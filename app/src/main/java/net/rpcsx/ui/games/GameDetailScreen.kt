@@ -124,7 +124,7 @@ fun GameDetailScreen(
                     Text("Cheat database", style = MaterialTheme.typography.titleMedium)
                     Text("${matchedCheats.size} matching entries")
                     if (enabledCount > 0) {
-                        Text("$enabledCount enabled for next boot")
+                        Text("$enabledCount selected for patch install")
                     }
                     if (CheatRepository.lastError.value != null) {
                         Text(CheatRepository.lastError.value ?: "", color = MaterialTheme.colorScheme.error)
@@ -134,7 +134,7 @@ fun GameDetailScreen(
 
             Spacer(Modifier.height(4.dp))
             Text(
-                "Live cheat toggles need a native RPCSX bridge. Current selections are staged for the next boot.",
+                "Live cheat toggles need a native RPCSX bridge. Artemis fixed-write cheats can be installed as next-boot patches.",
                 style = MaterialTheme.typography.bodySmall
             )
         }

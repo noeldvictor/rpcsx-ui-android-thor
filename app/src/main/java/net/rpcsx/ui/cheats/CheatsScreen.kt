@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,10 +47,13 @@ import net.rpcsx.EmulatorState
 import net.rpcsx.Game
 import net.rpcsx.R
 import net.rpcsx.RPCSX
+import net.rpcsx.cheats.ArtemisConverter
+import net.rpcsx.cheats.ArtemisInstallResult
 import net.rpcsx.cheats.CheatEntry
 import net.rpcsx.cheats.CheatRepository
 import net.rpcsx.cheats.CheatSelectionRepository
 import net.rpcsx.utils.GameIdentity
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,6 +67,11 @@ fun CheatsScreen(
     var selectedText by remember { mutableStateOf<String?>(null) }
     var selectedError by remember { mutableStateOf<String?>(null) }
     var refreshNonce by remember { mutableStateOf(0) }
+    var selectionNonce by remember { mutableStateOf(0) }
+    var isInstalling by remember { mutableStateOf(false) }
+    var installResult by remember { mutableStateOf<ArtemisInstallResult?>(null) }
+    var installError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val gameKey = game?.let { GameIdentity.primaryTitleId(it) ?: it.info.path } ?: "global"
     val isGameRunning = game != null &&
@@ -91,6 +100,12 @@ fun CheatsScreen(
         CheatRepository.matches(game)
     } else {
         CheatRepository.search(query)
+    }
+    val selectionVersion = selectionNonce
+    val installEntries = if (game != null && selectionVersion >= 0) {
+        CheatSelectionRepository.enabledEntries(context, gameKey, CheatRepository.matches(game))
+    } else {
+        emptyList()
     }
 
     Scaffold(
@@ -158,6 +173,29 @@ fun CheatsScreen(
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
 
+            if (game != null) {
+                CheatInstallCard(
+                    selectedCount = installEntries.size,
+                    isInstalling = isInstalling,
+                    result = installResult,
+                    error = installError,
+                    onApply = {
+                        scope.launch {
+                            isInstalling = true
+                            installResult = null
+                            installError = null
+                            try {
+                                installResult = ArtemisConverter.installEntries(context, game, installEntries)
+                            } catch (e: Exception) {
+                                installError = e.message ?: "Failed to install Artemis patches"
+                            } finally {
+                                isInstalling = false
+                            }
+                        }
+                    }
+                )
+            }
+
             Text("${baseEntries.size} entries", style = MaterialTheme.typography.labelLarge)
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -167,6 +205,9 @@ fun CheatsScreen(
                         enabled = CheatSelectionRepository.isEnabled(context, gameKey, entry),
                         onEnabledChange = {
                             CheatSelectionRepository.setEnabled(context, gameKey, entry, it)
+                            selectionNonce++
+                            installResult = null
+                            installError = null
                         },
                         onOpen = { selectedEntry = entry }
                     )
@@ -187,6 +228,56 @@ fun CheatsScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheatInstallCard(
+    selectedCount: Int,
+    isInstalling: Boolean,
+    result: ArtemisInstallResult?,
+    error: String?,
+    onApply: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Artemis patches", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (selectedCount == 0) {
+                    "No entries selected. Applying clears RPCSX Easy generated patches for this game."
+                } else {
+                    "$selectedCount selected entries will be converted to next-boot RPCSX patches."
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = onApply,
+                enabled = !isInstalling,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(painter = painterResource(id = R.drawable.ic_build), contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (isInstalling) "Installing..." else "Apply for Next Boot")
+            }
+            if (isInstalling) {
+                CircularProgressIndicator()
+            }
+            result?.let {
+                Text(it.message, style = MaterialTheme.typography.bodySmall)
+                if (it.patchFilePath != null && it.configFilePath != null) {
+                    Text(
+                        "Patch: ${it.patchFilePath}\nConfig: ${it.configFilePath}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (it.backupPaths.isNotEmpty()) {
+                    Text("Existing patch files were backed up before adding RPCSX Easy sections.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            error?.let {
+                Text(it, color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -239,6 +330,11 @@ private fun CheatPreview(
             if (text == null && error == null) {
                 CircularProgressIndicator()
             } else if (text != null) {
+                val summary = ArtemisConverter.summarize(text)
+                Text(
+                    "${summary.first} fixed-write cheats convertible, ${summary.second} risky/unsupported skipped.",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Button(onClick = onCopy) {
                     Icon(painter = painterResource(id = R.drawable.ic_description), contentDescription = null)
                     Spacer(Modifier.width(8.dp))

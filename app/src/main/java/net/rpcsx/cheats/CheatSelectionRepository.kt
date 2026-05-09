@@ -20,6 +20,10 @@ object CheatSelectionRepository {
         return entries.count { isEnabled(context, gameKey, it) }
     }
 
+    fun enabledEntries(context: Context, gameKey: String, entries: List<CheatEntry>): List<CheatEntry> {
+        return entries.filter { isEnabled(context, gameKey, it) }
+    }
+
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun key(gameKey: String, entry: CheatEntry): String =
