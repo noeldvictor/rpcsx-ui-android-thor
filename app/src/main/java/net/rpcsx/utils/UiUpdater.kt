@@ -39,6 +39,10 @@ class PackageInstallStatusReceiver : BroadcastReceiver() {
 
 object UiUpdater {
     suspend fun checkForUpdate(context: Context): String? {
+        if (BuildConfig.FORK_BUILD) {
+            return null
+        }
+
         val url = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getString("ui_channel", "")!!
 
         when (val fetchResult = GitHub.fetchLatestRelease(url)) {
@@ -58,6 +62,10 @@ object UiUpdater {
     }
 
     suspend fun downloadUpdate(context: Context, destinationDir: File, progressCallback: (Long, Long) -> Unit): File? {
+        if (BuildConfig.FORK_BUILD) {
+            return null
+        }
+
         val url = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getString("ui_channel", "")!!
 
         when (val fetchResult = GitHub.fetchLatestRelease(url)) {

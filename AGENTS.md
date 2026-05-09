@@ -1,0 +1,80 @@
+# RPCSX Easy Agent Notes
+
+## Repo And Git
+
+- Work on `master` unless the user explicitly asks for a branch.
+- Remote push target is SSH: `git@github.com:noeldvictor/rpcsx-ui-android.git`.
+- Commit and push completed work to `origin master`.
+- Do not fork extra RPCSX repos for this project; keep Android-side work in this repo unless the user asks otherwise.
+
+## Local Build Environment
+
+- Repo path: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android`
+- Java: `C:\Users\leanerdesigner\.codex\jdks\jdk-17`
+- Android SDK: `C:\Users\leanerdesigner\AppData\Local\Android\Sdk`
+- ADB: `C:\Users\leanerdesigner\AppData\Local\Android\Sdk\platform-tools\adb.exe`
+
+Use these environment variables for Gradle commands in PowerShell:
+
+```powershell
+$env:JAVA_HOME='C:\Users\leanerdesigner\.codex\jdks\jdk-17'
+$env:ANDROID_HOME='C:\Users\leanerdesigner\AppData\Local\Android\Sdk'
+```
+
+Useful verification commands:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleDebug
+```
+
+## Device Testing
+
+- Target handheld: Ayn Thor.
+- Known ADB model string: `AYN_Thor`.
+- Debug APK path after assemble: `app\build\outputs\apk\debug\rpcsx-debug.apk`.
+- Android package: `net.rpcsx.easy`.
+- Launcher label: `RPCSX Easy`.
+- Launcher activity: `net.rpcsx.MainActivity`.
+- This fork sets `BuildConfig.FORK_BUILD=true`; automatic upstream UI/core update prompts should stay disabled.
+
+Install and launch:
+
+```powershell
+& "$env:ANDROID_HOME\platform-tools\adb.exe" devices -l
+& "$env:ANDROID_HOME\platform-tools\adb.exe" install -r app\build\outputs\apk\debug\rpcsx-debug.apk
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell pm grant net.rpcsx.easy android.permission.POST_NOTIFICATIONS
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell monkey -p net.rpcsx.easy 1
+```
+
+If the launcher or another foreground app steals focus, launch the main activity directly:
+
+```powershell
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell am start -n net.rpcsx.easy/net.rpcsx.MainActivity
+```
+
+If the app does not appear, verify the installed package:
+
+```powershell
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell pm list packages net.rpcsx.easy
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell cmd package resolve-activity --brief net.rpcsx.easy
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell dumpsys activity activities | Select-String -Pattern 'topResumedActivity|net.rpcsx.easy'
+& "$env:ANDROID_HOME\platform-tools\adb.exe" shell pidof net.rpcsx.easy
+```
+
+## Cheat Work
+
+- Support offline single-player cheats only.
+- Do not help bypass DRM, anti-cheat, or online/multiplayer protections.
+- Bundled Aldos/Artemis source lives under `app/src/main/assets/cheats`.
+- Converted test fixtures live under `app/src/test/resources/cheats/converted`.
+- RPCSX/RPCS3 patches require a learned PPU hash; boot a game once, close it, then install fixed-write cheats.
+- AoB cheats are parsed and counted as risky, but should not be installed until native byte validation/scanning exists.
+
+## Current Cheat/Test Fixture
+
+- Odin Sphere Leifthrasir BLUS31601 has a conversion fixture.
+- Fixture source: `app/src/main/assets/cheats/ncl/1417_Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00.ncl`
+- Converted output:
+  - `app/src/test/resources/cheats/converted/odin_sphere_leifthrasir_blus31601_patch.yml`
+  - `app/src/test/resources/cheats/converted/odin_sphere_leifthrasir_blus31601_patch_config.yml`

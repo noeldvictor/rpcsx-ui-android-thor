@@ -406,7 +406,13 @@ fun GamesScreen(onOpenGameDetails: (Game) -> Unit = {}) {
             })
     }
 
-    if (rpcsxLibrary == null && rpcsxUpdateVersion == null && !rpcsxUpdate && activeDialogs.isEmpty()) {
+    if (
+        rpcsxLibrary == null &&
+        rpcsxUpdateVersion == null &&
+        !rpcsxUpdate &&
+        !rpcsxInstallLibraryFailed &&
+        activeDialogs.isEmpty()
+    ) {
         AlertDialog(
             onDismissRequest = { },
             title = { Text(stringResource(R.string.missing_rpcsx_lib)) },
@@ -512,14 +518,28 @@ fun GamesScreen(onOpenGameDetails: (Game) -> Unit = {}) {
 
         AlertDialog(
             onDismissRequest = {},
-            title = { Text(stringResource(R.string.failed_to_download_rpcsx)) },
-            text = {},
+            title = {
+                Text(
+                    if (BuildConfig.FORK_BUILD) {
+                        "RPCSX core required"
+                    } else {
+                        stringResource(R.string.failed_to_download_rpcsx)
+                    }
+                )
+            },
+            text = {
+                if (BuildConfig.FORK_BUILD) {
+                    Text("RPCSX Easy does not auto-download upstream builds. Install a compatible RPCSX Android library to continue.")
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    rpcsxInstallLibraryFailed = false
-                    coroutineScope.launch { checkForUpdates() }
-                }) {
-                    Text(stringResource(R.string.retry))
+                if (!BuildConfig.FORK_BUILD) {
+                    TextButton(onClick = {
+                        rpcsxInstallLibraryFailed = false
+                        coroutineScope.launch { checkForUpdates() }
+                    }) {
+                        Text(stringResource(R.string.retry))
+                    }
                 }
             },
             dismissButton = {

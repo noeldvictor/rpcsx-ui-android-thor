@@ -6,6 +6,7 @@ import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import net.rpcsx.BuildConfig
 import net.rpcsx.R
 import net.rpcsx.RPCSX
 import net.rpcsx.dialogs.AlertDialogQueue
@@ -55,6 +56,10 @@ object RpcsxUpdater {
     }
 
     suspend fun checkForUpdate(): String? {
+        if (BuildConfig.FORK_BUILD) {
+            return null
+        }
+
         val url = DevRpcsxChannel // TODO: update once RPCSX has release with android support
 
         val arch = getArch()
@@ -84,6 +89,10 @@ object RpcsxUpdater {
     }
 
     suspend fun downloadUpdate(destinationDir: File, progressCallback: (Long, Long) -> Unit): File? {
+        if (BuildConfig.FORK_BUILD) {
+            return null
+        }
+
         val url = DevRpcsxChannel // TODO: GeneralSettings["rpcsx_channel"] as String
         val arch = getArch()
 

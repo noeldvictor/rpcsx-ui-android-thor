@@ -24,6 +24,7 @@ android {
         }
 
         buildConfigField("String", "Version", "\"v${versionName}\"")
+        buildConfigField("Boolean", "FORK_BUILD", "true")
     }
 
     signingConfigs {
