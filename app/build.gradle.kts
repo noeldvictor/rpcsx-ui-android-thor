@@ -12,7 +12,7 @@ android {
     ndkVersion = "29.0.13113456"
 
     defaultConfig {
-        applicationId = "net.rpcsx"
+        applicationId = "net.rpcsx.easy"
         minSdk = 29
         targetSdk = 35
         versionCode = 1

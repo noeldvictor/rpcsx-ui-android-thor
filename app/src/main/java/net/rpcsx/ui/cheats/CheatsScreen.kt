@@ -1,0 +1,258 @@
+package net.rpcsx.ui.cheats
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import net.rpcsx.EmulatorState
+import net.rpcsx.Game
+import net.rpcsx.R
+import net.rpcsx.RPCSX
+import net.rpcsx.cheats.CheatEntry
+import net.rpcsx.cheats.CheatRepository
+import net.rpcsx.cheats.CheatSelectionRepository
+import net.rpcsx.utils.GameIdentity
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CheatsScreen(
+    game: Game?,
+    navigateBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    var selectedEntry by remember { mutableStateOf<CheatEntry?>(null) }
+    var selectedText by remember { mutableStateOf<String?>(null) }
+    var selectedError by remember { mutableStateOf<String?>(null) }
+    var refreshNonce by remember { mutableStateOf(0) }
+
+    val gameKey = game?.let { GameIdentity.primaryTitleId(it) ?: it.info.path } ?: "global"
+    val isGameRunning = game != null &&
+        RPCSX.activeGame.value == game.info.path &&
+        RPCSX.state.value != EmulatorState.Stopped &&
+        RPCSX.state.value != EmulatorState.Stopping
+
+    LaunchedEffect(refreshNonce) {
+        CheatRepository.load(context, forceRefresh = refreshNonce > 0)
+    }
+
+    LaunchedEffect(selectedEntry) {
+        val entry = selectedEntry
+        selectedText = null
+        selectedError = null
+        if (entry != null) {
+            try {
+                selectedText = CheatRepository.getCheatText(context, entry)
+            } catch (e: Exception) {
+                selectedError = e.message
+            }
+        }
+    }
+
+    val baseEntries = if (query.isBlank() && game != null) {
+        CheatRepository.matches(game)
+    } else {
+        CheatRepository.search(query)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.primary,
+                ),
+                title = {
+                    Text(
+                        game?.info?.name?.value ?: "Cheat Database",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = navigateBack) {
+                        Icon(painter = painterResource(id = R.drawable.ic_keyboard_arrow_left), contentDescription = null)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { refreshNonce++ }) {
+                        Icon(painter = painterResource(id = R.drawable.ic_refresh), contentDescription = null)
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .padding(12.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Search title, ID, or version") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            if (isGameRunning) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "This game is running. Cheat changes are staged for next boot until live patch toggles are wired into the native core.",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            if (CheatRepository.isLoading.value) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            CheatRepository.lastError.value?.let {
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
+
+            Text("${baseEntries.size} entries", style = MaterialTheme.typography.labelLarge)
+
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(baseEntries, key = { it.fileName }) { entry ->
+                    CheatEntryCard(
+                        entry = entry,
+                        enabled = CheatSelectionRepository.isEnabled(context, gameKey, entry),
+                        onEnabledChange = {
+                            CheatSelectionRepository.setEnabled(context, gameKey, entry, it)
+                        },
+                        onOpen = { selectedEntry = entry }
+                    )
+                }
+
+                item {
+                    selectedEntry?.let { entry ->
+                        CheatPreview(
+                            entry = entry,
+                            text = selectedText,
+                            error = selectedError,
+                            onCopy = {
+                                val cheatText = selectedText ?: return@CheatPreview
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText(entry.fileName, cheatText))
+                                Toast.makeText(context, "Copied cheat text", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheatEntryCard(
+    entry: CheatEntry,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    onOpen: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(entry.title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    entry.titleIds.ifEmpty { listOf("No title ID") }.joinToString(),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    listOf(entry.version, entry.size).filter { it.isNotBlank() }.joinToString("  "),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            TextButton(onClick = onOpen) {
+                Text("View")
+            }
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+        }
+    }
+}
+
+@Composable
+private fun CheatPreview(
+    entry: CheatEntry,
+    text: String?,
+    error: String?,
+    onCopy: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(entry.fileName, style = MaterialTheme.typography.titleMedium)
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (text == null && error == null) {
+                CircularProgressIndicator()
+            } else if (text != null) {
+                Button(onClick = onCopy) {
+                    Icon(painter = painterResource(id = R.drawable.ic_description), contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Copy NCL")
+                }
+                SelectionContainer {
+                    Text(text, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Source: ${CheatRepository.sourceUrl(entry)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}

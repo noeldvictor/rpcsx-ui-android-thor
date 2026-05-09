@@ -1,6 +1,5 @@
 package net.rpcsx.ui.games
 
-import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -32,6 +30,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -60,7 +59,6 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import net.rpcsx.BuildConfig
 import net.rpcsx.EmulatorState
-import net.rpcsx.FirmwareRepository
 import net.rpcsx.Game
 import net.rpcsx.GameFlag
 import net.rpcsx.GameInfo
@@ -70,13 +68,12 @@ import net.rpcsx.GameRepository
 import net.rpcsx.ProgressRepository
 import net.rpcsx.R
 import net.rpcsx.RPCSX
-import net.rpcsx.RPCSXActivity
+import net.rpcsx.cheats.CheatRepository
 import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.utils.FileUtil
 import net.rpcsx.utils.RpcsxUpdater
 import net.rpcsx.utils.UiUpdater
 import java.io.File
-import kotlin.concurrent.thread
 
 private fun withAlpha(color: Color, alpha: Float): Color {
     return Color(
@@ -86,52 +83,33 @@ private fun withAlpha(color: Color, alpha: Float): Color {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun GameItem(game: Game) {
+fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
     val context = LocalContext.current
     val menuExpanded = remember { mutableStateOf(false) }
     val iconExists = remember { mutableStateOf(false) }
     val emulatorState by remember { RPCSX.state }
     val emulatorActiveGame by remember { RPCSX.activeGame }
-
-    val installKeyLauncher =
-        rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri: Uri? ->
-            if (uri != null) {
-                val descriptor = context.contentResolver.openAssetFileDescriptor(uri, "r")
-                val fd = descriptor?.parcelFileDescriptor?.fd
-
-                if (fd != null) {
-                    val installProgress = ProgressRepository.create(context, context.getString(R.string.license_installation))
-
-                    game.addProgress(GameProgress(installProgress, GameProgressType.Compile))
-
-                    thread(isDaemon = true) {
-                        if (!RPCSX.instance.installKey(fd, installProgress, game.info.path)) {
-                            try {
-                                ProgressRepository.onProgressEvent(installProgress, -1, 0)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-
-                        try {
-                            descriptor.close()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-                } else {
-                    try {
-                        descriptor?.close()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-        }
+    val launchGame = rememberGameLauncher(game)
 
     Column {
         DropdownMenu(
             expanded = menuExpanded.value, onDismissRequest = { menuExpanded.value = false }) {
+            DropdownMenuItem(
+                text = { Text("Details") },
+                leadingIcon = { Icon(painter = painterResource(id = R.drawable.ic_info), contentDescription = null) },
+                onClick = {
+                    menuExpanded.value = false
+                    onOpenGameDetails(game)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Play") },
+                leadingIcon = { Icon(painter = painterResource(id = R.drawable.ic_play), contentDescription = null) },
+                onClick = {
+                    menuExpanded.value = false
+                    launchGame()
+                }
+            )
             if (game.progressList.isEmpty()) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.delete)) },
@@ -170,48 +148,7 @@ fun GameItem(game: Game) {
             modifier = Modifier
                 .fillMaxSize()
                 .combinedClickable(onClick = click@{
-                    if (game.hasFlag(GameFlag.Locked)) {
-                        AlertDialogQueue.showDialog(
-                            title = context.getString(R.string.missing_key),
-                            message = context.getString(R.string.game_require_key),
-                            onConfirm = { installKeyLauncher.launch("*/*") },
-                            onDismiss = {},
-                            confirmText = context.getString(R.string.install_rap_file)
-                        )
-
-                        return@click
-                    }
-
-                    if (FirmwareRepository.version.value == null) {
-                        AlertDialogQueue.showDialog(
-                            title = context.getString(R.string.missing_firmware),
-                            message = context.getString(R.string.install_firmware_to_continue)
-                        )
-                    } else if (FirmwareRepository.progressChannel.value != null) {
-                        AlertDialogQueue.showDialog(
-                            title = context.getString(R.string.missing_firmware),
-                            message = context.getString(R.string.wait_until_firmware_install)
-                        )
-                    } else if (game.info.path != "$" && game.findProgress(
-                            arrayOf(
-                                GameProgressType.Install, GameProgressType.Remove
-                            )
-                        ) == null
-                    ) {
-                        if (game.findProgress(GameProgressType.Compile) != null) {
-                            AlertDialogQueue.showDialog(
-                                title = context.getString(R.string.game_compiling_not_finished),
-                                message = context.getString(R.string.wait_until_game_compile)
-                            )
-                        } else {
-                            GameRepository.onBoot(game)
-                            val emulatorWindow = Intent(
-                                context, RPCSXActivity::class.java
-                            )
-                            emulatorWindow.putExtra("path", game.info.path)
-                            context.startActivity(emulatorWindow)
-                        }
-                    }
+                    onOpenGameDetails(game)
                 }, onLongClick = {
                     if (game.info.name.value != "VSH") {
                         menuExpanded.value = true
@@ -315,7 +252,7 @@ fun GameItem(game: Game) {
                     ) {
                         Card(
                             onClick = {
-                                installKeyLauncher.launch("*/*")
+                                launchGame()
                             }) {
 
                             Icon(
@@ -325,6 +262,31 @@ fun GameItem(game: Game) {
                                     .size(30.dp)
                                     .padding(7.dp)
                             )
+                        }
+                    }
+                }
+
+                if (CheatRepository.hasCheats(game)) {
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.End,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(5.dp)
+                    ) {
+                        Card {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_star),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("Cheats")
+                            }
                         }
                     }
                 }
@@ -346,7 +308,7 @@ fun GameItem(game: Game) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GamesScreen() {
+fun GamesScreen(onOpenGameDetails: (Game) -> Unit = {}) {
     val context = LocalContext.current
     val games = remember { GameRepository.list() }
     val isRefreshing by remember { GameRepository.isRefreshing }
@@ -382,6 +344,7 @@ fun GamesScreen() {
             updatesChecked = true
             checkForUpdates()
         }
+        CheatRepository.load(context)
     }
 
     if (uiUpdateVersion != null && rpcsxUpdateVersion == null && activeDialogs.isEmpty()) {
@@ -595,7 +558,7 @@ fun GamesScreen() {
             modifier = Modifier.fillMaxSize()
         ) {
             items(count = games.size, key = { index -> games[index].info.path }) { index ->
-                GameItem(games[index])
+                GameItem(games[index], onOpenGameDetails)
             }
         }
     }

@@ -65,10 +65,13 @@ import androidx.core.content.edit
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
 import net.rpcsx.BuildConfig
 import net.rpcsx.EmulatorState
 import net.rpcsx.FirmwareRepository
+import net.rpcsx.GameRepository
 import net.rpcsx.PrecompilerService
 import net.rpcsx.PrecompilerServiceAction
 import net.rpcsx.ProgressRepository
@@ -88,11 +91,14 @@ import net.rpcsx.ui.channels.channelToUiText
 import net.rpcsx.ui.channels.channelsToUiText
 import net.rpcsx.ui.channels.uiTextToChannel
 import net.rpcsx.ui.channels.uiTextToChannels
+import net.rpcsx.ui.cheats.CheatsScreen
 import net.rpcsx.ui.drivers.GpuDriversScreen
+import net.rpcsx.ui.games.GameDetailScreen
 import net.rpcsx.ui.games.GamesScreen
 import net.rpcsx.ui.settings.AdvancedSettingsScreen
 import net.rpcsx.ui.settings.ControllerSettings
 import net.rpcsx.ui.settings.SettingsScreen
+import net.rpcsx.ui.tools.TrimScreen
 import net.rpcsx.ui.user.UsersScreen
 import net.rpcsx.utils.FileUtil
 import net.rpcsx.utils.RpcsxUpdater
@@ -170,7 +176,7 @@ fun AppNavHost() {
     if (rpcsxLibrary == null) {
         GamesDestination(
             navigateToSettings = { },
-            drawerState
+            drawerState = drawerState
         )
 
         return
@@ -190,8 +196,51 @@ fun AppNavHost() {
         ) {
             GamesDestination(
                 navigateToSettings = { navigateTo("settings") },
-                drawerState
+                navigateTo = navigateTo,
+                drawerState = drawerState
             )
+        }
+
+        composable(
+            route = "game/{path}",
+            arguments = listOf(navArgument("path") { type = NavType.StringType })
+        ) { entry ->
+            val path = Uri.decode(entry.arguments?.getString("path").orEmpty())
+            val game = GameRepository.find(path)
+            if (game != null) {
+                GameDetailScreen(
+                    game = game,
+                    navigateBack = navController::navigateUp,
+                    navigateToCheats = { navigateTo("cheats/${Uri.encode(path)}") },
+                    navigateToTrim = { navigateTo("trim/${Uri.encode(path)}") }
+                )
+            } else {
+                GamesScreen { selected -> navigateTo("game/${Uri.encode(selected.info.path)}") }
+            }
+        }
+
+        composable(route = "cheats") {
+            CheatsScreen(game = null, navigateBack = navController::navigateUp)
+        }
+
+        composable(
+            route = "cheats/{path}",
+            arguments = listOf(navArgument("path") { type = NavType.StringType })
+        ) { entry ->
+            val path = Uri.decode(entry.arguments?.getString("path").orEmpty())
+            CheatsScreen(game = GameRepository.find(path), navigateBack = navController::navigateUp)
+        }
+
+        composable(route = "trim") {
+            TrimScreen(game = null, navigateBack = navController::navigateUp)
+        }
+
+        composable(
+            route = "trim/{path}",
+            arguments = listOf(navArgument("path") { type = NavType.StringType })
+        ) { entry ->
+            val path = Uri.decode(entry.arguments?.getString("path").orEmpty())
+            TrimScreen(game = GameRepository.find(path), navigateBack = navController::navigateUp)
         }
 
         composable(
@@ -473,6 +522,7 @@ fun AppNavHost() {
 @Composable
 fun GamesDestination(
     navigateToSettings: () -> Unit,
+    navigateTo: (String) -> Unit = {},
     drawerState: androidx.compose.material3.DrawerState
 ) {
     val context = LocalContext.current
@@ -483,7 +533,7 @@ fun GamesDestination(
     val rpcsxLibrary by remember { RPCSX.activeLibrary }
 
     if (rpcsxLibrary == null) {
-        GamesScreen()
+        GamesScreen { game -> navigateTo("game/${Uri.encode(game.info.path)}") }
         return
     }
 
@@ -611,6 +661,20 @@ fun GamesDestination(
                     )
 
                     NavigationDrawerItem(
+                        label = { Text("Cheat Database") },
+                        selected = false,
+                        icon = { Icon(painter = painterResource(id = R.drawable.ic_star), null) },
+                        onClick = { navigateTo("cheats") }
+                    )
+
+                    NavigationDrawerItem(
+                        label = { Text("Trim / Optimize") },
+                        selected = false,
+                        icon = { Icon(painter = painterResource(id = R.drawable.tune), null) },
+                        onClick = { navigateTo("trim") }
+                    )
+
+                    NavigationDrawerItem(
                         label = { Text(stringResource(R.string.device_info)) },
                         selected = false,
                         icon = { Icon(painterResource(R.drawable.perm_device_information), contentDescription = null) },
@@ -722,7 +786,11 @@ fun GamesDestination(
             floatingActionButton = {
                 DropUpFloatingActionButton(installPkgLauncher, gameFolderPickerLauncher)
             },
-        ) { innerPadding -> Column(modifier = Modifier.padding(innerPadding)) { GamesScreen() } }
+        ) { innerPadding ->
+            Column(modifier = Modifier.padding(innerPadding)) {
+                GamesScreen { game -> navigateTo("game/${Uri.encode(game.info.path)}") }
+            }
+        }
     }
 }
 
