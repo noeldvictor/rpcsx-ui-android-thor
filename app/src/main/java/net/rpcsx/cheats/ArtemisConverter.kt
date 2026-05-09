@@ -43,6 +43,14 @@ data class ArtemisInstallResult(
     val message: String
 )
 
+data class ArtemisPatchPreview(
+    val patchBody: String,
+    val configBody: String,
+    val installedCheats: Int,
+    val skippedCheats: Int,
+    val installedWrites: Int
+)
+
 object ArtemisConverter {
     private const val PATCH_VERSION = "1.2"
     private const val APP_VERSION = "All"
@@ -138,56 +146,44 @@ object ArtemisConverter {
             )
         }
 
-        val patchItems = mutableListOf<PatchItem>()
-        var skippedCheats = 0
-
-        entries.forEach { entry ->
-            val text = CheatRepository.getCheatText(context, entry)
-            parse(text).forEach { cheat ->
-                if (cheat.isSupported) {
-                    patchItems += PatchItem(entry = entry, cheat = cheat)
-                } else {
-                    skippedCheats++
-                }
-            }
-        }
-
         val gameTitle = game.info.name.value
             ?: entries.firstOrNull()?.title
             ?: titleId
-        val hashKey = "$titleId-$ppuHash"
-        val patchBody = buildPatchBody(hashKey, titleId, gameTitle, patchItems)
-        val configBody = buildConfigBody(hashKey, titleId, gameTitle, patchItems)
+        val entryTexts = entries.map { entry -> entry to CheatRepository.getCheatText(context, entry) }
+        val preview = buildPatchPreview(
+            entries = entryTexts,
+            titleId = titleId,
+            ppuHash = ppuHash,
+            gameTitle = gameTitle
+        )
 
         backups += writeGeneratedSection(
             file = patchFile,
             startMarker = PATCH_SECTION_START,
             endMarker = PATCH_SECTION_END,
-            body = patchBody,
+            body = preview.patchBody,
             prefixIfCreated = "Version: $PATCH_VERSION\n\n"
         )
         backups += writeGeneratedSection(
             file = configFile,
             startMarker = CONFIG_SECTION_START,
             endMarker = CONFIG_SECTION_END,
-            body = configBody,
+            body = preview.configBody,
             prefixIfCreated = ""
         )
 
-        val installedWrites = patchItems.sumOf { it.cheat.writes.size }
-        val installedCheats = patchItems.size
-        val message = if (installedCheats == 0) {
+        val message = if (preview.installedCheats == 0) {
             "No fixed-write Artemis cheats were installable for $titleId. Risky AoB/configurable codes were skipped."
         } else {
-            "Installed $installedCheats Artemis cheats ($installedWrites writes) for next boot. Skipped $skippedCheats risky or unsupported cheats."
+            "Installed ${preview.installedCheats} Artemis cheats (${preview.installedWrites} writes) for next boot. Skipped ${preview.skippedCheats} risky or unsupported cheats."
         }
 
         ArtemisInstallResult(
             titleId = titleId,
             patchHash = ppuHash,
-            installedCheats = installedCheats,
-            skippedCheats = skippedCheats,
-            installedWrites = installedWrites,
+            installedCheats = preview.installedCheats,
+            skippedCheats = preview.skippedCheats,
+            installedWrites = preview.installedWrites,
             patchFilePath = patchFile.absolutePath,
             configFilePath = configFile.absolutePath,
             backupPaths = backups,
@@ -199,6 +195,48 @@ object ArtemisConverter {
     fun summarize(text: String): Pair<Int, Int> {
         val cheats = parse(text)
         return cheats.count { it.isSupported } to cheats.count { !it.isSupported }
+    }
+
+    internal fun buildPatchPreview(
+        entry: CheatEntry,
+        cheatText: String,
+        titleId: String,
+        ppuHash: String,
+        gameTitle: String = entry.title
+    ): ArtemisPatchPreview = buildPatchPreview(
+        entries = listOf(entry to cheatText),
+        titleId = titleId,
+        ppuHash = ppuHash,
+        gameTitle = gameTitle
+    )
+
+    internal fun buildPatchPreview(
+        entries: List<Pair<CheatEntry, String>>,
+        titleId: String,
+        ppuHash: String,
+        gameTitle: String
+    ): ArtemisPatchPreview {
+        val patchItems = mutableListOf<PatchItem>()
+        var skippedCheats = 0
+
+        entries.forEach { (entry, text) ->
+            parse(text).forEach { cheat ->
+                if (cheat.isSupported) {
+                    patchItems += PatchItem(entry = entry, cheat = cheat)
+                } else {
+                    skippedCheats++
+                }
+            }
+        }
+
+        val hashKey = "$titleId-$ppuHash"
+        return ArtemisPatchPreview(
+            patchBody = buildPatchBody(hashKey, titleId, gameTitle, patchItems),
+            configBody = buildConfigBody(hashKey, titleId, gameTitle, patchItems),
+            installedCheats = patchItems.size,
+            skippedCheats = skippedCheats,
+            installedWrites = patchItems.sumOf { it.cheat.writes.size }
+        )
     }
 
     private fun parseBlock(rawBlock: String): ArtemisCheat? {

@@ -1,0 +1,173 @@
+"BLUS31601-TEST_PPU_HASH_ODIN_BLUS31601":
+  "Artemis: Odin Sphere Leifthrasir - Max Gold After Buying Anything From A Merchant [1]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "games24.blog.fc2.com/blog-entry-319.html"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x007037A8, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - Phozon Max After Absorbing From Enemy Or Generated From Seeds [2]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "games24.blog.fc2.com/blog-entry-319.html"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x0051B888, 0x60000000 ]
+      - [ be32, 0x005003B4, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - Max PP [3]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "games24.blog.fc2.com/blog-entry-319.html"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x00852AF4, 0x60000000 ]
+      - [ be32, 0x00852B68, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - Max Items On Change Except Magic Pots, Materials For Food And Potions, And Food [4]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "JorgeFFC"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x0042C0D8, 0x40800014 ]
+  "Artemis: Odin Sphere Leifthrasir - Infinite Ability Points For Non Phozon-Based Character Skills [5]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "JorgeFFC"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x00655E64, 0x38A00063 ]
+  "Artemis: Odin Sphere Leifthrasir - Max Chain On Hit (999) [6]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "JorgeFFC"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x0050C2D4, 0x30A503E7 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Infinite Health [7]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x0048FD20, 0x905C02C4 ]
+      - [ be32, 0x005D96DC, 0x60000000 ]
+      - [ be32, 0x005D96E0, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Max Level On Exp Gain [8]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x004FF6A0, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Max Phozon On Use [9]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x005003C4, 0x90BF191C ]
+      - [ be32, 0x0051B880, 0x30840000 ]
+      - [ be32, 0x00656254, 0x90A4191C ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Max + Infinite Gold On Buy [10]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x007037B4, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Big Score When You Finish Level [11]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x005D9DB0, 0x901F02E4 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Instant Max + Infinite PP [12]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x00852BA0, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Max + Infinite Special Gold + Keys + Items On Gain [13]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x0042C0EC, 0x90A30018 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Infinite Power [14]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x004FBECC, 0x60000000 ]
+  "Artemis: Odin Sphere Leifthrasir - ASM Infinite Capacity Points On Use [15]":
+    Games:
+      "Odin Sphere Leifthrasir":
+        "BLUS31601":
+          - All
+    Author: "jgduff1"
+    Patch Version: "1.0"
+    Group: "Artemis"
+    Notes: "Converted from AldosTools Artemis NCL by RPCSX Easy. Source: Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00."
+    Patch:
+      - [ be32, 0x00655E60, 0x7C842810 ]
+      - [ be32, 0x00655E64, 0x90A31924 ]

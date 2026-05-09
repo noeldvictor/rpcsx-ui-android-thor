@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class ArtemisConverterTest {
     @Test
@@ -48,5 +49,44 @@ class ArtemisConverterTest {
         assertEquals(1, cheats[0].aobPatches.size)
         assertEquals("0001000000010000", cheats[0].aobPatches.first().searchPattern)
         assertEquals(0 to 2, ArtemisConverter.summarize(text))
+    }
+
+    @Test
+    fun convertOdinSphereLeifthrasirBlusFixture() {
+        val source = File(
+            "src/main/assets/cheats/ncl/1417_Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00.ncl"
+        ).readText()
+        val entry = CheatEntry(
+            titleIds = listOf("BLUS31601"),
+            title = "Odin Sphere Leifthrasir",
+            version = "v01.01 av01.00",
+            size = "3.21 KB",
+            fileName = "Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00",
+            assetName = "1417_Odin Sphere Leifthrasir BLUS31601 v01.01 av01.00.ncl"
+        )
+
+        val preview = ArtemisConverter.buildPatchPreview(
+            entry = entry,
+            cheatText = source,
+            titleId = "BLUS31601",
+            ppuHash = "TEST_PPU_HASH_ODIN_BLUS31601",
+            gameTitle = "Odin Sphere Leifthrasir"
+        )
+
+        assertEquals(15, preview.installedCheats)
+        assertEquals(6, preview.skippedCheats)
+        assertEquals(22, preview.installedWrites)
+        assertEquals(
+            File("src/test/resources/cheats/converted/odin_sphere_leifthrasir_blus31601_patch.yml")
+                .readText()
+                .trimEnd(),
+            preview.patchBody
+        )
+        assertEquals(
+            File("src/test/resources/cheats/converted/odin_sphere_leifthrasir_blus31601_patch_config.yml")
+                .readText()
+                .trimEnd(),
+            preview.configBody
+        )
     }
 }
