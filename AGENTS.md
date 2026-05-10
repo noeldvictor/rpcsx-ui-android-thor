@@ -41,6 +41,7 @@ Useful verification commands:
 - Folder import is intentionally conservative: only loose `.pkg` and `.edat` files are sent to the native installer. Loose `.iso` files under Android external-storage documents are added as direct library entries instead of extracted, because the current core can abort while extracting some ISO directory entries.
 - External ISO entries parse `PS3_GAME/PARAM.SFO` and `PS3_GAME/ICON0.PNG` directly from the ISO to populate title IDs, names, cheat matching, and cached cover art.
 - The README is source-first: no big public APK download button, no support queue positioning.
+- In-game Back is routed to `RPCSX.instance.openHomeMenu()` from `RPCSXActivity`; this opens the native RPCSX Home Menu shown over gameplay.
 
 Install and launch:
 
@@ -65,6 +66,19 @@ If the app does not appear, verify the installed package:
 & "$env:ANDROID_HOME\platform-tools\adb.exe" shell dumpsys activity activities | Select-String -Pattern 'topResumedActivity|net.rpcsx.easy'
 & "$env:ANDROID_HOME\platform-tools\adb.exe" shell pidof net.rpcsx.easy
 ```
+
+## Native Home Menu / OSD Work
+
+- Android already shows the native RPCSX in-game `Home Menu` over gameplay. Do not build a separate Android/Compose OSD unless the user explicitly asks for a replacement.
+- The Android wrapper currently opens that menu through `_rpcsx_openHomeMenu`, surfaced as `RPCSX.instance.openHomeMenu()`.
+- Adding first-class menu rows such as `Cheats` or `Show FPS` belongs in the native/core Home Menu implementation, or behind a deliberate exported C ABI hook that the Android app can call. Android layout files cannot directly add rows to the existing menu.
+- The current Home Menu observed on Thor includes `Resume Game`, `Settings`, `Trophies`, `Take Screenshot`, `Start/Stop Recording`, `SaveState`, `Restart Game`, and `Exit Game`.
+- FPS display is already represented in the RPCSX config file under `Video -> Performance Overlay -> Enabled`. Through the Android settings bridge this should be treated as `Video@@Performance Overlay@@Enabled`.
+- If only a simple FPS toggle is requested, prefer toggling `Performance Overlay.Enabled` first. Avoid enabling debug overlays or graph-heavy performance views unless the user asks for more metrics.
+- Cheat toggles in the Home Menu should show only the currently running game's cheats, one row per cheat, with controller-friendly toggle behavior.
+- Cheat state is persisted in `config/patch_config.yml`; generated patch definitions live under `config/patches/TITLEID_patch.yml`.
+- For live cheat toggling, use the existing optional native hook `RPCSX.setPatchEnabled(hash, description, enabled)` when the current core exports it. If the hook is missing or the patch cannot apply live, the menu must clearly say the toggle takes effect after restart.
+- Keep OSD wording user-facing: say `Cheats`, `Show FPS`, `Restart needed`, or `Needs first boot`; avoid database/internal words in the menu.
 
 ## Cheat Work
 
