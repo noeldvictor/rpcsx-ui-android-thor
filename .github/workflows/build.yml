@@ -2,7 +2,7 @@
 # - Move librpcsx compilation away
 # - Do not use legacy CMake scripts (figure out how)
 
-name: Java CI with Gradle
+name: Build Thor APK
 
 on:
   workflow_dispatch:
@@ -96,22 +96,43 @@ jobs:
       uses: actions/upload-artifact@v4
       if: ${{ github.event_name != 'workflow_dispatch' }}
       with:
-        name: rpcsx-build
+        name: rpcsx-thor-experiment-build
         compression-level: 0
         path: |
-          app/build/outputs/apk/release/rpcsx-release.apk
+          app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk
 
     - name: Create release
       uses: softprops/action-gh-release@v2
       if: ${{ github.event_name == 'workflow_dispatch' }} 
       with:
-        prerelease: ${{ env.RX_VERSION }}
+        prerelease: ${{ inputs.releaseTag != 'Release' }}
         tag_name: v${{ env.RX_VERSION }}${{inputs.releaseTag == 'Draft' && format('-{0}', env.RX_SHA) || ''}}${{inputs.releaseTag != 'Release' && inputs.releaseTag == 'Draft' && format('-{0}', inputs.releaseTag) || ''}}${{ inputs.releaseTagVersion != 0 && format('-{0}', inputs.releaseTagVersion) || ''}}
         make_latest: true
-        # body: 'Some release text body if needed'
-        # body_path: or/as/file.md
+        name: RPCSX Thor Experiment ${{ env.RX_VERSION }}
+        body: |
+          Experimental AYN Thor build. Personal use only. No stability promise.
         files: |
-          app/build/outputs/apk/release/rpcsx-release.apk
+          app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk
+
+    - name: Publish latest Thor experiment APK
+      uses: softprops/action-gh-release@v2
+      if: |
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/master' &&
+        github.repository_owner == 'noeldvictor'
+      with:
+        prerelease: true
+        make_latest: true
+        tag_name: thor-v${{ env.RX_VERSION }}-${{ env.RX_SHA }}
+        name: RPCSX Thor Experiment ${{ env.RX_VERSION }}-${{ env.RX_SHA }}
+        body: |
+          Experimental AYN Thor APK from master.
+
+          Commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+
+          Personal use only. No stability promise. Do not open issues expecting support.
+        files: |
+          app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk
 
     - name: Deploy build
       uses: softprops/action-gh-release@v2
@@ -126,5 +147,5 @@ jobs:
         repository: RPCSX/rpcsx-ui-android-build
         token: ${{ secrets.BUILD_TOKEN }}
         tag_name: v${{ env.RX_VERSION }}-${{ env.RX_SHA }}
-        files: app/build/outputs/apk/release/rpcsx-release.apk
+        files: app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk
         body: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
