@@ -113,6 +113,7 @@ class GameRepository {
         private val refreshLock = Any()
         private var needsRefresh = false
         private var refreshRunning = false
+        private var pendingSaveRunnable: Runnable? = null
         val isRefreshing = mutableStateOf(false)
 
         fun save() {
@@ -121,12 +122,23 @@ class GameRepository {
                 return
             }
 
-            val games = synchronized(instance) {
-                instance.games.map { game -> toInfo(game.info) }.filter { info -> info.path != "$" }
+            pendingSaveRunnable?.let { mainHandler.removeCallbacks(it) }
+            val runnable = object : Runnable {
+                override fun run() {
+                    if (pendingSaveRunnable === this) {
+                        pendingSaveRunnable = null
+                    }
+
+                    val games = synchronized(instance) {
+                        instance.games.map { game -> toInfo(game.info) }.filter { info -> info.path != "$" }
+                    }
+                    thread(name = "rpcsx-save-games") {
+                        saveSnapshot(games)
+                    }
+                }
             }
-            thread {
-                saveSnapshot(games)
-            }
+            pendingSaveRunnable = runnable
+            mainHandler.postDelayed(runnable, 250L)
         }
 
         private fun saveSnapshot(games: List<GameInfo>) {
@@ -214,14 +226,18 @@ class GameRepository {
                         }
                     }
 
+                    val existingByPath = instance.games
+                        .associateBy { game -> game.info.path }
+                        .toMutableMap()
                     gameInfos.forEach { info ->
-                        val existsGame = instance.games.find { x -> x.info.path == info.path }
+                        val existsGame = existingByPath[info.path]
                         if (existsGame == null) {
                             val newGame = Game(toStore(info))
                             if (progressId >= 0) {
                                 newGame.addProgress(GameProgress(progressId, GameProgressType.Install))
                             }
                             instance.games.add(0, newGame)
+                            existingByPath[info.path] = newGame
                         } else {
                             existsGame.info.name.value = info.name ?: existsGame.info.name.value
                             existsGame.info.iconPath.value =

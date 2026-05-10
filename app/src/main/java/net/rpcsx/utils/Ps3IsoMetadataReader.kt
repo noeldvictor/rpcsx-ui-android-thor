@@ -54,11 +54,12 @@ object Ps3IsoMetadataReader {
         isoPath: String,
         fallbackName: String
     ): Ps3IsoMetadata {
-        val paramSfo = readIsoFile(channel, "PS3_GAME/PARAM.SFO", maxParamSfoBytes)
+        val iso = IsoImage(channel)
+        val paramSfo = iso.readFile("PS3_GAME/PARAM.SFO", maxParamSfoBytes)
         val sfo = paramSfo?.let { parseParamSfo(it) } ?: SfoMetadata()
         val titleId = sfo.titleId ?: GameIdentity.titleIdsFromText(fallbackName).firstOrNull()
         val title = sfo.title?.takeIf { it.isNotBlank() }
-        val iconPath = extractIcon(context, channel, isoPath, titleId)
+        val iconPath = extractIcon(context, iso, isoPath, titleId)
 
         return Ps3IsoMetadata(
             titleId = titleId,
@@ -69,11 +70,11 @@ object Ps3IsoMetadataReader {
 
     private fun extractIcon(
         context: Context,
-        channel: FileChannel,
+        iso: IsoImage,
         isoPath: String,
         titleId: String?
     ): String? {
-        val iconBytes = readIsoFile(channel, "PS3_GAME/ICON0.PNG", maxIconBytes) ?: return null
+        val iconBytes = iso.readFile("PS3_GAME/ICON0.PNG", maxIconBytes) ?: return null
         if (!iconBytes.isPng()) {
             return null
         }
@@ -143,6 +144,7 @@ object Ps3IsoMetadataReader {
 
     private class IsoImage(private val channel: FileChannel) {
         private val root: IsoEntry? by lazy { readRootEntry() }
+        private val directoryCache = mutableMapOf<IsoEntry, List<IsoEntry>>()
 
         fun readFile(path: String, maxBytes: Int): ByteArray? {
             val entry = findEntry(path) ?: return null
@@ -188,6 +190,7 @@ object Ps3IsoMetadataReader {
             if (!directory.isDirectory) {
                 return emptyList()
             }
+            directoryCache[directory]?.let { return it }
 
             val entries = mutableListOf<IsoEntry>()
             val bytesToRead = min(directory.size, maxDirectoryBytes)
@@ -213,7 +216,7 @@ object Ps3IsoMetadataReader {
                 }
                 sector++
             }
-            return entries
+            return entries.also { directoryCache[directory] = it }
         }
 
         private fun parseDirectoryRecord(data: ByteArray, offset: Int): IsoEntry? {

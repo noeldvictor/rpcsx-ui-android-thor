@@ -24,11 +24,7 @@ import net.rpcsx.ProgressRepository
 import net.rpcsx.R
 import net.rpcsx.RPCSX
 import net.rpcsx.provider.AppDataDocumentProvider
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.IOException
@@ -41,20 +37,22 @@ private data class InstallableFolder(
 )
 
 object FileUtil {
+    private const val copyBufferSize = 64 * 1024
+
     private val nativeInstallerSafeExtensions = setOf("pkg", "edat")
     private val isoExtensions = setOf("iso")
     private val externalIsoMetadataRefreshActive = AtomicBoolean(false)
 
     fun installPackages(context: Context, rootFolderUri: Uri) {
         thread {
-            val workList = mutableListOf<Uri>()
+            val workList = ArrayDeque<Uri>()
             workList.add(rootFolderUri)
 
             val batchFiles = mutableListOf<Uri>()
             val batchDirs = mutableListOf<InstallableFolder>()
 
             while (workList.isNotEmpty()) {
-                val currentFolderUri = workList.removeAt(0)
+                val currentFolderUri = workList.removeFirst()
 
                 val paramSfo =
                     uriOpenFile(context, currentFolderUri, "PS3_GAME/PARAM.SFO") ?: uriOpenFile(
@@ -370,12 +368,12 @@ object FileUtil {
     fun copyDirUriToInternalStorage(
         context: Context, rootFolderUri: Uri, path: String, progressId: Long
     ) {
-        val workList = mutableListOf<Pair<Uri, String>>()
+        val workList = ArrayDeque<Pair<Uri, String>>()
         workList.add(Pair(rootFolderUri, path))
         val fileList = mutableListOf<Pair<Uri, String>>()
 
         while (workList.isNotEmpty()) {
-            val currentFolderUriTarget = workList.removeAt(0)
+            val currentFolderUriTarget = workList.removeFirst()
             val currentFolderUri = currentFolderUriTarget.first
             val currentFolderTarget = currentFolderUriTarget.second
 
@@ -400,30 +398,19 @@ object FileUtil {
     }
 
     fun saveFile(context: Context, source: Uri, target: String) {
-        var bis: BufferedInputStream? = null
-        var bos: BufferedOutputStream? = null
-
         try {
-            bis = BufferedInputStream(
-                FileInputStream(
-                    context.contentResolver.openFileDescriptor(
-                        source, "r"
-                    )!!.fileDescriptor
-                )
-            )
+            val targetFile = File(target)
+            targetFile.parentFile?.mkdirs()
+            val inputStream = context.contentResolver.openInputStream(source)
+                ?: throw IOException("Cannot open input stream for $source")
 
-            bos = BufferedOutputStream(FileOutputStream(target, false))
-            val buf = ByteArray(1024)
-            bis.read(buf)
-
-            do {
-                bos.write(buf)
-            } while (bis.read(buf) != -1)
+            inputStream.use { input ->
+                targetFile.outputStream().use { output ->
+                    input.copyTo(output, copyBufferSize)
+                }
+            }
         } catch (e: IOException) {
             e.printStackTrace()
-        } finally {
-            bis?.close()
-            bos?.close()
         }
     }
 

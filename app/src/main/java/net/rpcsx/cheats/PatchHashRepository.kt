@@ -34,6 +34,7 @@ object PatchHashRepository {
     private val titleIdRegex = Regex("\\b[A-Z]{4}\\d{5}\\b", RegexOption.IGNORE_CASE)
     private val ppuHashRegex = Regex("PPU executable hash:\\s*([A-Za-z0-9_-]{8,96})")
     private val spuHashRegex = Regex("SPU executable hash:\\s*([A-Za-z0-9_-]{8,96})")
+    private val sectionContentCache = mutableMapOf<SectionContentCacheKey, SectionContentCacheEntry>()
 
     fun cachedStatus(context: Context, game: Game): PatchHashStatus {
         val titleId = GameIdentity.primaryTitleId(game)
@@ -216,18 +217,68 @@ object PatchHashRepository {
         runCatching { if (exists()) readText() else null }.getOrNull()
 
     private fun File.hasGeneratedSectionContent(startMarker: String, endMarker: String): Boolean {
-        val text = readTextOrNull() ?: return false
-        val start = text.indexOf(startMarker)
-        val end = text.indexOf(endMarker)
-        if (start < 0 || end <= start) {
+        val existsNow = exists()
+        val lengthNow = if (existsNow) length() else 0L
+        val lastModifiedNow = if (existsNow) lastModified() else 0L
+        val key = SectionContentCacheKey(absolutePath, startMarker, endMarker)
+
+        synchronized(sectionContentCache) {
+            sectionContentCache[key]?.let { cached ->
+                if (
+                    cached.exists == existsNow &&
+                    cached.length == lengthNow &&
+                    cached.lastModified == lastModifiedNow
+                ) {
+                    return cached.hasContent
+                }
+            }
+        }
+
+        val text = if (existsNow) readTextOrNull() else null
+        if (text == null) {
+            synchronized(sectionContentCache) {
+                sectionContentCache[key] = SectionContentCacheEntry(
+                    exists = existsNow,
+                    length = lengthNow,
+                    lastModified = lastModifiedNow,
+                    hasContent = false
+                )
+            }
             return false
         }
 
-        return text.substring(start + startMarker.length, end)
-            .lineSequence()
-            .map { it.trim() }
-            .any { it.isNotBlank() && !it.startsWith("#") }
+        val start = text.indexOf(startMarker)
+        val end = text.indexOf(endMarker)
+        val hasContent = start >= 0 &&
+            end > start &&
+            text.substring(start + startMarker.length, end)
+                .lineSequence()
+                .map { it.trim() }
+                .any { it.isNotBlank() && !it.startsWith("#") }
+
+        synchronized(sectionContentCache) {
+            sectionContentCache[key] = SectionContentCacheEntry(
+                exists = existsNow,
+                length = lengthNow,
+                lastModified = lastModifiedNow,
+                hasContent = hasContent
+            )
+        }
+        return hasContent
     }
+
+    private data class SectionContentCacheKey(
+        val path: String,
+        val startMarker: String,
+        val endMarker: String
+    )
+
+    private data class SectionContentCacheEntry(
+        val exists: Boolean,
+        val length: Long,
+        val lastModified: Long,
+        val hasContent: Boolean
+    )
 
     data class LearnedHashes(
         val ppuHashForTitle: String?,

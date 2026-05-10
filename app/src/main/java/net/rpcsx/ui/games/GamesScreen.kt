@@ -58,7 +58,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.rpcsx.BuildConfig
 import net.rpcsx.EmulatorState
 import net.rpcsx.Game
@@ -90,10 +92,26 @@ private fun withAlpha(color: Color, alpha: Float): Color {
 fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
     val context = LocalContext.current
     val menuExpanded = remember { mutableStateOf(false) }
-    val iconExists = remember { mutableStateOf(false) }
     val emulatorState by remember { RPCSX.state }
     val emulatorActiveGame by remember { RPCSX.activeGame }
     val launchGame = rememberGameLauncher(game)
+    val iconPath = game.info.iconPath.value
+    val progressEntry = game.progressList.firstOrNull()?.let { ProgressRepository.getItem(it.id) }
+    val progressValue = progressEntry?.value?.value?.longValue
+    val progressMax = progressEntry?.value?.max?.longValue
+    val hasProgress = game.progressList.isNotEmpty()
+    var iconExists by remember(iconPath) { mutableStateOf(false) }
+
+    LaunchedEffect(iconPath, hasProgress, progressValue, progressMax) {
+        val currentIconPath = iconPath
+        iconExists = currentIconPath != null && withContext(Dispatchers.IO) {
+            val progressFinished = hasProgress &&
+                progressMax != null &&
+                progressMax != 0L &&
+                progressValue == progressMax
+            progressFinished || File(currentIconPath).exists()
+        }
+    }
 
     Column {
         DropdownMenu(
@@ -159,23 +177,7 @@ fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
                     }
                 })
         ) {
-            if (game.info.iconPath.value != null && !iconExists.value) {
-                if (game.progressList.isNotEmpty()) {
-                    val progressId = ProgressRepository.getItem(game.progressList.first().id)
-                    if (progressId != null) {
-                        val progressValue = progressId.value.value
-                        val progressMax = progressId.value.max
-
-                        iconExists.value =
-                            (progressMax.longValue != 0L && progressValue.longValue == progressMax.longValue) || File(
-                                game.info.iconPath.value!!
-                            ).exists()
-                    }
-                } else {
-                    iconExists.value = File(game.info.iconPath.value!!).exists()
-                }
-            }
-            val hasIcon = game.info.iconPath.value != null && iconExists.value
+            val hasIcon = iconPath != null && iconExists
             val fallbackName = game.info.name.value
                 ?: game.info.path.substringAfterLast('/').substringBeforeLast('.', game.info.path)
 
@@ -212,7 +214,7 @@ fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
                         modifier = Modifier.fillMaxSize()
                     ) {
                         AsyncImage(
-                            model = game.info.iconPath.value,
+                            model = iconPath,
                             contentScale = if (game.info.name.value == "VSH") ContentScale.Fit else ContentScale.Crop,
                             contentDescription = null,
                             modifier = Modifier
