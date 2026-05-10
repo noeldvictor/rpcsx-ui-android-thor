@@ -100,6 +100,8 @@ class RPCSX {
     external fun setCustomDriver(path: String, libraryName: String, hookDir: String): Boolean
     external fun setPatchEnabled(hash: String, description: String, enabled: Boolean): Boolean
     external fun setProcessAffinityMask(mask: Int): Boolean
+    external fun supportsPpuCachePreparation(): Boolean
+    external fun preparePpuCache(path: String, titleId: String, progressId: Long): Boolean
 
 
     companion object {

@@ -28,6 +28,7 @@
     <string name="current_and_new_version">Current version: %1$s\nNew version: %2$s</string>
     <string name="deleting_game">Deleting Game</string>
     <string name="delete">Delete</string>
+    <string name="cache_preparation">Cache Preparation</string>
     <string name="downloading_latest_rpcsx">Downloading latest RPCSX</string>
     <string name="downloading_rpcsx">Downloading RPCSX %1$s</string>
     <string name="downloading_ui">Downloading Thor Experiment UI %1$s</string>

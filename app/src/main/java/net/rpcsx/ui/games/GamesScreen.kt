@@ -79,6 +79,7 @@ import net.rpcsx.utils.RpcsxUpdater
 import net.rpcsx.utils.UiUpdater
 import net.rpcsx.cheats.CheatPatchStatus
 import net.rpcsx.cheats.PatchHashRepository
+import net.rpcsx.utils.GameIdentity
 import java.io.File
 
 private fun withAlpha(color: Color, alpha: Float): Color {
@@ -147,7 +148,7 @@ fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
                         }
                         FileUtil.deleteCache(
                             context,
-                            game.info.path.substringAfterLast("/")
+                            GameIdentity.primaryTitleId(game) ?: game.info.path.substringAfterLast("/")
                         ) { success ->
                             if (!success) {
                                 AlertDialogQueue.showDialog(

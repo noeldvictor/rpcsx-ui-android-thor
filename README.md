@@ -70,6 +70,7 @@ Captured from the connected AYN Thor test device.
 - ISO metadata and cover lookup read `PS3_GAME/PARAM.SFO` and `PS3_GAME/ICON0.PNG` directly where possible.
 - Cheat work is now a first-class fork feature: bundled cheat database assets, cheat badges, per-game cheat visibility, Artemis/Aldos import experiments, and RPCS3 patch imports.
 - Recommended per-game settings are now a fork feature: the APK bundles an RPCS3 config database snapshot, keeps a writable local cache, and exposes one simple switch per game.
+- Per-game cache visibility is now on the game detail page: cache size, PPU entry count, refresh, clear, and an honest disabled prepare path when the installed RPCSX core lacks the native hook.
 - Trim/Optimize is intentionally visible as an experimental tool path rather than hidden developer plumbing.
 - Thor-specific performance research lives under `report/`, including PPU compile/cache notes and Snapdragon 8 Gen 2 targeting.
 - Thor compile relief is now applied on AYN/Thor/kalama targets: LLVM compile workers are capped, the suspicious CPU target is cleared back to generic, SPU cache/precompile are kept on, and the process is pinned to Thor performance cores where Android allows it.
@@ -102,7 +103,7 @@ Useful masks for future native/core work:
 | Performance plus prime | `3-7` | `0xF8` |
 | A715 plus prime | `3-4,7` | `0x98` |
 
-The practical performance direction is boring but important: keep PPU/SPU/shader caches on internal storage, cap LLVM compile workers before they heat-soak the handheld, detect actual CPU topology, and expose one obvious Thor preset instead of making people decode advanced settings.
+The practical performance direction is boring but important: keep PPU/SPU/shader caches on internal storage, cap LLVM compile workers before they heat-soak the handheld, detect actual CPU topology, and expose obvious Thor/cache controls instead of making people decode advanced settings.
 
 Base/Pro/Max should use the same CPU and GPU presets. Pro/Max mostly let us keep more internal cache, larger game libraries, and more cheat/database state without memory or storage pressure.
 

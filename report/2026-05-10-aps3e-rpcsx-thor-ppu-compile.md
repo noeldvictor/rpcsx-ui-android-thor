@@ -4,14 +4,14 @@
 
 APS3E is not faster because it magically avoids PS3 emulation work. It is an Android RPCS3-derived port with more Android-specific native control exposed in the app: default LLVM compile thread limits, native CPU detection, selectable LLVM CPU target, thread affinity masks, cache import/export plumbing, and a direct native PPU cache precompile hook.
 
-RPCSX for AYN Thor Experiment currently wraps a prebuilt RPCSX core through JNI. The UI can read/write core settings and already starts a compilation queue processor, but it does not yet provide a simple "Thor performance preset" or a visible per-game "prepare/build PPU cache" workflow. If the native RPCSX library does not expose direct PPU precompile and thread-affinity controls, those need core/API changes.
+RPCSX for AYN Thor Experiment currently wraps a prebuilt RPCSX core through JNI. The UI can read/write core settings, starts a compilation queue processor, applies a Thor compile-relief preset, and now shows per-game cache status from `cache/cache/TITLEID`. True background "prepare PPU cache" still needs the RPCSX native library to expose a stable export; the current downloaded core does not expose `_rpcsx_preparePpuCache`.
 
 The main Thor fix is not one single setting. It is:
 
 1. Keep PPU/SPU LLVM caches on fast internal storage.
 2. Cap LLVM compile threads around 4 first, then benchmark 3, 5, and 6.
 3. Add runtime-detected AYN Thor Base/Pro/Max Snapdragon 8 Gen 2 presets.
-4. Add explicit PPU cache prepare/status UI per game.
+4. Add explicit PPU cache prepare/status UI per game, with prepare enabled only when the core exposes it.
 5. Add native thread affinity and Android performance hints if the core lacks them.
 6. Preserve/label caches when core version, game update, firmware, or LLVM CPU target changes.
 
@@ -79,14 +79,13 @@ Local repo observations:
 - `RPCSX.rootDirectory` is set to the app external files directory. Game files can live on SD, but PPU/SPU/shader caches should be kept on fast internal app storage if possible.
 - Android-side cleanup has started in this repo: folder scans use queue-friendly data structures, URI copying uses larger stream buffers, ISO metadata avoids duplicate directory parsing, game-card icon checks are off the composition path, patch status reads are cached, and library saves are debounced.
 - Update after the first Thor compile-relief patch: `ThorPerformanceProfile` now applies `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU` on AYN/Thor/kalama targets. The JNI wrapper also exposes `setProcessAffinityMask`, and the app applies mask `0xF8` so current app/native threads stay on Thor CPUs `3-7` where Android permits it. Verified on the connected Thor: config changed from `Max LLVM Compile Threads: 0` and `Use LLVM CPU: cortex-a34` to `4` and blank, and `/proc/<pid>/status` reported `Cpus_allowed_list: 3-7`.
+- Update after the first cache workflow patch: game detail now scans `cache/cache/TITLEID`, shows cache size and PPU entry count, refreshes/clears cache by title ID, and has an optional native prepare path wired to `_rpcsx_preparePpuCache`. The current installed RPCSX core lacks that export, so the UI leaves Prepare disabled and tells users to boot the game once to warm cache.
 
 The missing pieces are product/UI decisions and possibly native exports:
 
-- No simple "AYN Thor Base/Pro/Max / Snapdragon 8 Gen 2" performance preset.
-- No game-detail "Prepare PPU cache" button with progress/status.
-- No cache manager showing warm/cold PPU cache status per title.
+- No stale-cache label for core/settings/LLVM CPU changes yet.
 - No Android-side CPU topology detection in this repo.
-- No visible native API in this wrapper for direct `precompile_ppu_cache(path/fd)`.
+- No working native API in the current downloaded core for direct `precompile_ppu_cache(path/fd)`.
 - No visible native API in this wrapper for PPU/SPU/RSX affinity masks, unless the downloaded core's settings JSON already exposes equivalent keys.
 
 Base/Pro/Max implication: do not fork three separate performance presets unless measurement proves a storage/RAM behavior difference. Start with one shared CPU/GPU preset, then vary cache budget and background-work aggressiveness by RAM/storage.
@@ -136,7 +135,7 @@ Variant policy:
 Add a Performance page:
 
 - "Device preset: AYN Thor Base/Pro/Max / Snapdragon 8 Gen 2"
-- "Prepare game cache" action on each game detail page
+- "Prepare game cache" action on each game detail page, disabled until the core exposes `_rpcsx_preparePpuCache`
 - Per-game badges: `PPU cache missing`, `PPU cache ready`, `cache stale after core/settings change`
 - "Cache storage: internal app storage" warning if caches are on slower external/SD storage
 - Benchmark logging: compile start/end, game ID, PPU hash if known, core version, LLVM CPU, max LLVM threads, scheduler mode, storage path, and battery/thermal state if available
@@ -215,4 +214,4 @@ Record:
 
 APS3E feels faster because it is closer to the native RPCS3 core and already exposes Android-specific levers: compile thread limit, CPU target, affinity, and cache tooling. PPU compile still has to happen with LLVM unless we switch to interpreter or defer compilation, both of which have tradeoffs.
 
-For RPCSX for AYN Thor Experiment on AYN Thor, the most useful next move is a real Thor performance/cache workflow: detect the CPU layout, cap compile threads, keep caches on internal storage, give users a clear per-game "Prepare cache" button, and add native affinity/precompile exports where the current RPCSX library does not already expose them.
+For RPCSX for AYN Thor Experiment on AYN Thor, the most useful next move is to make the cache workflow real end to end: detect the CPU layout, keep caches on internal storage, label stale caches, and add native affinity/precompile exports where the current RPCSX library does not already expose them.

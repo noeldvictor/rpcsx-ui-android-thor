@@ -54,6 +54,8 @@ struct RPCSXApi {
   void *(*setCustomDriver)(void *driverHandle);
   bool (*setPatchEnabled)(std::string_view hash, std::string_view description,
                           bool enabled);
+  bool (*preparePpuCache)(JNIEnv *env, std::string_view path,
+                          std::string_view titleId, long progressId);
 };
 
 struct RPCSXLibrary : RPCSXApi {
@@ -117,6 +119,7 @@ struct RPCSXLibrary : RPCSXApi {
     result.getVersion = reinterpret_cast<decltype(getVersion)>(dlsym(handle, "_rpcsx_getVersion"));
     result.setCustomDriver = reinterpret_cast<decltype(setCustomDriver)>(dlsym(handle, "_rpcsx_setCustomDriver"));
     result.setPatchEnabled = reinterpret_cast<decltype(setPatchEnabled)>(dlsym(handle, "_rpcsx_setPatchEnabled"));
+    result.preparePpuCache = reinterpret_cast<decltype(preparePpuCache)>(dlsym(handle, "_rpcsx_preparePpuCache"));
     // clang-format on
 
     return result;
@@ -339,6 +342,22 @@ Java_net_rpcsx_RPCSX_setProcessAffinityMask(JNIEnv *, jobject, jint mask) {
 
   ::closedir(task_dir);
   return any_success;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_supportsPpuCachePreparation(JNIEnv *, jobject) {
+  return rpcsxLib.preparePpuCache != nullptr;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_preparePpuCache(JNIEnv *env, jobject, jstring jpath,
+                                     jstring jtitleId, jlong progressId) {
+  if (rpcsxLib.preparePpuCache == nullptr) {
+    return false;
+  }
+
+  return rpcsxLib.preparePpuCache(env, unwrap(env, jpath), unwrap(env, jtitleId),
+                                  progressId);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

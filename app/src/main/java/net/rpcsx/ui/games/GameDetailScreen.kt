@@ -45,6 +45,7 @@ import net.rpcsx.cheats.CheatSelectionRepository
 import net.rpcsx.cheats.PatchHashRepository
 import net.rpcsx.cheats.PatchHashStatus
 import net.rpcsx.config.GameSettingsDatabase
+import net.rpcsx.performance.GameCacheRepository
 import net.rpcsx.utils.GameIdentity
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +65,8 @@ fun GameDetailScreen(
     var settingsStatus by remember(game.info.path) { mutableStateOf<GameSettingsDatabase.Status?>(null) }
     var settingsCacheMessage by remember(game.info.path) { mutableStateOf<String?>(null) }
     var settingsCacheUpdating by remember(game.info.path) { mutableStateOf(false) }
+    var cacheStatus by remember(game.info.path) { mutableStateOf<GameCacheRepository.CacheStatus?>(null) }
+    var cacheMessage by remember(game.info.path) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(game.info.path) {
         CheatRepository.load(context)
@@ -71,6 +74,9 @@ fun GameDetailScreen(
         settingsStatus = withContext(Dispatchers.IO) {
             GameSettingsDatabase.ensureDatabaseExported(context)
             GameSettingsDatabase.statusForGame(context, game)
+        }
+        cacheStatus = withContext(Dispatchers.IO) {
+            GameCacheRepository.statusForGame(game)
         }
     }
 
@@ -197,6 +203,40 @@ fun GameDetailScreen(
             }
 
             item {
+                CacheSummaryCard(
+                    status = cacheStatus,
+                    message = cacheMessage,
+                    onRefresh = {
+                        scope.launch {
+                            cacheStatus = withContext(Dispatchers.IO) {
+                                GameCacheRepository.statusForGame(game)
+                            }
+                            cacheMessage = null
+                        }
+                    },
+                    onPrepareCache = {
+                        cacheMessage = "Preparing cache."
+                        GameCacheRepository.prepareGameCache(context, game) { status ->
+                            cacheStatus = status
+                            cacheMessage = if (status.isWarm) {
+                                "Cache is ready."
+                            } else {
+                                "Cache was not built yet."
+                            }
+                        }
+                    },
+                    onClearCache = {
+                        scope.launch {
+                            cacheStatus = withContext(Dispatchers.IO) {
+                                GameCacheRepository.clearGameCache(game)
+                            }
+                            cacheMessage = "Cache cleared."
+                        }
+                    }
+                )
+            }
+
+            item {
                 Button(onClick = navigateToTrim, modifier = Modifier.fillMaxWidth()) {
                     Icon(painter = painterResource(id = R.drawable.tune), contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -220,6 +260,83 @@ fun GameDetailScreen(
                     "Most cheats are saved before launch and take effect the next time you start the game.",
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CacheSummaryCard(
+    status: GameCacheRepository.CacheStatus?,
+    message: String?,
+    onRefresh: () -> Unit,
+    onPrepareCache: () -> Unit,
+    onClearCache: () -> Unit
+) {
+    val title = when {
+        status == null -> "Checking Cache"
+        status.titleId == null -> "Cache"
+        status.isWarm -> "Cache Ready"
+        status.exists -> "Cache Started"
+        else -> "Cache Not Built"
+    }
+    val detail = when {
+        status == null -> "Checking PPU/SPU cache state."
+        status.titleId == null -> "No title ID detected yet."
+        status.isWarm -> "${GameCacheRepository.formatBytes(status.bytes)} cached for ${status.titleId}."
+        status.exists -> "Cache folder exists for ${status.titleId}, but no PPU entries were found yet."
+        else -> "Start this game once to build its PPU/SPU cache during boot."
+    }
+    val canPrepare = status?.prepareSupported == true && status.titleId != null
+    val canClear = status?.exists == true
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(detail, style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(onClick = onRefresh) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_refresh),
+                        contentDescription = "Refresh cache status"
+                    )
+                }
+            }
+
+            if (status != null && status.titleId != null) {
+                Text(
+                    "PPU entries: ${status.ppuEntries}; total files: ${status.totalEntries}.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (status != null && !status.prepareSupported) {
+                Text(
+                    "Background prepare needs a newer RPCSX core. For now, boot once, close the game, then come back here.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (!message.isNullOrBlank()) {
+                Text(message, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPrepareCache, enabled = canPrepare, modifier = Modifier.weight(1f)) {
+                    Icon(painter = painterResource(id = R.drawable.ic_play), contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Prepare")
+                }
+                Button(onClick = onClearCache, enabled = canClear, modifier = Modifier.weight(1f)) {
+                    Icon(painter = painterResource(id = R.drawable.ic_delete), contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Clear")
+                }
             }
         }
     }

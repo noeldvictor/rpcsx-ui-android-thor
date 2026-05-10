@@ -92,6 +92,15 @@ If the app does not appear, verify the installed package:
 - Never overwrite an existing custom config unless it has the managed header. User-created custom configs win.
 - Boot flow applies the recommended config before launch only when the game has a title-ID match and the user has not turned the switch off for that game.
 
+## Per-Game Cache Workflow
+
+- Android-side cache status lives at `app/src/main/java/net/rpcsx/performance/GameCacheRepository.kt`.
+- Game detail reads `cache/cache/TITLEID` under `RPCSX.rootDirectory`, counts PPU entries, shows cache size, and exposes refresh/clear controls.
+- The native wrapper has an optional `_rpcsx_preparePpuCache` hook surfaced as `RPCSX.supportsPpuCachePreparation()` and `RPCSX.preparePpuCache(...)`.
+- The currently installed/downloaded RPCSX core does not expose `_rpcsx_preparePpuCache`; keep the UI honest and tell users to boot once to warm cache until a core export exists.
+- Do not call private C++ internals like `Emulator::BootGame` or `ppu_precompile` across the wrapper boundary unless the core intentionally exports a stable C ABI.
+- Library delete now clears title-ID cache when a title ID is known; keep ISO/file-name fallback for entries without metadata.
+
 ## Thor Variant Notes
 
 Base, Pro, and Max share the same CPU/GPU performance target:
@@ -122,8 +131,8 @@ Use detected topology for presets. Do not assume every Snapdragon 8 Gen 2 device
 - Current Thor compile preset lives at `app/src/main/java/net/rpcsx/performance/ThorPerformanceProfile.kt`.
 - The preset is applied once on AYN/Thor/kalama targets: `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU`.
 - Native wrapper affinity helper: `RPCSX.setProcessAffinityMask(0xF8)` pins current app/native threads to Thor CPUs `3-7` where Android permits it. This is a first-pass compile relief, not a replacement for native PPU/SPU/RSX per-class affinity.
-- Next low-risk Android work: cache cheat badge lookups per game title ID, add per-game cache state, and keep heavy global cheat expansion off Base unless requested.
-- Next native/core work: expose PPU cache precompile, CPU topology, PPU/SPU/RSX affinity masks, and cache status. UI-only changes cannot truly pin native compile threads.
+- Next low-risk Android work: cache cheat badge lookups per game title ID, add stale-cache/core-version labeling, and keep heavy global cheat expansion off Base unless requested.
+- Next native/core work: implement/export `_rpcsx_preparePpuCache`, CPU topology, PPU/SPU/RSX affinity masks, and authoritative cache status. UI-only changes cannot truly pin native compile threads.
 - Default PPU compile experiment for Base/Pro/Max: Max LLVM compile threads `4`, heavy mask `0xF8`, then benchmark `3`, `5`, and `6`.
 
 ## Current Cheat/Test Fixture

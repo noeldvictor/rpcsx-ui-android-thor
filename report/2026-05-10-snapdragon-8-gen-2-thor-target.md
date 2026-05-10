@@ -8,6 +8,8 @@ Thor Lite is a Snapdragon 865 / Adreno 650 device. It may remain compatible, but
 
 Goal: make RPCSX for AYN Thor Experiment feel less like a generic Android port and more like a handheld-first PS3 app with clear cache/precompile flow, sane defaults, and no mystery knobs.
 
+Current implementation checkpoint: the app now applies a first-pass Thor compile-relief preset, pins current app/native threads to CPUs `3-7` where Android permits it, and shows per-game cache status on game detail. A real background PPU prepare action is wired only as an optional native hook because the currently installed RPCSX core does not expose `_rpcsx_preparePpuCache`.
+
 ## Public Research
 
 - Qualcomm lists Snapdragon 8 Gen 2 as an active premium-tier 4 nm platform with CPU speed up to 3.36 GHz depending on platform version, Qualcomm Adreno graphics, Quick Charge 5 support, and the Snapdragon X70 modem family: <https://www.qualcomm.com/smartphones/products/8-series/snapdragon-8-gen-2-mobile-platform>
@@ -82,6 +84,7 @@ Do not hardcode these masks for every Snapdragon 8 Gen 2 device. They are measur
 - Game-card icon file existence checks moved off the composition path.
 - Patch status checks cache generated patch-section file reads.
 - `games.json` saves are debounced during library changes.
+- Game detail now scans `cache/cache/TITLEID`, shows PPU cache size/entry counts, and clears cache by title ID.
 
 These do not make LLVM itself faster, but they reduce UI/library jank and wasted SD/internal-storage work around the emulator.
 
@@ -136,7 +139,7 @@ First benchmark should compare wall-clock PPU compile time, first playable frame
 
 3. Cache workflow:
    - Per-game cache badge: cold, building, ready, stale.
-   - `Prepare cache` action from the game detail page.
+   - `Prepare cache` action from the game detail page when `_rpcsx_preparePpuCache` exists.
    - Store caches on internal app storage by default.
    - Warn if games are external/SD but cache storage is slow or missing.
 
