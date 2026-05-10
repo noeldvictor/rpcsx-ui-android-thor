@@ -5,14 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/noeldvictor/rpcsx-ui-android-thor/releases/latest">
-    <img src="docs/images/download-apk-button.png" alt="Download APK - latest GitHub release" width="620">
-  </a>
-</p>
-
-<p align="center">
   <a href="https://github.com/noeldvictor/rpcsx-ui-android-thor/fork">
-    <img src="docs/images/fork-it-button.png" alt="Fork it - no support queue" width="420">
+    <img src="docs/images/fork-it-button.png" alt="Fork and build yourself - no APK support queue" width="620">
   </a>
 </p>
 
@@ -20,11 +14,11 @@ This is a personal-use Android fork of RPCSX-UI-Android aimed at the AYN Thor, e
 
 No stability guarantee. No support guarantee. Do not open issues expecting upstream-style triage. If the experiment annoys you, fork it and make your own version.
 
-## Big Button Path
+## Fork Path
 
-Press **Download APK** for the latest GitHub release. If a brand-new push is still building, check the [build workflow](https://github.com/noeldvictor/rpcsx-ui-android-thor/actions/workflows/build.yml) and wait for the newest `master` run to finish.
+This repo is source-first. Fork it, build it, and change what you need for your own AYN Thor.
 
-The APK is experimental and meant for sideloading on your own AYN Thor. No store release, no support queue, no stability promise.
+Build artifacts may exist in GitHub Actions, but this README intentionally does not present a big public download button. No store release, no support queue, no stability promise.
 
 ## What This Fork Is
 

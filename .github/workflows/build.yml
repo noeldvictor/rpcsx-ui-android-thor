@@ -114,26 +114,6 @@ jobs:
         files: |
           app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk
 
-    - name: Publish latest Thor experiment APK
-      uses: softprops/action-gh-release@v2
-      if: |
-        github.event_name == 'push' &&
-        github.ref == 'refs/heads/master' &&
-        github.repository_owner == 'noeldvictor'
-      with:
-        prerelease: true
-        make_latest: true
-        tag_name: thor-v${{ env.RX_VERSION }}-${{ env.RX_SHA }}
-        name: RPCSX Thor Experiment ${{ env.RX_VERSION }}-${{ env.RX_SHA }}
-        body: |
-          Experimental AYN Thor APK from master.
-
-          Commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
-
-          Personal use only. No stability promise. Do not open issues expecting support.
-        files: |
-          app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk
-
     - name: Deploy build
       uses: softprops/action-gh-release@v2
       if: |
