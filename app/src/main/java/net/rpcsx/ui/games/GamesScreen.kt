@@ -53,6 +53,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -173,6 +175,9 @@ fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
                     iconExists.value = File(game.info.iconPath.value!!).exists()
                 }
             }
+            val hasIcon = game.info.iconPath.value != null && iconExists.value
+            val fallbackName = game.info.name.value
+                ?: game.info.path.substringAfterLast('/').substringBeforeLast('.', game.info.path)
 
             Box(
                 modifier = Modifier
@@ -180,7 +185,27 @@ fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
                     .align(alignment = Alignment.CenterHorizontally)
                     .fillMaxSize()
             ) {
-                if (game.info.iconPath.value != null && iconExists.value) {
+                if (!hasIcon && fallbackName.isNotBlank() && game.info.path != "$") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 14.dp)
+                    ) {
+                        Text(
+                            fallbackName,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (hasIcon) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -348,6 +373,10 @@ fun GamesScreen(onOpenGameDetails: (Game) -> Unit = {}) {
             checkForUpdates()
         }
         CheatRepository.load(context)
+    }
+
+    LaunchedEffect(games.size) {
+        FileUtil.refreshExternalIsoMetadata(context)
     }
 
     if (uiUpdateVersion != null && rpcsxUpdateVersion == null && activeDialogs.isEmpty()) {

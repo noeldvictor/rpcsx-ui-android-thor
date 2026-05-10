@@ -34,4 +34,16 @@ class FileUtilTest {
             FileUtil.externalStorageDocumentIdToFilePath("primary:roms/ps3")
         )
     }
+
+    @Test
+    fun externalStoragePathsMapToDocumentIds() {
+        assertEquals(
+            "ABCD-1234:roms/ps3/Game.iso",
+            FileUtil.externalStoragePathToDocumentId("/storage/ABCD-1234/roms/ps3/Game.iso")
+        )
+        assertEquals(
+            "primary:roms/ps3",
+            FileUtil.externalStoragePathToDocumentId("/storage/emulated/0/roms/ps3")
+        )
+    }
 }

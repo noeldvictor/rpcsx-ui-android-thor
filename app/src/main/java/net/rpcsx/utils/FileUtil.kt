@@ -33,6 +33,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 private data class InstallableFolder(
@@ -42,6 +43,7 @@ private data class InstallableFolder(
 object FileUtil {
     private val nativeInstallerSafeExtensions = setOf("pkg", "edat")
     private val isoExtensions = setOf("iso")
+    private val externalIsoMetadataRefreshActive = AtomicBoolean(false)
 
     fun installPackages(context: Context, rootFolderUri: Uri) {
         thread {
@@ -84,7 +86,7 @@ object FileUtil {
                     } else if (isNativeInstallerSafeFileName(item.filename)) {
                         batchFiles += item.uri
                     } else if (isIsoFileName(item.filename)) {
-                        addExternalIsoGame(item)
+                        addExternalIsoGame(context, item)
                     } else {
                         Log.i("FileUtil", "Skipping unsupported folder import file: ${item.filename}")
                     }
@@ -161,27 +163,183 @@ object FileUtil {
         }
     }
 
+    fun externalStoragePathToDocumentId(path: String): String? {
+        val normalized = path.replace('\\', '/').trimEnd('/')
+        val primaryRoot = "/storage/emulated/0"
+        if (normalized == primaryRoot) {
+            return "primary:"
+        }
+        if (normalized.startsWith("$primaryRoot/")) {
+            return "primary:${normalized.removePrefix("$primaryRoot/")}"
+        }
+
+        val storageRoot = "/storage/"
+        if (!normalized.startsWith(storageRoot)) {
+            return null
+        }
+
+        val remaining = normalized.removePrefix(storageRoot)
+        val volume = remaining.substringBefore('/')
+        if (volume.isBlank() || volume == "emulated") {
+            return null
+        }
+
+        val relativePath = remaining.substringAfter('/', "")
+        return if (relativePath.isBlank()) {
+            "$volume:"
+        } else {
+            "$volume:$relativePath"
+        }
+    }
+
+    fun documentUriForExternalStoragePath(context: Context, path: String): Uri? {
+        val documentId = externalStoragePathToDocumentId(path) ?: return null
+        val treeUri = context.contentResolver.persistedUriPermissions
+            .asSequence()
+            .filter { it.isReadPermission }
+            .map { it.uri }
+            .filter { it.authority == "com.android.externalstorage.documents" }
+            .firstOrNull { uri ->
+                runCatching {
+                    isDocumentIdInsideTree(
+                        documentId,
+                        DocumentsContract.getTreeDocumentId(uri)
+                    )
+                }.getOrDefault(false)
+            } ?: return null
+
+        return DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+    }
+
     fun isAppManagedPath(path: String): Boolean {
         val root = RPCSX.rootDirectory.takeIf { it.isNotBlank() } ?: return false
         return isInsideDirectory(File(path), File(root))
     }
 
-    private fun addExternalIsoGame(item: SimpleDocument) {
+    fun refreshExternalIsoMetadata(context: Context) {
+        if (!externalIsoMetadataRefreshActive.compareAndSet(false, true)) {
+            return
+        }
+
+        thread {
+            try {
+                GameRepository.list()
+                    .filter { game -> isIsoFileName(game.info.path) }
+                    .filter { game ->
+                        game.info.iconPath.value == null ||
+                            game.info.titleId.value == null ||
+                            game.info.name.value.isNullOrBlank()
+                    }
+                    .forEach { game ->
+                        val path = game.info.path
+                        val uri = game.info.sourceUri.value?.let { Uri.parse(it) }
+                            ?: documentUriForExternalStoragePath(context, path)
+                        val fallbackName = game.info.name.value ?: path.substringAfterLast('/')
+                        val metadata = if (uri != null) {
+                            Ps3IsoMetadataReader.read(context, uri, path, fallbackName)
+                        } else if (File(path).canRead()) {
+                            Ps3IsoMetadataReader.readPath(context, path, fallbackName)
+                        } else {
+                            Ps3IsoMetadata()
+                        }
+
+                        if (metadata.hasMetadata) {
+                            GameRepository.add(
+                                arrayOf(
+                                    GameInfo(
+                                        path = path,
+                                        name = metadata.title ?: game.info.name.value ?: fallbackName.substringBeforeLast('.'),
+                                        iconPath = metadata.iconPath ?: game.info.iconPath.value,
+                                        gameFlags = game.info.gameFlags.intValue,
+                                        titleId = metadata.titleId ?: game.info.titleId.value,
+                                        sourceUri = uri?.toString() ?: game.info.sourceUri.value
+                                    )
+                                ),
+                                -1L
+                            )
+                        }
+                    }
+
+                backfillMissingIconsFromKnownGames()
+            } finally {
+                externalIsoMetadataRefreshActive.set(false)
+            }
+        }
+    }
+
+    private fun addExternalIsoGame(context: Context, item: SimpleDocument) {
         val path = documentUriToFilePath(item.uri)
         if (path == null) {
             Log.w("FileUtil", "Cannot add ISO without direct storage path: ${item.filename}")
             return
         }
 
+        val fallbackName = item.filename.substringBeforeLast('.', item.filename)
+        val metadata = Ps3IsoMetadataReader.read(context, item.uri, path, item.filename)
+
         GameRepository.add(
             arrayOf(
                 GameInfo(
                     path = path,
-                    name = item.filename.substringBeforeLast('.', item.filename)
+                    name = metadata.title ?: fallbackName,
+                    iconPath = metadata.iconPath,
+                    titleId = metadata.titleId,
+                    sourceUri = item.uri.toString()
                 )
             ),
             -1L
         )
+    }
+
+    private fun isDocumentIdInsideTree(documentId: String, treeDocumentId: String): Boolean {
+        val documentParts = documentId.split(':', limit = 2)
+        val treeParts = treeDocumentId.split(':', limit = 2)
+        if (documentParts.getOrNull(0) != treeParts.getOrNull(0)) {
+            return false
+        }
+
+        val documentRelativePath = documentParts.getOrNull(1).orEmpty().trim('/')
+        val treeRelativePath = treeParts.getOrNull(1).orEmpty().trim('/')
+        return treeRelativePath.isBlank() ||
+            documentRelativePath == treeRelativePath ||
+            documentRelativePath.startsWith("$treeRelativePath/")
+    }
+
+    private fun backfillMissingIconsFromKnownGames() {
+        val games = GameRepository.list().toList()
+        val iconsByTitleId = linkedMapOf<String, String>()
+
+        games.forEach { game ->
+            val iconPath = game.info.iconPath.value?.takeIf { File(it).exists() } ?: return@forEach
+            GameIdentity.titleIdsForGame(game).forEach { titleId ->
+                iconsByTitleId.putIfAbsent(titleId, iconPath)
+            }
+        }
+
+        games.forEach { game ->
+            val currentIcon = game.info.iconPath.value
+            if (currentIcon != null && File(currentIcon).exists()) {
+                return@forEach
+            }
+
+            val titleId = GameIdentity.titleIdsForGame(game)
+                .firstOrNull { titleId -> iconsByTitleId.containsKey(titleId) }
+                ?: return@forEach
+
+            GameRepository.add(
+                arrayOf(
+                    GameInfo(
+                        path = game.info.path,
+                        name = game.info.name.value,
+                        iconPath = iconsByTitleId[titleId],
+                        gameFlags = game.info.gameFlags.intValue,
+                        titleId = game.info.titleId.value ?: titleId,
+                        sourceUri = game.info.sourceUri.value
+                    )
+                ),
+                -1L
+            )
+        }
     }
 
     private fun isInsideDirectory(file: File, directory: File): Boolean {

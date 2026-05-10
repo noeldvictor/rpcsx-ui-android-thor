@@ -18,6 +18,7 @@ object GameIdentity {
 
     fun titleIdsForGame(game: Game): List<String> {
         val ids = linkedSetOf<String>()
+        ids += titleIdsFromText(game.info.titleId.value)
         ids += titleIdsFromText(game.info.path)
         ids += titleIdsFromText(game.info.name.value)
         return ids.toList()

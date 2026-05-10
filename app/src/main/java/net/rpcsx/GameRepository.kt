@@ -26,14 +26,26 @@ data class GameInfo @Keep constructor(
     val path: String,
     var name: String? = null,
     var iconPath: String? = null,
-    var gameFlags: Int = 0
-)
+    var gameFlags: Int = 0,
+    var titleId: String? = null,
+    var sourceUri: String? = null
+) {
+    @Keep
+    constructor(
+        path: String,
+        name: String?,
+        iconPath: String?,
+        gameFlags: Int
+    ) : this(path, name, iconPath, gameFlags, null, null)
+}
 
 data class GameInfoStore(
     val path: String,
     val name: MutableState<String?> = mutableStateOf(null),
     val iconPath: MutableState<String?> = mutableStateOf(null),
-    val gameFlags: MutableIntState = mutableIntStateOf(0)
+    val gameFlags: MutableIntState = mutableIntStateOf(0),
+    val titleId: MutableState<String?> = mutableStateOf(null),
+    val sourceUri: MutableState<String?> = mutableStateOf(null)
 )
 
 enum class GameProgressType {
@@ -73,11 +85,20 @@ private fun toStore(info: GameInfo) =
         info.path,
         mutableStateOf(info.name),
         mutableStateOf(info.iconPath),
-        mutableIntStateOf(info.gameFlags)
+        mutableIntStateOf(info.gameFlags),
+        mutableStateOf(info.titleId),
+        mutableStateOf(info.sourceUri)
     )
 
 private fun toInfo(store: GameInfoStore) =
-    GameInfo(store.path, store.name.value, store.iconPath.value, store.gameFlags.intValue)
+    GameInfo(
+        path = store.path,
+        name = store.name.value,
+        iconPath = store.iconPath.value,
+        gameFlags = store.gameFlags.intValue,
+        titleId = store.titleId.value,
+        sourceUri = store.sourceUri.value
+    )
 
 class GameRepository {
     private val games = mutableStateListOf<Game>()
@@ -172,6 +193,10 @@ class GameRepository {
                         existsGame.info.iconPath.value =
                             info.iconPath ?: existsGame.info.iconPath.value
                         existsGame.info.gameFlags.intValue = info.gameFlags
+                        existsGame.info.titleId.value =
+                            info.titleId ?: existsGame.info.titleId.value
+                        existsGame.info.sourceUri.value =
+                            info.sourceUri ?: existsGame.info.sourceUri.value
                         if (progressId >= 0) {
                             existsGame.addProgress(
                                 GameProgress(
