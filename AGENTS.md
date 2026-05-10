@@ -119,6 +119,9 @@ Use detected topology for presets. Do not assume every Snapdragon 8 Gen 2 device
 ## Thor Optimization Notes
 
 - Already cleaned up Android-side hotspots: folder scan queues use `ArrayDeque`, URI file copy uses a larger stream buffer, ISO metadata avoids duplicate directory parsing, patch status file checks are cached, and `games.json` saves are debounced.
+- Current Thor compile preset lives at `app/src/main/java/net/rpcsx/performance/ThorPerformanceProfile.kt`.
+- The preset is applied once on AYN/Thor/kalama targets: `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU`.
+- Native wrapper affinity helper: `RPCSX.setProcessAffinityMask(0xF8)` pins current app/native threads to Thor CPUs `3-7` where Android permits it. This is a first-pass compile relief, not a replacement for native PPU/SPU/RSX per-class affinity.
 - Next low-risk Android work: cache cheat badge lookups per game title ID, add per-game cache state, and keep heavy global cheat expansion off Base unless requested.
 - Next native/core work: expose PPU cache precompile, CPU topology, PPU/SPU/RSX affinity masks, and cache status. UI-only changes cannot truly pin native compile threads.
 - Default PPU compile experiment for Base/Pro/Max: Max LLVM compile threads `4`, heavy mask `0xF8`, then benchmark `3`, `5`, and `6`.

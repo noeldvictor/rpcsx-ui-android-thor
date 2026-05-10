@@ -19,6 +19,7 @@ import net.rpcsx.RPCSX
 import net.rpcsx.RPCSXActivity
 import net.rpcsx.config.GameSettingsDatabase
 import net.rpcsx.dialogs.AlertDialogQueue
+import net.rpcsx.performance.ThorPerformanceProfile
 import kotlin.concurrent.thread
 
 @Composable
@@ -118,6 +119,7 @@ private fun launchGame(
     }
 
     GameSettingsDatabase.applyRecommendedConfig(context, game)
+    ThorPerformanceProfile.applyRuntimeAffinity()
     GameRepository.onBoot(game)
     val emulatorWindow = Intent(context, RPCSXActivity::class.java)
     emulatorWindow.putExtra("path", game.info.path)

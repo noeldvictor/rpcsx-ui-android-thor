@@ -72,6 +72,7 @@ Captured from the connected AYN Thor test device.
 - Recommended per-game settings are now a fork feature: the APK bundles an RPCS3 config database snapshot, keeps a writable local cache, and exposes one simple switch per game.
 - Trim/Optimize is intentionally visible as an experimental tool path rather than hidden developer plumbing.
 - Thor-specific performance research lives under `report/`, including PPU compile/cache notes and Snapdragon 8 Gen 2 targeting.
+- Thor compile relief is now applied on AYN/Thor/kalama targets: LLVM compile workers are capped, the suspicious CPU target is cleared back to generic, SPU cache/precompile are kept on, and the process is pinned to Thor performance cores where Android allows it.
 - Generated icon and README art are custom for this fork and intentionally avoid console/game/IP logos.
 - Android-side performance cleanup has started: less main-thread file probing, faster folder scan queues, safer large-file copy, cached patch status reads, and debounced library saves.
 

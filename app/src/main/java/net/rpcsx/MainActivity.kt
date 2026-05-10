@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import net.rpcsx.config.GameSettingsDatabase
 import net.rpcsx.dialogs.AlertDialogQueue
+import net.rpcsx.performance.ThorPerformanceProfile
 import net.rpcsx.ui.navigation.AppNavHost
 import net.rpcsx.utils.GeneralSettings
 import net.rpcsx.utils.GitHub
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
 
             if (RPCSX.activeLibrary.value != null) {
                 RPCSX.instance.initialize(RPCSX.rootDirectory, UserRepository.getUserFromSettings())
+                ThorPerformanceProfile.applyStartupDefaults()
                 val gpuDriverPath = GeneralSettings["gpu_driver_path"] as? String
                 val gpuDriverName = GeneralSettings["gpu_driver_name"] as? String
 
@@ -103,11 +105,13 @@ class MainActivity : ComponentActivity() {
 
                 RPCSX.initialized = true
 
-                thread {
+                thread(name = "RPCSX-MainThreadProcessor") {
+                    ThorPerformanceProfile.applyRuntimeAffinity()
                     RPCSX.instance.startMainThreadProcessor()
                 }
 
-                thread {
+                thread(name = "RPCSX-CompilationQueue") {
+                    ThorPerformanceProfile.applyRuntimeAffinity()
                     RPCSX.instance.processCompilationQueue()
                 }
 

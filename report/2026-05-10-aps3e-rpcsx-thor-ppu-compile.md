@@ -78,6 +78,7 @@ Local repo observations:
 - `app/src/main/java/net/rpcsx/ui/settings/SettingsScreen.kt` can display the native settings JSON and write settings through `settingsSet`.
 - `RPCSX.rootDirectory` is set to the app external files directory. Game files can live on SD, but PPU/SPU/shader caches should be kept on fast internal app storage if possible.
 - Android-side cleanup has started in this repo: folder scans use queue-friendly data structures, URI copying uses larger stream buffers, ISO metadata avoids duplicate directory parsing, game-card icon checks are off the composition path, patch status reads are cached, and library saves are debounced.
+- Update after the first Thor compile-relief patch: `ThorPerformanceProfile` now applies `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU` on AYN/Thor/kalama targets. The JNI wrapper also exposes `setProcessAffinityMask`, and the app applies mask `0xF8` so current app/native threads stay on Thor CPUs `3-7` where Android permits it. Verified on the connected Thor: config changed from `Max LLVM Compile Threads: 0` and `Use LLVM CPU: cortex-a34` to `4` and blank, and `/proc/<pid>/status` reported `Cpus_allowed_list: 3-7`.
 
 The missing pieces are product/UI decisions and possibly native exports:
 

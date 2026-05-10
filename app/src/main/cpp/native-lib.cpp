@@ -1,12 +1,19 @@
 #include <algorithm>
 #include <android/dlext.h>
 #include <android/log.h>
+#include <cerrno>
+#include <cctype>
+#include <cstdlib>
+#include <dirent.h>
 #include <dlfcn.h>
+#include <cstring>
 #include <jni.h>
 #include <optional>
+#include <sched.h>
 #include <string>
 #include <string_view>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <utility>
 
@@ -129,6 +136,40 @@ static jstring wrap(JNIEnv *env, const std::string &string) {
 }
 static jstring wrap(JNIEnv *env, const char *string) {
   return env->NewStringUTF(string);
+}
+
+static bool set_thread_affinity(pid_t tid, jint mask) {
+  cpu_set_t set;
+  CPU_ZERO(&set);
+
+  for (int cpu = 0; cpu < CPU_SETSIZE && cpu < 32; cpu++) {
+    if ((mask & (1 << cpu)) != 0) {
+      CPU_SET(cpu, &set);
+    }
+  }
+
+  if (::sched_setaffinity(tid, sizeof(set), &set) != 0) {
+    __android_log_print(ANDROID_LOG_WARN, "RPCSX-UI",
+                        "Failed to set affinity for tid %d to mask 0x%x: %s",
+                        tid, mask, ::strerror(errno));
+    return false;
+  }
+
+  return true;
+}
+
+static bool is_numeric_name(const char *name) {
+  if (name == nullptr || *name == '\0') {
+    return false;
+  }
+
+  for (const char *cursor = name; *cursor != '\0'; cursor++) {
+    if (!std::isdigit(static_cast<unsigned char>(*cursor))) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -273,6 +314,31 @@ Java_net_rpcsx_RPCSX_settingsGet(JNIEnv *env, jobject, jstring jpath) {
 extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_settingsSet(
     JNIEnv *env, jobject, jstring jpath, jstring jvalue) {
   return rpcsxLib.settingsSet(unwrap(env, jpath), unwrap(env, jvalue));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_setProcessAffinityMask(JNIEnv *, jobject, jint mask) {
+  if (mask <= 0) {
+    return false;
+  }
+
+  DIR *task_dir = ::opendir("/proc/self/task");
+  if (task_dir == nullptr) {
+    return set_thread_affinity(static_cast<pid_t>(::syscall(SYS_gettid)), mask);
+  }
+
+  bool any_success = false;
+  while (dirent *entry = ::readdir(task_dir)) {
+    if (!is_numeric_name(entry->d_name)) {
+      continue;
+    }
+
+    const pid_t tid = static_cast<pid_t>(std::atoi(entry->d_name));
+    any_success = set_thread_affinity(tid, mask) || any_success;
+  }
+
+  ::closedir(task_dir);
+  return any_success;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

@@ -18,6 +18,7 @@ import net.rpcsx.databinding.ActivityRpcs3Binding
 import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.overlay.State
 import net.rpcsx.utils.InputBindingPrefs
+import net.rpcsx.performance.ThorPerformanceProfile
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
@@ -47,6 +48,7 @@ class RPCSXActivity : Activity() {
         RPCSX.lastPlayedGame = gamePath
 
         bootThread = thread {
+            ThorPerformanceProfile.applyRuntimeAffinity()
             if (RPCSX.getState() != EmulatorState.Stopped) {
                 val state = RPCSX.getState()
                 Log.w("RPCSX State", state.name)
