@@ -1820,8 +1820,6 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
   g_cfg_input.player1.device.from_string("Virtual");
   g_cfg_input.save("", g_cfg_input_configs.default_config);
 
-  g_cfg.core.llvm_cpu.from_string("cortex-a34");
-
   Emulator::SaveSettings(g_cfg.to_string(), Emu.GetTitleID());
   return true;
 }

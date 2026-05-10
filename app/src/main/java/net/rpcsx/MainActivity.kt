@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
             }
 
             if (RPCSX.activeLibrary.value != null) {
+                ThorPerformanceProfile.applyRuntimeAffinity()
                 RPCSX.instance.initialize(RPCSX.rootDirectory, UserRepository.getUserFromSettings())
                 ThorPerformanceProfile.applyStartupDefaults()
                 val gpuDriverPath = GeneralSettings["gpu_driver_path"] as? String

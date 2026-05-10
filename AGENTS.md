@@ -174,8 +174,9 @@ Use detected topology for presets. Do not assume every Snapdragon 8 Gen 2 device
 
 - Already cleaned up Android-side hotspots: folder scan queues use `ArrayDeque`, URI file copy uses a larger stream buffer, ISO metadata avoids duplicate directory parsing, patch status file checks are cached, and `games.json` saves are debounced.
 - Current Thor compile preset lives at `app/src/main/java/net/rpcsx/performance/ThorPerformanceProfile.kt`.
-- The preset is applied once on AYN/Thor/kalama targets: `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU`.
-- Native wrapper affinity helper: `RPCSX.setProcessAffinityMask(0xF8)` pins current app/native threads to Thor CPUs `3-7` where Android permits it. This is a first-pass compile relief, not a replacement for native PPU/SPU/RSX per-class affinity.
+- The preset is applied on AYN/Thor/kalama targets: `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU`.
+- Do not reintroduce an Android startup override that writes `Use LLVM CPU = cortex-a34`; that silently downgrades Thor JIT codegen and can undo the profile on later launches.
+- Native wrapper affinity helper: `RPCSX.setProcessAffinityMask(0xF8)` pins current app/native threads to Thor CPUs `3-7` where Android permits it. MainActivity applies it before core initialization so early native threads can inherit the performance-core mask. This is a first-pass compile relief, not a replacement for native PPU/SPU/RSX per-class affinity.
 - Custom GPU driver UI lives at `app/src/main/java/net/rpcsx/ui/drivers/GpuDriversScreen.kt`.
 - Curated GPU driver channels live in `app/src/main/java/net/rpcsx/ui/channels/UpdateChannelsScreen.kt`; keep K11MCH1/Kimchi first, StevenMXZ experimental, and CI builds clearly marked risky.
 - Thor Base/Pro/Max are Adreno 740. Prefer A6xx/A7xx Turnip packages when testing custom drivers, keep `Default` as fallback, and label A8xx/Gen8 packages as not for Thor.

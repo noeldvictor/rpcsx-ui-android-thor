@@ -8,7 +8,7 @@ import net.rpcsx.utils.GeneralSettings
 
 object ThorPerformanceProfile {
     private const val TAG = "ThorPerformanceProfile"
-    private const val PROFILE_VERSION = 1
+    private const val PROFILE_VERSION = 2
     private const val PROFILE_PREF = "thor_compile_profile_version"
     private const val PERFORMANCE_CORE_MASK = 0xF8
 
@@ -33,16 +33,16 @@ object ThorPerformanceProfile {
     }
 
     fun applyStartupDefaults(force: Boolean = false): ApplyResult {
-        val affinityApplied = applyRuntimeAffinity()
         if (!isThorTarget()) {
             return ApplyResult(
                 applied = false,
-                affinityApplied = affinityApplied,
+                affinityApplied = false,
                 changedSettings = emptyList(),
                 failedSettings = emptyList()
             )
         }
 
+        val affinityApplied = applyRuntimeAffinity()
         val alreadyApplied = (GeneralSettings[PROFILE_PREF] as? Int ?: 0) >= PROFILE_VERSION
         if (alreadyApplied && !force) {
             return ApplyResult(
@@ -79,23 +79,6 @@ object ThorPerformanceProfile {
         )
     }
 
-    fun applyRuntimeAffinity(): Boolean {
-        val result = runCatching {
-            RPCSX.instance.setProcessAffinityMask(PERFORMANCE_CORE_MASK)
-        }.getOrElse {
-            Log.w(TAG, "Could not set Thor performance-core affinity", it)
-            false
-        }
-
-        runCatching {
-            Process.setThreadPriority(Process.THREAD_PRIORITY_MORE_FAVORABLE)
-        }.onFailure {
-            Log.w(TAG, "Could not raise thread priority", it)
-        }
-
-        return result
-    }
-
     fun forceApplyCompileDefaults(): ApplyResult = applyStartupDefaults(force = true)
 
     private fun setSetting(
@@ -117,5 +100,26 @@ object ThorPerformanceProfile {
         } else {
             failed += label
         }
+    }
+
+    fun applyRuntimeAffinity(): Boolean {
+        if (!isThorTarget()) {
+            return false
+        }
+
+        val result = runCatching {
+            RPCSX.instance.setProcessAffinityMask(PERFORMANCE_CORE_MASK)
+        }.getOrElse {
+            Log.w(TAG, "Could not set Thor performance-core affinity", it)
+            false
+        }
+
+        runCatching {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_MORE_FAVORABLE)
+        }.onFailure {
+            Log.w(TAG, "Could not raise thread priority", it)
+        }
+
+        return result
     }
 }
