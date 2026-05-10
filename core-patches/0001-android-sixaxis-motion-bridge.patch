@@ -1,0 +1,53 @@
+diff --git a/android/src/rpcsx-android.cpp b/android/src/rpcsx-android.cpp
+index ce38967..1a0212a 100644
+--- a/android/src/rpcsx-android.cpp
++++ b/android/src/rpcsx-android.cpp
+@@ -1611 +1611,2 @@ static bool initVirtualPad(const std::shared_ptr<Pad> &pad) {
+-                CELL_PAD_CAPABILITY_ACTUATOR //| CELL_PAD_CAPABILITY_SENSOR_MODE
++                CELL_PAD_CAPABILITY_ACTUATOR |
++                CELL_PAD_CAPABILITY_SENSOR_MODE
+@@ -1713,0 +1715,44 @@ extern "C" bool _rpcsx_overlayPadData(int digital1, int digital2,
++extern "C" bool _rpcsx_overlayPadMotionData(float accelX, float accelY,
++                                            float accelZ, float gyroX,
++                                            float gyroY, float gyroZ) {
++  auto pad = [] {
++    std::shared_ptr<Pad> result;
++    std::lock_guard lock(g_virtual_pad_mutex);
++    result = g_virtual_pad;
++    return result;
++  }();
++
++  if (pad == nullptr) {
++    return false;
++  }
++
++  constexpr float android_standard_gravity = 9.80665f;
++  constexpr float rad_to_degree = 57.29577951308232f;
++  const auto clamp_sensor = [](float value) -> u16 {
++    return static_cast<u16>(std::clamp(value, 0.0f, 1023.0f));
++  };
++
++  // Android accelerometer values are m/s^2. RPCS3's DS3 sensor values use
++  // 512 as neutral and MOTION_ONE_G units per 1G. Match the SDL/DS4 paths.
++  pad->m_sensors[0].m_value =
++      clamp_sensor(((accelX / android_standard_gravity) * -1.0f *
++                    MOTION_ONE_G) +
++                   512.0f);
++  pad->m_sensors[1].m_value =
++      clamp_sensor(((accelY / android_standard_gravity) * -1.0f *
++                    MOTION_ONE_G) +
++                   512.0f);
++  pad->m_sensors[2].m_value =
++      clamp_sensor(((accelZ / android_standard_gravity) * -1.0f *
++                    MOTION_ONE_G) +
++                   512.0f);
++
++  // DS3 exposes one gyro channel. Use yaw, like existing SDL/DS4 handling.
++  (void)gyroX;
++  (void)gyroZ;
++  pad->m_sensors[3].m_value =
++      clamp_sensor((gyroY * rad_to_degree * (123.0f / 90.0f)) + 512.0f);
++
++  return true;
++}
++

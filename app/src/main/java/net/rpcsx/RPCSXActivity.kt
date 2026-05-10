@@ -16,6 +16,7 @@ import androidx.core.view.isInvisible
 import androidx.core.view.updateLayoutParams
 import net.rpcsx.databinding.ActivityRpcs3Binding
 import net.rpcsx.dialogs.AlertDialogQueue
+import net.rpcsx.input.SixaxisMotionController
 import net.rpcsx.overlay.State
 import net.rpcsx.utils.InputBindingPrefs
 import net.rpcsx.performance.ThorPerformanceProfile
@@ -26,6 +27,7 @@ import kotlin.math.abs
 class RPCSXActivity : Activity() {
     private lateinit var binding: ActivityRpcs3Binding
     private lateinit var unregisterUsbEventListener: () -> Unit
+    private lateinit var sixaxisMotionController: SixaxisMotionController
     private var gamePadState: State = State()
     private var usesAxisL2 = false
     private var usesAxisR2 = false
@@ -36,6 +38,7 @@ class RPCSXActivity : Activity() {
         super.onCreate(savedInstanceState)
         binding = ActivityRpcs3Binding.inflate(layoutInflater)
         setContentView(binding.root)
+        sixaxisMotionController = SixaxisMotionController(this)
 
         unregisterUsbEventListener = listenUsbEvents(this)
         enableFullScreenImmersive()
@@ -87,7 +90,18 @@ class RPCSXActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        sixaxisMotionController.start()
+    }
+
+    override fun onPause() {
+        sixaxisMotionController.stop()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        sixaxisMotionController.stop()
         super.onDestroy()
         RPCSX.state.value = EmulatorState.Paused
         unregisterUsbEventListener()

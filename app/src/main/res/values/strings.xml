@@ -101,7 +101,9 @@
     <string name="custom_driver_description">Install alternative drivers for potentially better performance or accuracy</string>
     <string name="custom_driver_not_supported">Custom Driver Not Supported</string>
     <string name="custom_driver_not_supported_description">Custom driver loading isn\'t currently supported for this device.</string>
+    <string name="core_update_needed">core update needed</string>
     <string name="download_channels">Download Channels</string>
+    <string name="enable_sixaxis_motion">Use AYN Thor Motion (Sixaxis)</string>
     <string name="enable_haptic_feedback">Enable Haptic Feedback</string>
     <string name="failed_to_assign_value">Failed to assign value %1$s to %2$s</string>
     <string name="failed_to_reset_key">Failed to reset %1$s</string>

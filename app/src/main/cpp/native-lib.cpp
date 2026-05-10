@@ -25,6 +25,8 @@
 struct RPCSXApi {
   bool (*overlayPadData)(int digital1, int digital2, int leftStickX,
                          int leftStickY, int rightStickX, int rightStickY);
+  bool (*overlayPadMotionData)(float accelX, float accelY, float accelZ,
+                               float gyroX, float gyroY, float gyroZ);
   bool (*initialize)(std::string_view rootDir, std::string_view user);
   bool (*processCompilationQueue)(JNIEnv *env);
   bool (*startMainThreadProcessor)(JNIEnv *env);
@@ -93,6 +95,7 @@ struct RPCSXLibrary : RPCSXApi {
 
     // clang-format off
     result.overlayPadData = reinterpret_cast<decltype(overlayPadData)>(dlsym(handle, "_rpcsx_overlayPadData"));
+    result.overlayPadMotionData = reinterpret_cast<decltype(overlayPadMotionData)>(dlsym(handle, "_rpcsx_overlayPadMotionData"));
     result.initialize = reinterpret_cast<decltype(initialize)>(dlsym(handle, "_rpcsx_initialize"));
     result.processCompilationQueue = reinterpret_cast<decltype(processCompilationQueue)>(dlsym(handle, "_rpcsx_processCompilationQueue"));
     result.startMainThreadProcessor = reinterpret_cast<decltype(startMainThreadProcessor)>(dlsym(handle, "_rpcsx_startMainThreadProcessor"));
@@ -201,6 +204,24 @@ extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_overlayPadData(
     jint leftStickY, jint rightStickX, jint rightStickY) {
   return rpcsxLib.overlayPadData(digital1, digital2, leftStickX, leftStickY,
                                  rightStickX, rightStickY);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_supportsPadMotionData(JNIEnv *, jobject) {
+  return rpcsxLib.overlayPadMotionData != nullptr;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_overlayPadMotionData(JNIEnv *, jobject, jfloat accelX,
+                                          jfloat accelY, jfloat accelZ,
+                                          jfloat gyroX, jfloat gyroY,
+                                          jfloat gyroZ) {
+  if (rpcsxLib.overlayPadMotionData == nullptr) {
+    return false;
+  }
+
+  return rpcsxLib.overlayPadMotionData(accelX, accelY, accelZ, gyroX, gyroY,
+                                       gyroZ);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_initialize(

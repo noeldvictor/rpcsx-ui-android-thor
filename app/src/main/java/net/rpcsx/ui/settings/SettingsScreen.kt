@@ -100,6 +100,7 @@ import net.rpcsx.utils.FileUtil
 import net.rpcsx.utils.GeneralSettings
 import net.rpcsx.utils.InputBindingPrefs
 import net.rpcsx.utils.RpcsxUpdater
+import net.rpcsx.utils.SixaxisMotionPrefs
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.ceil
@@ -922,6 +923,36 @@ fun ControllerSettings(
                     leadingIcon = null,
                     onClick = { value ->
                         ControllerOverlayPrefs.setShowScreenControls(value)
+                        itemValue = value
+                    }
+                )
+            }
+
+            item {
+                var itemValue by remember {
+                    mutableStateOf(SixaxisMotionPrefs.isEnabled())
+                }
+                val def = SixaxisMotionPrefs.defaultEnabled()
+                val motionBridgeSupported = remember { RPCSX.instance.supportsPadMotionData() }
+                val motionTitle = stringResource(R.string.enable_sixaxis_motion)
+                val coreUpdateNeeded = stringResource(R.string.core_update_needed)
+                val title = buildString {
+                    append(motionTitle)
+                    if (itemValue != def) {
+                        append(" *")
+                    }
+                    if (!motionBridgeSupported) {
+                        append(" (")
+                        append(coreUpdateNeeded)
+                        append(")")
+                    }
+                }
+                SwitchPreference(
+                    checked = itemValue,
+                    title = title,
+                    leadingIcon = null,
+                    onClick = { value ->
+                        SixaxisMotionPrefs.setEnabled(value)
                         itemValue = value
                     }
                 )
