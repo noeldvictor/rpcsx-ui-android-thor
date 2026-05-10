@@ -62,6 +62,8 @@ fun GameDetailScreen(
     var hashStatus by remember(game.info.path) { mutableStateOf(PatchHashRepository.cachedStatus(context, game)) }
     var expandedCheats by remember(game.info.path) { mutableStateOf<List<CheatEntry>>(emptyList()) }
     var settingsStatus by remember(game.info.path) { mutableStateOf<GameSettingsDatabase.Status?>(null) }
+    var settingsCacheMessage by remember(game.info.path) { mutableStateOf<String?>(null) }
+    var settingsCacheUpdating by remember(game.info.path) { mutableStateOf(false) }
 
     LaunchedEffect(game.info.path) {
         CheatRepository.load(context)
@@ -160,6 +162,8 @@ fun GameDetailScreen(
             item {
                 RecommendedSettingsCard(
                     status = settingsStatus,
+                    cacheMessage = settingsCacheMessage,
+                    cacheUpdating = settingsCacheUpdating,
                     onToggle = { enabled ->
                         scope.launch {
                             settingsStatus = withContext(Dispatchers.IO) {
@@ -169,6 +173,24 @@ fun GameDetailScreen(
                                     enabled
                                 )
                             }
+                        }
+                    },
+                    onUpdateCache = {
+                        scope.launch {
+                            settingsCacheUpdating = true
+                            val shouldApply = settingsStatus?.enabled == true
+                            val result = withContext(Dispatchers.IO) {
+                                val refresh = GameSettingsDatabase.refreshLocalCache(context)
+                                val status = if (shouldApply) {
+                                    GameSettingsDatabase.applyRecommendedConfig(context, game)
+                                } else {
+                                    GameSettingsDatabase.statusForGame(context, game)
+                                }
+                                refresh to status
+                            }
+                            settingsCacheMessage = result.first.message
+                            settingsStatus = result.second
+                            settingsCacheUpdating = false
                         }
                     }
                 )
@@ -206,7 +228,10 @@ fun GameDetailScreen(
 @Composable
 private fun RecommendedSettingsCard(
     status: GameSettingsDatabase.Status?,
-    onToggle: (Boolean) -> Unit
+    cacheMessage: String?,
+    cacheUpdating: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onUpdateCache: () -> Unit
 ) {
     val switchEnabled = status?.hasProfile == true && !status.customConfigPresent
     val checked = status?.enabled == true
@@ -215,6 +240,7 @@ private fun RecommendedSettingsCard(
         status.titleId == null -> "No title ID detected yet."
         !status.hasProfile -> "No recommended settings for ${status.titleId} yet."
         status.customConfigPresent -> "Custom settings already exist; leaving them alone."
+        status.enabled && status.managedConfigStale -> "On; newer cached settings will be saved next start."
         status.enabled && status.applied -> "On for next start."
         status.enabled -> "On; will be saved when you start the game."
         else -> "Off for this game."
@@ -230,6 +256,15 @@ private fun RecommendedSettingsCard(
                     Text("Recommended Settings", style = MaterialTheme.typography.titleMedium)
                     Text(message, style = MaterialTheme.typography.bodySmall)
                 }
+                IconButton(
+                    onClick = onUpdateCache,
+                    enabled = !cacheUpdating
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_refresh),
+                        contentDescription = "Update settings cache"
+                    )
+                }
                 Switch(
                     checked = checked,
                     enabled = switchEnabled,
@@ -237,8 +272,21 @@ private fun RecommendedSettingsCard(
                 )
             }
 
+            if (status?.databaseProfileCount != null) {
+                Text(
+                    "Settings cache: ${status.databaseProfileCount} profiles (${status.databaseSource ?: "ready"}).",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
             if (status?.databaseTimestamp != null && status.hasProfile) {
                 Text("Profile ${status.titleId}", style = MaterialTheme.typography.bodySmall)
+            }
+
+            if (cacheUpdating) {
+                Text("Updating settings cache.", style = MaterialTheme.typography.bodySmall)
+            } else if (!cacheMessage.isNullOrBlank()) {
+                Text(cacheMessage, style = MaterialTheme.typography.bodySmall)
             }
 
             if (status?.error != null) {

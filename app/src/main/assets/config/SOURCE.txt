@@ -12,5 +12,6 @@ Snapshot:
 
 Usage:
 - Loaded by net.rpcsx.config.GameSettingsDatabase.
-- Exported on startup to config/GuiConfigs/config_database.dat under the RPCSX app root.
+- Seeds config/GuiConfigs/config_database.dat under the RPCSX app root.
+- A valid local cache at that path is preserved when it is newer than or equal to this bundled snapshot.
 - Managed per-game configs are written as config/custom_configs/config_TITLEID.yml.

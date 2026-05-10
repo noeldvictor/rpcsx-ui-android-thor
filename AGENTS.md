@@ -84,7 +84,9 @@ If the app does not appear, verify the installed package:
 - Current source endpoint: `https://api.rpcs3.net/config/?api=v1`.
 - The snapshot is RPCS3-style JSON: `games[TITLEID].config` contains a YAML config snippet.
 - Android-side manager: `app/src/main/java/net/rpcsx/config/GameSettingsDatabase.kt`.
-- The app exports the bundled snapshot to `config/GuiConfigs/config_database.dat` under the RPCSX root so a future/core-side config database reader can find the familiar upstream location.
+- The app seeds and reads a writable local cache at `config/GuiConfigs/config_database.dat` under the RPCSX root so a future/core-side config database reader can find the familiar upstream location.
+- Preserve a valid local cache when it is newer than or equal to the bundled APK snapshot; do not stomp refreshed cache data during app startup.
+- The game detail card has a refresh icon that downloads `https://api.rpcs3.net/config/?api=v1` into the local cache. Startup should stay offline-friendly and only seed/fallback to the bundled snapshot.
 - The game detail screen shows this as `Recommended Settings`, not as database jargon.
 - Managed per-game configs are written to `config/custom_configs/config_TITLEID.yml` with the `# RPCSX_THOR_AUTO_SETTINGS` header.
 - Never overwrite an existing custom config unless it has the managed header. User-created custom configs win.

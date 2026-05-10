@@ -36,9 +36,11 @@ This fork now has an Android-side manager at `app/src/main/java/net/rpcsx/config
 The manager does four practical things:
 
 1. Loads the bundled RPCS3 config database from APK assets.
-2. Exports the same snapshot to `config/GuiConfigs/config_database.dat` under the RPCSX root, matching the upstream desktop filename/location pattern.
+2. Seeds and reads a writable local cache at `config/GuiConfigs/config_database.dat` under the RPCSX root, matching the upstream desktop filename/location pattern.
 3. Shows a plain `Recommended Settings` switch on the game detail screen when a title ID matches the database.
 4. Writes a managed per-game config to `config/custom_configs/config_TITLEID.yml` before launch.
+
+The local cache is the source of truth once it exists and validates. Startup only replaces it when the cache is missing, invalid, or older than the bundled APK snapshot. The game detail card has a refresh icon that downloads the current RPCS3 config API into that same local cache, so settings can update without waiting for a new APK while still working offline.
 
 Managed files start with:
 
