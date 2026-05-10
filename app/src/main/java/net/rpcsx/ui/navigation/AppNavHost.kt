@@ -661,7 +661,7 @@ fun GamesDestination(
                     )
 
                     NavigationDrawerItem(
-                        label = { Text("Cheat Database") },
+                        label = { Text("Browse All Cheats") },
                         selected = false,
                         icon = { Icon(painter = painterResource(id = R.drawable.ic_star), null) },
                         onClick = { navigateTo("cheats") }

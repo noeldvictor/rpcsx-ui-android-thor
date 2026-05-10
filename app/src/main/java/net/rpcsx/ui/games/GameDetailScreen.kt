@@ -1,6 +1,5 @@
 package net.rpcsx.ui.games
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,22 +25,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import net.rpcsx.Game
 import net.rpcsx.R
-import net.rpcsx.cheats.ArtemisConverter
-import net.rpcsx.cheats.ArtemisInstallResult
 import net.rpcsx.cheats.CheatEntry
 import net.rpcsx.cheats.CheatRepository
 import net.rpcsx.cheats.CheatSelectionRepository
 import net.rpcsx.cheats.PatchHashRepository
+import net.rpcsx.cheats.PatchHashStatus
 import net.rpcsx.utils.GameIdentity
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,12 +50,8 @@ fun GameDetailScreen(
 ) {
     val context = LocalContext.current
     val launchGame = rememberGameLauncher(game)
-    val scope = rememberCoroutineScope()
     val titleIds = GameIdentity.titleIdsForGame(game)
     var hashStatus by remember(game.info.path) { mutableStateOf(PatchHashRepository.cachedStatus(context, game)) }
-    var isInstalling by remember(game.info.path) { mutableStateOf(false) }
-    var installResult by remember(game.info.path) { mutableStateOf<ArtemisInstallResult?>(null) }
-    var installError by remember(game.info.path) { mutableStateOf<String?>(null) }
     var expandedCheats by remember(game.info.path) { mutableStateOf<List<CheatEntry>>(emptyList()) }
 
     LaunchedEffect(game.info.path) {
@@ -79,8 +70,8 @@ fun GameDetailScreen(
     }
 
     val cheatRows = expandedCheats.ifEmpty { matchedCheats }
-    val fixedCheatCount = cheatRows.sumOf { it.convertibleCount ?: 0 }
-    val riskyCheatCount = cheatRows.sumOf { it.riskyCount ?: 0 }
+    val readyCheats = cheatRows.filter { isReadyCheat(it) }
+    val unavailableCount = cheatRows.size - readyCheats.size
     val enabledCount = CheatSelectionRepository.enabledCount(
         context,
         GameIdentity.primaryTitleId(game) ?: game.info.path,
@@ -145,7 +136,7 @@ fun GameDetailScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Play")
                     }
-                    Button(onClick = navigateToCheats) {
+                    Button(onClick = navigateToCheats, enabled = cheatRows.isNotEmpty()) {
                         Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Cheats")
@@ -162,91 +153,73 @@ fun GameDetailScreen(
             }
 
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Cheat database", style = MaterialTheme.typography.titleMedium)
-                        Text("${cheatRows.size} individual cheats")
-                        Text("$fixedCheatCount static cheats, $riskyCheatCount risky/runtime")
-                        Text("Patch status: ${PatchHashRepository.statusText(hashStatus)}")
-                        hashStatus.ppuHash?.let { Text("PPU hash: $it", style = MaterialTheme.typography.bodySmall) }
-                        if (hashStatus.ppuHash == null && hashStatus.titleId != null) {
-                            Text("Boot this game once, close it, then RPCSX Easy can bind patches to the learned PPU hash.")
-                        }
-                        if (cheatRows.isNotEmpty()) {
-                            Text("Available cheats", style = MaterialTheme.typography.labelLarge)
-                            cheatRows.take(10).forEach { entry ->
-                                Text(
-                                    "${if ((entry.convertibleCount ?: 0) > 0) "Safe" else "Risky"} - ${entry.cheatName ?: entry.title}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            if (cheatRows.size > 10) {
-                                Text("${cheatRows.size - 10} more in the full Cheats list", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                        if (enabledCount > 0) {
-                            Text("$enabledCount selected for patch install")
-                        }
-                        if (CheatRepository.lastError.value != null) {
-                            Text(CheatRepository.lastError.value ?: "", color = MaterialTheme.colorScheme.error)
-                        }
-                        Button(
-                            onClick = navigateToCheats,
-                            enabled = cheatRows.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Open Cheat List")
-                        }
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    isInstalling = true
-                                    installResult = null
-                                    installError = null
-                                    try {
-                                        installResult = ArtemisConverter.installEntries(context, game, cheatRows)
-                                        hashStatus = PatchHashRepository.learnFromLogs(context, game)
-                                        Toast.makeText(
-                                            context,
-                                            installResult?.message ?: "Installed Artemis patches",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } catch (e: Exception) {
-                                        installError = e.message ?: "Failed to install Artemis patches"
-                                    } finally {
-                                        isInstalling = false
-                                    }
-                                }
-                            },
-                            enabled = cheatRows.isNotEmpty() && !isInstalling,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(painter = painterResource(id = R.drawable.ic_build), contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isInstalling) "Installing..." else "Install All Safe Cheats")
-                        }
-                        if (isInstalling) {
-                            CircularProgressIndicator()
-                        }
-                        installResult?.let {
-                            Text(it.message, style = MaterialTheme.typography.bodySmall)
-                        }
-                        installError?.let {
-                            Text(it, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
+                CheatSummaryCard(
+                    readyCheats = readyCheats,
+                    unavailableCount = unavailableCount,
+                    enabledCount = enabledCount,
+                    hashStatus = hashStatus,
+                    onOpenCheats = navigateToCheats
+                )
             }
 
             item {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Live cheat toggles need a native RPCSX bridge. Artemis static cheats can be installed as next-boot patches.",
+                    "Most cheats are saved before launch and take effect the next time you start the game.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         }
     }
 }
+
+@Composable
+private fun CheatSummaryCard(
+    readyCheats: List<CheatEntry>,
+    unavailableCount: Int,
+    enabledCount: Int,
+    hashStatus: PatchHashStatus,
+    onOpenCheats: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Cheats", style = MaterialTheme.typography.titleMedium)
+            Text("${readyCheats.size} available", style = MaterialTheme.typography.bodySmall)
+            if (unavailableCount > 0) {
+                Text("$unavailableCount more are not available yet", style = MaterialTheme.typography.bodySmall)
+            }
+            if (needsFirstBoot(readyCheats, hashStatus)) {
+                Text(
+                    "One-time setup: start this game once, close it, then come back to turn cheats on.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else if (enabledCount > 0) {
+                Text("$enabledCount on for next start", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Open Cheats to turn them on or off.", style = MaterialTheme.typography.bodySmall)
+            }
+            readyCheats.take(6).forEach { entry ->
+                Text(entry.cheatName ?: entry.title, style = MaterialTheme.typography.bodySmall)
+            }
+            if (readyCheats.size > 6) {
+                Text("${readyCheats.size - 6} more", style = MaterialTheme.typography.bodySmall)
+            }
+            Button(
+                onClick = onOpenCheats,
+                enabled = readyCheats.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Open Cheats")
+            }
+        }
+    }
+}
+
+private fun isReadyCheat(entry: CheatEntry): Boolean =
+    entry.format == CheatRepository.FORMAT_RPCS3_PATCH || (entry.convertibleCount ?: 0) > 0
+
+private fun needsFirstBoot(entries: List<CheatEntry>, hashStatus: PatchHashStatus): Boolean =
+    hashStatus.ppuHash == null &&
+        entries.any { it.format != CheatRepository.FORMAT_RPCS3_PATCH && isReadyCheat(it) }

@@ -1,9 +1,5 @@
 package net.rpcsx.ui.cheats
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,8 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import net.rpcsx.EmulatorState
 import net.rpcsx.Game
 import net.rpcsx.R
@@ -55,7 +50,6 @@ import net.rpcsx.cheats.CheatSelectionRepository
 import net.rpcsx.cheats.PatchHashRepository
 import net.rpcsx.cheats.PatchHashStatus
 import net.rpcsx.utils.GameIdentity
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,15 +58,17 @@ fun CheatsScreen(
     navigateBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
+    var showUnavailable by remember(game?.info?.path) { mutableStateOf(false) }
     var selectedEntry by remember { mutableStateOf<CheatEntry?>(null) }
     var selectedText by remember { mutableStateOf<String?>(null) }
     var selectedError by remember { mutableStateOf<String?>(null) }
     var refreshNonce by remember { mutableStateOf(0) }
     var selectionNonce by remember { mutableStateOf(0) }
-    var isInstalling by remember { mutableStateOf(false) }
-    var installResult by remember { mutableStateOf<ArtemisInstallResult?>(null) }
-    var installError by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+    var saveResult by remember { mutableStateOf<ArtemisInstallResult?>(null) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     var patchStatus by remember(game?.info?.path) {
         mutableStateOf(game?.let { PatchHashRepository.cachedStatus(context, it) })
     }
@@ -80,7 +76,6 @@ fun CheatsScreen(
     var expandedGlobalEntries by remember { mutableStateOf<List<CheatEntry>>(emptyList()) }
     var isExpandingGlobal by remember { mutableStateOf(false) }
     var globalExpandError by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
 
     val gameKey = game?.let { GameIdentity.primaryTitleId(it) ?: it.info.path } ?: "global"
     val isGameRunning = game != null &&
@@ -107,7 +102,7 @@ fun CheatsScreen(
         globalExpandError = null
         expandedGlobalEntries = runCatching { CheatRepository.expandAllEntries(context) }
             .getOrElse {
-                globalExpandError = it.message ?: "Failed to prepare individual cheat list"
+                globalExpandError = it.message ?: "Failed to prepare the cheat list"
                 CheatRepository.entries.toList()
             }
         isExpandingGlobal = false
@@ -138,25 +133,40 @@ fun CheatsScreen(
 
     val gameEntries = if (game != null) expandedGameEntries.ifEmpty { matchedEntries } else emptyList()
     val globalEntries = expandedGlobalEntries.ifEmpty { CheatRepository.entries.toList() }
-    val baseEntries = when {
-        game != null && query.isBlank() -> gameEntries
-        game != null -> filterEntries(gameEntries, query)
-        else -> filterEntries(globalEntries, query)
-    }
+    val sourceEntries = if (game != null) gameEntries else globalEntries
+    val visibleEntries = sourceEntries.filter { showUnavailable || isReadyCheat(it) }
+    val baseEntries = filterEntries(visibleEntries, query)
     LaunchedEffect(game?.info?.path, query, baseEntries.joinToString("|") { entryKey(it) }) {
         val selected = selectedEntry
         if (selected != null && baseEntries.none { entryKey(it) == entryKey(selected) }) {
-            selectedEntry = if (game != null && query.isBlank()) baseEntries.firstOrNull() else null
-        } else if (game != null && query.isBlank() && selected == null) {
-            selectedEntry = baseEntries.firstOrNull()
+            selectedEntry = null
         }
     }
 
     val selectionVersion = selectionNonce
-    val installEntries = if (game != null && selectionVersion >= 0) {
+    val enabledEntries = if (game != null && selectionVersion >= 0) {
         CheatSelectionRepository.enabledEntries(context, gameKey, gameEntries)
     } else {
         emptyList()
+    }
+    val hiddenUnavailableCount = sourceEntries.count { !isReadyCheat(it) }
+
+    fun saveCheatToggles() {
+        val targetGame = game ?: return
+        scope.launch {
+            isSaving = true
+            saveResult = null
+            saveError = null
+            try {
+                val selected = CheatSelectionRepository.enabledEntries(context, gameKey, gameEntries)
+                saveResult = ArtemisConverter.installEntries(context, targetGame, selected)
+                patchStatus = PatchHashRepository.learnFromLogs(context, targetGame)
+            } catch (e: Exception) {
+                saveError = e.message ?: "Failed to save cheats"
+            } finally {
+                isSaving = false
+            }
+        }
     }
 
     Scaffold(
@@ -168,7 +178,7 @@ fun CheatsScreen(
                 ),
                 title = {
                     Text(
-                        game?.info?.name?.value ?: "Cheat Database",
+                        if (game == null) "Browse All Cheats" else "Cheats",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -193,21 +203,28 @@ fun CheatsScreen(
                 .fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text("Search title, ID, or version") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            if (isGameRunning) {
+            if (game != null) {
+                item {
+                    Text(
+                        game.info.name.value ?: "This game",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                item {
+                    CheatStatusCard(
+                        enabledCount = enabledEntries.size,
+                        needsFirstBoot = needsFirstBoot(sourceEntries, patchStatus),
+                        isGameRunning = isGameRunning,
+                        isSaving = isSaving,
+                        result = saveResult,
+                        error = saveError
+                    )
+                }
+            } else {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "This game is running. Cheat changes are staged for next boot until live patch toggles are wired into the native core.",
+                            "This is a read-only browser. Open a game to turn its cheats on or off.",
                             modifier = Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -215,18 +232,33 @@ fun CheatsScreen(
                 }
             }
 
-            if (CheatRepository.isLoading.value) {
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(if (game == null) "Search games or cheats" else "Search cheats") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+
+            if (hiddenUnavailableCount > 0) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CircularProgressIndicator()
+                        Text(
+                            "Show cheats that are not available yet",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Switch(checked = showUnavailable, onCheckedChange = { showUnavailable = it })
                     }
                 }
             }
 
-            if (isExpandingGlobal) {
+            if (CheatRepository.isLoading.value || isExpandingGlobal) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -235,7 +267,10 @@ fun CheatsScreen(
                     ) {
                         CircularProgressIndicator()
                         Spacer(Modifier.width(8.dp))
-                        Text("Preparing individual cheat list", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (isExpandingGlobal) "Preparing cheats" else "Loading cheats",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
@@ -253,23 +288,23 @@ fun CheatsScreen(
             }
 
             item {
-                Text(
-                    "${baseEntries.size} ${if (game != null || expandedGlobalEntries.isNotEmpty()) "cheats" else "entries"}",
-                    style = MaterialTheme.typography.labelLarge
-                )
+                Text("${baseEntries.size} cheats", style = MaterialTheme.typography.labelLarge)
             }
 
             items(baseEntries, key = { entryKey(it) }) { entry ->
+                val canToggle = game != null && canToggleCheat(entry, patchStatus)
+                val isEnabled = game != null && CheatSelectionRepository.isEnabled(context, gameKey, entry)
                 CheatEntryCard(
                     entry = entry,
-                    enabled = game != null && CheatSelectionRepository.isEnabled(context, gameKey, entry),
+                    enabled = isEnabled,
                     showToggle = game != null,
-                    onEnabledChange = {
-                        if (game != null) {
-                            CheatSelectionRepository.setEnabled(context, gameKey, entry, it)
+                    toggleEnabled = canToggle && !isSaving,
+                    status = cheatStatusText(entry, isEnabled, canToggle, game != null),
+                    onEnabledChange = { checked ->
+                        if (game != null && canToggle) {
+                            CheatSelectionRepository.setEnabled(context, gameKey, entry, checked)
                             selectionNonce++
-                            installResult = null
-                            installError = null
+                            saveCheatToggles()
                         }
                     },
                     onOpen = { selectedEntry = entry }
@@ -281,70 +316,8 @@ fun CheatsScreen(
                         entry = entry,
                         text = selectedText,
                         error = selectedError,
-                        onCopy = {
-                            val cheatText = selectedText ?: return@CheatPreview
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText(entry.fileName, cheatText))
-                            Toast.makeText(context, "Copied cheat text", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                }
-            }
-
-            if (game != null) {
-                item {
-                    CheatInstallCard(
-                        selectedCount = installEntries.size,
-                        matchedCount = gameEntries.size,
-                        patchStatus = patchStatus,
-                        isInstalling = isInstalling,
-                        result = installResult,
-                        error = installError,
-                        onApplySelected = {
-                            scope.launch {
-                                isInstalling = true
-                                installResult = null
-                                installError = null
-                                try {
-                                    installResult = ArtemisConverter.installEntries(context, game, installEntries)
-                                    patchStatus = PatchHashRepository.learnFromLogs(context, game)
-                                } catch (e: Exception) {
-                                    installError = e.message ?: "Failed to install Artemis patches"
-                                } finally {
-                                    isInstalling = false
-                                }
-                            }
-                        },
-                        onInstallAll = {
-                            scope.launch {
-                                isInstalling = true
-                                installResult = null
-                                installError = null
-                                try {
-                                    installResult = ArtemisConverter.installEntries(context, game, gameEntries)
-                                    patchStatus = PatchHashRepository.learnFromLogs(context, game)
-                                } catch (e: Exception) {
-                                    installError = e.message ?: "Failed to install Artemis patches"
-                                } finally {
-                                    isInstalling = false
-                                }
-                            }
-                        },
-                        onClear = {
-                            scope.launch {
-                                isInstalling = true
-                                installResult = null
-                                installError = null
-                                try {
-                                    installResult = ArtemisConverter.installEntries(context, game, emptyList())
-                                    patchStatus = PatchHashRepository.learnFromLogs(context, game)
-                                } catch (e: Exception) {
-                                    installError = e.message ?: "Failed to clear Artemis patches"
-                                } finally {
-                                    isInstalling = false
-                                }
-                            }
-                        }
+                        canToggle = canToggle,
+                        isGameScreen = game != null
                     )
                 }
             }
@@ -353,73 +326,29 @@ fun CheatsScreen(
 }
 
 @Composable
-private fun CheatInstallCard(
-    selectedCount: Int,
-    matchedCount: Int,
-    patchStatus: PatchHashStatus?,
-    isInstalling: Boolean,
+private fun CheatStatusCard(
+    enabledCount: Int,
+    needsFirstBoot: Boolean,
+    isGameRunning: Boolean,
+    isSaving: Boolean,
     result: ArtemisInstallResult?,
-    error: String?,
-    onApplySelected: () -> Unit,
-    onInstallAll: () -> Unit,
-    onClear: () -> Unit
+    error: String?
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Artemis patches", style = MaterialTheme.typography.titleMedium)
-            patchStatus?.let {
-                Text("Patch status: ${PatchHashRepository.statusText(it)}", style = MaterialTheme.typography.bodySmall)
-                if (it.ppuHash == null && it.titleId != null) {
-                    Text("Boot once to learn the PPU hash required by RPCSX patches.", style = MaterialTheme.typography.bodySmall)
-                }
-            }
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Toggle cheats on or off", style = MaterialTheme.typography.titleSmall)
             Text(
-                if (selectedCount == 0) {
-                    "No selected cheats. Install all safe cheats or pick cheats below."
-                } else {
-                    "$selectedCount selected cheats will be converted to next-boot RPCSX patches."
+                when {
+                    isSaving -> "Saving..."
+                    needsFirstBoot -> "One-time setup: start this game once, close it, then come back to turn cheats on."
+                    isGameRunning -> "Saved changes take effect next time you start this game."
+                    enabledCount > 0 -> "$enabledCount on. Changes are saved for the next time you start this game."
+                    else -> "Toggles save automatically."
                 },
                 style = MaterialTheme.typography.bodySmall
             )
-            Button(
-                onClick = onApplySelected,
-                enabled = selectedCount > 0 && !isInstalling,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(painter = painterResource(id = R.drawable.ic_build), contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isInstalling) "Installing..." else "Apply Selected")
-            }
-            Button(
-                onClick = onInstallAll,
-                enabled = matchedCount > 0 && !isInstalling,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Install All Safe")
-            }
-            TextButton(
-                onClick = onClear,
-                enabled = !isInstalling,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Clear Generated Patches")
-            }
-            if (isInstalling) {
-                CircularProgressIndicator()
-            }
             result?.let {
-                Text(it.message, style = MaterialTheme.typography.bodySmall)
-                if (it.patchFilePath != null && it.configFilePath != null) {
-                    Text(
-                        "Patch: ${it.patchFilePath}\nConfig: ${it.configFilePath}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                if (it.backupPaths.isNotEmpty()) {
-                    Text("Existing patch files were backed up before adding RPCSX Easy sections.", style = MaterialTheme.typography.bodySmall)
-                }
+                Text(friendlySaveMessage(it, enabledCount), style = MaterialTheme.typography.bodySmall)
             }
             error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
@@ -433,6 +362,8 @@ private fun CheatEntryCard(
     entry: CheatEntry,
     enabled: Boolean,
     showToggle: Boolean,
+    toggleEnabled: Boolean,
+    status: String,
     onEnabledChange: (Boolean) -> Unit,
     onOpen: () -> Unit
 ) {
@@ -448,40 +379,20 @@ private fun CheatEntryCard(
                 if (entry.cheatName != null) {
                     Text(entry.title, style = MaterialTheme.typography.bodySmall)
                 }
-                Text(
-                    entry.titleIds.ifEmpty { listOf("No title ID") }.joinToString(),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    listOf(entry.version, entry.size).filter { it.isNotBlank() }.joinToString("  "),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                if (entry.convertibleCount != null && entry.riskyCount != null) {
-                    Text(
-                        if (entry.cheatName != null) {
-                            if (entry.convertibleCount > 0) "Safe static patch" else "Risky/runtime"
-                        } else {
-                            "${entry.convertibleCount} safe, ${entry.riskyCount} risky"
-                        },
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                Text(status, style = MaterialTheme.typography.bodySmall)
+                if (entry.titleIds.isNotEmpty()) {
+                    Text(entry.titleIds.joinToString(), style = MaterialTheme.typography.bodySmall)
                 }
-                Text(
-                    if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
-                        "RPCS3-ready patch"
-                    } else if (entry.cheatName != null) {
-                        "Artemis NCL cheat"
-                    } else {
-                        "Artemis NCL"
-                    },
-                    style = MaterialTheme.typography.bodySmall
-                )
             }
             TextButton(onClick = onOpen) {
-                Text("View")
+                Text("Details")
             }
             if (showToggle) {
-                Switch(checked = enabled, onCheckedChange = onEnabledChange)
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChange,
+                    enabled = toggleEnabled
+                )
             }
         }
     }
@@ -492,94 +403,65 @@ private fun CheatPreview(
     entry: CheatEntry,
     text: String?,
     error: String?,
-    onCopy: () -> Unit
+    canToggle: Boolean,
+    isGameScreen: Boolean
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(entry.cheatName ?: entry.fileName, style = MaterialTheme.typography.titleMedium)
-            if (entry.cheatName != null) {
-                Text(entry.fileName, style = MaterialTheme.typography.bodySmall)
-            }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (text == null && error == null) {
                 CircularProgressIndicator()
             } else if (text != null) {
-                val selectedCheats = if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
-                    emptyList()
+                if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
+                    Text(
+                        if (isGameScreen) {
+                            "This cheat is ready to toggle for this game."
+                        } else {
+                            "This cheat is ready when opened from its game page."
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 } else {
-                    ArtemisConverter.selectedCheats(text, entry)
-                }
-                val summary = if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
-                    (entry.convertibleCount ?: 1) to (entry.riskyCount ?: 0)
-                } else {
-                    selectedCheats.count { it.isSupported } to selectedCheats.count { !it.isSupported }
-                }
-                Text(
-                    if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
-                        "${summary.first} RPCS3-ready patches, ${summary.second} risky/unsupported."
-                    } else {
-                        "${summary.first} static cheats convertible, ${summary.second} risky/runtime skipped."
-                    },
-                    style = MaterialTheme.typography.bodySmall
-                )
-                if (entry.format != CheatRepository.FORMAT_RPCS3_PATCH) {
-                    if (selectedCheats.isNotEmpty()) {
-                        Text("Cheats", style = MaterialTheme.typography.labelLarge)
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            selectedCheats.take(80).forEach { cheat ->
-                                Text(
-                                    "${if (cheat.isSupported) "Safe" else "Risky"} - ${cheat.name}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            if (selectedCheats.size > 80) {
-                                Text(
-                                    "${selectedCheats.size - 80} more cheats in raw NCL below.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                    }
+                    val selectedCheats = ArtemisConverter.selectedCheats(text, entry)
                     val patchOps = selectedCheats.flatMap { it.writes }
+                    val unavailableReasons = selectedCheats.flatMap { it.unsupportedReasons }.distinct()
+
+                    Text(
+                        if (canToggle) {
+                            "This cheat can be turned on for the next game start."
+                        } else if (isReadyCheat(entry)) {
+                            "Start this game once, close it, then this cheat can be turned on."
+                        } else {
+                            "This cheat is in the library, but RPCSX Easy cannot use it yet."
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
                     if (patchOps.isNotEmpty()) {
-                        Text("Patch ops", style = MaterialTheme.typography.labelLarge)
+                        Text("Technical changes", style = MaterialTheme.typography.labelLarge)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            patchOps.take(80).forEach { write ->
+                            patchOps.take(40).forEach { write ->
                                 Text(
                                     "${write.patchType} 0x${write.address} = 0x${write.value}",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
-                            if (patchOps.size > 80) {
-                                Text("${patchOps.size - 80} more patch ops in raw NCL below.", style = MaterialTheme.typography.bodySmall)
+                            if (patchOps.size > 40) {
+                                Text("${patchOps.size - 40} more changes", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
-                    val unsupportedReasons = selectedCheats.flatMap { it.unsupportedReasons }.distinct()
-                    if (unsupportedReasons.isNotEmpty()) {
-                        Text("Skipped reasons", style = MaterialTheme.typography.labelLarge)
+
+                    if (unavailableReasons.isNotEmpty()) {
+                        Text("Why it is not available yet", style = MaterialTheme.typography.labelLarge)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            unsupportedReasons.forEach { reason ->
+                            unavailableReasons.forEach { reason ->
                                 Text(reason, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
                 }
-                Button(onClick = onCopy) {
-                    Icon(painter = painterResource(id = R.drawable.ic_description), contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
-                            "Copy Patch"
-                        } else {
-                            "Copy NCL"
-                        }
-                    )
-                }
-                SelectionContainer {
-                    Text(text, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(2.dp))
                 Text(
                     "Source: ${CheatRepository.sourceUrl(entry)}",
                     style = MaterialTheme.typography.bodySmall
@@ -601,6 +483,50 @@ private fun filterEntries(entries: List<CheatEntry>, query: String): List<CheatE
             entry.version.lowercase().contains(needle) ||
             entry.fileName.lowercase().contains(needle) ||
             entry.titleIds.any { it.lowercase().contains(needle) }
+    }
+}
+
+private fun isReadyCheat(entry: CheatEntry): Boolean =
+    entry.format == CheatRepository.FORMAT_RPCS3_PATCH || (entry.convertibleCount ?: 0) > 0
+
+private fun canToggleCheat(entry: CheatEntry, patchStatus: PatchHashStatus?): Boolean {
+    if (!isReadyCheat(entry)) {
+        return false
+    }
+
+    if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
+        return true
+    }
+
+    return patchStatus?.ppuHash != null
+}
+
+private fun needsFirstBoot(entries: List<CheatEntry>, patchStatus: PatchHashStatus?): Boolean =
+    patchStatus?.ppuHash == null &&
+        entries.any { it.format != CheatRepository.FORMAT_RPCS3_PATCH && isReadyCheat(it) }
+
+private fun cheatStatusText(
+    entry: CheatEntry,
+    enabled: Boolean,
+    canToggle: Boolean,
+    isGameScreen: Boolean
+): String = when {
+    !isReadyCheat(entry) -> "Not available yet"
+    !isGameScreen -> "Open this game to turn it on"
+    enabled -> "On for next start"
+    canToggle -> "Off"
+    else -> "Start game once to unlock"
+}
+
+private fun friendlySaveMessage(result: ArtemisInstallResult, enabledCount: Int): String {
+    if (result.missingHash) {
+        return "Start this game once, close it, then come back to turn cheats on."
+    }
+
+    return if (enabledCount == 0 || result.installedCheats == 0) {
+        "All cheats are off."
+    } else {
+        "Saved. Cheats take effect next time you start this game."
     }
 }
 
