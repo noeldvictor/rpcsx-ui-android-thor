@@ -72,15 +72,17 @@ class MainActivity : ComponentActivity() {
             val rpcsxPrevLibrary = GeneralSettings["rpcsx_prev_library"] as? String
 
             val bundledCore = File(nativeLibraryDir, "librpcsx-android.so")
-            if (
-                bundledCore.exists() &&
-                RPCSX.instance.getLibraryVersion(bundledCore.path) != null &&
-                shouldPreferBundledCore(rpcsxLibrary, bundledCore)
-            ) {
+            val hasValidBundledCore =
+                bundledCore.exists() && RPCSX.instance.getLibraryVersion(bundledCore.path) != null
+
+            if ((BuildConfig.FORK_BUILD || rpcsxLibrary == null) && hasValidBundledCore) {
                 rpcsxLibrary = bundledCore.path
                 GeneralSettings["rpcsx_library"] = bundledCore.path
                 GeneralSettings["rpcsx_installed_arch"] = "bundled"
                 GeneralSettings["rpcsx_update_status"] = true
+                GeneralSettings["rpcsx_prev_installed_arch"] = null
+                GeneralSettings["rpcsx_prev_library"] = null
+                GeneralSettings["rpcsx_bad_version"] = null
                 GeneralSettings.sync()
             }
 
@@ -106,7 +108,14 @@ class MainActivity : ComponentActivity() {
                     GeneralSettings.sync()
                 }
 
-                RPCSX.openLibrary(rpcsxLibrary)
+                if (!RPCSX.openLibrary(rpcsxLibrary) && hasValidBundledCore && rpcsxLibrary != bundledCore.path) {
+                    rpcsxLibrary = bundledCore.path
+                    GeneralSettings["rpcsx_library"] = bundledCore.path
+                    GeneralSettings["rpcsx_installed_arch"] = "bundled"
+                    GeneralSettings["rpcsx_update_status"] = true
+                    GeneralSettings.sync()
+                    RPCSX.openLibrary(rpcsxLibrary)
+                }
             }
 
             if (RPCSX.activeLibrary.value != null) {
@@ -171,16 +180,4 @@ class MainActivity : ComponentActivity() {
         unregisterUsbEventListener()
     }
 
-    private fun shouldPreferBundledCore(savedLibrary: String?, bundledCore: File): Boolean {
-        if (savedLibrary == null || savedLibrary == bundledCore.path) {
-            return true
-        }
-
-        if (!BuildConfig.FORK_BUILD) {
-            return false
-        }
-
-        val savedCore = File(savedLibrary)
-        return savedCore.name.startsWith("librpcsx-android_")
-    }
 }
