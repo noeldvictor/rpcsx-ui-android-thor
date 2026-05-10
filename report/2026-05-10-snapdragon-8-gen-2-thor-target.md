@@ -8,7 +8,7 @@ Thor Lite is a Snapdragon 865 / Adreno 650 device. It may remain compatible, but
 
 Goal: make RPCSX for AYN Thor Experiment feel less like a generic Android port and more like a handheld-first PS3 app with clear cache/precompile flow, sane defaults, and no mystery knobs.
 
-Current implementation checkpoint: the app now applies a first-pass Thor compile-relief preset, pins current app/native threads to CPUs `3-7` where Android permits it, shows per-game cache status on game detail, and lets users choose app-owned internal or SD-card compiled-cache storage with warnings. A real background PPU prepare action is wired only as an optional native hook because the currently installed RPCSX core does not expose `_rpcsx_preparePpuCache`.
+Current implementation checkpoint: the app now applies a first-pass Thor compile-relief preset, pins current app/native threads to CPUs `3-7` where Android permits it, shows per-game cache status on game detail, lets users choose app-owned internal or SD-card compiled-cache storage with warnings, and makes custom GPU driver download safer with curated Turnip sources and Thor/Adreno 740 notes. A real background PPU prepare action is wired only as an optional native hook because the currently installed RPCSX core does not expose `_rpcsx_preparePpuCache`.
 
 ## Public Research
 
@@ -158,6 +158,14 @@ First benchmark should compare wall-clock PPU compile time, first playable frame
 ## GPU/Display Notes
 
 Base/Pro/Max share Adreno 740 at the target level. The Android repo can help by keeping custom-driver selection obvious, preserving Vulkan/shader cache data, and avoiding unnecessary redraw/update churn on the second screen and overlay. PPU compile is CPU-bound, but bad UI polling, shader-cache churn, or aggressive overlay updates can still make the whole handheld feel worse.
+
+Custom GPU driver UI now treats `Default` as the safety fallback and exposes curated GitHub sources with notes:
+
+- K11MCH1/Kimchi AdrenoToolsDrivers first, because it is the established emulator-driver package source and carries the `.adrenoDrivers` marker this app already validates.
+- StevenMXZ Turnip builds as experimental, with release assets shown separately so Thor users can avoid OneUI and A8xx/Gen8 packages.
+- Freedreno Turnip CI as bleeding edge, with warnings to choose AdrenoTools ZIPs only and expect regressions.
+
+Thor guidance: for Adreno 740, prefer A6xx/A7xx Turnip packages when testing. A8xx/Gen8 packages target newer Adreno families and should be labeled as not for Thor unless the user is deliberately testing another device.
 
 ## Immediate Product Direction
 

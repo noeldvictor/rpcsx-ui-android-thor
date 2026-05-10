@@ -30,6 +30,35 @@ const val DevUiChannel = "https://github.com/RPCSX/rpcsx-ui-android-build"
 const val ReleaseRpcsxChannel = "https://github.com/RPCSX/rpcsx"
 const val DevRpcsxChannel = "https://github.com/RPCSX/rpcsx-build"
 
+data class GpuDriverChannelInfo(
+    val title: String,
+    val repoUrl: String,
+    val note: String,
+    val bypassValidation: Boolean = false
+)
+
+val CuratedGpuDriverChannels = listOf(
+    GpuDriverChannelInfo(
+        title = "Kimchi AdrenoToolsDrivers",
+        repoUrl = DefaultGpuDriverChannel,
+        note = "Best first stop. Mixed Qualcomm and Mesa Turnip packages; for Thor Adreno 740 prefer A6xx/A7xx Turnip builds and keep Default as fallback."
+    ),
+    GpuDriverChannelInfo(
+        title = "StevenMXZ Turnip builds",
+        repoUrl = "https://github.com/StevenMXZ/Adreno-Tools-Drivers",
+        note = "Newer experimental Mesa Turnip builds. For Thor Adreno 740 use A6xx/A7xx non-OneUI packages; avoid Gen8/A8xx packages unless testing another device.",
+        bypassValidation = true
+    ),
+    GpuDriverChannelInfo(
+        title = "Freedreno Turnip CI",
+        repoUrl = "https://github.com/ilhan-athn7/freedreno_turnip-CI",
+        note = "Bleeding-edge CI builds. Pick AdrenoTools ZIP assets only, expect regressions, and switch back to Default if a game stops booting.",
+        bypassValidation = true
+    )
+)
+
+val DefaultGpuDriverChannelList = CuratedGpuDriverChannels.map { it.repoUrl }.toSet()
+
 fun channelToUiText(channel: String, releaseRepo: String, devRepo: String): String {
     if (channel == releaseRepo) return "Release"
     if (channel == devRepo) return "Development"

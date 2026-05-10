@@ -81,6 +81,7 @@ import net.rpcsx.UserRepository
 import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.overlay.OverlayEditActivity
 import net.rpcsx.ui.channels.DefaultGpuDriverChannel
+import net.rpcsx.ui.channels.DefaultGpuDriverChannelList
 import net.rpcsx.ui.channels.DevRpcsxChannel
 import net.rpcsx.ui.channels.DevUiChannel
 import net.rpcsx.ui.channels.ReleaseRpcsxChannel
@@ -122,10 +123,11 @@ fun AppNavHost() {
     }
 
     var gpuDriverChannelList =
-        prefs.getStringSet("gpu_driver_channel_list", setOf(DefaultGpuDriverChannel))?.toList()
+        prefs.getStringSet("gpu_driver_channel_list", DefaultGpuDriverChannelList)?.toList()
     if (gpuDriverChannelList == null) {
-        gpuDriverChannelList = listOf(DefaultGpuDriverChannel)
+        gpuDriverChannelList = DefaultGpuDriverChannelList.toList()
     }
+    gpuDriverChannelList = (gpuDriverChannelList + DefaultGpuDriverChannelList).distinct()
     var gpuDriverChannels by remember { mutableStateOf(gpuDriverChannelList) }
 
     var uiChannelList =
@@ -358,7 +360,9 @@ fun AppNavHost() {
                         putStringSet("gpu_driver_channel_list", gpuDriverChannels.toSet())
                     }
                 },
-                isDeletable = { gpuDriverChannels.size > 1 })
+                isDeletable = { channel ->
+                    channel !in DefaultGpuDriverChannelList && gpuDriverChannels.size > 1
+                })
         }
 
         composable(

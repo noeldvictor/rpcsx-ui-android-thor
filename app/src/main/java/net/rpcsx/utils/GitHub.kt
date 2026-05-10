@@ -137,9 +137,29 @@ object GitHub {
             is GetResult.Success -> {
                 try {
                     val releases: List<Release> = json.decodeFromString(ListSerializer(Release.serializer()), response.content)
-                    val drivers = releases.map { release ->
-                        val assetUrl = release.assets.firstOrNull()?.browser_download_url
-                        release.name to assetUrl
+                    val drivers = releases.flatMap { release ->
+                        val zipAssets = release.assets
+                            .filter { asset ->
+                                asset.browser_download_url != null &&
+                                    asset.name.endsWith(".zip", ignoreCase = true)
+                            }
+
+                        if (zipAssets.isNotEmpty()) {
+                            zipAssets.map { asset ->
+                                val assetLabel = asset.name.removeSuffix(".zip")
+                                val label = if (zipAssets.size == 1) {
+                                    release.name
+                                } else {
+                                    "${release.name} - $assetLabel"
+                                }
+                                label to asset.browser_download_url
+                            }
+                        } else {
+                            release.assets
+                                .firstOrNull { it.browser_download_url != null }
+                                ?.let { asset -> listOf("${release.name} - ${asset.name}" to asset.browser_download_url) }
+                                ?: emptyList()
+                        }
                     }
                     FetchResult.Success(drivers)
                 } catch (e: Exception) {

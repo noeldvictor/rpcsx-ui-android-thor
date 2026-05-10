@@ -69,7 +69,9 @@ import kotlinx.coroutines.withContext
 import net.rpcsx.R
 import net.rpcsx.RPCSX
 import net.rpcsx.dialogs.AlertDialogQueue
+import net.rpcsx.ui.channels.CuratedGpuDriverChannels
 import net.rpcsx.ui.channels.DefaultGpuDriverChannel
+import net.rpcsx.ui.channels.GpuDriverChannelInfo
 import net.rpcsx.utils.DriversFetcher
 import net.rpcsx.utils.GeneralSettings
 import net.rpcsx.utils.GeneralSettings.string
@@ -92,8 +94,12 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
     var showDriverDialog by remember { mutableStateOf(false) }
     var shouldFetchAndShowDrivers by remember { mutableStateOf(false) }
     var repoUrl by remember { mutableStateOf<String?>(null) }
+    var repoTitle by remember { mutableStateOf<String?>(null) }
+    var repoNote by remember { mutableStateOf<String?>(null) }
+    var repoBypassValidation by remember { mutableStateOf(false) }
     var driverToDownload by remember { mutableStateOf<Pair<String, String>?>(null) }
     var shouldDownloadDriver by remember { mutableStateOf(false) }
+    var showDriverSourceDialog by remember { mutableStateOf(false) }
 
     val driverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -132,15 +138,31 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
         DriverDialog(onDismiss = { showDriverDialog = false }, onInstallClick = {
             driverPickerLauncher.launch("application/zip")
         }, onImportClick = {
-            repoUrl = GeneralSettings["gpu_driver_channel"].string(DefaultGpuDriverChannel)
-            shouldFetchAndShowDrivers = true
+            showDriverSourceDialog = true
         })
+    }
+
+    if (showDriverSourceDialog) {
+        DriverSourceDialog(
+            currentRepo = GeneralSettings["gpu_driver_channel"].string(DefaultGpuDriverChannel),
+            onDismiss = { showDriverSourceDialog = false },
+            onSelect = { source ->
+                repoUrl = source.repoUrl
+                repoTitle = source.title
+                repoNote = source.note
+                repoBypassValidation = source.bypassValidation
+                shouldFetchAndShowDrivers = true
+                showDriverSourceDialog = false
+            }
+        )
     }
 
     if (shouldFetchAndShowDrivers) {
         FetchAndShowDrivers(
             repoUrl = repoUrl!!,
-            bypassValidation = false,
+            sourceTitle = repoTitle ?: repoUrl!!,
+            sourceNote = repoNote,
+            bypassValidation = repoBypassValidation,
             onDismiss = { shouldFetchAndShowDrivers = false },
             onDownloadDriver = { url, name ->
                 driverToDownload = Pair(url, name)
@@ -189,6 +211,10 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
             )
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item(key = "thor_gpu_note") {
+                    ThorGpuDriverNote()
+                }
+
                 items(drivers.entries.toList(), key = { it.key }) { (file, metadata) ->
                     DeletableListItem(onDelete = if (metadata.name == "Default") null else ({
                         coroutineScope.launch(Dispatchers.IO) {
@@ -240,6 +266,13 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (metadata.label == selectedDriver) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                driverCompatibilityWarning(metadata.label)?.let { warning ->
+                                    Text(
+                                        text = warning,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (metadata.label == selectedDriver) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
@@ -269,6 +302,8 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
                                 painter = painterResource(id = R.drawable.ic_add),
                                 contentDescription = "Install Driver"
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Add Driver")
                         }
                     }
 
@@ -324,17 +359,110 @@ fun DriverDialog(
     })
 }
 
+@Composable
+private fun ThorGpuDriverNote() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Thor GPU Notes", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Default driver is safest. Turnip can improve Vulkan behavior, but bad builds can break boot or graphics.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                "AYN Thor Base/Pro/Max use Adreno 740. Prefer A6xx/A7xx Turnip builds; avoid A8xx/Gen8 builds unless testing another device.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun DriverSourceDialog(
+    currentRepo: String,
+    onDismiss: () -> Unit,
+    onSelect: (GpuDriverChannelInfo) -> Unit
+) {
+    val customSource = currentRepo
+        .takeIf { repo -> CuratedGpuDriverChannels.none { it.repoUrl == repo } }
+        ?.let { repo ->
+            GpuDriverChannelInfo(
+                title = "Custom channel",
+                repoUrl = repo,
+                note = "User-selected GitHub release channel. ZIPs must contain AdrenoTools driver metadata."
+            )
+        }
+    val sources = if (customSource != null) {
+        CuratedGpuDriverChannels + customSource
+    } else {
+        CuratedGpuDriverChannels
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download Driver") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                sources.forEach { source ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(source) },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(source.title, style = MaterialTheme.typography.titleSmall)
+                            Text(source.repoUrl, style = MaterialTheme.typography.bodySmall)
+                            Text(source.note, style = MaterialTheme.typography.bodySmall)
+                            if (source.bypassValidation) {
+                                Text("Experimental source; release assets are shown directly.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(android.R.string.cancel))
+            }
+        }
+    )
+}
+
+private fun driverCompatibilityWarning(name: String): String? {
+    return when {
+        name.contains("Gen8", ignoreCase = true) || name.contains("A8", ignoreCase = true) ->
+            "Not for Thor Adreno 740 unless you are deliberately testing."
+        name.contains("OneUI", ignoreCase = true) ->
+            "Samsung OneUI variant; usually skip on AYN Thor."
+        else -> null
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FetchAndShowDrivers(
     repoUrl: String,
+    sourceTitle: String,
+    sourceNote: String?,
     bypassValidation: Boolean = false,
     onDismiss: () -> Unit,
     onDownloadDriver: (String, String) -> Unit
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var fetchResult by remember { mutableStateOf<GitHub.FetchResult?>(null) }
-    var fetchedDrivers by remember { mutableStateOf<List<Pair<String, String?>>>(emptyList()) }
+    var fetchedDrivers by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var chosenIndex by remember { mutableIntStateOf(0) }
     val scrollState = rememberScrollState()
     val hasScrolled = remember { derivedStateOf { scrollState.value > 0 } }
@@ -344,7 +472,15 @@ fun FetchAndShowDrivers(
         isLoading = false
 
         if (fetchOutput is GitHub.FetchResult.Success<*>) {
-            fetchedDrivers = fetchOutput.content as List<Pair<String, String?>>
+            fetchedDrivers = when (val content = fetchOutput.content) {
+                is List<*> -> content.mapNotNull { item ->
+                    val pair = item as? Pair<*, *> ?: return@mapNotNull null
+                    val name = pair.first as? String ?: return@mapNotNull null
+                    val url = pair.second as? String ?: return@mapNotNull null
+                    name to url
+                }
+                else -> emptyList()
+            }
             fetchResult = null
         } else {
             fetchResult = fetchOutput
@@ -397,10 +533,17 @@ fun FetchAndShowDrivers(
             ) {
                 Column(modifier = Modifier.padding(vertical = 16.dp)) {
                     Text(
-                        text = stringResource(R.string.drivers),
+                        text = sourceTitle,
                         modifier = Modifier.padding(horizontal = 16.dp),
                         style = MaterialTheme.typography.headlineSmall
                     )
+                    if (!sourceNote.isNullOrBlank()) {
+                        Text(
+                            text = sourceNote,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
 
                     if (hasScrolled.value) {
@@ -413,6 +556,12 @@ fun FetchAndShowDrivers(
                             .heightIn(max = maxHeight)
                             .verticalScroll(scrollState)
                     ) {
+                        if (fetchedDrivers.isEmpty()) {
+                            Text(
+                                "No downloadable ZIP assets found for this source.",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
                         fetchedDrivers.forEachIndexed { index, driver ->
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -423,7 +572,15 @@ fun FetchAndShowDrivers(
                                 RadioButton(
                                     selected = chosenIndex == index,
                                     onClick = { chosenIndex = index })
-                                Text(text = driver.first, modifier = Modifier.padding(start = 8.dp))
+                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                    Text(text = driver.first)
+                                    driverCompatibilityWarning(driver.first)?.let { warning ->
+                                        Text(
+                                            warning,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -441,9 +598,10 @@ fun FetchAndShowDrivers(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(
+                            enabled = fetchedDrivers.isNotEmpty(),
                             onClick = {
                                 val chosenDriver = fetchedDrivers[chosenIndex]
-                                onDownloadDriver(chosenDriver.second!!, chosenDriver.first)
+                                onDownloadDriver(chosenDriver.second, chosenDriver.first)
                                 onDismiss()
                             }, modifier = Modifier.padding(end = 16.dp)
                         ) {
@@ -466,8 +624,9 @@ fun DownloadDriver(
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
+            val safeName = chosenName.replace(Regex("[^A-Za-z0-9._ -]"), "_")
             val driverFile =
-                File("${context.getExternalFilesDir(null)!!.absolutePath}/cache/$chosenName.zip")
+                File("${context.getExternalFilesDir(null)!!.absolutePath}/cache/$safeName.zip")
             if (!driverFile.exists()) driverFile.createNewFile()
 
             val result =
