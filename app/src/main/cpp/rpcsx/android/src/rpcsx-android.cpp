@@ -1,5 +1,6 @@
 #include "Crypto/unpkg.h"
 #include "Crypto/unself.h"
+#include "Emu/CPU/Backends/AArch64/AArch64Common.h"
 #include "Emu/Audio/Cubeb/CubebBackend.h"
 #include "Emu/Audio/Null/NullAudioBackend.h"
 #include "Emu/Cell/PPUAnalyser.h"
@@ -80,6 +81,11 @@
 #include <thread>
 #include <vector>
 
+#if defined(__ANDROID__) && defined(__aarch64__)
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
+#endif
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wreturn-type-c-linkage"
 
@@ -94,6 +100,141 @@ static std::atomic<ANativeWindow *> g_native_window;
 extern std::string g_android_executable_dir;
 extern std::string g_android_config_dir;
 extern std::string g_android_cache_dir;
+
+static void append_feature(std::vector<const char *> &features, unsigned long caps,
+                           unsigned long flag, const char *name) {
+  if ((caps & flag) != 0) {
+    features.push_back(name);
+  }
+}
+
+static std::string join_features(const std::vector<const char *> &features) {
+  std::string result;
+
+  for (std::size_t i = 0; i < features.size(); i++) {
+    if (i != 0) {
+      result += ", ";
+    }
+
+    result += features[i];
+  }
+
+  return result.empty() ? "none reported" : result;
+}
+
+static void append_thor_feature_doctor(std::string &result) {
+  const std::string configured_cpu = g_cfg.core.llvm_cpu;
+  const char *detected_cpu = fallback_cpu_detection();
+
+  fmt::append(result,
+              "Thor Feature Doctor:\nConfigured LLVM CPU: %s\nDetected LLVM "
+              "fallback CPU: %s\n",
+              configured_cpu.empty() ? "(generic/auto)" : configured_cpu,
+              detected_cpu);
+
+#if defined(__aarch64__)
+  fmt::append(result, "AArch64 core topology:\n");
+
+  const auto thread_count = std::thread::hardware_concurrency();
+  if (thread_count == 0) {
+    fmt::append(result, "- unknown\n");
+  } else {
+    for (u32 cpu = 0; cpu < thread_count; cpu++) {
+      const char *name = aarch64::get_cpu_name(static_cast<int>(cpu));
+      fmt::append(result, "- CPU%u: %s\n", cpu, name ? name : "unknown");
+    }
+  }
+
+#if defined(__ANDROID__)
+  const unsigned long hwcap = getauxval(AT_HWCAP);
+  const unsigned long hwcap2 = getauxval(AT_HWCAP2);
+  std::vector<const char *> hwcap_features;
+  std::vector<const char *> hwcap2_features;
+
+#ifdef HWCAP_FP
+  append_feature(hwcap_features, hwcap, HWCAP_FP, "FP");
+#endif
+#ifdef HWCAP_ASIMD
+  append_feature(hwcap_features, hwcap, HWCAP_ASIMD, "ASIMD/NEON");
+#endif
+#ifdef HWCAP_AES
+  append_feature(hwcap_features, hwcap, HWCAP_AES, "AES");
+#endif
+#ifdef HWCAP_PMULL
+  append_feature(hwcap_features, hwcap, HWCAP_PMULL, "PMULL");
+#endif
+#ifdef HWCAP_SHA1
+  append_feature(hwcap_features, hwcap, HWCAP_SHA1, "SHA1");
+#endif
+#ifdef HWCAP_SHA2
+  append_feature(hwcap_features, hwcap, HWCAP_SHA2, "SHA2");
+#endif
+#ifdef HWCAP_CRC32
+  append_feature(hwcap_features, hwcap, HWCAP_CRC32, "CRC32");
+#endif
+#ifdef HWCAP_ATOMICS
+  append_feature(hwcap_features, hwcap, HWCAP_ATOMICS, "ATOMICS");
+#endif
+#ifdef HWCAP_FPHP
+  append_feature(hwcap_features, hwcap, HWCAP_FPHP, "FPHP");
+#endif
+#ifdef HWCAP_ASIMDHP
+  append_feature(hwcap_features, hwcap, HWCAP_ASIMDHP, "ASIMDHP");
+#endif
+#ifdef HWCAP_ASIMDRDM
+  append_feature(hwcap_features, hwcap, HWCAP_ASIMDRDM, "ASIMDRDM");
+#endif
+#ifdef HWCAP_ASIMDDP
+  append_feature(hwcap_features, hwcap, HWCAP_ASIMDDP, "ASIMDDP/dotprod");
+#endif
+#ifdef HWCAP_ASIMDFHM
+  append_feature(hwcap_features, hwcap, HWCAP_ASIMDFHM, "ASIMDFHM");
+#endif
+#ifdef HWCAP_SVE
+  append_feature(hwcap_features, hwcap, HWCAP_SVE, "SVE");
+#endif
+
+#ifdef HWCAP2_DCPODP
+  append_feature(hwcap2_features, hwcap2, HWCAP2_DCPODP, "DCPODP");
+#endif
+#ifdef HWCAP2_SVE2
+  append_feature(hwcap2_features, hwcap2, HWCAP2_SVE2, "SVE2");
+#endif
+#ifdef HWCAP2_SVEI8MM
+  append_feature(hwcap2_features, hwcap2, HWCAP2_SVEI8MM, "SVEI8MM");
+#endif
+#ifdef HWCAP2_SVEBF16
+  append_feature(hwcap2_features, hwcap2, HWCAP2_SVEBF16, "SVEBF16");
+#endif
+#ifdef HWCAP2_I8MM
+  append_feature(hwcap2_features, hwcap2, HWCAP2_I8MM, "I8MM");
+#endif
+#ifdef HWCAP2_BF16
+  append_feature(hwcap2_features, hwcap2, HWCAP2_BF16, "BF16");
+#endif
+#ifdef HWCAP2_RNG
+  append_feature(hwcap2_features, hwcap2, HWCAP2_RNG, "RNG");
+#endif
+#ifdef HWCAP2_BTI
+  append_feature(hwcap2_features, hwcap2, HWCAP2_BTI, "BTI");
+#endif
+#ifdef HWCAP2_MTE
+  append_feature(hwcap2_features, hwcap2, HWCAP2_MTE, "MTE");
+#endif
+
+  fmt::append(result, "HWCAP: 0x%llx (%s)\n",
+              static_cast<unsigned long long>(hwcap),
+              join_features(hwcap_features));
+  fmt::append(result, "HWCAP2: 0x%llx (%s)\n",
+              static_cast<unsigned long long>(hwcap2),
+              join_features(hwcap2_features));
+#endif
+#else
+  fmt::append(result, "AArch64 core topology: unavailable on this build\n");
+#endif
+
+  fmt::append(result, "\n");
+}
 
 static std::mutex g_virtual_pad_mutex;
 static std::shared_ptr<Pad> g_virtual_pad;
@@ -2525,8 +2666,8 @@ extern "C" bool _rpcsx_installKey(JNIEnv *env, int fd, long progressId,
 extern "C" std::string _rpcsx_systemInfo() {
   std::string result;
 
-  fmt::append(result, "%s\n\nLLVM CPU: %s\n\n", utils::get_system_info(),
-              fallback_cpu_detection());
+  fmt::append(result, "%s\n\n", utils::get_system_info());
+  append_thor_feature_doctor(result);
 
   {
     vk::instance device_enum_context;
