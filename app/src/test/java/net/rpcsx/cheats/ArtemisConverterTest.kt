@@ -27,6 +27,49 @@ class ArtemisConverterTest {
     }
 
     @Test
+    fun convertStaticWriteSizesAndSerialWrites() {
+        val text = """
+            Static Mixed Writes
+            0
+            Artemis Team
+            0 00000010 FF
+            0 00000012 1234
+            0 00000014 12345678
+            0 00000018 1122334455667788
+            4 00000030 99
+            4 00000002 00000003
+            #
+            """.trimIndent()
+        val entry = CheatEntry(
+            titleIds = listOf("BLUS00000"),
+            title = "Static Test",
+            version = "01.00",
+            size = "test",
+            fileName = "Static Test BLUS00000"
+        )
+
+        val preview = ArtemisConverter.buildPatchPreview(
+            entry = entry,
+            cheatText = text,
+            titleId = "BLUS00000",
+            ppuHash = "TEST_HASH",
+            gameTitle = "Static Test"
+        )
+
+        assertEquals(1, preview.installedCheats)
+        assertEquals(0, preview.skippedCheats)
+        assertEquals(8, preview.installedWrites)
+        assertTrue(preview.patchBody.contains("- [ be8, 0x00000010, 0xFF ]"))
+        assertTrue(preview.patchBody.contains("- [ be16, 0x00000012, 0x1234 ]"))
+        assertTrue(preview.patchBody.contains("- [ be32, 0x00000014, 0x12345678 ]"))
+        assertTrue(preview.patchBody.contains("- [ be32, 0x00000018, 0x11223344 ]"))
+        assertTrue(preview.patchBody.contains("- [ be32, 0x0000001C, 0x55667788 ]"))
+        assertTrue(preview.patchBody.contains("- [ be8, 0x00000030, 0x99 ]"))
+        assertTrue(preview.patchBody.contains("- [ be8, 0x00000032, 0x99 ]"))
+        assertTrue(preview.patchBody.contains("- [ be8, 0x00000034, 0x99 ]"))
+    }
+
+    @Test
     fun parseAobAndPlaceholderCodesAsUnsupported() {
         val text = """
             AoB Patch

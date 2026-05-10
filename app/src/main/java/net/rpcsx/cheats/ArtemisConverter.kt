@@ -11,7 +11,8 @@ import java.util.Locale
 
 data class ArtemisWrite(
     val address: String,
-    val value: String
+    val value: String,
+    val patchType: String = "be32"
 )
 
 data class ArtemisAobPatch(
@@ -59,8 +60,12 @@ object ArtemisConverter {
     private const val CONFIG_SECTION_START = "# RPCSX Easy Artemis patch config start"
     private const val CONFIG_SECTION_END = "# RPCSX Easy Artemis patch config end"
 
-    private val fixedWriteRegex = Regex("^0\\s+([0-9A-Fa-f]{8})\\s+([0-9A-Fa-f]{8})(?:\\s+.*)?$")
+    private const val MAX_STATIC_OPS_PER_CHEAT = 4096
+
+    private val fixedWriteRegex = Regex("^0\\s+([0-9A-Fa-f]{8})\\s+([0-9A-Fa-f]+)(?:\\s+.*)?$")
+    private val serialWriteRegex = Regex("^4\\s+([0-9A-Fa-f]{8})\\s+([0-9A-Fa-f]+)(?:\\s+.*)?$")
     private val aobReplaceRegex = Regex("^B\\s+([0-9A-Fa-f]{16,})\\s+([0-9A-Fa-f]{16,})(?:\\s+.*)?$", RegexOption.IGNORE_CASE)
+    private val codeTokenRegex = Regex("^[0-9A-Fa-f]{1,2}$")
     private val whitespaceRegex = Regex("\\s+")
 
     fun parse(text: String): List<ArtemisCheat> {
@@ -194,11 +199,11 @@ object ArtemisConverter {
         val skippedCheats = readyPreview.skippedCheats + artemisPreview.skippedCheats
         val installedWrites = readyPreview.installedWrites + artemisPreview.installedWrites
         val message = if (installedCheats == 0) {
-            "No fixed-write Artemis cheats were installable for $titleId. Risky AoB/configurable codes were skipped."
+            "No static Artemis cheats were installable for $titleId. Risky AoB/configurable/runtime codes were skipped."
         } else if (artemisEntries.isNotEmpty() && ppuHash == null) {
             "Installed ${readyPreview.installedCheats} RPCS3-ready cheats for next boot. Boot $titleId once to learn the PPU hash before converting ${artemisEntries.size} Artemis entries."
         } else {
-            "Installed $installedCheats cheats ($installedWrites patch ops) for next boot. Skipped $skippedCheats risky or unsupported cheats."
+            "Installed $installedCheats cheats ($installedWrites static patch ops) for next boot. Skipped $skippedCheats risky or runtime-only cheats."
         }
 
         ArtemisInstallResult(
@@ -332,20 +337,52 @@ object ArtemisConverter {
         val aobPatches = mutableListOf<ArtemisAobPatch>()
         val unsupported = linkedSetOf<String>()
 
-        lines.drop(codeStart).forEach { line ->
+        val codeLines = lines.drop(codeStart)
+        var index = 0
+        while (index < codeLines.size) {
+            val line = codeLines[index]
             when {
                 line.startsWith(";") -> Unit
                 line.startsWith("[") -> unsupported += "Configurable placeholder values need a user choice before conversion."
                 fixedWriteRegex.matches(line) -> {
-                    val match = fixedWriteRegex.matchEntire(line) ?: return@forEach
-                    writes += ArtemisWrite(
-                        address = match.groupValues[1].uppercase(Locale.US),
-                        value = match.groupValues[2].uppercase(Locale.US)
+                    val match = fixedWriteRegex.matchEntire(line) ?: error("Fixed write regex precheck failed")
+                    val parsedWrites = staticWritesForValue(
+                        address = match.groupValues[1],
+                        value = match.groupValues[2]
                     )
+                    if (parsedWrites == null) {
+                        unsupported += "Static write value is not byte-aligned hex."
+                    } else if (writes.size + parsedWrites.size > MAX_STATIC_OPS_PER_CHEAT) {
+                        unsupported += "Static write payload is too large for a generated patch."
+                    } else {
+                        writes += parsedWrites
+                    }
+                }
+
+                serialWriteRegex.matches(line) -> {
+                    val match = serialWriteRegex.matchEntire(line) ?: error("Serial write regex precheck failed")
+                    val nextLine = codeLines.getOrNull(index + 1)
+                    val repeatMatch = nextLine?.let { serialWriteRegex.matchEntire(it) }
+                    if (repeatMatch == null) {
+                        unsupported += "Serial static write is missing its repeat descriptor."
+                    } else {
+                        val parsedWrites = serialWrites(
+                            address = match.groupValues[1],
+                            value = match.groupValues[2],
+                            addressStep = repeatMatch.groupValues[1],
+                            count = repeatMatch.groupValues[2]
+                        )
+                        if (parsedWrites == null) {
+                            unsupported += "Serial static write is invalid or too large."
+                        } else {
+                            writes += parsedWrites
+                        }
+                        index++
+                    }
                 }
 
                 aobReplaceRegex.matches(line) -> {
-                    val match = aobReplaceRegex.matchEntire(line) ?: return@forEach
+                    val match = aobReplaceRegex.matchEntire(line) ?: error("AoB regex precheck failed")
                     val searchPattern = match.groupValues[1].uppercase(Locale.US)
                     val replacePattern = match.groupValues[2].uppercase(Locale.US)
                     if (searchPattern.length == replacePattern.length && searchPattern.length % 2 == 0) {
@@ -363,6 +400,7 @@ object ArtemisConverter {
                     unsupported += "Unsupported Artemis code type: ${firstToken(line)}"
                 }
             }
+            index++
         }
 
         if (aobPatches.isNotEmpty()) {
@@ -382,9 +420,78 @@ object ArtemisConverter {
         )
     }
 
+    private fun staticWritesForValue(address: String, value: String): List<ArtemisWrite>? {
+        val normalizedAddress = address.uppercase(Locale.US)
+        val normalizedValue = value.uppercase(Locale.US)
+
+        if (normalizedValue.length % 2 != 0) {
+            return null
+        }
+
+        val startAddress = normalizedAddress.toLongOrNull(16) ?: return null
+        val byteCount = normalizedValue.length / 2
+        val chunkBytes = when {
+            byteCount == 1 -> 1
+            byteCount == 2 && startAddress % 2L == 0L -> 2
+            byteCount >= 4 && byteCount % 4 == 0 && startAddress % 4L == 0L -> 4
+            byteCount >= 2 && byteCount % 2 == 0 && startAddress % 2L == 0L -> 2
+            else -> 1
+        }
+        val patchType = when (chunkBytes) {
+            1 -> "be8"
+            2 -> "be16"
+            else -> "be32"
+        }
+
+        val chunks = normalizedValue.chunked(chunkBytes * 2)
+        if (chunks.size > MAX_STATIC_OPS_PER_CHEAT) {
+            return null
+        }
+
+        return chunks.mapIndexed { index, chunk ->
+            ArtemisWrite(
+                address = (startAddress + index.toLong() * chunkBytes)
+                    .toString(16)
+                    .uppercase(Locale.US)
+                    .padStart(8, '0'),
+                value = chunk,
+                patchType = patchType
+            )
+        }
+    }
+
+    private fun serialWrites(
+        address: String,
+        value: String,
+        addressStep: String,
+        count: String
+    ): List<ArtemisWrite>? {
+        val startAddress = address.toLongOrNull(16) ?: return null
+        val step = addressStep.toLongOrNull(16) ?: return null
+        val repeatCount = count.toIntOrNull(16) ?: return null
+        if (repeatCount <= 0 || repeatCount > MAX_STATIC_OPS_PER_CHEAT) {
+            return null
+        }
+
+        val writes = mutableListOf<ArtemisWrite>()
+        repeat(repeatCount) { index ->
+            val targetAddress = (startAddress + step * index)
+                .toString(16)
+                .uppercase(Locale.US)
+                .padStart(8, '0')
+            val parsedWrites = staticWritesForValue(targetAddress, value) ?: return null
+            writes += parsedWrites
+            if (writes.size > MAX_STATIC_OPS_PER_CHEAT) {
+                return null
+            }
+        }
+
+        return writes
+    }
+
     private fun looksLikeCodeLine(line: String): Boolean {
         val first = firstToken(line)
-        return first.length == 1 && first[0].uppercaseChar() in "0123456789ABCDEF"
+        return codeTokenRegex.matches(first)
     }
 
     private fun firstToken(line: String): String =
@@ -415,7 +522,7 @@ object ArtemisConverter {
                 appendLine("    Notes: ${yamlScalar("Converted from AldosTools Artemis NCL by RPCSX Easy. Source: ${item.entry.fileName}.")}")
                 appendLine("    Patch:")
                 item.cheat.writes.forEach { write ->
-                    appendLine("      - [ be32, 0x${write.address}, 0x${write.value} ]")
+                    appendLine("      - [ ${write.patchType}, 0x${write.address}, 0x${write.value} ]")
                 }
             }
         }.trimEnd()

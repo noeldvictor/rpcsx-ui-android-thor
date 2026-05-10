@@ -12,6 +12,9 @@ TITLE_ID_RE = re.compile(r"\b[A-Z]{4}\d{5}\b")
 PPU_HASH_RE = re.compile(r"^PPU-([0-9A-Fa-f]{40}):\s*$")
 PATCH_OP_RE = re.compile(r"-\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\]")
 LOAD_RE = re.compile(r"-\s*\[\s*load\s*,\s*\*([A-Za-z0-9_]+)\s*\]")
+FIXED_WRITE_RE = re.compile(r"^0\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]+)(?:\s+.*)?$")
+SERIAL_WRITE_RE = re.compile(r"^4\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]+)(?:\s+.*)?$")
+MAX_STATIC_OPS_PER_CHEAT = 4096
 IGNORED_PATCH_KEYS = {
     "Games",
     "Author",
@@ -221,6 +224,129 @@ def insert_cheat(conn, group_id, name, author="", notes="", risk="safe"):
     return cur.lastrowid
 
 
+def looks_like_code_line(line):
+    first = line.strip().split(maxsplit=1)[0] if line.strip() else ""
+    return re.fullmatch(r"[0-9A-Fa-f]{1,2}", first) is not None
+
+
+def static_write_count(address, value):
+    value = value.upper()
+    if len(value) % 2:
+        return None
+
+    try:
+        start = int(address, 16)
+    except ValueError:
+        return None
+
+    byte_count = len(value) // 2
+    if byte_count == 1:
+        chunk_bytes = 1
+    elif byte_count == 2 and start % 2 == 0:
+        chunk_bytes = 2
+    elif byte_count >= 4 and byte_count % 4 == 0 and start % 4 == 0:
+        chunk_bytes = 4
+    elif byte_count >= 2 and byte_count % 2 == 0 and start % 2 == 0:
+        chunk_bytes = 2
+    else:
+        chunk_bytes = 1
+
+    op_count = (byte_count + chunk_bytes - 1) // chunk_bytes
+    if op_count > MAX_STATIC_OPS_PER_CHEAT:
+        return None
+    return op_count
+
+
+def serial_write_count(address, value, address_step, count):
+    try:
+        repeat_count = int(count, 16)
+    except ValueError:
+        return None
+    if repeat_count <= 0 or repeat_count > MAX_STATIC_OPS_PER_CHEAT:
+        return None
+
+    per_repeat = static_write_count(address, value)
+    if per_repeat is None:
+        return None
+
+    total = per_repeat * repeat_count
+    if total > MAX_STATIC_OPS_PER_CHEAT:
+        return None
+    return total
+
+
+def artemis_static_counts(text):
+    convertible = 0
+    risky = 0
+    blocks = re.split(r"\n#", text.replace("\r\n", "\n").replace("\r", "\n"))
+    for raw_block in blocks:
+        lines = [line.strip() for line in raw_block.split("\n") if line.strip() and line.strip() != "#"]
+        if not lines:
+            continue
+
+        code_start = 1
+        if len(lines) > 1 and re.fullmatch(r"[01]", lines[1]):
+            code_start = 2
+        if code_start < len(lines) and not looks_like_code_line(lines[code_start]):
+            code_start += 1
+
+        writes = 0
+        unsupported = set()
+        code_lines = lines[code_start:]
+        i = 0
+        while i < len(code_lines):
+            line = code_lines[i]
+            if line.startswith(";"):
+                i += 1
+                continue
+            if line.startswith("["):
+                unsupported.add("placeholder")
+                i += 1
+                continue
+
+            fixed = FIXED_WRITE_RE.match(line)
+            if fixed:
+                count = static_write_count(fixed.group(1), fixed.group(2))
+                if count is None:
+                    unsupported.add("invalid_static")
+                else:
+                    writes += count
+                i += 1
+                continue
+
+            serial = SERIAL_WRITE_RE.match(line)
+            if serial:
+                next_line = code_lines[i + 1] if i + 1 < len(code_lines) else ""
+                repeat = SERIAL_WRITE_RE.match(next_line)
+                if repeat:
+                    count = serial_write_count(
+                        serial.group(1),
+                        serial.group(2),
+                        repeat.group(1),
+                        repeat.group(2),
+                    )
+                    if count is None:
+                        unsupported.add("invalid_serial")
+                    else:
+                        writes += count
+                    i += 2
+                    continue
+                unsupported.add("invalid_serial")
+                i += 1
+                continue
+
+            if looks_like_code_line(line):
+                unsupported.add("runtime_or_unsupported")
+            i += 1
+
+        if writes and not unsupported:
+            convertible += 1
+        elif writes or unsupported:
+            risky += 1
+
+    return convertible, risky
+
+
 def add_aldos(conn, assets_dir):
     index_path = assets_dir / "aldos_index.json"
     ncl_dir = assets_dir / "ncl"
@@ -239,6 +365,15 @@ def add_aldos(conn, assets_dir):
         if ids:
             game_id = upsert_game(conn, ids[0], entry["title"], entry.get("version") or None)
 
+        asset_name = entry.get("assetName")
+        text = ""
+        if asset_name:
+            file_path = ncl_dir / asset_name
+            if file_path.exists():
+                text = file_path.read_text(encoding="utf-8", errors="replace")
+                entry["convertibleCount"], entry["riskyCount"] = artemis_static_counts(text)
+                insert_raw_file(conn, source_id, entry["fileName"], f"cheats/ncl/{asset_name}", text)
+
         group_id = insert_group(conn, game_id, source_id, entry, "artemis_ncl")
         insert_group_title_ids(conn, group_id, ids)
         cheat_id = insert_cheat(
@@ -248,13 +383,6 @@ def add_aldos(conn, assets_dir):
             notes="Converted on install from bundled Artemis NCL.",
             risk="mixed" if (entry.get("riskyCount") or 0) else "safe",
         )
-        asset_name = entry.get("assetName")
-        text = ""
-        if asset_name:
-            file_path = ncl_dir / asset_name
-            if file_path.exists():
-                text = file_path.read_text(encoding="utf-8", errors="replace")
-                insert_raw_file(conn, source_id, entry["fileName"], f"cheats/ncl/{asset_name}", text)
         conn.execute(
             "INSERT INTO patches(cheat_id, raw_yaml) VALUES (?, ?)",
             (cheat_id, text),

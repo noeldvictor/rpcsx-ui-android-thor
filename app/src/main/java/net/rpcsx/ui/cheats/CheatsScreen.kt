@@ -296,7 +296,7 @@ private fun CheatInstallCard(
             }
             Text(
                 if (selectedCount == 0) {
-                    "No selected entries. Install all fixed cheats or pick entries below."
+                    "No selected entries. Install all static cheats or pick entries below."
                 } else {
                     "$selectedCount selected entries will be converted to next-boot RPCSX patches."
                 },
@@ -419,7 +419,7 @@ private fun CheatPreview(
                     if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
                         "${summary.first} RPCS3-ready patches, ${summary.second} risky/unsupported."
                     } else {
-                        "${summary.first} fixed-write cheats convertible, ${summary.second} risky/unsupported skipped."
+                        "${summary.first} static cheats convertible, ${summary.second} risky/runtime skipped."
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
