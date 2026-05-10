@@ -108,6 +108,15 @@ fun CheatsScreen(
     } else {
         CheatRepository.search(query)
     }
+    LaunchedEffect(game?.info?.path, query, baseEntries.joinToString("|") { it.fileName }) {
+        val selected = selectedEntry
+        if (selected != null && baseEntries.none { it.fileName == selected.fileName }) {
+            selectedEntry = null
+        } else if (game != null && query.isBlank() && selected == null) {
+            selectedEntry = baseEntries.firstOrNull()
+        }
+    }
+
     val selectionVersion = selectionNonce
     val installEntries = if (game != null && selectionVersion >= 0) {
         CheatSelectionRepository.enabledEntries(context, gameKey, matchedEntries)
@@ -423,6 +432,26 @@ private fun CheatPreview(
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
+                if (entry.format != CheatRepository.FORMAT_RPCS3_PATCH) {
+                    val cheats = ArtemisConverter.parse(text)
+                    if (cheats.isNotEmpty()) {
+                        Text("Cheats", style = MaterialTheme.typography.labelLarge)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            cheats.take(80).forEach { cheat ->
+                                Text(
+                                    "${if (cheat.isSupported) "Safe" else "Risky"} - ${cheat.name}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            if (cheats.size > 80) {
+                                Text(
+                                    "${cheats.size - 80} more cheats in raw NCL below.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                }
                 Button(onClick = onCopy) {
                     Icon(painter = painterResource(id = R.drawable.ic_description), contentDescription = null)
                     Spacer(Modifier.width(8.dp))

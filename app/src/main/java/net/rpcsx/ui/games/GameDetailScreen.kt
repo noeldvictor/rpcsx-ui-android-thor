@@ -142,7 +142,7 @@ fun GameDetailScreen(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Cheat database", style = MaterialTheme.typography.titleMedium)
                     Text("${matchedCheats.size} matching entries")
-                    Text("$fixedCheatCount fixed-write cheats, $riskyCheatCount risky/unsupported")
+                    Text("$fixedCheatCount static cheats, $riskyCheatCount risky/runtime")
                     Text("Patch status: ${PatchHashRepository.statusText(hashStatus)}")
                     hashStatus.ppuHash?.let { Text("PPU hash: $it", style = MaterialTheme.typography.bodySmall) }
                     if (hashStatus.ppuHash == null && hashStatus.titleId != null) {
@@ -180,7 +180,7 @@ fun GameDetailScreen(
                     ) {
                         Icon(painter = painterResource(id = R.drawable.ic_build), contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isInstalling) "Installing..." else "Install All Fixed Cheats")
+                        Text(if (isInstalling) "Installing..." else "Install All Safe Cheats")
                     }
                     if (isInstalling) {
                         CircularProgressIndicator()
@@ -196,7 +196,7 @@ fun GameDetailScreen(
 
             Spacer(Modifier.height(4.dp))
             Text(
-                "Live cheat toggles need a native RPCSX bridge. Artemis fixed-write cheats can be installed as next-boot patches.",
+                "Live cheat toggles need a native RPCSX bridge. Artemis static cheats can be installed as next-boot patches.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
