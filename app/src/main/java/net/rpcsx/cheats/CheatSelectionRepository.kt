@@ -27,5 +27,5 @@ object CheatSelectionRepository {
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun key(gameKey: String, entry: CheatEntry): String =
-        "${gameKey}:${entry.fileName}"
+        "${gameKey}:${entry.fileName}:${entry.cheatIndex ?: "all"}:${entry.cheatName.orEmpty()}"
 }

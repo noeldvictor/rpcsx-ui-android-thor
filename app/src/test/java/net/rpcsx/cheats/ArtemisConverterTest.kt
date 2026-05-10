@@ -70,6 +70,47 @@ class ArtemisConverterTest {
     }
 
     @Test
+    fun convertOnlySelectedVirtualArtemisCheat() {
+        val text = """
+            First Cheat
+            0
+            Artemis Team
+            0 00001000 11111111
+            #
+            Second Cheat
+            0
+            Artemis Team
+            0 00002000 22222222
+            #
+            """.trimIndent()
+        val entry = CheatEntry(
+            titleIds = listOf("BLUS00000"),
+            title = "Static Test",
+            version = "01.00",
+            size = "1 static patch op",
+            fileName = "Static Test BLUS00000",
+            cheatName = "Second Cheat",
+            cheatIndex = 1
+        )
+
+        val preview = ArtemisConverter.buildPatchPreview(
+            entry = entry,
+            cheatText = text,
+            titleId = "BLUS00000",
+            ppuHash = "TEST_HASH",
+            gameTitle = "Static Test"
+        )
+
+        assertEquals(1, preview.installedCheats)
+        assertEquals(0, preview.skippedCheats)
+        assertEquals(1, preview.installedWrites)
+        assertTrue(preview.patchBody.contains("Second Cheat"))
+        assertTrue(preview.patchBody.contains("- [ be32, 0x00002000, 0x22222222 ]"))
+        assertFalse(preview.patchBody.contains("First Cheat"))
+        assertFalse(preview.patchBody.contains("0x00001000"))
+    }
+
+    @Test
     fun parseAobAndPlaceholderCodesAsUnsupported() {
         val text = """
             AoB Patch

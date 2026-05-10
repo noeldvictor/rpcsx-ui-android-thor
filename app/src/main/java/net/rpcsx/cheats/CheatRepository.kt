@@ -31,7 +31,9 @@ data class CheatEntry(
     val format: String = "artemis_ncl",
     val patchHash: String? = null,
     val readyPatchBody: String? = null,
-    val readyConfigBody: String? = null
+    val readyConfigBody: String? = null,
+    val cheatName: String? = null,
+    val cheatIndex: Int? = null
 )
 
 object CheatRepository {
@@ -135,6 +137,35 @@ object CheatRepository {
     }
 
     fun hasCheats(game: Game): Boolean = matches(game).isNotEmpty()
+
+    suspend fun expandEntries(context: Context, sourceEntries: List<CheatEntry>): List<CheatEntry> =
+        withContext(Dispatchers.IO) {
+            sourceEntries.flatMap { entry ->
+                if (entry.format == FORMAT_RPCS3_PATCH) {
+                    listOf(entry)
+                } else {
+                    val text = getCheatText(context, entry)
+                    val cheats = ArtemisConverter.parse(text)
+                    if (cheats.isEmpty()) {
+                        listOf(entry)
+                    } else {
+                        cheats.mapIndexed { index, cheat ->
+                            entry.copy(
+                                size = if (cheat.isSupported) {
+                                    "${cheat.writes.size} static patch ops"
+                                } else {
+                                    "Risky/runtime"
+                                },
+                                convertibleCount = if (cheat.isSupported) 1 else 0,
+                                riskyCount = if (cheat.isSupported) 0 else 1,
+                                cheatName = cheat.name,
+                                cheatIndex = index
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
     suspend fun getCheatText(context: Context, entry: CheatEntry): String = withContext(Dispatchers.IO) {
         if (entry.format == FORMAT_RPCS3_PATCH) {

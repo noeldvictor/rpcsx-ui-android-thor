@@ -225,6 +225,21 @@ object ArtemisConverter {
         return cheats.count { it.isSupported } to cheats.count { !it.isSupported }
     }
 
+    fun selectedCheats(text: String, entry: CheatEntry): List<ArtemisCheat> {
+        val cheats = parse(text)
+        val cheatIndex = entry.cheatIndex
+        if (cheatIndex != null) {
+            return cheats.getOrNull(cheatIndex)?.let { listOf(it) }.orEmpty()
+        }
+
+        val cheatName = entry.cheatName
+        if (!cheatName.isNullOrBlank()) {
+            return cheats.filter { it.name == cheatName }
+        }
+
+        return cheats
+    }
+
     internal fun buildPatchPreview(
         entry: CheatEntry,
         cheatText: String,
@@ -248,7 +263,7 @@ object ArtemisConverter {
         var skippedCheats = 0
 
         entries.forEach { (entry, text) ->
-            parse(text).forEach { cheat ->
+            selectedCheats(text, entry).forEach { cheat ->
                 if (cheat.isSupported) {
                     patchItems += PatchItem(entry = entry, cheat = cheat)
                 } else {
@@ -631,7 +646,8 @@ object ArtemisConverter {
         val cheat: ArtemisCheat
     ) {
         fun description(index: Int): String {
-            return "Artemis: ${entry.title} - ${cheat.name} [${index + 1}]"
+            val suffix = if (entry.cheatIndex == null) " [${index + 1}]" else ""
+            return "Artemis: ${entry.title} - ${cheat.name}$suffix"
         }
     }
 }

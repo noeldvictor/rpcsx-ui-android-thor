@@ -76,6 +76,7 @@ fun CheatsScreen(
     var patchStatus by remember(game?.info?.path) {
         mutableStateOf(game?.let { PatchHashRepository.cachedStatus(context, it) })
     }
+    var expandedGameEntries by remember(game?.info?.path) { mutableStateOf<List<CheatEntry>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     val gameKey = game?.let { GameIdentity.primaryTitleId(it) ?: it.info.path } ?: "global"
@@ -103,15 +104,25 @@ fun CheatsScreen(
     }
 
     val matchedEntries = game?.let { CheatRepository.matches(it) }.orEmpty()
-    val baseEntries = if (query.isBlank() && game != null) {
-        matchedEntries
-    } else {
-        CheatRepository.search(query)
+    LaunchedEffect(game?.info?.path, matchedEntries.joinToString("|") { it.fileName }) {
+        expandedGameEntries = if (game == null || matchedEntries.isEmpty()) {
+            emptyList()
+        } else {
+            runCatching { CheatRepository.expandEntries(context, matchedEntries) }
+                .getOrElse { matchedEntries }
+        }
     }
-    LaunchedEffect(game?.info?.path, query, baseEntries.joinToString("|") { it.fileName }) {
+
+    val gameEntries = if (game != null) expandedGameEntries.ifEmpty { matchedEntries } else emptyList()
+    val baseEntries = when {
+        game != null && query.isBlank() -> gameEntries
+        game != null -> filterEntries(gameEntries, query)
+        else -> CheatRepository.search(query)
+    }
+    LaunchedEffect(game?.info?.path, query, baseEntries.joinToString("|") { entryKey(it) }) {
         val selected = selectedEntry
-        if (selected != null && baseEntries.none { it.fileName == selected.fileName }) {
-            selectedEntry = null
+        if (selected != null && baseEntries.none { entryKey(it) == entryKey(selected) }) {
+            selectedEntry = if (game != null && query.isBlank()) baseEntries.firstOrNull() else null
         } else if (game != null && query.isBlank() && selected == null) {
             selectedEntry = baseEntries.firstOrNull()
         }
@@ -119,7 +130,7 @@ fun CheatsScreen(
 
     val selectionVersion = selectionNonce
     val installEntries = if (game != null && selectionVersion >= 0) {
-        CheatSelectionRepository.enabledEntries(context, gameKey, matchedEntries)
+        CheatSelectionRepository.enabledEntries(context, gameKey, gameEntries)
     } else {
         emptyList()
     }
@@ -192,7 +203,7 @@ fun CheatsScreen(
             if (game != null) {
                 CheatInstallCard(
                     selectedCount = installEntries.size,
-                    matchedCount = matchedEntries.size,
+                    matchedCount = gameEntries.size,
                     patchStatus = patchStatus,
                     isInstalling = isInstalling,
                     result = installResult,
@@ -218,7 +229,7 @@ fun CheatsScreen(
                             installResult = null
                             installError = null
                             try {
-                                installResult = ArtemisConverter.installEntries(context, game, matchedEntries)
+                                installResult = ArtemisConverter.installEntries(context, game, gameEntries)
                                 patchStatus = PatchHashRepository.learnFromLogs(context, game)
                             } catch (e: Exception) {
                                 installError = e.message ?: "Failed to install Artemis patches"
@@ -245,10 +256,13 @@ fun CheatsScreen(
                 )
             }
 
-            Text("${baseEntries.size} entries", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "${baseEntries.size} ${if (game != null) "cheats" else "entries"}",
+                style = MaterialTheme.typography.labelLarge
+            )
 
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(baseEntries, key = { it.fileName }) { entry ->
+                items(baseEntries, key = { entryKey(it) }) { entry ->
                     CheatEntryCard(
                         entry = entry,
                         enabled = CheatSelectionRepository.isEnabled(context, gameKey, entry),
@@ -305,9 +319,9 @@ private fun CheatInstallCard(
             }
             Text(
                 if (selectedCount == 0) {
-                    "No selected entries. Install all static cheats or pick entries below."
+                    "No selected cheats. Install all safe cheats or pick cheats below."
                 } else {
-                    "$selectedCount selected entries will be converted to next-boot RPCSX patches."
+                    "$selectedCount selected cheats will be converted to next-boot RPCSX patches."
                 },
                 style = MaterialTheme.typography.bodySmall
             )
@@ -373,7 +387,10 @@ private fun CheatEntryCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(entry.title, style = MaterialTheme.typography.titleMedium)
+                Text(entry.cheatName ?: entry.title, style = MaterialTheme.typography.titleMedium)
+                if (entry.cheatName != null) {
+                    Text(entry.title, style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     entry.titleIds.ifEmpty { listOf("No title ID") }.joinToString(),
                     style = MaterialTheme.typography.bodySmall
@@ -384,13 +401,19 @@ private fun CheatEntryCard(
                 )
                 if (entry.convertibleCount != null && entry.riskyCount != null) {
                     Text(
-                        "${entry.convertibleCount} safe, ${entry.riskyCount} risky",
+                        if (entry.cheatName != null) {
+                            if (entry.convertibleCount > 0) "Safe static patch" else "Risky/runtime"
+                        } else {
+                            "${entry.convertibleCount} safe, ${entry.riskyCount} risky"
+                        },
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
                 Text(
                     if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
                         "RPCS3-ready patch"
+                    } else if (entry.cheatName != null) {
+                        "Artemis NCL cheat"
                     } else {
                         "Artemis NCL"
                     },
@@ -414,7 +437,10 @@ private fun CheatPreview(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(entry.fileName, style = MaterialTheme.typography.titleMedium)
+            Text(entry.cheatName ?: entry.fileName, style = MaterialTheme.typography.titleMedium)
+            if (entry.cheatName != null) {
+                Text(entry.fileName, style = MaterialTheme.typography.bodySmall)
+            }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (text == null && error == null) {
                 CircularProgressIndicator()
@@ -422,7 +448,8 @@ private fun CheatPreview(
                 val summary = if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
                     (entry.convertibleCount ?: 1) to (entry.riskyCount ?: 0)
                 } else {
-                    ArtemisConverter.summarize(text)
+                    val cheats = ArtemisConverter.selectedCheats(text, entry)
+                    cheats.count { it.isSupported } to cheats.count { !it.isSupported }
                 }
                 Text(
                     if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) {
@@ -433,7 +460,7 @@ private fun CheatPreview(
                     style = MaterialTheme.typography.bodySmall
                 )
                 if (entry.format != CheatRepository.FORMAT_RPCS3_PATCH) {
-                    val cheats = ArtemisConverter.parse(text)
+                    val cheats = ArtemisConverter.selectedCheats(text, entry)
                     if (cheats.isNotEmpty()) {
                         Text("Cheats", style = MaterialTheme.typography.labelLarge)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -475,3 +502,21 @@ private fun CheatPreview(
         }
     }
 }
+
+private fun filterEntries(entries: List<CheatEntry>, query: String): List<CheatEntry> {
+    val needle = query.trim().lowercase()
+    if (needle.isBlank()) {
+        return entries
+    }
+
+    return entries.filter { entry ->
+        entry.cheatName.orEmpty().lowercase().contains(needle) ||
+            entry.title.lowercase().contains(needle) ||
+            entry.version.lowercase().contains(needle) ||
+            entry.fileName.lowercase().contains(needle) ||
+            entry.titleIds.any { it.lowercase().contains(needle) }
+    }
+}
+
+private fun entryKey(entry: CheatEntry): String =
+    "${entry.fileName}:${entry.cheatIndex ?: "all"}:${entry.cheatName.orEmpty()}"
