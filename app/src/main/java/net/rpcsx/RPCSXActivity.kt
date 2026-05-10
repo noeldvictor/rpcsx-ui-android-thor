@@ -12,6 +12,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.isGone
 import androidx.core.view.isInvisible
 import androidx.core.view.updateLayoutParams
 import net.rpcsx.databinding.ActivityRpcs3Binding
@@ -43,6 +44,7 @@ class RPCSXActivity : Activity() {
         unregisterUsbEventListener = listenUsbEvents(this)
         enableFullScreenImmersive()
 
+        binding.oscToggle.isGone = ThorPerformanceProfile.isThorTarget()
         applyScreenControlsVisibility(ControllerOverlayPrefs.showScreenControls())
         binding.oscToggle.setOnClickListener {
             val showControls = binding.padOverlay.isInvisible
