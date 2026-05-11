@@ -75,7 +75,7 @@ Captured from the connected AYN Thor test device.
 - Compiled-cache storage is user-selectable from Settings between app-owned internal-fast storage and app-owned SD-card storage when Android exposes it, with warnings about slower cache reads and large migrations.
 - Trim/Optimize is intentionally visible as an experimental tool path rather than hidden developer plumbing.
 - Thor-specific performance research lives under `report/`, including PPU compile/cache notes and Snapdragon 8 Gen 2 targeting.
-- Thor compile relief is now applied on AYN/Thor/kalama targets: LLVM compile workers are capped, the old Android `cortex-a34` startup override is removed so the CPU target stays generic, SPU cache/precompile are kept on, and the process is pinned to Thor performance cores where Android allows it.
+- Thor compile relief is now applied on AYN/Thor/kalama targets: LLVM compile workers are capped, the old Android `cortex-a34` startup override is removed, the JIT uses a Thor-safe `cortex-a78` target when bundled LLVM would otherwise pick SVE-enabled Armv9 cores, SPU cache/precompile are kept on, and the process is pinned to Thor performance cores where Android allows it.
 - System Info now includes a first `Thor Feature Doctor` readout: configured LLVM CPU, fallback CPU, AArch64 core names, and Android HWCAP/HWCAP2 feature flags.
 - Custom GPU driver download is Thor-guided: the driver screen shows Adreno 740 notes, curated Turnip GitHub sources, per-source warnings, and separate release assets instead of hiding everything behind one repo URL.
 - On-screen controller controls are easy to hide for Thor's physical controls; Thor targets default to hidden while non-Thor devices keep the old visible default.

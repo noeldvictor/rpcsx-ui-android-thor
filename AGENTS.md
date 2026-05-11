@@ -174,8 +174,8 @@ Use detected topology for presets. Do not assume every Snapdragon 8 Gen 2 device
 
 - Already cleaned up Android-side hotspots: folder scan queues use `ArrayDeque`, URI file copy uses a larger stream buffer, ISO metadata avoids duplicate directory parsing, patch status file checks are cached, and `games.json` saves are debounced.
 - Current Thor compile preset lives at `app/src/main/java/net/rpcsx/performance/ThorPerformanceProfile.kt`.
-- The preset is applied on AYN/Thor/kalama targets: `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and blank/generic `Use LLVM CPU`.
-- Do not reintroduce an Android startup override that writes `Use LLVM CPU = cortex-a34`; that silently downgrades Thor JIT codegen and can undo the profile on later launches.
+- The preset is applied on AYN/Thor/kalama targets: `Max LLVM Compile Threads=4`, `LLVM Precompilation=true`, `SPU Cache=true`, and `Use LLVM CPU=cortex-a78`.
+- Do not reintroduce an Android startup override that writes `Use LLVM CPU = cortex-a34`; that silently downgrades Thor JIT codegen and can undo the profile on later launches. Do not let this vendored LLVM use `cortex-a510`, `cortex-a710`, `cortex-a715`, or `cortex-x3` on Thor unless Android reports SVE: those Armv9 CPU definitions enable SVE/SVE2 in LLVM while Snapdragon 8 Gen 2 reports dotprod/i8mm/bf16 but not SVE.
 - Native wrapper affinity helper: `RPCSX.setProcessAffinityMask(0xF8)` pins current app/native threads to Thor CPUs `3-7` where Android permits it. MainActivity applies it before core initialization so early native threads can inherit the performance-core mask. This is a first-pass compile relief, not a replacement for native PPU/SPU/RSX per-class affinity.
 - The first `Thor Feature Doctor` slice lives in `_rpcsx_systemInfo()` inside `app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp`; the existing System Info dialog now reports configured LLVM CPU, fallback CPU, AArch64 per-core names, and Android HWCAP/HWCAP2 feature flags.
 - Custom GPU driver UI lives at `app/src/main/java/net/rpcsx/ui/drivers/GpuDriversScreen.kt`.

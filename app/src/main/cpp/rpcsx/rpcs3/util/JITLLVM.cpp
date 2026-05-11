@@ -13,6 +13,11 @@
 
 #include <charconv>
 
+#if defined(ARCH_ARM64) && defined(ANDROID)
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
+#endif
+
 LOG_CHANNEL(jit_log, "JIT");
 
 #ifdef LLVM_AVAILABLE
@@ -49,6 +54,51 @@ LOG_CHANNEL(jit_log, "JIT");
 
 #ifdef ARCH_ARM64
 #include "Emu/CPU/Backends/AArch64/AArch64Common.h"
+#endif
+
+#if defined(ARCH_ARM64) && defined(ANDROID)
+static bool android_arm64_has_sve()
+{
+#ifdef HWCAP_SVE
+	return (getauxval(AT_HWCAP) & HWCAP_SVE) != 0;
+#else
+	return false;
+#endif
+}
+
+static bool android_arm64_cpu_enables_sve_by_default(const std::string& cpu)
+{
+	return cpu == "cortex-a510" ||
+		cpu == "cortex-a520" ||
+		cpu == "cortex-a520ae" ||
+		cpu == "cortex-a710" ||
+		cpu == "cortex-a715" ||
+		cpu == "cortex-a720" ||
+		cpu == "cortex-a720ae" ||
+		cpu == "cortex-a725" ||
+		cpu == "cortex-x2" ||
+		cpu == "cortex-x3" ||
+		cpu == "cortex-x4" ||
+		cpu == "cortex-x925" ||
+		cpu == "neoverse-n2" ||
+		cpu == "neoverse-n3" ||
+		cpu == "neoverse-v2" ||
+		cpu == "neoverse-v3" ||
+		cpu == "neoverse-v3ae";
+}
+
+static std::string sanitize_android_arm64_llvm_cpu(std::string cpu)
+{
+	std::transform(cpu.begin(), cpu.end(), cpu.begin(), ::tolower);
+
+	if (!android_arm64_has_sve() && android_arm64_cpu_enables_sve_by_default(cpu))
+	{
+		jit_log.warning("LLVM CPU '%s' enables SVE in bundled LLVM, but Android HWCAP does not report SVE. Using cortex-a78 for Thor-safe JIT code.", cpu);
+		return "cortex-a78";
+	}
+
+	return cpu;
+}
 #endif
 
 const bool jit_initialize = []() -> bool
@@ -585,6 +635,10 @@ std::string jit_compiler::cpu(const std::string& _cpu)
 			m_cpu = "alderlake";
 		}
 	}
+
+#if defined(ARCH_ARM64) && defined(ANDROID)
+	m_cpu = sanitize_android_arm64_llvm_cpu(m_cpu);
+#endif
 
 	return m_cpu;
 }
