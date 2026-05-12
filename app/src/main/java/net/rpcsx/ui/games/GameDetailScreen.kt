@@ -181,6 +181,14 @@ fun GameDetailScreen(
                             }
                         }
                     },
+                    onReplaceCustomConfig = {
+                        scope.launch {
+                            settingsStatus = withContext(Dispatchers.IO) {
+                                GameSettingsDatabase.replaceCustomWithRecommendedConfig(context, game)
+                            }
+                            settingsCacheMessage = "Old per-game settings were backed up. Recommended settings will apply next start."
+                        }
+                    },
                     onUpdateCache = {
                         scope.launch {
                             settingsCacheUpdating = true
@@ -348,6 +356,7 @@ private fun RecommendedSettingsCard(
     cacheMessage: String?,
     cacheUpdating: Boolean,
     onToggle: (Boolean) -> Unit,
+    onReplaceCustomConfig: () -> Unit,
     onUpdateCache: () -> Unit
 ) {
     val switchEnabled = status?.hasProfile == true && !status.customConfigPresent
@@ -356,7 +365,7 @@ private fun RecommendedSettingsCard(
         status == null -> "Checking recommended settings."
         status.titleId == null -> "No title ID detected yet."
         !status.hasProfile -> "No recommended settings for ${status.titleId} yet."
-        status.customConfigPresent -> "Custom settings already exist; leaving them alone."
+        status.customConfigPresent -> "Custom per-game settings are blocking recommended settings."
         status.enabled && status.managedConfigStale -> "On; newer cached settings will be saved next start."
         status.enabled && status.applied -> "On for next start."
         status.enabled -> "On; will be saved when you start the game."
@@ -398,6 +407,19 @@ private fun RecommendedSettingsCard(
 
             if (status?.databaseTimestamp != null && status.hasProfile) {
                 Text("Profile ${status.titleId}", style = MaterialTheme.typography.bodySmall)
+            }
+
+            if (status?.customConfigPresent == true) {
+                Text(
+                    "Use this when a game is slow, broken, or stuck on old settings. The current per-game file is backed up first.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Button(
+                    onClick = onReplaceCustomConfig,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Apply Recommended Settings")
+                }
             }
 
             if (cacheUpdating) {

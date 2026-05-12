@@ -210,6 +210,18 @@ object GameSettingsDatabase {
     }
 
     fun applyRecommendedConfig(context: Context, game: Game): Status {
+        return applyRecommendedConfig(context, game, replaceCustomConfig = false)
+    }
+
+    fun replaceCustomWithRecommendedConfig(context: Context, game: Game): Status {
+        return applyRecommendedConfig(context, game, replaceCustomConfig = true)
+    }
+
+    private fun applyRecommendedConfig(
+        context: Context,
+        game: Game,
+        replaceCustomConfig: Boolean
+    ): Status {
         val titleId = GameIdentity.primaryTitleId(game) ?: return statusForGame(context, game)
         val database = loadDatabase(context) ?: return statusForGame(context, game).copy(
             error = "Settings cache could not be loaded"
@@ -227,7 +239,18 @@ object GameSettingsDatabase {
         return runCatching {
             val existing = target.takeIf { it.exists() }?.readText()
             if (existing != null && !existing.startsWith(MANAGED_HEADER)) {
-                statusForGame(context, game)
+                if (!replaceCustomConfig) {
+                    statusForGame(context, game)
+                } else {
+                    backupCustomConfig(target)
+                    val body = buildManagedConfig(titleId, database.timestamp, config)
+                    target.writeText(body)
+                    prefs(context)
+                        .edit()
+                        .putBoolean(DISABLED_PREFIX + titleId, false)
+                        .apply()
+                    statusForGame(context, game)
+                }
             } else {
                 val body = buildManagedConfig(titleId, database.timestamp, config)
                 if (existing != body) {
@@ -241,6 +264,23 @@ object GameSettingsDatabase {
             Log.w(TAG, "Could not apply recommended settings for $titleId", it)
             statusForGame(context, game).copy(error = it.message)
         }
+    }
+
+    private fun backupCustomConfig(target: File) {
+        if (!target.exists()) {
+            return
+        }
+
+        val backupName = buildString {
+            append(target.nameWithoutExtension)
+            append(".user-backup-")
+            append(System.currentTimeMillis())
+            if (target.extension.isNotBlank()) {
+                append('.')
+                append(target.extension)
+            }
+        }
+        target.copyTo(File(target.parentFile, backupName), overwrite = false)
     }
 
     private fun removeManagedConfig(titleId: String) {
