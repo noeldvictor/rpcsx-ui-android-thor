@@ -54,6 +54,7 @@ Useful verification commands:
 - For black screens, crashes, or weird per-game boot behavior, use the Thor debug tools before guessing.
 - Live debug loop while the user plays: `.\tools\start_thor_debug_stream.ps1 -ClearLogcat -Launch -Label GAME`, then repeatedly run `.\tools\summarize_thor_debug_stream.ps1 -Latest` from Codex while the user reproduces the issue, then `.\tools\stop_thor_debug_stream.ps1 -Latest`.
 - Live streams write to ignored `debug-captures/*-stream/` folders. Watch `summary-latest.md`, `logcat-live.txt`, `rpcsx-live-tail.txt`, and `live-summary/now-*.txt`.
+- Newer live streams also write `memory-live.txt`; use it to catch RSS/swap growth before Android's low-memory killer takes the app down.
 - Clean repro flow: `.\tools\collect_thor_debug.ps1 -Prepare -Launch -Label GAME`, reproduce on Thor, then `.\tools\collect_thor_debug.ps1 -Label GAME`.
 - Do not run `-Prepare` after a crash; it clears logcat and destroys the freshest evidence.
 - Captures are written under ignored `debug-captures/` folders. Start analysis with `logcat-interesting.txt`, `device-files/cache/RPCSX.log`, `rpcsx-log-errors.txt`, `activity.txt`, and `cache-summary.txt`.
@@ -61,6 +62,7 @@ Useful verification commands:
 - For black screen while alive, check whether the title is still compiling, installing game data under `dev_hdd0/game`, waiting on a PS3 dialog, or producing audio without RSX frames.
 - If a live stream is active, do not leave it running forever after the repro. Stop it, inspect the final pull, then commit fixes or notes.
 - A live Thor repro on 2026-05-11 caught `BLUS31386` crashing in PPU LLVM precompile with `memory_commit(... errno=12=Out of memory)` and an LLVM `report_bad_alloc_error` tombstone. Treat first-boot full PPU precompilation as risky on Thor; the fork defaults should prefer `LLVM Precompilation=false` and low compile-thread pressure unless a guarded cache-builder mode is being tested.
+- A later 2026-05-11 repro showed Android LMK killing `net.rpcsx.easy` near 6 GB RSS while a direct ISO game opened multi-GB `/dev_bdvd/PS3_GAME/USRDIR/archives/*.files` payloads. The vendored ISO device must stream file reads; do not reintroduce whole-file ISO reads or whole-file ISO extraction copies for large game data.
 
 ## Device Testing
 

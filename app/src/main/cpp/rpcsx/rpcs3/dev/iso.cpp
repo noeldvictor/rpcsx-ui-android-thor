@@ -2,15 +2,165 @@
 #include "iso.hpp"
 #include "util/File.h"
 #include "util/types.hpp"
+#include <algorithm>
 #include <bit>
 #include <cctype>
 #include <codecvt>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <memory>
 #include <string>
+#include <vector>
+
+namespace
+{
+class iso_file_view final : public fs::file_base
+{
+	block_dev* m_dev;
+	iso::DirEntry m_entry;
+	u64 m_pos = 0;
+
+public:
+	iso_file_view(block_dev* dev, const iso::DirEntry& entry)
+		: m_dev(dev), m_entry(entry)
+	{
+	}
+
+	fs::stat_t get_stat() override
+	{
+		fs::stat_t stat = m_entry.to_fs_stat();
+		stat.is_writable = false;
+		return stat;
+	}
+
+	bool trunc(u64) override
+	{
+		fs::g_tls_error = fs::error::acces;
+		return false;
+	}
+
+	u64 read(void* buffer, u64 count) override
+	{
+		const u64 result = read_at(m_pos, buffer, count);
+		m_pos += result;
+		return result;
+	}
+
+	u64 read_at(u64 offset, void* buffer, u64 count) override
+	{
+		if (!m_dev || !buffer || count == 0)
+		{
+			return 0;
+		}
+
+		const u64 file_size = size();
+		if (offset >= file_size)
+		{
+			return 0;
+		}
+
+		const u64 readable = std::min<u64>(count, file_size - offset);
+		const std::size_t block_size = m_dev->block_size();
+		const std::size_t first_lba = m_entry.lba.value();
+		std::vector<u8> scratch;
+		u8* out = static_cast<u8*>(buffer);
+		u64 total = 0;
+
+		while (total < readable)
+		{
+			const u64 file_offset = offset + total;
+			const std::size_t block_index = static_cast<std::size_t>(file_offset / block_size);
+			const std::size_t block_offset = static_cast<std::size_t>(file_offset % block_size);
+			const u64 remaining = readable - total;
+
+			if (block_offset == 0 && remaining >= block_size)
+			{
+				const std::size_t block_count =
+					static_cast<std::size_t>(std::min<u64>(remaining / block_size, 64));
+				const std::size_t read_blocks =
+					m_dev->read(first_lba + block_index, out + total, block_count);
+
+				if (read_blocks == 0)
+				{
+					break;
+				}
+
+				total += read_blocks * block_size;
+
+				if (read_blocks < block_count)
+				{
+					break;
+				}
+
+				continue;
+			}
+
+			if (scratch.empty())
+			{
+				scratch.resize(block_size);
+			}
+
+			if (m_dev->read(first_lba + block_index, scratch.data(), 1) != 1)
+			{
+				break;
+			}
+
+			const u64 chunk = std::min<u64>(remaining, block_size - block_offset);
+			std::memcpy(out + total, scratch.data() + block_offset, chunk);
+			total += chunk;
+		}
+
+		return total;
+	}
+
+	u64 write(const void*, u64) override
+	{
+		fs::g_tls_error = fs::error::acces;
+		return 0;
+	}
+
+	u64 write_at(u64, const void*, u64) override
+	{
+		fs::g_tls_error = fs::error::acces;
+		return 0;
+	}
+
+	u64 seek(s64 offset, fs::seek_mode whence) override
+	{
+		s64 new_pos = -1;
+
+		if (whence == fs::seek_set)
+		{
+			new_pos = offset;
+		}
+		else if (whence == fs::seek_cur)
+		{
+			new_pos = static_cast<s64>(m_pos) + offset;
+		}
+		else if (whence == fs::seek_end)
+		{
+			new_pos = static_cast<s64>(size()) + offset;
+		}
+
+		if (new_pos < 0)
+		{
+			fs::g_tls_error = fs::error::inval;
+			return umax;
+		}
+
+		m_pos = static_cast<u64>(new_pos);
+		return m_pos;
+	}
+
+	u64 size() override
+	{
+		return m_entry.length.value();
+	}
+};
+} // namespace
 
 static std::string u16_ne_to_string(const char16_t* bytes, std::size_t count)
 {
@@ -378,16 +528,7 @@ fs::file iso_dev::read_file(const iso::DirEntry& entry)
 		return fs::make_stream<std::vector<std::uint8_t>>();
 	}
 
-	auto block_size = m_dev->block_size();
-	auto block_count = (entry.length.value() + block_size - 1) / block_size;
-
-	std::vector<std::uint8_t> data;
-	data.resize(block_count * block_size);
-	if (!m_dev->read(entry.lba.value(), data.data(), block_count))
-	{
-		return {};
-	}
-
-	data.resize(entry.length.value());
-	return fs::make_stream(std::move(data), entry.to_fs_stat());
+	fs::file result;
+	result.reset(std::make_unique<iso_file_view>(m_dev.get(), entry));
+	return result;
 }

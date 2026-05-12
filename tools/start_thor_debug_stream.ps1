@@ -34,10 +34,12 @@ Write-ThorStandardSnapshot $Adb $SnapshotDir $Package "start"
 
 $remoteRoot = "/storage/emulated/0/Android/data/$Package/files"
 $tailCommand = "while true; do echo '--- RPCSX.log tail '`$(date '+%Y-%m-%dT%H:%M:%S%z')' ---'; tail -n 120 $remoteRoot/cache/RPCSX.log 2>/dev/null; sleep $PollSeconds; done"
+$memoryCommand = "while true; do ts=`$(date '+%Y-%m-%dT%H:%M:%S%z'); app_pid=`$(pidof $Package); if [ -n ""`$app_pid"" ]; then echo ""--- memory `$ts pid=`$app_pid ---""; grep -E 'VmSize|VmRSS|VmSwap|RssAnon|RssFile|RssShmem|Threads' /proc/`$app_pid/status 2>/dev/null; dumpsys meminfo $Package 2>/dev/null | grep -E 'TOTAL|Native Heap|Dalvik Heap|Graphics|GL|Other dev|Unknown'; else echo ""--- memory `$ts pid=none ---""; fi; sleep $PollSeconds; done"
 
 $streams = @()
 $streams += Start-ThorAdbStream $Adb $SessionDir "logcat-live" @("logcat", "-v", "threadtime")
 $streams += Start-ThorAdbStream $Adb $SessionDir "rpcsx-live-tail" @("shell", $tailCommand)
+$streams += Start-ThorAdbStream $Adb $SessionDir "memory-live" @("shell", $memoryCommand)
 
 $streams | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $SessionDir "stream-processes.json") -Encoding UTF8
 Write-ThorLatestStream $RepoRoot $SessionDir
@@ -54,6 +56,7 @@ Write-ThorLatestStream $RepoRoot $SessionDir
     "",
     '- `logcat-live.txt`: Android logcat stream',
     '- `rpcsx-live-tail.txt`: repeated tail of RPCSX.log',
+    '- `memory-live.txt`: live RPCSX RSS/swap/thread snapshots',
     '- `snapshots/`: current process, activity, memory, thermal, cache, and game-install state',
     '- `stream-processes.json`: ADB stream process IDs',
     "",

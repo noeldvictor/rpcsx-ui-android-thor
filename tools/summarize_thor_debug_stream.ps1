@@ -90,6 +90,7 @@ if (-not $NoRefresh) {
 
 $logcatPath = Join-Path $SessionDir "logcat-live.txt"
 $rpcsxTailPath = Join-Path $SessionDir "rpcsx-live-tail.txt"
+$memoryLivePath = Join-Path $SessionDir "memory-live.txt"
 $processFile = Join-Path $SessionDir "stream-processes.json"
 $pidPath = Join-Path $SummaryDir "now-pid.txt"
 $activityPath = Join-Path $SummaryDir "now-activity.txt"
@@ -99,6 +100,7 @@ $logcatInteresting = Get-InterestingTail $logcatPath $TailLines
 $rpcsxInteresting = Get-InterestingTail $rpcsxTailPath $TailLines
 $logcatTail = Get-TailText $logcatPath 20
 $rpcsxTail = Get-TailText $rpcsxTailPath 30
+$memoryTail = Get-TailText $memoryLivePath 45
 $allInteresting = @($logcatInteresting + $rpcsxInteresting)
 
 $pidLines = Get-TailText $pidPath 20
@@ -122,10 +124,16 @@ if (Test-Path $processFile) {
     }
 }
 
-$diagnosisLines = @($rpcsxInteresting + $relevantLogcatInteresting)
+$diagnosisLines = @($rpcsxInteresting + $relevantLogcatInteresting + $memoryTail)
 $diagnosis = @()
 if (Test-AnyPattern $diagnosisLines @("FATAL EXCEPTION", "Fatal signal", "SIGSEGV", "SIGABRT", "tombstone", "Abort message")) {
     $diagnosis += "Crash signature present. Preserve this session, stop the stream, and inspect final/logcat plus tombstone lines first."
+}
+if (Test-AnyPattern $diagnosisLines @("lowmemorykiller", "lmkd", "critical pressure", "device is low on memory", "exited due to signal 9", "am_kill")) {
+    $diagnosis += "Android low-memory killer signature is present. Treat this as memory pressure/OOM unless a tombstone also appears."
+}
+if (Test-AnyPattern $memoryTail @("VmRSS:\s*[5-9]\d{6}\s+kB", "VmRSS:\s*\d{8,}\s+kB")) {
+    $diagnosis += "Live RSS is in multi-GB territory. Inspect recent RPCSX file-open and compile lines for the allocation trigger."
 }
 if (Test-AnyPattern $diagnosisLines @("semaphore_acquire has timed out")) {
     $diagnosis += "RSX semaphore timeout seen. Treat as GPU/RSX sync stall candidate before blaming UI."
@@ -153,6 +161,7 @@ $summary.Add("- Session: $SessionDir")
 $summary.Add("- Refreshed: $(Get-Date -Format o)")
 $summary.Add("- Logcat file: $logcatPath")
 $summary.Add("- RPCSX live tail file: $rpcsxTailPath")
+$summary.Add("- Memory live file: $memoryLivePath")
 $summary.Add("")
 $summary.Add("## Stream Processes")
 if ($processStatus.Count -gt 0) {
@@ -199,6 +208,15 @@ $summary.Add("")
 $summary.Add("## Last Raw RPCSX Tail")
 foreach ($line in $rpcsxTail) {
     $summary.Add($line)
+}
+$summary.Add("")
+$summary.Add("## Memory Live Tail")
+if ($memoryTail.Count -gt 0) {
+    foreach ($line in $memoryTail) {
+        $summary.Add($line)
+    }
+} else {
+    $summary.Add("(memory stream not present in this session)")
 }
 $summary.Add("")
 $summary.Add("## Hot Threads")

@@ -2528,6 +2528,45 @@ static bool installRap(JNIEnv *env, fs::file &&file, jlong progressId,
   return true;
 }
 
+static bool copyFileStreamed(const fs::file &source,
+                             const std::filesystem::path &destinationPath,
+                             std::string &errorMessage) {
+  fs::file destination(destinationPath.string(),
+                       fs::create | fs::trunc | fs::write);
+
+  if (!destination) {
+    errorMessage = fmt::format("Failed to open output file: %s",
+                               destinationPath.string());
+    return false;
+  }
+
+  constexpr u64 copyBufferSize = 1024 * 1024;
+  std::vector<std::uint8_t> buffer(copyBufferSize);
+  const u64 totalSize = source.size();
+  u64 copied = 0;
+
+  while (copied < totalSize) {
+    const u64 wanted = std::min<u64>(buffer.size(), totalSize - copied);
+    const u64 read = source.read_at(copied, buffer.data(), wanted);
+
+    if (read == 0) {
+      errorMessage = fmt::format("Short read while copying %s at 0x%llx",
+                                 destinationPath.string(), copied);
+      return false;
+    }
+
+    if (destination.write(buffer.data(), read) != read) {
+      errorMessage =
+          fmt::format("Short write while copying %s", destinationPath.string());
+      return false;
+    }
+
+    copied += read;
+  }
+
+  return true;
+}
+
 static bool installIso(JNIEnv *env, fs::file &&file, jlong progressId) {
   auto optIso = iso_dev::open(std::make_unique<file_view_block_dev>(file));
   Progress progress(env, progressId);
@@ -2643,12 +2682,13 @@ static bool installIso(JNIEnv *env, fs::file &&file, jlong progressId) {
       fs::file file;
       file.reset(std::move(raw_file));
 
-      if (!fs::write_file(entryDestPath,
-                          fs::open_mode::create + fs::open_mode::trunc,
-                          file.to_vector<std::uint8_t>())) {
-        progress.failure(fmt::format("Failed to write file: %s, dest %s",
-                                     entryDestPath.string(),
-                                     destinationPath.string()));
+      std::string copyError;
+      if (!copyFileStreamed(file, entryDestPath, copyError)) {
+        progress.failure(copyError.empty()
+                             ? fmt::format("Failed to copy file: %s, dest %s",
+                                           entryDestPath.string(),
+                                           destinationPath.string())
+                             : copyError);
         return false;
       }
 
