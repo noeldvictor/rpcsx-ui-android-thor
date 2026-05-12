@@ -100,7 +100,7 @@ namespace vk
 		auto dma_sync_region = valid_range;
 		dma_mapping_handle dma_mapping = {0, nullptr};
 
-		auto dma_sync = [&dma_sync_region, &dma_mapping](bool load, bool force = false)
+		auto dma_sync = [&](bool load, bool force = false)
 		{
 			if (dma_mapping.second && !force)
 			{
@@ -131,8 +131,10 @@ namespace vk
 			}
 #endif
 
-			auto working_buffer = vk::get_scratch_buffer(cmd, working_buffer_length);
 			u32 result_offset = 0;
+			auto working_buffer = vk::get_scratch_buffer(cmd, working_buffer_length,
+				VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+				VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
 			VkBufferImageCopy region = {};
 			region.imageSubresource = {src->aspect(), 0, 0, 1};
@@ -220,7 +222,7 @@ namespace vk
 					// Transfer -> Compute barrier
 					vk::insert_buffer_memory_barrier(cmd, working_buffer->value, dst_offset, dma_sync_region.length(),
 						VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-						VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+						VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 				}
 
 				// Prepare payload
@@ -283,8 +285,10 @@ namespace vk
 			if (require_rw_barrier)
 			{
 				vk::insert_buffer_memory_barrier(cmd, working_buffer->value, result_offset, dma_sync_region.length(),
-					VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-					VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+					VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+					VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+					VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT);
 			}
 
 			if (rsx_pitch == real_pitch) [[likely]]
@@ -330,6 +334,13 @@ namespace vk
 			region.bufferOffset = dma_mapping.first;
 			VK_GET_SYMBOL(vkCmdCopyImageToBuffer)(cmd, src->value, src->current_layout, dma_mapping.second->value, 1, &region);
 		}
+
+		// Post-transfer barrier on dma layer
+		vk::insert_buffer_memory_barrier(
+			cmd, dma_mapping.second->value,
+			dma_mapping.first, dma_sync_region.length(),
+			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
 
 		src->pop_layout(cmd);
 
