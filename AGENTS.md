@@ -5,6 +5,7 @@
 - Work directly on `master` only for this repo. Do not create or switch to feature branches for this fork.
 - Remote push target is SSH: `git@github.com:noeldvictor/rpcsx-ui-android-thor.git`.
 - Commit completed work to `master` and push only `origin master`.
+- Commit and push frequently during Thor core work. Make a checkpoint after each buildable native/APK slice, after each on-device install/smoke pass, and before starting risky upstream ports such as SPU reduced-loop or reservation-notifier rewrites.
 - Do not fork extra RPCSX repos for this project; keep Android-side and native/core experiment work in this repo unless the user asks otherwise.
 - Public positioning: this is a personal-use, AI-assisted/vibe-coded AYN Thor experiment. Do not present it as official RPCSX, official AYN, stable, or support-backed.
 
@@ -12,6 +13,7 @@
 
 - The RPCSX core source is checked into this repo as plain files at `app/src/main/cpp/rpcsx`.
 - It is not a Git submodule. Edit the vendored core files directly for Thor experiments.
+- The custom Thor core is in this repo as source, not only on the device and not only in a downloaded APK. Core changes under `app/src/main/cpp/rpcsx` are real repo changes; the debug APK packages them into `lib/arm64-v8a/librpcsx-android.so`.
 - The upstream core's third-party source dependencies are pinned as root repo submodules under `app/src/main/cpp/rpcsx/3rdparty` and `app/src/main/cpp/rpcsx/rpcs3/3rdparty`.
 - These dependency submodules use upstream SSH URLs and exact SHAs from the vendored RPCSX commit. They are source pins, not extra forks in this GitHub account.
 - Initial vendored upstream commit: `e27926d6296e2ce4bd5b0775cb4e4423d9e7cdb6` from `git@github.com:RPCSX/rpcsx.git`.
