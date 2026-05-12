@@ -33,10 +33,9 @@ object GameSettingsDatabase {
             # RPCSX_THOR_PROFILE_OVERRIDE
             # Eternal Sonata stability profile for AYN Thor.
             # Community note: 30 FPS avoids common battle/menu crash paths.
-            # SPURS/thread/audio workarounds are excluded on Thor after local PPU crash testing.
+            # WCB/SPURS/thread/audio workarounds are excluded on Thor after local crash/FPS testing.
             Video:
               Frame limit: 30
-              Write Color Buffers: true
         """.trimIndent()
     )
 
