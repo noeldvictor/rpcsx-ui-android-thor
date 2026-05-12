@@ -47,6 +47,7 @@ $tempFile = Join-Path ([System.IO.Path]::GetTempPath()) "config_BLUS30161.thor.y
 & $adb shell "mkdir -p '$remoteDir'"
 & $adb shell "if [ -f '$remoteConfig' ]; then cp '$remoteConfig' '$remoteBackup'; fi"
 & $adb push $tempFile $remoteConfig
+& $adb shell "chmod 664 '$remoteConfig'"
 
 Remove-Item -LiteralPath $tempFile -Force
 
