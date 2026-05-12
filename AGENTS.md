@@ -26,6 +26,17 @@
 - Current source-core status on 2026-05-10: `.\gradlew.bat ':app:configureCMakeDebug[arm64-v8a]'` succeeds, and `.\gradlew.bat :app:assembleDebug` succeeds after dependency hydration. The bundled debug APK includes `lib/arm64-v8a/librpcsx-android.so` plus `librpcsx-ui-jni.so`; the source-core build is slow and noisy with upstream warnings.
 - Treat core changes as first-class repo changes: edit the vendored files directly, test where possible, then commit and push on `master`.
 
+## Upstream RPCS3 Arm64 Mining
+
+- Do not treat RPCS3's lack of official Android/iOS support as a reason to ignore its arm64 work. Treat upstream RPCS3 arm64 as a playbook to mine, then adapt the ideas to Android lifecycle, JNI/export boundaries, memory pressure, AYN Thor thermals, and Adreno/Vulkan driver reality.
+- Local upstream comparison checkout: `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream`. At the last inspection it was at `cd7cb1c` (`Qt: include territory in language menu labels (#18704)`). The Android vendored RPCSX repo was at `e309e1e` (`Remove risky Eternal Sonata boot settings`).
+- Before inventing Thor-specific native optimizations, diff the vendored core against upstream RPCS3 for `rpcs3/Emu/CPU/Backends/AArch64/*`, `rpcs3/Emu/CPU/CPUTranslator.*`, `rpcs3/Emu/Cell/SPULLVMRecompiler.cpp`, `rpcs3/Emu/Cell/SPUCommonRecompiler.cpp`, `rpcs3/Emu/RSX/*`, `rpcs3/util/sysinfo.*`, and VM/page-size code.
+- Concrete import candidate: upstream RPCS3 now has `m_use_dotprod` / `utils::has_dotprod()` paths that use AArch64 `sdot`/`udot` for SPU `GB`, `GBH`, `GBB`, and `SUMB`. The vendored Android core still visibly has x86 GFNI/AVX/VNNI fast paths for those opcodes but no matching dotprod path. This is a real speedhack target for Thor's Snapdragon 8 Gen 2 if Android reports `HWCAP_ASIMDDP`.
+- Keep using the existing Thor Feature Doctor output in `_rpcsx_systemInfo()` to verify HWCAP/HWCAP2 before enabling imported Arm64 fast paths. The important feature flag for the dot-product SPU work is `ASIMDDP/dotprod`; `I8MM` and `BF16` are also worth recording, but do not imply SVE.
+- Upstream arm64 lessons to mine include LLVM tail-call/JIT gateway handling, AArch64 signal/exception decoding, 16K page-size and dirty-page tracking behavior, non-x86 RSX fallback fixes, and Linux/macOS/Windows-on-ARM build/runtime fixes. Android may need different wrappers, but the emulator-side ideas are still relevant.
+- Avoid framing this work as "RPCS3 for Android exists." The correct framing is: this fork borrows proven upstream RPCS3 arm64 compiler/runtime techniques and ports/adapts them into a personal AYN Thor Android experiment.
+- If an upstream arm64 idea depends on platform APIs unavailable on Android, document the missing API and build an Android-specific substitute where practical. Do not discard the idea until the emulator-level mechanism has been understood.
+
 ## Local Build Environment
 
 - Repo path: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android`
