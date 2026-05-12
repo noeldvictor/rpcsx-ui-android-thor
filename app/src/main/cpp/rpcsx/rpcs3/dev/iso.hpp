@@ -6,7 +6,9 @@
 #include "util/types.hpp"
 #include <bit>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace iso
 {
@@ -96,6 +98,7 @@ namespace iso
 		File = 1 << 2,
 		ExtAttr = 1 << 3,
 		Permissions = 1 << 4,
+		MultiExtent = 1 << 7,
 	};
 
 	constexpr DirEntryFlags operator&(DirEntryFlags lhs, DirEntryFlags rhs)
@@ -204,6 +207,43 @@ namespace iso
 	};
 
 #pragma pack(pop)
+
+	struct Entry
+	{
+		std::vector<DirEntry> extents;
+
+		bool is_directory() const
+		{
+			return !extents.empty() &&
+				(extents.front().flags & DirEntryFlags::Directory) != DirEntryFlags::None;
+		}
+
+		u64 size() const
+		{
+			u64 result = 0;
+			for (const auto& extent : extents)
+			{
+				result += extent.length.value();
+			}
+			return result;
+		}
+
+		fs::stat_t to_fs_stat() const
+		{
+			fs::stat_t result = extents.empty() ? fs::stat_t{} : extents.front().to_fs_stat();
+			result.is_directory = is_directory();
+			result.size = size();
+			return result;
+		}
+
+		fs::dir_entry to_fs_entry(std::string name) const
+		{
+			fs::dir_entry entry = {};
+			static_cast<fs::stat_t&>(entry) = to_fs_stat();
+			entry.name = std::move(name);
+			return entry;
+		}
+	};
 } // namespace iso
 
 class iso_dev final : public fs::device_base
@@ -236,7 +276,7 @@ public:
 private:
 	bool initialize();
 
-	std::optional<iso::DirEntry> open_entry(std::string_view path);
-	std::pair<std::vector<iso::DirEntry>, std::vector<std::string>> read_dir(const iso::DirEntry& entry);
-	fs::file read_file(const iso::DirEntry& entry);
+	std::optional<iso::Entry> open_entry(std::string_view path);
+	std::pair<std::vector<iso::Entry>, std::vector<std::string>> read_dir(const iso::Entry& entry);
+	fs::file read_file(const iso::Entry& entry);
 };

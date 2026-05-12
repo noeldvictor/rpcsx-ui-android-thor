@@ -20,18 +20,19 @@ namespace
 class iso_file_view final : public fs::file_base
 {
 	block_dev* m_dev;
-	iso::DirEntry m_entry;
+	std::vector<iso::DirEntry> m_extents;
 	u64 m_pos = 0;
 
 public:
-	iso_file_view(block_dev* dev, const iso::DirEntry& entry)
-		: m_dev(dev), m_entry(entry)
+	iso_file_view(block_dev* dev, const iso::Entry& entry)
+		: m_dev(dev), m_extents(entry.extents)
 	{
 	}
 
 	fs::stat_t get_stat() override
 	{
-		fs::stat_t stat = m_entry.to_fs_stat();
+		fs::stat_t stat = m_extents.empty() ? fs::stat_t{} : m_extents.front().to_fs_stat();
+		stat.size = size();
 		stat.is_writable = false;
 		return stat;
 	}
@@ -64,17 +65,23 @@ public:
 
 		const u64 readable = std::min<u64>(count, file_size - offset);
 		const std::size_t block_size = m_dev->block_size();
-		const std::size_t first_lba = m_entry.lba.value();
 		std::vector<u8> scratch;
 		u8* out = static_cast<u8*>(buffer);
 		u64 total = 0;
 
 		while (total < readable)
 		{
-			const u64 file_offset = offset + total;
-			const std::size_t block_index = static_cast<std::size_t>(file_offset / block_size);
-			const std::size_t block_offset = static_cast<std::size_t>(file_offset % block_size);
-			const u64 remaining = readable - total;
+			auto [extent, extent_offset] = extent_at(offset + total);
+			if (!extent)
+			{
+				break;
+			}
+
+			const u64 remaining = std::min<u64>(
+				readable - total, extent->length.value() - extent_offset);
+			const std::size_t block_index = static_cast<std::size_t>(extent_offset / block_size);
+			const std::size_t block_offset = static_cast<std::size_t>(extent_offset % block_size);
+			const std::size_t first_lba = extent->lba.value();
 
 			if (block_offset == 0 && remaining >= block_size)
 			{
@@ -157,7 +164,30 @@ public:
 
 	u64 size() override
 	{
-		return m_entry.length.value();
+		u64 result = 0;
+		for (const auto& extent : m_extents)
+		{
+			result += extent.length.value();
+		}
+
+		return result;
+	}
+
+private:
+	std::pair<const iso::DirEntry*, u64> extent_at(u64 offset) const
+	{
+		for (const auto& extent : m_extents)
+		{
+			const u64 extent_size = extent.length.value();
+			if (offset < extent_size)
+			{
+				return {&extent, offset};
+			}
+
+			offset -= extent_size;
+		}
+
+		return {nullptr, 0};
 	}
 };
 } // namespace
@@ -311,7 +341,7 @@ std::unique_ptr<fs::file_base> iso_dev::open(const std::string& path, rx::EnumBi
 		return {};
 	}
 
-	if ((optEntry->flags & iso::DirEntryFlags::Directory) == iso::DirEntryFlags::Directory)
+	if (optEntry->is_directory())
 	{
 		fs::g_tls_error = fs::error::isdir;
 		return {};
@@ -329,7 +359,7 @@ std::unique_ptr<fs::dir_base> iso_dev::open_dir(const std::string& path)
 		return {};
 	}
 
-	if ((optEntry->flags & iso::DirEntryFlags::Directory) != iso::DirEntryFlags::Directory)
+	if (!optEntry->is_directory())
 	{
 		fs::g_tls_error = fs::error::exist;
 		return {};
@@ -346,15 +376,18 @@ std::unique_ptr<fs::dir_base> iso_dev::open_dir(const std::string& path)
 	return std::make_unique<fs::virtual_dir>(std::move(result_items));
 }
 
-std::optional<iso::DirEntry>
+std::optional<iso::Entry>
 iso_dev::open_entry(std::string_view path)
 {
 	if (path == "/" || path == "\\" || path.empty())
 	{
-		return m_root_dir;
+		iso::Entry root;
+		root.extents.push_back(m_root_dir);
+		return root;
 	}
 
-	auto item = m_root_dir;
+	iso::Entry item;
+	item.extents.push_back(m_root_dir);
 
 	auto isStringEqNoCase = [](std::string_view lhs, std::string_view rhs)
 	{
@@ -383,8 +416,7 @@ iso_dev::open_entry(std::string_view path)
 			continue;
 		}
 
-		if ((item.flags & iso::DirEntryFlags::Directory) !=
-			iso::DirEntryFlags::Directory)
+		if (!item.is_directory())
 		{
 			return {};
 		}
@@ -423,107 +455,135 @@ iso_dev::open_entry(std::string_view path)
 	return item;
 }
 
-std::pair<std::vector<iso::DirEntry>, std::vector<std::string>>
-iso_dev::read_dir(const iso::DirEntry& entry)
+std::pair<std::vector<iso::Entry>, std::vector<std::string>>
+iso_dev::read_dir(const iso::Entry& entry)
 {
-	if ((entry.flags & iso::DirEntryFlags::Directory) !=
-		iso::DirEntryFlags::Directory)
+	if (!entry.is_directory())
 	{
 		return {};
 	}
 
 	auto block_size = m_dev->block_size();
-	auto total_block_count = (entry.length.value() + block_size - 1) / block_size;
-	auto total_buffer_block_count = std::min<std::size_t>(total_block_count, 10);
-
-	std::vector<std::byte> buffer(total_buffer_block_count * block_size);
-	auto first_block = entry.lba.value();
-
-	std::vector<iso::DirEntry> isoEntries;
+	std::vector<iso::Entry> isoEntries;
 	std::vector<std::string> names;
 
-	for (std::size_t block = first_block, end = first_block + total_block_count;
-		block < end;)
+	for (const auto& dir_extent : entry.extents)
 	{
-		auto block_count =
-			m_dev->read(block, buffer.data(), total_buffer_block_count);
-		block += block_count;
-
-		std::size_t buffer_offset = 0;
-		std::size_t buffer_size = block_count * block_size;
-
-		while (buffer_offset < buffer_size)
+		auto total_block_count = (dir_extent.length.value() + block_size - 1) / block_size;
+		auto total_buffer_block_count = std::min<std::size_t>(total_block_count, 10);
+		if (total_buffer_block_count == 0)
 		{
-			auto item = reinterpret_cast<const iso::DirEntry*>(buffer.data() +
-															   buffer_offset);
-			if (item->entry_length == 0)
+			continue;
+		}
+
+		std::vector<std::byte> buffer(total_buffer_block_count * block_size);
+		auto first_block = dir_extent.lba.value();
+
+		for (std::size_t block = first_block, end = first_block + total_block_count;
+			block < end;)
+		{
+			auto block_count =
+				m_dev->read(block, buffer.data(), total_buffer_block_count);
+			if (block_count == 0)
 			{
-				buffer_offset += block_size;
-				buffer_offset &= ~(block_size - 1);
-				continue;
+				break;
 			}
 
-			auto filename_end =
-				sizeof(iso::DirEntry) +
-				((item->filename_length + 1) & ~static_cast<std::size_t>(1));
+			block += block_count;
 
-			if (item->entry_length < filename_end)
+			std::size_t buffer_offset = 0;
+			std::size_t buffer_size = block_count * block_size;
+
+			while (buffer_offset < buffer_size)
 			{
+				auto item = reinterpret_cast<const iso::DirEntry*>(buffer.data() +
+																   buffer_offset);
+				if (item->entry_length == 0)
+				{
+					buffer_offset += block_size;
+					buffer_offset &= ~(block_size - 1);
+					continue;
+				}
+
+				auto filename_end =
+					sizeof(iso::DirEntry) +
+					((item->filename_length + 1) & ~static_cast<std::size_t>(1));
+
+				if (item->entry_length < filename_end)
+				{
+					buffer_offset += item->entry_length;
+					continue;
+				}
+
 				buffer_offset += item->entry_length;
-				continue;
-			}
 
-			buffer_offset += item->entry_length;
-
-			if (item->filename_length == 0 ||
-				item->filename_length + sizeof(iso::DirEntry) > item->entry_length)
-			{
-				continue;
-			}
-
-			auto filename =
-				item->filename_length > 1 ? decodeString({reinterpret_cast<const char*>(item + 1),
-															 item->filename_length},
-												m_encoding) :
-											std::string{};
-
-			if (item->filename_length == 1)
-			{
-				char c = *reinterpret_cast<const char*>(item + 1);
-				// can be special name
-				if (c == 0)
+				if (item->filename_length == 0 ||
+					item->filename_length + sizeof(iso::DirEntry) > item->entry_length)
 				{
-					filename = ".";
+					continue;
 				}
-				else if (c == 1)
+
+				auto filename =
+					item->filename_length > 1 ? decodeString({reinterpret_cast<const char*>(item + 1),
+																 item->filename_length},
+													m_encoding) :
+												std::string{};
+
+				if (item->filename_length == 1)
 				{
-					filename = "..";
+					char c = *reinterpret_cast<const char*>(item + 1);
+					// can be special name
+					if (c == 0)
+					{
+						filename = ".";
+					}
+					else if (c == 1)
+					{
+						filename = "..";
+					}
+				}
+
+				filename = filename.substr(0, filename.find(';'));
+				if (filename.empty())
+				{
+					continue;
+				}
+
+				bool extent_merged = false;
+				for (std::size_t i = 0; i < names.size(); ++i)
+				{
+					const auto& previous_extents = isoEntries[i].extents;
+					if (names[i] == filename && !previous_extents.empty() &&
+						(previous_extents.back().flags & iso::DirEntryFlags::MultiExtent) != iso::DirEntryFlags::None)
+					{
+						isoEntries[i].extents.push_back(*item);
+						extent_merged = true;
+						break;
+					}
+				}
+
+				if (!extent_merged)
+				{
+					iso::Entry dir_entry;
+					dir_entry.extents.push_back(*item);
+					isoEntries.push_back(std::move(dir_entry));
+					names.emplace_back(filename);
 				}
 			}
-
-			filename = filename.substr(0, filename.find(';'));
-			if (filename.empty())
-			{
-				continue;
-			}
-
-			isoEntries.push_back(*item);
-			names.emplace_back(filename);
 		}
 	}
 
 	return {std::move(isoEntries), std::move(names)};
 }
 
-fs::file iso_dev::read_file(const iso::DirEntry& entry)
+fs::file iso_dev::read_file(const iso::Entry& entry)
 {
-	if ((entry.flags & iso::DirEntryFlags::Directory) ==
-		iso::DirEntryFlags::Directory)
+	if (entry.is_directory())
 	{
 		return {};
 	}
 
-	if (entry.length.value() == 0)
+	if (entry.size() == 0)
 	{
 		return fs::make_stream<std::vector<std::uint8_t>>();
 	}
