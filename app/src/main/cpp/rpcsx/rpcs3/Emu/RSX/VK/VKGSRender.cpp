@@ -1345,7 +1345,8 @@ void VKGSRender::on_init_thread()
 	zcull_ctrl.reset(static_cast<::rsx::reports::ZCULL_control*>(this));
 
 	const auto shadermode = g_cfg.video.shadermode.get();
-	const bool preload_interpreter = shadermode == shader_mode::async_with_interpreter || shadermode == shader_mode::interpreter_only;
+	constexpr bool enable_interpreter_preload = false;
+	const bool preload_interpreter = enable_interpreter_preload && (shadermode == shader_mode::async_with_interpreter || shadermode == shader_mode::interpreter_only);
 
 	if (!m_overlay_manager)
 	{
