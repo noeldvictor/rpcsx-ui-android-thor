@@ -8,7 +8,7 @@ import net.rpcsx.utils.GeneralSettings
 
 object ThorPerformanceProfile {
     private const val TAG = "ThorPerformanceProfile"
-    private const val PROFILE_VERSION = 9
+    private const val PROFILE_VERSION = 10
     private const val PROFILE_PREF = "thor_compile_profile_version"
     private const val PERFORMANCE_CORE_MASK = 0xF8
 
@@ -63,7 +63,12 @@ object ThorPerformanceProfile {
         setSetting("Core@@Max SPURS Threads", "4", "Max SPURS Threads", changed, failed)
         setSetting("Core@@SPU Reservation Busy Waiting Enabled", "true", "SPU Reservation Busy Waiting", changed, failed)
         setSetting("Core@@SPU Reservation Busy Waiting Percentage", "100", "SPU Reservation Busy Waiting Percentage", changed, failed)
+        setSetting("Core@@Accurate SPU Reservations", "false", "Accurate SPU Reservations", changed, failed)
+        setSetting("Core@@SPU Verification", "false", "SPU Verification", changed, failed)
         setSetting("Core@@Use LLVM CPU", "\"cortex-a78\"", "Use LLVM CPU", changed, failed)
+        setSetting("Video@@Accurate ZCULL stats", "false", "Accurate ZCULL stats", changed, failed)
+        setSetting("Video@@Relaxed ZCULL Sync", "true", "Relaxed ZCULL Sync", changed, failed)
+        setSetting("Video@@Multithreaded RSX", "true", "Multithreaded RSX", changed, failed)
         setSetting("Video@@Disable On-Disk Shader Cache", "false", "On-Disk Shader Cache", changed, failed)
         if (affinityApplied) {
             setThorSchedulerDefaults(changed, failed)

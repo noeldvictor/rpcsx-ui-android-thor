@@ -107,8 +107,29 @@ This slice makes the Thor runtime less self-sabotaging during FPS testing:
 - Thor compile profile bumped to v9 and now sets `Core -> Max SPURS Threads = 4`.
 - Eternal Sonata `BLUS30161` Thor override now sets:
   - `Core -> Max SPURS Threads = 4`
+  - `Core -> SPU Reservation Busy Waiting Enabled = true`
+  - `Core -> SPU Reservation Busy Waiting Percentage = 100`
+  - `Core -> Accurate SPU Reservations = false`
+  - `Core -> SPU Verification = false`
   - `Core -> Sleep Timers Accuracy = As Host`
   - `Video -> Frame limit = 30`
+  - `Video -> Accurate ZCULL stats = false`
+  - `Video -> Relaxed ZCULL Sync = true`
+  - `Video -> Multithreaded RSX = true`
+
+## Follow-Up: Stale Per-Game Config Found
+
+The first retest still showed 10-13 FPS because the active device file `config/custom_configs/config_BLUS30161.yml` was an old full custom config, not the managed override. It masked the new Thor/global profile with slow values:
+
+- `Thread Scheduler Mode: Operating System`
+- `SPU Reservation Busy Waiting Percentage: 0`
+- `Max SPURS Threads: 6`
+- `Accurate SPU Reservations: true`
+- `SPU Verification: true`
+- `Accurate ZCULL stats: true`
+- `Multithreaded RSX: false`
+
+This means the first retest did not actually measure the intended SPURS 4 / busy-wait / reduced-accuracy profile. Replace that stale custom config with `tools/push_eternal_sonata_thor_profile.ps1`, relaunch the game, then retest FPS.
 
 ## Why Cap SPURS At 4 First
 

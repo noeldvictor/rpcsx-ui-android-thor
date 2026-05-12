@@ -38,9 +38,16 @@ object GameSettingsDatabase {
             # Cap SPURS to reduce SPU oversubscription on the Snapdragon 8 Gen 2 affinity split.
             Core:
               Max SPURS Threads: 4
+              SPU Reservation Busy Waiting Enabled: true
+              SPU Reservation Busy Waiting Percentage: 100
+              Accurate SPU Reservations: false
+              SPU Verification: false
               Sleep Timers Accuracy: As Host
             Video:
               Frame limit: 30
+              Accurate ZCULL stats: false
+              Relaxed ZCULL Sync: true
+              Multithreaded RSX: true
         """.trimIndent()
     )
 
