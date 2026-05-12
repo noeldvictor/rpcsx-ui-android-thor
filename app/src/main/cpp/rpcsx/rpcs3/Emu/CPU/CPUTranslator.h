@@ -3091,6 +3091,11 @@ protected:
 	// Allow Icelake tier AVX-512
 	bool m_use_avx512_icl = false;
 
+#ifdef ARCH_ARM64
+	// Allow AArch64 AdvSIMD dot-product instructions.
+	bool m_use_dotprod = false;
+#endif
+
 	// IR builder
 	llvm::IRBuilder<>* m_ir = nullptr;
 
@@ -3629,6 +3634,48 @@ public:
 		result.value = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::x86_avx512_vpdpbusd_128), {data0, data1, data2});
 		return result;
 	}
+
+#ifdef ARCH_ARM64
+	template <typename T1, typename T2, typename T3>
+	value_t<u32[4]> udot(T1 a, T2 b, T3 c)
+	{
+		value_t<u32[4]> result;
+
+		const auto data0 = a.eval(m_ir);
+		const auto data1 = b.eval(m_ir);
+		const auto data2 = c.eval(m_ir);
+
+		result.value = m_ir->CreateCall(get_intrinsic<u32[4], u8[16]>(llvm::Intrinsic::aarch64_neon_udot), {data0, data1, data2});
+		return result;
+	}
+
+	template <typename T1, typename T2, typename T3>
+	value_t<u32[4]> sdot(T1 a, T2 b, T3 c)
+	{
+		value_t<u32[4]> result;
+
+		const auto data0 = a.eval(m_ir);
+		const auto data1 = b.eval(m_ir);
+		const auto data2 = c.eval(m_ir);
+
+		result.value = m_ir->CreateCall(get_intrinsic<u32[4], u8[16]>(llvm::Intrinsic::aarch64_neon_sdot), {data0, data1, data2});
+		return result;
+	}
+
+	template <typename T1, typename T2>
+	auto addp(T1 a, T2 b)
+	{
+		using T_vector = typename is_llvm_expr<T1>::type;
+
+		const auto data1 = a.eval(m_ir);
+		const auto data2 = b.eval(m_ir);
+		const auto func = get_intrinsic<T_vector>(llvm::Intrinsic::aarch64_neon_addp);
+
+		value_t<T_vector> result;
+		result.value = m_ir->CreateCall(func, {data1, data2});
+		return result;
+	}
+#endif
 
 	template <typename T1, typename T2>
 	value_t<u8[16]> vpermb(T1 a, T2 b)

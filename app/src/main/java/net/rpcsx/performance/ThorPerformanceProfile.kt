@@ -8,7 +8,7 @@ import net.rpcsx.utils.GeneralSettings
 
 object ThorPerformanceProfile {
     private const val TAG = "ThorPerformanceProfile"
-    private const val PROFILE_VERSION = 5
+    private const val PROFILE_VERSION = 8
     private const val PROFILE_PREF = "thor_compile_profile_version"
     private const val PERFORMANCE_CORE_MASK = 0xF8
 
@@ -59,8 +59,14 @@ object ThorPerformanceProfile {
         setSetting("Core@@Max LLVM Compile Threads", "2", "Max LLVM Compile Threads", changed, failed)
         setSetting("Core@@LLVM Precompilation", "false", "LLVM Precompilation", changed, failed)
         setSetting("Core@@SPU Cache", "true", "SPU Cache", changed, failed)
+        setSetting("Core@@SPU Decoder", "\"Recompiler (LLVM)\"", "SPU Decoder", changed, failed)
+        setSetting("Core@@SPU Reservation Busy Waiting Enabled", "true", "SPU Reservation Busy Waiting", changed, failed)
+        setSetting("Core@@SPU Reservation Busy Waiting Percentage", "100", "SPU Reservation Busy Waiting Percentage", changed, failed)
         setSetting("Core@@Use LLVM CPU", "\"cortex-a78\"", "Use LLVM CPU", changed, failed)
         setSetting("Video@@Disable On-Disk Shader Cache", "false", "On-Disk Shader Cache", changed, failed)
+        if (affinityApplied) {
+            setThorSchedulerDefaults(changed, failed)
+        }
 
         if (failed.isEmpty()) {
             GeneralSettings[PROFILE_PREF] = PROFILE_VERSION
@@ -101,6 +107,21 @@ object ThorPerformanceProfile {
         } else {
             failed += label
         }
+    }
+
+    private fun setThorSchedulerDefaults(
+        changed: MutableList<String>,
+        failed: MutableList<String>
+    ) {
+        setSetting("Core@@Thread Scheduler Mode", "\"RPCS3 Scheduler\"", "Thread Scheduler Mode", changed, failed)
+        setSetting("Core@@Affinity@@CPU0", "\"General\"", "Affinity CPU0", changed, failed)
+        setSetting("Core@@Affinity@@CPU1", "\"General\"", "Affinity CPU1", changed, failed)
+        setSetting("Core@@Affinity@@CPU2", "\"General\"", "Affinity CPU2", changed, failed)
+        setSetting("Core@@Affinity@@CPU3", "\"General\"", "Affinity CPU3", changed, failed)
+        setSetting("Core@@Affinity@@CPU4", "\"PPU\"", "Affinity CPU4", changed, failed)
+        setSetting("Core@@Affinity@@CPU5", "\"SPU\"", "Affinity CPU5", changed, failed)
+        setSetting("Core@@Affinity@@CPU6", "\"SPU\"", "Affinity CPU6", changed, failed)
+        setSetting("Core@@Affinity@@CPU7", "\"RSX\"", "Affinity CPU7", changed, failed)
     }
 
     fun applyRuntimeAffinity(): Boolean {

@@ -126,6 +126,19 @@ static std::string join_features(const std::vector<const char *> &features) {
   return result.empty() ? "none reported" : result;
 }
 
+#if defined(__aarch64__)
+static std::string arm64_jit_target_attributes() {
+  std::vector<const char *> attributes;
+
+  attributes.push_back(utils::has_sha3() ? "+sha3" : "-sha3");
+  attributes.push_back(utils::has_dotprod() ? "+dotprod" : "-dotprod");
+  attributes.push_back(utils::has_sve() ? "+sve" : "-sve");
+  attributes.push_back(utils::has_sve2() ? "+sve2" : "-sve2");
+
+  return join_features(attributes);
+}
+#endif
+
 static void append_thor_feature_doctor(std::string &result) {
   const std::string configured_cpu = g_cfg.core.llvm_cpu;
   const char *detected_cpu = fallback_cpu_detection();
@@ -232,6 +245,30 @@ static void append_thor_feature_doctor(std::string &result) {
   fmt::append(result, "HWCAP2: 0x%llx (%s)\n",
               static_cast<unsigned long long>(hwcap2),
               join_features(hwcap2_features));
+  fmt::append(result,
+              "Core ARM64 gates: NEON=%s SHA3=%s DOTPROD=%s SVE=%s SVE2=%s\n",
+              utils::has_neon() ? "yes" : "no",
+              utils::has_sha3() ? "yes" : "no",
+              utils::has_dotprod() ? "yes" : "no",
+              utils::has_sve() ? "yes" : "no",
+              utils::has_sve2() ? "yes" : "no");
+  fmt::append(result, "LLVM ARM64 target attrs: %s\n",
+              arm64_jit_target_attributes());
+  fmt::append(result,
+              "Native scheduler: %s PPU=0x%llx SPU=0x%llx RSX=0x%llx\n",
+              g_cfg.core.thread_scheduler.get(),
+              static_cast<unsigned long long>(
+                  thread_ctrl::get_affinity_mask(thread_class::ppu)),
+              static_cast<unsigned long long>(
+                  thread_ctrl::get_affinity_mask(thread_class::spu)),
+              static_cast<unsigned long long>(
+                  thread_ctrl::get_affinity_mask(thread_class::rsx)));
+  fmt::append(result,
+              "SPU reservation busy-wait: %s percentage=%u\n",
+              g_cfg.core.spu_reservation_busy_waiting_enabled ? "enabled"
+                                                              : "disabled",
+              static_cast<u32>(
+                  g_cfg.core.spu_reservation_busy_waiting_percentage));
 #endif
 #else
   fmt::append(result, "AArch64 core topology: unavailable on this build\n");
@@ -1459,16 +1496,43 @@ public:
         queue.pop_front();
       }
 
-      impl(env, std::move(workload));
+      compile(env, std::move(workload));
       lastProcessedTag++;
     }
   }
 
+  bool prepare(JNIEnv *env, std::string path, std::string titleId,
+               jlong progressId) {
+    Progress progress(env, progressId);
+    progress.report(0, 0, "Preparing PPU cache");
+
+    const system_state state = Emu.GetStatus(false);
+    if (state != system_state::stopped && state != system_state::ready) {
+      progress.failure("Stop the current game before preparing cache.");
+      return false;
+    }
+
+    auto ebootPath = locateEbootPath(path);
+    if (ebootPath.empty()) {
+      progress.failure("No bootable EBOOT.BIN found for cache preparation.");
+      return false;
+    }
+
+    if (!titleId.empty()) {
+      Emu.SetTitleID(std::move(titleId));
+    }
+
+    return compile(env, {
+                            .progressId = progressId,
+                            .path = std::move(ebootPath),
+                        });
+  }
+
 private:
-  void impl(JNIEnv *env, CompilationWorkload workload) {
+  bool compile(JNIEnv *env, CompilationWorkload workload) {
     if (workload.path.empty()) {
       Progress(env, workload.progressId).success(0);
-      return;
+      return true;
     }
 
     rpcsx_android.error("Creating cache initiated, state %d",
@@ -1574,6 +1638,7 @@ private:
     MessageDialog::popPendingProgressId(workload.progressId);
 
     Progress(env, workload.progressId).success(0);
+    return true;
   }
 } static g_compilationQueue;
 
@@ -1974,6 +2039,13 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
 extern "C" bool _rpcsx_processCompilationQueue(JNIEnv *env) {
   g_compilationQueue.process(env);
   return true;
+}
+
+extern "C" bool _rpcsx_preparePpuCache(JNIEnv *env, std::string_view path,
+                                       std::string_view titleId,
+                                       long progressId) {
+  return g_compilationQueue.prepare(env, std::string(path),
+                                    std::string(titleId), progressId);
 }
 
 extern "C" bool _rpcsx_startMainThreadProcessor(JNIEnv *env) {

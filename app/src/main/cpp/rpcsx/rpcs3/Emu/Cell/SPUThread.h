@@ -197,11 +197,12 @@ struct alignas(16) spu_channel
 
 public:
 	static constexpr u32 off_wait = 32;
-	static constexpr u32 off_occupy = 32;
+	static constexpr u32 off_occupy = 33;
 	static constexpr u32 off_count = 63;
 	static constexpr u64 bit_wait = 1ull << off_wait;
 	static constexpr u64 bit_occupy = 1ull << off_occupy;
 	static constexpr u64 bit_count = 1ull << off_count;
+	static constexpr u64 occupy_ored_wait = bit_wait | bit_occupy;
 
 	// Returns true on success
 	bool try_push(u32 value)
@@ -253,17 +254,20 @@ public:
 					// Other thread has inserted a value through jostling_value, retry
 					continue;
 				}
+
+				// Turn off waiting bit manually (must succeed because waiting bit can only be resetted by the thread pushed to jostling_value)
+				if (~this->data.fetch_and(~occupy_ored_wait) & bit_wait)
+				{
+					// Could be fatal or at emulation stopping, to be checked by the caller
+					ensure(false);
+				}
+
+				// Fallthrough to notification
+				ensure(old & bit_wait);
 			}
 
 			if (old & bit_wait)
 			{
-				// Turn off waiting bit manually (must succeed because waiting bit can only be resetted by the thread pushed to jostling_value)
-				if (!this->data.bit_test_reset(off_wait))
-				{
-					// Could be fatal or at emulation stopping, to be checked by the caller
-					return {(old & bit_count) == 0, 0, false, false};
-				}
-
 				if (!postpone_notify)
 				{
 					utils::bless<atomic_t<u32>>(&data)[1].notify_one();
@@ -807,9 +811,18 @@ public:
 	u32 last_getllar = umax; // LS address of last GETLLAR (if matches current GETLLAR we can let the thread rest)
 	u32 last_getllar_gpr1 = umax;
 	u32 last_getllar_addr = umax;
+	u32 last_getllar_lsa = umax;
 	u32 getllar_spin_count = 0;
 	u32 getllar_busy_waiting_switch = umax; // umax means the test needs evaluation, otherwise it's a boolean
 	u64 getllar_evaluate_time = 0;
+
+	u32 eventstat_raddr = 0;
+	u32 eventstat_getllar = 0;
+	u64 eventstat_block_counter = 0;
+	u64 eventstat_spu_group_restart = 0;
+	u64 eventstat_spin_count = 0;
+	u64 eventstat_evaluate_time = 0;
+	u32 eventstat_busy_waiting_switch = 0; // umax means the test needs evaluation, otherwise it's a boolean
 
 	std::vector<mfc_cmd_dump> mfc_history;
 	u64 mfc_dump_idx = 0;
@@ -820,6 +833,7 @@ public:
 	u8 cpu_work_iteration_count = 0;
 
 	std::array<v128, 0x4000> stack_mirror; // Return address information
+	std::array<u32, 8> raddr_busy_wait_addr{}; // Recent reservation addresses selected for busy-waiting
 
 	const char* current_func{}; // Current STOP or RDCH blocking function
 	u64 start_time{};           // Starting time of STOP or RDCH bloking function
@@ -834,6 +848,7 @@ public:
 	bool stop_flag_removal_protection = false;
 
 	std::array<std::array<u8, 4>, SPU_LS_SIZE / 128> getllar_wait_time{};
+	std::array<std::array<u8, 16>, SPU_LS_SIZE / 128> eventstat_wait_time{};
 
 	void push_snr(u32 number, u32 value);
 	static void do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8* ls);

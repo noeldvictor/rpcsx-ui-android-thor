@@ -19,6 +19,10 @@
 #ifndef __APPLE__
 #include <sys/utsname.h>
 #include <cerrno>
+#if defined(ARCH_ARM64) && defined(__linux__)
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
+#endif
 #endif
 #endif
 
@@ -421,6 +425,78 @@ bool utils::has_um_wait()
 	static const bool g_value = (has_waitx() || has_waitpkg()) && get_tsc_freq();
 	return g_value;
 }
+
+#ifdef ARCH_ARM64
+bool utils::has_neon()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP_ASIMD)
+		return (getauxval(AT_HWCAP) & HWCAP_ASIMD) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return g_value;
+}
+
+bool utils::has_sha3()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP_SHA3)
+		return (getauxval(AT_HWCAP) & HWCAP_SHA3) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return g_value;
+}
+
+bool utils::has_dotprod()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP_ASIMDDP)
+		return (getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return g_value;
+}
+
+bool utils::has_sve()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP_SVE)
+		return (getauxval(AT_HWCAP) & HWCAP_SVE) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return g_value;
+}
+
+bool utils::has_sve2()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP2_SVE2)
+		return (getauxval(AT_HWCAP2) & HWCAP2_SVE2) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return g_value;
+}
+#endif
 
 u32 utils::get_rep_movsb_threshold()
 {

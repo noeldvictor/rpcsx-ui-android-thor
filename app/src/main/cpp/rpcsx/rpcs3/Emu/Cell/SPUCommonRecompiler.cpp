@@ -841,6 +841,7 @@ void spu_cache::initialize(bool build_existing_cache)
 			// Initialize compiler instances for parallel compilation
 			std::unique_ptr<spu_recompiler_base> compiler;
 
+#if defined(ARCH_X64)
 			if (g_cfg.core.spu_decoder == spu_decoder_type::asmjit)
 			{
 				compiler = spu_recompiler_base::make_asmjit_recompiler();
@@ -848,6 +849,24 @@ void spu_cache::initialize(bool build_existing_cache)
 			else if (g_cfg.core.spu_decoder == spu_decoder_type::llvm)
 			{
 				compiler = spu_recompiler_base::make_llvm_recompiler();
+			}
+#elif defined(ARCH_ARM64)
+			if (g_cfg.core.spu_decoder == spu_decoder_type::asmjit)
+			{
+				spu_log.warning("SPU ASMJIT is x64-only; using LLVM recompiler on ARM64.");
+				compiler = spu_recompiler_base::make_llvm_recompiler();
+			}
+			else if (g_cfg.core.spu_decoder == spu_decoder_type::llvm)
+			{
+				compiler = spu_recompiler_base::make_llvm_recompiler();
+			}
+#else
+#error "Unimplemented"
+#endif
+
+			if (!compiler)
+			{
+				fmt::throw_exception("Unsupported spu decoder '%s'", g_cfg.core.spu_decoder);
 			}
 
 			compiler->init();

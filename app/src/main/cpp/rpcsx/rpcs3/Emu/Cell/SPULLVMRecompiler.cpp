@@ -132,6 +132,8 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 
 	llvm::MDNode* m_md_unlikely;
 	llvm::MDNode* m_md_likely;
+	llvm::MDNode* m_md_spu_memory_domain;
+	llvm::MDNode* m_md_spu_context_domain;
 
 	struct block_info
 	{
@@ -155,6 +157,7 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 
 		// Store instructions
 		std::array<llvm::StoreInst*, s_reg_max> store{};
+		bool block_wide_reg_store_elimination = false;
 
 		// Store reordering/elimination protection
 		std::array<usz, s_reg_max> store_context_last_id = fill_array<usz>(0);          // Protects against illegal forward ordering
@@ -552,6 +555,40 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 		return m_ir->CreateAdd(off, add.value);
 	}
 
+	template <typename T>
+	T* spu_mem_attr(T* inst)
+	{
+		if (auto load_inst = llvm::dyn_cast<llvm::LoadInst>(inst))
+		{
+			load_inst->setMetadata(llvm::LLVMContext::MD_noalias, m_md_spu_context_domain);
+			load_inst->setMetadata(llvm::LLVMContext::MD_alias_scope, m_md_spu_memory_domain);
+		}
+		else if (auto store_inst = llvm::dyn_cast<llvm::StoreInst>(inst))
+		{
+			store_inst->setMetadata(llvm::LLVMContext::MD_noalias, m_md_spu_context_domain);
+			store_inst->setMetadata(llvm::LLVMContext::MD_alias_scope, m_md_spu_memory_domain);
+		}
+
+		return inst;
+	}
+
+	template <typename T>
+	T* spu_context_attr(T* inst)
+	{
+		if (auto load_inst = llvm::dyn_cast<llvm::LoadInst>(inst))
+		{
+			load_inst->setMetadata(llvm::LLVMContext::MD_alias_scope, m_md_spu_context_domain);
+			load_inst->setMetadata(llvm::LLVMContext::MD_noalias, m_md_spu_memory_domain);
+		}
+		else if (auto store_inst = llvm::dyn_cast<llvm::StoreInst>(inst))
+		{
+			store_inst->setMetadata(llvm::LLVMContext::MD_alias_scope, m_md_spu_context_domain);
+			store_inst->setMetadata(llvm::LLVMContext::MD_noalias, m_md_spu_memory_domain);
+		}
+
+		return inst;
+	}
+
 	// Return default register type
 	llvm::Type* get_reg_type(u32 index)
 	{
@@ -714,6 +751,7 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 		{
 			// Load register value if necessary
 			reg = m_finfo && m_finfo->load[index] ? m_finfo->load[index] : m_ir->CreateLoad(get_reg_type(index), init_reg_fixed(index));
+			spu_context_attr(reg);
 		}
 
 		if (reg->getType() == get_type<f64[4]>())
@@ -938,7 +976,8 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 		}
 
 		// Write register to the context
-		_store = m_ir->CreateStore(is_xfloat ? double_to_xfloat(saved_value) : m_ir->CreateBitCast(value, get_reg_type(index)), addr);
+		_store = m_ir->CreateStore(is_xfloat ? double_to_xfloat(saved_value) : bitcast(value, get_reg_type(index)), addr);
+		spu_context_attr(_store);
 	}
 
 	template <typename T, uint I>
@@ -1456,6 +1495,14 @@ public:
 			// Metadata for branch weights
 			m_md_likely = llvm::MDTuple::get(m_context, {md_name, md_high, md_low});
 			m_md_unlikely = llvm::MDTuple::get(m_context, {md_name, md_low, md_high});
+
+			const auto mem_domain = llvm::MDNode::getDistinct(m_context, {llvm::MDString::get(m_context, "SPU_mem")});
+			const auto mem_scope = llvm::MDNode::get(m_context, {llvm::MDString::get(m_context, "SPU_mem_scope"), mem_domain});
+			m_md_spu_memory_domain = llvm::MDNode::get(m_context, mem_scope);
+
+			const auto ctx_domain = llvm::MDNode::getDistinct(m_context, {llvm::MDString::get(m_context, "SPU_ctx")});
+			const auto ctx_scope = llvm::MDNode::get(m_context, {llvm::MDString::get(m_context, "SPU_ctx_scope"), ctx_domain});
+			m_md_spu_context_domain = llvm::MDNode::get(m_context, ctx_scope);
 
 			// Initialize transform passes
 			clear_transforms();
@@ -2580,6 +2627,7 @@ public:
 
 									m_ir->SetInsertPoint(ins);
 									auto si = llvm::cast<StoreInst>(m_ir->Insert(bs->clone()));
+									spu_context_attr(si);
 									if (b2->store[i] == nullptr)
 									{
 										// Protect against backwards ordering now
@@ -2648,7 +2696,7 @@ public:
 										continue;
 
 									m_ir->SetInsertPoint(ins);
-									m_ir->Insert(bs->clone());
+									m_ir->Insert(spu_context_attr(bs->clone()));
 								}
 
 								bs->eraseFromParent();
@@ -3671,16 +3719,6 @@ public:
 		{
 			switch (op.ra)
 			{
-			case SPU_WrOutMbox:
-			{
-				res.value = wait_rchcnt(OFFSET_OF(spu_thread, ch_out_mbox), true);
-				break;
-			}
-			case SPU_WrOutIntrMbox:
-			{
-				res.value = wait_rchcnt(OFFSET_OF(spu_thread, ch_out_intr_mbox), true);
-				break;
-			}
 			case SPU_RdSigNotify1:
 			{
 				res.value = wait_rchcnt(OFFSET_OF(spu_thread, ch_snr1));
@@ -4703,6 +4741,47 @@ public:
 		}
 
 		const auto a = get_vr<s32[4]>(op.ra);
+
+#ifdef ARCH_ARM64
+		// Use dot product instructions with special values to shift then sum results into the preferred slot.
+		if (m_use_dotprod)
+		{
+			if (match_vr<s32[4], s64[2]>(op.ra, [&](auto c, auto MP)
+			{
+				using VT = typename decltype(MP)::type;
+
+				if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
+				{
+					const auto zeroes = splat<u32[4]>(0);
+					const auto es = zshuffle(bitcast<u8[16]>(a), 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 0, 4, 8, 12);
+
+					set_vr(op.rt, sdot(zeroes, es, build<u8[16]>(
+						-0x01, -0x02, -0x04, -0x08,
+						-0x01, -0x02, -0x04, -0x08,
+						-0x01, -0x02, -0x04, -0x08,
+						-0x01, -0x02, -0x04, -0x08)));
+					return true;
+				}
+
+				return false;
+			}))
+			{
+				return;
+			}
+
+			const auto zeroes = splat<u32[4]>(0);
+			const auto masked = a & 0x01;
+			const auto es = zshuffle(bitcast<u8[16]>(masked), 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 0, 4, 8, 12);
+
+			set_vr(op.rt, udot(zeroes, es, build<u8[16]>(
+				0x01, 0x02, 0x04, 0x08,
+				0x01, 0x02, 0x04, 0x08,
+				0x01, 0x02, 0x04, 0x08,
+				0x01, 0x02, 0x04, 0x08)));
+			return;
+		}
+#endif
+
 		const auto m = zext<u32>(bitcast<i4>(trunc<bool[4]>(a)));
 		set_vr(op.rt, insert(splat<u32[4]>(0), 3, eval(m)));
 	}
@@ -4718,6 +4797,51 @@ public:
 		}
 
 		const auto a = get_vr<s16[8]>(op.ra);
+
+#ifdef ARCH_ARM64
+		// Use dot product instructions with special values to shift then sum results into the preferred slot.
+		if (m_use_dotprod)
+		{
+			if (match_vr<s16[8], s32[4], s64[2]>(op.ra, [&](auto c, auto MP)
+			{
+				using VT = typename decltype(MP)::type;
+
+				if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
+				{
+					const auto zeroes = splat<u32[4]>(0);
+					const auto es = zshuffle(bitcast<u8[16]>(a), 16, 16, 16, 16, 16, 16, 16, 16, 0, 2, 4, 6, 8, 10, 12, 14);
+
+					const auto extracted = sdot(zeroes, es, build<u8[16]>(
+						-0x01, -0x02, -0x04, -0x08,
+						-0x10, -0x20, -0x40, -0x80,
+						-0x01, -0x02, -0x04, -0x08,
+						-0x10, -0x20, -0x40, -0x80));
+
+					set_vr(op.rt, addp(zeroes, bitcast<u32[4]>(extracted)));
+					return true;
+				}
+
+				return false;
+			}))
+			{
+				return;
+			}
+
+			const auto zeroes = splat<u32[4]>(0);
+			const auto masked = a & 0x01;
+			const auto es = zshuffle(bitcast<u8[16]>(masked), 16, 16, 16, 16, 16, 16, 16, 16, 0, 2, 4, 6, 8, 10, 12, 14);
+
+			const auto extracted = udot(zeroes, es, build<u8[16]>(
+				0x01, 0x02, 0x04, 0x08,
+				0x10, 0x20, 0x40, 0x80,
+				0x01, 0x02, 0x04, 0x08,
+				0x10, 0x20, 0x40, 0x80));
+
+			set_vr(op.rt, addp(zeroes, bitcast<u32[4]>(extracted)));
+			return;
+		}
+#endif
+
 		const auto m = zext<u32>(bitcast<u8>(trunc<bool[8]>(a)));
 		set_vr(op.rt, insert(splat<u32[4]>(0), 3, eval(m)));
 	}
@@ -4725,6 +4849,52 @@ public:
 	void GBB(spu_opcode_t op)
 	{
 		const auto a = get_vr<u8[16]>(op.ra);
+
+#ifdef ARCH_ARM64
+		// Use dot product instructions with special values to shift then sum results into the preferred slot.
+		if (m_use_dotprod)
+		{
+			if (match_vr<s8[16], s16[8], s32[4], s64[2]>(op.ra, [&](auto c, auto MP)
+			{
+				using VT = typename decltype(MP)::type;
+
+				if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
+				{
+					const auto zeroes = splat<u32[4]>(0);
+
+					const auto extracted = sdot(zeroes, a, build<u8[16]>(
+						-0x01, -0x02, -0x04, -0x08,
+						-0x10, -0x20, -0x40, -0x80,
+						-0x01, -0x02, -0x04, -0x08,
+						-0x10, -0x20, -0x40, -0x80));
+
+					const auto es = zshuffle(bitcast<u8[16]>(extracted), 16, 16, 16, 16, 16, 16, 16, 16, 0, 8, 4, 12, 16, 16, 16, 16);
+					const auto zeroes16 = splat<u16[8]>(0);
+					set_vr(op.rt, addp(zeroes16, bitcast<u16[8]>(es)));
+					return true;
+				}
+
+				return false;
+			}))
+			{
+				return;
+			}
+
+			const auto zeroes = splat<u32[4]>(0);
+			const auto masked = a & 0x01;
+
+			const auto extracted = udot(zeroes, masked, build<u8[16]>(
+				0x01, 0x02, 0x04, 0x08,
+				0x10, 0x20, 0x40, 0x80,
+				0x01, 0x02, 0x04, 0x08,
+				0x10, 0x20, 0x40, 0x80));
+
+			const auto es = zshuffle(bitcast<u8[16]>(extracted), 16, 16, 16, 16, 16, 16, 16, 16, 0, 8, 4, 12, 16, 16, 16, 16);
+			const auto zeroes16 = splat<u16[8]>(0);
+			set_vr(op.rt, addp(zeroes16, bitcast<u16[8]>(es)));
+			return;
+		}
+#endif
 
 		if (m_use_gfni)
 		{
@@ -5258,13 +5428,24 @@ public:
 			return;
 		}
 
+#ifdef ARCH_ARM64
+		if (m_use_dotprod)
+#else
 		if (m_use_vnni)
+#endif
 		{
-			const auto [a, b] = get_vrs<u32[4]>(op.ra, op.rb);
 			const auto zeroes = splat<u32[4]>(0);
+#ifdef ARCH_ARM64
+			const auto [a, b] = get_vrs<u8[16]>(op.ra, op.rb);
+			const auto ones = splat<u8[16]>(0x01);
+			const auto ax = bitcast<u16[8]>(udot(zeroes, a, ones));
+			const auto bx = bitcast<u16[8]>(udot(zeroes, b, ones));
+#else
+			const auto [a, b] = get_vrs<u32[4]>(op.ra, op.rb);
 			const auto ones = splat<u32[4]>(0x01010101);
 			const auto ax = bitcast<u16[8]>(vpdpbusd(zeroes, a, ones));
 			const auto bx = bitcast<u16[8]>(vpdpbusd(zeroes, b, ones));
+#endif
 			set_vr(op.rt, shuffle2(ax, bx, 0, 8, 2, 10, 4, 12, 6, 14));
 			return;
 		}
@@ -5562,11 +5743,59 @@ public:
 
 	void CEQI(spu_opcode_t op)
 	{
+		// CEQHI following a comparison instruction (compare-equal negation)
+		if (!m_interp_magn && !op.si10 && match_vr<s32[4]>(op.ra, [&](auto c, auto MT)
+		{
+			using VT = typename decltype(MT)::type;
+			using VT_HALF = s16[8];
+
+			if (auto [ok, a, b] = match_expr(c, bitcast<VT>(sext<VT_HALF>(match<VT_HALF>() == match<VT_HALF>())) << 16 >> 16); ok && m_block->block_wide_reg_store_elimination)
+			{
+				set_vr(op.rt, bitcast<VT>(sext<VT_HALF>(a != b)) << 16 >> 16);
+				return true;
+			}
+
+			if (auto [ok, a, b] = match_expr(c, sext<VT>(MT == MT)); ok)
+			{
+				set_vr(op.rt, sext<VT>(a != b));
+				return true;
+			}
+
+			return false;
+		}))
+		{
+			return;
+		}
+
 		set_vr(op.rt, sext<s32[4]>(get_vr(op.ra) == get_imm(op.si10)));
 	}
 
 	void CEQHI(spu_opcode_t op)
 	{
+		// CEQHI following a comparison instruction (compare-equal negation)
+		if (!m_interp_magn && !op.si10 && match_vr<s16[8]>(op.ra, [&](auto c, auto MT)
+		{
+			using VT = typename decltype(MT)::type;
+			using VT_HALF = s8[16];
+
+			if (auto [ok, a, b] = match_expr(c, bitcast<VT>(sext<VT_HALF>(match<VT_HALF>() == match<VT_HALF>())) << 8 >> 8); ok && m_block->block_wide_reg_store_elimination)
+			{
+				set_vr(op.rt, bitcast<VT>(sext<VT_HALF>(a != b)) << 8 >> 8);
+				return true;
+			}
+
+			if (auto [ok, a, b] = match_expr(c, sext<VT>(match<VT>() == match<VT>())); ok)
+			{
+				set_vr(op.rt, sext<VT>(a != b));
+				return true;
+			}
+
+			return false;
+		}))
+		{
+			return;
+		}
+
 		set_vr(op.rt, sext<s16[8]>(get_vr<u16[8]>(op.ra) == get_imm<u16[8]>(op.si10)));
 	}
 
@@ -7520,13 +7749,13 @@ public:
 	void make_store_ls(value_t<u64> addr, value_t<u8[16]> data)
 	{
 		const auto bswapped = byteswap(data);
-		m_ir->CreateStore(bswapped.eval(m_ir), m_ir->CreateGEP(get_type<u8>(), m_lsptr, addr.value));
+		spu_mem_attr(m_ir->CreateStore(bswapped.eval(m_ir), m_ir->CreateGEP(get_type<u8>(), m_lsptr, addr.value)));
 	}
 
 	auto make_load_ls(value_t<u64> addr)
 	{
 		value_t<u8[16]> data;
-		data.value = m_ir->CreateLoad(get_type<u8[16]>(), m_ir->CreateGEP(get_type<u8>(), m_lsptr, addr.value));
+		data.value = spu_mem_attr(m_ir->CreateLoad(get_type<u8[16]>(), m_ir->CreateGEP(get_type<u8>(), m_lsptr, addr.value)));
 		return byteswap(data);
 	}
 
@@ -7541,9 +7770,15 @@ public:
 			{
 				data._u32[3] %= SPU_LS_SIZE;
 
-				if (data._u32[3] % 0x10 == 0)
+				if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
 				{
 					value_t<u64> addr = eval(splat<u64>(data._u32[3]) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
+					make_store_ls(addr, get_vr<u8[16]>(op.rt));
+					return;
+				}
+				else
+				{
+					value_t<u64> addr = eval(splat<u64>(data._u32[3] - remainder) + zext<u64>((extract(pair.second, 3) + remainder) & 0x3fff0));
 					make_store_ls(addr, get_vr<u8[16]>(op.rt));
 					return;
 				}
@@ -7565,9 +7800,15 @@ public:
 			{
 				data._u32[3] %= SPU_LS_SIZE;
 
-				if (data._u32[3] % 0x10 == 0)
+				if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
 				{
 					value_t<u64> addr = eval(splat<u64>(data._u32[3]) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
+					set_vr(op.rt, make_load_ls(addr));
+					return;
+				}
+				else
+				{
+					value_t<u64> addr = eval(splat<u64>(data._u32[3] - remainder) + zext<u64>((extract(pair.second, 3) + remainder) & 0x3fff0));
 					set_vr(op.rt, make_load_ls(addr));
 					return;
 				}

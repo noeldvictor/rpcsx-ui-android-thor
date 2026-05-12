@@ -2422,18 +2422,9 @@ void lv2_obj::notify_all() noexcept {
       break;
     }
 
-    if (cpu != &g_to_notify) {
-      const auto res_start = vm::reservation_notifier(0).second;
-      const auto res_end = vm::reservation_notifier(umax).second;
-
-      if (cpu >= res_start && cpu <= res_end) {
-        atomic_wait_engine::notify_all(cpu);
-      } else {
-        // Note: by the time of notification the thread could have been
-        // deallocated which is why the direct function is used
-        atomic_wait_engine::notify_one(cpu);
-      }
-    }
+    // Note: by the time of notification the thread could have been deallocated
+    // which is why the direct function is used.
+    atomic_wait_engine::notify_all(cpu);
   }
 
   g_to_notify[0] = nullptr;
@@ -2462,7 +2453,11 @@ void lv2_obj::notify_all() noexcept {
 
   atomic_t<u64, 64> *range_lock = nullptr;
 
-  for (usz i = 0, checked = 0; checked < 3 && i < total_waiters; i++) {
+  if (cpu->get_class() == thread_class::spu) {
+    range_lock = static_cast<spu_thread *>(cpu)->range_lock;
+  }
+
+  for (usz i = 0, checked = 0; checked < 4 && i < total_waiters; i++) {
     auto &waiter =
         spu_thread::g_spu_waiters_by_value[(i + cpu->id) % total_waiters];
     const u64 value = waiter.load();
@@ -2517,13 +2512,13 @@ void lv2_obj::notify_all() noexcept {
     }
   }
 
-  if (range_lock) {
+  if (range_lock && cpu->get_class() != thread_class::spu) {
     vm::free_range_lock(range_lock);
   }
 
-  for (u32 addr : notifies) {
-    if (addr) {
-      vm::reservation_notifier_notify(addr);
+  for (u32 i = 0; i < total_waiters; i++) {
+    if (notifies[i]) {
+      vm::reservation_notifier_notify(notifies[i]);
     }
   }
 }

@@ -13,16 +13,12 @@
 
 #include <charconv>
 
-#if defined(ARCH_ARM64) && defined(ANDROID)
-#include <asm/hwcap.h>
-#include <sys/auxv.h>
-#endif
-
 LOG_CHANNEL(jit_log, "JIT");
 
 #ifdef LLVM_AVAILABLE
 
 #include <unordered_map>
+#include <vector>
 
 #ifdef _MSC_VER
 #pragma warning(push, 0)
@@ -57,15 +53,6 @@ LOG_CHANNEL(jit_log, "JIT");
 #endif
 
 #if defined(ARCH_ARM64) && defined(ANDROID)
-static bool android_arm64_has_sve()
-{
-#ifdef HWCAP_SVE
-	return (getauxval(AT_HWCAP) & HWCAP_SVE) != 0;
-#else
-	return false;
-#endif
-}
-
 static bool android_arm64_cpu_enables_sve_by_default(const std::string& cpu)
 {
 	return cpu == "cortex-a510" ||
@@ -91,7 +78,7 @@ static std::string sanitize_android_arm64_llvm_cpu(std::string cpu)
 {
 	std::transform(cpu.begin(), cpu.end(), cpu.begin(), ::tolower);
 
-	if (!android_arm64_has_sve() && android_arm64_cpu_enables_sve_by_default(cpu))
+	if (!utils::has_sve() && android_arm64_cpu_enables_sve_by_default(cpu))
 	{
 		jit_log.warning("LLVM CPU '%s' enables SVE in bundled LLVM, but Android HWCAP does not report SVE. Using cortex-a78 for Thor-safe JIT code.", cpu);
 		return "cortex-a78";
@@ -125,6 +112,47 @@ namespace vm
 static shared_mutex null_mtx;
 
 static std::unordered_map<std::string, u64> null_funcs;
+
+#if defined(ARCH_ARM64)
+static std::string join_jit_attributes(const std::vector<std::string>& attributes)
+{
+	std::string result;
+
+	for (const std::string& attribute : attributes)
+	{
+		if (!result.empty())
+		{
+			result += ",";
+		}
+
+		result += attribute;
+	}
+
+	return result.empty() ? "none" : result;
+}
+
+static void report_aarch64_jit_target_once(const std::string& cpu, const std::string& triple, const std::vector<std::string>& attributes, u32 flags, bool uses_link_table)
+{
+	static shared_mutex s_reported_mutex;
+	static std::vector<std::string> s_reported_keys;
+
+	const std::string attr_text = join_jit_attributes(attributes);
+	const std::string key = fmt::format("%s|%s|%s|0x%x|%u", cpu, triple, attr_text, flags, uses_link_table ? 1 : 0);
+
+	std::lock_guard lock(s_reported_mutex);
+
+	for (const std::string& reported_key : s_reported_keys)
+	{
+		if (reported_key == key)
+		{
+			return;
+		}
+	}
+
+	s_reported_keys.emplace_back(key);
+	jit_log.notice("LLVM AArch64 target: cpu=%s triple=%s attrs=%s flags=0x%x link-table=%s", cpu, triple, attr_text, flags, uses_link_table ? "yes" : "no");
+}
+#endif
 
 static u64 make_null_function(const std::string& name)
 {
@@ -741,6 +769,32 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 		mem = std::make_unique<MemoryManager1>(std::move(symbols_cement));
 	}
 
+	const std::string target_triple = null_mod->getTargetTriple();
+
+	std::vector<std::string> attributes;
+
+#if defined(ARCH_ARM64)
+	if (utils::has_sha3())
+		attributes.push_back("+sha3");
+	else
+		attributes.push_back("-sha3");
+
+	if (utils::has_dotprod())
+		attributes.push_back("+dotprod");
+	else
+		attributes.push_back("-dotprod");
+
+	if (utils::has_sve())
+		attributes.push_back("+sve");
+	else
+		attributes.push_back("-sve");
+
+	if (utils::has_sve2())
+		attributes.push_back("+sve2");
+	else
+		attributes.push_back("-sve2");
+#endif
+
 	{
 
 		m_engine = std::unique_ptr<llvm::ExecutionEngine, void (*)(llvm::ExecutionEngine*)>{
@@ -754,6 +808,7 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 		//.setCodeModel(llvm::CodeModel::Large)
 #endif
 				.setRelocationModel(llvm::Reloc::Model::PIC_)
+				.setMAttrs(attributes)
 				.setMCPU(m_cpu)
 				.create(),
 			[](llvm::ExecutionEngine* engine)
@@ -783,6 +838,10 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 	{
 		fmt::throw_exception("LLVM: Failed to create ExecutionEngine: %s", result);
 	}
+
+#if defined(ARCH_ARM64)
+	report_aarch64_jit_target_once(m_cpu, target_triple, attributes, flags, !_link.empty());
+#endif
 
 	fs::device_stat stats{};
 
@@ -966,7 +1025,7 @@ const char* fallback_cpu_detection()
 		std::string result = aarch64::get_cpu_name();
 		if (result.empty())
 		{
-			return "cortex-a34";
+			return "cortex-a78";
 		}
 
 		std::transform(result.begin(), result.end(), result.begin(), ::tolower);

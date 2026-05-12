@@ -3831,15 +3831,15 @@ namespace rsx
 				return blit_engine::to_transfer_destination_format(transfer_destination_fmt());
 			}
 
-			u8 sw_height_log2() const
-			{
-				return bf_decoder<16, 8>(value);
-			}
+		u8 sw_height_log2() const
+		{
+			return bf_decoder<24, 8>(value);
+		}
 
-			u8 sw_width_log2() const
-			{
-				return bf_decoder<24, 8>(value);
-			}
+		u8 sw_width_log2() const
+		{
+			return bf_decoder<16, 8>(value);
+		}
 		};
 
 		static void dump(std::string& out, const decoded_type& decoded)

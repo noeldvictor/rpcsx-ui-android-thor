@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import net.rpcsx.Game
 import net.rpcsx.RPCSX
+import net.rpcsx.performance.ThorPerformanceProfile
 import net.rpcsx.utils.GameIdentity
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -19,6 +20,7 @@ object GameSettingsDatabase {
     private const val MANAGED_HEADER = "# RPCSX_THOR_AUTO_SETTINGS"
     private const val TIMESTAMP_HEADER = "# Database timestamp: "
     private const val SOURCE_URL = "https://api.rpcs3.net/config/?api=v1"
+    private val thorUnsafeSpuAsmjit = Regex("""^(\s*SPU Decoder:\s*)Recompiler \(ASMJIT\)\s*$""")
 
     private val lock = Any()
     private var cachedDatabase: Database? = null
@@ -418,9 +420,24 @@ object GameSettingsDatabase {
             appendLine("# Source: $SOURCE_URL")
             appendLine(TIMESTAMP_HEADER + timestamp)
             appendLine("# Title ID: $titleId")
-            append(config.trimEnd())
+            append(sanitizeThorManagedConfig(config.trimEnd()))
             appendLine()
         }
+    }
+
+    private fun sanitizeThorManagedConfig(config: String): String {
+        if (!ThorPerformanceProfile.isThorTarget()) {
+            return config
+        }
+
+        return config
+            .lineSequence()
+            .map { line ->
+                thorUnsafeSpuAsmjit.matchEntire(line)?.let { match ->
+                    "${match.groupValues[1]}Recompiler (LLVM)"
+                } ?: line
+            }
+            .joinToString("\n")
     }
 
     private fun managedConfigTimestamp(configText: String?): Long? {

@@ -195,6 +195,14 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 		// AVX does not use intrinsics so far
 		m_use_avx = true;
 	}
+
+#ifdef ARCH_ARM64
+	if (utils::has_dotprod())
+	{
+		m_use_dotprod = true;
+		llvm_log.notice("AArch64 dot-product SPU fast paths enabled.");
+	}
+#endif
 }
 
 llvm::Value* cpu_translator::bitcast(llvm::Value* val, llvm::Type* type) const
@@ -212,12 +220,73 @@ llvm::Value* cpu_translator::bitcast(llvm::Value* val, llvm::Type* type) const
 		fmt::throw_exception("cpu_translator::bitcast(): incompatible type sizes (%u vs %u)", s1, s2);
 	}
 
-	if (const auto c1 = llvm::dyn_cast<llvm::Constant>(val))
+	if (val->getType() == type)
+	{
+		return val;
+	}
+
+	llvm::CastInst* i;
+	llvm::Value* source_val = val;
+
+	// Try to reuse older bitcasts.
+	while ((i = llvm::dyn_cast_or_null<llvm::CastInst>(source_val)) && i->getOpcode() == llvm::Instruction::BitCast)
+	{
+		source_val = i->getOperand(0);
+
+		if (source_val->getType() == type)
+		{
+			return source_val;
+		}
+	}
+
+#if LLVM_VERSION_MAJOR >= 21
+	if (source_val->hasUseList())
+#endif
+	{
+		for (llvm::Value* it_val : source_val->uses())
+		{
+			if (!it_val)
+			{
+				continue;
+			}
+
+			llvm::CastInst* bci = llvm::dyn_cast_or_null<llvm::CastInst>(it_val);
+
+			while (bci && bci->getOpcode() == llvm::Instruction::BitCast)
+			{
+				if (bci->getParent() != m_ir->GetInsertBlock())
+				{
+					break;
+				}
+
+				if (bci->getType() == type)
+				{
+					return bci;
+				}
+
+#if LLVM_VERSION_MAJOR >= 21
+				if (!bci->hasUseList())
+				{
+					break;
+				}
+#endif
+
+				if (bci->use_begin() == bci->use_end())
+				{
+					break;
+				}
+
+				bci = llvm::dyn_cast_or_null<llvm::CastInst>(*bci->use_begin());
+			}
+		}
+	}
+
+	if (const auto c1 = llvm::dyn_cast<llvm::Constant>(source_val))
 	{
 		return ensure(llvm::ConstantFoldCastOperand(llvm::Instruction::BitCast, c1, type, m_module->getDataLayout()));
 	}
 
-	return m_ir->CreateBitCast(val, type);
+	return m_ir->CreateBitCast(source_val, type);
 }
 
 template <>
@@ -486,14 +555,32 @@ void cpu_translator::erase_stores(llvm::ArrayRef<llvm::Value*> args)
 {
 	for (auto v : args)
 	{
-		for (auto it = v->use_begin(); it != v->use_end(); ++it)
+#if LLVM_VERSION_MAJOR >= 21
+		if (!v->hasUseList())
 		{
-			llvm::Value* i = *it;
+			continue;
+		}
+#endif
+
+		for (llvm::Value* i : v->uses())
+		{
 			llvm::CastInst* bci = nullptr;
 
 			// Walk through bitcasts
 			while (i && (bci = llvm::dyn_cast<llvm::CastInst>(i)) && bci->getOpcode() == llvm::Instruction::BitCast)
 			{
+#if LLVM_VERSION_MAJOR >= 21
+				if (!bci->hasUseList())
+				{
+					break;
+				}
+#endif
+
+				if (bci->use_begin() == bci->use_end())
+				{
+					break;
+				}
+
 				i = *bci->use_begin();
 			}
 
