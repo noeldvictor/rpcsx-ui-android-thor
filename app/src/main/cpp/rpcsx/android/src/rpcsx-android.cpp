@@ -2002,7 +2002,7 @@ extern "C" int _rpcsx_boot(std::string_view path_) {
     path.pop_back();
   }
 
-  return static_cast<int>(Emu.BootGame(path, "", false, cfg_mode::global));
+  return static_cast<int>(Emu.BootGame(path, "", false, cfg_mode::custom));
 }
 
 extern "C" int _rpcsx_getState() {
