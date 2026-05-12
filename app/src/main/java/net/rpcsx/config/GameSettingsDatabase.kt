@@ -33,6 +33,8 @@ object GameSettingsDatabase {
             # RPCSX_THOR_PROFILE_OVERRIDE
             # Eternal Sonata stability profile for AYN Thor.
             # Community note: limiting to 30 FPS avoids common battle/menu crash paths.
+            # CPU blit and suspend-savestate mode are intentionally excluded here;
+            # they crash this Android core at boot on Thor/Turnip in local testing.
             Audio:
               Enable Time Stretching: true
             Core:
@@ -40,9 +42,6 @@ object GameSettingsDatabase {
             Video:
               Frame limit: 30
               Write Color Buffers: true
-              Force CPU Blit: true
-            Savestate:
-              Suspend Emulation Savestate Mode: true
         """.trimIndent()
     )
 
