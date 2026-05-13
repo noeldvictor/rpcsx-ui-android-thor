@@ -1,0 +1,18 @@
+{
+  "name": "eternal-sonata",
+  "description": "BLUS30161 Eternal Sonata SPURS/loading/FPS debug profile.",
+  "titleIds": ["BLUS30161"],
+  "mode": "SpursProbe",
+  "tags": ["spurs", "loading", "ppu-wait", "ghidra"],
+  "live": true,
+  "ghidra": {
+    "auto": true,
+    "module": "libsre",
+    "addresses": ["0x00cc948c", "0x00cc945c"],
+    "waitSeconds": 60
+  },
+  "notes": [
+    "Use at the Now Loading or 10-13 FPS slow area.",
+    "Ghidra target comes from the observed hot PPU SpursHdlr0 loop in libsre."
+  ]
+}

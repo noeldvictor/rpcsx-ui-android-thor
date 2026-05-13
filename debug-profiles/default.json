@@ -1,0 +1,17 @@
+{
+  "name": "default",
+  "description": "Game-agnostic Thor debug profile for crashes, black screens, and unknown weirdness.",
+  "mode": "Normal",
+  "tags": ["generic", "safe"],
+  "live": true,
+  "ghidra": {
+    "auto": true,
+    "module": "",
+    "addresses": [],
+    "waitSeconds": 0
+  },
+  "notes": [
+    "Use this first when the title is unknown.",
+    "Let logs identify a guest module/address before Ghidra."
+  ]
+}
