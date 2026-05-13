@@ -1,5 +1,9 @@
 # RPCSX for AYN Thor Experiment
 
+# EXTREMELY UNSTABLE AND NOT WORKING
+
+## I am testing stuff right now. Do not waste your time with this right now.
+
 <p align="center">
   <img src="docs/images/rpcsx-thor-experiment-banner.png" alt="RPCSX for AYN Thor Experiment">
 </p>
