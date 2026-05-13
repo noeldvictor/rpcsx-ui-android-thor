@@ -2430,10 +2430,11 @@ void ppu_thread::cpu_wait(rx::EnumBitSet<cpu_flag> old)
 	if (u32 addr = res_notify)
 	{
 		res_notify = 0;
+		res_notify_postpone_streak = 0;
 
-		if (res_notify_time == vm::reservation_notifier_count_index(addr).second)
+		if (res_notify_time + 128 == (vm::reservation_acquire(addr) & -128))
 		{
-			vm::reservation_notifier_notify(addr);
+			vm::reservation_notifier_notify(addr, res_notify_time);
 		}
 	}
 
@@ -3709,33 +3710,16 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 	{
 		extern atomic_t<u32> liblv2_begin, liblv2_end;
 
+		u32 notify = ppu.res_notify;
+
 		// Avoid notifications from lwmutex or sys_spinlock
 		if (new_data != old_data && (ppu.cia < liblv2_begin || ppu.cia >= liblv2_end))
 		{
-			u32 notify = ppu.res_notify;
-
-			if (notify)
-			{
-				if (ppu.res_notify_time == vm::reservation_notifier_count_index(notify).second)
-				{
-					ppu.state += cpu_flag::wait;
-					vm::reservation_notifier_notify(notify);
-				}
-				else
-				{
-					notify = 0;
-				}
-
-				ppu.res_notify = 0;
-			}
-
-			if ((addr ^ notify) & -128)
+			if (!notify || ((addr ^ notify) & -128))
 			{
 				// Try to postpone notification to when PPU is asleep or join notifications on the same address
 				// This also optimizes a mutex - won't notify after lock is aqcuired (prolonging the critical section duration), only notifies on unlock
-				const auto [count, index] = vm::reservation_notifier_count_index(addr);
-
-				switch (count)
+				switch (vm::reservation_notifier_count(addr, rtime))
 				{
 				case 0:
 				{
@@ -3744,11 +3728,16 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 				}
 				case 1:
 				{
-					if (!notify)
+					if (ppu.res_notify_postpone_streak <= 4)
 					{
-						ppu.res_notify = addr;
-						ppu.res_notify_time = index;
-						break;
+						if (!notify || ((notify & -128) == (addr & -128) && new_data != old_data))
+						{
+							ppu.res_notify = addr;
+							ppu.res_notify_time = rtime;
+							ppu.res_notify_postpone_streak++;
+							notify = 0;
+							break;
+						}
 					}
 
 					// Notify both
@@ -3761,14 +3750,26 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 						ppu.state += cpu_flag::wait;
 					}
 
-					vm::reservation_notifier_notify(addr);
+					vm::reservation_notifier_notify(addr, rtime);
 					break;
 				}
 				}
 			}
-
-			static_cast<void>(ppu.test_stopped());
 		}
+
+		if (notify)
+		{
+			if (auto waiter = vm::reservation_notifier_notify(notify, ppu.res_notify_time, true))
+			{
+				ppu.state += cpu_flag::wait;
+				waiter->notify_all();
+			}
+
+			ppu.res_notify = 0;
+			ppu.res_notify_postpone_streak = 0;
+		}
+
+		static_cast<void>(ppu.test_stopped());
 
 		if (addr == ppu.last_faddr)
 		{
@@ -3788,14 +3789,15 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 	// And on failure it has some time to do something else
 	if (notify && ((addr ^ notify) & -128))
 	{
-		if (ppu.res_notify_time == vm::reservation_notifier_count_index(notify).second)
+		if (auto waiter = vm::reservation_notifier_notify(notify, ppu.res_notify_time, true))
 		{
 			ppu.state += cpu_flag::wait;
-			vm::reservation_notifier_notify(notify);
+			waiter->notify_all();
 			static_cast<void>(ppu.test_stopped());
 		}
 
 		ppu.res_notify = 0;
+		ppu.res_notify_postpone_streak = 0;
 	}
 
 	ppu.raddr = 0;
