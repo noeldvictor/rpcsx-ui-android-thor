@@ -1,0 +1,4 @@
+interface:
+  display_name: "Thor Game Controller"
+  short_description: "Deterministic Thor and RPCS3 input"
+  default_prompt: "Use $thor-game-controller to verify input delivery, drive route macros, capture before/after screenshots, and recover from stuck emulator states."
