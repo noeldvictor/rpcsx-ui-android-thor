@@ -1,0 +1,50 @@
+﻿{
+    "id":  "20260516-095819-rsx-auditor",
+    "created":  "2026-05-16T09:58:19.7591347-04:00",
+    "action":  "Start",
+    "label":  "rsx-auditor",
+    "symptom":  "",
+    "package":  "net.rpcsx.easy",
+    "profile":  "default",
+    "profilePath":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-profiles\\default.json",
+    "mode":  "Normal",
+    "status":  "failed",
+    "failure":  "Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\"",
+    "settings":  {
+                     "logcatLines":  12000,
+                     "summaryTailLines":  80,
+                     "streamPollSeconds":  3,
+                     "postMode":  "Quiet",
+                     "postModeApplied":  ""
+                 },
+    "repo":  {
+                 "head":  "01ff1eeba",
+                 "branch":  "master",
+                 "status":  "M .gitignore\n M AGENTS.md\n M app/src/main/cpp/rpcsx/kernel/cellos/include/cellos/sys_spu.h\n M app/src/main/cpp/rpcsx/kernel/cellos/src/sys_semaphore.cpp\n M app/src/main/cpp/rpcsx/kernel/cellos/src/sys_spu.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.h\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKCommandStream.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKCompute.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKGSRender.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKHelpers.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKPipelineCompiler.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKPresent.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKQueryPool.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKRenderPass.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKRenderTargets.h\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKTexture.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKTextureCache.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/vkutils/barriers.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/vkutils/chip_class.h\n M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/vkutils/device.cpp\n M app/src/main/java/net/rpcsx/MainActivity.kt\n M app/src/main/java/net/rpcsx/RPCSXActivity.kt\n M app/src/main/java/net/rpcsx/config/GameSettingsDatabase.kt\n M app/src/main/java/net/rpcsx/performance/ThorPerformanceProfile.kt\n M debug-issues/README.md\n M debug-profiles/default.json\n M debug-profiles/eternal-sonata.json\n M tools/push_eternal_sonata_thor_profile.ps1\n M tools/set_thor_logging.ps1\n M tools/thor_ooda.ps1\n?? app/src/debug/\n?? app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/vkutils/thor_rsx_auditor.h\n?? debug-experiments/\n?? debug-profiles/eternal-sonata-speed.json\n?? ps3_emulation_ayn_thor_research_report.md\n?? tools/build_push_thor_core.ps1\n?? tools/eternal_sonata_speed_sprint.ps1\n?? tools/install_speed_sprint_tools.ps1\n?? tools/summarize_eternal_sonata_gpu_probe.ps1\n?? tools/thor_input_macro.ps1\n?? tools/thor_thread_wait_snapshot.ps1\n?? tools/windows_rpcs3_lab.ps1"
+             },
+    "apk":  {
+
+            },
+    "device":  {
+                   "serial":  "c3ca0370",
+                   "model":  "AYN Thor",
+                   "product":  "kalama",
+                   "board":  "kalama",
+                   "packagePath":  "package:/data/app/~~1qgpyGhGYzoCAEid7GvTzg==/net.rpcsx.easy-s3FKYHfn-I0p2ElTAlaaUg==/base.apk",
+                   "propsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260516-095819-rsx-auditor\\device-props.txt",
+                   "appPrefsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260516-095819-rsx-auditor\\app-prefs.txt"
+               },
+    "captures":  [
+
+                 ],
+    "summaries":  [
+
+                  ],
+    "quickRead":  [
+
+                  ],
+    "ghidra":  [
+
+               ],
+    "nextAction":  "Run failed: Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\""
+}
