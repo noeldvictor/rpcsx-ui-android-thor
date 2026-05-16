@@ -37,6 +37,7 @@
 #include <string_view>
 
 #ifdef ANDROID
+#include <android/log.h>
 #include <sys/system_properties.h>
 #endif
 
@@ -437,6 +438,7 @@ enum class thor_es_getllar_mode : u32
 	short_wait,
 	tiny_wait,
 	yield8,
+	skip_rsx_lock,
 };
 
 static thor_es_getllar_mode parse_thor_es_getllar_mode(std::string_view value)
@@ -459,6 +461,11 @@ static thor_es_getllar_mode parse_thor_es_getllar_mode(std::string_view value)
 	if (value == "yield8")
 	{
 		return thor_es_getllar_mode::yield8;
+	}
+
+	if (value == "norsx" || value == "skip-rsx" || value == "spurs-norsx")
+	{
+		return thor_es_getllar_mode::skip_rsx_lock;
 	}
 
 	return thor_es_getllar_mode::profile;
@@ -488,9 +495,9 @@ static thor_es_getllar_mode get_thor_es_getllar_mode()
 	return mode;
 }
 
-static bool thor_es_getllar_enabled()
+static bool thor_es_getllar_profile_enabled()
 {
-	return get_thor_es_getllar_mode() != thor_es_getllar_mode::disabled && Emu.GetTitleID() == "BLUS30161";
+	return get_thor_es_getllar_mode() == thor_es_getllar_mode::profile && Emu.GetTitleID() == "BLUS30161";
 }
 
 static const char* get_thor_es_getllar_mode_name()
@@ -502,6 +509,7 @@ static const char* get_thor_es_getllar_mode_name()
 	case thor_es_getllar_mode::short_wait: return "short";
 	case thor_es_getllar_mode::tiny_wait: return "tiny";
 	case thor_es_getllar_mode::yield8: return "yield8";
+	case thor_es_getllar_mode::skip_rsx_lock: return "norsx";
 	}
 
 	return "unknown";
@@ -586,6 +594,23 @@ static void log_thor_es_getllar_probe()
 			break;
 		}
 
+#ifdef ANDROID
+		__android_log_print(ANDROID_LOG_INFO, "RPCS3",
+			"Thor GETLLAR probe top%u: mode=%s total_calls=%llu key=0x%llx calls=%llu retries=%llu "
+			"max_retries=%llu slow_yields=%llu image_sig=0x%llx pc=0x%x block_hash=0x%llx "
+			"addr=0x%x lsa=0x%x group=0x%x spu_index=%u",
+			rank + 1, get_thor_es_getllar_mode_name(),
+			static_cast<unsigned long long>(g_thor_es_getllar_total_calls.load(std::memory_order_relaxed)),
+			static_cast<unsigned long long>(snapshot.key),
+			static_cast<unsigned long long>(snapshot.calls),
+			static_cast<unsigned long long>(snapshot.retries),
+			static_cast<unsigned long long>(snapshot.max_retries),
+			static_cast<unsigned long long>(snapshot.slow_yields),
+			static_cast<unsigned long long>(snapshot.image_signature),
+			snapshot.pc,
+			static_cast<unsigned long long>(snapshot.block_hash),
+			snapshot.addr, snapshot.lsa, snapshot.group_id, snapshot.spu_index);
+#else
 		spu_log.notice(
 			"Thor GETLLAR probe top%u: mode=%s total_calls=%llu key=0x%llx calls=%llu retries=%llu "
 			"max_retries=%llu slow_yields=%llu image_sig=0x%llx pc=0x%x block_hash=0x%llx "
@@ -596,12 +621,13 @@ static void log_thor_es_getllar_probe()
 			snapshot.slow_yields, snapshot.image_signature, snapshot.pc,
 			snapshot.block_hash, snapshot.addr, snapshot.lsa, snapshot.group_id,
 			snapshot.spu_index);
+#endif
 	}
 }
 
 static void record_thor_es_getllar(spu_thread& spu, u32 addr, u32 lsa, u64 retry_count, bool slow_yield)
 {
-	if (!thor_es_getllar_enabled())
+	if (!thor_es_getllar_profile_enabled())
 	{
 		return;
 	}
@@ -661,14 +687,14 @@ static void record_thor_es_getllar(spu_thread& spu, u32 addr, u32 lsa, u64 retry
 	selected->spu_index.store(spu.index, std::memory_order_relaxed);
 
 	const u64 total = g_thor_es_getllar_total_calls.fetch_add(1, std::memory_order_relaxed) + 1;
-	if (total % 10'000 != 0 && retry_count < 24)
+	if (total != 1 && total % 10'000 != 0 && retry_count < 24)
 	{
 		return;
 	}
 
 	const u64 now = get_system_time();
 	u64 last = g_thor_es_getllar_last_log_us.load(std::memory_order_relaxed);
-	if (last && now - last < 1'000'000)
+	if (total != 1 && last && now - last < 1'000'000)
 	{
 		return;
 	}
@@ -680,14 +706,31 @@ static void record_thor_es_getllar(spu_thread& spu, u32 addr, u32 lsa, u64 retry
 
 	const auto spu_name_ptr = spu.spu_tname.load();
 	const std::string spu_name = spu_name_ptr ? *spu_name_ptr : std::string();
+	const char* group_name = spu.group ? spu.group->name.c_str() : "";
+
+#ifdef ANDROID
+	__android_log_print(ANDROID_LOG_INFO, "RPCS3",
+		"Thor GETLLAR probe sample: mode=%s total_calls=%llu image_sig=0x%llx pc=0x%x "
+		"block_hash=0x%llx addr=0x%x lsa=0x%x retries=%llu slow_yield=%u group=0x%x "
+		"group_name=\"%s\" spu=0x%x spu_index=%u spu_name=\"%s\"",
+		get_thor_es_getllar_mode_name(),
+		static_cast<unsigned long long>(total),
+		static_cast<unsigned long long>(spu.es_gpu_probe.image_signature),
+		spu.pc,
+		static_cast<unsigned long long>(spu.block_hash),
+		addr, lsa & 0x3ff80,
+		static_cast<unsigned long long>(retry_count),
+		slow_yield ? 1 : 0,
+		spu.group ? spu.group->id : 0, group_name, spu.lv2_id, spu.index, spu_name.c_str());
+#else
 	spu_log.notice(
 		"Thor GETLLAR probe sample: mode=%s total_calls=%llu image_sig=0x%llx pc=0x%x "
 		"block_hash=0x%llx addr=0x%x lsa=0x%x retries=%llu slow_yield=%u group=0x%x "
 		"group_name=\"%s\" spu=0x%x spu_index=%u spu_name=\"%s\"",
 		get_thor_es_getllar_mode_name(), total, spu.es_gpu_probe.image_signature,
 		spu.pc, spu.block_hash, addr, lsa & 0x3ff80, retry_count, slow_yield ? 1 : 0,
-		spu.group ? spu.group->id : 0, spu.group ? spu.group->name : std::string_view{},
-		spu.lv2_id, spu.index, spu_name);
+		spu.group ? spu.group->id : 0, group_name, spu.lv2_id, spu.index, spu_name);
+#endif
 
 	log_thor_es_getllar_probe();
 }
@@ -695,6 +738,37 @@ static void record_thor_es_getllar(spu_thread& spu, u32 addr, u32 lsa, u64 retry
 static u32 thor_es_getllar_retry_spin_limit()
 {
 	return get_thor_es_getllar_mode() == thor_es_getllar_mode::yield8 && Emu.GetTitleID() == "BLUS30161" ? 8u : 24u;
+}
+
+static bool thor_es_getllar_skip_rsx_lock(const spu_thread& spu, u32 addr, u32 lsa)
+{
+	if (get_thor_es_getllar_mode() != thor_es_getllar_mode::skip_rsx_lock || Emu.GetTitleID() != "BLUS30161")
+	{
+		return false;
+	}
+
+	if (spu.es_gpu_probe.image_signature != 0x958dfe208b686622ull)
+	{
+		return false;
+	}
+
+	const u32 aligned_lsa = lsa & 0x3ff80;
+	if (spu.pc == 0x0a70 && addr == 0x8ab280 && aligned_lsa == 0x4a00)
+	{
+		return true;
+	}
+
+	if ((spu.pc == 0x0340 || spu.pc == 0x0d24) && addr == 0x8aa280 && aligned_lsa == 0x100)
+	{
+		return true;
+	}
+
+	if ((spu.pc == 0x1304 || spu.pc == 0x14f4 || spu.pc == 0x1a00 || spu.pc == 0x1e1c) && addr == 0x8aa300 && aligned_lsa == 0x2d80)
+	{
+		return true;
+	}
+
+	return false;
 }
 
 static u32 thor_es_getllar_retry_cycles()
@@ -717,6 +791,7 @@ static u32 thor_es_getllar_retry_cycles()
 	case thor_es_getllar_mode::disabled:
 	case thor_es_getllar_mode::profile:
 	case thor_es_getllar_mode::yield8:
+	case thor_es_getllar_mode::skip_rsx_lock:
 		break;
 	}
 
@@ -5613,7 +5688,8 @@ bool spu_thread::process_mfc_cmd()
 		getllar_busy_waiting_switch = umax;
 
 		u64 ntime = 0;
-		rsx::reservation_lock rsx_lock(addr, 128);
+		const bool skip_rsx_lock = thor_es_getllar_skip_rsx_lock(*this, addr, ch_mfc_cmd.lsa);
+		rsx::reservation_lock rsx_lock(addr, 128, !skip_rsx_lock && g_cfg.core.rsx_accurate_res_access && addr < rsx::constants::local_mem_base);
 
 		u64 getllar_retry_count = 0;
 		bool getllar_slow_yield = false;

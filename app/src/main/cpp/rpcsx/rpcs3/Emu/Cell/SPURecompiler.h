@@ -66,6 +66,8 @@ struct spu_program
 	bool operator<(const spu_program& rhs) const noexcept;
 };
 
+u32 spu_reduced_loop_unroll_factor() noexcept;
+
 class spu_item
 {
 public:

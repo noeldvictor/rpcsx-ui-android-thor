@@ -2164,6 +2164,7 @@ public:
 
 				const bool is_reduced_loop = m_inst_attrs[(baddr - start) / 4] == inst_attr::reduced_loop;
 				const auto reduced_loop_info = is_reduced_loop ? std::static_pointer_cast<reduced_loop_t>(ensure(m_patterns.at(baddr - start).info_ptr)) : nullptr;
+				const u32 reduced_loop_unroll = is_reduced_loop ? spu_reduced_loop_unroll_factor() : 2;
 
 				BasicBlock* block_optimization_phi_parent = nullptr;
 				const auto block_optimization_inner = is_reduced_loop ? BasicBlock::Create(m_context, fmt::format("b-loop-it-0x%x", baddr), m_function) : nullptr;
@@ -2277,9 +2278,8 @@ public:
 
 					llvm::Value* condition = nullptr;
 					llvm::Value* prev_it = loop_dictator_after_adjustment;
-					const u32 reserve_iterations = 2;
 
-					for (u32 i = 0; i < reserve_iterations; i++)
+					for (u32 i = 0; i < reduced_loop_unroll; i++)
 					{
 						if (i)
 						{
@@ -2379,7 +2379,7 @@ public:
 
 							iteration_emit++;
 
-							if (iteration_emit < 2)
+							if (iteration_emit < reduced_loop_unroll)
 							{
 								opt_pos = baddr - 4;
 								continue;

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "Status")]
+    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitU4", "ReducedLoopEmitU8", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock", "Status")]
     [string]$Mode = "Status"
 )
 
@@ -29,6 +29,8 @@ function Get-DeviceProp {
 
     "{0}={1}" -f $Name, $value
 }
+
+$ReducedLoopUnroll = "2"
 
 switch ($Mode) {
     "Quiet" {
@@ -88,6 +90,36 @@ switch ($Mode) {
         break
     }
     "ReducedLoopEmit" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "ReducedLoopEmitU4" {
+        $ReducedLoopUnroll = "4"
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "ReducedLoopEmitU8" {
+        $ReducedLoopUnroll = "8"
         Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
         Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
@@ -408,6 +440,23 @@ switch ($Mode) {
         Set-DeviceProp "log.tag.RPCSX-UI" "I"
         break
     }
+    "GetllarNoRsxLock" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_getllar" "norsx"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
 }
 
 if ($Mode -ne "Status" -and $Mode -ne "RsxDmaHostFence") {
@@ -434,10 +483,15 @@ if ($Mode -ne "Status" -and $Mode -notlike "Getllar*") {
     Set-DeviceProp "debug.rpcsx.thor.es_getllar" "off"
 }
 
+if ($Mode -ne "Status") {
+    Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_unroll" $ReducedLoopUnroll
+}
+
 Get-DeviceProp "debug.rpcsx.thor.logcat"
 Get-DeviceProp "debug.rpcsx.thor.syscall_stats"
 Get-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect"
 Get-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit"
+Get-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_unroll"
 Get-DeviceProp "debug.rpcsx.thor.spurs_probe"
 Get-DeviceProp "debug.rpcsx.thor.es_sema_superpath"
 Get-DeviceProp "debug.rpcsx.thor.es_dma_superpath"

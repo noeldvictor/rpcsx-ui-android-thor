@@ -144,6 +144,43 @@ static bool spu_reduced_loop_emit_enabled() noexcept
 	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
 }
 
+u32 spu_reduced_loop_unroll_factor() noexcept
+{
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+	const int length = __system_property_get("debug.rpcsx.thor.spu_reduced_loop_unroll", value);
+
+	if (length <= 0)
+	{
+		return 2;
+	}
+#else
+	const char* value = std::getenv("RPCSX_SPU_REDUCED_LOOP_UNROLL");
+
+	if (!value || !*value)
+	{
+		return 2;
+	}
+#endif
+
+	if (value[0] == '1')
+	{
+		return 1;
+	}
+
+	if (value[0] == '4')
+	{
+		return 4;
+	}
+
+	if (value[0] == '8')
+	{
+		return 8;
+	}
+
+	return 2;
+}
+
 // Move 4 args for calling native function from a GHC calling convention function
 #if defined(ARCH_X64)
 static u8* move_args_ghc_to_native(u8* raw)
@@ -811,8 +848,9 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	// SPU cache file (version + block size type)
 	const bool use_thor_reduced_loop_cache = spu_reduced_loop_emit_enabled();
+	const u32 thor_reduced_loop_unroll = use_thor_reduced_loop_cache ? spu_reduced_loop_unroll_factor() : 0;
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
-		(use_thor_reduced_loop_cache ? "-thor-rl" : "") + "-v1-tane.dat";
+		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u{}", thor_reduced_loop_unroll) : "") + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{

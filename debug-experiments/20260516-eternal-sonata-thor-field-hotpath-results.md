@@ -126,3 +126,86 @@ Next slice: add a gated `GETLLAR` retry probe that records top SPU image hash,
 PC, block hash, reservation address, and thread/group name, then feed the top
 hot SPU local-store window into the Ghidra/static-analysis lane documented in
 `debug-experiments/20260516-ghidra-ps3-tooling.md`.
+
+## GETLLAR Clean-Mode A/B
+
+Hypothesis: the dominant `spu_getllar_retry` wait site might be reduced by
+shortening the retry spin limit or by skipping the RSX reservation lock for the
+exact Eternal Sonata SPURS GETLLAR signatures found by the probe.
+
+Changed files/settings:
+
+- `app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp` added Android-direct
+  GETLLAR probe logging, split `profile` mode from speed modes so FPS sweeps do
+  not pay profiler atomics/logging, and added a `norsx` gate for exact
+  `BLUS30161` / image `0x958dfe208b686622` / PC/address/LSA keys.
+- `tools/set_thor_logging.ps1` added `GetllarNoRsxLock`.
+- Rollback switch: `debug.rpcsx.thor.es_getllar=off`.
+
+Thor clean field result with dev core `es-getllar-cleanmodes`, SHA256
+`6E5311A8F0366EFC8BB7846F1B663B2924F8C9342AA8B138B28E0ED08EC7B4ED`:
+
+| Mode | Capture | Matched field FPS | Later scene FPS | Visual result |
+| --- | --- | ---: | ---: | --- |
+| quiet, reduced-loop off | `debug-captures/android-speed-sprint/20260516-153950-thor-input-eternal-sonata-field-route/01-field.png` | `16.30` | `15.73` | correct field |
+| reduced-loop emit, GETLLAR off | `debug-captures/android-speed-sprint/20260516-154532-thor-input-eternal-sonata-field-route/01-field.png` | `19.60` | `18.40` | correct field |
+| reduced-loop emit, `yield8` | `debug-captures/android-speed-sprint/20260516-155117-thor-input-eternal-sonata-field-route/01-field.png` | `18.45` | `18.08` | correct field |
+| reduced-loop emit, `norsx` | `debug-captures/android-speed-sprint/20260516-155730-thor-input-eternal-sonata-field-route/01-field.png` | `18.84` | `17.60` | correct field |
+
+Status: `failed` as a speed path. The GETLLAR profile was real and correctly
+identified the SPURS kernel hot loop, but these wait/RSX-lock tweaks did not
+beat the reduced-loop baseline once profiler overhead was removed. Keep the
+probe code useful for future static analysis, but do not promote `yield8` or
+`norsx` for Eternal Sonata field FPS.
+
+Next action: continue SPU reduced-loop/codegen coverage and use Ghidra/disasm
+around image `0x958dfe208b686622` hot PCs `0x25cc`, `0x451c`, and GETLLAR PC
+`0x0a70` to find a real loop/body optimization rather than another wait knob.
+
+## Reduced-Loop Unroll A/B
+
+Hypothesis: reduced-loop emission is the only meaningful speed signal so far,
+so batching more guest SPU loop iterations per generated host loop might shave
+branch/condition overhead without changing normal emulator behavior.
+
+Changed files/settings:
+
+- `SPUCommonRecompiler.cpp` added `debug.rpcsx.thor.spu_reduced_loop_unroll`
+  / `RPCSX_SPU_REDUCED_LOOP_UNROLL` with allowed effective values `1`, `2`,
+  `4`, and `8`.
+- The reduced-loop SPU cache key now includes the unroll factor:
+  `spu-...-thor-rl-uN-v1-tane.dat`, preventing stale u2/u4/u8 compiler output
+  from mixing during A/B tests.
+- `SPULLVMRecompiler.cpp` uses the factor for both the reduced-loop entry guard
+  and emitted loop body unroll count.
+- `tools/set_thor_logging.ps1` added `ReducedLoopEmitU4` and
+  `ReducedLoopEmitU8`; `ReducedLoopEmit` keeps the previous u2 behavior.
+- Rollback switch: use `ReducedLoopEmit` or set
+  `debug.rpcsx.thor.spu_reduced_loop_unroll=2`.
+
+Thor dev core `es-reduced-loop-unroll`, SHA256
+`880C8B172817EB575C5201DED837905E3785960E70C4ACD609BC4025497A63AE`:
+
+| Mode | Capture | FPS overlay | Visual result |
+| --- | --- | ---: | --- |
+| u2 | `debug-captures/android-speed-sprint/20260516-174120-es-rl-u2-field-scene/scene.png` | `18.65` | correct field |
+| u4 | `debug-captures/android-speed-sprint/20260516-174631-es-rl-u4-field-scene/scene.png` | `19.81` | correct field |
+| u8 | `debug-captures/android-speed-sprint/20260516-175209-es-rl-u8-field-scene/scene.png` | `19.29` | correct field |
+| u4 menu | `debug-captures/android-speed-sprint/20260516-175353-thor-input-eternal-sonata-menu-route/02-pause-menu.png` | `20.22` | correct pause/menu overlay |
+
+Additional flicker burst:
+
+- `debug-captures/thor-screenshots/20260516-175921-es-rl-u4-menu-flicker-burst`
+- 8 frames captured; first/last inspected and showed the same pause/menu overlay
+  without obvious black spots or menu corruption. FPS varied during the burst,
+  likely because repeated `screencap` pulls are intrusive.
+
+Status: `promising-field-menu`, not a full win. u4 is the best tested unroll
+factor and is a small field uplift over the same dev-core u2 run, with menu
+visuals surviving. It still does not meet the 20% sustained target and cannot
+be promoted until first battle is routable and visually correct.
+
+Next action: keep u4 as the current reduced-loop experiment setting, then find
+or create a first-battle checkpoint. After battle validation, profile u4 with
+simpleperf/Perfetto to see whether SPU loop codegen or RSX FIFO becomes the new
+dominant limit.
