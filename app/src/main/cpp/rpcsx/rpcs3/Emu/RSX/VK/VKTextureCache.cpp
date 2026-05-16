@@ -3,6 +3,7 @@
 #include "VKTextureCache.h"
 #include "VKCompute.h"
 #include "VKAsyncScheduler.h"
+#include "vkutils/thor_rsx_auditor.h"
 
 #include "rx/asm.hpp"
 
@@ -344,16 +345,18 @@ namespace vk
 
 		src->pop_layout(cmd);
 
+		const bool use_host_dma_fence = vk::thor::rsx_auditor::use_host_read_dma_fence();
 		VkBufferMemoryBarrier2KHR mem_barrier =
 			{
 				.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
 				.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, // Finish all transfer...
 				.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
-				.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR, // ...before proceeding with any command
-				.dstAccessMask = 0,
+				.dstStageMask = use_host_dma_fence ? VK_PIPELINE_STAGE_2_HOST_BIT_KHR : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR,
+				.dstAccessMask = use_host_dma_fence ? VK_ACCESS_2_HOST_READ_BIT_KHR : 0,
 				.buffer = dma_mapping.second->value,
 				.offset = dma_mapping.first,
 				.size = valid_range.length()};
+		vk::thor::rsx_auditor::record_dma_transfer_fence(valid_range.length(), use_host_dma_fence);
 
 		// Create event object for this transfer and queue signal op
 		dma_fence = std::make_unique<vk::event>(*m_device, sync_domain::host);
@@ -1486,6 +1489,8 @@ namespace vk
 
 	vk::viewable_image* texture_cache::upload_image_simple(vk::command_buffer& cmd, VkFormat format, u32 address, u32 width, u32 height, u32 pitch)
 	{
+		vk::thor::rsx_auditor::record_simple_upload(static_cast<VkDeviceSize>(width) * height * 4);
+
 		bool linear_format_supported = false;
 
 		switch (format)

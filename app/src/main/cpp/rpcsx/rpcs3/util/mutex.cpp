@@ -1,6 +1,7 @@
 #include "mutex.h"
 
 #include "rx/asm.hpp"
+#include "util/thor_wait_profiler.h"
 
 void shared_mutex::imp_lock_shared(u32 val)
 {
@@ -26,7 +27,7 @@ void shared_mutex::imp_lock_shared(u32 val)
 			return;
 		}
 
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::mutex_shared);
 	}
 
 	// Acquire writer lock and downgrade
@@ -96,7 +97,7 @@ void shared_mutex::imp_lock(u32 val)
 
 	for (int i = 0; i < 10; i++)
 	{
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::mutex_exclusive);
 
 		const u32 old = m_value;
 
@@ -138,7 +139,7 @@ void shared_mutex::imp_lock_upgrade()
 {
 	for (int i = 0; i < 10; i++)
 	{
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::mutex_upgrade);
 
 		if (try_lock_upgrade())
 		{
@@ -178,7 +179,7 @@ void shared_mutex::imp_lock_unlock()
 
 		_max = val / c_one;
 
-		rx::busy_wait(1500);
+		thor_wait::profiled_busy_wait(thor_wait::site::mutex_unlock, 1500);
 	}
 
 	// Lock and unlock

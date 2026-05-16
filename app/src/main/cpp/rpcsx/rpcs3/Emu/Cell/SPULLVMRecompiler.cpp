@@ -1600,7 +1600,7 @@ public:
 			m_hash_start = hash_start;
 		}
 
-		spu_log.notice("Building function 0x%x... (size %u, %s)", func.entry_point, func.data.size(), m_hash);
+		spu_log.trace("Building function 0x%x... (size %u, %s)", func.entry_point, func.data.size(), m_hash);
 
 		m_pos = func.lower_bound;
 		m_base = func.entry_point;
@@ -3179,7 +3179,7 @@ public:
 				cache.add(func);
 			}
 
-			spu_log.success("New SPU block compiled successfully (size=%u)", func_size);
+			spu_log.trace("New SPU block compiled successfully (size=%u)", func_size);
 		}
 
 		return fn;
@@ -7607,17 +7607,17 @@ public:
 
 		if (auto [ok_re, mystery] = match_expr(a, spu_re(MT)); ok_re)
 		{
-			spu_log.todo("[%s:0x%05x] Unmatched spu_re(a) found in FMA", m_hash, m_pos);
+			spu_log.trace("[%s:0x%05x] Unmatched spu_re(a) found in FMA", m_hash, m_pos);
 		}
 
 		if (auto [ok_re, mystery] = match_expr(b, spu_re(MT)); ok_re)
 		{
-			spu_log.todo("[%s:0x%05x] Unmatched spu_re(b) found in FMA", m_hash, m_pos);
+			spu_log.trace("[%s:0x%05x] Unmatched spu_re(b) found in FMA", m_hash, m_pos);
 		}
 
 		if (auto [ok_resq, mystery] = match_expr(c, spu_rsqrte(MT)); ok_resq)
 		{
-			spu_log.todo("[%s:0x%05x] Unmatched spu_rsqrte(c) found in FMA", m_hash, m_pos);
+			spu_log.trace("[%s:0x%05x] Unmatched spu_rsqrte(c) found in FMA", m_hash, m_pos);
 		}
 
 		set_vr(op.rt4, fma(a, b, c));

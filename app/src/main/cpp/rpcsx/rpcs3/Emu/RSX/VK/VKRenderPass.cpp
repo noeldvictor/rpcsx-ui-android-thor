@@ -3,6 +3,7 @@
 #include "util/mutex.h"
 #include "VKRenderPass.h"
 #include "vkutils/image.h"
+#include "vkutils/thor_rsx_auditor.h"
 
 namespace vk
 {
@@ -365,6 +366,7 @@ namespace vk
 
 		VK_GET_SYMBOL(vkCmdBeginRenderPass)(cmd, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
 		renderpass_info = {pass, target};
+		vk::thor::rsx_auditor::record_renderpass_begin();
 	}
 
 	void begin_renderpass(VkDevice dev, const vk::command_buffer& cmd, u64 renderpass_key, VkFramebuffer target, const coordu& framebuffer_region)
@@ -382,6 +384,7 @@ namespace vk
 	{
 		VK_GET_SYMBOL(vkCmdEndRenderPass)(cmd);
 		g_current_renderpass[cmd] = {};
+		vk::thor::rsx_auditor::record_renderpass_end();
 	}
 
 	bool is_renderpass_open(const vk::command_buffer& cmd)

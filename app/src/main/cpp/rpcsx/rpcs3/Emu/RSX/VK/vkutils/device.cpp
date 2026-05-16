@@ -212,6 +212,66 @@ namespace vk
 
 		rsx_log.always()("Found Vulkan-compatible GPU: '%s' running on driver %s", get_name(), get_driver_version());
 
+		if (allow_extensions && (get_name().find("Adreno") != umax || get_name().find("Qualcomm") != umax))
+		{
+			supported_extensions device_extensions(supported_extensions::device, nullptr, dev);
+
+			rsx_log.notice("Thor Vulkan Feature Doctor: gpu='%s' vendor=0x%x device=0x%x driver_vendor=%u driver_id=%u api=%u.%u.%u driver='%s' conformance=%s",
+				get_name(), props.vendorID, props.deviceID, static_cast<u32>(get_driver_vendor()), static_cast<u32>(driver_properties.driverID),
+				VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion),
+				get_driver_version(), get_driver_vk_version());
+
+			for (u32 i = 0; i < get_queue_count(); i++)
+			{
+				const auto& queue = get_queue_properties(i);
+				std::string flags;
+				if (queue.queueFlags & VK_QUEUE_GRAPHICS_BIT) flags += "graphics,";
+				if (queue.queueFlags & VK_QUEUE_COMPUTE_BIT) flags += "compute,";
+				if (queue.queueFlags & VK_QUEUE_TRANSFER_BIT) flags += "transfer,";
+				if (queue.queueFlags & VK_QUEUE_SPARSE_BINDING_BIT) flags += "sparse,";
+				if (flags.empty()) flags = "none";
+				else flags.pop_back();
+
+				rsx_log.notice("Thor Vulkan Feature Doctor queue[%u]: flags=0x%x (%s) count=%u timestamp_bits=%u min_image_transfer_granularity=%ux%ux%u",
+					i, queue.queueFlags, flags.c_str(), queue.queueCount, queue.timestampValidBits,
+					queue.minImageTransferGranularity.width, queue.minImageTransferGranularity.height, queue.minImageTransferGranularity.depth);
+			}
+
+			for (u32 i = 0; i < memory_properties.memoryHeapCount; i++)
+			{
+				const auto& heap = memory_properties.memoryHeaps[i];
+				rsx_log.notice("Thor Vulkan Feature Doctor heap[%u]: size_mb=%llu flags=0x%x",
+					i, static_cast<unsigned long long>(heap.size / (1024ull * 1024ull)), heap.flags);
+			}
+
+			const char* watched_extensions[] =
+			{
+				"VK_QCOM_tile_memory_heap",
+				"VK_QCOM_tile_shading",
+				"VK_QCOM_tile_properties",
+				"VK_QCOM_elapsed_timer_query",
+				"VK_QCOM_queue_perf_hint",
+				"VK_KHR_pipeline_binary",
+				"VK_KHR_dynamic_rendering_local_read",
+				"VK_KHR_unified_image_layouts",
+				"VK_EXT_shader_tile_image",
+				"VK_EXT_present_timing",
+				"VK_KHR_present_wait",
+				"VK_KHR_present_id",
+				"VK_KHR_synchronization2",
+				"VK_EXT_attachment_feedback_loop_layout",
+				"VK_EXT_descriptor_indexing",
+				"VK_EXT_custom_border_color",
+				"VK_EXT_external_memory_host"
+			};
+
+			for (const auto* ext : watched_extensions)
+			{
+				rsx_log.notice("Thor Vulkan Feature Doctor extension: [%s] %s",
+					device_extensions.is_supported(ext) ? "supported" : "missing", ext);
+			}
+		}
+
 		if (get_driver_vendor() == driver_vendor::RADV && get_name().find("LLVM 8.0.0") != umax)
 		{
 			// Serious driver bug causing black screens
@@ -303,6 +363,11 @@ namespace vk
 #endif
 			}
 
+			if (gpu_name.find("Adreno") != umax || gpu_name.find("Qualcomm") != umax)
+			{
+				return driver_vendor::QUALCOMM;
+			}
+
 			if (gpu_name.find("llvmpipe") != umax)
 			{
 				return driver_vendor::LAVAPIPE;
@@ -358,9 +423,20 @@ namespace vk
 				return driver_vendor::PANVK;
 			case VK_DRIVER_ID_ARM_PROPRIETARY:
 				return driver_vendor::ARM_MALI;
+#ifdef VK_DRIVER_ID_QUALCOMM_PROPRIETARY
+			case VK_DRIVER_ID_QUALCOMM_PROPRIETARY:
+				return driver_vendor::QUALCOMM;
+#endif
 			default:
-				// Mobile?
+			{
+				const auto gpu_name = get_name();
+				if (gpu_name.find("Adreno") != umax || gpu_name.find("Qualcomm") != umax)
+				{
+					return driver_vendor::QUALCOMM;
+				}
+
 				return driver_vendor::unknown;
+			}
 			}
 		}
 	}

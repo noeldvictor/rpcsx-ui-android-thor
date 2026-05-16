@@ -195,7 +195,8 @@ struct sys_spu_image {
   void load(const fs::file &stream);
   void free() const;
   static void deploy(u8 *loc, std::span<const sys_spu_segment> segs,
-                     bool is_verbose = true);
+                     bool is_verbose = true, u32 *applied_count = nullptr);
+  static void deploy_segments(u8 *loc, std::span<const sys_spu_segment> segs);
 };
 
 enum : u32 {
@@ -255,6 +256,7 @@ struct lv2_spu_group {
   u32 waiter_spu_index = -1; // Index of SPU executing a waiting syscall
   class ppu_thread *waiter = nullptr;
   bool set_terminate = false;
+  std::array<bool, 8> patchless_image_deploy{};
 
   std::array<shared_ptr<named_thread<spu_thread>>, 8> threads; // SPU Threads
   std::array<s8, 256> threads_map; // SPU Threads map based number

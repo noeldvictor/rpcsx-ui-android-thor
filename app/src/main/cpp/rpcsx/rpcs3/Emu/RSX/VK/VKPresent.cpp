@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "VKGSRender.h"
 #include "vkutils/buffer_object.h"
+#include "vkutils/thor_rsx_auditor.h"
 #include "Emu/RSX/Overlays/overlay_manager.h"
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "rpcsx/fw/ps3/cellVideoOut.h"
@@ -200,6 +201,7 @@ void VKGSRender::advance_queued_frames()
 	m_current_frame->flags |= frame_context_state::dirty;
 
 	vk::advance_frame_counter();
+	vk::thor::rsx_auditor::on_frame_end();
 }
 
 void VKGSRender::queue_swap_request()

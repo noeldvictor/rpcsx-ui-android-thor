@@ -8,7 +8,7 @@ import net.rpcsx.utils.GeneralSettings
 
 object ThorPerformanceProfile {
     private const val TAG = "ThorPerformanceProfile"
-    private const val PROFILE_VERSION = 11
+    private const val PROFILE_VERSION = 12
     private const val PROFILE_PREF = "thor_compile_profile_version"
     private const val PERFORMANCE_CORE_MASK = 0xF8
 
@@ -61,8 +61,8 @@ object ThorPerformanceProfile {
         setSetting("Core@@SPU Cache", "true", "SPU Cache", changed, failed)
         setSetting("Core@@SPU Decoder", "\"Recompiler (LLVM)\"", "SPU Decoder", changed, failed)
         setSetting("Core@@Max SPURS Threads", "6", "Max SPURS Threads", changed, failed)
-        setSetting("Core@@SPU Reservation Busy Waiting Enabled", "true", "SPU Reservation Busy Waiting", changed, failed)
-        setSetting("Core@@SPU Reservation Busy Waiting Percentage", "100", "SPU Reservation Busy Waiting Percentage", changed, failed)
+        setSetting("Core@@SPU Reservation Busy Waiting Enabled", "false", "SPU Reservation Busy Waiting", changed, failed)
+        setSetting("Core@@SPU Reservation Busy Waiting Percentage", "0", "SPU Reservation Busy Waiting Percentage", changed, failed)
         setSetting("Core@@Accurate SPU Reservations", "true", "Accurate SPU Reservations", changed, failed)
         setSetting("Core@@SPU Verification", "true", "SPU Verification", changed, failed)
         setSetting("Core@@Use LLVM CPU", "\"cortex-a78\"", "Use LLVM CPU", changed, failed)
@@ -70,6 +70,9 @@ object ThorPerformanceProfile {
         setSetting("Video@@Relaxed ZCULL Sync", "false", "Relaxed ZCULL Sync", changed, failed)
         setSetting("Video@@Multithreaded RSX", "false", "Multithreaded RSX", changed, failed)
         setSetting("Video@@Disable On-Disk Shader Cache", "false", "On-Disk Shader Cache", changed, failed)
+        setSetting("Video@@Shader Compiler Threads", "2", "Shader Compiler Threads", changed, failed)
+        setSetting("Video@@Vulkan@@VRAM allocation limit (MB)", "3072", "Vulkan VRAM Allocation Limit", changed, failed)
+        setSetting("Video@@Performance Overlay@@Enabled", "true", "Performance Overlay", changed, failed)
         if (affinityApplied) {
             setThorSchedulerDefaults(changed, failed)
         }
@@ -119,7 +122,7 @@ object ThorPerformanceProfile {
         changed: MutableList<String>,
         failed: MutableList<String>
     ) {
-        setSetting("Core@@Thread Scheduler Mode", "\"RPCS3 Scheduler\"", "Thread Scheduler Mode", changed, failed)
+        setSetting("Core@@Thread Scheduler Mode", "\"Operating System\"", "Thread Scheduler Mode", changed, failed)
         setSetting("Core@@Affinity@@CPU0", "\"General\"", "Affinity CPU0", changed, failed)
         setSetting("Core@@Affinity@@CPU1", "\"General\"", "Affinity CPU1", changed, failed)
         setSetting("Core@@Affinity@@CPU2", "\"General\"", "Affinity CPU2", changed, failed)

@@ -2,6 +2,7 @@
 #include "VKCommandStream.h"
 #include "vkutils/descriptors.h"
 #include "vkutils/sync.h"
+#include "vkutils/thor_rsx_auditor.h"
 
 #include "Emu/IdManager.h"
 #include "Emu/RSX/RSXOffload.h"
@@ -39,6 +40,7 @@ namespace vk
 			.signalSemaphoreCount = submit_info.signal_semaphores_count,
 			.pSignalSemaphores = submit_info.signal_semaphores.data()};
 
+		vk::thor::rsx_auditor::record_queue_submit(submit_info.wait_semaphores_count, submit_info.signal_semaphores_count);
 		VK_GET_SYMBOL(vkQueueSubmit)(submit_info.queue, 1, &info, submit_info.pfence->handle);
 		release_global_submit_lock();
 
@@ -53,6 +55,7 @@ namespace vk
 		// Access to this method must be externally synchronized.
 		// Offloader is guaranteed to never call this for async flushes.
 		vk::descriptors::flush();
+		vk::thor::rsx_auditor::record_queue_submit_request(!!flush, !flush && g_cfg.video.multithreaded_rsx);
 
 		if (!flush && g_cfg.video.multithreaded_rsx)
 		{

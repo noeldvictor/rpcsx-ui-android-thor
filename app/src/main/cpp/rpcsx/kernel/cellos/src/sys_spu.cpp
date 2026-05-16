@@ -30,6 +30,9 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <string_view>
+#include <unordered_map>
 
 #ifdef ANDROID
 #include <sys/system_properties.h>
@@ -282,6 +285,248 @@ static void thor_spurs_probe_log(const char *op, ppu_thread &ppu,
   thor_spurs_probe_log_state(ppu, group, id, cause, status);
 }
 
+enum class thor_es_dma_superpath_mode : u32 {
+  disabled,
+  profile,
+  verify,
+};
+
+struct thor_es_dma_seen {
+  u64 output_hash = 0;
+  u64 repeat_hits = 0;
+  u64 output_mismatches = 0;
+};
+
+static std::mutex g_thor_es_dma_seen_mutex;
+static std::unordered_map<u64, thor_es_dma_seen> g_thor_es_dma_seen;
+static std::atomic<u64> g_thor_es_dma_last_log_us{0};
+
+static thor_es_dma_superpath_mode parse_thor_es_dma_superpath_mode(
+    std::string_view value) {
+  if (value.empty() || value == "0" || value == "off" || value == "false" ||
+      value == "disabled") {
+    return thor_es_dma_superpath_mode::disabled;
+  }
+
+  if (value == "verify" || value == "1" || value == "true") {
+    return thor_es_dma_superpath_mode::verify;
+  }
+
+  return thor_es_dma_superpath_mode::profile;
+}
+
+static thor_es_dma_superpath_mode get_thor_es_dma_superpath_mode() {
+  static const thor_es_dma_superpath_mode mode = [] {
+#ifdef ANDROID
+    char property_value[PROP_VALUE_MAX]{};
+    const int property_length = __system_property_get(
+        "debug.rpcsx.thor.es_dma_superpath", property_value);
+    if (property_length > 0) {
+      return parse_thor_es_dma_superpath_mode(
+          std::string_view{property_value, static_cast<usz>(property_length)});
+    }
+#endif
+
+    if (const char *value = std::getenv("RPCSX_THOR_ES_DMA_SUPERPATH")) {
+      return parse_thor_es_dma_superpath_mode(value);
+    }
+
+    if (const char *value = std::getenv("RPCS3_ES_DMA_SUPERPATH")) {
+      return parse_thor_es_dma_superpath_mode(value);
+    }
+
+    if (const char *value = std::getenv("RPCS3_ES_GPU_PROBE")) {
+      return parse_thor_es_dma_superpath_mode(value);
+    }
+
+    return thor_es_dma_superpath_mode::disabled;
+  }();
+
+  return mode;
+}
+
+static const char *get_thor_es_dma_superpath_mode_name() {
+  switch (get_thor_es_dma_superpath_mode()) {
+  case thor_es_dma_superpath_mode::profile:
+    return "profile";
+  case thor_es_dma_superpath_mode::verify:
+    return "verify";
+  default:
+    return "disabled";
+  }
+}
+
+static bool thor_es_dma_probe_enabled() {
+  return get_thor_es_dma_superpath_mode() !=
+             thor_es_dma_superpath_mode::disabled &&
+         Emu.GetTitleID() == "BLUS30161";
+}
+
+static bool thor_es_dma_verify_enabled() {
+  return get_thor_es_dma_superpath_mode() ==
+             thor_es_dma_superpath_mode::verify &&
+         Emu.GetTitleID() == "BLUS30161";
+}
+
+static void mix_thor_es_dma_signature(u64 &hash, u64 value) {
+  hash ^= value;
+  hash *= 1099511628211ull;
+}
+
+static u64 get_thor_es_spu_segments_signature(
+    std::span<const sys_spu_segment> segs) {
+  u64 hash = 1469598103934665603ull;
+
+  for (const auto &seg : segs) {
+    mix_thor_es_dma_signature(hash, static_cast<u32>(seg.type));
+    mix_thor_es_dma_signature(hash, seg.ls);
+    mix_thor_es_dma_signature(hash, seg.size);
+    mix_thor_es_dma_signature(hash, seg.addr);
+  }
+
+  return hash ? hash : 1;
+}
+
+static u64 hash_thor_es_dma_bytes(const void *data, u32 size) {
+  if (!data || !size) {
+    return 0;
+  }
+
+  u64 hash = 1469598103934665603ull;
+  const auto *bytes = static_cast<const u8 *>(data);
+  for (u32 i = 0; i < size; i++) {
+    hash ^= bytes[i];
+    hash *= 1099511628211ull;
+  }
+
+  return hash ? hash : 1;
+}
+
+static void reset_thor_es_dma_probe(spu_thread &thread, u64 image_signature,
+                                    u32 entry) {
+  auto &probe = thread.es_gpu_probe;
+  probe = {};
+  probe.start_us = get_system_time();
+  probe.image_signature = image_signature;
+  probe.pattern_signature = 1469598103934665603ull;
+  probe.get_payload_hash = 1469598103934665603ull;
+  probe.put_payload_hash = 1469598103934665603ull;
+  probe.entry = entry;
+}
+
+static u64 get_thor_es_dma_key(
+    const spu_thread::es_gpu_probe_state_t &probe) {
+  u64 key = 1469598103934665603ull;
+  mix_thor_es_dma_signature(key, probe.image_signature);
+  mix_thor_es_dma_signature(key, probe.pattern_signature);
+  mix_thor_es_dma_signature(key, probe.get_payload_hash);
+  mix_thor_es_dma_signature(key, probe.get_payload_bytes);
+  mix_thor_es_dma_signature(key, probe.put_payload_bytes);
+  return key ? key : 1;
+}
+
+static void record_thor_es_dma_seen(
+    const spu_thread::es_gpu_probe_state_t &probe, u64 &repeat_hits,
+    u64 &output_mismatches) {
+  repeat_hits = 0;
+  output_mismatches = 0;
+
+  if (!thor_es_dma_verify_enabled() || !probe.get_payload_bytes ||
+      !probe.put_payload_bytes) {
+    return;
+  }
+
+  const u64 key = get_thor_es_dma_key(probe);
+  std::lock_guard lock(g_thor_es_dma_seen_mutex);
+  auto &seen = g_thor_es_dma_seen[key];
+
+  if (!seen.output_hash) {
+    seen.output_hash = probe.put_payload_hash;
+    return;
+  }
+
+  if (seen.output_hash == probe.put_payload_hash) {
+    repeat_hits = ++seen.repeat_hits;
+  } else {
+    output_mismatches = ++seen.output_mismatches;
+  }
+}
+
+static void log_thor_es_dma_probe(ppu_thread &ppu,
+                                  const lv2_spu_group &group, u32 id,
+                                  const spu_thread &thread, u32 cause,
+                                  u32 status) {
+  if (!thor_es_dma_probe_enabled()) {
+    return;
+  }
+
+  const auto &probe = thread.es_gpu_probe;
+  const u64 total_bytes = probe.get_bytes + probe.put_bytes +
+                          probe.list_get_bytes + probe.list_put_bytes;
+  if (!total_bytes) {
+    return;
+  }
+
+  const bool has_rsx_traffic = probe.rsx_get_bytes || probe.rsx_put_bytes;
+  const bool strong_candidate =
+      total_bytes >= 1'048'576 || has_rsx_traffic || probe.max_dma_size >= 4096;
+  if (!strong_candidate && total_bytes < 65'536) {
+    return;
+  }
+
+  const u64 now = get_system_time();
+  if (!has_rsx_traffic) {
+    u64 last = g_thor_es_dma_last_log_us.load(std::memory_order_relaxed);
+    if (last && now - last < 100'000) {
+      return;
+    }
+
+    if (!g_thor_es_dma_last_log_us.compare_exchange_strong(
+            last, now, std::memory_order_relaxed)) {
+      return;
+    }
+  }
+
+  const u64 duration_us = probe.start_us ? now - probe.start_us : 0;
+  const u64 ls_end_hash =
+      thor_es_dma_verify_enabled()
+          ? hash_thor_es_dma_bytes(thread.ls, SPU_LS_SIZE)
+          : 0;
+  u64 repeat_hits = 0;
+  u64 output_mismatches = 0;
+  record_thor_es_dma_seen(probe, repeat_hits, output_mismatches);
+
+  const auto spu_name_ptr = thread.spu_tname.load();
+  const std::string spu_name = spu_name_ptr ? *spu_name_ptr : std::string();
+  const std::string ppu_name = static_cast<std::string>(ppu.thread_name);
+
+  sys_spu.notice(
+      "Eternal Sonata DMA candidate probe: mode=%s title=%s ppu=0x%x "
+      "ppu_name=\"%s\" group=0x%x group_name=\"%s\" spu=0x%x spu_index=%u "
+      "spu_name=\"%s\" entry=0x%x image_sig=0x%llx pattern_sig=0x%llx "
+      "duration_us=%llu total_bytes=%llu get_bytes=%llu put_bytes=%llu "
+      "list_get_bytes=%llu list_put_bytes=%llu rsx_get_bytes=%llu "
+      "rsx_put_bytes=%llu cmd_count=%llu list_cmd_count=%llu "
+      "get_payload_hash=0x%llx put_payload_hash=0x%llx "
+      "get_payload_bytes=%llu put_payload_bytes=%llu "
+      "sampled_get_payload_bytes=%llu sampled_put_payload_bytes=%llu "
+      "ls_start_hash=0x%llx ls_end_hash=0x%llx repeat_hits=%llu "
+      "output_mismatches=%llu max_dma_size=%u max_dma_pc=0x%x "
+      "max_dma_ea=0x%x block_hash=0x%llx max_dma_block_hash=0x%llx "
+      "cause=0x%x status=0x%x",
+      get_thor_es_dma_superpath_mode_name(), Emu.GetTitleID(), ppu.id,
+      ppu_name, id, group.name, thread.lv2_id, thread.index, spu_name,
+      probe.entry, probe.image_signature, probe.pattern_signature, duration_us,
+      total_bytes, probe.get_bytes, probe.put_bytes, probe.list_get_bytes,
+      probe.list_put_bytes, probe.rsx_get_bytes, probe.rsx_put_bytes,
+      probe.cmd_count, probe.list_cmd_count, probe.get_payload_hash,
+      probe.put_payload_hash, probe.get_payload_bytes, probe.put_payload_bytes,
+      probe.sampled_get_payload_bytes, probe.sampled_put_payload_bytes,
+      probe.ls_start_hash, ls_end_hash, repeat_hits, output_mismatches,
+      probe.max_dma_size, probe.max_dma_pc, probe.max_dma_ea,
+      thread.block_hash, probe.max_dma_block_hash, cause, status);
+}
+
 template <>
 void fmt_class_string<spu_group_status>::format(std::string &out, u64 arg) {
   format_enum(out, arg, [](spu_group_status value) {
@@ -397,8 +642,20 @@ void sys_spu_image::free() const {
   }
 }
 
+void sys_spu_image::deploy_segments(u8 *loc,
+                                    std::span<const sys_spu_segment> segs) {
+  for (const auto &seg : segs) {
+    if (seg.type == SYS_SPU_SEGMENT_TYPE_COPY) {
+      std::memcpy(loc + seg.ls, vm::base(seg.addr), seg.size);
+    } else if (seg.type == SYS_SPU_SEGMENT_TYPE_FILL) {
+      std::fill_n(reinterpret_cast<be_t<u32> *>(loc + seg.ls), seg.size / 4,
+                  seg.addr);
+    }
+  }
+}
+
 void sys_spu_image::deploy(u8 *loc, std::span<const sys_spu_segment> segs,
-                           bool is_verbose) {
+                           bool is_verbose, u32 *applied_count) {
   // Segment info dump
   std::string dump;
 
@@ -465,6 +722,10 @@ void sys_spu_image::deploy(u8 *loc, std::span<const sys_spu_segment> segs,
     // Alternative patch
     g_fxo->get<patch_engine>().apply(applied, Emu.GetTitleID() + '-' + hash,
                                      mem_translate);
+  }
+
+  if (applied_count) {
+    *applied_count = ::narrow<u32>(applied.size());
   }
 
   (is_verbose ? spu_log.notice : sys_spu.trace)(
@@ -1294,9 +1555,24 @@ error_code sys_spu_thread_group_start(ppu_thread &ppu, u32 id) {
       auto &args = group->args[thread->lv2_id >> 24];
       auto &img = group->imgs[thread->lv2_id >> 24];
 
-      sys_spu_image::deploy(thread->ls,
-                            std::span(img.second.data(), img.second.size()),
-                            group->stop_count < 5);
+      const u32 thread_index = thread->lv2_id >> 24;
+      const std::span<const sys_spu_segment> segments(img.second.data(),
+                                                       img.second.size());
+
+      if (Emu.GetTitleID() == "BLUS30161") {
+        reset_thor_es_dma_probe(*thread,
+                                get_thor_es_spu_segments_signature(segments),
+                                img.first);
+      }
+
+      if (group->patchless_image_deploy[thread_index]) {
+        sys_spu_image::deploy_segments(thread->ls, segments);
+      } else {
+        u32 applied_count = 0;
+        sys_spu_image::deploy(thread->ls, segments,
+                              group->stop_count < 5, &applied_count);
+        group->patchless_image_deploy[thread_index] = applied_count == 0;
+      }
 
       thread->cpu_init();
       thread->gpr[3] = v128::from64(0, args[0]);
@@ -1305,6 +1581,11 @@ error_code sys_spu_thread_group_start(ppu_thread &ppu, u32 id) {
       thread->gpr[6] = v128::from64(0, args[3]);
 
       thread->status_npc = {SPU_STATUS_RUNNING, img.first};
+
+      if (thor_es_dma_verify_enabled()) {
+        thread->es_gpu_probe.ls_start_hash =
+            hash_thor_es_dma_bytes(thread->ls, SPU_LS_SIZE);
+      }
     }
   }
 
@@ -1687,14 +1968,26 @@ error_code sys_spu_thread_group_join(ppu_thread &ppu, u32 id,
     return not_an_error(CELL_EFAULT);
   }
 
-  *cause = static_cast<u32>(ppu.gpr[4]);
+  const u32 cause_value = static_cast<u32>(ppu.gpr[4]);
+  const u32 status_value = static_cast<u32>(ppu.gpr[5]);
+  *cause = cause_value;
 
   if (!status) {
     return not_an_error(CELL_EFAULT);
   }
 
-  *status = static_cast<s32>(ppu.gpr[5]);
-  thor_spurs_probe_log("join", ppu, *group, id, *cause, *status);
+  *status = static_cast<s32>(status_value);
+  thor_spurs_probe_log("join", ppu, *group, id, cause_value, status_value);
+
+  if (thor_es_dma_probe_enabled()) {
+    for (const auto &thread : group->threads) {
+      if (thread) {
+        log_thor_es_dma_probe(ppu, *group, id, *thread, cause_value,
+                              status_value);
+      }
+    }
+  }
+
   return CELL_OK;
 }
 

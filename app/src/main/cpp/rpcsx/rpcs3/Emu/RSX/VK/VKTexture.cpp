@@ -8,6 +8,7 @@
 
 #include "vkutils/data_heap.h"
 #include "vkutils/image_helpers.h"
+#include "vkutils/thor_rsx_auditor.h"
 #include "VKGSRender.h"
 
 #include "../GCM.h"
@@ -1260,6 +1261,8 @@ namespace vk
 		const auto available_tile_size = tiled_region.tile->size - (range.start - tiled_region.base_address);
 		const auto max_content_size = tiled_region.tile->pitch * rx::alignUp<u32>(height, 64);
 		const auto section_length = std::min(max_content_size, available_tile_size);
+		const auto output_length = static_cast<VkDeviceSize>(width) * height * bpp;
+		vk::thor::rsx_auditor::record_detile_job(section_length, output_length);
 
 		// Sync the DMA layer
 		const auto dma_mapping = vk::map_dma(range.start, section_length);

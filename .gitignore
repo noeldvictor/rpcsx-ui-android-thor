@@ -17,3 +17,6 @@ local.properties
 **/build*/
 .rx.version
 debug-captures/
+iso/
+save-checkpoints/
+debug-saves/

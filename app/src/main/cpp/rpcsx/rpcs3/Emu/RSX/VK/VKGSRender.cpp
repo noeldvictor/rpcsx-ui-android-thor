@@ -13,6 +13,7 @@
 
 #include "vkutils/buffer_object.h"
 #include "vkutils/scratch.h"
+#include "vkutils/thor_rsx_auditor.h"
 
 #include "Emu/RSX/rsx_methods.h"
 #include "Emu/RSX/Host/MM.h"
@@ -1640,6 +1641,8 @@ void VKGSRender::flush_command_queue(bool hard_sync, bool do_not_switch)
 
 	if (hard_sync)
 	{
+		vk::thor::rsx_auditor::record_hard_sync_flush();
+
 		// wait for the latest instruction to execute
 		m_current_command_buffer->reset();
 

@@ -1,0 +1,21 @@
+{
+  "name": "eternal-sonata-speed",
+  "description": "BLUS30161 Eternal Sonata correctness-locked FPS and Vulkan baseline profile.",
+  "titleIds": ["BLUS30161"],
+  "mode": "Quiet",
+  "tags": ["fps", "vulkan", "rsx", "visual-correctness", "baseline"],
+  "live": true,
+  "capture": {
+    "logcatLines": 12000,
+    "summaryTailLines": 100,
+    "postMode": "Quiet"
+  },
+  "stream": {
+    "pollSeconds": 3
+  },
+  "notes": [
+    "Use for field, battle, and menu speed baselines.",
+    "Do not use SpursProbe or verbose logging for FPS sweeps unless the run is a short diagnostic follow-up.",
+    "Speed wins are valid only when field, battle, and menu remain visually correct."
+  ]
+}

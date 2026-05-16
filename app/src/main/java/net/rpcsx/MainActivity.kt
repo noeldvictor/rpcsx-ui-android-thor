@@ -3,6 +3,7 @@ package net.rpcsx
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -23,6 +24,59 @@ import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     private lateinit var unregisterUsbEventListener: () -> Unit
+
+    private fun findThorDevCoreOverride(): File? {
+        if (!BuildConfig.DEBUG) {
+            return null
+        }
+
+        val marker = File(filesDir, "dev-core/active-core.path")
+        if (!marker.isFile || !marker.canRead()) {
+            return null
+        }
+
+        val corePath = runCatching { marker.readLines().firstOrNull()?.trim() }.getOrNull()
+        if (corePath.isNullOrEmpty()) {
+            return null
+        }
+
+        val core = File(corePath)
+        if (!core.isFile || !core.canRead() || core.length() < 4096) {
+            Log.w("RPCSX-UI", "Ignoring invalid Thor dev core override: $corePath")
+            return null
+        }
+
+        return core
+    }
+
+    private fun maybeStartThorDebugBoot(sourceIntent: Intent?) {
+        if (!BuildConfig.DEBUG || sourceIntent == null) {
+            return
+        }
+
+        if (sourceIntent.action != "net.rpcsx.THOR_DEBUG_BOOT") {
+            return
+        }
+
+        val gamePath = sourceIntent.getStringExtra("path")
+        sourceIntent.removeExtra("path")
+        if (gamePath.isNullOrBlank()) {
+            Log.e("RPCSX-UI", "Thor debug boot requested without path")
+            return
+        }
+
+        if (RPCSX.activeLibrary.value == null) {
+            Log.e("RPCSX-UI", "Thor debug boot requested before RPCSX library was active")
+            return
+        }
+
+        Log.i("RPCSX-UI", "Thor debug boot through MainActivity: $gamePath")
+        startActivity(
+            Intent(this, RPCSXActivity::class.java)
+                .putExtra("path", gamePath)
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -74,8 +128,24 @@ class MainActivity : ComponentActivity() {
             val bundledCore = File(nativeLibraryDir, "librpcsx-android.so")
             val hasValidBundledCore =
                 bundledCore.exists() && RPCSX.instance.getLibraryVersion(bundledCore.path) != null
+            val devCore = findThorDevCoreOverride()
+            val hasValidDevCore =
+                devCore != null && RPCSX.instance.getLibraryVersion(devCore.path) != null
 
-            if ((BuildConfig.FORK_BUILD || rpcsxLibrary == null) && hasValidBundledCore) {
+            if (hasValidDevCore) {
+                val activeDevCore = checkNotNull(devCore)
+                rpcsxLibrary = activeDevCore.path
+                GeneralSettings["rpcsx_library"] = activeDevCore.path
+                GeneralSettings["rpcsx_installed_arch"] = "dev-core"
+                GeneralSettings["rpcsx_update_status"] = true
+                GeneralSettings["rpcsx_prev_installed_arch"] = null
+                GeneralSettings["rpcsx_prev_library"] = null
+                GeneralSettings["rpcsx_bad_version"] = null
+                GeneralSettings.sync()
+                Log.w("RPCSX-UI", "Using Thor dev core override: ${activeDevCore.path}")
+            }
+
+            if (!hasValidDevCore && (BuildConfig.FORK_BUILD || rpcsxLibrary == null) && hasValidBundledCore) {
                 rpcsxLibrary = bundledCore.path
                 GeneralSettings["rpcsx_library"] = bundledCore.path
                 GeneralSettings["rpcsx_installed_arch"] = "bundled"
@@ -174,6 +244,14 @@ class MainActivity : ComponentActivity() {
         } else {
             unregisterUsbEventListener = {}
         }
+
+        maybeStartThorDebugBoot(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        maybeStartThorDebugBoot(intent)
     }
 
     override fun onDestroy() {

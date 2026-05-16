@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "SpursProbe", "Status")]
+    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "Status")]
     [string]$Mode = "Status"
 )
 
@@ -37,6 +37,9 @@ switch ($Mode) {
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
         Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
         Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
         Set-DeviceProp "log.tag.RPCS3" "S"
         Set-DeviceProp "log.tag.RPCSX-UI" "W"
@@ -48,6 +51,9 @@ switch ($Mode) {
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
         Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
         Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
         Set-DeviceProp "log.tag.RPCS3" "I"
         Set-DeviceProp "log.tag.RPCSX-UI" "I"
@@ -59,6 +65,9 @@ switch ($Mode) {
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
         Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
         Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
         Set-DeviceProp "log.tag.RPCS3" "V"
         Set-DeviceProp "log.tag.RPCSX-UI" "V"
@@ -70,6 +79,9 @@ switch ($Mode) {
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "1"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
         Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
         Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
         Set-DeviceProp "log.tag.RPCS3" "V"
         Set-DeviceProp "log.tag.RPCSX-UI" "V"
@@ -81,6 +93,9 @@ switch ($Mode) {
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
         Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
         Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
         Set-DeviceProp "log.tag.RPCS3" "I"
         Set-DeviceProp "log.tag.RPCSX-UI" "I"
@@ -92,6 +107,302 @@ switch ($Mode) {
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
         Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
         Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "1"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "SemaProfile" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "profile"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "SemaFast" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "fast"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "DmaProfile" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "profile"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "DmaVerify" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "verify"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "RsxAuditor" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "60"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "RsxDmaHostFence" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "60"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_dma_fence" "host"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "RsxDepthFeedback" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "60"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback" "persist"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "RsxTextureBarrierSkipColor" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "60"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback" "persist"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_texture_barrier" "color"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "RsxTextureBarrierSkipDepth" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "60"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback" "persist"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_texture_barrier" "depth"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "RsxTextureBarrierSkipAll" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "60"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback" "persist"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_texture_barrier" "all"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "FastBusyWaitLight" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "light"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "FastBusyWait" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "fast"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "FastBusyWaitAggressive" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "aggressive"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "WaitProfiler" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "250000"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "WaitProfilerVerbose" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "100000"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "GetllarProbe" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_getllar" "profile"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "GetllarShort" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_getllar" "short"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "GetllarTiny" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_getllar" "tiny"
+        Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
+        Set-DeviceProp "log.tag.RPCS3" "I"
+        Set-DeviceProp "log.tag.RPCSX-UI" "I"
+        break
+    }
+    "GetllarYield8" {
+        Set-DeviceProp "debug.rpcsx.thor.logcat" "1"
+        Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect" "0"
+        Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit" "1"
+        Set-DeviceProp "debug.rpcsx.thor.spurs_probe" "0"
+        Set-DeviceProp "debug.rpcsx.thor.es_sema_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_dma_superpath" "off"
+        Set-DeviceProp "debug.rpcsx.thor.rsx_auditor" "0"
+        Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+        Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "off"
+        Set-DeviceProp "debug.rpcsx.thor.es_getllar" "yield8"
         Set-DeviceProp "debug.rpcsx.thor.dump_prx" "0"
         Set-DeviceProp "log.tag.RPCS3" "I"
         Set-DeviceProp "log.tag.RPCSX-UI" "I"
@@ -99,11 +410,44 @@ switch ($Mode) {
     }
 }
 
+if ($Mode -ne "Status" -and $Mode -ne "RsxDmaHostFence") {
+    Set-DeviceProp "debug.rpcsx.thor.rsx_dma_fence" "all"
+}
+
+if ($Mode -ne "Status" -and $Mode -ne "RsxDepthFeedback" -and $Mode -notlike "RsxTextureBarrierSkip*") {
+    Set-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback" "off"
+}
+
+if ($Mode -ne "Status" -and $Mode -notlike "RsxTextureBarrierSkip*") {
+    Set-DeviceProp "debug.rpcsx.thor.rsx_texture_barrier" "off"
+}
+
+if ($Mode -ne "Status" -and $Mode -notlike "FastBusyWait*") {
+    Set-DeviceProp "debug.rpcsx.thor.fast_busy_wait" "off"
+}
+
+if ($Mode -ne "Status" -and $Mode -notlike "WaitProfiler*") {
+    Set-DeviceProp "debug.rpcsx.thor.wait_profiler" "off"
+}
+
+if ($Mode -ne "Status" -and $Mode -notlike "Getllar*") {
+    Set-DeviceProp "debug.rpcsx.thor.es_getllar" "off"
+}
+
 Get-DeviceProp "debug.rpcsx.thor.logcat"
 Get-DeviceProp "debug.rpcsx.thor.syscall_stats"
 Get-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_detect"
 Get-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_emit"
 Get-DeviceProp "debug.rpcsx.thor.spurs_probe"
+Get-DeviceProp "debug.rpcsx.thor.es_sema_superpath"
+Get-DeviceProp "debug.rpcsx.thor.es_dma_superpath"
+Get-DeviceProp "debug.rpcsx.thor.rsx_auditor"
+Get-DeviceProp "debug.rpcsx.thor.rsx_dma_fence"
+Get-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback"
+Get-DeviceProp "debug.rpcsx.thor.rsx_texture_barrier"
+Get-DeviceProp "debug.rpcsx.thor.fast_busy_wait"
+Get-DeviceProp "debug.rpcsx.thor.wait_profiler"
+Get-DeviceProp "debug.rpcsx.thor.es_getllar"
 Get-DeviceProp "debug.rpcsx.thor.dump_prx"
 Get-DeviceProp "log.tag.RPCS3"
 Get-DeviceProp "log.tag.RPCSX-UI"

@@ -16,6 +16,7 @@
 #include "Emu/perf_meter.hpp"
 
 #include "rx/asm.hpp"
+#include "util/thor_wait_profiler.h"
 #include <thread>
 #include <unordered_map>
 #include <map>
@@ -124,7 +125,7 @@ void fmt_class_string<cpu_threads_emulation_info_dump_t>::format(std::string& ou
 
 				for (u32 i = 0; !rlock.try_lock() && i < 100; i++)
 				{
-					rx::busy_wait();
+					thor_wait::profiled_busy_wait(thor_wait::site::mutex_shared);
 				}
 
 				if (rlock)
@@ -552,7 +553,7 @@ namespace cpu_counter
 				return;
 			}
 
-			rx::busy_wait(300);
+			thor_wait::profiled_busy_wait(thor_wait::site::cpu_register_slot, 300);
 		}
 
 		s_tls_thread_slot = id;
@@ -1062,7 +1063,7 @@ bool cpu_thread::check_state() noexcept
 					{
 						if (i < 20 || ctr & 1)
 						{
-							rx::busy_wait(300);
+							thor_wait::profiled_busy_wait(thor_wait::site::cpu_suspend_wait, 300);
 						}
 						else
 						{

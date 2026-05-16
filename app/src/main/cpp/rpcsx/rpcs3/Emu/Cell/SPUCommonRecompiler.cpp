@@ -810,7 +810,14 @@ void spu_cache::initialize(bool build_existing_cache)
 	}
 
 	// SPU cache file (version + block size type)
-	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) + "-v1-tane.dat";
+	const bool use_thor_reduced_loop_cache = spu_reduced_loop_emit_enabled();
+	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
+		(use_thor_reduced_loop_cache ? "-thor-rl" : "") + "-v1-tane.dat";
+
+	if (use_thor_reduced_loop_cache)
+	{
+		spu_log.notice("Thor reduced-loop SPU cache variant enabled: %s", loc);
+	}
 
 	spu_cache cache(loc);
 
@@ -6040,7 +6047,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 						{
 							if (!std::exchange(logged_block[target_pc / 4], true))
 							{
-								spu_log.notice("SPU block is a loop at [0x%05x -> 0x%05x]", state_it->pc, target_pc);
+								spu_log.trace("SPU block is a loop at [0x%05x -> 0x%05x]", state_it->pc, target_pc);
 							}
 
 							state_it->parent_target_index++;
@@ -6049,7 +6056,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 						if (is_loop_connector && !std::exchange(logged_block[target_pc / 4], true))
 						{
-							spu_log.notice("SPU block analysis is too repetitive at [0x%05x -> 0x%05x]", state_it->pc, target_pc);
+							spu_log.trace("SPU block analysis is too repetitive at [0x%05x -> 0x%05x]", state_it->pc, target_pc);
 						}
 
 						insert_entry = true;
@@ -7889,7 +7896,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			{
 				add_pattern(false, inst_attr::reduced_loop, loop_pc - result.entry_point, loop_pc - result.entry_point, std::make_shared<reduced_loop_t>(pattern));
 
-				spu_log.success("Reduced Loop Pattern Detected! (DICT: r%d, ARG: %s, Incr: %s (%s), CMP/Size: %s/%u, loop_pc=0x%x, 0x%x-%s)",
+				spu_log.trace("Reduced Loop Pattern Detected! (DICT: r%d, ARG: %s, Incr: %s (%s), CMP/Size: %s/%u, loop_pc=0x%x, 0x%x-%s)",
 					pattern.cond_val_register_idx,
 					pattern.cond_val_is_immediate ? fmt::format("0x%x", pattern.cond_val_min) : fmt::format("r%d", pattern.cond_val_register_argument_idx),
 					pattern.cond_val_incr_is_immediate ? fmt::format("%d", static_cast<s32>(pattern.cond_val_incr)) : fmt::format("r%d", pattern.cond_val_incr),

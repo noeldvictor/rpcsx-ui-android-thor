@@ -1,12 +1,13 @@
 #include "sema.h"
 
 #include "rx/asm.hpp"
+#include "util/thor_wait_profiler.h"
 
 void semaphore_base::imp_wait()
 {
 	for (int i = 0; i < 10; i++)
 	{
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::semaphore_spin);
 
 		const u32 value = m_value.load();
 

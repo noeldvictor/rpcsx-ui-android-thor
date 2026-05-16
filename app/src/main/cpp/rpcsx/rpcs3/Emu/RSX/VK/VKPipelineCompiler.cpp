@@ -2,9 +2,12 @@
 #include "VKPipelineCompiler.h"
 #include "VKRenderPass.h"
 #include "vkutils/device.h"
+#include "vkutils/thor_rsx_auditor.h"
 #include "util/Thread.h"
 
 #include "util/sysinfo.hpp"
+
+#include <chrono>
 
 namespace vk
 {
@@ -53,7 +56,10 @@ namespace vk
 	std::unique_ptr<glsl::program> pipe_compiler::int_compile_compute_pipe(const VkComputePipelineCreateInfo& create_info, VkPipelineLayout pipe_layout)
 	{
 		VkPipeline pipeline;
+		const auto start = std::chrono::steady_clock::now();
 		VK_GET_SYMBOL(vkCreateComputePipelines)(*g_render_device, nullptr, 1, &create_info, nullptr, &pipeline);
+		const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+		vk::thor::rsx_auditor::record_pipeline_create(false, static_cast<u64>(elapsed_us));
 		return std::make_unique<vk::glsl::program>(*m_device, pipeline, pipe_layout);
 	}
 
@@ -61,7 +67,11 @@ namespace vk
 		const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs)
 	{
 		VkPipeline pipeline;
-		CHECK_RESULT(VK_GET_SYMBOL(vkCreateGraphicsPipelines)(*m_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline));
+		const auto start = std::chrono::steady_clock::now();
+		const VkResult compile_result = VK_GET_SYMBOL(vkCreateGraphicsPipelines)(*m_device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline);
+		const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+		vk::thor::rsx_auditor::record_pipeline_create(true, static_cast<u64>(elapsed_us));
+		CHECK_RESULT(compile_result);
 		auto result = std::make_unique<vk::glsl::program>(*m_device, pipeline, pipe_layout, vs_inputs, fs_inputs);
 		result->link();
 		return result;

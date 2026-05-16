@@ -11,6 +11,7 @@
 
 #include "rx/align.hpp"
 #include "rx/asm.hpp"
+#include "util/thor_wait_profiler.h"
 
 #include <thread>
 #include <bitset>
@@ -194,7 +195,7 @@ namespace rsx
 					}
 					else
 					{
-						rx::busy_wait(200);
+						thor_wait::profiled_busy_wait(thor_wait::site::rsx_fifo_cache_fill, 200);
 					}
 
 					if (strict_fetch_ordering)

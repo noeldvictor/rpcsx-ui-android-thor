@@ -1,13 +1,25 @@
 #include "vkutils/data_heap.h"
 #include "VKRenderTargets.h"
 #include "VKResourceManager.h"
+#include "vkutils/thor_rsx_auditor.h"
 #include "Emu/RSX/rsx_methods.h"
 #include "Emu/RSX/RSXThread.h"
+#include "Emu/System.h"
 
 #include "Emu/RSX/Common/tiled_dma_copy.hpp"
 
 namespace vk
 {
+	static bool thor_es_depth_feedback_persist_enabled()
+	{
+		return Emu.GetTitleID() == "BLUS30161" && vk::thor::rsx_auditor::persist_readonly_depth_feedback();
+	}
+
+	static bool thor_es_texture_barrier_skip_enabled(bool is_depth)
+	{
+		return Emu.GetTitleID() == "BLUS30161" && vk::thor::rsx_auditor::skip_texture_barrier(is_depth);
+	}
+
 	namespace surface_cache_utils
 	{
 		void dispose(vk::buffer* buf)
@@ -833,7 +845,8 @@ namespace vk
 
 	void render_target::texture_barrier(vk::command_buffer& cmd)
 	{
-		const auto is_framebuffer_read_only = is_depth_surface() && !rsx::method_registers.depth_write_enabled();
+		const auto is_depth = is_depth_surface();
+		const auto is_framebuffer_read_only = is_depth && !rsx::method_registers.depth_write_enabled();
 		const auto supports_fbo_loops = cmd.get_command_pool().get_owner().get_framebuffer_loops_support();
 		const auto optimal_layout = supports_fbo_loops ? VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT : VK_IMAGE_LAYOUT_GENERAL;
 
@@ -841,6 +854,19 @@ namespace vk
 		{
 			// If we have back-to-back depth-read barriers, skip subsequent ones
 			// If an actual write is happening, this flag will be automatically reset
+			vk::thor::rsx_auditor::record_texture_barrier_skip(true);
+			return;
+		}
+
+		if (thor_es_texture_barrier_skip_enabled(is_depth))
+		{
+			vk::thor::rsx_auditor::record_texture_barrier_skip(is_depth, true);
+			current_layout = optimal_layout;
+			m_cyclic_ref_tracker.on_insert_texture_barrier();
+			if (is_framebuffer_read_only)
+			{
+				m_cyclic_ref_tracker.allow_skip();
+			}
 			return;
 		}
 
@@ -861,7 +887,12 @@ namespace vk
 		if (m_cyclic_ref_tracker.can_skip() && is_framebuffer_read_only)
 		{
 			// Barrier ellided if triggered by a chain of cyclic references with no actual writes
-			m_cyclic_ref_tracker.reset();
+			const bool persist_depth_feedback = thor_es_depth_feedback_persist_enabled();
+			vk::thor::rsx_auditor::record_texture_post_barrier_elide(persist_depth_feedback);
+			if (!persist_depth_feedback)
+			{
+				m_cyclic_ref_tracker.reset();
+			}
 			return;
 		}
 

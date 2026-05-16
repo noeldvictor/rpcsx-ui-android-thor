@@ -27,12 +27,14 @@
 #include "Emu/RSX/Core/RSXReservationLock.hpp"
 
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <cfenv>
 #include <cstdlib>
 #include <thread>
 #include <shared_mutex>
 #include <span>
+#include <string_view>
 
 #ifdef ANDROID
 #include <sys/system_properties.h>
@@ -40,6 +42,7 @@
 
 #include "util/vm.hpp"
 #include "rx/asm.hpp"
+#include "util/thor_wait_profiler.h"
 #include "util/v128.hpp"
 #include "util/simd.hpp"
 #include "util/sysinfo.hpp"
@@ -225,6 +228,501 @@ static void thor_spurs_wait_probe_log(spu_thread& spu, thor_spurs_wait_event eve
 		mask, wait_switch, max_run, prev_running, wait_time);
 }
 
+enum class thor_es_dma_superpath_mode : u32
+{
+	disabled,
+	profile,
+	verify,
+};
+
+static thor_es_dma_superpath_mode parse_thor_es_dma_superpath_mode(std::string_view value)
+{
+	if (value.empty() || value == "0" || value == "off" || value == "false" || value == "disabled")
+	{
+		return thor_es_dma_superpath_mode::disabled;
+	}
+
+	if (value == "verify" || value == "1" || value == "true")
+	{
+		return thor_es_dma_superpath_mode::verify;
+	}
+
+	return thor_es_dma_superpath_mode::profile;
+}
+
+static thor_es_dma_superpath_mode get_thor_es_dma_superpath_mode()
+{
+	static const thor_es_dma_superpath_mode mode = []
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.es_dma_superpath", value);
+		if (length > 0)
+		{
+			return parse_thor_es_dma_superpath_mode(std::string_view{value, static_cast<usz>(length)});
+		}
+#endif
+
+		if (const char* value = std::getenv("RPCSX_THOR_ES_DMA_SUPERPATH"))
+		{
+			return parse_thor_es_dma_superpath_mode(value);
+		}
+
+		if (const char* value = std::getenv("RPCS3_ES_DMA_SUPERPATH"))
+		{
+			return parse_thor_es_dma_superpath_mode(value);
+		}
+
+		if (const char* value = std::getenv("RPCS3_ES_GPU_PROBE"))
+		{
+			return parse_thor_es_dma_superpath_mode(value);
+		}
+
+		return thor_es_dma_superpath_mode::disabled;
+	}();
+
+	return mode;
+}
+
+static bool thor_es_dma_probe_enabled()
+{
+	return get_thor_es_dma_superpath_mode() != thor_es_dma_superpath_mode::disabled && Emu.GetTitleID() == "BLUS30161";
+}
+
+static bool thor_es_dma_verify_enabled()
+{
+	return get_thor_es_dma_superpath_mode() == thor_es_dma_superpath_mode::verify && Emu.GetTitleID() == "BLUS30161";
+}
+
+static void mix_thor_es_dma_signature(u64& hash, u64 value)
+{
+	hash ^= value;
+	hash *= 1099511628211ull;
+}
+
+static void mix_thor_es_dma_payload_hash(u64& hash, const void* payload, u32 size, u64& sampled_bytes)
+{
+	if (!payload || !size)
+	{
+		return;
+	}
+
+	const auto* bytes = static_cast<const u8*>(payload);
+	mix_thor_es_dma_signature(hash, size);
+
+	auto mix_range = [&](u32 offset, u32 count)
+	{
+		for (u32 i = 0; i < count; i++)
+		{
+			hash ^= bytes[offset + i];
+			hash *= 1099511628211ull;
+		}
+
+		sampled_bytes += count;
+	};
+
+	if (size <= 16'384)
+	{
+		mix_range(0, size);
+		return;
+	}
+
+	constexpr u32 sample = 4096;
+	mix_range(0, sample);
+	mix_range((size / 2) - (sample / 2), sample);
+	mix_range(size - sample, sample);
+	mix_thor_es_dma_signature(hash, size ^ sampled_bytes);
+}
+
+static void record_thor_es_dma_payload(spu_thread* spu, MFC cmd, const void* payload, u32 size)
+{
+	if (!spu || !size || !thor_es_dma_verify_enabled())
+	{
+		return;
+	}
+
+	const u8 raw_cmd = static_cast<u8>(cmd);
+	const u8 base_cmd = raw_cmd & ~static_cast<u8>(MFC_BARRIER_MASK | MFC_FENCE_MASK | MFC_START_MASK | MFC_RESULT_MASK | MFC_LIST_MASK);
+	const bool is_get = base_cmd == static_cast<u8>(MFC_GET_CMD);
+	const bool is_put = base_cmd == static_cast<u8>(MFC_PUT_CMD);
+
+	if (is_get)
+	{
+		auto& probe = spu->es_gpu_probe;
+		probe.get_payload_bytes += size;
+		mix_thor_es_dma_payload_hash(probe.get_payload_hash, payload, size, probe.sampled_get_payload_bytes);
+	}
+	else if (is_put)
+	{
+		auto& probe = spu->es_gpu_probe;
+		probe.put_payload_bytes += size;
+		mix_thor_es_dma_payload_hash(probe.put_payload_hash, payload, size, probe.sampled_put_payload_bytes);
+	}
+}
+
+static void record_thor_es_dma(spu_thread* spu, MFC cmd, u32 lsa, u32 eal, u32 size, bool is_list)
+{
+	if (!spu || !size || !thor_es_dma_probe_enabled())
+	{
+		return;
+	}
+
+	const u8 raw_cmd = static_cast<u8>(cmd);
+	const u8 base_cmd = raw_cmd & ~static_cast<u8>(MFC_BARRIER_MASK | MFC_FENCE_MASK | MFC_START_MASK | MFC_RESULT_MASK | MFC_LIST_MASK);
+	const bool is_get = base_cmd == static_cast<u8>(MFC_GET_CMD);
+	const bool is_put = base_cmd == static_cast<u8>(MFC_PUT_CMD);
+
+	if (!is_get && !is_put)
+	{
+		return;
+	}
+
+	auto& probe = spu->es_gpu_probe;
+	probe.cmd_count++;
+
+	if (is_list)
+	{
+		probe.list_cmd_count++;
+		if (is_get)
+		{
+			probe.list_get_bytes += size;
+		}
+		else
+		{
+			probe.list_put_bytes += size;
+		}
+	}
+	else if (is_get)
+	{
+		probe.get_bytes += size;
+	}
+	else
+	{
+		probe.put_bytes += size;
+	}
+
+	const bool touches_rsx_local = (eal >> 28) == (rsx::constants::local_mem_base >> 28);
+	if (touches_rsx_local)
+	{
+		if (is_get)
+		{
+			probe.rsx_get_bytes += size;
+		}
+		else
+		{
+			probe.rsx_put_bytes += size;
+		}
+	}
+
+	if (size > probe.max_dma_size)
+	{
+		probe.max_dma_size = size;
+		probe.max_dma_pc = spu->pc;
+		probe.max_dma_ea = eal;
+		probe.max_dma_block_hash = spu->block_hash;
+	}
+
+	mix_thor_es_dma_signature(probe.pattern_signature, raw_cmd);
+	mix_thor_es_dma_signature(probe.pattern_signature, size);
+	mix_thor_es_dma_signature(probe.pattern_signature, lsa & 0x3fff0);
+	mix_thor_es_dma_signature(probe.pattern_signature, eal & 0xfffffff0);
+	mix_thor_es_dma_signature(probe.pattern_signature, spu->pc);
+	mix_thor_es_dma_signature(probe.pattern_signature, spu->block_hash);
+}
+
+enum class thor_es_getllar_mode : u32
+{
+	disabled,
+	profile,
+	short_wait,
+	tiny_wait,
+	yield8,
+};
+
+static thor_es_getllar_mode parse_thor_es_getllar_mode(std::string_view value)
+{
+	if (value.empty() || value == "0" || value == "off" || value == "false" || value == "disabled")
+	{
+		return thor_es_getllar_mode::disabled;
+	}
+
+	if (value == "short")
+	{
+		return thor_es_getllar_mode::short_wait;
+	}
+
+	if (value == "tiny")
+	{
+		return thor_es_getllar_mode::tiny_wait;
+	}
+
+	if (value == "yield8")
+	{
+		return thor_es_getllar_mode::yield8;
+	}
+
+	return thor_es_getllar_mode::profile;
+}
+
+static thor_es_getllar_mode get_thor_es_getllar_mode()
+{
+	static const thor_es_getllar_mode mode = []
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.es_getllar", value);
+		if (length > 0)
+		{
+			return parse_thor_es_getllar_mode(std::string_view{value, static_cast<usz>(length)});
+		}
+#endif
+
+		if (const char* value = std::getenv("RPCSX_THOR_ES_GETLLAR"))
+		{
+			return parse_thor_es_getllar_mode(value);
+		}
+
+		return thor_es_getllar_mode::disabled;
+	}();
+
+	return mode;
+}
+
+static bool thor_es_getllar_enabled()
+{
+	return get_thor_es_getllar_mode() != thor_es_getllar_mode::disabled && Emu.GetTitleID() == "BLUS30161";
+}
+
+static const char* get_thor_es_getllar_mode_name()
+{
+	switch (get_thor_es_getllar_mode())
+	{
+	case thor_es_getllar_mode::disabled: return "off";
+	case thor_es_getllar_mode::profile: return "profile";
+	case thor_es_getllar_mode::short_wait: return "short";
+	case thor_es_getllar_mode::tiny_wait: return "tiny";
+	case thor_es_getllar_mode::yield8: return "yield8";
+	}
+
+	return "unknown";
+}
+
+struct thor_es_getllar_bucket
+{
+	std::atomic<u64> key{0};
+	std::atomic<u64> calls{0};
+	std::atomic<u64> retries{0};
+	std::atomic<u64> max_retries{0};
+	std::atomic<u64> slow_yields{0};
+	std::atomic<u64> image_signature{0};
+	std::atomic<u64> block_hash{0};
+	std::atomic<u32> pc{0};
+	std::atomic<u32> addr{0};
+	std::atomic<u32> lsa{0};
+	std::atomic<u32> group_id{0};
+	std::atomic<u32> spu_index{0};
+};
+
+struct thor_es_getllar_snapshot
+{
+	u64 key = 0;
+	u64 calls = 0;
+	u64 retries = 0;
+	u64 max_retries = 0;
+	u64 slow_yields = 0;
+	u64 image_signature = 0;
+	u64 block_hash = 0;
+	u32 pc = 0;
+	u32 addr = 0;
+	u32 lsa = 0;
+	u32 group_id = 0;
+	u32 spu_index = 0;
+};
+
+static std::array<thor_es_getllar_bucket, 64> g_thor_es_getllar_buckets{};
+static std::atomic<u64> g_thor_es_getllar_total_calls{0};
+static std::atomic<u64> g_thor_es_getllar_last_log_us{0};
+
+static void thor_es_atomic_max(std::atomic<u64>& target, u64 value)
+{
+	u64 current = target.load(std::memory_order_relaxed);
+	while (current < value && !target.compare_exchange_weak(current, value, std::memory_order_relaxed))
+	{
+	}
+}
+
+static void log_thor_es_getllar_probe()
+{
+	std::array<thor_es_getllar_snapshot, std::size(g_thor_es_getllar_buckets)> snapshots{};
+
+	for (usz i = 0; i < snapshots.size(); i++)
+	{
+		const auto& bucket = g_thor_es_getllar_buckets[i];
+		auto& snapshot = snapshots[i];
+		snapshot.key = bucket.key.load(std::memory_order_relaxed);
+		snapshot.calls = bucket.calls.load(std::memory_order_relaxed);
+		snapshot.retries = bucket.retries.load(std::memory_order_relaxed);
+		snapshot.max_retries = bucket.max_retries.load(std::memory_order_relaxed);
+		snapshot.slow_yields = bucket.slow_yields.load(std::memory_order_relaxed);
+		snapshot.image_signature = bucket.image_signature.load(std::memory_order_relaxed);
+		snapshot.block_hash = bucket.block_hash.load(std::memory_order_relaxed);
+		snapshot.pc = bucket.pc.load(std::memory_order_relaxed);
+		snapshot.addr = bucket.addr.load(std::memory_order_relaxed);
+		snapshot.lsa = bucket.lsa.load(std::memory_order_relaxed);
+		snapshot.group_id = bucket.group_id.load(std::memory_order_relaxed);
+		snapshot.spu_index = bucket.spu_index.load(std::memory_order_relaxed);
+	}
+
+	std::sort(snapshots.begin(), snapshots.end(), [](const auto& lhs, const auto& rhs)
+	{
+		return lhs.retries > rhs.retries;
+	});
+
+	for (u32 rank = 0; rank < 8 && rank < snapshots.size(); rank++)
+	{
+		const auto& snapshot = snapshots[rank];
+		if (!snapshot.key || !snapshot.calls)
+		{
+			break;
+		}
+
+		spu_log.notice(
+			"Thor GETLLAR probe top%u: mode=%s total_calls=%llu key=0x%llx calls=%llu retries=%llu "
+			"max_retries=%llu slow_yields=%llu image_sig=0x%llx pc=0x%x block_hash=0x%llx "
+			"addr=0x%x lsa=0x%x group=0x%x spu_index=%u",
+			rank + 1, get_thor_es_getllar_mode_name(),
+			g_thor_es_getllar_total_calls.load(std::memory_order_relaxed),
+			snapshot.key, snapshot.calls, snapshot.retries, snapshot.max_retries,
+			snapshot.slow_yields, snapshot.image_signature, snapshot.pc,
+			snapshot.block_hash, snapshot.addr, snapshot.lsa, snapshot.group_id,
+			snapshot.spu_index);
+	}
+}
+
+static void record_thor_es_getllar(spu_thread& spu, u32 addr, u32 lsa, u64 retry_count, bool slow_yield)
+{
+	if (!thor_es_getllar_enabled())
+	{
+		return;
+	}
+
+	u64 key = 1469598103934665603ull;
+	mix_thor_es_dma_signature(key, spu.es_gpu_probe.image_signature);
+	mix_thor_es_dma_signature(key, spu.pc);
+	mix_thor_es_dma_signature(key, spu.block_hash);
+	mix_thor_es_dma_signature(key, addr);
+	mix_thor_es_dma_signature(key, lsa & 0x3ff80);
+
+	if (!key)
+	{
+		key = 1;
+	}
+
+	const u32 first_index = static_cast<u32>(key) & static_cast<u32>(g_thor_es_getllar_buckets.size() - 1);
+	thor_es_getllar_bucket* selected = nullptr;
+
+	for (u32 attempt = 0; attempt < 8; attempt++)
+	{
+		auto& bucket = g_thor_es_getllar_buckets[(first_index + attempt) & static_cast<u32>(g_thor_es_getllar_buckets.size() - 1)];
+		u64 expected = bucket.key.load(std::memory_order_relaxed);
+
+		if (expected == key)
+		{
+			selected = &bucket;
+			break;
+		}
+
+		if (!expected && bucket.key.compare_exchange_strong(expected, key, std::memory_order_relaxed))
+		{
+			selected = &bucket;
+			break;
+		}
+	}
+
+	if (!selected)
+	{
+		return;
+	}
+
+	selected->calls.fetch_add(1, std::memory_order_relaxed);
+	selected->retries.fetch_add(retry_count, std::memory_order_relaxed);
+	thor_es_atomic_max(selected->max_retries, retry_count);
+	if (slow_yield)
+	{
+		selected->slow_yields.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	selected->image_signature.store(spu.es_gpu_probe.image_signature, std::memory_order_relaxed);
+	selected->block_hash.store(spu.block_hash, std::memory_order_relaxed);
+	selected->pc.store(spu.pc, std::memory_order_relaxed);
+	selected->addr.store(addr, std::memory_order_relaxed);
+	selected->lsa.store(lsa & 0x3ff80, std::memory_order_relaxed);
+	selected->group_id.store(spu.group ? spu.group->id : 0, std::memory_order_relaxed);
+	selected->spu_index.store(spu.index, std::memory_order_relaxed);
+
+	const u64 total = g_thor_es_getllar_total_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+	if (total % 10'000 != 0 && retry_count < 24)
+	{
+		return;
+	}
+
+	const u64 now = get_system_time();
+	u64 last = g_thor_es_getllar_last_log_us.load(std::memory_order_relaxed);
+	if (last && now - last < 1'000'000)
+	{
+		return;
+	}
+
+	if (!g_thor_es_getllar_last_log_us.compare_exchange_strong(last, now, std::memory_order_relaxed))
+	{
+		return;
+	}
+
+	const auto spu_name_ptr = spu.spu_tname.load();
+	const std::string spu_name = spu_name_ptr ? *spu_name_ptr : std::string();
+	spu_log.notice(
+		"Thor GETLLAR probe sample: mode=%s total_calls=%llu image_sig=0x%llx pc=0x%x "
+		"block_hash=0x%llx addr=0x%x lsa=0x%x retries=%llu slow_yield=%u group=0x%x "
+		"group_name=\"%s\" spu=0x%x spu_index=%u spu_name=\"%s\"",
+		get_thor_es_getllar_mode_name(), total, spu.es_gpu_probe.image_signature,
+		spu.pc, spu.block_hash, addr, lsa & 0x3ff80, retry_count, slow_yield ? 1 : 0,
+		spu.group ? spu.group->id : 0, spu.group ? spu.group->name : std::string_view{},
+		spu.lv2_id, spu.index, spu_name);
+
+	log_thor_es_getllar_probe();
+}
+
+static u32 thor_es_getllar_retry_spin_limit()
+{
+	return get_thor_es_getllar_mode() == thor_es_getllar_mode::yield8 && Emu.GetTitleID() == "BLUS30161" ? 8u : 24u;
+}
+
+static u32 thor_es_getllar_retry_cycles()
+{
+	const auto mode = get_thor_es_getllar_mode();
+	if (mode != thor_es_getllar_mode::short_wait && mode != thor_es_getllar_mode::tiny_wait)
+	{
+		return 300;
+	}
+
+	if (Emu.GetTitleID() != "BLUS30161")
+	{
+		return 300;
+	}
+
+	switch (mode)
+	{
+	case thor_es_getllar_mode::short_wait: return 120;
+	case thor_es_getllar_mode::tiny_wait: return 40;
+	case thor_es_getllar_mode::disabled:
+	case thor_es_getllar_mode::profile:
+	case thor_es_getllar_mode::yield8:
+		break;
+	}
+
+	return 300;
+}
+
 template <>
 void fmt_class_string<mfc_atomic_status>::format(std::string& out, u64 arg)
 {
@@ -316,7 +814,9 @@ static FORCE_INLINE void __movsb(unsigned char* Dst, const unsigned char* Src, s
 		[Dst] "=D"(Dst), [Src] "=S"(Src), [Size] "=c"(Size) : "[Dst]"(Dst), "[Src]"(Src), "[Size]"(Size));
 }
 #else
-#define s_rep_movsb_threshold umax
+// On non-x64 targets __movsb aliases libc memcpy. The hand-written v128 loop is
+// fine for tiny DMAs, but Eternal Sonata's hot SPU jobs pound 16 KB transfers.
+#define s_rep_movsb_threshold 1024u
 #define __movsb std::memcpy
 #endif
 
@@ -646,7 +1146,7 @@ namespace spu
 				{
 					// Slight pause if function is overburdened
 					const auto count = atomic_instruction_table[pc_offset].observe() * 100ull;
-					rx::busy_wait(count);
+					thor_wait::profiled_busy_wait(thor_wait::site::spu_pc_acquire, count);
 				}
 
 				ensure(!spu.check_state());
@@ -2094,7 +2594,7 @@ void spu_thread::cpu_task()
 		}
 
 		// Print some stats
-		(!group || group->stop_count < 5 ? spu_log.notice : spu_log.trace)("Stats: Block Weight: %u (Retreats: %u);", block_counter, block_failure);
+		spu_log.trace("Stats: Block Weight: %u (Retreats: %u);", block_counter, block_failure);
 	}
 	else
 	{
@@ -2513,6 +3013,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 	perf_meter<"DMA"_u32> perf_;
 
 	const bool is_get = (args.cmd & ~(MFC_BARRIER_MASK | MFC_FENCE_MASK | MFC_START_MASK)) == MFC_GET_CMD;
+	record_thor_es_dma(_this, args.cmd, args.lsa, args.eal, args.size, _this && _this->es_gpu_probe.list_depth != 0);
 
 	u32 eal = args.eal;
 	u32 lsa = args.lsa & 0x3ffff;
@@ -2617,6 +3118,8 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 		src = zero_buf;
 	}
 
+	record_thor_es_dma_payload(_this, args.cmd, src, args.size);
+
 	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !g_cfg.core.spu_accurate_dma && eal < rsx::constants::local_mem_base)));
 
 	if ((!g_use_rtm && !is_get) || g_cfg.core.spu_accurate_dma) [[unlikely]]
@@ -2659,7 +3162,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 					}
 					else if (++i < 25) [[likely]]
 					{
-						rx::busy_wait(300);
+						thor_wait::profiled_busy_wait(thor_wait::site::spu_dma_reservation, 300);
 					}
 					else
 					{
@@ -2824,7 +3327,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 						if (true || ++i < 10)
 						{
-							rx::busy_wait(500);
+							thor_wait::profiled_busy_wait(thor_wait::site::spu_accurate_store, 500);
 						}
 						else
 						{
@@ -3302,6 +3805,22 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 {
 	perf_meter<"MFC_LIST"_u64> perf0;
 
+	struct thor_es_dma_list_scope
+	{
+		spu_thread& spu;
+
+		thor_es_dma_list_scope(spu_thread& spu)
+			: spu(spu)
+		{
+			spu.es_gpu_probe.list_depth++;
+		}
+
+		~thor_es_dma_list_scope()
+		{
+			spu.es_gpu_probe.list_depth--;
+		}
+	} thor_es_dma_scope{*this};
+
 	// Amount of elements to fetch in one go
 	constexpr u32 fetch_size = 6;
 
@@ -3372,8 +3891,17 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 					// Execute the postponed byteswapping and masking
 					s_size = std::bit_cast<be_t<u32>>(s_size) & ts_mask;
 
+					for (u32 i = 0; i < fetch_size; i++)
+					{
+						record_thor_es_dma(this, transfer.cmd, arg_lsa + i * rx::alignUp<u32>(s_size, 16), items[i].ea, s_size, true);
+					}
+
 					u8* src = vm::_ptr<u8>(0);
 					u8* dst = this->ls + arg_lsa;
+					for (u32 i = 0; i < fetch_size; i++)
+					{
+						record_thor_es_dma_payload(this, transfer.cmd, src + items[i].ea, s_size);
+					}
 
 					// Assume success, prepare the next elements
 					arg_lsa += fetch_size * rx::alignUp<u32>(s_size, 16);
@@ -3633,7 +4161,32 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 					}
 					default:
 					{
-						// TODO: Are more cases common enough? (in the range of less than 512 bytes because for more than that the optimization is doubtful)
+						if ((s_size & 0xf) == 0 && s_size <= 0x4000)
+						{
+							bool all_main_memory = true;
+							for (u32 i = 0; i < fetch_size; i++)
+							{
+								const u32 ea = items[i].ea;
+								all_main_memory &= ea < RAW_SPU_BASE_ADDR && s_size <= RAW_SPU_BASE_ADDR - ea;
+							}
+
+							if (all_main_memory)
+							{
+								const u32 stride = rx::alignUp<u32>(s_size, 16);
+								for (u32 i = 0; i < fetch_size; i++)
+								{
+									__movsb(dst + i * stride, src + items[i].ea, s_size);
+								}
+
+								if (!arg_size)
+								{
+									return true;
+								}
+
+								continue;
+							}
+						}
+
 						break;
 					}
 					}
@@ -3656,8 +4209,11 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 		// Try to inline the transfer
 		if (addr < RAW_SPU_BASE_ADDR && size && optimization_compatible == MFC_GET_CMD)
 		{
+			record_thor_es_dma(this, transfer.cmd, arg_lsa | (addr & 0xf), addr, size, true);
+
 			const u8* src = vm::_ptr<u8>(addr);
 			u8* dst = this->ls + arg_lsa + (addr & 0xf);
+			record_thor_es_dma_payload(this, transfer.cmd, src, size);
 
 			switch (u32 _size = size)
 			{
@@ -3727,6 +4283,8 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 		// Avoid inlining huge transfers because it intentionally drops range lock unlock
 		else if (optimization_compatible == MFC_PUT_CMD && ((addr >> 28 == rsx::constants::local_mem_base >> 28) || (addr < RAW_SPU_BASE_ADDR && size - 1 <= 0x400 - 1 && (addr % 0x10000 + (size - 1)) < 0x10000)))
 		{
+			record_thor_es_dma(this, transfer.cmd, arg_lsa | (addr & 0xf), addr, size, true);
+
 			if (addr >> 28 != rsx::constants::local_mem_base >> 28)
 			{
 				rsx_lock.update_if_enabled(addr, size, range_lock);
@@ -3744,6 +4302,7 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 
 			u8* dst = vm::_ptr<u8>(addr);
 			const u8* src = this->ls + arg_lsa + (addr & 0xf);
+			record_thor_es_dma_payload(this, transfer.cmd, src, size);
 
 			switch (u32 _size = size)
 			{
@@ -4154,7 +4713,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
 					}
 					else if (k < 15)
 					{
-						rx::busy_wait(500);
+						thor_wait::profiled_busy_wait(thor_wait::site::spu_putunc_abandon, 500);
 					}
 					else
 					{
@@ -4171,7 +4730,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
 			}
 			else if (j < 15)
 			{
-				rx::busy_wait(500);
+				thor_wait::profiled_busy_wait(thor_wait::site::spu_putunc_lock, 500);
 			}
 			else
 			{
@@ -4939,7 +5498,7 @@ bool spu_thread::process_mfc_cmd()
 								else
 #endif
 								{
-									rx::busy_wait(300);
+									thor_wait::profiled_busy_wait(thor_wait::site::spu_getllar, 300);
 								}
 
 								if (getllar_spin_count == 3)
@@ -5056,6 +5615,8 @@ bool spu_thread::process_mfc_cmd()
 		u64 ntime = 0;
 		rsx::reservation_lock rsx_lock(addr, 128);
 
+		u64 getllar_retry_count = 0;
+		bool getllar_slow_yield = false;
 		for (u64 i = 0; i != umax; [&]()
 			{
 				if (state & cpu_flag::pause)
@@ -5078,13 +5639,15 @@ bool spu_thread::process_mfc_cmd()
 					}
 				}
 
-				if (i < 24) [[likely]]
+				if (i < thor_es_getllar_retry_spin_limit()) [[likely]]
 				{
 					i++;
-					rx::busy_wait(300);
+					getllar_retry_count = i;
+					thor_wait::profiled_busy_wait(thor_wait::site::spu_getllar_retry, thor_es_getllar_retry_cycles());
 				}
 				else
 				{
+					getllar_slow_yield = true;
 					state += cpu_flag::wait + cpu_flag::temp;
 					std::this_thread::yield();
 					static_cast<void>(check_state());
@@ -5136,6 +5699,8 @@ bool spu_thread::process_mfc_cmd()
 
 			break;
 		}
+
+		record_thor_es_getllar(*this, addr, ch_mfc_cmd.lsa, getllar_retry_count, getllar_slow_yield);
 
 		raddr = addr;
 		rtime = ntime;
@@ -5804,7 +6369,7 @@ retry:
 
 	if (reading && res.locks && mask_hint & (SPU_EVENT_S1 | SPU_EVENT_S2))
 	{
-		rx::busy_wait(100);
+		thor_wait::profiled_busy_wait(thor_wait::site::spu_event_lock, 100);
 		goto retry;
 	}
 
@@ -6263,7 +6828,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 					continue;
 				}
 
-				rx::busy_wait(300);
+				thor_wait::profiled_busy_wait(thor_wait::site::spu_eventstat, 300);
 				lv2_obj::notify_all();
 
 				eventstat_spin_count++;
@@ -7707,7 +8272,7 @@ s64 spu_channel::pop_wait(cpu_thread& spu, bool pop)
 
 	for (int i = 0; i < 10; i++)
 	{
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_pop);
 
 		if (!(data & bit_wait))
 		{
@@ -7739,7 +8304,7 @@ s64 spu_channel::pop_wait(cpu_thread& spu, bool pop)
 					while (data & bit_wait)
 					{
 						// Wait until notifying thread finishes operation
-						busy_wait(500);
+						thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_pop, 500);
 					}
 
 					return static_cast<u32>(v);
@@ -7789,7 +8354,7 @@ bool spu_channel::push_wait(cpu_thread& spu, u32 value, bool push)
 			return true;
 		}
 
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_push);
 		state = data;
 	}
 
@@ -7844,7 +8409,7 @@ std::pair<u32, u32> spu_channel_4_t::pop_wait(cpu_thread& spu, bool pop_value)
 
 	for (int i = 0; i < 10; i++)
 	{
-		rx::busy_wait();
+		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel4_pop);
 
 		if (!atomic_storage<u8>::load(values.raw().waiting))
 		{

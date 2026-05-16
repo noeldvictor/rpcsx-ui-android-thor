@@ -22,6 +22,7 @@ import net.rpcsx.overlay.State
 import net.rpcsx.utils.InputBindingPrefs
 import net.rpcsx.performance.ThorPerformanceProfile
 import net.rpcsx.utils.ControllerOverlayPrefs
+import java.lang.ref.WeakReference
 import kotlin.concurrent.thread
 import kotlin.math.abs
 
@@ -32,10 +33,41 @@ class RPCSXActivity : Activity() {
         Down
     }
 
-    private companion object {
+    companion object {
         const val SELECT_STICK_HOTKEY_TRIGGER = 0.65f
         const val SELECT_STICK_HOTKEY_RELEASE = 0.35f
         const val SELECT_TAP_MS = 80L
+
+        @Volatile
+        private var activeInstance: WeakReference<RPCSXActivity>? = null
+
+        fun thorDebugPad(
+            digital1: Int,
+            digital2: Int,
+            leftStickX: Int,
+            leftStickY: Int,
+            rightStickX: Int,
+            rightStickY: Int,
+            durationMs: Long
+        ): Boolean {
+            if (!BuildConfig.DEBUG) {
+                return false
+            }
+
+            val activity = activeInstance?.get() ?: return false
+            activity.runOnUiThread {
+                activity.applyThorDebugPad(
+                    digital1,
+                    digital2,
+                    leftStickX,
+                    leftStickY,
+                    rightStickX,
+                    rightStickY,
+                    durationMs
+                )
+            }
+            return true
+        }
     }
 
     private lateinit var binding: ActivityRpcs3Binding
@@ -55,6 +87,7 @@ class RPCSXActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeInstance = WeakReference(this)
         binding = ActivityRpcs3Binding.inflate(layoutInflater)
         setContentView(binding.root)
         sixaxisMotionController = SixaxisMotionController(this)
@@ -123,6 +156,9 @@ class RPCSXActivity : Activity() {
     override fun onDestroy() {
         sixaxisMotionController.stop()
         super.onDestroy()
+        if (activeInstance?.get() === this) {
+            activeInstance = null
+        }
         RPCSX.state.value = EmulatorState.Paused
         unregisterUsbEventListener()
         bootThread?.interrupt()
@@ -249,6 +285,41 @@ class RPCSXActivity : Activity() {
             gamePadState.digital[1] = digital2BeforeBack
             sendGamepadData()
         }, 80L)
+    }
+
+    private fun applyThorDebugPad(
+        digital1: Int,
+        digital2: Int,
+        leftStickX: Int,
+        leftStickY: Int,
+        rightStickX: Int,
+        rightStickY: Int,
+        durationMs: Long
+    ) {
+        val previousDigital1 = gamePadState.digital[0]
+        val previousDigital2 = gamePadState.digital[1]
+        val previousLeftStickX = gamePadState.leftStickX
+        val previousLeftStickY = gamePadState.leftStickY
+        val previousRightStickX = gamePadState.rightStickX
+        val previousRightStickY = gamePadState.rightStickY
+
+        gamePadState.digital[0] = previousDigital1 or digital1
+        gamePadState.digital[1] = previousDigital2 or digital2
+        if (leftStickX >= 0) gamePadState.leftStickX = leftStickX.coerceIn(0, 255)
+        if (leftStickY >= 0) gamePadState.leftStickY = leftStickY.coerceIn(0, 255)
+        if (rightStickX >= 0) gamePadState.rightStickX = rightStickX.coerceIn(0, 255)
+        if (rightStickY >= 0) gamePadState.rightStickY = rightStickY.coerceIn(0, 255)
+        sendGamepadData()
+
+        binding.root.postDelayed({
+            gamePadState.digital[0] = previousDigital1
+            gamePadState.digital[1] = previousDigital2
+            gamePadState.leftStickX = previousLeftStickX
+            gamePadState.leftStickY = previousLeftStickY
+            gamePadState.rightStickX = previousRightStickX
+            gamePadState.rightStickY = previousRightStickY
+            sendGamepadData()
+        }, durationMs.coerceIn(20L, 5000L))
     }
 
     @Deprecated("Deprecated in Java")

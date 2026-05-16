@@ -5,6 +5,14 @@ This directory is for committed, durable debug issue summaries.
 Use `tools/thor_ooda.ps1` as the default capture wrapper. It is game-agnostic by
 default, with optional per-game overlays from `debug-profiles/*.json`.
 
+Fast loop:
+
+```powershell
+.\tools\thor_ooda.ps1 -Action Auto -Profile default -Label GAME
+.\tools\thor_ooda.ps1 -Action Summarize -Profile default -Label GAME -NoIssueCommit
+.\tools\thor_ooda.ps1 -Action Stop -Profile default -Label GAME
+```
+
 Raw logs, streams, tombstones, pulled config files, and Ghidra projects stay in ignored
 `debug-captures/` folders. Each OODA run should create a small tracked issue folder here
 with:

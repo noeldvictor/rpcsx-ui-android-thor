@@ -4,6 +4,14 @@
   "mode": "Normal",
   "tags": ["generic", "safe"],
   "live": true,
+  "capture": {
+    "logcatLines": 12000,
+    "summaryTailLines": 80,
+    "postMode": "Quiet"
+  },
+  "stream": {
+    "pollSeconds": 3
+  },
   "ghidra": {
     "auto": true,
     "module": "",

@@ -5,6 +5,14 @@
   "mode": "SpursProbe",
   "tags": ["spurs", "loading", "ppu-wait", "ghidra"],
   "live": true,
+  "capture": {
+    "logcatLines": 16000,
+    "summaryTailLines": 120,
+    "postMode": "Quiet"
+  },
+  "stream": {
+    "pollSeconds": 3
+  },
   "ghidra": {
     "auto": true,
     "module": "libsre",

@@ -4,6 +4,7 @@
 #include "VKQueryPool.h"
 #include "VKRenderPass.h"
 #include "VKResourceManager.h"
+#include "vkutils/thor_rsx_auditor.h"
 #include "rx/asm.hpp"
 #include "VKGSRender.h"
 
@@ -184,6 +185,7 @@ namespace vk
 	{
 		// We're technically supposed to stop any active renderpasses before streaming the results out, but that doesn't matter on IMR hw
 		// On TBDR setups like the apple M series, the stop is required (results are all 0 if you don't flush the RP), but this introduces a very heavy performance loss.
+		vk::thor::rsx_auditor::record_query_wait_copy(count);
 		VK_GET_SYMBOL(vkCmdCopyQueryPoolResults)(cmd, *query_slot_status[index].pool, index, count, dst, dst_offset, 4, VK_QUERY_RESULT_WAIT_BIT);
 	}
 

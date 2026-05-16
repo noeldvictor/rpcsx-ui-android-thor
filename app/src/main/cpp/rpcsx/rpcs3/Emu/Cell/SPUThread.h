@@ -797,6 +797,37 @@ public:
 	u64 block_recover = 0;
 	u64 block_failure = 0;
 
+	struct es_gpu_probe_state_t
+	{
+		u64 start_us = 0;
+		u64 image_signature = 0;
+		u64 pattern_signature = 1469598103934665603ull;
+		u64 get_bytes = 0;
+		u64 put_bytes = 0;
+		u64 list_get_bytes = 0;
+		u64 list_put_bytes = 0;
+		u64 rsx_get_bytes = 0;
+		u64 rsx_put_bytes = 0;
+		u64 cmd_count = 0;
+		u64 list_cmd_count = 0;
+		u64 get_payload_hash = 1469598103934665603ull;
+		u64 put_payload_hash = 1469598103934665603ull;
+		u64 get_payload_bytes = 0;
+		u64 put_payload_bytes = 0;
+		u64 sampled_get_payload_bytes = 0;
+		u64 sampled_put_payload_bytes = 0;
+		u64 ls_start_hash = 0;
+		u64 ls_end_hash = 0;
+		u32 entry = 0;
+		u32 max_dma_size = 0;
+		u32 max_dma_pc = 0;
+		u32 max_dma_ea = 0;
+		u64 max_dma_block_hash = 0;
+		u32 list_depth = 0;
+	};
+
+	es_gpu_probe_state_t es_gpu_probe{};
+
 	rpcs3::hypervisor_context_t hv_ctx; // NOTE: The offset within the class must be within the first 1MiB
 
 	u64 ftx = 0; // Failed transactions

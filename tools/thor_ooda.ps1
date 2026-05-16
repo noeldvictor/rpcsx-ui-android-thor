@@ -1,17 +1,21 @@
 param(
-    [ValidateSet("Profile", "BuildInstall", "Start", "Capture", "Stop", "Auto")]
+    [ValidateSet("Profile", "BuildInstall", "Start", "Summarize", "Capture", "Stop", "Auto")]
     [string]$Action = "Auto",
     [string]$Label = "thor-ooda",
     [string]$Profile = "default",
     [string]$Package = "net.rpcsx.easy",
     [string]$Mode = "",
     [string]$Symptom = "",
-    [int]$LogcatLines = 30000,
+    [int]$LogcatLines = 0,
+    [int]$SummaryTailLines = 0,
+    [int]$StreamPollSeconds = 0,
+    [string]$PostMode = "",
     [int]$GhidraWaitSeconds = -1,
     [switch]$NoBuildInstall,
     [switch]$NoLaunch,
     [switch]$NoGhidra,
-    [switch]$NoIssueCommit
+    [switch]$NoIssueCommit,
+    [switch]$KeepLogging
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,6 +56,25 @@ function Get-OodaProperty {
     return $prop.Value
 }
 
+function Get-OodaIntProperty {
+    param(
+        [object]$Object,
+        [string]$Name,
+        [int]$Default
+    )
+
+    $value = Get-OodaProperty $Object $Name $null
+    if ($null -eq $value) {
+        return $Default
+    }
+
+    try {
+        return [int]$value
+    } catch {
+        return $Default
+    }
+}
+
 function Get-OodaGitText {
     param([string[]]$GitArgs)
 
@@ -75,7 +98,8 @@ function Get-OodaAdbText {
 function New-OodaIssue {
     param(
         [object]$ProfileObject,
-        [string]$EffectiveMode
+        [string]$EffectiveMode,
+        [System.Collections.IDictionary]$EffectiveSettings
     )
 
     $issueId = "$stamp-$safeLabel"
@@ -92,6 +116,9 @@ function New-OodaIssue {
         profile = (Get-OodaProperty $ProfileObject "name" $Profile)
         profilePath = $profilePath
         mode = $EffectiveMode
+        status = "started"
+        failure = ""
+        settings = $EffectiveSettings
         repo = [ordered]@{
             head = (Get-OodaGitText @("rev-parse", "--short", "HEAD"))
             branch = (Get-OodaGitText @("branch", "--show-current"))
@@ -100,6 +127,8 @@ function New-OodaIssue {
         apk = [ordered]@{}
         device = [ordered]@{}
         captures = @()
+        summaries = @()
+        quickRead = @()
         ghidra = @()
         nextAction = ""
         issueDir = $issueDir
@@ -130,6 +159,24 @@ function Save-OodaIssue {
         $captureLines = @("- none yet")
     }
 
+    $summaryLines = @()
+    foreach ($summary in @($Issue["summaries"])) {
+        $summaryLines += "- $summary"
+    }
+    if ($summaryLines.Count -eq 0) {
+        $summaryLines = @("- none yet")
+    }
+
+    $quickReadLines = @()
+    foreach ($line in @($Issue["quickRead"])) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$line)) {
+            $quickReadLines += "- $line"
+        }
+    }
+    if ($quickReadLines.Count -eq 0) {
+        $quickReadLines = @("- no triage summary yet")
+    }
+
     $ghidraLines = @()
     foreach ($g in @($Issue["ghidra"])) {
         $ghidraLines += "- $g"
@@ -146,12 +193,22 @@ function Save-OodaIssue {
         "- Label: $($Issue["label"])",
         "- Profile: $($Issue["profile"])",
         "- Mode: $($Issue["mode"])",
+        "- Status: $($Issue["status"])",
         "- Package: $($Issue["package"])",
         "- Repo: $($Issue["repo"]["head"]) on $($Issue["repo"]["branch"])",
         "- Symptom: $($Issue["symptom"])",
+        "- Logcat Lines: $($Issue["settings"]["logcatLines"])",
+        "- Stream Poll Seconds: $($Issue["settings"]["streamPollSeconds"])",
+        "- Post Mode: $($Issue["settings"]["postMode"])",
         "",
         "## Captures",
         $captureLines,
+        "",
+        "## Summaries",
+        $summaryLines,
+        "",
+        "## Quick Read",
+        $quickReadLines,
         "",
         "## Ghidra",
         $ghidraLines,
@@ -186,6 +243,245 @@ function Commit-OodaIssue {
     if ($LASTEXITCODE -eq 0) {
         & git -C $RepoRoot push origin master | Out-Host
     }
+}
+
+function Add-OodaListValue {
+    param(
+        [System.Collections.IDictionary]$Issue,
+        [string]$Key,
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return
+    }
+
+    if ($Value -is [array]) {
+        foreach ($item in $Value) {
+            Add-OodaListValue $Issue $Key $item
+        }
+        return
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return
+    }
+
+    if (@($Issue[$Key]) -notcontains $text) {
+        $Issue[$Key] = @($Issue[$Key]) + $text
+    }
+}
+
+function Get-OodaTailText {
+    param(
+        [string]$Path,
+        [int]$Lines = 80
+    )
+
+    if (-not (Test-Path $Path)) {
+        return @()
+    }
+
+    return @(Get-Content -LiteralPath $Path -Tail $Lines -ErrorAction SilentlyContinue)
+}
+
+function Test-OodaAnyPattern {
+    param(
+        [string[]]$Lines,
+        [string[]]$Patterns
+    )
+
+    $text = ($Lines -join "`n")
+    foreach ($pattern in $Patterns) {
+        if ($text -match $pattern) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-OodaMarkdownSection {
+    param(
+        [string]$Path,
+        [string]$Section,
+        [int]$MaxLines = 12
+    )
+
+    if (-not (Test-Path $Path)) {
+        return @()
+    }
+
+    $lines = @(Get-Content -LiteralPath $Path)
+    $result = New-Object System.Collections.Generic.List[string]
+    $inside = $false
+    foreach ($line in $lines) {
+        if ($line -match "^##\s+$([regex]::Escape($Section))\s*$") {
+            $inside = $true
+            continue
+        }
+
+        if ($inside -and $line -match "^##\s+") {
+            break
+        }
+
+        if ($inside -and -not [string]::IsNullOrWhiteSpace($line)) {
+            $result.Add(($line -replace '^\-\s+', '').Trim())
+            if ($result.Count -ge $MaxLines) {
+                break
+            }
+        }
+    }
+
+    return @($result)
+}
+
+function Get-OodaLatestStreamDir {
+    $latestPath = Join-Path (Join-Path $RepoRoot "debug-captures") "latest-stream.txt"
+    if (-not (Test-Path $latestPath)) {
+        return ""
+    }
+
+    $streamDir = (Get-Content -LiteralPath $latestPath -Raw).Trim()
+    if ($streamDir -and (Test-Path $streamDir)) {
+        return (Resolve-Path -LiteralPath $streamDir).Path
+    }
+
+    return ""
+}
+
+function Invoke-OodaStreamSummary {
+    param(
+        [System.Collections.IDictionary]$Issue,
+        [string]$StreamDir = ""
+    )
+
+    $summaryLog = Join-Path $Issue["issueDir"] "stream-summary.txt"
+    if (-not [string]::IsNullOrWhiteSpace($StreamDir)) {
+        & "$PSScriptRoot\summarize_thor_debug_stream.ps1" -Package $Package -TailLines $EffectiveSummaryTailLines -Session $StreamDir *> $summaryLog
+    } else {
+        & "$PSScriptRoot\summarize_thor_debug_stream.ps1" -Package $Package -TailLines $EffectiveSummaryTailLines -Latest *> $summaryLog
+    }
+    Get-Content -LiteralPath $summaryLog | Write-Host
+
+    $resolvedStreamDir = $StreamDir
+    if ([string]::IsNullOrWhiteSpace($resolvedStreamDir)) {
+        $resolvedStreamDir = Get-OodaLatestStreamDir
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($resolvedStreamDir)) {
+        Add-OodaListValue $Issue "captures" $resolvedStreamDir
+        $summaryPath = Join-Path $resolvedStreamDir "summary-latest.md"
+        if (Test-Path $summaryPath) {
+            Add-OodaListValue $Issue "summaries" $summaryPath
+            Add-OodaListValue $Issue "quickRead" (Get-OodaMarkdownSection $summaryPath "Quick Read" 12)
+        }
+    }
+
+    Add-OodaListValue $Issue "summaries" $summaryLog
+    return $resolvedStreamDir
+}
+
+function Invoke-OodaCaptureTriage {
+    param(
+        [System.Collections.IDictionary]$Issue,
+        [string]$CaptureDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CaptureDir) -or -not (Test-Path $CaptureDir)) {
+        return
+    }
+
+    $rpcsxLines = @(Get-OodaTailText (Join-Path $CaptureDir "rpcsx-log-errors.txt") 160 | Where-Object { $_ -notmatch '^\s*#' })
+    $logcatLines = @(Get-OodaTailText (Join-Path $CaptureDir "logcat-interesting.txt") 160 | Where-Object { $_ -notmatch '^\s*#' })
+    $memLines = @(Get-OodaTailText (Join-Path $CaptureDir "meminfo.txt") 120 | Where-Object { $_ -notmatch '^\s*#' })
+    $topLines = @(Get-OodaTailText (Join-Path $CaptureDir "top-threads.txt") 80 | Where-Object { $_ -notmatch '^\s*#' })
+    $allLines = @($rpcsxLines + $logcatLines + $memLines + $topLines)
+
+    $signals = New-Object System.Collections.Generic.List[string]
+    if (Test-OodaAnyPattern $allLines @("FATAL EXCEPTION", "Fatal signal", "SIGSEGV", "SIGABRT", "tombstone", "Abort message")) {
+        $signals.Add("Crash signature present. Inspect logcat/tombstone lines before tuning performance.")
+    }
+    if (Test-OodaAnyPattern $allLines @("lowmemorykiller", "lmkd", "critical pressure", "Out of memory", "OutOfMemory", "report_bad_alloc_error", "memory_commit", "Cannot allocate")) {
+        $signals.Add("Memory pressure or allocation failure present. Treat compile/cache pressure as suspect.")
+    }
+    if (Test-OodaAnyPattern $allLines @("semaphore_acquire has timed out", "VK_ERROR", "Vulkan", "sys_rsx")) {
+        $signals.Add("RSX/Vulkan sync or driver signal present. Check RSX log lines before blaming SPU.")
+    }
+    if (Test-OodaAnyPattern $allLines @("SPU: Building function", "PPU: LLVM", "Building function", "LLVM")) {
+        $signals.Add("Compiler activity visible. Separate first-run compile stalls from steady-state FPS.")
+    }
+    if (Test-OodaAnyPattern $allLines @("Thor SPURS", "sys_spu_thread_group_start", "sys_spu_thread_group_join", "SpursHdlr", "CellSpurs")) {
+        $signals.Add("SPURS/SPU group churn visible. Keep using SPURS/profile probes for this repro.")
+    }
+    if (Test-OodaAnyPattern $allLines @("Reduced Loop Candidate", "spu_reduced_loop")) {
+        $signals.Add("SPU reduced-loop logging visible. Keep captures short and reset to Quiet after final pull.")
+    }
+    if ($signals.Count -eq 0) {
+        $signals.Add("No obvious crash/OOM/RSX/SPURS signature in the quick triage. Check activity focus and whether RPCSX.log is advancing.")
+    }
+
+    Add-OodaListValue $Issue "quickRead" @($signals)
+
+    $triagePath = Join-Path $Issue["issueDir"] "triage.md"
+    $out = New-Object System.Collections.Generic.List[string]
+    $out.Add("# Thor OODA Triage")
+    $out.Add("")
+    $out.Add("- Capture: $CaptureDir")
+    $out.Add("- Created: $(Get-Date -Format o)")
+    $out.Add("")
+    $out.Add("## Quick Read")
+    foreach ($signal in $signals) {
+        $out.Add("- $signal")
+    }
+    $out.Add("")
+    $out.Add("## Recent RPCSX Error Lines")
+    if ($rpcsxLines.Count -gt 0) {
+        foreach ($line in ($rpcsxLines | Select-Object -Last 80)) {
+            $out.Add($line)
+        }
+    } else {
+        $out.Add("(none)")
+    }
+    $out.Add("")
+    $out.Add("## Recent Logcat Interesting Lines")
+    if ($logcatLines.Count -gt 0) {
+        foreach ($line in ($logcatLines | Select-Object -Last 80)) {
+            $out.Add($line)
+        }
+    } else {
+        $out.Add("(none)")
+    }
+    $out.Add("")
+    $out.Add("## Hot Threads")
+    if ($topLines.Count -gt 0) {
+        foreach ($line in ($topLines | Select-Object -Last 50)) {
+            $out.Add($line)
+        }
+    } else {
+        $out.Add("(none)")
+    }
+
+    $out | Set-Content -LiteralPath $triagePath -Encoding UTF8
+    Add-OodaListValue $Issue "summaries" $triagePath
+}
+
+function Invoke-OodaPostRunLogging {
+    param(
+        [System.Collections.IDictionary]$Issue,
+        [string]$EffectiveMode
+    )
+
+    if ($KeepLogging -or $EffectiveMode -eq "Status" -or [string]::IsNullOrWhiteSpace($EffectivePostMode)) {
+        return
+    }
+
+    $postLog = Join-Path $Issue["issueDir"] "post-logging.txt"
+    & "$PSScriptRoot\set_thor_logging.ps1" -Mode $EffectivePostMode 2>&1 |
+        Tee-Object -FilePath $postLog |
+        ForEach-Object { Write-Host $_ }
+    $Issue["settings"]["postModeApplied"] = $EffectivePostMode
 }
 
 function Invoke-OodaBuildInstall {
@@ -231,7 +527,8 @@ function Set-OodaLogging {
 
     $logPath = Join-Path $Issue["issueDir"] "logging.txt"
     & "$PSScriptRoot\set_thor_logging.ps1" -Mode $EffectiveMode 2>&1 |
-        Tee-Object -FilePath $logPath
+        Tee-Object -FilePath $logPath |
+        ForEach-Object { Write-Host $_ }
 
     if (-not $NoGhidra) {
         $ghidra = Get-OodaProperty $ProfileObject "ghidra" $null
@@ -252,7 +549,7 @@ function Start-OodaStream {
 
     Set-OodaLogging $EffectiveMode $ProfileObject $Issue
 
-    $args = @("-Label", $Issue["id"], "-Package", $Package, "-ClearLogcat")
+    $args = @("-Label", $Issue["id"], "-Package", $Package, "-ClearLogcat", "-PollSeconds", "$EffectiveStreamPollSeconds")
     if (-not $NoLaunch) {
         $args += "-Launch"
     }
@@ -266,7 +563,7 @@ function Start-OodaStream {
         $streamDir = (Get-Content -LiteralPath $latestPath -Raw).Trim()
         if ($streamDir) {
             $Issue["captures"] = @($Issue["captures"]) + $streamDir
-            $Issue["nextAction"] = "Reproduce the issue on Thor, then run `.\tools\thor_ooda.ps1 -Action Stop -Label $($Issue["label"]) -Profile $Profile`."
+            $Issue["nextAction"] = "Reproduce on Thor. While it is running, use `.\tools\thor_ooda.ps1 -Action Summarize -Label $($Issue["label"]) -Profile $Profile -NoIssueCommit` for quick reads; when the issue is visible, run `.\tools\thor_ooda.ps1 -Action Stop -Label $($Issue["label"]) -Profile $Profile`."
         }
     }
 }
@@ -281,7 +578,7 @@ function Invoke-OodaCapture {
     Set-OodaLogging $EffectiveMode $ProfileObject $Issue
 
     $captureLog = Join-Path $Issue["issueDir"] "capture.txt"
-    & "$PSScriptRoot\collect_thor_debug.ps1" -Label $Issue["id"] -Package $Package -LogcatLines $LogcatLines *> $captureLog
+    & "$PSScriptRoot\collect_thor_debug.ps1" -Label $Issue["id"] -Package $Package -LogcatLines $EffectiveLogcatLines *> $captureLog
     Get-Content -LiteralPath $captureLog | Write-Host
 
     $captureRoot = Join-Path $RepoRoot "debug-captures"
@@ -301,7 +598,8 @@ function Stop-OodaStream {
     param([System.Collections.IDictionary]$Issue)
 
     & "$PSScriptRoot\stop_thor_debug_stream.ps1" -Latest -Package $Package 2>&1 |
-        Tee-Object -FilePath (Join-Path $Issue["issueDir"] "stop-stream.txt")
+        Tee-Object -FilePath (Join-Path $Issue["issueDir"] "stop-stream.txt") |
+        ForEach-Object { Write-Host $_ }
 
     $latestPath = Join-Path (Join-Path $RepoRoot "debug-captures") "latest-stream.txt"
     if (Test-Path $latestPath) {
@@ -401,7 +699,8 @@ function Invoke-OodaGhidra {
         }
 
         & powershell @helperArgs 2>&1 |
-            Tee-Object -FilePath $logPath
+            Tee-Object -FilePath $logPath |
+            ForEach-Object { Write-Host $_ }
         $helperExit = $LASTEXITCODE
         $ghidraDir = Get-ChildItem -LiteralPath (Join-Path $RepoRoot "debug-captures") -Directory -Filter "ghidra-$module-*" -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending |
@@ -444,12 +743,45 @@ if ([string]::IsNullOrWhiteSpace($effectiveMode)) {
     $effectiveMode = [string](Get-OodaProperty $profileObject "mode" "Normal")
 }
 
+$captureProfile = Get-OodaProperty $profileObject "capture" $null
+$streamProfile = Get-OodaProperty $profileObject "stream" $null
+$effectiveLogcatLines = $LogcatLines
+if ($effectiveLogcatLines -le 0) {
+    $effectiveLogcatLines = Get-OodaIntProperty $captureProfile "logcatLines" 12000
+}
+
+$effectiveSummaryTailLines = $SummaryTailLines
+if ($effectiveSummaryTailLines -le 0) {
+    $effectiveSummaryTailLines = Get-OodaIntProperty $captureProfile "summaryTailLines" 80
+}
+
+$effectiveStreamPollSeconds = $StreamPollSeconds
+if ($effectiveStreamPollSeconds -le 0) {
+    $effectiveStreamPollSeconds = Get-OodaIntProperty $streamProfile "pollSeconds" 3
+}
+
+$effectivePostMode = $PostMode
+if ([string]::IsNullOrWhiteSpace($effectivePostMode)) {
+    $effectivePostMode = [string](Get-OodaProperty $captureProfile "postMode" "Quiet")
+}
+if ($effectivePostMode -match '^(none|off|keep)$') {
+    $effectivePostMode = ""
+}
+
+$effectiveSettings = [ordered]@{
+    logcatLines = $effectiveLogcatLines
+    summaryTailLines = $effectiveSummaryTailLines
+    streamPollSeconds = $effectiveStreamPollSeconds
+    postMode = $effectivePostMode
+    postModeApplied = ""
+}
+
 if ($Action -eq "Profile") {
     $profileObject | ConvertTo-Json -Depth 8
     return
 }
 
-$issue = New-OodaIssue $profileObject $effectiveMode
+$issue = New-OodaIssue $profileObject $effectiveMode $effectiveSettings
 
 try {
     if ($Action -eq "BuildInstall") {
@@ -460,23 +792,44 @@ try {
             Invoke-OodaBuildInstall $issue
         }
         Start-OodaStream $issue $effectiveMode $profileObject
+    } elseif ($Action -eq "Summarize") {
+        $streamDir = Invoke-OodaStreamSummary $issue
+        Invoke-OodaGhidra $issue $profileObject @($streamDir)
+        $issue["nextAction"] = "If the quick read is enough, patch narrowly; otherwise keep the stream running and summarize again, or stop it when the repro is fully visible."
     } elseif ($Action -eq "Capture") {
         $captureDir = Invoke-OodaCapture $issue $effectiveMode $profileObject
+        Invoke-OodaCaptureTriage $issue $captureDir
         Invoke-OodaGhidra $issue $profileObject @($captureDir)
+        Invoke-OodaPostRunLogging $issue $effectiveMode
         $issue["nextAction"] = "Classify the issue from capture, patch narrowly, rebuild/install, and rerun the same profile."
     } elseif ($Action -eq "Stop") {
         $streamDir = Stop-OodaStream $issue
+        Invoke-OodaStreamSummary $issue $streamDir | Out-Null
         Invoke-OodaGhidra $issue $profileObject @($streamDir)
+        Invoke-OodaPostRunLogging $issue $effectiveMode
         $issue["nextAction"] = "Inspect final stream/capture output, patch narrowly, rebuild/install, and rerun the same profile."
     }
 
     Write-OodaDeviceMetadata $issue
+    $issue["status"] = "ok"
     Save-OodaIssue $issue
     Commit-OodaIssue $issue
     Write-Host "OODA issue written: $($issue["issueDir"])"
 } catch {
+    $issue["status"] = "failed"
+    $issue["failure"] = $_.Exception.Message
     $issue["nextAction"] = "Run failed: $($_.Exception.Message)"
+    try {
+        Write-OodaDeviceMetadata $issue
+    } catch {
+        Add-OodaListValue $issue "quickRead" "Device metadata capture also failed: $($_.Exception.Message)"
+    }
     Save-OodaIssue $issue
+    try {
+        Commit-OodaIssue $issue
+    } catch {
+        Write-Warning "Failed to auto-commit failed OODA issue: $($_.Exception.Message)"
+    }
     Write-Host "OODA issue written with failure: $($issue["issueDir"])"
     throw
 }

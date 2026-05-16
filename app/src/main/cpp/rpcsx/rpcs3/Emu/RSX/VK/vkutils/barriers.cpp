@@ -1,6 +1,7 @@
 #include "barriers.h"
 #include "commands.h"
 #include "image.h"
+#include "thor_rsx_auditor.h"
 
 #include "../../rsx_methods.h"
 #include "../VKRenderPass.h"
@@ -15,7 +16,10 @@ namespace vk
 		const VkImageSubresourceRange& range,
 		bool preserve_renderpass)
 	{
-		if (!preserve_renderpass && vk::is_renderpass_open(cmd))
+		const bool breaks_renderpass = !preserve_renderpass && vk::is_renderpass_open(cmd);
+		vk::thor::rsx_auditor::record_image_barrier(src_stage, dst_stage, breaks_renderpass);
+
+		if (breaks_renderpass)
 		{
 			vk::end_renderpass(cmd);
 		}
@@ -42,7 +46,10 @@ namespace vk
 		VkAccessFlags src_mask, VkAccessFlags dst_mask,
 		bool preserve_renderpass)
 	{
-		if (!preserve_renderpass && vk::is_renderpass_open(cmd))
+		const bool breaks_renderpass = !preserve_renderpass && vk::is_renderpass_open(cmd);
+		vk::thor::rsx_auditor::record_buffer_barrier(length, src_stage, dst_stage, breaks_renderpass);
+
+		if (breaks_renderpass)
 		{
 			vk::end_renderpass(cmd);
 		}
@@ -66,7 +73,10 @@ namespace vk
 		VkAccessFlags src_access, VkAccessFlags dst_access,
 		bool preserve_renderpass)
 	{
-		if (!preserve_renderpass && vk::is_renderpass_open(cmd))
+		const bool breaks_renderpass = !preserve_renderpass && vk::is_renderpass_open(cmd);
+		vk::thor::rsx_auditor::record_global_barrier(src_stage, dst_stage, breaks_renderpass);
+
+		if (breaks_renderpass)
 		{
 			vk::end_renderpass(cmd);
 		}
@@ -89,7 +99,10 @@ namespace vk
 		// Transition to GENERAL if this resource is both input and output
 		// TODO: This implicitly makes the target incompatible with the renderpass declaration; investigate a proper workaround
 		// TODO: This likely throws out hw optimizations on the rest of the renderpass, manage carefully
-		if (!preserve_renderpass && vk::is_renderpass_open(cmd))
+		const bool breaks_renderpass = !preserve_renderpass && vk::is_renderpass_open(cmd);
+		vk::thor::rsx_auditor::record_texture_barrier(breaks_renderpass, range.aspectMask);
+
+		if (breaks_renderpass)
 		{
 			vk::end_renderpass(cmd);
 		}

@@ -3,7 +3,12 @@
 #include "rx/tsc.hpp"
 #include "types.hpp"
 #include <atomic>
+#include <cstdlib>
 #include <thread>
+
+#if defined(ARCH_ARM64) && defined(ANDROID)
+#include <sys/system_properties.h>
+#endif
 
 extern bool g_use_rtm;
 extern u64 g_rtm_tx_limit1;
@@ -279,8 +284,85 @@ inline void pause() {
 
 inline void yield() { std::this_thread::yield(); }
 
+#if defined(ARCH_ARM64) && defined(ANDROID)
+enum class thor_busy_wait_mode : u32 {
+  disabled,
+  light,
+  fast,
+  aggressive,
+};
+
+inline thor_busy_wait_mode parse_thor_busy_wait_mode(const char *value) {
+  if (!value || value[0] == '\0' || value[0] == '0' || value[0] == 'o' ||
+      value[0] == 'O' || value[0] == 'd' || value[0] == 'D') {
+    return thor_busy_wait_mode::disabled;
+  }
+
+  if (value[0] == 'l' || value[0] == 'L') {
+    return thor_busy_wait_mode::light;
+  }
+
+  if (value[0] == 'a' || value[0] == 'A' || value[0] == '3') {
+    return thor_busy_wait_mode::aggressive;
+  }
+
+  if (value[0] == 'f' || value[0] == 'F') {
+    if ((value[1] == 'a' || value[1] == 'A') &&
+        (value[2] == 's' || value[2] == 'S')) {
+      return thor_busy_wait_mode::fast;
+    }
+
+    return thor_busy_wait_mode::disabled;
+  }
+
+  return thor_busy_wait_mode::fast;
+}
+
+inline thor_busy_wait_mode get_thor_busy_wait_mode() {
+  static const thor_busy_wait_mode mode = [] {
+    char value[PROP_VALUE_MAX]{};
+    const int length =
+        __system_property_get("debug.rpcsx.thor.fast_busy_wait", value);
+    if (length > 0) {
+      return parse_thor_busy_wait_mode(value);
+    }
+
+    return parse_thor_busy_wait_mode(std::getenv("RPCSX_THOR_FAST_BUSY_WAIT"));
+  }();
+
+  return mode;
+}
+
+inline u32 thor_busy_wait_poll_batch(usz cycles) {
+  switch (get_thor_busy_wait_mode()) {
+  case thor_busy_wait_mode::light:
+    return cycles <= 300 ? 2 : cycles <= 1000 ? 4 : 8;
+  case thor_busy_wait_mode::fast:
+    return cycles <= 300 ? 4 : cycles <= 1000 ? 8 : 16;
+  case thor_busy_wait_mode::aggressive:
+    return cycles <= 300 ? 8 : cycles <= 1000 ? 16 : 32;
+  case thor_busy_wait_mode::disabled:
+  default:
+    return 1;
+  }
+}
+#endif
+
 // Synchronization helper (cache-friendly busy waiting)
 inline void busy_wait(usz cycles = 3000) {
+#if defined(ARCH_ARM64) && defined(ANDROID)
+  const u32 batch = thor_busy_wait_poll_batch(cycles);
+  if (batch > 1) {
+    const u64 stop = get_tsc() + cycles;
+    while (get_tsc() < stop) {
+      for (u32 i = 0; i < batch; i++) {
+        pause();
+      }
+    }
+    return;
+  }
+#endif
+
   const u64 stop = get_tsc() + cycles;
   do
     pause();

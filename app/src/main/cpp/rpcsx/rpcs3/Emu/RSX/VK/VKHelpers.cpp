@@ -99,6 +99,11 @@ namespace vk
 		const auto gpu_name = gpu.get_name();
 
 		g_driver_vendor = gpu.get_driver_vendor();
+		if (g_driver_vendor == driver_vendor::unknown &&
+			(gpu_name.find("Adreno") != umax || gpu_name.find("Qualcomm") != umax))
+		{
+			g_driver_vendor = driver_vendor::QUALCOMM;
+		}
 		g_chip_class = gpu.get_chip_class();
 
 		switch (g_driver_vendor)
@@ -147,6 +152,9 @@ namespace vk
 			break;
 		case driver_vendor::ARM_MALI:
 			// Needs more testing
+			break;
+		case driver_vendor::QUALCOMM:
+			// Adreno stock/Turnip drivers need Thor-specific profiling before applying workarounds.
 			break;
 		default:
 			rsx_log.warning("Unsupported device: %s", gpu_name);

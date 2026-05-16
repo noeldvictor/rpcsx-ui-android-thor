@@ -20,6 +20,7 @@
 #include "rx/align.hpp"
 #include "util/simd.hpp"
 #include "util/serialization.hpp"
+#include "util/thor_wait_profiler.h"
 
 #include <thread>
 
@@ -261,7 +262,7 @@ namespace vm
 				perf0.restart();
 			}
 
-			rx::busy_wait(200);
+			thor_wait::profiled_busy_wait(thor_wait::site::vm_range_lock, 200);
 
 			if (i >= 2 && !_cpu)
 			{
@@ -410,7 +411,7 @@ namespace vm
 				}
 
 				if (i < 100)
-					rx::busy_wait(200);
+					thor_wait::profiled_busy_wait(thor_wait::site::vm_passive_lock, 200);
 				else
 					std::this_thread::yield();
 
@@ -524,7 +525,7 @@ namespace vm
 					to_prepare_memory = false;
 				}
 
-				rx::busy_wait(200);
+				thor_wait::profiled_busy_wait(thor_wait::site::vm_writer_lock, 200);
 			}
 			else
 			{
@@ -645,7 +646,7 @@ namespace vm
 			}
 			else if (i < 15)
 			{
-				rx::busy_wait(500);
+				thor_wait::profiled_busy_wait(thor_wait::site::vm_reservation_lock, 500);
 			}
 			else
 			{
@@ -686,7 +687,7 @@ namespace vm
 			}
 			else if (i < 15)
 			{
-				rx::busy_wait(500);
+				thor_wait::profiled_busy_wait(thor_wait::site::vm_reservation_shared, 500);
 			}
 			else
 			{
@@ -2181,7 +2182,7 @@ namespace vm
 			// Wait a bit before accessing global lock
 			range_lock->release(0);
 
-			rx::busy_wait(200);
+			thor_wait::profiled_busy_wait(thor_wait::site::vm_range_lock, 200);
 		}
 
 		const bool result = try_access_internal(begin, ptr, size, is_write);

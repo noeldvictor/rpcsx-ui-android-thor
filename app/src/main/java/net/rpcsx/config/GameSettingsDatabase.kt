@@ -33,11 +33,31 @@ object GameSettingsDatabase {
     private val thorProfileOverrides = mapOf(
         "BLUS30161" to """
             # RPCSX_THOR_PROFILE_OVERRIDE
-            # Eternal Sonata stability profile for AYN Thor.
-            # Community note: 30 FPS avoids common battle/menu crash paths.
+            # Eternal Sonata stability/speed profile for AYN Thor.
+            # Official DB requires Write Color Buffers; keep it for black-spot correctness.
+            # 30 FPS matches the practical full-speed target for this title on Thor.
+            # Cap Vulkan VRAM on shared-memory Adreno so cache/shader spikes do not eat the device.
             # Do not cap SPURS here; SPURS 4 caused a black-screen-alive load hang on Thor.
+            # 2026-05-16 Thor A/B: RPCS3 Scheduler + SPU busy-wait dropped the opening field route to low single digits.
+            Core:
+              Thread Scheduler Mode: Operating System
+              SPU Reservation Busy Waiting Percentage: 0
+              SPU Reservation Busy Waiting Enabled: false
+              Max SPURS Threads: 6
+              Accurate SPU Reservations: true
+              SPU Verification: true
+              Sleep Timers Accuracy: As Host
             Video:
               Frame limit: 30
+              Write Color Buffers: true
+              Accurate ZCULL stats: false
+              Relaxed ZCULL Sync: false
+              Multithreaded RSX: false
+              Shader Compiler Threads: 2
+              Vulkan:
+                VRAM allocation limit (MB): 3072
+              Performance Overlay:
+                Enabled: true
         """.trimIndent()
     )
 
