@@ -1,0 +1,4 @@
+interface:
+  display_name: "Thor Ghidra Lane"
+  short_description: "Map hot guest code to emulator fixes"
+  default_prompt: "Use Ghidra/static analysis to explain a measured Eternal Sonata hot path and propose a gated emulator-side optimization."
