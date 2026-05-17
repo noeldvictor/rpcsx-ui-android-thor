@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <bit>
 #include <cctype>
-#include <codecvt>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -192,10 +191,71 @@ private:
 };
 } // namespace
 
+static void append_utf8(std::string& result, char32_t codepoint)
+{
+	if (codepoint <= 0x7f)
+	{
+		result.push_back(static_cast<char>(codepoint));
+	}
+	else if (codepoint <= 0x7ff)
+	{
+		result.push_back(static_cast<char>(0xc0 | (codepoint >> 6)));
+		result.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+	}
+	else if (codepoint <= 0xffff)
+	{
+		result.push_back(static_cast<char>(0xe0 | (codepoint >> 12)));
+		result.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+		result.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+	}
+	else
+	{
+		result.push_back(static_cast<char>(0xf0 | (codepoint >> 18)));
+		result.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3f)));
+		result.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+		result.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+	}
+}
+
 static std::string u16_ne_to_string(const char16_t* bytes, std::size_t count)
 {
-	std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-	return convert.to_bytes(bytes, bytes + count);
+	std::string result;
+	result.reserve(count);
+
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		const char16_t unit = bytes[i];
+		char32_t codepoint = unit;
+
+		if (unit >= 0xd800 && unit <= 0xdbff)
+		{
+			if (i + 1 < count)
+			{
+				const char16_t trail = bytes[i + 1];
+				if (trail >= 0xdc00 && trail <= 0xdfff)
+				{
+					codepoint = 0x10000 + (((unit - 0xd800) << 10) | (trail - 0xdc00));
+					++i;
+				}
+				else
+				{
+					codepoint = 0xfffd;
+				}
+			}
+			else
+			{
+				codepoint = 0xfffd;
+			}
+		}
+		else if (unit >= 0xdc00 && unit <= 0xdfff)
+		{
+			codepoint = 0xfffd;
+		}
+
+		append_utf8(result, codepoint);
+	}
+
+	return result;
 }
 
 static std::string u16_se_to_string(const char16_t* bytes, std::size_t count)
