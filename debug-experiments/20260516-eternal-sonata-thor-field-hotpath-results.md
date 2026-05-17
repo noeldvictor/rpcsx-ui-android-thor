@@ -162,6 +162,43 @@ Next action: continue SPU reduced-loop/codegen coverage and use Ghidra/disasm
 around image `0x958dfe208b686622` hot PCs `0x25cc`, `0x451c`, and GETLLAR PC
 `0x0a70` to find a real loop/body optimization rather than another wait knob.
 
+## GhidraSPU Hot-Window Lane
+
+Status: installed and smoke-tested on the Eternal Sonata hot SPU image.
+
+- Source: `https://github.com/aerosoul94/GhidraSPU`, local checkout
+  `C:\Users\leanerdesigner\Documents\SteamPortableTools\toolchains\GhidraSPU`
+  at commit `b85076d`.
+- Install: compiled `spu.slaspec` with Ghidra 12.0.4 `support\sleigh.bat` and
+  installed the language under `Ghidra\Processors\SPU`.
+- Repo tooling added:
+  - `tools/run_ghidra_spu_window.ps1`
+  - `tools/ghidra_scripts/DisassembleSpuWindows.java`
+- Smoke output:
+  `debug-captures/ghidra-spu-window-20260516-212927/spu-hot-window-ghidra.txt`.
+
+Important correction: the old `*.ls.bin` sidecars for image
+`0x958dfe208b686622` are mostly zero at hot PCs `0x25cc` and `0x451c`, so a
+Ghidra import of those files is misleading. The working lane rebuilds a
+base-zero SPU hot-window image from the RPCS3 disassembly sidecar bytes and then
+uses GhidraSPU to decode the exact runtime PCs.
+
+Static result:
+
+- `0x25cc` sits after a `wrch MFC_Cmd` / `rdch MFC_RdAtomicStat` reservation
+  loop and falls into tag wait (`MFC_WrTagMask`, `MFC_WrTagUpdate`,
+  `MFC_RdTagStat`).
+- `0x451c` is the chunked MFC command issuer: it computes size, writes
+  `MFC_LSA`, `MFC_EAL`, `MFC_Size`, `MFC_TagID`, then `wrch MFC_Cmd`.
+- Both match the runtime SPU LLVM warnings:
+  `[0x25cc] MFC_Cmd: $11 is not a constant` and
+  `[0x451c] MFC_Cmd: $12 is not a constant`.
+
+Next optimization target: add a narrow dynamic `MFC_Cmd` hot-PC probe or
+compiler-side pattern proof for image `0x958dfe208b686622`, then decide whether
+we can safely avoid the generic `spu_exec_mfc_cmd` fallback for the stable
+command shapes in field/battle/menu.
+
 ## Reduced-Loop Unroll A/B
 
 Hypothesis: reduced-loop emission is the only meaningful speed signal so far,
