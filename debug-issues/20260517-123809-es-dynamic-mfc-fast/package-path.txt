@@ -1,0 +1,4 @@
+﻿# adb shell pm path net.rpcsx.easy
+# captured 2026-05-17T12:38:13.1273562-04:00
+
+package:/data/app/~~1qgpyGhGYzoCAEid7GvTzg==/net.rpcsx.easy-s3FKYHfn-I0p2ElTAlaaUg==/base.apk

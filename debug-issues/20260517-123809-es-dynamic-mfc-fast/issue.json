@@ -1,0 +1,50 @@
+﻿{
+    "id":  "20260517-123809-es-dynamic-mfc-fast",
+    "created":  "2026-05-17T12:38:10.0072893-04:00",
+    "action":  "Start",
+    "label":  "es-dynamic-mfc-fast",
+    "symptom":  "",
+    "package":  "net.rpcsx.easy",
+    "profile":  "default",
+    "profilePath":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-profiles\\default.json",
+    "mode":  "Normal",
+    "status":  "failed",
+    "failure":  "Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\"",
+    "settings":  {
+                     "logcatLines":  12000,
+                     "summaryTailLines":  80,
+                     "streamPollSeconds":  3,
+                     "postMode":  "Quiet",
+                     "postModeApplied":  ""
+                 },
+    "repo":  {
+                 "head":  "d52db27b9",
+                 "branch":  "codex/eternal-sonata-thor-speed",
+                 "status":  "M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPURecompiler.h\n M tools/eternal_sonata_speed_sprint.ps1\n M tools/set_thor_logging.ps1"
+             },
+    "apk":  {
+
+            },
+    "device":  {
+                   "serial":  "c3ca0370",
+                   "model":  "AYN Thor",
+                   "product":  "kalama",
+                   "board":  "kalama",
+                   "packagePath":  "package:/data/app/~~1qgpyGhGYzoCAEid7GvTzg==/net.rpcsx.easy-s3FKYHfn-I0p2ElTAlaaUg==/base.apk",
+                   "propsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260517-123809-es-dynamic-mfc-fast\\device-props.txt",
+                   "appPrefsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260517-123809-es-dynamic-mfc-fast\\app-prefs.txt"
+               },
+    "captures":  [
+
+                 ],
+    "summaries":  [
+
+                  ],
+    "quickRead":  [
+
+                  ],
+    "ghidra":  [
+
+               ],
+    "nextAction":  "Run failed: Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\""
+}
