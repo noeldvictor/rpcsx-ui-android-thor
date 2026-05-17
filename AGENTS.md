@@ -2,7 +2,9 @@
 
 ## Repo And Git
 
-- Work directly on `master` only for this repo. Do not create or switch to feature branches for this fork.
+- Work directly on `master` only for this repo. Do not create, switch to, push, or leave work on feature branches for this fork, including Codex default `codex/*` branches.
+- If work ever lands on a non-master branch by mistake, fast-forward or merge it into `master` immediately, continue on `master`, and push only `origin master`.
+- Do not push experiment branches or PR branches for this repo unless the user explicitly reverses this rule.
 - Remote push target is SSH: `git@github.com:noeldvictor/rpcsx-ui-android-thor.git`.
 - Commit completed work to `master` and push only `origin master`.
 - Commit and push frequently during Thor core work. Make a checkpoint after each buildable native/APK slice, after each on-device install/smoke pass, and before starting risky upstream ports such as SPU reduced-loop or reservation-notifier rewrites.
