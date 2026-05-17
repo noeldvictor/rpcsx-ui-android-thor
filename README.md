@@ -1,8 +1,8 @@
 # RPCSX for AYN Thor Experiment
 
-# EXTREMELY UNSTABLE AND NOT WORKING
+# EXTREMELY UNSTABLE RESEARCH BUILD
 
-## I am testing stuff right now. Do not waste your time with this right now.
+## I am testing stuff right now. Do not treat this as a general PS3-on-Android release.
 
 <p align="center">
   <img src="docs/images/rpcsx-thor-experiment-banner.png" alt="RPCSX for AYN Thor Experiment">
@@ -22,9 +22,32 @@ No stability guarantee. No support queue. No big download button. Do not open is
 
 - **Target:** AYN Thor Base / Pro / Max. Thor Lite may run it, but is not the PS3 performance target.
 - **Purpose:** easier library setup, better Thor controls, visible cheats, visible cache status, and Thor-specific performance experiments.
+- **Current speed canary:** Eternal Sonata `BLUS30161` now reaches Rocknix-class first-field and first-battle-prompt performance on Thor Max when using the optimized RelWithDebInfo native core. This is not broad compatibility and not a finished 30-FPS guarantee yet.
 - **Release style:** source-first. GitHub Actions artifacts may exist, but this README intentionally points people toward forking/building.
 - **AI note:** this is openly AI-assisted and experimental. Rough edges are expected.
 - **Upstream:** still GPLv2, still based on RPCSX-UI-Android, still dependent on RPCSX core behavior.
+
+## Current Performance Canary
+
+The current focused test game is **Eternal Sonata `BLUS30161`** on an AYN Thor Max, stock Qualcomm Vulkan driver, 720p Rocknix-correct profile, Write Color Buffers on, reduced-loop u4 enabled, and the optimized Android native core.
+
+As of **2026-05-17**, this fork is matching the public Rocknix/RPCS3 720p field target in the important sense: the Android Thor core is no longer stuck at `10-13 FPS` in the first playable field because the dev-core workflow stopped benchmarking a Debug native build.
+
+Measured local Thor Max proof:
+
+| Scene/check | FPS proof | Status |
+| --- | ---: | --- |
+| First field route | `29.14 FPS` | Rocknix-class |
+| Short moving field, open view | `27.35-28.08 FPS` | Rocknix-class |
+| Short moving field, tree-heavy view | `19.68 FPS` | Still a hotspot |
+| First battle tutorial prompt | `30.00 FPS` | Full-speed prompt proof |
+
+Important caveats:
+
+- This is a **single-game canary**, not proof that all PS3 games are fast.
+- The menu checkpoint still needs a clean correctness pass; one quick menu probe opened the ImGui debug overlay instead of the game menu.
+- The worst tree-heavy field camera still dips below the 30-FPS target, so the next work is residual RSX/SPU/GPU hot-path tuning, not victory-lap polishing.
+- Do not compare FPS from `app\.cxx\Debug\...` native cores. FPS runs must use the optimized RelWithDebInfo dev core or a release-equivalent build.
 
 ## Thor Variants
 
@@ -145,6 +168,14 @@ For faster UI-only iteration:
 ```powershell
 .\gradlew.bat :app:assembleDebug -PbuildBundledRpcsxCore=false
 ```
+
+For native/core speed iteration on Thor, use the optimized dev-core hot-swap path:
+
+```powershell
+.\tools\build_push_thor_core.ps1 -Label eternal-sonata-speed
+```
+
+That script defaults to `:app:buildCMakeRelWithDebInfo[arm64-v8a]` so FPS tests use `-O2 -DNDEBUG -flto=thin`. Debug native fallback is intentionally opt-in with `-AllowDebugFallback`; Debug native cores are useful for diagnosis, not FPS claims.
 
 ## Thor Debug Capture
 
