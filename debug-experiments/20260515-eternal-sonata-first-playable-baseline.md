@@ -125,6 +125,13 @@ Run: `debug-captures/android-speed-sprint/20260516-042622-thor-input-custom/`
   - transition proof: `debug-captures/android-speed-sprint/20260516-193110-thor-input-custom/01-loaded-save-pumpkin-collision.png` shows the PPU module scan after collision.
   - first-battle visual proof: `debug-captures/android-speed-sprint/20260516-193918-thor-input-custom/02-battle-followup-plus-240s.png`, about `13.48 FPS`, correct-looking enemy/party rendering.
   - decision: battle visual validation is now routable, but the route is too long for tight A/B FPS sweeps until a later save/savestate is created. Do not count reduced-loop as fully correctness-locked until this route or a shorter replacement passes with the speed feature enabled.
+- Reduced-loop u4 battle validation:
+  - route: `eternal-sonata-battle-intro-route`
+  - mode: `ReducedLoopEmitU4` / `debug.rpcsx.thor.spu_reduced_loop_emit=1` / `debug.rpcsx.thor.spu_reduced_loop_unroll=4`
+  - capture: `debug-captures/android-speed-sprint/20260516-200618-thor-input-eternal-sonata-battle-intro-route/`
+  - field frame: `05-loaded-field.png`, about `12.04 FPS`, correct-looking save-point field.
+  - battle visual: `10-first-battle-visual.png`, about `16.31 FPS`, correct-looking Polka/Frederic story visual during the battle route.
+  - decision: u4 is now field/menu/battle-visual validated, but not promoted as a strict battle FPS win until a shorter battle checkpoint or matched-frame route exists.
 
 ### Windows
 
@@ -146,4 +153,4 @@ Windows has a separate field proof in `debug-captures/windows-lab/20260515-20302
 1. Use `tools/eternal_sonata_speed_sprint.ps1 -Action AndroidRouteScene -Scene field -AndroidInputMode Direct` for route-plus-capture runs.
 2. Use short SPU/MFC hot-block probes on the field scene to connect active Android SPU threads to Windows image `0x958dfe208b686622` and PCs `0x25cc`/`0x451c`.
 3. Continue reduced-loop/codegen work around the same SPU image while keeping the cache-key separation; compare against clean normal-cache runs only.
-4. Re-run reduced-loop u4 on `eternal-sonata-battle-intro-route`; if it passes, create a later save/savestate near combat UI so battle FPS sweeps do not include minutes of story/compile transition.
+4. Create a later save/savestate near combat UI so battle FPS sweeps do not include minutes of story/compile transition, then re-measure stock vs u4 on matched frames.
