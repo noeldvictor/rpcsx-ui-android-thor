@@ -1,0 +1,50 @@
+﻿{
+    "id":  "20260517-155131-osd-exit-game-fix",
+    "created":  "2026-05-17T15:51:31.6462272-04:00",
+    "action":  "Start",
+    "label":  "osd-exit-game-fix",
+    "symptom":  "",
+    "package":  "net.rpcsx.easy",
+    "profile":  "default",
+    "profilePath":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-profiles\\default.json",
+    "mode":  "Normal",
+    "status":  "failed",
+    "failure":  "Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\"",
+    "settings":  {
+                     "logcatLines":  12000,
+                     "summaryTailLines":  80,
+                     "streamPollSeconds":  3,
+                     "postMode":  "Quiet",
+                     "postModeApplied":  ""
+                 },
+    "repo":  {
+                 "head":  "2ceeb268f",
+                 "branch":  "master",
+                 "status":  "M app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/Overlays/HomeMenu/overlay_home_menu_main_menu.cpp\n M app/src/main/java/net/rpcsx/RPCSXActivity.kt"
+             },
+    "apk":  {
+
+            },
+    "device":  {
+                   "serial":  "c3ca0370",
+                   "model":  "AYN Thor",
+                   "product":  "kalama",
+                   "board":  "kalama",
+                   "packagePath":  "package:/data/app/~~hoUTsT0vRKlPjakWEIJznA==/net.rpcsx.easy-GfUzF037iY5hx0NHpsl8eA==/base.apk",
+                   "propsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260517-155131-osd-exit-game-fix\\device-props.txt",
+                   "appPrefsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260517-155131-osd-exit-game-fix\\app-prefs.txt"
+               },
+    "captures":  [
+
+                 ],
+    "summaries":  [
+
+                  ],
+    "quickRead":  [
+
+                  ],
+    "ghidra":  [
+
+               ],
+    "nextAction":  "Run failed: Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\""
+}

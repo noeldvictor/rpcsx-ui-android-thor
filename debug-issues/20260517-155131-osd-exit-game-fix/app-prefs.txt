@@ -1,0 +1,34 @@
+﻿# adb shell run-as net.rpcsx.easy cat shared_prefs/app_prefs.xml
+# captured 2026-05-17T15:51:35.0904570-04:00
+
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <int name="thor_compile_profile_version" value="12" />
+    <int name="button_0_1_opacity" value="50" />
+    <int name="button_0_2_opacity" value="50" />
+    <string name="rpcsx_library">/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so</string>
+    <boolean name="show_screen_controls" value="false" />
+    <int name="dpad_x" value="102" />
+    <int name="dpad_y" value="668" />
+    <int name="button_0_4_opacity" value="50" />
+    <string name="gpu_driver_path">&#10;  </string>
+    <boolean name="thor_dev_core_override" value="true" />
+    <int name="triangleSquareCircleCross_y" value="668" />
+    <int name="triangleSquareCircleCross_x" value="1461" />
+    <int name="triangleSquareCircleCross_opacity" value="50" />
+    <boolean name="rpcsx_update_status" value="true" />
+    <string name="rpcsx_channel">https://github.com/RPCSX/rpcsx</string>
+    <string name="ui_channel">https://github.com/RPCSX/rpcsx-ui-android</string>
+    <int name="button_1_0_opacity" value="50" />
+    <int name="button_8_0_x" value="724" />
+    <int name="button_8_0_y" value="1035" />
+    <int name="button_0_8_opacity" value="50" />
+    <int name="button_8_0_opacity" value="50" />
+    <string name="selected_gpu_driver">Default</string>
+    <int name="dpad_opacity" value="50" />
+    <string name="cache_storage_root">/storage/emulated/0/Android/data/net.rpcsx.easy/files</string>
+    <string name="gpu_driver_channel">https://github.com/K11MCH1/AdrenoToolsDrivers</string>
+    <int name="button_256_0_opacity" value="50" />
+    <string name="rpcsx_installed_arch">dev-core</string>
+    <string name="gpu_driver_name">&#10;  </string>
+</map>
