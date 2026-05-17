@@ -100,6 +100,7 @@ static bool g_initialized;
 static std::atomic<ANativeWindow *> g_native_window;
 static std::atomic<bool> g_thor_fast_forward_enabled{false};
 static std::atomic<int> g_thor_fast_forward_previous_clocks_scale{100};
+static std::atomic<bool> g_home_menu_exit_game_selected{false};
 static constexpr int k_thor_fast_forward_clocks_scale = 200;
 
 extern std::string g_android_executable_dir;
@@ -2182,6 +2183,13 @@ extern "C" int _rpcsx_boot(std::string_view path_) {
 extern "C" int _rpcsx_getState() {
   return static_cast<int>(Emu.GetStatus(false));
 }
+extern "C" void _rpcsx_noteHomeMenuExitGameSelected() {
+  g_home_menu_exit_game_selected.store(true, std::memory_order_release);
+}
+extern "C" bool _rpcsx_consumeHomeMenuExitGameSelected() {
+  return g_home_menu_exit_game_selected.exchange(false,
+                                                 std::memory_order_acq_rel);
+}
 extern "C" void _rpcsx_kill() { Emu.Kill(); }
 extern "C" void _rpcsx_resume() { Emu.Resume(); }
 
@@ -2275,11 +2283,14 @@ extern "C" bool _rpcsx_surfaceEvent(JNIEnv *env, jobject surface, jint event) {
       ANativeWindow_release(prevWindow);
     }
 
-    if (auto padThread = pad::get_pad_thread()) {
-      padThread->open_home_menu();
-    }
+    const system_state state = Emu.GetStatus(false);
+    if (state != system_state::stopped && state != system_state::stopping) {
+      if (auto padThread = pad::get_pad_thread(true)) {
+        padThread->open_home_menu();
+      }
 
-    Emu.Pause();
+      Emu.Pause();
+    }
   } else {
     auto newWindow = ANativeWindow_fromSurface(env, surface);
 

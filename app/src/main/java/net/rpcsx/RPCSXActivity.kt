@@ -78,6 +78,9 @@ class RPCSXActivity : Activity() {
     private var usesAxisR2 = false
     private var bootThread: Thread? = null
     private var homeMenuThread: Thread? = null
+    private var stopWatcherThread: Thread? = null
+    @Volatile
+    private var finishAfterStopRequested = false
     private var selectHeld = false
     private var selectHotkeyConsumed = false
     private var activeSelectStickHotkey = SelectStickHotkey.None
@@ -159,7 +162,18 @@ class RPCSXActivity : Activity() {
         if (activeInstance?.get() === this) {
             activeInstance = null
         }
-        RPCSX.state.value = EmulatorState.Paused
+        if (finishAfterStopRequested) {
+            RPCSX.state.value = EmulatorState.Stopping
+        } else {
+            when (runCatching { RPCSX.getState() }.getOrDefault(RPCSX.state.value)) {
+                EmulatorState.Stopped -> {
+                    RPCSX.state.value = EmulatorState.Stopped
+                    RPCSX.activeGame.value = null
+                }
+                EmulatorState.Stopping -> RPCSX.state.value = EmulatorState.Stopping
+                else -> RPCSX.state.value = EmulatorState.Paused
+            }
+        }
         unregisterUsbEventListener()
         bootThread?.interrupt()
         bootThread?.join()
@@ -272,6 +286,71 @@ class RPCSXActivity : Activity() {
                 RPCSX.instance.openHomeMenu()
             } finally {
                 homeMenuLikelyOpen = false
+            }
+        }
+        watchForNativeStopAndFinish("home menu")
+    }
+
+    private fun watchForNativeStopAndFinish(reason: String) {
+        if (stopWatcherThread?.isAlive == true) {
+            return
+        }
+
+        stopWatcherThread = thread(name = "RPCSX-FinishAfterStop") {
+            repeat(600) {
+                if (Thread.interrupted()) {
+                    return@thread
+                }
+
+                val state = runCatching { RPCSX.getState() }
+                    .onFailure { Log.e("RPCSX State", "Failed to poll stop after $reason", it) }
+                    .getOrNull()
+
+                val exitGameSelected = runCatching { RPCSX.instance.consumeHomeMenuExitGameSelected() }
+                    .onFailure { Log.e("RPCSX State", "Failed to poll OSD exit after $reason", it) }
+                    .getOrDefault(false)
+
+                if (exitGameSelected && !finishAfterStopRequested) {
+                    Log.i("RPCSX State", "Finishing after OSD exit game from $reason")
+                    finishAfterStopRequested = true
+                    RPCSX.state.value = EmulatorState.Stopping
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            finish()
+                        }
+                    }
+                }
+
+                if (state == EmulatorState.Stopping && !finishAfterStopRequested) {
+                    finishAfterStopRequested = true
+                    RPCSX.state.value = EmulatorState.Stopping
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            finish()
+                        }
+                    }
+                }
+
+                if (state == EmulatorState.Stopped) {
+                    runOnUiThread {
+                        RPCSX.state.value = EmulatorState.Stopped
+                        RPCSX.activeGame.value = null
+                        if (!isFinishing && !isDestroyed) {
+                            finish()
+                        }
+                    }
+                    return@thread
+                }
+
+                try {
+                    Thread.sleep(100)
+                } catch (_: InterruptedException) {
+                    return@thread
+                }
+            }
+
+            if (finishAfterStopRequested) {
+                Log.w("RPCSX State", "Timed out waiting for emulator stop after $reason")
             }
         }
     }

@@ -89,6 +89,7 @@ class RPCSX {
     external fun settingsGet(path: String): String
     external fun settingsSet(path: String, value: String): Boolean
     external fun getState() : Int
+    external fun consumeHomeMenuExitGameSelected(): Boolean
     external fun kill()
     external fun resume()
     external fun openHomeMenu()

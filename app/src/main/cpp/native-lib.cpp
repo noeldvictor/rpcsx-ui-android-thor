@@ -35,6 +35,7 @@ struct RPCSXApi {
   void (*shutdown)();
   int (*boot)(std::string_view path_);
   int (*getState)();
+  bool (*consumeHomeMenuExitGameSelected)();
   void (*kill)();
   void (*resume)();
   void (*openHomeMenu)();
@@ -108,6 +109,7 @@ struct RPCSXLibrary : RPCSXApi {
     result.shutdown = reinterpret_cast<decltype(shutdown)>(dlsym(handle, "_rpcsx_shutdown"));
     result.boot = reinterpret_cast<decltype(boot)>(dlsym(handle, "_rpcsx_boot"));
     result.getState = reinterpret_cast<decltype(getState)>(dlsym(handle, "_rpcsx_getState"));
+    result.consumeHomeMenuExitGameSelected = reinterpret_cast<decltype(consumeHomeMenuExitGameSelected)>(dlsym(handle, "_rpcsx_consumeHomeMenuExitGameSelected"));
     result.kill = reinterpret_cast<decltype(kill)>(dlsym(handle, "_rpcsx_kill"));
     result.resume = reinterpret_cast<decltype(resume)>(dlsym(handle, "_rpcsx_resume"));
     result.openHomeMenu = reinterpret_cast<decltype(openHomeMenu)>(dlsym(handle, "_rpcsx_openHomeMenu"));
@@ -268,6 +270,15 @@ extern "C" JNIEXPORT jint JNICALL Java_net_rpcsx_RPCSX_boot(JNIEnv *env,
 extern "C" JNIEXPORT jint JNICALL Java_net_rpcsx_RPCSX_getState(JNIEnv *env,
                                                                 jobject) {
   return rpcsxLib.getState();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_consumeHomeMenuExitGameSelected(JNIEnv *, jobject) {
+  if (rpcsxLib.consumeHomeMenuExitGameSelected == nullptr) {
+    return false;
+  }
+
+  return rpcsxLib.consumeHomeMenuExitGameSelected();
 }
 
 extern "C" JNIEXPORT void JNICALL Java_net_rpcsx_RPCSX_kill(JNIEnv *env,

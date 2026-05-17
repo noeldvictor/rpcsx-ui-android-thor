@@ -19,6 +19,7 @@ extern atomic_t<bool> g_user_asked_for_screenshot;
 #if defined(__ANDROID__)
 extern "C" bool _rpcsx_isFastForwardEnabled();
 extern "C" bool _rpcsx_toggleFastForward();
+extern "C" void _rpcsx_noteHomeMenuExitGameSelected();
 #endif
 
 namespace rsx
@@ -201,9 +202,14 @@ namespace rsx
 					rsx_log.notice("User selected exit game in home menu");
 					Emu.CallFromMainThread([]
 						{
+#if defined(__ANDROID__)
+							_rpcsx_noteHomeMenuExitGameSelected();
+							Emu.Kill(false);
+#else
 							Emu.GracefulShutdown(false, true);
+#endif
 						});
-					return page_navigation::stay;
+					return page_navigation::exit;
 				});
 
 			apply_layout();
