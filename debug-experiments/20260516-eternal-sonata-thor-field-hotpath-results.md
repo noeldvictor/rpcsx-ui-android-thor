@@ -16,6 +16,52 @@ core for C++ changes, but clear SPU/PPU caches only when changing recompiler
 behavior, cache keys, timing semantics that are baked into generated code, or
 when running a deliberately labeled cold-cache baseline.
 
+## Native Build-Type Correction
+
+Status: `major-win`.
+
+The Android dev-core hot-swap path was pushing `CMAKE_BUILD_TYPE=Debug` native
+cores for FPS tests. That invalidated the Rocknix comparison: representative
+SPU/RSX compile commands had `-g`, `_DEBUG`, and `-fno-limit-debug-info`, but no
+`-O2`/`-DNDEBUG`.
+
+Optimized RelWithDebInfo dev-core:
+
+- Build command:
+  `.\tools\build_push_thor_core.ps1 -Label relwithdebinfo-speed-core -GradleTask ':app:buildCMakeRelWithDebInfo[arm64-v8a]' -NoFallbackBuild -NoStream`
+- SHA256:
+  `BFC15D139DFA798D8FA7C4331DF1A32A14BFE3F863D3F177BCA240E3E3E40AC7`
+- Compile flags verified:
+  `-O2 -g -DNDEBUG -flto=thin`
+- Workflow fix:
+  `tools/build_push_thor_core.ps1` now defaults to RelWithDebInfo and requires
+  `-AllowDebugFallback` before any Debug fallback is used.
+
+Measured same-profile result, 720p Rocknix-correct, WCB on, reduced-loop u4,
+stock Qualcomm, AllThreadsFF runtime affinity:
+
+| Build | Capture | FPS overlay | Visual result |
+| --- | --- | ---: | --- |
+| Debug native | `debug-captures/android-speed-sprint/20260517-131902-thor-input-custom/01-moving-left-mid.png` | `13.55` | correct field, tree-heavy moving camera |
+| Debug native | `debug-captures/android-speed-sprint/20260517-131902-thor-input-custom/02-moving-left-end.png` | `13.67` | correct field |
+| Debug native | `debug-captures/android-speed-sprint/20260517-131902-es-u4-720correct-moving-baseline-live-scene/scene.png` | `13.27` | correct field |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-140441-thor-input-custom/01-moving-left-3s.png` | `19.68` | correct field, worst short moving/tree sample |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-140441-thor-input-custom/02-field-after-short-move.png` | `28.08` | correct field |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-140441-es-rel-u4-720correct-moving-short-live-scene/scene.png` | `27.35` | correct field |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-135651-thor-input-custom/02-moving-left-end.png` | `30.00` | first battle tutorial prompt |
+
+The optimized core drops `rsx::thread` from near one full core in some static
+samples to about 21% in the battle prompt and moves the field from fake
+debug-bound `13 FPS` toward Rocknix-class `27-28 FPS`. The remaining field dip
+is now a real scene hot path, not a build mistake.
+
+Menu note: a quick direct `start` macro after the RelWithDebInfo field test
+opened the Dear ImGui demo/debug overlay instead of a valid Eternal Sonata menu
+checkpoint (`debug-captures/android-speed-sprint/20260517-142325-thor-input-custom/01-rel-pause-menu.png`).
+Do not count that as menu correctness. Re-run the dedicated menu route or fix
+the menu/input path before promoting the optimized core as field+battle+menu
+complete.
+
 ## RSX Depth Texture Barrier Skip
 
 Hypothesis: Eternal Sonata field was breaking the render pass once per frame for

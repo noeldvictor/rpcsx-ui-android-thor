@@ -14,8 +14,13 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <mutex>
 #include <thread>
+
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 
 #include "util/sysinfo.hpp"
 #include "util/fnv_hash.hpp"
@@ -144,6 +149,60 @@ namespace rsx
 		static std::string get_message(u32 index, u32 processed, u32 entry_count)
 		{
 			return fmt::format("%s pipeline object %u of %u", index == 0 ? "Loading" : "Compiling", processed, entry_count);
+		}
+
+#ifdef __ANDROID__
+		static int get_android_worker_override()
+		{
+			auto parse_positive_int = [](const char* value) -> int
+			{
+				if (!value || !*value)
+				{
+					return -1;
+				}
+
+				char* end = nullptr;
+				const long parsed = std::strtol(value, &end, 10);
+				if (end == value || parsed < 1 || parsed > 16)
+				{
+					return -1;
+				}
+
+				return static_cast<int>(parsed);
+			};
+
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.rsx_cache_workers", value);
+			if (length > 0)
+			{
+				return parse_positive_int(value);
+			}
+
+			return parse_positive_int(std::getenv("RPCSX_THOR_RSX_CACHE_WORKERS"));
+		}
+#endif
+
+		static uint get_preload_worker_count()
+		{
+			uint nb_workers = g_cfg.video.renderer == video_renderer::vulkan ? utils::get_thread_count() * 2 : 1;
+
+			if (const int configured = g_cfg.video.shader_compiler_threads_count; configured > 0)
+			{
+				nb_workers = static_cast<uint>(configured);
+			}
+
+#ifdef __ANDROID__
+			if (const int worker_override = get_android_worker_override(); worker_override > 0)
+			{
+				nb_workers = static_cast<uint>(worker_override);
+			}
+			else if (g_cfg.video.renderer == video_renderer::vulkan && g_cfg.video.shader_compiler_threads_count == 0)
+			{
+				nb_workers = std::min<uint>(nb_workers, 2);
+			}
+#endif
+
+			return std::max<uint>(nb_workers, 1);
 		}
 
 		void load_shaders(uint nb_workers, unpacked_type& unpacked, std::string& directory_path, std::vector<fs::dir_entry>& entries, u32 entry_count,
@@ -404,7 +463,8 @@ namespace rsx
 
 			// Preload everything needed to compile the shaders
 			unpacked_type unpacked;
-			uint nb_workers = g_cfg.video.renderer == video_renderer::vulkan ? utils::get_thread_count() * 2 : 1;
+			uint nb_workers = get_preload_worker_count();
+			rsx_log.notice("Shader cache preload workers: %u", nb_workers);
 
 			load_shaders(nb_workers, unpacked, directory_path, entries, entry_count, dlg);
 

@@ -20,13 +20,20 @@ Recent Android field captures:
 | Rocknix-correct mirror, stock Qualcomm | `18.49` | `18.49` |
 | Rocknix-fast mirror, stock Qualcomm, WCB off | `19.17` | `19.17` |
 | Rocknix-correct mirror, Android Turnip A7xx | `12.37` | `12.37` |
+| Debug native core, 720p/u4 moving field | `13.55`, `13.67`, `13.27` | `13.50` |
+| RelWithDebInfo native core, 720p/u4 short moving field | `19.68`, `28.08`, `27.35` | `25.04` |
+| RelWithDebInfo native core, first battle prompt | `30.00`, `30.00` | `30.00` |
 | Rocknix AYN Thor video target at 720p | about `26` | `26.00` |
 
-Rocknix target is therefore about `+36-37%` over our best reduced-loop Android
-field samples and about `+62%` over stock quiet Android. The matched
-low-resolution Rocknix preset mirror did not close the gap. Because the video
-target is 720p, the low-res Android miss makes resolution/fill-rate an even
-weaker explanation for the gap.
+Rocknix target is no longer explained by a mysterious driver-only gap. The
+largest delta was self-inflicted: the dev-core hot-swap workflow was pushing
+`CMAKE_BUILD_TYPE=Debug` Android native cores. Those compile commands had `-g`
+and `-fno-limit-debug-info` but no `-O2`/`-DNDEBUG`. A RelWithDebInfo dev core
+with `-O2 -g -DNDEBUG -flto=thin` immediately moved the same 720p/u4/WCB-on
+profile from about `13.5 FPS` while moving to Rocknix-class `27-28 FPS` in the
+open field, while the most occlusion-heavy tree camera still dipped to about
+`19.7 FPS`. This does not finish the 30-FPS-minimum goal, but it removes the
+fake 2x gap and makes remaining work a real hot-path problem again.
 
 ## Rocknix Reference
 
@@ -52,6 +59,47 @@ Sources:
   https://rpcs3.net/blog/2024/12/09/introducing-rpcs3-for-arm64/
 
 ## Highest-Probability Deltas
+
+### 0. Android Dev-Core Build Type Was The Huge Miss
+
+Status: `confirmed-major-win`.
+
+The speed sprint had been hot-swapping Debug native cores:
+
+- Script default before fix: `tools/build_push_thor_core.ps1` used
+  `:app:buildCMakeDebug[arm64-v8a]`.
+- Active slow core path:
+  `app\build\intermediates\cxx\Debug\2g1k4s2o\obj\arm64-v8a\librpcsx-android.so`.
+- CMake cache: `CMAKE_BUILD_TYPE=Debug`.
+- Representative SPU/RSX compile flags: `-g`, `-fno-limit-debug-info`,
+  `_DEBUG`, `-flto=thin`, but no `-O2`/`-O3`/`DNDEBUG`.
+
+Optimized replacement:
+
+- Build command:
+  `.\tools\build_push_thor_core.ps1 -Label relwithdebinfo-speed-core -GradleTask ':app:buildCMakeRelWithDebInfo[arm64-v8a]' -NoFallbackBuild -NoStream`
+- Active RelWithDebInfo SHA:
+  `BFC15D139DFA798D8FA7C4331DF1A32A14BFE3F863D3F177BCA240E3E3E40AC7`.
+- Active core source:
+  `app\build\intermediates\cxx\RelWithDebInfo\724a6w64\obj\arm64-v8a\librpcsx-android.so`.
+- Representative compile flags:
+  `-O2 -g -DNDEBUG -flto=thin`.
+
+Measured effect on the same 720p Rocknix-correct/u4/WCB-on profile:
+
+| Build | Capture | FPS proof | Notes |
+| --- | --- | ---: | --- |
+| Debug native | `debug-captures/android-speed-sprint/20260517-131902-es-u4-720correct-moving-baseline-live-scene/scene.png` | `13.27` | moving field, `rsx::thread` near a full core, GPU about 42% busy |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-135130-thor-input-eternal-sonata-field-route/02-field-move.png` | `29.14` | route field, shader compile overlay visible |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-140441-thor-input-custom/01-moving-left-3s.png` | `19.68` | worst short moving sample, tree/occlusion-heavy camera |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-140441-thor-input-custom/02-field-after-short-move.png` | `28.08` | same route after short movement, visually correct field |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-140441-es-rel-u4-720correct-moving-short-live-scene/scene.png` | `27.35` | same field, GPU at 680 MHz and about 78% busy |
+| RelWithDebInfo native | `debug-captures/android-speed-sprint/20260517-135651-thor-input-custom/02-moving-left-end.png` | `30.00` | movement macro reached first battle tutorial prompt |
+
+Workflow fix: `tools/build_push_thor_core.ps1` now defaults to the RelWithDebInfo
+task and requires `-AllowDebugFallback` before it will silently fall back to a
+Debug native build. Future FPS comparisons from Debug cores must be labeled
+`debug-native-core` and ignored for Rocknix-delta conclusions.
 
 ### 1. Our Android Effective Config Is Not Rocknix-Like
 
@@ -249,24 +297,25 @@ Acceptance:
 
 ## Current Bet
 
-Updated stack ranking after the Android mirror tests:
+Updated stack ranking after the RelWithDebInfo correction:
 
-1. Standalone RPCS3 Linux/Rocknix process shape, scheduler/governor, and system
-   driver stack.
-2. Mainline Mesa/Turnip behavior that is not reproduced by Android custom
-   Turnip driver injection.
-3. Upstream Linux ARM64 runtime differences around JIT memory, page behavior,
-   thread scheduling, and SPU/RSX synchronization.
+1. Android native build type was the major fake delta. Debug native cores are
+   not valid FPS evidence.
+2. Remaining 30-FPS-minimum gap is a real hot-path problem in the tree-heavy
+   moving field view: RSX thread, SPU load, GPU busy, and camera/occlusion
+   rendering all matter now.
+3. Standalone RPCS3 Linux/Rocknix process shape, governor, and system Turnip
+   stack may still explain smaller residual differences.
 4. Actual emulator-core algorithm delta in the hot SPU/MFC or RSX FIFO path.
 5. Resolution/precision/WCB/ZCULL mismatch.
 
-The fastest path to 26 on Android is no longer another settings sweep. We need
-to compare Android against Rocknix at the runtime level: CPU frequencies,
-per-thread core placement, governor/perf wrapper, RSX/SPU top threads, memory
-pressure, GPU frequency/busy counters, and exact driver/runtime logs. On the
-Android side, every new `AndroidScene` / `AndroidRouteScene` capture now needs
-CPU/GPU frequency and thread-affinity snapshots so we can see whether the field
-is parked on bad cores, starving RSX, or stalling inside the driver.
+The fastest path to Rocknix-class FPS was the optimized native core. The next
+path is no longer another broad settings sweep; it is a correctness-locked pass
+on the residual dips: tree-heavy moving field, first battle interaction after
+the tutorial prompt, and in-game menu. Each new `AndroidScene` /
+`AndroidRouteScene` capture still needs CPU/GPU frequency and thread-affinity
+snapshots so we can see whether the optimized core is CPU-bound, GPU-bound, or
+driver-stalled in the exact bad camera angle.
 
 Immediate correction from the user: treat the Rocknix result as a real 720p AYN
 Thor target, not a 480p preset result. Added explicit `Rocknix720Correct` and

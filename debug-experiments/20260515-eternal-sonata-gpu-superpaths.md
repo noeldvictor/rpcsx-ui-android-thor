@@ -1,6 +1,6 @@
 # Eternal Sonata GPU Superpaths
 
-- Status: `windows-probe-android-baseline`
+- Status: `optimized-native-core-baseline`
 - Title ID: `BLUS30161`
 - Game: Eternal Sonata
 - Platform scope: `experimental-gated`
@@ -60,6 +60,30 @@ This is not a plan to run the whole SPU emulator on GPU. The viable target is a 
   - no Base/Pro default promotion until memory risk is measured.
 
 ## Results
+
+### Android Native Build-Type Breakthrough
+
+- The largest Android/Rocknix gap was not a Vulkan superpath. It was the local
+  dev-core build type.
+- Before 2026-05-17, `tools/build_push_thor_core.ps1` defaulted to
+  `:app:buildCMakeDebug[arm64-v8a]`, and active FPS cores came from
+  `app\.cxx\Debug\...`.
+- Debug compile commands for SPU/RSX code had `-g`, `_DEBUG`, and
+  `-fno-limit-debug-info`, but no `-O2`/`-DNDEBUG`.
+- RelWithDebInfo dev-core SHA:
+  `BFC15D139DFA798D8FA7C4331DF1A32A14BFE3F863D3F177BCA240E3E3E40AC7`.
+- Verified RelWithDebInfo flags:
+  `-O2 -g -DNDEBUG -flto=thin`.
+- Same 720p/u4/WCB-on profile:
+  - Debug native moving field: about `13.3-13.7 FPS`.
+  - RelWithDebInfo field after short movement: `27.35-28.08 FPS`.
+  - RelWithDebInfo first battle tutorial prompt: `30.00 FPS`.
+- Workflow fix: dev-core hot-swap now defaults to RelWithDebInfo and requires
+  `-AllowDebugFallback` for Debug fallback.
+
+Reading: GPU offload remains a research lane, but the immediate "get to the
+Rocknix video" answer was to stop benchmarking an unoptimized native core. All
+future GPU superpath claims must use an optimized native core baseline.
 
 ### Windows
 

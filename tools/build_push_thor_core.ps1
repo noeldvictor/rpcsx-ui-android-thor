@@ -2,11 +2,12 @@ param(
     [string]$Package = "net.rpcsx.easy",
     [string]$Label = "dev-core",
     [string]$CoreName = "librpcsx-android.so",
-    [string]$GradleTask = ":app:buildCMakeDebug[arm64-v8a]",
+    [string]$GradleTask = ":app:buildCMakeRelWithDebInfo[arm64-v8a]",
     [string]$StagingDir = "",
     [string]$Profile = "default",
     [switch]$NoBuild,
     [switch]$NoFallbackBuild,
+    [switch]$AllowDebugFallback,
     [switch]$NoLaunch,
     [switch]$NoStream,
     [switch]$ResetToBundled
@@ -130,8 +131,12 @@ function Invoke-DevCoreBuild {
 
         $tasks = @($GradleTask)
         if (-not $NoFallbackBuild) {
-            $tasks += ":app:externalNativeBuildDebug"
-            $tasks += ":app:assembleDebug"
+            $tasks += ":app:externalNativeBuildRelWithDebInfo"
+            if ($AllowDebugFallback) {
+                $tasks += ":app:buildCMakeDebug[arm64-v8a]"
+                $tasks += ":app:externalNativeBuildDebug"
+                $tasks += ":app:assembleDebug"
+            }
         }
 
         foreach ($task in $tasks) {

@@ -67,6 +67,7 @@ struct spu_program
 };
 
 u32 spu_reduced_loop_unroll_factor() noexcept;
+bool spu_dynamic_mfc_fast_enabled() noexcept;
 
 class spu_item
 {

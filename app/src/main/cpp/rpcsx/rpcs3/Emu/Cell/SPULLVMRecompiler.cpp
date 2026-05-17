@@ -4182,6 +4182,18 @@ public:
 		}
 	}
 
+	static void exec_mfc_cmd_dynamic(spu_thread* _spu, u32 value)
+	{
+		_spu->ch_mfc_cmd.cmd = MFC(value & 0xff);
+
+		if (!_spu->process_mfc_cmd() || _spu->state & cpu_flag::again)
+		{
+			spu_runtime::g_escape(_spu);
+		}
+
+		static_cast<void>(_spu->test_stopped());
+	}
+
 	void WRCH(spu_opcode_t op) //
 	{
 		const auto val = eval(extract(get_vr(op.rt), 3));
@@ -4641,6 +4653,13 @@ public:
 
 			// Fallback to unoptimized WRCH implementation (TODO)
 			spu_log.warning("[0x%x] MFC_Cmd: $%u is not a constant", m_pos, +op.rt);
+			if (spu_dynamic_mfc_fast_enabled() && !g_cfg.core.mfc_debug)
+			{
+				update_pc();
+				ensure_gpr_stores();
+				call("spu_exec_mfc_cmd_dynamic", &exec_mfc_cmd_dynamic, m_thread, zext<u32>(trunc<u8>(val)).eval(m_ir));
+				return;
+			}
 			break;
 		}
 		case MFC_WrListStallAck:

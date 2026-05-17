@@ -181,6 +181,28 @@ u32 spu_reduced_loop_unroll_factor() noexcept
 	return 2;
 }
 
+bool spu_dynamic_mfc_fast_enabled() noexcept
+{
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+	const int length = __system_property_get("debug.rpcsx.thor.spu_dynamic_mfc_fast", value);
+
+	if (length <= 0)
+	{
+		return false;
+	}
+#else
+	const char* value = std::getenv("RPCSX_SPU_DYNAMIC_MFC_FAST");
+
+	if (!value || !*value)
+	{
+		return false;
+	}
+#endif
+
+	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+}
+
 // Move 4 args for calling native function from a GHC calling convention function
 #if defined(ARCH_X64)
 static u8* move_args_ghc_to_native(u8* raw)
@@ -849,12 +871,19 @@ void spu_cache::initialize(bool build_existing_cache)
 	// SPU cache file (version + block size type)
 	const bool use_thor_reduced_loop_cache = spu_reduced_loop_emit_enabled();
 	const u32 thor_reduced_loop_unroll = use_thor_reduced_loop_cache ? spu_reduced_loop_unroll_factor() : 0;
+	const bool use_thor_dynamic_mfc_cache = spu_dynamic_mfc_fast_enabled();
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
-		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u{}", thor_reduced_loop_unroll) : "") + "-v1-tane.dat";
+		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u{}", thor_reduced_loop_unroll) : "") +
+		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{
 		spu_log.notice("Thor reduced-loop SPU cache variant enabled: %s", loc);
+	}
+
+	if (use_thor_dynamic_mfc_cache)
+	{
+		spu_log.notice("Thor dynamic MFC fast SPU cache variant enabled: %s", loc);
 	}
 
 	spu_cache cache(loc);
