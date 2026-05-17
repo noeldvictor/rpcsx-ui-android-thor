@@ -98,6 +98,9 @@ function Get-SpeedAndroidSceneProfile {
         "menu" {
             return "eternal-sonata-menu-route"
         }
+        "battle" {
+            return "eternal-sonata-battle-intro-route"
+        }
         default {
             return ""
         }

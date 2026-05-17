@@ -119,7 +119,12 @@ Run: `debug-captures/android-speed-sprint/20260516-042622-thor-input-custom/`
   - macro tail: `stick:left:right:5000;wait:8000;shot:battle-candidate;threads:battle-route`
   - capture: `debug-captures/android-speed-sprint/20260516-074912-thor-input-custom/02-battle-candidate.png`
   - result: missed battle and triggered Polka's boundary dialogue, "Let's go back to Tenuto."; follow-up scene capture `debug-captures/android-speed-sprint/20260516-075332-eternal-sonata-battle-stock-qualcomm-scene/scene.png` is the same dialogue, not a battle.
-  - decision: first battle route remains open. Do not count reduced-loop as correctness-locked until a different route/checkpoint reaches battle.
+- Save-driven battle route:
+  - route profile: `eternal-sonata-load-field-route` loads Thor save `BLUS3016100` to Path to Tenuto save point; `eternal-sonata-battle-intro-route` continues with `stick:left:left:2600`, then `stick:left:down_left:2200` into the left pumpkin.
+  - field proof: `debug-captures/android-speed-sprint/20260516-192318-thor-input-custom/02-after-yes-skip-30s.png`, about `10.73 FPS` at the save point with correct-looking field rendering.
+  - transition proof: `debug-captures/android-speed-sprint/20260516-193110-thor-input-custom/01-loaded-save-pumpkin-collision.png` shows the PPU module scan after collision.
+  - first-battle visual proof: `debug-captures/android-speed-sprint/20260516-193918-thor-input-custom/02-battle-followup-plus-240s.png`, about `13.48 FPS`, correct-looking enemy/party rendering.
+  - decision: battle visual validation is now routable, but the route is too long for tight A/B FPS sweeps until a later save/savestate is created. Do not count reduced-loop as fully correctness-locked until this route or a shorter replacement passes with the speed feature enabled.
 
 ### Windows
 
@@ -141,4 +146,4 @@ Windows has a separate field proof in `debug-captures/windows-lab/20260515-20302
 1. Use `tools/eternal_sonata_speed_sprint.ps1 -Action AndroidRouteScene -Scene field -AndroidInputMode Direct` for route-plus-capture runs.
 2. Use short SPU/MFC hot-block probes on the field scene to connect active Android SPU threads to Windows image `0x958dfe208b686622` and PCs `0x25cc`/`0x451c`.
 3. Continue reduced-loop/codegen work around the same SPU image while keeping the cache-key separation; compare against clean normal-cache runs only.
-4. Extend the route matrix to first battle; menu proof now exists, but speed wins still need field + battle + menu.
+4. Re-run reduced-loop u4 on `eternal-sonata-battle-intro-route`; if it passes, create a later save/savestate near combat UI so battle FPS sweeps do not include minutes of story/compile transition.

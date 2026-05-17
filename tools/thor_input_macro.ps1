@@ -125,6 +125,12 @@ function Get-ThorMacroForProfile {
         "eternal-sonata-load-probe" {
             return "wait:120000;shot:title;dpad_down;wait:800;cross;wait:30000;shot:load-30s;wait:90000;shot:load-120s"
         }
+        "eternal-sonata-load-field-route" {
+            return "wait:90000;shot:title-before-load;dpad_down;wait:800;shot:title-load-selected;cross;wait:55000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:65000;shot:load-complete;cross;wait:30000;shot:loaded-field;threads:load-field-route"
+        }
+        "eternal-sonata-battle-intro-route" {
+            return "wait:90000;shot:title-before-load;dpad_down;wait:800;shot:title-load-selected;cross;wait:55000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:65000;shot:load-complete;cross;wait:30000;shot:loaded-field;stick:left:left:2600;wait:1000;shot:battle-approach;stick:left:down_left:2200;wait:25000;shot:battle-transition;wait:60000;shot:battle-story-1;wait:120000;shot:battle-story-2;wait:60000;shot:first-battle-visual;threads:battle-intro-route"
+        }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
         }
@@ -141,7 +147,7 @@ function Get-ThorMacroForProfile {
             if (-not [string]::IsNullOrWhiteSpace($Macro)) {
                 return $Macro
             }
-            throw "Unknown Thor input profile '$Name'. Supply -Macro or use fast-forward-toggle, title-new-game, title-load-save, eternal-sonata-new-game-probe, eternal-sonata-load-probe, eternal-sonata-field-direct, eternal-sonata-field-route, eternal-sonata-menu-route."
+            throw "Unknown Thor input profile '$Name'. Supply -Macro or use fast-forward-toggle, title-new-game, title-load-save, eternal-sonata-new-game-probe, eternal-sonata-load-probe, eternal-sonata-load-field-route, eternal-sonata-battle-intro-route, eternal-sonata-field-direct, eternal-sonata-field-route, eternal-sonata-menu-route."
         }
     }
 }
