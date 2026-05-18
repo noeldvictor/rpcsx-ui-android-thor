@@ -768,9 +768,9 @@ Status: `fused-blit-source-rejected`.
 
 Added durable wrapper and summarizer support for the Windows-only scout gate:
 
-- `tools/windows_rpcs3_lab.ps1 -RsxBlitSourceResolve Off|Fast`
-- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxBlitSourceResolve Off|Fast`
-- Process env: `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=off|fast`
+- `tools/windows_rpcs3_lab.ps1 -RsxBlitSourceResolve Off|Verify|Fast`
+- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxBlitSourceResolve Off|Verify|Fast`
+- Process env: `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=off|verify|fast`
 - Summary output:
   `eternal-sonata-rsx-blit-source-profile.csv` plus a `Blit Source Profile`
   table in `eternal-sonata-rsx-auditor-summary.md`
@@ -852,3 +852,58 @@ Decision:
   or copied hashes/bytes outside the critical path, then investigate why the
   compute writes are not feeding the visible texture chain. If that stalls,
   return to the measured SPU/HLE/codegen path around `0x25cc` / `0x451c`.
+
+## Windows Lab Slice - 2026-05-18 Blit Source Scratch Verify
+
+Status: `scratch-verify-gpu-dispatches`.
+
+Added a safer verify mode for the Windows-only blit-source resolve gate:
+
+- `tools/windows_rpcs3_lab.ps1 -RsxBlitSourceResolve Verify`
+- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxBlitSourceResolve Verify`
+- Process env: `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=verify`
+- Summary counters:
+  `blit_resolve(fast/verify/reject)` and
+  `blit_reject(region/typeless/format/rt/dispatch)`.
+
+Failed live-destination verify attempt:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-172519-rsx-blit-source-verify-storage-windows/`
+- Visual result: failed. The field was black with overlay only.
+- Crash signal:
+  `VKDraw.cpp:68 validate_image_layout_for_read_access`.
+- Reading: making the real blit destination storage-capable mutates the live
+  texture-cache chain too early. Do not use this as a Thor route.
+
+Scratch verify capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-173457-rsx-blit-source-verify-scratch-windows/`
+- Gate:
+  `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=verify`
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=profile`
+- Window routing: RPCS3 moved to `\\.\DISPLAY2`.
+- Host grade: clean.
+- Visual result: correct-looking first playable field screenshot.
+- Auditor totals across `7230` frames:
+  - queue submits: `7355`, about `61.04` per 60 frames;
+  - hard sync flushes: `103`, about `0.85` per 60 frames;
+  - render-pass barrier breaks: `5185`, about `43.03` per 60 frames;
+  - color resolve calls/skips: `6916` / `3458`;
+  - scratch verify dispatches: `3458`, about `28.70` per 60 frames;
+  - rejects: `26277`, all `render_target` rejects from non-candidate surfaces;
+  - compute pipeline creates: `3`.
+- Resolve profile:
+  - `transfer-read` count `3458`, duplicate tags `3458`;
+  - `blit-source` skip count `3458`;
+  - target: `1280x720`, `fmt=0x2c`, `samples=2`, `grid=2x1`,
+    `pitch=10240`, `base=0xc0b20000`.
+
+Reading: this is the first clean proof that the candidate RSX resolve/blit
+compute work can be dispatched on the GPU while the normal path preserves the
+visible frame. It is not a speed win because verify adds scratch work. The next
+RSX step is not Thor porting; it is finding the ownership/state gap that makes
+the live destination path black. Keep `fast` off until the candidate can feed
+the visible texture chain and pass field, menu, and first battle.

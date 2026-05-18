@@ -259,6 +259,8 @@ function Read-RsxAuditorRecord {
     $imageBreakSources = Split-AuditorImageSourceTuple $fields 'img_break'
     $resolve = Split-AuditorTuple $fields['resolve(color/depth/skip_color/skip_depth)'] 4
     $pipe = Split-AuditorTuple $fields['pipe(g/c/slow/us)'] 4
+    $blitResolve = Split-AuditorTuple $fields['blit_resolve(fast/verify/reject)'] 3
+    $blitReject = Split-AuditorTuple $fields['blit_reject(region/typeless/format/rt/dispatch)'] 5
 
     $record = [pscustomobject]@{
         frames            = Convert-AuditorNumber $fields['frames']
@@ -327,6 +329,14 @@ function Read-RsxAuditorRecord {
         out_mb            = Convert-AuditorDecimal $fields['out_mb']
         simple_upload     = Convert-AuditorNumber $fields['simple_upload']
         upload_mb         = Convert-AuditorDecimal $fields['upload_mb']
+        blit_resolve_fast = $blitResolve[0]
+        blit_resolve_verify = $blitResolve[1]
+        blit_resolve_reject = $blitResolve[2]
+        blit_reject_region = $blitReject[0]
+        blit_reject_typeless = $blitReject[1]
+        blit_reject_format = $blitReject[2]
+        blit_reject_rt = $blitReject[3]
+        blit_reject_dispatch = $blitReject[4]
     }
 
     $record | Add-Member -NotePropertyName pressure -NotePropertyValue (Get-AuditorPressure $record)
@@ -547,6 +557,14 @@ $totalInMb = [double](($records | Measure-Object -Property in_mb -Sum).Sum)
 $totalOutMb = [double](($records | Measure-Object -Property out_mb -Sum).Sum)
 $totalUpload = [UInt64](($records | Measure-Object -Property simple_upload -Sum).Sum)
 $totalUploadMb = [double](($records | Measure-Object -Property upload_mb -Sum).Sum)
+$totalBlitResolveFast = [UInt64](($records | Measure-Object -Property blit_resolve_fast -Sum).Sum)
+$totalBlitResolveVerify = [UInt64](($records | Measure-Object -Property blit_resolve_verify -Sum).Sum)
+$totalBlitResolveReject = [UInt64](($records | Measure-Object -Property blit_resolve_reject -Sum).Sum)
+$totalBlitRejectRegion = [UInt64](($records | Measure-Object -Property blit_reject_region -Sum).Sum)
+$totalBlitRejectTypeless = [UInt64](($records | Measure-Object -Property blit_reject_typeless -Sum).Sum)
+$totalBlitRejectFormat = [UInt64](($records | Measure-Object -Property blit_reject_format -Sum).Sum)
+$totalBlitRejectRt = [UInt64](($records | Measure-Object -Property blit_reject_rt -Sum).Sum)
+$totalBlitRejectDispatch = [UInt64](($records | Measure-Object -Property blit_reject_dispatch -Sum).Sum)
 
 $lines.Add("- Auditor frames: $totalFrames") | Out-Null
 $lines.Add("- Queue submits: $totalSubmits ($(Format-AuditorRate $totalSubmits $totalFrames) per 60 frames)") | Out-Null
@@ -559,6 +577,8 @@ $lines.Add("- Barrier-tracked buffer range: $(Format-AuditorDecimal $totalBarrie
 $lines.Add("- DMA transfer fences: all=$totalDmaAll / host=$totalDmaHost, bytes=$(Format-AuditorDecimal ($totalDmaMb + $totalDmaHostMb)) MB") | Out-Null
 $lines.Add("- Pipeline creates: graphics=$totalPipeGraphics compute=$totalPipeCompute slow=$totalPipeSlow total_us=$totalPipeUs") | Out-Null
 $lines.Add("- Detile/upload: detile=$totalDetile in=$(Format-AuditorDecimal $totalInMb) MB out=$(Format-AuditorDecimal $totalOutMb) MB simple_upload=$totalUpload upload=$(Format-AuditorDecimal $totalUploadMb) MB") | Out-Null
+$lines.Add("- Blit-source fused resolve: fast=$totalBlitResolveFast verify=$totalBlitResolveVerify rejects=$totalBlitResolveReject") | Out-Null
+$lines.Add("- Blit-source reject reasons region/typeless/format/rt/dispatch: $totalBlitRejectRegion/$totalBlitRejectTypeless/$totalBlitRejectFormat/$totalBlitRejectRt/$totalBlitRejectDispatch") | Out-Null
 if ($resolveProfileRecords.Count -gt 0) {
     $lines.Add("- Resolve profile records: $($resolveProfileRecords.Count)") | Out-Null
 }
@@ -590,6 +610,8 @@ $lines.Add(('| Pipeline creates g/c/slow | {0}/{1}/{2} | - | Warmup/stutter lane
 $lines.Add(('| Pipeline create ms | {0} | {1} | Shader/pipeline creation wall time. |' -f (Format-AuditorDecimal ([double]$totalPipeUs / 1000.0)), (Format-AuditorRate ([double]$totalPipeUs / 1000.0) $totalFrames))) | Out-Null
 $lines.Add(('| Detile in/out MB | {0}/{1} | {2}/{3} | Texture prep or layout conversion candidate. |' -f (Format-AuditorDecimal $totalInMb), (Format-AuditorDecimal $totalOutMb), (Format-AuditorRate $totalInMb $totalFrames), (Format-AuditorRate $totalOutMb $totalFrames))) | Out-Null
 $lines.Add(('| Simple upload MB | {0} | {1} | CPU-to-GPU upload bandwidth candidate. |' -f (Format-AuditorDecimal $totalUploadMb), (Format-AuditorRate $totalUploadMb $totalFrames))) | Out-Null
+$lines.Add(('| Blit-source fused resolve fast/verify/reject | {0}/{1}/{2} | {3}/{4}/{5} | Verify exercises the GPU candidate while keeping the normal visible frame. |' -f $totalBlitResolveFast, $totalBlitResolveVerify, $totalBlitResolveReject, (Format-AuditorRate $totalBlitResolveFast $totalFrames), (Format-AuditorRate $totalBlitResolveVerify $totalFrames), (Format-AuditorRate $totalBlitResolveReject $totalFrames))) | Out-Null
+$lines.Add(('| Blit-source reject reasons region/typeless/format/rt/dispatch | {0}/{1}/{2}/{3}/{4} | - | Classifies why candidate fused resolves did not dispatch. |' -f $totalBlitRejectRegion, $totalBlitRejectTypeless, $totalBlitRejectFormat, $totalBlitRejectRt, $totalBlitRejectDispatch)) | Out-Null
 
 $lines.Add("") | Out-Null
 $lines.Add("## Top Intervals By Pressure") | Out-Null

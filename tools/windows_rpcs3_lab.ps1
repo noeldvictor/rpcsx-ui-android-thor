@@ -30,7 +30,7 @@ param(
     [string]$RsxTextureBarrier = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$RsxResolve = "Off",
-    [ValidateSet("Off", "Fast")]
+    [ValidateSet("Off", "Verify", "Fast")]
     [string]$RsxBlitSourceResolve = "Off",
     [ValidateSet("Keep", "On", "Off")]
     [string]$RsxForceHwMsaaResolve = "Keep",
@@ -1428,6 +1428,7 @@ $rsxResolveEnv = switch ($RsxResolve) {
     default { "off" }
 }
 $rsxBlitSourceResolveEnv = switch ($RsxBlitSourceResolve) {
+    "Verify" { "verify" }
     "Fast" { "fast" }
     default { "off" }
 }

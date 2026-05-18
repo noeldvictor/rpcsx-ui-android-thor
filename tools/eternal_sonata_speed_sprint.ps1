@@ -30,7 +30,7 @@ param(
     [string]$WindowsRsxTextureBarrier = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$WindowsRsxResolve = "Off",
-    [ValidateSet("Off", "Fast")]
+    [ValidateSet("Off", "Verify", "Fast")]
     [string]$WindowsRsxBlitSourceResolve = "Off",
     [ValidateSet("Keep", "On", "Off")]
     [string]$WindowsRsxForceHwMsaaResolve = "Keep",
