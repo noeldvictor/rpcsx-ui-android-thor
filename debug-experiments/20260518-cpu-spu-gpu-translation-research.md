@@ -211,6 +211,73 @@ avoids generic `spu_exec_mfc_cmd` overhead for those stable shapes.
 This is "CPU SPU translation to better CPU" rather than GPU, but it directly
 targets the captured bottleneck and avoids the previous reservation crash class.
 
+### Windows MFC Shape Probe - 2026-05-18
+
+Status: `windows-shape-proof`.
+
+Added a Windows lab probe for the hot SPU MFC command sites:
+
+- `tools/windows_rpcs3_lab.ps1 -EternalSonataMfcShapeProbe Profile`
+- `tools/eternal_sonata_speed_sprint.ps1 -EternalSonataMfcShapeProbe Profile`
+- Process env: `RPCS3_ES_MFC_SHAPE_PROBE=profile`
+- Summary output:
+  `eternal-sonata-mfc-shape-profile.csv` plus an `MFC Shape Profile` table in
+  `eternal-sonata-gpu-probe-summary.md`.
+
+The first unthrottled run proved the hook worked but produced a huge
+`RPCS3.log`, so the lab patch now rate-limits MFC shape logs to about one
+sample per 100 ms when no RSX-local traffic is present.
+
+Clean field capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-160806-spu-mfc-shape-profile-throttled-windows/`
+- Host grade: clean across five snapshots.
+- Window routing: RPCS3 moved to `\\.\DISPLAY2`.
+- Visual result: correct-looking first playable field screenshot at
+  `screenshots/screenshot-0147s.png`, overlay around `30 FPS`.
+- Ghidra refresh:
+  `debug-captures/ghidra-spu-window-20260518-mfc-shape/spu-hot-window-ghidra.txt`.
+- Build proof:
+  `cmake --build rpcs3-upstream\build-msvc --config Release --target rpcs3 --parallel 6`
+  passed after the probe, with only the usual `LNK4098` warning.
+
+Summary:
+
+- GPU probe records: `1428`.
+- MFC shape records: `17083` raw, `502` aggregated.
+- Total observed DMA bytes: about `1,164.46 MB`.
+- RSX-local traffic: `0` records.
+- Offload fit mix: `610` `spu-kernel-hle`, `818` `too-small`.
+- Hot PC bytes:
+  - `0x25cc`: `475` records, about `750.44 MB`, max DMA `16 KB`;
+  - `0x451c`: `953` records, about `414.02 MB`, max DMA `16 KB`.
+
+Top shape findings:
+
+- `0x0a70`: `GETLLAR` (`cmd=0xd0`) dominated the sampled shape table with
+  `714,685` hits against fixed `LSA=0x4a00`, `EA=0x8ab280`, size `128`.
+- `0x25cc`: stable large-copy ladder, mostly `GET` (`cmd=0x40`), tag `31`,
+  size `16 KB`, repeated LSAs such as `0x3000`, `0x7000`, `0xb000`, `0xf000`,
+  and later `0x13000..0x3b000`. A small sampled `PUT` ladder (`cmd=0x20`) uses
+  the same size/tag shape.
+- `0x451c`: noisier small/list DMA issuer, with frequent `GET` rows at sizes
+  `128`/`256`, list/fence GET rows (`cmd=0x46`), and many smaller `cmd=0x42`
+  shapes.
+
+Reading:
+
+- This is a stronger SPU/codegen/HLE target than a GPU target. The hot path is
+  stable enough to specialize, but still produces zero RSX-local bytes.
+- The cleanest first fast path is not a replay cache and not Vulkan compute. It
+  is a verify-gated dynamic-MFC specialization for image
+  `0x958dfe208b686622`, especially the `0x25cc` 16 KB GET ladder.
+- `0x451c` needs more grouping before fast mode because it has many small/list
+  shapes and a `tiny-dispatch-trap` profile.
+- Reservation semantics remain off-limits for this slice: the `GETLLAR` signal
+  is real, but previous wait/notifier changes did not beat reduced-loop and once
+  hit the `SIGBUS` crash class.
+
 ### 3. Recognized-kernel IR before Vulkan
 
 Priority: medium.

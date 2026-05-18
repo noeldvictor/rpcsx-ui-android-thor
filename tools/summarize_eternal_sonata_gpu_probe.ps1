@@ -3,7 +3,8 @@ param(
     [string]$LogPath = "",
     [int]$Top = 25,
     [string]$OutPath = "",
-    [string]$CsvPath = ""
+    [string]$CsvPath = "",
+    [string]$MfcShapeCsvPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -153,6 +154,33 @@ function Get-ProbeReading {
     }
 }
 
+function Format-MfcShapeFlags {
+    param([UInt64]$Flags)
+
+    $names = New-Object System.Collections.Generic.List[string]
+    $map = @(
+        @{ bit = 0; name = "list" },
+        @{ bit = 1; name = "get" },
+        @{ bit = 2; name = "put" },
+        @{ bit = 3; name = "atomic" },
+        @{ bit = 4; name = "barrier" },
+        @{ bit = 5; name = "fence" },
+        @{ bit = 6; name = "rsx-local" }
+    )
+
+    foreach ($entry in $map) {
+        if (($Flags -band ([UInt64]1 -shl $entry.bit)) -ne 0) {
+            $names.Add($entry.name) | Out-Null
+        }
+    }
+
+    if ($names.Count -eq 0) {
+        return "none"
+    }
+
+    return ($names -join ",")
+}
+
 function Read-ProbeRecord {
     param([string]$Line)
 
@@ -227,6 +255,54 @@ function Read-ProbeRecord {
     return $record
 }
 
+function Read-MfcShapeRecord {
+    param([string]$Line)
+
+    if ($Line -notmatch 'Eternal Sonata MFC shape probe:') {
+        return $null
+    }
+
+    $fields = @{}
+    foreach ($match in [regex]::Matches($Line, '(?<key>[A-Za-z0-9_]+)=(?:"(?<quoted>[^"]*)"|(?<value>\S+))')) {
+        $key = $match.Groups['key'].Value
+        $quoted = $match.Groups['quoted']
+        $value = if ($quoted.Success) { $quoted.Value } else { $match.Groups['value'].Value }
+        $fields[$key] = $value
+    }
+
+    if (-not $fields.ContainsKey('count')) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        mode       = $fields['mode']
+        title      = $fields['title']
+        group      = Format-ProbeHex $fields['group']
+        group_name = $fields['group_name']
+        spu        = Format-ProbeHex $fields['spu']
+        spu_index  = [int](Convert-ProbeNumber $fields['spu_index'])
+        spu_name   = $fields['spu_name']
+        entry      = Format-ProbeHex $fields['entry']
+        image_sig  = Format-ProbeHex $fields['image_sig']
+        pc         = Format-ProbeHex $fields['pc']
+        block_hash = Format-ProbeHex $fields['block_hash']
+        cmd        = Format-ProbeHex $fields['cmd']
+        tag        = Convert-ProbeNumber $fields['tag']
+        size       = Convert-ProbeNumber $fields['size']
+        lsa        = Format-ProbeHex $fields['lsa']
+        flags      = Convert-ProbeNumber $fields['flags']
+        count      = Convert-ProbeNumber $fields['count']
+        bytes      = Convert-ProbeNumber $fields['bytes']
+        eal_first  = Format-ProbeHex $fields['eal_first']
+        eal_last   = Format-ProbeHex $fields['eal_last']
+        eal_min    = Format-ProbeHex $fields['eal_min']
+        eal_max    = Format-ProbeHex $fields['eal_max']
+        overflow   = Convert-ProbeNumber $fields['overflow']
+        cause      = Format-ProbeHex $fields['cause']
+        status     = Format-ProbeHex $fields['status']
+    }
+}
+
 function Read-RsxAuditorRecord {
     param([string]$Line)
 
@@ -284,9 +360,15 @@ if ([string]::IsNullOrWhiteSpace($OutPath)) {
 if ([string]::IsNullOrWhiteSpace($CsvPath)) {
     $CsvPath = Join-Path $RunDir "eternal-sonata-gpu-probe-records.csv"
 }
+if ([string]::IsNullOrWhiteSpace($MfcShapeCsvPath)) {
+    $MfcShapeCsvPath = Join-Path $RunDir "eternal-sonata-mfc-shape-profile.csv"
+}
 
 $records = New-Object System.Collections.Generic.List[object]
 $rsxAuditorRecords = New-Object System.Collections.Generic.List[object]
+$mfcShapeRecords = New-Object System.Collections.Generic.List[object]
+$mfcShapeGroups = @{}
+$mfcShapeRawRecords = [UInt64]0
 foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
     $record = Read-ProbeRecord $line
     if ($null -ne $record) {
@@ -297,6 +379,81 @@ foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
     if ($null -ne $rsxRecord) {
         $rsxAuditorRecords.Add($rsxRecord) | Out-Null
     }
+
+    $mfcShapeRecord = Read-MfcShapeRecord $line
+    if ($null -ne $mfcShapeRecord) {
+        $mfcShapeRawRecords++
+        $key = @(
+            $mfcShapeRecord.mode,
+            $mfcShapeRecord.title,
+            $mfcShapeRecord.group_name,
+            $mfcShapeRecord.spu_name,
+            $mfcShapeRecord.entry,
+            $mfcShapeRecord.image_sig,
+            $mfcShapeRecord.pc,
+            $mfcShapeRecord.block_hash,
+            $mfcShapeRecord.cmd,
+            $mfcShapeRecord.tag,
+            $mfcShapeRecord.size,
+            $mfcShapeRecord.lsa,
+            $mfcShapeRecord.flags
+        ) -join "|"
+
+        $minValue = Convert-ProbeNumber $mfcShapeRecord.eal_min
+        $maxValue = Convert-ProbeNumber $mfcShapeRecord.eal_max
+
+        if (-not $mfcShapeGroups.ContainsKey($key)) {
+            $mfcShapeGroups[$key] = [pscustomobject]@{
+                mode       = $mfcShapeRecord.mode
+                title      = $mfcShapeRecord.title
+                group      = $mfcShapeRecord.group
+                group_name = $mfcShapeRecord.group_name
+                spu        = $mfcShapeRecord.spu
+                spu_index  = $mfcShapeRecord.spu_index
+                spu_name   = $mfcShapeRecord.spu_name
+                entry      = $mfcShapeRecord.entry
+                image_sig  = $mfcShapeRecord.image_sig
+                pc         = $mfcShapeRecord.pc
+                block_hash = $mfcShapeRecord.block_hash
+                cmd        = $mfcShapeRecord.cmd
+                tag        = $mfcShapeRecord.tag
+                size       = $mfcShapeRecord.size
+                lsa        = $mfcShapeRecord.lsa
+                flags      = $mfcShapeRecord.flags
+                count      = $mfcShapeRecord.count
+                bytes      = $mfcShapeRecord.bytes
+                eal_first  = $mfcShapeRecord.eal_first
+                eal_last   = $mfcShapeRecord.eal_last
+                eal_min    = $mfcShapeRecord.eal_min
+                eal_max    = $mfcShapeRecord.eal_max
+                overflow   = $mfcShapeRecord.overflow
+                cause      = $mfcShapeRecord.cause
+                status     = $mfcShapeRecord.status
+                eal_min_value = $minValue
+                eal_max_value = $maxValue
+            }
+        } else {
+            $aggregate = $mfcShapeGroups[$key]
+            $aggregate.count += $mfcShapeRecord.count
+            $aggregate.bytes += $mfcShapeRecord.bytes
+            $aggregate.eal_last = $mfcShapeRecord.eal_last
+            if ($minValue -lt $aggregate.eal_min_value) {
+                $aggregate.eal_min_value = $minValue
+                $aggregate.eal_min = $mfcShapeRecord.eal_min
+            }
+            if ($maxValue -gt $aggregate.eal_max_value) {
+                $aggregate.eal_max_value = $maxValue
+                $aggregate.eal_max = $mfcShapeRecord.eal_max
+            }
+            if ($mfcShapeRecord.overflow -gt $aggregate.overflow) {
+                $aggregate.overflow = $mfcShapeRecord.overflow
+            }
+        }
+    }
+}
+
+foreach ($shape in $mfcShapeGroups.Values) {
+    $mfcShapeRecords.Add($shape) | Out-Null
 }
 
 $lines = New-Object System.Collections.Generic.List[string]
@@ -305,6 +462,7 @@ $lines.Add("") | Out-Null
 $lines.Add("- Generated: $(Get-Date -Format o)") | Out-Null
 $lines.Add("- Log: $LogPath") | Out-Null
 $lines.Add("- Records: $($records.Count)") | Out-Null
+$lines.Add("- MFC shape records: $mfcShapeRawRecords raw, $($mfcShapeRecords.Count) aggregated") | Out-Null
 $lines.Add("- RSX auditor records: $($rsxAuditorRecords.Count)") | Out-Null
 $lines.Add("- Top rows: $Top") | Out-Null
 
@@ -318,6 +476,12 @@ if ($records.Count -eq 0) {
 
 $records | Export-Csv -LiteralPath $CsvPath -NoTypeInformation -Encoding UTF8
 $lines.Add("- CSV: $CsvPath") | Out-Null
+if ($mfcShapeRecords.Count -gt 0) {
+    $mfcShapeRecords |
+        Select-Object mode,title,group,group_name,spu,spu_index,spu_name,entry,image_sig,pc,block_hash,cmd,tag,size,lsa,flags,count,bytes,eal_first,eal_last,eal_min,eal_max,overflow,cause,status |
+        Export-Csv -LiteralPath $MfcShapeCsvPath -NoTypeInformation -Encoding UTF8
+    $lines.Add("- MFC shape CSV: $MfcShapeCsvPath") | Out-Null
+}
 
 $totalBytes = [UInt64](($records | Measure-Object -Property total_bytes -Sum).Sum)
 $maxRecord = $records | Sort-Object -Property total_bytes -Descending | Select-Object -First 1
@@ -382,6 +546,41 @@ foreach ($pcGroup in @($records | Group-Object -Property max_dma_pc | Sort-Objec
     $pcSum = [UInt64](($pcRecords | Measure-Object -Property total_bytes -Sum).Sum)
     $pcMaxDma = [UInt64](($pcRecords | Measure-Object -Property max_dma_size -Maximum).Maximum)
     $lines.Add(('| `{0}` | {1} | {2} | {3} | {4} | `{5}` | `{6}` | `{7}` |' -f $pcGroup.Name, $pcGroup.Count, (Format-ProbeBytes $pcSum), (Format-ProbeBytes $pcTop.total_bytes), (Format-ProbeBytes $pcMaxDma), $pcTop.group_name, $pcTop.spu_name, $pcTop.max_dma_ea)) | Out-Null
+}
+
+if ($mfcShapeRecords.Count -gt 0) {
+    $lines.Add("") | Out-Null
+    $lines.Add("## MFC Shape Profile") | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add("| Rank | PC | Cmd | Flags | Count | Bytes | Size | Tag | LSA | EAL Range | First -> Last EAL | Group | SPU | Image | Block | Overflow |") | Out-Null
+    $lines.Add("| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | ---: |") | Out-Null
+
+    $rank = 1
+    foreach ($record in @($mfcShapeRecords | Sort-Object -Property count, bytes -Descending | Select-Object -First $Top)) {
+        $lines.Add(('| {0} | `{1}` | `{2}` | `{3}` | {4} | {5} | {6} | {7} | `{8}` | `{9}`-`{10}` | `{11}` -> `{12}` | `{13}` | `{14}` | `{15}` | `{16}` | {17} |' -f
+            $rank,
+            $record.pc,
+            $record.cmd,
+            (Format-MfcShapeFlags $record.flags),
+            $record.count,
+            (Format-ProbeBytes $record.bytes),
+            $record.size,
+            $record.tag,
+            $record.lsa,
+            $record.eal_min,
+            $record.eal_max,
+            $record.eal_first,
+            $record.eal_last,
+            $record.group_name,
+            $record.spu_name,
+            $record.image_sig,
+            $record.block_hash,
+            $record.overflow)) | Out-Null
+        $rank++
+    }
+
+    $lines.Add("") | Out-Null
+    $lines.Add("MFC shape reading: high counts with a small command/size/tag/LSA set are a codegen/HLE candidate; many one-off rows or large overflow means the path is still too dynamic for a fast path.") | Out-Null
 }
 
 $lines.Add("") | Out-Null
