@@ -104,6 +104,30 @@ function Split-AuditorTuple {
     return @($result)
 }
 
+function Split-AuditorImageSourceTuple {
+    param([hashtable]$Fields, [string]$Prefix)
+
+    $newKey = "${Prefix}(unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up)"
+    if ($Fields.ContainsKey($newKey)) {
+        return Split-AuditorTuple $Fields[$newKey] 10
+    }
+
+    $oldKey = "${Prefix}(unk/rt/tc/draw/pres/tex/up)"
+    $old = Split-AuditorTuple $Fields[$oldKey] 7
+    return @(
+        $old[0],
+        [UInt64]0,
+        [UInt64]0,
+        [UInt64]0,
+        $old[1],
+        $old[2],
+        $old[3],
+        $old[4],
+        $old[5],
+        $old[6]
+    )
+}
+
 function Get-AuditorPressure {
     param([object]$Record)
 
@@ -173,6 +197,8 @@ function Read-RsxAuditorRecord {
 
     $rpBreak = Split-AuditorTuple $fields['rp_break(g/b/i/t)'] 4
     $barriers = Split-AuditorTuple $fields['barriers(g/b/i/t/all)'] 5
+    $imageSources = Split-AuditorImageSourceTuple $fields 'img_src'
+    $imageBreakSources = Split-AuditorImageSourceTuple $fields 'img_break'
     $pipe = Split-AuditorTuple $fields['pipe(g/c/slow/us)'] 4
 
     $record = [pscustomobject]@{
@@ -196,6 +222,26 @@ function Read-RsxAuditorRecord {
         barrier_texture   = $barriers[3]
         barrier_all       = $barriers[4]
         barrier_mb        = Convert-AuditorDecimal $fields['barrier_mb']
+        image_src_unknown = $imageSources[0]
+        image_src_rt_res  = $imageSources[1]
+        image_src_rt_unres = $imageSources[2]
+        image_src_rt_post = $imageSources[3]
+        image_src_rt_other = $imageSources[4]
+        image_src_tc      = $imageSources[5]
+        image_src_draw    = $imageSources[6]
+        image_src_present = $imageSources[7]
+        image_src_texture = $imageSources[8]
+        image_src_up      = $imageSources[9]
+        image_break_unknown = $imageBreakSources[0]
+        image_break_rt_res  = $imageBreakSources[1]
+        image_break_rt_unres = $imageBreakSources[2]
+        image_break_rt_post = $imageBreakSources[3]
+        image_break_rt_other = $imageBreakSources[4]
+        image_break_tc      = $imageBreakSources[5]
+        image_break_draw    = $imageBreakSources[6]
+        image_break_present = $imageBreakSources[7]
+        image_break_texture = $imageBreakSources[8]
+        image_break_up      = $imageBreakSources[9]
         tex_color         = Convert-AuditorNumber $fields['tex_color']
         tex_depth         = Convert-AuditorNumber $fields['tex_depth']
         tex_skip          = Convert-AuditorNumber $fields['tex_skip']
@@ -295,6 +341,26 @@ $totalBarrierImage = [UInt64](($records | Measure-Object -Property barrier_image
 $totalBarrierTexture = [UInt64](($records | Measure-Object -Property barrier_texture -Sum).Sum)
 $totalBarrierAll = [UInt64](($records | Measure-Object -Property barrier_all -Sum).Sum)
 $totalBarrierMb = [double](($records | Measure-Object -Property barrier_mb -Sum).Sum)
+$totalImageSrcUnknown = [UInt64](($records | Measure-Object -Property image_src_unknown -Sum).Sum)
+$totalImageSrcRtRes = [UInt64](($records | Measure-Object -Property image_src_rt_res -Sum).Sum)
+$totalImageSrcRtUnres = [UInt64](($records | Measure-Object -Property image_src_rt_unres -Sum).Sum)
+$totalImageSrcRtPost = [UInt64](($records | Measure-Object -Property image_src_rt_post -Sum).Sum)
+$totalImageSrcRtOther = [UInt64](($records | Measure-Object -Property image_src_rt_other -Sum).Sum)
+$totalImageSrcTc = [UInt64](($records | Measure-Object -Property image_src_tc -Sum).Sum)
+$totalImageSrcDraw = [UInt64](($records | Measure-Object -Property image_src_draw -Sum).Sum)
+$totalImageSrcPresent = [UInt64](($records | Measure-Object -Property image_src_present -Sum).Sum)
+$totalImageSrcTexture = [UInt64](($records | Measure-Object -Property image_src_texture -Sum).Sum)
+$totalImageSrcUp = [UInt64](($records | Measure-Object -Property image_src_up -Sum).Sum)
+$totalImageBreakUnknown = [UInt64](($records | Measure-Object -Property image_break_unknown -Sum).Sum)
+$totalImageBreakRtRes = [UInt64](($records | Measure-Object -Property image_break_rt_res -Sum).Sum)
+$totalImageBreakRtUnres = [UInt64](($records | Measure-Object -Property image_break_rt_unres -Sum).Sum)
+$totalImageBreakRtPost = [UInt64](($records | Measure-Object -Property image_break_rt_post -Sum).Sum)
+$totalImageBreakRtOther = [UInt64](($records | Measure-Object -Property image_break_rt_other -Sum).Sum)
+$totalImageBreakTc = [UInt64](($records | Measure-Object -Property image_break_tc -Sum).Sum)
+$totalImageBreakDraw = [UInt64](($records | Measure-Object -Property image_break_draw -Sum).Sum)
+$totalImageBreakPresent = [UInt64](($records | Measure-Object -Property image_break_present -Sum).Sum)
+$totalImageBreakTexture = [UInt64](($records | Measure-Object -Property image_break_texture -Sum).Sum)
+$totalImageBreakUp = [UInt64](($records | Measure-Object -Property image_break_up -Sum).Sum)
 $totalTexColor = [UInt64](($records | Measure-Object -Property tex_color -Sum).Sum)
 $totalTexDepth = [UInt64](($records | Measure-Object -Property tex_depth -Sum).Sum)
 $totalTexSkip = [UInt64](($records | Measure-Object -Property tex_skip -Sum).Sum)
@@ -318,6 +384,8 @@ $lines.Add("- Auditor frames: $totalFrames") | Out-Null
 $lines.Add("- Queue submits: $totalSubmits ($(Format-AuditorRate $totalSubmits $totalFrames) per 60 frames)") | Out-Null
 $lines.Add("- Hard sync flushes: $totalHardSync ($(Format-AuditorRate $totalHardSync $totalFrames) per 60 frames)") | Out-Null
 $lines.Add("- Render-pass barrier breaks: $totalRpBreak ($(Format-AuditorRate $totalRpBreak $totalFrames) per 60 frames)") | Out-Null
+$lines.Add("- Image barrier source totals unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up: $totalImageSrcUnknown/$totalImageSrcRtRes/$totalImageSrcRtUnres/$totalImageSrcRtPost/$totalImageSrcRtOther/$totalImageSrcTc/$totalImageSrcDraw/$totalImageSrcPresent/$totalImageSrcTexture/$totalImageSrcUp") | Out-Null
+$lines.Add("- Image break source totals unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up: $totalImageBreakUnknown/$totalImageBreakRtRes/$totalImageBreakRtUnres/$totalImageBreakRtPost/$totalImageBreakRtOther/$totalImageBreakTc/$totalImageBreakDraw/$totalImageBreakPresent/$totalImageBreakTexture/$totalImageBreakUp") | Out-Null
 $lines.Add("- Barrier-tracked buffer range: $(Format-AuditorDecimal $totalBarrierMb) MB") | Out-Null
 $lines.Add("- DMA transfer fences: all=$totalDmaAll / host=$totalDmaHost, bytes=$(Format-AuditorDecimal ($totalDmaMb + $totalDmaHostMb)) MB") | Out-Null
 $lines.Add("- Pipeline creates: graphics=$totalPipeGraphics compute=$totalPipeCompute slow=$totalPipeSlow total_us=$totalPipeUs") | Out-Null
@@ -336,6 +404,8 @@ $lines.Add(('| Hard sync flushes | {0} | {1} | Strong CPU/GPU drain signal. |' -
 $lines.Add(('| Render-pass breaks | {0} | {1} | Tile-locality loss candidate on Adreno. |' -f $totalRpBreak, (Format-AuditorRate $totalRpBreak $totalFrames))) | Out-Null
 $lines.Add(('| Break source g/b/i/t | {0}/{1}/{2}/{3} | - | Global/buffer/image/texture split. |' -f $totalRpBreakGlobal, $totalRpBreakBuffer, $totalRpBreakImage, $totalRpBreakTexture)) | Out-Null
 $lines.Add(('| Barriers g/b/i/t/all | {0}/{1}/{2}/{3}/{4} | - | Synchronization narrowing targets. |' -f $totalBarrierGlobal, $totalBarrierBuffer, $totalBarrierImage, $totalBarrierTexture, $totalBarrierAll)) | Out-Null
+$lines.Add(('| Image barriers unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up | {0}/{1}/{2}/{3}/{4}/{5}/{6}/{7}/{8}/{9} | - | Total image barriers by callsite bucket. |' -f $totalImageSrcUnknown, $totalImageSrcRtRes, $totalImageSrcRtUnres, $totalImageSrcRtPost, $totalImageSrcRtOther, $totalImageSrcTc, $totalImageSrcDraw, $totalImageSrcPresent, $totalImageSrcTexture, $totalImageSrcUp)) | Out-Null
+$lines.Add(('| Image breaks unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up | {0}/{1}/{2}/{3}/{4}/{5}/{6}/{7}/{8}/{9} | - | Image barriers that ended an open render pass. |' -f $totalImageBreakUnknown, $totalImageBreakRtRes, $totalImageBreakRtUnres, $totalImageBreakRtPost, $totalImageBreakRtOther, $totalImageBreakTc, $totalImageBreakDraw, $totalImageBreakPresent, $totalImageBreakTexture, $totalImageBreakUp)) | Out-Null
 $lines.Add(('| Barrier MB | {0} | {1} | Buffer-range traffic touched by barriers. |' -f (Format-AuditorDecimal $totalBarrierMb), (Format-AuditorRate $totalBarrierMb $totalFrames))) | Out-Null
 $lines.Add(('| Texture barriers color/depth | {0}/{1} | - | Color versus depth feedback risk. |' -f $totalTexColor, $totalTexDepth)) | Out-Null
 $lines.Add(('| Texture skips/post elides | {0}/{1} | - | Existing skip or post-barrier elision activity. |' -f $totalTexSkip, $totalPostElide)) | Out-Null

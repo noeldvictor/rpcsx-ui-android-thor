@@ -267,5 +267,62 @@ Port decision:
   is mechanically valid, but it only removes the texture half of the locality
   pressure.
 - Next port-worthy work is not compute. It is image-barrier callsite labels and
-  a narrow preserve-renderpass/layout-transition experiment, then Thor field,
-  first battle, and menu validation.
+  a narrow render-target resolve locality experiment, then Thor field, first
+  battle, and menu validation.
+
+## Windows Lab Slice - 2026-05-17 Late
+
+Status: `windows-render-target-resolve-identified`.
+
+Follow-up instrumentation added image-barrier callsite buckets to the Windows
+`rpcs3-upstream` RSX auditor. The first broad pass split image barriers into
+`unknown/render-target/texture-cache/draw/present/texture/upscaler`; the second
+pass split render-target into `rt_res`, `rt_unres`, `rt_post`, and `rt_other`.
+
+Broad image-label capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260517-230406-rsx-image-labels-depth-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=depth`
+- Visual result: reached first playable field; screenshots looked correct with
+  FPS overlay around `30 FPS`.
+- Host grade: `high`; Vita3K appeared mid-run, so no timing claim.
+- Auditor totals across `7020` frames:
+  - render-pass barrier breaks: `3115`, about `26.62` per 60 frames;
+  - image barrier sources `unk/rt/tc/draw/pres/tex/up`:
+    `0/12464/7/0/171/0/0`;
+  - image break sources `unk/rt/tc/draw/pres/tex/up`:
+    `0/3115/0/0/0/0/0`.
+
+Reading: after depth texture-barrier skip, all remaining image render-pass
+breaks came from `VKRenderTargets`, not texture cache, draw, present, texture
+conversion, or upscaling.
+
+Refined render-target-label capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260517-231417-rsx-rt-labels-depth-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=depth`
+- Visual result: reached first playable field; screenshots looked correct with
+  FPS overlay around `30 FPS`.
+- Host grade: `high`; no Vita3K process was active, but a separate Vita3K build
+  was compiling through MSBuild/`cl.exe`, so no timing claim.
+- Auditor totals across `7020` frames:
+  - render-pass barrier breaks: `3381`, about `28.90` per 60 frames;
+  - image barrier sources
+    `unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up`:
+    `0/13528/0/0/0/7/0/185/0/0`;
+  - image break sources
+    `unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up`:
+    `0/3381/0/0/0/0/0/0/0/0`.
+
+Reading: the remaining tile-locality loss is specifically
+`render_target::resolve`, and the shape is very regular: four render-target
+resolve image barriers per resolve burst, with the first one ending the open
+render pass. The next RSX experiment should target render-target resolve
+scheduling/caching/locality, not texture-cache DMA fences and not generic GPU
+compute. A blunt `preserve_renderpass` flip is risky because this path enters
+compute resolve work; use a narrow, title-gated experiment with field/menu/battle
+visual validation.
