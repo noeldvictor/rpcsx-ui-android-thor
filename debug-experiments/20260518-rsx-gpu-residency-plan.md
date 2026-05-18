@@ -629,3 +629,120 @@ Next Windows step: add consumer callsite labels around
 `surface_access::transfer_read` so the hot target splits into texture-cache FBO
 sampling, copy/dynamic texture processing, present, surface collapse, or another
 consumer. Then test only the hot consumer with a narrow locality experiment.
+
+## Windows Lab Slice - 2026-05-18 Transfer Consumer Profile
+
+Status: `blit-source-consumer-identified`.
+
+Extended the local Windows lab patch so transfer-read resolves can be labeled by
+consumer callsite:
+
+- `texture-gather-slices`
+- `texture-fbo-copy`
+- `texture-fbo-sample`
+- `texture-fbo-wrap`
+- `surface-collapse`
+- `present`
+- `texture-cache-lock`
+- `blit-source`
+- `old-content-copy-source`
+
+The Android summarizer now maps those reason ids instead of reporting them as
+`unknown`.
+
+Build/parser proof:
+
+- `cmake --build rpcs3-upstream\build-msvc --config Release --target rpcs3 --parallel 6`
+  passed, with only the usual `LNK4098` warning.
+- `tools/summarize_eternal_sonata_rsx_auditor.ps1` passed PowerShell parser
+  validation after the reason-map update.
+
+Depth-skip consumer run:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-134503-rsx-transfer-consumer-profile-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=depth`
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=profile`
+- Host grade: `clean` across five snapshots.
+- Window routing: RPCS3 moved to `\\.\DISPLAY2`.
+- Visual result: reached field, but same-route screenshots showed black-backed
+  flower/foliage billboards. Treat this as a correctness warning for the depth
+  texture-barrier skip route, not as a speed win.
+- Auditor totals across `6240` frames:
+  - queue submits: `6379`, about `61.34` per 60 frames;
+  - hard sync flushes: `103`, about `0.99` per 60 frames;
+  - render-pass barrier breaks: `2966`, about `28.52` per 60 frames;
+  - image source `rt_res`: `11868`;
+  - image break source `rt_res`: `2966`;
+  - texture barriers color/depth: `0/0`;
+  - texture skips/post elides: `1867/675`;
+  - resolve calls/skips color/depth: calls `2967/0`, skips `0/0`;
+  - DMA transfer fences: `24`, about `33.57 MB`.
+- Resolve profile:
+  - count: `2967`, about `28.53` per 60 frames;
+  - reason: `blit-source`;
+  - duplicate tags: `0`;
+  - depth: `0`;
+  - format: `0x0000002c`;
+  - size: `1280x720`;
+  - samples/grid: `2`, `2x1`;
+  - pitch: `10240`;
+  - base: `0xc0b20000`.
+
+Baseline consumer run:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-134854-rsx-transfer-consumer-baseline-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER` off
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=profile`
+- Host grade: `moderate` only because the post-run snapshot caught Codex CPU
+  work; prelaunch, postlaunch, and field samples were clean.
+- Window routing: RPCS3 moved to `\\.\DISPLAY2`.
+- Visual result: reached field; same-camera screenshots looked clean, without
+  the black-backed flower/foliage billboards seen in the depth-skip run.
+- Auditor totals across `7200` frames:
+  - queue submits: `7325`, about `61.04` per 60 frames;
+  - hard sync flushes: `103`, about `0.86` per 60 frames;
+  - render-pass barrier breaks: `5102`, about `42.52` per 60 frames;
+  - break source `g/b/i/t`: `0/0/3401/1701`;
+  - image source `rt_res`: `13608`;
+  - image break source `rt_res`: `3401`;
+  - texture barriers color/depth: `0/1701`;
+  - resolve calls/skips color/depth: calls `3402/0`, skips `0/0`;
+  - DMA transfer fences: `15`, about `24.20 MB`.
+- Resolve profile:
+  - count: `3402`, about `28.35` per 60 frames;
+  - reason: `blit-source`;
+  - duplicate tags: `0`;
+  - depth: `0`;
+  - format: `0x0000002c`;
+  - size: `1280x720`;
+  - samples/grid: `2`, `2x1`;
+  - pitch: `10240`;
+  - base: `0xc0b20000`.
+
+Reading:
+
+- We found a real RSX-on-GPU target: the hot render-target resolve feeds the
+  blit engine through `texture_cache::upload_scaled_image`, not present, CPU
+  readback, texture-cache FBO sampling, or old-content copy.
+- The work is already GPU-adjacent, but it likely spills tile/locality because
+  the path resolves the MSAA render target, then uses the resolved image as the
+  blit source. A plausible GPU-use experiment is not "skip resolve"; it is a
+  fused MSAA-resolve-plus-blit path or renderpass-local resolve path for this
+  specific title/shape.
+- The depth texture-barrier skip route now has same-camera evidence of black
+  billboard artifacts. Do not port or promote it without a narrower fix.
+
+Next Windows step:
+
+1. Add a small blit-source geometry profiler for the `src_is_render_target`
+   branch in `texture_cache::upload_scaled_image`.
+2. Confirm whether the hot blit is a fixed-size, fixed-format
+   render-target-to-texture transfer.
+3. If stable, prototype a title-gated fused resolve/blit path and validate
+   field, first battle, and menu before any Thor port.

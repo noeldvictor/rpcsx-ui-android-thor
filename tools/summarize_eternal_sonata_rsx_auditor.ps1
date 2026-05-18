@@ -93,6 +93,17 @@ function Format-ResolveReason {
         1 { return "spill" }
         2 { return "transfer-read" }
         3 { return "memory-copy" }
+        4 { return "texture-gather-slices" }
+        5 { return "texture-fbo-copy" }
+        6 { return "texture-fbo-sample" }
+        7 { return "texture-fbo-wrap" }
+        8 { return "surface-collapse" }
+        9 { return "present" }
+        10 { return "texture-cache-lock" }
+        11 { return "surface-store-lookup" }
+        12 { return "framebuffer-readback" }
+        13 { return "blit-source" }
+        14 { return "old-content-copy-source" }
         default { return "unknown" }
     }
 }
