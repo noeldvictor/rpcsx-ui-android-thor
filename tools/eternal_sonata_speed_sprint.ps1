@@ -24,7 +24,7 @@ param(
     [string]$WindowsRsxDmaFence = "Off",
     [ValidateSet("Off", "Depth", "Color", "All")]
     [string]$WindowsRsxTextureBarrier = "Off",
-    [ValidateSet("Off", "SkipColor", "SkipDepth", "SkipAll")]
+    [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$WindowsRsxResolve = "Off",
     [int]$MaxSeconds = 120,
     [int]$AndroidSceneSeconds = 20,

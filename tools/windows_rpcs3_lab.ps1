@@ -24,7 +24,7 @@ param(
     [string]$RsxDmaFence = "Off",
     [ValidateSet("Off", "Depth", "Color", "All")]
     [string]$RsxTextureBarrier = "Off",
-    [ValidateSet("Off", "SkipColor", "SkipDepth", "SkipAll")]
+    [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$RsxResolve = "Off",
     [string[]]$SearchRoots = @(),
     [int]$MaxSeconds = 20,
@@ -1349,6 +1349,7 @@ $rsxTextureBarrierEnv = switch ($RsxTextureBarrier) {
     default { "off" }
 }
 $rsxResolveEnv = switch ($RsxResolve) {
+    "Profile" { "profile" }
     "SkipColor" { "color" }
     "SkipDepth" { "depth" }
     "SkipAll" { "all" }

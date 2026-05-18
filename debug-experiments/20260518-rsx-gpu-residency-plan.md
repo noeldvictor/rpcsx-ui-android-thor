@@ -376,3 +376,80 @@ to Thor. The next plausible RSX-on-GPU path is a correct resolve locality change
 profile resolve identity/geometry, then try batching/debouncing only provably
 duplicate resolves or moving the resolve into a hardware/local renderpass-safe
 path. Do not spend Thor time on blanket `SkipColor`.
+
+## Windows Lab Slice - 2026-05-18 Resolve Profile
+
+Status: `resolve-profile-single-target`.
+
+Added non-destructive resolve profiling to the Windows lab patch:
+
+- `tools/windows_rpcs3_lab.ps1 -RsxResolve Profile`
+- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxResolve Profile`
+- Process env: `RPCS3_ES_RSX_RESOLVE=profile`
+- Summary output:
+  `eternal-sonata-rsx-resolve-profile.csv` plus a `Resolve Profile` table in
+  `eternal-sonata-rsx-auditor-summary.md`
+
+Clean field capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-095926-rsx-resolve-profile-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=depth`
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=profile`
+- Host grade: `clean` across seven snapshots.
+- Visual result: correct-looking first playable field screenshot with FPS
+  overlay around `30 FPS`.
+- Auditor totals across `8940` frames:
+  - queue submits: `9073`, about `60.89` per 60 frames;
+  - hard sync flushes: `111`, about `0.74` per 60 frames;
+  - render-pass barrier breaks: `6873`, about `46.13` per 60 frames;
+  - image source `rt_res`: `27496`;
+  - image break source `rt_res`: `6873`;
+  - resolve calls/skips color/depth: calls `6874/0`, skips `0/0`;
+  - texture skips/post elides: `3437/3437`.
+- Resolve profile:
+  - count: `6874`, about `46.13` per 60 frames;
+  - depth: `0`;
+  - format: `0x0000002c`;
+  - size: `1280x720`;
+  - samples/grid: `2`, `2x1`;
+  - pitch: `10240`;
+  - base: `0xc0b20000`;
+  - key: `0x5d84ad5c95803672`.
+
+Duplicate-tag confirmation capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-100949-rsx-resolve-profile-dup-tags-windows/`
+- Host grade: `clean` across five snapshots.
+- Visual result: correct-looking first playable field screenshot.
+- Auditor totals across `7680` frames:
+  - queue submits: `7806`, about `60.98` per 60 frames;
+  - hard sync flushes: `104`, about `0.81` per 60 frames;
+  - render-pass barrier breaks: `4341`, about `33.91` per 60 frames;
+  - image source `rt_res`: `17368`;
+  - image break source `rt_res`: `4341`;
+  - resolve calls/skips color/depth: calls `4342/0`, skips `0/0`.
+- Resolve profile:
+  - same single target signature as the first profile run;
+  - count: `4342`, about `33.92` per 60 frames;
+  - duplicate last-use tags: `0`.
+
+Reading: Eternal Sonata field is not bouncing through many unrelated resolve
+targets. It is repeatedly resolving one `1280x720` 2x1 MSAA color render target,
+and the resolves are not simple duplicates of an unchanged last-use tag. The
+hot output is consumed, so `SkipColor` was a useful proof but not a feature.
+
+Next RSX-on-GPU route:
+
+1. Profile the resolve reason/callsite so we know whether the target is being
+   resolved for texture sampling, transfer/readback, present/blit, or another
+   consumer.
+2. Try a correct hardware/local resolve path only after that reason is known.
+   The global `Force Hardware MSAA Resolve` setting is a candidate A/B, but use
+   a reversible wrapper-controlled config override and screenshots because it
+   changes correctness-sensitive FBO sampling behavior.
+3. Do not port the local Windows resolve-skip code to Thor. Port only a narrow,
+   correct locality change after field, first battle, and menu survive.

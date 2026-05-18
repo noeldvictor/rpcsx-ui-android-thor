@@ -3,7 +3,8 @@ param(
     [string]$LogPath = "",
     [int]$Top = 15,
     [string]$OutPath = "",
-    [string]$CsvPath = ""
+    [string]$CsvPath = "",
+    [string]$ResolveProfileCsvPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -276,6 +277,41 @@ function Read-RsxAuditorRecord {
     return $record
 }
 
+function Read-RsxResolveProfileRecord {
+    param([string]$Line)
+
+    if ($Line -notmatch 'Thor RSX Resolve Profile:') {
+        return $null
+    }
+
+    $fields = @{}
+    foreach ($match in [regex]::Matches($Line, '(?<key>[A-Za-z0-9_()\/]+)=(?<value>\S+)')) {
+        $fields[$match.Groups['key'].Value] = $match.Groups['value'].Value
+    }
+
+    if (-not $fields.ContainsKey('frames')) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        frames  = Convert-AuditorNumber $fields['frames']
+        slot    = if ($fields.ContainsKey('slot')) { $fields['slot'] } else { "" }
+        count   = Convert-AuditorNumber $fields['count']
+        skips   = Convert-AuditorNumber $fields['skips']
+        dup     = Convert-AuditorNumber $fields['dup']
+        depth   = Convert-AuditorNumber $fields['depth']
+        fmt     = if ($fields.ContainsKey('fmt')) { $fields['fmt'] } else { "0x00000000" }
+        w       = Convert-AuditorNumber $fields['w']
+        h       = Convert-AuditorNumber $fields['h']
+        samples = Convert-AuditorNumber $fields['samples']
+        sx      = Convert-AuditorNumber $fields['sx']
+        sy      = Convert-AuditorNumber $fields['sy']
+        pitch   = Convert-AuditorNumber $fields['pitch']
+        base    = if ($fields.ContainsKey('base')) { $fields['base'] } else { "0x00000000" }
+        key     = if ($fields.ContainsKey('key')) { $fields['key'] } else { "0x0000000000000000" }
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
     if ([string]::IsNullOrWhiteSpace($RunDir)) {
         throw "Pass -RunDir or -LogPath."
@@ -301,12 +337,21 @@ if ([string]::IsNullOrWhiteSpace($OutPath)) {
 if ([string]::IsNullOrWhiteSpace($CsvPath)) {
     $CsvPath = Join-Path $RunDir "eternal-sonata-rsx-auditor-records.csv"
 }
+if ([string]::IsNullOrWhiteSpace($ResolveProfileCsvPath)) {
+    $ResolveProfileCsvPath = Join-Path $RunDir "eternal-sonata-rsx-resolve-profile.csv"
+}
 
 $records = New-Object System.Collections.Generic.List[object]
+$resolveProfileRecords = New-Object System.Collections.Generic.List[object]
 foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
     $record = Read-RsxAuditorRecord $line
     if ($null -ne $record) {
         $records.Add($record) | Out-Null
+    }
+
+    $resolveProfileRecord = Read-RsxResolveProfileRecord $line
+    if ($null -ne $resolveProfileRecord) {
+        $resolveProfileRecords.Add($resolveProfileRecord) | Out-Null
     }
 }
 
@@ -328,6 +373,10 @@ if ($records.Count -eq 0) {
 
 $records | Export-Csv -LiteralPath $CsvPath -NoTypeInformation -Encoding UTF8
 $lines.Add("- CSV: $CsvPath") | Out-Null
+if ($resolveProfileRecords.Count -gt 0) {
+    $resolveProfileRecords | Export-Csv -LiteralPath $ResolveProfileCsvPath -NoTypeInformation -Encoding UTF8
+    $lines.Add("- Resolve profile CSV: $ResolveProfileCsvPath") | Out-Null
+}
 
 $totalFrames = [UInt64](($records | Measure-Object -Property frames -Sum).Sum)
 $totalSubmits = [UInt64](($records | Measure-Object -Property submits -Sum).Sum)
@@ -400,6 +449,9 @@ $lines.Add("- Barrier-tracked buffer range: $(Format-AuditorDecimal $totalBarrie
 $lines.Add("- DMA transfer fences: all=$totalDmaAll / host=$totalDmaHost, bytes=$(Format-AuditorDecimal ($totalDmaMb + $totalDmaHostMb)) MB") | Out-Null
 $lines.Add("- Pipeline creates: graphics=$totalPipeGraphics compute=$totalPipeCompute slow=$totalPipeSlow total_us=$totalPipeUs") | Out-Null
 $lines.Add("- Detile/upload: detile=$totalDetile in=$(Format-AuditorDecimal $totalInMb) MB out=$(Format-AuditorDecimal $totalOutMb) MB simple_upload=$totalUpload upload=$(Format-AuditorDecimal $totalUploadMb) MB") | Out-Null
+if ($resolveProfileRecords.Count -gt 0) {
+    $lines.Add("- Resolve profile records: $($resolveProfileRecords.Count)") | Out-Null
+}
 
 $lines.Add("") | Out-Null
 $lines.Add("## Totals") | Out-Null
@@ -486,6 +538,59 @@ foreach ($group in $pressureGroups) {
         default { "No single RSX pressure bucket dominates this interval." }
     }
     $lines.Add(('| `{0}` | {1} | {2} | {3} |' -f $group.Name, $group.Count, $groupFrames, $reading)) | Out-Null
+}
+
+if ($resolveProfileRecords.Count -gt 0) {
+    $profileGroups = @(
+        $resolveProfileRecords |
+            Group-Object -Property key |
+            ForEach-Object {
+                $first = $_.Group[0]
+                [pscustomobject]@{
+                    key     = $_.Name
+                    count   = [UInt64](($_.Group | Measure-Object -Property count -Sum).Sum)
+                    skips   = [UInt64](($_.Group | Measure-Object -Property skips -Sum).Sum)
+                    dup     = [UInt64](($_.Group | Measure-Object -Property dup -Sum).Sum)
+                    depth   = $first.depth
+                    fmt     = $first.fmt
+                    w       = $first.w
+                    h       = $first.h
+                    samples = $first.samples
+                    sx      = $first.sx
+                    sy      = $first.sy
+                    pitch   = $first.pitch
+                    base    = $first.base
+                }
+            } |
+            Sort-Object -Property count -Descending
+    )
+
+    $lines.Add("") | Out-Null
+    $lines.Add("## Resolve Profile") | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add("| Rank | Count | Per 60 Frames | Skips | Dup Tags | Depth | Format | Size | Samples | Grid | Pitch | Base | Key |") | Out-Null
+    $lines.Add("| ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | --- | ---: | --- | --- |") | Out-Null
+
+    $rank = 1
+    foreach ($profile in @($profileGroups | Select-Object -First $Top)) {
+        $lines.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | `{6}` | {7}x{8} | {9} | {10}x{11} | {12} | `{13}` | `{14}` |' -f
+            $rank,
+            $profile.count,
+            (Format-AuditorRate $profile.count $totalFrames),
+            $profile.skips,
+            $profile.dup,
+            $profile.depth,
+            $profile.fmt,
+            $profile.w,
+            $profile.h,
+            $profile.samples,
+            $profile.sx,
+            $profile.sy,
+            $profile.pitch,
+            $profile.base,
+            $profile.key)) | Out-Null
+        $rank++
+    }
 }
 
 $lines.Add("") | Out-Null
