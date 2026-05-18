@@ -796,7 +796,7 @@ function Invoke-LabInputMacro {
         $nameLower = $name.ToLowerInvariant()
         $duration = $DefaultPressMs
 
-        if ($parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
+        if ($nameLower -ne "combo" -and $parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
             $duration = [int]$parts[1].Trim()
         }
 
@@ -834,6 +834,44 @@ function Invoke-LabInputMacro {
                 Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog
             }
             Start-Sleep -Milliseconds $duration
+            continue
+        }
+
+        if ($nameLower -eq "combo") {
+            try {
+                if ($parts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($parts[1])) {
+                    throw "Input combo token must look like combo:key1+key2:duration."
+                }
+
+                $comboParts = $parts[1].Trim() -split ':', 2
+                $comboKeys = @($comboParts[0] -split '\+' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                if ($comboKeys.Count -eq 0) {
+                    throw "Input combo token must include at least one key."
+                }
+
+                if ($comboParts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($comboParts[1])) {
+                    $duration = [int]$comboParts[1].Trim()
+                }
+
+                $handle = Wait-LabProcessWindow -Process $Process -TimeoutSeconds 1
+                if ($handle -ne [IntPtr]::Zero) {
+                    [LabInput.Win32]::SetForegroundWindow($handle) | Out-Null
+                }
+
+                $comboVks = @($comboKeys | ForEach-Object { Get-LabVirtualKey $_ })
+                Write-LabLine $RunLog "Input combo: $($comboKeys -join '+') ${duration}ms"
+                foreach ($vk in $comboVks) {
+                    [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+                }
+                Start-Sleep -Milliseconds $duration
+                for ($i = $comboVks.Count - 1; $i -ge 0; $i--) {
+                    [LabInput.Win32]::keybd_event($comboVks[$i], 0, 2, [UIntPtr]::Zero)
+                }
+                Start-Sleep -Milliseconds 80
+            } catch {
+                Write-LabLine $RunLog "Input combo failed: $($_.Exception.Message)"
+                throw
+            }
             continue
         }
 

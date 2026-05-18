@@ -214,6 +214,35 @@ a small process-MFC branch around the same DMA copy. The stronger next Windows
 experiment is LLVM dynamic `MFC_Cmd` fallback/codegen specialization for the
 `0x25cc` issuing block, then a separate look at `0x451c` list/small-GET issuing.
 
+### Windows RSX Blit-Source Fast Gate
+
+- Local Windows core experiment: fused the RSX blit-source MSAA resolve into a
+  compute path writing the cached destination, then transitioned the destination
+  back to shader-read layout so `blit_engine_dst` textures can be sampled without
+  the previous black-frame/layout assert.
+- Field fast proof:
+  `debug-captures/windows-lab/20260518-174657-rsx-blit-source-fast-shaderread-windows/`
+  reached correct field visuals on `\\.\DISPLAY2`, with `10,500` fast fused
+  resolves, zero verify resolves, and no fatal/assert strings.
+- Menu fast proof:
+  `debug-captures/windows-lab/20260518-175211-rsx-blit-source-fast-menu-shaderread-windows/`
+  reached the pause overlay with correct-looking field/menu composition, with
+  `10,008` fast fused resolves and no fatal/assert strings.
+- Battle-active fast proof:
+  `debug-captures/windows-lab/20260518-182149-rsx-blit-source-fast-battle-active-windows/`
+  reached the active first-battle tutorial overlay, with correct-looking battle
+  UI/character/background rendering, clean host snapshots, `6,510` fast fused
+  resolves, and no fatal/assert strings.
+- Wrapper follow-up: `tools/windows_rpcs3_lab.ps1` now supports
+  `combo:key1+key2:duration` input tokens, and
+  `tools/eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu|battle`
+  has repeatable Windows routes for the menu and first-battle gates.
+
+Reading: this is the first real RSX-on-GPU foothold for Eternal Sonata. It is
+not a Thor FPS win yet, but the Windows field/menu/battle correctness gate now
+justifies porting the narrow, title-gated blit-source fast path to the Android
+vendored core and measuring Adreno tile/barrier behavior.
+
 ## Notes
 
 Good candidates: bulk math/transform/decode/render-prep jobs whose outputs are consumed by RSX or large buffers.

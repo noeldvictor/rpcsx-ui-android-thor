@@ -93,9 +93,17 @@ function Get-SpeedLabel {
 function Get-SpeedWindowsSceneMacro {
     param([string]$Scene)
 
+    $loadField = "wait:45000;ls_down:120;wait:800;cross:180;wait:30000;cross:180;wait:1500;ls_up:120;wait:500;cross:180;wait:12000;start:180;wait:1500;cross:180;wait:35000"
+
     switch ($Scene) {
         "field" {
-            return "wait:45000;ls_down:120;wait:800;cross:180;wait:30000;cross:180;wait:1500;ls_up:120;wait:500;cross:180;wait:12000;start:180;wait:1500;cross:180;wait:35000;shot:100;wait:15000;shot:100"
+            return "$loadField;shot:100;wait:15000;shot:100"
+        }
+        "menu" {
+            return "$loadField;shot:100;start:180;wait:1000;shot:100;wait:5000;shot:100"
+        }
+        "battle" {
+            return "$loadField;shot:100;combo:ls_left+ls_down:2000;wait:20000;shot:100;dpad_down:120;wait:500;cross:180;wait:30000;shot:100;wait:30000;shot:100"
         }
         default {
             return ""
