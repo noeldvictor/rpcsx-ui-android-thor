@@ -564,3 +564,68 @@ means the next Windows A/B should target the transfer-read consumer:
    sampling for multisampled attachments.
 3. If it is a real transfer/copy consumer, instrument that callsite before
    attempting a different resolve scheduler.
+
+## Windows Lab Slice - 2026-05-18 Force Hardware MSAA Resolve A/B
+
+Status: `rejected-correctness`.
+
+Added a reversible Windows wrapper override:
+
+- `tools/windows_rpcs3_lab.ps1 -RsxForceHwMsaaResolve On|Off|Keep`
+- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxForceHwMsaaResolve On|Off|Keep`
+
+The wrapper edits RPCS3's `Force Hardware MSAA Resolve` setting before launch,
+records the old and new values in `windows-rpcs3-lab.txt`, and restores the old
+value after the run. The tested run changed `false -> true`, then restored
+`true -> false`; the config was checked afterward and is back to `false`.
+
+Clean field capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-132528-rsx-force-hw-msaa-resolve-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=depth`
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=profile`
+- Config override:
+  `Force Hardware MSAA Resolve: true`
+- Host grade: `clean` across five snapshots.
+- Screenshot:
+  `screenshots/screenshot-0131s.png`
+- Visual result: failed. The field rendered, but flower/foliage sprites showed
+  obvious black square backgrounds. Later screenshots showed repeated black
+  square flower/foliage tiles. Do not port or recommend this setting for Eternal
+  Sonata without a narrower fix.
+- Auditor totals across `6300` frames:
+  - queue submits: `6441`, about `61.34` per 60 frames;
+  - hard sync flushes: `104`, about `0.99` per 60 frames;
+  - render-pass barrier breaks: `3002`, about `28.59` per 60 frames;
+  - image source `rt_res`: `12028`;
+  - image break source `rt_res`: `3002`;
+  - resolve calls/skips color/depth: calls `3007/1906`, skips `0/0`;
+  - DMA transfer fences: `25`, about `33.58 MB`.
+- Resolve profile:
+  - color transfer-read: `3007`, about `28.64` per 60 frames,
+    `1280x720`, `fmt=0x0000002c`, base `0xc0b20000`;
+  - depth transfer-read: `1906`, about `18.15` per 60 frames,
+    `1280x720`, `fmt=0x00000081`, base `0xc1260000`;
+  - duplicate tags: `0`.
+
+Comparison to the previous clean reason-profile run:
+
+| Metric | Reason Profile Off | Force HW MSAA On | Reading |
+| --- | ---: | ---: | --- |
+| Frames | `7680` | `6300` | Different duration, compare normalized rates. |
+| Render-pass breaks / 60 | `33.82` | `28.59` | Mechanically lower. |
+| Color resolves / 60 | `33.83` | `28.64` | Lower, but not enough to matter if visuals break. |
+| Depth resolves / 60 | `0.00` | `18.15` | New depth resolve pressure appears. |
+| Visual correctness | pass | fail | Black square sprites reject the route. |
+
+Reading: global `Force Hardware MSAA Resolve` moves some work in the desired
+direction but changes FBO/MSAA sampling semantics enough to corrupt field
+sprites. This is useful evidence, not a speed win.
+
+Next Windows step: add consumer callsite labels around
+`surface_access::transfer_read` so the hot target splits into texture-cache FBO
+sampling, copy/dynamic texture processing, present, surface collapse, or another
+consumer. Then test only the hot consumer with a narrow locality experiment.

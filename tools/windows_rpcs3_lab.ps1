@@ -26,6 +26,8 @@ param(
     [string]$RsxTextureBarrier = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$RsxResolve = "Off",
+    [ValidateSet("Keep", "On", "Off")]
+    [string]$RsxForceHwMsaaResolve = "Keep",
     [string[]]$SearchRoots = @(),
     [int]$MaxSeconds = 20,
     [string]$InputMacro = "",
@@ -1023,6 +1025,46 @@ function Set-LabFpsOverlayConfig {
     return $false
 }
 
+function Set-LabForceHwMsaaResolveConfig {
+    param(
+        [string]$ConfigPath,
+        [string]$Mode
+    )
+
+    if ($Mode -eq "Keep" -or -not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+        return $null
+    }
+
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $original = [System.IO.File]::ReadAllText($ConfigPath, $utf8NoBom)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $found = $false
+    $oldValue = ""
+    $newValue = if ($Mode -eq "On") { "true" } else { "false" }
+
+    foreach ($line in [System.IO.File]::ReadLines($ConfigPath, $utf8NoBom)) {
+        if ($line -match '^  Force Hardware MSAA Resolve: (?<value>\S+)\s*$') {
+            $found = $true
+            $oldValue = $Matches['value']
+            $lines.Add("  Force Hardware MSAA Resolve: $newValue")
+        } else {
+            $lines.Add($line)
+        }
+    }
+
+    $updated = ($lines -join [Environment]::NewLine) + [Environment]::NewLine
+    if ($updated -ne $original) {
+        [System.IO.File]::WriteAllText($ConfigPath, $updated, $utf8NoBom)
+    }
+
+    return [pscustomobject]@{
+        found = $found
+        old_value = $oldValue
+        new_value = $newValue
+        changed = ($updated -ne $original)
+    }
+}
+
 function Update-LabConfigDatabase {
     param(
         [string]$ConfigDbPath,
@@ -1127,6 +1169,14 @@ Write-LabLine $runLog "- Qt: $qtRoot"
 Write-LabLine $runLog "- Vulkan/vcpkg: $vcpkgRoot"
 $fpsConfigChanged = Set-LabFpsOverlayConfig -ConfigPath $rpcs3Config
 Write-LabLine $runLog "- FPS overlay config: $(if ($fpsConfigChanged) { 'updated' } else { 'already-enabled-or-missing' })"
+$forceHwMsaaResolveOverride = Set-LabForceHwMsaaResolveConfig -ConfigPath $rpcs3Config -Mode $RsxForceHwMsaaResolve
+if ($null -eq $forceHwMsaaResolveOverride) {
+    Write-LabLine $runLog "- Force Hardware MSAA Resolve override: keep"
+} elseif ($forceHwMsaaResolveOverride.found) {
+    Write-LabLine $runLog "- Force Hardware MSAA Resolve override: $($forceHwMsaaResolveOverride.old_value) -> $($forceHwMsaaResolveOverride.new_value) changed=$($forceHwMsaaResolveOverride.changed)"
+} else {
+    Write-LabLine $runLog "- Force Hardware MSAA Resolve override: key missing"
+}
 Update-LabConfigDatabase -ConfigDbPath $rpcs3ConfigDb -TitleId $TitleId -Force ([bool]$RefreshConfigDb) -Skip ([bool]$SkipConfigDbRefresh) -RunLog $runLog
 if ($Action -eq "Run") {
     if ($SkipAgentInputProfile) {
@@ -1234,6 +1284,7 @@ Write-LabLine $runLog "- RSX auditor: $RsxAuditor"
 Write-LabLine $runLog "- RSX DMA fence: $RsxDmaFence"
 Write-LabLine $runLog "- RSX texture barrier: $RsxTextureBarrier"
 Write-LabLine $runLog "- RSX resolve probe: $RsxResolve"
+Write-LabLine $runLog "- RSX Force Hardware MSAA Resolve: $RsxForceHwMsaaResolve"
 if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
     $gpuProbeDumpDir = Join-Path $runDir "spu-images"
     Write-LabLine $runLog "- Eternal Sonata GPU probe SPU image dump dir: $gpuProbeDumpDir"
@@ -1488,6 +1539,14 @@ if (Test-Path -LiteralPath $sourceLog) {
                 Write-LabLine $runLog "GPU probe summary failed: $($_.Exception.Message)"
             }
         }
+    }
+}
+
+if ($null -ne $forceHwMsaaResolveOverride -and $forceHwMsaaResolveOverride.found) {
+    $restoreMode = if ($forceHwMsaaResolveOverride.old_value -match '^(?i:true|1|yes|on)$') { "On" } else { "Off" }
+    $restoreResult = Set-LabForceHwMsaaResolveConfig -ConfigPath $rpcs3Config -Mode $restoreMode
+    if ($null -ne $restoreResult) {
+        Write-LabLine $runLog "- Force Hardware MSAA Resolve restored: $($restoreResult.old_value) -> $($restoreResult.new_value) changed=$($restoreResult.changed)"
     }
 }
 
