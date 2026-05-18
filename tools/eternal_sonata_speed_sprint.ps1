@@ -19,6 +19,8 @@ param(
     [string]$EternalSonataGpuProbe = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataMfcShapeProbe = "Off",
+    [ValidateSet("Off", "Verify", "Fast")]
+    [string]$EternalSonataMfcLadder = "Off",
     [ValidateSet("Off", "Verify")]
     [string]$EternalSonataDmaSuperPath = "Off",
     [string]$WindowsRsxAuditor = "Off",
@@ -325,6 +327,7 @@ switch ($Action) {
             EternalSonataSemaphoreSuperPath = $EternalSonataSemaphoreSuperPath
             EternalSonataGpuProbe = $EternalSonataGpuProbe
             EternalSonataMfcShapeProbe = $EternalSonataMfcShapeProbe
+            EternalSonataMfcLadder = $EternalSonataMfcLadder
             EternalSonataDmaSuperPath = $EternalSonataDmaSuperPath
             RsxAuditor = $WindowsRsxAuditor
             RsxDmaFence = $WindowsRsxDmaFence

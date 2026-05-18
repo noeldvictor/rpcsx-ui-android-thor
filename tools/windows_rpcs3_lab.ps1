@@ -19,6 +19,8 @@ param(
     [string]$EternalSonataGpuProbe = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataMfcShapeProbe = "Off",
+    [ValidateSet("Off", "Verify", "Fast")]
+    [string]$EternalSonataMfcLadder = "Off",
     [ValidateSet("Off", "Verify")]
     [string]$EternalSonataDmaSuperPath = "Off",
     [string]$RsxAuditor = "Off",
@@ -1284,6 +1286,7 @@ if ($EternalSonataWaitSuperPath -eq "Clamp") {
 Write-LabLine $runLog "- Eternal Sonata semaphore ESRCH superpath: $EternalSonataSemaphoreSuperPath"
 Write-LabLine $runLog "- Eternal Sonata GPU candidate probe: $EternalSonataGpuProbe"
 Write-LabLine $runLog "- Eternal Sonata MFC shape probe: $EternalSonataMfcShapeProbe"
+Write-LabLine $runLog "- Eternal Sonata MFC ladder: $EternalSonataMfcLadder"
 Write-LabLine $runLog "- Eternal Sonata DMA superpath: $EternalSonataDmaSuperPath"
 Write-LabLine $runLog "- RSX auditor: $RsxAuditor"
 Write-LabLine $runLog "- RSX DMA fence: $RsxDmaFence"
@@ -1291,7 +1294,7 @@ Write-LabLine $runLog "- RSX texture barrier: $RsxTextureBarrier"
 Write-LabLine $runLog "- RSX resolve probe: $RsxResolve"
 Write-LabLine $runLog "- RSX blit-source resolve: $RsxBlitSourceResolve"
 Write-LabLine $runLog "- RSX Force Hardware MSAA Resolve: $RsxForceHwMsaaResolve"
-if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
+if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
     $gpuProbeDumpDir = Join-Path $runDir "spu-images"
     Write-LabLine $runLog "- Eternal Sonata GPU probe SPU image dump dir: $gpuProbeDumpDir"
 }
@@ -1359,6 +1362,7 @@ $previousEsSemaSuperPath = [Environment]::GetEnvironmentVariable("RPCS3_ES_SEMA_
 $previousEsGpuProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_GPU_PROBE", "Process")
 $previousEsGpuProbeDumpDir = [Environment]::GetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", "Process")
 $previousEsMfcShapeProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", "Process")
+$previousEsMfcLadder = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_LADDER", "Process")
 $previousEsDmaSuperPath = [Environment]::GetEnvironmentVariable("RPCS3_ES_DMA_SUPERPATH", "Process")
 $previousRsxAuditor = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_AUDITOR", "Process")
 $previousRsxDmaFence = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", "Process")
@@ -1388,6 +1392,11 @@ $esGpuProbeEnv = switch ($EternalSonataGpuProbe) {
 }
 $esMfcShapeProbeEnv = switch ($EternalSonataMfcShapeProbe) {
     "Profile" { "profile" }
+    default { "off" }
+}
+$esMfcLadderEnv = switch ($EternalSonataMfcLadder) {
+    "Verify" { "verify" }
+    "Fast" { "fast" }
     default { "off" }
 }
 $esDmaSuperPathEnv = switch ($EternalSonataDmaSuperPath) {
@@ -1422,7 +1431,7 @@ $rsxBlitSourceResolveEnv = switch ($RsxBlitSourceResolve) {
     "Fast" { "fast" }
     default { "off" }
 }
-$esGpuProbeDumpDir = if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") { Join-Path $runDir "spu-images" } else { "" }
+$esGpuProbeDumpDir = if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") { Join-Path $runDir "spu-images" } else { "" }
 
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPURS_SUPERPATH", $esSuperPathEnv, "Process")
 if ($EternalSonataJoinSpin -ge 0) {
@@ -1434,6 +1443,7 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE", $esGpuProbeEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", $esGpuProbeDumpDir, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", $esMfcShapeProbeEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $esMfcLadderEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_DMA_SUPERPATH", $esDmaSuperPathEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_AUDITOR", $rsxAuditorEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", $rsxDmaFenceEnv, "Process")
@@ -1451,6 +1461,7 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE", $previousEsGpuProbe, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", $previousEsGpuProbeDumpDir, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", $previousEsMfcShapeProbe, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $previousEsMfcLadder, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_DMA_SUPERPATH", $previousEsDmaSuperPath, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_AUDITOR", $previousRsxAuditor, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", $previousRsxDmaFence, "Process")
@@ -1547,7 +1558,7 @@ if (Test-Path -LiteralPath $sourceLog) {
     Copy-Item -LiteralPath $sourceLog -Destination $destLog -Force
     Write-LabLine $runLog "RPCS3 log: $destLog"
 
-    if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
+    if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
         $gpuProbeSummary = Join-Path $PSScriptRoot "summarize_eternal_sonata_gpu_probe.ps1"
         if (Test-Path -LiteralPath $gpuProbeSummary -PathType Leaf) {
             try {

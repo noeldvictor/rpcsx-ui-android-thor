@@ -188,6 +188,32 @@ future GPU superpath claims must use an optimized native core baseline.
 
 `windows-probe-android-baseline`: Android now confirms the Windows DMA/MFC hot-map for image `0x958dfe208b686622` around PCs `0x25cc` and `0x451c`. The tested semaphore, RSX-threading, RPCS3 scheduler modes, exact job-output replay, and first list-copy shortcut did not produce field FPS wins. Reduced-loop emission now gives a modest but real field/menu gain, so continue that codegen path while RSX/Vulkan traffic is investigated directly. Do not build Vulkan compute fast mode from the field sample until an RSX-local or GPU-consumed output path is observed.
 
+### Windows MFC Ladder Gate
+
+- Added Windows-only `RPCS3_ES_MFC_LADDER=verify|fast`, surfaced as
+  `tools/eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field
+  -EternalSonataMfcLadder Verify|Fast`.
+- Gate is intentionally narrow: `BLUS30161`, SPU image
+  `0x958dfe208b686622`, PC `0x25cc`, `MFC_GET_CMD`, tag `31`, size `0x4000`,
+  EAH `0`, main-memory EA, and LSAs in the observed `0x3000 + n*0x4000`
+  ladder.
+- Verify run:
+  `debug-captures/windows-lab/20260518-162907-mfc-ladder-verify-windows/`
+  reached the correct field on `\\.\DISPLAY2`, logged `20,748` eligible hits,
+  `20,748` verify hits, zero generic-ordering blocks, and zero ordering
+  mismatches.
+- Fast run:
+  `debug-captures/windows-lab/20260518-163226-mfc-ladder-fast-windows/`
+  reached the correct field on `\\.\DISPLAY2`, logged `20,898` fast hits, zero
+  blocks, and zero mismatches.
+- Both runs still showed zero RSX-local traffic. This is a verified CPU/SPU MFC
+  lane, not an RSX/GPU lane.
+
+Reading: the ladder gate is safe enough to keep as a probe, but it mostly skips
+a small process-MFC branch around the same DMA copy. The stronger next Windows
+experiment is LLVM dynamic `MFC_Cmd` fallback/codegen specialization for the
+`0x25cc` issuing block, then a separate look at `0x451c` list/small-GET issuing.
+
 ## Notes
 
 Good candidates: bulk math/transform/decode/render-prep jobs whose outputs are consumed by RSX or large buffers.

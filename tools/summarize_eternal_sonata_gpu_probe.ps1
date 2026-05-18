@@ -4,7 +4,8 @@ param(
     [int]$Top = 25,
     [string]$OutPath = "",
     [string]$CsvPath = "",
-    [string]$MfcShapeCsvPath = ""
+    [string]$MfcShapeCsvPath = "",
+    [string]$MfcLadderCsvPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -303,6 +304,53 @@ function Read-MfcShapeRecord {
     }
 }
 
+function Read-MfcLadderRecord {
+    param([string]$Line)
+
+    if ($Line -notmatch 'Eternal Sonata MFC ladder probe:') {
+        return $null
+    }
+
+    $fields = @{}
+    foreach ($match in [regex]::Matches($Line, '(?<key>[A-Za-z0-9_]+)=(?:"(?<quoted>[^"]*)"|(?<value>\S+))')) {
+        $key = $match.Groups['key'].Value
+        $quoted = $match.Groups['quoted']
+        $value = if ($quoted.Success) { $quoted.Value } else { $match.Groups['value'].Value }
+        $fields[$key] = $value
+    }
+
+    if (-not $fields.ContainsKey('eligible')) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        mode        = $fields['mode']
+        ladder_mode = $fields['ladder_mode']
+        title       = $fields['title']
+        group       = Format-ProbeHex $fields['group']
+        group_name  = $fields['group_name']
+        spu         = Format-ProbeHex $fields['spu']
+        spu_index   = [int](Convert-ProbeNumber $fields['spu_index'])
+        spu_name    = $fields['spu_name']
+        entry       = Format-ProbeHex $fields['entry']
+        image_sig   = Format-ProbeHex $fields['image_sig']
+        pc          = Format-ProbeHex $fields['pc']
+        last_lsa    = Format-ProbeHex $fields['last_lsa']
+        eligible    = Convert-ProbeNumber $fields['eligible']
+        verify_hits = Convert-ProbeNumber $fields['verify_hits']
+        fast_hits   = Convert-ProbeNumber $fields['fast_hits']
+        blocked     = Convert-ProbeNumber $fields['blocked']
+        mismatches  = Convert-ProbeNumber $fields['mismatches']
+        bytes       = Convert-ProbeNumber $fields['bytes']
+        eal_first   = Format-ProbeHex $fields['eal_first']
+        eal_last    = Format-ProbeHex $fields['eal_last']
+        eal_min     = Format-ProbeHex $fields['eal_min']
+        eal_max     = Format-ProbeHex $fields['eal_max']
+        cause       = Format-ProbeHex $fields['cause']
+        status      = Format-ProbeHex $fields['status']
+    }
+}
+
 function Read-RsxAuditorRecord {
     param([string]$Line)
 
@@ -363,10 +411,14 @@ if ([string]::IsNullOrWhiteSpace($CsvPath)) {
 if ([string]::IsNullOrWhiteSpace($MfcShapeCsvPath)) {
     $MfcShapeCsvPath = Join-Path $RunDir "eternal-sonata-mfc-shape-profile.csv"
 }
+if ([string]::IsNullOrWhiteSpace($MfcLadderCsvPath)) {
+    $MfcLadderCsvPath = Join-Path $RunDir "eternal-sonata-mfc-ladder-profile.csv"
+}
 
 $records = New-Object System.Collections.Generic.List[object]
 $rsxAuditorRecords = New-Object System.Collections.Generic.List[object]
 $mfcShapeRecords = New-Object System.Collections.Generic.List[object]
+$mfcLadderRecords = New-Object System.Collections.Generic.List[object]
 $mfcShapeGroups = @{}
 $mfcShapeRawRecords = [UInt64]0
 foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
@@ -450,6 +502,11 @@ foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
             }
         }
     }
+
+    $mfcLadderRecord = Read-MfcLadderRecord $line
+    if ($null -ne $mfcLadderRecord) {
+        $mfcLadderRecords.Add($mfcLadderRecord) | Out-Null
+    }
 }
 
 foreach ($shape in $mfcShapeGroups.Values) {
@@ -463,6 +520,7 @@ $lines.Add("- Generated: $(Get-Date -Format o)") | Out-Null
 $lines.Add("- Log: $LogPath") | Out-Null
 $lines.Add("- Records: $($records.Count)") | Out-Null
 $lines.Add("- MFC shape records: $mfcShapeRawRecords raw, $($mfcShapeRecords.Count) aggregated") | Out-Null
+$lines.Add("- MFC ladder records: $($mfcLadderRecords.Count)") | Out-Null
 $lines.Add("- RSX auditor records: $($rsxAuditorRecords.Count)") | Out-Null
 $lines.Add("- Top rows: $Top") | Out-Null
 
@@ -481,6 +539,12 @@ if ($mfcShapeRecords.Count -gt 0) {
         Select-Object mode,title,group,group_name,spu,spu_index,spu_name,entry,image_sig,pc,block_hash,cmd,tag,size,lsa,flags,count,bytes,eal_first,eal_last,eal_min,eal_max,overflow,cause,status |
         Export-Csv -LiteralPath $MfcShapeCsvPath -NoTypeInformation -Encoding UTF8
     $lines.Add("- MFC shape CSV: $MfcShapeCsvPath") | Out-Null
+}
+if ($mfcLadderRecords.Count -gt 0) {
+    $mfcLadderRecords |
+        Select-Object mode,ladder_mode,title,group,group_name,spu,spu_index,spu_name,entry,image_sig,pc,last_lsa,eligible,verify_hits,fast_hits,blocked,mismatches,bytes,eal_first,eal_last,eal_min,eal_max,cause,status |
+        Export-Csv -LiteralPath $MfcLadderCsvPath -NoTypeInformation -Encoding UTF8
+    $lines.Add("- MFC ladder CSV: $MfcLadderCsvPath") | Out-Null
 }
 
 $totalBytes = [UInt64](($records | Measure-Object -Property total_bytes -Sum).Sum)
@@ -581,6 +645,53 @@ if ($mfcShapeRecords.Count -gt 0) {
 
     $lines.Add("") | Out-Null
     $lines.Add("MFC shape reading: high counts with a small command/size/tag/LSA set are a codegen/HLE candidate; many one-off rows or large overflow means the path is still too dynamic for a fast path.") | Out-Null
+}
+
+if ($mfcLadderRecords.Count -gt 0) {
+    $lines.Add("") | Out-Null
+    $lines.Add("## MFC 0x25cc Ladder Gate") | Out-Null
+    $lines.Add("") | Out-Null
+
+    $ladderEligible = [UInt64](($mfcLadderRecords | Measure-Object -Property eligible -Sum).Sum)
+    $ladderVerify = [UInt64](($mfcLadderRecords | Measure-Object -Property verify_hits -Sum).Sum)
+    $ladderFast = [UInt64](($mfcLadderRecords | Measure-Object -Property fast_hits -Sum).Sum)
+    $ladderBlocked = [UInt64](($mfcLadderRecords | Measure-Object -Property blocked -Sum).Sum)
+    $ladderMismatches = [UInt64](($mfcLadderRecords | Measure-Object -Property mismatches -Sum).Sum)
+    $ladderBytes = [UInt64](($mfcLadderRecords | Measure-Object -Property bytes -Sum).Sum)
+
+    $lines.Add("- Eligible hits: $ladderEligible") | Out-Null
+    $lines.Add("- Verify hits: $ladderVerify") | Out-Null
+    $lines.Add("- Fast hits: $ladderFast") | Out-Null
+    $lines.Add("- Blocked by generic MFC ordering: $ladderBlocked") | Out-Null
+    $lines.Add("- Ordering mismatches: $ladderMismatches") | Out-Null
+    $lines.Add("- Ladder bytes: $(Format-ProbeBytes $ladderBytes)") | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add("| Rank | Mode | PC | Eligible | Verify | Fast | Blocked | Mismatches | Bytes | Last LSA | EAL Range | Group | SPU | Image |") | Out-Null
+    $lines.Add("| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |") | Out-Null
+
+    $rank = 1
+    foreach ($record in @($mfcLadderRecords | Sort-Object -Property eligible, bytes -Descending | Select-Object -First $Top)) {
+        $lines.Add(('| {0} | `{1}` | `{2}` | {3} | {4} | {5} | {6} | {7} | {8} | `{9}` | `{10}`-`{11}` | `{12}` | `{13}` | `{14}` |' -f
+            $rank,
+            $record.ladder_mode,
+            $record.pc,
+            $record.eligible,
+            $record.verify_hits,
+            $record.fast_hits,
+            $record.blocked,
+            $record.mismatches,
+            (Format-ProbeBytes $record.bytes),
+            $record.last_lsa,
+            $record.eal_min,
+            $record.eal_max,
+            $record.group_name,
+            $record.spu_name,
+            $record.image_sig)) | Out-Null
+        $rank++
+    }
+
+    $lines.Add("") | Out-Null
+    $lines.Add("MFC ladder reading: verify mode should show eligible hits with zero ordering mismatches before fast mode is trusted. A fast-mode FPS win here would be a CPU/SPU dispatch/codegen win, not proof of GPU-resident work.") | Out-Null
 }
 
 $lines.Add("") | Out-Null
