@@ -199,6 +199,7 @@ function Read-RsxAuditorRecord {
     $barriers = Split-AuditorTuple $fields['barriers(g/b/i/t/all)'] 5
     $imageSources = Split-AuditorImageSourceTuple $fields 'img_src'
     $imageBreakSources = Split-AuditorImageSourceTuple $fields 'img_break'
+    $resolve = Split-AuditorTuple $fields['resolve(color/depth/skip_color/skip_depth)'] 4
     $pipe = Split-AuditorTuple $fields['pipe(g/c/slow/us)'] 4
 
     $record = [pscustomobject]@{
@@ -249,6 +250,10 @@ function Read-RsxAuditorRecord {
         forced_skip       = Convert-AuditorNumber $fields['forced_skip']
         post_elide        = Convert-AuditorNumber $fields['post_elide']
         post_persist      = Convert-AuditorNumber $fields['post_persist']
+        resolve_color     = $resolve[0]
+        resolve_depth     = $resolve[1]
+        resolve_skip_color = $resolve[2]
+        resolve_skip_depth = $resolve[3]
         dma_transfer_all  = Convert-AuditorNumber $fields['dma_transfer_all']
         dma_mb            = Convert-AuditorDecimal $fields['dma_mb']
         dma_transfer_host = Convert-AuditorNumber $fields['dma_transfer_host']
@@ -365,6 +370,10 @@ $totalTexColor = [UInt64](($records | Measure-Object -Property tex_color -Sum).S
 $totalTexDepth = [UInt64](($records | Measure-Object -Property tex_depth -Sum).Sum)
 $totalTexSkip = [UInt64](($records | Measure-Object -Property tex_skip -Sum).Sum)
 $totalPostElide = [UInt64](($records | Measure-Object -Property post_elide -Sum).Sum)
+$totalResolveColor = [UInt64](($records | Measure-Object -Property resolve_color -Sum).Sum)
+$totalResolveDepth = [UInt64](($records | Measure-Object -Property resolve_depth -Sum).Sum)
+$totalResolveSkipColor = [UInt64](($records | Measure-Object -Property resolve_skip_color -Sum).Sum)
+$totalResolveSkipDepth = [UInt64](($records | Measure-Object -Property resolve_skip_depth -Sum).Sum)
 $totalDmaAll = [UInt64](($records | Measure-Object -Property dma_transfer_all -Sum).Sum)
 $totalDmaMb = [double](($records | Measure-Object -Property dma_mb -Sum).Sum)
 $totalDmaHost = [UInt64](($records | Measure-Object -Property dma_transfer_host -Sum).Sum)
@@ -386,6 +395,7 @@ $lines.Add("- Hard sync flushes: $totalHardSync ($(Format-AuditorRate $totalHard
 $lines.Add("- Render-pass barrier breaks: $totalRpBreak ($(Format-AuditorRate $totalRpBreak $totalFrames) per 60 frames)") | Out-Null
 $lines.Add("- Image barrier source totals unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up: $totalImageSrcUnknown/$totalImageSrcRtRes/$totalImageSrcRtUnres/$totalImageSrcRtPost/$totalImageSrcRtOther/$totalImageSrcTc/$totalImageSrcDraw/$totalImageSrcPresent/$totalImageSrcTexture/$totalImageSrcUp") | Out-Null
 $lines.Add("- Image break source totals unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up: $totalImageBreakUnknown/$totalImageBreakRtRes/$totalImageBreakRtUnres/$totalImageBreakRtPost/$totalImageBreakRtOther/$totalImageBreakTc/$totalImageBreakDraw/$totalImageBreakPresent/$totalImageBreakTexture/$totalImageBreakUp") | Out-Null
+$lines.Add("- Resolve calls/skips color/depth: calls=$totalResolveColor/$totalResolveDepth skips=$totalResolveSkipColor/$totalResolveSkipDepth") | Out-Null
 $lines.Add("- Barrier-tracked buffer range: $(Format-AuditorDecimal $totalBarrierMb) MB") | Out-Null
 $lines.Add("- DMA transfer fences: all=$totalDmaAll / host=$totalDmaHost, bytes=$(Format-AuditorDecimal ($totalDmaMb + $totalDmaHostMb)) MB") | Out-Null
 $lines.Add("- Pipeline creates: graphics=$totalPipeGraphics compute=$totalPipeCompute slow=$totalPipeSlow total_us=$totalPipeUs") | Out-Null
@@ -409,6 +419,8 @@ $lines.Add(('| Image breaks unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/te
 $lines.Add(('| Barrier MB | {0} | {1} | Buffer-range traffic touched by barriers. |' -f (Format-AuditorDecimal $totalBarrierMb), (Format-AuditorRate $totalBarrierMb $totalFrames))) | Out-Null
 $lines.Add(('| Texture barriers color/depth | {0}/{1} | - | Color versus depth feedback risk. |' -f $totalTexColor, $totalTexDepth)) | Out-Null
 $lines.Add(('| Texture skips/post elides | {0}/{1} | - | Existing skip or post-barrier elision activity. |' -f $totalTexSkip, $totalPostElide)) | Out-Null
+$lines.Add(('| Resolve calls color/depth | {0}/{1} | {2}/{3} | MSAA resolve demand before any lab skip. |' -f $totalResolveColor, $totalResolveDepth, (Format-AuditorRate $totalResolveColor $totalFrames), (Format-AuditorRate $totalResolveDepth $totalFrames))) | Out-Null
+$lines.Add(('| Resolve skips color/depth | {0}/{1} | {2}/{3} | Unsafe lab probe activity; screenshots decide whether route survives. |' -f $totalResolveSkipColor, $totalResolveSkipDepth, (Format-AuditorRate $totalResolveSkipColor $totalFrames), (Format-AuditorRate $totalResolveSkipDepth $totalFrames))) | Out-Null
 $lines.Add(('| DMA fences all/host | {0}/{1} | {2}/{3} | Candidate for narrower host-read or GPU-resident path. |' -f $totalDmaAll, $totalDmaHost, (Format-AuditorRate $totalDmaAll $totalFrames), (Format-AuditorRate $totalDmaHost $totalFrames))) | Out-Null
 $lines.Add(('| DMA MB all/host | {0}/{1} | {2}/{3} | Bandwidth tied to transfer fences. |' -f (Format-AuditorDecimal $totalDmaMb), (Format-AuditorDecimal $totalDmaHostMb), (Format-AuditorRate $totalDmaMb $totalFrames), (Format-AuditorRate $totalDmaHostMb $totalFrames))) | Out-Null
 $lines.Add(('| Query waits | {0} | {1} | Occlusion/query wait pressure if nonzero. |' -f $totalQueryWait, (Format-AuditorRate $totalQueryWait $totalFrames))) | Out-Null

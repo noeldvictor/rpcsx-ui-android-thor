@@ -326,3 +326,53 @@ scheduling/caching/locality, not texture-cache DMA fences and not generic GPU
 compute. A blunt `preserve_renderpass` flip is risky because this path enters
 compute resolve work; use a narrow, title-gated experiment with field/menu/battle
 visual validation.
+
+## Windows Lab Slice - 2026-05-18 Morning
+
+Status: `resolve-skip-rejected`.
+
+Added an unsafe, title-gated Windows probe for `render_target::resolve`:
+
+- `tools/windows_rpcs3_lab.ps1 -RsxResolve SkipColor|SkipDepth|SkipAll`
+- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxResolve SkipColor|SkipDepth|SkipAll`
+- Process env: `RPCS3_ES_RSX_RESOLVE=color|depth|all`
+- Auditor tuple:
+  `resolve(color/depth/skip_color/skip_depth)=...`
+
+Useful capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-093227-rsx-resolve-skip-color-rerun-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=depth`
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=color`
+- Host grade: `clean` across prelaunch, postlaunch, field samples, and postrun.
+- Screenshots:
+  `screenshots/screenshot-0131s.png`,
+  `screenshots/screenshot-0153s.png`
+- Visual result: failed. The field was almost entirely black with only a small
+  bright player/effect blob and the FPS overlay visible. Baseline comparison
+  remains
+  `debug-captures/windows-lab/20260517-231417-rsx-rt-labels-depth-windows/screenshots/screenshot-0134s.png`.
+- Auditor totals across `8940` frames:
+  - queue submits: `9075`, about `60.91` per 60 frames;
+  - hard sync flushes: `113`, about `0.76` per 60 frames;
+  - render-pass barrier breaks: `0`;
+  - image barrier sources
+    `unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up`:
+    `0/0/0/0/0/7/0/151/0/0`;
+  - image break sources
+    `unk/rt_res/rt_unres/rt_post/rt_other/tc/draw/pres/tex/up`:
+    `0/0/0/0/0/0/0/0/0/0`;
+  - resolve calls/skips color/depth: calls `6876/0`, skips `6876/0`;
+  - texture skips/post elides: `3438/3438`;
+  - DMA transfer fences: `15`, about `24.20 MB`.
+
+Reading: the destructive probe proves the hot `render_target::resolve` output is
+consumed by the field render. Removing the resolves mechanically eliminates the
+render-pass-break counter, but it is not visually correct and must not be ported
+to Thor. The next plausible RSX-on-GPU path is a correct resolve locality change:
+profile resolve identity/geometry, then try batching/debouncing only provably
+duplicate resolves or moving the resolve into a hardware/local renderpass-safe
+path. Do not spend Thor time on blanket `SkipColor`.

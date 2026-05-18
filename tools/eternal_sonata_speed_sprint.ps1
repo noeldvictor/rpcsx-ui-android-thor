@@ -24,6 +24,8 @@ param(
     [string]$WindowsRsxDmaFence = "Off",
     [ValidateSet("Off", "Depth", "Color", "All")]
     [string]$WindowsRsxTextureBarrier = "Off",
+    [ValidateSet("Off", "SkipColor", "SkipDepth", "SkipAll")]
+    [string]$WindowsRsxResolve = "Off",
     [int]$MaxSeconds = 120,
     [int]$AndroidSceneSeconds = 20,
     [int]$ScreenshotEverySeconds = 15,
@@ -320,6 +322,7 @@ switch ($Action) {
             RsxAuditor = $WindowsRsxAuditor
             RsxDmaFence = $WindowsRsxDmaFence
             RsxTextureBarrier = $WindowsRsxTextureBarrier
+            RsxResolve = $WindowsRsxResolve
             MaxSeconds = $MaxSeconds
             ScreenshotEverySeconds = $ScreenshotEverySeconds
             ScreenshotStartSeconds = $ScreenshotStartSeconds
