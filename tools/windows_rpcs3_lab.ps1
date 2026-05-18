@@ -26,6 +26,8 @@ param(
     [string]$RsxTextureBarrier = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$RsxResolve = "Off",
+    [ValidateSet("Off", "Fast")]
+    [string]$RsxBlitSourceResolve = "Off",
     [ValidateSet("Keep", "On", "Off")]
     [string]$RsxForceHwMsaaResolve = "Keep",
     [string[]]$SearchRoots = @(),
@@ -1284,6 +1286,7 @@ Write-LabLine $runLog "- RSX auditor: $RsxAuditor"
 Write-LabLine $runLog "- RSX DMA fence: $RsxDmaFence"
 Write-LabLine $runLog "- RSX texture barrier: $RsxTextureBarrier"
 Write-LabLine $runLog "- RSX resolve probe: $RsxResolve"
+Write-LabLine $runLog "- RSX blit-source resolve: $RsxBlitSourceResolve"
 Write-LabLine $runLog "- RSX Force Hardware MSAA Resolve: $RsxForceHwMsaaResolve"
 if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
     $gpuProbeDumpDir = Join-Path $runDir "spu-images"
@@ -1357,6 +1360,7 @@ $previousRsxAuditor = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_AUDITO
 $previousRsxDmaFence = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", "Process")
 $previousRsxTextureBarrier = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_TEXTURE_BARRIER", "Process")
 $previousRsxResolve = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_RESOLVE", "Process")
+$previousRsxBlitSourceResolve = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE", "Process")
 $esSuperPathEnv = switch ($EternalSonataSuperPath) {
     "Detect" { "detect" }
     "Cache" { "cache" }
@@ -1406,6 +1410,10 @@ $rsxResolveEnv = switch ($RsxResolve) {
     "SkipAll" { "all" }
     default { "off" }
 }
+$rsxBlitSourceResolveEnv = switch ($RsxBlitSourceResolve) {
+    "Fast" { "fast" }
+    default { "off" }
+}
 $esGpuProbeDumpDir = if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") { Join-Path $runDir "spu-images" } else { "" }
 
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPURS_SUPERPATH", $esSuperPathEnv, "Process")
@@ -1422,6 +1430,7 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", $rsxDmaFenceEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_TEXTURE_BARRIER", $rsxTextureBarrierEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_RESOLVE", $rsxResolveEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE", $rsxBlitSourceResolveEnv, "Process")
 try {
     $process = Start-Process @startInfo
 } finally {
@@ -1437,6 +1446,7 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", $previousRsxDmaFence, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_TEXTURE_BARRIER", $previousRsxTextureBarrier, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_RESOLVE", $previousRsxResolve, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE", $previousRsxBlitSourceResolve, "Process")
 }
 
 if (-not $SkipHostSystemCheck) {

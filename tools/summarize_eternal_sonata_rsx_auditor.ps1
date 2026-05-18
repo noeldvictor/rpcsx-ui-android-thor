@@ -4,7 +4,8 @@ param(
     [int]$Top = 15,
     [string]$OutPath = "",
     [string]$CsvPath = "",
-    [string]$ResolveProfileCsvPath = ""
+    [string]$ResolveProfileCsvPath = "",
+    [string]$BlitSourceProfileCsvPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,6 +107,40 @@ function Format-ResolveReason {
         14 { return "old-content-copy-source" }
         default { return "unknown" }
     }
+}
+
+function Format-BlitFlags {
+    param([UInt64]$Flags)
+
+    $names = New-Object System.Collections.Generic.List[string]
+    $map = @(
+        @{ bit = 0; name = "interpolate" },
+        @{ bit = 1; name = "format-convert" },
+        @{ bit = 2; name = "src-typeless" },
+        @{ bit = 3; name = "dst-typeless" },
+        @{ bit = 4; name = "null-region" },
+        @{ bit = 5; name = "cached-dest" },
+        @{ bit = 6; name = "dst-render-target" },
+        @{ bit = 7; name = "src-depth" },
+        @{ bit = 8; name = "dst-depth" },
+        @{ bit = 9; name = "src-tiled" },
+        @{ bit = 10; name = "dst-tiled" },
+        @{ bit = 11; name = "dst-swizzled" },
+        @{ bit = 12; name = "flip-horizontal" },
+        @{ bit = 13; name = "flip-vertical" }
+    )
+
+    foreach ($entry in $map) {
+        if (($Flags -band ([UInt64]1 -shl $entry.bit)) -ne 0) {
+            $names.Add($entry.name) | Out-Null
+        }
+    }
+
+    if ($names.Count -eq 0) {
+        return "none"
+    }
+
+    return ($names -join ",")
 }
 
 function Split-AuditorTuple {
@@ -335,6 +370,45 @@ function Read-RsxResolveProfileRecord {
     }
 }
 
+function Read-RsxBlitSourceProfileRecord {
+    param([string]$Line)
+
+    if ($Line -notmatch 'Thor RSX Blit Source Profile:') {
+        return $null
+    }
+
+    $fields = @{}
+    foreach ($match in [regex]::Matches($Line, '(?<key>[A-Za-z0-9_()\/]+)=(?<value>\S+)')) {
+        $fields[$match.Groups['key'].Value] = $match.Groups['value'].Value
+    }
+
+    if (-not $fields.ContainsKey('frames')) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        frames    = Convert-AuditorNumber $fields['frames']
+        slot      = if ($fields.ContainsKey('slot')) { $fields['slot'] } else { "" }
+        count     = Convert-AuditorNumber $fields['count']
+        src       = if ($fields.ContainsKey('src')) { $fields['src'] } else { "0x00000000" }
+        dst       = if ($fields.ContainsKey('dst')) { $fields['dst'] } else { "0x00000000" }
+        src_pitch = Convert-AuditorNumber $fields['src_pitch']
+        dst_pitch = Convert-AuditorNumber $fields['dst_pitch']
+        src_bpp   = Convert-AuditorNumber $fields['src_bpp']
+        dst_bpp   = Convert-AuditorNumber $fields['dst_bpp']
+        src_req   = if ($fields.ContainsKey('src_req')) { $fields['src_req'] } else { "0x0" }
+        dst_req   = if ($fields.ContainsKey('dst_req')) { $fields['dst_req'] } else { "0x0" }
+        src_fmt   = if ($fields.ContainsKey('src_fmt')) { $fields['src_fmt'] } else { "0x00000000" }
+        dst_fmt   = if ($fields.ContainsKey('dst_fmt')) { $fields['dst_fmt'] } else { "0x00000000" }
+        src_ctx   = Convert-AuditorNumber $fields['src_ctx']
+        dst_ctx   = Convert-AuditorNumber $fields['dst_ctx']
+        src_rect  = if ($fields.ContainsKey('src_rect')) { $fields['src_rect'] } else { "0/0/0/0" }
+        dst_rect  = if ($fields.ContainsKey('dst_rect')) { $fields['dst_rect'] } else { "0/0/0/0" }
+        flags     = if ($fields.ContainsKey('flags')) { Convert-AuditorNumber $fields['flags'] } else { [UInt64]0 }
+        key       = if ($fields.ContainsKey('key')) { $fields['key'] } else { "0x0000000000000000" }
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
     if ([string]::IsNullOrWhiteSpace($RunDir)) {
         throw "Pass -RunDir or -LogPath."
@@ -363,9 +437,13 @@ if ([string]::IsNullOrWhiteSpace($CsvPath)) {
 if ([string]::IsNullOrWhiteSpace($ResolveProfileCsvPath)) {
     $ResolveProfileCsvPath = Join-Path $RunDir "eternal-sonata-rsx-resolve-profile.csv"
 }
+if ([string]::IsNullOrWhiteSpace($BlitSourceProfileCsvPath)) {
+    $BlitSourceProfileCsvPath = Join-Path $RunDir "eternal-sonata-rsx-blit-source-profile.csv"
+}
 
 $records = New-Object System.Collections.Generic.List[object]
 $resolveProfileRecords = New-Object System.Collections.Generic.List[object]
+$blitSourceProfileRecords = New-Object System.Collections.Generic.List[object]
 foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
     $record = Read-RsxAuditorRecord $line
     if ($null -ne $record) {
@@ -375,6 +453,11 @@ foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
     $resolveProfileRecord = Read-RsxResolveProfileRecord $line
     if ($null -ne $resolveProfileRecord) {
         $resolveProfileRecords.Add($resolveProfileRecord) | Out-Null
+    }
+
+    $blitSourceProfileRecord = Read-RsxBlitSourceProfileRecord $line
+    if ($null -ne $blitSourceProfileRecord) {
+        $blitSourceProfileRecords.Add($blitSourceProfileRecord) | Out-Null
     }
 }
 
@@ -399,6 +482,10 @@ $lines.Add("- CSV: $CsvPath") | Out-Null
 if ($resolveProfileRecords.Count -gt 0) {
     $resolveProfileRecords | Export-Csv -LiteralPath $ResolveProfileCsvPath -NoTypeInformation -Encoding UTF8
     $lines.Add("- Resolve profile CSV: $ResolveProfileCsvPath") | Out-Null
+}
+if ($blitSourceProfileRecords.Count -gt 0) {
+    $blitSourceProfileRecords | Export-Csv -LiteralPath $BlitSourceProfileCsvPath -NoTypeInformation -Encoding UTF8
+    $lines.Add("- Blit source profile CSV: $BlitSourceProfileCsvPath") | Out-Null
 }
 
 $totalFrames = [UInt64](($records | Measure-Object -Property frames -Sum).Sum)
@@ -613,6 +700,67 @@ if ($resolveProfileRecords.Count -gt 0) {
             $profile.sy,
             $profile.pitch,
             $profile.base,
+            $profile.key)) | Out-Null
+        $rank++
+    }
+}
+
+if ($blitSourceProfileRecords.Count -gt 0) {
+    $blitGroups = @(
+        $blitSourceProfileRecords |
+            Group-Object -Property key |
+            ForEach-Object {
+                $first = $_.Group[0]
+                [pscustomobject]@{
+                    key       = $first.key
+                    count     = [UInt64](($_.Group | Measure-Object -Property count -Sum).Sum)
+                    src       = $first.src
+                    dst       = $first.dst
+                    src_pitch = $first.src_pitch
+                    dst_pitch = $first.dst_pitch
+                    src_bpp   = $first.src_bpp
+                    dst_bpp   = $first.dst_bpp
+                    src_req   = $first.src_req
+                    dst_req   = $first.dst_req
+                    src_fmt   = $first.src_fmt
+                    dst_fmt   = $first.dst_fmt
+                    src_ctx   = $first.src_ctx
+                    dst_ctx   = $first.dst_ctx
+                    src_rect  = $first.src_rect
+                    dst_rect  = $first.dst_rect
+                    flags     = $first.flags
+                }
+            } |
+            Sort-Object -Property count -Descending
+    )
+
+    $lines.Add("") | Out-Null
+    $lines.Add("## Blit Source Profile") | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add("| Rank | Count | Per 60 Frames | Src | Dst | Src/Dst Req | Src/Dst Rect | Pitch | BPP | Format | Ctx | Flags | Key |") | Out-Null
+    $lines.Add("| ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |") | Out-Null
+
+    $rank = 1
+    foreach ($profile in @($blitGroups | Select-Object -First $Top)) {
+        $lines.Add(('| {0} | {1} | {2} | `{3}` | `{4}` | {5} / {6} | `{7}` / `{8}` | {9}/{10} | {11}/{12} | `{13}` / `{14}` | {15}/{16} | `{17}` | `{18}` |' -f
+            $rank,
+            $profile.count,
+            (Format-AuditorRate $profile.count $totalFrames),
+            $profile.src,
+            $profile.dst,
+            $profile.src_req,
+            $profile.dst_req,
+            $profile.src_rect,
+            $profile.dst_rect,
+            $profile.src_pitch,
+            $profile.dst_pitch,
+            $profile.src_bpp,
+            $profile.dst_bpp,
+            $profile.src_fmt,
+            $profile.dst_fmt,
+            $profile.src_ctx,
+            $profile.dst_ctx,
+            (Format-BlitFlags $profile.flags),
             $profile.key)) | Out-Null
         $rank++
     }

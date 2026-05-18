@@ -26,6 +26,8 @@ param(
     [string]$WindowsRsxTextureBarrier = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$WindowsRsxResolve = "Off",
+    [ValidateSet("Off", "Fast")]
+    [string]$WindowsRsxBlitSourceResolve = "Off",
     [ValidateSet("Keep", "On", "Off")]
     [string]$WindowsRsxForceHwMsaaResolve = "Keep",
     [int]$MaxSeconds = 120,
@@ -325,6 +327,7 @@ switch ($Action) {
             RsxDmaFence = $WindowsRsxDmaFence
             RsxTextureBarrier = $WindowsRsxTextureBarrier
             RsxResolve = $WindowsRsxResolve
+            RsxBlitSourceResolve = $WindowsRsxBlitSourceResolve
             RsxForceHwMsaaResolve = $WindowsRsxForceHwMsaaResolve
             MaxSeconds = $MaxSeconds
             ScreenshotEverySeconds = $ScreenshotEverySeconds

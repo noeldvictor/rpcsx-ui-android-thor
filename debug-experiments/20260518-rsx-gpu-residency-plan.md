@@ -476,6 +476,10 @@ Primary-source reading:
   <https://arxiv.org/abs/1807.09449>
 - Academic DBT hybrid-execution direction:
   <https://arxiv.org/abs/2512.00487>
+- Academic binary-translation-to-GPU direction:
+  <https://www.usenix.org/conference/atc23/presentation/ginzburg>
+- Academic system-level DBT codegen direction:
+  <https://arxiv.org/abs/2402.09688>
 - Academic GPU emulator batching reference:
   <https://arxiv.org/abs/1907.08467>
 
@@ -499,6 +503,17 @@ Reading:
 - CPU-to-GPU emulator offload papers point toward selective, batched,
   verification-friendly execution. That supports the existing SPU-superpath rule:
   avoid broad "SPU on GPU"; target stable bulk jobs only.
+- Vectorized binary-translation work is relevant as a design signal, not a
+  drop-in SPU plan. It works when many independent instances can be batched and
+  run to completion with limited synchronization. Eternal Sonata's hot SPU
+  `0x25cc` / `0x451c` path still looks like DMA command/wait machinery, so any
+  GPU offload must first find a coarse repeated payload or an RSX-consumed
+  resource, then add verify-only comparison.
+- Recent system-level DBT work argues that reducing coordination overhead,
+  eliminating redundant coordination points, and improving generated-code
+  quality can produce emulator wins without moving work to a different
+  processor. That keeps SPU HLE/codegen/reduced-loop work on equal footing with
+  RSX tiler-locality work.
 
 Decision: keep RSX work on a correct resolve-locality lane. Do not build a
 generic compute resolve until a capture proves the consumer cannot be handled by
@@ -746,3 +761,94 @@ Next Windows step:
    render-target-to-texture transfer.
 3. If stable, prototype a title-gated fused resolve/blit path and validate
    field, first battle, and menu before any Thor port.
+
+## Windows Lab Slice - 2026-05-18 Blit Source Geometry and Fused Resolve
+
+Status: `fused-blit-source-rejected`.
+
+Added durable wrapper and summarizer support for the Windows-only scout gate:
+
+- `tools/windows_rpcs3_lab.ps1 -RsxBlitSourceResolve Off|Fast`
+- `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxBlitSourceResolve Off|Fast`
+- Process env: `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=off|fast`
+- Summary output:
+  `eternal-sonata-rsx-blit-source-profile.csv` plus a `Blit Source Profile`
+  table in `eternal-sonata-rsx-auditor-summary.md`
+
+Geometry profile capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-141204-rsx-blit-source-geometry-profile-windows/`
+- Gate:
+  `RPCS3_ES_RSX_TEXTURE_BARRIER=off`
+- Resolve probe:
+  `RPCS3_ES_RSX_RESOLVE=profile`
+- Host grade: clean during the useful field samples.
+- Window routing: RPCS3 moved to `\\.\DISPLAY2`.
+- Visual result: correct-looking first playable field screenshot.
+- Auditor totals across `7260` frames:
+  - queue submits: `7380`, about `60.99` per 60 frames;
+  - hard sync flushes: `98`, about `0.81` per 60 frames;
+  - render-pass barrier breaks: `5225`, about `43.18` per 60 frames;
+  - image break source `rt_res`: `3483`;
+  - texture barriers depth: `1742`;
+  - color resolves: `3484`, about `28.79` per 60 frames;
+  - DMA transfer fences: `15`, about `24.20 MB`.
+- Resolve profile:
+  - reason: `blit-source`;
+  - format: `0x0000002c`;
+  - size: `1280x720`;
+  - samples/grid: `2`, `2x1`;
+  - pitch: `10240`;
+  - base: `0xc0b20000`.
+- Blit source profile highlights:
+  - stable `0xc3840000 -> 0xc3a11080`, `640x360`, count `7134`;
+  - stable `0xc1a30000 -> 0xc2ecc100`, `768x768`, count `3484`;
+  - source-render-target chunks from `0xc0b20000`, `0xc0b21000`,
+    `0xc0b22000`, covering `0..2560 x 720`, each count `1742`.
+
+Reading: the hot consumer is real and stable enough to scout. It is a good
+Windows research target because it is already RSX/GPU-adjacent and batched by a
+large render-target-to-texture transfer, not a tiny SPURS control event.
+
+Fast fused prototype capture:
+
+- Run dir:
+  `debug-captures/windows-lab/20260518-143950-rsx-blit-source-fused-fast-windows/`
+- Gate:
+  `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=fast`
+- Host grade: high near the end, so timing is not comparable.
+- Visual result: failed. Screenshots at `132s`, `147s`, and `156s` showed a
+  black field with only the overlay visible.
+- Counter result:
+  - render-pass barrier breaks dropped to `0`;
+  - resolve calls/skips dropped to `0`;
+  - compute pipeline creates: `1`;
+  - DMA transfer fences: `8`, about `9.21 MB`.
+
+Follow-up diagnostics:
+
+- `20260518-144937-rsx-blit-source-fused-solid-probe-windows`: forced solid
+  magenta shader output, still black field.
+- `20260518-145729-rsx-blit-source-fused-storage-dst-windows`: added storage
+  usage for the blit destination texture, still black field.
+- `20260518-150422-rsx-blit-source-fused-trace-windows`: trace confirmed the
+  fused helper dispatched on the expected `0xc0b20000` source chunks and
+  `0/0/1024/720`, `1024/0/2048/720`, `2048/0/2560/720` rectangles, still black.
+- `20260518-151129-rsx-blit-source-fused-untyped-dst-windows`: changed the
+  destination image declaration to match the untyped resolve style, still black.
+- `20260518-151717-rsx-blit-source-fused-untyped-solid-windows`: untyped
+  destination plus forced solid magenta, still black.
+
+Decision:
+
+- Keep the blit-source profile tooling and the wrapper gate because they found a
+  legitimate RSX-local candidate.
+- Reject the current direct compute resolve-to-blit-destination path. It gives
+  beautiful counters and a black field, which is not a speed win.
+- Do not port `RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE=fast` to Thor.
+- The next valid RSX path is verify-only parity first: run the normal
+  resolve/blit and the candidate fused path on the same source, compare GPU-side
+  or copied hashes/bytes outside the critical path, then investigate why the
+  compute writes are not feeding the visible texture chain. If that stalls,
+  return to the measured SPU/HLE/codegen path around `0x25cc` / `0x451c`.
