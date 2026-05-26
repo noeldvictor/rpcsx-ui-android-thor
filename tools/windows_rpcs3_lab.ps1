@@ -952,6 +952,120 @@ Player 7 Input:
     Write-LabLine $RunLog "- Agent input profile: active map $activeStatus ($activePath)"
 }
 
+function Invoke-LabLoadTargetGate {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$ScreenshotDir,
+        [string]$RunLog,
+        [datetime]$LaunchTime = (Get-Date),
+        [int]$TimeoutMilliseconds = 15000,
+        [int]$PollMilliseconds = 1500
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ScreenshotDir)) {
+        Write-LabLine $RunLog "Load target gate failed: no screenshot directory was provided."
+        return $false
+    }
+
+    $runDir = Split-Path -Parent $ScreenshotDir
+    if ([string]::IsNullOrWhiteSpace($runDir)) {
+        Write-LabLine $RunLog "Load target gate failed: could not resolve run directory from $ScreenshotDir."
+        return $false
+    }
+
+    $classifier = Join-Path $PSScriptRoot "classify_eternal_sonata_load_target.ps1"
+    if (-not (Test-Path -LiteralPath $classifier -PathType Leaf)) {
+        Write-LabLine $RunLog "Load target gate failed: classifier not found at $classifier."
+        return $false
+    }
+
+    if ($TimeoutMilliseconds -le 0) {
+        $TimeoutMilliseconds = 15000
+    }
+    if ($PollMilliseconds -le 0) {
+        $PollMilliseconds = 1500
+    }
+
+    function Get-LabLoadTargetStatus {
+        param([object[]]$ClassifierOutput)
+
+        foreach ($line in @($ClassifierOutput)) {
+            $text = "$line"
+            if ($text -match '- Status: ``([^`]+)``') {
+                return $matches[1]
+            }
+        }
+        return ""
+    }
+
+    function Write-LabLoadTargetFailure {
+        param(
+            [int]$ElapsedSeconds,
+            [string]$Message
+        )
+
+        $marker = Join-Path $runDir "load-target-gate-failed.txt"
+        "Load target gate failed at ${ElapsedSeconds}s: $Message" | Set-Content -LiteralPath $marker -Encoding UTF8
+        Write-LabLine $RunLog "Load target gate failed: $Message"
+        Write-LabLine $RunLog "Load target gate marker: $marker"
+    }
+
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
+    $attempt = 1
+    Write-LabLine $RunLog "Load target gate polling for PATH_TO_TENUTO_PRESENT for up to ${TimeoutMilliseconds}ms."
+    while ($true) {
+        if ($Process) {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+                Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message "RPCS3 exited before the load target could be classified."
+                return $false
+            }
+        }
+
+        $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+        $tag = if ($attempt -eq 1) { "load-target-gate" } else { "load-target-gate-$attempt" }
+        Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
+
+        $output = @()
+        try {
+            $output = @(& $classifier -RunDir $runDir -RequirePathToTenuto 2>&1)
+            foreach ($line in @($output)) {
+                Write-LabLine $RunLog "Load target gate: $line"
+            }
+            Write-LabLine $RunLog "Load target gate passed after attempt ${attempt}: PATH_TO_TENUTO_PRESENT."
+            return $true
+        } catch {
+            $status = Get-LabLoadTargetStatus -ClassifierOutput @($output)
+            if ([string]::IsNullOrWhiteSpace($status)) {
+                $status = "UNKNOWN_LOAD_TARGET"
+            }
+
+            $message = $_.Exception.Message
+            Write-LabLine $RunLog "Load target gate attempt ${attempt}: $status ($message)"
+            if ($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS") {
+                foreach ($line in @($output)) {
+                    Write-LabLine $RunLog "Load target gate: $line"
+                }
+                Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message $message
+                return $false
+            }
+
+            if ((Get-Date) -ge $deadline) {
+                foreach ($line in @($output)) {
+                    Write-LabLine $RunLog "Load target gate: $line"
+                }
+                Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message ("timed out after {0}ms; last status {1}; {2}" -f $TimeoutMilliseconds, $status, $message)
+                return $false
+            }
+
+            $remainingMs = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+            Start-Sleep -Milliseconds ([Math]::Min($PollMilliseconds, $remainingMs))
+            $attempt++
+        }
+    }
+}
+
 function Invoke-LabInputMacro {
     param(
         [System.Diagnostics.Process]$Process,
@@ -1073,6 +1187,21 @@ function Invoke-LabInputMacro {
                 Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $shotTag
             }
             Start-Sleep -Milliseconds $duration
+            continue
+        }
+
+        if ($nameLower -eq "gate_load_target" -or $nameLower -eq "assert_load_target" -or $nameLower -eq "load_target_gate") {
+            $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 15000 }
+            Write-LabLine $RunLog "Input load target gate (timeout ${gateTimeoutMilliseconds}ms)"
+            $gatePassed = Invoke-LabLoadTargetGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
+            if (-not $gatePassed) {
+                Write-LabLine $RunLog "Input macro aborted before pressing Cross because the load target gate failed."
+                if (-not $Process.HasExited) {
+                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds 500
+                }
+                return
+            }
             continue
         }
 

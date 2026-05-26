@@ -381,3 +381,129 @@ Next:
 - If the classifier reports `DEBUG_SAVE_PROLOGUE_PRESENT`,
   `MIXED_LOAD_TARGETS`, or `UNKNOWN_LOAD_TARGET`, repair save-target selection
   before pressing `Cross`.
+
+## 2026-05-26 Live Load Target Macro Gate
+
+Purpose:
+
+- Prevent another blind Load-list `Cross` after the route drifted from Path to
+  Tenuto to Debug Save / Prologue.
+- Turn the offline load-target classifier into a live Windows macro guard.
+
+Change:
+
+- Added `gate_load_target`, `assert_load_target`, and `load_target_gate` tokens
+  to `tools\windows_rpcs3_lab.ps1`.
+- The token captures a tagged screenshot, runs
+  `tools\classify_eternal_sonata_load_target.ps1 -RequirePathToTenuto`, writes
+  `eternal-sonata-load-target-summary.md`, and aborts the macro before pressing
+  `Cross` if the selected Load-list target is not only
+  `PATH_TO_TENUTO_PRESENT`.
+- `tools\ps3_harness_refiner.ps1` now inserts `gate_load_target` before the
+  first Load-list `Cross` in the state-aware double-confirm repair command and
+  changes the newest wrong-save-target state from a blind retry blocker into a
+  load-target-gated diagnostic.
+
+Validation:
+
+- Parser validation passed for `tools\windows_rpcs3_lab.ps1` and
+  `tools\ps3_harness_refiner.ps1`.
+- The refiner now emits the gated command label
+  `cpu4-stateaware-loadtarget-gated-doubleconfirm-dismisssave-left200-visualgate-windows`.
+- Local save inspection found the current RPCS3 `BLUS3016100\PARAM.SFO` and
+  existing backup/checkpoint folders still advertise `Ch. 1 Raindrops Path to
+  Tenuto South Section`, so no save mutation was performed in this round.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `load-target-gate`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run the refiner-emitted gated diagnostic only if no newer run is active. If
+  `gate_load_target` aborts on Debug Save / Prologue, restore or repair the
+  Path-to-Tenuto save source before continuing route or speed work.
+
+## 2026-05-26 Polling Load Target Gate And Direct-Left Refiner
+
+Purpose:
+
+- Stop the state-aware route loop from using stale one-shot Load-list proof.
+- Separate three states that were previously collapsed as `UNKNOWN_LOAD_TARGET`:
+  transient save-file checking, real wrong-save target, and black-screen route
+  timeout.
+
+Changes:
+
+- `tools\windows_rpcs3_lab.ps1` now treats `gate_load_target`,
+  `assert_load_target`, and `load_target_gate` as polling guards. The token
+  duration is the poll timeout; it screenshots repeatedly until
+  `PATH_TO_TENUTO_PRESENT`, fails immediately on `DEBUG_SAVE_PROLOGUE_PRESENT`
+  or `MIXED_LOAD_TARGETS`, and writes `load-target-gate-failed.txt` on timeout.
+- `tools\ps3_harness_refiner.ps1` now reads
+  `eternal-sonata-load-target-summary.md` plus
+  `load-target-gate-failed.txt`, emits `failed-load-target-gate`, and shows a
+  Load target column in the recent-run table.
+- The refiner now blocks the obsolete post-load dismiss-save sequence after it
+  proves it opens the Save/Create-new-file menu, and suggests only
+  `cpu4-stateaware-loadtarget-pollgated-directleft200-longgate-visualgate-windows`
+  after a direct-left black/unknown gate timeout.
+
+Run evidence:
+
+- `20260526-011701-cpu4-stateaware-loadtarget-gated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  aborted before slot `Cross` with `DEBUG_SAVE_PROLOGUE_PRESENT`. Manual
+  screenshot showed Debug Save / Prologue and a damaged-save message. Host and
+  fatal scans were clean. GPU scoreboard stayed `0 B` promoted CPU/SPU to GPU,
+  `0 B` direct RSX-local, and `0 B` indirect overlap.
+- Restored the known checkpoint from
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100` after
+  backing up the current RPCS3 save to
+  `debug-captures\save-backups\BLUS3016100-before-live-gate-restore-20260526-012048`.
+  `PARAM.SFO` again advertised `Ch. 1 Raindrops Path to Tenuto South Section`.
+- `20260526-013113-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  proved the polling gate: first screenshot was transient
+  `Checking save files...`, second screenshot
+  `screenshot-0065s-load-target-gate-2.png` classified
+  `PATH_TO_TENUTO_PRESENT`, and field appeared at `screenshot-0120s.png`
+  (`120s`). The route still failed `CleanAfterField` because later screenshots
+  stayed on Save/Create-new-file UI after the obsolete field-side dismiss-save
+  presses. Classify as route-tooling, not moving gameplay and not speed.
+- `20260526-014524-cpu4-stateaware-loadtarget-pollgated-directleft200-visualgate-windows-windows`
+  tested direct-left without the obsolete Save-menu presses, but the 30s gate
+  never reached a classifiable Load slot. All gate screenshots were black
+  `UNKNOWN_LOAD_TARGET`; the macro aborted before slot `Cross`. Host and fatal
+  scans were clean. GPU summary is route-invalid: `663` records,
+  `649.96 MB` observed DMA, offload fit `too-small=347` /
+  `spu-kernel-hle=316`, lane 2 `6713/6713/6713/0/0`, and GPU Port Scoreboard
+  `0 B` promoted CPU/SPU to GPU, `0 B` direct RSX-local, `0 B` indirect
+  overlap.
+
+Validation:
+
+- Parser validation passed for `tools\windows_rpcs3_lab.ps1` and
+  `tools\ps3_harness_refiner.ps1`.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` now reports newest decision:
+  direct-left route timed out with black/`UNKNOWN_LOAD_TARGET` gate captures
+  and suggests the long-gate direct-left command only.
+- No lingering RPCS3/RPCSX process remained after the runs.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `load-target-gate`, `directleft-gate-timeout`.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run only the long-gate direct-left proof. Do not fall back to the old
+  dismiss-save macro, because it already proved field then opened the Save menu.
+- Keep HLE/RSX speed stacking blocked until the same route proves correct field,
+  menu/Options, and first-battle visuals.

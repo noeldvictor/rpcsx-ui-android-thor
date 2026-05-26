@@ -282,8 +282,13 @@ function New-StateAwareLateLoadConfirmCommand {
 }
 
 function New-StateAwareLateLoadDoubleConfirmDismissMovementCommand {
-    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100"
-    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-late-load-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 185 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 9"
+    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro `"$macro`" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10"
+}
+
+function New-StateAwareLoadTargetPollGatedDirectLeftCommand {
+    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;ls_left:200;wait:1200;shot:100;wait:10000;shot:100"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-directleft200-longgate-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 9"
 }
 
 function New-Hle451cSize16CandidateReproofCommand {
@@ -572,6 +577,34 @@ function Read-LabEvidence {
     }
 }
 
+function Read-LoadTargetEvidence {
+    param([System.IO.DirectoryInfo]$Run)
+
+    $summaryPath = Join-Path $Run.FullName "eternal-sonata-load-target-summary.md"
+    $markerPath = Join-Path $Run.FullName "load-target-gate-failed.txt"
+    $summaryLines = Read-FileLines -Path $summaryPath
+    $status = Get-MarkdownBulletValue -Lines $summaryLines -Label "Status"
+    if ([string]::IsNullOrWhiteSpace($status)) {
+        $status = ""
+    }
+
+    $markerText = ""
+    if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+        $markerText = ((Read-FileLines -Path $markerPath) -join " ").Trim()
+        if ($markerText.Length -gt 220) {
+            $markerText = $markerText.Substring(0, 220) + "..."
+        }
+    }
+
+    return [pscustomobject]@{
+        SummaryPath = if (Test-Path -LiteralPath $summaryPath -PathType Leaf) { $summaryPath } else { "" }
+        Status = $status
+        GateFailed = Test-Path -LiteralPath $markerPath -PathType Leaf
+        MarkerPath = if (Test-Path -LiteralPath $markerPath -PathType Leaf) { $markerPath } else { "" }
+        MarkerText = $markerText
+    }
+}
+
 function Read-FatalEvidence {
     param([System.IO.DirectoryInfo]$Run)
 
@@ -646,6 +679,9 @@ function Get-RunDecision {
 
     if ($RunEvidence.Fatal -and $RunEvidence.Fatal.HasFatal) {
         return "failed-fatal-log"
+    }
+    if ($RunEvidence.LoadTarget -and $RunEvidence.LoadTarget.GateFailed) {
+        return "failed-load-target-gate"
     }
 
     $visual = $RunEvidence.Visual
@@ -881,6 +917,7 @@ $runEvidence = foreach ($run in $runs) {
         Gpu = Read-GpuSummary -Run $run
         Lane = Read-LaneEvidence -Run $run
         Lab = Read-LabEvidence -Run $run
+        LoadTarget = Read-LoadTargetEvidence -Run $run
         Fatal = Read-FatalEvidence -Run $run
         Decision = ""
     }
@@ -973,6 +1010,10 @@ $latestStateAwareSavePromptField = $false
 $latestStateAwareDismissLoadMenuMiss = $false
 $latestStateAwareLateLoadConfirmNeedsSecondCross = $false
 $latestStateAwareLateDoubleConfirmRouteDrift = $false
+$latestLoadTargetGateFailure = $false
+$latestLoadTargetGateStatus = ""
+$latestLoadTargetPollGatedSaveMenuAfterField = $false
+$latestLoadTargetDirectLeftGateFailure = $false
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -998,6 +1039,18 @@ if ($latestRun) {
     $latestLabel = if ($latestRun.Lab.Label) { $latestRun.Lab.Label } else { "" }
     $latestText = "$($latestRun.Name) $latestLabel"
     $latestFatal = $latestRun.Fatal -and $latestRun.Fatal.HasFatal
+    $latestLoadTargetGateFailure = $latestRun.LoadTarget -and $latestRun.LoadTarget.GateFailed
+    $latestLoadTargetGateStatus = if ($latestRun.LoadTarget -and $latestRun.LoadTarget.Status) { $latestRun.LoadTarget.Status } else { "" }
+    $latestLoadTargetPollGatedSaveMenuAfterField =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.Visual.Status -eq "FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS" -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*loadtarget-pollgated*" -and
+        $latestText -like "*dismisssave*"
+    $latestLoadTargetDirectLeftGateFailure =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestText -like "*loadtarget-pollgated-directleft*"
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
     $latestStateAwarePromptStuck =
@@ -1389,8 +1442,18 @@ if ($latestStateAwareDismissLoadMenuMiss) {
 if ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-late-load-confirm-needs-second-cross" -Severity "blocker" -Evidence "Newest late load-confirm repair opened the Load data/Proceed prompt with Yes highlighted, but never sent the second Cross confirm, so every screenshot stayed on the Load UI." -Action "Do not rerun the one-cross late-confirm macro. Send a second Cross after the prompt appears, then capture field, dismiss the save prompt, and test the one-left-pulse route under CleanAfterField."
 }
+if ($latestLoadTargetGateFailure) {
+    $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
+    Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
+}
+if ($latestLoadTargetPollGatedSaveMenuAfterField) {
+    Add-AntiPattern -List $antiPatterns -Name "pollgated-route-opens-save-menu-after-field" -Severity "blocker" -Evidence "Newest polling-gated route proved Path to Tenuto and reached field, but later screenshots stayed on the Save/Create new save file menu after the post-load dismissal presses." -Action "Remove the obsolete field-side save-prompt dismissal sequence. After the accepted field screenshot, go directly to the movement pulse and screenshots."
+}
+if ($latestLoadTargetDirectLeftGateFailure) {
+    Add-AntiPattern -List $antiPatterns -Name "directleft-load-target-gate-timeout" -Severity "blocker" -Evidence "Newest direct-left route aborted before slot Cross because all polling-gate screenshots stayed UNKNOWN_LOAD_TARGET; manual visual inspection showed a black screen, not a save slot." -Action "Retry only the direct-left route with a longer load-target gate. Do not fall back to the old dismiss-save macro because it already proved it opens the Save menu after field."
+}
 if ($latestStateAwareLateDoubleConfirmRouteDrift) {
-    Add-AntiPattern -List $antiPatterns -Name "stateaware-late-doubleconfirm-wrong-save-target" -Severity "blocker" -Evidence "Newest late double-confirm route still missed field, and manual screenshots showed the Load list on Debug Save / Prologue instead of the known Path to Tenuto save target." -Action "Do not rerun the state-aware load macros. First run tools\classify_eternal_sonata_load_target.ps1 on the candidate capture, then repair save-target selection until the gate reports only PATH_TO_TENUTO_PRESENT before pressing Cross."
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-late-doubleconfirm-wrong-save-target" -Severity "blocker" -Evidence "Newest late double-confirm route still missed field, and manual screenshots showed the Load list on Debug Save / Prologue instead of the known Path to Tenuto save target." -Action "Do not rerun blind state-aware load macros. Use only the load-target-gated diagnostic; it screenshots, runs tools\classify_eternal_sonata_load_target.ps1, and aborts before Cross unless the gate reports PATH_TO_TENUTO_PRESENT."
 }
 if ($latestHle451cSize16BodyOffBattleRouteLost) {
     $battleRouteLossEvidence = if ($latestHle451cSize16BodyOffBattleProcessExit) {
@@ -1559,8 +1622,14 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest dismiss-save route missed field entirely and stayed in the Load screen/Proceed state. Do not rerun the default or dismiss-save macros; use a late load-confirm Yes repair, then prove field before any save-prompt dismissal or speed work."
 } elseif ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     "Latest late load-confirm route opened the Proceed prompt but did not send the second Cross confirm. Do not rerun the one-cross macro; use the double-confirm plus save-prompt dismissal route before any speed work."
+} elseif ($latestLoadTargetPollGatedSaveMenuAfterField) {
+    "Latest polling-gated route proved Path to Tenuto and field, then the old save-prompt dismissal opened the Save/Create-new-file menu. Remove those field-side Cross presses and go directly to a left-movement proof."
+} elseif ($latestLoadTargetDirectLeftGateFailure) {
+    "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
+} elseif ($latestLoadTargetGateFailure) {
+    "Latest load-target gate aborted before save-slot Cross with status $latestLoadTargetGateStatus. Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing."
 } elseif ($latestStateAwareLateDoubleConfirmRouteDrift) {
-    "Latest late double-confirm route missed field and selected Debug Save / Prologue instead of Path to Tenuto. Stop state-aware macro retries until save-target selection is repaired or route-state-gated."
+    "Latest late double-confirm route missed field and selected Debug Save / Prologue instead of Path to Tenuto. Use a load-target-gated diagnostic only; it must abort before Cross unless Path to Tenuto is selected."
 } elseif ($latestHle451cPreserveBodyBattleFatal) {
     "Latest 0x451c preserve-body first-battle proof reached battle, then froze with VM access violation at 0x40. Keep preserve-body opt-in/off and re-prove the same first-battle route with preserve-body Off before narrowing semantics."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {
@@ -1707,8 +1776,14 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareLateLoadConfirmCommand
 } elseif ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     New-StateAwareLateLoadDoubleConfirmDismissMovementCommand
+} elseif ($latestLoadTargetPollGatedSaveMenuAfterField) {
+    New-StateAwareLoadTargetPollGatedDirectLeftCommand
+} elseif ($latestLoadTargetDirectLeftGateFailure) {
+    New-StateAwareLoadTargetPollGatedDirectLeftCommand
+} elseif ($latestLoadTargetGateFailure) {
+    New-StateAwareLateLoadDoubleConfirmDismissMovementCommand
 } elseif ($latestStateAwareLateDoubleConfirmRouteDrift) {
-    "# No automatic state-aware rerun: latest double-confirm route selected Debug Save / Prologue, not Path to Tenuto. Use .\tools\classify_eternal_sonata_load_target.ps1 -RunDir `"$($latestRun.Path)`" to gate save-list diagnostics, then repair target selection before pressing Cross."
+    New-StateAwareLateLoadDoubleConfirmDismissMovementCommand
 } elseif ($latestHle451cPreserveBodyBattleFatal) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-451c-preserve-body-off-first-battle-reproof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Off -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 220 -ScreenshotMaxCount 8"
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {
@@ -1883,8 +1958,8 @@ if ($antiPatterns.Count -eq 0) {
 $md.Add("")
 $md.Add("## Recent Runs")
 $md.Add("")
-$md.Add("| Run | Visual | Fatal | Primary small class | Field | RSX-local | Offload fit | Lane 2 | Decision |")
-$md.Add("| --- | --- | --- | --- | --- | ---: | --- | --- | --- |")
+$md.Add("| Run | Visual | Load target | Fatal | Primary small class | Field | RSX-local | Offload fit | Lane 2 | Decision |")
+$md.Add("| --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |")
 foreach ($run in $runEvidence) {
     $fieldText = if ($run.Visual.FirstFieldScreenshot) {
         "{0} at {1}s" -f $run.Visual.FirstFieldScreenshot, $run.Visual.FirstFieldSeconds
@@ -1900,7 +1975,8 @@ foreach ($run in $runEvidence) {
     $fit = if ($run.Gpu.OffloadFitMix) { $run.Gpu.OffloadFitMix } else { "n/a" }
     $primarySmall = if ($run.Visual.PrimarySmallClass) { $run.Visual.PrimarySmallClass } else { "none" }
     $fatalText = if ($run.Fatal -and $run.Fatal.HasFatal) { "yes" } else { "no" }
-    $md.Add(("| ``{0}`` | ``{1}`` | ``{2}`` | ``{3}`` | {4} | {5} | {6} | {7} | ``{8}`` |" -f $run.Name, $run.Visual.Status, $fatalText, $primarySmall, $fieldText, $rsxLocal, $fit, $laneText, $run.Decision))
+    $loadTargetText = if ($run.LoadTarget -and $run.LoadTarget.Status) { $run.LoadTarget.Status } elseif ($run.LoadTarget -and $run.LoadTarget.GateFailed) { "failed-no-status" } else { "n/a" }
+    $md.Add(("| ``{0}`` | ``{1}`` | ``{2}`` | ``{3}`` | ``{4}`` | {5} | {6} | {7} | {8} | ``{9}`` |" -f $run.Name, $run.Visual.Status, $loadTargetText, $fatalText, $primarySmall, $fieldText, $rsxLocal, $fit, $laneText, $run.Decision))
 }
 $md.Add("")
 $md.Add("## Reading")

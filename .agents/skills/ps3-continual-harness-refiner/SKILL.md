@@ -97,10 +97,19 @@ prompt but does not send the second `Cross`, block that one-cross macro and
 suggest the double-confirm repair. If the double-confirm route still stays in
 the Load list and manual screenshots show `Debug Save` / `Prologue` instead of
 the Path to Tenuto save target, stop automatic state-aware macro retries. Run
-`tools/classify_eternal_sonata_load_target.ps1` on the capture and do not press
-`Cross` in a new route until that gate reports only `PATH_TO_TENUTO_PRESENT`.
-Repair save-target selection for `DEBUG_SAVE_PROLOGUE_PRESENT`,
-`MIXED_LOAD_TARGETS`, or `UNKNOWN_LOAD_TARGET`.
+`tools/classify_eternal_sonata_load_target.ps1` on the capture, or use the
+`gate_load_target` macro token in `tools/windows_rpcs3_lab.ps1`, and do not
+press `Cross` in a new route until that gate reports only
+`PATH_TO_TENUTO_PRESENT`. Repair save-target selection for
+`DEBUG_SAVE_PROLOGUE_PRESENT`, `MIXED_LOAD_TARGETS`, or
+`UNKNOWN_LOAD_TARGET`. The live macro gate now polls instead of using a single
+screenshot: transient `Checking save files...` frames are allowed to become
+`PATH_TO_TENUTO_PRESENT`, but `DEBUG_SAVE_PROLOGUE_PRESENT` or timeout still
+aborts before slot `Cross`. If a polling-gated route reaches field and then the
+old dismiss-save sequence opens the Save/Create-new-file menu, block that
+sequence and suggest a direct-left movement proof. If direct-left times out on
+black/`UNKNOWN_LOAD_TARGET` gate screenshots, suggest only the direct-left
+long-gate variant, not the old dismiss-save macro.
 
 ## Acceptance
 
