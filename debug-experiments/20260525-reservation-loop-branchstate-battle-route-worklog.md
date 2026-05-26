@@ -3041,3 +3041,85 @@ Next:
 - Do not fall back to old loader-control.
 - Isolate the same TopSlot battle route with `Verify25ccShadow` off, or
   repair/state-gate the battle macro before another verifier proof.
+
+## 2026-05-26 0x25cc Descriptor Battle Stock-Control Loading Miss
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-182155-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`
+
+Verification:
+
+- Windows-only RPCS3 run on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity
+  `0x0F`, frame/vblank `240/240`, GPU probe Profile, and
+  `Verify25ccShadow` off.
+- No RPCS3/RPCSX/build process remained after the run.
+- Host checks were clean across `6` snapshots.
+- Fatal scan was clean: `rpcs3.stderr.txt` was `0` bytes, and `RPCS3.log`
+  had no access violation, fatal, assertion, STOP, likely-crashed, validation,
+  or device-lost hit.
+- Manual screenshots:
+  - `screenshot-0117s.png`: `Now Loading...`, not field.
+  - `screenshot-0169s.png`: `Now Loading...`, not battle.
+  - `screenshot-0320s.png`: still `Now Loading...`.
+- Visual gate status `NO_FIELD_LIKE_SCREENSHOT`; all `15` screenshots were
+  `loading-like-small-png`; required field, late field, and battle-like checks
+  all failed.
+- Window-title samples around `119.81` to `120.18 FPS` are loading-screen
+  telemetry only and must not be used as speed proof.
+
+Counters:
+
+- GPU probe records `2944`.
+- Total observed DMA `4,319.29 MB`.
+- Hot PCs: `0x25cc` with `2691` records / `4,112.23 MB`, and `0x451c` with
+  `253` records / `207.06 MB`.
+- Offload fit `spu-kernel-hle=2783` / `too-small=161`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`.
+- GPU Port Scoreboard stayed `0 B` promoted CPU/SPU-to-GPU replacement,
+  `0 B` direct RSX-local, and `0 B` indirect overlap.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-loading`.
+- Not field.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Reading:
+
+- The no-verifier stock-control did not reproduce the previous verifier fatal,
+  but it also did not reach field or battle. Therefore it does not prove the
+  verifier alone caused the fatal. The default TopSlot battle macro is not a
+  valid stock control in this state.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this stock-control loading
+  miss and suggests a Down160 late-load-complete stock left-only diagnostic
+  instead of falling back to generic `stateaware-one-step` or old
+  loader-control.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next:
+
+- Do not rerun the same TopSlot `Verify25ccShadow` battle command.
+- Do not rerun the same no-verifier TopSlot stock-control command.
+- Do not use loading-screen `120 FPS` title samples as speed evidence.
+- Repair from the current Down160 late-load-complete base with stock left-only
+  movement before any verifier retry:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

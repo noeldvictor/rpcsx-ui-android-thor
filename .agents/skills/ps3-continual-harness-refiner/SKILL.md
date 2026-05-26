@@ -294,6 +294,14 @@ battle-like screenshots. Do not rerun the same TopSlot verifier command and do
 not fall back to old loader-control. Isolate the same TopSlot battle route with
 `Verify25ccShadow` off, or repair/state-gate the battle macro before another
 verifier proof.
+If that no-`Verify25ccShadow` TopSlot stock-control isolation stays on
+`Now Loading...` for every screenshot with clean host/fatal logs, classify it as
+`hle-25cc-shadow-desc-battle-stock-loading`. It proves the default TopSlot
+battle macro is not a valid stock control for this state, and it does not prove
+the verifier alone caused the previous fatal. Do not fall back to generic
+`stateaware-one-step`, old loader-control, or speed/HLE/RSX/GPU work. Repair
+from the current Down160 late-load-complete route base with a stock left-only
+diagnostic before any verifier retry.
 
 ## Acceptance
 
