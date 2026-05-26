@@ -113,7 +113,9 @@ long-gate variant, not the old dismiss-save macro. If that long-gate variant
 still reports `UNKNOWN_LOAD_TARGET` while screenshots are story/cutscene or
 other non-field frames, stop lengthening the gate. Treat it as a title-to-Load
 route miss; repair the title/menu/load-list state gate before pressing slot
-`Cross`.
+`Cross`. The live `gate_load_target` guard now also classifies each polling
+screenshot and aborts early after repeated obvious story/cutscene or non-field
+frames, while still allowing black/loading transients to keep polling.
 
 ## Acceptance
 

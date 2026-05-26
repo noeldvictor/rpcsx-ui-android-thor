@@ -986,6 +986,129 @@ function Invoke-LabLoadTargetGate {
         $PollMilliseconds = 1500
     }
 
+    function Get-LabLoadTargetGateColorStats {
+        param([string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            return $null
+        }
+
+        try {
+            Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+            $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+        } catch {
+            return $null
+        }
+
+        try {
+            $count = 0
+            [double]$red = 0
+            [double]$green = 0
+            [double]$blue = 0
+            [int]$greenDominant = 0
+            [int]$blueDominant = 0
+            [int]$redDominant = 0
+            [int]$dark = 0
+
+            for ($y = 0; $y -lt $bitmap.Height; $y += 48) {
+                for ($x = 0; $x -lt $bitmap.Width; $x += 48) {
+                    $pixel = $bitmap.GetPixel($x, $y)
+                    $count++
+                    $red += $pixel.R
+                    $green += $pixel.G
+                    $blue += $pixel.B
+
+                    if ($pixel.G -gt ($pixel.R + 15) -and $pixel.G -gt ($pixel.B + 15)) {
+                        $greenDominant++
+                    }
+                    if ($pixel.B -gt ($pixel.R + 20) -and $pixel.B -gt ($pixel.G + 20)) {
+                        $blueDominant++
+                    }
+                    if ($pixel.R -gt ($pixel.G + 20) -and $pixel.R -gt ($pixel.B + 20)) {
+                        $redDominant++
+                    }
+                    if (($pixel.R + $pixel.G + $pixel.B) -lt 90) {
+                        $dark++
+                    }
+                }
+            }
+
+            if ($count -eq 0) {
+                return $null
+            }
+
+            return [pscustomobject]@{
+                AvgR = [math]::Round($red / $count, 1)
+                AvgG = [math]::Round($green / $count, 1)
+                AvgB = [math]::Round($blue / $count, 1)
+                GreenRatio = [math]::Round($greenDominant / $count, 3)
+                BlueRatio = [math]::Round($blueDominant / $count, 3)
+                RedRatio = [math]::Round($redDominant / $count, 3)
+                DarkRatio = [math]::Round($dark / $count, 3)
+            }
+        } finally {
+            $bitmap.Dispose()
+        }
+    }
+
+    function Test-LabLoadTargetGateBlueNonField {
+        param([AllowNull()][object]$ColorStats)
+
+        if (-not $ColorStats) {
+            return $false
+        }
+
+        return (
+            $ColorStats.BlueRatio -ge 0.35 -and
+            $ColorStats.GreenRatio -lt 0.20 -and
+            $ColorStats.AvgB -ge ($ColorStats.AvgR + 20) -and
+            $ColorStats.AvgB -ge ($ColorStats.AvgG + 15)
+        )
+    }
+
+    function Get-LabLoadTargetGateScreenshotClass {
+        param([string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            return ""
+        }
+
+        $bytes = (Get-Item -LiteralPath $Path).Length
+        $colorStats = Get-LabLoadTargetGateColorStats -Path $Path
+
+        if (Test-LabLoadTargetGateBlueNonField -ColorStats $colorStats) {
+            if ($bytes -ge 1000000) {
+                return "cutscene-or-nonfield-large-png"
+            }
+            return "cutscene-or-nonfield-small-png"
+        }
+
+        if ($bytes -ge 1000000) {
+            if ($colorStats -and (
+                $colorStats.RedRatio -ge 0.45 -or
+                $colorStats.DarkRatio -ge 0.70 -or
+                ($colorStats.GreenRatio -lt 0.15 -and $colorStats.DarkRatio -ge 0.35)
+            )) {
+                return "cutscene-or-nonfield-large-png"
+            }
+            return "large-unknown-or-field-like-png"
+        }
+
+        if ($bytes -ge 20000 -and $bytes -le 60000) {
+            return "black-overlay-small-png"
+        }
+        if ($bytes -ge 90000 -and $bytes -le 160000) {
+            return "loading-like-small-png"
+        }
+        return "load-ui-or-other-png"
+    }
+
+    function Test-LabLoadTargetGateWrongStateClass {
+        param([string]$Class)
+
+        return $Class -like "cutscene-or-nonfield-*"
+    }
+
     function Get-LabLoadTargetStatus {
         param([object[]]$ClassifierOutput)
 
@@ -1012,6 +1135,8 @@ function Invoke-LabLoadTargetGate {
 
     $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
     $attempt = 1
+    $consecutiveWrongStateScreenshots = 0
+    $wrongStateAbortThreshold = 2
     Write-LabLine $RunLog "Load target gate polling for PATH_TO_TENUTO_PRESENT for up to ${TimeoutMilliseconds}ms."
     while ($true) {
         if ($Process) {
@@ -1025,7 +1150,7 @@ function Invoke-LabLoadTargetGate {
 
         $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
         $tag = if ($attempt -eq 1) { "load-target-gate" } else { "load-target-gate-$attempt" }
-        Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
+        $screenshotPath = Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
 
         $output = @()
         try {
@@ -1049,6 +1174,23 @@ function Invoke-LabLoadTargetGate {
                 }
                 Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message $message
                 return $false
+            }
+
+            $screenshotClass = Get-LabLoadTargetGateScreenshotClass -Path $screenshotPath
+            if (-not [string]::IsNullOrWhiteSpace($screenshotClass)) {
+                Write-LabLine $RunLog "Load target gate screenshot class: $screenshotClass"
+            }
+            if ($status -eq "UNKNOWN_LOAD_TARGET" -and (Test-LabLoadTargetGateWrongStateClass -Class $screenshotClass)) {
+                $consecutiveWrongStateScreenshots++
+                if ($consecutiveWrongStateScreenshots -ge $wrongStateAbortThreshold) {
+                    foreach ($line in @($output)) {
+                        Write-LabLine $RunLog "Load target gate: $line"
+                    }
+                    Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message ("wrong-state/cutscene while waiting for Load list; {0} consecutive {1} screenshots; {2}" -f $consecutiveWrongStateScreenshots, $screenshotClass, $message)
+                    return $false
+                }
+            } else {
+                $consecutiveWrongStateScreenshots = 0
             }
 
             if ((Get-Date) -ge $deadline) {
@@ -1512,6 +1654,8 @@ function Save-LabScreenshot {
         $graphics.Dispose()
         $bmp.Dispose()
     }
+
+    return $path
 }
 
 function Set-LabFpsOverlayConfig {

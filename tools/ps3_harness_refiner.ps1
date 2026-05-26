@@ -1055,7 +1055,10 @@ if ($latestRun) {
     $latestLoadTargetDirectLeftLongGateCutscene =
         $latestLoadTargetDirectLeftGateFailure -and
         $latestText -like "*longgate*" -and
-        (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass)
+        (
+            (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -or
+            ($latestRun.LoadTarget -and $latestRun.LoadTarget.MarkerText -match "wrong-state|cutscene")
+        )
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
     $latestStateAwarePromptStuck =

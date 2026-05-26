@@ -566,3 +566,53 @@ Next:
   before pressing slot `Cross`.
 - Keep speed stacking and HLE/RSX promotion blocked until correct field,
   menu/Options, and first-battle visuals are proven again.
+
+## 2026-05-26 Load-Target Wrong-State Early Abort
+
+Purpose:
+
+- Convert the manually reviewed long-gate cutscene miss into live harness
+  behavior so future `gate_load_target` runs do not wait the full timeout while
+  already in story/cutscene.
+- Preserve the good behavior that lets black/loading/save-check transients poll
+  until a real Load-list target appears.
+
+Change:
+
+- `tools\windows_rpcs3_lab.ps1` now returns the saved PNG path from
+  `Save-LabScreenshot`.
+- `Invoke-LabLoadTargetGate` classifies each polling screenshot with lightweight
+  color/size rules mirroring the refiner's non-field detector.
+- When the load-target classifier remains `UNKNOWN_LOAD_TARGET` and the gate
+  sees repeated obvious `cutscene-or-nonfield-*` screenshots, it writes a
+  `wrong-state/cutscene` marker and aborts early before slot `Cross`.
+- Black/loading/other unknown screenshots still reset the wrong-state streak and
+  continue polling until the normal timeout.
+- `tools\ps3_harness_refiner.ps1` also recognizes a
+  `wrong-state/cutscene` load-target marker as equivalent to the manually
+  reviewed long-gate route miss, so it emits no automatic direct-left rerun.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` were
+  updated with the standing rule.
+
+Validation:
+
+- Parser validation passed for `tools\windows_rpcs3_lab.ps1` and
+  `tools\ps3_harness_refiner.ps1`.
+- `git diff --check` had only the repo's normal CRLF warnings.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` still reports the latest
+  long-gate direct-left cutscene route miss and emits no automatic rerun.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `load-target-gate`,
+  `wrong-state-early-abort`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Repair the title-to-Load route timing or add a specific title/menu/load-list
+  state gate. Do not start HLE/RSX stacking from invalid route counters.
