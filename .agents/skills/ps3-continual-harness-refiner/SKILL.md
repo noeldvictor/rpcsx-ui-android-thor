@@ -124,7 +124,17 @@ routes. Use the `Down:160` title-selection diagnostic next so the Load menu
 selection is proven before any save-slot `Cross`. If `Down:160` proves
 `PATH_TO_TENUTO_PRESENT`, continue only with the `Down:160` load-target-gated
 direct-left route. It may press slot `Cross` only after the gate passes, then
-must prove field/movement before any speed, HLE, or RSX promotion.
+must prove field/movement before any speed, HLE, or RSX promotion. If that
+direct-left route proves accepted Path to Tenuto field plus movement, treat it
+as the current route base. Do not fall back to generic `stateaware-one-step`,
+old loader-control, old double-confirm, or old long-gate macros. The next
+route proof should use the `Down:160` load-target-gated base for first battle,
+while title Options remains a separate required proof before any 200% or speed
+promotion. If that first-battle extension crashes after accepted field or shows
+the RPCS3 likely-crashed overlay/corrupt field visuals, re-prove the last clean
+Down160 direct-left boundary and then shrink or state-gate the battle movement
+leg. Do not fall back to generic loader-control or speed/HLE/RSX promotion from
+the crashed battle capture.
 
 ## Acceptance
 

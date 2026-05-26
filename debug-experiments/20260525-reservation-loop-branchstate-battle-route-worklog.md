@@ -775,3 +775,133 @@ Next:
 - Do not run generic loader-control, old double-confirm, old long-gate, speed
   stacking, HLE, or RSX promotion until field plus movement is valid from the
   Down160 route.
+
+## 2026-05-26 Down160 Direct-Left Field/Movement Proof
+
+Purpose:
+
+- Verify whether the proven `Down:160` title Load selection can press the
+  Path-to-Tenuto save slot, reach accepted field, and survive a direct-left
+  movement pulse without opening the obsolete Save/Create-new-file menu.
+
+Run evidence:
+
+- Windows run
+  `20260526-031038-cpu4-titleload-down160-pollgated-directleft200-visualgate-windows-windows`
+  used PadApi, screen 1, CPU affinity `0x0F`, frame/vblank `240`,
+  `ReservationLoop Verify`, and `WindowsVisualGate CleanAfterField`.
+- The live load-target gate passed before save-slot `Cross`:
+  `screenshot-0081s-load-target-gate.png` classified as
+  `PATH_TO_TENUTO_PRESENT`.
+- Visual gate status was `FIELD_LIKE_PRESENT`, first field-like screenshot
+  `screenshot-0136s-accepted-field-check.png` at `136s`, with `0` invalid
+  screenshots after first field-like output and the required field deadline
+  passed by `175s`.
+- Manual screenshot review confirmed the correct Path to Tenuto field and no
+  visible menu/prompt overlay at:
+  - `screenshot-0136s-accepted-field-check.png`;
+  - `screenshot-0138s-left200-check.png` after `ls_left:200`;
+  - `screenshot-0210s.png` late in the route.
+- Host checks were clean, stderr/stdout were empty, and no RPCS3/RPCSX process
+  remained after the run.
+- Fatal scan found no real crash/access/Vulkan/assertion/SIGBUS/SIGSEGV hit.
+- GPU probe summary: `1553` records, `2,355.39 MB` observed DMA,
+  offload fit `spu-kernel-hle=1139` / `too-small=414`, hot PCs `0x25cc`
+  (`1,267.91 MB`) and `0x451c` (`1,087.48 MB`), dynamic MFC
+  `249,853` hits / `574.28 MB` / `257.355 ms`.
+- GPU Port Scoreboard stayed `0 B` promoted CPU/SPU-to-GPU, `0 B` direct
+  RSX-local scout traffic, and `0 B` indirect SPU-DMA/RSX-resource overlap.
+
+Change:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the latest
+  `titleload-down160-pollgated-directleft200` valid-field run as a
+  `titleload-down160-field-route-proven` route base.
+- Added a Down160 load-target-gated first-battle command suggestion:
+  `cpu4-titleload-down160-firstbattle-battleroute-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  now block the stale generic `stateaware-one-step`, old loader-control,
+  old double-confirm, and old long-gate suggestions after this proof.
+
+Classification:
+
+- `route-tooling`, `valid-field-triage`, `down160-field-movement-base`.
+- Field plus direct-left movement proof only.
+- Not menu/Options proof.
+- Not first-battle proof.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Use the Down160 route base for first-battle proof:
+  `cpu4-titleload-down160-firstbattle-battleroute-windows`.
+- Title Options remains separately required before any speed, HLE/RSX, GPU
+  migration, or 200% promotion claim.
+
+## 2026-05-26 Down160 First-Battle Extension Crash
+
+Purpose:
+
+- Extend the proven Down160 load-target-gated field route toward first battle
+  without using the stale loader-control or old title-selection macros.
+
+Run evidence:
+
+- Windows run
+  `20260526-032955-cpu4-titleload-down160-firstbattle-battleroute-windows-windows`
+  used PadApi, screen 1, CPU affinity `0x0F`, frame/vblank `240`,
+  `ReservationLoop Verify`, and `WindowsVisualGate BattleRoute`.
+- The live load-target gate passed before save-slot `Cross` after three
+  attempts:
+  `screenshot-0085s-load-target-gate-3.png` classified as
+  `PATH_TO_TENUTO_PRESENT`.
+- The route reached accepted Path to Tenuto field:
+  `screenshot-0140s-accepted-field-check.png` at `140s`.
+- After the battle movement branch (`ls_left:2600` plus
+  `combo:ls_left+ls_down:2200`), manual screenshots showed corrupt field output
+  with the RPCS3 likely-crashed overlay, not battle:
+  - `screenshot-0192s-battle-candidate.png`;
+  - `screenshot-0253s-first-battle-check.png`;
+  - `screenshot-0314s-late-battle-check.png`.
+- `rpcs3.stderr.txt` reported:
+  `RPCS3: PPU[0x100000c] Thread () [0x002aedd0]: VM: Access violation reading location 0x40 (unmapped memory)`.
+- Visual gate status was `FIELD_LIKE_PRESENT`, but `BattleRoute` failed because
+  no battle-like screenshot was found at or after `200s`.
+- Host checks stayed clean across `5` snapshots and no RPCS3/RPCSX process
+  remained after the wrapper stopped the run at `MaxSeconds 335`.
+- GPU probe summary: `1034` records, `1,148.44 MB` observed DMA, offload fit
+  `spu-kernel-hle=575` / `too-small=459`, hot PCs `0x451c`
+  (`587.50 MB`) and `0x25cc` (`560.94 MB`), dynamic MFC `126,592` hits /
+  `273.60 MB` / `111.494 ms`.
+- GPU Port Scoreboard stayed `0 B` promoted CPU/SPU-to-GPU, `0 B` direct
+  RSX-local scout traffic, and `0 B` indirect SPU-DMA/RSX-resource overlap.
+
+Change:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes a
+  `titleload-down160-firstbattle` fatal as
+  `titleload-down160-firstbattle-fatal`.
+- When a clean Down160 direct-left proof exists, this fatal no longer suggests
+  generic loader-control. It suggests re-proving the Down160 direct-left
+  boundary before shrinking or state-gating the first-battle movement leg.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  now carry the same rule.
+
+Classification:
+
+- `failed-fatal-log`, `route-tooling`, `down160-firstbattle-extension-crash`.
+- Field proof survived until the movement extension.
+- Not first-battle proof.
+- Not menu/Options proof.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Re-prove the last clean Down160 direct-left boundary or shrink/state-gate the
+  battle movement leg from the accepted field screenshot before another
+  first-battle attempt.
+- Do not promote speed, HLE, RSX, or GPU migration from this crashed capture.
