@@ -3409,3 +3409,82 @@ Refiner/Skill updates:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;ls_left:1200;wait:12000;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 0x25cc Stock Down160 Strong-Dismiss Left1200 Long-Gate Field Clean
+
+Question:
+
+- The previous strong-dismiss `ls_left:1200` attempt aborted before save-slot
+  `Cross` on black-overlay `UNKNOWN_LOAD_TARGET` gate frames. This rerun kept
+  the same strong-dismiss movement shape and only lengthened the load-target
+  gate to `60000ms`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-194411-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-longgate-diagnostic-windows`
+
+Verification:
+
+- Windows-only RPCS3 on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and no
+  `Verify25ccShadow`/body fast path.
+- Load-target gate passed on attempt 1 at
+  `screenshot-0082s-load-target-gate.png` with `PATH_TO_TENUTO_PRESENT`
+  (`path-to-tenuto=1`, `debug-save-prologue=0`, `unknown=0`).
+- `screenshot-0177s-load-complete-90s.png` showed the Load UI with
+  `Load complete`.
+- The `cross:300` strong dismiss reached clean Path-to-Tenuto field at
+  `screenshot-0196s-post-load-complete-strong-dismiss-18s.png`; visual gate
+  status `FIELD_LIKE_PRESENT`, first field-like at `196s`, required field by
+  `260s` passed, and invalid screenshots after first field-like were `0`.
+- Manual screenshot checks confirm the character moved after `ls_left:1200`:
+  `screenshot-0210s-left1200-check.png` shows the post-left field position,
+  while `screenshot-0255s-left1200-late-check.png` and `screenshot-0290s.png`
+  stayed clean Path-to-Tenuto field with no save prompt, black overlay,
+  corrupt field, or crash overlay.
+- Host checks were clean across `6` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted log scan found no actionable
+  access violation, assertion, validation, device-lost, or likely-crashed
+  signature; the only hits were benign `ppu_loader` exception-export names and
+  normal PPU thread-exit `aborted` warnings from the load path.
+
+Counters:
+
+- GPU probe records `2576`.
+- Total observed DMA `3,802.85 MB`.
+- Hot PCs: `0x451c` with `1501` records / `2,066.70 MB`; `0x25cc` with `1075`
+  records / `1,736.15 MB`.
+- Offload fit `spu-kernel-hle=1777` / `too-small=799`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+- Window-title field samples ranged from `29.09 FPS` at field entry to
+  `33.31 FPS` at the late screenshot, but this is route telemetry only, not a
+  matched speed proof.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-field-clean`.
+- Field movement boundary: `ls_left:1200` was sent after accepted field and the
+  field remained clean.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the strong-dismiss
+  `left1200` field-clean long-gate result instead of falling through to generic
+  `hle-25cc-shadow-pattern-gap` advice.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command keeps the strong-dismiss long-gate base and tries the
+  `ls_left:1800` midpoint before any verifier, battle, HLE, RSX, GPU, or speed
+  promotion:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;ls_left:1800;wait:12000;shot:left1800-check;wait:45000;shot:left1800-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

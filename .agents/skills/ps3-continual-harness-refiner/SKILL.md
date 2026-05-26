@@ -332,6 +332,15 @@ This is pre-slot gate noise, not movement failure and not a wrong save target.
 Keep the strong-dismiss base and rerun the same `ls_left:1200` shape with a
 longer `gate_load_target` before any verifier, battle, HLE, RSX, GPU, or speed
 work.
+If the strong-dismiss long-gate `ls_left:1200` retry proves
+`PATH_TO_TENUTO_PRESENT`, reaches clean Path-to-Tenuto field, accepts the
+`ls_left:1200` pulse, and stays field-clean through late screenshots, classify
+it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-field-clean`.
+This is a route/movement boundary only: not first-battle proof, not speed, not
+GPU migration, and not a 200% candidate. Keep the same strong-dismiss long-gate
+base and try a midpoint `ls_left:1800` before verifier, full battle, HLE, RSX,
+GPU, or speed promotion.
 
 ## Acceptance
 
