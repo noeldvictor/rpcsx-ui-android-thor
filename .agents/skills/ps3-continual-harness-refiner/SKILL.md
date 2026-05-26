@@ -324,6 +324,14 @@ stays field-clean, classify it as
 Do not fall through to generic 0x25cc shadow-pattern advice. Keep the
 strong-dismiss Down160 base and add only `ls_left:1200` next before any
 verifier, full first-battle, HLE, RSX, GPU, or speed promotion.
+If that strong-dismiss `ls_left:1200` attempt aborts before save-slot `Cross`
+because every load-target polling frame is a black overlay with
+`UNKNOWN_LOAD_TARGET`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-black-gate`.
+This is pre-slot gate noise, not movement failure and not a wrong save target.
+Keep the strong-dismiss base and rerun the same `ls_left:1200` shape with a
+longer `gate_load_target` before any verifier, battle, HLE, RSX, GPU, or speed
+work.
 
 ## Acceptance
 

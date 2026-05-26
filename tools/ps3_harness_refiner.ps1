@@ -373,6 +373,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1200Command {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1200LongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;ls_left:1200;wait:12000;shot:left1200-check;wait:45000;shot:left1200-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
@@ -1197,6 +1202,7 @@ $latestHle25ccShadowDescBattleStockLoading = $false
 $latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit = $false
 $latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccShadowDescOptionsRouteMiss = $false
 $latestHle25ccShadowDescOptionsNoCrossRouteMiss = $false
@@ -1570,6 +1576,13 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss-nomove*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss-left1200*"
     $latestHle25ccShadowDescBuildcheckRouteMiss =
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestText -like "*25cc*" -and
@@ -1888,7 +1901,8 @@ if ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
 if ($latestLoadTargetGateFailure -and
     -not $latestTitleToLoadDownHoldClassifierFalseGateFailure -and
     -not $latestTitleToLoadDownHoldLeftOnlyClassifierDrift -and
-    -not $latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
+    -not $latestTitleToLoadDownHoldLoadTopNormalizeBlack -and
+    -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
     $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
     Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
 }
@@ -2077,6 +2091,9 @@ if ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-field-clean" -Severity "resolved-control" -Evidence ("Newest stock Down160 strong-dismiss no-movement diagnostic reached Path-to-Tenuto field at {0}s and stayed field-clean through the late checkpoint." -f $latestRun.Visual.FirstFieldSeconds) -Action "Keep the strong-dismiss Down160 base and add only ls_left:1200 next. Do not fall back to generic 0x25cc pattern-gap advice, verifier retry, full battle, HLE, RSX, GPU, or speed work yet."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-black-gate" -Severity "route-repair" -Evidence "Newest stock Down160 strong-dismiss left1200 attempt aborted before save-slot Cross because every load-target polling frame was a black overlay with UNKNOWN_LOAD_TARGET." -Action "Treat this as pre-slot gate noise, not a movement or save-target failure. Keep the strong-dismiss base and rerun the same left1200 shape with a longer load-target gate before verifier, battle, HLE, RSX, GPU, or speed work."
+}
 if ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-leftonly-process-exit" -Severity "route-repair" -Evidence "Newest stock Down160 left-only diagnostic proved Path-to-Tenuto field, then RPCS3 exited after the ls_left:2600 movement before left-check screenshots." -Action "Keep the repaired classifier and Down160 load-complete base. Shrink the stock left-only movement to ls_left:1200 with an immediate post-movement screenshot before any verifier or full first-battle retry."
 }
@@ -2218,6 +2235,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 direct-left-shaped route has Path-to-Tenuto target evidence but no field proof. Keep the Down160 route and run the post-load-complete Cross repair under the multi-row load-target classifier."
 } elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
     "Latest Down160 title/load route selected $latestLoadTargetGateStatus, not Path to Tenuto. Stop route retries, restore or repair the save target, and require PATH_TO_TENUTO_PRESENT before re-running the Down160 direct-left boundary."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
+    "Latest stock Down160 strong-dismiss left1200 attempt aborted before slot Cross on black-overlay UNKNOWN_LOAD_TARGET gate frames. Treat it as pre-slot gate noise, not movement failure; rerun the same strong-dismiss left1200 shape with a longer load-target gate."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -2438,6 +2457,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand
 } elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
     "# No automatic route rerun: latest Down160 gate selected $latestLoadTargetGateStatus. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then re-run the Down160 direct-left boundary proof."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1200LongGateCommand
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {

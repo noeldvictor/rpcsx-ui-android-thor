@@ -3343,3 +3343,69 @@ Refiner/Skill updates:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;ls_left:1200;wait:12000;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 0x25cc Stock Down160 Strong-Dismiss Left1200 Black Gate
+
+Question:
+
+- The previous strong-dismiss no-movement diagnostic reached clean
+  Path-to-Tenuto field. This run added only `ls_left:1200` on that same base to
+  test whether the smaller stock movement rung could be observed before any
+  verifier or first-battle retry.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-193211-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-diagnostic-windows`
+
+Verification:
+
+- Windows-only RPCS3 on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and no
+  `Verify25ccShadow`/body fast path.
+- Host checks were clean across `3` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- `rpcs3.stderr.txt` was `0` bytes and fatal scan found no access violation,
+  fatal, assertion, STOP, likely-crashed, validation, or device-lost hit.
+- The live load-target gate aborted before save-slot `Cross`: `13` polling
+  screenshots from `screenshot-0081s-load-target-gate.png` through
+  `screenshot-0111s-load-target-gate-13.png` all classified
+  `black-overlay-small-png` / `UNKNOWN_LOAD_TARGET`.
+- Because the slot `Cross` never fired, the run never reached field, never
+  dismissed `Load complete`, and never sent `ls_left:1200`. Visual gate status
+  was `NO_FIELD_LIKE_SCREENSHOT`.
+
+Counters:
+
+- GPU probe records `891`.
+- Total observed DMA `898.94 MB`.
+- Hot PCs: `0x451c` with `677` records / `569.37 MB`; `0x25cc` with `214`
+  records / `329.57 MB`.
+- Offload fit `spu-kernel-hle=448` / `too-small=443`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-black-gate`.
+- Not field: all gate frames were black-overlay `UNKNOWN_LOAD_TARGET`.
+- Not moving gameplay: slot `Cross` and `ls_left:1200` never executed.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact stock Down160
+  strong-dismiss left1200 black-gate state before the generic load-target
+  fallback.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command keeps the proven strong-dismiss base and only lengthens
+  the pre-slot load-target gate:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;ls_left:1200;wait:12000;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
