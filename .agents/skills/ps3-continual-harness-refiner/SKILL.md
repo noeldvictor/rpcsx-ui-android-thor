@@ -318,6 +318,12 @@ Do not count the left input as movement and do not fall back to generic
 loader-control. Keep the Down160 base and run a stronger no-movement
 post-load-complete dismiss diagnostic before any verifier, movement,
 first-battle, HLE, RSX, GPU, or speed retry.
+If that stronger no-movement dismiss reaches clean Path-to-Tenuto field and
+stays field-clean, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-field-clean`.
+Do not fall through to generic 0x25cc shadow-pattern advice. Keep the
+strong-dismiss Down160 base and add only `ls_left:1200` next before any
+verifier, full first-battle, HLE, RSX, GPU, or speed promotion.
 
 ## Acceptance
 
