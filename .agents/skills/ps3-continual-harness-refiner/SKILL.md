@@ -121,7 +121,10 @@ allowing black/loading transients to keep polling.
 If the title-to-Load diagnostic still enters New Game/story cutscene after the
 short `Down:20`, do not fall back to the old double-confirm or long-gate
 routes. Use the `Down:160` title-selection diagnostic next so the Load menu
-selection is proven before any save-slot `Cross`.
+selection is proven before any save-slot `Cross`. If `Down:160` proves
+`PATH_TO_TENUTO_PRESENT`, continue only with the `Down:160` load-target-gated
+direct-left route. It may press slot `Cross` only after the gate passes, then
+must prove field/movement before any speed, HLE, or RSX promotion.
 
 ## Acceptance
 

@@ -715,3 +715,63 @@ Next:
 - Run only `cpu4-title-to-load-down160-state-diagnostic-windows`.
 - Do not fall back to double-confirm, direct-left long-gate, speed stacking, or
   HLE/RSX promotion until the Load selection is proven before slot `Cross`.
+
+## 2026-05-26 Title Down160 Load-Target Proof
+
+Purpose:
+
+- Test whether a longer title `Down` press selects Load and reaches the known
+  Path to Tenuto save target before any save-slot `Cross`.
+
+Run evidence:
+
+- Windows run
+  `20260526-025935-cpu4-title-to-load-down160-state-diagnostic-windows-windows`
+  used PadApi, screen 1, CPU affinity `0x0F`, frame/vblank `240`,
+  `ReservationLoop Verify`, and `WindowsVisualGate Off`.
+- Manual screenshot review:
+  - `screenshot-0069s-title-after-down160.png` showed `Load` selected on the
+    title menu.
+  - `screenshot-0082s-post-title-cross-down160.png` showed the expected
+    `Checking save files...` Load screen.
+  - `screenshot-0092s-load-target-gate-4.png` showed `Save File 01`, `Polka`,
+    `Path to Tenuto South Section`, and `Ch. 1 Raindrops`.
+- The load-target classifier reported `PATH_TO_TENUTO_PRESENT` after attempt
+  4. Earlier attempts were transient Load UI / save-check frames.
+- Host checks were clean, no RPCS3/RPCSX process remained, and the run was
+  stopped by `MaxSeconds 140` after the diagnostic intentionally ended without
+  pressing the save slot.
+- GPU/counter output remains route-diagnostic only: `946` candidate rows,
+  `948.60 MB` observed DMA, offload fit `spu-kernel-hle=475` /
+  `too-small=471`, hot PCs `0x451c` (`539.05 MB`) and `0x25cc`
+  (`409.55 MB`), and GPU Port Scoreboard `0 B` promoted CPU/SPU-to-GPU,
+  `0 B` direct RSX-local, `0 B` indirect overlap.
+
+Change:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes a down160 title-to-Load
+  diagnostic with `PATH_TO_TENUTO_PRESENT` as a route checkpoint, not a generic
+  wrong-window failure.
+- Added `New-StateAwareTitleToLoadDownHoldDirectLeftCommand`, which repeats the
+  proven `Down:160` title route, gates `PATH_TO_TENUTO_PRESENT`, then presses
+  the save slot and attempts the direct-left movement proof under
+  `CleanAfterField`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same next-step rule.
+
+Classification:
+
+- `route-tooling`, `title-down160-load-target-proof`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run only
+  `cpu4-titleload-down160-pollgated-directleft200-visualgate-windows`.
+- Do not run generic loader-control, old double-confirm, old long-gate, speed
+  stacking, HLE, or RSX promotion until field plus movement is valid from the
+  Down160 route.
