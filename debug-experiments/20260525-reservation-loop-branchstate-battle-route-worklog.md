@@ -2289,3 +2289,52 @@ Next:
   separate visual-proof axis.
 - Keep `0x451c` list-family batching second behind `0x25cc`, and do not add a
   Vulkan compute path unless a later scout proves RSX-consumed data.
+
+## 2026-05-26 0x25cc Pattern-Family Coverage Refresh
+
+Commands:
+
+```powershell
+.\tools\summarize_eternal_sonata_25cc_pattern_family.ps1 -MaxRuns 16 -Top 30 -OutPath .\debug-experiments\20260526-25cc-pattern-family-refresh.md -CsvPath .\debug-experiments\20260526-25cc-pattern-family.csv
+.\tools\summarize_eternal_sonata_25cc_coverage.ps1 -AtlasCsvPath .\debug-experiments\20260526-spu-hle-candidates.csv -OutPath .\debug-experiments\20260526-25cc-coverage-gap.md -CsvPath .\debug-experiments\20260526-25cc-coverage-gap.csv
+```
+
+Evidence:
+
+- Pattern-family report used the same `6` valid fatal-clean field runs as the
+  atlas and excluded the first-battle access-violation route.
+- Selected `0x25cc` traffic is `6.86 GB` over `2` EA buckets, with `0 B`
+  RSX-local bytes.
+- The broad target is `0x9e4000`: `6.86 GB`, `4340` records, `159`
+  patterns, `34,782.089 ms`, max job `6.16 MB`, and `0 B` RSX-local.
+- The only other EA bucket, `0x4f0b80`, is tiny: `2.95 MB` over `6`
+  records.
+- Top repeated `0x9e4000` pattern clusters were all classified
+  `broaden-25cc-verify-ea-family`; the largest four each appeared in all
+  `6` valid runs and covered `510.38 MB`, `492.05 MB`, `482.88 MB`, and
+  `459.96 MB`.
+- Coverage-gap report compared the old exact `0xa1c000` guarded skip against
+  the refreshed atlas. The exact skip is still correctness-clean
+  (`0` mismatches, `0` destination changes, `0` skip misses), but it removed
+  only `5.55 MB`: `0.97%` of that run's hot `0x25cc` bytes, `6.67%` of the
+  exact verifier-shape bytes, and just `0.08%` of the refreshed `6.86 GB`
+  atlas bucket.
+
+Classification:
+
+- `analysis`, `spu-hle-25cc-pattern-family`, `spu-hle-25cc-coverage-gap`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+- This explains why the exact guarded skip was safe but not fast enough: it
+  covered the wrong tiny slice of the larger `0x9e4000` family.
+
+Next:
+
+- Do not rerun the exact `0xa1c000` guarded skip expecting a speed gate.
+- Add or plan a verify-only broad `0x9e4000` family/body verifier for
+  `0x25cc`: gate by title/image/group/SPU/PC, record command descriptors,
+  source/destination hashes, touched GET/PUT ranges, and whether the stock path
+  changes destination data.
+- Keep fast mode and Vulkan compute off until that verifier survives field,
+  title Options, and first-battle visuals with no mismatches.
