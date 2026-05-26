@@ -1830,3 +1830,78 @@ Next:
 - Validate the refiner. The next run must be only the late-dismiss left-only
   first-battle movement isolation before full battle, HLE, RSX, GPU, or
   speed-stacking work.
+
+## 2026-05-26 Down160 Late-Dismiss Field Reached, Window Lost Before Movement
+
+Run:
+
+- `debug-captures\windows-lab\20260526-132810-cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10
+```
+
+Evidence:
+
+- No RPCS3/RPCSX or harness process was active before the run, and the branch
+  was clean.
+- Host checks were clean prelaunch, postlaunch, and postrun. `rpcs3.stderr.txt`
+  is `0` bytes. A targeted fatal scan found no `VM: Access violation`, `FATAL`,
+  `SIG`, Vulkan fatal, verification failure, unknown STOP, unhandled exception,
+  likely-crashed marker, or access-violation evidence.
+- The load-target gate passed on the first attempt:
+  `screenshot-0082s-load-target-gate.png` showed `Save File 01` /
+  `Path to Tenuto` / `South Section` / `Ch. 1 Raindrops`, and
+  `tools\classify_eternal_sonata_load_target.ps1` reported
+  `PATH_TO_TENUTO_PRESENT`.
+- `screenshot-0177s-load-complete-90s.png` still showed the load screen with
+  the `Load complete.` prompt.
+- `screenshot-0195s-post-load-complete-dismiss-18s.png` showed the correct
+  Path-to-Tenuto field after dismissing the load-complete prompt. The window
+  title sample at that checkpoint was `33.32 FPS`, Vulkan, `ETERNAL SONATA
+  [BLUS30161]`.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reported
+  `FIELD_LIKE_PRESENT`, with first field-like screenshot
+  `screenshot-0195s-post-load-complete-dismiss-18s.png` at `195s` (`2.50 MB`)
+  and `0` invalid screenshots after first field-like output.
+- After the `ls_left:2600` input, both movement checkpoints were skipped:
+  `left2600-check` at `243s` and `left2600-late-check` at `304s` because the
+  game window was no longer found. The lab recorded `Process exited at 304s
+  before max 330s` with exit code `exited`.
+- The generated GPU summary reported `1,455` GPU-candidate records,
+  `1,663.41 MB` observed DMA, `0 B` RSX-local traffic, offload fit
+  `spu-kernel-hle=832` / `too-small=623`, hot PCs `0x451c` (`872.92 MB`) and
+  `0x25cc` (`790.49 MB`), dynamic MFC `187,670` hits / `395.07 MB` /
+  `155.380 ms`, MFC list transfer `71,242` calls / `68.290 ms`, and reservation
+  command peak `156,597` hits (`120,500` GETLLAR / `36,097` PUTLLC).
+- GPU scoreboard still reports promoted CPU/SPU-to-GPU replacement as `0 B`
+  and `0.000%`.
+
+Harness/refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` classified this capture as
+  `failed-window-lost-after-field`: valid field route, no fatal markers, no
+  movement proof after left input.
+- The refiner's next action is to add or use black-overlay route control before
+  movement or lane-2 HLE/GPU dry-runs. Suggested next run:
+  `cpu4-loader-control-visualgate-windows`, a no-movement
+  `CleanAfterField` loader/control proof.
+
+Classification:
+
+- `route-tooling`, `titleload-down160-lateloadcomplete-field-reached-window-lost`.
+- Field route restored from the correct `Path to Tenuto` load target.
+- Not post-left movement proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run the no-movement loader/control visual gate before adding movement, battle,
+  lane-2 HLE, RSX, GPU, or speed-stacking work. The goal is to separate route
+  stability/window lifetime from the left-movement input itself.
