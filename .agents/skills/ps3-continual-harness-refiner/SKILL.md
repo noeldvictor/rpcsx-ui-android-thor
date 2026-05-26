@@ -78,6 +78,16 @@ with `0 B` promoted CPU/SPU-to-GPU replacement. Do not rerun that auditor and do
 not keep stacking RSX toggles. Next, pivot to a larger SPU/PPU/codegen speed
 lane, or change RSX source-read/fill architecture if staying RSX.
 
+The first reservation-loop branch-state BattleRoute pivot
+`20260525-224813-cpu4-reservation-loop-branchstate-verify-battle-topslot-battleroute-windows`
+reached a clean field screenshot, then lost the window/process before late field
+or first battle. Treat it as `failed-window-lost-after-field`, not a speed win,
+not `gpu-migration-credit`, and not a 200% candidate. Its `0x25cc` / `0x451c`
+counters are SPU HLE/codegen profiling evidence only. The next action should be
+a smaller field-only `ReservationLoop Verify` route with one state-aware movement
+step and `CleanAfterField`, before any broader battle proof or fast-mode
+promotion.
+
 ## Acceptance
 
 A useful refiner pass leaves one concrete Windows-only action and prevents a

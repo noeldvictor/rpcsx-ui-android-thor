@@ -18365,3 +18365,76 @@ Next:
   debt is source-layout render-pass breaks.
 - Otherwise pivot to a larger SPU/PPU/codegen speed lane. The refiner now
   suggests a `ReservationLoop Verify` first-battle TopSlot BattleRoute proof.
+
+## 2026-05-25 - Reservation Loop Branch-State Battle Route Failed After Field
+
+Purpose:
+
+- Follow the post-RSX-auditor pivot into a CPU4-affinity
+  `ReservationLoop Verify` first-battle TopSlot BattleRoute proof.
+- Check whether the branch-state/reservation-loop counters are route-safe enough
+  to inform the next SPU/PPU/codegen speed lane.
+- Keep this Windows-only on screen 1. No Android, ADB, or Thor work was run.
+
+Run:
+
+- `debug-captures\windows-lab\20260525-224813-cpu4-reservation-loop-branchstate-verify-battle-topslot-battleroute-windows`
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-reservation-loop-branchstate-verify-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Evidence:
+
+- Visual gate: `FIELD_LIKE_PRESENT`, but gate result `failed`.
+- First field-like screenshot: `screenshot-0117s.png` at `117s`, `2.50 MB`.
+- Manual screenshot review confirmed clean Path to Tenuto field gameplay.
+- Required late field at or after `220s`: failed.
+- Required battle-like at or after `200s`: failed.
+- Only `1` field-like screenshot was captured; the game window/process was gone
+  before screenshots at `169s`, `230s`, and `290s`.
+- Window-title FPS at the only screenshot: `32.54`.
+- Host contention stayed externally clean across prelaunch, postlaunch, and
+  postrun snapshots.
+- Fatal-marker scan found no real access violation, assertion, Vulkan
+  validation error, `VK_ERROR`, `SIGSEGV`, or `SIGBUS`.
+
+Counters:
+
+- GPU probe records: `846`.
+- Total observed DMA bytes: `1,048.32 MB`.
+- Offload fit: `spu-kernel-hle=505`, `too-small=341`.
+- Hot PCs: `0x25cc` with `533.92 MB` and `0x451c` with `514.39 MB`.
+- Dynamic MFC hits: `114,827`, `255.12 MB`, `82.885 ms`.
+- List-transfer calls: `42,887`, `33.470 ms`.
+- MFC wait reads: `5,242,116`, all fast, `0` blocking.
+- Reservation loop verify records: `3,199`.
+- Reservation loop command exact-PC records: `25,277`.
+- PUTLLC16 analyzer records: `43`.
+- Promoted CPU/SPU -> GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `failed-window-lost-after-field`.
+- Useful SPU/reservation-loop profile only.
+- Not a speed win, not `windows-micro-win`, not `gpu-migration-credit`, and not
+  a 200% gate candidate.
+- Do not promote any lane-2/HLE/GPU fast mode from this run's clean counters,
+  because the route failed before late field and first battle.
+
+Next:
+
+- The refiner now correctly shrinks the next step to one state-aware field
+  movement proof with `CleanAfterField`:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+```
+
+- Keep broad SPU Vulkan compute parked for this trace. It still reports `0 B`
+  RSX-local traffic and `0 B` indirect RSX overlap, so the useful lane remains
+  SPU HLE/codegen/reservation-loop work around `0x25cc` and `0x451c`.
