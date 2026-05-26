@@ -89,7 +89,10 @@ proof or fast-mode promotion. The default state-aware one-step route then stuck
 on the damaged-save load confirmation, and the damaged-confirm repair reached
 field but parked on the save-point prompt. Treat that as route/tooling only,
 not moving gameplay. The refiner must suggest the damaged-confirm dismiss-save
-macro before any speed, HLE/GPU, or first-battle promotion.
+macro before any speed, HLE/GPU, or first-battle promotion. If that dismiss-save
+route stays in the Load UI, classify it as `load-menu-miss`, block both old
+macros, and suggest a late load-confirm Yes repair before any save-prompt
+dismissal or movement proof.
 
 ## Acceptance
 

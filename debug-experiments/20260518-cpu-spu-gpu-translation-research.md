@@ -18493,3 +18493,52 @@ Next:
   `cpu4-stateaware-damaged-confirm-dismiss-save-left200-visualgate-windows`,
   to dismiss the save prompt and prove the one-left-pulse field state before
   any broader battle route or fast-mode promotion.
+
+## 2026-05-26 - Dismiss-Save State-Aware Route Rejection
+
+Purpose:
+
+- Test the damaged-confirm dismiss-save route suggested after the save-prompt
+  field proof.
+- Keep load/menu FPS and counters out of speed accounting if the route misses
+  field.
+
+Run:
+
+- `debug-captures\windows-lab\20260525-235739-cpu4-stateaware-damaged-confirm-dismiss-save-left200-visualgate-windows-windows`.
+
+Evidence:
+
+- Visual gate failed: `NO_FIELD_LIKE_SCREENSHOT`.
+- Manual screenshots show the Load/Proceed prompt at `screenshot-0133s.png`
+  and the Load file list through `screenshot-0185s.png`, not Path to Tenuto
+  field.
+- Host contention was clean across `6` snapshots.
+- Fatal scan was clean.
+- Title samples were `31.88` to `56.11 FPS`, but the state was Load UI, so the
+  samples are not speed evidence.
+
+Counters:
+
+- Records: `1,243`.
+- Total observed DMA: `1,279.18 MB`.
+- Offload fit: `spu-kernel-hle=671`, `too-small=572`.
+- Hot PCs: `0x25cc` with `675.88 MB`, `0x451c` with `603.30 MB`.
+- Dynamic MFC: `130,418` hits, `315.38 MB`, `122.073 ms`.
+- MFC list transfer: `48,710` calls, `26.522 ms`.
+- Reservation-loop verify records: `4,903`.
+- Lane 2: `8299/8299/8299/0/0`.
+- GPU port scoreboard: `0 B` promoted CPU/SPU-to-GPU replacement, `0 B`
+  direct RSX-local scout traffic, and `0 B` indirect overlap.
+
+Classification:
+
+- `failed-visual-gate`, `route-tooling`, `load-menu-miss`.
+- Not field, not moving gameplay, not a speed win, not
+  `gpu-migration-credit`, and not a 200% gate candidate.
+
+Next:
+
+- The refiner now suggests `cpu4-stateaware-late-load-confirm-left200-visualgate-windows`
+  to repair the late Load/Proceed confirmation before any save-prompt dismissal
+  or movement proof.

@@ -182,3 +182,77 @@ Next:
   reservation-loop proof.
 - Keep lane-2 HLE/GPU fast modes blocked until field, menu/Options, and
   first-battle visuals are valid in the same stack.
+
+## 2026-05-26 Dismiss-Save Route Rejection
+
+Goal:
+
+- Test the refiner's damaged-confirm dismiss-save route after the previous run
+  reached field rendering but parked on the save-point prompt.
+- Keep this Windows-only on screen 1. No Android, ADB, or Thor work was run.
+
+Run:
+
+- `debug-captures\windows-lab\20260525-235739-cpu4-stateaware-damaged-confirm-dismiss-save-left200-visualgate-windows-windows`
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-damaged-confirm-dismiss-save-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;cross:120;wait:15000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 185 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8
+```
+
+Visual/log proof:
+
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`.
+- All `9` screenshots were `wrong-window-or-other-small-png` by the
+  field-only classifier.
+- Manual screenshots show the Load screen and `Load data from this file.
+  Proceed?` prompt at `screenshot-0133s.png`, then the Load list through
+  `screenshot-0185s.png`.
+- Host contention stayed clean across `6` snapshots.
+- Fatal-marker scan was clean after excluding known non-fatal symbol text.
+- Title-bar FPS samples ranged from `31.88` to `56.11`, but these are Load UI
+  samples, not field or moving-gameplay speed evidence.
+
+Counters:
+
+- GPU probe records: `1,243`.
+- Total observed DMA bytes: `1,279.18 MB`.
+- Offload fit: `spu-kernel-hle=671`, `too-small=572`.
+- Hot PCs:
+  - `0x25cc`: `439` records, `675.88 MB`.
+  - `0x451c`: `804` records, `603.30 MB`.
+- Dynamic MFC hits: `130,418`, `315.38 MB`, `122.073 ms`.
+- MFC list-transfer calls: `48,710`, `26.522 ms`.
+- Reservation loop verify records: `4,903`.
+- Reservation loop command exact-PC records: `39,000`.
+- Lane 2 stayed clean: `8299/8299/8299/0/0`.
+- Promoted CPU/SPU -> GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `failed-visual-gate`, `route-tooling`, `load-menu-miss`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `windows-micro-win`.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Harness/refiner outcome:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes
+  `stateaware-dismiss-save-load-menu-miss`.
+- It blocks the old default field macro and the dismiss-save macro after this
+  state, and suggests the late load-confirm repair:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-late-load-confirm-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:35000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8
+```
+
+Next:
+
+- Run the late load-confirm repair before any save-prompt dismissal, broader
+  battle route, or fast-mode promotion.
