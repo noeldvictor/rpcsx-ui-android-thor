@@ -17955,3 +17955,91 @@ Next:
 - If that passes, the failure is likely an interaction and the next step is a
   two-family interaction split.
 - If that fails, split resolve/depth/present into smaller toggles.
+
+## 2026-05-25 - BodyFast Plus RSX Resolve/Depth/Present Bisection Passed
+
+Purpose:
+
+- Complete the complementary bisection after `bodyfast + RSX geometry-only`
+  passed and the earlier full `bodyfast + RSX geometry/locality` stack lost the
+  RPCS3 window.
+- Test only the resolve/depth/present half (`DepthReadOnly`, `FastSampled`,
+  `KeepReadOnly`, `GpuSwap`) on top of the clean `0x25cc bodyfast`
+  CPU-pressure component.
+- Keep this Windows-only on screen 1. No Android, ADB, Thor, or 200%
+  promotion work was performed.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-resolvedepthpresent-battle-topslot-nopause-bisect -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260525-211419-hle-25cc-bodyfast-rsx-resolvedepthpresent-battle-topslot-nopause-bisect-windows`
+
+Visual/log proof:
+
+- Visual gate passed `BattleRoute` triage:
+  `FIELD_LIKE_PRESENT` / `passed-for-triage`.
+- Required field-like screenshot at or before `160s`: passed.
+- Required field-like screenshot at or after `220s`: passed.
+- Required battle-like screenshot at or after `200s`: passed.
+- Manual spot checks:
+  - `screenshot-0117s.png`: clean Path to Tenuto field, title `119.90 FPS`;
+  - `screenshot-0169s.png`: clean first-battle tutorial prompt, title
+    `119.84 FPS`;
+  - `screenshot-0230s.png`: clean active first battle, title `120.09 FPS`;
+  - `screenshot-0320s.png`: clean late active first battle, title `119.94 FPS`.
+- Invalid screenshots after first field-like: `0`.
+- Host gate: external-clean across all `6` host snapshots; one in-run snapshot
+  was total `moderate` from GPU engine sum, so do not use it as a fresh timing
+  comparison.
+- Serious fatal evidence: none in refiner output; the harness stopped the
+  process at the `330s` wall-time limit.
+
+Counters:
+
+- `0x25cc bodyfast` remained active:
+  - records `3058`;
+  - hits `45858`;
+  - bytes `716.53 MB`;
+  - timing `0.000 ms`.
+- GPU migration accounting remains empty:
+  - total observed DMA bytes `0 B`;
+  - RSX-local traffic records `0`;
+  - indirect RSX resource overlap records `0`;
+  - new promoted CPU/SPU to GPU replacement `0 B` / `0.000%`.
+
+Classification:
+
+- `resolved-bisect`, `valid-first-battle-triage`.
+- Not a speed win: FPS stayed capped around `120`.
+- Not `gpu-migration-credit`: no new CPU/SPU/PPU work moved onto GPU.
+- Not a 200% gate candidate.
+- Since geometry-only and resolve/depth/present-only both passed, but the full
+  combined stack failed, the blocker is now a cross-family interaction.
+
+Harness/report changes:
+
+- `tools\ps3_harness_refiner.ps1` now detects the state where both RSX halves
+  pass after the full stack failed.
+- The refiner no longer falls back to the stale bodyfast CPU-stack rule for
+  RSX bisection runs, and it no longer suggests the failed full stack after
+  both halves pass.
+- The next suggested command adds only `VertexSuperset Fast` to the
+  resolve/depth/present subset:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-rdp-vertexsuperset-battle-topslot-nopause-interaction -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Next:
+
+- Run the interaction command above.
+- If it passes, keep `VertexSuperset Fast` compatible and add exactly one more
+  geometry family.
+- If it fails, the interaction starts with `VertexSuperset Fast` plus the
+  resolve/depth/present subset; split that pair before testing persistent
+  vertex or index caches.

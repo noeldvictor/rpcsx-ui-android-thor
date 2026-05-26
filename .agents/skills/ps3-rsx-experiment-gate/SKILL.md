@@ -49,6 +49,10 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
 - If geometry-only passes after a full-stack failure, do not jump back to the
   full stack. Test resolve/depth/present-only next; if that also passes, treat
   the bug as an interaction before combining again.
+- If geometry-only and resolve/depth/present-only both pass but the full stack
+  failed, do not rerun the full stack. Add one geometry family to the
+  resolve/depth/present subset at a time, starting with `VertexSuperset Fast`
+  while persistent vertex and index caches stay off.
 - Keep `RSX auditor` off for timing unless the experiment is specifically a
   counter/auditor proof.
 

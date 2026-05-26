@@ -34,6 +34,9 @@ Compose it with:
 - If a combined stack fails where a component passed alone, the result is a
   `stack-regression`. Do not keep stacking. Bisect the combined stack back down
   to the last known-good component.
+- If complementary subsets each pass but the full stack fails, the result is an
+  interaction ladder, not a retry. Recombine one family at a time and keep the
+  last failing full stack out of automatic suggestions.
 - Do not add deltas arithmetically. The only aggregate claim is the measured
   result of the combined run after field, menu/Options, and first-battle visuals
   survive.
