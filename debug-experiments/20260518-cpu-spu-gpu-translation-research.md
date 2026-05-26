@@ -18296,3 +18296,72 @@ Next:
 
 - For speed, stop RSX interaction stacking and pivot to a larger SPU/PPU/codegen
   lane with matched field/menu/battle proof.
+
+## 2026-05-25 - BodyFast RSX Final-Stack Auditor Accounting
+
+Purpose:
+
+- Refresh exact-stack RSX-local accounting after the final RDP plus
+  `VertexSuperset Fast`, `VertexPersistent Fast`, and `IndexPersistent Fast`
+  recombine passed.
+- Answer the speed/offload question honestly before choosing the next lane.
+- Keep this Windows-only on screen 1. No Android, ADB, or Thor work was run.
+
+Run:
+
+- `debug-captures\windows-lab\20260525-222842-hle-25cc-bodyfast-rsx-finalstack-auditor-battle-topslot-nopause-accounting-windows`
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-finalstack-auditor-battle-topslot-nopause-accounting -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsRsxAuditor 60 -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Evidence:
+
+- Visual gate: `FIELD_LIKE_PRESENT`, `passed-for-triage`.
+- Field by `160s`: passed, first field-like `screenshot-0117s.png` at `117s`.
+- Active first battle: passed, first battle-like `screenshot-0230s.png` at
+  `230s`; late battle `screenshot-0320s.png` at `320s`.
+- Invalid screenshots after first field-like: `0`.
+- Manual spot checks of field and active battle screenshots were clean.
+- Fatal-marker scan found no real access violation, assertion, Vulkan
+  validation error, `VK_ERROR`, `SIGSEGV`, or `SIGBUS`.
+- Host contention: `ExternalFail` passed, external clean across `6` snapshots,
+  total clean.
+- Window-title FPS remained capped near `120 FPS`, roughly `119.87` to
+  `120.22`.
+
+Counters:
+
+- Promoted CPU/SPU -> GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+- `0x25cc bodyfast`: `3,055` body records, `45,813` GET body hits, `45,840`
+  PUT rejects, `715.83 MB`.
+- RSX auditor records: `793`, auditor frames `47,580`.
+- RSX-local credit events: `17,408,746`.
+- Persistent vertex fast: `8,612,782` hits, `111,068.09 MB` hit bytes.
+- Persistent index fast: `8,495,219` hits, `10,229.11 MB` hit bytes.
+- Fused GPU resolve/blit dispatches: `21,327`.
+- Sampled-MSAA resolve/blit dispatches: `21,327`.
+- Read-only depth-feedback keeps: `279,197`.
+- Present upload GPU byte-swap: `1` event, `3.52 MB`.
+- Remaining render-pass break debt: `7,105`, all from fused blit-source source
+  reads.
+
+Classification:
+
+- `valid-first-battle-triage`.
+- `gpu-migration-credit` only for RSX-local residency/cache accounting.
+- Not a speed win.
+- Not promoted CPU/SPU GPU replacement.
+- Not a 200% gate candidate.
+
+Next:
+
+- Do not rerun the exact final-stack auditor and do not stack more RSX toggles.
+- If staying RSX, attack source-read/fill architecture because the remaining
+  debt is source-layout render-pass breaks.
+- Otherwise pivot to a larger SPU/PPU/codegen speed lane. The refiner now
+  suggests a `ReservationLoop Verify` first-battle TopSlot BattleRoute proof.

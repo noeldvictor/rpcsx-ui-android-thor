@@ -71,10 +71,12 @@ only, RDP plus `VertexSuperset Fast`, RDP plus `VertexSuperset Fast` plus
 `VertexPersistent Fast`, and the final RDP plus `VertexSuperset Fast` plus
 `VertexPersistent Fast` plus `IndexPersistent Fast` recombine. Treat the full
 stack as visually compatible on the TopSlot BattleRoute, but capped around
-`120 FPS`, not new CPU/SPU GPU migration, and not a 200% gate candidate. Do not
-keep stacking RSX toggles. Next, run exact-stack `-WindowsRsxAuditor 60`
-accounting only if RSX-local credit must be refreshed; otherwise pivot to a
-larger SPU/PPU/codegen speed lane.
+`120 FPS`, not new CPU/SPU GPU migration, and not a 200% gate candidate. The
+follow-up exact-stack `-WindowsRsxAuditor 60` accounting pass also reached clean
+field and active battle visuals, proving large RSX-local residency/cache credit
+with `0 B` promoted CPU/SPU-to-GPU replacement. Do not rerun that auditor and do
+not keep stacking RSX toggles. Next, pivot to a larger SPU/PPU/codegen speed
+lane, or change RSX source-read/fill architecture if staying RSX.
 
 ## Acceptance
 

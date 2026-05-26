@@ -65,6 +65,12 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
   treat the stack as compatible but closed for interaction bisection. Do not add
   more RSX toggles. Refresh exact-stack auditor/accounting proof only if needed,
   or pivot to SPU/PPU/codegen work for actual speed.
+- If the exact final-stack auditor/accounting proof has already passed clean
+  field and active first-battle visuals, do not rerun it. Bank the RSX-local
+  residency/cache counters separately from promoted CPU/SPU GPU replacement,
+  then pivot to SPU/PPU/codegen speed work or a source-read/fill architecture
+  change. The current final-stack auditor evidence still reports `0 B` promoted
+  CPU/SPU-to-GPU replacement and capped `120 FPS`.
 - Keep `RSX auditor` off for timing unless the experiment is specifically a
   counter/auditor proof.
 
