@@ -279,6 +279,12 @@ If the no-initial-`Cross` Options proof reaches the title menu and selects
 repeat the same route. Classify it as `options-nocross-wait-drift`; switch to a
 fast Down160 title-menu route with short waits between `Down`, `Down`, and
 `Cross`, keeping explicit title/selection screenshots and `Verify25ccShadow`.
+If that fast Down160 Options proof reaches the full title Options page with the
+0x25cc shadow/descriptor verifier clean, classify it as
+`valid-options-triage` and `hle-25cc-shadow-desc-options-clean`. It is a menu
+proof only: not speed, not GPU migration, and not a 200% result. Do not rerun
+field or Options; the next required proof is first battle with
+`Verify25ccShadow`.
 
 ## Acceptance
 

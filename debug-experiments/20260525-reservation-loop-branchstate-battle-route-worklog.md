@@ -2891,3 +2891,81 @@ Next:
 - Do not repeat the same no-initial-Cross Options macro.
 - Run the fast Down160 title Options proof with `Verify25ccShadow`, then prove
   first battle before bodyfast, stack, GPU, or speed promotion.
+
+## 2026-05-26 0x25cc Descriptor Fast-Select Options Proof
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label cpu4-hle-25cc-shadow-desc-options-fastselect-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-preinput;down:160;wait:600;shot:title-after-down1;down:160;wait:600;shot:title-after-down2-fast;cross:180;wait:6000;shot:options-candidate;wait:10000;shot:options-late" -MaxSeconds 130 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 65 -ScreenshotMaxCount 14 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-174450-cpu4-hle-25cc-shadow-desc-options-fastselect-proof-windows`
+
+Verification:
+
+- Windows-only RPCS3 run on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity
+  `0x0F`, frame/vblank `240/240`, GPU probe Profile, and
+  `Verify25ccShadow`.
+- Host checks were clean across `6` snapshots, and no active RPCS3/RPCSX
+  process remained after the run.
+- Fatal scan was clean; no access violation, VM access, Vulkan, validation,
+  assertion, or likely-crashed evidence was present.
+- Manual screenshots verified the exact title route:
+  - `screenshot-0068s-title-preinput.png`: title menu, `NEW GAME` selected.
+  - `screenshot-0069s-title-after-down1.png`: title menu, `LOAD` selected.
+  - `screenshot-0070s-title-after-down2-fast.png`: title menu, `OPTIONS`
+    selected.
+  - `screenshot-0077s-options-candidate.png`: full title Options page.
+  - `screenshot-0088s-options-late.png`: full title Options page still stable.
+
+Counters:
+
+- GPU probe records `974`; SPU HLE verifier/shadow rows `974`.
+- 0x25cc family records `400`; shadow descriptor records `11988`.
+- Target 0x25cc shadow verifier: hits `12768`, GET/PUT `5988/6780`, bytes
+  `199.50 MB`, destination changed/unchanged `2814/9954`, output
+  match/mismatch `12768/0`, unique source hashes `400`, unique
+  destination-post hashes `400`.
+- Target 0x25cc shadow descriptors: hits `12768`, GET/PUT `5988/6780`, bytes
+  `199.50 MB`, destination changed `2814`, output match/mismatch `12768/0`,
+  unique pattern signatures `36`, descriptor overflow `0`.
+- Total observed DMA `1154.35 MB`; RSX-local traffic records `0`; offload fit
+  `spu-kernel-hle=584` / `too-small=390`.
+- GPU Port Scoreboard stayed `0 B` promoted CPU/SPU-to-GPU, `0 B` direct
+  RSX-local, and `0 B` indirect overlap.
+- Note: the generic shadow-verifier aggregate still includes older/non-target
+  shapes such as `0x451c`; the target 0x25cc shadow and descriptor rows for
+  this proof stayed zero-mismatch.
+
+Classification:
+
+- `valid-options-triage`.
+- `hle-25cc-shadow-desc-options-clean`.
+- Menu/Options proof only.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the 0x25cc descriptor
+  fast-select Options shape as valid Options triage instead of wrong-window or
+  cutscene fallout from the field-only visual classifier.
+- Older cutscene/menu-route misses no longer outrank the newest valid Options
+  proof.
+- Suggested command now advances to a TopSlot first-battle
+  `Verify25ccShadow` proof:
+  `cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  now carry the same standing rule.
+
+Next:
+
+- Do not rerun the descriptor field proof.
+- Do not rerun title Options.
+- Prove first battle with `Verify25ccShadow`.
+- Only after first battle can bodyfast, stack, GPU, or speed promotion be
+  reconsidered.
