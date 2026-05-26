@@ -2061,3 +2061,87 @@ Next:
 - Run only the suggested `left200x2` movement-control proof, then require the
   same screenshot/log/counter classification before increasing route distance,
   attempting first battle, or reopening HLE/GPU/speed-stacking work.
+
+## 2026-05-26 Loader-Control Left200x2 Movement Passed
+
+Run:
+
+- `debug-captures\windows-lab\20260526-142353-cpu4-loader-control-left200x2-visualgate-windows-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+```
+
+Evidence:
+
+- Host checks were clean across `7` snapshots, RPCS3 stayed on screen 1 /
+  `\\.\DISPLAY2`, CPU affinity `0x0F` was applied, and the harness stopped
+  RPCS3 at the planned `215s` wall-time limit. No RPCS3/RPCSX process remained
+  afterward.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` are both `0` bytes. A targeted
+  fatal scan found no real `VM: Access violation`, `FATAL`, `SIG`, Vulkan
+  fatal, verification failure, unknown STOP, unhandled exception,
+  likely-crashed marker, or access-violation evidence. The only `fatal` hit was
+  the config line `Show fatal error hints: false`.
+- Manual screenshot checks showed clean Path-to-Tenuto field visuals throughout:
+  - `screenshot-0133s.png` shows the pre-movement field near the save point.
+  - `screenshot-0136s.png` shows the first `ls_left:200` pulse moved the player
+    left of the save point.
+  - `screenshot-0138s.png` shows the second `ls_left:200` pulse still clean and
+    farther from the save point.
+  - `screenshot-0210s.png` shows the same clean field alive at the final
+    captured frame.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reported
+  `FIELD_LIKE_PRESENT`, first field-like screenshot `screenshot-0117s.png` at
+  `117s` (`2.49 MB`), `16` field-like screenshots, `0` invalid screenshots
+  after first field-like output, and a passed triage gate.
+- Window-title samples stayed on `ETERNAL SONATA [BLUS30161]`, Vulkan, with
+  route-health FPS samples from `27.27` to `42.38`. These are not a matched
+  speed claim.
+- GPU profiler summary recorded `1,594` candidate records, `2,621.03 MB`
+  observed DMA, `1,594` dynamic MFC records, `768` MFC list-transfer records,
+  `1,710` reservation-loop command records, `6,031` reservation-loop verify
+  records, and offload-fit mix `spu-kernel-hle=1231, too-small=363`.
+- Hot PC DMA remained concentrated at `0x451c` (`1,326.58 MB`) and `0x25cc`
+  (`1,294.45 MB`). Dynamic MFC fallback was `301,245` hits / `627.93 MB` /
+  `316.959 ms`, with PC mix `0x25cc=25,637` hits and `0x451c=275,608` hits.
+  List transfer was `112,760` calls / `1.75 MB` descriptors / `159.799 ms`.
+- Reservation-loop command peak rose to `233,244` hits, with `175,795` GETLLAR,
+  `57,449` PUTLLC, and top exact PCs `0xa70`, `0xad4`, `0x340`, and `0x660`.
+- Promoted CPU/SPU-to-GPU replacement remains `0 B` / `0.000%`. Direct
+  RSX-local scout traffic remains `0 B`, and indirect SPU-DMA/RSX-resource
+  overlap remains `0 B`.
+
+Harness/refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` classified this newest capture as
+  `valid-field-triage`.
+- The refiner resolved the newest route base to
+  `cpu4-loader-control-left200x2-visualgate-windows`, kept lane-2 HLE/GPU
+  dry-runs blocked, and continued to treat repeated zero-RSX-local evidence as
+  a direction away from broad SPU-to-Vulkan compute.
+- Suggested next command is exactly one tiny diagonal micro-pulse from this
+  proof base:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
+```
+
+Classification:
+
+- `route-tooling`, `valid-field-triage`, `loader-control-left200x2-field-clean`.
+- The stable loader/control route now has two verified small left-movement
+  pulses with clean field visuals.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run only the suggested `left200x2-diag200` field movement proof, then require
+  the same screenshot/log/counter classification before increasing route
+  distance, attempting first battle, or reopening HLE/GPU/speed-stacking work.
