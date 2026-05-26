@@ -1905,3 +1905,80 @@ Next:
 - Run the no-movement loader/control visual gate before adding movement, battle,
   lane-2 HLE, RSX, GPU, or speed-stacking work. The goal is to separate route
   stability/window lifetime from the left-movement input itself.
+
+## 2026-05-26 Loader-Control Field Stable Through 190s
+
+Run:
+
+- `debug-captures\windows-lab\20260526-134726-cpu4-loader-control-visualgate-windows-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
+```
+
+Evidence:
+
+- The Codex shell hit its outer timeout after the lab had already stopped
+  RPCS3 at the `190s` wall-time limit. The run folder is complete enough for
+  classification: `windows-rpcs3-lab.txt` records `Process exceeded 190s total
+  wall time; stopping PID 9352`, host checks clean, `Exit code: exited`, and no
+  RPCS3/RPCSX process remained afterward.
+- `rpcs3.stderr.txt` is `0` bytes. A targeted fatal scan found no real
+  `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification failure,
+  unknown STOP, unhandled exception, likely-crashed marker, or access-violation
+  evidence. The only `fatal` hit was the config line `Show fatal error hints:
+  false`.
+- Manual screenshots showed the Path-to-Tenuto field from the first captured
+  frame through the final one:
+  - `screenshot-0117s.png` shows clean field at `117s`.
+  - `screenshot-0190s.png` shows the same clean field still alive at `190s`.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reported
+  `FIELD_LIKE_PRESENT`, first field-like screenshot `screenshot-0117s.png` at
+  `117s` (`2.50 MB`), `10` field-like screenshots, and `0` invalid screenshots
+  after first field-like output.
+- `window-title-samples.csv` stayed on `ETERNAL SONATA [BLUS30161]`, Vulkan,
+  with field-route title FPS samples from `26.27` to `36.87` FPS. These are
+  route-health samples only, not a matched speed claim.
+- The full GPU summarizer timed out on the `83.88 MB` log, so a targeted
+  streaming extraction was used for route-control counters: `1,452`
+  GPU-candidate records, `2,204.69 MB` observed DMA, `0 B` RSX bytes, largest
+  job `13.17 MB`, hot PCs `0x25cc=1,159.68 MB` and `0x451c=1,045.00 MB`,
+  dynamic MFC `1,452` records / `240,330` hits / `534.01 MB` / `224.923 ms`,
+  MFC list transfer `720` records / `89,079` calls / `88.424 ms`, and
+  reservation command `1,606` records with peak `164,027` hits
+  (`125,916` GETLLAR / `38,111` PUTLLC).
+- Promoted CPU/SPU-to-GPU replacement remains `0 B` / `0.000%`.
+
+Harness/refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` classified this newest capture as
+  `valid-field-triage`.
+- The refiner marked the previous black-overlay route-control blocker as
+  resolved by this newest loader-control run, but kept lane-2 HLE/GPU dry-runs
+  blocked because newer proof still lacks field/menu/battle coverage and
+  repeated counters show zero RSX-local traffic.
+- Suggested next command is a single small state-aware movement step from this
+  route base:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
+```
+
+Classification:
+
+- `route-tooling`, `valid-field-triage`.
+- No-movement loader/control route held stable field visuals through the
+  planned 190s stop.
+- Not post-left movement proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run only the suggested small `left200` movement-control proof before any
+  larger left-only leg, first battle, HLE, RSX, GPU, or speed-stacking work.
