@@ -363,6 +363,11 @@ function New-Hle25ccShadowDescBattleStockDown160Left1200Command {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-left1200-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismissNoMoveCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;wait:45000;shot:strong-dismiss-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-nomove-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
@@ -1185,6 +1190,7 @@ $latestHle25ccShadowDescOptionsPass = $false
 $latestHle25ccShadowDescBattleFatal = $false
 $latestHle25ccShadowDescBattleStockLoading = $false
 $latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit = $false
+$latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccShadowDescOptionsRouteMiss = $false
 $latestHle25ccShadowDescOptionsNoCrossRouteMiss = $false
@@ -1543,6 +1549,14 @@ if ($latestRun) {
         $latestText -like "*battle-stock-down160-leftonly*" -and
         $latestRun.Lab -and
         $latestRun.Lab.ProcessExitedWindowLoss -gt 0
+    $latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-left1200*"
     $latestHle25ccShadowDescBuildcheckRouteMiss =
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestText -like "*25cc*" -and
@@ -1794,6 +1808,8 @@ if ($loadingRuns.Count -ge 2) {
 if ($cutsceneRuns.Count -ge 1 -and $latestRun.Decision -ne "valid-options-triage") {
     $cutsceneAction = if ($latestHle25ccShadowDescBattleFatal) {
         "The current blocker is the 0x25cc descriptor first-battle fatal, not the older Options/cutscene route misses. Ignore old loader-control fallback advice and isolate the same TopSlot battle route with Verify25ccShadow off."
+    } elseif ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
+        "The current blocker is the stock Down160 left1200 load-complete popup miss, not the older Options/cutscene route misses. Keep the repaired Down160 base and prove a stronger no-movement dismiss before movement."
     } elseif ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
         "The current blocker is the stock Down160 left-only process exit after clean field, not the older Options/cutscene route misses. Keep the repaired Down160 base and shrink the stock left movement."
     } elseif ($latestHle25ccShadowDescBattleStockLoading) {
@@ -1973,6 +1989,8 @@ if ($latestHle25ccBodyBattleOptionsRouteMiss) {
 if ($fatalRuns.Count -ge 1) {
     $fatalAction = if ($latestHle451cPreserveBodyBattleFatal) {
         "Latest preserve-body first-battle proof reached battle but froze with VM access violation. Re-prove the exact first-battle route with preserve-body Off before narrowing preserve-body semantics."
+    } elseif ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
+        "A recent 0x25cc descriptor verifier battle run fataled, but the newest stock Down160 left1200 run stayed on the Load complete popup. Repair the dismiss step before any verifier or movement retry."
     } elseif ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
         "A recent 0x25cc descriptor verifier battle run fataled, but the newest stock Down160 route now reaches field and exits only after ls_left:2600. Shrink stock left movement on the repaired Down160 base before any verifier retry."
     } elseif ($latestHle25ccShadowDescBattleStockLoading) {
@@ -2035,6 +2053,9 @@ if ($latestHle25ccShadowDescBattleFatal) {
 }
 if ($latestHle25ccShadowDescBattleStockLoading) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-loading" -Severity "route-repair" -Evidence "Newest no-Verify25ccShadow TopSlot stock-control battle isolation stayed on Now Loading for every screenshot, with clean host/fatal logs and no field or battle visuals." -Action "Do not treat this as a verifier-only fatal and do not fall back to generic field movement. Repair the battle route from the current Down160 late-load-complete base with a stock left-only diagnostic before any verifier retry."
+}
+if ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-left1200-load-complete-stuck" -Severity "route-repair" -Evidence "Newest stock Down160 left1200 diagnostic proved PATH_TO_TENUTO_PRESENT, but all post-load and post-left screenshots stayed on the Load UI with the Load complete popup until max wall-time." -Action "Do not count the left1200 input as movement and do not fall back to generic loader-control. Keep the Down160 base and run a stronger no-movement post-load-complete dismiss diagnostic before any verifier or movement retry."
 }
 if ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-leftonly-process-exit" -Severity "route-repair" -Evidence "Newest stock Down160 left-only diagnostic proved Path-to-Tenuto field, then RPCS3 exited after the ls_left:2600 movement before left-check screenshots." -Action "Keep the repaired classifier and Down160 load-complete base. Shrink the stock left-only movement to ls_left:1200 with an immediate post-movement screenshot before any verifier or full first-battle retry."
@@ -2245,6 +2266,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc descriptor fast-select Options proof reached the full title Options page with Verify25ccShadow and zero target 0x25cc shadow/descriptor mismatches. Do not rerun field or Options; prove first battle next before bodyfast, stack, GPU, or speed promotion."
 } elseif ($latestHle25ccShadowDescBattleFatal) {
     "Latest 0x25cc descriptor first-battle Verify25ccShadow run reached battle/tutorial visuals but fataled at PPU VM access 0x002aedd0 reading 0x40. Do not count it as first-battle proof, do not rerun unchanged, and do not reset to loader-control; first isolate whether the same TopSlot battle route is fatal without Verify25ccShadow."
+} elseif ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
+    "Latest stock Down160 left1200 diagnostic never dismissed the Load complete popup, so its left1200 input is not movement. Keep the Down160 base, prove a stronger no-movement post-load-complete dismiss, then retry movement only after field appears."
 } elseif ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     "Latest stock Down160 left-only diagnostic reached Path-to-Tenuto field at $($latestRun.Visual.FirstFieldSeconds)s with clean fatal logs, then RPCS3 exited after ls_left:2600 before left-check screenshots. Treat the Down160 base as repaired, but not movement/battle proof; shrink to ls_left:1200 with an immediate post-movement screenshot before any verifier retry."
 } elseif ($latestHle25ccShadowDescBattleStockLoading) {
@@ -2461,6 +2484,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleVerifyCommand
 } elseif ($latestHle25ccShadowDescBattleFatal) {
     New-Hle25ccShadowDescBattleStockControlCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismissNoMoveCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     New-Hle25ccShadowDescBattleStockDown160Left1200Command
 } elseif ($latestHle25ccShadowDescBattleStockLoading) {

@@ -3204,3 +3204,74 @@ Refiner/Skill updates:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-left1200-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:1200;wait:12000;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 0x25cc Stock Down160 Left1200 Load-Complete Stuck
+
+Question:
+
+- The previous stock Down160 left-only diagnostic reached field, then RPCS3
+  exited after `ls_left:2600`. The refiner shrank movement to `ls_left:1200`
+  with an immediate post-movement screenshot to test whether a smaller stock
+  movement rung survives.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-190058-cpu4-hle-25cc-shadow-desc-battle-stock-down160-left1200-diagnostic-windows`
+
+Verification:
+
+- Windows-only RPCS3 on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and no
+  `Verify25ccShadow`/body fast path.
+- Host checks were clean across `5` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- `rpcs3.stderr.txt` was `0` bytes and fatal scan found no access violation,
+  fatal, assertion, STOP, likely-crashed, validation, or device-lost hit.
+- Load-target gate passed on attempt 1:
+  `screenshot-0081s-load-target-gate.png` classified
+  `PATH_TO_TENUTO_PRESENT`.
+- Visual gate status was `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot
+  was none and the required field before `240s` failed.
+- Manual screenshot review showed the route never dismissed the Load UI:
+  `screenshot-0195s-post-load-complete-dismiss-18s.png`,
+  `screenshot-0209s-left1200-check.png`, and
+  `screenshot-0254s-left1200-late-check.png` all remained on `Save File 03` /
+  `Path to Tenuto` with the `Load complete` popup.
+- Process stayed alive until the harness stopped it at the `270s` max wall time,
+  so this is not the previous post-movement process-exit signature.
+
+Counters:
+
+- GPU probe records `2288`.
+- Total observed DMA `2,262.88 MB`.
+- Hot PCs: `0x451c` with `1839` records / `1,575.26 MB`; `0x25cc` with `449`
+  records / `687.62 MB`.
+- Offload fit `too-small=1193` / `spu-kernel-hle=1095`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-left1200-load-complete-stuck`.
+- Not moving gameplay: `ls_left:1200` was sent while still on the Load UI.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact stock Down160
+  left1200 load-complete-stuck state instead of falling back to generic
+  `loader-control`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command keeps the repaired Down160 base, sends a stronger
+  no-movement post-load-complete dismiss, and captures field/stuck evidence
+  before any verifier or movement retry:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-nomove-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;wait:45000;shot:strong-dismiss-late-check" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

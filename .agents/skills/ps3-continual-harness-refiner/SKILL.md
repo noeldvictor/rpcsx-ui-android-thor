@@ -310,6 +310,14 @@ repaired classifier and Down160 load-complete base, but do not count it as
 moving gameplay, first-battle proof, speed, or GPU migration credit. Shrink the
 same stock movement rung to `ls_left:1200` with an immediate post-movement
 screenshot before any verifier retry.
+If that `ls_left:1200` shrink proves `PATH_TO_TENUTO_PRESENT` but every
+post-load and post-left screenshot is still the Load UI with the `Load
+complete` popup, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-left1200-load-complete-stuck`.
+Do not count the left input as movement and do not fall back to generic
+loader-control. Keep the Down160 base and run a stronger no-movement
+post-load-complete dismiss diagnostic before any verifier, movement,
+first-battle, HLE, RSX, GPU, or speed retry.
 
 ## Acceptance
 
