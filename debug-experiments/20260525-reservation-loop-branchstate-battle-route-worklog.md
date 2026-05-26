@@ -2969,3 +2969,75 @@ Next:
 - Prove first battle with `Verify25ccShadow`.
 - Only after first battle can bodyfast, stack, GPU, or speed promotion be
   reconsidered.
+
+## 2026-05-26 0x25cc Descriptor First-Battle Fatal
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows`
+
+Verification:
+
+- Windows-only RPCS3 run on screen 1, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and `Verify25ccShadow`.
+- The wrapper timed out after the run itself reached `MaxSeconds 330`; no
+  active RPCS3/RPCSX/build process remained afterward.
+- Manual screenshot checks:
+  - `screenshot-0117s.png`: clean Path-to-Tenuto field, no crash overlay.
+  - `screenshot-0169s.png`: first-battle/tutorial-like view with Polka
+    `900/900`, but heavy corrupt/noisy side borders.
+  - `screenshot-0230s.png` and `screenshot-0320s.png`: same frozen
+    battle/tutorial-like frame with the same corrupt side borders.
+- Fatal scan is positive:
+  - `rpcs3.stderr.txt`: `PPU[0x100000c] Thread () [0x002aedd0]: VM: Access
+    violation reading location 0x40 (unmapped memory)`.
+  - `RPCS3.log` reports the same fatal at `0:02:00.612266`.
+- Visual gate alone reported `FIELD_LIKE_PRESENT` with late battle-like
+  screenshots, but the fatal log and frozen/corrupt late frames override that.
+
+Counters:
+
+- GPU probe records `849`; SPU HLE verifier/shadow records `849`.
+- 0x25cc family records `380`; 0x25cc shadow records `380`; descriptor records
+  `11388`.
+- Target 0x25cc shadow verifier: GET/PUT `5688/6300`, bytes `187.31 MB`,
+  destination changed/unchanged `3325/8663`, output match/mismatch `11988/0`.
+- Target 0x25cc descriptors: descriptor hits `11988`, GET/PUT `5688/6300`,
+  bytes `187.31 MB`, destination changed `3325`, output match/mismatch
+  `11988/0`, unique pattern signatures `57`, descriptor overflow `0`.
+- Total observed DMA `1,167.43 MB`; RSX-local traffic `0`; indirect
+  SPU-DMA/RSX-resource overlap `0`; offload fit `spu-kernel-hle=550` /
+  `too-small=299`.
+- GPU Port Scoreboard stayed `0 B` promoted CPU/SPU-to-GPU replacement,
+  `0 B` direct RSX-local, and `0 B` indirect overlap.
+
+Classification:
+
+- `failed-fatal-log`.
+- `hle-25cc-shadow-desc-battle-fatal`.
+- Descriptor verifier coverage only.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this 0x25cc descriptor
+  first-battle fatal explicitly instead of falling through to the old generic
+  loader-control fatal recovery.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same standing rule.
+
+Next:
+
+- Do not rerun the same TopSlot `Verify25ccShadow` battle command.
+- Do not fall back to old loader-control.
+- Isolate the same TopSlot battle route with `Verify25ccShadow` off, or
+  repair/state-gate the battle macro before another verifier proof.

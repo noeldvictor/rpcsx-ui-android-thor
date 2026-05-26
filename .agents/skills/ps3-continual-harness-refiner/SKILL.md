@@ -285,6 +285,15 @@ If that fast Down160 Options proof reaches the full title Options page with the
 proof only: not speed, not GPU migration, and not a 200% result. Do not rerun
 field or Options; the next required proof is first battle with
 `Verify25ccShadow`.
+If the follow-up 0x25cc descriptor first-battle `Verify25ccShadow` run reaches
+field and battle/tutorial visuals but logs a PPU VM access violation at
+`0x002aedd0` reading `0x40`, classify it as
+`hle-25cc-shadow-desc-battle-fatal`. It is not first-battle proof, not speed,
+not GPU migration, and not a 200% result, even if the visual gate sees
+battle-like screenshots. Do not rerun the same TopSlot verifier command and do
+not fall back to old loader-control. Isolate the same TopSlot battle route with
+`Verify25ccShadow` off, or repair/state-gate the battle macro before another
+verifier proof.
 
 ## Acceptance
 
