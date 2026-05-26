@@ -1068,6 +1068,7 @@ $latestValidLoaderControlLeft200 = $false
 $latestValidLoaderControlLeft200x2 = $false
 $latestValidLoaderControlLeft200x3 = $false
 $latestValidLoaderControlLeft200x4 = $false
+$latestValidLoaderControlDiag200 = $false
 $latestValidLoaderControlLeftCount = -1
 $latestCutsceneOrNonfield = $false
 $latestBlackOverlay = $false
@@ -1506,6 +1507,9 @@ if ($latestRun) {
     $latestValidLoaderControlLeft200x4 =
         $latestValidLoaderControl -and
         ($latestRun.Name -like "*loader-control-left200x4*" -or $latestLabel -like "*loader-control-left200x4*")
+    $latestValidLoaderControlDiag200 =
+        $latestValidLoaderControl -and
+        ($latestRun.Name -like "*loader-control-left200x2-diag200*" -or $latestLabel -like "*loader-control-left200x2-diag200*")
     $latestValidLoaderControlLeft200x3 =
         $latestValidLoaderControl -and
         !$latestValidLoaderControlLeft200x4 -and
@@ -1611,6 +1615,8 @@ if ($blackRuns.Count -ge 2) {
             "Use the latest valid loader-control-left200x4 route as the base, but do not repeat the rejected diag200 branch; try one more left-only micro-pulse or start route-control repair before lane-2 HLE/GPU fast modes."
         } elseif ($latestValidLoaderControlLeft200x3) {
             "Use the latest valid loader-control-left200x3 route as the base, but do not repeat the rejected diag200 branch; try one more left-only micro-pulse or start route-control repair before lane-2 HLE/GPU fast modes."
+        } elseif ($latestValidLoaderControlDiag200) {
+            "Latest loader-control-left200x2-diag200 route already passed field triage; do not repeat it. Bank it as route tooling only, then pivot to a different proof axis before lane-2 HLE/GPU fast modes."
         } elseif ($latestValidLoaderControlLeft200x2) {
             if ($recentDiag200Rejected) {
                 "Use the latest valid loader-control-left200x2 route as the base, but do not repeat the rejected diag200 branch; try one left-only micro-pulse or rebuild route control before lane-2 HLE/GPU fast modes."
@@ -2104,6 +2110,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Do not repeat the rejected diag200 route; extend the newest valid loader-control-left200x3 route by exactly one more left-only micro-pulse with CleanAfterField, while lane-2 HLE/GPU dry-runs stay blocked."
 } elseif ($latestValidLoaderControlLeft200x3) {
     "Extend the newest valid loader-control-left200x3 route by exactly one more left-only micro-pulse with CleanAfterField; keep lane-2 HLE/GPU dry-runs blocked."
+} elseif ($latestValidLoaderControlDiag200) {
+    "Latest loader-control-left200x2-diag200 field proof is clean. Do not repeat the same diagonal command; bank the diagonal micro-pulse as route-tooling only, then pivot to Options/menu proof, first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis."
 } elseif ($latestValidLoaderControlLeft200x2 -and $recentDiag200Rejected) {
     "Do not repeat the rejected diag200 route; extend the newest valid loader-control-left200x2 route by exactly one left-only micro-pulse with CleanAfterField, while lane-2 HLE/GPU dry-runs stay blocked."
 } elseif ($latestValidLoaderControlLeft200x2) {
@@ -2298,6 +2306,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x5-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 245 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 14"
 } elseif ($latestValidLoaderControlLeft200x3) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x4-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 235 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 13"
+} elseif ($latestValidLoaderControlDiag200) {
+    "# No automatic duplicate: latest loader-control-left200x2-diag200 already passed field triage. Bank it as route tooling and pivot to Options/menu proof, first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis."
 } elseif ($latestValidLoaderControlLeft200x2 -and $recentDiag200Rejected) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x3-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12"
 } elseif ($latestValidLoaderControlLeft200x2) {

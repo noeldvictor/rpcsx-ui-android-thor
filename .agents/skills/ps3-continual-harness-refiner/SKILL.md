@@ -215,6 +215,12 @@ classify it as a truncated launch. It is intentionally short. If it proves
 field/menu/battle proof, not speed, and not GPU migration. Resume only the
 late-dismiss left-only first-battle movement isolation next.
 
+If a latest `loader-control-left200x2-diag200` run passes field triage after
+the `left200x2` boundary is re-proven, do not suggest the identical diagonal
+command again. Bank it as route tooling only, still not speed and not GPU
+migration, then pivot to a different proof axis such as Options/menu proof,
+first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis.
+
 ## Acceptance
 
 A useful refiner pass leaves one concrete Windows-only action and prevents a
