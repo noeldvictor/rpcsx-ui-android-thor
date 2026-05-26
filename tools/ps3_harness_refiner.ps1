@@ -301,6 +301,11 @@ function New-StateAwareTitleToLoadDownHoldDiagnosticCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-title-to-load-down160-state-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 140 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
 }
 
+function New-StateAwareTitleToLoadDownHoldLoadTargetReproofCommand {
+    $macro = "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:12000;shot:post-title-cross-down160;gate_load_target:45000"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadtarget-reproof-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 145 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
+}
+
 function New-StateAwareTitleToLoadDownHoldDirectLeftCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field-check;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-pollgated-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 9"
@@ -342,8 +347,8 @@ function New-StateAwareTitleToLoadDownHoldBattleLeftOnlyDiagnosticCommand {
 }
 
 function New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand {
-    $macro = "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:14000;shot:load-list-initial;wait:4000;shot:load-list-stable;up:120;wait:900;shot:load-list-after-up1;up:120;wait:900;shot:load-list-after-up2;down:120;wait:900;shot:load-list-after-down1"
-    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadlist-cursor-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 130 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
+    $macro = "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:14000;shot:save-check-14s;wait:16000;shot:load-list-probe-30s;wait:15000;shot:load-list-stable-45s;up:120;wait:900;shot:load-list-after-up1;up:120;wait:900;shot:load-list-after-up2;down:120;wait:900;shot:load-list-after-down1"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadlist-cursor-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 170 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
 }
 
 function New-Hle451cSize16CandidateReproofCommand {
@@ -1127,6 +1132,8 @@ $latestTitleToLoadDownHoldBattleLeftOnlyPass = $false
 $latestTitleToLoadDownHoldBattleLeftOnlyFatal = $false
 $latestTitleToLoadDownHoldLeftOnlyClassifierDrift = $false
 $latestTitleToLoadDownHoldLoadTopNormalizeBlack = $false
+$latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall = $false
+$latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1255,6 +1262,16 @@ if ($latestRun) {
         $latestLoadTargetGateFailure -and
         $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
         $latestText -like "*titleload-down160-loadtopnormalize*" -and
+        $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png"
+    $latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall =
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestText -like "*titleload-down160-loadlist-cursor-diagnostic*" -and
+        $latestRun.Decision -ne "valid-field-triage" -and
+        $latestRun.Visual.PrimarySmallClass -ne "black-overlay-small-png"
+    $latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition =
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestText -like "*titleload-down160-loadlist-cursor-diagnostic*" -and
+        $latestRun.Decision -ne "valid-field-triage" -and
         $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png"
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
@@ -1622,6 +1639,10 @@ if ($loadingRuns.Count -ge 2) {
 if ($cutsceneRuns.Count -ge 1) {
     $cutsceneAction = if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
         "The newest blocker is a Down160 load-target classifier row-drift false gate. Keep the Down160 route and rerun the post-load-complete repair under the multi-row classifier before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition) {
+        "The newest blocker is a Down160 load-list diagnostic black transition, not the older cutscene route. Re-prove the Down160 load-target gate with no cursor input before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
+        "The newest blocker is a Down160 load-list diagnostic timing miss, not the older cutscene route. Rerun the extended cursor diagnostic that waits through Checking save files before any old loader-control or speed work."
     } elseif ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
         "The newest blocker is a Down160 load-top-normalize black gate. Ignore older cutscene/harness-noise frames and run the load-list cursor diagnostic before another left-only isolation."
     } elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
@@ -1707,6 +1728,12 @@ if ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
 }
 if ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-loadtopnormalize-black-gate" -Severity "harness-noise" -Evidence "Newest load-top-normalize repair sent pre-gate Up taps and then only captured black-overlay load-target frames, so it did not prove the save target or route." -Action "Do not repeat blind pre-gate Up normalization. Run the load-list cursor diagnostic to screenshot the Load list before/after controlled cursor movement, then update the classifier or macro from that evidence."
+}
+if ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-loadlist-diagnostic-save-check-stall" -Severity "route-repair" -Evidence "Newest Down160 load-list cursor diagnostic captured the Checking save files dialog for every supposed load-list cursor screenshot, so Up/Down was sent before the Load list was visible." -Action "Do not fall back to generic state-aware or old loader-control macros. Rerun the extended cursor diagnostic that waits through the save-check transition before controlled cursor movement."
+}
+if ($latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-loadlist-diagnostic-black-transition" -Severity "route-repair" -Evidence "Newest Down160 load-list cursor diagnostic selected LOAD, then captured only black/perf-overlay frames through the 45s load-list wait and cursor taps." -Action "Do not keep extending the cursor diagnostic and do not fall back to generic state-aware macros. Re-prove the Down160 load-target gate with no cursor input before another cursor or movement repair."
 }
 if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and -not $latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
@@ -1921,6 +1948,10 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 no-movement diagnostic proved the Path-to-Tenuto load target but stayed on the Load complete banner. Send one delayed post-load-complete Cross and capture no-movement field proof before any movement, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
     "Latest Down160 load-top-normalize repair black-overlayed before proving a load target. Do not repeat blind Up normalization or fall back to generic state-aware macros; run a load-list cursor diagnostic and repair selected-row load-target gating before another left-only isolation."
+} elseif ($latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition) {
+    "Latest Down160 load-list cursor diagnostic selected Load but then black-overlayed through the extended wait and cursor taps. Re-prove the Down160 load-target gate with no cursor input before any cursor, movement, speed, HLE, or RSX work."
+} elseif ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
+    "Latest Down160 load-list cursor diagnostic sent cursor input while the game was still on Checking save files. Rerun the extended diagnostic that waits for the Load list before Up/Down; this is route timing, not speed or GPU work."
 } elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
     "Latest Down160 late-dismiss left-only isolation has load-list cursor/classifier drift: a lower Path-to-Tenuto row was visible, but the gate aborted on damaged/debug-like upper rows. Repair the load-list cursor diagnostic or selected-row classifier before rerunning left-only movement."
 } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
@@ -2108,6 +2139,10 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
     New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissNoMoveCommand
 } elseif ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
+    New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand
+} elseif ($latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition) {
+    New-StateAwareTitleToLoadDownHoldLoadTargetReproofCommand
+} elseif ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
     New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
     New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand

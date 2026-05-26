@@ -196,6 +196,18 @@ state-aware macros. Run a load-list cursor diagnostic or selected-row classifier
 repair first. If a blind pre-gate `Up` normalization variant only produces
 black-overlay gate screenshots, classify that variant as harness noise and do
 not repeat it.
+If that load-list cursor diagnostic proves title `Down:160` selects `LOAD` but
+all intended load-list cursor screenshots are still the `Checking save files...`
+progress dialog, classify it as `titleload-down160-loadlist-diagnostic-save-check-stall`.
+Do not infer cursor behavior, do not fall back to generic state-aware macros,
+and do not start speed/HLE/RSX/GPU work. Extend the diagnostic so it waits
+through the save-check transition before sending `Up` or `Down`.
+If the extended cursor diagnostic instead selects `LOAD` and then shows only
+black/perf-overlay frames through the longer wait and cursor taps, classify it
+as `titleload-down160-loadlist-diagnostic-black-transition`. Do not extend the
+cursor diagnostic again. Re-prove the Down160 load-target gate with no cursor
+input before another cursor, left-only, first-battle, HLE, RSX, GPU, or speed
+step.
 
 ## Acceptance
 

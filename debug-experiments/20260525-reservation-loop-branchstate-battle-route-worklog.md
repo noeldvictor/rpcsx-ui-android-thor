@@ -1617,3 +1617,138 @@ Next:
 - Validate the refiner. The next run must be the load-list cursor diagnostic
   before another left-only isolation, first-battle route, HLE, RSX, GPU, or
   speed-stacking attempt.
+
+## 2026-05-26 Down160 Load-List Cursor Diagnostic Timing Miss
+
+Run:
+
+- `debug-captures\windows-lab\20260526-081622-cpu4-titleload-down160-loadlist-cursor-diagnostic-windows-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadlist-cursor-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:14000;shot:load-list-initial;wait:4000;shot:load-list-stable;up:120;wait:900;shot:load-list-after-up1;up:120;wait:900;shot:load-list-after-up2;down:120;wait:900;shot:load-list-after-down1" -MaxSeconds 130 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0
+```
+
+Evidence:
+
+- The title screenshots confirm the title route itself: `screenshot-0068s-title-settle.png`
+  is the title menu, and `screenshot-0069s-title-after-down160.png` has `LOAD`
+  selected after `Down:160`.
+- Manual screenshot review shows every intended load-list cursor checkpoint was
+  still the `Checking save files...` progress dialog, not the Load list:
+  `screenshot-0084s-load-list-initial.png`,
+  `screenshot-0089s-load-list-stable.png`,
+  `screenshot-0090s-load-list-after-up1.png`,
+  `screenshot-0092s-load-list-after-up2.png`, and
+  `screenshot-0093s-load-list-after-down1.png`.
+- `tools\classify_eternal_sonata_load_target.ps1` reported
+  `UNKNOWN_LOAD_TARGET` for all seven screenshots, which is correct for this
+  diagnostic because no Load-list row was visible.
+- Host checks were clean, `rpcs3.stderr.txt` was empty, no RPCS3/RPCSX process
+  remained after the lab stop, and targeted fatal scan found no
+  `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification failure,
+  unknown STOP, or unhandled exception hits.
+- Window-title samples are save-check/menu telemetry only, not speed proof:
+  `44.96`, `47.79`, `57.23`, `58.60`, and `43.53 FPS` across the supposed
+  load-list shots.
+- GPU summary is route-invalid for speed or migration: `844` records,
+  `824.24 MB` observed DMA, direct RSX-local scout traffic `0 B`, indirect
+  SPU-DMA/RSX overlap `0 B`, promoted CPU/SPU-to-GPU replacement `0 B`,
+  offload fit `too-small=434` / `spu-kernel-hle=410`, dynamic MFC `93,026`
+  hits, and reservation-loop peak command hits `138,916`.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now classifies this latest shape as
+  `titleload-down160-loadlist-diagnostic-save-check-stall`.
+- The cursor diagnostic macro now takes snapshots at 14s, 30s, and 45s after
+  title `Cross`, then sends controlled `Up`/`Down` inputs only after the longer
+  wait.
+- The refiner now blocks the stale generic `stateaware-one-step` fallback for
+  this state and suggests the extended cursor diagnostic again.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Classification:
+
+- `route-tooling`, `titleload-down160-loadlist-diagnostic-save-check-stall`.
+- Not cursor/classifier drift proof yet.
+- Not field proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner. The next run must be the extended load-list cursor
+  diagnostic before another left-only isolation, first-battle route, HLE, RSX,
+  GPU, or speed-stacking attempt.
+
+## 2026-05-26 Extended Down160 Cursor Diagnostic Black Transition
+
+Run:
+
+- `debug-captures\windows-lab\20260526-083255-cpu4-titleload-down160-loadlist-cursor-diagnostic-windows-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadlist-cursor-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:14000;shot:save-check-14s;wait:16000;shot:load-list-probe-30s;wait:15000;shot:load-list-stable-45s;up:120;wait:900;shot:load-list-after-up1;up:120;wait:900;shot:load-list-after-up2;down:120;wait:900;shot:load-list-after-down1" -MaxSeconds 170 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0
+```
+
+Evidence:
+
+- The wrapper command timed out in Codex after the lab had already stopped
+  RPCS3 at the `170s` wall-time limit. The run folder is complete enough for
+  classification: `windows-rpcs3-lab.txt` records `Exit code: exited`, host
+  checks clean, and no RPCS3/RPCSX process remained afterward.
+- `screenshot-0069s-title-after-down160.png` again proves title `Down:160`
+  selects `LOAD`.
+- Manual screenshot review shows all post-title checkpoints are black/perf
+  overlay only: `screenshot-0084s-save-check-14s.png`,
+  `screenshot-0101s-load-list-probe-30s.png`,
+  `screenshot-0116s-load-list-stable-45s.png`,
+  `screenshot-0118s-load-list-after-up1.png`,
+  `screenshot-0119s-load-list-after-up2.png`, and
+  `screenshot-0121s-load-list-after-down1.png`. No `Checking save files`
+  dialog, Load list, or save row was visible.
+- `tools\classify_eternal_sonata_load_target.ps1` reported
+  `UNKNOWN_LOAD_TARGET` for all `8` screenshots.
+- `rpcs3.stderr.txt` is empty and targeted fatal scan found no
+  `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification failure,
+  unknown STOP, unhandled exception, or likely-crashed hits.
+- The full GPU summarizer timed out on the large log, so a targeted streaming
+  extraction was used for route-invalid counters: `1,316` GPU-candidate records,
+  `1,308.23 MB` observed DMA, `0 B` RSX bytes, top PCs `0x451c`
+  `734,414,496 B` and `0x25cc` `637,368,992 B`, dynamic MFC `1,316` records /
+  `147,486` hits / `315.41 MB`, MFC list transfer `910` records / `56,092`
+  calls, reservation command `1,367` records / `8,717,441` hits with
+  `6,558,419` GETLLAR and `2,159,022` PUTLLC commands.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now separates the prior
+  `titleload-down160-loadlist-diagnostic-save-check-stall` from this new
+  `titleload-down160-loadlist-diagnostic-black-transition`.
+- The refiner now suggests a no-cursor Down160 load-target reproof:
+  `cpu4-titleload-down160-loadtarget-reproof-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same black-transition rule.
+
+Classification:
+
+- `route-tooling`, `titleload-down160-loadlist-diagnostic-black-transition`.
+- Not field proof.
+- Not cursor/classifier proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner. The next run must be the no-cursor Down160 load-target
+  reproof before another cursor diagnostic, left-only isolation, first-battle
+  route, HLE, RSX, GPU, or speed-stacking attempt.
