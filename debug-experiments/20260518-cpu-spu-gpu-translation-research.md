@@ -18043,3 +18043,88 @@ Next:
 - If it fails, the interaction starts with `VertexSuperset Fast` plus the
   resolve/depth/present subset; split that pair before testing persistent
   vertex or index caches.
+
+## 2026-05-25 - BodyFast RSX RDP Plus VertexSuperset Interaction Passed
+
+Purpose:
+
+- Continue the interaction ladder after both RSX halves passed alone but the
+  full bodyfast plus RSX geometry/locality stack lost the window.
+- Recombine only one geometry family with the resolve/depth/present subset:
+  `VertexSuperset Fast`.
+- Keep persistent vertex and persistent index caches off.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-rdp-vertexsuperset-battle-topslot-nopause-interaction -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260525-213312-hle-25cc-bodyfast-rsx-rdp-vertexsuperset-battle-topslot-nopause-interaction-windows`
+
+Visual/log proof:
+
+- Visual gate passed `BattleRoute` triage:
+  `FIELD_LIKE_PRESENT` / `passed-for-triage`.
+- Required field-like screenshot at or before `160s`: passed.
+- Required field-like screenshot at or after `220s`: passed.
+- Required battle-like screenshot at or after `200s`: passed.
+- Manual spot checks:
+  - `screenshot-0118s.png`: clean Path to Tenuto field, title `120.11 FPS`;
+  - `screenshot-0169s.png`: clean first-battle tutorial prompt, title
+    `119.92 FPS`;
+  - `screenshot-0231s.png`: clean active first battle, title `119.93 FPS`;
+  - `screenshot-0320s.png`: clean late active first battle, title `120.12 FPS`.
+- Invalid screenshots after first field-like: `0`.
+- Serious fatal evidence: none found by the filtered scan.
+- Host gate: external-clean across all `6` snapshots; total host grade was
+  `moderate` because two in-run GPU engine snapshots exceeded `60%`, so this
+  is not a fresh timing comparison.
+
+Counters:
+
+- `0x25cc bodyfast` remained active:
+  - records `3052`;
+  - hits `45768`;
+  - bytes `715.13 MB`;
+  - timing `0.000 ms`.
+- GPU migration scoreboard for new promoted CPU/SPU replacement remains empty:
+  - total observed DMA bytes `0 B`;
+  - direct RSX-local scout rows `0`;
+  - indirect overlap rows `0`.
+- This run intentionally kept `RSX auditor` off, so it does not remeasure
+  vertex-superset RSX-local bytes. It only proves the already-known
+  `VertexSuperset Fast` RSX residency component remains visually compatible
+  when layered onto bodyfast plus resolve/depth/present.
+
+Classification:
+
+- `resolved-interaction-bisect`, `valid-first-battle-triage`.
+- Not a speed win: title FPS stayed capped around `120`.
+- Not new `gpu-migration-credit`: no new promoted CPU/SPU work moved to GPU in
+  this capture, and RSX auditor was off.
+- Not a 200% gate candidate.
+- The remaining full-stack blocker is now narrowed to persistent vertex and/or
+  persistent index cache interacting with the bodyfast plus RDP plus
+  VertexSuperset subset.
+
+Harness/report changes:
+
+- `tools\ps3_harness_refiner.ps1` now detects the passing
+  `rdp-vertexsuperset` interaction step and does not fall back to generic field
+  movement.
+- The next suggested command adds only `VertexPersistent Fast` while keeping
+  index persistent off:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-rdp-vertexpersistent-battle-topslot-nopause-interaction -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Next:
+
+- Run the `rdp + VertexSuperset + VertexPersistent` interaction command above.
+- If it passes, add only `IndexPersistent Fast` in the final recombine step.
+- If it fails, split persistent vertex against the RDP plus VertexSuperset
+  subset before testing index persistent.

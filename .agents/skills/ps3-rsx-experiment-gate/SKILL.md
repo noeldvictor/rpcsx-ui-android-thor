@@ -53,6 +53,9 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
   failed, do not rerun the full stack. Add one geometry family to the
   resolve/depth/present subset at a time, starting with `VertexSuperset Fast`
   while persistent vertex and index caches stay off.
+- If resolve/depth/present plus `VertexSuperset Fast` also passes, keep index
+  persistent off and add only `VertexPersistent Fast` next. If that passes, the
+  final isolated recombine step is index persistent.
 - Keep `RSX auditor` off for timing unless the experiment is specifically a
   counter/auditor proof.
 

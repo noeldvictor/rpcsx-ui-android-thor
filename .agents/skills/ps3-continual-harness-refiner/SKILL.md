@@ -68,9 +68,10 @@ win and not GPU migration. The full bodyfast plus RSX geometry/locality stack
 failed after field/tutorial and lost the window before active battle, but both
 component halves survived field and active first battle: geometry-only
 vertex/index caches, and resolve/depth/present-only. Do not resurrect the
-failed full stack. Treat it as a cross-family interaction and add one geometry
-family to the resolve/depth/present subset at a time, starting with
-`VertexSuperset Fast` while persistent vertex and index caches stay off.
+failed full stack. The first recombine step, resolve/depth/present plus
+`VertexSuperset Fast`, also survived field and active first battle. Treat the
+remaining failure as a narrower interaction with persistent vertex and/or index
+cache. Next add `VertexPersistent Fast` while keeping index persistent off.
 
 ## Acceptance
 
