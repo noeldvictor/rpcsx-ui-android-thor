@@ -321,6 +321,11 @@ function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissDirectLeftComma
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
 }
 
+function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
+}
+
 function New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:load-complete-check;cross:120;wait:12000;shot:post-load-complete-dismiss-check;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 190 -InputMacro `"$macro`" -MaxSeconds 250 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 10"
@@ -1108,6 +1113,7 @@ $latestTitleToLoadDownHoldClassifierFalseGateFailure = $false
 $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck = $false
 $latestTitleToLoadDownHoldLoadStabilityNeedsDismiss = $false
 $latestTitleToLoadDownHoldLateDismissNoMoveFieldPass = $false
+$latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass = $false
 $latestTitleToLoadDownHoldPostLoadCompleteSavePrompt = $false
 $latestTitleToLoadDownHoldLoadTargetPass = $false
 $latestTitleToLoadDownHoldDirectLeftFieldPass = $false
@@ -1209,6 +1215,10 @@ if ($latestRun) {
         $latestRun.Decision -eq "valid-field-triage" -and
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
         $latestText -like "*titleload-down160-lateloadcomplete-dismiss-nomove*"
+    $latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*titleload-down160-lateloadcomplete-dismiss-directleft200*"
     $latestTitleToLoadDownHoldPostLoadCompleteSavePrompt =
         $latestRun.Decision -eq "valid-field-triage" -and
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
@@ -1596,6 +1606,8 @@ if ($loadingRuns.Count -ge 2) {
 if ($cutsceneRuns.Count -ge 1) {
     $cutsceneAction = if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
         "The newest blocker is a Down160 load-target classifier row-drift false gate. Keep the Down160 route and rerun the post-load-complete repair under the multi-row classifier before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
+        "The newest useful proof is a Down160 late-dismiss direct-left boundary that reached and stayed in clean field. Ignore older cutscene/harness-noise frames and isolate the larger left-only battle movement on the same late-dismiss base."
     } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
         "The newest useful proof is a Down160 late load-complete dismiss that reached clean field with no movement. Ignore older cutscene/harness-noise frames and add only one direct-left movement pulse on the same late-dismiss base."
     } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
@@ -1663,6 +1675,9 @@ if ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
 }
 if ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-late-dismiss-field-clean" -Severity "resolved-control" -Evidence ("Newest Down160 delayed single-dismiss route reached Path-to-Tenuto field at {0}s without opening the save prompt or adding movement." -f $latestRun.Visual.FirstFieldSeconds) -Action "Keep this late-dismiss route base and add only one direct-left movement pulse next. Do not fall back to generic state-aware, old loader-control, first-battle, HLE, RSX, GPU, or speed work yet."
+}
+if ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-late-dismiss-directleft-field-clean" -Severity "resolved-control" -Evidence ("Newest Down160 delayed single-dismiss direct-left route reached Path-to-Tenuto field at {0}s and stayed field-clean after the left200 pulse." -f $latestRun.Visual.FirstFieldSeconds) -Action "Keep this late-dismiss route base. Run only the left-only first-battle movement isolation next; do not fall back to generic state-aware, old loader-control, full battle, HLE, RSX, GPU, or speed work yet."
 }
 if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and -not $latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
@@ -1875,6 +1890,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest plain Down160 direct-left route removed the save-prompt Cross but stayed on Now Loading through late screenshots. Do not use the generic state-aware fallback or repeat the prompt route; run a Down160 no-movement load-stability diagnostic first."
 } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
     "Latest Down160 no-movement diagnostic proved the Path-to-Tenuto load target but stayed on the Load complete banner. Send one delayed post-load-complete Cross and capture no-movement field proof before any movement, battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
+    "Latest Down160 delayed single-dismiss direct-left route proved Path to Tenuto field and stayed field-clean after the left200 pulse. Run only the same late-dismiss base with a left-only first-battle movement isolation before full battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
     "Latest Down160 delayed single-dismiss no-movement route proved Path to Tenuto field without opening the save prompt. Add only one direct-left movement pulse on the same late-dismiss base before first-battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
@@ -2057,6 +2074,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldLoadStabilityNoMoveCommand
 } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
     New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissNoMoveCommand
+} elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
+    New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
     New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {

@@ -181,6 +181,13 @@ field with `PATH_TO_TENUTO_PRESENT` and no save prompt, classify it as
 and add exactly one direct-left movement pulse next. Do not fall back to generic
 state-aware, old loader-control, first-battle, HLE, RSX, GPU, or speed work
 until that movement boundary is proven.
+If that late-dismiss direct-left pulse reaches field and stays clean after
+`ls_left:200`, classify it as
+`titleload-down160-late-dismiss-directleft-field-clean`. Keep the same
+late-dismiss base and run only the left-only first-battle movement isolation
+next (`ls_left:2600` without the down-left branch). Do not fall back to generic
+state-aware, old loader-control, full battle, HLE, RSX, GPU, or speed work until
+that larger left-only branch is classified.
 
 ## Acceptance
 

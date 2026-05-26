@@ -1477,3 +1477,74 @@ Next:
 
 - Validate the refiner, then run only the late-dismiss direct-left movement
   boundary before any first-battle, HLE, RSX, GPU, or speed-stacking work.
+
+## 2026-05-26 Down160 Late-Dismiss Direct-Left Movement Boundary
+
+Run:
+
+- `debug-captures\windows-lab\20260526-072403-cpu4-titleload-down160-lateloadcomplete-dismiss-directleft200-visualgate-windows-windows`.
+
+Evidence:
+
+- The run used the full 21-token late-dismiss direct-left macro, screen 1,
+  PadApi, CPU affinity `0x0F`, frame/vblank `240/240`, and reservation-loop
+  `Verify`.
+- The load-target gate passed on attempt 3:
+  `PATH_TO_TENUTO_PRESENT`, path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`2`.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reports
+  `FIELD_LIKE_PRESENT`, first field-like at
+  `screenshot-0199s-post-load-complete-dismiss-18s.png` (`199s`), required
+  field-like before `240s` passed, and `0` invalid screenshots after first
+  field-like.
+- Manual screenshots confirm the boundary:
+  `screenshot-0199s-post-load-complete-dismiss-18s.png` is clean
+  Path-to-Tenuto field, `screenshot-0202s-left200-check.png` is clean after the
+  `ls_left:200` pulse, and `screenshot-0260s.png` remains clean field. No save
+  prompt, crash overlay, or corrupt field visuals were visible.
+- `rpcs3.stderr.txt` is empty, host checks are clean, no RPCS3/RPCSX process
+  remained afterward, and targeted fatal scan found no `VM: Access violation`,
+  `FATAL`, `SIG`, Vulkan fatal, verification failure, unknown STOP, or
+  unhandled exception hits.
+- Window-title samples are route telemetry only, not speed proof:
+  `23.78 FPS` at field, `26.50 FPS` after left200, `28.48 FPS` at `260s`.
+- GPU summary:
+  - Records: `1840`.
+  - Observed DMA: `2,424.44 MB`.
+  - GPU Port Scoreboard: promoted CPU/SPU->GPU replacement `0 B`, direct
+    RSX-local scout traffic `0 B`, indirect SPU-DMA/RSX overlap `0 B`.
+  - Offload fit: `spu-kernel-hle=1200`, `too-small=640`.
+  - Hot PCs: `0x25cc` `847` records / `1,361.25 MB`, `0x451c` `993` records /
+    `1,063.18 MB`.
+  - Dynamic MFC: `241,794` hits, `597.91 MB`, `399.638 ms`.
+  - MFC list transfer: `87,880` calls, `137.570 ms`.
+  - Reservation-loop peak command hits: `229,282`, with GETLLAR/PUTLLC
+    `177,885` / `51,397`.
+  - Lane 2 verifier row stayed clean: `11375/11375/11375/0/0`.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now treats a Down160
+  `lateloadcomplete-dismiss-directleft200` run with `PATH_TO_TENUTO_PRESENT`
+  and field triage as
+  `titleload-down160-late-dismiss-directleft-field-clean`.
+- The refiner now blocks the generic state-aware fallback for this state.
+- The suggested next action is the same late-dismiss base plus left-only
+  first-battle movement isolation:
+  `cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same late-dismiss direct-left rule.
+
+Classification:
+
+- `valid-field-triage`, `route-tooling`,
+  `titleload-down160-late-dismiss-directleft-field-clean`.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+- Menu/Options and first battle are still missing.
+
+Next:
+
+- Validate the refiner, then run only the late-dismiss left-only first-battle
+  movement isolation before full battle, HLE, RSX, GPU, or speed-stacking work.
