@@ -84,9 +84,12 @@ reached a clean field screenshot, then lost the window/process before late field
 or first battle. Treat it as `failed-window-lost-after-field`, not a speed win,
 not `gpu-migration-credit`, and not a 200% candidate. Its `0x25cc` / `0x451c`
 counters are SPU HLE/codegen profiling evidence only. The next action should be
-a smaller field-only `ReservationLoop Verify` route with one state-aware movement
-step and `CleanAfterField`, before any broader battle proof or fast-mode
-promotion.
+a smaller field-only `ReservationLoop Verify` route before any broader battle
+proof or fast-mode promotion. The default state-aware one-step route then stuck
+on the damaged-save load confirmation, and the damaged-confirm repair reached
+field but parked on the save-point prompt. Treat that as route/tooling only,
+not moving gameplay. The refiner must suggest the damaged-confirm dismiss-save
+macro before any speed, HLE/GPU, or first-battle promotion.
 
 ## Acceptance
 

@@ -266,6 +266,16 @@ function New-LoaderControlLeftPulseCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label $label -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"$macro`" -MaxSeconds $maxSeconds -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount $screenshotMax"
 }
 
+function New-StateAwareDamagedSaveConfirmCommand {
+    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;cross:120;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-damaged-confirm-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"$macro`" -MaxSeconds 175 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8"
+}
+
+function New-StateAwareDamagedSaveDismissMovementCommand {
+    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;cross:120;wait:15000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-damaged-confirm-dismiss-save-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"$macro`" -MaxSeconds 185 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8"
+}
+
 function New-Hle451cSize16CandidateReproofCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label hle-451c-size16-candidate-reproof-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8"
 }
@@ -948,6 +958,8 @@ $latestHle25ccBodyFastRsxRdpVertexSupersetPass = $false
 $latestHle25ccBodyFastRsxRdpVertexPersistentPass = $false
 $latestHle25ccBodyFastRsxRdpIndexPersistentPass = $false
 $latestHle25ccBodyFastRsxFinalStackAuditorPass = $false
+$latestStateAwarePromptStuck = $false
+$latestStateAwareSavePromptField = $false
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -975,6 +987,14 @@ if ($latestRun) {
     $latestFatal = $latestRun.Fatal -and $latestRun.Fatal.HasFatal
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
+    $latestStateAwarePromptStuck =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
+        ($latestText -like "*stateaware-one-step*" -or $latestText -like "*state-aware-one-step*")
+    $latestStateAwareSavePromptField =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestText -like "*stateaware-damaged-confirm*" -and
+        $latestText -notlike "*dismiss-save*"
     $latestHle451cSize16Candidate =
         $latestText -like "*451c-size16*" -or
         $latestText -like "*size16-candidate*" -or
@@ -1332,6 +1352,12 @@ if ($wrongWindowRuns.Count -ge 1) {
         Add-AntiPattern -List $antiPatterns -Name "window-capture-instability" -Severity "warning" -Evidence ("{0} recent run(s) had wrong-window/other small screenshots." -f $realWrongWindowRuns.Count) -Action "Keep RPCS3 on screen 1 and reject captures with small screenshots after first field-like output."
     }
 }
+if ($latestStateAwarePromptStuck) {
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-load-confirm-prompt-stuck" -Severity "blocker" -Evidence "Newest state-aware one-step repair stayed on the load-confirm prompt instead of reaching field; screenshots show the damaged-save confirmation dialog, not a wrong window." -Action "Do not rerun the default field macro. Add an explicit post-prompt Cross confirm, delay screenshots until after the confirm, then re-test the one-left-pulse field route under CleanAfterField."
+}
+if ($latestStateAwareSavePromptField) {
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-save-prompt-field-not-moving" -Severity "route-repair" -Evidence "Newest damaged-save-confirm state-aware route reached field-like Path to Tenuto output, but manual screenshot review showed the save-point prompt over the field, so it is not moving gameplay proof." -Action "Do not fall back to the default state-aware command. Dismiss the save prompt, then capture the same one-left-pulse route under CleanAfterField before any speed or HLE/GPU promotion."
+}
 if ($latestHle451cSize16BodyOffBattleRouteLost) {
     $battleRouteLossEvidence = if ($latestHle451cSize16BodyOffBattleProcessExit) {
         if ($latestHle451cSize16BodyOffBattleLeftOnlyProcessExit) {
@@ -1491,7 +1517,11 @@ if ($latestHle451cPreserveBodyOffBattleTopslotLeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-451c-preserve-body-off-battle-topslot-leftonly-exit" -Severity "blocker" -Evidence ("Newest preserve-body-off top-slot left-only diagnostic reached accepted field at {0}s, then RPCS3 exited after the left-only movement branch." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not fall back to the old non-top-slot no-post diagnostic. Top-slot no-post already stayed alive; shrink or repair the left-only movement branch before diagonal or preserve-body-on battle work."
 }
 
-$nextAction = if ($latestHle451cPreserveBodyBattleFatal) {
+$nextAction = if ($latestStateAwarePromptStuck) {
+    "Latest state-aware one-step repair reached the load-confirm prompt and never accepted field. Do not rerun the default field macro; use the damaged-save-confirm variant with an extra Cross after the prompt and delayed screenshots."
+} elseif ($latestStateAwareSavePromptField) {
+    "Latest damaged-save-confirm route repaired the load-confirm failure and reached field-like output, but it is parked on the save prompt. Dismiss the save prompt and re-test the same one-left-pulse field route before any broader battle or speed proof."
+} elseif ($latestHle451cPreserveBodyBattleFatal) {
     "Latest 0x451c preserve-body first-battle proof reached battle, then froze with VM access violation at 0x40. Keep preserve-body opt-in/off and re-prove the same first-battle route with preserve-body Off before narrowing semantics."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {
     "Latest preserve-body-off top-slot left1250 state-gated diagnostic black-overlayed before it proved accepted field, so it is a route/control miss rather than a movement boundary. Reconfirm or repair the no-movement route-state gate before any further midpoint."
@@ -1629,7 +1659,11 @@ $nextAction = if ($latestHle451cPreserveBodyBattleFatal) {
     "Run a no-movement Windows loader/control with CleanAfterField to regain a valid field baseline."
 }
 
-$suggestedCommand = if ($latestHle451cPreserveBodyBattleFatal) {
+$suggestedCommand = if ($latestStateAwarePromptStuck) {
+    New-StateAwareDamagedSaveConfirmCommand
+} elseif ($latestStateAwareSavePromptField) {
+    New-StateAwareDamagedSaveDismissMovementCommand
+} elseif ($latestHle451cPreserveBodyBattleFatal) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-451c-preserve-body-off-first-battle-reproof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Off -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 220 -ScreenshotMaxCount 8"
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {
     New-Hle451cPreserveBodyOffBattleTopslotRouteStateGateAfterLeft1200ReproofCommand

@@ -18438,3 +18438,58 @@ Next:
 - Keep broad SPU Vulkan compute parked for this trace. It still reports `0 B`
   RSX-local traffic and `0 B` indirect RSX overlap, so the useful lane remains
   SPU HLE/codegen/reservation-loop work around `0x25cc` and `0x451c`.
+
+## 2026-05-25 - State-Aware Damaged-Save Field Route Repair
+
+Purpose:
+
+- Repair the field-only reservation-loop route after the default one-step macro
+  stuck on the damaged-save load confirmation.
+- Keep route-state proof separate from speed and GPU migration claims.
+
+Runs:
+
+- Failed prompt-stuck default:
+  `debug-captures\windows-lab\20260525-232051-cpu4-stateaware-one-step-visualgate-windows-windows`.
+- Repaired damaged-confirm route:
+  `debug-captures\windows-lab\20260525-233009-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`.
+
+Evidence:
+
+- The failed default route was `NO_FIELD_LIKE_SCREENSHOT`; manual review showed
+  the damaged-save load confirmation prompt, not a wrong window.
+- The repaired route passed field triage: first field-like screenshot
+  `screenshot-0133s.png` at `133s`, `8` field-like screenshots, and `0`
+  invalid screenshots after first field-like.
+- Manual review of `screenshot-0133s.png` and `screenshot-0175s.png` showed
+  clean Path to Tenuto field rendering, but the save-point prompt remained open.
+- Fatal scan was clean.
+- Window-title FPS samples during the prompt were about `21.54` to `33.35`,
+  but this is not a matched speed comparison.
+
+Counters:
+
+- Repaired run GPU probe records: `1,264`.
+- Total observed DMA: `1,822.96 MB`.
+- Offload fit: `spu-kernel-hle=889`, `too-small=375`.
+- Hot PCs: `0x25cc` with `1,003.91 MB`, `0x451c` with `819.05 MB`.
+- Dynamic MFC: `190,787` hits, `447.59 MB`, `244.207 ms`.
+- MFC list transfer: `69,806` calls, `60.396 ms`.
+- Reservation-loop verify records: `4,710`.
+- Lane 2: `6941/6941/6941/0/0`.
+- GPU port scoreboard: `0 B` promoted CPU/SPU-to-GPU replacement, `0 B`
+  direct RSX-local scout traffic, and `0 B` indirect overlap.
+
+Classification:
+
+- `route-tooling`, `valid-field-triage-but-save-prompt`.
+- Not moving gameplay.
+- Not a speed win, not `windows-micro-win`, not `gpu-migration-credit`, and not
+  a 200% gate candidate.
+
+Next:
+
+- Use the new refiner suggestion,
+  `cpu4-stateaware-damaged-confirm-dismiss-save-left200-visualgate-windows`,
+  to dismiss the save prompt and prove the one-left-pulse field state before
+  any broader battle route or fast-mode promotion.
