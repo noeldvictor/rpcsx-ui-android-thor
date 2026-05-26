@@ -242,6 +242,15 @@ round must build or rerun `Verify25ccShadow`, then parse
 `eternal-sonata-spu-hle-25cc-shadow-desc-profile.csv` and require nonzero
 `direction=PUT` rows plus zero mismatches before any bodyfast, stack, GPU,
 menu, or battle promotion.
+If the patched buildcheck run is
+`20260526-162731-cpu4-hle-25cc-shadow-desc-field-buildcheck-windows`, classify
+it as source-instrumentation validated but route-invalid. It proved nonzero PUT
+shadow coverage with zero mismatches, but the old `down:20`/`up` load macro
+stayed on the Load menu and descriptor overflow reached `56`. Do not rerun that
+macro, do not promote bodyfast, and do not start menu/battle/stack/GPU work
+from it. The next 25cc proof must use the current Down160 late-dismiss
+direct-left field route, and descriptor overflow must be widened or explicitly
+treated as incomplete coverage.
 
 ## Acceptance
 

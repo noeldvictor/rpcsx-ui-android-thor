@@ -2627,3 +2627,63 @@ Next:
   battle promotion.
 - If the descriptor CSV still has PUT `0`, classify it as a verifier failure
   and debug the finish-hook/path coverage instead of repeating planning reports.
+
+## 2026-05-26 0x25cc Shadow Descriptor Buildcheck Route Miss
+
+Command:
+
+```powershell
+cmake --build ..\rpcs3-upstream\build-msvc --config Release --target rpcs3 -- /m
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-field-buildcheck -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260526-162731-cpu4-hle-25cc-shadow-desc-field-buildcheck-windows`
+
+Evidence:
+
+- The patched `rpcs3-upstream` Release build completed and wrote
+  `build-msvc\bin\rpcs3.exe`. Link warning was the pre-existing
+  `LNK4098` defaultlib warning; no compile failure.
+- The run used the rebuilt executable, `Verify25ccShadow`, GPU probe profile,
+  CPU affinity `0x0F`, 240/240 frame/vblank, and `-WindowsGameScreen 1`.
+  RPCS3 moved to `\\.\DISPLAY2`.
+- Host contention was clean for all `6` host snapshots.
+- Visual gate failed: `NO_FIELD_LIKE_SCREENSHOT`; all `18` screenshots were
+  classified as `wrong-window-or-other-small-png`.
+- Manual screenshot check of `screenshot-0160s.png` shows the Load menu with
+  `Path to Tenuto` visible but `File does not exist`, not field gameplay.
+- No RPCS3 process was left running after the harness stopped the run at
+  `225s`.
+- The patched shadow aggregate now sees PUTs:
+  `20868` 25cc shadow hits / `326.06 MB`, GET `9918`, PUT `10950`,
+  output match/mismatch `20868/0`, destination changed `3404`.
+- The new descriptor CSV exists:
+  `eternal-sonata-spu-hle-25cc-shadow-desc-profile.csv`.
+  Direction groups show GET `9918` hits and PUT `754` descriptor hits,
+  output mismatches `0`, unique pattern signatures `33`.
+- Top PUT descriptor rows hit the expected `0x9e4000` family, for example
+  direction `2`, family `1`, raw/base cmd `0x20/0x20`, tag `31`, size
+  `16384`, LSA `0x3000`, EAL `0x9e4000`, hashes matching post output.
+- Descriptor overflow reached `56`, so the current 16-slot descriptor table is
+  too small for complete pattern accounting even though the PUT finish hook is
+  proven to fire.
+
+Classification:
+
+- `source-instrumentation-validated`, `route-tooling`, `failed-visual-gate`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Do not rerun this old `down:20`/`up` macro. It is route-stale for the
+  current save list and sticks on the Load menu.
+- Either widen the 25cc descriptor table before the next accounting run, or
+  accept that descriptor overflow prevents full descriptor coverage.
+- Rerun `Verify25ccShadow` with the current Down160 late-dismiss direct-left
+  field route, then require clean field visuals, nonzero PUT descriptor rows,
+  zero mismatches, and no descriptor overflow before any bodyfast, stack, GPU,
+  menu, or battle promotion.
