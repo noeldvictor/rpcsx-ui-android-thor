@@ -1013,3 +1013,47 @@ Next:
 - Do not repeat speed/HLE/RSX work from these counters.
 - Repair or restore save-target selection so the polling gate reports only
   `PATH_TO_TENUTO_PRESENT`, then re-run the Down160 direct-left boundary proof.
+
+## 2026-05-26 Down160 Wrong-Save-Target Refiner Tightening
+
+Purpose:
+
+- Stop the newest corrected Down160 failure from falling through to the stale
+  generic `stateaware-loadtarget-pollgated-doubleconfirm-dismisssave` command.
+
+Change:
+
+- `tools\ps3_harness_refiner.ps1` now detects a Down160 title/load route whose
+  load-target gate aborts on `DEBUG_SAVE_PROLOGUE_PRESENT` or
+  `MIXED_LOAD_TARGETS` before save-slot `Cross`.
+- The refiner emits `titleload-down160-wrong-save-target` and blocks automatic
+  route reruns until the Path-to-Tenuto save target is restored or repaired and
+  the live gate reports `PATH_TO_TENUTO_PRESENT`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same rule.
+
+Validation:
+
+- `tools\ps3_harness_refiner.ps1` parses successfully.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` reports
+  `titleload-down160-wrong-save-target`, classifies the newest corrected
+  Down160 run as `failed-load-target-gate`, keeps the truncated launch as
+  `failed-harness-launch`, and emits a commented no-rerun suggested command
+  instead of the stale generic state-aware command.
+- The secondary cutscene anti-pattern now points back to the newest Down160
+  wrong-save-target blocker instead of saying to return to old loader-control.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `wrong-save-target-loop-break`.
+- Not field proof.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner. If it reports the expected wrong-save-target blocker,
+  restore or repair the local Path-to-Tenuto save target before another Down160
+  direct-left boundary proof.

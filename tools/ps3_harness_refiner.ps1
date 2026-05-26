@@ -1083,6 +1083,7 @@ $latestLoadTargetPollGatedSaveMenuAfterField = $false
 $latestLoadTargetDirectLeftGateFailure = $false
 $latestLoadTargetDirectLeftLongGateCutscene = $false
 $latestTitleToLoadDiagnosticCutscene = $false
+$latestTitleToLoadDownHoldWrongSaveTarget = $false
 $latestTitleToLoadDownHoldLoadTargetPass = $false
 $latestTitleToLoadDownHoldDirectLeftFieldPass = $false
 $latestTitleToLoadDownHoldBattleFatal = $false
@@ -1154,6 +1155,13 @@ if ($latestRun) {
         (
             (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -or
             ($latestRun.LoadTarget -and $latestRun.LoadTarget.MarkerText -match "wrong-state|cutscene")
+        )
+    $latestTitleToLoadDownHoldWrongSaveTarget =
+        $latestLoadTargetGateFailure -and
+        (@("DEBUG_SAVE_PROLOGUE_PRESENT", "MIXED_LOAD_TARGETS") -contains $latestLoadTargetGateStatus) -and
+        (
+            $latestText -like "*titleload-down160*" -or
+            $latestText -like "*title-to-load-down160*"
         )
     $latestTitleToLoadDownHoldLoadTargetPass =
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
@@ -1536,7 +1544,11 @@ if ($loadingRuns.Count -ge 2) {
     Add-AntiPattern -List $antiPatterns -Name "repeated-loading-before-field" -Severity "blocker" -Evidence ("{0} of {1} recent runs stayed loading-like." -f $loadingRuns.Count, $runEvidence.Count) -Action "Increase or repair the accepted-field state gate before movement. Counters from loading-only captures are not comparable."
 }
 if ($cutsceneRuns.Count -ge 1) {
-    $cutsceneAction = if ($latestHle451cSize16BodyMenuRouteMiss) {
+    $cutsceneAction = if ($latestTitleToLoadDownHoldWrongSaveTarget) {
+        "The newest blocker is not the older cutscene route miss; it is a Down160 wrong-save-target gate. Restore or repair Path to Tenuto and verify PATH_TO_TENUTO_PRESENT before any route rerun."
+    } elseif ($latestTitleToLoadDiagnosticCutscene -or $latestLoadTargetDirectLeftLongGateCutscene) {
+        "Keep the title/load state-gated ladder. Do not back off to old loader-control movement or speed toggles."
+    } elseif ($latestHle451cSize16BodyMenuRouteMiss) {
         "Latest opt-in size16 body menu/Options attempt rendered clean intro/cutscene frames but missed the title Options target. Do not switch back to loader-control movement; repair or state-gate the menu route before rerunning the body menu proof."
     } elseif ($recentDiag200Rejected -and $latestValidLoaderControlLeftCount -ge 2) {
         "The left-only base has been re-proved, so keep the rejected diag200 branch blocked and try another left-only micro-pulse or route-control repair before any lane-2 HLE/GPU fast mode."
@@ -1578,6 +1590,9 @@ if ($latestLoadTargetDirectLeftLongGateCutscene) {
 }
 if ($latestTitleToLoadDiagnosticCutscene) {
     Add-AntiPattern -List $antiPatterns -Name "title-to-load-diagnostic-entered-newgame" -Severity "blocker" -Evidence "Newest title-to-Load diagnostic stayed on the title screen after the short Down press, then Cross entered New Game/story cutscene instead of the Load list." -Action "Do not fall back to double-confirm or long-gate routes. Use the down160 title-to-Load diagnostic to prove Load selection before any save-slot Cross."
+}
+if ($latestTitleToLoadDownHoldWrongSaveTarget) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-wrong-save-target" -Severity "blocker" -Evidence "Newest Down160 title/load route selected $latestLoadTargetGateStatus instead of PATH_TO_TENUTO_PRESENT, so the live gate aborted before save-slot Cross." -Action "Do not fall back to generic state-aware, old loader-control, or blind double-confirm macros. Restore or repair the Path-to-Tenuto save target, verify the gate reports PATH_TO_TENUTO_PRESENT, then re-run the Down160 direct-left boundary proof."
 }
 if ($latestTitleToLoadDownHoldLoadTargetPass) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-target-proven-no-field-yet" -Severity "route-repair" -Evidence "Newest down160 title-to-Load diagnostic reached PATH_TO_TENUTO_PRESENT but intentionally stopped before pressing the save slot, so it is not field or moving gameplay proof." -Action "Continue only with the down160 load-target-gated direct-left route. Keep HLE/RSX speed work blocked until field movement is valid."
@@ -1788,6 +1803,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest down160 load-target-gated route proved Path to Tenuto field plus direct-left movement. Use that route base for first-battle proof next; title Options is still separately required before any 200% or speed promotion."
 } elseif ($latestTitleToLoadDownHoldBattleFatal -and $recentTitleToLoadDownHoldDirectLeftFieldPass) {
     "Latest Down160 first-battle route crashed after accepted field and movement. Re-prove the last clean Down160 direct-left boundary, then shrink or state-gate the battle movement branch before another first-battle attempt."
+} elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
+    "Latest Down160 title/load route selected $latestLoadTargetGateStatus, not Path to Tenuto. Stop route retries, restore or repair the save target, and require PATH_TO_TENUTO_PRESENT before re-running the Down160 direct-left boundary."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -1958,6 +1975,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldBattleRouteCommand
 } elseif ($latestTitleToLoadDownHoldBattleFatal -and $recentTitleToLoadDownHoldDirectLeftFieldPass) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
+} elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
+    "# No automatic route rerun: latest Down160 gate selected $latestLoadTargetGateStatus. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then re-run the Down160 direct-left boundary proof."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {

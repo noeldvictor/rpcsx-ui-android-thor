@@ -143,6 +143,13 @@ left-only is clean, the next rung is a smaller/state-gated down-left leg, not
 the original full `combo:ls_left+ls_down:2200` branch. If left-only crashes,
 shrink the left movement from the clean Down160 direct-left boundary.
 
+If any `Down:160` title/load route aborts before slot `Cross` because the
+load-target gate reports `DEBUG_SAVE_PROLOGUE_PRESENT` or
+`MIXED_LOAD_TARGETS`, classify it as a wrong-save-target blocker. Do not
+suggest generic state-aware, old loader-control, old double-confirm, or
+Down160 movement reruns. Restore or repair the Path-to-Tenuto save target,
+verify `PATH_TO_TENUTO_PRESENT`, then re-run the Down160 direct-left boundary.
+
 ## Acceptance
 
 A useful refiner pass leaves one concrete Windows-only action and prevents a
