@@ -221,6 +221,13 @@ command again. Bank it as route tooling only, still not speed and not GPU
 migration, then pivot to a different proof axis such as Options/menu proof,
 first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis.
 
+If the latest clean run is a `0x25cc` / `9e4000` shadow verifier field proof,
+do not fall through to generic state-aware movement or exact-EA skip reruns.
+Treat it as HLE analysis only: exact command-level `eal == 0x9e4000` covers a
+small slice of the max-DMA pattern family, so the next step is
+pattern/descriptor-level payload or LS-range hashing for the top repeated
+groups before any fast/body promotion, Options/menu proof, or battle proof.
+
 ## Acceptance
 
 A useful refiner pass leaves one concrete Windows-only action and prevents a

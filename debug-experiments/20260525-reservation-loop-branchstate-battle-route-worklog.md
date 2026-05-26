@@ -2446,3 +2446,43 @@ Next:
   groups can be verified without conflating them with exact command EA buckets.
 - Keep fast/body promotion off until this pattern-level verifier is clean in
   field, menu/Options, and first battle.
+
+## 2026-05-26 Harness Refiner 0x25cc Shadow Loop Fix
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Evidence:
+
+- Before the patch, the refiner saw the clean
+  `20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows` field
+  run but fell through to a generic `cpu4-stateaware-one-step` field command.
+- `tools\ps3_harness_refiner.ps1` now detects a latest clean `0x25cc` /
+  `9e4000` shadow verifier field proof and emits the
+  `hle-25cc-shadow-pattern-gap` direction anti-pattern.
+- Re-run after the patch changed the next action to:
+  `Latest 0x25cc shadow verifier is field-clean, but it proved exact
+  command-level EA is the wrong broad predicate. Do not rerun generic movement
+  or exact-EA skips; add pattern/descriptor-level payload or LS-range hashing
+  for the top max-DMA groups before fast/body promotion.`
+- The local `ps3-continual-harness-refiner` skill now carries the same rule so
+  future heartbeat rounds do not fall back to old route movement after this
+  verifier result.
+
+Classification:
+
+- `process-harness`, `spu-hle-25cc-shadow-pattern-gap-refiner-fix`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Implement or extend the runtime verifier to emit payload or LS-range hashes
+  for the top repeated max-DMA `0x9e4000` pattern groups.
+- Keep broad SPU-to-Vulkan compute, exact-EA fast skips, and generic movement
+  reruns parked until the pattern-level verifier is clean across field,
+  menu/Options, and first battle.

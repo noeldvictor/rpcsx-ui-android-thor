@@ -1102,6 +1102,7 @@ $latestHle451cPreserveBodyOffBattleTopslotLeft1300Loading = $false
 $latestHle451cPreserveBodyOffBattleTopslotLeft1400ProcessExit = $false
 $latestHle451cPreserveBodyOffBattleTopslotLeft1600Fatal = $false
 $latestCleanHle25ccBodyOptions = $false
+$latestCleanHle25ccShadowField = $false
 $latestHle25ccBodyBattleOptionsRouteMiss = $false
 $latestHle25ccNoPauseBattleAbComplete = $false
 $latestHle25ccBodyFastRsxGeomStackWindowLost = $false
@@ -1418,6 +1419,12 @@ if ($latestRun) {
         $latestRun.Decision -eq "valid-options-triage" -and
         (($latestText -like "*25cc-body*" -or $latestText -like "*hle-25cc-body*") -and
         ($latestText -like "*options*" -or $latestText -like "*menu*"))
+    $latestCleanHle25ccShadowField =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestText -like "*25cc*" -and
+        ($latestText -like "*shadow*" -or
+        $latestText -like "*verify25ccshadow*" -or
+        $latestText -like "*9e4000*")
     $latestHle25ccBodyBattleOptionsRouteMiss =
         $latestRun.Decision -eq "route-miss-options-not-battle"
     $latestHle25ccNoPauseBattleAbComplete =
@@ -1863,6 +1870,9 @@ if ($latestCleanHle451cSize16BodyOptions) {
 if ($latestCleanHle25ccBodyOptions) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-body-options-clean" -Severity "resolved-control" -Evidence "Newest opt-in 0x25cc body run reached the full title Options page with expected small menu screenshots and no black/loading classes." -Action "Keep the body opt-in. Prove first-battle visuals before stock/body battle A/B, micro-win banking, speed claims, or promotion."
 }
+if ($latestCleanHle25ccShadowField) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-pattern-gap" -Severity "direction" -Evidence ("Newest 0x25cc shadow verifier reached field at {0}s, but exact command-level EA buckets cover only a small slice of the max-DMA pattern family." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun generic movement or exact-EA 0x9e4000 skips. Add pattern/descriptor-level payload or LS-range hashing for the top max-DMA groups before fast/body promotion."
+}
 if ($latestHle451cSize16BodyMenuRouteMiss) {
     Add-AntiPattern -List $antiPatterns -Name "hle-size16-body-menu-route-miss" -Severity "blocker" -Evidence "Newest opt-in size16 body menu/Options attempt missed the Options target and captured intro/cutscene frames instead." -Action "Keep the body opt-in and repair the Windows menu/Options route or add a title-menu visual gate before rerunning menu proof."
 }
@@ -2056,6 +2066,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc no-pause BattleRoute A/B is complete and classified not-speed-win. Do not add generic route movement or rerun the same A/B; inspect body/family verifier timing, remove measurement overhead, or narrow the 0x25cc body before another matched comparison."
 } elseif ($latestHle25ccBodyBattleOptionsRouteMiss) {
     "Latest 0x25cc body battle attempt opened the title Options page instead of first battle. Do not rerun that battle command unchanged; repair the first-battle macro or add a battle-aware route/visual gate before battle proof or stock/body A/B."
+} elseif ($latestCleanHle25ccShadowField) {
+    "Latest 0x25cc shadow verifier is field-clean, but it proved exact command-level EA is the wrong broad predicate. Do not rerun generic movement or exact-EA skips; add pattern/descriptor-level payload or LS-range hashing for the top max-DMA groups before fast/body promotion."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
     "Latest run had fatal/crash log evidence; do not extend it. Re-prove the newest clean loader-control-left200x$newestValidLoaderControlLeftCount boundary with CleanAfterField before adding another pulse."
 } elseif ($latestFatal) {
@@ -2254,6 +2266,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     "# No automatic rerun: latest 0x25cc no-pause BattleRoute A/B already proved field and first-battle visuals but was slower. Inspect body/family timing, remove verifier overhead, or narrow the 0x25cc body before another stock/body A/B."
 } elseif ($latestHle25ccBodyBattleOptionsRouteMiss) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-body-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify25ccShadow -EternalSonataSpuHle25ccBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
+} elseif ($latestCleanHle25ccShadowField) {
+    "# No automatic movement rerun: latest clean 0x25cc shadow run exposes a pattern-hash instrumentation gap. Add pattern/descriptor-level payload or LS-range hashing for the top max-DMA 0x9e4000 groups, then rerun Verify25ccShadow across field, menu/Options, and first battle."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
     New-LoaderControlLeftPulseCommand -Count $newestValidLoaderControlLeftCount -Reconfirm
 } elseif ($latestFatal) {
