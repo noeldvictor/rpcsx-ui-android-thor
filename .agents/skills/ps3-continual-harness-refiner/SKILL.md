@@ -175,6 +175,12 @@ checkpoints, classify it as `titleload-down160-load-complete-waits-for-dismiss`.
 Do not fall back to generic state-aware routes and do not add movement. Send
 exactly one delayed post-load-complete `Cross`, then capture no-movement field
 proof before any direct-left, first-battle, HLE, RSX, GPU, or speed work.
+If that delayed single-dismiss no-movement proof reaches clean Path-to-Tenuto
+field with `PATH_TO_TENUTO_PRESENT` and no save prompt, classify it as
+`titleload-down160-late-dismiss-field-clean`. Keep the same late-dismiss base
+and add exactly one direct-left movement pulse next. Do not fall back to generic
+state-aware, old loader-control, first-battle, HLE, RSX, GPU, or speed work
+until that movement boundary is proven.
 
 ## Acceptance
 

@@ -1403,3 +1403,77 @@ Next:
 - Validate the refiner, then run only the delayed single-dismiss no-movement
   proof before any direct-left movement, first-battle, HLE, RSX, GPU, or
   speed-stacking work.
+
+## 2026-05-26 Down160 Late Load-Complete Dismiss Field Proof
+
+Runs:
+
+- Wrong-save-target attempt:
+  `debug-captures\windows-lab\20260526-064710-cpu4-titleload-down160-lateloadcomplete-dismiss-nomove-visualgate-windows-windows`.
+- Restored-save rerun:
+  `debug-captures\windows-lab\20260526-065427-cpu4-titleload-down160-lateloadcomplete-dismiss-nomove-visualgate-windows-windows`.
+
+Evidence:
+
+- The first run aborted before slot `Cross` because the live gate selected
+  `DEBUG_SAVE_PROLOGUE_PRESENT` (`0` Path, `11` Debug, `0` unknown). The local
+  save target was backed up to
+  `debug-captures\save-backups\BLUS3016100-before-lateloadcomplete-restore-20260526-065409`
+  and restored from
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100`.
+- The rerun used the full 18-token late-dismiss no-movement macro, screen 1,
+  PadApi, CPU affinity `0x0F`, frame/vblank `240/240`, and reservation-loop
+  `Verify`.
+- The load-target gate passed on attempt 4:
+  `PATH_TO_TENUTO_PRESENT`, path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`3`.
+- Manual screenshots show the repaired route state:
+  `screenshot-0183s-load-complete-90s.png` is still the Load UI with the
+  `Load complete` banner; after exactly one delayed `Cross`,
+  `screenshot-0201s-post-load-complete-dismiss-18s.png` and
+  `screenshot-0247s-post-dismiss-63s.png` show clean Path-to-Tenuto field with
+  no save prompt.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reports
+  `FIELD_LIKE_PRESENT`, first field-like at
+  `screenshot-0201s-post-load-complete-dismiss-18s.png` (`201s`), and `0`
+  invalid screenshots after first field-like.
+- `rpcs3.stderr.txt` is empty, host checks are clean, and targeted fatal scan
+  found no `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification
+  failure, unknown STOP, or unhandled exception hits.
+- Targeted `rg` counter extraction for the restored rerun:
+  - GPU-candidate records: `2101`.
+  - Observed DMA: `2,904.03 MB`.
+  - Direct RSX bytes: `0 B`.
+  - Hot PCs: `0x25cc` `979` records / `1,581.88 MB`, `0x451c` `1122`
+    records / `1,322.14 MB`.
+  - Dynamic MFC: `2101` records, `300,702` hits, `714.46 MB`, `281.302 ms`.
+  - MFC list transfer: `1073` records, `110,199` calls, `93.506 ms`.
+  - Reservation commands: `2272` records, `13,288,323` command hits,
+    `9,710,230` GETLLAR, `3,578,093` PUTLLC.
+  - MFC wait: `2272` records, `14,927,748` reads, all fast, `0` blocking.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now treats a Down160
+  `lateloadcomplete-dismiss-nomove` run with `PATH_TO_TENUTO_PRESENT` and field
+  triage as `titleload-down160-late-dismiss-field-clean`.
+- The refiner now blocks the generic state-aware fallback for this state.
+- The suggested next action is the same late-dismiss base plus one direct-left
+  pulse:
+  `cpu4-titleload-down160-lateloadcomplete-dismiss-directleft200-visualgate-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same late-dismiss field-clean rule.
+
+Classification:
+
+- `valid-field-triage`, `route-tooling`,
+  `titleload-down160-late-dismiss-field-clean`.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner, then run only the late-dismiss direct-left movement
+  boundary before any first-battle, HLE, RSX, GPU, or speed-stacking work.
