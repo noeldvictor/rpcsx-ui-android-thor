@@ -413,6 +413,21 @@ function Get-LabSetting {
     return Get-MarkdownBulletValue -Lines $Lines -Label $Label
 }
 
+function Get-LabPlainValue {
+    param(
+        [string[]]$Lines,
+        [string]$Label
+    )
+
+    $pattern = "^" + [regex]::Escape($Label) + ":\s*(.+)$"
+    foreach ($line in $Lines) {
+        if ($line -match $pattern) {
+            return $matches[1].Trim().TrimEnd(".")
+        }
+    }
+    return ""
+}
+
 function Get-PrimarySmallClass {
     param([object[]]$Rows)
 
@@ -594,6 +609,8 @@ function Read-LabEvidence {
         CpuAffinity = Get-LabSetting -Lines $lines -Label "CPU affinity mask requested"
         FrameLimit = Get-LabSetting -Lines $lines -Label "Frame limit override"
         VblankRate = Get-LabSetting -Lines $lines -Label "Vblank rate override"
+        InputMacro = Get-LabSetting -Lines $lines -Label "Input macro"
+        InputMacroTokens = Get-LabPlainValue -Lines $lines -Label "Input macro tokens"
         HostChecks = $hostChecks.Count
         HostBadChecks = $hostBad.Count
         WindowNotFoundScreenshots = $windowNotFoundScreenshots.Count
@@ -699,6 +716,27 @@ function Read-FatalEvidence {
     }
 }
 
+function Test-HarnessLaunchMacroTruncated {
+    param([AllowNull()][object]$RunEvidence)
+
+    if (-not $RunEvidence -or -not $RunEvidence.Lab) {
+        return $false
+    }
+
+    $label = if ($RunEvidence.Lab.Label) { $RunEvidence.Lab.Label } else { "" }
+    $text = "$($RunEvidence.Name) $label"
+    if ($text -notlike "*titleload-down160-pollgated-directleft200*") {
+        return $false
+    }
+
+    $tokenText = if ($RunEvidence.Lab.InputMacroTokens) { $RunEvidence.Lab.InputMacroTokens } else { "" }
+    [int]$tokens = 0
+    if ([int]::TryParse($tokenText, [ref]$tokens)) {
+        return $tokens -lt 10
+    }
+    return $false
+}
+
 function Get-RunDecision {
     param([object]$RunEvidence)
 
@@ -707,6 +745,9 @@ function Get-RunDecision {
     }
     if ($RunEvidence.LoadTarget -and $RunEvidence.LoadTarget.GateFailed) {
         return "failed-load-target-gate"
+    }
+    if (Test-HarnessLaunchMacroTruncated -RunEvidence $RunEvidence) {
+        return "failed-harness-launch"
     }
 
     $visual = $RunEvidence.Visual
@@ -968,6 +1009,7 @@ $wrongWindowRuns = @($runEvidence | Where-Object {
 })
 $fatalRuns = @($runEvidence | Where-Object { $_.Fatal -and $_.Fatal.HasFatal })
 $validFieldRuns = @($runEvidence | Where-Object { $_.Decision -eq "valid-field-triage" })
+$truncatedMacroRuns = @($runEvidence | Where-Object { $_.Decision -eq "failed-harness-launch" })
 $rsxZeroRuns = @($runEvidence | Where-Object { $_.Gpu.RsxLocalTrafficRecords -eq "0" -or $_.Gpu.RsxLocalTrafficRecords -eq "0 raw, 0 aggregated" })
 $recentHle451cPreserveBodyOffBattleTopslotLeft1600Fatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab.Label) { $_.Lab.Label } else { "" }
@@ -1508,6 +1550,9 @@ if ($wrongWindowRuns.Count -ge 1) {
     if ($realWrongWindowRuns.Count -ge 1) {
         Add-AntiPattern -List $antiPatterns -Name "window-capture-instability" -Severity "warning" -Evidence ("{0} recent run(s) had wrong-window/other small screenshots." -f $realWrongWindowRuns.Count) -Action "Keep RPCS3 on screen 1 and reject captures with small screenshots after first field-like output."
     }
+}
+if ($truncatedMacroRuns.Count -ge 1) {
+    Add-AntiPattern -List $antiPatterns -Name "truncated-input-macro" -Severity "harness-noise" -Evidence ("{0} recent run(s) launched a Down160 direct-left label with too few input macro tokens." -f $truncatedMacroRuns.Count) -Action "Ignore these as harness launch noise. Re-run only with the full quoted macro and do not count their screenshots as field, speed, or route proof."
 }
 if ($latestStateAwarePromptStuck) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-load-confirm-prompt-stuck" -Severity "blocker" -Evidence "Newest state-aware one-step repair stayed on the load-confirm prompt instead of reaching field; screenshots show the damaged-save confirmation dialog, not a wrong window." -Action "Do not rerun the default field macro. Add an explicit post-prompt Cross confirm, delay screenshots until after the confirm, then re-test the one-left-pulse field route under CleanAfterField."

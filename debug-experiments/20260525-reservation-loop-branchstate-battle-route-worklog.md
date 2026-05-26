@@ -961,3 +961,55 @@ Next:
 
 - Validate the refiner, then re-prove the Down160 direct-left boundary or run
   the left-only diagnostic if the boundary is already the newest clean run.
+
+## 2026-05-26 Down160 Direct-Left Reproof Attempt
+
+Run:
+
+- Invalid launch-noise folder:
+  `debug-captures\windows-lab\20260526-035544-cpu4-titleload-down160-pollgated-directleft200-visualgate-windows-windows`.
+  Background PowerShell quoting truncated the intended 20-token input macro to
+  only `wait:65000`, so screenshots from this folder must not count as route,
+  field, speed, or GPU evidence.
+- Corrected run:
+  `debug-captures\windows-lab\20260526-035749-cpu4-titleload-down160-pollgated-directleft200-visualgate-windows-windows`.
+
+Evidence:
+
+- The corrected run launched with the full 20-token macro, `-WindowsGameScreen 1`,
+  CPU affinity `0x0F`, frame/vblank `240/240`, and clean host pre/post/postrun
+  snapshots.
+- Load target gate polled from `screenshot-0081s-load-target-gate.png` through
+  `screenshot-0110s-load-target-gate-13.png`.
+- `eternal-sonata-load-target-summary.md` classified all `13` screenshots as
+  `debug-save-prologue`: `PATH_TO_TENUTO_PRESENT=0`,
+  `DEBUG_SAVE_PROLOGUE_PRESENT=13`, `UNKNOWN=0`.
+- Manual image review of `screenshot-0081s-load-target-gate.png` confirmed the
+  Load screen selected `Debug Save` / `Prologue` with damaged-save text.
+- The live gate aborted before save-slot `Cross`; visual gate reported
+  `NO_FIELD_LIKE_SCREENSHOT`; no field, Options, or first-battle proof exists.
+- Fatal scan stayed clean. The GPU scoreboard stayed at `0` promoted CPU/SPU to
+  GPU records, `0 B` direct RSX-local, and `0 B` indirect overlap. The run still
+  logged `857.57 MB` observed DMA, but those counters are route-invalid.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now reads `Input macro tokens` from
+  `windows-rpcs3-lab.txt` and classifies a Down160 direct-left label with too
+  few tokens as `failed-harness-launch`.
+- The refiner also emits a `truncated-input-macro` harness-noise anti-pattern so
+  the invalid `035544` folder cannot become the next clean boundary.
+
+Classification:
+
+- `035544`: `failed-harness-launch`, harness noise.
+- `035749`: `failed-load-target-gate`, route/tooling.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Do not repeat speed/HLE/RSX work from these counters.
+- Repair or restore save-target selection so the polling gate reports only
+  `PATH_TO_TENUTO_PRESENT`, then re-run the Down160 direct-left boundary proof.

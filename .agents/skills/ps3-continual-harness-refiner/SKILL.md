@@ -23,6 +23,8 @@ override the Windows-only 200% gate.
   updated.
 - Invalid visuals, lost windows, route misses, process exits, host-gate failures,
   and fatal logs block speed claims even when counters look good.
+- A launch with a truncated input macro is harness noise. Do not let screenshots
+  from that run become a route boundary or field proof.
 - Stacking is allowed only after each component is individually clean on the same
   route and no newer combined-stack failure exists.
 - If a combined stack fails, stop stacking and bisect from the last known-good
