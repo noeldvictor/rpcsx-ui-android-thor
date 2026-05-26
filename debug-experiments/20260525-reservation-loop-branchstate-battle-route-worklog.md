@@ -1195,3 +1195,70 @@ Next:
 - Rerun only the Down160 post-load-complete dismiss direct-left repair under the
   corrected multi-row classifier. Do not run speed/HLE/RSX promotion until field
   movement is valid again.
+
+## 2026-05-26 Down160 Post-Load Cross Save-Prompt Miss
+
+Run:
+
+- `debug-captures\windows-lab\20260526-051647-cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows-windows`.
+
+Evidence:
+
+- The run launched with the full 23-token macro, screen 1, CPU affinity `0x0F`,
+  frame/vblank `240/240`, reservation-loop `Verify`, and clean pre/post/postrun
+  host snapshots.
+- The corrected multi-row load-target gate passed on attempt 1:
+  `PATH_TO_TENUTO_PRESENT`, path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`0`.
+- The outer Codex shell timed out during postrun/tail handling after the lab
+  stopped RPCS3 at the intended `250s` wall. No lingering RPCS3/RPCSX process
+  remained.
+- Visual gate reported `FIELD_LIKE_PRESENT`, first field-like
+  `screenshot-0136s-load-complete-check.png` at `136s`, with `0` invalid
+  screenshots after first field-like.
+- Manual review changes the result class: `screenshot-0136s-load-complete-check.png`
+  is clean Path-to-Tenuto field, but `screenshot-0151s-left200-check.png` and
+  `screenshot-0220s.png` show the in-field `Save game` / `Don't save game`
+  prompt blocking movement. The extra post-field `Cross` opened the save prompt
+  before the direct-left movement proof.
+- `rpcs3.stderr.txt` is empty, and targeted fatal scan found no
+  `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification failure,
+  unknown STOP, or unhandled exception hits.
+- The full GPU summarizer timed out on the `113 MB` log, so use targeted `rg`
+  extraction for this route-invalid capture:
+  - GPU-candidate records: `2005`.
+  - Observed DMA: `3,072.92 MB`.
+  - Direct RSX bytes: `0 B`.
+  - Hot PCs: `0x25cc` `1025` records / `1,675.44 MB`, `0x451c` `980` records /
+    `1,397.47 MB`.
+  - Dynamic MFC: `2005` records, `324,760` hits, `753.36 MB`, `289.108 ms`.
+  - MFC list transfer: `955` records, `118,657` calls, `106.292 ms`.
+  - Reservation commands: `2135` records, `13,203,094` command hits,
+    `9,598,252` GETLLAR, `3,604,842` PUTLLC.
+  - MFC wait: `2136` records, `14,921,138` reads, all fast, `0` blocking.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now detects a valid-field Down160
+  `postloadcomplete-dismiss-directleft200` route as
+  `titleload-down160-postloadcomplete-cross-opens-save-prompt`.
+- The refiner blocks generic valid-field fallback for this state and suggests
+  the plain Down160 load-target-gated direct-left route without the extra
+  post-field `Cross`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same rule.
+
+Classification:
+
+- `route-tooling`, `valid-field-triage-but-save-prompt`.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run only the plain Down160 load-target-gated direct-left route:
+  `cpu4-titleload-down160-pollgated-directleft200-visualgate-windows`. Do not
+  repeat the post-load-complete `Cross`, and do not run speed/HLE/RSX promotion
+  until field movement is valid again.

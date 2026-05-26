@@ -1091,6 +1091,7 @@ $latestTitleToLoadDiagnosticCutscene = $false
 $latestTitleToLoadDownHoldWrongSaveTarget = $false
 $latestTitleToLoadDownHoldClassifierFalseGateFailure = $false
 $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck = $false
+$latestTitleToLoadDownHoldPostLoadCompleteSavePrompt = $false
 $latestTitleToLoadDownHoldLoadTargetPass = $false
 $latestTitleToLoadDownHoldDirectLeftFieldPass = $false
 $latestTitleToLoadDownHoldBattleFatal = $false
@@ -1180,6 +1181,10 @@ if ($latestRun) {
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
         $latestText -like "*titleload-down160*" -and
         $latestText -like "*directleft200*"
+    $latestTitleToLoadDownHoldPostLoadCompleteSavePrompt =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*titleload-down160-postloadcomplete-dismiss-directleft200*"
     $latestTitleToLoadDownHoldLoadTargetPass =
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
         $latestText -like "*title-to-load-down160-state-diagnostic*"
@@ -1621,6 +1626,9 @@ if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
 if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
 }
+if ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-postloadcomplete-cross-opens-save-prompt" -Severity "route-repair" -Evidence "Newest Down160 post-load-complete repair reached Path-to-Tenuto field, but manual screenshot review showed the extra post-field Cross opened the Save game prompt before the left movement proof." -Action "Do not treat this as moving gameplay and do not use generic valid-field fallback. Remove the extra post-load-complete Cross and rerun the plain Down160 load-target-gated direct-left route."
+}
 if ($latestTitleToLoadDownHoldLoadTargetPass) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-target-proven-no-field-yet" -Severity "route-repair" -Evidence "Newest down160 title-to-Load diagnostic reached PATH_TO_TENUTO_PRESENT but intentionally stopped before pressing the save slot, so it is not field or moving gameplay proof." -Action "Continue only with the down160 load-target-gated direct-left route. Keep HLE/RSX speed work blocked until field movement is valid."
 }
@@ -1820,6 +1828,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest title-to-Load diagnostic proved the short title Down press did not reach Load; Cross entered New Game/story cutscene. Run the down160 title-selection diagnostic next and keep all speed/HLE/RSX work blocked."
 } elseif ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
     "Latest Down160 post-load-complete repair aborted on a stale fixed-row live gate, but the corrected multi-row classifier now reports PATH_TO_TENUTO_PRESENT on the lower selected row. Treat it as classifier row drift and rerun the same Down160 post-load-complete dismiss route before any speed/HLE/RSX work."
+} elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
+    "Latest Down160 post-load-complete repair reached field, but the extra post-field Cross opened the Save game prompt and blocked movement. Remove that Cross and rerun the plain Down160 load-target-gated direct-left route before any speed/HLE/RSX work."
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     "Latest down160 title-to-Load diagnostic proved PATH_TO_TENUTO_PRESENT and intentionally stopped before slot Cross. Continue with the down160 load-target-gated direct-left route; this is still route repair, not speed."
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
@@ -1996,6 +2006,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
     New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand
+} elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
+    New-StateAwareTitleToLoadDownHoldDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {

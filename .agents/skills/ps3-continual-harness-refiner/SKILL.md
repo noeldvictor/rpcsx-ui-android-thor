@@ -159,6 +159,10 @@ the Load UI on the `Load complete` popup instead of reaching field, keep the
 Down160 route and add an explicit post-load-complete `Cross` before movement
 screenshots. Do not fall back to generic state-aware or old loader-control
 macros from that state.
+If that post-load-complete repair reaches field but the extra `Cross` opens the
+in-field `Save game` prompt before the movement screenshot, classify it as a
+save-prompt route miss, not moving gameplay. Remove the extra post-field
+`Cross` and rerun the plain Down160 load-target-gated direct-left route.
 
 ## Acceptance
 
