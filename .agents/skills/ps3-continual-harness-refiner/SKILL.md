@@ -109,7 +109,11 @@ aborts before slot `Cross`. If a polling-gated route reaches field and then the
 old dismiss-save sequence opens the Save/Create-new-file menu, block that
 sequence and suggest a direct-left movement proof. If direct-left times out on
 black/`UNKNOWN_LOAD_TARGET` gate screenshots, suggest only the direct-left
-long-gate variant, not the old dismiss-save macro.
+long-gate variant, not the old dismiss-save macro. If that long-gate variant
+still reports `UNKNOWN_LOAD_TARGET` while screenshots are story/cutscene or
+other non-field frames, stop lengthening the gate. Treat it as a title-to-Load
+route miss; repair the title/menu/load-list state gate before pressing slot
+`Cross`.
 
 ## Acceptance
 

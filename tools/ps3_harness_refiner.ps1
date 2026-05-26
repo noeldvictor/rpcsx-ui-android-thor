@@ -1014,6 +1014,7 @@ $latestLoadTargetGateFailure = $false
 $latestLoadTargetGateStatus = ""
 $latestLoadTargetPollGatedSaveMenuAfterField = $false
 $latestLoadTargetDirectLeftGateFailure = $false
+$latestLoadTargetDirectLeftLongGateCutscene = $false
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1051,6 +1052,10 @@ if ($latestRun) {
         $latestLoadTargetGateFailure -and
         $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
         $latestText -like "*loadtarget-pollgated-directleft*"
+    $latestLoadTargetDirectLeftLongGateCutscene =
+        $latestLoadTargetDirectLeftGateFailure -and
+        $latestText -like "*longgate*" -and
+        (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass)
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
     $latestStateAwarePromptStuck =
@@ -1449,7 +1454,10 @@ if ($latestLoadTargetGateFailure) {
 if ($latestLoadTargetPollGatedSaveMenuAfterField) {
     Add-AntiPattern -List $antiPatterns -Name "pollgated-route-opens-save-menu-after-field" -Severity "blocker" -Evidence "Newest polling-gated route proved Path to Tenuto and reached field, but later screenshots stayed on the Save/Create new save file menu after the post-load dismissal presses." -Action "Remove the obsolete field-side save-prompt dismissal sequence. After the accepted field screenshot, go directly to the movement pulse and screenshots."
 }
-if ($latestLoadTargetDirectLeftGateFailure) {
+if ($latestLoadTargetDirectLeftLongGateCutscene) {
+    Add-AntiPattern -List $antiPatterns -Name "directleft-longgate-entered-cutscene" -Severity "blocker" -Evidence "Newest long-gate direct-left route stayed UNKNOWN_LOAD_TARGET while screenshots showed story/cutscene frames, not the Load list or Path to Tenuto field." -Action "Stop longer-gate reruns. Repair the title-to-Load route or add a title/menu/load-list visual state gate before pressing slot Cross."
+}
+if ($latestLoadTargetDirectLeftGateFailure -and -not $latestLoadTargetDirectLeftLongGateCutscene) {
     Add-AntiPattern -List $antiPatterns -Name "directleft-load-target-gate-timeout" -Severity "blocker" -Evidence "Newest direct-left route aborted before slot Cross because all polling-gate screenshots stayed UNKNOWN_LOAD_TARGET; manual visual inspection showed a black screen, not a save slot." -Action "Retry only the direct-left route with a longer load-target gate. Do not fall back to the old dismiss-save macro because it already proved it opens the Save menu after field."
 }
 if ($latestStateAwareLateDoubleConfirmRouteDrift) {
@@ -1624,6 +1632,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest late load-confirm route opened the Proceed prompt but did not send the second Cross confirm. Do not rerun the one-cross macro; use the double-confirm plus save-prompt dismissal route before any speed work."
 } elseif ($latestLoadTargetPollGatedSaveMenuAfterField) {
     "Latest polling-gated route proved Path to Tenuto and field, then the old save-prompt dismissal opened the Save/Create-new-file menu. Remove those field-side Cross presses and go directly to a left-movement proof."
+} elseif ($latestLoadTargetDirectLeftLongGateCutscene) {
+    "Latest long-gate direct-left route entered story/cutscene frames while the load-target classifier stayed UNKNOWN_LOAD_TARGET. Stop gate-length retries; repair the title-to-Load route or add a title/menu/load-list state gate before slot Cross."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -1778,6 +1788,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareLateLoadDoubleConfirmDismissMovementCommand
 } elseif ($latestLoadTargetPollGatedSaveMenuAfterField) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
+} elseif ($latestLoadTargetDirectLeftLongGateCutscene) {
+    "# No automatic direct-left rerun: latest long-gate route entered story/cutscene before the Load-list target. Repair title-to-Load input timing/state gate, then re-run a load-target-gated route."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {

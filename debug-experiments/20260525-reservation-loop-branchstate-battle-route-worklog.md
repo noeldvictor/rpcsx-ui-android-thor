@@ -507,3 +507,62 @@ Next:
   dismiss-save macro, because it already proved field then opened the Save menu.
 - Keep HLE/RSX speed stacking blocked until the same route proves correct field,
   menu/Options, and first-battle visuals.
+
+## 2026-05-26 Long-Gate Direct-Left Cutscene Route Miss
+
+Purpose:
+
+- Test whether the direct-left `UNKNOWN_LOAD_TARGET` failure was only a short
+  30s gate timeout, or whether the route was entering the wrong game state.
+- Stop the refiner from asking for the same route again when screenshots prove
+  it missed the Load list.
+
+Run evidence:
+
+- Windows run
+  `20260526-020147-cpu4-stateaware-loadtarget-pollgated-directleft200-longgate-visualgate-windows-windows`
+  used PadApi, screen 1, CPU affinity `0x0F`, `ReservationLoop Verify`,
+  `CleanAfterField`, and a `gate_load_target:60000` guard before slot `Cross`.
+- The load-target gate timed out with classifier status
+  `UNKNOWN_LOAD_TARGET` and aborted before pressing slot `Cross`.
+- Manual screenshot review rejected the visual byte-size heuristic:
+  `screenshot-0079s-load-target-gate-9.png` showed a story/cutscene tree scene,
+  and `screenshot-0122s-load-target-gate-25.png` showed a story/cutscene star
+  scene with the subtitle `Emilia.`. These are not the Load list, not Path to
+  Tenuto field gameplay, and not moving-gameplay proof.
+- Host contention was clean, stderr was empty, no lingering RPCS3/RPCSX process
+  remained, and fatal scan found no crash/access/Vulkan/assertion hit.
+- GPU summary is route-invalid only: `863` records, `1,288.98 MB` observed DMA,
+  offload fit `spu-kernel-hle=639` / `too-small=224`, hot PCs `0x25cc`
+  (`679.52 MB`) and `0x451c` (`609.47 MB`), dynamic MFC `142,984` hits /
+  `323.36 MB` / `189.669 ms`, list-transfer `52,930` calls / `59.812 ms`, lane
+  2 `11717/11717/11717/0/0`, and GPU Port Scoreboard `0 B` promoted CPU/SPU to
+  GPU, `0 B` direct RSX-local, `0 B` indirect overlap.
+
+Change:
+
+- `tools\ps3_harness_refiner.ps1` now separates the old black
+  direct-left timeout from the newer long-gate cutscene route miss.
+- The refiner emits `directleft-longgate-entered-cutscene` and no automatic
+  rerun command when a long-gate direct-left capture is
+  `UNKNOWN_LOAD_TARGET` with story/cutscene or other non-field screenshots.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same operating rule.
+
+Classification:
+
+- `process-harness`, `route-tooling`,
+  `directleft-longgate-entered-cutscene`, `load-target-gate`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Do not run another direct-left long-gate retry from this state.
+- Repair the title-to-Load input timing or add a title/menu/load-list state gate
+  before pressing slot `Cross`.
+- Keep speed stacking and HLE/RSX promotion blocked until correct field,
+  menu/Options, and first-battle visuals are proven again.
