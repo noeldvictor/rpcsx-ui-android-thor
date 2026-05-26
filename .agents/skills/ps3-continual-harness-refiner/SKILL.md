@@ -261,6 +261,14 @@ promotion. The refiner should emit
 `hle-25cc-shadow-desc-buildcheck-route-miss` for the stale buildcheck and must
 not suggest generic `stateaware-one-step`, old loader-control, or the old
 `down:20`/`up` load macro.
+If the latest
+`cpu4-hle-25cc-shadow-desc-down160-latedismiss-directleft-field` proof is
+clean, classify it as `valid-field-triage` and
+`source-instrumentation-validated`, not speed, not GPU migration, and not a
+200% gate result. Do not rerun field or fall back to the generic
+`hle-25cc-shadow-pattern-gap` advice; the next 25cc rung is title Options/menu
+proof with `Verify25ccShadow`, followed by first battle, before bodyfast,
+stack, GPU, or speed promotion.
 
 ## Acceptance
 

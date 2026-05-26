@@ -2735,3 +2735,70 @@ Next:
 - Require clean field visuals, nonzero PUT descriptor rows, zero mismatches,
   and descriptor overflow `0` before any bodyfast, stack, GPU, menu, or battle
   promotion.
+
+## 2026-05-26 0x25cc Descriptor Down160 Field Proof
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-down160-latedismiss-directleft-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260526-165517-cpu4-hle-25cc-shadow-desc-down160-latedismiss-directleft-field-windows`
+
+Evidence:
+
+- No active emulator/build process was present before the run.
+- The run used the rebuilt widened-table `rpcs3.exe`, screen 1 /
+  `\\.\DISPLAY2`, CPU affinity `0x0F`, 240/240 frame/vblank,
+  `-EternalSonataGpuProbe Profile`, and `Verify25ccShadow`.
+- Load-target gate passed as `PATH_TO_TENUTO_PRESENT`.
+- Visuals were field-clean through `260s`. Manual checks:
+  `screenshot-0195s-post-load-complete-dismiss-18s.png`,
+  `screenshot-0197s-left200-check.png`, and `screenshot-0260s.png` show clean
+  Path-to-Tenuto field with no save prompt, crash overlay, or corrupt field.
+- Host checks were clean for all `6` snapshots. Focused fatal scan over
+  `RPCS3.log` and `rpcs3.stderr.txt` found no fatal/access/assert/Vulkan/device
+  lost hit.
+- The wrapper full post-pass hung after the harness stopped RPCS3 at `260s`;
+  it was stopped only after raw targeted counter extraction.
+- Raw descriptor extraction from `RPCS3.log`:
+  - verifier rows `836`
+  - shadow hits `26748`, GET `12528`, PUT `14220`
+  - shadow bytes `438.24 MB`
+  - output match/mismatch `26748/0`
+  - descriptor direction rows/hits: GET `12528/12528`, PUT `12540/14220`
+  - descriptor PUT mismatches `0`
+  - unique pattern signatures `74`
+  - max descriptor overflow `0`
+- Top PUT descriptor rows include the expected max-DMA family: direction `2`,
+  raw/base command `0x20`, tag `31`, size `16384`, with zero mismatch/overflow.
+- Field title-sample FPS averaged about `36.11 FPS` after field, but this is
+  instrumentation context only, not a matched speed proof.
+
+Classification:
+
+- `valid-field-triage`, `source-instrumentation-validated`,
+  `hle-25cc-shadow-desc-down160-field-clean`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the clean descriptor Down160
+  field proof and emits `hle-25cc-shadow-desc-down160-field-clean`.
+- It no longer falls through to the old generic `hle-25cc-shadow-pattern-gap`
+  advice for this exact descriptor proof.
+- Suggested command is now a title Options/menu `Verify25ccShadow` proof:
+  `cpu4-hle-25cc-shadow-desc-options-proof`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  now carry the same standing rule.
+
+Next:
+
+- Do not rerun the 0x25cc descriptor field proof.
+- Prove title Options/menu with `Verify25ccShadow`.
+- Then prove first battle before bodyfast, stack, GPU, or speed promotion.

@@ -331,6 +331,10 @@ function New-Hle25ccShadowDescDown160VerifyCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-down160-latedismiss-directleft-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescOptionsCommand {
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label cpu4-hle-25cc-shadow-desc-options-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate Off -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 90 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
@@ -1108,6 +1112,7 @@ $latestHle451cPreserveBodyOffBattleTopslotLeft1400ProcessExit = $false
 $latestHle451cPreserveBodyOffBattleTopslotLeft1600Fatal = $false
 $latestCleanHle25ccBodyOptions = $false
 $latestCleanHle25ccShadowField = $false
+$latestHle25ccShadowDescDown160FieldPass = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccBodyBattleOptionsRouteMiss = $false
 $latestHle25ccNoPauseBattleAbComplete = $false
@@ -1431,6 +1436,15 @@ if ($latestRun) {
         ($latestText -like "*shadow*" -or
         $latestText -like "*verify25ccshadow*" -or
         $latestText -like "*9e4000*")
+    $latestHle25ccShadowDescDown160FieldPass =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*down160*" -and
+        ($latestText -like "*latedismiss*" -or
+        $latestText -like "*lateloadcomplete*") -and
+        ($latestText -like "*directleft*" -or
+        $latestText -like "*field*")
     $latestHle25ccShadowDescBuildcheckRouteMiss =
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestText -like "*25cc*" -and
@@ -1882,8 +1896,11 @@ if ($latestCleanHle451cSize16BodyOptions) {
 if ($latestCleanHle25ccBodyOptions) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-body-options-clean" -Severity "resolved-control" -Evidence "Newest opt-in 0x25cc body run reached the full title Options page with expected small menu screenshots and no black/loading classes." -Action "Keep the body opt-in. Prove first-battle visuals before stock/body battle A/B, micro-win banking, speed claims, or promotion."
 }
-if ($latestCleanHle25ccShadowField) {
+if ($latestCleanHle25ccShadowField -and -not $latestHle25ccShadowDescDown160FieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-pattern-gap" -Severity "direction" -Evidence ("Newest 0x25cc shadow verifier reached field at {0}s, but exact command-level EA buckets cover only a small slice of the max-DMA pattern family and the current shadow/body path is GET-only." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun generic movement or exact-EA 0x9e4000 skips. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
+}
+if ($latestHle25ccShadowDescDown160FieldPass) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-down160-field-clean" -Severity "resolved-control" -Evidence ("Newest 0x25cc descriptor Down160 field proof reached Path-to-Tenuto field at {0}s with the widened descriptor table, PUT/GET descriptor coverage, zero mismatches, and descriptor overflow 0." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun the 0x25cc descriptor field proof. Prove title Options/menu with Verify25ccShadow next, then first battle, before bodyfast, stack, GPU, or speed promotion."
 }
 if ($latestHle25ccShadowDescBuildcheckRouteMiss) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-buildcheck-route-miss" -Severity "blocker" -Evidence "Newest 0x25cc descriptor buildcheck proved nonzero PUT shadow coverage but stayed in the Load menu and used the stale down:20/up macro." -Action "Do not fall back to generic state-aware or old loader-control movement. Use the widened descriptor table with the current Down160 late-dismiss direct-left route, then require clean field visuals, PUT descriptor rows, zero mismatches, and descriptor overflow 0."
@@ -2083,6 +2100,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc body battle attempt opened the title Options page instead of first battle. Do not rerun that battle command unchanged; repair the first-battle macro or add a battle-aware route/visual gate before battle proof or stock/body A/B."
 } elseif ($latestHle25ccShadowDescBuildcheckRouteMiss) {
     "Latest 0x25cc descriptor buildcheck is source-instrumentation validated but route-invalid and used the stale down:20/up macro. Do not fall back to generic movement. Rerun Verify25ccShadow on the current Down160 late-dismiss direct-left field route with the widened descriptor table, then require clean field visuals, nonzero PUT descriptor rows, zero mismatches, and descriptor overflow 0."
+} elseif ($latestHle25ccShadowDescDown160FieldPass) {
+    "Latest 0x25cc descriptor Down160 field proof is clean and source-instrumentation validated with PUT/GET descriptor coverage, zero mismatches, and descriptor overflow 0. Do not rerun field; prove title Options/menu with Verify25ccShadow next, then first battle, before bodyfast, stack, GPU, or speed promotion."
 } elseif ($latestCleanHle25ccShadowField) {
     "Latest 0x25cc shadow verifier is field-clean, but it proved exact command-level EA is the wrong broad predicate and the current shadow/body path is GET-only. Do not rerun generic movement or exact-EA skips; add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
@@ -2285,6 +2304,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-body-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify25ccShadow -EternalSonataSpuHle25ccBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccShadowDescBuildcheckRouteMiss) {
     New-Hle25ccShadowDescDown160VerifyCommand
+} elseif ($latestHle25ccShadowDescDown160FieldPass) {
+    New-Hle25ccShadowDescOptionsCommand
 } elseif ($latestCleanHle25ccShadowField) {
     "# No automatic movement rerun: latest clean 0x25cc shadow run exposes a pattern-hash instrumentation gap, and the current shadow/body path is GET-only while matched target rows are PUT-heavy. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA 0x9e4000 groups, then rerun Verify25ccShadow across field, menu/Options, and first battle."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
