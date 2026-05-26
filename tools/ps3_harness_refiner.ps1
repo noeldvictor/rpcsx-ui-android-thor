@@ -296,6 +296,11 @@ function New-StateAwareTitleToLoadDiagnosticCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-title-to-load-state-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 125 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
 }
 
+function New-StateAwareTitleToLoadDownHoldDiagnosticCommand {
+    $macro = "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:12000;shot:post-title-cross-down160;up:120;wait:200;up:120;wait:200;up:120;wait:200;up:120;wait:200;up:120;wait:600;shot:pre-load-target-gate-down160;gate_load_target:30000"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-title-to-load-down160-state-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 140 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
+}
+
 function New-Hle451cSize16CandidateReproofCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label hle-451c-size16-candidate-reproof-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8"
 }
@@ -1020,6 +1025,7 @@ $latestLoadTargetGateStatus = ""
 $latestLoadTargetPollGatedSaveMenuAfterField = $false
 $latestLoadTargetDirectLeftGateFailure = $false
 $latestLoadTargetDirectLeftLongGateCutscene = $false
+$latestTitleToLoadDiagnosticCutscene = $false
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1060,6 +1066,14 @@ if ($latestRun) {
     $latestLoadTargetDirectLeftLongGateCutscene =
         $latestLoadTargetDirectLeftGateFailure -and
         $latestText -like "*longgate*" -and
+        (
+            (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -or
+            ($latestRun.LoadTarget -and $latestRun.LoadTarget.MarkerText -match "wrong-state|cutscene")
+        )
+    $latestTitleToLoadDiagnosticCutscene =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestText -like "*title-to-load-state-diagnostic*" -and
         (
             (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -or
             ($latestRun.LoadTarget -and $latestRun.LoadTarget.MarkerText -match "wrong-state|cutscene")
@@ -1465,6 +1479,9 @@ if ($latestLoadTargetPollGatedSaveMenuAfterField) {
 if ($latestLoadTargetDirectLeftLongGateCutscene) {
     Add-AntiPattern -List $antiPatterns -Name "directleft-longgate-entered-cutscene" -Severity "blocker" -Evidence "Newest long-gate direct-left route stayed UNKNOWN_LOAD_TARGET while screenshots showed story/cutscene frames, not the Load list or Path to Tenuto field." -Action "Stop longer-gate reruns. Run the title-to-Load diagnostic: screenshot title settle, after title Down, after title Cross, before the Load-target gate, then abort unless PATH_TO_TENUTO_PRESENT."
 }
+if ($latestTitleToLoadDiagnosticCutscene) {
+    Add-AntiPattern -List $antiPatterns -Name "title-to-load-diagnostic-entered-newgame" -Severity "blocker" -Evidence "Newest title-to-Load diagnostic stayed on the title screen after the short Down press, then Cross entered New Game/story cutscene instead of the Load list." -Action "Do not fall back to double-confirm or long-gate routes. Use the down160 title-to-Load diagnostic to prove Load selection before any save-slot Cross."
+}
 if ($latestLoadTargetDirectLeftGateFailure -and -not $latestLoadTargetDirectLeftLongGateCutscene) {
     Add-AntiPattern -List $antiPatterns -Name "directleft-load-target-gate-timeout" -Severity "blocker" -Evidence "Newest direct-left route aborted before slot Cross because all polling-gate screenshots stayed UNKNOWN_LOAD_TARGET; manual visual inspection showed a black screen, not a save slot." -Action "Retry only the direct-left route with a longer load-target gate. Do not fall back to the old dismiss-save macro because it already proved it opens the Save menu after field."
 }
@@ -1642,6 +1659,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest polling-gated route proved Path to Tenuto and field, then the old save-prompt dismissal opened the Save/Create-new-file menu. Remove those field-side Cross presses and go directly to a left-movement proof."
 } elseif ($latestLoadTargetDirectLeftLongGateCutscene) {
     "Latest long-gate direct-left route entered story/cutscene frames while the load-target classifier stayed UNKNOWN_LOAD_TARGET. Run the title-to-Load diagnostic next; it screenshots each title/menu/load-list transition and stops before slot Cross unless PATH_TO_TENUTO_PRESENT."
+} elseif ($latestTitleToLoadDiagnosticCutscene) {
+    "Latest title-to-Load diagnostic proved the short title Down press did not reach Load; Cross entered New Game/story cutscene. Run the down160 title-selection diagnostic next and keep all speed/HLE/RSX work blocked."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -1798,6 +1817,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetDirectLeftLongGateCutscene) {
     New-StateAwareTitleToLoadDiagnosticCommand
+} elseif ($latestTitleToLoadDiagnosticCutscene) {
+    New-StateAwareTitleToLoadDownHoldDiagnosticCommand
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {

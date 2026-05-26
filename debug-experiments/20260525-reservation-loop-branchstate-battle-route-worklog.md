@@ -656,3 +656,62 @@ Next:
 - Run the title-to-Load diagnostic, inspect the named screenshots and
   `load-target-gate-failed.txt`, then repair only the title/menu/load-list
   transition before any movement or speed stacking.
+
+## 2026-05-26 Title-To-Load Short-Down Miss
+
+Purpose:
+
+- Execute the title-to-Load diagnostic and determine whether the route reaches
+  the Load list before any save-slot `Cross`.
+
+Run evidence:
+
+- Windows run
+  `20260526-023814-cpu4-title-to-load-state-diagnostic-windows-windows` used
+  PadApi, screen 1, CPU affinity `0x0F`, frame/vblank `240`,
+  `ReservationLoop Verify`, and `WindowsVisualGate Off`.
+- The diagnostic captured the title/menu transition and aborted before any
+  save-slot `Cross`.
+- Manual screenshot review:
+  - `screenshot-0068s-title-settle.png` showed the title menu.
+  - `screenshot-0069s-title-after-down.png` still showed the title menu after
+    the short `Down:20` press.
+  - `screenshot-0081s-post-title-cross.png` entered New Game/story cutscene,
+    proving the short Down did not select Load.
+  - `screenshot-0084s-pre-load-target-gate.png` and
+    `screenshot-0087s-load-target-gate-2.png` were story/cutscene frames, not
+    Load list and not field.
+- `load-target-gate-failed.txt` reports:
+  `wrong-state/cutscene while waiting for Load list`.
+- Load-target summary status was `UNKNOWN_LOAD_TARGET`, with all six
+  screenshots classified unknown by crop comparison.
+- Host checks were clean, stderr was empty, and no RPCS3/RPCSX process remained
+  after the run. The command wrapper timed out after the run output, but the lab
+  log records RPCS3 exited at `89s` before `MaxSeconds 125`.
+
+Change:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes a failed
+  `title-to-load-state-diagnostic` cutscene/wrong-state result as
+  `title-to-load-diagnostic-entered-newgame`.
+- Added `New-StateAwareTitleToLoadDownHoldDiagnosticCommand`, which uses a
+  longer title `Down:160` hold, named screenshots, and a
+  `gate_load_target:30000` guard without pressing the save slot.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same rule.
+
+Classification:
+
+- `route-tooling`, `title-to-load-diagnostic-entered-newgame`,
+  `load-target-gate`, `wrong-state/cutscene`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run only `cpu4-title-to-load-down160-state-diagnostic-windows`.
+- Do not fall back to double-confirm, direct-left long-gate, speed stacking, or
+  HLE/RSX promotion until the Load selection is proven before slot `Cross`.

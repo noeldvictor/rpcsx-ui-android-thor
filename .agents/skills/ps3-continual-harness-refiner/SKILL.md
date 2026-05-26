@@ -118,6 +118,10 @@ aborts before slot `Cross` unless `PATH_TO_TENUTO_PRESENT` is true. The live
 `gate_load_target` guard now also classifies each polling screenshot and aborts
 early after repeated obvious story/cutscene or non-field frames, while still
 allowing black/loading transients to keep polling.
+If the title-to-Load diagnostic still enters New Game/story cutscene after the
+short `Down:20`, do not fall back to the old double-confirm or long-gate
+routes. Use the `Down:160` title-selection diagnostic next so the Load menu
+selection is proven before any save-slot `Cross`.
 
 ## Acceptance
 
