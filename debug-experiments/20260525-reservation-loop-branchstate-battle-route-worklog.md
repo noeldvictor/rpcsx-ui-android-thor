@@ -2338,3 +2338,44 @@ Next:
   changes destination data.
 - Keep fast mode and Vulkan compute off until that verifier survives field,
   title Options, and first-battle visuals with no mismatches.
+
+## 2026-05-26 0x25cc 0x9e4000 Verifier Plan
+
+Command:
+
+```powershell
+.\tools\summarize_eternal_sonata_25cc_verifier_plan.ps1
+```
+
+Evidence:
+
+- Generated
+  `debug-experiments/20260526-25cc-9e4000-verifier-plan.md` from the committed
+  pattern-family and coverage-gap CSVs.
+- The broad target remains the `0x9e4000` family: `6.86 GB`, `4340` records,
+  `159` pattern rows, `47` repeated pattern rows, `34,782.089 ms`, and `0 B`
+  RSX-local bytes.
+- The old exact `0xa1c000` skip remains correctness-clean but covers only
+  `5.55 MB`, so it is not a credible large speed lane by itself.
+- Source anchor inspection of local `rpcs3-upstream` found the useful runtime
+  hooks already present: family classifier, `cmd.eal == 0x9e4000` predicate,
+  shadow sample counters, runtime body-copy hook, MFC command entry, LLVM
+  verifier candidate, and dynamic MFC fallback signal.
+
+Classification:
+
+- `analysis`, `spu-hle-25cc-9e4000-verifier-plan`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Implement/extend the verify-only runtime `0x9e4000` family lane first:
+  title/image/group/SPU/PC gate, command descriptors, source and destination
+  hashes, stock-path destination-change checks, touched GET/PUT ranges, reject
+  counts, and pattern signatures.
+- Treat LLVM direct-copy recognition as secondary until traces prove constant
+  MFC commands on this hot path.
+- Keep fast/body mode and Vulkan compute off until the verifier is clean across
+  field, menu/Options, and first-battle visuals.
