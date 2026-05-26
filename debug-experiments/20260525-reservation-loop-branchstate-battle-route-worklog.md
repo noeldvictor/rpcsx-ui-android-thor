@@ -2531,3 +2531,51 @@ Next:
   changed/unchanged, and output-match/mismatch.
 - Keep fast/body mode off until PUT-side and GET-side pattern-level semantics
   are clean in field, menu/Options, and first battle.
+
+## 2026-05-26 0x25cc Shadow Native Contract
+
+Command:
+
+```powershell
+.\tools\summarize_eternal_sonata_25cc_shadow_contract.ps1 -Top 8
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Evidence:
+
+- Added `tools\summarize_eternal_sonata_25cc_shadow_contract.ps1`.
+- Generated:
+  `debug-experiments\20260526-25cc-shadow-native-contract.md` and
+  `debug-experiments\20260526-25cc-shadow-native-contract.csv`.
+- Inputs were the latest clean shadow verifier field run
+  `debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows`
+  plus `debug-experiments\20260526-25cc-pattern-hash-targets.csv`.
+- Current shadow verifier output remains GET-only: `12108` hits /
+  `189.19 MB`, GET/PUT `12108/0`, output match/mismatch `12108/0`.
+- Runtime-seen target patterns are PUT-heavy: `4` groups,
+  `188.60 MB` latest-run bytes, GET `29.31 MB` (`15.5%`), PUT
+  `159.29 MB` (`84.5%`).
+- The same runtime-seen groups represent `1.56 GB` in the multi-run atlas.
+- The report records exact source anchors in the sibling Windows source tree:
+  runtime family predicate, shadow begin/finish, shadow recorder, body copy,
+  GPU-probe pattern signature, LLVM verifier candidate, and dynamic-MFC
+  fallback signal.
+- The `ps3-continual-harness-refiner` skill now blocks another planning report
+  after this contract and points the next round at a verify-only C++
+  instrumentation patch.
+
+Classification:
+
+- `analysis`, `spu-hle-25cc-shadow-native-contract`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Patch the native `SPUThread.cpp` shadow verifier so it emits aggregate rows
+  by pattern or descriptor plus GET/PUT direction.
+- Treat a rerun with PUT still at `0` as a verifier failure, not as a speed or
+  bodyfast candidate.
+- Keep broad SPU-to-Vulkan compute, exact-EA fast/body promotion, and generic
+  route movement reruns parked until direction-split shadow semantics are clean.

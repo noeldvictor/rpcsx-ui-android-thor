@@ -229,6 +229,12 @@ GET-only while the matched top pattern rows are PUT-heavy. The next step is
 pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction
 for the top repeated groups before any fast/body promotion, Options/menu proof,
 or battle proof.
+After `debug-experiments/20260526-25cc-shadow-native-contract.md` exists, do
+not create another 0x25cc planning report before source work. The next useful
+round is a verify-only C++ instrumentation patch at the recorded `SPUThread.cpp`
+anchors, then a Windows `Verify25ccShadow` rerun that emits direction-split
+GET/PUT shadow rows. If PUT remains zero, classify the patch/run as a verifier
+failure instead of moving to bodyfast, GPU compute, menu, or battle proof.
 
 ## Acceptance
 
