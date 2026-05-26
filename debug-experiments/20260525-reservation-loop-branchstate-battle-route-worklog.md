@@ -3123,3 +3123,84 @@ Next:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 0x25cc Stock Down160 Classifier Repair And Left2600 Exit
+
+Question:
+
+- The previous no-verifier TopSlot stock control stayed on `Now Loading...`.
+  The refiner suggested repairing from the current Down160 late-load-complete
+  base with stock left-only movement. The first Down160 stock run aborted at the
+  load-target gate; manual screenshot review showed this was a classifier
+  false-negative, not a bad save target.
+
+Classifier repair:
+
+- Patched `tools\classify_eternal_sonata_load_target.ps1` so a lower
+  `Path to Tenuto` row can win over damaged rows above it when the good-vs-bad
+  image margin is strong.
+- The same classifier still rejects the known `Debug Save / Prologue` control.
+- Reclassifying the aborted run
+  `20260526-183700-cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic-windows`
+  now reports `PATH_TO_TENUTO_PRESENT`; the old live gate marker remains an
+  artifact of the pre-fix classifier.
+
+Rerun artifact:
+
+- `debug-captures\windows-lab\20260526-184336-cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic-rerun-windows`
+
+Verification:
+
+- Windows-only RPCS3 on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and no
+  `Verify25ccShadow`/body fast path.
+- Host checks were clean across `3` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- Load-target gate passed on attempt 1:
+  `screenshot-0081s-load-target-gate.png` classified
+  `PATH_TO_TENUTO_PRESENT`.
+- `screenshot-0176s-load-complete-90s.png` showed the Load UI with
+  `Load complete`.
+- `screenshot-0195s-post-load-complete-dismiss-18s.png` showed clean
+  Path-to-Tenuto field. Visual gate status `FIELD_LIKE_PRESENT`; first
+  field-like at `195s`; required field before `240s` passed.
+- After `ls_left:2600`, screenshots at `243s` and `303s` skipped because the
+  game window was not found and the process had exited.
+- Fatal scan/stderr were clean: `rpcs3.stderr.txt` was `0` bytes and `RPCS3.log`
+  had no access violation, fatal, assertion, STOP, likely-crashed, validation,
+  or device-lost hit. The log tail contained many guest
+  `unknown draw command` sys_tty lines, but not a fatal emulator signature.
+
+Counters:
+
+- GPU probe records `1642`.
+- Total observed DMA `1,817.32 MB`.
+- Hot PCs: `0x451c` with `1258` records / `1,217.61 MB`; `0x25cc` with
+  `384` records / `599.71 MB`.
+- Offload fit `spu-kernel-hle=852` / `too-small=790`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-leftonly-process-exit`.
+- Not moving gameplay: there is no post-`ls_left:2600` field screenshot.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact stock Down160
+  left-only process-exit state instead of falling through to generic
+  `stateaware-one-step`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command shrinks the same repaired stock base to
+  `ls_left:1200` and captures an immediate post-movement screenshot:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-left1200-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:1200;wait:12000;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 270 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

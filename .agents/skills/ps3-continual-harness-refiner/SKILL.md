@@ -302,6 +302,14 @@ the verifier alone caused the previous fatal. Do not fall back to generic
 `stateaware-one-step`, old loader-control, or speed/HLE/RSX/GPU work. Repair
 from the current Down160 late-load-complete route base with a stock left-only
 diagnostic before any verifier retry.
+If the Down160 stock left-only diagnostic proves `PATH_TO_TENUTO_PRESENT` and
+accepted field, then RPCS3 exits after `ls_left:2600` before the left-check
+screenshots, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-leftonly-process-exit`. Keep the
+repaired classifier and Down160 load-complete base, but do not count it as
+moving gameplay, first-battle proof, speed, or GPU migration credit. Shrink the
+same stock movement rung to `ls_left:1200` with an immediate post-movement
+screenshot before any verifier retry.
 
 ## Acceptance
 

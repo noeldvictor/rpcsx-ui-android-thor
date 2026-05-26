@@ -25,6 +25,10 @@ param(
 
     [double]$MaxKnownDiff = 8.0,
 
+    [double]$LoosePathMaxDiff = 22.0,
+
+    [double]$LoosePathDecisionMargin = 6.0,
+
     [switch]$RequirePathToTenuto,
 
     [switch]$NoWriteSummary
@@ -145,6 +149,9 @@ function Get-TargetClass {
     if ($BadDiff -le $MaxKnownDiff -and ($GoodDiff - $BadDiff) -ge $DecisionMargin) {
         return "debug-save-prologue"
     }
+    if ($GoodDiff -le $LoosePathMaxDiff -and ($BadDiff - $GoodDiff) -ge $LoosePathDecisionMargin) {
+        return "path-to-tenuto"
+    }
     return "unknown-load-target"
 }
 
@@ -170,7 +177,11 @@ function Get-BestTargetMatch {
     }
 
     return @($matches | Sort-Object `
-        @{ Expression = { if ($_.Target -eq "unknown-load-target") { 1 } else { 0 } } }, `
+        @{ Expression = {
+            if ($_.Target -eq "path-to-tenuto") { 0 }
+            elseif ($_.Target -eq "debug-save-prologue") { 1 }
+            else { 2 }
+        } }, `
         BestKnownDiff, CandidateY | Select-Object -First 1)[0]
 }
 
@@ -258,6 +269,7 @@ $summary.Add(("- Debug-Save exemplar: ``{0}``" -f $resolvedBadExemplar))
 $summary.Add(("- Crop reference: x={0}, y={1}, width={2}, height={3} on 1296x759 screenshots." -f $CropX, $CropY, $CropWidth, $CropHeight))
 $summary.Add(("- Candidate crop Y rows: ``{0}``." -f ($CandidateCropYs -join ", ")))
 $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $DecisionMargin, $MaxKnownDiff))
+$summary.Add(("- Loose lower-row Path-to-Tenuto margin: ``{0}``; loose max diff: ``{1}``." -f $LoosePathDecisionMargin, $LoosePathMaxDiff))
 $summary.Add(("- Status: ``{0}``" -f $status))
 $summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, unknown={2}." -f $pathRows.Count, $debugRows.Count, $unknownRows.Count))
 $summary.Add("")
