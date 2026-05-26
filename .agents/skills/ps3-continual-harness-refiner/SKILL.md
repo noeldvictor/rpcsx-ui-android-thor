@@ -224,9 +224,11 @@ first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis.
 If the latest clean run is a `0x25cc` / `9e4000` shadow verifier field proof,
 do not fall through to generic state-aware movement or exact-EA skip reruns.
 Treat it as HLE analysis only: exact command-level `eal == 0x9e4000` covers a
-small slice of the max-DMA pattern family, so the next step is
-pattern/descriptor-level payload or LS-range hashing for the top repeated
-groups before any fast/body promotion, Options/menu proof, or battle proof.
+small slice of the max-DMA pattern family, and the current shadow/body path is
+GET-only while the matched top pattern rows are PUT-heavy. The next step is
+pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction
+for the top repeated groups before any fast/body promotion, Options/menu proof,
+or battle proof.
 
 ## Acceptance
 

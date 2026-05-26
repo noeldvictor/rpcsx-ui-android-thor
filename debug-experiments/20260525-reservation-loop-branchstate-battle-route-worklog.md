@@ -2486,3 +2486,48 @@ Next:
 - Keep broad SPU-to-Vulkan compute, exact-EA fast skips, and generic movement
   reruns parked until the pattern-level verifier is clean across field,
   menu/Options, and first battle.
+
+## 2026-05-26 0x25cc Pattern Hash Target Atlas
+
+Command:
+
+```powershell
+.\tools\summarize_eternal_sonata_25cc_hash_targets.ps1 -Top 16
+```
+
+Evidence:
+
+- Added `tools\summarize_eternal_sonata_25cc_hash_targets.ps1`.
+- Generated:
+  `debug-experiments\20260526-25cc-pattern-hash-targets.md` and
+  `debug-experiments\20260526-25cc-pattern-hash-targets.csv`.
+- Inputs were the multi-run `debug-experiments\20260526-25cc-pattern-family.csv`
+  atlas and latest clean shadow run
+  `debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows`.
+- Atlas `0x9e4000` HLE candidates: `159` groups / `6.86 GB`.
+- Latest shadow-run runtime candidates: `16` groups / `1.03 GB`.
+- Top-16 atlas groups seen in the latest shadow run: `4` groups, `1.56 GB`
+  atlas bytes, `188.60 MB` latest-run bytes.
+- Current shadow verifier is GET-only for this route: `12108` hits /
+  `189.19 MB`, GET/PUT `12108/0`, output match/mismatch `12108/0`.
+- The matched latest-run pattern rows are strongly PUT-heavy: the repeated
+  top groups seen in the latest run are about `84%` PUT bytes. That means the
+  current GET-only `try_es_spu_hle_25cc_body_copy()` cannot cover the main
+  `0x9e4000` byte mass even if its GET side is clean.
+
+Classification:
+
+- `analysis`, `spu-hle-25cc-pattern-hash-targets`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Extend the runtime `0x25cc` shadow verifier to aggregate by pattern or
+  descriptor plus direction, not just exact command-level EA buckets.
+- Emit separate GET and PUT shadow hash summaries: direction, LSA, EAL,
+  source hash, destination-before hash, destination-after hash,
+  changed/unchanged, and output-match/mismatch.
+- Keep fast/body mode off until PUT-side and GET-side pattern-level semantics
+  are clean in field, menu/Options, and first battle.
