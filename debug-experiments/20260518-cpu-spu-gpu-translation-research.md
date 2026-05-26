@@ -17872,3 +17872,86 @@ Next:
   refiner: bodyfast plus geometry-only vertex/index caches, same TopSlot
   BattleRoute, same visual gate. If that passes, the suspect is the
   resolve/depth/present side. If it fails, split the geometry caches further.
+
+## 2026-05-25 - BodyFast Plus RSX Geometry-Only Bisection Passed
+
+Purpose:
+
+- Follow the loop-breaker plan after the full `bodyfast + RSX geometry/locality`
+  stack lost the RPCS3 window.
+- Test only the geometry/cache half (`VertexSuperset Fast`,
+  `VertexPersistent Fast`, `IndexPersistent Fast`) on top of the clean
+  `0x25cc bodyfast` CPU-pressure component.
+- Keep this Windows-only on screen 1. No Android, ADB, Thor, or 200% promotion
+  work was performed.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-geometryonly-battle-topslot-nopause-bisect -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260525-204625-hle-25cc-bodyfast-rsx-geometryonly-battle-topslot-nopause-bisect-windows`
+
+Visual/log proof:
+
+- Visual gate passed `BattleRoute` triage:
+  `FIELD_LIKE_PRESENT` / `passed-for-triage`.
+- Required field-like screenshot at or before `160s`: passed.
+- Required field-like screenshot at or after `220s`: passed.
+- Required battle-like screenshot at or after `200s`: passed.
+- Manual spot checks:
+  - `screenshot-0117s.png`: clean Path to Tenuto field, title `120.14 FPS`;
+  - `screenshot-0169s.png`: clean first-battle tutorial prompt, title
+    `119.97 FPS`;
+  - `screenshot-0230s.png`: clean active first battle, title `119.94 FPS`;
+  - `screenshot-0320s.png`: clean late active first battle, title `119.97 FPS`.
+- Invalid screenshots after first field-like: `0`.
+- Host contention: clean / external-clean across `6` snapshots.
+- Serious fatal evidence: none found by the refiner; the run ended by the
+  harness wall-time stop at `330s`.
+
+Counters:
+
+- `0x25cc bodyfast` remained active:
+  - records `3057`;
+  - hits `45843`;
+  - bytes `716.30 MB`;
+  - timing `0.000 ms`.
+- GPU migration accounting remains empty:
+  - total observed DMA bytes `0 B`;
+  - RSX-local traffic records `0`;
+  - indirect RSX resource overlap records `0`;
+  - new promoted CPU/SPU to GPU replacement `0 B` / `0.000%`.
+
+Classification:
+
+- `resolved-bisect`, `valid-first-battle-triage`.
+- Not a speed win: FPS stayed capped around `120`.
+- Not `gpu-migration-credit`: no new CPU/SPU/PPU work moved onto GPU.
+- Not a 200% gate candidate.
+- The geometry-only vertex/index cache half is provisionally compatible with
+  `0x25cc bodyfast` on this route.
+- Since the prior full stack failed but geometry-only passed, the suspect shifts
+  to the resolve/depth/present half or an interaction between the two halves.
+
+Harness/report changes:
+
+- `tools\ps3_harness_refiner.ps1` now detects this passing geometry-only
+  bisection after the older full-stack window-loss failure.
+- The refiner no longer resurrects the failed full stack after a passing
+  bisection. It now suggests the complementary resolve/depth/present-only
+  bisection:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-resolvedepthpresent-battle-topslot-nopause-bisect -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Next:
+
+- Run the complementary resolve/depth/present-only bisection above.
+- If that passes, the failure is likely an interaction and the next step is a
+  two-family interaction split.
+- If that fails, split resolve/depth/present into smaller toggles.

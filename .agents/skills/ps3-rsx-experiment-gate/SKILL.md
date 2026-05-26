@@ -46,6 +46,9 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
   migration. If the full RSX geometry/locality stack fails, the next valid RSX
   step is a geometry-only or resolve/depth/present-only bisect, not another
   full-stack run.
+- If geometry-only passes after a full-stack failure, do not jump back to the
+  full stack. Test resolve/depth/present-only next; if that also passes, treat
+  the bug as an interaction before combining again.
 - Keep `RSX auditor` off for timing unless the experiment is specifically a
   counter/auditor proof.
 

@@ -942,6 +942,16 @@ $latestCleanHle25ccBodyOptions = $false
 $latestHle25ccBodyBattleOptionsRouteMiss = $false
 $latestHle25ccNoPauseBattleAbComplete = $false
 $latestHle25ccBodyFastRsxGeomStackWindowLost = $false
+$latestHle25ccBodyFastRsxGeometryOnlyPass = $false
+$recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
+    $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
+    $text = "$($_.Name) $label"
+    $_.Decision -eq "failed-window-lost-after-field" -and
+        $text -like "*bodyfast*" -and
+        $text -like "*rsx*" -and
+        $text -like "*geomstack*" -and
+        $text -like "*battle*"
+}).Count -gt 0
 $latestHle25ccBodyFastCpuStackComponent = $false
 $latestHle25ccBodyFastCpuCandidate = $false
 $latestHle25ccBodyFastCpuEvidence = ""
@@ -1081,6 +1091,12 @@ if ($latestRun) {
         $latestText -like "*bodyfast*" -and
         $latestText -like "*rsx*" -and
         $latestText -like "*geomstack*" -and
+        $latestText -like "*battle*"
+    $latestHle25ccBodyFastRsxGeometryOnlyPass =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestText -like "*bodyfast*" -and
+        $latestText -like "*rsx*" -and
+        $latestText -like "*geometryonly*" -and
         $latestText -like "*battle*"
     $latestHle25ccBodyFastSummaryPaths = @(
         (Join-Path $RunRoot "_eternal-sonata-25cc-bodyfast-repeat-battle-ab-latest.md"),
@@ -1396,7 +1412,10 @@ if ($latestHle451cPreserveBodyOffBattleTopslotLeft1600Fatal) {
 if ($latestHle25ccNoPauseBattleAbComplete) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-nopause-battle-ab-complete" -Severity "direction" -Evidence "Newest 0x25cc no-pause BattleRoute A/B already reached valid field and late first-battle visuals, and the narrow A/B summary classifies the body as not-speed-win." -Action "Do not suggest generic loader-control movement or rerun the same A/B. Inspect body/family verifier timing, remove measurement overhead, or narrow the 0x25cc body before the next stock/body comparison."
 }
-if ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
+if ($latestHle25ccBodyFastRsxGeometryOnlyPass -and $recentHle25ccBodyFastRsxGeomStackWindowLost) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-bodyfast-rsx-geometryonly-bisect-passed" -Severity "resolved-bisect" -Evidence "Newest bodyfast plus RSX geometry-only vertex/index cache bisection reached field and active first battle after the prior full bodyfast plus RSX geometry/locality stack lost the window." -Action "Do not resurrect the failed full stack. Test the complementary resolve/depth/present-only subset next; if it passes, the failure is an interaction, and if it fails, split that subset."
+}
+elseif ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-bodyfast-rsx-geomstack-window-lost" -Severity "blocker" -Evidence "Newest bodyfast plus RSX geometry/locality stack reached field/tutorial but lost the game window before the required late field and active first-battle screenshots." -Action "Do not rerun the same combined stack and do not add another candidate. Bisect the stack from the known-good bodyfast-only proof, starting with bodyfast plus geometry-only vertex/index caches."
 }
 elseif ($latestHle25ccBodyFastCpuStackComponent) {
@@ -1443,6 +1462,8 @@ $nextAction = if ($latestHle451cPreserveBodyBattleFatal) {
     "Latest preserve-body battle diagnostic stayed in the load menu instead of reaching field or battle. Repair/state-gate the Windows battle route before any preserve-body semantics or speed work."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotFieldClean) {
     "Latest preserve-body-off battle top-slot diagnostic repaired the load-menu miss and reached accepted field. Keep preserve-body Off and isolate the left-only movement branch with the same top-slot-normalized load macro before any preserve-body semantics or speed work."
+} elseif ($latestHle25ccBodyFastRsxGeometryOnlyPass -and $recentHle25ccBodyFastRsxGeomStackWindowLost) {
+    "Latest bodyfast plus RSX geometry-only bisection passed field and active first-battle triage after the full RSX geometry/locality stack lost the window. Keep geometry caches provisionally compatible; next isolate the complementary resolve/depth/present-only subset instead of rerunning the full stack."
 } elseif ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
     "Latest bodyfast plus RSX geometry/locality stack failed after field/tutorial and lost the game window before active first battle. Stop stacking. Bisect from the known-good bodyfast-only proof, starting with bodyfast plus geometry-only vertex/index caches."
 } elseif ($latestHle25ccBodyFastCpuStackComponent) {
@@ -1567,6 +1588,8 @@ $suggestedCommand = if ($latestHle451cPreserveBodyBattleFatal) {
     "# No automatic preserve-body battle rerun: latest preserve-body battle diagnostic stayed on the load menu. Repair the battle load macro or add an accepted-field visual gate before testing body-on/body-off semantics again."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotFieldClean) {
     New-Hle451cPreserveBodyOffBattleTopslotLeftOnlyDiagnosticCommand
+} elseif ($latestHle25ccBodyFastRsxGeometryOnlyPass -and $recentHle25ccBodyFastRsxGeomStackWindowLost) {
+    ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-resolvedepthpresent-battle-topslot-nopause-bisect -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-geometryonly-battle-topslot-nopause-bisect -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccBodyFastCpuStackComponent) {

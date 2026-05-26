@@ -64,9 +64,11 @@ override the Windows-only 200% gate.
 ## Current Standing Rule
 
 `0x25cc bodyfast` is a stackable CPU-pressure component only. It is not an FPS
-win and not GPU migration. The latest bodyfast plus RSX geometry/locality stack
-failed after field/tutorial and lost the window before active battle, so the
-next action is stack bisection, not rerunning the same full stack.
+win and not GPU migration. The full bodyfast plus RSX geometry/locality stack
+failed after field/tutorial and lost the window before active battle, but the
+geometry-only vertex/index-cache bisection survived field and active first
+battle. Do not resurrect the failed full stack. The next action is the
+complementary resolve/depth/present-only bisection.
 
 ## Acceptance
 
