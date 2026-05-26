@@ -134,7 +134,12 @@ promotion. If that first-battle extension crashes after accepted field or shows
 the RPCS3 likely-crashed overlay/corrupt field visuals, re-prove the last clean
 Down160 direct-left boundary and then shrink or state-gate the battle movement
 leg. Do not fall back to generic loader-control or speed/HLE/RSX promotion from
-the crashed battle capture.
+the crashed battle capture. After that boundary is re-proven, isolate the
+battle movement by running a Down160 left-only diagnostic (`ls_left:2600`
+without the down-left branch) before trying another first-battle route. If
+left-only is clean, the next rung is a smaller/state-gated down-left leg, not
+the original full `combo:ls_left+ls_down:2200` branch. If left-only crashes,
+shrink the left movement from the clean Down160 direct-left boundary.
 
 ## Acceptance
 

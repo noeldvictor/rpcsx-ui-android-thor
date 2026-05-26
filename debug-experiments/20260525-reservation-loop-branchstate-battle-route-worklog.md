@@ -886,6 +886,10 @@ Change:
 - When a clean Down160 direct-left proof exists, this fatal no longer suggests
   generic loader-control. It suggests re-proving the Down160 direct-left
   boundary before shrinking or state-gating the first-battle movement leg.
+- Follow-up harness refinement: after that boundary is re-proven, the refiner
+  now suggests `cpu4-titleload-down160-firstbattle-leftonly-diagnostic-windows`
+  instead of the original full first-battle movement branch. This isolates
+  `ls_left:2600` from the crashing down-left movement.
 - `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
   now carry the same rule.
 
@@ -905,3 +909,55 @@ Next:
   battle movement leg from the accepted field screenshot before another
   first-battle attempt.
 - Do not promote speed, HLE, RSX, or GPU migration from this crashed capture.
+
+## 2026-05-26 Down160 Battle Movement Isolation Rung
+
+Purpose:
+
+- Prevent the post-reproof loop where the refiner would immediately repeat the
+  same full first-battle movement branch that already crashed.
+
+Change:
+
+- Added `New-StateAwareTitleToLoadDownHoldBattleLeftOnlyDiagnosticCommand` to
+  `tools\ps3_harness_refiner.ps1`.
+- The diagnostic uses the proven Down160 load-target gate, reaches accepted
+  field, sends only `ls_left:2600`, and captures left-only/late screenshots
+  under `CleanAfterField`.
+- Added refiner state for:
+  - recent Down160 first-battle fatal;
+  - clean Down160 direct-left reproof after that fatal;
+  - Down160 left-only pass;
+  - Down160 left-only fatal.
+- If the direct-left boundary is re-proven while the recent full first-battle
+  crash is still in the trajectory window, the suggested command is now
+  `cpu4-titleload-down160-firstbattle-leftonly-diagnostic-windows`, not the full
+  crashing branch.
+- If left-only passes, the refiner emits no automatic full rerun and requires a
+  smaller/state-gated down-left diagnostic next. If left-only crashes, it backs
+  off to the Down160 direct-left boundary.
+- `AGENTS.md` and `.agents\skills\ps3-continual-harness-refiner\SKILL.md`
+  now carry the same route-isolation rule.
+
+Validation:
+
+- `ps3_harness_refiner.ps1` parses successfully.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` still points at the clean
+  Down160 direct-left reproof while the latest trajectory item is the crashed
+  full first-battle branch. After that boundary is re-proven, the new
+  `titleload-down160-boundary-reproved-after-battle-fatal` guard should route
+  to the left-only diagnostic instead of repeating the full crashing branch.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `battle-movement-isolation`.
+- Not field proof by itself.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner, then re-prove the Down160 direct-left boundary or run
+  the left-only diagnostic if the boundary is already the newest clean run.
