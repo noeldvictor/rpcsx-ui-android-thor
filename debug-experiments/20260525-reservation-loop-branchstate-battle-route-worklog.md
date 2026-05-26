@@ -332,3 +332,52 @@ Next:
   to Tenuto is selected before pressing `Cross`.
 - Keep lane-2 HLE/GPU fast modes blocked until field, menu/Options, and
   first-battle visuals are valid in the same stack.
+
+## 2026-05-26 Load Target Classifier Gate
+
+Purpose:
+
+- Replace manual-only Load-list inspection with a deterministic local route
+  state gate before another state-aware macro can press `Cross`.
+- Keep Load UI counters from polluting speed, HLE/GPU, or 200% gate claims.
+
+Change:
+
+- Added `tools\classify_eternal_sonata_load_target.ps1`.
+- The script compares a stable Load-list crop against the known good Path to
+  Tenuto exemplar from
+  `20260526-001938-cpu4-stateaware-late-load-confirm-left200-visualgate-windows-windows`
+  and the known bad Debug Save / Prologue exemplar from
+  `20260526-003206-cpu4-stateaware-late-load-doubleconfirm-dismisssave-left200-visualgate-windows-windows`.
+- It writes `eternal-sonata-load-target-summary.md` in the run directory and
+  can enforce `-RequirePathToTenuto`.
+
+Validation:
+
+- Good run:
+  `.\tools\classify_eternal_sonata_load_target.ps1 -RunDir 'debug-captures\windows-lab\20260526-001938-cpu4-stateaware-late-load-confirm-left200-visualgate-windows-windows' -RequirePathToTenuto`
+  reported `PATH_TO_TENUTO_PRESENT`, with `12` Path-to-Tenuto rows, `0`
+  Debug-Save rows, and `0` unknown rows.
+- Bad run:
+  `.\tools\classify_eternal_sonata_load_target.ps1 -RunDir 'debug-captures\windows-lab\20260526-003206-cpu4-stateaware-late-load-doubleconfirm-dismisssave-left200-visualgate-windows-windows'`
+  reported `DEBUG_SAVE_PROLOGUE_PRESENT`, with `13` Debug-Save rows, `0`
+  Path-to-Tenuto rows, and `0` unknown rows.
+- Parser validation passed for the classifier.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `load-target-gate`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Do not run another automatic state-aware route from the wrong-save-target
+  state until the candidate Load-list capture gates as only
+  `PATH_TO_TENUTO_PRESENT`.
+- If the classifier reports `DEBUG_SAVE_PROLOGUE_PRESENT`,
+  `MIXED_LOAD_TARGETS`, or `UNKNOWN_LOAD_TARGET`, repair save-target selection
+  before pressing `Cross`.

@@ -1390,7 +1390,7 @@ if ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-late-load-confirm-needs-second-cross" -Severity "blocker" -Evidence "Newest late load-confirm repair opened the Load data/Proceed prompt with Yes highlighted, but never sent the second Cross confirm, so every screenshot stayed on the Load UI." -Action "Do not rerun the one-cross late-confirm macro. Send a second Cross after the prompt appears, then capture field, dismiss the save prompt, and test the one-left-pulse route under CleanAfterField."
 }
 if ($latestStateAwareLateDoubleConfirmRouteDrift) {
-    Add-AntiPattern -List $antiPatterns -Name "stateaware-late-doubleconfirm-wrong-save-target" -Severity "blocker" -Evidence "Newest late double-confirm route still missed field, and manual screenshots showed the Load list on Debug Save / Prologue instead of the known Path to Tenuto save target." -Action "Do not rerun the state-aware load macros. First repair save-target selection or add a route-state diagnostic/OCR gate that proves Path to Tenuto is selected before pressing Cross."
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-late-doubleconfirm-wrong-save-target" -Severity "blocker" -Evidence "Newest late double-confirm route still missed field, and manual screenshots showed the Load list on Debug Save / Prologue instead of the known Path to Tenuto save target." -Action "Do not rerun the state-aware load macros. First run tools\classify_eternal_sonata_load_target.ps1 on the candidate capture, then repair save-target selection until the gate reports only PATH_TO_TENUTO_PRESENT before pressing Cross."
 }
 if ($latestHle451cSize16BodyOffBattleRouteLost) {
     $battleRouteLossEvidence = if ($latestHle451cSize16BodyOffBattleProcessExit) {
@@ -1708,7 +1708,7 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     New-StateAwareLateLoadDoubleConfirmDismissMovementCommand
 } elseif ($latestStateAwareLateDoubleConfirmRouteDrift) {
-    "# No automatic state-aware rerun: latest double-confirm route selected Debug Save / Prologue, not Path to Tenuto. Repair save-target selection or add OCR/route-state gating before pressing Cross."
+    "# No automatic state-aware rerun: latest double-confirm route selected Debug Save / Prologue, not Path to Tenuto. Use .\tools\classify_eternal_sonata_load_target.ps1 -RunDir `"$($latestRun.Path)`" to gate save-list diagnostics, then repair target selection before pressing Cross."
 } elseif ($latestHle451cPreserveBodyBattleFatal) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-451c-preserve-body-off-first-battle-reproof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Off -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 220 -ScreenshotMaxCount 8"
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {

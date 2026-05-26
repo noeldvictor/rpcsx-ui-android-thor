@@ -96,9 +96,11 @@ dismissal or movement proof. If the late load-confirm route opens the Proceed
 prompt but does not send the second `Cross`, block that one-cross macro and
 suggest the double-confirm repair. If the double-confirm route still stays in
 the Load list and manual screenshots show `Debug Save` / `Prologue` instead of
-the Path to Tenuto save target, stop automatic state-aware macro retries and
-repair save-target selection or add route-state/OCR gating before pressing
-`Cross`.
+the Path to Tenuto save target, stop automatic state-aware macro retries. Run
+`tools/classify_eternal_sonata_load_target.ps1` on the capture and do not press
+`Cross` in a new route until that gate reports only `PATH_TO_TENUTO_PRESENT`.
+Repair save-target selection for `DEBUG_SAVE_PROLOGUE_PRESENT`,
+`MIXED_LOAD_TARGETS`, or `UNKNOWN_LOAD_TARGET`.
 
 ## Acceptance
 

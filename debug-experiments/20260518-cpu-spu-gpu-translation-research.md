@@ -18594,3 +18594,14 @@ Next:
 - Continue treating zero-RSX-local SPU traffic as a CPU/SPU HLE, NEON/dotprod,
   reduced-loop, scheduler, or copy-specialization lane, not a Vulkan compute
   offload lane.
+
+## 2026-05-26 - Load Target Gate For Research Hygiene
+
+Added `tools\classify_eternal_sonata_load_target.ps1` as a route-state
+classifier for Load-list captures. This is not a speed optimization and not
+GPU migration; it is a guardrail so Load UI runs cannot masquerade as field,
+movement, or SPU/RSX proof. The classifier was validated against the known good
+Path to Tenuto late-confirm capture and the known bad Debug Save / Prologue
+double-confirm capture. Future route research should require
+`PATH_TO_TENUTO_PRESENT` before pressing `Cross`; otherwise the run remains
+route-tooling and its counters are profiling-only.
