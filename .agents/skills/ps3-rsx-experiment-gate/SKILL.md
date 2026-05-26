@@ -60,6 +60,11 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
   `VertexPersistent Fast` passes, do not fall back to generic movement or broad
   RSX stacking. Add only `IndexPersistent Fast` next; if it fails, classify
   index persistent as the remaining interaction suspect.
+- If the RDP plus `VertexSuperset Fast` plus `VertexPersistent Fast` plus
+  `IndexPersistent Fast` final recombine passes field and active first battle,
+  treat the stack as compatible but closed for interaction bisection. Do not add
+  more RSX toggles. Refresh exact-stack auditor/accounting proof only if needed,
+  or pivot to SPU/PPU/codegen work for actual speed.
 - Keep `RSX auditor` off for timing unless the experiment is specifically a
   counter/auditor proof.
 

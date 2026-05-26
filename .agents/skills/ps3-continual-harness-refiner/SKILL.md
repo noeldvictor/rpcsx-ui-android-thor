@@ -64,17 +64,17 @@ override the Windows-only 200% gate.
 ## Current Standing Rule
 
 `0x25cc bodyfast` is a stackable CPU-pressure component only. It is not an FPS
-win and not GPU migration. The full bodyfast plus RSX geometry/locality stack
-failed after field/tutorial and lost the window before active battle, but both
-component halves survived field and active first battle: geometry-only
-vertex/index caches, and resolve/depth/present-only. Do not resurrect the
-failed full stack. The first recombine step, resolve/depth/present plus
-`VertexSuperset Fast`, also survived field and active first battle. The second
-recombine step, resolve/depth/present plus `VertexSuperset Fast` plus
-`VertexPersistent Fast`, also survived field and active first battle. Treat the
-remaining failure as either `IndexPersistent Fast` or prior full-stack
-route/transient sensitivity. Next add `IndexPersistent Fast` as the final
-isolated recombine step.
+win and not GPU migration. The original full bodyfast plus RSX
+geometry/locality stack lost the window after field/tutorial, but the repaired
+interaction ladder has now passed through geometry-only, resolve/depth/present
+only, RDP plus `VertexSuperset Fast`, RDP plus `VertexSuperset Fast` plus
+`VertexPersistent Fast`, and the final RDP plus `VertexSuperset Fast` plus
+`VertexPersistent Fast` plus `IndexPersistent Fast` recombine. Treat the full
+stack as visually compatible on the TopSlot BattleRoute, but capped around
+`120 FPS`, not new CPU/SPU GPU migration, and not a 200% gate candidate. Do not
+keep stacking RSX toggles. Next, run exact-stack `-WindowsRsxAuditor 60`
+accounting only if RSX-local credit must be refreshed; otherwise pivot to a
+larger SPU/PPU/codegen speed lane.
 
 ## Acceptance
 
