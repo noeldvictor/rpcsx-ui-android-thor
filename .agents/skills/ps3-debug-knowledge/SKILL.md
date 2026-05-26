@@ -36,10 +36,13 @@ Use status mode for the current high-signal project memory:
 
 1. Search before changing code, rerunning an expensive route, or answering status.
 2. Prefer evidence from current `AGENTS.md` and `debug-experiments/*.md` over memory.
-3. Treat raw capture folders as supporting evidence; durable conclusions belong in Markdown notes.
-4. If a search finds conflicting notes, prefer the newest dated entry and mention the older result as superseded.
-5. Append durable facts only when they will change a future decision: current best stack, failed route, rollback switch, proof gap, or promotion status.
-6. Keep Android/Thor actions out of the plan while the Windows 200% gate is active.
+3. Always inspect the newest relevant run before following an older next-action
+   note. A latest failed run cancels stale stack/repeat suggestions until it is
+   classified.
+4. Treat raw capture folders as supporting evidence; durable conclusions belong in Markdown notes.
+5. If a search finds conflicting notes, prefer the newest dated entry and mention the older result as superseded.
+6. Append durable facts only when they will change a future decision: current best stack, failed route, rollback switch, proof gap, or promotion status.
+7. Keep Android/Thor actions out of the plan while the Windows 200% gate is active.
 
 Read `references/query-patterns.md` for search terms that map to the current PS3 performance lanes.
 

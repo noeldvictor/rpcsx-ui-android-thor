@@ -11,6 +11,10 @@ Treat the user's goal as a gate, not a vibe. Keep working until the gate is met,
 
 Do not claim this skill can override Codex Desktop, tool timeouts, context limits, user interruptions, safety limits, or permissions. It is a persistence protocol, not a hidden infinite loop.
 
+If the user says the work is going in circles, or if the latest run invalidates
+the current next-action recommendation, pause the experiment loop and repair the
+plan/skills/ledger before running anything else.
+
 ## Start A Goal Loop
 
 1. State the current goal in one sentence.

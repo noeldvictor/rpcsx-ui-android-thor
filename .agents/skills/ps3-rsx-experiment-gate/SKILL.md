@@ -34,6 +34,21 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
    - `failed`: visual regression, route failure, validation mismatch, crash, or no meaningful work moved.
    - `parked`: useful idea blocked by missing route, tooling, or required architecture.
 
+## Stack Discipline
+
+- Do not treat "more GPU toggles" as progress. A combined stack must preserve
+  the same visual route that each component proved alone.
+- If a combined RSX stack loses the game window, misses late field/battle, or
+  exits after tutorial prompt, stop and bisect. First test the smallest
+  compatible subset against the known-good non-RSX control, then add one RSX
+  family at a time.
+- For bodyfast plus RSX work, bodyfast is a CPU-pressure component, not GPU
+  migration. If the full RSX geometry/locality stack fails, the next valid RSX
+  step is a geometry-only or resolve/depth/present-only bisect, not another
+  full-stack run.
+- Keep `RSX auditor` off for timing unless the experiment is specifically a
+  counter/auditor proof.
+
 ## Windows Commands
 
 Read `references/eternal-sonata-windows-gate.md` before running or modifying the current RSX-local stack.

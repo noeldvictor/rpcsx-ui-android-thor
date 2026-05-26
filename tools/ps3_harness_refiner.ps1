@@ -941,6 +941,7 @@ $latestHle451cPreserveBodyOffBattleTopslotLeft1600Fatal = $false
 $latestCleanHle25ccBodyOptions = $false
 $latestHle25ccBodyBattleOptionsRouteMiss = $false
 $latestHle25ccNoPauseBattleAbComplete = $false
+$latestHle25ccBodyFastRsxGeomStackWindowLost = $false
 $latestHle25ccBodyFastCpuStackComponent = $false
 $latestHle25ccBodyFastCpuCandidate = $false
 $latestHle25ccBodyFastCpuEvidence = ""
@@ -1075,6 +1076,12 @@ if ($latestRun) {
         $latestText -like "*nopause*" -and
         $latestText -like "*battleroute*" -and
         $latestText -like "*ab*"
+    $latestHle25ccBodyFastRsxGeomStackWindowLost =
+        $latestRun.Decision -eq "failed-window-lost-after-field" -and
+        $latestText -like "*bodyfast*" -and
+        $latestText -like "*rsx*" -and
+        $latestText -like "*geomstack*" -and
+        $latestText -like "*battle*"
     $latestHle25ccBodyFastSummaryPaths = @(
         (Join-Path $RunRoot "_eternal-sonata-25cc-bodyfast-repeat-battle-ab-latest.md"),
         (Join-Path $RunRoot "_eternal-sonata-25cc-bodyfast-battle-ab-latest.md")
@@ -1389,7 +1396,10 @@ if ($latestHle451cPreserveBodyOffBattleTopslotLeft1600Fatal) {
 if ($latestHle25ccNoPauseBattleAbComplete) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-nopause-battle-ab-complete" -Severity "direction" -Evidence "Newest 0x25cc no-pause BattleRoute A/B already reached valid field and late first-battle visuals, and the narrow A/B summary classifies the body as not-speed-win." -Action "Do not suggest generic loader-control movement or rerun the same A/B. Inspect body/family verifier timing, remove measurement overhead, or narrow the 0x25cc body before the next stock/body comparison."
 }
-if ($latestHle25ccBodyFastCpuStackComponent) {
+if ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-bodyfast-rsx-geomstack-window-lost" -Severity "blocker" -Evidence "Newest bodyfast plus RSX geometry/locality stack reached field/tutorial but lost the game window before the required late field and active first-battle screenshots." -Action "Do not rerun the same combined stack and do not add another candidate. Bisect the stack from the known-good bodyfast-only proof, starting with bodyfast plus geometry-only vertex/index caches."
+}
+elseif ($latestHle25ccBodyFastCpuStackComponent) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-bodyfast-cpu-load-stack-component" -Severity "resolved-control" -Evidence ("Newest 0x25cc bodyfast BattleRoute repeat is field/battle clean, fatal-clean, and has clean external host samples; {0}. FPS remains capped, so this is a CPU-pressure component only." -f $latestHle25ccBodyFastCpuEvidence) -Action "Stack bodyfast with the existing verified RSX geometry/locality credit stack in a combined Windows proof. Do not count bodyfast as FPS or GPU migration, and do not rerun bodyfast alone unless the stack regresses."
 }
 elseif ($latestHle25ccBodyFastCpuCandidate) {
@@ -1433,6 +1443,8 @@ $nextAction = if ($latestHle451cPreserveBodyBattleFatal) {
     "Latest preserve-body battle diagnostic stayed in the load menu instead of reaching field or battle. Repair/state-gate the Windows battle route before any preserve-body semantics or speed work."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotFieldClean) {
     "Latest preserve-body-off battle top-slot diagnostic repaired the load-menu miss and reached accepted field. Keep preserve-body Off and isolate the left-only movement branch with the same top-slot-normalized load macro before any preserve-body semantics or speed work."
+} elseif ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
+    "Latest bodyfast plus RSX geometry/locality stack failed after field/tutorial and lost the game window before active first battle. Stop stacking. Bisect from the known-good bodyfast-only proof, starting with bodyfast plus geometry-only vertex/index caches."
 } elseif ($latestHle25ccBodyFastCpuStackComponent) {
     "Latest 0x25cc bodyfast BattleRoute repeat is clean and confirms lower RPCS3 CPU pressure while FPS stays capped. Treat it as a stackable CPU-pressure component; next run should combine it with the existing RSX geometry/locality credit stack, not rerun bodyfast alone."
 } elseif ($latestHle25ccBodyFastCpuCandidate) {
@@ -1555,6 +1567,8 @@ $suggestedCommand = if ($latestHle451cPreserveBodyBattleFatal) {
     "# No automatic preserve-body battle rerun: latest preserve-body battle diagnostic stayed on the load menu. Repair the battle load macro or add an accepted-field visual gate before testing body-on/body-off semantics again."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotFieldClean) {
     New-Hle451cPreserveBodyOffBattleTopslotLeftOnlyDiagnosticCommand
+} elseif ($latestHle25ccBodyFastRsxGeomStackWindowLost) {
+    ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-geometryonly-battle-topslot-nopause-bisect -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccBodyFastCpuStackComponent) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-geomstack-battle-topslot-nopause -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccBodyFastCpuCandidate) {

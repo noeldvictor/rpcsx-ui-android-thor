@@ -17795,3 +17795,80 @@ Next:
   clean but FPS remains capped, pivot to larger `0x451c`/descriptor/list HLE or
   codegen bodies where removed CPU work can become visible beyond the `120 FPS`
   cap.
+
+## 2026-05-25 - BodyFast Plus RSX Geometry Stack Rejected And Loop Broken
+
+Purpose:
+
+- Start combining the clean `0x25cc` bodyfast CPU-pressure component with the
+  existing RSX geometry/locality credit stack.
+- Test whether the sprint system was actually stacking useful changes or just
+  rerunning stale recommendations.
+- Keep this Windows-only on screen 1. No Android, ADB, Thor, GPU offload
+  promotion, or 200% claim was performed.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-geomstack-battle-topslot-nopause -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260525-201304-hle-25cc-bodyfast-rsx-geomstack-battle-topslot-nopause-windows`
+
+Result:
+
+- The route reached clean field at `screenshot-0117s.png`.
+- The later manual screenshot `screenshot-0169s.png` reached the first-battle
+  tutorial prompt (`View the tutorial? Yes/No`) and was visually clean at about
+  `119.79 FPS`.
+- The game window/process was gone before the required late active-battle
+  screenshots at `230s` and `290s`.
+- Visual gate failed:
+  - no field-like screenshot at or after `220s`;
+  - no battle-like screenshot at or after `200s`;
+  - gate result `failed`.
+- Host contention stayed clean, and the fatal scan found only the benign config
+  line `Show fatal error hints: false`.
+
+Counters:
+
+- Bodyfast still fired: `2047` records, `30693` GET body hits, `479.58 MB`,
+  zero timing/shadow/family verifier cost.
+- GPU-probe scoreboard still showed `0 B` total observed DMA, `0` direct
+  RSX-local scout traffic, and `0` indirect RSX overlap for CPU/SPU-to-GPU
+  migration accounting.
+
+Classification:
+
+- `stack-regression`, `failed-window-lost-after-field`,
+  `failed-visual-gate`.
+- Not `windows-micro-win`, not `gpu-migration-credit`, not speed evidence, and
+  not a 200% gate candidate.
+- The failure does not invalidate bodyfast alone. It invalidates this full
+  bodyfast plus RSX geometry/locality combined stack on this battle route.
+
+Harness finding:
+
+- The previous refiner output was wrong after this run: it still recommended
+  the same full combined stack because the older "bodyfast is stackable" rule
+  outranked the newest failed run.
+- `tools\ps3_harness_refiner.ps1` is now patched so
+  `failed-window-lost-after-field` for `bodyfast + rsx-geomstack` becomes a
+  blocker and suggests bisection from the known-good bodyfast-only proof.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md`,
+  `.agents\skills\ps3-speed-proof-gate\SKILL.md`,
+  `.agents\skills\ps3-rsx-experiment-gate\SKILL.md`,
+  `.agents\skills\ps3-debug-knowledge\SKILL.md`, `codex-goal-loop`, and
+  `AGENTS.md` now carry the loop-breaker rule: newest failure outranks older
+  opportunity.
+
+Next:
+
+- Do not rerun the same full combined stack.
+- Do not add another candidate on top.
+- If continuing experiments, run the bisection command suggested by the updated
+  refiner: bodyfast plus geometry-only vertex/index caches, same TopSlot
+  BattleRoute, same visual gate. If that passes, the suspect is the
+  resolve/depth/present side. If it fails, split the geometry caches further.
