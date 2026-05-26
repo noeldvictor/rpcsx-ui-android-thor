@@ -1548,3 +1548,72 @@ Next:
 
 - Validate the refiner, then run only the late-dismiss left-only first-battle
   movement isolation before full battle, HLE, RSX, GPU, or speed-stacking work.
+
+## 2026-05-26 Down160 Left-Only Load-List Cursor Blocker
+
+Runs:
+
+- Classifier/cursor drift:
+  `debug-captures\windows-lab\20260526-074648-cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows-windows`.
+- Blind load-top-normalize repair:
+  `debug-captures\windows-lab\20260526-075615-cpu4-titleload-down160-loadtopnormalize-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows-windows`.
+
+Evidence:
+
+- The first run used the full 21-token late-dismiss left-only isolation macro,
+  screen 1, PadApi, CPU affinity `0x0F`, frame/vblank `240/240`, and
+  reservation-loop `Verify`.
+- It aborted before slot `Cross` because the load-target gate reported
+  `DEBUG_SAVE_PROLOGUE_PRESENT` across all polling screenshots.
+- Manual review of `screenshot-0081s-load-target-gate.png` showed damaged rows
+  above a visible lower `Save File 05` / `Path to Tenuto` row. The local
+  checkpoint hashes already matched
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100`, so this
+  is load-list cursor/classifier drift, not a save-restore problem.
+- The blind `loadtopnormalize` attempt added pre-gate `Up` taps, then captured
+  only black-overlay load-target frames and timed out as `UNKNOWN_LOAD_TARGET`.
+  Manual review of `screenshot-0084s-load-target-gate.png` confirms this was a
+  black-frame/transition miss, not a load-list proof.
+- Both runs had clean host checks, no lingering RPCS3/RPCSX process, empty
+  stderr, and targeted fatal scans found no `VM: Access violation`, `FATAL`,
+  `SIG`, Vulkan fatal, verification failure, unknown STOP, or unhandled
+  exception hits.
+- GPU summaries are invalid for speed or migration because neither run reached
+  field:
+  - Drift run: `809` records, `828.57 MB` observed DMA, `0 B` direct
+    RSX-local, promoted CPU/SPU->GPU replacement `0 B`, offload fit
+    `spu-kernel-hle=439` / `too-small=370`, hot PCs `0x25cc` `282` records /
+    `438.46 MB` and `0x451c` `527` records / `390.10 MB`.
+  - Blind-normalize run: `446` records, `473.71 MB` observed DMA, `0 B` direct
+    RSX-local, promoted CPU/SPU->GPU replacement `0 B`, offload fit
+    `spu-kernel-hle=302` / `too-small=144`, hot PCs `0x25cc` `303` records /
+    `473.67 MB` and `0x451c` `143` records / `40.0 KB`.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now treats the first shape as
+  `titleload-down160-leftonly-load-list-cursor-drift`.
+- It treats the blind Up-normalize shape as
+  `titleload-down160-loadtopnormalize-black-gate`.
+- The generic state-aware fallback is blocked for both.
+- The suggested next action is a load-list cursor diagnostic:
+  `cpu4-titleload-down160-loadlist-cursor-diagnostic-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same rule.
+
+Classification:
+
+- `failed-load-target-gate`, `route-tooling`,
+  `load-list-cursor-classifier-drift`.
+- The blind-normalize run is `harness-noise`.
+- Not field proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner. The next run must be the load-list cursor diagnostic
+  before another left-only isolation, first-battle route, HLE, RSX, GPU, or
+  speed-stacking attempt.

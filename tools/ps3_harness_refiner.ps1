@@ -341,6 +341,11 @@ function New-StateAwareTitleToLoadDownHoldBattleLeftOnlyDiagnosticCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 285 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 10"
 }
 
+function New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand {
+    $macro = "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:14000;shot:load-list-initial;wait:4000;shot:load-list-stable;up:120;wait:900;shot:load-list-after-up1;up:120;wait:900;shot:load-list-after-up2;down:120;wait:900;shot:load-list-after-down1"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadlist-cursor-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 130 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
+}
+
 function New-Hle451cSize16CandidateReproofCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label hle-451c-size16-candidate-reproof-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8"
 }
@@ -1120,6 +1125,8 @@ $latestTitleToLoadDownHoldDirectLeftFieldPass = $false
 $latestTitleToLoadDownHoldBattleFatal = $false
 $latestTitleToLoadDownHoldBattleLeftOnlyPass = $false
 $latestTitleToLoadDownHoldBattleLeftOnlyFatal = $false
+$latestTitleToLoadDownHoldLeftOnlyClassifierDrift = $false
+$latestTitleToLoadDownHoldLoadTopNormalizeBlack = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1240,6 +1247,15 @@ if ($latestRun) {
     $latestTitleToLoadDownHoldBattleLeftOnlyFatal =
         $latestFatal -and
         $latestText -like "*titleload-down160-firstbattle-leftonly*"
+    $latestTitleToLoadDownHoldLeftOnlyClassifierDrift =
+        $latestLoadTargetGateFailure -and
+        (@("DEBUG_SAVE_PROLOGUE_PRESENT", "MIXED_LOAD_TARGETS") -contains $latestLoadTargetGateStatus) -and
+        $latestText -like "*titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly*"
+    $latestTitleToLoadDownHoldLoadTopNormalizeBlack =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestText -like "*titleload-down160-loadtopnormalize*" -and
+        $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png"
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
     $latestStateAwarePromptStuck =
@@ -1606,6 +1622,10 @@ if ($loadingRuns.Count -ge 2) {
 if ($cutsceneRuns.Count -ge 1) {
     $cutsceneAction = if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
         "The newest blocker is a Down160 load-target classifier row-drift false gate. Keep the Down160 route and rerun the post-load-complete repair under the multi-row classifier before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
+        "The newest blocker is a Down160 load-top-normalize black gate. Ignore older cutscene/harness-noise frames and run the load-list cursor diagnostic before another left-only isolation."
+    } elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
+        "The newest blocker is Down160 left-only load-list cursor/classifier drift. Ignore older cutscene/harness-noise frames and repair selected-row gating before another left-only isolation."
     } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
         "The newest useful proof is a Down160 late-dismiss direct-left boundary that reached and stayed in clean field. Ignore older cutscene/harness-noise frames and isolate the larger left-only battle movement on the same late-dismiss base."
     } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
@@ -1648,7 +1668,10 @@ if ($latestStateAwareDismissLoadMenuMiss) {
 if ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-late-load-confirm-needs-second-cross" -Severity "blocker" -Evidence "Newest late load-confirm repair opened the Load data/Proceed prompt with Yes highlighted, but never sent the second Cross confirm, so every screenshot stayed on the Load UI." -Action "Do not rerun the one-cross late-confirm macro. Send a second Cross after the prompt appears, then capture field, dismiss the save prompt, and test the one-left-pulse route under CleanAfterField."
 }
-if ($latestLoadTargetGateFailure -and -not $latestTitleToLoadDownHoldClassifierFalseGateFailure) {
+if ($latestLoadTargetGateFailure -and
+    -not $latestTitleToLoadDownHoldClassifierFalseGateFailure -and
+    -not $latestTitleToLoadDownHoldLeftOnlyClassifierDrift -and
+    -not $latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
     $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
     Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
 }
@@ -1678,6 +1701,12 @@ if ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
 }
 if ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-late-dismiss-directleft-field-clean" -Severity "resolved-control" -Evidence ("Newest Down160 delayed single-dismiss direct-left route reached Path-to-Tenuto field at {0}s and stayed field-clean after the left200 pulse." -f $latestRun.Visual.FirstFieldSeconds) -Action "Keep this late-dismiss route base. Run only the left-only first-battle movement isolation next; do not fall back to generic state-aware, old loader-control, full battle, HLE, RSX, GPU, or speed work yet."
+}
+if ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-leftonly-load-list-cursor-drift" -Severity "route-repair" -Evidence "Newest Down160 late-dismiss left-only isolation aborted before slot Cross after the load-target classifier latched onto damaged/debug-like upper rows while manual screenshot review showed a lower Path-to-Tenuto row visible." -Action "Do not restore the already-matching checkpoint, fall back to generic state-aware, or stack HLE/RSX/GPU work. Run a load-list cursor diagnostic or selected-row-aware classifier repair before another left-only isolation."
+}
+if ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-loadtopnormalize-black-gate" -Severity "harness-noise" -Evidence "Newest load-top-normalize repair sent pre-gate Up taps and then only captured black-overlay load-target frames, so it did not prove the save target or route." -Action "Do not repeat blind pre-gate Up normalization. Run the load-list cursor diagnostic to screenshot the Load list before/after controlled cursor movement, then update the classifier or macro from that evidence."
 }
 if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and -not $latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
@@ -1890,6 +1919,10 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest plain Down160 direct-left route removed the save-prompt Cross but stayed on Now Loading through late screenshots. Do not use the generic state-aware fallback or repeat the prompt route; run a Down160 no-movement load-stability diagnostic first."
 } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
     "Latest Down160 no-movement diagnostic proved the Path-to-Tenuto load target but stayed on the Load complete banner. Send one delayed post-load-complete Cross and capture no-movement field proof before any movement, battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
+    "Latest Down160 load-top-normalize repair black-overlayed before proving a load target. Do not repeat blind Up normalization or fall back to generic state-aware macros; run a load-list cursor diagnostic and repair selected-row load-target gating before another left-only isolation."
+} elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
+    "Latest Down160 late-dismiss left-only isolation has load-list cursor/classifier drift: a lower Path-to-Tenuto row was visible, but the gate aborted on damaged/debug-like upper rows. Repair the load-list cursor diagnostic or selected-row classifier before rerunning left-only movement."
 } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
     "Latest Down160 delayed single-dismiss direct-left route proved Path to Tenuto field and stayed field-clean after the left200 pulse. Run only the same late-dismiss base with a left-only first-battle movement isolation before full battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
@@ -2074,6 +2107,10 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldLoadStabilityNoMoveCommand
 } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
     New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissNoMoveCommand
+} elseif ($latestTitleToLoadDownHoldLoadTopNormalizeBlack) {
+    New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand
+} elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
+    New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
     New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {

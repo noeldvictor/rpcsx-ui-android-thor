@@ -188,6 +188,14 @@ late-dismiss base and run only the left-only first-battle movement isolation
 next (`ls_left:2600` without the down-left branch). Do not fall back to generic
 state-aware, old loader-control, full battle, HLE, RSX, GPU, or speed work until
 that larger left-only branch is classified.
+If the left-only isolation aborts before slot `Cross` because the classifier
+latched onto damaged/debug-like upper rows while a lower Path-to-Tenuto row is
+visible, classify it as load-list cursor/classifier drift, not a wrong-save
+target. Do not restore the already-matching checkpoint or fall back to generic
+state-aware macros. Run a load-list cursor diagnostic or selected-row classifier
+repair first. If a blind pre-gate `Up` normalization variant only produces
+black-overlay gate screenshots, classify that variant as harness noise and do
+not repeat it.
 
 ## Acceptance
 
