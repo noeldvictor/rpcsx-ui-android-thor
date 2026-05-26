@@ -963,6 +963,16 @@ namespace vk
 			fmt::throw_exception("Unreachable");
 		}
 
+		const VkFormat vk_format = get_compatible_sampler_format(m_formats_support, gcm_format);
+		if (context == rsx::texture_upload_context::blit_engine_dst && vk::thor::rsx_auditor::fuse_blit_source_resolve())
+		{
+			const auto format_features = vk::get_current_renderer()->get_format_properties(vk_format);
+			if (format_features.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
+			{
+				usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+			}
+		}
+
 		// Check what actually exists at that address
 		const rsx::image_section_attributes_t search_desc = {.gcm_format = gcm_format, .width = width, .height = height, .depth = section_depth, .mipmaps = mipmaps};
 		const bool allow_dirty = (context != rsx::texture_upload_context::framebuffer_storage);
@@ -982,6 +992,10 @@ namespace vk
 			else if (flags & texture_create_flags::shareable)
 			{
 				reusable = (image && image->sharing_mode() == VK_SHARING_MODE_CONCURRENT);
+			}
+			else if (!image || (image->info.usage & usage_flags) != usage_flags)
+			{
+				reusable = false;
 			}
 
 			if (!reusable || !image || region.get_image_type() != type || image->depth() != depth) // TODO
@@ -1020,7 +1034,6 @@ namespace vk
 		if (!image)
 		{
 			const bool is_cubemap = type == rsx::texture_dimension_extended::texture_dimension_cubemap;
-			const VkFormat vk_format = get_compatible_sampler_format(m_formats_support, gcm_format);
 			VkImageCreateFlags create_flags = is_cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 			VkSharingMode sharing_mode = (flags & texture_create_flags::shareable) ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE;
 

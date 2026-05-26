@@ -30,6 +30,12 @@ namespace gl
 		using image_storage_type = gl::texture;
 		using texture_format = gl::texture::format;
 		using viewable_image_type = gl::viewable_image*;
+
+		static bool try_fused_blit_source_resolve(
+			gl::command_context&, gl::viewable_image*, gl::texture*, areai, areai, bool, const rsx::typeless_xfer&, bool)
+		{
+			return false;
+		}
 	};
 
 	class cached_texture_section : public rsx::cached_texture_section<gl::cached_texture_section, gl::texture_cache_traits>

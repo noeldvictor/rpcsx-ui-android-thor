@@ -3181,7 +3181,7 @@ namespace rsx
 			else
 			{
 				src_area = src_subres.src_area;
-				vram_texture = src_subres.surface->get_surface(rsx::surface_access::transfer_read);
+				vram_texture = src_subres.surface;
 				typeless_info.src_context = texture_upload_context::framebuffer_storage;
 			}
 
@@ -3425,10 +3425,26 @@ namespace rsx
 			{
 				// Do preliminary analysis
 				typeless_info.analyse();
+			}
 
+			bool fused_blit_source_resolve = false;
+			if (src_is_render_target)
+			{
+				fused_blit_source_resolve = traits::try_fused_blit_source_resolve(
+					cmd, src_subres.surface, dest_texture, src_area, dst_area, interpolate, typeless_info, use_null_region);
+
+				if (!fused_blit_source_resolve)
+				{
+					src_subres.surface->memory_barrier(cmd, rsx::surface_access::transfer_read);
+					vram_texture = src_subres.surface->get_surface(rsx::surface_access::transfer_read);
+				}
+			}
+
+			if (!fused_blit_source_resolve && !use_null_region) [[likely]]
+			{
 				blitter.scale_image(cmd, vram_texture, dest_texture, src_area, dst_area, interpolate, typeless_info);
 			}
-			else if (cached_dest)
+			else if (!fused_blit_source_resolve && cached_dest)
 			{
 				cached_dest->dma_transfer(cmd, vram_texture, src_area, dst_range, dst.pitch);
 			}

@@ -14,39 +14,38 @@
   </a>
 </p>
 
-Personal-use Android fork of RPCSX-UI-Android for **AYN Thor Base, Pro, and Max**. It is vibe-coded with AI assistance, tuned around Snapdragon 8 Gen 2 / Adreno 740 Thor hardware, and meant to move fast toward a simpler handheld PS3 experience.
+Personal-use Android fork of RPCSX-UI-Android for **AYN Thor Base, Pro, and Max**. It targets Snapdragon 8 Gen 2 / Adreno 740 Thor hardware and handheld PS3 testing.
 
-No stability guarantee. No support queue. No big download button. Do not open issues expecting upstream-style triage. Fork it, build it, change it, and use legally owned dumps with legally obtained firmware.
+No stability guarantee. No support queue. No APK support. Build it yourself and use legally owned dumps with legally obtained firmware.
 
 ## Quick Read
 
 - **Target:** AYN Thor Base / Pro / Max. Thor Lite may run it, but is not the PS3 performance target.
-- **Purpose:** easier library setup, better Thor controls, visible cheats, visible cache status, and Thor-specific performance experiments.
-- **Current speed canary:** Eternal Sonata `BLUS30161` now reaches Rocknix-class first-field and first-battle-prompt performance on Thor Max when using the optimized RelWithDebInfo native core. This is not broad compatibility and not a finished 30-FPS guarantee yet.
-- **Release style:** source-first. GitHub Actions artifacts may exist, but this README intentionally points people toward forking/building.
-- **AI note:** this is openly AI-assisted and experimental. Rough edges are expected.
+- **Purpose:** library setup, Thor controls, cheat lists, cache status, and Thor-specific performance experiments.
+- **Current benchmark:** Eternal Sonata `BLUS30161` reaches near-30-FPS first-field and first-battle-prompt performance on Thor Max with the optimized RelWithDebInfo native core. This is not broad compatibility or a finished 30-FPS guarantee.
+- **Release style:** source-first. GitHub Actions artifacts may exist, but builds are the expected path.
 - **Upstream:** still GPLv2, still based on RPCSX-UI-Android, still dependent on RPCSX core behavior.
 
 ## Current Performance Canary
 
 The current focused test game is **Eternal Sonata `BLUS30161`** on an AYN Thor Max, stock Qualcomm Vulkan driver, 720p Rocknix-correct profile, Write Color Buffers on, reduced-loop u4 enabled, and the optimized Android native core.
 
-As of **2026-05-17**, this fork is matching the public Rocknix/RPCS3 720p field target in the important sense: the Android Thor core is no longer stuck at `10-13 FPS` in the first playable field because the dev-core workflow stopped benchmarking a Debug native build.
+As of **2026-05-17**, this fork matches the public Rocknix/RPCS3 720p field target for the tested scene. The Android Thor core is no longer stuck at `10-13 FPS` in the first playable field when using the optimized dev-core workflow.
 
-Measured local Thor Max proof:
+Measured on Thor Max:
 
-| Scene/check | FPS proof | Status |
+| Scene/check | FPS | Status |
 | --- | ---: | --- |
-| First field route | `29.14 FPS` | Rocknix-class |
-| Short moving field, open view | `27.35-28.08 FPS` | Rocknix-class |
+| First field route | `29.14 FPS` | Near target |
+| Short moving field, open view | `27.35-28.08 FPS` | Near target |
 | Short moving field, tree-heavy view | `19.68 FPS` | Still a hotspot |
-| First battle tutorial prompt | `30.00 FPS` | Full-speed prompt proof |
+| First battle tutorial prompt | `30.00 FPS` | Target met |
 
 Important caveats:
 
 - This is a **single-game canary**, not proof that all PS3 games are fast.
 - The menu checkpoint still needs a clean correctness pass; one quick menu probe opened the ImGui debug overlay instead of the game menu.
-- The worst tree-heavy field camera still dips below the 30-FPS target, so the next work is residual RSX/SPU/GPU hot-path tuning, not victory-lap polishing.
+- The worst tree-heavy field camera still dips below the 30-FPS target. Remaining work is RSX/SPU/GPU hot-path tuning.
 - Do not compare FPS from `app\.cxx\Debug\...` native cores. FPS runs must use the optimized RelWithDebInfo dev core or a release-equivalent build.
 
 ## Thor Variants
@@ -69,23 +68,23 @@ Captured from the connected AYN Thor test device.
 
 ## User-Facing Differences
 
-Plain version: upstream is the general Android app; this fork is the Thor handheld experiment.
+Summary: upstream is the general Android app; this fork is the Thor handheld build.
 
 | Area | This fork changes |
 | --- | --- |
 | Updates | Upstream-style update nags are disabled for this fork. |
 | Library setup | External PS3 folders and ISOs can be added with SD-card use in mind. |
 | Titles and covers | Reads `PARAM.SFO` and `ICON0.PNG` from PS3 game folders/ISOs where possible. |
-| Cheats | Adds cheat badges, per-game cheat lists, bundled cheat database work, and simple toggles. |
+| Cheats | Adds cheat badges, per-game cheat lists, bundled cheat database, and toggles. |
 | In-game menu | Adds Thor-friendly Cheats, Fast Forward 2x, Show FPS, Save State, and Load State paths. |
 | Hotkeys | `Select + R1` fast-forward, `Select + right stick down` save, `Select + right stick up` load. |
 | Back button | Android Back opens the in-game menu during gameplay and pauses. |
 | Touch overlay | Thor defaults to hidden on-screen controls because it has physical controls. |
 | Sixaxis | Thor motion sensors are wired for PS3 motion when the bundled core exposes the bridge. |
-| Recommended settings | Per-game settings can be enabled with one simple switch. |
+| Recommended settings | Per-game settings can be enabled with one switch. |
 | Compiled cache | Game detail shows PPU, SPU, and shader cache status instead of hiding it. |
 | Cache storage | Internal or app-owned SD-card compiled-cache storage can be selected when Android exposes both. |
-| Trim / Optimize | Experimental personal-use trimming tools are visible in the app. |
+| Trim / Optimize | Experimental personal-use trimming tools are available in the app. |
 | GPU drivers | Driver UI is Thor-guided with Adreno 740 notes and curated Turnip-style sources. |
 | Debugging | Thor log/screenshot capture scripts are included for reproducible play-session debugging. |
 
@@ -101,8 +100,29 @@ Plain version: upstream is the general Android app; this fork is the Thor handhe
 - Thor defaults cap LLVM compile workers, disable full first-boot PPU precompile, enable SPU and on-disk shader cache, and use a Thor-safe `cortex-a78` LLVM target.
 - The old Android `cortex-a34` startup override is removed because it silently downgrades Thor JIT codegen.
 - Fast Forward 2x uses RPCSX/RPCS3 `Clocks scale`, not raw uncapped rendering.
-- System Info includes an early `Thor Feature Doctor` readout for LLVM CPU, detected AArch64 cores, and Android feature flags.
-- Android-side performance cleanup has started: less main-thread file probing, faster folder scan queues, safer large-file copy, cached patch status reads, and debounced library saves.
+- System Info includes `Thor Feature Doctor` output for LLVM CPU, detected AArch64 cores, and Android feature flags.
+- Android-side cleanup reduces main-thread file probing, speeds folder scan queues, improves large-file copy, caches patch status reads, and debounces library saves.
+
+## Cheats Setup
+
+The APK bundles `app/src/main/assets/cheats/cheats.db`. It currently contains `2501` Aldos/Artemis entries and `28` RPCS3-ready patch entries, so the app can show matching cheats on a game detail page without a network fetch.
+
+Install flow:
+
+1. Add a game so the app can read its title ID from `PARAM.SFO` or the ISO.
+2. Open the game detail page, then open `Cheats`.
+3. For Aldos/Artemis cheats, start the game once, close it, then return to `Cheats`. RPCSX needs the PPU patch hash before it can write RPCS3 patch files.
+4. Turn on the cheats you want. The app writes generated patches to `config/patches/TITLEID_patch.yml` and enables them in `config/patch_config.yml`.
+5. Restart the game. Cheat changes apply on the next game start.
+
+RPCS3-ready patch entries already include PPU hashes and can be toggled without the Aldos/Artemis conversion step. Risky AoB, runtime, or unsupported Artemis codes stay visible as unavailable until native validation exists.
+
+Developer refresh:
+
+```powershell
+.\tools\update_aldos_cheats.ps1
+python .\tools\build_cheat_db.py
+```
 
 <details>
 <summary>AYN Thor hardware notes</summary>

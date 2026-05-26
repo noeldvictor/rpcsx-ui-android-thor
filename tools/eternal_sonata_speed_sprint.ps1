@@ -7,6 +7,8 @@ param(
     [string]$Label = "",
     [string]$BootTarget = "",
     [string]$InputMacro = "",
+    [ValidateSet("Keyboard", "PadApi")]
+    [string]$WindowsInputBackend = "Keyboard",
     [ValidateSet("Off", "Detect", "Cache")]
     [string]$EternalSonataSuperPath = "Off",
     [int]$EternalSonataJoinSpin = -1,
@@ -21,26 +23,74 @@ param(
     [string]$EternalSonataMfcShapeProbe = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
     [string]$EternalSonataMfcLadder = "Off",
+    [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
+    [string]$EternalSonataSpuHleVerify = "Off",
+    [ValidateSet("Off", "Verify", "Fast")]
+    [string]$EternalSonataSpuHle25ccBody = "Off",
+    [ValidateSet("Off", "Verify")]
+    [string]$EternalSonataSpuHleSize16Body = "Off",
+    [ValidateSet("Off", "Verify")]
+    [string]$EternalSonataSpuHle451cPreserveBody = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataKernelCapsule = "Off",
+    [ValidateSet("Off", "Profile", "Verify")]
+    [string]$EternalSonataReservationLoop = "Off",
+    [ValidateSet("Off", "Relaxed")]
+    [string]$EternalSonataPutllc16Reservations = "Off",
+    [ValidateSet("Off", "Profile", "Verify", "Fast")]
+    [string]$EternalSonataPutllc16Pair = "Off",
     [ValidateSet("Off", "Verify")]
     [string]$EternalSonataDmaSuperPath = "Off",
     [string]$WindowsRsxAuditor = "Off",
     [ValidateSet("Off", "Host")]
     [string]$WindowsRsxDmaFence = "Off",
-    [ValidateSet("Off", "Depth", "Color", "All")]
+    [ValidateSet("Off", "Depth", "DepthReadOnly", "Color", "All")]
     [string]$WindowsRsxTextureBarrier = "Off",
+    [ValidateSet("Off", "KeepReadOnly")]
+    [string]$WindowsRsxDepthFeedback = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$WindowsRsxResolve = "Off",
-    [ValidateSet("Off", "Verify", "Fast")]
+    [ValidateSet("Off", "Verify", "VerifySampled", "VerifyCachedSampled", "VerifyCachedTransferSampled", "VerifyCachedDeferSampled", "Fast", "FastSampled", "FastCachedSampled", "FastCachedTransferSampled", "FastCachedDeferSampled", "FastKeepSrc")]
     [string]$WindowsRsxBlitSourceResolve = "Off",
+    [ValidateSet("Off", "GpuSwap")]
+    [string]$WindowsRsxPresentUpload = "Off",
+    [ValidateSet("Off", "GpuSwap", "GpuSwapCached")]
+    [string]$WindowsRsxIndexUpload = "Off",
+    [ValidateSet("Off", "Profile", "Verify", "Fast")]
+    [string]$WindowsRsxIndexPersistentCache = "Off",
+    [ValidateSet("Off", "Profile", "Fast")]
+    [string]$WindowsRsxVertexSupersetCache = "Off",
+    [int]$WindowsRsxVertexSupersetScanLimit = 0,
+    [ValidateSet("Off", "Profile", "Verify", "Fast")]
+    [string]$WindowsRsxVertexPersistentCache = "Off",
+    [ValidateSet("Off", "Profile", "Fast")]
+    [string]$WindowsRsxVertexVolatileCache = "Off",
+    [ValidateSet("Off", "Verify", "VerifySampled", "Fast", "FastSampled")]
+    [string]$AndroidRsxBlitSourceResolve = "Off",
     [ValidateSet("Keep", "On", "Off")]
     [string]$WindowsRsxForceHwMsaaResolve = "Keep",
+    [ValidateSet("Keep", "Off", "Auto", "PS3Native", "30", "60", "120", "240")]
+    [string]$WindowsFrameLimit = "Keep",
+    [int]$WindowsVblankRate = 0,
+    [ValidateSet("Keep", "On", "Off")]
+    [string]$WindowsSpuAccurateReservations = "Keep",
+    [int]$WindowsGameScreen = 1,
     [int]$MaxSeconds = 120,
     [int]$AndroidSceneSeconds = 20,
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
     [int]$ScreenshotMaxCount = 6,
+    [ValidateSet("Off", "FieldLike", "FieldByDeadline", "CleanAfterField", "BattleRoute")]
+    [string]$WindowsVisualGate = "Off",
+    [ValidateSet("Legacy", "TopSlot")]
+    [string]$WindowsBattleLoadRoute = "Legacy",
+    [int]$WindowsVisualGateFieldSeconds = 160,
+    [long]$WindowsVisualGateMinFieldPngBytes = 1000000,
     [int]$HostSampleSeconds = 1,
     [int]$HostSampleEverySeconds = 30,
+    [ValidateSet("Off", "Warn", "Fail", "ExternalFail")]
+    [string]$WindowsHostContentionGate = "Off",
+    [string]$WindowsCpuAffinityMask = "",
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$AndroidInputMode = "Direct",
     [ValidateSet("Keep", "Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU4", "ReducedLoopEmitU4Quiet", "ReducedLoopEmitU4DynMfcQuiet", "ReducedLoopEmitU8", "ReducedLoopEmitU8Quiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock")]
@@ -91,19 +141,35 @@ function Get-SpeedLabel {
 }
 
 function Get-SpeedWindowsSceneMacro {
-    param([string]$Scene)
+    param(
+        [string]$Scene,
+        [string]$BattleLoadRoute = "Legacy"
+    )
 
-    $loadField = "wait:45000;ls_down:120;wait:800;cross:180;wait:30000;cross:180;wait:1500;ls_up:120;wait:500;cross:180;wait:12000;start:180;wait:1500;cross:180;wait:35000"
+    # Short title pulses are required; longer down/left-stick presses can skip from NEW GAME to title OPTIONS.
+    # The load menu can remember a lower save slot from a prior failed route, so normalize to Save File 01 before selecting.
+    $selectTopSave = "up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500"
+    $loadField = "wait:45000;down:20;wait:500;cross:80;wait:12000;$selectTopSave;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000"
+    # The first-battle route is timing-sensitive. The normalized TopSlot loader
+    # intentionally avoids a post-load start/cross pair, which can pause the
+    # field and fake a battle-route baseline while never reaching first battle.
+    $loadBattleLegacy = "wait:45000;ls_down:120;wait:800;cross:180;wait:30000;cross:180;wait:1500;ls_up:120;wait:500;cross:180;wait:12000;start:180;wait:1500;cross:180;wait:35000"
+    $loadBattleTopSlot = $loadField
 
     switch ($Scene) {
         "field" {
             return "$loadField;shot:100;wait:15000;shot:100"
         }
         "menu" {
-            return "$loadField;shot:100;start:180;wait:1000;shot:100;wait:5000;shot:100"
+            # Full title Options page, not the weaker field Pause overlay.
+            # First settle/skip to the title menu, then wait for the Options
+            # selection to stabilize before opening it. Shorter timing can miss
+            # the full Options page and fall into intro playback.
+            return "wait:65000;cross:180;wait:9000;shot:100;down:220;wait:1000;shot:100;down:220;wait:16000;shot:100;cross:180;wait:8000;shot:100;wait:6000;shot:100"
         }
         "battle" {
-            return "$loadField;shot:100;combo:ls_left+ls_down:2000;wait:20000;shot:100;dpad_down:120;wait:500;cross:180;wait:30000;shot:100;wait:30000;shot:100"
+            $loadBattle = if ($BattleLoadRoute -eq "TopSlot") { $loadBattleTopSlot } else { $loadBattleLegacy }
+            return "$loadBattle;shot:100;ls_left:2600;wait:1000;combo:ls_left+ls_down:2200;wait:45000;shot:100;dpad_down:120;wait:500;cross:180;wait:60000;shot:100;wait:60000;shot:100"
         }
         default {
             return ""
@@ -134,6 +200,66 @@ function Get-SpeedAndroidSceneProfile {
     }
 }
 
+function Invoke-SpeedWindowsVisualGate {
+    param(
+        [string]$SafeLabel,
+        [datetime]$StartedAt
+    )
+
+    if ($WindowsVisualGate -eq "Off") {
+        return
+    }
+
+    $checker = Join-Path $PSScriptRoot "check_eternal_sonata_windows_visual_gate.ps1"
+    if (-not (Test-Path -LiteralPath $checker -PathType Leaf)) {
+        throw "Windows visual gate helper not found: $checker"
+    }
+
+    $captureRoot = Join-Path $RepoRoot "debug-captures\windows-lab"
+    $runNameSuffix = "-$SafeLabel-windows"
+    $runDir = Get-ChildItem -LiteralPath $captureRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name.EndsWith($runNameSuffix, [System.StringComparison]::OrdinalIgnoreCase) -and $_.LastWriteTime -ge $StartedAt.AddMinutes(-5) } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $runDir) {
+        throw "Could not find latest Windows run directory ending with '$runNameSuffix' for visual gate."
+    }
+
+    $gateParams = @{
+        RunDir = $runDir.FullName
+        MinFieldPngBytes = $WindowsVisualGateMinFieldPngBytes
+    }
+
+    switch ($WindowsVisualGate) {
+        "FieldLike" {
+            $gateParams.RequireFieldLike = $true
+        }
+        "FieldByDeadline" {
+            $gateParams.RequireFieldLike = $true
+            $gateParams.RequireFieldAtOrBeforeSeconds = $WindowsVisualGateFieldSeconds
+        }
+        "CleanAfterField" {
+            $gateParams.RequireFieldLike = $true
+            $gateParams.RequireFieldAtOrBeforeSeconds = $WindowsVisualGateFieldSeconds
+            $gateParams.RequireNoInvalidAfterFirstField = $true
+        }
+        "BattleRoute" {
+            $gateParams.RequireFieldLike = $true
+            $gateParams.RequireFieldAtOrBeforeSeconds = $WindowsVisualGateFieldSeconds
+            $gateParams.RequireFieldAtOrAfterSeconds = 220
+            $gateParams.RequireMinFieldLikeCount = 2
+            $gateParams.RequireBattleLikeAtOrAfterSeconds = 200
+            $gateParams.RequireNoInvalidAfterFirstField = $true
+            if ($gateParams.MinFieldPngBytes -lt 1500000) {
+                $gateParams.MinFieldPngBytes = 1500000
+            }
+        }
+    }
+
+    & $checker @gateParams
+}
+
 function Invoke-SpeedAdbText {
     param(
         [string]$CaptureDir,
@@ -160,10 +286,18 @@ function Set-AndroidSpeedProperties {
     if ($AndroidLogMode -eq "GpuSuperpathScout" -and $EternalSonataGpuProbe -eq "Off" -and $EternalSonataDmaSuperPath -eq "Off") {
         $dmaMode = "verify"
     }
+    $rsxBlitSourceMode = switch ($AndroidRsxBlitSourceResolve) {
+        "Verify" { "verify" }
+        "VerifySampled" { "verify-sampled" }
+        "Fast" { "fast" }
+        "FastSampled" { "fast-sampled" }
+        default { "off" }
+    }
 
     & $Adb shell setprop debug.rpcsx.thor.es_sema_superpath $semaMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.es_dma_superpath $dmaMode | Out-Null
-    Write-Host "Android speed properties: debug.rpcsx.thor.es_sema_superpath=$semaMode debug.rpcsx.thor.es_dma_superpath=$dmaMode"
+    & $Adb shell setprop debug.rpcsx.thor.rsx_blit_source_resolve $rsxBlitSourceMode | Out-Null
+    Write-Host "Android speed properties: debug.rpcsx.thor.es_sema_superpath=$semaMode debug.rpcsx.thor.es_dma_superpath=$dmaMode debug.rpcsx.thor.rsx_blit_source_resolve=$rsxBlitSourceMode"
 }
 
 function Set-AndroidLogMode {
@@ -324,6 +458,11 @@ switch ($Action) {
         Invoke-DeviceSnapshot
     }
     "WindowsScene" {
+        $effectiveMaxSeconds = $MaxSeconds
+        if ($Scene -eq "battle" -and [string]::IsNullOrWhiteSpace($InputMacro) -and $effectiveMaxSeconds -lt 330) {
+            $effectiveMaxSeconds = 330
+        }
+
         $runParams = @{
             Action = "Run"
             Label = "$safeLabel-windows"
@@ -336,24 +475,49 @@ switch ($Action) {
             EternalSonataGpuProbe = $EternalSonataGpuProbe
             EternalSonataMfcShapeProbe = $EternalSonataMfcShapeProbe
             EternalSonataMfcLadder = $EternalSonataMfcLadder
+            EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
+            EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
+            EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body
+            EternalSonataSpuHle451cPreserveBody = $EternalSonataSpuHle451cPreserveBody
+            EternalSonataKernelCapsule = $EternalSonataKernelCapsule
+            EternalSonataReservationLoop = $EternalSonataReservationLoop
+            EternalSonataPutllc16Reservations = $EternalSonataPutllc16Reservations
+            EternalSonataPutllc16Pair = $EternalSonataPutllc16Pair
             EternalSonataDmaSuperPath = $EternalSonataDmaSuperPath
             RsxAuditor = $WindowsRsxAuditor
             RsxDmaFence = $WindowsRsxDmaFence
             RsxTextureBarrier = $WindowsRsxTextureBarrier
+            RsxDepthFeedback = $WindowsRsxDepthFeedback
             RsxResolve = $WindowsRsxResolve
             RsxBlitSourceResolve = $WindowsRsxBlitSourceResolve
+            RsxPresentUpload = $WindowsRsxPresentUpload
+            RsxIndexUpload = $WindowsRsxIndexUpload
+            RsxIndexPersistentCache = $WindowsRsxIndexPersistentCache
+            RsxVertexSupersetCache = $WindowsRsxVertexSupersetCache
+            RsxVertexSupersetScanLimit = $WindowsRsxVertexSupersetScanLimit
+            RsxVertexPersistentCache = $WindowsRsxVertexPersistentCache
+            RsxVertexVolatileCache = $WindowsRsxVertexVolatileCache
             RsxForceHwMsaaResolve = $WindowsRsxForceHwMsaaResolve
-            MaxSeconds = $MaxSeconds
+            FrameLimit = $WindowsFrameLimit
+            VblankRate = $WindowsVblankRate
+            SpuAccurateReservations = $WindowsSpuAccurateReservations
+            GameScreen = $WindowsGameScreen
+            MaxSeconds = $effectiveMaxSeconds
+            InputBackend = $WindowsInputBackend
             ScreenshotEverySeconds = $ScreenshotEverySeconds
             ScreenshotStartSeconds = $ScreenshotStartSeconds
             ScreenshotMaxCount = $ScreenshotMaxCount
             HostSampleSeconds = $HostSampleSeconds
             HostSampleEverySeconds = $HostSampleEverySeconds
+            HostContentionGate = $WindowsHostContentionGate
+        }
+        if (-not [string]::IsNullOrWhiteSpace($WindowsCpuAffinityMask)) {
+            $runParams.CpuAffinityMask = $WindowsCpuAffinityMask
         }
         if ($BootTarget) {
             $runParams.BootTarget = $BootTarget
         }
-        $sceneMacro = if ($InputMacro) { $InputMacro } else { Get-SpeedWindowsSceneMacro -Scene $Scene }
+        $sceneMacro = if ($InputMacro) { $InputMacro } else { Get-SpeedWindowsSceneMacro -Scene $Scene -BattleLoadRoute $WindowsBattleLoadRoute }
         if ($sceneMacro) {
             $runParams.InputMacro = $sceneMacro
         }
@@ -372,7 +536,9 @@ switch ($Action) {
         if ($SkipHostSystemCheck) {
             $runParams.SkipHostSystemCheck = $true
         }
+        $labStartedAt = Get-Date
         & (Join-Path $PSScriptRoot "windows_rpcs3_lab.ps1") @runParams
+        Invoke-SpeedWindowsVisualGate -SafeLabel $safeLabel -StartedAt $labStartedAt
     }
     "AndroidStart" {
         Set-AndroidLogMode

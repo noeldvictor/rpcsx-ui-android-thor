@@ -559,6 +559,10 @@ if ($Mode -ne "Status" -and $Mode -notlike "Getllar*") {
 }
 
 if ($Mode -ne "Status") {
+    Set-DeviceProp "debug.rpcsx.thor.rsx_blit_source_resolve" "off"
+}
+
+if ($Mode -ne "Status") {
     Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_unroll" $ReducedLoopUnroll
     Set-DeviceProp "debug.rpcsx.thor.spu_dynamic_mfc_fast" $DynamicMfcFast
 }
@@ -576,6 +580,7 @@ Get-DeviceProp "debug.rpcsx.thor.rsx_auditor"
 Get-DeviceProp "debug.rpcsx.thor.rsx_dma_fence"
 Get-DeviceProp "debug.rpcsx.thor.rsx_depth_feedback"
 Get-DeviceProp "debug.rpcsx.thor.rsx_texture_barrier"
+Get-DeviceProp "debug.rpcsx.thor.rsx_blit_source_resolve"
 Get-DeviceProp "debug.rpcsx.thor.fast_busy_wait"
 Get-DeviceProp "debug.rpcsx.thor.wait_profiler"
 Get-DeviceProp "debug.rpcsx.thor.es_getllar"

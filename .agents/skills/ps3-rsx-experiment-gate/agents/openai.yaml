@@ -1,0 +1,4 @@
+interface:
+  display_name: "PS3 RSX Experiment Gate"
+  short_description: "Gate RSX/GPU migration experiments"
+  default_prompt: "Gate a PS3 RSX or GPU-migration experiment with Windows proof, visual checks, rollback, and promotion criteria."

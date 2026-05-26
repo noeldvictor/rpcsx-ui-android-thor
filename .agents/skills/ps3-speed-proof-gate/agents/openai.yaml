@@ -1,0 +1,4 @@
+interface:
+  display_name: "PS3 Speed Proof Gate"
+  short_description: "Validate PS3 speed claims"
+  default_prompt: "Classify a PS3/RPCS3/RPCSX speed result with Windows/Thor proof gates, visual checks, comparability, and promotion status."

@@ -238,10 +238,57 @@ experiment is LLVM dynamic `MFC_Cmd` fallback/codegen specialization for the
   `tools/eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu|battle`
   has repeatable Windows routes for the menu and first-battle gates.
 
-Reading: this is the first real RSX-on-GPU foothold for Eternal Sonata. It is
-not a Thor FPS win yet, but the Windows field/menu/battle correctness gate now
-justifies porting the narrow, title-gated blit-source fast path to the Android
-vendored core and measuring Adreno tile/barrier behavior.
+Reading: this is the first real RSX-on-GPU correctness foothold for Eternal
+Sonata, not a speed win and not a Thor promotion gate. As of the 2026-05-18 user
+directive, keep this entire RSX/SPU/PPU GPU-shifted lane Windows-only until
+matched moving-gameplay Windows runs prove a stable 200% or better performance
+improvement with correct field, menu, and first-battle visuals. Do not port,
+build, push, or device-test this path on Thor/Android before that bar is met.
+
+### Windows Fieldbattle SPU-to-RSX Overlap Scout
+
+- Updated `tools/summarize_eternal_sonata_gpu_probe.ps1` to correlate sampled
+  SPU max-DMA/MFC ranges with profiled RSX resolve/blit/texture resources from
+  the same Windows log. This widens the detector from direct `RSX GET/PUT` bytes
+  to a first-pass "did this SPU range appear to become an RSX resource?" check.
+- Field-to-first-battle run:
+  `debug-captures/windows-lab/20260518-212026-gpu-candidate-probe-fieldbattle-windows-windows/`
+  reached the field and active first-battle tutorial visuals on `\\.\DISPLAY2`.
+- Result:
+  - `670` SPU probe records;
+  - about `898.25 MB` observed DMA;
+  - hot PCs `0x451c` and `0x25cc`;
+  - direct RSX-local traffic: `0`;
+  - RSX resource profile rows: `3,093` raw, `84` aggregated;
+  - indirect SPU-DMA/MFC-to-RSX overlap records: `0`.
+
+Reading: this route still does not justify moving the hot SPU `0x25cc` /
+`0x451c` path to Vulkan compute. It is CPU/SPU MFC/codegen/HLE work unless a
+future scene exposes GPU-consumed output. The practical GPU lane remains
+RSX-local: fix the fused blit-source live-destination/texture-chain issue, or
+find another no-readback render/texture/upload path.
+
+### Windows RSX DepthReadOnly Locality Gate
+
+- Added Windows-only `RPCS3_ES_RSX_TEXTURE_BARRIER=depth-readonly`, surfaced as
+  `tools/windows_rpcs3_lab.ps1 -RsxTextureBarrier DepthReadOnly` and
+  `tools/eternal_sonata_speed_sprint.ps1 -WindowsRsxTextureBarrier DepthReadOnly`.
+- The gate is narrower than broad `Depth`: it requires BLUS30161 plus the hot
+  bound read-only depth feedback-loop surface (`base=0xc1260000`, `fmt=0x81`,
+  `1280x720`, `samples=2`, `grid=2x1`, `pitch=10240`, render pass open).
+- Clean field-to-first-battle run:
+  `debug-captures/windows-lab/20260518-222010-rsx-texturebarrier-depthreadonly-fast-uncap-vblank240-fieldbattle-windows-windows/`
+  kept the first-battle tutorial visuals correct on `\\.\DISPLAY2`.
+- Counter result:
+  - render-pass barrier breaks fell to `1594`, about `7.89` per 60 frames;
+  - texture barriers color/depth became `0/0`;
+  - texture skips/post elides were `4364/798`;
+  - all forced skips landed on the profiled depth feedback-loop surface.
+
+Reading: this is the current best RSX/GPU-residency foothold because it removes
+a large render-pass break class without a generic depth skip. It is still not a
+200% Windows moving-gameplay proof, and the narrowed full Options-page route is
+not yet reliable, so it must stay Windows-only and off Android/Thor.
 
 ## Notes
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PS3 Debug Knowledge"
+  short_description: "Search and record PS3 debug evidence"
+  default_prompt: "Find prior PS3/RPCS3/RPCSX speed evidence, summarize the current best proof, and record any new durable fact."

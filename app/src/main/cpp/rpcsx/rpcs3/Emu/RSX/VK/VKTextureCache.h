@@ -6,9 +6,12 @@
 #include "VKRenderPass.h"
 #include "VKGSRenderTypes.hpp"
 #include "vkutils/image_helpers.h"
+#include "vkutils/thor_rsx_auditor.h"
 
 #include "../Common/texture_cache.h"
 #include "../Common/tiled_dma_copy.hpp"
+
+#include "Emu/System.h"
 
 #include "rx/align.hpp"
 
@@ -31,6 +34,68 @@ namespace vk
 		using image_storage_type = vk::image;
 		using texture_format = VkFormat;
 		using viewable_image_type = vk::viewable_image*;
+
+		static bool try_fused_blit_source_resolve(
+			vk::command_buffer& cmd, vk::viewable_image* src, vk::image* dst,
+			areai src_area, areai dst_area, bool interpolate, const rsx::typeless_xfer& xfer_info, bool use_null_region)
+		{
+			if (Emu.GetTitleID() != "BLUS30161")
+			{
+				return false;
+			}
+
+			const bool fast = vk::thor::rsx_auditor::fuse_blit_source_resolve();
+			const bool verify = vk::thor::rsx_auditor::verify_blit_source_resolve();
+			if (!fast && !verify)
+			{
+				return false;
+			}
+
+			const auto reject = [](vk::thor::rsx_auditor::blit_source_reject_reason reason) -> bool
+			{
+				vk::thor::rsx_auditor::record_blit_source_resolve_reject(reason);
+				return false;
+			};
+
+			if (!dst || use_null_region || interpolate)
+			{
+				return reject(vk::thor::rsx_auditor::blit_source_reject_reason::region);
+			}
+
+			if (xfer_info.src_is_typeless || xfer_info.dst_is_typeless || xfer_info.flip_horizontal || xfer_info.flip_vertical)
+			{
+				return reject(vk::thor::rsx_auditor::blit_source_reject_reason::typeless_or_flip);
+			}
+
+			if (xfer_info.src_gcm_format != xfer_info.dst_gcm_format)
+			{
+				return reject(vk::thor::rsx_auditor::blit_source_reject_reason::format);
+			}
+
+			auto rtt = dynamic_cast<vk::render_target*>(src);
+			if (!rtt || !(rtt->msaa_flags & rsx::surface_state_flags::require_resolve))
+			{
+				return reject(vk::thor::rsx_auditor::blit_source_reject_reason::render_target);
+			}
+
+			const bool resolved = verify ?
+				vk::resolve_blit_image_to_scratch(cmd, rtt, dst, src_area, dst_area) :
+				vk::resolve_blit_image(cmd, rtt, dst, src_area, dst_area);
+
+			if (!resolved)
+			{
+				return reject(vk::thor::rsx_auditor::blit_source_reject_reason::dispatch);
+			}
+
+			if (verify)
+			{
+				vk::thor::rsx_auditor::record_blit_source_resolve_verify();
+				return false;
+			}
+
+			vk::thor::rsx_auditor::record_blit_source_resolve_fast();
+			return true;
+		}
 	};
 
 	class cached_texture_section : public rsx::cached_texture_section<vk::cached_texture_section, vk::texture_cache_traits>

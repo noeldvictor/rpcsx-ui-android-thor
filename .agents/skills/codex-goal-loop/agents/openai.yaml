@@ -1,0 +1,3 @@
+display_name: Codex Goal Loop
+short_description: Goal-locked continuation checkpoints.
+default_prompt: Use the Codex Goal Loop skill to define the done gate, keep working until complete or blocked, and leave exact resume breadcrumbs.

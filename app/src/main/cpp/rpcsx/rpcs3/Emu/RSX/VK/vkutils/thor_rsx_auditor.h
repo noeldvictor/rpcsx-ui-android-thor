@@ -15,8 +15,20 @@
 
 namespace vk::thor::rsx_auditor
 {
+	enum class blit_source_reject_reason : u32
+	{
+		region = 0,
+		typeless_or_flip = 1,
+		format = 2,
+		render_target = 3,
+		dispatch = 4,
+		count = 5,
+	};
+
 	namespace detail
 	{
+		inline constexpr u32 blit_source_reject_reason_count = static_cast<u32>(blit_source_reject_reason::count);
+
 		inline std::atomic<u32> g_cached_enabled{0}; // 0 unknown, 1 disabled, 2 enabled
 		inline std::atomic<u32> g_report_interval{60};
 		inline std::atomic<u64> g_property_poll_counter{0};
@@ -69,6 +81,19 @@ namespace vk::thor::rsx_auditor
 		inline std::atomic<u64> g_detile_output_bytes{0};
 		inline std::atomic<u64> g_simple_uploads{0};
 		inline std::atomic<u64> g_simple_upload_bytes{0};
+		inline std::atomic<u64> g_blit_source_resolve_fast{0};
+		inline std::atomic<u64> g_blit_source_resolve_verify{0};
+		inline std::atomic<u64> g_blit_source_resolve_reject{0};
+		inline std::atomic<u64> g_blit_source_resolve_reject_by_reason[blit_source_reject_reason_count]{};
+		inline std::atomic<u32> g_cached_blit_source_mode{0}; // 0 unknown, 1 off, 2 verify, 3 fast
+		inline std::atomic<u64> g_blit_source_mode_property_poll_counter{0};
+
+		enum class blit_source_resolve_mode : u32
+		{
+			off = 0,
+			verify = 1,
+			fast = 2,
+		};
 
 		inline bool looks_disabled(const char* value, int length)
 		{
@@ -311,6 +336,64 @@ namespace vk::thor::rsx_auditor
 			}
 
 			return static_cast<texture_barrier_mode>(cached - 1u);
+		}
+
+		inline blit_source_resolve_mode parse_blit_source_resolve_mode(const char* value, int length)
+		{
+			if (length >= 6 &&
+				(value[0] == 'v' || value[0] == 'V') &&
+				(value[1] == 'e' || value[1] == 'E') &&
+				(value[2] == 'r' || value[2] == 'R') &&
+				(value[3] == 'i' || value[3] == 'I') &&
+				(value[4] == 'f' || value[4] == 'F') &&
+				(value[5] == 'y' || value[5] == 'Y'))
+			{
+				return blit_source_resolve_mode::verify;
+			}
+
+			if (length >= 4 &&
+				(value[0] == 'f' || value[0] == 'F') &&
+				(value[1] == 'a' || value[1] == 'A') &&
+				(value[2] == 's' || value[2] == 'S') &&
+				(value[3] == 't' || value[3] == 'T'))
+			{
+				return blit_source_resolve_mode::fast;
+			}
+
+			return blit_source_resolve_mode::off;
+		}
+
+		inline blit_source_resolve_mode poll_blit_source_mode_property()
+		{
+			char value[128]{};
+			int length = 0;
+
+#ifdef ANDROID
+			length = __system_property_get("debug.rpcsx.thor.rsx_blit_source_resolve", value);
+#else
+			if (const char* env = std::getenv("RPCSX_THOR_RSX_BLIT_SOURCE_RESOLVE"))
+			{
+				std::strncpy(value, env, sizeof(value) - 1);
+				length = static_cast<int>(std::strlen(value));
+			}
+#endif
+
+			const blit_source_resolve_mode mode = parse_blit_source_resolve_mode(value, length);
+			g_cached_blit_source_mode.store(static_cast<u32>(mode) + 1u, std::memory_order_relaxed);
+			return mode;
+		}
+
+		inline blit_source_resolve_mode get_blit_source_resolve_mode()
+		{
+			const u64 poll = g_blit_source_mode_property_poll_counter.fetch_add(1, std::memory_order_relaxed);
+			const u32 cached = g_cached_blit_source_mode.load(std::memory_order_relaxed);
+
+			if (cached == 0 || (poll & 0xfffu) == 0)
+			{
+				return poll_blit_source_mode_property();
+			}
+
+			return static_cast<blit_source_resolve_mode>(cached - 1u);
 		}
 
 		inline bool enabled()
@@ -616,6 +699,51 @@ namespace vk::thor::rsx_auditor
 		detail::add_bytes(detail::g_simple_upload_bytes, bytes);
 	}
 
+	inline bool fuse_blit_source_resolve()
+	{
+		return detail::get_blit_source_resolve_mode() == detail::blit_source_resolve_mode::fast;
+	}
+
+	inline bool verify_blit_source_resolve()
+	{
+		return detail::get_blit_source_resolve_mode() == detail::blit_source_resolve_mode::verify;
+	}
+
+	inline bool test_blit_source_resolve()
+	{
+		return detail::get_blit_source_resolve_mode() != detail::blit_source_resolve_mode::off;
+	}
+
+	inline void record_blit_source_resolve_fast()
+	{
+		if (enabled())
+		{
+			detail::g_blit_source_resolve_fast.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
+	inline void record_blit_source_resolve_verify()
+	{
+		if (enabled())
+		{
+			detail::g_blit_source_resolve_verify.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
+	inline void record_blit_source_resolve_reject(blit_source_reject_reason reason = blit_source_reject_reason::dispatch)
+	{
+		if (enabled())
+		{
+			detail::g_blit_source_resolve_reject.fetch_add(1, std::memory_order_relaxed);
+
+			const u32 reason_index = static_cast<u32>(reason);
+			if (reason_index < detail::blit_source_reject_reason_count)
+			{
+				detail::g_blit_source_resolve_reject_by_reason[reason_index].fetch_add(1, std::memory_order_relaxed);
+			}
+		}
+	}
+
 	inline void on_frame_end()
 	{
 		if (!enabled())
@@ -679,6 +807,14 @@ namespace vk::thor::rsx_auditor
 		const u64 detile_output_bytes = detail::take(detail::g_detile_output_bytes);
 		const u64 simple_uploads = detail::take(detail::g_simple_uploads);
 		const u64 simple_upload_bytes = detail::take(detail::g_simple_upload_bytes);
+		const u64 blit_source_resolve_fast = detail::take(detail::g_blit_source_resolve_fast);
+		const u64 blit_source_resolve_verify = detail::take(detail::g_blit_source_resolve_verify);
+		const u64 blit_source_resolve_reject = detail::take(detail::g_blit_source_resolve_reject);
+		u64 blit_source_reject_by_reason[detail::blit_source_reject_reason_count]{};
+		for (u32 i = 0; i < detail::blit_source_reject_reason_count; ++i)
+		{
+			blit_source_reject_by_reason[i] = detail::take(detail::g_blit_source_resolve_reject_by_reason[i]);
+		}
 
 		u64 barrier_mib = 0, barrier_mib_frac = 0;
 		u64 dma_mib = 0, dma_mib_frac = 0;
@@ -698,7 +834,8 @@ namespace vk::thor::rsx_auditor
 			"rp_begin=%llu rp_end=%llu rp_break=%llu rp_break(g/b/i/t)=%llu/%llu/%llu/%llu barriers(g/b/i/t/all)=%llu/%llu/%llu/%llu/%llu barrier_mb=%llu.%02llu "
 			"tex_color=%llu tex_depth=%llu tex_skip=%llu depth_skip=%llu forced_skip=%llu post_elide=%llu post_persist=%llu "
 			"dma_transfer_all=%llu dma_mb=%llu.%02llu dma_transfer_host=%llu dma_host_mb=%llu.%02llu query_wait=%llu slots=%llu pipe(g/c/slow/us)=%llu/%llu/%llu/%llu "
-			"detile=%llu in_mb=%llu.%02llu out_mb=%llu.%02llu simple_upload=%llu upload_mb=%llu.%02llu",
+			"detile=%llu in_mb=%llu.%02llu out_mb=%llu.%02llu simple_upload=%llu upload_mb=%llu.%02llu "
+			"blit_resolve(fast/verify/reject)=%llu/%llu/%llu blit_reject(region/typeless/format/rt/dispatch)=%llu/%llu/%llu/%llu/%llu",
 			static_cast<unsigned long long>(frames),
 			static_cast<unsigned long long>(queue_submits),
 			static_cast<unsigned long long>(wait_semaphores),
@@ -746,6 +883,14 @@ namespace vk::thor::rsx_auditor
 			static_cast<unsigned long long>(detile_out_mib_frac),
 			static_cast<unsigned long long>(simple_uploads),
 			static_cast<unsigned long long>(upload_mib),
-			static_cast<unsigned long long>(upload_mib_frac));
+			static_cast<unsigned long long>(upload_mib_frac),
+			static_cast<unsigned long long>(blit_source_resolve_fast),
+			static_cast<unsigned long long>(blit_source_resolve_verify),
+			static_cast<unsigned long long>(blit_source_resolve_reject),
+			static_cast<unsigned long long>(blit_source_reject_by_reason[0]),
+			static_cast<unsigned long long>(blit_source_reject_by_reason[1]),
+			static_cast<unsigned long long>(blit_source_reject_by_reason[2]),
+			static_cast<unsigned long long>(blit_source_reject_by_reason[3]),
+			static_cast<unsigned long long>(blit_source_reject_by_reason[4]));
 	}
 }

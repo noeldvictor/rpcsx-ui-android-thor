@@ -1,0 +1,4 @@
+interface:
+  display_name: "PS3 Harness Refiner"
+  short_description: "Refine PS3 speed-loop next actions"
+  default_prompt: "Inspect recent Eternal Sonata Windows lab runs, detect repeated route or proof failures, and choose the next safe Windows-only experiment."

@@ -21,30 +21,72 @@ param(
     [string]$EternalSonataMfcShapeProbe = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
     [string]$EternalSonataMfcLadder = "Off",
+    [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
+    [string]$EternalSonataSpuHleVerify = "Off",
+    [ValidateSet("Off", "Verify", "Fast")]
+    [string]$EternalSonataSpuHle25ccBody = "Off",
+    [ValidateSet("Off", "Verify")]
+    [string]$EternalSonataSpuHleSize16Body = "Off",
+    [ValidateSet("Off", "Verify")]
+    [string]$EternalSonataSpuHle451cPreserveBody = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataKernelCapsule = "Off",
+    [ValidateSet("Off", "Profile", "Verify")]
+    [string]$EternalSonataReservationLoop = "Off",
+    [ValidateSet("Off", "Relaxed")]
+    [string]$EternalSonataPutllc16Reservations = "Off",
+    [ValidateSet("Off", "Profile", "Verify", "Fast")]
+    [string]$EternalSonataPutllc16Pair = "Off",
     [ValidateSet("Off", "Verify")]
     [string]$EternalSonataDmaSuperPath = "Off",
     [string]$RsxAuditor = "Off",
     [ValidateSet("Off", "Host")]
     [string]$RsxDmaFence = "Off",
-    [ValidateSet("Off", "Depth", "Color", "All")]
+    [ValidateSet("Off", "Depth", "DepthReadOnly", "Color", "All")]
     [string]$RsxTextureBarrier = "Off",
+    [ValidateSet("Off", "KeepReadOnly")]
+    [string]$RsxDepthFeedback = "Off",
     [ValidateSet("Off", "Profile", "SkipColor", "SkipDepth", "SkipAll")]
     [string]$RsxResolve = "Off",
-    [ValidateSet("Off", "Verify", "Fast")]
+    [ValidateSet("Off", "Verify", "VerifySampled", "VerifyCachedSampled", "VerifyCachedTransferSampled", "VerifyCachedDeferSampled", "Fast", "FastSampled", "FastCachedSampled", "FastCachedTransferSampled", "FastCachedDeferSampled", "FastKeepSrc")]
     [string]$RsxBlitSourceResolve = "Off",
+    [ValidateSet("Off", "GpuSwap")]
+    [string]$RsxPresentUpload = "Off",
+    [ValidateSet("Off", "GpuSwap", "GpuSwapCached")]
+    [string]$RsxIndexUpload = "Off",
+    [ValidateSet("Off", "Profile", "Verify", "Fast")]
+    [string]$RsxIndexPersistentCache = "Off",
+    [ValidateSet("Off", "Profile", "Fast")]
+    [string]$RsxVertexSupersetCache = "Off",
+    [int]$RsxVertexSupersetScanLimit = 0,
+    [ValidateSet("Off", "Profile", "Verify", "Fast")]
+    [string]$RsxVertexPersistentCache = "Off",
+    [ValidateSet("Off", "Profile", "Fast")]
+    [string]$RsxVertexVolatileCache = "Off",
     [ValidateSet("Keep", "On", "Off")]
     [string]$RsxForceHwMsaaResolve = "Keep",
     [string[]]$SearchRoots = @(),
     [int]$MaxSeconds = 20,
     [string]$InputMacro = "",
+    [ValidateSet("Keyboard", "PadApi")]
+    [string]$InputBackend = "Keyboard",
     [int]$InputStartSeconds = 0,
     [int]$InputDefaultPressMs = 120,
+    [ValidateSet("Keep", "Off", "Auto", "PS3Native", "30", "60", "120", "240")]
+    [string]$FrameLimit = "Keep",
+    [int]$VblankRate = 0,
+    [ValidateSet("Keep", "On", "Off")]
+    [string]$SpuAccurateReservations = "Keep",
+    [int]$GameScreen = 1,
     [int]$ScreenshotEverySeconds = 0,
     [int]$ScreenshotStartSeconds = 20,
     [int]$ScreenshotMaxCount = 0,
     [int]$HostSampleSeconds = 1,
     [int]$HostSampleEverySeconds = 30,
+    [ValidateSet("Off", "Warn", "Fail", "ExternalFail")]
+    [string]$HostContentionGate = "Off",
     [switch]$SkipHostSystemCheck,
+    [string]$CpuAffinityMask = "",
     [switch]$RenderDocInject,
     [string]$RenderDocPath = "",
     [switch]$RenderDocApiValidation,
@@ -59,6 +101,10 @@ param(
 $ErrorActionPreference = "Stop"
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue) {
     $global:PSNativeCommandUseErrorActionPreference = $false
+}
+
+if ($SkipHostSystemCheck -and $HostContentionGate -ne "Off") {
+    throw "HostContentionGate requires host system checks. Remove -SkipHostSystemCheck or set -HostContentionGate Off."
 }
 
 function Get-LabRepoRoot {
@@ -268,6 +314,61 @@ function Get-LabHostContention {
     }
 }
 
+function Get-LabExternalHostContention {
+    param(
+        [AllowNull()]$MemoryUsedPercent,
+        [object[]]$ProcessRows,
+        [int]$RunPid = 0
+    )
+
+    $rank = 0
+    $reasons = New-Object System.Collections.Generic.List[string]
+    $externalEmulators = @($ProcessRows | Where-Object {
+        (Test-LabKnownEmulatorProcessName -Name $_.name) -and ($RunPid -le 0 -or $_.pid -ne $RunPid)
+    })
+
+    if ($externalEmulators.Count -gt 0) {
+        $rank = [Math]::Max($rank, 2)
+        $names = @($externalEmulators | ForEach-Object { "$($_.name)#$($_.pid)" })
+        $reasons.Add("external emulator active: $($names -join ', ')") | Out-Null
+    }
+
+    $heavyOther = @($ProcessRows | Where-Object {
+        ($RunPid -le 0 -or $_.pid -ne $RunPid) -and ([double]$_.cpu_percent -ge 15.0)
+    } | Select-Object -First 3)
+
+    if ($heavyOther.Count -gt 0) {
+        $rank = [Math]::Max($rank, 1)
+        $heavyNames = @($heavyOther | ForEach-Object { "$($_.name)#$($_.pid)=$($_.cpu_percent)%" })
+        $reasons.Add("hot non-run process: $($heavyNames -join ', ')") | Out-Null
+    }
+
+    if ($null -ne $MemoryUsedPercent) {
+        if ([double]$MemoryUsedPercent -ge 90.0) {
+            $rank = [Math]::Max($rank, 2)
+            $reasons.Add("host memory used >= 90%") | Out-Null
+        } elseif ([double]$MemoryUsedPercent -ge 80.0) {
+            $rank = [Math]::Max($rank, 1)
+            $reasons.Add("host memory used >= 80%") | Out-Null
+        }
+    }
+
+    $grade = switch ($rank) {
+        2 { "high" }
+        1 { "moderate" }
+        default { "clean" }
+    }
+
+    if ($reasons.Count -eq 0) {
+        $reasons.Add("no competing emulator, hot non-run process, or memory pressure detected") | Out-Null
+    }
+
+    return [pscustomobject]@{
+        grade   = $grade
+        reasons = @($reasons)
+    }
+}
+
 function Get-LabHostLoadSnapshot {
     param(
         [string]$Phase,
@@ -285,6 +386,7 @@ function Get-LabHostLoadSnapshot {
     }
 
     $contention = Get-LabHostContention -TotalCpuPercent $totalCpu -GpuEngineUtilPercent $gpuEngineUtil -MemoryUsedPercent $memory.used_percent -ProcessRows $processRows -RunPid $RunPid
+    $externalContention = Get-LabExternalHostContention -MemoryUsedPercent $memory.used_percent -ProcessRows $processRows -RunPid $RunPid
     $topProcesses = @($processRows | Select-Object -First 12)
     $emulatorProcesses = @($processRows | Where-Object { Test-LabKnownEmulatorProcessName -Name $_.name })
     $runProcess = @($processRows | Where-Object { $RunPid -gt 0 -and $_.pid -eq $RunPid } | Select-Object -First 1)
@@ -302,6 +404,8 @@ function Get-LabHostLoadSnapshot {
         run_process                   = @($runProcess)
         contention_grade              = $contention.grade
         contention_reasons            = @($contention.reasons)
+        external_contention_grade     = $externalContention.grade
+        external_contention_reasons   = @($externalContention.reasons)
         emulator_processes            = @($emulatorProcesses)
         top_processes                 = @($topProcesses)
     }
@@ -332,8 +436,10 @@ function Save-LabHostLoadSnapshot {
         "none"
     }
     $reasonText = @($Snapshot.contention_reasons) -join "; "
+    $externalGrade = if ($Snapshot.PSObject.Properties.Name -contains "external_contention_grade") { $Snapshot.external_contention_grade } else { "unknown" }
+    $externalReasonText = if ($Snapshot.PSObject.Properties.Name -contains "external_contention_reasons") { @($Snapshot.external_contention_reasons) -join "; " } else { "not recorded" }
 
-    Write-LabLine $RunLog "- Host check [$($Snapshot.phase)]: $($Snapshot.contention_grade); cpu=${cpuText}%; mem=${memText}%; gpu-engine-sum=${gpuText}%; external-emulators=$emulatorText; $reasonText"
+    Write-LabLine $RunLog "- Host check [$($Snapshot.phase)]: $($Snapshot.contention_grade); external=$externalGrade; cpu=${cpuText}%; mem=${memText}%; gpu-engine-sum=${gpuText}%; external-emulators=$emulatorText; $reasonText; external reasons: $externalReasonText"
     Write-LabLine $RunLog "  host snapshot: $jsonPath"
 
     return $jsonPath
@@ -345,6 +451,33 @@ function Get-LabWorstHostContentionGrade {
     $worstRank = -1
     foreach ($snapshot in @($Snapshots)) {
         $rank = switch ($snapshot.contention_grade) {
+            "high" { 2 }
+            "moderate" { 1 }
+            "clean" { 0 }
+            default { 1 }
+        }
+        $worstRank = [Math]::Max($worstRank, $rank)
+    }
+
+    switch ("$worstRank") {
+        "2" { return "high" }
+        "1" { return "moderate" }
+        "0" { return "clean" }
+        default { return "unknown" }
+    }
+}
+
+function Get-LabWorstExternalHostContentionGrade {
+    param([object[]]$Snapshots)
+
+    $worstRank = -1
+    foreach ($snapshot in @($Snapshots)) {
+        $grade = if ($snapshot.PSObject.Properties.Name -contains "external_contention_grade") {
+            $snapshot.external_contention_grade
+        } else {
+            "unknown"
+        }
+        $rank = switch ($grade) {
             "high" { 2 }
             "moderate" { 1 }
             "clean" { 0 }
@@ -607,6 +740,94 @@ function Get-LabVirtualKey {
     return [byte]$map[$key]
 }
 
+function Convert-LabAffinityMask {
+    param([string]$Mask)
+
+    if ([string]::IsNullOrWhiteSpace($Mask)) {
+        return $null
+    }
+
+    $text = $Mask.Trim()
+    if ($text -match '^0x([0-9a-fA-F]+)$') {
+        return [Convert]::ToInt64($Matches[1], 16)
+    }
+
+    return [Convert]::ToInt64($text, 10)
+}
+
+function Set-LabProcessAffinity {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$Mask,
+        [string]$RunLog
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Mask)) {
+        return
+    }
+
+    $affinity = Convert-LabAffinityMask -Mask $Mask
+    if ($null -eq $affinity -or $affinity -le 0) {
+        throw "CPU affinity mask must be a positive decimal or hex value, got '$Mask'."
+    }
+
+    $Process.Refresh()
+    $Process.ProcessorAffinity = [IntPtr]::new([int64]$affinity)
+    Write-LabLine $RunLog ("- CPU affinity applied: {0} (0x{1:x})" -f $affinity, $affinity)
+}
+
+function Set-LabPadApiState {
+    param(
+        [string]$Path,
+        [string[]]$Keys = @()
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "PadApi input requires a state file path."
+    }
+
+    $parent = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    $cleanKeys = @(
+        $Keys |
+            ForEach-Object { "$_".Trim().ToLowerInvariant() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+
+    $text = ($cleanKeys -join " ")
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $tmp = "{0}.{1}.tmp" -f $Path, [Guid]::NewGuid().ToString("N")
+    [System.IO.File]::WriteAllText($tmp, $text, $utf8NoBom)
+
+    $lastError = $null
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $Path) {
+                [System.IO.File]::Replace($tmp, $Path, $null, $true)
+            } else {
+                [System.IO.File]::Move($tmp, $Path)
+            }
+            return
+        } catch {
+            $lastError = $_
+            try {
+                [System.IO.File]::Copy($tmp, $Path, $true)
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+                return
+            } catch {
+                $lastError = $_
+                Start-Sleep -Milliseconds 25
+            }
+        }
+    }
+
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    throw "Failed to update PadApi state file '$Path': $($lastError.Exception.Message)"
+}
+
 function Wait-LabProcessWindow {
     param(
         [System.Diagnostics.Process]$Process,
@@ -735,6 +956,9 @@ function Invoke-LabInputMacro {
     param(
         [System.Diagnostics.Process]$Process,
         [string]$Macro,
+        [ValidateSet("Keyboard", "PadApi")]
+        [string]$InputBackend = "Keyboard",
+        [string]$PadApiFile = "",
         [int]$StartSeconds,
         [int]$DefaultPressMs,
         [string]$RunLog,
@@ -747,6 +971,12 @@ function Invoke-LabInputMacro {
     }
 
     Initialize-LabInput
+    if ($InputBackend -eq "PadApi") {
+        Set-LabPadApiState -Path $PadApiFile -Keys @()
+        Write-LabLine $RunLog "Input backend: PadApi ($PadApiFile)"
+    } else {
+        Write-LabLine $RunLog "Input backend: Keyboard"
+    }
 
     if ($StartSeconds -gt 0) {
         Write-LabLine $RunLog "Input macro initial wait: ${StartSeconds}s"
@@ -796,7 +1026,16 @@ function Invoke-LabInputMacro {
         $nameLower = $name.ToLowerInvariant()
         $duration = $DefaultPressMs
 
-        if ($nameLower -ne "combo" -and $parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
+        $shotTag = ""
+        if (($nameLower -eq "shot" -or $nameLower -eq "screenshot") -and $parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
+            $shotArg = $parts[1].Trim()
+            $parsedDuration = 0
+            if ([int]::TryParse($shotArg, [ref]$parsedDuration)) {
+                $duration = $parsedDuration
+            } else {
+                $shotTag = $shotArg
+            }
+        } elseif ($nameLower -ne "combo" -and $parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
             $duration = [int]$parts[1].Trim()
         }
 
@@ -831,7 +1070,7 @@ function Invoke-LabInputMacro {
                 Write-LabLine $RunLog "Input screenshot skipped: no screenshot directory was provided."
             } else {
                 $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
-                Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog
+                Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $shotTag
             }
             Start-Sleep -Milliseconds $duration
             continue
@@ -853,19 +1092,25 @@ function Invoke-LabInputMacro {
                     $duration = [int]$comboParts[1].Trim()
                 }
 
-                $handle = Wait-LabProcessWindow -Process $Process -TimeoutSeconds 1
-                if ($handle -ne [IntPtr]::Zero) {
-                    [LabInput.Win32]::SetForegroundWindow($handle) | Out-Null
-                }
-
-                $comboVks = @($comboKeys | ForEach-Object { Get-LabVirtualKey $_ })
                 Write-LabLine $RunLog "Input combo: $($comboKeys -join '+') ${duration}ms"
-                foreach ($vk in $comboVks) {
-                    [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
-                }
-                Start-Sleep -Milliseconds $duration
-                for ($i = $comboVks.Count - 1; $i -ge 0; $i--) {
-                    [LabInput.Win32]::keybd_event($comboVks[$i], 0, 2, [UIntPtr]::Zero)
+                if ($InputBackend -eq "PadApi") {
+                    Set-LabPadApiState -Path $PadApiFile -Keys $comboKeys
+                    Start-Sleep -Milliseconds $duration
+                    Set-LabPadApiState -Path $PadApiFile -Keys @()
+                } else {
+                    $handle = Wait-LabProcessWindow -Process $Process -TimeoutSeconds 1
+                    if ($handle -ne [IntPtr]::Zero) {
+                        [LabInput.Win32]::SetForegroundWindow($handle) | Out-Null
+                    }
+
+                    $comboVks = @($comboKeys | ForEach-Object { Get-LabVirtualKey $_ })
+                    foreach ($vk in $comboVks) {
+                        [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+                    }
+                    Start-Sleep -Milliseconds $duration
+                    for ($i = $comboVks.Count - 1; $i -ge 0; $i--) {
+                        [LabInput.Win32]::keybd_event($comboVks[$i], 0, 2, [UIntPtr]::Zero)
+                    }
                 }
                 Start-Sleep -Milliseconds 80
             } catch {
@@ -875,16 +1120,22 @@ function Invoke-LabInputMacro {
             continue
         }
 
-        $handle = Wait-LabProcessWindow -Process $Process -TimeoutSeconds 1
-        if ($handle -ne [IntPtr]::Zero) {
-            [LabInput.Win32]::SetForegroundWindow($handle) | Out-Null
-        }
-
-        $vk = Get-LabVirtualKey $name
         Write-LabLine $RunLog "Input press: $name ${duration}ms"
-        [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
-        Start-Sleep -Milliseconds $duration
-        [LabInput.Win32]::keybd_event($vk, 0, 2, [UIntPtr]::Zero)
+        if ($InputBackend -eq "PadApi") {
+            Set-LabPadApiState -Path $PadApiFile -Keys @($name)
+            Start-Sleep -Milliseconds $duration
+            Set-LabPadApiState -Path $PadApiFile -Keys @()
+        } else {
+            $handle = Wait-LabProcessWindow -Process $Process -TimeoutSeconds 1
+            if ($handle -ne [IntPtr]::Zero) {
+                [LabInput.Win32]::SetForegroundWindow($handle) | Out-Null
+            }
+
+            $vk = Get-LabVirtualKey $name
+            [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds $duration
+            [LabInput.Win32]::keybd_event($vk, 0, 2, [UIntPtr]::Zero)
+        }
         Start-Sleep -Milliseconds 80
     }
 }
@@ -916,6 +1167,12 @@ namespace LabVisual
 
         [DllImport("user32.dll")]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        public static extern bool BringWindowToTop(IntPtr hWnd);
     }
 }
 "@
@@ -923,6 +1180,27 @@ namespace LabVisual
 
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
+}
+
+function Set-LabWindowForeground {
+    param([IntPtr]$Handle)
+
+    if ($Handle -eq [IntPtr]::Zero) {
+        return
+    }
+
+    $swRestore = 9
+    $flagsNoMoveNoSizeShow = 0x0001 -bor 0x0002 -bor 0x0040
+    $hwndTopMost = [IntPtr]::new(-1)
+    $hwndNoTopMost = [IntPtr]::new(-2)
+
+    [LabVisual.Win32]::ShowWindow($Handle, $swRestore) | Out-Null
+    [LabVisual.Win32]::BringWindowToTop($Handle) | Out-Null
+    [LabVisual.Win32]::SetForegroundWindow($Handle) | Out-Null
+    [LabVisual.Win32]::SetWindowPos($Handle, $hwndTopMost, 0, 0, 0, 0, $flagsNoMoveNoSizeShow) | Out-Null
+    [LabVisual.Win32]::SetWindowPos($Handle, $hwndNoTopMost, 0, 0, 0, 0, $flagsNoMoveNoSizeShow) | Out-Null
+    [LabVisual.Win32]::BringWindowToTop($Handle) | Out-Null
+    [LabVisual.Win32]::SetForegroundWindow($Handle) | Out-Null
 }
 
 function Move-LabWindowToSecondaryMonitor {
@@ -962,8 +1240,70 @@ function Move-LabWindowToSecondaryMonitor {
     $flagsNoZOrder = 0x0004
 
     [LabVisual.Win32]::SetWindowPos($handle, [IntPtr]::Zero, $x, $y, $width, $height, $flagsNoZOrder) | Out-Null
-    [LabVisual.Win32]::SetForegroundWindow($handle) | Out-Null
+    Set-LabWindowForeground -Handle $handle
     Write-LabLine $RunLog "- Secondary monitor: moved RPCS3 window to $($secondary.DeviceName) at ${x},${y} (${width}x${height})"
+}
+
+function Convert-LabCsvField {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        $Value = ""
+    }
+
+    return '"' + ($Value -replace '"', '""') + '"'
+}
+
+function Write-LabWindowTitleSample {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$TitleSamplesPath,
+        [string]$RunLog,
+        [int]$ElapsedSeconds,
+        [string]$Phase
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TitleSamplesPath)) {
+        return
+    }
+
+    $title = ""
+    try {
+        $Process.Refresh()
+        if (-not $Process.HasExited) {
+            $title = $Process.MainWindowTitle
+        }
+    } catch {
+        $title = ""
+    }
+
+    $fps = ""
+    if ($title -match 'FPS:\s*(?<fps>[0-9]+(?:\.[0-9]+)?)') {
+        $fps = $Matches.fps
+    }
+
+    $titleDir = Split-Path -Parent $TitleSamplesPath
+    if (-not [string]::IsNullOrWhiteSpace($titleDir)) {
+        New-Item -ItemType Directory -Force -Path $titleDir | Out-Null
+    }
+
+    if (-not (Test-Path -LiteralPath $TitleSamplesPath -PathType Leaf)) {
+        "timestamp,elapsed_seconds,phase,fps,window_title" | Set-Content -LiteralPath $TitleSamplesPath -Encoding UTF8
+    }
+
+    $fields = @(
+        (Convert-LabCsvField (Get-Date -Format o)),
+        $ElapsedSeconds.ToString([System.Globalization.CultureInfo]::InvariantCulture),
+        (Convert-LabCsvField $Phase),
+        (Convert-LabCsvField $fps),
+        (Convert-LabCsvField $title)
+    )
+    Add-Content -LiteralPath $TitleSamplesPath -Value ($fields -join ",") -Encoding UTF8
+
+    if (-not [string]::IsNullOrWhiteSpace($title)) {
+        $fpsText = if ([string]::IsNullOrWhiteSpace($fps)) { "n/a" } else { $fps }
+        Write-LabLine $RunLog "- Window title sample [$Phase]: fps=$fpsText; title=$title"
+    }
 }
 
 function Save-LabScreenshot {
@@ -971,14 +1311,21 @@ function Save-LabScreenshot {
         [System.Diagnostics.Process]$Process,
         [string]$ScreenshotDir,
         [int]$ElapsedSeconds,
-        [string]$RunLog
+        [string]$RunLog,
+        [string]$Tag = ""
     )
 
     Initialize-LabVisual
 
     $handle = Wait-LabProcessWindow -Process $Process -TimeoutSeconds 1
     if ($handle -eq [IntPtr]::Zero) {
-        Write-LabLine $RunLog "Screenshot skipped at ${ElapsedSeconds}s: game window was not found."
+        $Process.Refresh()
+        if ($Process.HasExited) {
+            $exitCode = if ($null -eq $Process.ExitCode -or "$($Process.ExitCode)" -eq "") { "exited" } else { "$($Process.ExitCode)" }
+            Write-LabLine $RunLog "Screenshot skipped at ${ElapsedSeconds}s: game window was not found; process has exited with code $exitCode."
+        } else {
+            Write-LabLine $RunLog "Screenshot skipped at ${ElapsedSeconds}s: game window was not found; process is still running with an empty MainWindowHandle."
+        }
         return
     }
 
@@ -996,21 +1343,42 @@ function Save-LabScreenshot {
     }
 
     New-Item -ItemType Directory -Force -Path $ScreenshotDir | Out-Null
-    [LabVisual.Win32]::SetForegroundWindow($handle) | Out-Null
-    Start-Sleep -Milliseconds 100
+    Set-LabWindowForeground -Handle $handle
+    Start-Sleep -Milliseconds 250
 
     $bmp = New-Object System.Drawing.Bitmap $width, $height
     $graphics = [System.Drawing.Graphics]::FromImage($bmp)
     try {
         $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, [System.Drawing.Size]::new($width, $height))
-        $path = Join-Path $ScreenshotDir ("screenshot-{0:0000}s.png" -f $ElapsedSeconds)
+        $safeTag = ""
+        if (-not [string]::IsNullOrWhiteSpace($Tag)) {
+            $safeTag = ($Tag.Trim() -replace '[^A-Za-z0-9_.-]', '-').Trim("-")
+            if ($safeTag.Length -gt 48) {
+                $safeTag = $safeTag.Substring(0, 48)
+            }
+        }
+
+        $baseName = if ([string]::IsNullOrWhiteSpace($safeTag)) {
+            "screenshot-{0:0000}s.png" -f $ElapsedSeconds
+        } else {
+            "screenshot-{0:0000}s-{1}.png" -f $ElapsedSeconds, $safeTag
+        }
+
+        $path = Join-Path $ScreenshotDir $baseName
         $suffix = 1
         while (Test-Path -LiteralPath $path) {
-            $path = Join-Path $ScreenshotDir ("screenshot-{0:0000}s-{1:00}.png" -f $ElapsedSeconds, $suffix)
+            $baseName = if ([string]::IsNullOrWhiteSpace($safeTag)) {
+                "screenshot-{0:0000}s-{1:00}.png" -f $ElapsedSeconds, $suffix
+            } else {
+                "screenshot-{0:0000}s-{1}-{2:00}.png" -f $ElapsedSeconds, $safeTag, $suffix
+            }
+            $path = Join-Path $ScreenshotDir $baseName
             $suffix++
         }
         $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
         Write-LabLine $RunLog "Screenshot: $path"
+        $titleSamplesPath = Join-Path (Split-Path -Parent $ScreenshotDir) "window-title-samples.csv"
+        Write-LabWindowTitleSample -Process $Process -TitleSamplesPath $titleSamplesPath -RunLog $RunLog -ElapsedSeconds $ElapsedSeconds -Phase ("screenshot:{0}" -f (Split-Path -Leaf $path))
     } finally {
         $graphics.Dispose()
         $bmp.Dispose()
@@ -1106,6 +1474,84 @@ function Set-LabForceHwMsaaResolveConfig {
         old_value = $oldValue
         new_value = $newValue
         changed = ($updated -ne $original)
+    }
+}
+
+function New-LabRunConfig {
+    param(
+        [string]$SourcePath,
+        [string]$RunDir,
+        [string]$FrameLimit,
+        [int]$VblankRate,
+        [string]$SpuAccurateReservations,
+        [string]$RunLog
+    )
+
+    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep") {
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        Write-LabLine $RunLog "- Run config override: skipped; missing source config"
+        return $null
+    }
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $target = Join-Path $RunDir "rpcs3-run-config.yml"
+    $lines = New-Object System.Collections.Generic.List[string]
+    $frameValue = switch ($FrameLimit) {
+        "Off" { "Off" }
+        "Auto" { "Auto" }
+        "PS3Native" { "PS3 Native" }
+        "30" { "30" }
+        "60" { "60" }
+        "120" { "120" }
+        "240" { "240" }
+        default { "" }
+    }
+    $accurateReservationsValue = switch ($SpuAccurateReservations) {
+        "On" { "true" }
+        "Off" { "false" }
+        default { "" }
+    }
+
+    $inCore = $false
+    $inVideo = $false
+    foreach ($line in [System.IO.File]::ReadLines($SourcePath, $utf8NoBom)) {
+        $newLine = $line
+        if ($line -match '^Core:\s*$') {
+            $inCore = $true
+            $inVideo = $false
+        } elseif ($line -match '^Video:\s*$') {
+            $inCore = $false
+            $inVideo = $true
+        } elseif ($line -match '^[^ ].*:\s*$') {
+            $inCore = $false
+            $inVideo = $false
+        }
+
+        if ($inCore -and $accurateReservationsValue -and $line -match '^  Accurate SPU Reservations: ') {
+            $newLine = "  Accurate SPU Reservations: $accurateReservationsValue"
+        }
+
+        if ($inVideo) {
+            if ($frameValue -and $line -match '^  Frame limit: ') {
+                $newLine = "  Frame limit: $frameValue"
+            } elseif ($VblankRate -gt 0 -and $line -match '^  Vblank Rate: ') {
+                $newLine = "  Vblank Rate: $VblankRate"
+            } elseif ($line -match '^  Write Color Buffers: ') {
+                $newLine = '  Write Color Buffers: true'
+            }
+        }
+
+        $lines.Add($newLine) | Out-Null
+    }
+
+    [System.IO.File]::WriteAllText($target, (($lines.ToArray()) -join "`n") + "`n", $utf8NoBom)
+    return [pscustomobject]@{
+        path                      = $target
+        frame_limit               = $(if ($frameValue) { $frameValue } else { "default" })
+        vblank_rate               = $(if ($VblankRate -gt 0) { $VblankRate } else { "default" })
+        spu_accurate_reservations = $(if ($accurateReservationsValue) { $accurateReservationsValue } else { "default" })
     }
 }
 
@@ -1221,6 +1667,16 @@ if ($null -eq $forceHwMsaaResolveOverride) {
 } else {
     Write-LabLine $runLog "- Force Hardware MSAA Resolve override: key missing"
 }
+$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -RunLog $runLog
+if ($null -eq $runConfigOverride) {
+    Write-LabLine $runLog "- Run config override: keep"
+} else {
+    Write-LabLine $runLog "- Run config override: $($runConfigOverride.path)"
+    Write-LabLine $runLog "- Run config frame limit: $($runConfigOverride.frame_limit)"
+    Write-LabLine $runLog "- Run config vblank rate: $($runConfigOverride.vblank_rate)"
+    Write-LabLine $runLog "- Run config Accurate SPU Reservations: $($runConfigOverride.spu_accurate_reservations)"
+    Write-LabLine $runLog "- Run config Write Color Buffers: forced true"
+}
 Update-LabConfigDatabase -ConfigDbPath $rpcs3ConfigDb -TitleId $TitleId -Force ([bool]$RefreshConfigDb) -Skip ([bool]$SkipConfigDbRefresh) -RunLog $runLog
 if ($Action -eq "Run") {
     if ($SkipAgentInputProfile) {
@@ -1306,6 +1762,15 @@ if ($Action -eq "Smoke") {
         $argsList.Add("--headless")
     } elseif ($Mode -eq "NoGui") {
         $argsList.Add("--no-gui")
+        if ($GameScreen -ge 0) {
+            $argsList.Add("--game-screen")
+            $argsList.Add("$GameScreen")
+        }
+    }
+
+    if ($null -ne $runConfigOverride) {
+        $argsList.Add("--config")
+        $argsList.Add($runConfigOverride.path)
     }
 
     $BootTarget = Resolve-LabBootTarget $BootTarget
@@ -1325,14 +1790,35 @@ Write-LabLine $runLog "- Eternal Sonata semaphore ESRCH superpath: $EternalSonat
 Write-LabLine $runLog "- Eternal Sonata GPU candidate probe: $EternalSonataGpuProbe"
 Write-LabLine $runLog "- Eternal Sonata MFC shape probe: $EternalSonataMfcShapeProbe"
 Write-LabLine $runLog "- Eternal Sonata MFC ladder: $EternalSonataMfcLadder"
+Write-LabLine $runLog "- Eternal Sonata SPU HLE verifier: $EternalSonataSpuHleVerify"
+Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x25cc body: $EternalSonataSpuHle25ccBody"
+Write-LabLine $runLog "- Eternal Sonata SPU HLE size16 body: $EternalSonataSpuHleSize16Body"
+Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x451c preserve body: $EternalSonataSpuHle451cPreserveBody"
+Write-LabLine $runLog "- Eternal Sonata kernel capsule: $EternalSonataKernelCapsule"
+Write-LabLine $runLog "- Eternal Sonata reservation loop: $EternalSonataReservationLoop"
+Write-LabLine $runLog "- Eternal Sonata PUTLLC16 reservations: $EternalSonataPutllc16Reservations"
+Write-LabLine $runLog "- Eternal Sonata PUTLLC16 pair: $EternalSonataPutllc16Pair"
 Write-LabLine $runLog "- Eternal Sonata DMA superpath: $EternalSonataDmaSuperPath"
 Write-LabLine $runLog "- RSX auditor: $RsxAuditor"
 Write-LabLine $runLog "- RSX DMA fence: $RsxDmaFence"
 Write-LabLine $runLog "- RSX texture barrier: $RsxTextureBarrier"
+Write-LabLine $runLog "- RSX depth feedback: $RsxDepthFeedback"
 Write-LabLine $runLog "- RSX resolve probe: $RsxResolve"
 Write-LabLine $runLog "- RSX blit-source resolve: $RsxBlitSourceResolve"
+Write-LabLine $runLog "- RSX present upload: $RsxPresentUpload"
+Write-LabLine $runLog "- RSX index upload: $RsxIndexUpload"
+Write-LabLine $runLog "- RSX index persistent cache scout: $RsxIndexPersistentCache"
+Write-LabLine $runLog "- RSX vertex superset cache: $RsxVertexSupersetCache"
+if ($RsxVertexSupersetScanLimit -gt 0) {
+    Write-LabLine $runLog "- RSX vertex superset scan limit: $RsxVertexSupersetScanLimit"
+}
+Write-LabLine $runLog "- RSX vertex persistent cache scout: $RsxVertexPersistentCache"
+Write-LabLine $runLog "- RSX vertex volatile cache: $RsxVertexVolatileCache"
 Write-LabLine $runLog "- RSX Force Hardware MSAA Resolve: $RsxForceHwMsaaResolve"
-if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
+Write-LabLine $runLog "- Frame limit override: $FrameLimit"
+Write-LabLine $runLog "- Vblank rate override: $VblankRate"
+Write-LabLine $runLog "- Game screen: $GameScreen"
+if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataSpuHleVerify -ne "Off" -or $EternalSonataSpuHle25ccBody -ne "Off" -or $EternalSonataSpuHle451cPreserveBody -ne "Off" -or $EternalSonataKernelCapsule -ne "Off" -or $EternalSonataReservationLoop -ne "Off" -or $EternalSonataPutllc16Pair -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
     $gpuProbeDumpDir = Join-Path $runDir "spu-images"
     Write-LabLine $runLog "- Eternal Sonata GPU probe SPU image dump dir: $gpuProbeDumpDir"
 }
@@ -1345,6 +1831,7 @@ if ($FirmwarePath) {
 Write-LabLine $runLog "- Max seconds: $MaxSeconds"
 if ($InputMacro) {
     Write-LabLine $runLog "- Input macro: $InputMacro"
+    Write-LabLine $runLog "- Input backend: $InputBackend"
     Write-LabLine $runLog "- Input start seconds: $InputStartSeconds"
     Write-LabLine $runLog "- Input default press ms: $InputDefaultPressMs"
 }
@@ -1359,6 +1846,10 @@ if ($SkipHostSystemCheck) {
     Write-LabLine $runLog "- Host system check: enabled"
     Write-LabLine $runLog "- Host sample seconds: $HostSampleSeconds"
     Write-LabLine $runLog "- Host periodic sample seconds: $HostSampleEverySeconds"
+    Write-LabLine $runLog "- Host contention gate: $HostContentionGate"
+}
+if (-not [string]::IsNullOrWhiteSpace($CpuAffinityMask)) {
+    Write-LabLine $runLog "- CPU affinity mask requested: $CpuAffinityMask"
 }
 if ($RenderDocInject) {
     Write-LabLine $runLog "- RenderDoc inject: true"
@@ -1372,6 +1863,9 @@ Write-LabLine $runLog "$rpcs3Exe $argumentLine"
 Write-LabLine $runLog ""
 
 $hostSnapshots = New-Object System.Collections.Generic.List[object]
+$hostContentionGateFailed = $false
+$worstHostContention = "unknown"
+$worstExternalHostContention = "unknown"
 if (-not $SkipHostSystemCheck) {
     $prelaunchSnapshot = Get-LabHostLoadSnapshot -Phase "prelaunch" -SampleSeconds $HostSampleSeconds
     $hostSnapshots.Add($prelaunchSnapshot) | Out-Null
@@ -1392,6 +1886,12 @@ if ($windowHidden) {
 }
 
 $launchTime = Get-Date
+$padApiFile = ""
+if ($InputMacro -and $InputBackend -eq "PadApi") {
+    $padApiFile = Join-Path $runDir "windows-pad-api-state.txt"
+    Set-LabPadApiState -Path $padApiFile -Keys @()
+    Write-LabLine $runLog "- PadApi state file: $padApiFile"
+}
 $previousEsSuperPath = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPURS_SUPERPATH", "Process")
 $previousEsJoinSpin = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPURS_JOIN_SPIN", "Process")
 $previousEsWaitSuperPath = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPURS_WAIT_SUPERPATH", "Process")
@@ -1401,12 +1901,29 @@ $previousEsGpuProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_GPU_PROBE"
 $previousEsGpuProbeDumpDir = [Environment]::GetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", "Process")
 $previousEsMfcShapeProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", "Process")
 $previousEsMfcLadder = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_LADDER", "Process")
+$previousEsSpuHleVerify = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", "Process")
+$previousEsSpuHle25ccBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", "Process")
+$previousEsSpuHleSize16Body = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", "Process")
+$previousEsSpuHle451cPreserveBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_451C_PRESERVE_BODY", "Process")
+$previousEsKernelCapsule = [Environment]::GetEnvironmentVariable("RPCS3_ES_KERNEL_CAPSULE", "Process")
+$previousEsReservationLoop = [Environment]::GetEnvironmentVariable("RPCS3_ES_RESERVATION_LOOP", "Process")
+$previousEsPutllc16Relaxed = [Environment]::GetEnvironmentVariable("RPCS3_ES_PUTLLC16_RELAXED", "Process")
+$previousEsPutllc16Pair = [Environment]::GetEnvironmentVariable("RPCS3_ES_PUTLLC16_PAIR", "Process")
 $previousEsDmaSuperPath = [Environment]::GetEnvironmentVariable("RPCS3_ES_DMA_SUPERPATH", "Process")
 $previousRsxAuditor = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_AUDITOR", "Process")
 $previousRsxDmaFence = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", "Process")
 $previousRsxTextureBarrier = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_TEXTURE_BARRIER", "Process")
+$previousRsxDepthFeedback = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_DEPTH_FEEDBACK", "Process")
 $previousRsxResolve = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_RESOLVE", "Process")
 $previousRsxBlitSourceResolve = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE", "Process")
+$previousRsxPresentUpload = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_PRESENT_UPLOAD", "Process")
+$previousRsxIndexUpload = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_INDEX_UPLOAD", "Process")
+$previousRsxIndexPersistentCache = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_INDEX_PERSISTENT_CACHE", "Process")
+$previousRsxVertexSupersetCache = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_SUPERSET_CACHE", "Process")
+$previousRsxVertexSupersetScan = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_SUPERSET_SCAN", "Process")
+$previousRsxVertexPersistentCache = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_PERSISTENT_CACHE", "Process")
+$previousRsxVertexVolatileCache = [Environment]::GetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_VOLATILE_CACHE", "Process")
+$previousPadApiFile = [Environment]::GetEnvironmentVariable("RPCS3_ES_PAD_API_FILE", "Process")
 $esSuperPathEnv = switch ($EternalSonataSuperPath) {
     "Detect" { "detect" }
     "Cache" { "cache" }
@@ -1437,6 +1954,45 @@ $esMfcLadderEnv = switch ($EternalSonataMfcLadder) {
     "Fast" { "fast" }
     default { "off" }
 }
+$esSpuHleVerifyEnv = switch ($EternalSonataSpuHleVerify) {
+    "Verify" { "verify" }
+    "VerifyShadow" { "verify-shadow" }
+    "Verify25ccShadow" { "verify-25cc-shadow" }
+    "Skip" { "skip" }
+    default { "off" }
+}
+$esSpuHle25ccBodyEnv = switch ($EternalSonataSpuHle25ccBody) {
+    "Verify" { "verify" }
+    "Fast" { "fast" }
+    default { "off" }
+}
+$esSpuHleSize16BodyEnv = switch ($EternalSonataSpuHleSize16Body) {
+    "Verify" { "verify" }
+    default { "off" }
+}
+$esSpuHle451cPreserveBodyEnv = switch ($EternalSonataSpuHle451cPreserveBody) {
+    "Verify" { "verify" }
+    default { "off" }
+}
+$esKernelCapsuleEnv = switch ($EternalSonataKernelCapsule) {
+    "Profile" { "profile" }
+    default { "off" }
+}
+$esReservationLoopEnv = switch ($EternalSonataReservationLoop) {
+    "Profile" { "profile" }
+    "Verify" { "verify" }
+    default { "off" }
+}
+$esPutllc16RelaxedEnv = switch ($EternalSonataPutllc16Reservations) {
+    "Relaxed" { "1" }
+    default { "off" }
+}
+$esPutllc16PairEnv = switch ($EternalSonataPutllc16Pair) {
+    "Profile" { "profile" }
+    "Verify" { "verify" }
+    "Fast" { "fast" }
+    default { "off" }
+}
 $esDmaSuperPathEnv = switch ($EternalSonataDmaSuperPath) {
     "Verify" { "verify" }
     default { "off" }
@@ -1454,8 +2010,13 @@ $rsxDmaFenceEnv = switch ($RsxDmaFence) {
 }
 $rsxTextureBarrierEnv = switch ($RsxTextureBarrier) {
     "Depth" { "depth" }
+    "DepthReadOnly" { "depth-readonly" }
     "Color" { "color" }
     "All" { "all" }
+    default { "off" }
+}
+$rsxDepthFeedbackEnv = switch ($RsxDepthFeedback) {
+    "KeepReadOnly" { "keep-readonly" }
     default { "off" }
 }
 $rsxResolveEnv = switch ($RsxResolve) {
@@ -1467,10 +2028,50 @@ $rsxResolveEnv = switch ($RsxResolve) {
 }
 $rsxBlitSourceResolveEnv = switch ($RsxBlitSourceResolve) {
     "Verify" { "verify" }
+    "VerifySampled" { "verify-sampled" }
+    "VerifyCachedSampled" { "verify-cached-sampled" }
+    "VerifyCachedTransferSampled" { "verify-cached-transfer-sampled" }
+    "VerifyCachedDeferSampled" { "verify-cached-defer-sampled" }
+    "Fast" { "fast" }
+    "FastSampled" { "fast-sampled" }
+    "FastCachedSampled" { "fast-cached-sampled" }
+    "FastCachedTransferSampled" { "fast-cached-transfer-sampled" }
+    "FastCachedDeferSampled" { "fast-cached-defer-sampled" }
+    "FastKeepSrc" { "fast-keep-src" }
+    default { "off" }
+}
+$rsxPresentUploadEnv = switch ($RsxPresentUpload) {
+    "GpuSwap" { "gpu-swap" }
+    default { "off" }
+}
+$rsxIndexUploadEnv = switch ($RsxIndexUpload) {
+    "GpuSwap" { "gpu-swap" }
+    "GpuSwapCached" { "gpu-swap-cached" }
+    default { "off" }
+}
+$rsxIndexPersistentCacheEnv = switch ($RsxIndexPersistentCache) {
+    "Profile" { "profile" }
+    "Verify" { "verify" }
     "Fast" { "fast" }
     default { "off" }
 }
-$esGpuProbeDumpDir = if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") { Join-Path $runDir "spu-images" } else { "" }
+$rsxVertexSupersetCacheEnv = switch ($RsxVertexSupersetCache) {
+    "Profile" { "profile" }
+    "Fast" { "fast" }
+    default { "off" }
+}
+$rsxVertexPersistentCacheEnv = switch ($RsxVertexPersistentCache) {
+    "Profile" { "profile" }
+    "Verify" { "verify" }
+    "Fast" { "fast" }
+    default { "off" }
+}
+$rsxVertexVolatileCacheEnv = switch ($RsxVertexVolatileCache) {
+    "Profile" { "profile" }
+    "Fast" { "fast" }
+    default { "off" }
+}
+$esGpuProbeDumpDir = if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataSpuHleVerify -ne "Off" -or $EternalSonataSpuHle25ccBody -ne "Off" -or $EternalSonataSpuHle451cPreserveBody -ne "Off" -or $EternalSonataKernelCapsule -ne "Off" -or $EternalSonataReservationLoop -ne "Off" -or $EternalSonataPutllc16Pair -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") { Join-Path $runDir "spu-images" } else { "" }
 
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPURS_SUPERPATH", $esSuperPathEnv, "Process")
 if ($EternalSonataJoinSpin -ge 0) {
@@ -1483,12 +2084,29 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", $esGpuProbeDumpDir, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", $esMfcShapeProbeEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $esMfcLadderEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $esSpuHleVerifyEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $esSpuHle25ccBodyEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $esSpuHleSize16BodyEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_451C_PRESERVE_BODY", $esSpuHle451cPreserveBodyEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_KERNEL_CAPSULE", $esKernelCapsuleEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RESERVATION_LOOP", $esReservationLoopEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_PUTLLC16_RELAXED", $esPutllc16RelaxedEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_PUTLLC16_PAIR", $esPutllc16PairEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_DMA_SUPERPATH", $esDmaSuperPathEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_AUDITOR", $rsxAuditorEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", $rsxDmaFenceEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_TEXTURE_BARRIER", $rsxTextureBarrierEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DEPTH_FEEDBACK", $rsxDepthFeedbackEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_RESOLVE", $rsxResolveEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE", $rsxBlitSourceResolveEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_PRESENT_UPLOAD", $rsxPresentUploadEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_INDEX_UPLOAD", $rsxIndexUploadEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_INDEX_PERSISTENT_CACHE", $rsxIndexPersistentCacheEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_SUPERSET_CACHE", $rsxVertexSupersetCacheEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_SUPERSET_SCAN", $(if ($RsxVertexSupersetScanLimit -gt 0) { "$RsxVertexSupersetScanLimit" } else { $null }), "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_PERSISTENT_CACHE", $rsxVertexPersistentCacheEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_VOLATILE_CACHE", $rsxVertexVolatileCacheEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_PAD_API_FILE", $padApiFile, "Process")
 try {
     $process = Start-Process @startInfo
 } finally {
@@ -1501,13 +2119,32 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", $previousEsGpuProbeDumpDir, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", $previousEsMfcShapeProbe, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $previousEsMfcLadder, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $previousEsSpuHleVerify, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $previousEsSpuHle25ccBody, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $previousEsSpuHleSize16Body, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_451C_PRESERVE_BODY", $previousEsSpuHle451cPreserveBody, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_KERNEL_CAPSULE", $previousEsKernelCapsule, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RESERVATION_LOOP", $previousEsReservationLoop, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_PUTLLC16_RELAXED", $previousEsPutllc16Relaxed, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_PUTLLC16_PAIR", $previousEsPutllc16Pair, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_DMA_SUPERPATH", $previousEsDmaSuperPath, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_AUDITOR", $previousRsxAuditor, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DMA_FENCE", $previousRsxDmaFence, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_TEXTURE_BARRIER", $previousRsxTextureBarrier, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_DEPTH_FEEDBACK", $previousRsxDepthFeedback, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_RESOLVE", $previousRsxResolve, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_BLIT_SOURCE_RESOLVE", $previousRsxBlitSourceResolve, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_PRESENT_UPLOAD", $previousRsxPresentUpload, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_INDEX_UPLOAD", $previousRsxIndexUpload, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_INDEX_PERSISTENT_CACHE", $previousRsxIndexPersistentCache, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_SUPERSET_CACHE", $previousRsxVertexSupersetCache, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_SUPERSET_SCAN", $previousRsxVertexSupersetScan, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_PERSISTENT_CACHE", $previousRsxVertexPersistentCache, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_VOLATILE_CACHE", $previousRsxVertexVolatileCache, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_PAD_API_FILE", $previousPadApiFile, "Process")
 }
+
+Set-LabProcessAffinity -Process $process -Mask $CpuAffinityMask -RunLog $runLog
 
 if (-not $SkipHostSystemCheck) {
     $postlaunchSnapshot = Get-LabHostLoadSnapshot -Phase "postlaunch" -SampleSeconds $HostSampleSeconds -RunPid $process.Id
@@ -1520,11 +2157,12 @@ if (-not $windowHidden -and $Action -ne "InstallFirmware") {
 }
 
 $screenshotDir = Join-Path $runDir "screenshots"
+$titleSamplesPath = Join-Path $runDir "window-title-samples.csv"
 
 if ($RenderDocInject) {
     Invoke-LabRenderDocInject -Process $process -RunDir $runDir -SafeLabel $safeLabel -RunLog $runLog -RequestedPath $RenderDocPath -ApiValidation:$RenderDocApiValidation -CaptureCallstacks:$RenderDocCaptureCallstacks
 }
-Invoke-LabInputMacro -Process $process -Macro $InputMacro -StartSeconds $InputStartSeconds -DefaultPressMs $InputDefaultPressMs -RunLog $runLog -ScreenshotDir $screenshotDir -LaunchTime $launchTime
+Invoke-LabInputMacro -Process $process -Macro $InputMacro -InputBackend $InputBackend -PadApiFile $padApiFile -StartSeconds $InputStartSeconds -DefaultPressMs $InputDefaultPressMs -RunLog $runLog -ScreenshotDir $screenshotDir -LaunchTime $launchTime
 $exited = $false
 
 $nextScreenshotAt = [Math]::Max(0, $ScreenshotStartSeconds)
@@ -1533,12 +2171,13 @@ $nextHostSampleAt = if (-not $SkipHostSystemCheck -and $HostSampleEverySeconds -
 
 while ($true) {
     $process.Refresh()
+    $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $launchTime).TotalSeconds)
     if ($process.HasExited) {
         $exited = $true
+        Write-LabLine $runLog "Process exited at ${elapsedSeconds}s before max ${MaxSeconds}s."
         break
     }
 
-    $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $launchTime).TotalSeconds)
     if ($ScreenshotEverySeconds -gt 0 -and $elapsedSeconds -ge $nextScreenshotAt -and ($ScreenshotMaxCount -le 0 -or $screenshotCount -lt $ScreenshotMaxCount)) {
         Save-LabScreenshot -Process $process -ScreenshotDir $screenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $runLog
         $screenshotCount++
@@ -1549,6 +2188,7 @@ while ($true) {
         $hostSnapshot = Get-LabHostLoadSnapshot -Phase ("sample-{0:0000}s" -f $elapsedSeconds) -SampleSeconds $HostSampleSeconds -RunPid $process.Id
         $hostSnapshots.Add($hostSnapshot) | Out-Null
         Save-LabHostLoadSnapshot -RunDir $runDir -RunLog $runLog -Snapshot $hostSnapshot | Out-Null
+        Write-LabWindowTitleSample -Process $process -TitleSamplesPath $titleSamplesPath -RunLog $runLog -ElapsedSeconds $elapsedSeconds -Phase ("host-sample-{0:0000}s" -f $elapsedSeconds)
         while ($nextHostSampleAt -le $elapsedSeconds) {
             $nextHostSampleAt += $HostSampleEverySeconds
         }
@@ -1575,7 +2215,27 @@ if (-not $SkipHostSystemCheck) {
     $hostSnapshots.Add($postrunSnapshot) | Out-Null
     Save-LabHostLoadSnapshot -RunDir $runDir -RunLog $runLog -Snapshot $postrunSnapshot | Out-Null
     $worstHostContention = Get-LabWorstHostContentionGrade -Snapshots $hostSnapshots.ToArray()
+    $worstExternalHostContention = Get-LabWorstExternalHostContentionGrade -Snapshots $hostSnapshots.ToArray()
     Write-LabLine $runLog "Host contention summary: $worstHostContention ($($hostSnapshots.Count) snapshots)"
+    Write-LabLine $runLog "Host external contention summary: $worstExternalHostContention ($($hostSnapshots.Count) snapshots)"
+    if ($HostContentionGate -ne "Off") {
+        if ($HostContentionGate -eq "ExternalFail") {
+            Write-LabLine $runLog "Host contention gate: $HostContentionGate; require=external-clean; worst-external=$worstExternalHostContention; worst-total=$worstHostContention"
+        } else {
+            Write-LabLine $runLog "Host contention gate: $HostContentionGate; require=clean; worst=$worstHostContention; worst-external=$worstExternalHostContention"
+        }
+        if ($HostContentionGate -eq "Fail" -and $worstHostContention -ne "clean") {
+            $hostContentionGateFailed = $true
+            $gatePath = Join-Path $runDir "host-contention-gate-failed.txt"
+            "Host contention gate failed: worst=$worstHostContention; require=clean" | Set-Content -LiteralPath $gatePath -Encoding UTF8
+            Write-LabLine $runLog "Host contention gate failed: $gatePath"
+        } elseif ($HostContentionGate -eq "ExternalFail" -and $worstExternalHostContention -ne "clean") {
+            $hostContentionGateFailed = $true
+            $gatePath = Join-Path $runDir "host-contention-gate-failed.txt"
+            "Host contention gate failed: worst_external=$worstExternalHostContention; require=external-clean; worst_total=$worstHostContention" | Set-Content -LiteralPath $gatePath -Encoding UTF8
+            Write-LabLine $runLog "Host contention gate failed: $gatePath"
+        }
+    }
 }
 
 $exitCode = if ($exited -and $process.HasExited) {
@@ -1597,7 +2257,7 @@ if (Test-Path -LiteralPath $sourceLog) {
     Copy-Item -LiteralPath $sourceLog -Destination $destLog -Force
     Write-LabLine $runLog "RPCS3 log: $destLog"
 
-    if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
+    if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataSpuHleVerify -ne "Off" -or $EternalSonataSpuHle25ccBody -ne "Off" -or $EternalSonataSpuHle451cPreserveBody -ne "Off" -or $EternalSonataKernelCapsule -ne "Off" -or $EternalSonataReservationLoop -ne "Off" -or $EternalSonataPutllc16Pair -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
         $gpuProbeSummary = Join-Path $PSScriptRoot "summarize_eternal_sonata_gpu_probe.ps1"
         if (Test-Path -LiteralPath $gpuProbeSummary -PathType Leaf) {
             try {
@@ -1622,3 +2282,6 @@ if ($null -ne $forceHwMsaaResolveOverride -and $forceHwMsaaResolveOverride.found
 
 Write-LabLine $runLog ""
 Write-LabLine $runLog "Run dir: $runDir"
+if ($hostContentionGateFailed) {
+    throw "Host contention gate failed: worst=$worstHostContention; worst_external=$worstExternalHostContention; run=$runDir"
+}

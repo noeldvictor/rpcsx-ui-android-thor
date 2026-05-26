@@ -14,7 +14,7 @@ Use this repo-only skill for control-path reliability. It owns controller delive
 1. Classify the target:
    - Thor debug app: use Direct input first.
    - Thor fallback: use Android Virtual input, then OdinRaw only when Direct is unavailable.
-   - Windows lab: use `tools/windows_rpcs3_lab.ps1` macros, never ad hoc GUI clicking for benchmarks.
+   - Windows lab: use `tools/windows_rpcs3_lab.ps1` macros, never ad hoc GUI clicking for benchmarks. Prefer `-InputBackend PadApi` for menu/title routing or any route that has ignored keyboard focus/d-pad/left-stick input.
    - Physical controller: test separately from agent macros and label results manual.
 2. Prove input delivery with before/after screenshots before extending a route.
 3. Keep macros short while debugging. Add one movement or button cluster at a time.
@@ -47,12 +47,18 @@ Basic Windows macro proof:
 .\tools\windows_rpcs3_lab.ps1 -Mode NoGui -Visible -InputMacro "move2;focus;wait:3000;cross:150;wait:800;shot" -ScreenshotEverySeconds 0
 ```
 
+Focus-independent Windows pad API proof:
+
+```powershell
+.\tools\windows_rpcs3_lab.ps1 -Mode NoGui -InputBackend PadApi -InputMacro "wait:65000;shot;cross:180;wait:6000;shot;down:250;wait:1000;shot;down:250;wait:1000;shot;cross:180;wait:8000;shot" -ScreenshotEverySeconds 0
+```
+
 ## Recovery Ladder
 
 1. Check whether the target is the game window, title screen, menu, fatal dialog, black transition, or Android launcher.
 2. Capture the current state with a screenshot and log path.
 3. Thor: try Direct input, then `virtual:KEY`, then `raw:KEY` only if the debug receiver is unavailable.
-4. Windows: use `focus` and `move2`, then restart through `tools/windows_rpcs3_lab.ps1`.
+4. Windows: use `focus` and `move2` once for keyboard, then switch to `-InputBackend PadApi`. If PadApi still does not move title/menu selection, mark the game state as route-specific and stop treating it as a perf run.
 5. If a fatal popup or GUI steals control, stop the app/process and relaunch through the scripted path.
 6. If a route returns to title or a boundary dialogue, mark the route failed. Do not reuse that macro for perf.
 
@@ -60,7 +66,7 @@ Basic Windows macro proof:
 
 Input work is complete only when the capture folder contains:
 
-- `README.md` or `run.md` with macro text and input mode;
+- `README.md`, `run.md`, or Windows `windows-rpcs3-lab.txt` with macro text and input mode;
 - before/after screenshot proof;
 - the target platform, core/config identity, and route label;
 - a clear classification: delivered, ignored, wrong state, popup/fatal, title reset, black transition, or manual-only.

@@ -9,6 +9,8 @@ description: Run normalized Windows RPCS3 lab versus AYN Thor Android comparison
 
 Use this repo-only skill for measurement, not for inventing the optimization. It answers whether a change moved the same scene on Windows, Thor, or both.
 
+For GPU/CPU-to-GPU work, compose with `ps3-speed-proof-gate` before any Android step. The current promotion rule is Windows-only until a stable 200% moving-gameplay improvement survives field, menu, and first-battle visuals.
+
 ## Workflow
 
 1. Classify the run:
@@ -47,4 +49,4 @@ Thor field:
 
 ## Acceptance
 
-Do not compare FPS across different scene positions, drivers, logging modes, host-contention grades, or cache states unless the difference is the explicit variable under test.
+Do not compare FPS across different scene positions, drivers, logging modes, host-contention grades, display targets, or cache states unless the difference is the explicit variable under test. For Windows runs, keep RPCS3 on the second screen with `-WindowsGameScreen 1`.

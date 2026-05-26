@@ -1,0 +1,4 @@
+interface:
+  display_name: "PS3 Research Scout"
+  short_description: "Research PS3 speed ideas"
+  default_prompt: "Research academic and primary-source PS3 emulation, SPU/RSX, Vulkan, or GPU-offload ideas and turn them into repo-local experiments."

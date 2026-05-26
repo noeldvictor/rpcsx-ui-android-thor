@@ -13,12 +13,16 @@
 
 namespace vk
 {
+	class render_target;
+
 	namespace surface_cache_utils
 	{
 		void dispose(vk::buffer* buf);
 	}
 
 	void resolve_image(vk::command_buffer& cmd, vk::viewable_image* dst, vk::viewable_image* src);
+	bool resolve_blit_image(vk::command_buffer& cmd, vk::render_target* src, vk::image* dst, areai src_area, areai dst_area);
+	bool resolve_blit_image_to_scratch(vk::command_buffer& cmd, vk::render_target* src, vk::image* dst_reference, areai src_area, areai dst_area);
 	void unresolve_image(vk::command_buffer& cmd, vk::viewable_image* dst, vk::viewable_image* src);
 
 	class image_reference_sync_barrier

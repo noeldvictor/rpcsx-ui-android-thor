@@ -13,6 +13,7 @@ Use this repo-only skill for Cell-side speed work. Keep scene routing in `thor-s
 
 1. Start from a known scene and cache state.
 2. Choose one gate or probe, not a mixed pile:
+   - `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -EternalSonataKernelCapsule Profile -WindowsInputBackend PadApi -WindowsGameScreen 1`
    - `.\tools\set_thor_logging.ps1 -Mode ReducedLoop`
    - `.\tools\set_thor_logging.ps1 -Mode ReducedLoopEmit`
    - `.\tools\set_thor_logging.ps1 -Mode DmaProfile`
@@ -28,6 +29,9 @@ Read `references/candidates.md` before changing SPU, PPU, MFC, or Ghidra-probed 
 
 Hot files include:
 
+- `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp`
+- `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp`
+- `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\lv2\sys_spu.cpp`
 - `app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp`
 - `app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp`
 - `app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp`
@@ -36,4 +40,4 @@ Hot files include:
 
 ## Acceptance
 
-A hotpath patch must be title-gated or debug-property-gated until proven, must preserve normal cache behavior, and must pass field, first battle, and menu visual checks before it becomes a claimed speed win.
+A hotpath patch must be title-gated or debug-property-gated until proven, must preserve normal cache behavior, and must pass field, first battle, and menu visual checks before it becomes a claimed speed win. Under the current GPU 200% gate, keep shared-core hotpath experiments in the Windows lab until `ps3-speed-proof-gate` says the proof is comparable and promotable.
