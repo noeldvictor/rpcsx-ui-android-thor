@@ -2687,3 +2687,51 @@ Next:
   field route, then require clean field visuals, nonzero PUT descriptor rows,
   zero mismatches, and no descriptor overflow before any bodyfast, stack, GPU,
   menu, or battle promotion.
+
+## 2026-05-26 0x25cc Descriptor Capacity Widen Build
+
+Command:
+
+```powershell
+git -C ..\rpcs3-upstream diff --check -- rpcs3/Emu/Cell/SPUThread.h rpcs3/Emu/Cell/SPUThread.cpp rpcs3/Emu/Cell/lv2/sys_spu.cpp
+cmake --build ..\rpcs3-upstream\build-msvc --config Release --target rpcs3 -- /m
+```
+
+Evidence:
+
+- No active RPCS3/RPCSX/gameplay run was present before this step. Leftover
+  MSBuild node-reuse workers were stopped after the build completed.
+- The previous descriptor buildcheck proved the PUT finish hook but reported
+  descriptor overflow `56`, so the 16-slot descriptor table could not provide
+  complete accounting.
+- Patched the sibling Windows source tree `..\rpcs3-upstream` by widening
+  `SPUThread.h` `spu_hle_25cc_shadow_descs` from `16` to `128` entries.
+- `git diff --check` on the touched sibling SPU files reported only
+  line-ending warnings, no whitespace errors.
+- The patched Release `rpcs3.exe` rebuilt successfully. The only notable link
+  warning was the pre-existing `LNK4098` defaultlib warning.
+- No gameplay route, screenshot gate, or FPS comparison was run in this step.
+- Patched `tools\ps3_harness_refiner.ps1` so this exact buildcheck route miss
+  no longer falls through to generic `stateaware-one-step` or old
+  loader-control movement. It now emits
+  `hle-25cc-shadow-desc-buildcheck-route-miss` and suggests the widened-table
+  Down160 late-dismiss direct-left `Verify25ccShadow` command.
+- Re-ran `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`; the generated next
+  action now points at `cpu4-hle-25cc-shadow-desc-down160-latedismiss-directleft-field`
+  with `-EternalSonataSpuHleVerify Verify25ccShadow`, not the stale route.
+
+Classification:
+
+- `source-instrumentation`, `harness-accounting-capacity`, `build-pass`,
+  `process-harness-refiner-fix`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Rerun `Verify25ccShadow` with the current Down160 late-dismiss direct-left
+  field route, not the stale `down:20`/`up` macro.
+- Require clean field visuals, nonzero PUT descriptor rows, zero mismatches,
+  and descriptor overflow `0` before any bodyfast, stack, GPU, menu, or battle
+  promotion.

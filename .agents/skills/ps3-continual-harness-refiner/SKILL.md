@@ -251,6 +251,16 @@ macro, do not promote bodyfast, and do not start menu/battle/stack/GPU work
 from it. The next 25cc proof must use the current Down160 late-dismiss
 direct-left field route, and descriptor overflow must be widened or explicitly
 treated as incomplete coverage.
+After the sibling `rpcs3-upstream` descriptor table is widened from `16` to
+`128` entries and rebuilt, treat that as instrumentation accounting only. Do
+not claim speed or GPU migration from the build. The next 25cc proof must be a
+fresh `Verify25ccShadow` Down160 late-dismiss direct-left field run, and it
+must require clean field visuals, nonzero PUT descriptor rows, zero mismatches,
+and descriptor overflow `0` before bodyfast, stack, GPU, menu, or battle
+promotion. The refiner should emit
+`hle-25cc-shadow-desc-buildcheck-route-miss` for the stale buildcheck and must
+not suggest generic `stateaware-one-step`, old loader-control, or the old
+`down:20`/`up` load macro.
 
 ## Acceptance
 

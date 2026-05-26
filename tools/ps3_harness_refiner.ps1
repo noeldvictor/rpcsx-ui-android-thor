@@ -326,6 +326,11 @@ function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissDirectLeftComma
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
 }
 
+function New-Hle25ccShadowDescDown160VerifyCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-down160-latedismiss-directleft-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
@@ -1103,6 +1108,7 @@ $latestHle451cPreserveBodyOffBattleTopslotLeft1400ProcessExit = $false
 $latestHle451cPreserveBodyOffBattleTopslotLeft1600Fatal = $false
 $latestCleanHle25ccBodyOptions = $false
 $latestCleanHle25ccShadowField = $false
+$latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccBodyBattleOptionsRouteMiss = $false
 $latestHle25ccNoPauseBattleAbComplete = $false
 $latestHle25ccBodyFastRsxGeomStackWindowLost = $false
@@ -1425,6 +1431,12 @@ if ($latestRun) {
         ($latestText -like "*shadow*" -or
         $latestText -like "*verify25ccshadow*" -or
         $latestText -like "*9e4000*")
+    $latestHle25ccShadowDescBuildcheckRouteMiss =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        ($latestText -like "*buildcheck*" -or
+        $latestText -like "*desc-field*")
     $latestHle25ccBodyBattleOptionsRouteMiss =
         $latestRun.Decision -eq "route-miss-options-not-battle"
     $latestHle25ccNoPauseBattleAbComplete =
@@ -1873,6 +1885,9 @@ if ($latestCleanHle25ccBodyOptions) {
 if ($latestCleanHle25ccShadowField) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-pattern-gap" -Severity "direction" -Evidence ("Newest 0x25cc shadow verifier reached field at {0}s, but exact command-level EA buckets cover only a small slice of the max-DMA pattern family and the current shadow/body path is GET-only." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun generic movement or exact-EA 0x9e4000 skips. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
 }
+if ($latestHle25ccShadowDescBuildcheckRouteMiss) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-buildcheck-route-miss" -Severity "blocker" -Evidence "Newest 0x25cc descriptor buildcheck proved nonzero PUT shadow coverage but stayed in the Load menu and used the stale down:20/up macro." -Action "Do not fall back to generic state-aware or old loader-control movement. Use the widened descriptor table with the current Down160 late-dismiss direct-left route, then require clean field visuals, PUT descriptor rows, zero mismatches, and descriptor overflow 0."
+}
 if ($latestHle451cSize16BodyMenuRouteMiss) {
     Add-AntiPattern -List $antiPatterns -Name "hle-size16-body-menu-route-miss" -Severity "blocker" -Evidence "Newest opt-in size16 body menu/Options attempt missed the Options target and captured intro/cutscene frames instead." -Action "Keep the body opt-in and repair the Windows menu/Options route or add a title-menu visual gate before rerunning menu proof."
 }
@@ -2066,6 +2081,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc no-pause BattleRoute A/B is complete and classified not-speed-win. Do not add generic route movement or rerun the same A/B; inspect body/family verifier timing, remove measurement overhead, or narrow the 0x25cc body before another matched comparison."
 } elseif ($latestHle25ccBodyBattleOptionsRouteMiss) {
     "Latest 0x25cc body battle attempt opened the title Options page instead of first battle. Do not rerun that battle command unchanged; repair the first-battle macro or add a battle-aware route/visual gate before battle proof or stock/body A/B."
+} elseif ($latestHle25ccShadowDescBuildcheckRouteMiss) {
+    "Latest 0x25cc descriptor buildcheck is source-instrumentation validated but route-invalid and used the stale down:20/up macro. Do not fall back to generic movement. Rerun Verify25ccShadow on the current Down160 late-dismiss direct-left field route with the widened descriptor table, then require clean field visuals, nonzero PUT descriptor rows, zero mismatches, and descriptor overflow 0."
 } elseif ($latestCleanHle25ccShadowField) {
     "Latest 0x25cc shadow verifier is field-clean, but it proved exact command-level EA is the wrong broad predicate and the current shadow/body path is GET-only. Do not rerun generic movement or exact-EA skips; add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
@@ -2266,6 +2283,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     "# No automatic rerun: latest 0x25cc no-pause BattleRoute A/B already proved field and first-battle visuals but was slower. Inspect body/family timing, remove verifier overhead, or narrow the 0x25cc body before another stock/body A/B."
 } elseif ($latestHle25ccBodyBattleOptionsRouteMiss) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-body-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify25ccShadow -EternalSonataSpuHle25ccBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
+} elseif ($latestHle25ccShadowDescBuildcheckRouteMiss) {
+    New-Hle25ccShadowDescDown160VerifyCommand
 } elseif ($latestCleanHle25ccShadowField) {
     "# No automatic movement rerun: latest clean 0x25cc shadow run exposes a pattern-hash instrumentation gap, and the current shadow/body path is GET-only while matched target rows are PUT-heavy. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA 0x9e4000 groups, then rerun Verify25ccShadow across field, menu/Options, and first battle."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
