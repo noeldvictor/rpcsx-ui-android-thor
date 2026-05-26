@@ -208,6 +208,12 @@ as `titleload-down160-loadlist-diagnostic-black-transition`. Do not extend the
 cursor diagnostic again. Re-prove the Down160 load-target gate with no cursor
 input before another cursor, left-only, first-battle, HLE, RSX, GPU, or speed
 step.
+If that no-cursor Down160 load-target reproof has only 9 macro tokens, do not
+classify it as a truncated launch. It is intentionally short. If it proves
+`PATH_TO_TENUTO_PRESENT`, classify it as
+`titleload-down160-loadtarget-reproof-passed`: route target repaired, still no
+field/menu/battle proof, not speed, and not GPU migration. Resume only the
+late-dismiss left-only first-battle movement isolation next.
 
 ## Acceptance
 

@@ -763,6 +763,9 @@ function Test-HarnessLaunchMacroTruncated {
     if ($text -notlike "*titleload-down160*") {
         return $false
     }
+    if ($text -like "*titleload-down160-loadtarget-reproof*") {
+        return $false
+    }
 
     $tokenText = if ($RunEvidence.Lab.InputMacroTokens) { $RunEvidence.Lab.InputMacroTokens } else { "" }
     [int]$tokens = 0
@@ -1134,6 +1137,7 @@ $latestTitleToLoadDownHoldLeftOnlyClassifierDrift = $false
 $latestTitleToLoadDownHoldLoadTopNormalizeBlack = $false
 $latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall = $false
 $latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition = $false
+$latestTitleToLoadDownHoldLoadTargetReproofPass = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1273,6 +1277,9 @@ if ($latestRun) {
         $latestText -like "*titleload-down160-loadlist-cursor-diagnostic*" -and
         $latestRun.Decision -ne "valid-field-triage" -and
         $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png"
+    $latestTitleToLoadDownHoldLoadTargetReproofPass =
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*titleload-down160-loadtarget-reproof*"
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
     $latestStateAwarePromptStuck =
@@ -1735,6 +1742,9 @@ if ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
 if ($latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-loadlist-diagnostic-black-transition" -Severity "route-repair" -Evidence "Newest Down160 load-list cursor diagnostic selected LOAD, then captured only black/perf-overlay frames through the 45s load-list wait and cursor taps." -Action "Do not keep extending the cursor diagnostic and do not fall back to generic state-aware macros. Re-prove the Down160 load-target gate with no cursor input before another cursor or movement repair."
 }
+if ($latestTitleToLoadDownHoldLoadTargetReproofPass) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-loadtarget-reproof-passed" -Severity "resolved-control" -Evidence "Newest no-cursor Down160 reproof selected LOAD and the live load-target gate eventually reported PATH_TO_TENUTO_PRESENT." -Action "Treat this as route target repair only, not field or speed proof. Resume the late-dismiss left-only first-battle movement isolation instead of falling back to generic loader-control."
+}
 if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and -not $latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
 }
@@ -1952,6 +1962,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 load-list cursor diagnostic selected Load but then black-overlayed through the extended wait and cursor taps. Re-prove the Down160 load-target gate with no cursor input before any cursor, movement, speed, HLE, or RSX work."
 } elseif ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
     "Latest Down160 load-list cursor diagnostic sent cursor input while the game was still on Checking save files. Rerun the extended diagnostic that waits for the Load list before Up/Down; this is route timing, not speed or GPU work."
+} elseif ($latestTitleToLoadDownHoldLoadTargetReproofPass) {
+    "Latest no-cursor Down160 reproof selected Load and proved PATH_TO_TENUTO_PRESENT again. Resume only the late-dismiss left-only first-battle movement isolation before any cursor, full battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
     "Latest Down160 late-dismiss left-only isolation has load-list cursor/classifier drift: a lower Path-to-Tenuto row was visible, but the gate aborted on damaged/debug-like upper rows. Repair the load-list cursor diagnostic or selected-row classifier before rerunning left-only movement."
 } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {
@@ -2144,6 +2156,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldLoadTargetReproofCommand
 } elseif ($latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall) {
     New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand
+} elseif ($latestTitleToLoadDownHoldLoadTargetReproofPass) {
+    New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldLeftOnlyClassifierDrift) {
     New-StateAwareTitleToLoadDownHoldLoadListCursorDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldLateDismissDirectLeftFieldPass) {

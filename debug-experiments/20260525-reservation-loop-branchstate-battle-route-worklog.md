@@ -1752,3 +1752,81 @@ Next:
 - Validate the refiner. The next run must be the no-cursor Down160 load-target
   reproof before another cursor diagnostic, left-only isolation, first-battle
   route, HLE, RSX, GPU, or speed-stacking attempt.
+
+## 2026-05-26 Down160 No-Cursor Load-Target Reproof Passed
+
+Run:
+
+- `debug-captures\windows-lab\20260526-090340-cpu4-titleload-down160-loadtarget-reproof-windows-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadtarget-reproof-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:12000;shot:post-title-cross-down160;gate_load_target:45000" -MaxSeconds 145 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0
+```
+
+Evidence:
+
+- The Codex shell timed out while waiting for process output, but the lab had
+  already stopped RPCS3 at the `145s` limit and `windows-rpcs3-lab.txt`
+  records `Exit code: exited`.
+- No RPCS3/RPCSX process remained after the run. Host checks were clean across
+  prelaunch, postlaunch, samples, and postrun. `rpcs3.stderr.txt` is `0` bytes.
+- Targeted fatal scan found no `VM: Access violation`, `FATAL`, `SIG`, Vulkan
+  fatal, verification failure, unknown STOP, unhandled exception, or
+  likely-crashed evidence.
+- Manual screenshots:
+  - `screenshot-0070s-title-after-down160.png` proves title `Down:160`
+    selects `LOAD`.
+  - `screenshot-0082s-post-title-cross-down160.png` is still
+    `Checking save files...`.
+  - `screenshot-0098s-load-target-gate-6.png` shows `Save File 01` /
+    `Path to Tenuto` / `South Section` / `Ch. 1 Raindrops`.
+- `tools\classify_eternal_sonata_load_target.ps1` reports
+  `PATH_TO_TENUTO_PRESENT`: path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`8`; the live gate passed on attempt 6.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reports
+  `NO_FIELD_LIKE_SCREENSHOT`, with `2` title/cutscene-sized frames and `7`
+  small load/UI frames. There is no field, Options/menu, or battle proof.
+- The full GPU summarizer timed out on the `52.47 MB` log, so targeted
+  streaming extraction was used for route-invalid counters: `930`
+  GPU-candidate records, `986.63 MB` observed DMA, `0 B` RSX bytes, offload fit
+  `spu-kernel-hle=518` / `too-small=412`, hot PCs `0x25cc`
+  `565,296,192 B` and `0x451c` `469,257,760 B`, dynamic MFC `930` records /
+  `97,666` hits / `245.12 MB` / `96.784 ms`, MFC list transfer `557` records /
+  `35,945` calls / `48.171 ms`, reservation command `1,023` records /
+  `5,239,530` hits with `3,933,972` GETLLAR and `1,305,558` PUTLLC commands.
+- `tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir`
+  found no command CSV sidecars and classified that sub-summary as
+  `collect-missing-proof`; the targeted log extraction above is the usable
+  counter note for this route-only run.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` no longer treats
+  `cpu4-titleload-down160-loadtarget-reproof-windows` as truncated just because
+  it has only `9` macro tokens. This diagnostic is intentionally short.
+- The refiner now classifies this shape as
+  `titleload-down160-loadtarget-reproof-passed` when the load-target summary is
+  `PATH_TO_TENUTO_PRESENT`.
+- The suggested next action is back to the late-dismiss left-only first-battle
+  movement isolation:
+  `cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Classification:
+
+- `route-tooling`, `titleload-down160-loadtarget-reproof-passed`.
+- Not field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner. The next run must be only the late-dismiss left-only
+  first-battle movement isolation before full battle, HLE, RSX, GPU, or
+  speed-stacking work.
