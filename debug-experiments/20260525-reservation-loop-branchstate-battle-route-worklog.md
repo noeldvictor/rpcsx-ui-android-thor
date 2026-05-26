@@ -2579,3 +2579,51 @@ Next:
   bodyfast candidate.
 - Keep broad SPU-to-Vulkan compute, exact-EA fast/body promotion, and generic
   route movement reruns parked until direction-split shadow semantics are clean.
+
+## 2026-05-26 0x25cc PUT Shadow Finish Hook And Descriptor Parser
+
+Command:
+
+```powershell
+git -C ..\rpcs3-upstream diff --check -- rpcs3/Emu/Cell/SPUThread.cpp rpcs3/Emu/Cell/SPUThread.h rpcs3/Emu/Cell/lv2/sys_spu.cpp
+.\tools\summarize_eternal_sonata_gpu_probe.ps1 -RunDir $env:TEMP\es-gpu-probe-desc-test-* -Top 5
+```
+
+Evidence:
+
+- No active RPCS3/RPCSX/build process was found before starting.
+- The previous `0x25cc` shadow verifier was GET-only because normal PUT DMA
+  returns before the final `finish_es_spu_hle_shadow_sample(...)` hook.
+- Patched the sibling Windows source tree `..\rpcs3-upstream` so the shadow
+  sample is finished before the accurate/GET early return, accurate DMA return,
+  and normal PUT return paths in `SPUThread.cpp`.
+- Added a fixed-size `spu_hle_25cc_shadow_descs` descriptor table in
+  `SPUThread.h` keyed by direction, family, raw/base command, tag, size, LSA,
+  and EAL. `sys_spu.cpp` now logs `Eternal Sonata SPU HLE 25cc shadow
+  descriptor:` rows with GET/PUT direction, bytes, hashes, match/mismatch, and
+  overflow.
+- `git diff --check` on the three patched sibling source files reports only
+  line-ending warnings, no whitespace errors.
+- Updated `tools\summarize_eternal_sonata_gpu_probe.ps1` to parse and export
+  `eternal-sonata-spu-hle-25cc-shadow-desc-profile.csv`, then summarize
+  descriptor GET/PUT totals and top command shapes.
+- A synthetic one-line descriptor log parsed successfully with GET `0`, PUT
+  `3`, output mismatches `0`, and pattern signature `0x222`.
+- The full old field capture parse timed out at 120 seconds, so no new old-run
+  descriptor evidence was claimed.
+
+Classification:
+
+- `source-instrumentation`, `harness-parser`, `spu-hle-25cc-shadow-put-finish`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Build or run the patched Windows RPCS3 source with `Verify25ccShadow`.
+- Parse the resulting run and require nonzero `direction=PUT` descriptor rows
+  plus zero output mismatches before touching bodyfast, stack, GPU, menu, or
+  battle promotion.
+- If the descriptor CSV still has PUT `0`, classify it as a verifier failure
+  and debug the finish-hook/path coverage instead of repeating planning reports.

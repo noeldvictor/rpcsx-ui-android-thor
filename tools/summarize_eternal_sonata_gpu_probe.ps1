@@ -10,6 +10,7 @@ param(
     [string]$SpuHleShadowCsvPath = "",
     [string]$SpuHle25ccFamilyCsvPath = "",
     [string]$SpuHle25ccShadowCsvPath = "",
+    [string]$SpuHle25ccShadowDescCsvPath = "",
     [string]$SpuHle25ccBodyCsvPath = "",
     [string]$SpuHle451cListSeedCsvPath = "",
     [string]$SpuHle451cListFamilyCsvPath = "",
@@ -1420,6 +1421,58 @@ function Read-SpuHle25ccShadowRecord {
     }
 }
 
+function Read-SpuHle25ccShadowDescRecord {
+    param([string]$Line)
+
+    if ($Line -notmatch 'Eternal Sonata SPU HLE 25cc shadow descriptor:') {
+        return $null
+    }
+
+    $fields = Get-ProbeFields $Line
+    if (-not $fields.ContainsKey('hits')) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        mode                 = $fields['mode']
+        hle_mode             = $fields['hle_mode']
+        title                = $fields['title']
+        ppu                  = Format-ProbeHex $fields['ppu']
+        ppu_name             = $fields['ppu_name']
+        group                = Format-ProbeHex $fields['group']
+        group_name           = $fields['group_name']
+        spu                  = Format-ProbeHex $fields['spu']
+        spu_index            = [int](Convert-ProbeNumber $fields['spu_index'])
+        spu_name             = $fields['spu_name']
+        entry                = Format-ProbeHex $fields['entry']
+        image_sig            = Format-ProbeHex $fields['image_sig']
+        pattern_sig          = Format-ProbeHex $fields['pattern_sig']
+        direction            = Convert-ProbeNumber $fields['direction']
+        family               = Convert-ProbeNumber $fields['family']
+        raw_cmd              = Format-ProbeHex $fields['raw_cmd']
+        base_cmd             = Format-ProbeHex $fields['base_cmd']
+        tag                  = Convert-ProbeNumber $fields['tag']
+        size                 = Convert-ProbeNumber $fields['size']
+        lsa                  = Format-ProbeHex $fields['lsa']
+        eal                  = Format-ProbeHex $fields['eal']
+        hits                 = Convert-ProbeNumber $fields['hits']
+        bytes                = Convert-ProbeNumber $fields['bytes']
+        src_repeats          = Convert-ProbeNumber $fields['src_repeats']
+        dst_pre_repeats      = Convert-ProbeNumber $fields['dst_pre_repeats']
+        dst_post_repeats     = Convert-ProbeNumber $fields['dst_post_repeats']
+        dst_changed          = Convert-ProbeNumber $fields['dst_changed']
+        dst_unchanged        = Convert-ProbeNumber $fields['dst_unchanged']
+        output_match         = Convert-ProbeNumber $fields['output_match']
+        output_mismatch      = Convert-ProbeNumber $fields['output_mismatch']
+        last_src_hash        = Format-ProbeHex $fields['last_src_hash']
+        last_dst_pre_hash    = Format-ProbeHex $fields['last_dst_pre_hash']
+        last_dst_post_hash   = Format-ProbeHex $fields['last_dst_post_hash']
+        desc_overflow        = Convert-ProbeNumber $fields['desc_overflow']
+        cause                = Format-ProbeHex $fields['cause']
+        status               = Format-ProbeHex $fields['status']
+    }
+}
+
 function Read-SpuHle25ccBodyRecord {
     param([string]$Line)
 
@@ -2535,6 +2588,9 @@ if ([string]::IsNullOrWhiteSpace($SpuHle25ccFamilyCsvPath)) {
 if ([string]::IsNullOrWhiteSpace($SpuHle25ccShadowCsvPath)) {
     $SpuHle25ccShadowCsvPath = Join-Path $RunDir "eternal-sonata-spu-hle-25cc-shadow-profile.csv"
 }
+if ([string]::IsNullOrWhiteSpace($SpuHle25ccShadowDescCsvPath)) {
+    $SpuHle25ccShadowDescCsvPath = Join-Path $RunDir "eternal-sonata-spu-hle-25cc-shadow-desc-profile.csv"
+}
 if ([string]::IsNullOrWhiteSpace($SpuHle25ccBodyCsvPath)) {
     $SpuHle25ccBodyCsvPath = Join-Path $RunDir "eternal-sonata-spu-hle-25cc-body-profile.csv"
 }
@@ -2605,6 +2661,7 @@ $spuHleVerifyRecords = New-Object System.Collections.Generic.List[object]
 $spuHleShadowRecords = New-Object System.Collections.Generic.List[object]
 $spuHle25ccFamilyRecords = New-Object System.Collections.Generic.List[object]
 $spuHle25ccShadowRecords = New-Object System.Collections.Generic.List[object]
+$spuHle25ccShadowDescRecords = New-Object System.Collections.Generic.List[object]
 $spuHle25ccBodyRecords = New-Object System.Collections.Generic.List[object]
 $spuHle451cListSeedRecords = New-Object System.Collections.Generic.List[object]
 $spuHle451cListFamilyRecords = New-Object System.Collections.Generic.List[object]
@@ -2753,6 +2810,11 @@ foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
         $spuHle25ccShadowRecords.Add($spuHle25ccShadowRecord) | Out-Null
     }
 
+    $spuHle25ccShadowDescRecord = Read-SpuHle25ccShadowDescRecord $line
+    if ($null -ne $spuHle25ccShadowDescRecord) {
+        $spuHle25ccShadowDescRecords.Add($spuHle25ccShadowDescRecord) | Out-Null
+    }
+
     $spuHle25ccBodyRecord = Read-SpuHle25ccBodyRecord $line
     if ($null -ne $spuHle25ccBodyRecord) {
         $spuHle25ccBodyRecords.Add($spuHle25ccBodyRecord) | Out-Null
@@ -2850,6 +2912,7 @@ $lines.Add("- SPU HLE verifier records: $($spuHleVerifyRecords.Count)") | Out-Nu
 $lines.Add("- SPU HLE shadow records: $($spuHleShadowRecords.Count)") | Out-Null
 $lines.Add("- SPU HLE 0x25cc family records: $($spuHle25ccFamilyRecords.Count)") | Out-Null
 $lines.Add("- SPU HLE 0x25cc shadow records: $($spuHle25ccShadowRecords.Count)") | Out-Null
+$lines.Add("- SPU HLE 0x25cc shadow descriptor records: $($spuHle25ccShadowDescRecords.Count)") | Out-Null
 $lines.Add("- SPU HLE 0x25cc body records: $($spuHle25ccBodyRecords.Count)") | Out-Null
 $lines.Add("- SPU HLE 0x451c list-seed records: $($spuHle451cListSeedRecords.Count)") | Out-Null
 $lines.Add("- SPU HLE 0x451c list-family records: $($spuHle451cListFamilyRecords.Count)") | Out-Null
@@ -2873,7 +2936,7 @@ $lines.Add("- Kernel capsule records: $($kernelCapsuleRecords.Count)") | Out-Nul
 $lines.Add("- RSX auditor records: $($rsxAuditorRecords.Count)") | Out-Null
 $lines.Add("- Top rows: $Top") | Out-Null
 
-if ($records.Count -eq 0 -and $spuHleVerifyRecords.Count -eq 0 -and $spuHleShadowRecords.Count -eq 0 -and $spuHle25ccFamilyRecords.Count -eq 0 -and $spuHle25ccShadowRecords.Count -eq 0 -and $spuHle25ccBodyRecords.Count -eq 0 -and $spuHle451cListSeedRecords.Count -eq 0 -and $spuHle451cListFamilyRecords.Count -eq 0 -and $spuHle451cDescBatchRecords.Count -eq 0 -and $spuHle451cPreserveBodyRecords.Count -eq 0) {
+if ($records.Count -eq 0 -and $spuHleVerifyRecords.Count -eq 0 -and $spuHleShadowRecords.Count -eq 0 -and $spuHle25ccFamilyRecords.Count -eq 0 -and $spuHle25ccShadowRecords.Count -eq 0 -and $spuHle25ccShadowDescRecords.Count -eq 0 -and $spuHle25ccBodyRecords.Count -eq 0 -and $spuHle451cListSeedRecords.Count -eq 0 -and $spuHle451cListFamilyRecords.Count -eq 0 -and $spuHle451cDescBatchRecords.Count -eq 0 -and $spuHle451cPreserveBodyRecords.Count -eq 0) {
     $lines.Add("") | Out-Null
     $lines.Add('No `Eternal Sonata GPU/DMA candidate probe` records were found.') | Out-Null
 
@@ -3153,6 +3216,12 @@ if ($spuHle25ccShadowRecords.Count -gt 0) {
         Export-Csv -LiteralPath $SpuHle25ccShadowCsvPath -NoTypeInformation -Encoding UTF8
     $lines.Add("- SPU HLE 0x25cc shadow CSV: $SpuHle25ccShadowCsvPath") | Out-Null
 }
+if ($spuHle25ccShadowDescRecords.Count -gt 0) {
+    $spuHle25ccShadowDescRecords |
+        Select-Object mode,hle_mode,title,ppu,ppu_name,group,group_name,spu,spu_index,spu_name,entry,image_sig,pattern_sig,direction,family,raw_cmd,base_cmd,tag,size,lsa,eal,hits,bytes,src_repeats,dst_pre_repeats,dst_post_repeats,dst_changed,dst_unchanged,output_match,output_mismatch,last_src_hash,last_dst_pre_hash,last_dst_post_hash,desc_overflow,cause,status |
+        Export-Csv -LiteralPath $SpuHle25ccShadowDescCsvPath -NoTypeInformation -Encoding UTF8
+    $lines.Add("- SPU HLE 0x25cc shadow descriptor CSV: $SpuHle25ccShadowDescCsvPath") | Out-Null
+}
 if ($spuHle25ccBodyRecords.Count -gt 0) {
     $spuHle25ccBodyRecords |
         Select-Object mode,hle_mode,title,ppu,ppu_name,group,group_name,spu,spu_index,spu_name,entry,image_sig,hits,get_hits,put_rejects,bytes,total_us,max_total_us,ea9e4000_hits,ea4f0b80_hits,exact_a1c000_hits,other_ea_hits,last_family,last_pc,last_cmd,last_tag,last_size,last_lsa,last_eal,cause,status |
@@ -3214,6 +3283,82 @@ if ($spuHle25ccShadowRecords.Count -gt 0) {
 
     $lines.Add("") | Out-Null
     $lines.Add("SPU HLE 0x25cc shadow reading: verify-only source/destination hashing for repeated runtime-family DMA. It does not skip or offload work; use it to decide whether any 0x25cc HLE/codegen body is semantically safe after field/menu/battle proof.") | Out-Null
+}
+if ($spuHle25ccShadowDescRecords.Count -gt 0) {
+    $lines.Add("") | Out-Null
+    $lines.Add("## SPU HLE 0x25cc Shadow Descriptors") | Out-Null
+    $lines.Add("") | Out-Null
+
+    $shadowDescHits = [UInt64]0
+    $shadowDescBytes = [UInt64]0
+    $shadowDescGetHits = [UInt64]0
+    $shadowDescPutHits = [UInt64]0
+    $shadowDescChanged = [UInt64]0
+    $shadowDescMatch = [UInt64]0
+    $shadowDescMismatch = [UInt64]0
+    foreach ($record in $spuHle25ccShadowDescRecords) {
+        $hits = [UInt64]$record.hits
+        $shadowDescHits += $hits
+        $shadowDescBytes += [UInt64]$record.bytes
+        $shadowDescChanged += [UInt64]$record.dst_changed
+        $shadowDescMatch += [UInt64]$record.output_match
+        $shadowDescMismatch += [UInt64]$record.output_mismatch
+
+        if ([int]$record.direction -eq 1) {
+            $shadowDescGetHits += $hits
+        }
+        elseif ([int]$record.direction -eq 2) {
+            $shadowDescPutHits += $hits
+        }
+    }
+
+    $shadowDescOverflow = [UInt64](($spuHle25ccShadowDescRecords | Measure-Object -Property desc_overflow -Maximum).Maximum)
+    $shadowDescPatternCount = @($spuHle25ccShadowDescRecords | Select-Object -ExpandProperty pattern_sig -Unique | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+
+    $lines.Add("- Descriptor hits: $shadowDescHits") | Out-Null
+    $lines.Add("- Direction hits: GET=$shadowDescGetHits, PUT=$shadowDescPutHits") | Out-Null
+    $lines.Add("- Bytes: $(Format-ProbeBytes $shadowDescBytes)") | Out-Null
+    $lines.Add("- Destination changed: $shadowDescChanged") | Out-Null
+    $lines.Add("- Output match/mismatch: $shadowDescMatch / $shadowDescMismatch") | Out-Null
+    $lines.Add("- Unique pattern signatures: $shadowDescPatternCount") | Out-Null
+    $lines.Add("- Descriptor overflow: $shadowDescOverflow") | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add("| Rank | Dir | Family | Pattern | Raw Cmd | Base Cmd | Tag | Size | LSA | EAL | Hits | Bytes | Changed | Match | Mismatch | Src Hash | Dst Post Hash | Group | SPU |") | Out-Null
+    $lines.Add("| ---: | --- | ---: | --- | --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |") | Out-Null
+
+    $rank = 1
+    foreach ($record in @($spuHle25ccShadowDescRecords | Sort-Object -Property hits, bytes -Descending | Select-Object -First $Top)) {
+        $directionLabel = switch ([int]$record.direction) {
+            1 { "GET"; break }
+            2 { "PUT"; break }
+            default { "other"; break }
+        }
+
+        $lines.Add(('| {0} | {1} | {2} | `{3}` | `{4}` | `{5}` | {6} | {7} | `{8}` | `{9}` | {10} | {11} | {12} | {13} | {14} | `{15}` | `{16}` | `{17}` | `{18}` |' -f
+            $rank,
+            $directionLabel,
+            $record.family,
+            $record.pattern_sig,
+            $record.raw_cmd,
+            $record.base_cmd,
+            $record.tag,
+            $record.size,
+            $record.lsa,
+            $record.eal,
+            $record.hits,
+            $record.bytes,
+            $record.dst_changed,
+            $record.output_match,
+            $record.output_mismatch,
+            $record.last_src_hash,
+            $record.last_dst_post_hash,
+            $record.group_name,
+            $record.spu_name)) | Out-Null
+        $rank++
+    }
+
+    $lines.Add("") | Out-Null
+    $lines.Add("SPU HLE 0x25cc shadow descriptor reading: these rows split the verifier by DMA direction and command shape. A real 0x25cc body candidate needs nonzero PUT descriptor coverage with zero mismatches before any fast path or speed claim.") | Out-Null
 }
 if ($spuHle25ccBodyRecords.Count -gt 0) {
     $lines.Add("") | Out-Null

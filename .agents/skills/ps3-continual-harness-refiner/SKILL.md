@@ -235,6 +235,13 @@ round is a verify-only C++ instrumentation patch at the recorded `SPUThread.cpp`
 anchors, then a Windows `Verify25ccShadow` rerun that emits direction-split
 GET/PUT shadow rows. If PUT remains zero, classify the patch/run as a verifier
 failure instead of moving to bodyfast, GPU compute, menu, or battle proof.
+Once the local `rpcs3-upstream` source has the 25cc PUT finish-hook and
+descriptor logger patch, do not make more native 25cc source changes or
+planning ledgers until the patched Windows build/run is validated. The next
+round must build or rerun `Verify25ccShadow`, then parse
+`eternal-sonata-spu-hle-25cc-shadow-desc-profile.csv` and require nonzero
+`direction=PUT` rows plus zero mismatches before any bodyfast, stack, GPU,
+menu, or battle promotion.
 
 ## Acceptance
 
