@@ -1329,3 +1329,77 @@ Next:
 
 - Validate the refiner, then run only the Down160 no-movement load-stability
   diagnostic before any first-battle, HLE, RSX, GPU, or speed-stacking work.
+
+## 2026-05-26 Down160 No-Movement Load-Complete Diagnostic
+
+Run:
+
+- Invalid launch-noise folder:
+  `debug-captures\windows-lab\20260526-062630-cpu4-titleload-down160-loadstability-nocross-nomove-visualgate-windows-windows`.
+  The wrapper quoting truncated the intended 17-token macro to only
+  `wait:65000`, so this folder is harness noise and must not count as route,
+  field, speed, or GPU evidence.
+- Corrected run:
+  `debug-captures\windows-lab\20260526-062820-cpu4-titleload-down160-loadstability-nocross-nomove-visualgate-windows-windows`.
+
+Evidence:
+
+- The corrected run launched with the full 17-token no-movement macro, screen
+  1, PadApi, CPU affinity `0x0F`, frame/vblank `240/240`, reservation-loop
+  `Verify`, and clean pre/post/postrun host snapshots. No RPCS3/RPCSX process
+  remained after the lab stop.
+- The load-target gate passed on attempt 1:
+  `screenshot-0081s-load-target-gate.png` reported
+  `PATH_TO_TENUTO_PRESENT`.
+- Manual screenshots show the route state clearly:
+  `screenshot-0177s-post-confirm-90s.png`,
+  `screenshot-0267s-post-confirm-180s.png`, and `screenshot-0280s.png` all
+  show the Load UI with the `Load complete` banner, not Path-to-Tenuto field.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reports
+  `NO_FIELD_LIKE_SCREENSHOT`; all `17` screenshots are classed
+  `wrong-window-or-other-small-png`.
+- `rpcs3.stderr.txt` is empty, and targeted fatal scan found no
+  `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification failure,
+  unknown STOP, or unhandled exception hits.
+- Targeted `rg` counter extraction:
+  - GPU-candidate records: `2107`.
+  - Observed DMA: `2,168.88 MB`.
+  - Direct RSX bytes: `0 B`.
+  - Hot PCs: `0x25cc` `699` records / `1,094.37 MB`, `0x451c` `1408`
+    records / `1,074.50 MB`.
+  - Dynamic MFC: `2107` records, `230,670` hits, `525.36 MB`, `331.039 ms`.
+  - MFC list transfer: `1328` records, `86,569` calls, `104.263 ms`.
+  - Reservation commands: `2401` records, `12,823,696` command hits,
+    `9,528,795` GETLLAR, `3,294,901` PUTLLC.
+  - MFC wait: `2401` records, `14,091,248` reads, all fast, `0` blocking.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now treats any `titleload-down160` route
+  label with too few input macro tokens as `failed-harness-launch`, so the
+  malformed `062630` folder cannot become route evidence.
+- `tools\ps3_harness_refiner.ps1` now treats a Down160 no-movement
+  load-stability run with `PATH_TO_TENUTO_PRESENT` and no field as
+  `titleload-down160-load-complete-waits-for-dismiss`.
+- The refiner now blocks the generic state-aware fallback for this state.
+- The suggested next action is a delayed single post-load-complete `Cross`
+  with no movement:
+  `cpu4-titleload-down160-lateloadcomplete-dismiss-nomove-visualgate-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same load-complete-waits-for-dismiss rule.
+
+Classification:
+
+- `failed-visual-gate`, `route-tooling`,
+  `titleload-down160-load-complete-waits-for-dismiss`.
+- Not field proof.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner, then run only the delayed single-dismiss no-movement
+  proof before any direct-left movement, first-battle, HLE, RSX, GPU, or
+  speed-stacking work.

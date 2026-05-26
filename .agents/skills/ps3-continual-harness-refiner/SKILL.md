@@ -169,6 +169,12 @@ stays on `Now Loading...` through late screenshots despite
 proof. Do not fall back to generic state-aware routes and do not repeat the
 save-prompt-opening repair. Run a Down160 no-movement load-stability diagnostic
 that observes the post-confirm state with no field-side `Cross` or movement.
+If that no-movement load-stability diagnostic passes `PATH_TO_TENUTO_PRESENT`
+but stays on the Load UI with the `Load complete` banner through late
+checkpoints, classify it as `titleload-down160-load-complete-waits-for-dismiss`.
+Do not fall back to generic state-aware routes and do not add movement. Send
+exactly one delayed post-load-complete `Cross`, then capture no-movement field
+proof before any direct-left, first-battle, HLE, RSX, GPU, or speed work.
 
 ## Acceptance
 

@@ -311,6 +311,11 @@ function New-StateAwareTitleToLoadDownHoldLoadStabilityNoMoveCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadstability-nocross-nomove-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 285 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 13"
 }
 
+function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissNoMoveCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;wait:45000;shot:post-dismiss-63s"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-nomove-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 275 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
+}
+
 function New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:load-complete-check;cross:120;wait:12000;shot:post-load-complete-dismiss-check;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 190 -InputMacro `"$macro`" -MaxSeconds 250 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 10"
@@ -735,7 +740,7 @@ function Test-HarnessLaunchMacroTruncated {
 
     $label = if ($RunEvidence.Lab.Label) { $RunEvidence.Lab.Label } else { "" }
     $text = "$($RunEvidence.Name) $label"
-    if ($text -notlike "*titleload-down160-pollgated-directleft200*") {
+    if ($text -notlike "*titleload-down160*") {
         return $false
     }
 
@@ -1096,6 +1101,7 @@ $latestTitleToLoadDiagnosticCutscene = $false
 $latestTitleToLoadDownHoldWrongSaveTarget = $false
 $latestTitleToLoadDownHoldClassifierFalseGateFailure = $false
 $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck = $false
+$latestTitleToLoadDownHoldLoadStabilityNeedsDismiss = $false
 $latestTitleToLoadDownHoldPostLoadCompleteSavePrompt = $false
 $latestTitleToLoadDownHoldLoadTargetPass = $false
 $latestTitleToLoadDownHoldDirectLeftFieldPass = $false
@@ -1189,6 +1195,10 @@ if ($latestRun) {
     $latestTitleToLoadDownHoldDirectLeftPersistentLoading =
         $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and
         $latestRun.Visual.PrimarySmallClass -eq "loading-like-small-png"
+    $latestTitleToLoadDownHoldLoadStabilityNeedsDismiss =
+        (@("failed-wrong-window-or-other-visual", "failed-visual-gate") -contains $latestRun.Decision) -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*titleload-down160-loadstability-nocross-nomove*"
     $latestTitleToLoadDownHoldPostLoadCompleteSavePrompt =
         $latestRun.Decision -eq "valid-field-triage" -and
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
@@ -1576,6 +1586,8 @@ if ($loadingRuns.Count -ge 2) {
 if ($cutsceneRuns.Count -ge 1) {
     $cutsceneAction = if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
         "The newest blocker is a Down160 load-target classifier row-drift false gate. Keep the Down160 route and rerun the post-load-complete repair under the multi-row classifier before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
+        "The newest blocker is a Down160 no-movement load-complete-waits-for-dismiss state. Ignore older cutscene/harness-noise frames and run the delayed single-dismiss no-movement proof before any old loader-control or speed work."
     } elseif ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
         "The newest blocker is a Down160 post-load-complete route miss. Keep the Down160 route and repair the load-complete dismissal before any old loader-control or speed work."
     } elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
@@ -1598,7 +1610,7 @@ if ($wrongWindowRuns.Count -ge 1) {
     }
 }
 if ($truncatedMacroRuns.Count -ge 1) {
-    Add-AntiPattern -List $antiPatterns -Name "truncated-input-macro" -Severity "harness-noise" -Evidence ("{0} recent run(s) launched a Down160 direct-left label with too few input macro tokens." -f $truncatedMacroRuns.Count) -Action "Ignore these as harness launch noise. Re-run only with the full quoted macro and do not count their screenshots as field, speed, or route proof."
+    Add-AntiPattern -List $antiPatterns -Name "truncated-input-macro" -Severity "harness-noise" -Evidence ("{0} recent run(s) launched a Down160 route label with too few input macro tokens." -f $truncatedMacroRuns.Count) -Action "Ignore these as harness launch noise. Re-run only with the full quoted macro and do not count their screenshots as field, speed, or route proof."
 }
 if ($latestStateAwarePromptStuck) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-load-confirm-prompt-stuck" -Severity "blocker" -Evidence "Newest state-aware one-step repair stayed on the load-confirm prompt instead of reaching field; screenshots show the damaged-save confirmation dialog, not a wrong window." -Action "Do not rerun the default field macro. Add an explicit post-prompt Cross confirm, delay screenshots until after the confirm, then re-test the one-left-pulse field route under CleanAfterField."
@@ -1633,6 +1645,9 @@ if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
 }
 if ($latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-loading-only" -Severity "blocker" -Evidence "Newest plain Down160 direct-left route removed the save-prompt Cross and still stayed on Now Loading through late screenshots despite PATH_TO_TENUTO_PRESENT." -Action "Do not fall back to generic state-aware routes or repeat the save-prompt-opening repair. Run the Down160 no-movement load-stability diagnostic to separate persistent loading from movement/prompt timing before any speed/HLE/RSX work."
+}
+if ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-load-complete-waits-for-dismiss" -Severity "route-repair" -Evidence "Newest Down160 no-movement load-stability diagnostic passed PATH_TO_TENUTO_PRESENT, then stayed on the Load UI with the Load complete banner through late checkpoints." -Action "Do not fall back to generic state-aware routes or add movement. Send exactly one delayed post-load-complete Cross, then capture no-movement field proof before any direct-left, first-battle, HLE, RSX, GPU, or speed work."
 }
 if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and -not $latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
@@ -1843,6 +1858,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 post-load-complete repair reached field, but the extra post-field Cross opened the Save game prompt and blocked movement. Remove that Cross and rerun the plain Down160 load-target-gated direct-left route before any speed/HLE/RSX work."
 } elseif ($latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     "Latest plain Down160 direct-left route removed the save-prompt Cross but stayed on Now Loading through late screenshots. Do not use the generic state-aware fallback or repeat the prompt route; run a Down160 no-movement load-stability diagnostic first."
+} elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
+    "Latest Down160 no-movement diagnostic proved the Path-to-Tenuto load target but stayed on the Load complete banner. Send one delayed post-load-complete Cross and capture no-movement field proof before any movement, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     "Latest down160 title-to-Load diagnostic proved PATH_TO_TENUTO_PRESENT and intentionally stopped before slot Cross. Continue with the down160 load-target-gated direct-left route; this is still route repair, not speed."
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
@@ -2021,6 +2038,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand
 } elseif ($latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     New-StateAwareTitleToLoadDownHoldLoadStabilityNoMoveCommand
+} elseif ($latestTitleToLoadDownHoldLoadStabilityNeedsDismiss) {
+    New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissNoMoveCommand
 } elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
