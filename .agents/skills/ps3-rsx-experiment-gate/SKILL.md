@@ -56,6 +56,10 @@ Always keep RPCS3/PS3 gameplay on the second screen for Windows runs with `-Wind
 - If resolve/depth/present plus `VertexSuperset Fast` also passes, keep index
   persistent off and add only `VertexPersistent Fast` next. If that passes, the
   final isolated recombine step is index persistent.
+- If resolve/depth/present plus `VertexSuperset Fast` plus
+  `VertexPersistent Fast` passes, do not fall back to generic movement or broad
+  RSX stacking. Add only `IndexPersistent Fast` next; if it fails, classify
+  index persistent as the remaining interaction suspect.
 - Keep `RSX auditor` off for timing unless the experiment is specifically a
   counter/auditor proof.
 

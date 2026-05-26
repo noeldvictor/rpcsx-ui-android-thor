@@ -18128,3 +18128,88 @@ Next:
 - If it passes, add only `IndexPersistent Fast` in the final recombine step.
 - If it fails, split persistent vertex against the RDP plus VertexSuperset
   subset before testing index persistent.
+
+## 2026-05-25 - BodyFast RSX RDP Plus VertexPersistent Interaction Passed
+
+Purpose:
+
+- Continue the interaction ladder after bodyfast plus RSX full geometry/locality
+  lost the window, while the separate geometry-only, resolve/depth/present-only,
+  and RDP plus `VertexSuperset Fast` steps all survived field and active battle.
+- Add exactly one more family: `VertexPersistent Fast`; keep
+  `IndexPersistent Fast` off.
+- Keep this Windows-only on screen 1. No Android, ADB, or Thor work was run.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-rdp-vertexpersistent-battle-topslot-nopause-interaction -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Run:
+
+- `debug-captures\windows-lab\20260525-215019-hle-25cc-bodyfast-rsx-rdp-vertexpersistent-battle-topslot-nopause-interaction-windows`
+
+Visual/log proof:
+
+- Visual gate: `FIELD_LIKE_PRESENT`, `passed-for-triage`.
+- Field-like screenshots: first `screenshot-0117s.png` at `117s`; `15`
+  field-like screenshots total; invalid after first field-like: `0`.
+- Required checkpoints passed: field by `160s`, field at or after `220s`, and
+  battle-like at or after `200s` with first battle-like `screenshot-0230s.png`.
+- Manual screenshots looked clean:
+  - `screenshot-0117s.png`: Path to Tenuto field, no obvious corruption.
+  - `screenshot-0169s.png`: first-battle tutorial prompt, clean UI.
+  - `screenshot-0230s.png`: active first battle, clean Polka UI and ground.
+  - `screenshot-0320s.png`: late active first battle, clean Polka UI and ground.
+- Fatal-marker scan found no real access violation, likely-crashed line,
+  assertion, Vulkan validation error, `VK_ERROR`, `SIGSEGV`, or `SIGBUS`.
+- Host: `ExternalFail` passed; external contention clean across `6` snapshots.
+  Overall host grade was `moderate` because RPCS3/GPU-engine load exceeded the
+  total-load threshold during the run, which is acceptable for this route proof
+  but not a clean speed claim.
+- RPCS3 was moved to `\\.\DISPLAY2`; `-WindowsGameScreen 1` was active.
+
+FPS/counters:
+
+- Window-title FPS stayed capped around `120 FPS`: `119.98` at `117s`,
+  `119.99` at `169s`, `120.10` at `230s`, `120.13` at `300s`, and `119.97`
+  at `330s`.
+- `0x25cc bodyfast`: `3055` records, `45813` GET body hits, `45840` PUT
+  rejects, `715.83 MB`, `0.000 ms` verifier/body timing.
+- `GPU Port Scoreboard`: new promoted CPU/SPU -> GPU replacement `0 B`;
+  direct RSX-local scout traffic `0 B`; indirect SPU-DMA/RSX-resource overlap
+  `0 B`.
+- RSX auditor was intentionally off for timing, so this run does not remeasure
+  persistent-vertex RSX-local bytes. It only proves visual/route compatibility.
+
+Classification:
+
+- `resolved-interaction-bisect`, `valid-first-battle-triage`.
+- Not a speed win: FPS remained capped at about `120 FPS`.
+- Not new `gpu-migration-credit`: no new promoted CPU/SPU work moved to GPU,
+  and RSX auditor was off.
+- Not a 200% gate candidate.
+- The remaining full-stack blocker is now narrowed to `IndexPersistent Fast`
+  or prior full-stack route/transient sensitivity.
+
+Harness/report changes:
+
+- `tools\ps3_harness_refiner.ps1` now detects the passing
+  `rdp-vertexpersistent` interaction step and keeps the next action on the RSX
+  ladder instead of falling back to generic field movement.
+- The next suggested command adds `IndexPersistent Fast` as the final isolated
+  recombine step:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-bodyfast-rsx-rdp-indexpersistent-battle-topslot-nopause-interaction -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHle25ccBody Fast -WindowsRsxTextureBarrier DepthReadOnly -WindowsRsxBlitSourceResolve FastSampled -WindowsRsxDepthFeedback KeepReadOnly -WindowsRsxPresentUpload GpuSwap -WindowsRsxVertexSupersetCache Fast -WindowsRsxVertexPersistentCache Fast -WindowsRsxIndexPersistentCache Fast -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160
+```
+
+Next:
+
+- Run the IndexPersistent final recombine command above.
+- If it passes, treat the original full-stack window loss as route/transient or
+  repaired-by-ordering and re-evaluate whether a timed/audited proof is worth
+  running.
+- If it fails, classify `IndexPersistent Fast` as the remaining RSX interaction
+  suspect and keep it out of stacked speed/GPU trials.

@@ -69,9 +69,12 @@ failed after field/tutorial and lost the window before active battle, but both
 component halves survived field and active first battle: geometry-only
 vertex/index caches, and resolve/depth/present-only. Do not resurrect the
 failed full stack. The first recombine step, resolve/depth/present plus
-`VertexSuperset Fast`, also survived field and active first battle. Treat the
-remaining failure as a narrower interaction with persistent vertex and/or index
-cache. Next add `VertexPersistent Fast` while keeping index persistent off.
+`VertexSuperset Fast`, also survived field and active first battle. The second
+recombine step, resolve/depth/present plus `VertexSuperset Fast` plus
+`VertexPersistent Fast`, also survived field and active first battle. Treat the
+remaining failure as either `IndexPersistent Fast` or prior full-stack
+route/transient sensitivity. Next add `IndexPersistent Fast` as the final
+isolated recombine step.
 
 ## Acceptance
 
