@@ -112,10 +112,12 @@ black/`UNKNOWN_LOAD_TARGET` gate screenshots, suggest only the direct-left
 long-gate variant, not the old dismiss-save macro. If that long-gate variant
 still reports `UNKNOWN_LOAD_TARGET` while screenshots are story/cutscene or
 other non-field frames, stop lengthening the gate. Treat it as a title-to-Load
-route miss; repair the title/menu/load-list state gate before pressing slot
-`Cross`. The live `gate_load_target` guard now also classifies each polling
-screenshot and aborts early after repeated obvious story/cutscene or non-field
-frames, while still allowing black/loading transients to keep polling.
+route miss; run the title-to-Load diagnostic that screenshots title settle,
+after title `Down`, after title `Cross`, and before `gate_load_target`, then
+aborts before slot `Cross` unless `PATH_TO_TENUTO_PRESENT` is true. The live
+`gate_load_target` guard now also classifies each polling screenshot and aborts
+early after repeated obvious story/cutscene or non-field frames, while still
+allowing black/loading transients to keep polling.
 
 ## Acceptance
 

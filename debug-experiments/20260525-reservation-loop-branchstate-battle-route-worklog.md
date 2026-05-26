@@ -616,3 +616,43 @@ Next:
 
 - Repair the title-to-Load route timing or add a specific title/menu/load-list
   state gate. Do not start HLE/RSX stacking from invalid route counters.
+
+## 2026-05-26 Title-To-Load Diagnostic Command
+
+Purpose:
+
+- Replace the inert "no automatic rerun" refiner output with one bounded
+  Windows-only diagnostic that captures the missing title/menu/load-list state.
+- Keep the safety property that no save-slot `Cross` is sent unless the live
+  `gate_load_target` classifier proves `PATH_TO_TENUTO_PRESENT`.
+
+Change:
+
+- Added `New-StateAwareTitleToLoadDiagnosticCommand` to
+  `tools\ps3_harness_refiner.ps1`.
+- When the newest evidence is `directleft-longgate-entered-cutscene`, the
+  refiner now suggests
+  `cpu4-title-to-load-state-diagnostic-windows` instead of a comment or another
+  long-gate retry.
+- The diagnostic uses PadApi on Windows screen 1, CPU affinity `0x0F`,
+  frame/vblank `240`, `ReservationLoop Verify`, and `WindowsVisualGate Off`.
+  Its macro screenshots title settle, after title `Down`, after title `Cross`,
+  and pre-load-target gate, then runs `gate_load_target:25000` without pressing
+  the save slot.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same operating rule.
+
+Classification:
+
+- `process-harness`, `route-tooling`, `title-to-load-diagnostic`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Run the title-to-Load diagnostic, inspect the named screenshots and
+  `load-target-gate-failed.txt`, then repair only the title/menu/load-list
+  transition before any movement or speed stacking.

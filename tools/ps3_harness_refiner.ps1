@@ -291,6 +291,11 @@ function New-StateAwareLoadTargetPollGatedDirectLeftCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-directleft200-longgate-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 9"
 }
 
+function New-StateAwareTitleToLoadDiagnosticCommand {
+    $macro = "wait:65000;shot:title-settle;down:20;wait:500;shot:title-after-down;cross:80;wait:12000;shot:post-title-cross;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;shot:pre-load-target-gate;gate_load_target:25000"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-title-to-load-state-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 125 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0"
+}
+
 function New-Hle451cSize16CandidateReproofCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label hle-451c-size16-candidate-reproof-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8"
 }
@@ -1458,7 +1463,7 @@ if ($latestLoadTargetPollGatedSaveMenuAfterField) {
     Add-AntiPattern -List $antiPatterns -Name "pollgated-route-opens-save-menu-after-field" -Severity "blocker" -Evidence "Newest polling-gated route proved Path to Tenuto and reached field, but later screenshots stayed on the Save/Create new save file menu after the post-load dismissal presses." -Action "Remove the obsolete field-side save-prompt dismissal sequence. After the accepted field screenshot, go directly to the movement pulse and screenshots."
 }
 if ($latestLoadTargetDirectLeftLongGateCutscene) {
-    Add-AntiPattern -List $antiPatterns -Name "directleft-longgate-entered-cutscene" -Severity "blocker" -Evidence "Newest long-gate direct-left route stayed UNKNOWN_LOAD_TARGET while screenshots showed story/cutscene frames, not the Load list or Path to Tenuto field." -Action "Stop longer-gate reruns. Repair the title-to-Load route or add a title/menu/load-list visual state gate before pressing slot Cross."
+    Add-AntiPattern -List $antiPatterns -Name "directleft-longgate-entered-cutscene" -Severity "blocker" -Evidence "Newest long-gate direct-left route stayed UNKNOWN_LOAD_TARGET while screenshots showed story/cutscene frames, not the Load list or Path to Tenuto field." -Action "Stop longer-gate reruns. Run the title-to-Load diagnostic: screenshot title settle, after title Down, after title Cross, before the Load-target gate, then abort unless PATH_TO_TENUTO_PRESENT."
 }
 if ($latestLoadTargetDirectLeftGateFailure -and -not $latestLoadTargetDirectLeftLongGateCutscene) {
     Add-AntiPattern -List $antiPatterns -Name "directleft-load-target-gate-timeout" -Severity "blocker" -Evidence "Newest direct-left route aborted before slot Cross because all polling-gate screenshots stayed UNKNOWN_LOAD_TARGET; manual visual inspection showed a black screen, not a save slot." -Action "Retry only the direct-left route with a longer load-target gate. Do not fall back to the old dismiss-save macro because it already proved it opens the Save menu after field."
@@ -1636,7 +1641,7 @@ $nextAction = if ($latestStateAwarePromptStuck) {
 } elseif ($latestLoadTargetPollGatedSaveMenuAfterField) {
     "Latest polling-gated route proved Path to Tenuto and field, then the old save-prompt dismissal opened the Save/Create-new-file menu. Remove those field-side Cross presses and go directly to a left-movement proof."
 } elseif ($latestLoadTargetDirectLeftLongGateCutscene) {
-    "Latest long-gate direct-left route entered story/cutscene frames while the load-target classifier stayed UNKNOWN_LOAD_TARGET. Stop gate-length retries; repair the title-to-Load route or add a title/menu/load-list state gate before slot Cross."
+    "Latest long-gate direct-left route entered story/cutscene frames while the load-target classifier stayed UNKNOWN_LOAD_TARGET. Run the title-to-Load diagnostic next; it screenshots each title/menu/load-list transition and stops before slot Cross unless PATH_TO_TENUTO_PRESENT."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -1792,7 +1797,7 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestLoadTargetPollGatedSaveMenuAfterField) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetDirectLeftLongGateCutscene) {
-    "# No automatic direct-left rerun: latest long-gate route entered story/cutscene before the Load-list target. Repair title-to-Load input timing/state gate, then re-run a load-target-gated route."
+    New-StateAwareTitleToLoadDiagnosticCommand
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {
