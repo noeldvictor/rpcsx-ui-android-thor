@@ -2379,3 +2379,70 @@ Next:
   MFC commands on this hot path.
 - Keep fast/body mode and Vulkan compute off until the verifier is clean across
   field, menu/Options, and first-battle visuals.
+
+## 2026-05-26 0x25cc 0x9e4000 Shadow Field Verifier
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-9e4000-shadow-field-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows -RequireFieldLike -RequireFieldAtOrBeforeSeconds 160 -RequireNoInvalidAfterFirstField -MinFieldPngBytes 1000000
+.\tools\summarize_eternal_sonata_gpu_probe.ps1 -RunDir .\debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows
+.\tools\summarize_eternal_sonata_25cc_runtime_family.ps1 -RunDir .\debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows
+```
+
+Evidence:
+
+- Run directory:
+  `debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows`.
+- The shell wrapper timed out after the emulator had stopped at the configured
+  `225s` wall limit, so post-run visual and GPU/SPU summaries were completed
+  manually from the capture folder.
+- Visual gate passed for field triage: `18` field-like screenshots, first
+  `screenshot-0117s.png` at `117s`, and `0` invalid screenshots after first
+  field.
+- Fatal scan was clean (`rpcs3.stderr.txt` empty, no access/STOP/crash/Vulkan
+  fatal hit in `RPCS3.log`), no RPCS3/RPCSX process remained, and host
+  contention was clean across `6` snapshots.
+- Window-title samples were context only: `21` samples, average `32.94 FPS`,
+  min `23.55`, max `39.28`. This was an instrumented, unmatched run, not a
+  speed measurement.
+- GPU probe: `3,133.21 MB` total observed DMA, `0` RSX-local traffic records,
+  `0` indirect RSX-resource overlap records, offload fit
+  `spu-kernel-hle=1323` / `too-small=460`.
+- `0x25cc` family verifier: `808` rows, `26013` hits, `26013/0`
+  success/fail, GET/PUT `12108/13905`, `406.45 MB`, `1,034.335 ms`.
+- Exact command-level buckets were not broad enough: `ea9e4000=1734`
+  (`6.666%`), `exact_a1c000=1734` (`6.666%`), `ea4f0b80=1`, and
+  `other_matching_ea=22544` (`86.664%`).
+- `0x25cc` shadow semantics were clean for observed GETs: `12108` hits,
+  `189.19 MB`, output match/mismatch `12108/0`, destination
+  changed/unchanged `810/11298`, with exact command buckets
+  `ea9e4000=807`, `exact_a1c000=807`, `ea4f0b80=1`, `other=10493`.
+- Runtime-family pattern report found `16` repeated max-DMA `0x9e4000`
+  `hle-pattern-body-candidate` groups covering `636` records and `1.03 GB`;
+  the top group was pattern `0xf4175241af5df103`, `96` records,
+  `161.08 MB`.
+- Hash semantics for max-DMA pattern groups still have `0 B` sampled payload and
+  zero LS/block hashes, so this run exposes a `hash-instrumentation-gap` for
+  the broad pattern-level body design.
+
+Classification:
+
+- `analysis`, `valid-field-triage`,
+  `spu-hle-25cc-verify-shadow-field-clean`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+- Broad SPU-to-Vulkan compute remains parked because RSX-local and indirect
+  overlap are still `0 B`.
+
+Next:
+
+- Correct the verifier plan: broad `0x9e4000` means max-DMA pattern/descriptor
+  family, not exact command-level `eal == 0x9e4000`.
+- Add pattern/descriptor-level source/destination semantics for the top
+  max-DMA `0x9e4000` groups, or add payload/LS-range hashes so the top repeated
+  groups can be verified without conflating them with exact command EA buckets.
+- Keep fast/body promotion off until this pattern-level verifier is clean in
+  field, menu/Options, and first battle.
