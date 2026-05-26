@@ -163,6 +163,12 @@ If that post-load-complete repair reaches field but the extra `Cross` opens the
 in-field `Save game` prompt before the movement screenshot, classify it as a
 save-prompt route miss, not moving gameplay. Remove the extra post-field
 `Cross` and rerun the plain Down160 load-target-gated direct-left route.
+If that plain Down160 direct-left rerun removes the save-prompt `Cross` but
+stays on `Now Loading...` through late screenshots despite
+`PATH_TO_TENUTO_PRESENT`, classify it as persistent loading, not a speed/FPS
+proof. Do not fall back to generic state-aware routes and do not repeat the
+save-prompt-opening repair. Run a Down160 no-movement load-stability diagnostic
+that observes the post-confirm state with no field-side `Cross` or movement.
 
 ## Acceptance
 

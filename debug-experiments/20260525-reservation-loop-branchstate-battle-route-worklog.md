@@ -1262,3 +1262,70 @@ Next:
   `cpu4-titleload-down160-pollgated-directleft200-visualgate-windows`. Do not
   repeat the post-load-complete `Cross`, and do not run speed/HLE/RSX promotion
   until field movement is valid again.
+
+## 2026-05-26 Down160 Plain Direct-Left Loading Miss
+
+Run:
+
+- `debug-captures\windows-lab\20260526-060436-cpu4-titleload-down160-pollgated-directleft200-visualgate-windows-windows`.
+
+Evidence:
+
+- The run used the full 20-token plain Down160 macro, screen 1, PadApi, CPU
+  affinity `0x0F`, frame/vblank `240/240`, reservation-loop `Verify`, and
+  clean pre/post/postrun host snapshots. No RPCS3/RPCSX process remained after
+  the lab stop.
+- The corrected multi-row load-target gate passed on attempt 3:
+  `PATH_TO_TENUTO_PRESENT`, path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`2`.
+- The outer Codex shell timed out while tailing after the lab had already
+  stopped RPCS3 at `230s`; this did not leave a live duplicate run.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reports
+  `NO_FIELD_LIKE_SCREENSHOT`. Class counts were `loading-like-small-png=12`
+  and `wrong-window-or-other-small-png=3`.
+- Manual screenshot review confirms the visual gate result:
+  `screenshot-0141s-accepted-field-check.png`,
+  `screenshot-0143s-left200-check.png`, and `screenshot-0210s.png` all show
+  Eternal Sonata `Now Loading...` at about `120 FPS`, not Path-to-Tenuto field
+  and not movement.
+- `rpcs3.stderr.txt` is empty, and targeted fatal scan found no
+  `VM: Access violation`, `FATAL`, `SIG`, Vulkan fatal, verification failure,
+  unknown STOP, or unhandled exception hits.
+- Targeted `rg` counter extraction:
+  - GPU-candidate records: `1827`.
+  - Observed DMA: `2,332.89 MB`.
+  - Direct RSX bytes: `0 B`.
+  - Hot PCs: `0x25cc` `1255` records / `1,923.04 MB`, `0x451c` `572`
+    records / `409.84 MB`.
+  - Dynamic MFC: `1827` records, `119,673` hits, `672.18 MB`, `153.733 ms`.
+  - MFC list transfer: `544` records, `33,052` calls, `27.233 ms`.
+  - Reservation commands: `1894` records, `5,086,348` command hits,
+    `3,789,574` GETLLAR, `1,296,774` PUTLLC.
+  - MFC wait: `1894` records, `5,818,878` reads, all fast, `0` blocking.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now treats `failed-loading-visual` plus a
+  Down160 `directleft200` label plus `PATH_TO_TENUTO_PRESENT` as
+  `titleload-down160-path-target-loading-only`.
+- The refiner now blocks the generic state-aware fallback and the
+  save-prompt-opening repair loop for this state.
+- The suggested next action is a Down160 no-movement load-stability diagnostic:
+  `cpu4-titleload-down160-loadstability-nocross-nomove-visualgate-windows`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same loading-only rule.
+
+Classification:
+
+- `failed-loading-visual`, `route-tooling`,
+  `titleload-down160-path-target-loading-only`.
+- Not field proof.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner, then run only the Down160 no-movement load-stability
+  diagnostic before any first-battle, HLE, RSX, GPU, or speed-stacking work.

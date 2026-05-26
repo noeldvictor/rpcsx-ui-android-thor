@@ -306,6 +306,11 @@ function New-StateAwareTitleToLoadDownHoldDirectLeftCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-pollgated-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 9"
 }
 
+function New-StateAwareTitleToLoadDownHoldLoadStabilityNoMoveCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:post-confirm-90s;wait:45000;shot:post-confirm-135s;wait:45000;shot:post-confirm-180s"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-loadstability-nocross-nomove-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 285 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 13"
+}
+
 function New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:load-complete-check;cross:120;wait:12000;shot:post-load-complete-dismiss-check;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 190 -InputMacro `"$macro`" -MaxSeconds 250 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 10"
@@ -1177,10 +1182,13 @@ if ($latestRun) {
         $latestText -like "*titleload-down160*" -and
         $latestText -like "*directleft200*"
     $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck =
-        $latestRun.Decision -eq "failed-visual-gate" -and
+        (@("failed-visual-gate", "failed-loading-visual") -contains $latestRun.Decision) -and
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
         $latestText -like "*titleload-down160*" -and
         $latestText -like "*directleft200*"
+    $latestTitleToLoadDownHoldDirectLeftPersistentLoading =
+        $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and
+        $latestRun.Visual.PrimarySmallClass -eq "loading-like-small-png"
     $latestTitleToLoadDownHoldPostLoadCompleteSavePrompt =
         $latestRun.Decision -eq "valid-field-triage" -and
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
@@ -1623,7 +1631,10 @@ if ($latestTitleToLoadDownHoldWrongSaveTarget) {
 if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-load-target-classifier-row-drift" -Severity "route-repair" -Evidence "Newest Down160 post-load-complete route has a live gate-failed marker, but the corrected multi-row classifier now reports PATH_TO_TENUTO_PRESENT on the lower selected Path-to-Tenuto row." -Action "Do not fall back to generic state-aware or old loader-control macros. Re-run the same Down160 post-load-complete dismiss direct-left repair under the multi-row classifier."
 }
-if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
+if ($latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-loading-only" -Severity "blocker" -Evidence "Newest plain Down160 direct-left route removed the save-prompt Cross and still stayed on Now Loading through late screenshots despite PATH_TO_TENUTO_PRESENT." -Action "Do not fall back to generic state-aware routes or repeat the save-prompt-opening repair. Run the Down160 no-movement load-stability diagnostic to separate persistent loading from movement/prompt timing before any speed/HLE/RSX work."
+}
+if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck -and -not $latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
 }
 if ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
@@ -1830,6 +1841,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 post-load-complete repair aborted on a stale fixed-row live gate, but the corrected multi-row classifier now reports PATH_TO_TENUTO_PRESENT on the lower selected row. Treat it as classifier row drift and rerun the same Down160 post-load-complete dismiss route before any speed/HLE/RSX work."
 } elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
     "Latest Down160 post-load-complete repair reached field, but the extra post-field Cross opened the Save game prompt and blocked movement. Remove that Cross and rerun the plain Down160 load-target-gated direct-left route before any speed/HLE/RSX work."
+} elseif ($latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
+    "Latest plain Down160 direct-left route removed the save-prompt Cross but stayed on Now Loading through late screenshots. Do not use the generic state-aware fallback or repeat the prompt route; run a Down160 no-movement load-stability diagnostic first."
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     "Latest down160 title-to-Load diagnostic proved PATH_TO_TENUTO_PRESENT and intentionally stopped before slot Cross. Continue with the down160 load-target-gated direct-left route; this is still route repair, not speed."
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
@@ -2006,6 +2019,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldDiagnosticCommand
 } elseif ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
     New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand
+} elseif ($latestTitleToLoadDownHoldDirectLeftPersistentLoading) {
+    New-StateAwareTitleToLoadDownHoldLoadStabilityNoMoveCommand
 } elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
