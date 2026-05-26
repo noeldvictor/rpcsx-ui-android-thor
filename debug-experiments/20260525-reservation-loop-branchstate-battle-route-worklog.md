@@ -2802,3 +2802,92 @@ Next:
 - Do not rerun the 0x25cc descriptor field proof.
 - Prove title Options/menu with `Verify25ccShadow`.
 - Then prove first battle before bodyfast, stack, GPU, or speed promotion.
+
+## 2026-05-26 0x25cc Descriptor Options Route Misses
+
+Commands:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label cpu4-hle-25cc-shadow-desc-options-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate Off -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 90 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label cpu4-hle-25cc-shadow-desc-options-nocross-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-preinput;down:220;wait:1000;shot:title-after-down1;down:220;wait:16000;shot:title-after-down2;cross:180;wait:8000;shot:options-candidate;wait:12000;shot:options-late" -MaxSeconds 155 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 14 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260526-171358-cpu4-hle-25cc-shadow-desc-options-proof-windows`
+- `debug-captures\windows-lab\20260526-172754-cpu4-hle-25cc-shadow-desc-options-nocross-proof-windows`
+
+Verification:
+
+- Both runs were controlled Windows-only RPCS3 runs on screen 1 / `\\.\DISPLAY2`
+  with CPU affinity `0x0F`, PadApi, GPU probe profile, and
+  `Verify25ccShadow`.
+- No active RPCS3/RPCSX process remained after the no-cross run.
+- Fatal scan found no fatal/crash/access/Vulkan/assertion hits in either run.
+- Host samples were clean: `7` snapshots for the initial Options run and `6`
+  snapshots for the no-cross repair.
+- Manual screenshots from the initial Options run show story/cutscene or
+  intro-field frames, not the full title Options page. The route selected New
+  Game/story instead of Options.
+- Manual screenshots from the no-cross run show:
+  - `screenshot-0068s-title-preinput.png`: title menu with `NEW GAME`, `LOAD`,
+    and `OPTIONS`; selection at `NEW GAME`.
+  - `screenshot-0070s-title-after-down1.png`: title menu with `LOAD` selected.
+  - `screenshot-0086s-title-after-down2.png`: story/cutscene text, proving the
+    long second wait drifted into the intro/title loop.
+  - `screenshot-0095s-options-candidate.png` and
+    `screenshot-0108s-options-late.png`: title-menu frames, still not full
+    Options.
+
+Counters:
+
+- Initial Options route:
+  - GPU probe records `1519`; SPU HLE verifier/shadow rows `1519`.
+  - 0x25cc shadow hits `30948`, GET/PUT `14853/16095`, bytes `483.56 MB`,
+    output match/mismatch `30948/0`.
+  - Descriptor hits `30948`, GET/PUT `14853/16095`, bytes `483.56 MB`,
+    output match/mismatch `30948/0`, unique pattern signatures `147`,
+    descriptor overflow `0`.
+  - Total observed DMA `2432.83 MB`; RSX-local `0`; GPU Port Scoreboard
+    promoted CPU/SPU-to-GPU `0 B`, direct RSX-local `0 B`, indirect overlap
+    `0 B`.
+- No-cross route:
+  - GPU probe records `1117`; SPU HLE verifier/shadow rows `1117`.
+  - 0x25cc shadow hits `17658`, GET/PUT `8253/9405`, bytes `275.91 MB`,
+    output match/mismatch `17658/0`.
+  - Descriptor hits `17658`, GET/PUT `8253/9405`, bytes `275.91 MB`,
+    output match/mismatch `17658/0`, unique pattern signatures `120`,
+    descriptor overflow `0`.
+  - 0x25cc family timing total `863.274 ms`, average `48.889 us`, max
+    `16821 us`.
+  - Total observed DMA `1831.69 MB`; RSX-local `0`; offload fit
+    `spu-kernel-hle=803` / `too-small=314`; GPU Port Scoreboard promoted
+    CPU/SPU-to-GPU `0 B`, direct RSX-local `0 B`, indirect overlap `0 B`.
+
+Classification:
+
+- `failed-cutscene-or-nonfield-visual`.
+- `route-tooling`.
+- Initial run: `hle-25cc-shadow-desc-options-initial-cross-cutscene-route-miss`.
+- No-cross run: `hle-25cc-shadow-desc-options-nocross-wait-drift`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now distinguishes the no-initial-Cross wait
+  drift from the initial-Cross route miss.
+- The refiner no longer repeats the same no-cross macro after the latest
+  no-cross miss; it suggests a fast Down160 Options-select proof with short
+  waits and explicit title/selection screenshots.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  now carry the same standing rule.
+
+Next:
+
+- Do not rerun the descriptor field proof.
+- Do not fall back to old loader-control field movement.
+- Do not repeat the same no-initial-Cross Options macro.
+- Run the fast Down160 title Options proof with `Verify25ccShadow`, then prove
+  first battle before bodyfast, stack, GPU, or speed promotion.

@@ -269,6 +269,16 @@ clean, classify it as `valid-field-triage` and
 `hle-25cc-shadow-pattern-gap` advice; the next 25cc rung is title Options/menu
 proof with `Verify25ccShadow`, followed by first battle, before bodyfast,
 stack, GPU, or speed promotion.
+If that descriptor Options proof instead enters story/cutscene or field-like
+intro frames, classify it as an Options route miss. Do not back off to generic
+loader-control or field movement. The next command should remove the initial
+title `Cross`, take a preinput screenshot, step down to Options, and open the
+full title Options page with `Verify25ccShadow`.
+If the no-initial-`Cross` Options proof reaches the title menu and selects
+`Load` but then drifts into the intro/title loop before opening Options, do not
+repeat the same route. Classify it as `options-nocross-wait-drift`; switch to a
+fast Down160 title-menu route with short waits between `Down`, `Down`, and
+`Cross`, keeping explicit title/selection screenshots and `Verify25ccShadow`.
 
 ## Acceptance
 
