@@ -92,7 +92,13 @@ not moving gameplay. The refiner must suggest the damaged-confirm dismiss-save
 macro before any speed, HLE/GPU, or first-battle promotion. If that dismiss-save
 route stays in the Load UI, classify it as `load-menu-miss`, block both old
 macros, and suggest a late load-confirm Yes repair before any save-prompt
-dismissal or movement proof.
+dismissal or movement proof. If the late load-confirm route opens the Proceed
+prompt but does not send the second `Cross`, block that one-cross macro and
+suggest the double-confirm repair. If the double-confirm route still stays in
+the Load list and manual screenshots show `Debug Save` / `Prologue` instead of
+the Path to Tenuto save target, stop automatic state-aware macro retries and
+repair save-target selection or add route-state/OCR gating before pressing
+`Cross`.
 
 ## Acceptance
 

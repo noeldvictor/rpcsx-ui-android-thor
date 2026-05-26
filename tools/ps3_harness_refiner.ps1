@@ -281,6 +281,11 @@ function New-StateAwareLateLoadConfirmCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-late-load-confirm-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8"
 }
 
+function New-StateAwareLateLoadDoubleConfirmDismissMovementCommand {
+    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-late-load-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 185 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 9"
+}
+
 function New-Hle451cSize16CandidateReproofCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label hle-451c-size16-candidate-reproof-field -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8"
 }
@@ -966,6 +971,8 @@ $latestHle25ccBodyFastRsxFinalStackAuditorPass = $false
 $latestStateAwarePromptStuck = $false
 $latestStateAwareSavePromptField = $false
 $latestStateAwareDismissLoadMenuMiss = $false
+$latestStateAwareLateLoadConfirmNeedsSecondCross = $false
+$latestStateAwareLateDoubleConfirmRouteDrift = $false
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1005,6 +1012,14 @@ if ($latestRun) {
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
         $latestText -like "*stateaware-damaged-confirm-dismiss-save*"
+    $latestStateAwareLateLoadConfirmNeedsSecondCross =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
+        $latestText -like "*stateaware-late-load-confirm*"
+    $latestStateAwareLateDoubleConfirmRouteDrift =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
+        $latestText -like "*stateaware-late-load-doubleconfirm*"
     $latestHle451cSize16Candidate =
         $latestText -like "*451c-size16*" -or
         $latestText -like "*size16-candidate*" -or
@@ -1371,6 +1386,12 @@ if ($latestStateAwareSavePromptField) {
 if ($latestStateAwareDismissLoadMenuMiss) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-dismiss-save-load-menu-miss" -Severity "blocker" -Evidence "Newest dismiss-save state-aware route never reached field; screenshots stayed on the Load/Proceed screen and then the Load list, despite clean host and fatal-clean logs." -Action "Do not rerun the old default or the dismiss-save macro. Treat this as a late load-confirm timing miss and use a late Yes-confirm repair before any save-prompt dismissal or movement proof."
 }
+if ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-late-load-confirm-needs-second-cross" -Severity "blocker" -Evidence "Newest late load-confirm repair opened the Load data/Proceed prompt with Yes highlighted, but never sent the second Cross confirm, so every screenshot stayed on the Load UI." -Action "Do not rerun the one-cross late-confirm macro. Send a second Cross after the prompt appears, then capture field, dismiss the save prompt, and test the one-left-pulse route under CleanAfterField."
+}
+if ($latestStateAwareLateDoubleConfirmRouteDrift) {
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-late-doubleconfirm-wrong-save-target" -Severity "blocker" -Evidence "Newest late double-confirm route still missed field, and manual screenshots showed the Load list on Debug Save / Prologue instead of the known Path to Tenuto save target." -Action "Do not rerun the state-aware load macros. First repair save-target selection or add a route-state diagnostic/OCR gate that proves Path to Tenuto is selected before pressing Cross."
+}
 if ($latestHle451cSize16BodyOffBattleRouteLost) {
     $battleRouteLossEvidence = if ($latestHle451cSize16BodyOffBattleProcessExit) {
         if ($latestHle451cSize16BodyOffBattleLeftOnlyProcessExit) {
@@ -1536,6 +1557,10 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest damaged-save-confirm route repaired the load-confirm failure and reached field-like output, but it is parked on the save prompt. Dismiss the save prompt and re-test the same one-left-pulse field route before any broader battle or speed proof."
 } elseif ($latestStateAwareDismissLoadMenuMiss) {
     "Latest dismiss-save route missed field entirely and stayed in the Load screen/Proceed state. Do not rerun the default or dismiss-save macros; use a late load-confirm Yes repair, then prove field before any save-prompt dismissal or speed work."
+} elseif ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
+    "Latest late load-confirm route opened the Proceed prompt but did not send the second Cross confirm. Do not rerun the one-cross macro; use the double-confirm plus save-prompt dismissal route before any speed work."
+} elseif ($latestStateAwareLateDoubleConfirmRouteDrift) {
+    "Latest late double-confirm route missed field and selected Debug Save / Prologue instead of Path to Tenuto. Stop state-aware macro retries until save-target selection is repaired or route-state-gated."
 } elseif ($latestHle451cPreserveBodyBattleFatal) {
     "Latest 0x451c preserve-body first-battle proof reached battle, then froze with VM access violation at 0x40. Keep preserve-body opt-in/off and re-prove the same first-battle route with preserve-body Off before narrowing semantics."
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {
@@ -1680,6 +1705,10 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareDamagedSaveDismissMovementCommand
 } elseif ($latestStateAwareDismissLoadMenuMiss) {
     New-StateAwareLateLoadConfirmCommand
+} elseif ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
+    New-StateAwareLateLoadDoubleConfirmDismissMovementCommand
+} elseif ($latestStateAwareLateDoubleConfirmRouteDrift) {
+    "# No automatic state-aware rerun: latest double-confirm route selected Debug Save / Prologue, not Path to Tenuto. Repair save-target selection or add OCR/route-state gating before pressing Cross."
 } elseif ($latestHle451cPreserveBodyBattleFatal) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-451c-preserve-body-off-first-battle-reproof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Off -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 220 -ScreenshotMaxCount 8"
 } elseif ($latestHle451cPreserveBodyOffBattleTopslotLeft1250StateGatedBlack) {

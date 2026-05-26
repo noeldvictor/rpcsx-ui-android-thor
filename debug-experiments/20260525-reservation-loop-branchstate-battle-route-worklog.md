@@ -256,3 +256,79 @@ Next:
 
 - Run the late load-confirm repair before any save-prompt dismissal, broader
   battle route, or fast-mode promotion.
+
+## 2026-05-26 Late Load-Confirm And Double-Confirm Rejection
+
+Goal:
+
+- Repair the state-aware field route after the dismiss-save macro stayed in the
+  Load/Proceed screen.
+- Keep this Windows-only on screen 1. No Android, ADB, or Thor work was run.
+
+Late load-confirm run:
+
+- `debug-captures\windows-lab\20260526-001938-cpu4-stateaware-late-load-confirm-left200-visualgate-windows-windows`
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; no field-like screenshot at or
+  before `175s`.
+- Manual screenshots show the `Load data from this file. Proceed?` prompt with
+  `Yes` highlighted from `screenshot-0154s.png` through `screenshot-0205s.png`.
+- Diagnosis: the macro opened the prompt but did not send the second `Cross`
+  needed to accept it.
+- Host and fatal scans were clean after excluding known `ExceptionEventHandler`
+  symbol text.
+- Classification: `failed-visual-gate`, `route-tooling`,
+  `late-load-confirm-needs-second-cross`.
+
+Corrected double-confirm run:
+
+- `debug-captures\windows-lab\20260526-003206-cpu4-stateaware-late-load-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; no field-like screenshot at or
+  before `185s`.
+- Manual screenshots show the Load list selected `Debug Save` / `Prologue`, not
+  the known Path to Tenuto save target. Later `down` input moved the cursor to
+  a `File does not exist` row because the run never reached field/save prompt.
+- Host and fatal scans were clean.
+
+Corrected-run counters:
+
+- GPU probe records: `1,458`.
+- Total observed DMA bytes: `1,547.96 MB`.
+- Offload fit: `spu-kernel-hle=816`, `too-small=642`.
+- Hot PCs:
+  - `0x25cc`: `547` records, `849.44 MB`.
+  - `0x451c`: `911` records, `698.52 MB`.
+- Dynamic MFC hits: `152,217`, `385.90 MB`, `155.355 ms`.
+- MFC list-transfer calls: `56,079`, `41.624 ms`.
+- Reservation loop verify records: `5,451`.
+- Reservation loop command exact-PC records: `43,279`.
+- Lane 2 stayed clean: `10464/10464/10464/0/0`.
+- Promoted CPU/SPU -> GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- Both runs are `failed-visual-gate` / `route-tooling`.
+- Not field.
+- Not moving gameplay.
+- Not a speed win.
+- Not `windows-micro-win`.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Harness/refiner outcome:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes
+  `stateaware-late-load-confirm-needs-second-cross` and suggests the
+  double-confirm route after the one-cross prompt miss.
+- It also recognizes
+  `stateaware-late-doubleconfirm-wrong-save-target` and stops automatic
+  state-aware reruns when the double-confirm route selects `Debug Save` /
+  `Prologue` instead of Path to Tenuto.
+
+Next:
+
+- Repair save-target selection or add route-state/OCR gating that proves Path
+  to Tenuto is selected before pressing `Cross`.
+- Keep lane-2 HLE/GPU fast modes blocked until field, menu/Options, and
+  first-battle visuals are valid in the same stack.

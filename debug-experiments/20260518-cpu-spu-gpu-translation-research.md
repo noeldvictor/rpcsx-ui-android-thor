@@ -18542,3 +18542,55 @@ Next:
 - The refiner now suggests `cpu4-stateaware-late-load-confirm-left200-visualgate-windows`
   to repair the late Load/Proceed confirmation before any save-prompt dismissal
   or movement proof.
+
+## 2026-05-26 - State-Aware Late-Confirm Route Drift
+
+Purpose:
+
+- Keep the SPU/HLE/codegen research lane from treating Load UI counters as
+  speed or GPU-port evidence.
+- Tighten the continual-harness route blocker after two more field-route misses.
+
+Runs:
+
+- One-cross late confirm:
+  `debug-captures\windows-lab\20260526-001938-cpu4-stateaware-late-load-confirm-left200-visualgate-windows-windows`.
+- Double-confirm plus dismiss-save:
+  `debug-captures\windows-lab\20260526-003206-cpu4-stateaware-late-load-doubleconfirm-dismisssave-left200-visualgate-windows-windows`.
+
+Evidence:
+
+- The one-cross run opened the `Load data from this file. Proceed?` prompt with
+  `Yes` highlighted and then stayed there.
+- The double-confirm run still stayed in the Load list, and manual screenshots
+  showed `Debug Save` / `Prologue` instead of the Path to Tenuto save target.
+- Both runs were host-clean and fatal-clean, but both failed the field visual
+  gate with `NO_FIELD_LIKE_SCREENSHOT`.
+
+Corrected-run counters:
+
+- Records: `1,458`.
+- Total observed DMA: `1,547.96 MB`.
+- Offload fit: `spu-kernel-hle=816`, `too-small=642`.
+- Hot PCs: `0x25cc` with `849.44 MB`, `0x451c` with `698.52 MB`.
+- Dynamic MFC: `152,217` hits, `385.90 MB`, `155.355 ms`.
+- MFC list transfer: `56,079` calls, `41.624 ms`.
+- Lane 2: `10464/10464/10464/0/0`.
+- GPU port scoreboard: `0 B` promoted CPU/SPU-to-GPU replacement, `0 B`
+  direct RSX-local scout traffic, and `0 B` indirect overlap.
+
+Classification:
+
+- `failed-visual-gate`, `route-tooling`.
+- Not field, not moving gameplay, not a speed win, not
+  `gpu-migration-credit`, and not a 200% gate candidate.
+
+Next:
+
+- Stop automatic state-aware macro retries after the wrong-save-target
+  double-confirm miss.
+- Repair save-target selection or add route-state/OCR gating that proves Path
+  to Tenuto is selected before pressing `Cross`.
+- Continue treating zero-RSX-local SPU traffic as a CPU/SPU HLE, NEON/dotprod,
+  reduced-loop, scheduler, or copy-specialization lane, not a Vulkan compute
+  offload lane.
