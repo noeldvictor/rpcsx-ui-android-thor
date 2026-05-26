@@ -1057,3 +1057,141 @@ Next:
 - Validate the refiner. If it reports the expected wrong-save-target blocker,
   restore or repair the local Path-to-Tenuto save target before another Down160
   direct-left boundary proof.
+
+## 2026-05-26 Down160 Save Restore And Load-Complete Miss
+
+Run:
+
+- Backup before restore:
+  `debug-captures\save-backups\BLUS3016100-before-down160-path-restore-20260526-043444`.
+- Restored from:
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100`.
+- Boundary reproof attempt:
+  `debug-captures\windows-lab\20260526-043503-cpu4-titleload-down160-pollgated-directleft200-visualgate-windows-windows`.
+
+Evidence:
+
+- The restored Windows RPCS3 save hashes match the known checkpoint, and
+  `PARAM.SFO` advertises `Ch. 1 Raindrops Path to Tenuto South Section`.
+- The run launched with the full 20-token macro, screen 1, CPU affinity `0x0F`,
+  frame/vblank `240/240`, and clean host pre/post samples.
+- The live load-target gate passed immediately:
+  `screenshot-0081s-load-target-gate.png` classified
+  `PATH_TO_TENUTO_PRESENT`.
+- The route did not reach field. Manual review of
+  `screenshot-0136s-accepted-field-check.png` and `screenshot-0210s.png` shows
+  the Load UI with `Load complete`, not Path-to-Tenuto moving gameplay.
+- `tools\check_eternal_sonata_windows_visual_gate.ps1` reports
+  `NO_FIELD_LIKE_SCREENSHOT`; all 13 screenshots are
+  `wrong-window-or-other-small-png`.
+- `rpcs3.stderr.txt` is empty and a fatal scan of `RPCS3.log` did not find a
+  VM access violation, Vulkan fatal, verification failure, or STOP hit.
+- The direct sprint command timed out during the wrapper tail after stopping
+  RPCS3 at `230s`, so automatic GPU summary files were not produced in that
+  run directory. A later full summarizer retry also timed out on the
+  `94.67 MB` log.
+- Minimal `rg` counter extraction found `1684` raw GPU-candidate probe records,
+  `1,663.24 MB` observed DMA, `0 B` direct RSX bytes, and hot max-DMA PCs
+  `0x451c` (`1150` records) and `0x25cc` (`534` records). These counters are
+  route-invalid because there was no field/movement proof.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now detects this shape as
+  `titleload-down160-load-complete-not-dismissed`.
+- The suggested command is now
+  `cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows`,
+  which keeps the Down160 load-target gate and adds an explicit
+  post-load-complete `Cross` before field and movement screenshots.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same route-repair rule.
+
+Validation:
+
+- `tools\ps3_harness_refiner.ps1` parses successfully.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` now reports
+  `titleload-down160-load-complete-not-dismissed` and suggests
+  `cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows`,
+  not the stale generic state-aware command.
+
+Classification:
+
+- `failed-visual-gate`, `route-tooling`,
+  `down160-load-complete-not-dismissed`.
+- Not field proof.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Validate the refiner, then run only the Down160 post-load-complete dismiss
+  direct-left repair before any first-battle, HLE, RSX, or speed work.
+
+## 2026-05-26 Down160 Multi-Row Load-Target Classifier
+
+Run:
+
+- Post-load-complete repair attempt:
+  `debug-captures\windows-lab\20260526-045343-cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows-windows`.
+
+Evidence:
+
+- The run launched with the full 23-token macro, screen 1, CPU affinity `0x0F`,
+  frame/vblank `240/240`, and clean host pre/post samples.
+- The live load-target gate aborted before save-slot `Cross`; visual gate stayed
+  `NO_FIELD_LIKE_SCREENSHOT`, with all screenshots classed as
+  `wrong-window-or-other-small-png`.
+- Manual review of `screenshot-0085s-load-target-gate-3.png` showed the selected
+  lower row was `Save File 04` / `Path to Tenuto`, while the old fixed crop was
+  reading the top damaged-save text.
+- `tools\classify_eternal_sonata_load_target.ps1` now scans visible candidate
+  rows (`190, 365, 535`) with `x=650`, `height=145`, and records the winning
+  crop row in the summary table.
+- Reclassifying the latest `045343` folder now reports
+  `PATH_TO_TENUTO_PRESENT`: path-to-tenuto=`12`, debug-save-prologue=`0`,
+  unknown=`2`.
+- Control checks still hold: old wrong-save folder `035749` reports
+  `DEBUG_SAVE_PROLOGUE_PRESENT` (`0/13/0` path/debug/unknown), and old known-good
+  Path folder `031038` reports `PATH_TO_TENUTO_PRESENT` (`1/0/12`).
+- GPU summary for `045343` remains route-invalid: `765` records,
+  `781.61 MB` observed DMA, `0` RSX-local traffic records,
+  `0` indirect RSX resource overlap records, offload fit
+  `spu-kernel-hle=397`, `too-small=368`.
+
+Harness update:
+
+- `tools\ps3_harness_refiner.ps1` now detects a Down160 post-load route with a
+  gate-failed marker but corrected `PATH_TO_TENUTO_PRESENT` classifier status as
+  `titleload-down160-load-target-classifier-row-drift`.
+- The refiner blocks the generic load-target failure fallback for that state and
+  suggests rerunning
+  `cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows`
+  under the corrected multi-row classifier.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  carry the same row-drift rule.
+
+Validation:
+
+- `tools\classify_eternal_sonata_load_target.ps1` parses successfully.
+- `tools\ps3_harness_refiner.ps1` parses successfully.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` reports
+  `titleload-down160-load-target-classifier-row-drift` and suggests the Down160
+  post-load-complete dismiss command, not generic state-aware or old
+  loader-control macros.
+
+Classification:
+
+- `route-tooling`, `classifier-row-drift`, `failed-load-target-gate`.
+- Not field proof.
+- Not moving gameplay.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Rerun only the Down160 post-load-complete dismiss direct-left repair under the
+  corrected multi-row classifier. Do not run speed/HLE/RSX promotion until field
+  movement is valid again.

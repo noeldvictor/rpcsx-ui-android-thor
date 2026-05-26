@@ -306,6 +306,11 @@ function New-StateAwareTitleToLoadDownHoldDirectLeftCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-pollgated-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 9"
 }
 
+function New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:load-complete-check;cross:120;wait:12000;shot:post-load-complete-dismiss-check;ls_left:200;wait:1200;shot:left200-check;wait:10000;shot:late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-postloadcomplete-dismiss-directleft200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 190 -InputMacro `"$macro`" -MaxSeconds 250 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 130 -ScreenshotMaxCount 10"
+}
+
 function New-StateAwareTitleToLoadDownHoldBattleRouteCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field-check;ls_left:2600;wait:1000;combo:ls_left+ls_down:2200;wait:45000;shot:battle-candidate;dpad_down:120;wait:500;cross:180;wait:60000;shot:first-battle-check;wait:60000;shot:late-battle-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-titleload-down160-firstbattle-battleroute-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 175 -InputMacro `"$macro`" -MaxSeconds 335 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12"
@@ -1084,6 +1089,8 @@ $latestLoadTargetDirectLeftGateFailure = $false
 $latestLoadTargetDirectLeftLongGateCutscene = $false
 $latestTitleToLoadDiagnosticCutscene = $false
 $latestTitleToLoadDownHoldWrongSaveTarget = $false
+$latestTitleToLoadDownHoldClassifierFalseGateFailure = $false
+$latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck = $false
 $latestTitleToLoadDownHoldLoadTargetPass = $false
 $latestTitleToLoadDownHoldDirectLeftFieldPass = $false
 $latestTitleToLoadDownHoldBattleFatal = $false
@@ -1163,6 +1170,16 @@ if ($latestRun) {
             $latestText -like "*titleload-down160*" -or
             $latestText -like "*title-to-load-down160*"
         )
+    $latestTitleToLoadDownHoldClassifierFalseGateFailure =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*titleload-down160*" -and
+        $latestText -like "*directleft200*"
+    $latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*titleload-down160*" -and
+        $latestText -like "*directleft200*"
     $latestTitleToLoadDownHoldLoadTargetPass =
         $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
         $latestText -like "*title-to-load-down160-state-diagnostic*"
@@ -1544,7 +1561,11 @@ if ($loadingRuns.Count -ge 2) {
     Add-AntiPattern -List $antiPatterns -Name "repeated-loading-before-field" -Severity "blocker" -Evidence ("{0} of {1} recent runs stayed loading-like." -f $loadingRuns.Count, $runEvidence.Count) -Action "Increase or repair the accepted-field state gate before movement. Counters from loading-only captures are not comparable."
 }
 if ($cutsceneRuns.Count -ge 1) {
-    $cutsceneAction = if ($latestTitleToLoadDownHoldWrongSaveTarget) {
+    $cutsceneAction = if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
+        "The newest blocker is a Down160 load-target classifier row-drift false gate. Keep the Down160 route and rerun the post-load-complete repair under the multi-row classifier before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
+        "The newest blocker is a Down160 post-load-complete route miss. Keep the Down160 route and repair the load-complete dismissal before any old loader-control or speed work."
+    } elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
         "The newest blocker is not the older cutscene route miss; it is a Down160 wrong-save-target gate. Restore or repair Path to Tenuto and verify PATH_TO_TENUTO_PRESENT before any route rerun."
     } elseif ($latestTitleToLoadDiagnosticCutscene -or $latestLoadTargetDirectLeftLongGateCutscene) {
         "Keep the title/load state-gated ladder. Do not back off to old loader-control movement or speed toggles."
@@ -1578,7 +1599,7 @@ if ($latestStateAwareDismissLoadMenuMiss) {
 if ($latestStateAwareLateLoadConfirmNeedsSecondCross) {
     Add-AntiPattern -List $antiPatterns -Name "stateaware-late-load-confirm-needs-second-cross" -Severity "blocker" -Evidence "Newest late load-confirm repair opened the Load data/Proceed prompt with Yes highlighted, but never sent the second Cross confirm, so every screenshot stayed on the Load UI." -Action "Do not rerun the one-cross late-confirm macro. Send a second Cross after the prompt appears, then capture field, dismiss the save prompt, and test the one-left-pulse route under CleanAfterField."
 }
-if ($latestLoadTargetGateFailure) {
+if ($latestLoadTargetGateFailure -and -not $latestTitleToLoadDownHoldClassifierFalseGateFailure) {
     $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
     Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
 }
@@ -1593,6 +1614,12 @@ if ($latestTitleToLoadDiagnosticCutscene) {
 }
 if ($latestTitleToLoadDownHoldWrongSaveTarget) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-wrong-save-target" -Severity "blocker" -Evidence "Newest Down160 title/load route selected $latestLoadTargetGateStatus instead of PATH_TO_TENUTO_PRESENT, so the live gate aborted before save-slot Cross." -Action "Do not fall back to generic state-aware, old loader-control, or blind double-confirm macros. Restore or repair the Path-to-Tenuto save target, verify the gate reports PATH_TO_TENUTO_PRESENT, then re-run the Down160 direct-left boundary proof."
+}
+if ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-load-target-classifier-row-drift" -Severity "route-repair" -Evidence "Newest Down160 post-load-complete route has a live gate-failed marker, but the corrected multi-row classifier now reports PATH_TO_TENUTO_PRESENT on the lower selected Path-to-Tenuto row." -Action "Do not fall back to generic state-aware or old loader-control macros. Re-run the same Down160 post-load-complete dismiss direct-left repair under the multi-row classifier."
+}
+if ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
+    Add-AntiPattern -List $antiPatterns -Name "titleload-down160-path-target-no-field" -Severity "route-repair" -Evidence "Newest Down160 direct-left-shaped route has PATH_TO_TENUTO_PRESENT but failed the field visual gate. The preceding manual screenshot review showed the Load UI with a Load complete popup, and the latest live gate needed the multi-row target classifier." -Action "Do not fall back to generic state-aware or old loader-control macros. Keep the Down160 route and use the post-load-complete Cross repair before the field and movement screenshots."
 }
 if ($latestTitleToLoadDownHoldLoadTargetPass) {
     Add-AntiPattern -List $antiPatterns -Name "titleload-down160-target-proven-no-field-yet" -Severity "route-repair" -Evidence "Newest down160 title-to-Load diagnostic reached PATH_TO_TENUTO_PRESENT but intentionally stopped before pressing the save slot, so it is not field or moving gameplay proof." -Action "Continue only with the down160 load-target-gated direct-left route. Keep HLE/RSX speed work blocked until field movement is valid."
@@ -1791,6 +1818,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest long-gate direct-left route entered story/cutscene frames while the load-target classifier stayed UNKNOWN_LOAD_TARGET. Run the title-to-Load diagnostic next; it screenshots each title/menu/load-list transition and stops before slot Cross unless PATH_TO_TENUTO_PRESENT."
 } elseif ($latestTitleToLoadDiagnosticCutscene) {
     "Latest title-to-Load diagnostic proved the short title Down press did not reach Load; Cross entered New Game/story cutscene. Run the down160 title-selection diagnostic next and keep all speed/HLE/RSX work blocked."
+} elseif ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
+    "Latest Down160 post-load-complete repair aborted on a stale fixed-row live gate, but the corrected multi-row classifier now reports PATH_TO_TENUTO_PRESENT on the lower selected row. Treat it as classifier row drift and rerun the same Down160 post-load-complete dismiss route before any speed/HLE/RSX work."
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     "Latest down160 title-to-Load diagnostic proved PATH_TO_TENUTO_PRESENT and intentionally stopped before slot Cross. Continue with the down160 load-target-gated direct-left route; this is still route repair, not speed."
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
@@ -1803,6 +1832,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest down160 load-target-gated route proved Path to Tenuto field plus direct-left movement. Use that route base for first-battle proof next; title Options is still separately required before any 200% or speed promotion."
 } elseif ($latestTitleToLoadDownHoldBattleFatal -and $recentTitleToLoadDownHoldDirectLeftFieldPass) {
     "Latest Down160 first-battle route crashed after accepted field and movement. Re-prove the last clean Down160 direct-left boundary, then shrink or state-gate the battle movement branch before another first-battle attempt."
+} elseif ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
+    "Latest Down160 direct-left-shaped route has Path-to-Tenuto target evidence but no field proof. Keep the Down160 route and run the post-load-complete Cross repair under the multi-row load-target classifier."
 } elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
     "Latest Down160 title/load route selected $latestLoadTargetGateStatus, not Path to Tenuto. Stop route retries, restore or repair the save target, and require PATH_TO_TENUTO_PRESENT before re-running the Down160 direct-left boundary."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
@@ -1963,6 +1994,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDiagnosticCommand
 } elseif ($latestTitleToLoadDiagnosticCutscene) {
     New-StateAwareTitleToLoadDownHoldDiagnosticCommand
+} elseif ($latestTitleToLoadDownHoldClassifierFalseGateFailure) {
+    New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
@@ -1975,6 +2008,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldBattleRouteCommand
 } elseif ($latestTitleToLoadDownHoldBattleFatal -and $recentTitleToLoadDownHoldDirectLeftFieldPass) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
+} elseif ($latestTitleToLoadDownHoldDirectLeftLoadCompleteStuck) {
+    New-StateAwareTitleToLoadDownHoldPostLoadCompleteDismissCommand
 } elseif ($latestTitleToLoadDownHoldWrongSaveTarget) {
     "# No automatic route rerun: latest Down160 gate selected $latestLoadTargetGateStatus. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then re-run the Down160 direct-left boundary proof."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {

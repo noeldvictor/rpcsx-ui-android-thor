@@ -149,6 +149,16 @@ load-target gate reports `DEBUG_SAVE_PROLOGUE_PRESENT` or
 suggest generic state-aware, old loader-control, old double-confirm, or
 Down160 movement reruns. Restore or repair the Path-to-Tenuto save target,
 verify `PATH_TO_TENUTO_PRESENT`, then re-run the Down160 direct-left boundary.
+If a Down160 post-load route has a live gate-failed marker but the corrected
+multi-row classifier reports `PATH_TO_TENUTO_PRESENT` on a lower selected row,
+classify it as load-target classifier row drift. Do not suggest the generic
+state-aware or old loader-control macro. Re-run the same Down160
+post-load-complete dismiss route under the multi-row classifier.
+If the Down160 direct-left route passes `PATH_TO_TENUTO_PRESENT` but stays in
+the Load UI on the `Load complete` popup instead of reaching field, keep the
+Down160 route and add an explicit post-load-complete `Cross` before movement
+screenshots. Do not fall back to generic state-aware or old loader-control
+macros from that state.
 
 ## Acceptance
 

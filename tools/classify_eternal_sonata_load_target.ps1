@@ -7,13 +7,15 @@ param(
 
     [string]$BadExemplar = "",
 
-    [int]$CropX = 660,
+    [int]$CropX = 650,
 
     [int]$CropY = 190,
 
+    [int[]]$CandidateCropYs = @(),
+
     [int]$CropWidth = 500,
 
-    [int]$CropHeight = 170,
+    [int]$CropHeight = 145,
 
     [int]$GridColumns = 80,
 
@@ -60,12 +62,15 @@ function Get-ScreenshotSecond {
 }
 
 function Get-ScaledRect {
-    param([System.Drawing.Bitmap]$Bitmap)
+    param(
+        [System.Drawing.Bitmap]$Bitmap,
+        [int]$Y = $CropY
+    )
 
     $baseWidth = 1296.0
     $baseHeight = 759.0
     $x = [math]::Floor($CropX * $Bitmap.Width / $baseWidth)
-    $y = [math]::Floor($CropY * $Bitmap.Height / $baseHeight)
+    $y = [math]::Floor($Y * $Bitmap.Height / $baseHeight)
     $w = [math]::Max(1, [math]::Floor($CropWidth * $Bitmap.Width / $baseWidth))
     $h = [math]::Max(1, [math]::Floor($CropHeight * $Bitmap.Height / $baseHeight))
 
@@ -87,15 +92,16 @@ function Get-ScaledRect {
 function Get-RegionDiff {
     param(
         [string]$CandidatePath,
-        [string]$ExemplarPath
+        [string]$ExemplarPath,
+        [int]$CandidateY = $CropY
     )
 
     $candidate = [System.Drawing.Bitmap]::FromFile($CandidatePath)
     $exemplar = [System.Drawing.Bitmap]::FromFile($ExemplarPath)
 
     try {
-        $candidateRect = Get-ScaledRect -Bitmap $candidate
-        $exemplarRect = Get-ScaledRect -Bitmap $exemplar
+        $candidateRect = Get-ScaledRect -Bitmap $candidate -Y $CandidateY
+        $exemplarRect = Get-ScaledRect -Bitmap $exemplar -Y $CropY
         [double]$sum = 0
         [int]$count = 0
 
@@ -142,6 +148,32 @@ function Get-TargetClass {
     return "unknown-load-target"
 }
 
+function Get-BestTargetMatch {
+    param(
+        [string]$CandidatePath,
+        [string]$GoodExemplarPath,
+        [string]$BadExemplarPath,
+        [int[]]$CropYs
+    )
+
+    $matches = foreach ($candidateY in $CropYs) {
+        $goodDiff = Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $GoodExemplarPath -CandidateY $candidateY
+        $badDiff = Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $BadExemplarPath -CandidateY $candidateY
+        $target = Get-TargetClass -GoodDiff $goodDiff -BadDiff $badDiff
+        [pscustomobject]@{
+            CandidateY = $candidateY
+            GoodDiff = $goodDiff
+            BadDiff = $badDiff
+            BestKnownDiff = [math]::Min($goodDiff, $badDiff)
+            Target = $target
+        }
+    }
+
+    return @($matches | Sort-Object `
+        @{ Expression = { if ($_.Target -eq "unknown-load-target") { 1 } else { 0 } } }, `
+        BestKnownDiff, CandidateY | Select-Object -First 1)[0]
+}
+
 $repoRoot = Get-RepoRoot
 Set-Location -LiteralPath $repoRoot
 
@@ -168,6 +200,11 @@ if (-not (Test-Path -LiteralPath $resolvedBadExemplar -PathType Leaf)) {
 
 Add-Type -AssemblyName System.Drawing -ErrorAction Stop
 
+if ($CandidateCropYs.Count -eq 0) {
+    $CandidateCropYs = @($CropY, 365, 535)
+}
+$CandidateCropYs = @($CandidateCropYs | Select-Object -Unique)
+
 $screenshotDir = Join-Path $resolvedRunDir "screenshots"
 if (-not (Test-Path -LiteralPath $screenshotDir -PathType Container)) {
     $directPngs = @(Get-ChildItem -LiteralPath $resolvedRunDir -Filter "*.png" -File -ErrorAction SilentlyContinue)
@@ -185,15 +222,15 @@ if ($screenshots.Count -eq 0) {
 }
 
 $rows = foreach ($shot in $screenshots) {
-    $goodDiff = Get-RegionDiff -CandidatePath $shot.FullName -ExemplarPath $resolvedGoodExemplar
-    $badDiff = Get-RegionDiff -CandidatePath $shot.FullName -ExemplarPath $resolvedBadExemplar
+    $bestMatch = Get-BestTargetMatch -CandidatePath $shot.FullName -GoodExemplarPath $resolvedGoodExemplar -BadExemplarPath $resolvedBadExemplar -CropYs $CandidateCropYs
     [pscustomobject]@{
         Screenshot = $shot.Name
         Seconds = $(if ((Get-ScreenshotSecond $shot.Name) -eq [int]::MaxValue) { $null } else { Get-ScreenshotSecond $shot.Name })
         Bytes = $shot.Length
-        GoodDiff = $goodDiff
-        BadDiff = $badDiff
-        Target = Get-TargetClass -GoodDiff $goodDiff -BadDiff $badDiff
+        CropY = $bestMatch.CandidateY
+        GoodDiff = $bestMatch.GoodDiff
+        BadDiff = $bestMatch.BadDiff
+        Target = $bestMatch.Target
     }
 }
 
@@ -215,19 +252,20 @@ $summary.Add("# Eternal Sonata Load Target Classifier")
 $summary.Add("")
 $summary.Add(("- Run directory: ``{0}``" -f $resolvedRunDir))
 $summary.Add(("- Screenshot directory: ``{0}``" -f $screenshotDir))
-$summary.Add(("- Method: stable Load-list crop comparison, not OCR."))
+$summary.Add(("- Method: stable Load-list crop comparison across visible save rows, not OCR."))
 $summary.Add(("- Path-to-Tenuto exemplar: ``{0}``" -f $resolvedGoodExemplar))
 $summary.Add(("- Debug-Save exemplar: ``{0}``" -f $resolvedBadExemplar))
 $summary.Add(("- Crop reference: x={0}, y={1}, width={2}, height={3} on 1296x759 screenshots." -f $CropX, $CropY, $CropWidth, $CropHeight))
+$summary.Add(("- Candidate crop Y rows: ``{0}``." -f ($CandidateCropYs -join ", ")))
 $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $DecisionMargin, $MaxKnownDiff))
 $summary.Add(("- Status: ``{0}``" -f $status))
 $summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, unknown={2}." -f $pathRows.Count, $debugRows.Count, $unknownRows.Count))
 $summary.Add("")
-$summary.Add("| Screenshot | Seconds | Bytes | Good diff | Bad diff | Target |")
-$summary.Add("| --- | ---: | ---: | ---: | ---: | --- |")
+$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Target |")
+$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | --- |")
 foreach ($row in $rows) {
     $seconds = if ($null -eq $row.Seconds) { "" } else { $row.Seconds }
-    $summary.Add(("| ``{0}`` | {1} | {2} | {3:N3} | {4:N3} | ``{5}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.GoodDiff, $row.BadDiff, $row.Target))
+    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | ``{6}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.Target))
 }
 
 $outPath = Join-Path $resolvedRunDir "eternal-sonata-load-target-summary.md"
