@@ -2233,3 +2233,59 @@ Next:
 - Do not rerun the same `left200x2-diag200` command. Choose a new proof axis:
   Options/menu proof, first-battle route repair from a clean route base, or a
   focused SPU kernel HLE/codegen/verifier analysis around `0x451c` / `0x25cc`.
+
+## 2026-05-26 SPU HLE Candidate Atlas Refresh
+
+Command:
+
+```powershell
+.\tools\summarize_eternal_sonata_spu_hle_candidates.ps1 -MaxRuns 16 -Top 25 -OutPath .\debug-experiments\20260526-spu-hle-candidate-atlas.md -CsvPath .\debug-experiments\20260526-spu-hle-candidates.csv
+```
+
+Evidence:
+
+- Workspace/process check found no active RPCS3/RPCSX/RenderDoc/Ghidra run and
+  `git status` was clean before this analysis pass.
+- The atlas scanned `16` recent Windows-lab run dirs, used `6` valid
+  fatal-clean field runs, and excluded
+  `20260526-032955-cpu4-titleload-down160-firstbattle-battleroute-windows-windows`
+  because it had a real `VM: Access violation reading location 0x40`.
+- Valid run set included the latest clean route proofs:
+  `20260526-144112-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows`,
+  `20260526-142353-cpu4-loader-control-left200x2-visualgate-windows-windows`,
+  `20260526-140709-cpu4-loader-control-left200-visualgate-windows-windows`,
+  `20260526-132810-cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows-windows`,
+  `20260526-072403-cpu4-titleload-down160-lateloadcomplete-dismiss-directleft200-visualgate-windows-windows`,
+  and `20260526-031038-cpu4-titleload-down160-pollgated-directleft200-visualgate-windows-windows`.
+- Top stable bucket is `0x25cc`, `CellSpursKernelGroup` /
+  `CellSpursKernel0`, recommendation `spu-hle-codegen-priority`,
+  `4340` records, `6` valid runs, `159` pattern signatures,
+  `6.86 GB` sampled DMA, `1.01 GB` GET, `5.84 GB` PUT, max job
+  `6.16 MB`, and `0 B` RSX-local.
+- Second stable bucket is `0x451c`, `TCX_CellSpursKernelGroup` /
+  `TCX_CellSpursKernel0`, recommendation `spu-hle-codegen-priority`,
+  `2397` records, `6` valid runs, `5.49 GB` sampled DMA, and `0 B`
+  RSX-local.
+- No candidate bucket in the valid field set had RSX-local bytes, so this pass
+  gives no new CPU/SPU-to-GPU migration credit.
+- The report selected `0x25cc` as the next HLE verifier target and captured the
+  latest disasm window at
+  `debug-captures\windows-lab\20260526-144112-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows\spu-images\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt`.
+
+Classification:
+
+- `analysis`, `spu-hle-codegen-triage`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+- Broad SPU-to-Vulkan compute remains parked because the repeated field-clean
+  traces still show `0 B` RSX-local bytes and no RSX-consumed batch shape.
+
+Next:
+
+- Do not repeat the `left200x2-diag200` route proof.
+- Continue on a verify-only `0x25cc` SPU HLE/codegen/body verifier from the
+  atlas target, or run Options/menu proof / first-battle route repair as a
+  separate visual-proof axis.
+- Keep `0x451c` list-family batching second behind `0x25cc`, and do not add a
+  Vulkan compute path unless a later scout proves RSX-consumed data.
