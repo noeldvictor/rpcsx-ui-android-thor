@@ -3805,6 +3805,83 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Lower-Row Damaged Target Reclassification
+
+Question:
+
+- After the save-list inventory showed initial Path-to-Tenuto rows, re-run the
+  strongdismiss600 no-movement proof and determine whether the gate was loading
+  a real Path save or another damaged/missing selected row.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-152343-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run stayed Windows-only on `-WindowsGameScreen 1`, PadApi, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and `-EternalSonataGpuProbe Profile`.
+- The original load-target gate accepted `PATH_TO_TENUTO_PRESENT` on attempt
+  `1`, but manual review showed the selected row was lower `Save File 05` with
+  Path-to-Tenuto preview text while the screen also showed damaged-save rows.
+- `screenshot-0176s-load-complete-90s.png` displayed
+  `Error: Save data cannot be found`.
+- `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`,
+  `screenshot-0241s-strongdismiss600-late-check.png`, and
+  `screenshot-0286s-strongdismiss600-very-late-check.png` stayed in the Load UI
+  with `Load complete.`; field never appeared.
+- Visual gate status was `NO_FIELD_LIKE_SCREENSHOT`, with `12`
+  wrong-window/other-small PNG classifications and no field-like screenshot at
+  or before `260s`.
+- `rpcs3.stderr.txt` was `0` bytes, host checks were clean, and fatal scan found
+  only the benign `Show fatal error hints: false` config line.
+- `tools\classify_eternal_sonata_load_target.ps1` now adds a non-OCR
+  damaged-save text guard. Reclassifying the run reports
+  `DAMAGED_SAVE_TARGET`, `11` damaged-save text marker screenshots, and one
+  lower-row Path preview with cursor drift/damaged text.
+
+Counters:
+
+- GPU probe records `2,554`.
+- Total observed DMA `2,566.28 MB`.
+- Offload fit `too-small=1285` / `spu-kernel-hle=1269`.
+- Hot PCs: `0x451c` with `2,013` records / `1,734.59 MB`; `0x25cc` with `541`
+  records / `831.69 MB`.
+- Promoted CPU/SPU-to-GPU replacement `0 B`; direct RSX-local scout traffic
+  `0 B`; indirect SPU-DMA/RSX-resource overlap `0 B`.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-damaged-save-target`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\classify_eternal_sonata_load_target.ps1` now detects damaged-save text
+  markers in addition to multi-row Path/Debug matching and lower-row cursor
+  markers.
+- `tools\ps3_harness_refiner.ps1`,
+  `.agents\skills\ps3-continual-harness-refiner\SKILL.md`, and `AGENTS.md`
+  now treat this lower-row damaged shape as `DAMAGED_SAVE_TARGET`, not a
+  `Load complete` route that should get another double-dismiss.
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` now blocks automatic route
+  reruns and says to repair the selected Path-to-Tenuto save target, then run
+  only a target-gate reproof before any no-movement, `left1275`, battle, HLE,
+  RSX, GPU, or speed work.
+
+Next allowed action:
+
+```powershell
+# No automatic route rerun: repair the selected Path-to-Tenuto save target, then run a target-only gate until DAMAGED_SAVE_TARGET becomes PATH_TO_TENUTO_PRESENT. Do not press save-slot Cross or start movement/speed work before that.
+```
+
 ## 2026-05-27 StrongDismiss600 Left1275 Save-List Inventory Reproof
 
 Question:

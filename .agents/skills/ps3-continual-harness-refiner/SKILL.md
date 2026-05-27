@@ -463,8 +463,9 @@ not 200% evidence. Do not fall back to generic state-aware or old
 loader-control routes. Re-prove the same strongdismiss600 base with no movement
 / post-load stability before another `left1275`, verifier, battle, HLE, RSX,
 GPU, or speed attempt.
-If that no-movement strongdismiss600 reproof shows a top-only Path-to-Tenuto
-row with `Save file has been damaged` / `File does not exist`, classify it as
+If that no-movement strongdismiss600 reproof shows Path-to-Tenuto preview text
+but also shows damaged-save text, lower-row cursor drift, or a
+`Save data cannot be found` prompt before field, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-damaged-save-target`
 and require the load-target classifier to report `DAMAGED_SAVE_TARGET`, not
 `PATH_TO_TENUTO_PRESENT`. This is a selected-save/cursor/checkpoint blocker:
