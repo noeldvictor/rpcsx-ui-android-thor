@@ -3805,6 +3805,75 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1275 Save-List Inventory Reproof
+
+Question:
+
+- After the `left1275` route drifted to `Debug Save / Prologue`, is the current
+  initial Load-list row actually Path to Tenuto, and do `Down` inputs move the
+  cursor into empty rows?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-151442-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave-windows`.
+
+Evidence:
+
+- The run was a no-slot-cross inventory. It selected `LOAD` from title with
+  `Down:160`, waited `60s` on the Load list, then captured repeated `Down`
+  screenshots without pressing the save slot.
+- Manual review showed `screenshot-0068s-title-settle-before-inventory.png` on
+  the title menu with `New Game` selected and
+  `screenshot-0070s-title-after-down160-inventory.png` with `Load` selected.
+- Manual review of `screenshot-0130s-load-list-initial-after60.png` showed
+  `Save File 01` / `Path to Tenuto` / `South Section` / `Ch. 1 Raindrops`.
+- `screenshot-0132s-load-list-after-down1.png` and
+  `screenshot-0134s-load-list-after-down2.png` still showed the top
+  Path-to-Tenuto preview, but the cursor marker moved to lower empty rows.
+- `screenshot-0135s-load-list-after-down3.png` through
+  `screenshot-0140s-load-list-after-down6.png` showed only `File does not
+  exist` rows after scrolling down.
+- `tools\classify_eternal_sonata_load_target.ps1` reported
+  `DAMAGED_SAVE_TARGET` for the whole folder because it correctly detected
+  lower-row cursor markers after the first `Down`, not because the initial row
+  was Debug Save.
+- Host checks were clean across `5` snapshots.
+- `rpcs3.stderr.txt` was `0` bytes, and fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe recorded `1,346` rows and `1,268.28 MB` observed DMA.
+- Hot PCs: `0x451c` `920.04 MB`, `0x25cc` `348.24 MB`.
+- Offload fit mix: `too-small=755`, `spu-kernel-hle=591`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local scout traffic, and
+  indirect SPU-DMA/RSX-resource overlap all stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
+- The initial Load-list row is usable Path to Tenuto.
+- Do not normalize with save-list `Down`/`Up`; those moves select empty rows.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now gives this inventory result an explicit
+  decision string instead of the stale generic "newest valid-field route base"
+  wording.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Left1275 Debug Save Drift
 
 Question:

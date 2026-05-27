@@ -2642,6 +2642,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 cursor-aware no-movement proof black-overlayed through the entire load-target gate before any save-slot Cross. Do not restore saves or move; run the title-to-Load pre-gate timing diagnostic with 12s/30s/45s/60s screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved the black gate was timing/state-sensitive, but the stable Load list selected Debug Save / Prologue. Do not restore or move; inventory the current save-list cursor rows with repeated Down screenshots and no slot Cross."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
+    "Latest stock Down160 strongdismiss600 save-list inventory shows the initial Load-list position is Path to Tenuto, while Down moves the cursor into empty rows. Do not normalize with Down/Up; resume the no-movement long-gate proof from the initial Path row before another left1275 attempt."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
