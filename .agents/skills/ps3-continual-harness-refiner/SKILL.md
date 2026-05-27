@@ -446,6 +446,14 @@ not 200% evidence. Do not fall back to generic state-aware or old
 loader-control macros. Re-prove only the strongdismiss600 Path-to-Tenuto
 load-target gate; if that target-only reproof passes `PATH_TO_TENUTO_PRESENT`,
 resume the same `ls_left:1275` midpoint with immediate screenshots.
+If that same `ls_left:1275` midpoint aborts before save-slot `Cross` because the
+load-target gate reports `DEBUG_SAVE_PROLOGUE_PRESENT`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-debug-save-target`.
+This is selected-row route drift, not a movement boundary and not speed, GPU, or
+200% evidence. Do not fall back to generic state-aware routes or save-list
+normalization. Inventory the current save-list rows with repeated `Down`
+screenshots and no slot `Cross`, then repair selected-row targeting before
+another `left1275` attempt.
 If that resumed `ls_left:1275` proof passes `PATH_TO_TENUTO_PRESENT` but every
 post-dismiss and post-left screenshot remains on `Now Loading...` with
 fatal-clean logs, classify it as

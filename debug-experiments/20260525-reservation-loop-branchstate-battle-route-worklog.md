@@ -3805,6 +3805,74 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1275 Debug Save Drift
+
+Question:
+
+- After the double-dismiss no-movement proof reached clean Path-to-Tenuto field
+  before opening the field Save prompt, can the same strongdismiss600 base resume
+  into the `ls_left:1275` movement midpoint?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-150629-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used the stock Down160 strongdismiss600 left1275 macro with GPU probe
+  profiling only; HLE, RSX, verifier, kernel capsule, and speed toggles were
+  all off.
+- The load-target gate aborted before save-slot `Cross` on attempt 1 at `82s`.
+- `eternal-sonata-load-target-summary.md` reported
+  `DEBUG_SAVE_PROLOGUE_PRESENT` with path/debug/empty/unknown counts `0/1/0/0`.
+- Manual review of `screenshot-0082s-load-target-gate.png` showed
+  `Save File 01` / `Debug Save` / `Prologue`; no Path-to-Tenuto row was
+  selected.
+- `eternal-sonata-windows-visual-gate-summary.md` reported
+  `NO_FIELD_LIKE_SCREENSHOT`; the only screenshot was
+  `wrong-window-or-other-small-png` by byte-size heuristic, but visually it was
+  the Load list on the wrong save target.
+- Host checks were clean across prelaunch, postlaunch, and postrun snapshots.
+- `rpcs3.stderr.txt` was `0` bytes, and the fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe recorded `619` rows and `562.44 MB` observed DMA.
+- Hot PCs: `0x451c` `425.53 MB`, `0x25cc` `136.91 MB`.
+- Offload fit mix: `too-small=384`, `spu-kernel-hle=235`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local scout traffic, and
+  indirect SPU-DMA/RSX-resource overlap all stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-debug-save-target`.
+- Not field.
+- Not movement: the macro aborted before save-slot `Cross`, so `ls_left:1275`
+  was never executed.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the left1275
+  `DEBUG_SAVE_PROLOGUE_PRESENT` abort as selected-row route drift instead of
+  generic load-target failure.
+- The refiner excludes this shape from generic state-aware fallback and suggests
+  the no-slot-cross save-list inventory command.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Double-Dismiss Field Prompt
 
 Question:

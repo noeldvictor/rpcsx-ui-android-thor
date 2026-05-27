@@ -1327,6 +1327,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnost
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1738,6 +1739,13 @@ if ($latestRun) {
         $latestLoadTargetGateFailure -and
         $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
         $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1275*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget =
+        -not $latestFatal -and
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -and
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1275*"
@@ -2179,6 +2187,7 @@ if ($latestLoadTargetGateFailure -and
     -not $latestTitleToLoadDownHoldLoadTopNormalizeBlack -and
     -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate -and
     -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget -and
+    -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget -and
     -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500PreGateFatal) {
     $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
     Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
@@ -2416,6 +2425,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1350Vm40Corrup
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-black-gate" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 attempt aborted before save-slot Cross because every load-target polling screenshot was a black overlay with UNKNOWN_LOAD_TARGET, while fatal scan stayed clean." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof. Re-prove only the strongdismiss600 Path-to-Tenuto load target, then rerun the left1275 midpoint only if PATH_TO_TENUTO_PRESENT is restored."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-debug-save-target" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 attempt aborted before save-slot Cross because the load-target gate selected Debug Save / Prologue." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof. Do not fall back to generic state-aware routes or save-list normalization. Inventory the current save-list rows with repeated Down screenshots and no slot Cross, then repair the selected Path-to-Tenuto row before another left1275 attempt."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-loading-only" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 rerun passed PATH_TO_TENUTO_PRESENT, but after the strongdismiss600 post-load Cross it stayed on Now Loading through immediate and late post-left screenshots with fatal-clean logs." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof and do not fall back to generic state-aware routes. Re-prove the same strongdismiss600 base with no movement / post-load stability before another left1275 or larger movement retry."
 }
@@ -2614,6 +2626,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 left1350 reached clean field first, but post-left screenshots showed the likely-crashed overlay/corrupt field and a PPU VM access violation. Bank left1200 as the clean lower boundary, left1350 as the fatal upper boundary, and try the left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate) {
     "Latest stock Down160 strongdismiss600 left1275 aborted before save-slot Cross on black-overlay UNKNOWN_LOAD_TARGET gate frames with fatal-clean logs. Movement was not tested; re-prove the strongdismiss600 Path-to-Tenuto target only before rerunning left1275."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget) {
+    "Latest stock Down160 strongdismiss600 left1275 aborted before save-slot Cross on Debug Save / Prologue. Movement was not tested; inventory the current save-list rows without pressing the slot, repair selected-row targeting, and do not fall back to generic state-aware routing."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     "Latest stock Down160 strongdismiss600 left1275 passed the load target but stayed on Now Loading through all post-left screenshots. Treat this as route/load stability, not movement; re-prove the strongdismiss600 base with no movement before any left1275, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget) {
@@ -2882,6 +2896,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget) {
