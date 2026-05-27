@@ -490,6 +490,13 @@ save-list `Down`/`Up`, and do not run movement. Run a title-to-Load pre-gate
 diagnostic with explicit screenshots at roughly 12s, 30s, 45s, and 60s after
 title `Cross`, then start the load-target gate only when the Load list is
 visible.
+If that title-to-Load pre-gate diagnostic reaches a stable Load list but the
+gate reports `DEBUG_SAVE_PROLOGUE_PRESENT`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-debug-save-target`.
+This resolves the black-gate question but exposes current save-list selection
+drift. Do not restore saves, press the slot, or run movement. Inventory the
+current save-list rows with repeated `Down` screenshots and no slot `Cross` so
+the Path-to-Tenuto row and cursor position can be repaired directly.
 
 ## Acceptance
 

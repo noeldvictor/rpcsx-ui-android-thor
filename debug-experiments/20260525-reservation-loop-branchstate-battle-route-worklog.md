@@ -3873,6 +3873,75 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-blackgate;down:160;wait:900;shot:title-after-down160-blackgate;cross:120;wait:12000;shot:pregate-12s;wait:18000;shot:pregate-30s;wait:15000;shot:pregate-45s;wait:15000;shot:pregate-60s;gate_load_target:60000;shot:path-target-after-pregate-black-diagnostic" -MaxSeconds 210 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Title-To-Load Pre-Gate Debug Save Target
+
+Question:
+
+- Was the cursor-aware no-movement black-gate caused by timing, or is the
+  current Load-list selection drifting away from Path to Tenuto?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-140004-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic-windows`.
+
+Evidence:
+
+- `screenshot-0068s-title-settle-before-blackgate.png` showed the title menu.
+- `screenshot-0070s-title-after-down160-blackgate.png` showed `LOAD`
+  selected, so title `Down:160` still reaches the Load menu entry.
+- `screenshot-0082s-pregate-12s.png`, `screenshot-0101s-pregate-30s.png`,
+  `screenshot-0116s-pregate-45s.png`, and
+  `screenshot-0132s-pregate-60s.png` were stable Load-list frames, not black
+  transition frames.
+- Manual review of `screenshot-0132s-load-target-gate.png` showed
+  `Save File 01`, `Debug Save`, `Prologue`; Path to Tenuto was not selected.
+- `load-target-gate-failed.txt` reported
+  `DEBUG_SAVE_PROLOGUE_PRESENT` at `132s`.
+- `eternal-sonata-load-target-summary.md` recorded
+  path/debug/unknown counts `0/5/2`, lower-row cursor markers `0`.
+- The macro aborted before save-slot `Cross`, so field, movement, and battle
+  were never attempted.
+- Host checks were clean across `3` snapshots.
+- Fatal scan found only the benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `1,069`.
+- Total observed DMA: `1,131.37 MB`.
+- Hot PCs: `0x451c` with `668.71 MB`; `0x25cc` with `462.66 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-debug-save-target`.
+- The prior black-gate diagnosis is refined: waiting longer reaches the Load
+  list, but the selected row is currently Debug Save / Prologue.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this as a save-list selection
+  inventory problem instead of another black-gate timing run or save-restore
+  job.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- The next action is a no-slot-cross inventory of the current save-list rows
+  using repeated `Down` screenshots.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Left1200 Clean Boundary
 
 Question:
