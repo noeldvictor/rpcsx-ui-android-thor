@@ -4326,6 +4326,86 @@ Next exact action:
 # No automatic route rerun: the restored checkpoint still selects DAMAGED_SAVE_TARGET. Repair selected-row/cursor targeting or save-list layout, then run only a target gate until PATH_TO_TENUTO_PRESENT is clean.
 ```
 
+## 2026-05-27 Cursor-Aware Load-Target Correction
+
+Question:
+
+- Is the post-restore top-only Path-to-Tenuto row truly damaged, or is the
+  crop classifier confusing persistent top preview text with the actual selected
+  save-list cursor?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-132938-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-cursor-damaged-target-diagnostic-windows`.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-cursor-damaged-target-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;shot:title-after-down160;cross:120;wait:12000;shot:load-list-initial;wait:5000;shot:load-list-stable;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;up:120;wait:900;shot:load-list-after-up1;up:120;wait:900;shot:load-list-after-up2" -MaxSeconds 120 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Evidence:
+
+- The macro did not press `Cross` on any save slot.
+- Manual review:
+  - `screenshot-0082s-load-list-initial.png` showed top `Save File 01` /
+    `Path to Tenuto` selected.
+  - `screenshot-0089s-load-list-after-down1.png` showed the cursor moved to the
+    first lower `File does not exist` row while the top Path-to-Tenuto preview
+    stayed visible.
+  - `screenshot-0091s-load-list-after-down2.png` showed the cursor moved to the
+    second lower `File does not exist` row while the top preview still stayed
+    visible.
+- This proves top-preview Path text can be stale relative to cursor selection.
+- The classifier now records lower-row cursor markers:
+  - current cursor diagnostic: `DAMAGED_SAVE_TARGET`, but only because lower
+    cursor rows were detected at `365` / `535`.
+  - prior target-only post-restore reproof:
+    `20260527-130917-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-windows`
+    reclassifies as `PATH_TO_TENUTO_PRESENT` with `0` lower-row cursor markers.
+- Host checks were clean across `5` snapshots. `rpcs3.stderr.txt` was empty,
+  and fatal scan found only the benign `Show fatal error hints: false` config
+  line.
+
+Counters:
+
+- GPU probe records: `956`.
+- Total observed DMA: `1,021.11 MB`.
+- Hot PCs: `0x451c` and `0x25cc`; this remains route-invalid cursor tooling.
+- Offload fit: `spu-kernel-hle=520`, `too-small=436`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-cursor-diagnostic-lower-empty-rows`.
+- Supersedes the prior overbroad top-only `DAMAGED_SAVE_TARGET` read for the
+  post-restore target-only reproof.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Harness/Refiner updates:
+
+- `tools\classify_eternal_sonata_load_target.ps1` now combines Path/Debug crop
+  matching with lower-row cursor-marker detection.
+- `tools\ps3_harness_refiner.ps1` recognizes the cursor diagnostic and points
+  back to the same strongdismiss600 no-movement proof under the cursor-aware
+  gate.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
 
 Question:

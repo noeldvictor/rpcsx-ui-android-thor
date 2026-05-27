@@ -471,6 +471,15 @@ This is selected-row/cursor targeting or save-list layout repair, not another
 file-restore job. Do not repeat the same restore and do not run route,
 movement, HLE, RSX, GPU, or speed work until a target-only gate reports
 `PATH_TO_TENUTO_PRESENT`.
+If a cursor diagnostic shows the top Path-to-Tenuto preview remains while
+`Down` inputs move the cursor onto lower `File does not exist` rows, classify it
+as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-cursor-diagnostic-lower-empty-rows`.
+This means top-preview text alone is stale; the gate must use cursor-aware
+classification. Do not use save-list `Down`/`Up` normalization on this route.
+Rerun the same strongdismiss600 no-movement proof with the cursor-aware
+load-target gate, and only continue to movement if the top-selected Path row
+loads into clean field.
 
 ## Acceptance
 

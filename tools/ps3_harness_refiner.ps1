@@ -1306,6 +1306,7 @@ $latestTitleToLoadDownHoldLoadTopNormalizeBlack = $false
 $latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall = $false
 $latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition = $false
 $latestTitleToLoadDownHoldLoadTargetReproofPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1741,6 +1742,13 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows =
+        -not $latestFatal -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "DAMAGED_SAVE_TARGET" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-save-list-cursor-damaged-target-diagnostic*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass =
         -not $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2357,6 +2365,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveT
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-still-damaged" -Severity "blocker" -Evidence "Newest target-only reproof after restoring the Path-to-Tenuto checkpoint still reported DAMAGED_SAVE_TARGET across the load-target gate; screenshots showed the selected top Path-to-Tenuto row with File does not exist, and the guard prevented save-slot Cross." -Action "Do not restore the same checkpoint again and do not rerun route, movement, HLE, RSX, GPU, or speed work. Repair selected-row/cursor targeting or save-list layout, then run a target-only gate before any no-movement or movement proof."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-cursor-diagnostic-lower-empty-rows" -Severity "route-repair" -Evidence "Newest cursor diagnostic showed the Path-to-Tenuto preview text remains at the top while Down inputs move the cursor onto lower File does not exist rows. The cursor-aware classifier now distinguishes top-selected Path from lower-empty-row selection." -Action "Do not use save-list Down/Up normalization for this route. Re-run the same strongdismiss600 no-movement proof with the cursor-aware load-target gate; only continue to movement if the top-selected gate passes and field appears clean."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate-passed" -Severity "resolved-control" -Evidence "Newest target-only reproof after the left1275 black-gate run passed PATH_TO_TENUTO_PRESENT and had no actionable fatal/access/assertion/device-lost log hit." -Action "Treat this as target health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1275 midpoint with immediate post-movement screenshots."
 }
@@ -2534,6 +2545,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 no-movement stability proof is now classified DAMAGED_SAVE_TARGET: the selected top Path-to-Tenuto row is damaged/missing. Stop route retries, restore or repair the Path-to-Tenuto save target, then run target-only reproof before any movement or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
     "Latest stock Down160 strongdismiss600 target-only reproof after restoring the checkpoint still selected DAMAGED_SAVE_TARGET. Treat this as selected-row/cursor or save-list layout repair, not another file-restore job; do not run movement or speed work until a target-only gate shows PATH_TO_TENUTO_PRESENT."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
+    "Latest stock Down160 strongdismiss600 cursor diagnostic proved the stale Path-to-Tenuto preview can remain while Down inputs select lower File does not exist rows. Do not normalize with save-list Down/Up; rerun no-movement with the cursor-aware gate and only continue if the top-selected Path gate loads cleanly."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
@@ -2792,6 +2805,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     "# No automatic route rerun: latest strongdismiss600 no-movement proof selected DAMAGED_SAVE_TARGET. Restore or repair the Path-to-Tenuto save target, verify with a target-only gate under the damaged-target guard, then retry no-movement stability only after PATH_TO_TENUTO_PRESENT is clean."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
     "# No automatic route rerun: target-only reproof after checkpoint restore still selected DAMAGED_SAVE_TARGET. Repair selected-row/cursor targeting or save-list layout, then run only a target gate until PATH_TO_TENUTO_PRESENT is clean."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {

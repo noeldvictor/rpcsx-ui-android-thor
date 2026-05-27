@@ -194,6 +194,43 @@ function Get-BestTargetMatch {
     return $best
 }
 
+function Get-LowerCursorRows {
+    param(
+        [string]$CandidatePath,
+        [int[]]$CropYs
+    )
+
+    $bitmap = [System.Drawing.Bitmap]::FromFile($CandidatePath)
+    try {
+        $cursorRows = New-Object System.Collections.Generic.List[int]
+        foreach ($candidateY in @($CropYs | Where-Object { $_ -ne $CropY })) {
+            $x = [math]::Floor(60 * $bitmap.Width / 1296.0)
+            $y = [math]::Floor(($candidateY - 15) * $bitmap.Height / 759.0)
+            $w = [math]::Max(1, [math]::Floor(95 * $bitmap.Width / 1296.0))
+            $h = [math]::Max(1, [math]::Floor(100 * $bitmap.Height / 759.0))
+            $xMax = [math]::Min($bitmap.Width, $x + $w)
+            $yMax = [math]::Min($bitmap.Height, $y + $h)
+            [int]$whitePixels = 0
+
+            for ($py = [math]::Max(0, $y); $py -lt $yMax; $py += 2) {
+                for ($px = [math]::Max(0, $x); $px -lt $xMax; $px += 2) {
+                    $pixel = $bitmap.GetPixel($px, $py)
+                    if ($pixel.R -gt 220 -and $pixel.G -gt 200 -and $pixel.B -gt 150) {
+                        $whitePixels++
+                    }
+                }
+            }
+
+            if ($whitePixels -ge 20) {
+                [void]$cursorRows.Add([int]$candidateY)
+            }
+        }
+        return @($cursorRows)
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
 $repoRoot = Get-RepoRoot
 Set-Location -LiteralPath $repoRoot
 
@@ -243,6 +280,7 @@ if ($screenshots.Count -eq 0) {
 
 $rows = foreach ($shot in $screenshots) {
     $bestMatch = Get-BestTargetMatch -CandidatePath $shot.FullName -GoodExemplarPath $resolvedGoodExemplar -BadExemplarPath $resolvedBadExemplar -CropYs $CandidateCropYs
+    $lowerCursorRows = @(Get-LowerCursorRows -CandidatePath $shot.FullName -CropYs $CandidateCropYs)
     [pscustomobject]@{
         Screenshot = $shot.Name
         Seconds = $(if ((Get-ScreenshotSecond $shot.Name) -eq [int]::MaxValue) { $null } else { Get-ScreenshotSecond $shot.Name })
@@ -254,13 +292,15 @@ $rows = foreach ($shot in $screenshots) {
         PathCandidateYs = @($bestMatch.PathCandidateYs) -join ","
         DebugCandidateYs = @($bestMatch.DebugCandidateYs) -join ","
         TopPathOnly = [bool]$bestMatch.TopPathOnly
+        LowerCursorYs = $lowerCursorRows -join ","
     }
 }
 
 $pathRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" })
 $debugRows = @($rows | Where-Object { $_.Target -eq "debug-save-prologue" })
 $unknownRows = @($rows | Where-Object { $_.Target -eq "unknown-load-target" })
-$damagedRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" -and $_.TopPathOnly })
+$lowerCursorRows = @($rows | Where-Object { -not [string]::IsNullOrWhiteSpace($_.LowerCursorYs) })
+$damagedRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" -and $_.TopPathOnly -and -not [string]::IsNullOrWhiteSpace($_.LowerCursorYs) })
 $status = if ($damagedRows.Count -gt 0) {
     "DAMAGED_SAVE_TARGET"
 } elseif ($pathRows.Count -gt 0 -and $debugRows.Count -eq 0) {
@@ -278,7 +318,7 @@ $summary.Add("# Eternal Sonata Load Target Classifier")
 $summary.Add("")
 $summary.Add(("- Run directory: ``{0}``" -f $resolvedRunDir))
 $summary.Add(("- Screenshot directory: ``{0}``" -f $screenshotDir))
-$summary.Add(("- Method: stable Load-list crop comparison across visible save rows, not OCR."))
+$summary.Add(("- Method: stable Load-list crop comparison across visible save rows plus lower-row cursor-marker detection, not OCR."))
 $summary.Add(("- Path-to-Tenuto exemplar: ``{0}``" -f $resolvedGoodExemplar))
 $summary.Add(("- Debug-Save exemplar: ``{0}``" -f $resolvedBadExemplar))
 $summary.Add(("- Crop reference: x={0}, y={1}, width={2}, height={3} on 1296x759 screenshots." -f $CropX, $CropY, $CropWidth, $CropHeight))
@@ -287,15 +327,16 @@ $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $Decisio
 $summary.Add(("- Loose lower-row Path-to-Tenuto margin: ``{0}``; loose max diff: ``{1}``." -f $LoosePathDecisionMargin, $LoosePathMaxDiff))
 $summary.Add(("- Status: ``{0}``" -f $status))
 $summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, unknown={2}." -f $pathRows.Count, $debugRows.Count, $unknownRows.Count))
+$summary.Add(("- Lower-row cursor markers: ``{0}`` screenshot(s)." -f $lowerCursorRows.Count))
 if ($damagedRows.Count -gt 0) {
-    $summary.Add(("- Damaged target guard: ``{0}`` top-only Path-to-Tenuto row(s) with no adjacent lower Path row." -f $damagedRows.Count))
+    $summary.Add(("- Damaged target guard: ``{0}`` top-only Path-to-Tenuto preview row(s) with the cursor on a lower missing row." -f $damagedRows.Count))
 }
 $summary.Add("")
-$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Path Ys | Debug Ys | Top path only | Target |")
-$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |")
+$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Path Ys | Debug Ys | Top path only | Lower cursor Ys | Target |")
+$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |")
 foreach ($row in $rows) {
     $seconds = if ($null -eq $row.Seconds) { "" } else { $row.Seconds }
-    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | ``{6}`` | ``{7}`` | ``{8}`` | ``{9}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.Target))
+    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | ``{6}`` | ``{7}`` | ``{8}`` | ``{9}`` | ``{10}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.LowerCursorYs, $row.Target))
 }
 
 $outPath = Join-Path $resolvedRunDir "eternal-sonata-load-target-summary.md"
