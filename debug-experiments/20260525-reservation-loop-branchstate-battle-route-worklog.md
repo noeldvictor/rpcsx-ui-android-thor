@@ -3883,6 +3883,77 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Windows Strongdismiss600 Left1321 Fatal Upper Boundary
+
+Question:
+
+- Does the `ls_left:1321` midpoint between clean `left1312` and fatal/corrupt
+  `left1331` survive, or does it reproduce the `0x40` corrupt-field fatal?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-171535-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1321-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used the refiner-suggested Windows-only command on screen 1 with
+  `WindowsCpuAffinityMask 0x0F`, `WindowsFrameLimit 240`, `WindowsVblankRate 240`,
+  `EternalSonataGpuProbe Profile`, and `CleanAfterField`.
+- The load-target gate passed attempt `1` as `PATH_TO_TENUTO_PRESENT`; the gate
+  summary reported path/debug/empty/unknown counts `1/0/0/0`, no lower-row
+  cursor markers, and no damaged-save text markers.
+- `screenshot-0196s-post-load-complete-strongdismiss600-18s.png` was a clean
+  pre-movement Path-to-Tenuto field screenshot.
+- Manual screenshot review found `screenshot-0199s-left1321-immediate-check.png`,
+  `screenshot-0210s-left1321-check.png`,
+  `screenshot-0255s-left1321-late-check.png`, and `screenshot-0290s.png` all
+  showed RPCS3's likely-crashed overlay and corrupt/frozen field visuals after
+  the `ls_left:1321` pulse.
+- `rpcs3.stderr.txt` and `RPCS3.log:19024` reported
+  `PPU[0x100000c] Thread () [0x002aedd0]` `VM: Access violation reading
+  location 0x40 (unmapped memory)` around `0:03:18.141882`.
+- Visual gate still reported `FIELD_LIKE_PRESENT` and `0` invalid screenshots
+  after first field-like, so manual screenshot/log review overrides byte-size
+  triage for this rung.
+- Host contention stayed clean across `6` snapshots.
+- The run stopped at the planned `MaxSeconds 300` wall-time limit.
+
+Counters:
+
+- GPU probe records: `1,665`.
+- Total observed DMA: `1,851.15 MB`.
+- Hot PCs: `0x451c` / `1,051.07 MB`, `0x25cc` / `800.08 MB`.
+- Offload fit mix: `spu-kernel-hle=923`, `too-small=742`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-corruption`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1321-vm40-corrupt-field`.
+- Not clean movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the `left1321`
+  VM40/corrupt-field failure, banks `left1312` as the clean lower boundary and
+  `left1321` as the fatal upper boundary, and suggests `ls_left:1316`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact Windows-only action:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1316;wait:1200;shot:left1316-immediate-check;wait:10800;shot:left1316-check;wait:45000;shot:left1316-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 Windows Strongdismiss600 Left1312 Movement Boundary
 
 Question:

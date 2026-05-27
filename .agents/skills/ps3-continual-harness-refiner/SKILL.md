@@ -492,6 +492,17 @@ evidence even if the byte-size visual gate says field-like. Keep `left1312` as
 the clean lower boundary, `left1331` as the fatal/corrupt upper boundary, and
 try the `ls_left:1321` midpoint with immediate post-movement screenshots before
 verifier, battle, HLE, RSX, GPU, or speed work.
+If that `ls_left:1321` midpoint also passes `PATH_TO_TENUTO_PRESENT` and reaches
+a clean pre-movement Path-to-Tenuto field, but the immediate and later post-left
+screenshots show RPCS3's likely-crashed overlay with corrupt/frozen field
+visuals and stderr/RPCS3.log reports a PPU `VM: Access violation reading
+location 0x40`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1321-vm40-corrupt-field`.
+Do not count it as clean movement, first-battle, speed, GPU migration, or 200%
+evidence even if the byte-size visual gate says field-like. Keep `left1312` as
+the clean lower boundary, `left1321` as the fatal/corrupt upper boundary, and
+try the `ls_left:1316` midpoint with immediate post-movement screenshots before
+verifier, battle, HLE, RSX, GPU, or speed work.
 If that no-movement strongdismiss600 reproof shows Path-to-Tenuto preview text
 but also shows damaged-save text, lower-row cursor drift, or a
 `Save data cannot be found` prompt before field, classify it as
