@@ -18605,3 +18605,21 @@ Path to Tenuto late-confirm capture and the known bad Debug Save / Prologue
 double-confirm capture. Future route research should require
 `PATH_TO_TENUTO_PRESENT` before pressing `Cross`; otherwise the run remains
 route-tooling and its counters are profiling-only.
+
+## 2026-05-26 - StrongDismiss600 Left1800 Route Hygiene
+
+Restoring the Path-to-Tenuto save target fixed the newest route-state blocker:
+`debug-captures\windows-lab\20260526-203125-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-windows`
+reported `PATH_TO_TENUTO_PRESENT` with no Debug Save rows. The exact
+strongdismiss600 left1800 retry then reached a clean Path-to-Tenuto field in
+`debug-captures\windows-lab\20260526-203509-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-longgate-diagnostic-rerun-windows`,
+but RPCS3 exited after `ls_left:1800` and before the left-check screenshots.
+
+This does not change the research conclusion: it is not moving-gameplay proof,
+not a first-battle proof, not a speed win, and not GPU migration. The GPU
+summary still reported `0 B` promoted CPU/SPU-to-GPU replacement, `0 B`
+direct RSX-local scout traffic, and `0 B` indirect overlap. Treat the run as a
+route/harness hygiene finding only. The refiner now keeps the restored
+strongdismiss600 base but shrinks movement to `ls_left:1500` with an immediate
+post-movement screenshot before any 25cc HLE, SPU-to-GPU, verifier, or speed
+claim.
