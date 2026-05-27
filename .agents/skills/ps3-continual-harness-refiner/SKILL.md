@@ -425,6 +425,17 @@ fatal: not first-battle proof, not speed, not GPU migration, and not 200%
 evidence. Try the `ls_left:1350` midpoint on the same strongdismiss600 base
 with immediate post-movement screenshots before verifier, battle, HLE, RSX, GPU,
 or speed promotion.
+If that `ls_left:1350` midpoint passes `PATH_TO_TENUTO_PRESENT` and reaches a
+clean pre-movement Path-to-Tenuto field, but the immediate and later post-left
+screenshots show RPCS3's likely-crashed overlay with corrupt/frozen field
+visuals and stderr/RPCS3.log reports a PPU `VM: Access violation reading
+location 0x40`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1350-vm40-corrupt-field`.
+Do not count it as clean movement, first-battle, speed, GPU migration, or 200%
+evidence even if the byte-size visual gate says field-like. Keep `left1200` as
+the clean lower boundary, `left1350` as the fatal/corrupt upper boundary, and
+try the `ls_left:1275` midpoint with immediate post-movement screenshots before
+verifier, battle, HLE, RSX, GPU, or speed work.
 
 ## Acceptance
 
