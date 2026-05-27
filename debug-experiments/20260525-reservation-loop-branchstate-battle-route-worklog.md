@@ -3805,6 +3805,71 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 No-Movement Double-Dismiss Field Prompt
+
+Question:
+
+- After the single strongdismiss600 no-movement proof stayed on the Load UI,
+  test whether a second delayed strong post-load `Cross` can prove clean field
+  without adding movement.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-144847-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-double-dismiss-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The live load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`; `screenshot-0081s-load-target-gate.png` selected
+  the top Path-to-Tenuto row with no lower-row cursor marker.
+- `screenshot-0176s-load-complete-90s.png` still showed the Load UI with
+  `File does not exist` / `Load complete.`.
+- Manual review confirmed `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`
+  reached clean Path-to-Tenuto field with no prompt or corruption.
+- The second delayed `Cross` then opened the field `Save game` prompt, visible
+  from `screenshot-0215s-post-load-complete-second-strongdismiss600-18s.png`
+  through `screenshot-0306s-double-strongdismiss600-very-late-check.png`.
+- Visual gate reported `FIELD_LIKE_PRESENT`, first field-like at `195s`, and no
+  invalid screenshots after first field-like; manual review overrides this for
+  the prompt-covered later frames.
+- Host contention stayed clean across `5` snapshots.
+- Fatal scan found only the benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe recorded `2,856` rows and `4,000.26 MB` observed DMA.
+- Hot PCs were `0x451c` (`2,524.03 MB`) and `0x25cc` (`1,476.23 MB`).
+- Offload fit was `spu-kernel-hle=1858` / `too-small=998`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  overlap all stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-double-dismiss-field-prompt`.
+- Clean no-movement field at `195s`, then prompt-covered field after the second
+  delayed `Cross`.
+- Not moving gameplay.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now excludes `battle-stock` route labels from
+  generic 0x25cc shadow pattern-gap advice and recognizes this double-dismiss
+  field-prompt state.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Load-Complete Stuck
 
 Question:

@@ -513,6 +513,14 @@ Do not repeat the same macro and do not add movement. Keep the initial Path row
 and run a no-movement double-dismiss proof with a second delayed strong
 post-load `Cross`; require clean field screenshots before any `left1275`,
 battle, HLE, RSX, GPU, or speed step.
+If that double-dismiss no-movement proof reaches clean Path-to-Tenuto field at
+the first post-load checkpoint, then the second delayed `Cross` opens the field
+`Save game` prompt, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-double-dismiss-field-prompt`.
+This proves the no-movement field route is repaired, but the later prompt
+screenshots are not moving gameplay. Do not repeat double-dismiss and do not
+jump to verifier/HLE/GPU work; resume the same strongdismiss600 base with
+`ls_left:1275` and immediate screenshots.
 
 ## Acceptance
 
