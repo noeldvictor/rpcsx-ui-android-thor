@@ -29,6 +29,10 @@ param(
 
     [double]$LoosePathDecisionMargin = 6.0,
 
+    [double]$MaxEmptyKnownDiff = 25.0,
+
+    [double]$MinLoadTargetTextBrightRatio = 0.012,
+
     [switch]$RequirePathToTenuto,
 
     [switch]$NoWriteSummary
@@ -140,9 +144,14 @@ function Get-RegionDiff {
 function Get-TargetClass {
     param(
         [double]$GoodDiff,
-        [double]$BadDiff
+        [double]$BadDiff,
+        [double]$TextBrightRatio
     )
 
+    if ($TextBrightRatio -lt $MinLoadTargetTextBrightRatio -and
+        ([math]::Min($GoodDiff, $BadDiff) -le $MaxEmptyKnownDiff)) {
+        return "empty-load-slot"
+    }
     if ($GoodDiff -le $MaxKnownDiff -and ($BadDiff - $GoodDiff) -ge $DecisionMargin) {
         return "path-to-tenuto"
     }
@@ -153,6 +162,43 @@ function Get-TargetClass {
         return "path-to-tenuto"
     }
     return "unknown-load-target"
+}
+
+function Get-RegionTextBrightRatio {
+    param(
+        [string]$CandidatePath,
+        [int]$CandidateY = $CropY
+    )
+
+    $candidate = [System.Drawing.Bitmap]::FromFile($CandidatePath)
+
+    try {
+        $candidateRect = Get-ScaledRect -Bitmap $candidate -Y $CandidateY
+        [int]$bright = 0
+        [int]$count = 0
+
+        for ($row = 0; $row -lt $GridRows; $row++) {
+            $rowFrac = if ($GridRows -le 1) { 0.5 } else { ($row + 0.5) / $GridRows }
+            $cy = [math]::Min($candidate.Height - 1, $candidateRect.Y + [math]::Floor($rowFrac * $candidateRect.Height))
+
+            for ($col = 0; $col -lt $GridColumns; $col++) {
+                $colFrac = if ($GridColumns -le 1) { 0.5 } else { ($col + 0.5) / $GridColumns }
+                $cx = [math]::Min($candidate.Width - 1, $candidateRect.X + [math]::Floor($colFrac * $candidateRect.Width))
+                $pixel = $candidate.GetPixel($cx, $cy)
+                $count++
+                if ($pixel.R -gt 210 -and $pixel.G -gt 180 -and $pixel.B -gt 120) {
+                    $bright++
+                }
+            }
+        }
+
+        if ($count -eq 0) {
+            return 0.0
+        }
+        return [math]::Round($bright / $count, 4)
+    } finally {
+        $candidate.Dispose()
+    }
 }
 
 function Get-BestTargetMatch {
@@ -166,11 +212,13 @@ function Get-BestTargetMatch {
     $matches = foreach ($candidateY in $CropYs) {
         $goodDiff = Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $GoodExemplarPath -CandidateY $candidateY
         $badDiff = Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $BadExemplarPath -CandidateY $candidateY
-        $target = Get-TargetClass -GoodDiff $goodDiff -BadDiff $badDiff
+        $textBrightRatio = Get-RegionTextBrightRatio -CandidatePath $CandidatePath -CandidateY $candidateY
+        $target = Get-TargetClass -GoodDiff $goodDiff -BadDiff $badDiff -TextBrightRatio $textBrightRatio
         [pscustomobject]@{
             CandidateY = $candidateY
             GoodDiff = $goodDiff
             BadDiff = $badDiff
+            TextBrightRatio = $textBrightRatio
             BestKnownDiff = [math]::Min($goodDiff, $badDiff)
             Target = $target
         }
@@ -288,6 +336,7 @@ $rows = foreach ($shot in $screenshots) {
         CropY = $bestMatch.CandidateY
         GoodDiff = $bestMatch.GoodDiff
         BadDiff = $bestMatch.BadDiff
+        TextBrightRatio = $bestMatch.TextBrightRatio
         Target = $bestMatch.Target
         PathCandidateYs = @($bestMatch.PathCandidateYs) -join ","
         DebugCandidateYs = @($bestMatch.DebugCandidateYs) -join ","
@@ -298,6 +347,7 @@ $rows = foreach ($shot in $screenshots) {
 
 $pathRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" })
 $debugRows = @($rows | Where-Object { $_.Target -eq "debug-save-prologue" })
+$emptyRows = @($rows | Where-Object { $_.Target -eq "empty-load-slot" })
 $unknownRows = @($rows | Where-Object { $_.Target -eq "unknown-load-target" })
 $lowerCursorRows = @($rows | Where-Object { -not [string]::IsNullOrWhiteSpace($_.LowerCursorYs) })
 $damagedRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" -and $_.TopPathOnly -and -not [string]::IsNullOrWhiteSpace($_.LowerCursorYs) })
@@ -325,18 +375,19 @@ $summary.Add(("- Crop reference: x={0}, y={1}, width={2}, height={3} on 1296x759
 $summary.Add(("- Candidate crop Y rows: ``{0}``." -f ($CandidateCropYs -join ", ")))
 $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $DecisionMargin, $MaxKnownDiff))
 $summary.Add(("- Loose lower-row Path-to-Tenuto margin: ``{0}``; loose max diff: ``{1}``." -f $LoosePathDecisionMargin, $LoosePathMaxDiff))
+$summary.Add(("- Empty-slot guard: bright-text ratio below ``{0}`` with best known diff <= ``{1}``." -f $MinLoadTargetTextBrightRatio, $MaxEmptyKnownDiff))
 $summary.Add(("- Status: ``{0}``" -f $status))
-$summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, unknown={2}." -f $pathRows.Count, $debugRows.Count, $unknownRows.Count))
+$summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, empty-load-slot={2}, unknown={3}." -f $pathRows.Count, $debugRows.Count, $emptyRows.Count, $unknownRows.Count))
 $summary.Add(("- Lower-row cursor markers: ``{0}`` screenshot(s)." -f $lowerCursorRows.Count))
 if ($damagedRows.Count -gt 0) {
     $summary.Add(("- Damaged target guard: ``{0}`` top-only Path-to-Tenuto preview row(s) with the cursor on a lower missing row." -f $damagedRows.Count))
 }
 $summary.Add("")
-$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Path Ys | Debug Ys | Top path only | Lower cursor Ys | Target |")
-$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |")
+$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Text bright | Path Ys | Debug Ys | Top path only | Lower cursor Ys | Target |")
+$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |")
 foreach ($row in $rows) {
     $seconds = if ($null -eq $row.Seconds) { "" } else { $row.Seconds }
-    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | ``{6}`` | ``{7}`` | ``{8}`` | ``{9}`` | ``{10}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.LowerCursorYs, $row.Target))
+    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | {6:N4} | ``{7}`` | ``{8}`` | ``{9}`` | ``{10}`` | ``{11}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.TextBrightRatio, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.LowerCursorYs, $row.Target))
 }
 
 $outPath = Join-Path $resolvedRunDir "eternal-sonata-load-target-summary.md"

@@ -3942,6 +3942,84 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Save-List Inventory After Pregate Debug Save Drift
+
+Question:
+
+- After the pre-gate diagnostic reported `DEBUG_SAVE_PROLOGUE_PRESENT`, inspect
+  the actual Load-list rows without pressing a save slot, so the next route does
+  not guess at cursor position.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-141108-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave-windows`.
+
+Evidence:
+
+- The macro stopped before save-slot `Cross`; no field, movement, or battle
+  route was attempted.
+- `screenshot-0068s-title-settle-before-inventory.png` showed the title menu,
+  and `screenshot-0070s-title-after-down160-inventory.png` showed `LOAD`
+  selected.
+- Manual review of `screenshot-0131s-load-list-initial-after60.png` showed
+  `Save File 01` and `Save File 02` are both `Path to Tenuto`, `South Section`,
+  `Ch. 1 Raindrops`.
+- `screenshot-0132s-load-list-after-down1.png` selected the second Path row.
+- `screenshot-0134s-load-list-after-down2.png` and later Down screenshots moved
+  the cursor onto `File does not exist` rows; no `Debug Save / Prologue` row was
+  visible in the inventory run.
+- The classifier was tightened after this review: empty slots now use a
+  bright-text guard and are counted as `empty-load-slot` instead of being
+  mistaken for the Debug Save exemplar. The inventory summary now reports
+  path/debug/empty/unknown counts `4/0/3/2`.
+- The full-run status remains `DAMAGED_SAVE_TARGET` only because later Down
+  screenshots intentionally put the cursor on empty rows. The actionable route
+  state is the initial post-Load-list screenshot: Path-to-Tenuto is already the
+  usable row.
+- Host external contention was clean across `5` snapshots; one host sample was
+  moderate from RPCS3 CPU load only.
+- `rpcs3.stderr.txt` contained only Qt/media warnings, and fatal scan found only
+  the benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `1,324`.
+- Total observed DMA: `1,450.56 MB`.
+- Hot PCs: `0x451c` with `787.82 MB`; `0x25cc` with `662.74 MB`.
+- Offload fit `spu-kernel-hle=739` / `too-small=585`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
+- The previous pregate Debug Save classification was not reproduced by the row
+  inventory; the initial row is usable Path to Tenuto, while further `Down`
+  inputs are harmful because they enter empty slots.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\classify_eternal_sonata_load_target.ps1` now has an empty-slot guard
+  so empty Load-list rows do not count as `DEBUG_SAVE_PROLOGUE_PRESENT`.
+- `tools\ps3_harness_refiner.ps1` now recognizes this inventory run as a
+  resolved control and suggests the strongdismiss600 no-movement long-gate proof
+  from the initial Path row, not generic loader-control.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Left1200 Clean Boundary
 
 Question:

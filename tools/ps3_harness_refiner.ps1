@@ -1319,6 +1319,7 @@ $latestTitleToLoadDownHoldLoadTargetReproofPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1777,6 +1778,11 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows =
+        -not $latestFatal -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass =
         -not $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2402,6 +2408,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareB
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-debug-save-target" -Severity "route-repair" -Evidence "Newest title-to-Load pre-gate diagnostic selected LOAD and reached a stable Load list by 12s, but the selected row was Save File 01 / Debug Save / Prologue through 60s and the load-target gate aborted before slot Cross." -Action "Do not treat this as black-gate timing, movement, speed, or GPU proof. Inventory the current save-list rows with repeated Down screenshots and no slot Cross so the Path-to-Tenuto row/cursor state can be repaired precisely."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows" -Severity "resolved-control" -Evidence "Newest save-list inventory screenshots show the initial Load-list position has Path to Tenuto rows, Down once selects the second Path row, and further Down inputs move into empty slots." -Action "Do not normalize with save-list Down/Up and do not fall back to generic loader-control. Resume the strongdismiss600 no-movement long-gate proof from the initial Path row, then add movement only after clean field is re-proven."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate-passed" -Severity "resolved-control" -Evidence "Newest target-only reproof after the left1275 black-gate run passed PATH_TO_TENUTO_PRESENT and had no actionable fatal/access/assertion/device-lost log hit." -Action "Treat this as target health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1275 midpoint with immediate post-movement screenshots."
 }
@@ -2849,6 +2858,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {

@@ -497,6 +497,14 @@ This resolves the black-gate question but exposes current save-list selection
 drift. Do not restore saves, press the slot, or run movement. Inventory the
 current save-list rows with repeated `Down` screenshots and no slot `Cross` so
 the Path-to-Tenuto row and cursor position can be repaired directly.
+If that save-list inventory shows the initial post-Load-list position already
+contains Path-to-Tenuto rows, `Down` once selects the second Path row, and
+further `Down` inputs move into `File does not exist` rows, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
+Do not normalize the save-list cursor with `Down`/`Up`, do not restore saves,
+and do not fall back to generic loader-control. Resume the strongdismiss600
+no-movement long-gate proof from the initial Path row, then add movement only
+after clean field is re-proven.
 
 ## Acceptance
 
