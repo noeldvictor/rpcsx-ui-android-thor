@@ -505,6 +505,14 @@ Do not normalize the save-list cursor with `Down`/`Up`, do not restore saves,
 and do not fall back to generic loader-control. Resume the strongdismiss600
 no-movement long-gate proof from the initial Path row, then add movement only
 after clean field is re-proven.
+If that no-movement long-gate proof passes `PATH_TO_TENUTO_PRESENT` but manual
+screenshots show `Save data cannot be found` followed by a persistent
+`Load complete` overlay through late checks, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-loadcomplete-stuck`.
+Do not repeat the same macro and do not add movement. Keep the initial Path row
+and run a no-movement double-dismiss proof with a second delayed strong
+post-load `Cross`; require clean field screenshots before any `left1275`,
+battle, HLE, RSX, GPU, or speed step.
 
 ## Acceptance
 

@@ -3805,6 +3805,68 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 No-Movement Load-Complete Stuck
+
+Question:
+
+- After the save-list inventory showed Path-to-Tenuto rows at the initial Load
+  position, prove whether the strongdismiss600 no-movement long-gate route
+  reaches clean field before adding movement again.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-143406-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The live load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`; `screenshot-0081s-load-target-gate.png` showed the
+  selected lower Path-to-Tenuto row.
+- Manual review showed `screenshot-0176s-load-complete-90s.png` on
+  `Error: Save data cannot be found`, then
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`,
+  `screenshot-0241s-strongdismiss600-late-check.png`, and
+  `screenshot-0286s-strongdismiss600-very-late-check.png` still on the Load UI
+  with the `Load complete.` popup.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`, `12` wrong-window/other
+  small screenshots, and failed the required field-like check by `260s`.
+- Host contention stayed clean across `5` snapshots.
+- Fatal scan found only the benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe recorded `2,563` rows and `2,466.04 MB` observed DMA.
+- Hot PCs were `0x451c` (`1,736.12 MB`) and `0x25cc` (`729.93 MB`).
+- Offload fit was `spu-kernel-hle=1168` / `too-small=1395`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  overlap all stayed `0 B`.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-loadcomplete-stuck`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this specific no-movement
+  `Load complete` stuck state and blocks repeating the same single-dismiss
+  macro.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-double-dismiss-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 300 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;cross:600;wait:18000;shot:post-load-complete-second-strongdismiss600-18s;wait:45000;shot:double-strongdismiss600-late-check;wait:45000;shot:double-strongdismiss600-very-late-check" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 Cursor-Aware No-Movement Black-Gate
 
 Question:
