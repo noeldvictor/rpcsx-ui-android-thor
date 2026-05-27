@@ -408,6 +408,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGate
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1500FatalCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1500-fatal"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1258,6 +1263,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrup
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1350Vm40Corrupt = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccShadowDescOptionsRouteMiss = $false
@@ -1709,6 +1715,16 @@ if ($latestRun) {
         $latestLoadTargetGateFailure -and
         $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
         $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1275*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly =
+        -not $latestFatal -and
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestRun.Visual.Status -eq "NO_FIELD_LIKE_SCREENSHOT" -and
+        $latestRun.Visual.PrimarySmallClass -eq "loading-like-small-png" -and
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1275*"
@@ -2319,6 +2335,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1350Vm40Corrup
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-black-gate" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 attempt aborted before save-slot Cross because every load-target polling screenshot was a black overlay with UNKNOWN_LOAD_TARGET, while fatal scan stayed clean." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof. Re-prove only the strongdismiss600 Path-to-Tenuto load target, then rerun the left1275 midpoint only if PATH_TO_TENUTO_PRESENT is restored."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-loading-only" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 rerun passed PATH_TO_TENUTO_PRESENT, but after the strongdismiss600 post-load Cross it stayed on Now Loading through immediate and late post-left screenshots with fatal-clean logs." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof and do not fall back to generic state-aware routes. Re-prove the same strongdismiss600 base with no movement / post-load stability before another left1275 or larger movement retry."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate-passed" -Severity "resolved-control" -Evidence "Newest target-only reproof after the left1275 black-gate run passed PATH_TO_TENUTO_PRESENT and had no actionable fatal/access/assertion/device-lost log hit." -Action "Treat this as target health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1275 midpoint with immediate post-movement screenshots."
 }
@@ -2490,6 +2509,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 left1350 reached clean field first, but post-left screenshots showed the likely-crashed overlay/corrupt field and a PPU VM access violation. Bank left1200 as the clean lower boundary, left1350 as the fatal upper boundary, and try the left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate) {
     "Latest stock Down160 strongdismiss600 left1275 aborted before save-slot Cross on black-overlay UNKNOWN_LOAD_TARGET gate frames with fatal-clean logs. Movement was not tested; re-prove the strongdismiss600 Path-to-Tenuto target only before rerunning left1275."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
+    "Latest stock Down160 strongdismiss600 left1275 passed the load target but stayed on Now Loading through all post-left screenshots. Treat this as route/load stability, not movement; re-prove the strongdismiss600 base with no movement before any left1275, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
@@ -2742,6 +2763,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {

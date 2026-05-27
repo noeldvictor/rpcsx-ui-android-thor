@@ -4076,6 +4076,81 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1275 Loading-Only Miss
+
+Question:
+
+- The target-only reproof after the `left1275` black-gate miss passed
+  `PATH_TO_TENUTO_PRESENT`. This reran the same strongdismiss600
+  `ls_left:1275` midpoint to see whether the route could reach field and
+  accept the midpoint movement before any verifier, battle, HLE, RSX, GPU, or
+  speed promotion.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-122721-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The load-target gate passed on attempt `1` with `PATH_TO_TENUTO_PRESENT`.
+- `screenshot-0081s-load-target-gate.png` selected `Save File 01` /
+  `Path to Tenuto`.
+- `screenshot-0176s-load-complete-90s.png` showed the `Load complete`
+  banner.
+- After the strongdismiss600 post-load `Cross`, the run stayed on
+  `Now Loading...` instead of field:
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`,
+  `screenshot-0198s-left1275-immediate-check.png`,
+  `screenshot-0210s-left1275-check.png`,
+  `screenshot-0255s-left1275-late-check.png`, and `screenshot-0290s.png`.
+- The `ls_left:1275` input was sent while the route was still loading, so it
+  is not valid movement evidence.
+- Visual gate result: `NO_FIELD_LIKE_SCREENSHOT`; class counts included
+  `loading-like-small-png=11` and `wrong-window-or-other-small-png=2`.
+- Fatal scan found only the benign `Show fatal error hints: false` config
+  line.
+- Host contention was clean across `6` snapshots.
+- Window-title FPS samples around `120 FPS` are invalid because the visible
+  scene was `Now Loading...`, not field or gameplay.
+
+Counters:
+
+- GPU probe records: `2,627`.
+- Total observed DMA: `3,401.09 MB`.
+- Hot PCs: `0x25cc` with `1,637` records / `2,508.29 MB`, and `0x451c` with
+  `990` records / `892.80 MB`.
+- Offload fit: `spu-kernel-hle=2028`, `too-small=599`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-loading-only`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this loading-only left1275
+  miss and no longer falls through to the stale generic state-aware command.
+- The next action is a no-movement strongdismiss600 post-load stability reproof
+  on the same base, not another `left1275` movement attempt.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
 
 Question:

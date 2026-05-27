@@ -446,6 +446,15 @@ not 200% evidence. Do not fall back to generic state-aware or old
 loader-control macros. Re-prove only the strongdismiss600 Path-to-Tenuto
 load-target gate; if that target-only reproof passes `PATH_TO_TENUTO_PRESENT`,
 resume the same `ls_left:1275` midpoint with immediate screenshots.
+If that resumed `ls_left:1275` proof passes `PATH_TO_TENUTO_PRESENT` but every
+post-dismiss and post-left screenshot remains on `Now Loading...` with
+fatal-clean logs, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-loading-only`.
+This is route/load stability, not movement, not speed, not GPU migration, and
+not 200% evidence. Do not fall back to generic state-aware or old
+loader-control routes. Re-prove the same strongdismiss600 base with no movement
+/ post-load stability before another `left1275`, verifier, battle, HLE, RSX,
+GPU, or speed attempt.
 
 ## Acceptance
 
