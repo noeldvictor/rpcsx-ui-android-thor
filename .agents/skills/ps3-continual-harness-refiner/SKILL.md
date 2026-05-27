@@ -407,6 +407,14 @@ frames before the load-target gate, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-title-route-miss-after-target-reproof`.
 Do not retry movement again. Run the Down160 title-to-Load diagnostic with
 explicit title-settle, after-Down160, post-title-Cross, and pre-gate screenshots.
+If that diagnostic proves `Load` selection and `PATH_TO_TENUTO_PRESENT` again,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-title-to-load-down160-reproved-load`.
+This is title/load-list health only, not field, movement, speed, GPU migration,
+or 200% evidence. Resume the same strongdismiss600 `ls_left:1200` movement proof
+with immediate post-movement screenshots; do not fall back to generic
+`titleload-down160-pollgated-directleft200`, old state-aware, or loader-control
+routes.
 
 ## Acceptance
 

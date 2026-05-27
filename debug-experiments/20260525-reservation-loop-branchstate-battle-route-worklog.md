@@ -4024,3 +4024,69 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-title-to-load-down160-state-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:12000;shot:post-title-cross-down160;up:120;wait:200;up:120;wait:200;up:120;wait:200;up:120;wait:200;up:120;wait:600;shot:pre-load-target-gate-down160;gate_load_target:30000" -MaxSeconds 140 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0
 ```
+
+## 2026-05-27 StrongDismiss600 Title-to-Load Down160 Reproof
+
+Question:
+
+- After the restored strongdismiss600 `ls_left:1200` movement retry entered
+  story/cutscene frames before the Load-list gate, prove whether the title
+  `Down:160` route still selects `Load` and reaches the Path-to-Tenuto row.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-105159-cpu4-title-to-load-down160-state-diagnostic-windows-windows`.
+
+Evidence:
+
+- The diagnostic used explicit screenshots for title settle, after `Down:160`,
+  after title `Cross`, and pre-load-target gate.
+- Manual screenshots showed `screenshot-0069s-title-settle.png` on the title
+  menu with `New Game` selected, `screenshot-0071s-title-after-down160.png`
+  with `Load` selected, and `screenshot-0083s-post-title-cross-down160.png` /
+  `screenshot-0087s-pre-load-target-gate-down160.png` on `Save File 01`,
+  `Path to Tenuto`, `South Section`, `Ch. 1 Raindrops`.
+- The load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`.
+- `eternal-sonata-load-target-summary.md` recorded
+  path/debug/unknown counts `3/0/2`; the two unknown entries were the title-menu
+  screenshots before the Load list was opened.
+- Host contention was clean across `6` snapshots.
+- `rpcs3.stderr.txt` was `0` bytes, and fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+- The lab stopped RPCS3 after `MaxSeconds 140`, expected for this intentionally
+  short diagnostic after the target gate had passed.
+
+Counters:
+
+- GPU probe was intentionally off for this route-state diagnostic, so there is
+  no new DMA/offload/RSX-local counter evidence.
+- Window-title samples ranged from `38.33` to `53.73` FPS while on title/load UI;
+  these are route telemetry only, not a speed result.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-title-to-load-down160-reproved-load`.
+- Title/load-list health only.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes a passed Down160 title-to-Load
+  diagnostic after the prior strongdismiss600 `left1200` route miss and resumes
+  the same strongdismiss600 `ls_left:1200` movement proof instead of falling back
+  to generic `titleload-down160-pollgated-directleft200`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

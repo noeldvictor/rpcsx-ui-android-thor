@@ -1295,6 +1295,17 @@ $recentTitleToLoadDownHoldDirectLeftFieldPass = @($runEvidence | Where-Object {
         $_.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
         $text -like "*titleload-down160-pollgated-directleft200*"
 }).Count -gt 0
+$recentHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200TitleRouteMiss = @($runEvidence | Where-Object {
+    $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
+    $text = "$($_.Name) $label"
+    $_.LoadTarget -and
+        $_.LoadTarget.GateFailed -and
+        $_.LoadTarget.Status -eq "UNKNOWN_LOAD_TARGET" -and
+        $text -like "*25cc*" -and
+        $text -like "*shadow-desc*" -and
+        $text -like "*battle-stock-down160-strongdismiss600-left1200*" -and
+        $text -like "*rerun-after-target-reproof*"
+}).Count -gt 0
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1823,6 +1834,9 @@ if ($latestRun) {
         !$latestValidLoaderControlLeft200x3 -and
         ($latestRun.Name -like "*loader-control-left200*" -or $latestLabel -like "*loader-control-left200*")
 }
+$latestTitleToLoadDownHoldPassAfterStrongDismiss600Left1200RouteMiss =
+    $latestTitleToLoadDownHoldLoadTargetPass -and
+    $recentHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200TitleRouteMiss
 $newestValidLoaderControlRun = @($runEvidence | Where-Object {
     $label = if ($_.Lab.Label) { $_.Lab.Label } else { "" }
     $_.Decision -eq "valid-field-triage" -and
@@ -2244,6 +2258,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfter
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1200DebugSavePass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1200-debug-save-passed" -Severity "resolved-control" -Evidence "Newest target-only strongdismiss600 reproof after the left1200 Debug Save blocker passed PATH_TO_TENUTO_PRESENT and had no actionable fatal/access/assertion/device-lost log hit." -Action "Treat this as target health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1200 movement proof with immediate post-movement screenshots; do not fall back to generic state-aware or loader-control routes."
 }
+if ($latestTitleToLoadDownHoldPassAfterStrongDismiss600Left1200RouteMiss) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-title-to-load-down160-reproved-load" -Severity "resolved-control" -Evidence "Newest Down160 title-to-Load diagnostic selected Load and proved PATH_TO_TENUTO_PRESENT after the prior strongdismiss600 left1200 route miss entered story/cutscene frames before the Load-list gate." -Action "Treat this as title-route health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1200 movement proof with immediate post-movement screenshots."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-rsx-fpcal-corrupt-field" -Severity "blocker" -Evidence "Newest stronger-dismiss left1500 run passed PATH_TO_TENUTO_PRESENT and reached field, but the RSX thread fataled with Unimplemented FP CAL at the post-left checkpoint. Manual screenshot review showed the field was clean before movement and visibly striped/corrupt after ls_left:1500." -Action "Do not count this as clean movement, speed, first-battle, or GPU migration proof. Keep the strongdismiss600 base but shrink to ls_left:1200 with immediate screenshots before any verifier, battle, HLE, RSX, GPU, or speed work."
 }
@@ -2372,6 +2389,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 delayed single-dismiss direct-left route proved Path to Tenuto field and stayed field-clean after the left200 pulse. Run only the same late-dismiss base with a left-only first-battle movement isolation before full battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestTitleToLoadDownHoldLateDismissNoMoveFieldPass) {
     "Latest Down160 delayed single-dismiss no-movement route proved Path to Tenuto field without opening the save prompt. Add only one direct-left movement pulse on the same late-dismiss base before first-battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestTitleToLoadDownHoldPassAfterStrongDismiss600Left1200RouteMiss) {
+    "Latest Down160 title-to-Load diagnostic proved PATH_TO_TENUTO_PRESENT after the strongdismiss600 left1200 route miss. Resume the same strongdismiss600 ls_left:1200 movement proof with immediate screenshots; this is route repair, not speed."
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     "Latest down160 title-to-Load diagnostic proved PATH_TO_TENUTO_PRESENT and intentionally stopped before slot Cross. Continue with the down160 load-target-gated direct-left route; this is still route repair, not speed."
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
@@ -2614,6 +2633,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldPostLoadCompleteSavePrompt) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
+} elseif ($latestTitleToLoadDownHoldPassAfterStrongDismiss600Left1200RouteMiss) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1200LongGateCommand
 } elseif ($latestTitleToLoadDownHoldLoadTargetPass) {
     New-StateAwareTitleToLoadDownHoldDirectLeftCommand
 } elseif ($latestTitleToLoadDownHoldBattleLeftOnlyFatal) {
