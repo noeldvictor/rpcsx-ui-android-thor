@@ -18623,3 +18623,59 @@ route/harness hygiene finding only. The refiner now keeps the restored
 strongdismiss600 base but shrinks movement to `ls_left:1500` with an immediate
 post-movement screenshot before any 25cc HLE, SPU-to-GPU, verifier, or speed
 claim.
+
+## 2026-05-26 - StrongDismiss600 Left1500 Pre-Gate Fatal
+
+The follow-up left1500 shrink did not produce new SPU/HLE or GPU evidence.
+`debug-captures\windows-lab\20260526-210213-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic-windows`
+failed before save-slot `Cross`: every load-target screenshot was a black
+overlay, manual review showed RPCS3's likely-crashed overlay, and stderr/logs
+reported a PPU main-thread `VM: Access violation reading location 0x4` at
+`0x0007dccc`.
+
+Treat this as route/harness fatal hygiene only. It is not save-target proof,
+not movement proof, not first-battle proof, not a speed result, and not GPU
+migration. The GPU scoreboard stayed at `0 B` promoted CPU/SPU-to-GPU
+replacement, `0 B` direct RSX-local scout traffic, and `0 B` indirect overlap.
+The next research-safe step is a target-only strongdismiss600 reproof to check
+whether the route base is still healthy before retrying any movement.
+
+## 2026-05-26 - StrongDismiss600 Target Reproof After Left1500 Fatal
+
+The target-only health check
+`debug-captures\windows-lab\20260526-211010-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal-windows`
+passed `PATH_TO_TENUTO_PRESENT` on the first live gate attempt and was
+fatal-clean (`rpcs3.stderr.txt` was `0` bytes). This repairs only the route
+target uncertainty introduced by the previous pre-gate fatal; it deliberately
+did not press the save slot or enter field/movement.
+
+There is still no new CPU/SPU-to-GPU migration credit here. The scoreboard
+remains `0 B` promoted CPU/SPU-to-GPU replacement, `0 B` direct RSX-local scout
+traffic, and `0 B` indirect overlap. Counters were useful for sizing only:
+`1,254` GPU probe records, `1,279.64 MB` observed DMA,
+`spu-kernel-hle=633`, `too-small=621`, with hot PCs `0x451c`
+(`771.78 MB`) and `0x25cc` (`507.86 MB`).
+
+Next research-safe step is to resume the exact strongdismiss600 `ls_left:1500`
+movement proof with the immediate screenshot. Do not treat this target reproof
+as field, movement, first-battle, speed, GPU migration, or 200% evidence.
+
+## 2026-05-26 - StrongDismiss600 Left1500 RSX FP CAL Corrupt Field
+
+The resumed movement proof
+`debug-captures\windows-lab\20260526-212009-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic-windows`
+did reach clean field before movement, but the first post-`ls_left:1500`
+screenshots became visibly striped/corrupt and the RSX thread logged
+`Unimplemented FP CAL instruction` at `0:03:18.476613`. The byte-size visual
+gate reported field-like, so this is a manual-visual corruption case that the
+refiner must not mistake for a clean movement boundary.
+
+No speed or GPU-migration credit follows from this. The scoreboard remained
+`0 B` promoted CPU/SPU-to-GPU replacement, `0 B` direct RSX-local scout traffic,
+and `0 B` indirect overlap. Counters are sizing only: `1,674` GPU probe records,
+`1,950.72 MB` observed DMA, `spu-kernel-hle=963`, `too-small=711`, with hot PCs
+`0x451c` (`1,121.32 MB`) and `0x25cc` (`829.40 MB`).
+
+Next research-safe step is to keep the strongdismiss600 route base but shrink to
+`ls_left:1200` with immediate post-movement screenshots before any verifier,
+battle, HLE, RSX, GPU, or speed promotion.

@@ -366,6 +366,31 @@ generic state-aware routing, and do not promote verifier, battle, HLE, RSX,
 GPU, or speed work. Keep the restored strongdismiss600 base, shrink to
 `ls_left:1500`, and capture an immediate post-movement screenshot before any
 larger movement or first-battle retry.
+If the follow-up strongdismiss600 `ls_left:1500` attempt aborts before
+save-slot `Cross` because every load-target polling screenshot is a black
+overlay with `UNKNOWN_LOAD_TARGET`, and stderr/RPCS3.log reports a PPU
+`VM: Access violation reading location 0x4`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-pregate-fatal-0x4`.
+This is not a save-target proof, movement proof, first-battle proof, speed, or
+GPU migration. Do not fall back to generic state-aware routing and do not rerun
+movement immediately. Re-prove only the strongdismiss600 Path-to-Tenuto
+load-target gate before deciding whether `ls_left:1500` is safe to retry.
+If that target-only reproof after the `left1500` fatal passes
+`PATH_TO_TENUTO_PRESENT` and is fatal-clean, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal-passed`.
+This is target health only, not field, movement, first-battle, speed, or GPU
+migration proof. Resume the same strongdismiss600 `ls_left:1500` movement proof
+with the immediate post-movement screenshot; do not fall back to generic
+state-aware or loader-control routes.
+If the resumed strongdismiss600 `ls_left:1500` proof passes
+`PATH_TO_TENUTO_PRESENT` and reaches a clean pre-movement field screenshot, but
+the immediate/late post-left screenshots become visibly striped/corrupt and
+stderr/RPCS3.log reports an RSX `Unimplemented FP CAL` fatal, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-rsx-fpcal-corrupt-field`.
+Do not count it as movement, first-battle, speed, GPU migration, or 200%
+evidence even if the byte-size visual gate says field-like. Keep the same
+strongdismiss600 base, shrink to `ls_left:1200`, and keep immediate
+post-movement screenshots before verifier, battle, HLE, RSX, GPU, or speed work.
 
 ## Acceptance
 

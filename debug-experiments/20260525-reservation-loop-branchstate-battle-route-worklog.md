@@ -3732,3 +3732,207 @@ Refiner/Skill updates:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1500;wait:1200;shot:left1500-immediate-check;wait:10800;shot:left1500-check;wait:45000;shot:left1500-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 StrongDismiss600 Left1500 RSX FP CAL Corrupt Field
+
+Question:
+
+- After the target-only reproof passed, this reran the same strongdismiss600
+  `ls_left:1500` movement proof with an immediate screenshot to see whether the
+  previous pre-gate fatal was transient or whether the movement rung itself was
+  unsafe.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-212009-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The live load-target gate passed after attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`.
+- `screenshot-0176s-load-complete-90s.png` showed the load-complete checkpoint.
+- Manual review: `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`
+  was a clean Path-to-Tenuto field screenshot before movement.
+- Manual review: `screenshot-0198s-left1500-immediate-check.png`,
+  `screenshot-0210s-left1500-check.png`,
+  `screenshot-0255s-left1500-late-check.png`, and `screenshot-0290s.png` were
+  visibly striped/corrupt and effectively frozen-looking after `ls_left:1500`.
+- The byte-size visual gate reported `FIELD_LIKE_PRESENT`, first field-like at
+  `195s`, `0` invalid screenshots after first field-like, and
+  `passed-for-triage`; this is insufficient because the corruption is visual,
+  not byte-size.
+- `rpcs3.stderr.txt` was `343` bytes and reported:
+  `RSX [0x026b4bc]: SIG: Thread terminated due to fatal error: Unimplemented FP CAL instruction`.
+- `RPCS3.log:19920` reported the same RSX fatal at `0:03:18.476613`, aligned
+  with the immediate post-left checkpoint.
+- Host checks were clean across `6` snapshots.
+- The lab stopped RPCS3 at `MaxSeconds 300`, but the RSX fatal had already
+  happened at the post-left checkpoint.
+
+Counters:
+
+- GPU probe records `1,674`.
+- Total observed DMA `1,950.72 MB`.
+- Hot PCs: `0x451c` with `1,142` records / `1,121.32 MB`; `0x25cc` with
+  `532` records / `829.40 MB`.
+- Offload fit `spu-kernel-hle=963` / `too-small=711`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-corruption`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-rsx-fpcal-corrupt-field`.
+- Not clean movement: the first post-left frame is corrupt and RSX-fatal.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now detects the strongdismiss600 `left1500`
+  field-then-RSX-FP-CAL failure and suggests shrinking the same base to
+  `ls_left:1200` with immediate screenshots.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
+
+Question:
+
+- The restored strongdismiss600 `ls_left:1800` retry reached clean field and
+  then exited after movement. This round shrank the movement midpoint to
+  `ls_left:1500` and added an immediate post-movement screenshot to see whether
+  the route could survive long enough to prove movement before any verifier,
+  battle, HLE, RSX, GPU, or speed promotion.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-210213-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run never reached save-slot `Cross` or `ls_left:1500`.
+- The live load-target gate timed out after `60000ms` with status
+  `UNKNOWN_LOAD_TARGET`.
+- All `21` load-target screenshots were `black-overlay-small-png`.
+- Manual screenshot review of
+  `screenshots\screenshot-0081s-load-target-gate.png` showed the RPCS3
+  `The PS3 application has likely crashed` overlay, not a Load list or field.
+- `rpcs3.stderr.txt` was `118` bytes and reported:
+  `PPU[0x1000000] Thread (main_thread) [0x0007dccc]: VM: Access violation reading location 0x4 (unmapped memory)`.
+- `RPCS3.log` reported the same access violation at `0:01:10.847869`.
+- Host checks were clean across prelaunch, postlaunch, and postrun snapshots;
+  no RPCS3/RPCSX/build process remained after the run.
+- Visual gate status was `NO_FIELD_LIKE_SCREENSHOT`, with no field-like
+  screenshot at or before `260s`.
+
+Counters:
+
+- GPU probe records `472`.
+- Total observed DMA `476.21 MB`.
+- Hot PCs: `0x451c` with `353` records / `292.09 MB`; `0x25cc` with `119`
+  records / `184.12 MB`.
+- Offload fit `too-small=244` / `spu-kernel-hle=228`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-pregate-fatal-0x4`.
+- Not save-target proof.
+- Not movement: the macro aborted before save-slot `Cross`.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this left1500 pre-gate fatal
+  and no longer falls back to generic state-aware load-target routing.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command is a target-only health reproof, not movement:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1500-fatal" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## 2026-05-26 StrongDismiss600 Target Reproof After Left1500 Fatal
+
+Question:
+
+- The previous `ls_left:1500` shrink crashed before save-slot `Cross`, so this
+  target-only run checked whether the restored strongdismiss600 Path-to-Tenuto
+  load target was still healthy before retrying movement.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-211010-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal-windows`.
+
+Evidence:
+
+- The macro intentionally stopped after:
+  `wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1500-fatal`.
+- The live load-target gate passed after attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`.
+- `eternal-sonata-load-target-summary.md` recorded
+  `path-to-tenuto=1`, `debug-save-prologue=0`, `unknown=0`.
+- `screenshot-0081s-load-target-gate.png` matched the Path-to-Tenuto exemplar
+  with crop diff `0.000` versus Debug Save diff `17.758`.
+- `screenshot-0082s-path-target-reproof-after-left1500-fatal.png` is the final
+  target-health screenshot.
+- Host checks were clean across `7` snapshots.
+- `rpcs3.stderr.txt` was `0` bytes, and no actionable fatal/access/assertion or
+  device-lost signature was found in the stderr/log scan.
+- The lab stopped RPCS3 after `MaxSeconds 150`; this is expected for this
+  intentionally short target proof because the target gate had already passed.
+
+Counters:
+
+- GPU probe records `1,254`.
+- Total observed DMA `1,279.64 MB`.
+- Hot PCs: `0x451c` with `924` records / `771.78 MB`; `0x25cc` with `330`
+  records / `507.86 MB`.
+- Offload fit `spu-kernel-hle=633` / `too-small=621`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal-passed`.
+- Target health repaired after the left1500 pre-gate fatal.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the passed target-only reproof
+  as a resolved control and suggests the same strongdismiss600 `ls_left:1500`
+  movement proof with the immediate screenshot, instead of generic
+  loader-control/state-aware fallback.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same reusable rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1500;wait:1200;shot:left1500-immediate-check;wait:10800;shot:left1500-check;wait:45000;shot:left1500-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
