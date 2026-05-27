@@ -4009,6 +4009,73 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1275-blackgate" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Target Reproof After Left1275 Black Gate
+
+Question:
+
+- The `ls_left:1275` midpoint never reached save-slot `Cross` because all
+  load-target gate screenshots were black-overlay `UNKNOWN_LOAD_TARGET` frames.
+  This run re-proves only the strongdismiss600 Path-to-Tenuto target before
+  retrying movement.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-121649-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate-windows`.
+
+Evidence:
+
+- The macro intentionally stopped after:
+  `wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1275-blackgate`.
+- The live load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`.
+- `eternal-sonata-load-target-summary.md` recorded path/debug/unknown
+  counts `1/0/0`; the accepted crop was row `365` with Path-to-Tenuto diff
+  `6.537` versus Debug Save diff `18.577`.
+- Manual review of
+  `screenshot-0082s-path-target-reproof-after-left1275-blackgate.png` showed
+  the selected visible row as `Save File 04`, `Path to Tenuto`,
+  `South Section`, `Ch. 1 Raindrops`.
+- `rpcs3.stderr.txt` was `0` bytes, and fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+- Host contention was clean across `7` snapshots.
+- The lab stopped RPCS3 after `MaxSeconds 150`; this is expected for this
+  intentionally short target proof because the target gate had already passed.
+
+Counters:
+
+- GPU probe records: `1,260`.
+- Total observed DMA: `1,321.75 MB`.
+- Hot PCs: `0x451c` with `925` records / `805.33 MB`, and `0x25cc` with `335`
+  records / `516.42 MB`.
+- Offload fit: `spu-kernel-hle=665`, `too-small=595`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate-passed`.
+- Target health repaired after the left1275 black-gate miss.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill status:
+
+- No harness-code change was needed this round. The refiner already recognizes
+  this passed target-only reproof as a resolved control.
+- `AGENTS.md` now carries the same standing breadcrumb.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
 
 Question:
