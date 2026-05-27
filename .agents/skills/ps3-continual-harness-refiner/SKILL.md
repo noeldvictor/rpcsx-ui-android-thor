@@ -357,6 +357,15 @@ or speed result. Do not rerun the route automatically. Restore or repair the
 Path-to-Tenuto save target, verify `PATH_TO_TENUTO_PRESENT` with the
 load-target gate, then retry the strongdismiss600 `ls_left:1800` shape only
 after the target is correct.
+If the restored strongdismiss600 `ls_left:1800` retry proves
+`PATH_TO_TENUTO_PRESENT`, reaches clean Path-to-Tenuto field, and then RPCS3
+exits after `ls_left:1800` before the left-check screenshots, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-process-exit`.
+Do not treat the field screenshot as moving gameplay, do not fall back to
+generic state-aware routing, and do not promote verifier, battle, HLE, RSX,
+GPU, or speed work. Keep the restored strongdismiss600 base, shrink to
+`ls_left:1500`, and capture an immediate post-movement screenshot before any
+larger movement or first-battle retry.
 
 ## Acceptance
 

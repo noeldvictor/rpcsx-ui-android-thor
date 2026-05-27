@@ -3629,3 +3629,106 @@ Refiner/Skill updates:
 ```powershell
 # No automatic route rerun: latest strongdismiss600 left1800 gate selected DEBUG_SAVE_PROLOGUE_PRESENT. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then retry the strongdismiss600 left1800 shape.
 ```
+
+## 2026-05-26 StrongDismiss600 Save Restore, Target Reproof, And Left1800 Process Exit
+
+Question:
+
+- The previous strongdismiss600 `ls_left:1800` attempt was blocked before slot
+  `Cross` because the Load list selected `Debug Save` / `Prologue`. This round
+  restored the known Path-to-Tenuto checkpoint, re-proved only the load target,
+  then retried the exact strongdismiss600 `ls_left:1800` route.
+
+Restore:
+
+- Backup before restore:
+  `debug-captures\save-backups\BLUS3016100-before-strongdismiss600-target-restore-20260526-203059`.
+- Restored from:
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100`.
+- Restored to:
+  `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\build-msvc\bin\dev_hdd0\home\00000001\savedata\BLUS3016100`.
+
+Target reproof artifact:
+
+- `debug-captures\windows-lab\20260526-203125-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-windows`.
+
+Target reproof evidence:
+
+- The macro stopped before save-slot `Cross`:
+  `wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof`.
+- Load-target gate passed on attempt 1:
+  `PATH_TO_TENUTO_PRESENT`, path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`0`.
+- Manual screenshots `screenshot-0081s-load-target-gate.png` and
+  `screenshot-0082s-path-target-reproof.png` showed `Save File 01` and
+  `Save File 02` as `Path to Tenuto / South Section / Ch. 1 Raindrops`.
+- Host checks were clean; `rpcs3.stderr.txt` was empty; fatal scan found no
+  actionable access violation, assertion, validation, device-lost, likely
+  crashed, or unhandled exception hits.
+- GPU probe records `1233`; total observed DMA `1,344.55 MB`; hot PCs
+  remained `0x451c` and `0x25cc`; promoted CPU/SPU-to-GPU, RSX-local, and
+  indirect overlap all stayed `0 B`.
+
+Retry artifact:
+
+- `debug-captures\windows-lab\20260526-203509-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-longgate-diagnostic-rerun-windows`.
+
+Retry evidence:
+
+- Load-target gate passed on attempt 1:
+  `PATH_TO_TENUTO_PRESENT`, path-to-tenuto=`1`, debug-save-prologue=`0`,
+  unknown=`0`.
+- Manual screenshots:
+  - `screenshot-0081s-load-target-gate.png`: correct Path-to-Tenuto row.
+  - `screenshot-0176s-load-complete-90s.png`: Load UI with `Load complete`.
+  - `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`: clean
+    Path-to-Tenuto field after the stronger `cross:600` dismiss.
+- The run then sent `ls_left:1800`, but the game window/process exited before
+  `left1800-check` and `left1800-late-check`; both screenshots were skipped.
+- Visual gate status was `FIELD_LIKE_PRESENT`, first field-like
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` at `195s`,
+  with `0` invalid screenshots after field-like.
+- Host checks were clean across `3` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted log scan found no actionable
+  fatal/access/assertion/validation/device-lost/likely-crashed signature; the
+  only searched hits were benign PPU thread-exit `aborted` warnings during load.
+
+Counters:
+
+- GPU probe records `1630`.
+- Total observed DMA `1,973.14 MB`.
+- Hot PCs: `0x451c` with `1022` records / `1,024.36 MB`; `0x25cc` with `608`
+  records / `948.78 MB`.
+- Offload fit `spu-kernel-hle=1017` / `too-small=613`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- Target reproof: `route-tooling` / `target-repaired`, not field, not movement,
+  not speed, not `gpu-migration-credit`, not a 200% candidate.
+- Retry: `failed-window-lost-after-field`.
+- Retry subsystem class:
+  `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-process-exit`.
+- Not movement proof: the only field screenshot was before the `ls_left:1800`
+  pulse, and the left-check screenshots were skipped after process exit.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the restored strongdismiss600
+  `left1800` process-exit state instead of falling back to generic
+  `stateaware-one-step` routing.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command keeps the restored strongdismiss600 base, shrinks the
+  movement midpoint to `ls_left:1500`, and captures an immediate post-movement
+  screenshot:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1500;wait:1200;shot:left1500-immediate-check;wait:10800;shot:left1500-check;wait:45000;shot:left1500-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
