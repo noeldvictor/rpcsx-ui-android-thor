@@ -531,6 +531,13 @@ sent. Keep `left1316` as the clean lower boundary and `left1318` as the
 fatal/corrupt upper boundary. Re-prove only the strongdismiss600
 Path-to-Tenuto load target, then retry `ls_left:1317` if
 `PATH_TO_TENUTO_PRESENT` is restored.
+If `ls_left:1317` selects `Debug Save / Prologue` again after that target-only
+reproof passed `PATH_TO_TENUTO_PRESENT`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-debug-save-after-target-reproof`.
+Stop the target-reproof loop. Do not count movement, field, speed, GPU
+migration, or 200% evidence. Inventory the save-list rows with repeated Down
+screenshots and no slot `Cross`, then repair selected-row targeting before
+another `left1317` movement attempt.
 If that no-movement strongdismiss600 reproof shows Path-to-Tenuto preview text
 but also shows damaged-save text, lower-row cursor drift, or a
 `Save data cannot be found` prompt before field, classify it as

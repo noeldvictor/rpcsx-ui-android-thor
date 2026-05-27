@@ -56,9 +56,8 @@ Put dated run details in `debug-experiments/`, not here.
 - Fatal upper proof: `20260527-181934-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows`.
 - `left1316` is clean movement only. It is not first-battle proof, speed proof, GPU migration, or 200%.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
-- Latest `left1317` attempt selected `Debug Save / Prologue` at the load-target gate before save-slot `Cross`; movement was not tested and the bracket is unchanged.
-- Latest target-only reproof after that blocker restored `PATH_TO_TENUTO_PRESENT`; still no field or movement proof.
-- Next action should come from the refiner. Expected next proof is `ls_left:1317` on the same strongdismiss600 base.
+- Repeated `left1317` after a clean target-only reproof again selected `Debug Save / Prologue`; movement was not tested and the bracket is unchanged.
+- Do not loop target reproofs. Next expected action is save-list inventory / selected-row repair before another `left1317` movement attempt.
 
 ## Banked Findings
 

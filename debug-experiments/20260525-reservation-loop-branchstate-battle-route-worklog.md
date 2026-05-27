@@ -6018,3 +6018,67 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-27 StrongDismiss600 Left1317 Repeated Debug-Save After Target Reproof
+
+Question:
+
+- After the target-only reproof passed `PATH_TO_TENUTO_PRESENT`, determine
+  whether the same strongdismiss600 `ls_left:1317` movement proof can start from
+  the correct Path-to-Tenuto row.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-191936-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 23-token macro.
+- The load-target gate aborted before save-slot `Cross` at `81s` with
+  `DEBUG_SAVE_PROLOGUE_PRESENT`.
+- Manual screenshot review of `screenshot-0081s-load-target-gate.png` showed
+  `Save File 01 / Debug Save / Prologue` plus damaged-save text.
+- `left1317` movement was never sent.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`, as expected for a pre-slot
+  abort.
+- `rpcs3.stderr.txt` was `0` bytes. Fatal scan found no actionable access
+  violation, device-lost, assertion, or crash line for this route failure.
+- Host checks were clean before and after launch; postrun was `moderate` only
+  because `codex#21200=15%` appeared after the macro had already aborted.
+
+Counters:
+
+- GPU probe records: `625`.
+- Total observed DMA: `631.02 MB`.
+- Offload fit mix: `too-small=319`, `spu-kernel-hle=306`.
+- Hot PCs: `0x451c` `385.51 MB`, `0x25cc` `245.50 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-debug-save-after-target-reproof`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now detects repeated `left1317` Debug Save
+  selection after a clean target-only reproof and stops the reproof-to-movement
+  loop.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  require save-list inventory / selected-row repair before another `left1317`
+  movement attempt.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
