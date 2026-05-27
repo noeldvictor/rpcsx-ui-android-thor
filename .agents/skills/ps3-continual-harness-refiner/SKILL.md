@@ -464,6 +464,13 @@ do not press `Cross`, do not rerun movement, and do not fall back to generic
 state-aware routes. Restore or repair the Path-to-Tenuto save target, then run
 a target-only reproof under the damaged-target guard before no-movement,
 `left1275`, verifier, battle, HLE, RSX, GPU, or speed work.
+If that checkpoint restore plus target-only reproof still reports
+`DAMAGED_SAVE_TARGET`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-still-damaged`.
+This is selected-row/cursor targeting or save-list layout repair, not another
+file-restore job. Do not repeat the same restore and do not run route,
+movement, HLE, RSX, GPU, or speed work until a target-only gate reports
+`PATH_TO_TENUTO_PRESENT`.
 
 ## Acceptance
 

@@ -1114,8 +1114,14 @@ function Invoke-LabLoadTargetGate {
 
         foreach ($line in @($ClassifierOutput)) {
             $text = "$line"
-            if ($text -match '- Status: ``([^`]+)``') {
-                return $matches[1]
+            if ($text -match '- Status:\s+`+([^`]+)`+') {
+                return $matches[1].Trim()
+            }
+            if ($text -match '- Status:\s+([A-Z_]+)') {
+                return $matches[1].Trim()
+            }
+            if ($text -match '\bgot\s+([A-Z_]+)\b') {
+                return $matches[1].Trim()
             }
         }
         return ""
@@ -1161,12 +1167,12 @@ function Invoke-LabLoadTargetGate {
             Write-LabLine $RunLog "Load target gate passed after attempt ${attempt}: PATH_TO_TENUTO_PRESENT."
             return $true
         } catch {
-            $status = Get-LabLoadTargetStatus -ClassifierOutput @($output)
+            $message = $_.Exception.Message
+            $status = Get-LabLoadTargetStatus -ClassifierOutput (@($output) + @($message))
             if ([string]::IsNullOrWhiteSpace($status)) {
                 $status = "UNKNOWN_LOAD_TARGET"
             }
 
-            $message = $_.Exception.Message
             Write-LabLine $RunLog "Load target gate attempt ${attempt}: $status ($message)"
             if ($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS" -or $status -eq "DAMAGED_SAVE_TARGET") {
                 foreach ($line in @($output)) {

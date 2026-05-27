@@ -4235,6 +4235,97 @@ Next exact action:
 # No automatic route rerun: restore or repair the Path-to-Tenuto save target, then run a target-only load-gate reproof under the DAMAGED_SAVE_TARGET guard before retrying no-movement stability or left1275.
 ```
 
+## 2026-05-27 Damaged-Target Restore Reproof Still Damaged
+
+Question:
+
+- Does restoring the known Path-to-Tenuto checkpoint repair the selected
+  strongdismiss600 load target enough to resume no-movement or `left1275`
+  route work?
+
+Artifacts:
+
+- Backup before restore:
+  `debug-captures\save-backups\BLUS3016100-before-damaged-target-restore-20260527-130850`.
+- Restore source:
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100`.
+- Reproof run:
+  `debug-captures\windows-lab\20260527-130917-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-windows`.
+
+Restore evidence:
+
+- The live `BLUS3016100` save was backed up, then the checkpoint files
+  `ICON0.PNG`, `PARAM.SFO`, `PREVIEW0`, and `SAVEDATA` were copied back to the
+  RPCS3 savedata directory.
+- Post-restore hashes matched the checkpoint manifest:
+  - `ICON0.PNG`:
+    `17A53E68FE8D4B857746235FDDA00784FC023672C43DD74E0665FC7AA34C8729`.
+  - `PARAM.SFO`:
+    `F9A81489223525F42B913056F9CFF26EFA4F27BB425C9FBAF84FB922816FD1A3`.
+  - `PREVIEW0`:
+    `D7A9E99CDB1B010AD30DDEC040B0F2A3CEEE0CE21942BE6CA9D4E2A4BAD1386E`.
+  - `SAVEDATA`:
+    `05F76EAC35647BD719618A94648789C511CC47667CD6A7EF6DB302438F9EA49A`.
+
+Reproof command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-damaged-target-restore" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Evidence:
+
+- The target-only reproof stayed on the Load list and aborted before save-slot
+  `Cross`; the guard did not enter the damaged slot.
+- `eternal-sonata-load-target-summary.md` reported `DAMAGED_SAVE_TARGET`.
+- All `19` load-target screenshots matched a top-only Path-to-Tenuto row at
+  `y=190`, with no adjacent lower Path row.
+- Manual review of
+  `screenshots\screenshot-0141s-load-target-gate-19.png` showed `Save File 01`
+  / `Path to Tenuto`, but the selected row said `File does not exist`.
+- Host checks were clean across `3` snapshots, `rpcs3.stderr.txt` was empty,
+  and fatal scan found only the benign `Show fatal error hints: false` config
+  line.
+
+Counters:
+
+- GPU probe records: `1,157`.
+- Total observed DMA: `1,246.79 MB`.
+- Hot PCs: `0x451c` with `796` records / `692.33 MB`, and `0x25cc` with
+  `361` records / `554.46 MB`.
+- Offload fit: `spu-kernel-hle=625`, `too-small=532`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-still-damaged`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Harness/Refiner updates:
+
+- `tools\windows_rpcs3_lab.ps1` now parses load-target exception text so the
+  live gate marker can preserve `DAMAGED_SAVE_TARGET` instead of degrading it
+  to `UNKNOWN_LOAD_TARGET`.
+- `tools\ps3_harness_refiner.ps1` now recognizes this post-restore target-only
+  miss and refuses another automatic route rerun.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact action:
+
+```powershell
+# No automatic route rerun: the restored checkpoint still selects DAMAGED_SAVE_TARGET. Repair selected-row/cursor targeting or save-list layout, then run only a target gate until PATH_TO_TENUTO_PRESENT is clean.
+```
+
 ## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
 
 Question:
