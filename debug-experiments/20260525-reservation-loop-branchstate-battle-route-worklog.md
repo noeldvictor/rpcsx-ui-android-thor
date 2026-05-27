@@ -3954,6 +3954,75 @@ Next exact Windows-only action:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1316;wait:1200;shot:left1316-immediate-check;wait:10800;shot:left1316-check;wait:45000;shot:left1316-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Windows Strongdismiss600 Left1316 Clean Boundary
+
+Question:
+
+- Does the `ls_left:1316` midpoint between clean `left1312` and fatal/corrupt
+  `left1321` survive clean field movement?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-173311-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used the refiner-suggested Windows-only command on screen 1 with
+  `WindowsCpuAffinityMask 0x0F`, `WindowsFrameLimit 240`, `WindowsVblankRate 240`,
+  `EternalSonataGpuProbe Profile`, and `CleanAfterField`.
+- The load-target gate passed attempt `1` as `PATH_TO_TENUTO_PRESENT`; the gate
+  summary reported path/debug/empty/unknown counts `1/0/0/0`, no lower-row
+  cursor markers, and no damaged-save text markers.
+- `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` showed clean
+  Path-to-Tenuto field before movement.
+- Manual screenshot review found clean accepted field movement at
+  `screenshot-0199s-left1316-immediate-check.png` and clean field visuals at
+  `screenshot-0210s-left1316-check.png`,
+  `screenshot-0255s-left1316-late-check.png`, and `screenshot-0290s.png`.
+  There was no RPCS3 likely-crashed overlay, striped/corrupt field, or save
+  prompt.
+- Visual gate reported `FIELD_LIKE_PRESENT`, first field-like screenshot at
+  `195s`, and `0` invalid screenshots after first field-like.
+- `rpcs3.stderr.txt` was `0` bytes, and fatal scan found no actionable
+  access/assertion/device-lost/FP-CAL/fatal log hit.
+- Host contention stayed clean across `6` snapshots.
+- The run stopped at the planned `MaxSeconds 300` wall-time limit.
+
+Counters:
+
+- GPU probe records: `2,608`.
+- Total observed DMA: `3,752.06 MB`.
+- Hot PCs: `0x451c` / `2,268.59 MB`, `0x25cc` / `1,483.47 MB`.
+- Offload fit mix: `spu-kernel-hle=1751`, `too-small=857`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-field-clean`.
+- Clean movement boundary only.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the `left1316` clean movement
+  boundary, banks `left1316` as the clean lower boundary below the `left1321`
+  fatal/corrupt upper boundary, and suggests `ls_left:1318`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact Windows-only action:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1318;wait:1200;shot:left1318-immediate-check;wait:10800;shot:left1318-check;wait:45000;shot:left1318-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 Windows Strongdismiss600 Left1312 Movement Boundary
 
 Question:
