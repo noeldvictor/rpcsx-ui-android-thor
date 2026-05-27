@@ -470,9 +470,15 @@ but also shows damaged-save text, lower-row cursor drift, or a
 and require the load-target classifier to report `DAMAGED_SAVE_TARGET`, not
 `PATH_TO_TENUTO_PRESENT`. This is a selected-save/cursor/checkpoint blocker:
 do not press `Cross`, do not rerun movement, and do not fall back to generic
-state-aware routes. Restore or repair the Path-to-Tenuto save target, then run
-a target-only reproof under the damaged-target guard before no-movement,
-`left1275`, verifier, battle, HLE, RSX, GPU, or speed work.
+state-aware routes. If the live save bytes already match the checkpoint, do
+not repeat the restore. Run only a target-only selected-row repair proof from a
+stable Load list, with before/after screenshots and no save-slot `Cross`,
+before no-movement, `left1275`, verifier, battle, HLE, RSX, GPU, or speed work.
+If the damaged target is a lower visible Path row such as `Save File 05` with
+damaged rows above it, the allowed repair probe is the explicit
+`loadlist-uprepair-target-diagnostic`: wait for the Load list to settle, send
+bounded `Up` pulses, screenshot each step, then run `gate_load_target`. Do not
+turn this into a movement route or broad save-list normalization.
 If that checkpoint restore plus target-only reproof still reports
 `DAMAGED_SAVE_TARGET`, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-still-damaged`.
@@ -480,6 +486,11 @@ This is selected-row/cursor targeting or save-list layout repair, not another
 file-restore job. Do not repeat the same restore and do not run route,
 movement, HLE, RSX, GPU, or speed work until a target-only gate reports
 `PATH_TO_TENUTO_PRESENT`.
+If the target-only `loadlist-uprepair-target-diagnostic` passes
+`PATH_TO_TENUTO_PRESENT`, classify it as target-selection repair only. It is
+not field, not movement, not first battle, not speed, not GPU migration, and
+not 200%. Resume only the strongdismiss600 no-movement stability proof before
+any `left1275`, battle, HLE, RSX, GPU, or speed step.
 If a cursor diagnostic shows the top Path-to-Tenuto preview remains while
 `Down` inputs move the cursor onto lower `File does not exist` rows, classify it
 as

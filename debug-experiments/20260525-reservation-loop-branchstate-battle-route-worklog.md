@@ -3805,6 +3805,117 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Latest Addendum: Save File 05 Repaired To Top Target
+
+- Latest artifact:
+  `debug-captures\windows-lab\20260527-155055-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic-windows`.
+- This target-only diagnostic was run after the newer Save File 05 damaged-row
+  blocker. It waited for the Load list, sent five bounded `Up` pulses with
+  screenshots, and did not press save-slot `Cross`.
+- Result: `PATH_TO_TENUTO_PRESENT`, path/debug/empty/unknown `7/0/0/2`,
+  lower-row cursor markers `0`, damaged-save markers `0`.
+- Manual screenshot `screenshot-0108s-load-target-gate.png` shows selected
+  `Save File 01` / `Path to Tenuto`; lower rows are only `File does not exist`.
+- Host was clean across `6` snapshots. Fatal scan was clean except the benign
+  `Show fatal error hints: false` config line.
+- GPU probe was route-only: `1,370` records, `1,419.69 MB` observed DMA,
+  hot PCs `0x451c` (`878.72 MB`) and `0x25cc` (`540.97 MB`), with promoted
+  CPU/SPU-to-GPU replacement `0 B`, direct RSX-local `0 B`, and indirect
+  overlap `0 B`.
+- Classification: `route-tooling`,
+  `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic-passed`.
+  Not field, not movement, not first-battle proof, not speed, not
+  `gpu-migration-credit`, not 200%.
+- Refiner now points to no-movement stability next:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## 2026-05-27 StrongDismiss600 Save File 05 Cursor Repair
+
+Question:
+
+- The latest no-movement strongdismiss600 proof selected a lower `Save File 05`
+  Path-to-Tenuto row with damaged rows above it, then stayed in the Load UI with
+  `Save data cannot be found` / `Load complete`. Determine whether this is a
+  file-restore problem or selected-row/internal-slot state, then prove only the
+  load target before any slot `Cross`, movement, HLE, RSX, GPU, or speed work.
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260527-152343-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+- `debug-captures\windows-lab\20260527-155055-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic-windows`.
+
+Evidence:
+
+- Manual review of the latest failed no-movement gate screenshot showed
+  `Save File 05` / `Path to Tenuto` selected while upper rows said
+  `Save file has been damaged`.
+- `tools\classify_eternal_sonata_load_target.ps1` now reports that run as
+  `DAMAGED_SAVE_TARGET`: path/debug/empty/unknown `11/0/0/1`, lower-row cursor
+  markers `2`, damaged-save text markers `11`.
+- The live RPCS3 save bytes already matched
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100` for
+  `ICON0.PNG`, `PARAM.SFO`, `PREVIEW0`, and `SAVEDATA`; hashes equal for all
+  four files.
+- The live PS3 savedata directory contained only `BLUS3016100`, so repeating
+  the same checkpoint restore is not a useful next step.
+- I updated `tools\ps3_harness_refiner.ps1`,
+  `.agents\skills\ps3-continual-harness-refiner\SKILL.md`, and `AGENTS.md` so
+  this condition points to a target-only stable-load-list `Up` repair diagnostic
+  rather than another restore or movement route.
+- The target-only diagnostic intentionally did not press save-slot `Cross`. It
+  waited for the Load list, captured `screenshot-0100s-load-list-before-uprepair.png`,
+  sent five bounded `Up` pulses with screenshots, then ran `gate_load_target`.
+- The diagnostic passed `PATH_TO_TENUTO_PRESENT` after attempt `1`; counts were
+  path/debug/empty/unknown `7/0/0/2`, lower-row cursor markers `0`, and
+  damaged-save text markers `0`.
+- Manual screenshot `screenshot-0108s-load-target-gate.png` shows selected
+  `Save File 01` / `Path to Tenuto` / `South Section` / `Ch. 1 Raindrops`,
+  with lower rows only `File does not exist`.
+- Host checks were clean across `6` snapshots. Fatal scan was clean except the
+  benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- Target-only diagnostic GPU probe records: `1,370`.
+- Total observed DMA: `1,419.69 MB`.
+- Hot PCs: `0x451c` with `878.72 MB`, `0x25cc` with `540.97 MB`.
+- Offload fit: `spu-kernel-hle=719`, `too-small=651`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic-passed`.
+- Target selection repaired to top-row `Save File 01` only.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now emits the stable-load-list
+  `loadlist-uprepair-target-diagnostic` when the latest no-movement proof lands
+  on the damaged lower Path row.
+- The refiner recognizes a passed `loadlist-uprepair-target-diagnostic` as
+  target-selection repair only and suggests no-movement stability next, not
+  movement, HLE, RSX, GPU, or speed work.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Lower-Row Damaged Target Reclassification
 
 Question:

@@ -443,6 +443,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventor
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetDiagnosticCommand {
+    $macro = "wait:65000;shot:title-settle-before-uprepair;down:160;wait:900;shot:title-after-down160-uprepair;cross:120;wait:30000;shot:load-list-before-uprepair;up:100;wait:700;shot:load-list-uprepair-up1;up:100;wait:700;shot:load-list-uprepair-up2;up:100;wait:700;shot:load-list-uprepair-up3;up:100;wait:700;shot:load-list-uprepair-up4;up:100;wait:700;shot:load-list-uprepair-up5;gate_load_target:30000;shot:path-target-after-uprepair"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
@@ -1328,6 +1333,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlack
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1817,6 +1823,13 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass =
+        -not $latestFatal -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass =
         -not $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2432,7 +2445,7 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnl
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-loading-only" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 rerun passed PATH_TO_TENUTO_PRESENT, but after the strongdismiss600 post-load Cross it stayed on Now Loading through immediate and late post-left screenshots with fatal-clean logs." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof and do not fall back to generic state-aware routes. Re-prove the same strongdismiss600 base with no movement / post-load stability before another left1275 or larger movement retry."
 }
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget) {
-    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-damaged-save-target" -Severity "blocker" -Evidence "Newest strongdismiss600 no-movement stability proof was reclassified as DAMAGED_SAVE_TARGET: the Path-to-Tenuto preview coincided with lower-row cursor drift and/or damaged-save text, and the game raised Save data cannot be found before field." -Action "Do not press Cross, do not fall back to generic state-aware routes, and do not rerun movement. Restore or repair the Path-to-Tenuto save target, then run a target-only reproof under the damaged-target guard before any no-movement, left1275, battle, HLE, RSX, GPU, or speed attempt."
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-damaged-save-target" -Severity "blocker" -Evidence "Newest strongdismiss600 no-movement stability proof was reclassified as DAMAGED_SAVE_TARGET: the Path-to-Tenuto preview coincided with lower-row cursor drift and/or damaged-save text, and the game raised Save data cannot be found before field." -Action "Do not press save-slot Cross, do not fall back to generic state-aware routes, and do not rerun movement. Run only a target-only selected-row repair proof from a stable Load list; if save bytes already match the checkpoint, do not repeat the same restore."
 }
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadCompleteStuck) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-loadcomplete-stuck" -Severity "route-repair" -Evidence "Newest strongdismiss600 no-movement proof passed PATH_TO_TENUTO_PRESENT, but the first post-load Cross only cleared the Save data cannot be found / Load complete overlay sequence and every late screenshot stayed in the Load UI." -Action "Do not repeat the same no-movement macro and do not add movement. Keep the initial Path row, send a second delayed strong post-load Cross, and require clean field screenshots before retrying left1275, battle, HLE, RSX, GPU, or speed work."
@@ -2631,7 +2644,7 @@ $nextAction = if ($latestStateAwarePromptStuck) {
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     "Latest stock Down160 strongdismiss600 left1275 passed the load target but stayed on Now Loading through all post-left screenshots. Treat this as route/load stability, not movement; re-prove the strongdismiss600 base with no movement before any left1275, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget) {
-    "Latest stock Down160 strongdismiss600 no-movement stability proof is now classified DAMAGED_SAVE_TARGET: Path-to-Tenuto was visible, but damaged-save text/lower-row cursor drift led to Save data cannot be found before field. Stop route retries, repair the selected save target, then run target-only reproof before any movement or speed work."
+    "Latest stock Down160 strongdismiss600 no-movement stability proof is now classified DAMAGED_SAVE_TARGET: Path-to-Tenuto was visible on Save File 05 with damaged rows above it, then Save data cannot be found appeared before field. Stop route retries and run only the stable-load-list Up-repair target diagnostic; do not repeat file restore when the live save hashes already match the checkpoint."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadCompleteStuck) {
     "Latest stock Down160 strongdismiss600 no-movement proof passed PATH_TO_TENUTO_PRESENT but stayed on the Load complete overlay after the first strong post-load Cross. Do not repeat it or add movement; rerun no-movement with a second delayed strong post-load Cross before any battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
@@ -2644,6 +2657,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved the black gate was timing/state-sensitive, but the stable Load list selected Debug Save / Prologue. Do not restore or move; inventory the current save-list cursor rows with repeated Down screenshots and no slot Cross."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     "Latest stock Down160 strongdismiss600 save-list inventory shows the initial Load-list position is Path to Tenuto, while Down moves the cursor into empty rows. Do not normalize with Down/Up; resume the no-movement long-gate proof from the initial Path row before another left1275 attempt."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
+    "Latest stock Down160 strongdismiss600 target-only Up-repair diagnostic passed PATH_TO_TENUTO_PRESENT after stable Load-list screenshots. This repairs target selection only; rerun no-movement stability before any left1275, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
@@ -2903,7 +2918,7 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget) {
-    "# No automatic route rerun: latest strongdismiss600 no-movement proof selected DAMAGED_SAVE_TARGET. Restore or repair the Path-to-Tenuto save target, verify with a target-only gate under the damaged-target guard, then retry no-movement stability only after PATH_TO_TENUTO_PRESENT is clean."
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetDiagnosticCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadCompleteStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDoubleDismissLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
@@ -2915,6 +2930,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
