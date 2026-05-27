@@ -57,7 +57,8 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1316` is clean movement only. It is not first-battle proof, speed proof, GPU migration, or 200%.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
 - Latest `left1317` attempt selected `Debug Save / Prologue` at the load-target gate before save-slot `Cross`; movement was not tested and the bracket is unchanged.
-- Next action should come from the refiner. Expected next proof is a target-only Path-to-Tenuto reproof, then `ls_left:1317` on the same strongdismiss600 base.
+- Latest target-only reproof after that blocker restored `PATH_TO_TENUTO_PRESENT`; still no field or movement proof.
+- Next action should come from the refiner. Expected next proof is `ls_left:1317` on the same strongdismiss600 base.
 
 ## Banked Findings
 

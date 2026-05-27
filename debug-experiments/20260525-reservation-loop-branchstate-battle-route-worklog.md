@@ -3945,6 +3945,69 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1317-debug-save -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1317-debug-save" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1317 Target Reproof Passed
+
+Question:
+
+- After the `left1317` midpoint aborted on `Debug Save / Prologue`, prove only
+  whether the strongdismiss600 Down160 route can again select Path to Tenuto
+  before retrying movement.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-185940-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1317-debug-save-windows`.
+
+Evidence:
+
+- The run used screen `1`, CPU affinity `0x0F`, PadApi, a `7` token
+  no-movement macro, frame/vblank `240/240`, GPU probe `Profile`, and visual
+  gate `Off`.
+- The load-target gate passed on attempt `1` with `PATH_TO_TENUTO_PRESENT`.
+- `eternal-sonata-load-target-summary.md` reported path/debug/empty/unknown
+  counts `1/0/0/0`, lower-row cursor markers `0`, and damaged-save markers `0`.
+- Manual review of `screenshot-0081s-load-target-gate.png` showed the Load list
+  on `Path to Tenuto`, `South Section`, `Ch. 1 Raindrops`, not Debug Save.
+- `rpcs3.stderr.txt` was `0` bytes. Fatal scan found no actionable
+  VM/access/device-lost/assert/crash line.
+- Host checks were clean during route proof; the final postrun aggregate was
+  `moderate` only because Codex CPU usage was sampled after the target gate had
+  already passed. No timing or speed claim is made from this run.
+
+Counters:
+
+- GPU probe records: `1,257`.
+- Total observed DMA: `1,310.05 MB`.
+- Hot PCs: `0x451c` `786.14 MB`, `0x25cc` `523.91 MB`.
+- Offload fit mix: `spu-kernel-hle=662`, `too-small=595`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local scout traffic, and
+  indirect SPU-DMA/RSX-resource overlap all stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1317-debug-save-passed`.
+- Target health only.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/standing update:
+
+- The movement bracket remains `left1316` clean / `left1318` fatal-corrupt.
+- `tools\ps3_harness_refiner.ps1` now recommends retrying `ls_left:1317` with
+  immediate screenshots.
+- `AGENTS.md` records the target reproof pass and keeps the next action on
+  `left1317`.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-immediate-check;wait:10800;shot:left1317-check;wait:45000;shot:left1317-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Left1318 Fatal Upper Boundary
 
 Question:
