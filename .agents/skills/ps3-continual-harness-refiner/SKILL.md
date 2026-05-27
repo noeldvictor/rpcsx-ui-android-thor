@@ -593,8 +593,9 @@ drift. Do not restore saves, press the slot, or run movement. Inventory the
 current save-list rows with repeated `Down` screenshots and no slot `Cross` so
 the Path-to-Tenuto row and cursor position can be repaired directly.
 If that save-list inventory shows the initial post-Load-list position already
-contains Path-to-Tenuto rows, `Down` once selects the second Path row, and
-further `Down` inputs move into `File does not exist` rows, classify it as
+contains `Save File 01 / Path to Tenuto`, `Down` once selects an empty row,
+`Down` twice selects `Save File 03 / Path to Tenuto`, and further `Down` inputs
+alternate through empty rows and later Path rows, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
 Do not normalize the save-list cursor with `Down`/`Up`, do not restore saves,
 and do not fall back to generic loader-control. Resume the strongdismiss600

@@ -4771,6 +4771,66 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Save-List Inventory After Left1317 Drift
+
+Question:
+
+- After repeated `left1317` attempts hit `Debug Save / Prologue`, inventory the
+  settled Load-list rows without pressing save-slot `Cross`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-193933-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave-windows`.
+
+Evidence:
+
+- Windows-only RPCS3 run on screen `1`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, and 26-token no-slot-cross inventory macro.
+- Host contention was clean across `5` snapshots.
+- The run intentionally stopped at `MaxSeconds 165`.
+- Manual screenshot review:
+  - `screenshot-0130s-load-list-initial-after60.png`: `Save File 01 / Path to Tenuto / South Section / Ch. 1 Raindrops` selected.
+  - `screenshot-0132s-load-list-after-down1.png`: cursor on `File does not exist`.
+  - `screenshot-0133s-load-list-after-down2.png`: cursor on `Save File 03 / Path to Tenuto`.
+  - `screenshot-0135s-load-list-after-down3.png`: cursor on `File does not exist`.
+  - `screenshot-0136s-load-list-after-down4.png` through `screenshot-0140s-load-list-after-down6.png`: cursor on `Save File 05 / Path to Tenuto`.
+- `rpcs3.stderr.txt` was `0` bytes. Fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `1,370`.
+- Total observed DMA: `1,396.13 MB`.
+- Offload fit mix: `spu-kernel-hle=696`, `too-small=674`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- Refiner and skill wording now match the observed inventory: initial
+  `Save File 01 / Path to Tenuto`, Down1 empty, Down2 `Save File 03 / Path`,
+  Down3 empty, Down4+ `Save File 05 / Path`.
+- `AGENTS.md` now says not to normalize the cursor with `Down`/`Up`; next proof
+  is no-movement long-gate from the initial Path row before another `left1317`
+  movement attempt.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Double-Dismiss Field Prompt
 
 Question:

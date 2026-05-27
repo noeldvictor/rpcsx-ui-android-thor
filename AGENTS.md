@@ -56,8 +56,8 @@ Put dated run details in `debug-experiments/`, not here.
 - Fatal upper proof: `20260527-181934-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows`.
 - `left1316` is clean movement only. It is not first-battle proof, speed proof, GPU migration, or 200%.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
-- Repeated `left1317` after a clean target-only reproof again selected `Debug Save / Prologue`; movement was not tested and the bracket is unchanged.
-- Do not loop target reproofs. Next expected action is save-list inventory / selected-row repair before another `left1317` movement attempt.
+- Save-list inventory after the repeated `left1317` drift showed the settled initial row is `Save File 01 / Path to Tenuto`; `Down` moves through empty and alternate Path rows.
+- Do not normalize the save cursor with `Down`/`Up`. Next expected action is no-movement long-gate proof from the initial Path row before another `left1317` movement attempt.
 
 ## Banked Findings
 
