@@ -3488,3 +3488,74 @@ Refiner/Skill updates:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:300;wait:18000;shot:post-load-complete-strong-dismiss-18s;ls_left:1800;wait:12000;shot:left1800-check;wait:45000;shot:left1800-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 0x25cc Stock Down160 Strong-Dismiss Left1800 Long-Gate Load Complete Stuck
+
+Question:
+
+- The prior strong-dismiss long-gate `ls_left:1200` diagnostic reached clean
+  Path-to-Tenuto field, visibly accepted the movement pulse, and stayed
+  field-clean. This run tried the next midpoint, `ls_left:1800`, on the same
+  stock Down160 strong-dismiss long-gate base before any verifier, battle, HLE,
+  RSX, GPU, or speed promotion.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-200029-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-longgate-diagnostic-windows`
+
+Verification:
+
+- Windows-only RPCS3 on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and no
+  `Verify25ccShadow`/body fast path.
+- Load-target gate passed on attempt 1 at
+  `screenshot-0081s-load-target-gate.png` with `PATH_TO_TENUTO_PRESENT`
+  (`path-to-tenuto=1`, `debug-save-prologue=0`, `unknown=0`).
+- The run did not reach Path-to-Tenuto field. Manual screenshot review showed
+  the Load UI with the `Load complete` popup at
+  `screenshot-0195s-post-load-complete-strong-dismiss-18s.png`,
+  `screenshot-0209s-left1800-check.png`,
+  `screenshot-0255s-left1800-late-check.png`, and `screenshot-0290s.png`.
+- Visual gate status was `NO_FIELD_LIKE_SCREENSHOT`; all `12` screenshots were
+  classified `wrong-window-or-other-small-png`.
+- Host checks were clean across `6` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted log scan found no actionable access
+  violation, assertion, validation, device-lost, or likely-crashed signature;
+  the matches were benign command/VFS/export/audio/bootstrap text.
+
+Counters:
+
+- GPU probe records `2600`.
+- Total observed DMA `2,872.45 MB`.
+- Hot PCs: `0x451c` with `1831` records / `1,681.79 MB`; `0x25cc` with `769`
+  records / `1,190.66 MB`.
+- Offload fit `spu-kernel-hle=1471` / `too-small=1129`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-load-complete-stuck`.
+- Not movement: the `ls_left:1800` input happened while still on the Load UI.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this `left1800`
+  load-complete-stuck state instead of falling through to the previous clean
+  `left1200` recommendation.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next command keeps the strong-dismiss long-gate base but uses one
+  stronger post-load-complete `Cross` hold before re-testing the same
+  `ls_left:1800` midpoint:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1800;wait:12000;shot:left1800-check;wait:45000;shot:left1800-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

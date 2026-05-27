@@ -383,6 +383,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1800LongGateCom
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1800LongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1800;wait:12000;shot:left1800-check;wait:45000;shot:left1800-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-StateAwareTitleToLoadDownHoldLateLoadCompleteDismissBattleLeftOnlyDiagnosticCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-titleload-down160-lateloadcomplete-dismiss-firstbattle-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10"
@@ -1209,6 +1214,7 @@ $latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccShadowDescOptionsRouteMiss = $false
 $latestHle25ccShadowDescOptionsNoCrossRouteMiss = $false
@@ -1596,6 +1602,14 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss-left1200*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss-left1800*"
     $latestHle25ccShadowDescBuildcheckRouteMiss =
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestText -like "*25cc*" -and
@@ -2110,6 +2124,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1200-field-clean" -Severity "resolved-control" -Evidence ("Newest stock Down160 strong-dismiss left1200 long-gate diagnostic reached Path-to-Tenuto field at {0}s, accepted the left1200 pulse, and stayed field-clean through late screenshots." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank this as a route/movement boundary only, not speed or GPU migration. Keep the strong-dismiss long-gate base and try the left1800 midpoint before verifier, full battle, HLE, RSX, GPU, or speed promotion."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-load-complete-stuck" -Severity "route-repair" -Evidence "Newest stock Down160 strong-dismiss left1800 long-gate diagnostic proved PATH_TO_TENUTO_PRESENT but every post-load and post-left screenshot stayed on the Load UI with the Load complete popup." -Action "Do not count left1800 as movement and do not promote verifier, battle, HLE, RSX, GPU, or speed work. Retry the same long-gate left1800 shape once with a single stronger post-load-complete Cross hold."
+}
 if ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-leftonly-process-exit" -Severity "route-repair" -Evidence "Newest stock Down160 left-only diagnostic proved Path-to-Tenuto field, then RPCS3 exited after the ls_left:2600 movement before left-check screenshots." -Action "Keep the repaired classifier and Down160 load-complete base. Shrink the stock left-only movement to ls_left:1200 with an immediate post-movement screenshot before any verifier or full first-battle retry."
 }
@@ -2327,6 +2344,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strong-dismiss no-movement diagnostic reached clean Path-to-Tenuto field and stayed there. Keep the strong-dismiss base and retry only ls_left:1200 next before any verifier or first-battle promotion."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass) {
     "Latest stock Down160 strong-dismiss left1200 long-gate diagnostic reached Path-to-Tenuto field and stayed field-clean after the left1200 pulse. Bank it as route movement only; try the left1800 midpoint on the same strong-dismiss long-gate base before verifier or battle promotion."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck) {
+    "Latest stock Down160 strong-dismiss left1800 long-gate diagnostic proved the Path-to-Tenuto load target, but never dismissed the Load complete popup. Do not count it as movement; retry the same left1800 long-gate shape once with a stronger single Cross hold before verifier or battle promotion."
 } elseif ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     "Latest stock Down160 left-only diagnostic reached Path-to-Tenuto field at $($latestRun.Visual.FirstFieldSeconds)s with clean fatal logs, then RPCS3 exited after ls_left:2600 before left-check screenshots. Treat the Down160 base as repaired, but not movement/battle proof; shrink to ls_left:1200 with an immediate post-movement screenshot before any verifier retry."
 } elseif ($latestHle25ccShadowDescBattleStockLoading) {
@@ -2551,6 +2570,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1200Command
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1800LongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1800LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     New-Hle25ccShadowDescBattleStockDown160Left1200Command
 } elseif ($latestHle25ccShadowDescBattleStockLoading) {

@@ -341,6 +341,13 @@ This is a route/movement boundary only: not first-battle proof, not speed, not
 GPU migration, and not a 200% candidate. Keep the same strong-dismiss long-gate
 base and try a midpoint `ls_left:1800` before verifier, full battle, HLE, RSX,
 GPU, or speed promotion.
+If that midpoint proves `PATH_TO_TENUTO_PRESENT` but every post-load and
+post-left screenshot remains on the Load UI with the `Load complete` popup,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-load-complete-stuck`.
+Do not count `ls_left:1800` as movement and do not fall back to verifier,
+battle, HLE, RSX, GPU, or speed work. Retry the same long-gate `ls_left:1800`
+shape once with a single stronger post-load-complete `Cross` hold.
 
 ## Acceptance
 
