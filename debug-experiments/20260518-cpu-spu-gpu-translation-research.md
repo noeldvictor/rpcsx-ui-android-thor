@@ -18679,3 +18679,28 @@ and `0 B` indirect overlap. Counters are sizing only: `1,674` GPU probe records,
 Next research-safe step is to keep the strongdismiss600 route base but shrink to
 `ls_left:1200` with immediate post-movement screenshots before any verifier,
 battle, HLE, RSX, GPU, or speed promotion.
+
+## 2026-05-26 - StrongDismiss600 Left1200 Route Volatility
+
+The `ls_left:1200` shrink did not produce movement, speed, HLE, or GPU evidence
+yet. The first run
+`debug-captures\windows-lab\20260526-213735-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic-windows`
+aborted before save-slot `Cross` because the live Load-list gate saw only
+`Debug Save / Prologue`. A target refresh and target-only reproof then passed
+`PATH_TO_TENUTO_PRESENT` in
+`debug-captures\windows-lab\20260526-214507-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1200-debug-save-windows`,
+but the immediate movement retry
+`debug-captures\windows-lab\20260526-215015-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic-rerun-after-target-reproof-windows`
+entered story/cutscene frames before the Load-list gate and aborted as
+`UNKNOWN_LOAD_TARGET`.
+
+No research conclusion changes: these are route-state and harness-quality
+findings only. The scoreboard stayed `0 B` promoted CPU/SPU-to-GPU replacement,
+`0 B` direct RSX-local scout traffic, and `0 B` indirect overlap in all three
+runs. Counters remain sizing-only: the wrong-target run observed `1,274.91 MB`
+DMA, the target reproof observed `1,340.04 MB`, and the cutscene route miss
+observed `1,054.90 MB`, with hot PCs still dominated by `0x451c` and `0x25cc`.
+
+Next research-safe step is a Down160 title-to-Load diagnostic with explicit
+screenshots. Do not retry movement, bodyfast, verifier, RSX, GPU, or speed work
+until the title-to-Load state is deterministic again.

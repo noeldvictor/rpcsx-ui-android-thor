@@ -391,6 +391,22 @@ Do not count it as movement, first-battle, speed, GPU migration, or 200%
 evidence even if the byte-size visual gate says field-like. Keep the same
 strongdismiss600 base, shrink to `ls_left:1200`, and keep immediate
 post-movement screenshots before verifier, battle, HLE, RSX, GPU, or speed work.
+If that `ls_left:1200` shrink aborts before save-slot `Cross` because every
+load-target polling screenshot shows `Debug Save / Prologue`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-debug-save-target`.
+Do not count it as a movement boundary and do not fall back to generic
+state-aware or loader-control routes. Refresh or repair the Path-to-Tenuto save
+target, then run only a target gate reproof.
+If that target-only reproof after the `left1200` Debug Save blocker passes
+`PATH_TO_TENUTO_PRESENT`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1200-debug-save-passed`.
+This is target health only, not field, movement, speed, or GPU migration proof.
+Resume the same `ls_left:1200` movement proof only after the target is healthy.
+If that immediate movement retry enters story/cutscene or other non-Load-list
+frames before the load-target gate, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-title-route-miss-after-target-reproof`.
+Do not retry movement again. Run the Down160 title-to-Load diagnostic with
+explicit title-settle, after-Down160, post-title-Cross, and pre-gate screenshots.
 
 ## Acceptance
 

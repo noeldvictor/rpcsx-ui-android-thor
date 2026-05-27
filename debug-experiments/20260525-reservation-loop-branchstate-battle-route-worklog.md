@@ -3936,3 +3936,91 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1500;wait:1200;shot:left1500-immediate-check;wait:10800;shot:left1500-check;wait:45000;shot:left1500-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 StrongDismiss600 Left1200 Route Volatility
+
+Question:
+
+- After `ls_left:1500` reached a clean field and then hit RSX `Unimplemented
+  FP CAL` with corrupt post-left visuals, shrink the same strongdismiss600 base
+  to `ls_left:1200` and keep immediate screenshots. If the load target drifts,
+  re-prove target health before movement.
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260526-213735-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic-windows`.
+- `debug-captures\save-backups\BLUS3016100-before-left1200-debug-save-refresh-20260526-214454`.
+- `debug-captures\windows-lab\20260526-214507-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1200-debug-save-windows`.
+- `debug-captures\windows-lab\20260526-215015-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic-rerun-after-target-reproof-windows`.
+
+Evidence:
+
+- The first `left1200` shrink aborted before save-slot `Cross`: all `20`
+  load-target screenshots were the Load UI with `Debug Save` / `Prologue`.
+  `eternal-sonata-load-target-summary.md` reported
+  `DEBUG_SAVE_PROLOGUE_PRESENT`, path/debug/unknown `0/20/0`.
+- Manual review of `screenshot-0081s-load-target-gate.png` confirmed the wrong
+  row: `Save File 01`, `Debug Save`, `Prologue`, not Path to Tenuto.
+- Visual gate status was `NO_FIELD_LIKE_SCREENSHOT`.
+- `rpcs3.stderr.txt` was `0` bytes, fatal scan was clean except the benign
+  `Show fatal error hints: false` config line, and host checks were clean.
+- The live RPCS3 save and the checkpoint `SAVEDATA`/`PARAM.SFO` hashes matched,
+  but the live UI still presented the wrong row. I still backed up the live
+  save and refreshed it from
+  `save-checkpoints\eternal-sonata\thor-20260515-190657\BLUS3016100`.
+- The target-only reproof after the refresh passed
+  `PATH_TO_TENUTO_PRESENT` on attempt `1`; classifier counts were
+  path/debug/unknown `1/0/0`, `rpcs3.stderr.txt` was `0` bytes, fatal scan was
+  clean, and host checks were clean across `7` snapshots.
+- The immediate movement retry after target reproof did not reach the Load
+  list. The gate saw story/cutscene/nonfield frames, aborted as
+  `UNKNOWN_LOAD_TARGET` after `7` screenshots, and never pressed save-slot
+  `Cross` or `ls_left:1200`.
+- Manual review of `screenshot-0081s-load-target-gate.png` and
+  `screenshot-0096s-load-target-gate-7.png` from that retry showed the Eternal
+  Sonata story scene, not the Load list. The byte visual gate called early
+  cutscene frames field-like, so manual review overrides byte-size triage here.
+- The rerun's `rpcs3.stderr.txt` was `0` bytes, fatal scan was clean except
+  `Show fatal error hints: false`, and host checks were clean.
+
+Counters:
+
+- First `left1200` wrong-target run: GPU probe records `1,185`, total observed
+  DMA `1,274.91 MB`, hot PCs `0x451c` `762.23 MB` and `0x25cc` `512.68 MB`.
+- Target-only reproof: GPU probe records `1,258`, total observed DMA
+  `1,340.04 MB`, hot PCs `0x451c` `780.43 MB` and `0x25cc` `559.61 MB`.
+- Movement retry route-miss: GPU probe records `769`, total observed DMA
+  `1,054.90 MB`, hot PCs `0x451c` `594.93 MB` and `0x25cc` `459.97 MB`.
+- In all three runs, promoted CPU/SPU-to-GPU replacement, direct RSX-local
+  scout traffic, and indirect SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-debug-save-target`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1200-debug-save-passed`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-title-route-miss-after-target-reproof`.
+- Not field.
+- Not movement: no run pressed save-slot `Cross` into Path to Tenuto and then
+  reached the `ls_left:1200` token.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the left1200 Debug Save
+  blocker, the target-only reproof pass, and the follow-up title/cutscene route
+  miss after target health is restored.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- The refiner now stops movement retries and suggests only the Down160
+  title-to-Load diagnostic with explicit title/down/cross/pre-gate screenshots.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-title-to-load-down160-state-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle;down:160;wait:900;shot:title-after-down160;cross:120;wait:12000;shot:post-title-cross-down160;up:120;wait:200;up:120;wait:200;up:120;wait:200;up:120;wait:200;up:120;wait:600;shot:pre-load-target-gate-down160;gate_load_target:30000" -MaxSeconds 140 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0
+```
