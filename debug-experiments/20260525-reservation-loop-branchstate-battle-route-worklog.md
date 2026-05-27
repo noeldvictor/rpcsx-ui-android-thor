@@ -3883,6 +3883,68 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1317 Debug-Save Target Blocker
+
+Question:
+
+- After `left1316` was clean and `left1318` was fatal/corrupt, test the
+  midpoint `ls_left:1317` without duplicating either boundary.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-183942-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used screen `1`, CPU affinity `0x0F`, PadApi, a `23` token macro,
+  frame/vblank `240/240`, and GPU probe `Profile`.
+- Host checks were clean across `3` snapshots.
+- The load-target gate aborted on attempt `1` before save-slot `Cross`.
+- `eternal-sonata-load-target-summary.md` reported
+  `DEBUG_SAVE_PROLOGUE_PRESENT`, with path/debug/empty/unknown counts
+  `0/1/0/0`.
+- Manual review of `screenshot-0081s-load-target-gate.png` showed the Load list
+  selected `Save File 01`, `Debug Save`, `Prologue`, with damaged-save text.
+- `eternal-sonata-windows-visual-gate-summary.md` reported
+  `NO_FIELD_LIKE_SCREENSHOT`; the only screenshot was the Load UI.
+- `rpcs3.stderr.txt` was `0` bytes. Fatal scan found no actionable VM/access,
+  device-lost, assert, or crash line.
+
+Counters:
+
+- GPU probe records: `621`.
+- Total observed DMA: `634.88 MB`.
+- Hot PCs: `0x451c` `398.65 MB`, `0x25cc` `236.22 MB`.
+- Offload fit mix: `spu-kernel-hle=312`, `too-small=309`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local scout traffic, and
+  indirect SPU-DMA/RSX-resource overlap all stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-debug-save-target`.
+- Not a `left1317` movement boundary: the movement pulse was never sent.
+- Not field.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this specific `left1317`
+  Debug Save blocker and does not fall back to generic state-aware routing.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Movement bracket remains `left1316` clean / `left1318` fatal-corrupt.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1317-debug-save -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1317-debug-save" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Left1318 Fatal Upper Boundary
 
 Question:
