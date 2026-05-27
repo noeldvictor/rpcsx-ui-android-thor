@@ -415,6 +415,16 @@ or 200% evidence. Resume the same strongdismiss600 `ls_left:1200` movement proof
 with immediate post-movement screenshots; do not fall back to generic
 `titleload-down160-pollgated-directleft200`, old state-aware, or loader-control
 routes.
+If the resumed strongdismiss600 `ls_left:1200` proof then passes
+`PATH_TO_TENUTO_PRESENT`, reaches clean Path-to-Tenuto field, visibly accepts
+the `ls_left:1200` pulse, and stays field-clean through late screenshots,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-field-clean`.
+This is the clean lower movement boundary after the `left1500` RSX FP CAL
+fatal: not first-battle proof, not speed, not GPU migration, and not 200%
+evidence. Try the `ls_left:1350` midpoint on the same strongdismiss600 base
+with immediate post-movement screenshots before verifier, battle, HLE, RSX, GPU,
+or speed promotion.
 
 ## Acceptance
 

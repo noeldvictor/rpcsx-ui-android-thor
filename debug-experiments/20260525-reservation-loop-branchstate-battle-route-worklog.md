@@ -3805,6 +3805,75 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1200 Clean Boundary
+
+Question:
+
+- After the `left1500` RSX FP CAL fatal and a title-to-Load reproof, retry the
+  same strongdismiss600 base with `ls_left:1200` and immediate post-movement
+  screenshots to determine whether the smaller movement is clean.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-111249-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic-windows`.
+
+Evidence:
+
+- `gate_load_target:60000` passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`; load-target counts were path/debug/unknown `1/0/0`.
+- `screenshot-0196s-post-load-complete-strongdismiss600-18s.png` reached clean
+  Path-to-Tenuto field after the stronger `cross:600` load-complete dismiss.
+- `screenshot-0200s-left1200-immediate-check.png` visibly moved Polka left away
+  from the save point.
+- `screenshot-0211s-left1200-check.png`,
+  `screenshot-0257s-left1200-late-check.png`, and `screenshot-0290s.png` stayed
+  field-clean by manual review.
+- Visual gate reported `FIELD_LIKE_PRESENT`, first field-like at `196s`, and
+  `0` invalid screenshots after first field-like.
+- `rpcs3.stderr.txt` was `0` bytes, and fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+- Host contention summary was `moderate` / external `moderate` because one
+  sample flagged `Codex#17044=15%`; this blocks any speed comparison from this
+  run but does not invalidate route/visual proof.
+- The lab stopped RPCS3 after `MaxSeconds 300`, expected after the requested
+  late field screenshots were captured.
+
+Counters:
+
+- GPU probe records: `2,599`.
+- Total observed DMA: `3,882.63 MB`.
+- Hot PCs: `0x25cc` with `1,355` records / `2,183.96 MB`, and `0x451c` with
+  `1,244` records / `1,698.67 MB`.
+- Offload fit: `spu-kernel-hle=1894`, `too-small=705`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-field-clean`.
+- Clean lower movement boundary after the `left1500` RSX FP CAL fatal.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this clean strongdismiss600
+  `left1200` route boundary and no longer lets the stale 0x25cc shadow-pattern
+  instrumentation lane outrank the newest route result.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1350-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1350;wait:1200;shot:left1350-immediate-check;wait:10800;shot:left1350-check;wait:45000;shot:left1350-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
 
 Question:

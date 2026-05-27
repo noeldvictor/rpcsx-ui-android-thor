@@ -398,6 +398,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1200LongGate
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1350LongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1350;wait:1200;shot:left1350-immediate-check;wait:10800;shot:left1350-check;wait:45000;shot:left1350-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1350-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1500FatalCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1500-fatal"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1240,6 +1245,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800ProcessExit = 
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500PreGateFatal = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1500FatalPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccShadowDescOptionsRouteMiss = $false
 $latestHle25ccShadowDescOptionsNoCrossRouteMiss = $false
@@ -1670,6 +1676,13 @@ if ($latestRun) {
             (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -or
             ($latestRun.LoadTarget -and $latestRun.LoadTarget.MarkerText -match "wrong-state|cutscene")
         )
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1200*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800ProcessExit =
         $latestRun.Decision -eq "failed-window-lost-after-field" -and
         $latestRun.LoadTarget -and
@@ -2207,7 +2220,7 @@ if ($latestCleanHle451cSize16BodyOptions) {
 if ($latestCleanHle25ccBodyOptions) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-body-options-clean" -Severity "resolved-control" -Evidence "Newest opt-in 0x25cc body run reached the full title Options page with expected small menu screenshots and no black/loading classes." -Action "Keep the body opt-in. Prove first-battle visuals before stock/body battle A/B, micro-win banking, speed claims, or promotion."
 }
-if ($latestCleanHle25ccShadowField -and -not $latestHle25ccShadowDescDown160FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass) {
+if ($latestCleanHle25ccShadowField -and -not $latestHle25ccShadowDescDown160FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-pattern-gap" -Severity "direction" -Evidence ("Newest 0x25cc shadow verifier reached field at {0}s, but exact command-level EA buckets cover only a small slice of the max-DMA pattern family and the current shadow/body path is GET-only." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun generic movement or exact-EA 0x9e4000 skips. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
 }
 if ($latestHle25ccShadowDescDown160FieldPass) {
@@ -2260,6 +2273,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfter
 }
 if ($latestTitleToLoadDownHoldPassAfterStrongDismiss600Left1200RouteMiss) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-title-to-load-down160-reproved-load" -Severity "resolved-control" -Evidence "Newest Down160 title-to-Load diagnostic selected Load and proved PATH_TO_TENUTO_PRESENT after the prior strongdismiss600 left1200 route miss entered story/cutscene frames before the Load-list gate." -Action "Treat this as title-route health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1200 movement proof with immediate post-movement screenshots."
+}
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-field-clean" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 left1200 run proved Path-to-Tenuto field at {0}s, accepted the left1200 pulse, and stayed field-clean through late screenshots." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank this as the clean lower movement boundary after the left1500 RSX fatal. Try the left1350 midpoint next with immediate screenshots; do not promote verifier, battle, HLE, RSX, GPU, or speed work yet."
 }
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1500-rsx-fpcal-corrupt-field" -Severity "blocker" -Evidence "Newest stronger-dismiss left1500 run passed PATH_TO_TENUTO_PRESENT and reached field, but the RSX thread fataled with Unimplemented FP CAL at the post-left checkpoint. Manual screenshot review showed the field was clean before movement and visibly striped/corrupt after ls_left:1500." -Action "Do not count this as clean movement, speed, first-battle, or GPU migration proof. Keep the strongdismiss600 base but shrink to ls_left:1200 with immediate screenshots before any verifier, battle, HLE, RSX, GPU, or speed work."
@@ -2423,6 +2439,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1500 fatal passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same ls_left:1500 movement proof with the immediate screenshot; do not fall back to generic state-aware or loader-control routes."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1200DebugSavePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1200 Debug Save blocker passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same ls_left:1200 movement proof with immediate screenshots; do not fall back to generic state-aware or loader-control routes."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass) {
+    "Latest stock Down160 strongdismiss600 left1200 movement proof is field-clean after the left1500 RSX fatal. Bank left1200 as the clean lower boundary and try the left1350 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
     "Latest stock Down160 strongdismiss600 left1500 reached clean field first, but the post-left screenshots became visibly corrupt and the RSX thread logged Unimplemented FP CAL. Do not count it as movement; shrink the same strongdismiss600 base to ls_left:1200 with immediate screenshots."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
@@ -2667,6 +2685,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1500LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1200DebugSavePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1200LongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1350LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1200LongGateCommand
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
