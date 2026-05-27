@@ -3945,6 +3945,70 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1275 Black-Gate Miss
+
+Question:
+
+- After `left1200` was clean and `left1350` was fatal/corrupt, test the
+  midpoint `ls_left:1275` on the same strongdismiss600 base.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-120107-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run never reached save-slot `Cross`, field, or the `ls_left:1275` token.
+- `gate_load_target:60000` timed out as `UNKNOWN_LOAD_TARGET`.
+- All `21` load-target polling screenshots from
+  `screenshot-0081s-load-target-gate.png` through
+  `screenshot-0141s-load-target-gate-21.png` were black-overlay frames by
+  manual review and visual-gate classification.
+- Load-target classifier counts were path/debug/unknown `0/0/21`.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`.
+- `rpcs3.stderr.txt` was `0` bytes, and fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+- Host contention was clean across `3` snapshots.
+- RPCS3 exited after the macro aborted before slot `Cross`, expected for this
+  load-target gate failure.
+
+Counters:
+
+- GPU probe records: `1,185`.
+- Total observed DMA: `1,151.32 MB`.
+- Hot PCs: `0x451c` with `921` records / `745.21 MB`, and `0x25cc` with `264`
+  records / `406.11 MB`.
+- Offload fit: `too-small=630`, `spu-kernel-hle=555`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-black-gate`.
+- Not field.
+- Not movement: save-slot `Cross` and `ls_left:1275` were never sent.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this specific strongdismiss600
+  `left1275` black-gate miss and no longer falls back to generic state-aware or
+  old loader-control routes.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1275-blackgate" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-26 StrongDismiss600 Left1500 Pre-Gate Fatal
 
 Question:

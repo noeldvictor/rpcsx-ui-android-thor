@@ -436,6 +436,16 @@ evidence even if the byte-size visual gate says field-like. Keep `left1200` as
 the clean lower boundary, `left1350` as the fatal/corrupt upper boundary, and
 try the `ls_left:1275` midpoint with immediate post-movement screenshots before
 verifier, battle, HLE, RSX, GPU, or speed work.
+If that `ls_left:1275` midpoint aborts before save-slot `Cross` because every
+load-target polling screenshot is a black overlay with `UNKNOWN_LOAD_TARGET`,
+and stderr/RPCS3.log are fatal-clean except the benign fatal-hints config line,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-black-gate`.
+This is pre-slot route noise, not movement, not speed, not GPU migration, and
+not 200% evidence. Do not fall back to generic state-aware or old
+loader-control macros. Re-prove only the strongdismiss600 Path-to-Tenuto
+load-target gate; if that target-only reproof passes `PATH_TO_TENUTO_PRESENT`,
+resume the same `ls_left:1275` midpoint with immediate screenshots.
 
 ## Acceptance
 
