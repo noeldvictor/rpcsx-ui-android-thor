@@ -480,6 +480,16 @@ classification. Do not use save-list `Down`/`Up` normalization on this route.
 Rerun the same strongdismiss600 no-movement proof with the cursor-aware
 load-target gate, and only continue to movement if the top-selected Path row
 loads into clean field.
+If that cursor-aware no-movement proof aborts before save-slot `Cross` because
+all load-target polling screenshots are black transition/overlay frames with
+`UNKNOWN_LOAD_TARGET`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-cursoraware-black-gate`.
+This is a title-to-Load timing failure, not a save restore, cursor-normalization,
+movement, speed, GPU, or 200% result. Do not restore the checkpoint, do not use
+save-list `Down`/`Up`, and do not run movement. Run a title-to-Load pre-gate
+diagnostic with explicit screenshots at roughly 12s, 30s, 45s, and 60s after
+title `Cross`, then start the load-target gate only when the Load list is
+visible.
 
 ## Acceptance
 

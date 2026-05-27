@@ -413,6 +413,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCo
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand {
+    $macro = "wait:65000;shot:title-settle-before-blackgate;down:160;wait:900;shot:title-after-down160-blackgate;cross:120;wait:12000;shot:pregate-12s;wait:18000;shot:pregate-30s;wait:15000;shot:pregate-45s;wait:15000;shot:pregate-60s;gate_load_target:60000;shot:path-target-after-pregate-black-diagnostic"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 210 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1500FatalCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1500-fatal"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1500-fatal -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro `"$macro`" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1307,6 +1312,7 @@ $latestTitleToLoadDownHoldLoadListDiagnosticSaveCheckStall = $false
 $latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition = $false
 $latestTitleToLoadDownHoldLoadTargetReproofPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1749,6 +1755,15 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-save-list-cursor-damaged-target-diagnostic*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate =
+        -not $latestFatal -and
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-nomove*" -and
+        $latestText -like "*cursoraware*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass =
         -not $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2368,6 +2383,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfter
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-cursor-diagnostic-lower-empty-rows" -Severity "route-repair" -Evidence "Newest cursor diagnostic showed the Path-to-Tenuto preview text remains at the top while Down inputs move the cursor onto lower File does not exist rows. The cursor-aware classifier now distinguishes top-selected Path from lower-empty-row selection." -Action "Do not use save-list Down/Up normalization for this route. Re-run the same strongdismiss600 no-movement proof with the cursor-aware load-target gate; only continue to movement if the top-selected gate passes and field appears clean."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-cursoraware-black-gate" -Severity "route-repair" -Evidence "Newest cursor-aware no-movement proof aborted before save-slot Cross because every load-target polling screenshot was a black transition/overlay with UNKNOWN_LOAD_TARGET; fatal scan stayed clean and no slot was pressed." -Action "Do not restore the save, normalize cursor rows, or run movement. Diagnose the title-to-Load transition timing with explicit 12s/30s/45s/60s pre-gate screenshots, then gate only after the Load list is actually visible."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate-passed" -Severity "resolved-control" -Evidence "Newest target-only reproof after the left1275 black-gate run passed PATH_TO_TENUTO_PRESENT and had no actionable fatal/access/assertion/device-lost log hit." -Action "Treat this as target health only, not field/movement/speed/GPU proof. Resume the same strongdismiss600 ls_left:1275 midpoint with immediate post-movement screenshots."
 }
@@ -2547,6 +2565,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 target-only reproof after restoring the checkpoint still selected DAMAGED_SAVE_TARGET. Treat this as selected-row/cursor or save-list layout repair, not another file-restore job; do not run movement or speed work until a target-only gate shows PATH_TO_TENUTO_PRESENT."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
     "Latest stock Down160 strongdismiss600 cursor diagnostic proved the stale Path-to-Tenuto preview can remain while Down inputs select lower File does not exist rows. Do not normalize with save-list Down/Up; rerun no-movement with the cursor-aware gate and only continue if the top-selected Path gate loads cleanly."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
+    "Latest stock Down160 strongdismiss600 cursor-aware no-movement proof black-overlayed through the entire load-target gate before any save-slot Cross. Do not restore saves or move; run the title-to-Load pre-gate timing diagnostic with 12s/30s/45s/60s screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
@@ -2807,6 +2827,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     "# No automatic route rerun: target-only reproof after checkpoint restore still selected DAMAGED_SAVE_TARGET. Repair selected-row/cursor targeting or save-list layout, then run only a target gate until PATH_TO_TENUTO_PRESENT is clean."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {

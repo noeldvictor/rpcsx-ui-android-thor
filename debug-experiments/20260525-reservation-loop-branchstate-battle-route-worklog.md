@@ -3805,6 +3805,74 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Cursor-Aware No-Movement Black-Gate
+
+Question:
+
+- After the cursor-aware load-target fix, can the same strongdismiss600
+  no-movement route load Path to Tenuto cleanly before any `left1275` retry?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-134709-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-cursoraware-windows`.
+
+Evidence:
+
+- The run intentionally used the same no-movement macro and cursor-aware
+  `gate_load_target:60000` before any save-slot `Cross`.
+- It aborted before pressing save-slot `Cross`; therefore no field, movement,
+  or first-battle step was attempted.
+- `load-target-gate-failed.txt` reported timeout at `140s` with last status
+  `UNKNOWN_LOAD_TARGET`.
+- `eternal-sonata-load-target-summary.md` recorded
+  path/debug/unknown counts `0/0/20`; lower-row cursor markers `0`.
+- Manual review of
+  `screenshots\screenshot-0140s-load-target-gate-20.png` showed a black
+  transition/overlay with live FPS counters, not the Load list.
+- All `20` load-target gate screenshots were small black-overlay frames,
+  from `screenshot-0082s-load-target-gate.png` through
+  `screenshot-0140s-load-target-gate-20.png`.
+- Host checks were clean across `3` snapshots.
+- `rpcs3.stderr.txt` was small, and fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records were route-invalid for speed because no save slot or field
+  was reached.
+- The summary still showed `0 B` promoted CPU/SPU-to-GPU replacement, direct
+  RSX-local traffic, and indirect SPU-DMA/RSX-resource overlap.
+- Hot repeated CPU/SPU DMA remained around `0x25cc` / `0x451c`, but this is
+  analyzer evidence only and not a GPU migration result.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-cursoraware-black-gate`.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this cursor-aware no-movement
+  black gate as a title-to-Load timing failure, not a save restore or cursor
+  normalization problem.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- The next action is a title-to-Load pre-gate timing diagnostic with explicit
+  screenshots before the load-target gate, not a movement retry.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-blackgate;down:160;wait:900;shot:title-after-down160-blackgate;cross:120;wait:12000;shot:pregate-12s;wait:18000;shot:pregate-30s;wait:15000;shot:pregate-45s;wait:15000;shot:pregate-60s;gate_load_target:60000;shot:path-target-after-pregate-black-diagnostic" -MaxSeconds 210 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Left1200 Clean Boundary
 
 Question:
