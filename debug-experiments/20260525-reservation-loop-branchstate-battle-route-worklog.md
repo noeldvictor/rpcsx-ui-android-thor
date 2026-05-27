@@ -3805,6 +3805,85 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 No-Movement Field Clean Reproof
+
+Question:
+
+- After the target-only Up-repair diagnostic restored selected `Save File 01`
+  / `Path to Tenuto`, prove whether the same stock Down160 strongdismiss600
+  no-movement route reaches stable field before retrying `ls_left:1275`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-160714-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Command used the stock Down160 strongdismiss600 macro with no movement input:
+  `gate_load_target:60000`, save-slot `Cross`, post-load `Cross:600`, then
+  late field screenshots.
+- Load-target gate passed on attempt `1` with `PATH_TO_TENUTO_PRESENT`.
+  Classifier counts were path/debug/empty/unknown `1/0/0/0`, lower-row cursor
+  markers `0`, and damaged-save markers `0`.
+- Manual review of `screenshot-0081s-load-target-gate.png` and
+  `screenshot-0176s-load-complete-90s.png` showed selected `Save File 01` /
+  `Path to Tenuto` / `South Section` / `Ch. 1 Raindrops`; `Save File 02` also
+  showed Path-to-Tenuto, while a bottom damaged-save message was still visible.
+  The selected row loaded successfully, so record the damaged-row text as a
+  screenshot nuance, not a blocker for this run.
+- Manual review of `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`
+  showed clean Path-to-Tenuto field with Polka at the save point. The late
+  checks `screenshot-0241s-strongdismiss600-late-check.png` and
+  `screenshot-0286s-strongdismiss600-very-late-check.png` stayed field-clean.
+- Visual gate reported `FIELD_LIKE_PRESENT`, first field-like
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` at `195s`,
+  required field before `260s` passed, and invalid screenshots after first
+  field-like were `0`.
+- Host contention was clean across `5` snapshots.
+- Fatal scan of `rpcs3.stderr.txt` and `RPCS3.log` found no actionable fatal,
+  access-violation, assertion, Vulkan error, or device-lost line after excluding
+  the benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `2,604`.
+- Total observed DMA: `3,687.56 MB`.
+- Hot PCs: `0x451c` `2,132.05 MB`, `0x25cc` `1,555.51 MB`.
+- Offload fit: `spu-kernel-hle=1770`, `too-small=834`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`.
+- Field-only/no-movement route base.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact
+  strongdismiss600 single-dismiss no-movement field-clean shape instead of
+  falling through to generic `cpu4-stateaware-one-step`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` carries the same
+  rule: a clean single-dismiss no-movement long-gate proof resumes the same
+  strongdismiss600 `ls_left:1275` midpoint with immediate screenshots.
+- Verified refiner output now emits the same `left1275` command and a
+  `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`
+  resolved-control anti-pattern.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 Latest Addendum: Save File 05 Repaired To Top Target
 
 - Latest artifact:

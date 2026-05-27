@@ -1789,6 +1789,15 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-nomove-double-dismiss*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass =
+        -not $latestFatal -and
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-nomove-longgate*" -and
+        $latestText -notlike "*nomove-double-dismiss*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged =
         -not $latestFatal -and
         $latestLoadTargetGateStatus -eq "DAMAGED_SAVE_TARGET" -and
@@ -2453,6 +2462,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadComplete
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDoubleDismissFieldPrompt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-double-dismiss-field-prompt" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 double-dismiss no-movement proof passed PATH_TO_TENUTO_PRESENT, reached clean Path-to-Tenuto field at {0}s, then the second delayed Cross opened the field Save game prompt." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank the first field screenshot as the repaired no-movement base, but do not repeat double-dismiss and do not count the prompt-covered later frames as moving gameplay. Resume the same strongdismiss600 base with ls_left:1275 and immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 no-movement proof passed PATH_TO_TENUTO_PRESENT, reached clean Path-to-Tenuto field at {0}s, and stayed field-like through late checks." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank this as the repaired no-movement route base only. Resume the same strongdismiss600 base with ls_left:1275 and immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-damaged-target-restore-still-damaged" -Severity "blocker" -Evidence "Newest target-only reproof after restoring the Path-to-Tenuto checkpoint still reported DAMAGED_SAVE_TARGET across the load-target gate; screenshots showed the selected top Path-to-Tenuto row with File does not exist, and the guard prevented save-slot Cross." -Action "Do not restore the same checkpoint again and do not rerun route, movement, HLE, RSX, GPU, or speed work. Repair selected-row/cursor targeting or save-list layout, then run a target-only gate before any no-movement or movement proof."
 }
@@ -2659,6 +2671,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 save-list inventory shows the initial Load-list position is Path to Tenuto, while Down moves the cursor into empty rows. Do not normalize with Down/Up; resume the no-movement long-gate proof from the initial Path row before another left1275 attempt."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
     "Latest stock Down160 strongdismiss600 target-only Up-repair diagnostic passed PATH_TO_TENUTO_PRESENT after stable Load-list screenshots. This repairs target selection only; rerun no-movement stability before any left1275, battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass) {
+    "Latest stock Down160 strongdismiss600 no-movement proof reached clean Path-to-Tenuto field and stayed field-like through late checks. Resume the same ls_left:1275 midpoint with immediate screenshots; this is route repair, not speed."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
@@ -2933,6 +2947,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
