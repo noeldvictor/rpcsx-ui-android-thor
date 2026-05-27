@@ -1168,7 +1168,7 @@ function Invoke-LabLoadTargetGate {
 
             $message = $_.Exception.Message
             Write-LabLine $RunLog "Load target gate attempt ${attempt}: $status ($message)"
-            if ($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS") {
+            if ($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS" -or $status -eq "DAMAGED_SAVE_TARGET") {
                 foreach ($line in @($output)) {
                     Write-LabLine $RunLog "Load target gate: $line"
                 }

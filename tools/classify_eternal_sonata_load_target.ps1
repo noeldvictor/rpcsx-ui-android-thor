@@ -176,13 +176,22 @@ function Get-BestTargetMatch {
         }
     }
 
-    return @($matches | Sort-Object `
+    $pathCandidateYs = @($matches | Where-Object { $_.Target -eq "path-to-tenuto" } | Select-Object -ExpandProperty CandidateY)
+    $debugCandidateYs = @($matches | Where-Object { $_.Target -eq "debug-save-prologue" } | Select-Object -ExpandProperty CandidateY)
+    $topPathOnly = ($pathCandidateYs.Count -eq 1 -and $pathCandidateYs[0] -eq $CropY)
+
+    $best = @($matches | Sort-Object `
         @{ Expression = {
             if ($_.Target -eq "path-to-tenuto") { 0 }
             elseif ($_.Target -eq "debug-save-prologue") { 1 }
             else { 2 }
         } }, `
         BestKnownDiff, CandidateY | Select-Object -First 1)[0]
+
+    $best | Add-Member -NotePropertyName PathCandidateYs -NotePropertyValue $pathCandidateYs -Force
+    $best | Add-Member -NotePropertyName DebugCandidateYs -NotePropertyValue $debugCandidateYs -Force
+    $best | Add-Member -NotePropertyName TopPathOnly -NotePropertyValue $topPathOnly -Force
+    return $best
 }
 
 $repoRoot = Get-RepoRoot
@@ -242,13 +251,19 @@ $rows = foreach ($shot in $screenshots) {
         GoodDiff = $bestMatch.GoodDiff
         BadDiff = $bestMatch.BadDiff
         Target = $bestMatch.Target
+        PathCandidateYs = @($bestMatch.PathCandidateYs) -join ","
+        DebugCandidateYs = @($bestMatch.DebugCandidateYs) -join ","
+        TopPathOnly = [bool]$bestMatch.TopPathOnly
     }
 }
 
 $pathRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" })
 $debugRows = @($rows | Where-Object { $_.Target -eq "debug-save-prologue" })
 $unknownRows = @($rows | Where-Object { $_.Target -eq "unknown-load-target" })
-$status = if ($pathRows.Count -gt 0 -and $debugRows.Count -eq 0) {
+$damagedRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" -and $_.TopPathOnly })
+$status = if ($damagedRows.Count -gt 0) {
+    "DAMAGED_SAVE_TARGET"
+} elseif ($pathRows.Count -gt 0 -and $debugRows.Count -eq 0) {
     "PATH_TO_TENUTO_PRESENT"
 } elseif ($debugRows.Count -gt 0 -and $pathRows.Count -eq 0) {
     "DEBUG_SAVE_PROLOGUE_PRESENT"
@@ -272,12 +287,15 @@ $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $Decisio
 $summary.Add(("- Loose lower-row Path-to-Tenuto margin: ``{0}``; loose max diff: ``{1}``." -f $LoosePathDecisionMargin, $LoosePathMaxDiff))
 $summary.Add(("- Status: ``{0}``" -f $status))
 $summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, unknown={2}." -f $pathRows.Count, $debugRows.Count, $unknownRows.Count))
+if ($damagedRows.Count -gt 0) {
+    $summary.Add(("- Damaged target guard: ``{0}`` top-only Path-to-Tenuto row(s) with no adjacent lower Path row." -f $damagedRows.Count))
+}
 $summary.Add("")
-$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Target |")
-$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | --- |")
+$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Path Ys | Debug Ys | Top path only | Target |")
+$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |")
 foreach ($row in $rows) {
     $seconds = if ($null -eq $row.Seconds) { "" } else { $row.Seconds }
-    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | ``{6}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.Target))
+    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | ``{6}`` | ``{7}`` | ``{8}`` | ``{9}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.Target))
 }
 
 $outPath = Join-Path $resolvedRunDir "eternal-sonata-load-target-summary.md"
