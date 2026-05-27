@@ -348,6 +348,15 @@ classify it as
 Do not count `ls_left:1800` as movement and do not fall back to verifier,
 battle, HLE, RSX, GPU, or speed work. Retry the same long-gate `ls_left:1800`
 shape once with a single stronger post-load-complete `Cross` hold.
+If that stronger `cross:600` retry aborts before save-slot `Cross` and the
+load-target classifier reports `DEBUG_SAVE_PROLOGUE_PRESENT` for every polling
+screenshot, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-debug-save-target`.
+This is a save-target blocker, not a stronger-dismiss, movement, HLE, RSX, GPU,
+or speed result. Do not rerun the route automatically. Restore or repair the
+Path-to-Tenuto save target, verify `PATH_TO_TENUTO_PRESENT` with the
+load-target gate, then retry the strongdismiss600 `ls_left:1800` shape only
+after the target is correct.
 
 ## Acceptance
 

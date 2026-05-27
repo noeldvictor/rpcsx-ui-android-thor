@@ -1215,6 +1215,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget = $false
 $latestHle25ccShadowDescBuildcheckRouteMiss = $false
 $latestHle25ccShadowDescOptionsRouteMiss = $false
 $latestHle25ccShadowDescOptionsNoCrossRouteMiss = $false
@@ -1610,6 +1611,12 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss-left1800*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1800*"
     $latestHle25ccShadowDescBuildcheckRouteMiss =
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestText -like "*25cc*" -and
@@ -1929,7 +1936,8 @@ if ($latestLoadTargetGateFailure -and
     -not $latestTitleToLoadDownHoldClassifierFalseGateFailure -and
     -not $latestTitleToLoadDownHoldLeftOnlyClassifierDrift -and
     -not $latestTitleToLoadDownHoldLoadTopNormalizeBlack -and
-    -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
+    -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate -and
+    -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget) {
     $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
     Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
 }
@@ -2127,6 +2135,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass) {
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1800LoadCompleteStuck) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss-left1800-load-complete-stuck" -Severity "route-repair" -Evidence "Newest stock Down160 strong-dismiss left1800 long-gate diagnostic proved PATH_TO_TENUTO_PRESENT but every post-load and post-left screenshot stayed on the Load UI with the Load complete popup." -Action "Do not count left1800 as movement and do not promote verifier, battle, HLE, RSX, GPU, or speed work. Retry the same long-gate left1800 shape once with a single stronger post-load-complete Cross hold."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-debug-save-target" -Severity "blocker" -Evidence "Newest stronger-dismiss left1800 retry aborted before save-slot Cross because the load-target gate saw DEBUG_SAVE_PROLOGUE_PRESENT in every polling screenshot." -Action "Do not count this as a stronger-dismiss or movement result, and do not rerun the route/HLE/RSX/speed path. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then retry the strongdismiss600 left1800 shape only after the save target is correct."
+}
 if ($latestHle25ccShadowDescBattleStockDown160LeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-leftonly-process-exit" -Severity "route-repair" -Evidence "Newest stock Down160 left-only diagnostic proved Path-to-Tenuto field, then RPCS3 exited after the ls_left:2600 movement before left-check screenshots." -Action "Keep the repaired classifier and Down160 load-complete base. Shrink the stock left-only movement to ls_left:1200 with an immediate post-movement screenshot before any verifier or full first-battle retry."
 }
@@ -2270,6 +2281,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest Down160 title/load route selected $latestLoadTargetGateStatus, not Path to Tenuto. Stop route retries, restore or repair the save target, and require PATH_TO_TENUTO_PRESENT before re-running the Down160 direct-left boundary."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
     "Latest stock Down160 strong-dismiss left1200 attempt aborted before slot Cross on black-overlay UNKNOWN_LOAD_TARGET gate frames. Treat it as pre-slot gate noise, not movement failure; rerun the same strong-dismiss left1200 shape with a longer load-target gate."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget) {
+    "Latest stock Down160 strongdismiss600 left1800 retry aborted before save-slot Cross on Debug Save / Prologue. Stop route retries, restore or repair the Path-to-Tenuto save target, and require PATH_TO_TENUTO_PRESENT before re-running that stronger-dismiss shape."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -2496,6 +2509,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     "# No automatic route rerun: latest Down160 gate selected $latestLoadTargetGateStatus. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then re-run the Down160 direct-left boundary proof."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200BlackGate) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismissLeft1200LongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1800DebugSaveTarget) {
+    "# No automatic route rerun: latest strongdismiss600 left1800 gate selected DEBUG_SAVE_PROLOGUE_PRESENT. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then retry the strongdismiss600 left1800 shape."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {

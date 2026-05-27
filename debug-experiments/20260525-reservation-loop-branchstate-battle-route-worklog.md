@@ -3559,3 +3559,73 @@ Refiner/Skill updates:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1800;wait:12000;shot:left1800-check;wait:45000;shot:left1800-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-26 0x25cc Stock Down160 StrongDismiss600 Left1800 Debug-Save Target Blocker
+
+Question:
+
+- The prior `ls_left:1800` long-gate diagnostic proved the Path-to-Tenuto save
+  target but never dismissed the `Load complete` popup. This retry kept the
+  same route shape and increased the post-load-complete hold to `cross:600` to
+  see whether the stronger dismiss allowed the `ls_left:1800` midpoint to reach
+  field before any verifier, battle, HLE, RSX, GPU, or speed promotion.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-201603-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-longgate-diagnostic-windows`
+
+Verification:
+
+- Windows-only RPCS3 on screen 1 / `\\.\DISPLAY2`, PadApi, CPU affinity `0x0F`,
+  frame/vblank `240/240`, GPU probe Profile, and no
+  `Verify25ccShadow`/body fast path.
+- The live load-target gate aborted before save-slot `Cross`; the stronger
+  post-load-complete hold and `ls_left:1800` input were never sent.
+- Load-target classifier status was `DEBUG_SAVE_PROLOGUE_PRESENT`, with
+  `path-to-tenuto=0`, `debug-save-prologue=19`, and `unknown=0`.
+- Manual screenshots `screenshot-0081s-load-target-gate.png` and
+  `screenshot-0139s-load-target-gate-19.png` showed `Debug Save` / `Prologue`
+  with damaged-save rows. No lower Path-to-Tenuto row was visible, so this is
+  a real save-target miss, not row-classifier drift.
+- Visual gate status was `NO_FIELD_LIKE_SCREENSHOT`; all `19` screenshots were
+  classified `wrong-window-or-other-small-png`.
+- Host checks were clean across `3` snapshots; no RPCS3/RPCSX/build process was
+  left running afterward.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted log scan found no actionable
+  access violation, assertion, validation, device-lost, or likely-crashed
+  signature; the matches were benign command/VFS/export/audio/bootstrap text.
+
+Counters:
+
+- GPU probe records `1144`.
+- Total observed DMA `1,211.72 MB`.
+- Hot PCs: `0x451c` with `831` records / `730.67 MB`; `0x25cc` with `313`
+  records / `481.04 MB`.
+- Offload fit `spu-kernel-hle=639` / `too-small=505`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1800-debug-save-target`.
+- Not field.
+- Not movement: the macro aborted before save-slot `Cross`.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this stronger-dismiss
+  `left1800` run as a save-target blocker instead of suggesting another route
+  attempt.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+- Suggested next action is intentionally not a runnable route command:
+
+```powershell
+# No automatic route rerun: latest strongdismiss600 left1800 gate selected DEBUG_SAVE_PROLOGUE_PRESENT. Restore or repair the Path-to-Tenuto save target, verify PATH_TO_TENUTO_PRESENT with the load-target gate, then retry the strongdismiss600 left1800 shape.
+```
