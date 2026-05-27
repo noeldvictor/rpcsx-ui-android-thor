@@ -3883,6 +3883,88 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 Windows Strongdismiss600 Left1312 Movement Boundary
+
+Question:
+
+- Does the `ls_left:1312` midpoint below the known `left1350` VM40/corrupt
+  upper boundary survive as clean field movement under the same stock Down160
+  strongdismiss600 route?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-163849-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used the refiner-suggested Windows-only command on screen 1 with
+  `WindowsCpuAffinityMask 0x0F`, `WindowsFrameLimit 240`, `WindowsVblankRate 240`,
+  `EternalSonataGpuProbe Profile`, and `CleanAfterField`.
+- The load-target gate passed attempt `1` as `PATH_TO_TENUTO_PRESENT`; the gate
+  summary reported path/debug/empty/unknown counts `1/0/0/0`, no lower-row
+  cursor markers, no damaged-save text markers, and path candidate rows
+  `190,535`.
+- Visual gate status was `FIELD_LIKE_PRESENT`, first field-like screenshot was
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` at `195s`,
+  and invalid screenshots after first field-like were `0`.
+- Manual screenshot review confirmed clean field before movement, accepted
+  `ls_left:1312` displacement at
+  `screenshot-0198s-left1312-immediate-check.png`, and clean field visuals at
+  `screenshot-0210s-left1312-check.png`,
+  `screenshot-0255s-left1312-late-check.png`, and `screenshot-0290s.png`.
+- Host contention stayed clean across `6` snapshots. Fatal/log scan found no
+  actionable fatal/access/assertion/Vulkan device-lost signature; the only
+  matching log lines were Vulkan initialization and the benign
+  `Show fatal error hints: false` setting.
+- The run stopped at the planned `MaxSeconds 300` wall-time limit.
+
+Counters:
+
+- GPU probe records: `2,599`.
+- Total observed DMA: `3,710.27 MB`.
+- Hot PCs: `0x451c` / `2,159.45 MB`, `0x25cc` / `1,550.82 MB`.
+- Offload fit mix: `spu-kernel-hle=1736`, `too-small=863`.
+- Promoted CPU/SPU-to-GPU replacement: `0 B`.
+- Direct RSX-local scout traffic: `0 B`.
+- Indirect SPU-DMA/RSX-resource overlap: `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-field-clean`.
+- Clean movement boundary only.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Pattern update:
+
+- The last-week pattern still holds: the repeatable pressure is CPU/SPU-side
+  Spurs DMA around `0x451c` and `0x25cc`, not a proven RSX-local/GPU migration
+  path. CPU-pressure reductions remain worth banking as `stackable-cpu-pressure`
+  or `windows-micro-win` only after matched clean visuals, clean host checks,
+  and no fatal/corrupt-field evidence.
+- Route volatility is now the main blocker before speed stacking: several
+  attempts failed on wrong save target, Load-complete stickiness, or post-left
+  corruption even when raw title FPS looked high. Treat title-bar FPS from
+  route-invalid or menu/loading frames as telemetry only.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the `left1312` clean boundary,
+  banks it under the `left1350` fatal/corrupt upper boundary, and suggests the
+  next midpoint `ls_left:1331`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact Windows-only action:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1331-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1331;wait:1200;shot:left1331-immediate-check;wait:10800;shot:left1331-check;wait:45000;shot:left1331-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Field Clean Reproof
 
 Question:

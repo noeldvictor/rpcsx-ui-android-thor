@@ -472,6 +472,15 @@ GPU migration, and not 200% evidence. Bank `left1275` as the clean lower
 boundary below the `left1350` fatal/corrupt upper boundary, then try the
 `ls_left:1312` midpoint with immediate screenshots before verifier, battle,
 HLE, RSX, GPU, or speed work.
+If that `ls_left:1312` proof passes `PATH_TO_TENUTO_PRESENT`, reaches clean
+Path-to-Tenuto field, visibly accepts the left movement pulse, and stays
+field-clean through late screenshots, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-field-clean`.
+This is still a clean movement boundary only: not first-battle proof, not
+speed, not GPU migration, and not 200% evidence. Bank `left1312` as the clean
+lower boundary below the `left1350` fatal/corrupt upper boundary, then try the
+`ls_left:1331` midpoint with immediate screenshots before verifier, battle,
+HLE, RSX, GPU, or speed work.
 If that no-movement strongdismiss600 reproof shows Path-to-Tenuto preview text
 but also shows damaged-save text, lower-row cursor drift, or a
 `Save data cannot be found` prompt before field, classify it as
