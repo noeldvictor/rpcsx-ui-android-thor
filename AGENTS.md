@@ -51,12 +51,12 @@ Put dated run details in `debug-experiments/`, not here.
 ## Current PS3 State
 
 - Current route base: Down160 title route, `PATH_TO_TENUTO_PRESENT` gate, strong post-load dismiss, Path-to-Tenuto field.
-- Current movement bracket: `left1316` is clean, `left1321` is fatal/corrupt, next midpoint is `left1318`.
+- Current movement bracket: `left1316` is clean, `left1318` is fatal/corrupt, next midpoint is `left1317`.
 - Clean lower proof: `20260527-173311-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-longgate-diagnostic-windows`.
-- Fatal upper proof: `20260527-171535-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1321-longgate-diagnostic-windows`.
+- Fatal upper proof: `20260527-181934-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows`.
 - `left1316` is clean movement only. It is not first-battle proof, speed proof, GPU migration, or 200%.
-- `left1321` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
-- Next action should come from the refiner. Expected next proof is `ls_left:1318` on the same strongdismiss600 base.
+- `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
+- Next action should come from the refiner. Expected next proof is `ls_left:1317` on the same strongdismiss600 base.
 
 ## Banked Findings
 

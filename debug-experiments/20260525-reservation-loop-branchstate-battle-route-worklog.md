@@ -3883,6 +3883,72 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1318 Fatal Upper Boundary
+
+Question:
+
+- After `left1316` was clean and `left1321` was fatal/corrupt, test the
+  `ls_left:1318` midpoint on the same Down160 strongdismiss600 base.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-181934-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used screen `1`, CPU affinity `0x0F`, PadApi, a `23` token macro,
+  `240/240`, visual gate `CleanAfterField`, GPU probe `Profile`, and clean host
+  checks across `6` snapshots.
+- The load-target gate passed on attempt `1` with `PATH_TO_TENUTO_PRESENT`.
+- Pre-movement field was clean at
+  `screenshot-0196s-post-load-complete-strongdismiss600-18s.png`.
+- Manual screenshots after `ls_left:1318` show RPCS3's likely-crashed overlay
+  and corrupt/frozen field visuals:
+  `screenshot-0199s-left1318-immediate-check.png`,
+  `screenshot-0210s-left1318-check.png`,
+  `screenshot-0255s-left1318-late-check.png`, and `screenshot-0290s.png`.
+- The byte-size visual gate reported `FIELD_LIKE_PRESENT` with `0` invalid
+  screenshots after first field-like, but manual screenshot review and fatal
+  logs override that triage for this boundary.
+- `rpcs3.stderr.txt` was `108` bytes and reported
+  `PPU[0x100000c] Thread () [0x002aedd0]: VM: Access violation reading location 0x40`.
+- `RPCS3.log:19168` reported the same PPU VM access violation at about
+  `0:03:18.282928`.
+
+Counters:
+
+- GPU probe records `1,657`.
+- Total observed DMA `1,901.90 MB`.
+- Hot PCs: `0x451c` with `1,110.30 MB`, `0x25cc` with `791.60 MB`.
+- Offload fit `spu-kernel-hle=946` / `too-small=711`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap all stayed `0 B`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-corruption`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-vm40-corrupt-field`.
+- Not clean movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes `left1318` as the fatal upper
+  boundary above clean `left1316`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-immediate-check;wait:10800;shot:left1317-check;wait:45000;shot:left1317-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 Windows Strongdismiss600 Left1321 Fatal Upper Boundary
 
 Question:
