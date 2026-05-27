@@ -3805,6 +3805,84 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1275 Field-Clean Movement Boundary
+
+Question:
+
+- After the strongdismiss600 no-movement base re-proved clean field, retry the
+  same repaired base with `ls_left:1275` and immediate screenshots. This checks
+  whether the midpoint below the `left1350` VM40/corrupt-field failure is a
+  stable movement boundary.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-162159-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- The run used screen 1, PadApi, CPU affinity `0x0F`, frame/vblank `240`, GPU
+  probe `Profile`, and `CleanAfterField`.
+- The live load-target gate passed `PATH_TO_TENUTO_PRESENT` on attempt `1`.
+- Manual load-target review showed the selected Path-to-Tenuto row, not Debug
+  Save or an empty/damaged lower row.
+- `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` showed clean
+  Path-to-Tenuto field before movement.
+- `screenshot-0199s-left1275-immediate-check.png`,
+  `screenshot-0210s-left1275-check.png`,
+  `screenshot-0255s-left1275-late-check.png`, and `screenshot-0290s.png`
+  showed the field stayed clean after the `ls_left:1275` movement pulse.
+- Host checks were clean across prelaunch/postlaunch/postrun snapshots.
+- `rpcs3.stderr.txt` and `RPCS3.log` had no actionable fatal/access/assertion,
+  Vulkan, or device-lost hit after excluding the benign fatal-hints config line.
+- Visual gate reported `FIELD_LIKE_PRESENT`; first accepted field was the
+  post-load strongdismiss600 screenshot at `195s`, with `0` invalid screenshots
+  after the first field-like frame.
+
+Counters:
+
+- GPU probe records `2,607`.
+- Total observed DMA `3,736.60 MB`.
+- Hot PCs: `0x451c` with `2,162.74 MB`; `0x25cc` with `1,573.86 MB`.
+- Offload fit `spu-kernel-hle=1745` / `too-small=862`.
+- RSX-local traffic `0`; indirect SPU-DMA/RSX-resource overlap `0`;
+  promoted CPU/SPU-to-GPU replacement `0 B`.
+- Repeated signatures remain SPU/kernel-HLE and route/codegen evidence, not GPU
+  migration evidence.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-field-clean`.
+- Clean movement boundary only.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Goal update:
+
+- CPU-pressure reductions are now first-class bankable components when matched
+  and clean. Use `stackable-cpu-pressure` or `windows-micro-win` for verified
+  CPU-load, verifier-overhead, scheduler, or cache/residency pressure relief.
+- These still do not lower the hard Windows 200% gate and must not be counted
+  as speed proof, GPU migration, or gate completion without field, title
+  Options/menu, and first-battle moving-gameplay visuals.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes a clean strongdismiss600
+  `left1275` movement proof and no longer falls through to generic
+  `stateaware-one-step`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Field Clean Reproof
 
 Question:
@@ -5436,4 +5514,23 @@ Next exact command:
 
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1200-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1200;wait:1200;shot:left1200-immediate-check;wait:10800;shot:left1200-check;wait:45000;shot:left1200-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## 2026-05-27 Current Resume Note After Goal Update
+
+- Current best recent boundary:
+  `20260527-162159-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`
+  is `valid-field-triage` / `route-tooling` /
+  `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-field-clean`.
+- It is a clean movement boundary under the same strongdismiss600 route, not
+  speed, not GPU migration, not first-battle proof, and not 200%.
+- Goal rule updated: matched CPU-pressure reductions are bankable as
+  `stackable-cpu-pressure` or `windows-micro-win`, but they remain separate
+  from the 200% moving-gameplay gate.
+- Refiner validation now points at `left1312` and no longer falls back to
+  generic `stateaware-one-step`.
+- Next exact Windows-only action:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1312;wait:1200;shot:left1312-immediate-check;wait:10800;shot:left1312-check;wait:45000;shot:left1312-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
