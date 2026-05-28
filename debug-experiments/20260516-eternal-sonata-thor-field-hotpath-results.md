@@ -18,7 +18,7 @@ when running a deliberately labeled cold-cache baseline.
 
 ## Native Build-Type Correction
 
-Status: `major-win`.
+Status: `promoted-workflow`.
 
 The Android dev-core hot-swap path was pushing `CMAKE_BUILD_TYPE=Debug` native
 cores for FPS tests. That invalidated the Rocknix comparison: representative
@@ -36,6 +36,12 @@ Optimized RelWithDebInfo dev-core:
 - Workflow fix:
   `tools/build_push_thor_core.ps1` now defaults to RelWithDebInfo and requires
   `-AllowDebugFallback` before any Debug fallback is used.
+
+Promotion note, 2026-05-28: this build-type correction is now promoted as the
+official Thor dev-core speed workflow. Debug native cores are debug-only
+evidence and must not be used for FPS/Rocknix comparisons. This does not promote
+reduced-loop u4, `0x25cc bodyfast`, or any HLE/GPU fast path as a default speed
+win.
 
 Measured same-profile result, 720p Rocknix-correct, WCB on, reduced-loop u4,
 stock Qualcomm, AllThreadsFF runtime affinity:

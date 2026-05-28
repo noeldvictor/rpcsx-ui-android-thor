@@ -92,17 +92,39 @@ function Invoke-DevCoreRunAs {
     & $Adb shell "run-as $Package sh -c '$escapedCommand'"
 }
 
+function Test-DevCoreDebugTask {
+    param([string]$Task)
+
+    if ([string]::IsNullOrWhiteSpace($Task)) {
+        return $false
+    }
+
+    return $Task -match '(?i)(buildCMakeDebug|externalNativeBuildDebug|assembleDebug)'
+}
+
+function Test-DevCoreDebugBuildPath {
+    param([string]$Path)
+
+    return $Path -match '\\Debug\\'
+}
+
 function Find-DevCoreLibrary {
     $buildRoot = Join-Path $RepoRoot "app\build"
     if (-not (Test-Path $buildRoot)) {
         return $null
     }
 
-    return Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter $CoreName -ErrorAction SilentlyContinue |
+    $candidates = Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter $CoreName -ErrorAction SilentlyContinue |
         Where-Object {
             $_.FullName -match '\\(cxx|intermediates)\\' -and
             $_.FullName -match '\\arm64-v8a\\'
-        } |
+        }
+
+    if (-not $AllowDebugFallback) {
+        $candidates = $candidates | Where-Object { -not (Test-DevCoreDebugBuildPath $_.FullName) }
+    }
+
+    return $candidates |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 }
@@ -160,6 +182,10 @@ function Invoke-DevCoreBuild {
     }
 }
 
+if ((Test-DevCoreDebugTask $GradleTask) -and -not $AllowDebugFallback) {
+    throw "Debug native Gradle tasks are blocked for speed dev-core pushes. Use the RelWithDebInfo default, or pass -AllowDebugFallback when intentionally pushing a Debug core."
+}
+
 if ($ResetToBundled) {
     Write-DevCoreLog "# Reset Thor dev core override"
     Assert-DevCoreCommand "remove active dev-core markers" {
@@ -182,6 +208,7 @@ Write-DevCoreLog "- Package: $Package"
 Write-DevCoreLog "- Staging dir: $StagingDir"
 Write-DevCoreLog "- Internal core: $internalCorePath"
 Write-DevCoreLog "- Gradle task: $GradleTask"
+Write-DevCoreLog "- Build policy: RelWithDebInfo is the promoted speed baseline; Debug native cores require -AllowDebugFallback and are debug-only evidence."
 Write-DevCoreLog "- Repo: $(Get-DevCoreGitText @('rev-parse', '--short', 'HEAD'))"
 
 if (-not $NoBuild) {
@@ -256,6 +283,8 @@ if (-not $NoStream) {
     "- Active internal core: $internalCorePath",
     "- SHA256: $hash",
     "- Log: $logPath",
+    "",
+    "RelWithDebInfo is the promoted speed baseline for dev-core pushes. Debug native cores require `-AllowDebugFallback` and should be labeled debug-only evidence.",
     "",
     "Debug APKs read app-internal `files/dev-core/active-core.path` at startup and use that core before falling back to the bundled APK core.",
     "Reset with:",

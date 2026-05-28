@@ -62,7 +62,7 @@ Sources:
 
 ### 0. Android Dev-Core Build Type Was The Huge Miss
 
-Status: `confirmed-major-win`.
+Status: `promoted-workflow`.
 
 The speed sprint had been hot-swapping Debug native cores:
 
@@ -100,6 +100,11 @@ Workflow fix: `tools/build_push_thor_core.ps1` now defaults to the RelWithDebInf
 task and requires `-AllowDebugFallback` before it will silently fall back to a
 Debug native build. Future FPS comparisons from Debug cores must be labeled
 `debug-native-core` and ignored for Rocknix-delta conclusions.
+
+Promotion note, 2026-05-28: the RelWithDebInfo dev-core build/push path is now
+the official Thor Android speed baseline. This promotion only covers build
+workflow validity; reduced-loop u4, bodyfast, and HLE/GPU fast paths still need
+their normal field, menu, and first-battle gates before default promotion.
 
 ### 1. Our Android Effective Config Is Not Rocknix-Like
 

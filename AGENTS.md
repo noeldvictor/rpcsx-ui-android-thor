@@ -127,6 +127,7 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Banked Findings
 
+- Promoted workflow: Thor dev-core speed pushes use RelWithDebInfo as the official baseline. Debug native cores are invalid for FPS/Rocknix comparisons and `tools/build_push_thor_core.ps1` now blocks Debug tasks or newest-Debug-library pushes unless `-AllowDebugFallback` is explicit. This is workflow promotion only; reduced-loop u4, `0x25cc bodyfast`, and HLE/GPU fast paths remain gated until field, Options/menu, and first-battle proof all pass.
 - `0x25cc bodyfast` is banked only as stackable CPU-pressure reduction: RPCS3 process CPU `42.60%` to `37.10%` (`-5.50 pp`, `-12.91%`) on clean capped BattleRoute repeat. It is not an FPS win, GPU migration, or 200% candidate.
 - Final bodyfast plus RSX-local stack is visually compatible on the capped TopSlot BattleRoute, but it remains around `120 FPS` and reports `0 B` promoted CPU/SPU-to-GPU replacement. Do not keep stacking RSX toggles or rerun the auditor.
 - RSX-local accounting is useful but separate from CPU/SPU-to-GPU migration. Current promoted CPU/SPU-to-GPU credit remains `0 B`.
