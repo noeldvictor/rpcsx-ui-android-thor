@@ -9513,3 +9513,66 @@ Next exact command:
 # Bank it as route tooling and pivot to Options/menu proof, first-battle route repair,
 # or focused SPU kernel HLE/codegen/verifier analysis.
 ```
+
+## 2026-05-28 SPU HLE Candidate Atlas Refresh After Diagonal Proof
+
+Question:
+
+- After banking the clean diagonal field route, what is the next non-visual
+  CPU/SPU pressure target that can move performance work without repeating the
+  route proof or enabling lane-2/GPU fast modes?
+
+Command:
+
+```powershell
+.\tools\summarize_eternal_sonata_spu_hle_candidates.ps1 -MaxRuns 12 -Top 20
+```
+
+Artifact:
+
+- `debug-captures\windows-lab\_eternal-sonata-spu-hle-candidates-latest.md`.
+- `debug-captures\windows-lab\_eternal-sonata-spu-hle-candidates-latest.csv`.
+
+Evidence:
+
+- The atlas scanned `12` recent run directories.
+- It used `2` valid field runs:
+  - `20260528-040209-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+  - `20260528-032238-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+- It excluded `2` field-like runs with real fatal logs:
+  - `20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows`.
+  - `20260528-042238-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+- Top stable bucket remains PC `0x25cc`, `CellSpursKernelGroup` /
+  `CellSpursKernel0`, image `0x958dfe208b686622`, recommendation
+  `spu-hle-codegen-priority`.
+- Shape: `3.06 GB` total over `1946` records, `463.93 MB` GET, `2.61 GB`
+  PUT, `0 B` list GET, max job `3.06 MB`, `58` pattern signatures, and
+  `0 B` RSX-local.
+- Next bucket is PC `0x451c`, `TCX_CellSpursKernel0`, also
+  `spu-hle-codegen-priority`, with `2.93 GB` total and `0 B` RSX-local.
+- Top repeated `0x25cc` patterns across the valid runs include
+  `0x30540805202a855f` (`250.61 MB`), `0x209c1716c9de855f`
+  (`224.63 MB`), `0x4318b5fc803b855f` (`223.10 MB`), and
+  `0xf7bf30bddad5855f` (`212.40 MB`).
+- Latest valid disasm window remains
+  `debug-captures\windows-lab\20260528-040209-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows\spu-images\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt`.
+
+Classification:
+
+- `analysis`.
+- `spu-hle-codegen-triage`.
+- `stackable-cpu-pressure-target-selection`.
+- Not field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Broad SPU-to-Vulkan compute stays parked because the valid set still has
+  `0 B` RSX-local evidence.
+- Continue with verify-only `0x25cc` SPU HLE/codegen/verifier work or the
+  missing visual gates (Options/menu and first battle). Keep lane-2/GPU fast
+  modes blocked until field/menu/battle visuals are valid.
