@@ -7517,3 +7517,74 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-uprepair;down:160;wait:900;shot:title-after-down160-uprepair;cross:120;wait:30000;shot:load-list-before-uprepair;up:100;wait:700;shot:load-list-uprepair-up1;up:100;wait:700;shot:load-list-uprepair-up2;up:100;wait:700;shot:load-list-uprepair-up3;up:100;wait:700;shot:load-list-uprepair-up4;up:100;wait:700;shot:load-list-uprepair-up5;gate_load_target:30000;shot:path-target-after-uprepair" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 Load-List Up-Repair Target Passed
+
+Question:
+
+- After the title-to-Load diagnostic selected lower `Save File 05 / Path to
+  Tenuto` with damaged rows above it, test whether bounded `Up` repair from a
+  stable Load list restores the top `Save File 01 / Path to Tenuto` target
+  before any save-slot `Cross`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-030231-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate Off`, and the intended 25-token target-only repair macro.
+- Host contention was clean for prelaunch, postlaunch, in-run samples at
+  `112s`/`120s`/`150s`, and postrun.
+- Manual review of `screenshot-0068s-title-settle-before-uprepair.png`
+  confirmed the title menu was visible before input.
+- Manual review of `screenshot-0069s-title-after-down160-uprepair.png`
+  confirmed `down:160` selected `LOAD`.
+- Manual review of `screenshot-0107s-load-target-gate.png` confirmed selected
+  top `Save File 01 / Path to Tenuto / South Section / Ch.1 Raindrops` with
+  lower rows showing `File does not exist`; damaged-save rows were gone.
+- The load-target classifier reported `PATH_TO_TENUTO_PRESENT` on the first
+  gate attempt: path-to-tenuto `7`, debug-save-prologue `0`, empty-load-slot
+  `0`, unknown `2`, lower-row cursor markers `0`, and damaged-save text
+  markers `0`.
+- The run intentionally did not press the save slot. No field, movement,
+  Options/menu, or battle proof was attempted.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `1372`.
+- Total observed DMA: `1,408.09 MB`.
+- Offload fit mix: `spu-kernel-hle=707`, `too-small=665`.
+- Hot PCs: `0x451c` `867.16 MB`, `0x25cc` `540.94 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `target-selection-repair`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-passed`.
+- This restores the top Path-to-Tenuto target only.
+- Not field proof.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now selects the strongdismiss600
+  no-movement long-gate stability proof before any `left1275`, battle, HLE,
+  RSX, GPU, or speed work.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
