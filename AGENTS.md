@@ -108,7 +108,8 @@ Put dated run details in `debug-experiments/`, not here.
 - Latest `left200x2-confirm` reproof `20260528-112431-cpu4-loader-control-left200x2-confirm-visualgate-windows-windows` passed `CleanAfterField`: `16` field-like screenshots through `210s`, first field-like at `117s`, manual post-second-pulse and late field reviews clean, stdout/stderr empty, no real fatal/access/device-lost/assertion/verification hits, and runtime host samples clean. Postrun host was moderate only from Codex CPU after RPCS3 exited; do not use this as speed evidence.
 - Latest `left200x2-diag200` proof `20260528-114457-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows` passed `CleanAfterField`: `18` field-like screenshots through `220s`, first field-like at `117s`, manual post-diagonal and late field reviews clean, stdout/stderr empty, no real fatal/access/device-lost/assertion/verification hits, and runtime host samples clean. It is route-tooling only, not speed, first-battle, Options/menu, GPU migration, or 200%.
 - Latest SPU HLE atlas refresh `debug-captures\windows-lab\_eternal-sonata-spu-hle-candidates-latest.md` scanned `12` recent runs, used `2` valid field runs, excluded `2` fatal field-like runs, and selected PC `0x25cc` / `CellSpursKernel0` as top verify-gated CPU/SPU HLE/codegen target: `3.06 GB` over `1946` records, `58` patterns, max job `3.06 MB`, `0 B` RSX-local. Broad SPU-to-Vulkan remains parked.
-- Current refiner/atlas next action: do not repeat `loader-control-left200x2-diag200`; either prove Options/menu or first-battle, or continue focused verify-only `0x25cc` SPU HLE/codegen work. Lane-2/GPU fast modes remain blocked until field/menu/battle visuals are valid.
+- Latest `0x25cc / 0x9e4000` verifier-plan refresh `debug-experiments\20260526-25cc-9e4000-verifier-plan.md` updated current `rpcs3-upstream` source anchors and keeps the historical broad family at `6.86 GB`, `4340` records, `159` pattern rows, and `0 B` RSX-local. It is analysis only; next code work is verify-only family/hash counters before any fast/body mode.
+- Current refiner/atlas next action: do not repeat `loader-control-left200x2-diag200`; either prove first-battle or continue focused verify-only `0x25cc` SPU HLE/codegen work. Lane-2/GPU fast modes remain blocked until field/menu/battle visuals are valid.
 
 ## Banked Findings
 
@@ -117,7 +118,7 @@ Put dated run details in `debug-experiments/`, not here.
 - RSX-local accounting is useful but separate from CPU/SPU-to-GPU migration. Current promoted CPU/SPU-to-GPU credit remains `0 B`.
 - 0x25cc descriptor/shadow verifier has clean field and Options coverage with zero mismatches and overflow `0`; first-battle verifier attempts hit fatal/corrupt evidence. Treat as verifier coverage only.
 - Exact `0xa1c000` 0x25cc skip is correctness-clean but too small for a speed path: latest refresh says `5.55 MB` skipped versus `5.65 GB` observed 0x25cc atlas (`0.10%`).
-- Broader `0x9e4000` 0x25cc pattern groups are the better CPU-pressure candidate: latest runtime-family sizing shows `437.30 MB` across `10` repeated groups, but still `0 B` RSX-local and not a proof because the source run fataled.
+- Broader `0x9e4000` 0x25cc pattern groups are the better CPU-pressure candidate. Current sizing is `3.06 GB` in valid field atlas data and `6.86 GB` in the wider historical verifier-plan CSV, still with `0 B` RSX-local; treat as verify/codegen CPU-pressure work, not GPU offload proof.
 - Broad SPU-to-GPU compute offload remains parked unless a candidate has stable batching, low readback pressure, and explicit correctness gates.
 
 ## Speed Claim Rules

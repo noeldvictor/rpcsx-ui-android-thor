@@ -9576,3 +9576,66 @@ Decision:
 - Continue with verify-only `0x25cc` SPU HLE/codegen/verifier work or the
   missing visual gates (Options/menu and first battle). Keep lane-2/GPU fast
   modes blocked until field/menu/battle visuals are valid.
+
+## 2026-05-28 0x25cc / 0x9e4000 Verifier Plan Refresh
+
+Question:
+
+- After the atlas narrowed the valid-field CPU/SPU pressure target to
+  `0x25cc`, can the existing verifier plan still point to concrete code
+  anchors and a broad enough family predicate without repeating field-route
+  proof or enabling unsafe fast/GPU modes?
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\summarize_eternal_sonata_25cc_verifier_plan.ps1
+```
+
+Artifact:
+
+- `debug-experiments\20260526-25cc-9e4000-verifier-plan.md`.
+
+Evidence:
+
+- Refiner scanned `8` recent runs and again said not to repeat
+  `loader-control-left200x2-diag200`; pivot to first-battle repair or focused
+  SPU kernel HLE/codegen/verifier analysis.
+- The verifier plan refreshed against the current
+  `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream` checkout.
+- Source anchors moved to current upstream locations:
+  - `SPUThread.cpp:2161` for `try_es_spu_hle_25cc_body_copy`.
+  - `SPUThread.cpp:6774` for `process_mfc_cmd`.
+  - `SPULLVMRecompiler.cpp:4401` for
+    `exec_es_spu_hle_verify_candidate`.
+  - `SPULLVMRecompiler.cpp:5707` for the dynamic MFC fallback signal.
+- Historical `20260526-25cc-pattern-family.csv` coverage for the broad
+  `0x9e4000` family remains `6.86 GB` across `4340` records, `159` pattern
+  rows, and `47` repeated rows, with `0 B` RSX-local.
+- The plan explicitly keeps exact `0xa1c000` as too narrow:
+  `5.55 MB` skipped, `0.97%` of that run's hot `0x25cc` bytes, `6.67%` of
+  exact verifier-shape bytes, `0` mismatches, and `0` destination changes.
+- It requires a verify-only rollback path and command/family/hash counters
+  before any fast/body/skip mode.
+
+Classification:
+
+- `analysis`.
+- `spu-hle-25cc-9e4000-verifier-plan`.
+- `stackable-cpu-pressure-target-selection`.
+- Not field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- This refresh does not supersede the valid-field atlas. Use the atlas
+  `3.06 GB` valid-field subset for proof discipline and the verifier plan's
+  `6.86 GB` historical family for code-anchor and counter design.
+- Next non-visual implementation step should add or confirm verify-only
+  family/hash counters around PC `0x25cc` / `CellSpursKernel0`, not enable
+  fast/body mode.
