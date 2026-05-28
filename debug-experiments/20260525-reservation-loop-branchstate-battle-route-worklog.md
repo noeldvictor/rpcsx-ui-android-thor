@@ -10238,3 +10238,77 @@ Decision:
 - Do not promote lane-2 HLE/GPU paths from this; next useful proof remains
   first-battle route repair under `Verify25ccShadow` with body/skip/GPU modes
   off.
+
+## 2026-05-28 Verify25ccShadow left400 + diag400 Battle Probe
+
+Question:
+
+- Can the newly valid `left200x2+diag200+left400` route become a first-battle
+  repair path if we add one smaller `left+down 400ms` nudge under
+  `Verify25ccShadow`, with body/skip/GPU fast paths off?
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field;wait:1000;ls_left:200;wait:1000;shot:left200;wait:1000;ls_left:200;wait:1000;shot:left200x2;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:diag200;wait:1000;ls_left:400;wait:1200;shot:left400-bridge;wait:1000;combo:ls_left+ls_down:400;wait:1600;shot:diag400-battleprobe;wait:60000;shot:probe-late1;wait:60000;shot:probe-late2;wait:60000;shot:probe-late3" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir "debug-captures\windows-lab\20260528-154248-cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe-windows"
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-154248-cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe-windows`.
+- `debug-captures\windows-lab\20260528-154248-cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-154248-cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe-windows\eternal-sonata-gpu-probe-summary.md`.
+- `debug-captures\windows-lab\20260528-154248-cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe-windows\eternal-sonata-25cc-counterproof-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  `Verify25ccShadow`, GPU probe profile, body/skip/GPU fast paths off, and CPU
+  affinity `0x0F`.
+- Runtime and postrun host checks were clean across `5` snapshots. `stdout` and
+  `stderr` were empty.
+- BattleRoute visual gate failed: `NO_FIELD_LIKE_SCREENSHOT`, `20`
+  screenshots, all `black-overlay-small-png`, no field-like screenshot at or
+  before `160s`, no field-like screenshot at or after `220s`, and no
+  battle-like screenshot at or after `200s`.
+- Manual image review of `screenshot-0117s-accepted-field.png` and
+  `screenshot-0314s-probe-late3.png` confirmed black/perf-overlay captures,
+  not field or battle visuals. Ignore window-title FPS samples from this run.
+- Targeted fatal/access/device-lost/assertion scan found `0` hits.
+- GPU probe summary extracted `2670` records, `2670` SPU HLE verifier records,
+  `919` 0x25cc family records, `27558` 0x25cc shadow descriptor records,
+  `1718` 0x451c descriptor-batch records, and `0 B` RSX-local traffic.
+- 25cc counterproof classified the run as `partial-counterproof`: `29703`
+  0x25cc shadow verifier hits over `464.11 MB`, GET/PUT `13773/15930`,
+  match/mismatch `29703/0`, changed/unchanged `4497/25206`, and descriptor
+  overflow `0`.
+- Direction-split 25cc descriptor rows remained clean: GET `13773` hits over
+  `215.20 MB`, PUT `15930` hits over `248.91 MB`, and `0` 25cc mismatches.
+- Generic non-25cc shadow mismatches still appeared at `0x451c` (`356` across
+  `316` lines), blocking broad shadow claims but not the 25cc-only reading.
+- Refiner now flags `repeated-black-overlay-pre-field` and says to re-prove the
+  newest clean `loader-control-left200x2` boundary with `CleanAfterField`
+  before adding movement again.
+
+Classification:
+
+- `failed-visual-gate`.
+- `black-overlay-pre-field`.
+- `partial-counterproof`.
+- Not valid field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not use this run for route, HLE, GPU, or speed promotion despite clean
+  25cc counters.
+- Re-prove the clean `loader-control-left200x2` boundary with `CleanAfterField`
+  before adding any more movement or BattleRoute probes.
