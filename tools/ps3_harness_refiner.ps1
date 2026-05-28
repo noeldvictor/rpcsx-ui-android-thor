@@ -357,6 +357,11 @@ function New-ReservationLoopBattleTopSlotCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-reservation-loop-battle-topslot-route-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-ReservationLoopTopSlotLeftOnlyDiagnosticCommand {
+    $macro = "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field-check;ls_left:2600;wait:45000;shot:left2600-check;wait:45000;shot:left2600-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-reservation-loop-topslot-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"$macro`" -MaxSeconds 240 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160LeftOnlyCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1437,6 +1442,7 @@ $latestStateAwareSavePromptField = $false
 $latestStateAwareDismissLoadMenuMiss = $false
 $latestStateAwareLateLoadConfirmNeedsSecondCross = $false
 $latestStateAwareLateDoubleConfirmRouteDrift = $false
+$latestReservationLoopStateAwareOneStepFieldPass = $false
 $latestLoadTargetGateFailure = $false
 $latestLoadTargetGateStatus = ""
 $latestLoadTargetPollGatedSaveMenuAfterField = $false
@@ -1680,6 +1686,16 @@ if ($latestRun) {
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
         $latestText -like "*stateaware-late-load-doubleconfirm*"
+    $recentReservationLoopBattleTopSlotWindowLost = @($runEvidence | Where-Object {
+        $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
+        $text = "$($_.Name) $label"
+        $_.Decision -eq "failed-window-lost-after-field" -and
+            $text -like "*reservation-loop-battle-topslot-route-proof*"
+    }).Count -gt 0
+    $latestReservationLoopStateAwareOneStepFieldPass =
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestText -like "*stateaware-one-step-visualgate*" -and
+        $recentReservationLoopBattleTopSlotWindowLost
     $latestHle451cSize16Candidate =
         $latestText -like "*451c-size16*" -or
         $latestText -like "*size16-candidate*" -or
@@ -2726,6 +2742,9 @@ if ($latestHle25ccShadowDescOptionsPass) {
 if ($latestReservationLoopOptionsPass) {
     Add-AntiPattern -List $antiPatterns -Name "reservation-loop-options-clean" -Severity "resolved-control" -Evidence "Newest reservation-loop fast-select Options proof reached the full title Options page with expected small menu screenshots and fatal-clean logs." -Action "Do not rerun field or Options. Prove or repair first battle under ReservationLoop Verify before speed, HLE/GPU, or 200% promotion."
 }
+if ($latestReservationLoopStateAwareOneStepFieldPass) {
+    Add-AntiPattern -List $antiPatterns -Name "reservation-loop-stateaware-field-clean-after-battle-window-loss" -Severity "resolved-control" -Evidence "Newest state-aware reservation-loop field reproof is clean after the TopSlot first-battle route lost the window after field." -Action "Do not rerun the same state-aware field proof. Isolate the TopSlot post-field movement branch with a left-only diagnostic before another full BattleRoute retry."
+}
 if ($latestHle25ccShadowDescBattleFatal) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-fatal" -Severity "blocker" -Evidence "Newest 0x25cc descriptor first-battle Verify25ccShadow run reached field and battle/tutorial visuals, but fataled with a PPU VM access violation at 0x002aedd0 reading 0x40; late screenshots are frozen/corrupt and cannot count as first-battle proof." -Action "Do not rerun the same TopSlot verifier command and do not fall back to old loader-control. Isolate the same TopSlot battle route with Verify25ccShadow off, or repair/state-gate the battle macro before another verifier proof."
 }
@@ -3187,6 +3206,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc body battle attempt opened the title Options page instead of first battle. Do not rerun that battle command unchanged; repair the first-battle macro or add a battle-aware route/visual gate before battle proof or stock/body A/B."
 } elseif ($latestHle25ccShadowDescOptionsPass) {
     "Latest 0x25cc descriptor fast-select Options proof reached the full title Options page with Verify25ccShadow and zero target 0x25cc shadow/descriptor mismatches. Do not rerun field or Options; prove first battle next before bodyfast, stack, GPU, or speed promotion."
+} elseif ($latestReservationLoopStateAwareOneStepFieldPass) {
+    "Latest reservation-loop state-aware field reproof is clean after the TopSlot battle route lost the window after field. Do not rerun the same field proof; isolate the TopSlot post-field movement with a left-only diagnostic before another full BattleRoute retry."
 } elseif ($latestReservationLoopOptionsPass) {
     "Latest reservation-loop fast-select Options proof reached the full title Options page with fatal-clean logs. Do not rerun field or Options; prove or repair first battle under ReservationLoop Verify before speed, HLE/GPU, or 200% promotion."
 } elseif ($latestHle25ccShadowDescBattleFatal) {
@@ -3511,6 +3532,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-body-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify25ccShadow -EternalSonataSpuHle25ccBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccShadowDescOptionsPass) {
     New-Hle25ccShadowDescBattleVerifyCommand
+} elseif ($latestReservationLoopStateAwareOneStepFieldPass) {
+    New-ReservationLoopTopSlotLeftOnlyDiagnosticCommand
 } elseif ($latestReservationLoopOptionsPass) {
     New-ReservationLoopBattleTopSlotCommand
 } elseif ($latestHle25ccShadowDescBattleFatal) {

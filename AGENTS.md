@@ -92,7 +92,8 @@ Put dated run details in `debug-experiments/`, not here.
 - `tools/ps3_harness_refiner.ps1` now recognizes `reservation-loop-options-fastselect-proof` as valid Options proof instead of wrong-window noise and points the next action to first-battle proof/repair under `ReservationLoop Verify`.
 - Latest reservation-loop first-battle attempt `20260528-064514-cpu4-reservation-loop-battle-topslot-route-proof-windows` reached a valid Path-to-Tenuto field screenshot at `117s`, then RPCS3 exited before the `169s+` screenshots. Manual `BattleRoute` gate failed because there was no late field or battle-like visual. Fatal scan was clean except the harmless `Show fatal error hints: false` config line; stderr/stdout were empty.
 - Treat the latest battle attempt as `failed-window-lost-after-field`, not first-battle proof, speed, GPU migration, or 200% evidence. Its clean reservation-loop counters are route/tooling evidence only because visuals failed after field.
-- Current refiner next action: back off to the newest valid-field route base and run exactly one small state-aware movement step with `CleanAfterField`; lane-2 HLE/GPU fast modes remain blocked until field, Options, and first-battle visuals are all valid.
+- Latest state-aware field reproof `20260528-070432-cpu4-stateaware-one-step-visualgate-windows-windows` passed `CleanAfterField`: field screenshots at `117s` and `133s`, empty stdout/stderr, no real targeted fatal/access/device-lost/assertion/verification log hit, and reservation-loop counters clean. Treat it as `valid-field-triage` only.
+- `tools/ps3_harness_refiner.ps1` now blocks repeating the same state-aware field proof after this pass. Current refiner next action: isolate TopSlot post-field movement with `cpu4-reservation-loop-topslot-leftonly-diagnostic-windows` before another full `BattleRoute` retry. Lane-2 HLE/GPU fast modes remain blocked until field, Options, and first-battle visuals are all valid.
 
 ## Banked Findings
 
