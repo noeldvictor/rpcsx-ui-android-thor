@@ -10741,3 +10741,57 @@ Decision:
 - Next useful work is either an explicit `Verify25ccShadow` descriptor proof
   re-run on the clean field route, or code/harness work that preserves descriptor
   rows before wrapper postrun stalls.
+
+## 2026-05-28 25cc proof matrix audit
+
+Question:
+
+- Which proof surfaces currently have real 25cc descriptor rows, valid visuals,
+  and clean fatal/counter state?
+
+Commands:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260526-174450-cpu4-hle-25cc-shadow-desc-options-fastselect-proof-windows
+Get-Content .\debug-captures\windows-lab\20260528-132515-cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows-windows\eternal-sonata-25cc-counterproof-summary.md
+Get-Content .\debug-captures\windows-lab\20260528-135315-cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean-windows\eternal-sonata-25cc-counterproof-summary.md
+Get-Content .\debug-captures\windows-lab\20260528-154248-cpu4-hle-25cc-shadow-desc-left400-diag400-battleprobe-windows\eternal-sonata-25cc-counterproof-summary.md
+```
+
+Evidence:
+
+- Field surface is valid: `20260528-132515` is `valid-field-counterproof`,
+  visual status `FIELD_LIKE_PRESENT`, first field `117s`, targeted fatal hits
+  `0`, 25cc descriptors `22008` rows / `23643` hits / `369.42 MB`, GET/PUT
+  `10998/12645`, output mismatches `0`, descriptor overflow `0`.
+- Options descriptor surface exists only as legacy-format evidence:
+  `20260526-174450` has 25cc descriptors `11988` rows / `12768` hits /
+  `199.50 MB`, GET/PUT `5988/6780`, output mismatches `0`, overflow `0`, and
+  targeted fatal hits `0`, but the current counterproof parser reports visual
+  status `missing` because that older run has no standard visual-gate summary.
+- Current-format Options visual proof exists separately as reservation-loop
+  proof `20260528-062448`; it is not the same as 25cc descriptor proof.
+- First-battle descriptor attempts are counter-clean but visually invalid:
+  `20260528-135315` logged `31263` 25cc hits / `488.48 MB` with zero 25cc
+  mismatch/overflow, and `20260528-154248` logged `29703` hits / `464.11 MB`
+  with zero 25cc mismatch/overflow. Both have visual status
+  `NO_FIELD_LIKE_SCREENSHOT` / black-overlay and cannot count.
+
+Classification:
+
+- `analysis`.
+- `proof-gap-audit`.
+- Field: `valid-field-counterproof`.
+- Options: `partial-counterproof` / legacy visual status missing.
+- Battle: `partial-counterproof` / invalid visuals.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not promote 25cc body/fast/codegen from descriptor cleanliness alone.
+- Next non-duplicate proof should be either current-format Options
+  `Verify25ccShadow` reproof or first-battle route repair that produces valid
+  visuals while retaining the 25cc descriptor rows.
