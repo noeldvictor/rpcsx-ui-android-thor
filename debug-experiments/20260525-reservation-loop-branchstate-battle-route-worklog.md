@@ -10681,3 +10681,63 @@ Decision:
 - Next useful work is either route-control repair below/around the second
   pulse, or focused SPU kernel HLE/codegen/verifier analysis instead of another
   movement rerun.
+
+## 2026-05-28 SPU verifier pivot audit after left200x2 block
+
+Question:
+
+- With `loader-control-left200x2` blocked by the refiner, can existing logs
+  support a 25cc descriptor/counterproof claim, or are they only SPU atlas target
+  selection?
+
+Commands:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\summarize_eternal_sonata_spu_hle_candidates.ps1 -MaxRuns 8
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260528-172735-cpu4-loader-control-left200-repair-after-left200x2-fatal-visualgate-windows-windows
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260528-151432-cpu4-loader-control-left200x2-diag200-left400-visualgate-windows-windows
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\_ps3-harness-refiner-latest.md`.
+- `debug-captures\windows-lab\_eternal-sonata-spu-hle-candidates-latest.md`.
+- Ignored local counterproof summaries under the two audited run directories.
+
+Evidence:
+
+- Refiner again blocks automatic `loader-control-left200x2`: it failed `3`
+  times in the recent 8-run window after lower `left200` stayed clean.
+- HLE atlas used `3` valid field runs and excluded `2` fatal field-like runs.
+  Top stable bucket is PC `0x25cc`, `CellSpursKernelGroup` /
+  `CellSpursKernel0`, `3.68 GB`, `2313` records, GET `552.10 MB`, PUT
+  `3.14 GB`, max job `4.35 MB`, and `0 B` RSX-local.
+- `20260528-172735` stayed clean visually and had zero targeted fatal hits, but
+  dedicated 25cc counterproof parsing found `0` shadow verifier hits and `0`
+  descriptor rows.
+- `20260528-151432` is still a valid field/atlas run, but the same parser also
+  found `0` 25cc shadow verifier hits and `0` descriptor rows.
+- Therefore the loader-control atlas is useful for choosing the CPU-pressure
+  target, but it is not descriptor/hash proof. Future verifier work must use the
+  explicit `Verify25ccShadow`/descriptor route, with `20260528-132515` as the
+  clean field counterproof reference.
+
+Classification:
+
+- `analysis`.
+- `spu-hle-codegen-verifier-target-selection`.
+- `failed-counterproof` for the two audited loader-control logs.
+- Not route extension.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not run another `left200x2` movement attempt until route control is
+  repaired.
+- Do not treat loader-control SPU atlas bytes as 25cc descriptor proof.
+- Next useful work is either an explicit `Verify25ccShadow` descriptor proof
+  re-run on the clean field route, or code/harness work that preserves descriptor
+  rows before wrapper postrun stalls.
