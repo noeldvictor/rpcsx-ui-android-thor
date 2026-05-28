@@ -353,6 +353,10 @@ function New-Hle25ccShadowDescBattleStockControlCommand {
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-ReservationLoopBattleTopSlotCommand {
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-reservation-loop-battle-topslot-route-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160LeftOnlyCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:120;wait:18000;shot:post-load-complete-dismiss-18s;ls_left:2600;wait:45000;shot:left2600-check;wait:60000;shot:left2600-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 240 -InputMacro `"$macro`" -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 10 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -991,6 +995,9 @@ function Get-RunDecision {
     if (Test-Hle25ccShadowDescOptionsProof -RunEvidence $RunEvidence) {
         return "valid-options-triage"
     }
+    if (Test-ReservationLoopOptionsProof -RunEvidence $RunEvidence) {
+        return "valid-options-triage"
+    }
     if (Test-Hle25ccBodyBattleOptionsRouteMiss -RunEvidence $RunEvidence) {
         return "route-miss-options-not-battle"
     }
@@ -1166,6 +1173,41 @@ function Test-Hle25ccShadowDescOptionsProof {
     return ($black -eq 0 -and $loading -eq 0 -and ($otherSmall + $nonFieldSmall) -ge 2)
 }
 
+function Test-ReservationLoopOptionsProof {
+    param([AllowNull()][object]$RunEvidence)
+
+    if (-not $RunEvidence) {
+        return $false
+    }
+    if ($RunEvidence.Fatal -and $RunEvidence.Fatal.HasFatal) {
+        return $false
+    }
+
+    $label = if ($RunEvidence.Lab.Label) { $RunEvidence.Lab.Label } else { "" }
+    $text = "$($RunEvidence.Name) $label"
+    if ($text -notlike "*reservation-loop-options-fastselect-proof*" -or
+        $text -like "*battle*") {
+        return $false
+    }
+
+    if (-not $RunEvidence.Visual -or $RunEvidence.Visual.ScreenshotCount -eq 0) {
+        return $false
+    }
+    if ($RunEvidence.Visual.Status -ne "NO_FIELD_LIKE_SCREENSHOT") {
+        return $false
+    }
+
+    $counts = $RunEvidence.Visual.ClassCounts
+    $black = if ($counts.ContainsKey("black-overlay-small-png")) { [int]$counts["black-overlay-small-png"] } else { 0 }
+    $loading = if ($counts.ContainsKey("loading-like-small-png")) { [int]$counts["loading-like-small-png"] } else { 0 }
+    $otherSmall = if ($counts.ContainsKey("wrong-window-or-other-small-png")) { [int]$counts["wrong-window-or-other-small-png"] } else { 0 }
+    $nonFieldSmall = if ($counts.ContainsKey("cutscene-or-nonfield-small-png")) { [int]$counts["cutscene-or-nonfield-small-png"] } else { 0 }
+
+    # Full title Options pages compress below the field threshold, so the
+    # field-only visual classifier records them as small non-field output.
+    return ($black -eq 0 -and $loading -eq 0 -and ($otherSmall + $nonFieldSmall) -ge 2)
+}
+
 function Test-Hle25ccBodyBattleOptionsRouteMiss {
     param([AllowNull()][object]$RunEvidence)
 
@@ -1277,13 +1319,15 @@ $cutsceneRuns = @($runEvidence | Where-Object { (Test-HarnessCutsceneOrNonFieldC
 $optionsProofRuns = @($runEvidence | Where-Object {
     (Test-Hle451cSize16BodyOptionsProof -RunEvidence $_) -or
     (Test-Hle451cPreserveBodyOptionsProof -RunEvidence $_) -or
-    (Test-Hle25ccBodyOptionsProof -RunEvidence $_)
+    (Test-Hle25ccBodyOptionsProof -RunEvidence $_) -or
+    (Test-ReservationLoopOptionsProof -RunEvidence $_)
 })
 $wrongWindowRuns = @($runEvidence | Where-Object {
     $_.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
     -not ((Test-Hle451cSize16BodyOptionsProof -RunEvidence $_) -or
         (Test-Hle451cPreserveBodyOptionsProof -RunEvidence $_) -or
         (Test-Hle25ccBodyOptionsProof -RunEvidence $_) -or
+        (Test-ReservationLoopOptionsProof -RunEvidence $_) -or
         (Test-Hle25ccBodyBattleOptionsRouteMiss -RunEvidence $_))
 })
 $fatalRuns = @($runEvidence | Where-Object { $_.Fatal -and $_.Fatal.HasFatal })
@@ -1773,6 +1817,9 @@ if ($latestRun) {
         $latestText -like "*shadow-desc*" -and
         ($latestText -like "*options*" -or
         $latestText -like "*menu*")
+    $latestReservationLoopOptionsPass =
+        $latestRun.Decision -eq "valid-options-triage" -and
+        $latestText -like "*reservation-loop-options-fastselect-proof*"
     $latestHle25ccShadowDescBattleFatal =
         $latestFatal -and
         $latestText -like "*25cc*" -and
@@ -2676,6 +2723,9 @@ if ($latestHle25ccShadowDescDown160FieldPass) {
 if ($latestHle25ccShadowDescOptionsPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-options-clean" -Severity "resolved-control" -Evidence "Newest 0x25cc descriptor fast-select Options proof reached the full title Options page with expected small menu screenshots, fatal-clean logs, zero target 0x25cc shadow/descriptor mismatches, and descriptor overflow 0." -Action "Do not rerun field or Options. Prove first battle with Verify25ccShadow next before bodyfast, stack, GPU, or speed promotion."
 }
+if ($latestReservationLoopOptionsPass) {
+    Add-AntiPattern -List $antiPatterns -Name "reservation-loop-options-clean" -Severity "resolved-control" -Evidence "Newest reservation-loop fast-select Options proof reached the full title Options page with expected small menu screenshots and fatal-clean logs." -Action "Do not rerun field or Options. Prove or repair first battle under ReservationLoop Verify before speed, HLE/GPU, or 200% promotion."
+}
 if ($latestHle25ccShadowDescBattleFatal) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-fatal" -Severity "blocker" -Evidence "Newest 0x25cc descriptor first-battle Verify25ccShadow run reached field and battle/tutorial visuals, but fataled with a PPU VM access violation at 0x002aedd0 reading 0x40; late screenshots are frozen/corrupt and cannot count as first-battle proof." -Action "Do not rerun the same TopSlot verifier command and do not fall back to old loader-control. Isolate the same TopSlot battle route with Verify25ccShadow off, or repair/state-gate the battle macro before another verifier proof."
 }
@@ -3137,6 +3187,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc body battle attempt opened the title Options page instead of first battle. Do not rerun that battle command unchanged; repair the first-battle macro or add a battle-aware route/visual gate before battle proof or stock/body A/B."
 } elseif ($latestHle25ccShadowDescOptionsPass) {
     "Latest 0x25cc descriptor fast-select Options proof reached the full title Options page with Verify25ccShadow and zero target 0x25cc shadow/descriptor mismatches. Do not rerun field or Options; prove first battle next before bodyfast, stack, GPU, or speed promotion."
+} elseif ($latestReservationLoopOptionsPass) {
+    "Latest reservation-loop fast-select Options proof reached the full title Options page with fatal-clean logs. Do not rerun field or Options; prove or repair first battle under ReservationLoop Verify before speed, HLE/GPU, or 200% promotion."
 } elseif ($latestHle25ccShadowDescBattleFatal) {
     "Latest 0x25cc descriptor first-battle Verify25ccShadow run reached battle/tutorial visuals but fataled at PPU VM access 0x002aedd0 reading 0x40. Do not count it as first-battle proof, do not rerun unchanged, and do not reset to loader-control; first isolate whether the same TopSlot battle route is fatal without Verify25ccShadow."
 } elseif ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {
@@ -3459,6 +3511,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-25cc-body-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify25ccShadow -EternalSonataSpuHle25ccBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160"
 } elseif ($latestHle25ccShadowDescOptionsPass) {
     New-Hle25ccShadowDescBattleVerifyCommand
+} elseif ($latestReservationLoopOptionsPass) {
+    New-ReservationLoopBattleTopSlotCommand
 } elseif ($latestHle25ccShadowDescBattleFatal) {
     New-Hle25ccShadowDescBattleStockControlCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160Left1200LoadCompleteStuck) {

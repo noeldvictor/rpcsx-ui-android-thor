@@ -2365,6 +2365,85 @@ Next action:
 # Next sprint step should pivot to Options/menu proof, first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis.
 ```
 
+## 2026-05-28 Reservation-Loop Options Fast-Select Proof
+
+Question:
+
+- After banking the diagonal field route, prove the missing title Options/menu
+  visual checkpoint for the current reservation-loop lane without rerunning
+  field movement.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-062448-cpu4-reservation-loop-options-fastselect-proof-windows`.
+
+Evidence:
+
+- Command used `-Action WindowsScene -Scene menu`, PadApi input,
+  `-WindowsGameScreen 1`, CPU affinity `0x0F`, frame/vblank `240/240`,
+  `-EternalSonataReservationLoop Verify`, `-WindowsVisualGate Off`, and the
+  no-initial-Cross fast-select macro:
+  `wait:65000;shot:title-preinput;down:160;wait:600;shot:title-after-down1;down:160;wait:600;shot:title-after-down2-fast;cross:180;wait:6000;shot:options-candidate;wait:10000;shot:options-late`.
+- Manual review confirmed the route: `screenshot-0070s-title-after-down2-fast.png`
+  showed title menu selection on `OPTIONS`, `screenshot-0077s-options-candidate.png`
+  showed the full title Options page, and `screenshot-0130s.png` showed the
+  same full Options page still stable.
+- The field-only visual classifier saw `NO_FIELD_LIKE_SCREENSHOT` and
+  `wrong-window-or-other-small-png` because full Options pages compress below
+  the field threshold. This is expected for title Options and not window loss.
+- Host checks were clean in-run at prelaunch, postlaunch, `88s`, `91s`, and
+  `120s`. Aggregate host summary was moderate only because postrun Codex CPU
+  was `28.4%`.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` were `0` bytes. Targeted `rg`
+  scan found no `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal
+  error, or assertion-failed hit. Only the normal `Show fatal error hints:
+  false` config line matched the fatal string.
+- The wrapper stalled during postrun log analysis after RPCS3 had exited and
+  paths were written. The wrapper PowerShell was killed, then screenshots,
+  fatal logs, reservation-loop counters, and
+  `tools\ps3_harness_refiner.ps1 -MaxRuns 8` were checked manually. No
+  RPCS3/RPCSX process remained active.
+- Harness fix: `tools\ps3_harness_refiner.ps1` now recognizes
+  `reservation-loop-options-fastselect-proof` as `valid-options-triage` when
+  the run is fatal-clean, has no black/loading screenshots, and has repeated
+  small title Options screenshots. The refiner no longer sends this lane back
+  to generic field movement after a clean Options proof.
+
+Counters:
+
+- Reservation-loop candidate probe records: `975`.
+- Reservation-loop dynamic probe records: `975`.
+- Reservation-loop wait probe records: `1063`.
+- Reservation-loop wait-PC probe records: `51726`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `390`.
+- Max reads observed: `127294`.
+
+Classification:
+
+- `valid-options-triage`.
+- `reservation-loop-options-clean`.
+- Menu/Options proof only.
+- Not field proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now selects first-battle
+  proof/repair under `ReservationLoop Verify`. It explicitly says not to rerun
+  field or Options.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-reservation-loop-battle-topslot-route-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 Classification:
 
 - `route-tooling`, `valid-field-triage`, `loader-control-left200x2-field-clean`.
