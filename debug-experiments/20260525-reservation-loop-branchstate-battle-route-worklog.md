@@ -7793,3 +7793,72 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 Left1275 Field-Like Fatal Retry
+
+Question:
+
+- After a clean no-movement route-base reproof, retry the same strongdismiss600
+  base with `ls_left:1275` and immediate/late screenshots.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-042238-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate CleanAfterField`, and the intended 23-token `left1275`
+  macro.
+- The load-target classifier passed `PATH_TO_TENUTO_PRESENT` on attempt 1 at
+  `81s`: path-to-tenuto `1`, debug-save-prologue `0`, empty-load-slot `0`,
+  unknown `0`, lower-row cursor markers `0`, damaged-save text markers `0`,
+  and `Top path only=True`.
+- The visual gate reported `FIELD_LIKE_PRESENT`: first field-like screenshot
+  at `195s`, `11` field-like large PNGs, `0` invalid screenshots after first
+  field-like output, and field-like frames through `290s`.
+- Manual review of `screenshot-0199s-left1275-immediate-check.png` and
+  `screenshot-0255s-left1275-late-check.png` showed the RPCS3 crash overlay
+  plus corrupted field output after the movement input.
+- `rpcs3.stderr.txt` was `108` bytes and reported
+  `PPU[0x100000c] Thread () [0x002aedd0]: VM: Access violation reading
+  location 0x40`.
+- The same fatal appears in `RPCS3.log`; it overrides the field-like visual
+  gate result.
+- In-run host samples at `256s`, `270s`, and `300s` were clean; overall host
+  summary was moderate only because postrun Codex CPU was `15.7%`.
+
+Counters:
+
+- GPU probe records: `1664`.
+- Total observed DMA: `1,942.53 MB`.
+- Offload fit mix: `spu-kernel-hle=936`, `too-small=728`.
+- Hot PCs: `0x451c` `1,158.16 MB`, `0x25cc` `784.37 MB`.
+- Largest single job: `21.58 MB` at `0x451c`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `route-tooling`.
+- `crash-overlay`.
+- `corrupt-field`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-fatal-0x002aedd0`.
+- Not valid movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now selects a no-movement
+  loader/control with `CleanAfterField` before adding movement again.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
+```
