@@ -2004,6 +2004,13 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1316-down120*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget =
+        -not $latestFatal -and
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1316-down60*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt =
         $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2680,6 +2687,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120Vm4
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down120-loading-only" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1316-down120 diagnostic passed PATH_TO_TENUTO_PRESENT, but the post-load-complete dismiss entered persistent Now Loading and never reached field before any movement evidence could count." -Action "Do not count left1316 or down120 as tested, and do not fall back to generic stateaware-one-step. Re-prove the same strongdismiss600 base with no movement before another left/down diagnostic, verifier, HLE, RSX, GPU, speed, or first-battle promotion."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-debug-save-target" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1316-down60 diagnostic aborted before save-slot Cross because the load-target gate selected Save File 01 / Debug Save / Prologue. Neither left1316 nor down60 movement was tested." -Action "Do not rerun left1316-down60 and do not fall back to generic stateaware-one-step. Inventory the current save-list rows without pressing the slot, then repair selected-row targeting before another left/down diagnostic, verifier, HLE, RSX, GPU, speed, or first-battle promotion."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1331-vm40-corrupt-field" -Severity "blocker" -Evidence "Newest strongdismiss600 left1331 run passed PATH_TO_TENUTO_PRESENT and reached a clean pre-movement field, but the immediate post-left screenshot showed the RPCS3 likely-crashed overlay and corrupt/frozen field while stderr/RPCS3.log reported a PPU VM access violation at 0x40." -Action "Do not count this as clean movement, speed, first-battle, or GPU migration proof. Keep left1312 as the clean lower boundary and left1331 as the fatal/corrupt upper boundary; try the left1321 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
@@ -2918,6 +2928,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 left1317-down120 attempt fataled with corrupt field at the immediate post-left1317 screenshot, before down120 could be trusted. Re-prove plain left1317 once; if it repeats fatal/corrupt, demote the stable lower boundary to left1316."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly) {
     "Latest stock Down160 strongdismiss600 left1316-down120 attempt passed the Path-to-Tenuto target gate but stayed on Now Loading after the post-load-complete dismiss. Movement was not tested; re-prove the same strongdismiss600 no-movement base before another left/down diagnostic."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget) {
+    "Latest stock Down160 strongdismiss600 left1316-down60 attempt aborted before save-slot Cross on Save File 01 / Debug Save / Prologue. Movement was not tested; inventory the current save-list rows without pressing the slot and repair selected-row targeting before another left/down diagnostic."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     "Latest stock Down160 strongdismiss600 left1331 reached clean field first, but post-left screenshots showed the likely-crashed overlay/corrupt field and a PPU VM access violation at 0x40. Bank left1312 as the clean lower boundary, left1331 as the fatal upper boundary, and try the left1321 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {
@@ -3224,6 +3236,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1317ReproofAfterDown120FatalCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1321LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {

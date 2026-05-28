@@ -666,6 +666,14 @@ on `Now Loading...`, classify it as
 Movement was not tested. Re-prove the same strongdismiss600 base with no
 movement before another left/down diagnostic. Do not fall back to generic
 `stateaware-one-step`, verifier, HLE, RSX, GPU, speed, or first-battle work.
+If a later smaller `left1316-down60` diagnostic aborts before save-slot `Cross`
+because the load-target gate selects `Save File 01 / Debug Save / Prologue`,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-debug-save-target`.
+Neither left nor down movement was tested. Do not rerun `left1316-down60` and
+do not fall back to generic `stateaware-one-step`; inventory the current
+save-list rows without pressing the slot, then repair selected-row targeting
+before another left/down, verifier, HLE, RSX, GPU, speed, or first-battle step.
 
 ## Acceptance
 

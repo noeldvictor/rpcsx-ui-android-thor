@@ -61,7 +61,8 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
 - Latest no-movement load-stability reproof `20260527-215837-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows` reached clean Path-to-Tenuto field at `195s` and stayed field-like through late checks.
 - `left1316-down120` remains a loading-only failure. Movement was not tested; do not repeat that combo.
-- Next expected action is the same strongdismiss600 base with a new `left1316-down60` nudge and immediate screenshots. Do not repeat old `left1312`/`left1331`/`left1321`/`left1316`/`left1318`/`left1317` midpoint proofs, repeat `left1316-down120`, repeat `left1317-down120`, or fall back to generic `stateaware-one-step`.
+- `left1316-down60` aborted before slot load on `Save File 01 / Debug Save / Prologue`. Movement was not tested; do not repeat that combo or fall back to generic `stateaware-one-step`.
+- Next expected action is save-list inventory/selected-row repair with no slot `Cross`, then only resume left/down movement after `PATH_TO_TENUTO_PRESENT` is re-proven.
 
 ## Banked Findings
 

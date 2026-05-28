@@ -4545,6 +4545,71 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1316;wait:1200;shot:left1316-immediate-check;ls_down:60;wait:1200;shot:left1316-down60-immediate-check;wait:10800;shot:left1316-down60-check;wait:45000;shot:left1316-down60-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1316 Down60 Debug-Save Abort
+
+Question:
+
+- Does the pinned `left1316` lower boundary tolerate a smaller `down60` nudge
+  after the fresh `left1275` route revalidation?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-224241-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 26-token macro.
+- The run aborted before save-slot `Cross`; the load-target gate failed at
+  `81s` with `DEBUG_SAVE_PROLOGUE_PRESENT`.
+- Manual screenshot review of
+  `screenshot-0081s-load-target-gate.png` confirmed `Save File 01 /
+  Debug Save / Prologue`, with lower rows showing `File does not exist` and
+  `Save file has been damaged`.
+- The input macro stopped before field load, so neither `left1316` nor `down60`
+  movement was tested.
+- Visual summary reported `NO_FIELD_LIKE_SCREENSHOT`, one screenshot, and
+  primary class `wrong-window-or-other-small-png`.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal scan found only Vulkan init
+  lines and the benign `Show fatal error hints: false` config line.
+- Host samples were clean prelaunch, postlaunch, and postrun.
+- Window-title sample at the gate was `48.75` FPS; this is load-menu telemetry
+  only and not comparable speed evidence.
+
+Counters:
+
+- GPU probe records: `624`.
+- Total observed DMA: `603.31 MB`.
+- Offload fit mix: `too-small=358`, `spu-kernel-hle=266`.
+- Hot PCs: `0x451c` `402.47 MB`, `0x25cc` `200.83 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-debug-save-target`.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this specific
+  `left1316-down60` Debug Save abort and recommends save-list inventory rather
+  than the generic state-aware polling route.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same anti-loop rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Load-Stability Reproof
 
 Question:
