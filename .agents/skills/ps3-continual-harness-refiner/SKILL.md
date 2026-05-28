@@ -635,6 +635,14 @@ upper bound, and stop left-only bisection. Do not fall through to generic
 `stateaware-one-step`, old loader-control, verifier, HLE, RSX, GPU, or speed
 work. The next route step should probe an alternate battle approach, starting
 with one `ls_down:120` nudge after `left1317` and immediate screenshots.
+If that `left1317-down120` route fatal/corrupts at the immediate post-`left1317`
+screenshot, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-vm40-corrupt-field`.
+Do not count `down120` as tested, and do not treat `left1317` as stable from the
+earlier single clean pass. Re-prove the plain `left1317` boundary once; if that
+also fatal/corrupts, demote the stable lower boundary to `left1316`. Do not
+fall through to generic `stateaware-one-step`, old loader-control, verifier,
+HLE, RSX, GPU, or speed work.
 
 ## Acceptance
 

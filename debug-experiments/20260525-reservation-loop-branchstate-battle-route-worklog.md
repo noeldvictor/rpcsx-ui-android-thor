@@ -4902,6 +4902,74 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-immediate-check;ls_down:120;wait:1200;shot:left1317-down120-immediate-check;wait:10800;shot:left1317-down120-check;wait:45000;shot:left1317-down120-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1317 Down120 Fatal
+
+Question:
+
+- After `left1317` passed once and `left1318` remained fatal, determine whether
+  a small `ls_down:120` nudge after `left1317` can start an alternate
+  battle-approach route.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-204121-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Windows-only RPCS3 run on screen `1`, PadApi input, CPU affinity `0x0F`,
+  frame/vblank `240/240`, and the expected 26-token macro.
+- Load-target gate passed attempt `1` as `PATH_TO_TENUTO_PRESENT`; counts were
+  path/debug/empty/unknown `1/0/0/0`, with no lower-row cursor or damaged-save
+  markers.
+- Visual gate reported `FIELD_LIKE_PRESENT`; first field-like screenshot was
+  `screenshot-0196s-post-load-complete-strongdismiss600-18s.png` at `196s`.
+- Manual screenshot review showed the pre-movement field was clean at `196s`.
+  The immediate post-`left1317` screenshot at `199s` already showed the RPCS3
+  likely-crashed banner and corrupt/frozen field, before `ls_down:120` could be
+  trusted. The `201s`, `257s`, and `290s` screenshots stayed in that corrupt
+  state.
+- Host contention was clean across `6` snapshots.
+- `rpcs3.stderr.txt` and `RPCS3.log` reported a PPU VM access violation reading
+  `0x40` at roughly the immediate post-left window. This overrides byte-size
+  field triage.
+
+Counters:
+
+- GPU probe records: `1,660`.
+- Total observed DMA: `1,910.83 MB`.
+- Offload fit mix: `spu-kernel-hle=936`, `too-small=724`.
+- Hot PCs: `0x451c` `1,120.42 MB`, `0x25cc` `790.41 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `stack-regression`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-vm40-corrupt-field`.
+- `down120` is not proven because the crash/corruption was visible immediately
+  after the `left1317` pulse.
+- Not a stable `left1317` proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact
+  `left1317-down120` fatal instead of falling back to generic loader-control.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  record `left1317` as mixed evidence: one clean pass, one fatal repeat under
+  the down120 extension before down120 became meaningful.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-reproof-after-down120-fatal -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-reproof-immediate-check;wait:10800;shot:left1317-reproof-check;wait:45000;shot:left1317-reproof-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Save-List Inventory After Left1317 Drift
 
 Question:
