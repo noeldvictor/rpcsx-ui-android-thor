@@ -604,6 +604,15 @@ This resolves the black-gate question but exposes current save-list selection
 drift. Do not restore saves, press the slot, or run movement. Inventory the
 current save-list rows with repeated `Down` screenshots and no slot `Cross` so
 the Path-to-Tenuto row and cursor position can be repaired directly.
+If that same pre-gate diagnostic instead reaches a stable lower Path-to-Tenuto
+row with damaged-save rows above it and the gate reports `DAMAGED_SAVE_TARGET`,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-damaged-save-target`.
+This resolves the black-gate question but shows the selected row is still
+wrong. Do not press the slot, restore saves, run movement, or fall back to
+generic state-aware routing. Run only the stable Load-list
+`loadlist-uprepair-target-diagnostic` and require `PATH_TO_TENUTO_PRESENT`
+before any no-movement or movement route.
 If that save-list inventory selects `LOAD` from the title menu but every
 intended Load-list row screenshot is black-overlay only, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-black-transition`.

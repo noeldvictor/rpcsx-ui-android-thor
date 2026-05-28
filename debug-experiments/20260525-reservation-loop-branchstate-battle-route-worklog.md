@@ -7437,3 +7437,83 @@ Next exact command:
 - Current refiner next action is the title-to-Load pre-gate black diagnostic
   with timed screenshots; do not fall back to the stale generic state-aware
   polling macro.
+
+## 2026-05-28 Title-Load Pre-Gate Damaged Target Diagnostic
+
+Question:
+
+- After the no-movement proof black-overlayed through the whole load-target
+  gate, verify whether title `Down:160` enters the Load list late, enters the
+  wrong title route, or settles on the wrong save row before slot `Cross`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-024313-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate Off`, and the intended 16-token timed diagnostic macro.
+- Host contention was clean for prelaunch, postlaunch, and postrun.
+- Manual review of `screenshot-0068s-title-settle-before-blackgate.png`
+  confirmed the title menu was visible before input.
+- Manual review of `screenshot-0069s-title-after-down160-blackgate.png`
+  confirmed `down:160` selected `LOAD`, not `NEW GAME` or `OPTIONS`.
+- Manual review of `screenshot-0082s-pregate-12s.png` and
+  `screenshot-0132s-load-target-gate.png` confirmed the Load screen was stable
+  by 12s and selected lower `Save File 05 / Path to Tenuto / South Section /
+  Ch.1 Raindrops`, with damaged-save rows above it.
+- The load-target classifier reported `DAMAGED_SAVE_TARGET`: path-to-tenuto
+  `5`, debug-save-prologue `0`, empty-load-slot `0`, unknown `2`, lower-row
+  cursor markers `5`, damaged-save text markers `5`, and damaged target guard
+  `5`.
+- The macro aborted before save-slot `Cross`; no field, movement, Options/menu,
+  or battle proof was attempted.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `1105`.
+- Total observed DMA: `1,109.04 MB`.
+- Offload fit mix: `too-small=554`, `spu-kernel-hle=551`.
+- Hot PCs: `0x451c` `701.32 MB`, `0x25cc` `407.72 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-damaged-save-target`.
+- The prior black gate was not persistent black timing; this run exposed lower
+  save-row selection with damaged rows above it.
+- Not field proof.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/skill update:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact title-to-Load
+  pre-gate `DAMAGED_SAVE_TARGET` shape and recommends the stable Load-list
+  Up-repair target diagnostic instead of the stale generic polling movement
+  macro.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` now records the same
+  standing rule.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now emits
+  `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-damaged-save-target`
+  and selects only the target-repair command below.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-uprepair;down:160;wait:900;shot:title-after-down160-uprepair;cross:120;wait:30000;shot:load-list-before-uprepair;up:100;wait:700;shot:load-list-uprepair-up1;up:100;wait:700;shot:load-list-uprepair-up2;up:100;wait:700;shot:load-list-uprepair-up3;up:100;wait:700;shot:load-list-uprepair-up4;up:100;wait:700;shot:load-list-uprepair-up5;gate_load_target:30000;shot:path-target-after-uprepair" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
