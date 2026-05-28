@@ -9127,10 +9127,71 @@ Reading:
   pattern/descriptor verifier semantics for top `0x9e4000` groups, including
   sampled payload or LS/block hashes, before any fast body or A/B timing.
 
-## 2026-05-28 Latest Pointer: Broaden 0x9e4000 Verifier Or Codegen
+## 2026-05-28 Stock-Control TopSlot BattleRoute Device Lost
+
+Question:
+
+- Is the same TopSlot battle route fatal without `Verify25ccShadow`?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-102538-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`.
+
+Evidence:
+
+- Ran the refiner-proposed stock-control route with PadApi input,
+  `-WindowsGameScreen 1`, TopSlot battle load, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  host gate `ExternalFail`, `BattleRoute` visual gate, `330s` cap,
+  screenshots every `20s`, and screenshots starting at `120s`.
+- Host contention checks were clean across the run. RPCS3 stopped at the
+  wall-time cap; no emulator process remained active.
+- Visual gate failed `NO_FIELD_LIKE_SCREENSHOT`: all `15` screenshots from
+  `118s` through `320s` were `black-overlay-small-png` at `34954` bytes, with
+  no field-like or battle-like frame.
+- Manual review of `screenshot-0320s.png` showed black output with only the
+  FPS overlay visible.
+- `rpcs3.stdout.txt` was `0` bytes. `rpcs3.stderr.txt` was `1234` bytes.
+  `RPCS3.log` was `1.76 MB`.
+- Fatal scan found real `VK_ERROR_DEVICE_LOST` in `vk::wait_for_event`
+  (`sync.cpp:610`) / `vk::die_with_error` (`shared.cpp:205`) with fault
+  `access_write` at address `0x2d0614000`.
+- GPU probe summary recorded `769` rows, `792.37 MB` total observed DMA,
+  largest single job `4.70 MB`, `0` RSX-local traffic records, offload fit mix
+  `too-small=392` and `spu-kernel-hle=377`, hot PCs `0x451c` (`490.04 MB`)
+  and `0x25cc` (`302.33 MB`), and top `0x25cc` pattern
+  `0x869b21fba7608f1f` at EA `0x9e4000`.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-gate`.
+- `stock-control-topslot-device-lost`.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Reading:
+
+- `Verify25ccShadow` is not the sole explanation for the earlier battle-route
+  fatal. The same stock route/device path can lose Vulkan and render only the
+  black overlay.
+- Do not extend this route. Repair route/RSX device-loss behavior or re-prove
+  the latest clean lower boundary before another movement or first-battle
+  attempt.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says the latest run had
+  fatal/crash log evidence and should not be extended. Re-prove the newest
+  clean `loader-control-left200x1` boundary with `CleanAfterField` before
+  adding another pulse.
+
+## 2026-05-28 Latest Pointer: Reprove Left200 Boundary
 
 Next exact command:
 
 ```powershell
-# Do not repeat loader-control-left200x2 or the exact 0xa1c000 skip. Next useful step is clean-route pattern/descriptor verifier coverage for the top 0x9e4000 groups, including payload/hash semantics, or SPU codegen-dispatch analysis.
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
 ```
