@@ -1353,6 +1353,12 @@ $recentDiag200Rejected = @($cutsceneRuns | Where-Object {
     $_.Name -like "*loader-control-left200x2-diag200*" -or $label -like "*loader-control-left200x2-diag200*"
 }).Count -ge 1
 $latestRun = $runEvidence | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$verifierPlanPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-9e4000-verifier-plan.md"
+$hashTargetsPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-pattern-hash-targets.md"
+$verifierPlanFile = Get-Item -LiteralPath $verifierPlanPath -ErrorAction SilentlyContinue
+$hashTargetsFile = Get-Item -LiteralPath $hashTargetsPath -ErrorAction SilentlyContinue
+$hasFresh25ccVerifierPlan = ($null -ne $verifierPlanFile) -and ($null -ne $latestRun) -and ($verifierPlanFile.LastWriteTime -gt $latestRun.LastWriteTime)
+$hasFresh25ccHashTargets = ($null -ne $hashTargetsFile) -and ($null -ne $verifierPlanFile) -and ($hashTargetsFile.LastWriteTime -gt $verifierPlanFile.LastWriteTime)
 $latestValidLoaderControl = $false
 $latestValidLoaderControlLeft200 = $false
 $latestValidLoaderControlLeft200x2 = $false
@@ -3291,7 +3297,13 @@ $nextAction = if ($latestStateAwarePromptStuck) {
 } elseif ($latestValidLoaderControlLeft200x3) {
     "Extend the newest valid loader-control-left200x3 route by exactly one more left-only micro-pulse with CleanAfterField; keep lane-2 HLE/GPU dry-runs blocked."
 } elseif ($latestValidLoaderControlDiag200) {
-    "Latest loader-control-left200x2-diag200 field proof is clean. Do not repeat the same diagonal command; bank the diagonal micro-pulse as route-tooling only, then pivot to Options/menu proof, first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis."
+    if ($hasFresh25ccHashTargets) {
+        "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier/hash target reports are refreshed. Do not rerun diagonal or repeat reports; next non-visual step is a verify-only family/hash counter implementation around PC 0x25cc, or switch to first-battle route repair."
+    } elseif ($hasFresh25ccVerifierPlan) {
+        "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier plan is refreshed. Do not repeat the diagonal or verifier-plan report; refresh the 0x25cc pattern hash targets, then implement verify-only family/hash counters before any fast/body/GPU mode."
+    } else {
+        "Latest loader-control-left200x2-diag200 field proof is clean. Do not repeat the same diagonal command; bank the diagonal micro-pulse as route-tooling only, then refresh the 0x25cc verifier/hash target reports or repair first-battle."
+    }
 } elseif ($latestValidLoaderControlLeft200x2 -and $recentDiag200Rejected) {
     "Do not repeat the rejected diag200 route; extend the newest valid loader-control-left200x2 route by exactly one left-only micro-pulse with CleanAfterField, while lane-2 HLE/GPU dry-runs stay blocked."
 } elseif ($latestValidLoaderControlLeft200x2) {
@@ -3615,7 +3627,13 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestValidLoaderControlLeft200x3) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x4-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 235 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 13"
 } elseif ($latestValidLoaderControlDiag200) {
-    "# No automatic duplicate: latest loader-control-left200x2-diag200 already passed field triage. Bank it as route tooling and pivot to Options/menu proof, first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis."
+    if ($hasFresh25ccHashTargets) {
+        "# No automatic duplicate: diagonal field proof and 0x25cc verifier/hash reports are already refreshed. Implement/confirm verify-only family/hash counters around PC 0x25cc next, or run a non-duplicate first-battle route repair."
+    } elseif ($hasFresh25ccVerifierPlan) {
+        ".\tools\summarize_eternal_sonata_25cc_hash_targets.ps1"
+    } else {
+        ".\tools\summarize_eternal_sonata_25cc_verifier_plan.ps1"
+    }
 } elseif ($latestValidLoaderControlLeft200x2 -and $recentDiag200Rejected) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x3-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12"
 } elseif ($latestValidLoaderControlLeft200x2) {

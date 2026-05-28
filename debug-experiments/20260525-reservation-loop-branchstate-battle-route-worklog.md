@@ -9639,3 +9639,87 @@ Decision:
 - Next non-visual implementation step should add or confirm verify-only
   family/hash counters around PC `0x25cc` / `CellSpursKernel0`, not enable
   fast/body mode.
+
+## 2026-05-28 Refiner Tightening And 0x25cc Hash Target Refresh
+
+Question:
+
+- After the verifier plan refresh, how do we stop the continual loop from
+  repeating diagonal field proof or repeating the same analysis report, while
+  still moving the CPU/SPU pressure lane forward?
+
+Commands:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\summarize_eternal_sonata_25cc_hash_targets.ps1
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `tools\ps3_harness_refiner.ps1`.
+- `debug-experiments\20260526-25cc-pattern-hash-targets.md`.
+- `debug-experiments\20260526-25cc-pattern-hash-targets.csv`.
+
+Evidence:
+
+- Initial refiner output still gave the broad branch: do not repeat
+  `loader-control-left200x2-diag200`; pivot to Options/menu proof,
+  first-battle route repair, or focused SPU HLE/codegen/verifier analysis.
+- Refiner was tightened to detect fresh
+  `20260526-25cc-9e4000-verifier-plan.md` and
+  `20260526-25cc-pattern-hash-targets.md` report timestamps.
+- After the verifier plan is fresh but hash targets are stale, the suggested
+  command becomes:
+
+```powershell
+.\tools\summarize_eternal_sonata_25cc_hash_targets.ps1
+```
+
+- After both reports are fresh, the suggested command becomes a blocker
+  comment, not another report rerun:
+
+```powershell
+# No automatic duplicate: diagonal field proof and 0x25cc verifier/hash reports are already refreshed.
+# Implement/confirm verify-only family/hash counters around PC 0x25cc next,
+# or run a non-duplicate first-battle route repair.
+```
+
+- Hash target refresh used the latest Windows run with both runtime-family
+  patterns and 25cc shadow profile:
+  `20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows`.
+  That source run is fatal, so the report is sizing/target-selection only.
+- Atlas `0x9e4000` HLE candidates remain `159` groups / `6.86 GB`.
+- Latest shadow-run runtime candidates are `10` groups / `437.30 MB`.
+- Top-16 atlas groups seen in that shadow run are `5` groups,
+  `2.09 GB` atlas bytes, and `274.17 MB` latest-run bytes.
+- Shadow verifier totals: `11988` hits, `187.31 MB`, GET/PUT `5688/6300`,
+  changed/unchanged `3325/8663`, match/mismatch `11988/0`.
+- Exact EA buckets remain too narrow: `ea9e4000=799`,
+  `exact_a1c000=799`, `other_matching_ea=10389`.
+- Matched top groups are PUT-heavy at about `84%` PUT, so the current
+  GET-only `0x25cc` body copy cannot cover the main bytes.
+
+Classification:
+
+- `analysis`.
+- `harness-refiner-improvement`.
+- `spu-hle-25cc-pattern-hash-targets`.
+- `stackable-cpu-pressure-target-selection`.
+- Not field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not refresh the same verifier/hash reports again until new run data or
+  code changes exist.
+- Next non-visual implementation step is verify-only pattern/descriptor
+  counters split by MFC direction, source hash, destination pre/post hash,
+  and output match/mismatch around PC `0x25cc`.
+- Broad SPU-to-Vulkan remains parked because the lane still has `0 B`
+  RSX-local evidence and tiny-dispatch risk.
