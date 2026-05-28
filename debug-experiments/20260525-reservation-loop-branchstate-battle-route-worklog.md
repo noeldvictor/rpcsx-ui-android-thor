@@ -7724,3 +7724,72 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 Clean No-Movement Route Reproof After Left1275 Loading Failure
+
+Question:
+
+- After `left1275` passed the load target but stayed on `Now Loading...`,
+  re-prove that the strongdismiss600 base route still reaches and holds the
+  Path-to-Tenuto field without movement input.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-040209-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate CleanAfterField`, and the intended no-movement long-gate
+  macro.
+- The load-target classifier passed `PATH_TO_TENUTO_PRESENT` on attempt 1 at
+  `81s`: path-to-tenuto `1`, debug-save-prologue `0`, empty-load-slot `0`,
+  unknown `0`, lower-row cursor markers `0`, damaged-save text markers `0`,
+  and `Top path only=True`.
+- The visual gate reported `FIELD_LIKE_PRESENT`: first field-like screenshot
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` at `195s`
+  (`2.50 MB`), field-like screenshots through `286s+`, and `0` invalid
+  screenshots after first field-like output.
+- Manual review of `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`
+  and `screenshot-0286s-strongdismiss600-very-late-check.png` confirmed clean
+  Path-to-Tenuto field visuals, not loading, menu, or wrong-window output.
+- Host contention summary was clean for all `5` snapshots.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` were `0` bytes. Log scan found no
+  access violation, device-lost crash, assertion crash, segfault, verification
+  failure, or unimplemented fatal; the remaining early RSX shader diagnostics
+  were non-fatal and field visuals stayed valid.
+
+Counters:
+
+- GPU probe records: `2619`.
+- Total observed DMA: `3,740.05 MB`.
+- Offload fit mix: `spu-kernel-hle=1786`, `too-small=833`.
+- Hot PCs: `0x451c` `2,118.37 MB`, `0x25cc` `1,621.68 MB`.
+- Largest single job: `10.97 MB` at `0x451c`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`.
+- This revalidates the route base after the loading-only `left1275` failure.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now selects the same
+  strongdismiss600 base with `ls_left:1275` immediate/late screenshots. This is
+  route repair, not speed.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
