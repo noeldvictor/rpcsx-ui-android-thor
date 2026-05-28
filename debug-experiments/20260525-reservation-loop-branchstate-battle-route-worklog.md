@@ -9926,3 +9926,78 @@ Decision:
 - Next useful step is to re-prove the clean loader-control-left200x2 boundary
   with `CleanAfterField`, then rebuild battle movement from a visual-valid
   boundary.
+
+## 2026-05-28 Loader-Control left200x2 Reconfirm After Black-Overlay Battle
+
+Question:
+
+- After the black-overlay battle attempt, is the last clean loader-control
+  `left200x2` boundary still visually valid enough to build from?
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir "debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows" -RequireFieldLike -RequireNoInvalidAfterFirstField -RequireFieldAtOrBeforeSeconds 160 -MinFieldPngBytes 1000000
+.\tools\summarize_eternal_sonata_gpu_probe.ps1 -RunDir "debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows" -Top 12
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir "debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows" -Top 12
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`.
+- `debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows\eternal-sonata-gpu-probe-summary.md`.
+- `debug-captures\windows-lab\20260528-141346-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows\eternal-sonata-spu-reservation-loop-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  reservation-loop verify, body/skip/GPU fast paths off, and CPU affinity
+  `0x0F`.
+- RPCS3 reached the planned `215s` stop and exited. The wrapper then stayed in
+  the known postrun phase; after confirming no emulator process remained and
+  artifacts were present, only the stuck wrapper was killed.
+- Visual gate passed: `FIELD_LIKE_PRESENT`, first field-like screenshot
+  `screenshot-0117s.png` at `117s`, `16` field-like screenshots through
+  `210s`, `0` invalid screenshots after first field-like, and required field
+  before `160s` passed.
+- Manual image review of `screenshot-0117s.png` and `screenshot-0210s.png`
+  confirmed clean Path-to-Tenuto field visuals after the two left pulses.
+- Host checks were clean across prelaunch, postlaunch, runtime samples, and
+  postrun. `stdout`/`stderr` were empty.
+- Targeted fatal/access/device-lost/assertion scan found `0` hits.
+- GPU probe summary extracted `1539` records, `2,283.71 MB` observed DMA,
+  largest single job `9.35 MB`, `0 B` RSX-local traffic, and fit mix
+  `spu-kernel-hle=1096`, `too-small=443`.
+- Reservation-loop summary extracted `1639` reservation command rows,
+  `44896` command exact-PC rows, `86252` command-run MFC wait exact-PC rows,
+  peak snapshot hits GETLLAR/PUTLLC/Atomic/PUTLLC-fail
+  `140021/109015/31006/144270/12599`, and primary command/read deltas
+  GETLLAR `0`, PUTLLC `0`.
+- Reservation-loop summary still reports `collect-missing-proof` because no
+  kernel capsule or PUTLLC16 pair verifier rows were present. Do not change
+  fast paths from this run alone.
+- Refiner now classifies the newest run as `valid-field-triage` and points to
+  exactly one tiny diagonal micro-pulse with `CleanAfterField`.
+
+Classification:
+
+- `valid-field-triage`.
+- `loader-control-left200x2-reconfirmed`.
+- `reservation-loop-counter-base`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- The clean loader-control `left200x2` boundary is re-established after the
+  black-overlay battle failure.
+- Next useful step is one tiny diagonal micro-pulse from this base with
+  `CleanAfterField`; lane-2 HLE/GPU dry-runs stay blocked until field,
+  Options/menu, and first-battle visuals are valid.
