@@ -10928,3 +10928,70 @@ Decision:
 - First-battle proof remains the blocker.
 - The next non-duplicate step is a stock-control TopSlot BattleRoute with
   `Verify25ccShadow` off, same route/host/display settings.
+
+## 2026-05-28 stock-control TopSlot route device-loss isolation
+
+Question:
+
+- Does the same TopSlot BattleRoute still fail when `Verify25ccShadow` is off,
+  separating route/RSX instability from 25cc verifier instability?
+
+Commands:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`.
+- `debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows\eternal-sonata-gpu-probe-summary.md`.
+- `debug-captures\windows-lab\_ps3-harness-refiner-latest.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched with `--game-screen 1`, TopSlot BattleRoute, CPU affinity
+  `0x0F`, frame/vblank `240`, GPU probe profile mode, and
+  `Verify25ccShadow` off.
+- Host checks were clean at prelaunch, postlaunch, runtime samples `291s`,
+  `300s`, `330s`, and postrun. Host contention gate `ExternalFail` passed.
+- Visual gate failed `NO_FIELD_LIKE_SCREENSHOT`: all `15` screenshots were
+  `black-overlay-small-png`, each `34882` bytes. Manual review of
+  `screenshot-0117s.png` confirmed black output with only the perf overlay.
+- There was no field-like screenshot at or before `160s`, no field-like
+  screenshot at or after `220s`, and no battle-like screenshot at or after
+  `200s`.
+- Targeted fatal scan found real RSX `VK_ERROR_DEVICE_LOST` / device-lost
+  failure in `vk::wait_for_event` in `rpcs3.stderr.txt` and `RPCS3.log`.
+- GPU probe summary logged `753` records, `724.84 MB` observed DMA, `0`
+  RSX-local traffic records, `0` indirect RSX resource overlap records, and
+  offload fit mix `too-small=411`, `spu-kernel-hle=342`.
+- Hot PC summary: `0x451c` had `502.62 MB`; `0x25cc` had `222.22 MB`, with
+  repeated `0x9e4000` patterns but still `0 B` RSX-local.
+- Because `Verify25ccShadow` was off, there are no 25cc descriptor/shadow rows
+  to use as counterproof.
+- Refiner after the run says not to extend the latest fatal route. It
+  recommends re-proving the newest clean `loader-control-left200x1` boundary
+  with `CleanAfterField` before adding another pulse.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-gate`.
+- `route-rsx-device-loss-isolation`.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- The stock-control route also fails, so the previous first-battle verifier
+  fatal is not isolated to `Verify25ccShadow`.
+- Do not repeat TopSlot BattleRoute or extend movement from this failure.
+- Next action is the refiner command: re-prove the clean
+  `left200x1` loader-control boundary, then only add route complexity after
+  visuals and fatal logs are clean.
