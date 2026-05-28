@@ -9063,10 +9063,74 @@ Reading:
 - The stronger CPU-pressure path is broader verify-only coverage around the
   dynamic MFC / `0x9e4000` pattern families or SPU codegen dispatch overhead.
 
+## 2026-05-28 0x25cc Runtime-Family Refresh
+
+Question:
+
+- After the exact skip proved too small, split the runtime `0x25cc` traffic by
+  dynamic family and pattern groups to decide whether `0x9e4000` verifier
+  breadth or codegen dispatch overhead is the next better lever.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-25cc-runtime-family-summary.md`.
+- `debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-25cc-runtime-family-patterns.csv`.
+- `debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-25cc-runtime-family-buckets.csv`.
+- `debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-25cc-runtime-family-hash-semantics.csv`.
+
+Evidence:
+
+- Ran `tools\summarize_eternal_sonata_25cc_runtime_family.ps1 -Top 20`.
+- The summarizer selected
+  `20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows`
+  as the newest run with 25cc family and GPU-probe CSVs.
+- Visual gate summary on that source run reported field-like screenshots from
+  `117s`, field-like after `220s`, battle-like at `230s`, and `15`
+  field-like screenshots.
+- Fatal scan and stderr also found a real
+  `VM: Access violation reading location 0x40` at `0x002aedd0`, so this
+  analysis is sizing/target selection only and not valid proof.
+- Runtime hook buckets: `380` rows, `11988` hits, success/fail `11988/0`,
+  GET/PUT hits `5688/6300`, `187.31 MB`, total timing `585.853 ms`,
+  average `48.870 us/hit`, max `25055 us`.
+- Command-level buckets: `ea9e4000` `799` hits (`6.665%`, `12.48 MB`),
+  `exact_a1c000` `799` hits (`6.665%`, `12.48 MB`), and
+  `other_matching_ea` `10389` hits (`86.662%`, `162.33 MB`).
+- Shadow semantics: `11988` hits, `187.31 MB`, destination changed/unchanged
+  `3325/8663`, output match/mismatch `11988/0`, `380` unique source hashes,
+  and `380` unique destination-post hashes.
+- GPU-probe 0x25cc rows totaled `656.31 MB` with `0 B` direct RSX-local
+  traffic.
+- HLE pattern-body candidates: `10` repeated `0x9e4000` groups, `278`
+  records, `437.30 MB`; top group pattern `0x209c1716c9de855f` had `48`
+  records and `73.35 MB`.
+- Hash semantics scout still has an instrumentation gap: sampled payload bytes
+  were `0 B` and LS/block hashes were `0x0`.
+
+Classification:
+
+- `analysis`.
+- `spu-hle-25cc-runtime-family-sizing`.
+- Not a Windows micro-win.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not first-battle proof.
+- Not a 200% gate candidate.
+
+Reading:
+
+- Exact command-level EA matching remains too narrow. The broader repeated
+  `0x9e4000` pattern-body groups are the better CPU-pressure candidate.
+- Direct RSX-local traffic is still `0 B`, so this is CPU/SPU HLE/codegen
+  sizing, not GPU migration.
+- The next concrete implementation should add or repair clean-route
+  pattern/descriptor verifier semantics for top `0x9e4000` groups, including
+  sampled payload or LS/block hashes, before any fast body or A/B timing.
+
 ## 2026-05-28 Latest Pointer: Broaden 0x9e4000 Verifier Or Codegen
 
 Next exact command:
 
 ```powershell
-# Do not repeat loader-control-left200x2 or the exact 0xa1c000 skip. Next useful step is a focused 0x25cc dynamic-MFC / 0x9e4000 verifier coverage expansion or SPU codegen-dispatch analysis.
+# Do not repeat loader-control-left200x2 or the exact 0xa1c000 skip. Next useful step is clean-route pattern/descriptor verifier coverage for the top 0x9e4000 groups, including payload/hash semantics, or SPU codegen-dispatch analysis.
 ```
