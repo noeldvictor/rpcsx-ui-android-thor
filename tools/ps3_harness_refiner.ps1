@@ -1419,6 +1419,7 @@ $latestTitleToLoadDownHoldLoadListDiagnosticBlackTransition = $false
 $latestTitleToLoadDownHoldLoadTargetReproofPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveBlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave = $false
@@ -1950,6 +1951,14 @@ if ($latestRun) {
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-nomove*" -and
         $latestText -like "*cursoraware*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveBlackGate =
+        -not $latestFatal -and
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
+        $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-nomove*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget =
         -not $latestFatal -and
         $latestLoadTargetGateFailure -and
@@ -2792,6 +2801,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiag
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-cursoraware-black-gate" -Severity "route-repair" -Evidence "Newest cursor-aware no-movement proof aborted before save-slot Cross because every load-target polling screenshot was a black transition/overlay with UNKNOWN_LOAD_TARGET; fatal scan stayed clean and no slot was pressed." -Action "Do not restore the save, normalize cursor rows, or run movement. Diagnose the title-to-Load transition timing with explicit 12s/30s/45s/60s pre-gate screenshots, then gate only after the Load list is actually visible."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveBlackGate -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-black-gate" -Severity "route-repair" -Evidence "Newest no-movement proof from the initial Path row aborted before save-slot Cross because every load-target polling screenshot was a black transition/overlay with UNKNOWN_LOAD_TARGET; fatal scan stayed clean and no slot was pressed." -Action "Do not fall back to generic state-aware routing or repeat the same no-movement proof. Diagnose the title-to-Load transition timing with explicit 12s/30s/45s/60s pre-gate screenshots, then gate only after the Load list is visible."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-debug-save-target" -Severity "route-repair" -Evidence "Newest title-to-Load pre-gate diagnostic selected LOAD and reached a stable Load list by 12s, but the selected row was Save File 01 / Debug Save / Prologue through 60s and the load-target gate aborted before slot Cross." -Action "Do not treat this as black-gate timing, movement, speed, or GPU proof. Inventory the current save-list rows with repeated Down screenshots and no slot Cross so the Path-to-Tenuto row/cursor state can be repaired precisely."
 }
@@ -3023,6 +3035,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 cursor diagnostic proved the stale Path-to-Tenuto preview can remain while Down inputs select lower File does not exist rows. Do not normalize with save-list Down/Up; rerun no-movement with the cursor-aware gate and only continue if the top-selected Path gate loads cleanly."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
     "Latest stock Down160 strongdismiss600 cursor-aware no-movement proof black-overlayed through the entire load-target gate before any save-slot Cross. Do not restore saves or move; run the title-to-Load pre-gate timing diagnostic with 12s/30s/45s/60s screenshots."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveBlackGate) {
+    "Latest stock Down160 strongdismiss600 no-movement proof from the initial Path row black-overlayed through the entire load-target gate before any save-slot Cross. Do not fall back to generic state-aware routing; run the title-to-Load pre-gate black diagnostic with timed screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved the black gate was timing/state-sensitive, but the stable Load list selected Debug Save / Prologue. Do not restore or move; inventory the current save-list cursor rows with repeated Down screenshots and no slot Cross."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
@@ -3340,6 +3354,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveBlackGate) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand

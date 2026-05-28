@@ -7207,6 +7207,74 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
 ```
 
+## 2026-05-28 Initial-Row No-Movement Reproof Black Gate
+
+Question:
+
+- After inventory re-proved the initial Load-list row is Path to Tenuto, rerun
+  the no-movement long-gate proof from that initial row with no save-list
+  normalization.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-022230-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate CleanAfterField`, and the intended 20-token no-movement
+  macro.
+- Host contention was clean for prelaunch, postlaunch, and postrun.
+- The load-target gate never reached a readable Load list: all `16` polling
+  screenshots from `81s` through `140s` were `black-overlay-small-png` and
+  classified `UNKNOWN_LOAD_TARGET`.
+- The gate timed out at `140s`; the macro aborted before save-slot `Cross`.
+- Manual review of `screenshot-0140s-load-target-gate-16.png` confirmed a black
+  overlay with the RPCS3 FPS/perf overlay still alive.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`; no field-like frame existed
+  before `260s`.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `1191`.
+- Total observed DMA: `1156.19 MB`.
+- Offload fit mix: `too-small=642`, `spu-kernel-hle=549`.
+- Hot PCs: `0x451c` `799.33 MB`, `0x25cc` `356.86 MB`.
+- PUTLLC16 analyzer records: `43`; detected PUTLLC16 patterns `8`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `nomove-initial-path-row-black-gate`.
+- No save slot was pressed; field, movement, Options/menu, and battle were not
+  tested.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/skill update:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes this exact strongdismiss600
+  no-movement black-gate shape and recommends the title-to-Load pre-gate black
+  diagnostic instead of falling back to the stale generic state-aware polling
+  macro.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` now documents that
+  both cursor-aware and initial-row no-movement black gates should route to the
+  timed title-to-Load diagnostic.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-blackgate;down:160;wait:900;shot:title-after-down160-blackgate;cross:120;wait:12000;shot:pregate-12s;wait:18000;shot:pregate-30s;wait:15000;shot:pregate-45s;wait:15000;shot:pregate-60s;gate_load_target:60000;shot:path-target-after-pregate-black-diagnostic" -MaxSeconds 210 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-28 Refiner Loop Guard And Save-List Inventory Reproof
 
 Question:
@@ -7356,3 +7424,16 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
 ```
+
+## 2026-05-28 Latest Pointer: No-Movement Black Gate
+
+- Latest run is
+  `debug-captures\windows-lab\20260528-022230-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+- Full evidence is recorded above in
+  `2026-05-28 Initial-Row No-Movement Reproof Black Gate`.
+- Current classification is `failed-load-target-gate` / `route-tooling`: all
+  `16` load-target frames were black-overlay `UNKNOWN_LOAD_TARGET`, no slot was
+  pressed, and no field/movement/speed/GPU credit exists.
+- Current refiner next action is the title-to-Load pre-gate black diagnostic
+  with timed screenshots; do not fall back to the stale generic state-aware
+  polling macro.
