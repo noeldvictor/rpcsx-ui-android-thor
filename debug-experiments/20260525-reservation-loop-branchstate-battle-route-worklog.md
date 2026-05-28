@@ -7207,6 +7207,90 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
 ```
 
+## 2026-05-28 Refiner Loop Guard And Save-List Inventory Reproof
+
+Question:
+
+- The refiner was recommending the same state-aware polling repair that just
+  failed on `DEBUG_SAVE_PROLOGUE_PRESENT`. Add a loop guard, then run a
+  non-destructive save-list inventory with no save-slot `Cross`.
+
+Code/tooling:
+
+- `tools\ps3_harness_refiner.ps1` now detects
+  `stateaware-loadtarget-pollgated` plus `DEBUG_SAVE_PROLOGUE_PRESENT` and
+  recommends save-list inventory instead of the identical polling macro.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` now carries the
+  same standing rule.
+- Verified by rerunning `tools\ps3_harness_refiner.ps1 -MaxRuns 8`; it emitted
+  `stateaware-pollgated-debug-save-repeat` and selected the inventory command.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-020512-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate Off`, and the intended 26-token inventory macro.
+- Host contention was clean for prelaunch, postlaunch, in-run samples at
+  `140s`/`150s`, and postrun.
+- The macro took title screenshots, selected Load with `down:160`/`cross:120`,
+  waited `60s`, then took Load-list row screenshots while pressing `Down`.
+- Manual review of `screenshot-0130s-load-list-initial-after60.png` confirmed
+  the initial selected row is `Save File 01 / Path to Tenuto / South Section /
+  Ch.1 Raindrops`.
+- Manual review of `screenshot-0132s-load-list-after-down1.png` and
+  `screenshot-0140s-load-list-after-down6.png` confirmed `Down` moves the
+  cursor onto lower `File does not exist` rows while the Path-to-Tenuto preview
+  can remain stale.
+- The classifier reported `DAMAGED_SAVE_TARGET` because of cursor drift, not a
+  Debug Save row: path-to-tenuto `3`, debug-save-prologue `0`,
+  empty-load-slot `4`, unknown `2`, lower-row cursor markers `6`, damaged-save
+  text markers `0`, and damaged target guard `2`.
+- No save-slot `Cross` was sent. No field, movement, Options/menu, or battle
+  proof was attempted.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `1364`.
+- Total observed DMA: `1432.11 MB`.
+- Offload fit mix: `spu-kernel-hle=706`, `too-small=658`.
+- Hot PCs: `0x451c` `845.03 MB`, `0x25cc` `587.08 MB`.
+- PUTLLC16 analyzer records: `43`; detected PUTLLC16 patterns `8`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `save-list-inventory-initial-path-rows`.
+- The repeated `Debug Save / Prologue` loop is now routed to inventory/row
+  repair instead of an identical polling macro.
+- Not field proof.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` detects the inventory as
+  `save-list-inventory-initial-path-rows` and recommends resuming no-movement
+  long-gate proof from the initial Path row, without save-list `Down/Up`
+  normalization.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-28 Polling Repair Still Hit Debug Save
 
 Question:

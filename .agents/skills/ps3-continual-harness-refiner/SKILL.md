@@ -108,6 +108,10 @@ press `Cross` in a new route until that gate reports only
 screenshot: transient `Checking save files...` frames are allowed to become
 `PATH_TO_TENUTO_PRESENT`, but `DEBUG_SAVE_PROLOGUE_PRESENT` or timeout still
 aborts before slot `Cross`. If a polling-gated route reaches field and then the
+same state-aware polling repair later repeats `DEBUG_SAVE_PROLOGUE_PRESENT`,
+do not recommend the identical polling macro again; inventory current save-list
+rows with no slot `Cross` and repair selected-row targeting first. If a
+polling-gated route reaches field and then the
 old dismiss-save sequence opens the Save/Create-new-file menu, block that
 sequence and suggest a direct-left movement proof. If direct-left times out on
 black/`UNKNOWN_LOAD_TARGET` gate screenshots, suggest only the direct-left

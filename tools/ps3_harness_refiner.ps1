@@ -1397,6 +1397,7 @@ $latestLoadTargetGateFailure = $false
 $latestLoadTargetGateStatus = ""
 $latestLoadTargetPollGatedSaveMenuAfterField = $false
 $latestLoadTargetDirectLeftGateFailure = $false
+$latestStateAwareLoadTargetPollGatedDebugSaveTarget = $false
 $latestLoadTargetDirectLeftLongGateCutscene = $false
 $latestTitleToLoadDiagnosticCutscene = $false
 $latestTitleToLoadDownHoldWrongSaveTarget = $false
@@ -1518,6 +1519,10 @@ if ($latestRun) {
         $latestLoadTargetGateFailure -and
         $latestLoadTargetGateStatus -eq "UNKNOWN_LOAD_TARGET" -and
         $latestText -like "*loadtarget-pollgated-directleft*"
+    $latestStateAwareLoadTargetPollGatedDebugSaveTarget =
+        $latestLoadTargetGateFailure -and
+        $latestLoadTargetGateStatus -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -and
+        $latestText -like "*stateaware-loadtarget-pollgated*"
     $latestLoadTargetDirectLeftLongGateCutscene =
         $latestLoadTargetDirectLeftGateFailure -and
         $latestText -like "*longgate*" -and
@@ -2473,6 +2478,9 @@ if ($latestLoadTargetGateFailure -and
     $statusText = if ([string]::IsNullOrWhiteSpace($latestLoadTargetGateStatus)) { "no classifier status" } else { $latestLoadTargetGateStatus }
     Add-AntiPattern -List $antiPatterns -Name "load-target-gate-failed-before-slot-cross" -Severity "blocker" -Evidence "Newest load-target-gated route aborted before pressing Cross on the save slot; classifier status was $statusText." -Action "Do not run HLE/RSX speed experiments until the gate reports PATH_TO_TENUTO_PRESENT. Use only the polling load-target-gated route; if it times out as UNKNOWN_LOAD_TARGET, inspect the save-check screen or checkpoint state instead of stacking speed toggles."
 }
+if ($latestStateAwareLoadTargetPollGatedDebugSaveTarget) {
+    Add-AntiPattern -List $antiPatterns -Name "stateaware-pollgated-debug-save-repeat" -Severity "route-repair" -Evidence "Newest state-aware polling repair selected Debug Save / Prologue, so another identical polling macro would repeat the same pre-slot blocker." -Action "Inventory the current save-list rows with repeated Down screenshots and no slot Cross, then repair selected-row targeting before route, HLE, RSX, GPU, or speed work."
+}
 if ($latestLoadTargetPollGatedSaveMenuAfterField) {
     Add-AntiPattern -List $antiPatterns -Name "pollgated-route-opens-save-menu-after-field" -Severity "blocker" -Evidence "Newest polling-gated route proved Path to Tenuto and reached field, but later screenshots stayed on the Save/Create new save file menu after the post-load dismissal presses." -Action "Remove the obsolete field-side save-prompt dismissal sequence. After the accepted field screenshot, go directly to the movement pulse and screenshots."
 }
@@ -3035,6 +3043,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 target-only reproof after the left1275 black gate passed PATH_TO_TENUTO_PRESENT and was fatal-clean. Resume the same left1275 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
     "Latest stock Down160 strongdismiss600 left1500 reached clean field first, but the post-left screenshots became visibly corrupt and the RSX thread logged Unimplemented FP CAL. Do not count it as movement; shrink the same strongdismiss600 base to ls_left:1200 with immediate screenshots."
+} elseif ($latestStateAwareLoadTargetPollGatedDebugSaveTarget) {
+    "Latest state-aware polling repair selected Debug Save / Prologue before save-slot Cross. Do not repeat the same polling macro; inventory the current save-list rows without pressing the slot, then repair selected-row targeting before another route or speed step."
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     "Latest direct-left route never reached a classifiable load slot; the load-target gate saw UNKNOWN_LOAD_TARGET black-screen captures through timeout. Retry only direct-left with a longer gate, not the obsolete dismiss-save sequence."
 } elseif ($latestLoadTargetGateFailure) {
@@ -3351,6 +3361,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1500RsxFpcalCorrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1200LongGateCommand
+} elseif ($latestStateAwareLoadTargetPollGatedDebugSaveTarget) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
 } elseif ($latestLoadTargetDirectLeftGateFailure) {
     New-StateAwareLoadTargetPollGatedDirectLeftCommand
 } elseif ($latestLoadTargetGateFailure) {
