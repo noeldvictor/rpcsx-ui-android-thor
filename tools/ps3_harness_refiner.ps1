@@ -1372,6 +1372,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugS
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPassAfterLeft1317Repair = $false
 $recentTitleToLoadDownHoldBattleFatal = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
     $text = "$($_.Name) $label"
@@ -1407,6 +1408,14 @@ $recentHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft
         $text -like "*25cc*" -and
         $text -like "*shadow-desc*" -and
         $text -like "*battle-stock-down160-strongdismiss600-target-reproof-after-left1317-debug-save*"
+}).Count -gt 0
+$recentHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterLeft1317Drift = @($runEvidence | Where-Object {
+    $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
+    $text = "$($_.Name) $label"
+    -not ($_.Fatal -and $_.Fatal.HasFatal) -and
+        $text -like "*25cc*" -and
+        $text -like "*shadow-desc*" -and
+        $text -like "*battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave*"
 }).Count -gt 0
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
@@ -1846,6 +1855,10 @@ if ($latestRun) {
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-nomove-longgate*" -and
         $latestText -notlike "*nomove-double-dismiss*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPassAfterLeft1317Repair =
+        $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass -and
+        $recentHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1317DebugSavePass -and
+        $recentHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterLeft1317Drift
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged =
         -not $latestFatal -and
         $latestLoadTargetGateStatus -eq "DAMAGED_SAVE_TARGET" -and
@@ -2603,7 +2616,10 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadComplete
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDoubleDismissFieldPrompt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-double-dismiss-field-prompt" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 double-dismiss no-movement proof passed PATH_TO_TENUTO_PRESENT, reached clean Path-to-Tenuto field at {0}s, then the second delayed Cross opened the field Save game prompt." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank the first field screenshot as the repaired no-movement base, but do not repeat double-dismiss and do not count the prompt-covered later frames as moving gameplay. Resume the same strongdismiss600 base with ls_left:1275 and immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
-if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass) {
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPassAfterLeft1317Repair) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean-after-left1317-repair" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 no-movement proof after the left1317 save-list repair passed PATH_TO_TENUTO_PRESENT, reached clean Path-to-Tenuto field at {0}s, and stayed field-like through late checks." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank this as the repaired no-movement base for the current left1316/left1318 bracket. Resume the same strongdismiss600 base with ls_left:1317 and immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
+}
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPassAfterLeft1317Repair) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 no-movement proof passed PATH_TO_TENUTO_PRESENT, reached clean Path-to-Tenuto field at {0}s, and stayed field-like through late checks." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank this as the repaired no-movement route base only. Resume the same strongdismiss600 base with ls_left:1275 and immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterDamagedRestoreStillDamaged) {
@@ -2830,6 +2846,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 save-list inventory shows the initial Load-list position is Save File 01 Path to Tenuto, while Down moves through empty and alternate Path rows. Do not normalize with Down/Up; resume the no-movement long-gate proof from the initial Path row before another movement attempt."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
     "Latest stock Down160 strongdismiss600 target-only Up-repair diagnostic passed PATH_TO_TENUTO_PRESENT after stable Load-list screenshots. This repairs target selection only; rerun no-movement stability before any left1275, battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPassAfterLeft1317Repair) {
+    "Latest stock Down160 strongdismiss600 no-movement proof after left1317 save-list repair reached clean Path-to-Tenuto field and stayed field-like through late checks. Keep the left1316 clean / left1318 fatal bracket and retry ls_left:1317 with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass) {
     "Latest stock Down160 strongdismiss600 no-movement proof reached clean Path-to-Tenuto field and stayed field-like through late checks. Resume the same ls_left:1275 midpoint with immediate screenshots; this is route repair, not speed."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {
@@ -3124,6 +3142,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPassAfterLeft1317Repair) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1317LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveFieldPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TargetReproofAfterLeft1275BlackGatePass) {

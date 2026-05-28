@@ -620,6 +620,11 @@ jump to verifier/HLE/GPU work; resume the same strongdismiss600 base with
 If a single-dismiss strongdismiss600 no-movement long-gate proof reaches clean
 Path-to-Tenuto field and remains field-like through late checks, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`.
+If that no-movement proof directly follows the `left1317` Debug Save repair and
+save-list inventory, classify it more narrowly as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean-after-left1317-repair`.
+Keep the current `left1316` clean / `left1318` fatal bracket and retry
+`ls_left:1317` with immediate screenshots.
 This is a repaired field route base only, not movement or speed evidence. Do not
 fall through to generic `stateaware-one-step`, old loader-control, verifier,
 HLE, RSX, GPU, or speed work; resume the same strongdismiss600 base with

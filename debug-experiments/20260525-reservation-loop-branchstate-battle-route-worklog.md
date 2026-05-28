@@ -4473,6 +4473,69 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 No-Movement Field Reproof After Left1317 Repair
+
+Question:
+
+- After save-list inventory showed the initial row is `Save File 01 / Path to
+  Tenuto`, re-prove the no-movement route base before another `left1317`
+  movement attempt.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-195951-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Windows-only RPCS3 run on screen `1`, PadApi input, CPU affinity `0x0F`,
+  frame/vblank `240/240`, and the expected 20-token no-movement macro.
+- Load-target gate passed attempt `1` as `PATH_TO_TENUTO_PRESENT`; path/debug/
+  empty/unknown counts were `1/0/0/0`, with no lower-row cursor or damaged-save
+  markers.
+- Visual gate reported `FIELD_LIKE_PRESENT`; first field-like screenshot was
+  `screenshot-0196s-post-load-complete-strongdismiss600-18s.png` at `196s`.
+- Manual screenshot review confirmed clean Path-to-Tenuto field at `196s`,
+  `241s`, and `287s`, with no prompt, corrupt overlay, or load-menu stall.
+- Host contention stayed clean across `5` snapshots.
+- `rpcs3.stderr.txt` was `0` bytes. Fatal scan found only the benign
+  `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `2,612`.
+- Total observed DMA: `3,817.59 MB`.
+- Offload fit mix: `spu-kernel-hle=1757`, `too-small=855`.
+- Hot PCs: `0x451c` `2,256.95 MB`, `0x25cc` `1,560.64 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean-after-left1317-repair`.
+- Repaired no-movement route base only.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now distinguishes this no-movement field pass
+  after the `left1317` save-list repair from the older generic no-movement path.
+- The next action now stays on the current bracket and suggests `left1317`, not
+  obsolete `left1275`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-immediate-check;wait:10800;shot:left1317-check;wait:45000;shot:left1317-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Save File 05 Cursor Repair
 
 Question:
