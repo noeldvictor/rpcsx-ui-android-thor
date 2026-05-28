@@ -1340,6 +1340,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316FieldPass = $f
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317ReproofAfterDown120FatalPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120Vm40Corrupt = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadCompleteStuck = $false
@@ -1974,6 +1975,15 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1317-down120*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly =
+        -not $latestFatal -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestRun.Visual.Status -eq "NO_FIELD_LIKE_SCREENSHOT" -and
+        $latestRun.Visual.PrimarySmallClass -eq "loading-like-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1316-down120*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt =
         $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2644,6 +2654,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317ReproofAft
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120Vm40Corrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-vm40-corrupt-field" -Severity "blocker" -Evidence "Newest strongdismiss600 left1317-down120 run passed PATH_TO_TENUTO_PRESENT and reached clean field, but the immediate post-left1317 screenshot already showed the likely-crashed overlay/corrupt field and stderr/RPCS3.log reported a PPU VM access violation at 0x40 before down120 could be trusted." -Action "Do not count down120 as tested, do not call left1317 stable from one earlier clean pass, and do not fall back to generic stateaware-one-step. Re-prove the plain left1317 boundary once; if it repeats fatal/corrupt, demote the stable lower boundary to left1316."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down120-loading-only" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1316-down120 diagnostic passed PATH_TO_TENUTO_PRESENT, but the post-load-complete dismiss entered persistent Now Loading and never reached field before any movement evidence could count." -Action "Do not count left1316 or down120 as tested, and do not fall back to generic stateaware-one-step. Re-prove the same strongdismiss600 base with no movement before another left/down diagnostic, verifier, HLE, RSX, GPU, speed, or first-battle promotion."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1331-vm40-corrupt-field" -Severity "blocker" -Evidence "Newest strongdismiss600 left1331 run passed PATH_TO_TENUTO_PRESENT and reached a clean pre-movement field, but the immediate post-left screenshot showed the RPCS3 likely-crashed overlay and corrupt/frozen field while stderr/RPCS3.log reported a PPU VM access violation at 0x40." -Action "Do not count this as clean movement, speed, first-battle, or GPU migration proof. Keep left1312 as the clean lower boundary and left1331 as the fatal/corrupt upper boundary; try the left1321 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
@@ -2878,6 +2891,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 plain left1317 reproof passed after the left1317-down120 fatal. Bank left1317 as clean single-axis movement, keep left1317-down120 failed, and try lower-bound left1316-down120 with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120Vm40Corrupt) {
     "Latest stock Down160 strongdismiss600 left1317-down120 attempt fataled with corrupt field at the immediate post-left1317 screenshot, before down120 could be trusted. Re-prove plain left1317 once; if it repeats fatal/corrupt, demote the stable lower boundary to left1316."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly) {
+    "Latest stock Down160 strongdismiss600 left1316-down120 attempt passed the Path-to-Tenuto target gate but stayed on Now Loading after the post-load-complete dismiss. Movement was not tested; re-prove the same strongdismiss600 no-movement base before another left/down diagnostic."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     "Latest stock Down160 strongdismiss600 left1331 reached clean field first, but post-left screenshots showed the likely-crashed overlay/corrupt field and a PPU VM access violation at 0x40. Bank left1312 as the clean lower boundary, left1331 as the fatal upper boundary, and try the left1321 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {
@@ -3180,6 +3195,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120Vm40Corrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1317ReproofAfterDown120FatalCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120LoadingOnly) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1321LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {

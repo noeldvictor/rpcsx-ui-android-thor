@@ -652,6 +652,13 @@ Bank `left1317` as clean single-axis movement, but keep `left1317-down120`
 failed and do not repeat that exact combo. The next route step is a lower-bound
 `left1316-down120` diagnostic with immediate screenshots, not generic routing,
 verifier, HLE, RSX, GPU, speed, or first-battle promotion.
+If that lower-bound `left1316-down120` diagnostic passes
+`PATH_TO_TENUTO_PRESENT` but every post-load and post-movement screenshot stays
+on `Now Loading...`, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down120-loading-only`.
+Movement was not tested. Re-prove the same strongdismiss600 base with no
+movement before another left/down diagnostic. Do not fall back to generic
+`stateaware-one-step`, verifier, HLE, RSX, GPU, speed, or first-battle work.
 
 ## Acceptance
 

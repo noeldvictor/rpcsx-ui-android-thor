@@ -58,7 +58,8 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1317` remains route/movement evidence only. It is not first-battle proof, speed proof, GPU migration, or 200%.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
 - No-movement long-gate after save-list inventory re-proved clean Path-to-Tenuto field from the initial row.
-- Next expected action is a lower-bound `left1316-down120` diagnostic with immediate screenshots. Do not repeat `left1317-down120` or fall back to generic `stateaware-one-step`.
+- Latest `left1316-down120` diagnostic stayed on `Now Loading...` after the post-load-complete dismiss. Movement was not tested.
+- Next expected action is a strongdismiss600 no-movement load-stability reproof. Do not repeat `left1316-down120`, repeat `left1317-down120`, or fall back to generic `stateaware-one-step`.
 
 ## Banked Findings
 
