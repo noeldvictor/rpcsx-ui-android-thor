@@ -9267,10 +9267,87 @@ Refiner result:
   valid `loader-control-left200x1` route by exactly one more tiny state-aware
   left pulse with `CleanAfterField`; keep lane-2 HLE/GPU dry-runs blocked.
 
-## 2026-05-28 Latest Pointer: Extend Left200x2 Carefully
+## 2026-05-28 Loader-Control Left200x2 Non-Field Regression
+
+Question:
+
+- Does the refiner-suggested `left200x2` extension from the clean
+  `left200x1` boundary still reproduce a valid Path-to-Tenuto field after two
+  tiny state-aware left pulses?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-110434-cpu4-loader-control-left200x2-visualgate-windows-windows`.
+
+Evidence:
+
+- Ran the exact refiner command with PadApi input, `-WindowsGameScreen 1`, CPU
+  affinity `0x0F`, frame/vblank `240/240`, `ReservationLoop Verify`,
+  `CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`, two `ls_left:200`
+  pulses, `215s` cap, screenshots from `110s`, and `-ScreenshotMaxCount 11`.
+- RPCS3 was moved to `\\.\DISPLAY2`; host checks were clean at prelaunch,
+  postlaunch, `149s`, `152s`, `180s`, `210s`, and postrun.
+- RPCS3 stopped at the `215s` cap. The wrapper then stalled in postrun log
+  processing after RPCS3 exited, so only the wrapper PowerShell was killed.
+  No RPCS3/RPCSX process remained active.
+- Manual visual gate failed: `16` screenshots, first field-like screenshot
+  none, required field-like by `160s` failed, and all screenshots were
+  `cutscene-or-nonfield-small-png`.
+- Manual review of `screenshot-0117s.png` and `screenshot-0210s.png` showed
+  the blue/starry non-field screen, not Path-to-Tenuto field.
+- Window-title FPS samples were `25.71` at `117s` and `32.55` for later
+  screenshots through `210s`; these are invalid for speed comparison because
+  the visual gate failed.
+- `rpcs3.stdout.txt` was `0` bytes. `rpcs3.stderr.txt` was `1752` bytes and
+  contained libusb disconnected/descriptor warnings only. `RPCS3.log` was
+  `102.87 MB`.
+- Targeted fatal scan found no `VM: Access violation`, `VK_ERROR_DEVICE_LOST`,
+  `Assertion Failed`, `Thread terminated due to fatal error`, `Device lost`,
+  verifier failure, non-zero output mismatch, or non-zero dynamic fail hit.
+
+Targeted counters:
+
+- GPU-candidate probe records: `1767`.
+- MFC dynamic probe records: `1767`.
+- MFC list transfer probe records: `470`.
+- MFC wait probe records: `1846`.
+- MFC wait-PC probe records: `106759`.
+- Reservation-loop command probe records: `1846`.
+- Reservation-loop command-PC probe records: `51839`.
+- Reservation-loop verify probe records: `6877`.
+- Reservation-loop verify-lane records: `5031`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `212`.
+- Max reads observed: `431022`.
+- Read failures: `0`.
+- Unexpected values: `0`.
+- Lane mismatches: `0`.
+- Counters are invalid for HLE/GPU or speed promotion because visuals failed.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `loader-control-left200x2-nonfield-regression`.
+- Not movement proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says to back off from the
+  latest non-field/cutscene route and re-prove the last clean
+  `loader-control-left200x2-confirm` boundary with `CleanAfterField` before
+  diagonal, first-battle, HLE/GPU, or lane-2 fast-mode work.
+
+## 2026-05-28 Latest Pointer: Reprove Left200x2 Confirm Boundary
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-confirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
 ```
