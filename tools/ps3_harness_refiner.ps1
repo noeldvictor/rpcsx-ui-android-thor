@@ -1355,10 +1355,13 @@ $recentDiag200Rejected = @($cutsceneRuns | Where-Object {
 $latestRun = $runEvidence | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $verifierPlanPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-9e4000-verifier-plan.md"
 $hashTargetsPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-pattern-hash-targets.md"
+$shadowContractPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-shadow-native-contract.md"
 $verifierPlanFile = Get-Item -LiteralPath $verifierPlanPath -ErrorAction SilentlyContinue
 $hashTargetsFile = Get-Item -LiteralPath $hashTargetsPath -ErrorAction SilentlyContinue
+$shadowContractFile = Get-Item -LiteralPath $shadowContractPath -ErrorAction SilentlyContinue
 $hasFresh25ccVerifierPlan = ($null -ne $verifierPlanFile) -and ($null -ne $latestRun) -and ($verifierPlanFile.LastWriteTime -gt $latestRun.LastWriteTime)
 $hasFresh25ccHashTargets = ($null -ne $hashTargetsFile) -and ($null -ne $verifierPlanFile) -and ($hashTargetsFile.LastWriteTime -gt $verifierPlanFile.LastWriteTime)
+$hasFresh25ccShadowContract = ($null -ne $shadowContractFile) -and ($null -ne $hashTargetsFile) -and ($shadowContractFile.LastWriteTime -gt $hashTargetsFile.LastWriteTime)
 $latestValidLoaderControl = $false
 $latestValidLoaderControlLeft200 = $false
 $latestValidLoaderControlLeft200x2 = $false
@@ -3297,7 +3300,9 @@ $nextAction = if ($latestStateAwarePromptStuck) {
 } elseif ($latestValidLoaderControlLeft200x3) {
     "Extend the newest valid loader-control-left200x3 route by exactly one more left-only micro-pulse with CleanAfterField; keep lane-2 HLE/GPU dry-runs blocked."
 } elseif ($latestValidLoaderControlDiag200) {
-    if ($hasFresh25ccHashTargets) {
+    if ($hasFresh25ccShadowContract) {
+        "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier/hash/native-contract reports are refreshed. Do not add another report; next step is proving direction-split 0x25cc counters on a clean route or patching the active source if that binary lacks descriptor counters."
+    } elseif ($hasFresh25ccHashTargets) {
         "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier/hash target reports are refreshed. Do not rerun diagonal or repeat reports; next non-visual step is a verify-only family/hash counter implementation around PC 0x25cc, or switch to first-battle route repair."
     } elseif ($hasFresh25ccVerifierPlan) {
         "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier plan is refreshed. Do not repeat the diagonal or verifier-plan report; refresh the 0x25cc pattern hash targets, then implement verify-only family/hash counters before any fast/body/GPU mode."
@@ -3627,7 +3632,9 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestValidLoaderControlLeft200x3) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x4-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 235 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 13"
 } elseif ($latestValidLoaderControlDiag200) {
-    if ($hasFresh25ccHashTargets) {
+    if ($hasFresh25ccShadowContract) {
+        "# No automatic duplicate: diagonal field proof plus 0x25cc verifier/hash/native-contract reports are already refreshed. Next: prove direction-split 0x25cc counters on a clean route, or patch the active source if descriptor counters are missing from that binary."
+    } elseif ($hasFresh25ccHashTargets) {
         "# No automatic duplicate: diagonal field proof and 0x25cc verifier/hash reports are already refreshed. Implement/confirm verify-only family/hash counters around PC 0x25cc next, or run a non-duplicate first-battle route repair."
     } elseif ($hasFresh25ccVerifierPlan) {
         ".\tools\summarize_eternal_sonata_25cc_hash_targets.ps1"

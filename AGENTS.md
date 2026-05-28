@@ -110,7 +110,8 @@ Put dated run details in `debug-experiments/`, not here.
 - Latest SPU HLE atlas refresh `debug-captures\windows-lab\_eternal-sonata-spu-hle-candidates-latest.md` scanned `12` recent runs, used `2` valid field runs, excluded `2` fatal field-like runs, and selected PC `0x25cc` / `CellSpursKernel0` as top verify-gated CPU/SPU HLE/codegen target: `3.06 GB` over `1946` records, `58` patterns, max job `3.06 MB`, `0 B` RSX-local. Broad SPU-to-Vulkan remains parked.
 - Latest `0x25cc / 0x9e4000` verifier-plan refresh `debug-experiments\20260526-25cc-9e4000-verifier-plan.md` updated current `rpcs3-upstream` source anchors and keeps the historical broad family at `6.86 GB`, `4340` records, `159` pattern rows, and `0 B` RSX-local. It is analysis only; next code work is verify-only family/hash counters before any fast/body mode.
 - Latest `0x25cc` pattern-hash target refresh `debug-experiments\20260526-25cc-pattern-hash-targets.md` shows `10` runtime groups, `437.30 MB`, top-16 atlas overlap `5` groups / `274.17 MB`, shadow verifier `11988` hits / `187.31 MB`, GET/PUT `5688/6300`, and match/mismatch `11988/0`. The matched groups are PUT-heavy, so GET-only bodyfast cannot cover the main bytes.
-- Current refiner/atlas next action: do not repeat `loader-control-left200x2-diag200`, the verifier plan, or hash-target reports; either implement/confirm verify-only `0x25cc` family/hash counters or run a non-duplicate first-battle route repair. Lane-2/GPU fast modes remain blocked until field/menu/battle visuals are valid.
+- Latest `0x25cc` native-contract refresh `debug-experiments\20260526-25cc-shadow-native-contract.md` classifies the selected shadow verifier data as fatal-run sizing only: `11988` hits / `187.31 MB`, GET/PUT `5688/6300`, match/mismatch `11988/0`, and runtime-seen top groups `274.17 MB` with `84.4%` PUT. Upstream `rpcs3-upstream` already has direction-split descriptor anchors; the vendored Android core was not run.
+- Current refiner/atlas next action: do not repeat `loader-control-left200x2-diag200`, verifier-plan, hash-target, or native-contract reports. Prove direction-split `0x25cc` counters on a clean Windows route, or patch the active Windows source if the binary lacks descriptor counters. Lane-2/GPU fast modes remain blocked until field/menu/battle visuals are valid.
 
 ## Banked Findings
 
@@ -120,6 +121,7 @@ Put dated run details in `debug-experiments/`, not here.
 - 0x25cc descriptor/shadow verifier has clean field and Options coverage with zero mismatches and overflow `0`; first-battle verifier attempts hit fatal/corrupt evidence. Treat as verifier coverage only.
 - Exact `0xa1c000` 0x25cc skip is correctness-clean but too small for a speed path: latest refresh says `5.55 MB` skipped versus `5.65 GB` observed 0x25cc atlas (`0.10%`).
 - Broader `0x9e4000` 0x25cc pattern groups are the better CPU-pressure candidate. Current sizing is `3.06 GB` in valid field atlas data, `6.86 GB` in the wider historical verifier-plan CSV, and `437.30 MB` in the latest shadow-run runtime family, still with `0 B` RSX-local; treat as verify/codegen CPU-pressure work, not GPU offload proof.
+- Direction-split PUT-heavy `0x25cc` evidence exists only from fatal sizing data so far. It is target selection, not promotion, until reproved with clean field, Options/menu, and first-battle visuals.
 - Broad SPU-to-GPU compute offload remains parked unless a candidate has stable batching, low readback pressure, and explicit correctness gates.
 
 ## Speed Claim Rules

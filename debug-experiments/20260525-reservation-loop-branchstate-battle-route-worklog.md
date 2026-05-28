@@ -9723,3 +9723,68 @@ Decision:
   and output match/mismatch around PC `0x25cc`.
 - Broad SPU-to-Vulkan remains parked because the lane still has `0 B`
   RSX-local evidence and tiny-dispatch risk.
+
+## 2026-05-28 0x25cc Shadow Native Contract Refresh
+
+Question:
+
+- After the hash-target refresh, can we turn the 0x25cc analysis into a
+  concrete native contract without adding another duplicate report loop?
+
+Commands:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+rg -n "record_es_spu_hle_25cc_shadow_sample|exec_es_spu_hle_verify_candidate|25cc" C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell app\src\main\cpp\rpcsx\rpcs3\Emu\Cell
+.\tools\summarize_eternal_sonata_25cc_shadow_contract.ps1
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `tools\ps3_harness_refiner.ps1`.
+- `tools\summarize_eternal_sonata_25cc_shadow_contract.ps1`.
+- `debug-experiments\20260526-25cc-shadow-native-contract.md`.
+- `debug-experiments\20260526-25cc-shadow-native-contract.csv`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process was running at the checkpoint start.
+- Current upstream comparison source already has direction-split descriptor
+  instrumentation anchors around `SPUThread.cpp` 0x25cc shadow recording and
+  `SPULLVMRecompiler.cpp` verifier-candidate dispatch.
+- The vendored Android core was only searched for parity; no Android, ADB, or
+  Thor work was run.
+- The shadow-contract report now classifies the selected shadow run correctly
+  as `fatal-run sizing evidence only`, not clean proof.
+- Selected shadow verifier totals: `11988` hits, `187.31 MB`, GET/PUT
+  `5688/6300`, changed/unchanged `3325/8663`, and match/mismatch `11988/0`.
+- Runtime-seen top target groups cover `274.17 MB` in the selected run, with
+  PUT `231.52 MB` (`84.4%`) and GET `42.65 MB` (`15.6%`).
+- Multi-run atlas coverage for those runtime-seen groups is `2.09 GB`.
+- The refiner now detects the fresh verifier plan, hash targets, and native
+  contract; its suggested command is a stop-comment, not another report rerun.
+
+Classification:
+
+- `analysis`.
+- `harness-refiner-improvement`.
+- `spu-hle-25cc-shadow-native-contract`.
+- `stackable-cpu-pressure-target-selection`.
+- Not field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not generate another 0x25cc planning/hash/native-contract report until
+  new run data or source changes exist.
+- Next useful Windows-only step is clean-route proof of direction-split 0x25cc
+  counters, or patching the active Windows source if the binary lacks the
+  descriptor counters.
+- The PUT-heavy direction split is target selection only. It cannot promote
+  bodyfast, skip, GPU migration, or 200% without clean field, Options/menu, and
+  first-battle proof.

@@ -184,6 +184,20 @@ $targetRuntimeBytes = Get-UInt64Sum $runtimeSeenTargets "runtime_total_bytes"
 $targetRuntimeGetBytes = Get-UInt64Sum $runtimeSeenTargets "runtime_get_bytes"
 $targetRuntimePutBytes = Get-UInt64Sum $runtimeSeenTargets "runtime_put_bytes"
 $targetAtlasBytes = Get-UInt64Sum $runtimeSeenTargets "atlas_total_bytes"
+$selectedRunHasFatal = $false
+$stderrPath = Join-Path $runPath "rpcs3.stderr.txt"
+$logPath = Join-Path $runPath "RPCS3.log"
+foreach ($fatalPath in @($stderrPath, $logPath)) {
+    if (Test-Path -LiteralPath $fatalPath -PathType Leaf) {
+        $fatalHit = Select-String -LiteralPath $fatalPath -Pattern "VM: Access violation|VK_ERROR_DEVICE_LOST|Device lost|Assertion Failed|Thread terminated due to fatal error" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($fatalHit) {
+            $selectedRunHasFatal = $true
+            break
+        }
+    }
+}
+$selectedRunTrust = if ($selectedRunHasFatal) { "fatal-run sizing evidence only" } else { "clean-log candidate evidence" }
 
 $contractRows = @()
 $rank = 1
@@ -248,10 +262,10 @@ $lines.Add("- Contract CSV: ``$outCsvFile``")
 $lines.Add("")
 $lines.Add("## Contract Summary")
 $lines.Add("")
-$lines.Add("- Latest clean shadow verifier output is GET-only: ``$shadowHits`` hits, ``$(Format-Bytes $shadowBytes)``, GET/PUT ``$shadowGetHits/$shadowPutHits``, changed/unchanged ``$shadowChanged/$shadowUnchanged``, match/mismatch ``$shadowMatch/$shadowMismatch``.")
+$lines.Add("- Selected shadow verifier output is ``$selectedRunTrust``: ``$shadowHits`` hits, ``$(Format-Bytes $shadowBytes)``, GET/PUT ``$shadowGetHits/$shadowPutHits``, changed/unchanged ``$shadowChanged/$shadowUnchanged``, match/mismatch ``$shadowMatch/$shadowMismatch``.")
 $lines.Add("- Runtime-seen target patterns are PUT-heavy: ``$($runtimeSeenTargets.Count)`` groups, ``$(Format-Bytes $targetRuntimeBytes)`` latest-run bytes, GET ``$(Format-Bytes $targetRuntimeGetBytes)`` (``$(Format-Percent $targetRuntimeGetBytes $targetRuntimeBytes)``), PUT ``$(Format-Bytes $targetRuntimePutBytes)`` (``$(Format-Percent $targetRuntimePutBytes $targetRuntimeBytes)``).")
 $lines.Add("- Multi-run atlas coverage for those runtime-seen groups is ``$(Format-Bytes $targetAtlasBytes)``.")
-$lines.Add("- Therefore a GET-only body copy can only prove a minority of the runtime-seen hot byte mass. The next source change must make PUT-side shadow semantics visible before any bodyfast or skip promotion.")
+$lines.Add("- Therefore a GET-only body copy can only prove a minority of the runtime-seen hot byte mass. Direction-split PUT shadow evidence is now visible, but it must be reproved on clean field/menu/battle visuals before any bodyfast or skip promotion.")
 $lines.Add("")
 $lines.Add("## Runtime-Seen PUT-Heavy Targets")
 $lines.Add("")
@@ -271,7 +285,7 @@ foreach ($anchor in $anchors) {
 $lines.Add("")
 $lines.Add("## Native Patch Contract")
 $lines.Add("")
-$lines.Add("The next productive patch should be a verify-only C++ instrumentation change. Do not add another planning report before this source slice.")
+$lines.Add("The next productive source/run step should use or extend the verify-only C++ descriptor instrumentation. Do not add another planning report before either proving these counters on a clean route or patching the active source if the binary lacks them.")
 $lines.Add("")
 $lines.Add("Required behavior:")
 $lines.Add("")

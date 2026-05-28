@@ -1,6 +1,6 @@
 # Eternal Sonata 0x25cc Shadow Native Contract
 
-- Generated: 2026-05-26 16:04:58 -04:00
+- Generated: 2026-05-28 13:06:05 -04:00
 - Classification: `analysis`, `spu-hle-25cc-shadow-native-contract`.
 - Not speed.
 - Not `gpu-migration-credit`.
@@ -9,27 +9,28 @@
 ## Inputs
 
 - Hash target CSV: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-experiments\20260526-25cc-pattern-hash-targets.csv`
-- Shadow run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows`
-- Shadow profile CSV: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows\eternal-sonata-spu-hle-25cc-shadow-profile.csv`
-- Runtime pattern CSV: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260526-152956-cpu4-hle-25cc-9e4000-shadow-field-windows-windows\eternal-sonata-25cc-runtime-family-patterns.csv`
+- Shadow run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows`
+- Shadow profile CSV: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-spu-hle-25cc-shadow-profile.csv`
+- Runtime pattern CSV: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260526-180020-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-25cc-runtime-family-patterns.csv`
 - Source root inspected: `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream`
 - Contract CSV: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-experiments\20260526-25cc-shadow-native-contract.csv`
 
 ## Contract Summary
 
-- Latest clean shadow verifier output is GET-only: `12108` hits, `189.19 MB`, GET/PUT `12108/0`, changed/unchanged `810/11298`, match/mismatch `12108/0`.
-- Runtime-seen target patterns are PUT-heavy: `4` groups, `188.60 MB` latest-run bytes, GET `29.31 MB` (`15.5%`), PUT `159.29 MB` (`84.5%`).
-- Multi-run atlas coverage for those runtime-seen groups is `1.56 GB`.
-- Therefore a GET-only body copy can only prove a minority of the runtime-seen hot byte mass. The next source change must make PUT-side shadow semantics visible before any bodyfast or skip promotion.
+- Selected shadow verifier output is `fatal-run sizing evidence only`: `11988` hits, `187.31 MB`, GET/PUT `5688/6300`, changed/unchanged `3325/8663`, match/mismatch `11988/0`.
+- Runtime-seen target patterns are PUT-heavy: `5` groups, `274.17 MB` latest-run bytes, GET `42.65 MB` (`15.6%`), PUT `231.52 MB` (`84.4%`).
+- Multi-run atlas coverage for those runtime-seen groups is `2.09 GB`.
+- Therefore a GET-only body copy can only prove a minority of the runtime-seen hot byte mass. Direction-split PUT shadow evidence is now visible, but it must be reproved on clean field/menu/battle visuals before any bodyfast or skip promotion.
 
 ## Runtime-Seen PUT-Heavy Targets
 
 | Rank | Pattern | Atlas Bytes | Runtime Records | Runtime Bytes | GET | PUT | Max Cmds | Body Gap |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 1 | `0x209c1716c9de855f` | 482.88 MB | 39 | 59.60 MB | 9.29 MB (15.6%) | 50.30 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
-| 2 | `0x4318b5fc803b855f` | 459.96 MB | 35 | 53.48 MB | 8.34 MB (15.6%) | 45.14 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
-| 3 | `0x30540805202a855f` | 492.05 MB | 33 | 50.43 MB | 7.86 MB (15.6%) | 42.56 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
-| 4 | `0x4b67e9a0b6538093` | 163.12 MB | 16 | 25.09 MB | 3.81 MB (15.2%) | 21.28 MB (84.8%) | 173 | `put-heavy-get-only-body-caps-coverage` |
+| 1 | `0x209c1716c9de855f` | 482.88 MB | 48 | 73.35 MB | 11.44 MB (15.6%) | 61.91 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
+| 2 | `0xf7bf30bddad5855f` | 510.38 MB | 39 | 59.60 MB | 9.29 MB (15.6%) | 50.30 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
+| 3 | `0x4318b5fc803b855f` | 459.96 MB | 38 | 58.07 MB | 9.05 MB (15.6%) | 49.01 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
+| 4 | `0x30540805202a855f` | 492.05 MB | 38 | 58.07 MB | 9.05 MB (15.6%) | 49.01 MB (84.4%) | 159 | `put-heavy-get-only-body-caps-coverage` |
+| 5 | `0xb86b87ed0d1f8093` | 192.92 MB | 16 | 25.09 MB | 3.81 MB (15.2%) | 21.28 MB (84.8%) | 173 | `put-heavy-get-only-body-caps-coverage` |
 
 ## Source Anchors
 
@@ -40,16 +41,16 @@
 | shadow hash | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:1952` |
 | shadow begin | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:1974` |
 | 25cc shadow recorder | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:1989` |
-| 25cc body copy | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:2100` |
-| MFC shadow begin hook | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:4362` |
-| MFC shadow finish hook | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:4996` |
-| GPU-probe pattern signature | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:2438` |
+| 25cc body copy | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:2161` |
+| MFC shadow begin hook | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:4423` |
+| MFC shadow finish hook | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:4586` |
+| GPU-probe pattern signature | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp:2499` |
 | LLVM verifier candidate | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp:4401` |
 | dynamic MFC fallback signal | `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp:5707` |
 
 ## Native Patch Contract
 
-The next productive patch should be a verify-only C++ instrumentation change. Do not add another planning report before this source slice.
+The next productive source/run step should use or extend the verify-only C++ descriptor instrumentation. Do not add another planning report before either proving these counters on a clean route or patching the active source if the binary lacks them.
 
 Required behavior:
 
