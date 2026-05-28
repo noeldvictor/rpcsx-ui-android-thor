@@ -4897,6 +4897,73 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-28 No-Movement Stability Re-Proved After Up-Repair
+
+Question:
+
+- After bounded Up-repair restored top `Save File 01 / Path to Tenuto`, rerun
+  the strongdismiss600 no-movement long-gate proof before allowing any
+  movement, battle, HLE, RSX, GPU, or speed work.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-032238-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataGpuProbe Profile`,
+  `-WindowsVisualGate CleanAfterField`, and the intended 20-token no-movement
+  macro.
+- The load-target gate passed on attempt 1 at `81s` with
+  `PATH_TO_TENUTO_PRESENT`: path-to-tenuto `1`, debug-save-prologue `0`,
+  empty-load-slot `0`, unknown `0`, lower-row cursor markers `0`, and
+  damaged-save text markers `0`.
+- Manual review of `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`,
+  `screenshot-0241s-strongdismiss600-late-check.png`, and
+  `screenshot-0286s-strongdismiss600-very-late-check.png` confirmed clean
+  Path-to-Tenuto field visuals with no movement branch.
+- Visual gate reported `FIELD_LIKE_PRESENT`, first field-like at `195s`, `10`
+  field-like large screenshots, and `0` invalid screenshots after first field.
+- Host contention was not clean enough for performance comparison: summary
+  `high`, external summary `moderate`, with a bad GPU-engine sample at `300s`
+  and postrun Codex CPU load.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `2613`.
+- Total observed DMA: `3,743.33 MB`.
+- Offload fit mix: `spu-kernel-hle=1741`, `too-small=872`.
+- Hot PCs: `0x451c` `2,231.64 MB`, `0x25cc` `1,511.69 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`.
+- This banks only the repaired no-movement field base.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed, especially because host contention was high/moderate.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now selects the same
+  strongdismiss600 base with `ls_left:1275` and immediate/late screenshots.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Title-To-Load Pregate Path Target Repaired
 
 Question:
