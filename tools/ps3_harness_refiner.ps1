@@ -965,6 +965,14 @@ function Get-RunDecision {
         return "failed-harness-launch"
     }
 
+    $label = if ($RunEvidence.Lab -and $RunEvidence.Lab.Label) { $RunEvidence.Lab.Label } else { "" }
+    $text = "$($RunEvidence.Name) $label"
+    if ($RunEvidence.LoadTarget -and
+        $RunEvidence.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $text -like "*battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic*") {
+        return "route-tooling"
+    }
+
     $visual = $RunEvidence.Visual
     if ($visual.ScreenshotCount -eq 0) {
         return "not-comparable-no-screenshots"
@@ -1406,6 +1414,8 @@ $latestTitleToLoadDownHoldLoadTargetReproofPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListCursorDiagnosticLowerEmptyRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass = $false
@@ -1453,6 +1463,17 @@ $recentHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfter
         $text -like "*25cc*" -and
         $text -like "*shadow-desc*" -and
         $text -like "*battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave*"
+}).Count -gt 0
+$recentHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget = @($runEvidence | Where-Object {
+    $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
+    $text = "$($_.Name) $label"
+    -not ($_.Fatal -and $_.Fatal.HasFatal) -and
+        $_.LoadTarget -and
+        $_.LoadTarget.GateFailed -and
+        $_.LoadTarget.Status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -and
+        $text -like "*25cc*" -and
+        $text -like "*shadow-desc*" -and
+        $text -like "*battle-stock-down160-strongdismiss600-left1316-down60*"
 }).Count -gt 0
 $recentHle25ccBodyFastRsxGeomStackWindowLost = @($runEvidence | Where-Object {
     $label = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
@@ -1925,6 +1946,16 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass =
+        -not $latestFatal -and
+        $latestRun.LoadTarget -and
+        $latestLoadTargetGateStatus -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave =
+        $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass -and
+        $recentHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition =
         -not $latestFatal -and
         $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
@@ -2742,6 +2773,11 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDe
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-black-transition" -Severity "route-repair" -Evidence "Newest save-list inventory selected LOAD from the title menu, but every intended Load-list row screenshot was black-overlay only, so no save rows were observed." -Action "Do not infer Path rows, do not run no-movement or movement, and do not repeat this inventory shape. Run the title-to-Load pre-gate black diagnostic with 12s/30s/45s/60s screenshots and the load-target gate to distinguish slow Load-list entry from wrong-state transition."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-path-target-passed-after-left1316-down60-debug-save" -Severity "resolved-control" -Evidence "Newest title-to-Load pre-gate diagnostic selected LOAD, captured stable Path-to-Tenuto rows at 12s/30s/45s/60s, and the load-target gate passed PATH_TO_TENUTO_PRESENT after the recent left1316-down60 Debug Save abort." -Action "Treat this as target repair only, not field, movement, speed, or GPU proof. Resume the same strongdismiss600 left1316-down60 diagnostic with immediate screenshots instead of falling back to generic state-aware routing."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-path-target-passed" -Severity "resolved-control" -Evidence "Newest title-to-Load pre-gate diagnostic selected LOAD, captured stable Path-to-Tenuto rows, and the load-target gate passed PATH_TO_TENUTO_PRESENT." -Action "Treat this as target repair only, not field, movement, speed, or GPU proof. Continue on the strongdismiss600 route; do not fall back to generic state-aware routing."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows" -Severity "resolved-control" -Evidence "Newest save-list inventory screenshots show the initial Load-list position has Save File 01 Path to Tenuto, Down1 selects an empty row, Down2 selects Save File 03 Path to Tenuto, and Down4+ reaches Save File 05 Path to Tenuto." -Action "Do not normalize with save-list Down/Up and do not fall back to generic loader-control. Resume the strongdismiss600 no-movement long-gate proof from the initial Path row, then add movement only after clean field is re-proven."
 }
@@ -2964,6 +3000,10 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved the black gate was timing/state-sensitive, but the stable Load list selected Debug Save / Prologue. Do not restore or move; inventory the current save-list cursor rows with repeated Down screenshots and no slot Cross."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
     "Latest stock Down160 strongdismiss600 save-list inventory selected LOAD, but every intended row screenshot was black-overlay only. Do not infer Path rows or resume no-movement; run the title-to-Load pre-gate black diagnostic with timed screenshots and the load-target gate."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave) {
+    "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved stable Path-to-Tenuto rows and PATH_TO_TENUTO_PRESENT after the left1316-down60 Debug Save abort. Resume left1316-down60 with immediate screenshots; this is route repair, not speed."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass) {
+    "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved stable Path-to-Tenuto rows and PATH_TO_TENUTO_PRESENT. Continue on the strongdismiss600 route; this is target repair, not speed."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     "Latest stock Down160 strongdismiss600 save-list inventory shows the initial Load-list position is Save File 01 Path to Tenuto, while Down moves through empty and alternate Path rows. Do not normalize with Down/Up; resume the no-movement long-gate proof from the initial Path row before another movement attempt."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
@@ -3274,6 +3314,10 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60LongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {

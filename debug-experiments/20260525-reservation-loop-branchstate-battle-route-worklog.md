@@ -4897,6 +4897,75 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Title-To-Load Pregate Path Target Repaired
+
+Question:
+
+- After the latest save-list inventory selected `LOAD` but row screenshots were
+  black-overlay only, can a timed pre-gate diagnostic observe the Load list and
+  prove the correct Path-to-Tenuto target before pressing a save slot?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-232417-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 16-token pre-gate macro.
+- `screenshot-0068s-title-settle-before-blackgate.png` showed the title menu.
+- `screenshot-0069s-title-after-down160-blackgate.png` showed `LOAD` selected.
+- `screenshot-0082s-pregate-12s.png`,
+  `screenshot-0101s-pregate-30s.png`,
+  `screenshot-0116s-pregate-45s.png`, and
+  `screenshot-0131s-pregate-60s.png` were stable Load-list frames with the top
+  selected row showing `Save File 01 / Path to Tenuto / South Section /
+  Ch. 1 Raindrops`.
+- `screenshot-0132s-load-target-gate.png` also showed Path to Tenuto, and the
+  classifier reported `PATH_TO_TENUTO_PRESENT` with path/debug/empty/unknown
+  counts `5/0/0/2`.
+- The macro intentionally stopped before save-slot `Cross`, so no field,
+  movement, menu, or first-battle proof was attempted.
+- Host checks were clean across `7` snapshots.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted crash/access/device-lost/assert
+  scan found no actionable hit; the only broad `fatal` match was the benign
+  `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `1793`.
+- Total observed DMA: `1835.58 MB`.
+- Offload fit mix: `spu-kernel-hle=927`, `too-small=866`.
+- Hot PCs: `0x451c` `1065.56 MB`, `0x25cc` `770.01 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-path-target-passed-after-left1316-down60-debug-save`.
+- Target selection is repaired for the current route.
+- Not field.
+- Not movement.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now treats this intentional no-field
+  pre-gate diagnostic as resolved route-control evidence instead of a generic
+  wrong-window visual failure.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1316;wait:1200;shot:left1316-immediate-check;ls_down:60;wait:1200;shot:left1316-down60-immediate-check;wait:10800;shot:left1316-down60-check;wait:45000;shot:left1316-down60-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Lower-Row Damaged Target Reclassification
 
 Question:

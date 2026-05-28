@@ -607,6 +607,15 @@ no-movement or movement, and do not repeat the same inventory shape. Run the
 title-to-Load pre-gate black diagnostic with timed 12s/30s/45s/60s screenshots
 and a load-target gate to separate slow Load-list entry from wrong-state
 transition.
+If that title-to-Load pre-gate black diagnostic instead captures stable
+Path-to-Tenuto Load-list rows and the gate reports `PATH_TO_TENUTO_PRESENT`,
+classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-path-target-passed`.
+This is target repair only, not field, movement, speed, GPU migration, or 200%
+proof. If the currently blocked route was the recent `left1316-down60`
+Debug-Save abort, resume that same `left1316-down60` diagnostic with immediate
+screenshots; otherwise continue on the strongdismiss600 route. Do not fall back
+to generic state-aware or old loader-control routing.
 If that save-list inventory shows the initial post-Load-list position already
 contains `Save File 01 / Path to Tenuto`, `Down` once selects an empty row,
 `Down` twice selects `Save File 03 / Path to Tenuto`, and further `Down` inputs
