@@ -9008,15 +9008,65 @@ Refiner result:
   lower boundary was clean. Repair route control or switch to focused SPU
   kernel HLE/codegen/verifier analysis before another movement run.
 
-## 2026-05-28 Latest Pointer: Stop Repeating Left200x2
+## 2026-05-28 0x25cc Coverage Refresh
 
-- Latest completed run: `20260528-092432-cpu4-loader-control-left200-visualgate-windows-windows`.
-- Result: `valid-field-triage` plus small route/movement tooling. Field stayed clean from `117s` through `200s` including immediately after `ls_left:200`; host checks were clean and no real fatal/access/device-lost/assertion/verification log hit appeared.
-- This is not speed, GPU migration, first-battle, Options/menu, or 200% evidence.
-- Refiner blocks another `loader-control-left200x2` repeat because that route failed twice recently. Next work should repair route control or switch to focused SPU kernel HLE/codegen/verifier analysis before another movement run.
+Question:
+
+- Since the refiner blocks another `left200x2` movement repeat, refresh the
+  focused SPU HLE/codegen evidence for the known `0x25cc` exact skip before
+  deciding whether it is worth more work.
+
+Artifact:
+
+- `debug-captures\windows-lab\_eternal-sonata-25cc-coverage-latest.md`.
+- `debug-captures\windows-lab\_eternal-sonata-25cc-coverage-latest.csv`.
+
+Evidence:
+
+- Ran `tools\summarize_eternal_sonata_25cc_coverage.ps1`.
+- Inputs were the existing Windows title-CSV verify run
+  `20260524-125346-hle-shadow-verify-titlecsv-uncap240-field-windows-windows`,
+  skip run
+  `20260524-125942-hle-shadow-skip-titlecsv-uncap240-field-windows-windows`,
+  and the current `_eternal-sonata-spu-hle-candidates-latest.csv` atlas.
+- No RPCS3 run was launched; there were no new screenshots or live gameplay
+  counters this round. Verification was the generated Markdown/CSV plus a
+  process check showing no RPCS3/RPCSX process active.
+- The refreshed atlas has `3552` 0x25cc records across `6` valid field runs,
+  `5.65 GB` total, and `0 B` RSX-local.
+- Verify mode saw `501.28 MB` hot `0x25cc`, top EA `0x9e4000`, exact verify
+  shape `72.89 MB`, `14.54%` verify share, `4.86 MB` shadow bytes, `0`
+  output mismatches, `0` destination changes, and title average `116.57 FPS`.
+- Skip mode saw `573.70 MB` hot `0x25cc`, top EA `0x9e4000`, exact verify
+  shape `83.20 MB`, `14.50%` verify share, `5.55 MB` shadow/skip bytes, `0`
+  output mismatches, `0` destination changes, `0` skip misses, and title
+  average `111.33 FPS`.
+- The exact skip removed only `0.97%` of that skip run's hot 0x25cc bytes,
+  `6.67%` of the exact verifier-shape bytes, and `0.10%` of the refreshed
+  `5.65 GB` 0x25cc atlas.
+
+Classification:
+
+- `analysis`.
+- `spu-hle-25cc-coverage-gap`.
+- Not a Windows micro-win.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not first-battle proof.
+- Not a 200% gate candidate.
+
+Reading:
+
+- The exact `lsa=0x3b000` / `eal=0xa1c000` guarded skip is correctness-clean
+  but too small to explain or deliver a major speed gain. Do not rerun that
+  exact skip expecting 200%.
+- The stronger CPU-pressure path is broader verify-only coverage around the
+  dynamic MFC / `0x9e4000` pattern families or SPU codegen dispatch overhead.
+
+## 2026-05-28 Latest Pointer: Broaden 0x9e4000 Verifier Or Codegen
 
 Next exact command:
 
 ```powershell
-# No automatic movement rerun: loader-control-left200x2 already failed 2 time(s). Repair route control or run a focused SPU kernel HLE/codegen/verifier analysis next.
+# Do not repeat loader-control-left200x2 or the exact 0xa1c000 skip. Next useful step is a focused 0x25cc dynamic-MFC / 0x9e4000 verifier coverage expansion or SPU codegen-dispatch analysis.
 ```
