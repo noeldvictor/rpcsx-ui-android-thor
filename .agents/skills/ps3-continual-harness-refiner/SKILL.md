@@ -691,6 +691,14 @@ Neither left nor down movement was tested. Do not rerun `left1316-down60` and
 do not fall back to generic `stateaware-one-step`; inventory the current
 save-list rows without pressing the slot, then repair selected-row targeting
 before another left/down, verifier, HLE, RSX, GPU, speed, or first-battle step.
+If a repaired `left1316-down60` diagnostic later passes
+`PATH_TO_TENUTO_PRESENT` and reaches clean field, but the process/window exits
+after `ls_left:1316` before any valid `down60` screenshot, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-window-lost-after-field`.
+Do not count `left1316` or `down60` movement, do not repeat the same combo, and
+do not fall back to generic `stateaware-one-step`. Back off to
+`left1275-down60` with immediate screenshots before verifier, HLE, RSX, GPU,
+speed, or first-battle work.
 
 ## Acceptance
 

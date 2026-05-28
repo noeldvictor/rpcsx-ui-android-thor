@@ -458,6 +458,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60Lo
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275Down60LongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;ls_down:60;wait:1200;shot:left1275-down60-immediate-check;wait:10800;shot:left1275-down60-check;wait:45000;shot:left1275-down60-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1416,6 +1421,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareBlack
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregatePathTargetPassAfterLeft1316Down60DebugSave = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60WindowLostAfterField = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass = $false
@@ -2046,6 +2052,14 @@ if ($latestRun) {
         -not $latestFatal -and
         $latestLoadTargetGateFailure -and
         $latestLoadTargetGateStatus -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1316-down60*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60WindowLostAfterField =
+        -not $latestFatal -and
+        $latestRun.Decision -eq "failed-window-lost-after-field" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1316-down60*"
@@ -2728,6 +2742,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120Loa
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-debug-save-target" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1316-down60 diagnostic aborted before save-slot Cross because the load-target gate selected Save File 01 / Debug Save / Prologue. Neither left1316 nor down60 movement was tested." -Action "Do not rerun left1316-down60 and do not fall back to generic stateaware-one-step. Inventory the current save-list rows without pressing the slot, then repair selected-row targeting before another left/down diagnostic, verifier, HLE, RSX, GPU, speed, or first-battle promotion."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60WindowLostAfterField) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-window-lost-after-field" -Severity "blocker" -Evidence "Newest strongdismiss600 left1316-down60 diagnostic passed PATH_TO_TENUTO_PRESENT and reached clean field, but the process/window exited after ls_left:1316 before any valid down60 screenshot could verify movement." -Action "Do not count left1316 or down60 movement, do not repeat left1316-down60, and do not fall back to generic stateaware-one-step. Back off to left1275-down60 with immediate screenshots before verifier, HLE, RSX, GPU, speed, or first-battle promotion."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1331-vm40-corrupt-field" -Severity "blocker" -Evidence "Newest strongdismiss600 left1331 run passed PATH_TO_TENUTO_PRESENT and reached a clean pre-movement field, but the immediate post-left screenshot showed the RPCS3 likely-crashed overlay and corrupt/frozen field while stderr/RPCS3.log reported a PPU VM access violation at 0x40." -Action "Do not count this as clean movement, speed, first-battle, or GPU migration proof. Keep left1312 as the clean lower boundary and left1331 as the fatal/corrupt upper boundary; try the left1321 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
@@ -2976,6 +2993,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 left1316-down120 attempt passed the Path-to-Tenuto target gate but stayed on Now Loading after the post-load-complete dismiss. Movement was not tested; re-prove the same strongdismiss600 no-movement base before another left/down diagnostic."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget) {
     "Latest stock Down160 strongdismiss600 left1316-down60 attempt aborted before save-slot Cross on Save File 01 / Debug Save / Prologue. Movement was not tested; inventory the current save-list rows without pressing the slot and repair selected-row targeting before another left/down diagnostic."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60WindowLostAfterField) {
+    "Latest stock Down160 strongdismiss600 left1316-down60 passed the Path-to-Tenuto target gate and reached clean field, but lost the window/process after ls_left:1316 before down60 could be verified. Movement was not counted; back off to left1275-down60 with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     "Latest stock Down160 strongdismiss600 left1331 reached clean field first, but post-left screenshots showed the likely-crashed overlay/corrupt field and a PPU VM access violation at 0x40. Bank left1312 as the clean lower boundary, left1331 as the fatal upper boundary, and try the left1321 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {
@@ -3290,6 +3309,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60DebugSaveTarget) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60WindowLostAfterField) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1275Down60LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1321LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {

@@ -6817,3 +6817,68 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-27 StrongDismiss600 Left1316 Down60 Window Lost After Field
+
+Question:
+
+- After the title-to-Load target repair restored `PATH_TO_TENUTO_PRESENT`, retry
+  the same `left1316-down60` diagnostic and verify whether the smaller down
+  nudge can move toward the battle trigger without breaking field visuals.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-234240-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 26-token macro.
+- The load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`; path/debug/empty/unknown counts were `1/0/0/0`.
+- `screenshot-0081s-load-target-gate.png` showed Path-to-Tenuto rows and no
+  Debug Save or damaged-save marker.
+- `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` showed clean
+  Path-to-Tenuto field.
+- After `ls_left:1316`, `screenshot-0199s-left1316-immediate-check.png` was a
+  wrong-window browser capture, and later screenshots were skipped because the
+  game window/process was gone before `down60` could be verified.
+- Visual gate reported `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`.
+- `rpcs3.stderr.txt` was empty. Targeted log scan found no access violation,
+  device lost, assertion, crash, segfault, verification failure, or unimplemented
+  line.
+
+Counters:
+
+- GPU probe records: `1672`.
+- Total observed DMA: `1951.36 MB`.
+- Offload fit mix: `spu-kernel-hle=974`, `too-small=698`.
+- Hot PCs: `0x451c` `1113.92 MB`, `0x25cc` `837.44 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-window-lost-after-field`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-window-lost-after-field`.
+- Clean field was reached, but movement was not counted because the window was
+  lost immediately after `ls_left:1316` and `down60` was not verified.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now detects this exact window-loss pattern
+  and recommends backing off to `left1275-down60` instead of repeating
+  `left1316-down60` or falling back to generic `stateaware-one-step`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` carry
+  the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;ls_down:60;wait:1200;shot:left1275-down60-immediate-check;wait:10800;shot:left1275-down60-check;wait:45000;shot:left1275-down60-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

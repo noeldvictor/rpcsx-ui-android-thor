@@ -61,9 +61,9 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
 - Latest no-movement load-stability reproof `20260527-215837-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows` reached clean Path-to-Tenuto field at `195s` and stayed field-like through late checks.
 - `left1316-down120` remains a loading-only failure. Movement was not tested; do not repeat that combo.
-- `left1316-down60` aborted before slot load on `Save File 01 / Debug Save / Prologue`. Movement was not tested; do not repeat that combo or fall back to generic `stateaware-one-step`.
-- Latest title-to-Load pre-gate black diagnostic selected `LOAD`, showed stable `Path to Tenuto` rows at 12s/30s/45s/60s, and passed `PATH_TO_TENUTO_PRESENT`; the prior black inventory result is superseded.
-- This is target repair only, not field, movement, speed, GPU migration, or 200% evidence. Next expected action is the same strongdismiss600 `left1316-down60` diagnostic with immediate screenshots.
+- `left1316-down60` first aborted on `Save File 01 / Debug Save / Prologue`; the title-to-Load repair then restored `PATH_TO_TENUTO_PRESENT`.
+- Latest repaired `left1316-down60` reached clean Path-to-Tenuto field, but RPCS3 lost the window/process after `ls_left:1316`; `down60` was not verified.
+- This is route-tooling failure only, not movement, speed, GPU migration, or 200% evidence. Next expected action is `left1275-down60` with immediate screenshots.
 
 ## Banked Findings
 
