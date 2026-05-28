@@ -7083,3 +7083,65 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 StrongDismiss600 Left1275 Black Load-Target Gate
+
+Question:
+
+- After the repaired no-movement route base reached clean Path-to-Tenuto field,
+  rerun the same strongdismiss600 route with `ls_left:1275` and immediate
+  movement screenshots.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-010220-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 23-token movement macro.
+- Host contention was clean for prelaunch, postlaunch, and postrun.
+- The load-target gate never reached a readable Load list: all `16` polling
+  screenshots from `81s` through `140s` were `black-overlay-small-png` and
+  classified `UNKNOWN_LOAD_TARGET`.
+- The gate timed out at `140s`; the macro aborted before save-slot `Cross`.
+- Manual review of `screenshot-0140s-load-target-gate-16.png` confirmed a black
+  overlay with the RPCS3 FPS/perf overlay still alive.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT` with `16` black-overlay frames
+  and no field-like screenshot before `260s`.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `1190`.
+- Total observed DMA: `1154.76 MB`.
+- Offload fit mix: `too-small=654`, `spu-kernel-hle=536`.
+- Hot PCs: `0x451c` `784.99 MB`, `0x25cc` `369.77 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-black-gate`.
+- Movement was not tested because the run aborted before save-slot `Cross`.
+- Not field proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` detects this as
+  `left1275-black-gate` and recommends re-proving only the strongdismiss600
+  Path-to-Tenuto target before rerunning `left1275`.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-target-reproof-after-left1275-blackgate -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;shot:path-target-reproof-after-left1275-blackgate" -MaxSeconds 150 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 70 -ScreenshotMaxCount 5 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
