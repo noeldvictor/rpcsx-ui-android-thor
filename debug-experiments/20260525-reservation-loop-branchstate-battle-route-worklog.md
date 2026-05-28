@@ -10860,3 +10860,71 @@ Decision:
 - Current-format 25cc field and Options/menu proofs are now both clean.
 - Bodyfast/codegen/stack promotion remains blocked until first-battle visuals
   are valid with the same 25cc mismatch/overflow discipline.
+
+## 2026-05-28 first-battle Verify25ccShadow fatal isolation
+
+Question:
+
+- After current-format field and Options counterproofs passed, can the same
+  25cc descriptor/shadow verifier survive the TopSlot first-battle route?
+
+Commands:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260528-184420-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows -RequireFieldLike -RequireFieldAtOrBeforeSeconds 160 -RequireBattleLikeAtOrAfterSeconds 220 -RequireNoInvalidAfterFirstField
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260528-184420-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-184420-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows`.
+- `debug-captures\windows-lab\20260528-184420-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-184420-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows\eternal-sonata-25cc-counterproof-summary.md`.
+- `debug-captures\windows-lab\_ps3-harness-refiner-latest.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched with `--game-screen 1`, TopSlot BattleRoute, CPU affinity
+  `0x0F`, `Verify25ccShadow`, GPU probe profile mode, and body/skip/GPU fast
+  paths off.
+- Host checks were clean at prelaunch, postlaunch, runtime samples `291s`,
+  `300s`, `330s`, and postrun. Host contention gate `ExternalFail` passed.
+- RPCS3 reached the planned `330s` timeout and stopped. The wrapper again
+  stalled after RPCS3 exit; no emulator process remained, so only the stale
+  PowerShell wrapper was killed.
+- Targeted fatal scan found a real PPU VM access violation at `0x002aedd0`
+  reading `0x40` in both stderr and `RPCS3.log`.
+- Manual screenshots: `screenshot-0117s.png` is clean Path-to-Tenuto field.
+  `screenshot-0169s.png`, `screenshot-0230s.png`, and `screenshot-0320s.png`
+  show the RPCS3 likely-crashed overlay and corrupt/frozen field output.
+- Visual gate status was `FIELD_LIKE_PRESENT` with first field at `117s`, but
+  required battle-like at or after `220s` failed with `0` battle-like frames.
+- 25cc verifier summary: `10833` hits / `169.27 MB`, GET/PUT `4953/5880`,
+  match/mismatch `10833/0`, changed/unchanged `2939/7894`.
+- 25cc descriptor summary: `9918` rows / `10833` hits / `169.27 MB`, GET/PUT
+  `4953/5880`, output mismatches `0`, descriptor overflow `0`.
+- Generic non-25cc shadow mismatches remained at PC `0x451c`; this still blocks
+  broad shadow claims.
+- Refiner after the run says not to rerun this verifier command unchanged and
+  not to reset to loader-control. It recommends the same TopSlot BattleRoute
+  with `Verify25ccShadow` off to isolate route fatal versus verifier fatal.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-gate`.
+- `partial-counterproof`.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- First-battle proof remains the blocker.
+- The next non-duplicate step is a stock-control TopSlot BattleRoute with
+  `Verify25ccShadow` off, same route/host/display settings.
