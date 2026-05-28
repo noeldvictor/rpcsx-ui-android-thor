@@ -2285,6 +2285,80 @@ Harness/refiner result:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
 ```
 
+## 2026-05-28 Reservation-Loop TopSlot Left-Only Route Miss
+
+Question:
+
+- After the state-aware field reproof passed, isolate TopSlot post-field
+  movement with a left-only diagnostic before another full `BattleRoute` retry.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-072448-cpu4-reservation-loop-topslot-leftonly-diagnostic-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`, host
+  contention gate `ExternalFail`, `-WindowsVisualGate CleanAfterField`,
+  `-WindowsVisualGateFieldSeconds 160`, and the TopSlot macro with
+  `ls_left:2600`.
+- Host checks were clean at prelaunch, postlaunch, `211s`, and `240s`.
+  Postrun host check was moderate because Codex was sampled as a hot non-run
+  process after RPCS3 stopped; host gate wrote
+  `host-contention-gate-failed.txt`. This is not speed evidence either way.
+- RPCS3 moved to `\\.\DISPLAY2` while launched with `--game-screen 1`.
+- Visual gate failed `NO_FIELD_LIKE_SCREENSHOT`: `10` screenshots were
+  captured, with no field-like screenshot at or before `160s`, none at or
+  after `220s`, and `0` field-like screenshots total.
+- Manual review of `screenshot-0117s-accepted-field-check.png` showed a
+  close-up/cutscene-like frame, not the Path-to-Tenuto field. Manual review of
+  `screenshot-0165s-left2600-check.png` showed blue/starry non-field frames.
+  Late screenshots stayed in the same small blue/starry class.
+- Window-title samples were live RPCS3 output (`27.36` at `117s`, then
+  `32.44` for later samples), but these are invalid for speed claims because
+  the visual route was wrong.
+- The harness stopped RPCS3 at the `240s` wall-time limit. The wrapper then
+  stalled after postrun artifact paths were written. No RPCS3/RPCSX process
+  remained active; only the wrapper PowerShell was killed, then visual gate,
+  fatal scan, counters, and refiner were checked manually.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` were `0` bytes. Targeted fatal scan
+  found no `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal
+  error, or assertion-failed hit. Only the normal `Show fatal error hints:
+  false` config line matched the fatal string.
+
+Counters:
+
+- Reservation-loop candidate probe records: `2018`.
+- Reservation-loop dynamic probe records: `2018`.
+- Reservation-loop wait probe records: `2105`.
+- Reservation-loop wait-PC probe records: `120402`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `535`.
+- Max reads observed: `185854`.
+- Counters are not promotion evidence because the visual gate failed.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-tooling`.
+- `cutscene-or-nonfield-frames`.
+- `reservation-loop-topslot-leftonly-route-miss`.
+- Not valid field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now recommends backing off from
+  the latest non-field/cutscene route and re-proving
+  `cpu4-loader-control-left200x2-confirm-visualgate-windows`.
+
 ## 2026-05-28 Reservation-Loop State-Aware Field Reproof
 
 Question:
@@ -8487,15 +8561,15 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
 ```
 
-## 2026-05-28 Latest Pointer: Reservation-Loop TopSlot Left-Only Next
+## 2026-05-28 Latest Pointer: Reprove Left200x2 Boundary
 
-- Latest completed run: `20260528-070432-cpu4-stateaware-one-step-visualgate-windows-windows`.
-- Result: `valid-field-triage` only. Field screenshots at `117s` and `133s`, empty stdout/stderr, no real targeted fatal hit, and clean reservation-loop counters.
-- The prior TopSlot battle route still failed as `failed-window-lost-after-field`; first-battle proof is still missing.
-- Refiner was repaired to avoid repeating the same state-aware field proof and now recommends the TopSlot left-only diagnostic.
+- Latest completed run: `20260528-072448-cpu4-reservation-loop-topslot-leftonly-diagnostic-windows-windows`.
+- Result: `failed-visual-gate`, `cutscene-or-nonfield-frames`. The `117s` accepted-field screenshot was cutscene-like, and the `165s+` left2600 frames were blue/starry non-field frames.
+- Fatal scan was clean, stdout/stderr were empty, and reservation-loop counters had zero mismatches/failures. Counters are invalid for promotion because visuals failed.
+- Refiner now recommends backing off to the last clean loader-control-left200x2 boundary before any diagonal, battle, HLE/GPU, speed, or 200% promotion.
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-reservation-loop-topslot-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field-check;ls_left:2600;wait:45000;shot:left2600-check;wait:45000;shot:left2600-late-check" -MaxSeconds 240 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-confirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
 ```
