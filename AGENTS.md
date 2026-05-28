@@ -44,7 +44,7 @@ Put dated run details in `debug-experiments/`, not here.
 2. Run `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`.
 3. Take one concrete Windows-only step: route repair, boundary bisection, harness fix, analysis, or one gated experiment.
 4. Verify screenshots, fatal logs, host grade, and counters.
-5. Classify honestly: `speed-win`, `windows-micro-win`, `stackable-cpu-pressure`, `gpu-migration-credit`, `valid-field-triage`, `route-tooling`, `failed`, `stack-regression`, `parked`, or `not-comparable`.
+5. Classify honestly: `speed-win`, `windows-micro-win`, `stackable-cpu-pressure`, `gpu-migration-credit`, `valid-field-triage`, `valid-options-counterproof`, `route-tooling`, `failed`, `stack-regression`, `parked`, or `not-comparable`.
 6. Update the narrowest ledger before stopping.
 7. Commit and push after each completed work round.
 
@@ -124,6 +124,7 @@ Put dated run details in `debug-experiments/`, not here.
 - Latest lower-bound repair `20260528-172735-cpu4-loader-control-left200-repair-after-left200x2-fatal-visualgate-windows-windows` passed `CleanAfterField`: `16` field-like screenshots from `117s` through `220s`, manual first/last review confirmed correct Path-to-Tenuto field visuals, runtime/postrun host checks were clean, and targeted crash scan found no real fatal/access/device-lost/assertion hit. The wrapper stalled after RPCS3 exit and was killed; reservation-loop CSVs were missing, so it is visual route proof only.
 - Current refiner next action: do not repeat `loader-control-left200x2`; it has failed `3` times in the recent window after lower `left200` stayed clean. Repair route control or switch to focused SPU kernel HLE/codegen/verifier analysis before another movement run. Latest valid lower bound is `20260528-172735-cpu4-loader-control-left200-repair-after-left200x2-fatal-visualgate-windows-windows`; latest valid `left200x2` base remains `20260528-160536-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`.
 - Latest SPU verifier pivot audit refreshed the 8-run HLE atlas: PC `0x25cc` / `CellSpursKernel0` is still the top CPU-pressure target at `3.68 GB` over `3` valid field runs, `0 B` RSX-local. Dedicated `25cc-counterproof` parsing of the latest clean `left200` repair and latest tracked `left200x2` loader-control base found `0` shadow descriptor rows/hits in both logs, so loader-control atlas data is target selection only, not counterproof. Use the dedicated `Verify25ccShadow`/descriptor route for future proof; do not cite loader-control logs as 25cc descriptor proof.
+- Latest current-format `Verify25ccShadow` Options counterproof `20260528-182410-cpu4-hle-25cc-shadow-desc-options-fastselect-currentproof-windows` reached the full title Options page (`screenshot-0079s-options-candidate.png`, `screenshot-0089s-options-late.png`), had clean host/fatal checks, and summarized as `valid-options-counterproof`: 25cc descriptors `8958` rows / `9498` hits / `148.41 MB`, GET/PUT `4473/5025`, output mismatches `0`, overflow `0`. Refiner says do not rerun field or Options; next proof target is first battle under `Verify25ccShadow`.
 
 ## Banked Findings
 
@@ -131,11 +132,11 @@ Put dated run details in `debug-experiments/`, not here.
 - `0x25cc bodyfast` is banked only as stackable CPU-pressure reduction: RPCS3 process CPU `42.60%` to `37.10%` (`-5.50 pp`, `-12.91%`) on clean capped BattleRoute repeat. It is not an FPS win, GPU migration, or 200% candidate.
 - Final bodyfast plus RSX-local stack is visually compatible on the capped TopSlot BattleRoute, but it remains around `120 FPS` and reports `0 B` promoted CPU/SPU-to-GPU replacement. Do not keep stacking RSX toggles or rerun the auditor.
 - RSX-local accounting is useful but separate from CPU/SPU-to-GPU migration. Current promoted CPU/SPU-to-GPU credit remains `0 B`.
-- 0x25cc descriptor/shadow verifier has clean field counterproof with zero mismatches and overflow `0`. Historical Options descriptor evidence also has zero 25cc mismatches, but it lacks the current standard visual-gate summary; current Options visual proof is reservation-loop, not 25cc descriptor. First-battle verifier attempts have descriptor rows with zero 25cc mismatches but invalid visuals. Treat all of this as verifier coverage only, not promotion.
+- 0x25cc descriptor/shadow verifier now has clean current-format field and Options/menu counterproofs with zero 25cc mismatches and overflow `0`. First-battle verifier attempts still have descriptor rows with zero 25cc mismatches but invalid visuals. Treat this as verifier coverage only, not bodyfast/codegen promotion.
 - Loader-control runs can have useful SPU atlas bytes while still having no 25cc descriptor rows. Counterproof requires explicit `Verify25ccShadow`/descriptor logs.
 - Exact `0xa1c000` 0x25cc skip is correctness-clean but too small for a speed path: latest refresh says `5.55 MB` skipped versus `5.65 GB` observed 0x25cc atlas (`0.10%`).
 - Broader `0x9e4000` 0x25cc pattern groups are the better CPU-pressure candidate. Current sizing is `3.06 GB` in valid field atlas data, `6.86 GB` in the wider historical verifier-plan CSV, and `437.30 MB` in the latest shadow-run runtime family, still with `0 B` RSX-local; treat as verify/codegen CPU-pressure work, not GPU offload proof.
-- Direction-split PUT-heavy `0x25cc` evidence now has clean field counterproof with zero 25cc descriptor mismatches/overflow. It is still not promotion until Options/menu and first-battle are clean under the same proof discipline.
+- Direction-split PUT-heavy `0x25cc` evidence now has clean field and Options/menu counterproofs with zero 25cc descriptor mismatches/overflow. It is still not promotion until first-battle visuals are clean under the same proof discipline.
 - Broad SPU-to-GPU compute offload remains parked unless a candidate has stable batching, low readback pressure, and explicit correctness gates.
 
 ## Speed Claim Rules

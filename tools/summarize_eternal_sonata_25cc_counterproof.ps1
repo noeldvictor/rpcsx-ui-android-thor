@@ -1,7 +1,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$RunDir
+    [string]$RunDir,
+
+    [ValidateSet("Auto", "Field", "Options", "Battle", "Missing")]
+    [string]$ManualVisualKind = "Auto",
+
+    [string]$ManualVisualEvidence = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,13 +75,30 @@ if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
 
 $visualSummaryPath = Join-Path $root "eternal-sonata-windows-visual-gate-summary.md"
 $visualStatus = "missing"
-$firstField = "missing"
+$visualKind = "missing"
+$visualEvidence = "missing"
 if (Test-Path -LiteralPath $visualSummaryPath -PathType Leaf) {
     $visualLines = Get-Content -LiteralPath $visualSummaryPath
     $statusLine = $visualLines | Where-Object { $_ -match '^- Status:' } | Select-Object -First 1
     if ($statusLine -and $statusLine -match '`([^`]+)`') { $visualStatus = $matches[1] }
     $firstFieldLine = $visualLines | Where-Object { $_ -match '^- First field-like(?: screenshot)?:' } | Select-Object -First 1
-    if ($firstFieldLine) { $firstField = ($firstFieldLine -replace '^- First field-like(?: screenshot)?:\s*', '').TrimEnd('.') }
+    if ($firstFieldLine) {
+        $visualKind = "field"
+        $visualEvidence = ($firstFieldLine -replace '^- First field-like(?: screenshot)?:\s*', '').TrimEnd('.')
+    }
+}
+
+if ($ManualVisualKind -ne "Auto") {
+    $visualKind = $ManualVisualKind.ToLowerInvariant()
+    $visualStatus = switch ($ManualVisualKind) {
+        "Field" { "FIELD_LIKE_PRESENT_MANUAL" }
+        "Options" { "OPTIONS_MENU_PRESENT_MANUAL" }
+        "Battle" { "BATTLE_PRESENT_MANUAL" }
+        default { "missing" }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ManualVisualEvidence)) {
+        $visualEvidence = $ManualVisualEvidence
+    }
 }
 
 $fatalPattern = 'VM: Access violation|VK_ERROR_DEVICE_LOST|Device lost|Assertion Failed|Thread terminated due to fatal error'
@@ -189,8 +211,13 @@ $descOverflow = [UInt64](($directionRows | Measure-Object -Property desc_overflo
 $putHits = [UInt64](($directionRows | Where-Object { $_.direction -eq "PUT" } | Measure-Object -Property hits -Sum).Sum)
 $getHits = [UInt64](($directionRows | Where-Object { $_.direction -eq "GET" } | Measure-Object -Property hits -Sum).Sum)
 
-$classification = if ($visualStatus -eq "FIELD_LIKE_PRESENT" -and $fatalHits -eq 0 -and $descRows -gt 0 -and $putHits -gt 0 -and $getHits -gt 0 -and $descMismatch -eq 0 -and $descOverflow -eq 0 -and $shadow.OutputMismatch -eq 0) {
+$countersClean = $fatalHits -eq 0 -and $descRows -gt 0 -and $putHits -gt 0 -and $getHits -gt 0 -and $descMismatch -eq 0 -and $descOverflow -eq 0 -and $shadow.OutputMismatch -eq 0
+$classification = if ($countersClean -and $visualKind -eq "field") {
     "valid-field-counterproof"
+} elseif ($countersClean -and $visualKind -eq "options") {
+    "valid-options-counterproof"
+} elseif ($countersClean -and $visualKind -eq "battle") {
+    "valid-battle-counterproof"
 } elseif ($descRows -gt 0) {
     "partial-counterproof"
 } else {
@@ -201,12 +228,13 @@ $csvPath = Join-Path $root "eternal-sonata-25cc-counterproof-direction-summary.c
 $directionRows | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
 
 $mdPath = Join-Path $root "eternal-sonata-25cc-counterproof-summary.md"
+$visualEvidenceText = $visualEvidence.TrimEnd('.')
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("# Eternal Sonata 0x25cc Counterproof") | Out-Null
 $lines.Add("") | Out-Null
 $lines.Add("- Classification: ``$classification``.") | Out-Null
 $lines.Add("- Run: ``$root``.") | Out-Null
-$lines.Add("- Visual status: ``$visualStatus``; first field-like: $firstField.") | Out-Null
+$lines.Add("- Visual status: ``$visualStatus``; visual kind: ``$visualKind``; evidence: $visualEvidenceText.") | Out-Null
 $lines.Add("- Targeted fatal/access/device-lost/assertion hits: ``$fatalHits``.") | Out-Null
 $lines.Add("- 25cc shadow verifier: ``$($shadow.Hits)`` hits, ``$(Format-CounterBytes $shadow.Bytes)``, GET/PUT ``$($shadow.GetHits)/$($shadow.PutHits)``, match/mismatch ``$($shadow.OutputMatch)/$($shadow.OutputMismatch)``, changed/unchanged ``$($shadow.DstChanged)/$($shadow.DstUnchanged)``.") | Out-Null
 $lines.Add("- 25cc shadow descriptors: ``$descRows`` rows, ``$descHits`` hits, ``$(Format-CounterBytes $descBytes)``, GET/PUT hits ``$getHits/$putHits``, output mismatches ``$descMismatch``, max descriptor overflow ``$descOverflow``.") | Out-Null
@@ -236,7 +264,13 @@ foreach ($row in $directionRows) {
 $lines.Add("") | Out-Null
 $lines.Add("## Reading") | Out-Null
 $lines.Add("") | Out-Null
-$lines.Add("- This is a verify-only field counterproof. It is not speed, GPU migration, Options/menu proof, first-battle proof, or a 200% gate candidate.") | Out-Null
+$readingLine = switch ($visualKind) {
+    "field" { "- This is a verify-only field counterproof. It is not speed, GPU migration, Options/menu proof, first-battle proof, or a 200% gate candidate." }
+    "options" { "- This is a verify-only Options/menu counterproof. It is not speed, GPU migration, field proof, first-battle proof, or a 200% gate candidate." }
+    "battle" { "- This is a verify-only first-battle counterproof. It is not speed, GPU migration, field proof, Options/menu proof, or a 200% gate candidate." }
+    default { "- This is a partial verify-only counterproof. Visual proof is missing or unclassified, so it is not a 200% gate candidate." }
+}
+$lines.Add($readingLine) | Out-Null
 $lines.Add("- Body/skip paths were off. Any later fast path still needs clean field, Options/menu, and first-battle visuals with zero 25cc mismatches.") | Out-Null
 if ($fatalExamples.Count -gt 0) {
     $lines.Add("") | Out-Null

@@ -10795,3 +10795,68 @@ Decision:
 - Next non-duplicate proof should be either current-format Options
   `Verify25ccShadow` reproof or first-battle route repair that produces valid
   visuals while retaining the 25cc descriptor rows.
+
+## 2026-05-28 current-format 25cc Options counterproof
+
+Question:
+
+- Can the 25cc descriptor/shadow verifier produce a current-format title
+  Options proof, closing the gap left by the legacy Options descriptor run and
+  the separate reservation-loop Options visual proof?
+
+Commands:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label cpu4-hle-25cc-shadow-desc-options-fastselect-currentproof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-preinput;down:160;wait:600;shot:title-after-down1;down:160;wait:600;shot:title-after-down2-fast;cross:180;wait:6000;shot:options-candidate;wait:10000;shot:options-late" -MaxSeconds 130 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 65 -ScreenshotMaxCount 14 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260528-182410-cpu4-hle-25cc-shadow-desc-options-fastselect-currentproof-windows -ManualVisualKind Options -ManualVisualEvidence "screenshot-0079s-options-candidate.png and screenshot-0089s-options-late.png show full Options page with live FPS overlay"
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-182410-cpu4-hle-25cc-shadow-desc-options-fastselect-currentproof-windows`.
+- `debug-captures\windows-lab\20260528-182410-cpu4-hle-25cc-shadow-desc-options-fastselect-currentproof-windows\eternal-sonata-25cc-counterproof-summary.md`.
+- `debug-captures\windows-lab\_ps3-harness-refiner-latest.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched with `--game-screen 1`, CPU affinity `0x0F`,
+  `Verify25ccShadow`, GPU probe profile mode, and body/skip/GPU fast paths off.
+- Host checks were clean at prelaunch, postlaunch, runtime samples `90s` and
+  `120s`, and postrun.
+- Manual screenshot review confirmed the full title Options page at
+  `screenshot-0079s-options-candidate.png` and
+  `screenshot-0089s-options-late.png`; both had live FPS overlays.
+- Stdout/stderr were empty. Targeted fatal/access/device-lost/assertion scan
+  across stderr, RPCS3 log, and lab log found `0` hits.
+- 25cc verifier summary: `9498` hits / `148.41 MB`, GET/PUT `4473/5025`,
+  match/mismatch `9498/0`, changed/unchanged `1958/7540`.
+- 25cc descriptor summary: `8958` rows / `9498` hits / `148.41 MB`, GET/PUT
+  `4473/5025`, output mismatches `0`, descriptor overflow `0`.
+- Generic non-25cc shadow mismatches still appeared at PC `0x451c`, so the
+  proof is limited to the 25cc descriptor lane.
+- The wrapper again stalled after RPCS3 exited; no emulator process remained,
+  so only the stale PowerShell wrapper was killed before manual analysis.
+- `tools\summarize_eternal_sonata_25cc_counterproof.ps1` was tightened to
+  accept explicit manual visual kind/evidence and classified this run as
+  `valid-options-counterproof`.
+- Refiner after the run says field and Options should not be rerun; first
+  battle under `Verify25ccShadow` is the next proof target.
+
+Classification:
+
+- `valid-options-counterproof`.
+- `verify-only`.
+- `25cc-descriptor-clean`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not first-battle proof.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Current-format 25cc field and Options/menu proofs are now both clean.
+- Bodyfast/codegen/stack promotion remains blocked until first-battle visuals
+  are valid with the same 25cc mismatch/overflow discipline.
