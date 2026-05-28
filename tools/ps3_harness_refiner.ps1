@@ -1362,6 +1362,18 @@ $shadowContractFile = Get-Item -LiteralPath $shadowContractPath -ErrorAction Sil
 $hasFresh25ccVerifierPlan = ($null -ne $verifierPlanFile) -and ($null -ne $latestRun) -and ($verifierPlanFile.LastWriteTime -gt $latestRun.LastWriteTime)
 $hasFresh25ccHashTargets = ($null -ne $hashTargetsFile) -and ($null -ne $verifierPlanFile) -and ($hashTargetsFile.LastWriteTime -gt $verifierPlanFile.LastWriteTime)
 $hasFresh25ccShadowContract = ($null -ne $shadowContractFile) -and ($null -ne $hashTargetsFile) -and ($shadowContractFile.LastWriteTime -gt $hashTargetsFile.LastWriteTime)
+$latest25ccCleanCounterProofSummary = $null
+foreach ($run in $runs) {
+    $summaryPath = Join-Path $run.FullName "eternal-sonata-25cc-counterproof-summary.md"
+    if ((Test-Path -LiteralPath $summaryPath -PathType Leaf) -and
+        (Select-String -LiteralPath $summaryPath -Pattern 'Classification: `valid-field-counterproof`' -SimpleMatch -Quiet)) {
+        $latest25ccCleanCounterProofSummary = Get-Item -LiteralPath $summaryPath
+        break
+    }
+}
+$hasFresh25ccCleanCounterProof = ($null -ne $latest25ccCleanCounterProofSummary) -and
+    ($null -ne $shadowContractFile) -and
+    ($latest25ccCleanCounterProofSummary.LastWriteTime -gt $shadowContractFile.LastWriteTime)
 $latestValidLoaderControl = $false
 $latestValidLoaderControlLeft200 = $false
 $latestValidLoaderControlLeft200x2 = $false
@@ -2739,8 +2751,11 @@ if ($latestCleanHle451cSize16BodyOptions) {
 if ($latestCleanHle25ccBodyOptions) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-body-options-clean" -Severity "resolved-control" -Evidence "Newest opt-in 0x25cc body run reached the full title Options page with expected small menu screenshots and no black/loading classes." -Action "Keep the body opt-in. Prove first-battle visuals before stock/body battle A/B, micro-win banking, speed claims, or promotion."
 }
-if ($latestCleanHle25ccShadowField -and -not $latestHle25ccShadowDescDown160FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass) {
+if ($latestCleanHle25ccShadowField -and -not $hasFresh25ccCleanCounterProof -and -not $latestHle25ccShadowDescDown160FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissNoMoveFieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismissLeft1200FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1200FieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-pattern-gap" -Severity "direction" -Evidence ("Newest 0x25cc shadow verifier reached field at {0}s, but exact command-level EA buckets cover only a small slice of the max-DMA pattern family and the current shadow/body path is GET-only." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun generic movement or exact-EA 0x9e4000 skips. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
+}
+if ($hasFresh25ccCleanCounterProof) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-field-counterproof-clean" -Severity "resolved-control" -Evidence "Newest Verify25ccShadow field counterproof has direction-split GET/PUT descriptor rows, zero 25cc mismatches, and descriptor overflow 0." -Action "Do not rerun field counterproof. Repair/prove first battle under Verify25ccShadow with body/skip/GPU modes off."
 }
 if ($latestHle25ccShadowDescDown160FieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-down160-field-clean" -Severity "resolved-control" -Evidence ("Newest 0x25cc descriptor Down160 field proof reached Path-to-Tenuto field at {0}s with the widened descriptor table, PUT/GET descriptor coverage, zero mismatches, and descriptor overflow 0." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not rerun the 0x25cc descriptor field proof. Prove title Options/menu with Verify25ccShadow next, then first battle, before bodyfast, stack, GPU, or speed promotion."
@@ -3243,6 +3258,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest 0x25cc descriptor Options proof entered story/cutscene because the initial Cross selected New Game instead of opening Options. Do not back off to loader-control field movement; rerun the Options proof with the no-initial-Cross title route and explicit preinput/selection screenshots."
 } elseif ($latestHle25ccShadowDescDown160FieldPass) {
     "Latest 0x25cc descriptor Down160 field proof is clean and source-instrumentation validated with PUT/GET descriptor coverage, zero mismatches, and descriptor overflow 0. Do not rerun field; prove title Options/menu with Verify25ccShadow next, then first battle, before bodyfast, stack, GPU, or speed promotion."
+} elseif ($latestCleanHle25ccShadowField -and $hasFresh25ccCleanCounterProof) {
+    "Latest Verify25ccShadow field counterproof is clean with direction-split GET/PUT descriptor rows, zero 25cc mismatches, and descriptor overflow 0. Do not repeat field counterproof; repair/prove first battle under Verify25ccShadow with body/skip/GPU modes off."
 } elseif ($latestCleanHle25ccShadowField) {
     "Latest 0x25cc shadow verifier is field-clean, but it proved exact command-level EA is the wrong broad predicate and the current shadow/body path is GET-only. Do not rerun generic movement or exact-EA skips; add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA groups before fast/body promotion."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
@@ -3300,7 +3317,9 @@ $nextAction = if ($latestStateAwarePromptStuck) {
 } elseif ($latestValidLoaderControlLeft200x3) {
     "Extend the newest valid loader-control-left200x3 route by exactly one more left-only micro-pulse with CleanAfterField; keep lane-2 HLE/GPU dry-runs blocked."
 } elseif ($latestValidLoaderControlDiag200) {
-    if ($hasFresh25ccShadowContract) {
+    if ($hasFresh25ccCleanCounterProof) {
+        "Latest Verify25ccShadow loader-control-left200x2-diag200 field counterproof is clean with direction-split GET/PUT descriptor rows and zero 25cc mismatches. Do not repeat field counterproof; next step is first-battle route repair/proof under Verify25ccShadow before any body/skip/GPU mode."
+    } elseif ($hasFresh25ccShadowContract) {
         "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier/hash/native-contract reports are refreshed. Do not add another report; next step is proving direction-split 0x25cc counters on a clean route or patching the active source if that binary lacks descriptor counters."
     } elseif ($hasFresh25ccHashTargets) {
         "Latest loader-control-left200x2-diag200 field proof is clean and the 0x25cc verifier/hash target reports are refreshed. Do not rerun diagonal or repeat reports; next non-visual step is a verify-only family/hash counter implementation around PC 0x25cc, or switch to first-battle route repair."
@@ -3577,6 +3596,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescOptionsNoInitialCrossCommand
 } elseif ($latestHle25ccShadowDescDown160FieldPass) {
     New-Hle25ccShadowDescOptionsCommand
+} elseif ($latestCleanHle25ccShadowField -and $hasFresh25ccCleanCounterProof) {
+    "# No automatic duplicate: Verify25ccShadow field counterproof is clean. Next: repair/prove first battle under Verify25ccShadow; keep body/skip/GPU modes off."
 } elseif ($latestCleanHle25ccShadowField) {
     "# No automatic movement rerun: latest clean 0x25cc shadow run exposes a pattern-hash instrumentation gap, and the current shadow/body path is GET-only while matched target rows are PUT-heavy. Add pattern/descriptor-level payload or LS-range hashing split by GET/PUT direction for the top max-DMA 0x9e4000 groups, then rerun Verify25ccShadow across field, menu/Options, and first battle."
 } elseif ($latestFatal -and $newestValidLoaderControlLeftCount -ge 1) {
@@ -3632,7 +3653,9 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
 } elseif ($latestValidLoaderControlLeft200x3) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x4-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro `"wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100`" -MaxSeconds 235 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 13"
 } elseif ($latestValidLoaderControlDiag200) {
-    if ($hasFresh25ccShadowContract) {
+    if ($hasFresh25ccCleanCounterProof) {
+        "# No automatic duplicate: Verify25ccShadow field counterproof is clean. Next: repair/prove first battle under Verify25ccShadow; keep body/skip/GPU modes off."
+    } elseif ($hasFresh25ccShadowContract) {
         "# No automatic duplicate: diagonal field proof plus 0x25cc verifier/hash/native-contract reports are already refreshed. Next: prove direction-split 0x25cc counters on a clean route, or patch the active source if descriptor counters are missing from that binary."
     } elseif ($hasFresh25ccHashTargets) {
         "# No automatic duplicate: diagonal field proof and 0x25cc verifier/hash reports are already refreshed. Implement/confirm verify-only family/hash counters around PC 0x25cc next, or run a non-duplicate first-battle route repair."

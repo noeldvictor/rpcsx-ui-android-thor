@@ -9788,3 +9788,73 @@ Decision:
 - The PUT-heavy direction split is target selection only. It cannot promote
   bodyfast, skip, GPU migration, or 200% without clean field, Options/menu, and
   first-battle proof.
+
+## 2026-05-28 Verify25ccShadow Field Counterproof
+
+Question:
+
+- After the native contract, can the active Windows binary emit clean
+  direction-split 0x25cc GET/PUT descriptor counters on a visually clean route?
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir "debug-captures\windows-lab\20260528-132515-cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows-windows" -RequireFieldLike -RequireNoInvalidAfterFirstField -RequireFieldAtOrBeforeSeconds 160 -MinFieldPngBytes 1000000
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir "debug-captures\windows-lab\20260528-132515-cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows-windows"
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-132515-cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows-windows`.
+- `tools\summarize_eternal_sonata_25cc_counterproof.ps1`.
+- `debug-captures\windows-lab\20260528-132515-cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows-windows\eternal-sonata-25cc-counterproof-summary.md`.
+- `debug-captures\windows-lab\20260528-132515-cpu4-hle-25cc-shadow-desc-loader-control-left200x2-diag200-counterproof-windows-windows\eternal-sonata-25cc-counterproof-direction-summary.csv`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 was launched through the Windows harness with `--game-screen 1`,
+  `Verify25ccShadow`, reservation-loop verify, GPU probe profile, and body/skip
+  modes off.
+- The wrapper hit the planned `225s` stop, RPCS3 exited, and the wrapper then
+  stalled in postrun parsing. Only the stuck wrapper process was killed; the
+  emulator was already gone and artifacts were complete.
+- Visual gate passed: `FIELD_LIKE_PRESENT`, first field-like screenshot
+  `screenshot-0117s.png` at `117s`, `18` field-like screenshots, `0` invalid
+  screenshots after first field-like, and required field before `160s` passed.
+- Targeted fatal/access/device-lost/assertion scan found `0` hits.
+- Host checks were clean during the run; postrun was moderate only from Codex
+  CPU after RPCS3 exited.
+- 25cc shadow verifier totals: `23643` hits, `369.42 MB`, GET/PUT
+  `10998/12645`, match/mismatch `23643/0`, changed/unchanged `8135/15508`.
+- 25cc descriptor totals: `22008` rows, `23643` hits, `369.42 MB`, GET/PUT
+  hits `10998/12645`, output mismatch `0`, max descriptor overflow `0`.
+- Direction split:
+  - GET `0x40`: `10998` rows / `10998` hits / `171.84 MB`, mismatch `0`,
+    overflow `0`, `106` patterns.
+  - PUT `0x20`: `11010` rows / `12645` hits / `197.58 MB`, mismatch `0`,
+    overflow `0`, `106` patterns.
+- Generic non-25cc shadow verifier rows still showed `125` mismatches across
+  `109` lines at PC `0x451c`. This blocks broad shadow/HLE claims, but not the
+  25cc-only descriptor counterproof above.
+
+Classification:
+
+- `valid-field-counterproof`.
+- `spu-hle-25cc-shadow-counterproof`.
+- `stackable-cpu-pressure-target-selection`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- The active Windows binary can emit direction-split 0x25cc GET/PUT descriptor
+  counters on a visually clean field route.
+- Do not repeat field counterproof or add another 0x25cc report. Next useful
+  step is first-battle route repair/proof under `Verify25ccShadow`, with
+  body/skip/GPU modes still off.
