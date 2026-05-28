@@ -1,0 +1,176 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-05-28T19:54:17.1232605-04:00",
+    "title_id":  "BLUS30161",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows",
+    "classification":  [
+                           "analysis",
+                           "verify-counter-plan"
+                       ],
+    "source_anchors":  [
+                           {
+                               "area":  "runtime family classifier",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                               "line":  656
+                           },
+                           {
+                               "area":  "0x9e4000 family predicate",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                               "line":  683
+                           },
+                           {
+                               "area":  "shadow sample counters",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                               "line":  1989
+                           },
+                           {
+                               "area":  "runtime body-copy hook",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                               "line":  2161
+                           },
+                           {
+                               "area":  "MFC command entry",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                               "line":  6774
+                           },
+                           {
+                               "area":  "LLVM verifier candidate",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPULLVMRecompiler.cpp",
+                               "line":  4401
+                           },
+                           {
+                               "area":  "dynamic MFC fallback signal",
+                               "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPULLVMRecompiler.cpp",
+                               "line":  5707
+                           }
+                       ],
+    "lanes":  [
+                  {
+                      "lane":  "mfc-descriptor-family-25cc-9e4000",
+                      "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+                      "priority":  1,
+                      "runtime_anchor":  {
+                                             "image_sig":  "0x958dfe208b686622",
+                                             "entry":  "0x00818",
+                                             "pc":  "0x025cc",
+                                             "group":  "CellSpursKernelGroup",
+                                             "spu_index":  0,
+                                             "spu_name":  "CellSpursKernel0",
+                                             "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt"
+                                         },
+                      "predicate":  [
+                                        "title_id == BLUS30161",
+                                        "image_sig == 0x958dfe208b686622",
+                                        "pc == 0x25cc",
+                                        "group == CellSpursKernelGroup",
+                                        "spu_name == CellSpursKernel0",
+                                        "MFC GET/PUT non-list command",
+                                        "tag == 31",
+                                        "size == 0x4000",
+                                        "max_dma_ea family contains 0x9e4000",
+                                        "valid LS range",
+                                        "no fast/body mutation in verify mode"
+                                    ],
+                      "required_counters":  [
+                                                "hits",
+                                                "bytes",
+                                                "get_hits",
+                                                "put_hits",
+                                                "rejects_by_reason",
+                                                "duration_us",
+                                                "cmd",
+                                                "tag",
+                                                "size",
+                                                "eah",
+                                                "eal",
+                                                "lsa",
+                                                "pc",
+                                                "image_sig",
+                                                "group",
+                                                "spu_name",
+                                                "src_hash",
+                                                "dst_pre_hash",
+                                                "dst_post_hash",
+                                                "output_mismatches",
+                                                "descriptor_overflow",
+                                                "fatal_log_hits"
+                                            ],
+                      "promotion_gate":  [
+                                             "verify-only field visual",
+                                             "verify-only Options/menu visual",
+                                             "verify-only first-battle visual",
+                                             "output_mismatches == 0",
+                                             "descriptor_overflow == 0",
+                                             "fatal_log_hits == 0"
+                                         ],
+                      "blocked_modes":  [
+                                            "bodyfast",
+                                            "codegen-fast",
+                                            "vulkan-compute"
+                                        ]
+                  },
+                  {
+                      "lane":  "tcx-spurs-descriptor-family-451c",
+                      "contract_id":  "BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0",
+                      "priority":  2,
+                      "runtime_anchor":  {
+                                             "image_sig":  "0x958dfe208b686622",
+                                             "entry":  "0x00818",
+                                             "pc":  "0x0451c",
+                                             "group":  "TCX_CellSpursKernelGroup",
+                                             "spu_index":  0,
+                                             "spu_name":  "TCX_CellSpursKernel0",
+                                             "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-0451c-group-TCX_CellSpursKernelGroup-spu-0-TCX_CellSpursKernel0.disasm.txt"
+                                         },
+                      "predicate":  [
+                                        "title_id == BLUS30161",
+                                        "image_sig == 0x958dfe208b686622",
+                                        "pc == 0x451c",
+                                        "group == TCX_CellSpursKernelGroup",
+                                        "spu_name == TCX_CellSpursKernel0",
+                                        "MFC command shape recorded before specialization",
+                                        "list and non-list traffic split",
+                                        "valid LS range",
+                                        "no fast/body mutation in verify mode"
+                                    ],
+                      "required_counters":  [
+                                                "hits",
+                                                "bytes",
+                                                "get_hits",
+                                                "put_hits",
+                                                "rejects_by_reason",
+                                                "duration_us",
+                                                "cmd",
+                                                "tag",
+                                                "size",
+                                                "eah",
+                                                "eal",
+                                                "lsa",
+                                                "pc",
+                                                "image_sig",
+                                                "group",
+                                                "spu_name",
+                                                "src_hash",
+                                                "dst_pre_hash",
+                                                "dst_post_hash",
+                                                "output_mismatches",
+                                                "descriptor_overflow",
+                                                "fatal_log_hits"
+                                            ],
+                      "promotion_gate":  [
+                                             "verify-only field visual",
+                                             "verify-only Options/menu visual",
+                                             "verify-only first-battle visual",
+                                             "output_mismatches == 0",
+                                             "descriptor_overflow == 0",
+                                             "fatal_log_hits == 0"
+                                         ],
+                      "blocked_modes":  [
+                                            "bodyfast",
+                                            "codegen-fast",
+                                            "vulkan-compute"
+                                        ]
+                  }
+              ],
+    "next_action":  "Implement the priority-1 lane as verify-only counters before any fast/body/codegen mode."
+}

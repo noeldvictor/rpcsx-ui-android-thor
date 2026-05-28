@@ -212,6 +212,7 @@ Put dated run details in `debug-experiments/`, not here.
 - Current SPU contract plan: `debug-experiments/20260528-spu-contract-pipeline-plan.md`.
 - Current SPU contract tool: `tools/spu_contract_pipeline.ps1`.
 - Current SPU contract outputs: `spu-contracts/BLUS30161/latest-summary.md`.
+- Current SPU verify-counter plan: `spu-contracts/BLUS30161/verify-counter-plan.md`.
 - Current refiner: `tools/ps3_harness_refiner.ps1`.
 - Current refiner skill: `.agents/skills/ps3-continual-harness-refiner/SKILL.md`.
 - Current SPU contract skill: `.agents/skills/ps3-spu-contract-compiler/SKILL.md`.

@@ -30,6 +30,8 @@ Current outputs:
 
 - `spu-contracts\BLUS30161\latest-summary.md`
 - `spu-contracts\BLUS30161\index.json`
+- `spu-contracts\BLUS30161\verify-counter-plan.md`
+- `spu-contracts\BLUS30161\verify-counter-plan.json`
 - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
 - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
 
@@ -61,3 +63,34 @@ Wire one selected contract, likely `0x25cc/0x9e4000`, into a verify-only
 emulator counter keyed by title, image signature, PC, group, command shape, and
 GET/PUT direction. Do not enable bodyfast/codegen until that counter survives
 the full visual gate.
+
+## 2026-05-28 Verify-Counter Plan Output
+
+Update:
+
+- `tools\spu_contract_pipeline.ps1` now emits a concrete verify-counter plan in
+  both JSON and Markdown.
+- Priority 1: `mfc-descriptor-family-25cc-9e4000`, contract
+  `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`.
+- Priority 2: `tcx-spurs-descriptor-family-451c`, contract
+  `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`.
+- The priority-1 lane records 11 predicates and 22 required counters, including
+  hits, bytes, GET/PUT splits, rejects, duration, command fields, hashes,
+  `output_mismatches`, `descriptor_overflow`, and `fatal_log_hits`.
+- The generated source anchors exist in the local `rpcs3-upstream` checkout:
+  `SPUThread.cpp` and `SPULLVMRecompiler.cpp`.
+
+Classification:
+
+- `analysis`.
+- `verify-counter-plan`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Implement only the priority-1 verify-only counter lane first. Keep
+  `bodyfast`, `codegen-fast`, and `vulkan-compute` blocked until field,
+  Options/menu, and first-battle visuals pass with zero mismatches, zero
+  descriptor overflow, and zero fatal log hits.

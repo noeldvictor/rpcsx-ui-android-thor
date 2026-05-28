@@ -41,8 +41,10 @@ GETLLAR/PUTLLC reservation loops, and repeated SPURS/SPU kernels.
    - inferred kernel class;
    - MFC/DMA/reservation evidence;
    - required verifier checks.
-4. Use Ghidra/headless output to tighten the contract, not to skip verification.
-5. Add emulator verify-only counters for the contract. Promote only after clean
+4. Inspect `spu-contracts\BLUS30161\verify-counter-plan.md` for the next
+   verify-only source anchors, predicates, and counters.
+5. Use Ghidra/headless output to tighten the contract, not to skip verification.
+6. Add emulator verify-only counters for the contract. Promote only after clean
    field, Options/menu, and first-battle visuals and zero mismatches.
 
 ## First Lanes

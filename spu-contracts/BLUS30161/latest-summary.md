@@ -1,6 +1,6 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-28T19:45:21.8676015-04:00`
+- Generated: `2026-05-28T19:54:17.0977542-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`
 - Target PCs: `0x25cc, 0x451c`

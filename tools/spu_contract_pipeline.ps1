@@ -217,6 +217,110 @@ function New-Contract {
     }
 }
 
+function New-VerifyCounterPlan {
+    param(
+        [string]$Title,
+        [string]$RunPath,
+        [object[]]$ContractRows
+    )
+
+    $sourceAnchors = @(
+        [pscustomobject]@{ area = "runtime family classifier"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp"; line = 656 },
+        [pscustomobject]@{ area = "0x9e4000 family predicate"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp"; line = 683 },
+        [pscustomobject]@{ area = "shadow sample counters"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp"; line = 1989 },
+        [pscustomobject]@{ area = "runtime body-copy hook"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp"; line = 2161 },
+        [pscustomobject]@{ area = "MFC command entry"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp"; line = 6774 },
+        [pscustomobject]@{ area = "LLVM verifier candidate"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp"; line = 4401 },
+        [pscustomobject]@{ area = "dynamic MFC fallback signal"; file = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp"; line = 5707 }
+    )
+
+    $lanes = New-Object System.Collections.Generic.List[object]
+    foreach ($contract in $ContractRows) {
+        $pcKey = Normalize-HexKey $contract.runtime_anchor.pc
+        $is25cc = $pcKey -eq "25cc"
+        $laneName = if ($is25cc) { "mfc-descriptor-family-25cc-9e4000" } else { "tcx-spurs-descriptor-family-$pcKey" }
+        $predicate = if ($is25cc) {
+            @(
+                "title_id == BLUS30161",
+                "image_sig == 0x958dfe208b686622",
+                "pc == 0x25cc",
+                "group == CellSpursKernelGroup",
+                "spu_name == CellSpursKernel0",
+                "MFC GET/PUT non-list command",
+                "tag == 31",
+                "size == 0x4000",
+                "max_dma_ea family contains 0x9e4000",
+                "valid LS range",
+                "no fast/body mutation in verify mode"
+            )
+        } else {
+            @(
+                "title_id == BLUS30161",
+                "image_sig == 0x958dfe208b686622",
+                "pc == 0x$pcKey",
+                "group == $($contract.runtime_anchor.group)",
+                "spu_name == $($contract.runtime_anchor.spu_name)",
+                "MFC command shape recorded before specialization",
+                "list and non-list traffic split",
+                "valid LS range",
+                "no fast/body mutation in verify mode"
+            )
+        }
+
+        $lanes.Add([pscustomobject]@{
+            lane = $laneName
+            contract_id = $contract.contract_id
+            priority = $(if ($is25cc) { 1 } else { 2 })
+            runtime_anchor = $contract.runtime_anchor
+            predicate = $predicate
+            required_counters = @(
+                "hits",
+                "bytes",
+                "get_hits",
+                "put_hits",
+                "rejects_by_reason",
+                "duration_us",
+                "cmd",
+                "tag",
+                "size",
+                "eah",
+                "eal",
+                "lsa",
+                "pc",
+                "image_sig",
+                "group",
+                "spu_name",
+                "src_hash",
+                "dst_pre_hash",
+                "dst_post_hash",
+                "output_mismatches",
+                "descriptor_overflow",
+                "fatal_log_hits"
+            )
+            promotion_gate = @(
+                "verify-only field visual",
+                "verify-only Options/menu visual",
+                "verify-only first-battle visual",
+                "output_mismatches == 0",
+                "descriptor_overflow == 0",
+                "fatal_log_hits == 0"
+            )
+            blocked_modes = @("bodyfast", "codegen-fast", "vulkan-compute")
+        }) | Out-Null
+    }
+
+    return [pscustomobject]@{
+        schema_version = 1
+        generated_at = (Get-Date).ToString("o")
+        title_id = $Title
+        source_run = $RunPath
+        classification = @("analysis", "verify-counter-plan")
+        source_anchors = $sourceAnchors
+        lanes = $lanes.ToArray()
+        next_action = "Implement the priority-1 lane as verify-only counters before any fast/body/codegen mode."
+    }
+}
+
 $runPath = if ([string]::IsNullOrWhiteSpace($RunDir)) {
     Find-LatestRun -Root $RunRoot
 } else {
@@ -248,12 +352,14 @@ if ([string]::IsNullOrWhiteSpace($ghidraPath)) {
 $ghidraAvailable = (-not $NoGhidra.IsPresent) -and (-not [string]::IsNullOrWhiteSpace($ghidraPath)) -and (Test-Path -LiteralPath $ghidraPath -PathType Leaf)
 
 $contracts = New-Object System.Collections.Generic.List[object]
+$contractDetails = New-Object System.Collections.Generic.List[object]
 foreach ($window in $windows) {
     $evidence = Read-HotEvidence -LogPath $logPath -PcValue $window.pc -EaValues $eas
     $contract = New-Contract -Window $window -Evidence $evidence -RunPath $runPath -Title $TitleId -GhidraAvailable $ghidraAvailable -GhidraPath $ghidraPath
     $safeName = ($contract.contract_id -replace '[^A-Za-z0-9_.-]', '_') + ".json"
     $path = Join-Path $outRoot $safeName
     $contract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $path -Encoding UTF8
+    $contractDetails.Add($contract) | Out-Null
     $contracts.Add([pscustomobject]@{
         contract_id = $contract.contract_id
         path = $path
@@ -307,5 +413,34 @@ $summary.Add("Classification: $($bt)analysis$bt, $($bt)spu-contract-scaffold$bt,
 $summary.Add("Next: wire the selected contract into a verify-only emulator counter before any fast path.") | Out-Null
 $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
+$verifyPlan = New-VerifyCounterPlan -Title $TitleId -RunPath $runPath -ContractRows ($contractDetails.ToArray())
+$verifyPlanPath = Join-Path $outRoot "verify-counter-plan.json"
+$verifyPlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $verifyPlanPath -Encoding UTF8
+
+$verifyMdPath = Join-Path $outRoot "verify-counter-plan.md"
+$verifyMd = New-Object System.Collections.Generic.List[string]
+$verifyMd.Add("# SPU Verify Counter Plan") | Out-Null
+$verifyMd.Add("") | Out-Null
+$verifyMd.Add("- Generated: $bt$generatedAt$bt") | Out-Null
+$verifyMd.Add("- Title: $bt$TitleId$bt") | Out-Null
+$verifyMd.Add("- Source run: $bt$runPath$bt") | Out-Null
+$verifyMd.Add("- Classification: $($bt)analysis$bt, $($bt)verify-counter-plan$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
+$verifyMd.Add("") | Out-Null
+$verifyMd.Add("| Priority | Lane | Contract | PC | Fast modes |") | Out-Null
+$verifyMd.Add("| ---: | --- | --- | --- | --- |") | Out-Null
+foreach ($lane in $verifyPlan.lanes) {
+    $verifyMd.Add("| $($lane.priority) | $bt$($lane.lane)$bt | $bt$($lane.contract_id)$bt | $bt$($lane.runtime_anchor.pc)$bt | $bt$($lane.blocked_modes -join ', ')$bt |") | Out-Null
+}
+$verifyMd.Add("") | Out-Null
+$verifyMd.Add("Priority-1 implementation target: add verify-only counters for the $($bt)0x25cc/0x9e4000$($bt) MFC descriptor family. Keep bodyfast, codegen-fast, and Vulkan compute blocked until field, Options/menu, and first-battle visuals all pass with zero mismatches, zero descriptor overflow, and zero fatal log hits.") | Out-Null
+$verifyMd.Add("") | Out-Null
+$verifyMd.Add("Source anchors to inspect first:") | Out-Null
+foreach ($anchor in $verifyPlan.source_anchors) {
+    $verifyMd.Add("- $($bt)$($anchor.area)$($bt): $($bt)$($anchor.file):$($anchor.line)$bt") | Out-Null
+}
+$verifyMd | Set-Content -LiteralPath $verifyMdPath -Encoding UTF8
+
 Write-Output "SPU contract index: $indexPath"
 Write-Output "SPU contract summary: $summaryPath"
+Write-Output "SPU verify plan: $verifyPlanPath"
+Write-Output "SPU verify plan summary: $verifyMdPath"
