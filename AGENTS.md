@@ -63,7 +63,8 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1316-down120` remains a loading-only failure. Movement was not tested; do not repeat that combo.
 - `left1316-down60` first aborted on `Save File 01 / Debug Save / Prologue`; the title-to-Load repair then restored `PATH_TO_TENUTO_PRESENT`.
 - Latest repaired `left1316-down60` reached clean Path-to-Tenuto field, but RPCS3 lost the window/process after `ls_left:1316`; `down60` was not verified.
-- This is route-tooling failure only, not movement, speed, GPU migration, or 200% evidence. Next expected action is `left1275-down60` with immediate screenshots.
+- Backed-off `left1275-down60` then aborted before slot load on `Save File 01 / Debug Save / Prologue`; movement was not tested.
+- This is route-tooling failure only, not movement, speed, GPU migration, or 200% evidence. Next expected action is save-list inventory with no slot `Cross`.
 
 ## Banked Findings
 

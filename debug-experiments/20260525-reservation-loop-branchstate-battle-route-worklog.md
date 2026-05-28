@@ -6882,3 +6882,66 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;ls_down:60;wait:1200;shot:left1275-down60-immediate-check;wait:10800;shot:left1275-down60-check;wait:45000;shot:left1275-down60-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 StrongDismiss600 Left1275 Down60 Debug-Save Target
+
+Question:
+
+- After `left1316-down60` reached clean field but lost the window after
+  `ls_left:1316`, back off to `left1275-down60` and verify whether a smaller
+  left/down movement reaches field cleanly.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-000227-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-down60-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 26-token macro.
+- Prelaunch and postlaunch host checks were clean; postrun was moderate because
+  Codex used CPU after the early abort.
+- The load-target gate failed at `81s` on attempt `1` with
+  `DEBUG_SAVE_PROLOGUE_PRESENT`.
+- Manual screenshot review of `screenshot-0081s-load-target-gate.png` showed
+  `Save File 01 / Debug Save / Prologue` and damaged-save rows. No slot `Cross`
+  was sent after the gate failure.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`; there was only one
+  load-target screenshot and no field/movement checkpoint.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `626`.
+- Total observed DMA: `624.81 MB`.
+- Offload fit mix: `too-small=323`, `spu-kernel-hle=303`.
+- Hot PCs: `0x451c` `410.18 MB`, `0x25cc` `214.63 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-debug-save-target`.
+- Movement was not tested because the run aborted before save-slot `Cross`.
+- Not field proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` already detects this as
+  `left1275-debug-save-target` and recommends save-list inventory with repeated
+  `Down` screenshots and no slot `Cross`, instead of generic routing or save
+  normalization.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
