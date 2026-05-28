@@ -6945,3 +6945,71 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 StrongDismiss600 Save-List Inventory Initial Path Row
+
+Question:
+
+- After `left1275-down60` aborted on `Save File 01 / Debug Save / Prologue`,
+  inventory the current Load-list rows without pressing a save slot so the next
+  route does not blindly repeat cursor drift.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-002231-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-WindowsVisualGate Off`, and the intended
+  26-token no-slot macro.
+- Host contention was clean across `5` snapshots.
+- The run captured `9` screenshots: title settle, title after `Down160`, initial
+  Load list after 60s, and six repeated `Down` row screenshots.
+- Manual screenshot review of `screenshot-0130s-load-list-initial-after60.png`
+  showed `Save File 01 / Path to Tenuto / South Section / Ch. 1 Raindrops`.
+- Manual review of the later `Down` screenshots showed the cursor moving onto
+  lower rows where the visible top Path preview can remain stale while selected
+  lower rows are empty.
+- `tools\classify_eternal_sonata_load_target.ps1` reported
+  `DAMAGED_SAVE_TARGET` for the whole inventory: path-to-tenuto `3`,
+  empty-load-slot `4`, unknown `2`, lower-row cursor markers `6`, damaged-save
+  text markers `0`, and damaged-target guard `2`.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `1370`.
+- Total observed DMA: `1415.86 MB`.
+- Offload fit mix: `spu-kernel-hle=709`, `too-small=661`.
+- Hot PCs: `0x451c` `889.25 MB`, `0x25cc` `526.61 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
+- Initial Load-list row is Path-to-Tenuto; later `Down` inputs create stale
+  preview/cursor drift and should not be used for normalization.
+- Not field proof.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` wording now records this as initial Path row
+  plus stale preview/cursor drift, not as reliable alternate Path rows.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` carries the same
+  wording.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```

@@ -64,7 +64,8 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1316-down60` first aborted on `Save File 01 / Debug Save / Prologue`; the title-to-Load repair then restored `PATH_TO_TENUTO_PRESENT`.
 - Latest repaired `left1316-down60` reached clean Path-to-Tenuto field, but RPCS3 lost the window/process after `ls_left:1316`; `down60` was not verified.
 - Backed-off `left1275-down60` then aborted before slot load on `Save File 01 / Debug Save / Prologue`; movement was not tested.
-- This is route-tooling failure only, not movement, speed, GPU migration, or 200% evidence. Next expected action is save-list inventory with no slot `Cross`.
+- Latest save-list inventory shows the initial Load-list row is `Save File 01 / Path to Tenuto`; later `Down` inputs move the cursor onto lower rows where the Path preview can stay stale over empty slots.
+- This is route-tooling only, not movement, speed, GPU migration, or 200% evidence. Next expected action is the no-movement long-gate proof from the initial Path row, with no save-list `Down`/`Up` normalization.
 
 ## Banked Findings
 

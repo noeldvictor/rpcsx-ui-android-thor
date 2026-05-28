@@ -617,9 +617,9 @@ Debug-Save abort, resume that same `left1316-down60` diagnostic with immediate
 screenshots; otherwise continue on the strongdismiss600 route. Do not fall back
 to generic state-aware or old loader-control routing.
 If that save-list inventory shows the initial post-Load-list position already
-contains `Save File 01 / Path to Tenuto`, `Down` once selects an empty row,
-`Down` twice selects `Save File 03 / Path to Tenuto`, and further `Down` inputs
-alternate through empty rows and later Path rows, classify it as
+contains `Save File 01 / Path to Tenuto`, while later `Down` inputs move the
+cursor onto lower rows where the Path preview can remain stale over empty
+slots, classify it as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows`.
 Do not normalize the save-list cursor with `Down`/`Up`, do not restore saves,
 and do not fall back to generic loader-control. Resume the strongdismiss600
