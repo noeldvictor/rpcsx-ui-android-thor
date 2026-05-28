@@ -8704,15 +8704,90 @@ Refiner result:
   valid-field run as the route base and add only one small state-aware movement
   step with `CleanAfterField`.
 
-## 2026-05-28 Latest Pointer: State-Aware One-Step Reset
+## 2026-05-28 State-Aware One-Step Field Reset
 
-- Latest completed run: `20260528-080430-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`.
-- Result: `failed-visual-gate`, `loading-like-small-png`. All `16` screenshots stayed on `Now Loading...`; no fatal/device-lost log recurred.
-- Host contention was clean, but visuals, counters, and FPS samples are not promotion evidence.
-- Refiner says to return to the newest valid-field base and run only `cpu4-stateaware-one-step-visualgate-windows` with `CleanAfterField` before any loader-control left200x2, diagonal, battle, HLE/GPU, speed, or 200% promotion.
+Question:
+
+- After the left200x2 reconfirm stayed on loading, return to the newest
+  valid-field base and run only the small state-aware one-step field reset
+  before any loader-control or battle-route extension.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-082422-cpu4-stateaware-one-step-visualgate-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`,
+  the harness-provided state-aware macro, `-MaxSeconds 120`, screenshots every
+  `15s`, screenshots starting at `15s`, and max screenshot count `6`.
+- Host checks were clean at prelaunch, postlaunch, and `133s`. Postrun host
+  summary was moderate only because Codex CPU was sampled at `19.8%` after
+  RPCS3 had stopped.
+- RPCS3 moved to `\\.\DISPLAY2` while launched with `--game-screen 1`.
+- Visual gate passed for this short reset: `3` screenshots, all
+  `field-like-large-png`, first field-like screenshot
+  `screenshot-0117s.png` at `117s` (`2.50 MB`), field-like at-or-before
+  `160s`, and `0` invalid screenshots after first field-like.
+- Manual review of `screenshot-0117s.png` confirmed the Path-to-Tenuto field,
+  not loading, black output, cutscene, or wrong-window output.
+- Window-title samples were live (`33.31 FPS` at `117s`, `32.73 FPS` at
+  `133s`), but this is route/field reset evidence only, not a speed proof.
+- `rpcs3.stdout.txt` and `rpcs3.stderr.txt` were `0` bytes. Targeted fatal
+  scan found no real `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal, or
+  assertion line. Only the normal `Show fatal error hints: false` config line
+  matched the fatal string.
+- RPCS3 stopped at the `120s` wall-time limit, then wrapper post-processing
+  stalled after artifact paths. No RPCS3/RPCSX process remained active; only
+  the wrapper PowerShell was killed before manual visual/log/counter/refiner
+  checks.
+
+Counters:
+
+- MFC dynamic probe records: `1025`.
+- MFC wait probe records: `1104`.
+- MFC wait-PC probe records: `55567`.
+- Reservation-loop command probe records: `1104`.
+- Reservation-loop verify probe records: `1104`.
+- Reservation-loop verify lane records: `2651`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `212`.
+- Max reads observed: `132961`.
+- Reservation verify records included nonzero failure/read-failure/unexpected
+  counts, so these counters are route-triage only and not HLE/GPU promotion
+  evidence.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `state-aware-one-step-field-reset`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says this clean state-aware
+  field reset resolves the immediate loader-control/loading/fatal detour. Do
+  not rerun the same field proof; isolate TopSlot post-field movement with a
+  left-only diagnostic before another full `BattleRoute` retry.
+
+## 2026-05-28 Latest Pointer: TopSlot Left-Only Diagnostic
+
+- Latest completed run: `20260528-082422-cpu4-stateaware-one-step-visualgate-windows-windows`.
+- Result: `valid-field-triage`: field-like screenshots at `117s` and `133s`, manual `0117s` field review clean, empty stdout/stderr, and no real fatal/access/device-lost/assertion hit.
+- This is not speed, GPU migration, first-battle, Options/menu, or 200% proof.
+- Refiner says not to rerun the same state-aware field proof. Next step is to isolate the TopSlot post-field movement branch with a left-only diagnostic before another full `BattleRoute` retry.
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-reservation-loop-topslot-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field-check;ls_left:2600;wait:45000;shot:left2600-check;wait:45000;shot:left2600-late-check" -MaxSeconds 240 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
