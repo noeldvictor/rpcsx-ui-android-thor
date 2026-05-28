@@ -9858,3 +9858,71 @@ Decision:
 - Do not repeat field counterproof or add another 0x25cc report. Next useful
   step is first-battle route repair/proof under `Verify25ccShadow`, with
   body/skip/GPU modes still off.
+
+## 2026-05-28 Verify25ccShadow First-Battle Attempt After Field Counterproof
+
+Question:
+
+- After clean field counterproof, can the TopSlot BattleRoute produce valid
+  first-battle visuals under `Verify25ccShadow` with body/skip/GPU modes off?
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir "debug-captures\windows-lab\20260528-135315-cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean-windows" -RequireFieldLike -RequireBattleLikeAtOrAfterSeconds 220 -RequireFieldAtOrBeforeSeconds 160 -MinFieldPngBytes 1000000
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir "debug-captures\windows-lab\20260528-135315-cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean-windows"
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-135315-cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean-windows`.
+- `debug-captures\windows-lab\20260528-135315-cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-135315-cpu4-hle-25cc-shadow-desc-battle-topslot-counterproof-after-fieldclean-windows\eternal-sonata-25cc-counterproof-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  `Verify25ccShadow`, GPU probe profile, and body/skip/GPU fast paths off.
+- Prelaunch, postlaunch, and in-run host samples were clean. The host gate
+  failed only after RPCS3 exited because Codex CPU was sampled as a hot non-run
+  process.
+- RPCS3 reached the planned `330s` stop and exited; the wrapper then stalled in
+  postrun parsing and was killed after artifact completion.
+- Visual gate failed: all `15` screenshots were `black-overlay-small-png`,
+  with no field-like screenshot and no battle-like screenshot at or after
+  `220s`.
+- Window-title FPS samples continued through `320s`, but screenshots remained
+  black overlay; therefore title FPS is not valid visual proof.
+- Targeted fatal/access/device-lost/assertion scan found `0` hits.
+- 25cc counter summary was `partial-counterproof` only because visuals failed:
+  `31263` hits / `488.48 MB`, GET/PUT `14748/16515`, match/mismatch `31263/0`,
+  descriptor rows `29508`, descriptor mismatch `0`, overflow `0`.
+- Generic non-25cc shadow rows still showed `350` mismatches across `311`
+  lines at PC `0x451c`.
+- Refiner now classifies the latest run as `failed-visual-gate` and points to
+  re-proving `loader-control-left200x2` before adding movement again.
+
+Classification:
+
+- `failed-visual-gate`.
+- `black-overlay-small-png`.
+- `partial-counterproof`.
+- Not field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- This run proves the first-battle TopSlot path can keep RPCS3 alive and emit
+  25cc counters, but the black-overlay screenshots invalidate every gameplay
+  claim.
+- Do not rerun the same TopSlot Verify25ccShadow battle command unchanged.
+- Next useful step is to re-prove the clean loader-control-left200x2 boundary
+  with `CleanAfterField`, then rebuild battle movement from a visual-valid
+  boundary.
