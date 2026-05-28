@@ -8033,19 +8033,6 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
 ```
 
-## 2026-05-28 Latest Pointer: No-Movement Black Gate
-
-- Latest run is
-  `debug-captures\windows-lab\20260528-022230-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
-- Full evidence is recorded above in
-  `2026-05-28 Initial-Row No-Movement Reproof Black Gate`.
-- Current classification is `failed-load-target-gate` / `route-tooling`: all
-  `16` load-target frames were black-overlay `UNKNOWN_LOAD_TARGET`, no slot was
-  pressed, and no field/movement/speed/GPU credit exists.
-- Current refiner next action is the title-to-Load pre-gate black diagnostic
-  with timed screenshots; do not fall back to the stale generic state-aware
-  polling macro.
-
 ## 2026-05-28 Title-Load Pre-Gate Damaged Target Diagnostic
 
 Question:
@@ -8561,15 +8548,96 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
 ```
 
-## 2026-05-28 Latest Pointer: Reprove Left200x2 Boundary
+## 2026-05-28 Loader-Control Left200x2 Reproof Fatal/Black Regression
 
-- Latest completed run: `20260528-072448-cpu4-reservation-loop-topslot-leftonly-diagnostic-windows-windows`.
-- Result: `failed-visual-gate`, `cutscene-or-nonfield-frames`. The `117s` accepted-field screenshot was cutscene-like, and the `165s+` left2600 frames were blue/starry non-field frames.
-- Fatal scan was clean, stdout/stderr were empty, and reservation-loop counters had zero mismatches/failures. Counters are invalid for promotion because visuals failed.
-- Refiner now recommends backing off to the last clean loader-control-left200x2 boundary before any diagonal, battle, HLE/GPU, speed, or 200% promotion.
+Question:
+
+- After the TopSlot route miss, re-prove the last clean
+  `loader-control-left200x2` boundary with `CleanAfterField` before extending
+  movement again.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-074420-cpu4-loader-control-left200x2-confirm-visualgate-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`,
+  two `ls_left:200` pulses, `-MaxSeconds 215`, screenshots every `10s`, and
+  screenshots starting at `110s`.
+- Host contention was clean at prelaunch, postlaunch, `149s`, `152s`,
+  `180s`, `210s`, and postrun: `7` clean snapshots, external contention
+  clean.
+- The harness moved RPCS3 to `\\.\DISPLAY2` while launched with
+  `--game-screen 1`.
+- Visual gate failed `NO_FIELD_LIKE_SCREENSHOT`: all `16` screenshots from
+  `117s` through `210s` were `black-overlay-small-png`, each `34924` bytes.
+  There was no field-like screenshot at or before `160s`, none at or after
+  `210s`, and `0` field-like screenshots total.
+- Manual review of `screenshot-0117s.png` confirmed black output with only
+  the RPCS3 overlay/title visible, not the Path-to-Tenuto field.
+- Window-title samples reported live RPCS3 output at `36.67 FPS`, but those
+  samples are invalid for speed because the scene was black and the run hit a
+  fatal device-lost log.
+- `rpcs3.stdout.txt` was `0` bytes. `rpcs3.stderr.txt` was `790` bytes and
+  reported `VK_ERROR_DEVICE_LOST` with a device fault write address and stack
+  frames in `vk::wait_for_event` / `vk::die_with_error`.
+- Targeted fatal scan found a real `RPCS3.log` hit at line `83874`:
+  `Assertion Failed! Vulkan API call failed with unrecoverable error: Device
+  lost ... (VK_ERROR_DEVICE_LOST)`. The normal `Show fatal error hints: false`
+  config line was also present.
+- RPCS3 was stopped at the `215s` wall-time limit, then wrapper post-processing
+  stalled after artifact paths. No RPCS3/RPCSX process remained active; only
+  the wrapper PowerShell was killed before manual visual/log/counter/refiner
+  checks.
+
+Counters:
+
+- MFC dynamic probe records: `720`.
+- MFC wait probe records: `787`.
+- MFC wait-PC probe records: `38275`.
+- Reservation-loop command probe records: `787`.
+- Reservation-loop verify probe records: `787`.
+- Reservation-loop verify lane records: `1890`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `242`.
+- Max reads observed: `137694`.
+- Reservation verify records included nonzero failure/read-failure/unexpected
+  counts, and all counters are invalid for promotion because the visual gate
+  and fatal-log gate failed.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-gate`.
+- `black-overlay-small-png`.
+- `loader-control-left200x2-reproof-regression`.
+- Not valid field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says the latest run had
+  fatal/crash log evidence and must not be extended. It recommends re-proving
+  the newest clean `loader-control-left200x2` boundary with `CleanAfterField`
+  before adding another pulse.
+
+## 2026-05-28 Latest Pointer: Reconfirm Left200x2 Boundary
+
+- Latest completed run: `20260528-074420-cpu4-loader-control-left200x2-confirm-visualgate-windows-windows`.
+- Result: `failed-fatal-log` plus `failed-visual-gate`. All `16` screenshots were black-overlay frames, and `RPCS3.log`/stderr reported `VK_ERROR_DEVICE_LOST`.
+- Host contention was clean, but visuals, fatal log, counters, and FPS samples are not promotion evidence.
+- Refiner says to re-prove the newest clean `loader-control-left200x2` boundary before any diagonal pulse, battle route, HLE/GPU fast mode, speed claim, or 200% promotion.
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-confirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
 ```
