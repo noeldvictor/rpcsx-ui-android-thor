@@ -10165,3 +10165,76 @@ Decision:
   HLE/GPU paths from its clean counters.
 - Back off to the clean `left200x2+diag200` field route and add only one small,
   state-aware movement step under `CleanAfterField`.
+
+## 2026-05-28 Loader-Control left200x2 + diag200 + left400 Bridge Reproof
+
+Question:
+
+- Can the clean `left200x2+diag200` field route survive a smaller `left400`
+  bridge step after the `left800+diag600` bridge lost/exited the game window?
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-left400-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field;wait:1000;ls_left:200;wait:1000;shot:left200;wait:1000;ls_left:200;wait:1000;shot:left200x2;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:diag200;wait:1000;ls_left:400;wait:1200;shot:left400-bridge;wait:12000;shot:left400-late" -MaxSeconds 235 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 14 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir "debug-captures\windows-lab\20260528-151432-cpu4-loader-control-left200x2-diag200-left400-visualgate-windows-windows" -Top 12
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-151432-cpu4-loader-control-left200x2-diag200-left400-visualgate-windows-windows`.
+- `debug-captures\windows-lab\20260528-151432-cpu4-loader-control-left200x2-diag200-left400-visualgate-windows-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-151432-cpu4-loader-control-left200x2-diag200-left400-visualgate-windows-windows\eternal-sonata-gpu-probe-summary.md`.
+- `debug-captures\windows-lab\20260528-151432-cpu4-loader-control-left200x2-diag200-left400-visualgate-windows-windows\eternal-sonata-spu-reservation-loop-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  reservation-loop verify, body/skip/GPU fast paths off, and CPU affinity
+  `0x0F`.
+- Visual gate passed: `FIELD_LIKE_PRESENT`, first field-like screenshot
+  `screenshot-0117s-accepted-field.png` at `117s`, `19` field-like screenshots
+  through `230s`, `0` invalid screenshots after first field-like, and required
+  field before `160s` passed.
+- Manual image review of `screenshot-0129s-left400-bridge.png` and
+  `screenshot-0230s.png` confirmed clean Path-to-Tenuto field visuals after the
+  `left400` bridge and at the late checkpoint.
+- Runtime host samples were clean. Postrun/summary was moderate only because
+  Codex CPU was sampled after RPCS3 exited. `stdout` and `stderr` were empty.
+- Targeted fatal/access/device-lost/assertion scan found `0` hits.
+- GPU probe summary extracted `1739` records, `2,677.34 MB` observed DMA,
+  largest single job `11.99 MB`, `0 B` RSX-local traffic, and fit mix
+  `spu-kernel-hle=1292`, `too-small=447`.
+- Reservation-loop summary extracted `1851` reservation command rows, `50783`
+  command exact-PC rows, `98568` command-run MFC wait exact-PC rows, peak
+  snapshot hits GETLLAR/PUTLLC/Atomic/PUTLLC-fail
+  `202517/150217/52300/207465/11321`, and primary command/read deltas GETLLAR
+  `0`, PUTLLC `0`.
+- Reservation-loop summary still reports `collect-missing-proof` because no
+  kernel capsule or PUTLLC16 pair verifier rows were present. Do not change
+  fast paths from this run alone.
+- Refiner now classifies the newest run as `valid-field-triage` and still says
+  first-battle route repair/proof under `Verify25ccShadow` is required before
+  any body/skip/GPU mode.
+
+Classification:
+
+- `valid-field-triage`.
+- `loader-control-left200x2-diag200-left400-reconfirmed`.
+- `reservation-loop-counter-base`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- The `left400` bridge recovers useful route margin after the failed `left800`
+  bridge and is now the narrow valid movement boundary.
+- Do not promote lane-2 HLE/GPU paths from this; next useful proof remains
+  first-battle route repair under `Verify25ccShadow` with body/skip/GPU modes
+  off.
