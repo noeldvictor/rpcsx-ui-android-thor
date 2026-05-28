@@ -8933,15 +8933,90 @@ Refiner result:
   state-aware `left200` movement step with `CleanAfterField`. Lane-2 HLE/GPU
   dry-runs remain blocked.
 
-## 2026-05-28 Latest Pointer: Add One Small Left200 Step
+## 2026-05-28 Loader-Control Left200 Small Movement Clean
 
-- Latest completed run: `20260528-090516-cpu4-loader-control-visualgate-windows-windows`.
-- Result: `valid-field-triage`. Field was clean from `117s` through `190s`, host checks were clean, and no real fatal/access/device-lost/assertion/verification log hit appeared.
-- This is route base proof only; it is not movement proof, speed, GPU migration, first-battle, Options/menu, or 200% evidence.
-- Refiner says to add one small state-aware `left200` step from this clean base and keep lane-2 HLE/GPU fast modes blocked until field, Options, and first-battle visuals are all valid.
+Question:
+
+- From the clean `20260528-090516` loader-control base, add one small
+  `ls_left:200` step and verify the field stays clean afterward.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-092432-cpu4-loader-control-left200-visualgate-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`,
+  the refiner-proposed macro with `ls_left:200`, `-MaxSeconds 205`,
+  screenshots every `10s`, screenshots starting at `110s`, and
+  `-ScreenshotMaxCount 10`.
+- Host checks were clean at prelaunch, postlaunch, `146s`, `150s`, `180s`,
+  and postrun.
+- RPCS3 moved to `\\.\DISPLAY2` while launched with `--game-screen 1`.
+- Visual gate passed byte/color triage: `14` field-like screenshots, first
+  field-like `screenshot-0117s.png` at `117s` (`2.50 MB`), field-like
+  at-or-before `160s`, field-like at-or-after `190s`, required count `8`,
+  and `0` invalid screenshots after first field-like.
+- Manual review of `screenshot-0135s.png` immediately after `ls_left:200`
+  and `screenshot-0200s.png` at the late gate confirmed clean Path-to-Tenuto
+  field visuals with no crash overlay or obvious corruption. FPS overlay was
+  roughly `31-35 FPS`; this is not a speed result.
+- `rpcs3.stdout.txt` was `0` bytes. `rpcs3.stderr.txt` was `444` bytes and
+  contained only Qt parser/media/painter warnings, not a VM access or Vulkan
+  device-lost failure.
+- Targeted fatal scan found no real crash/access/device-lost/assertion/
+  verification failure. The only `fatal` match was the normal
+  `Show fatal error hints: false` config line.
+- RPCS3 stopped at the `205s` wall-time limit, then wrapper post-processing
+  stalled after artifact paths. No RPCS3/RPCSX process remained active; only
+  the wrapper PowerShell was killed before manual visual/log/counter/refiner
+  checks.
+
+Counters:
+
+- MFC dynamic probe records: `1619`.
+- MFC wait probe records: `1745`.
+- MFC wait-PC probe records: `91872`.
+- Reservation-loop command probe records: `1745`.
+- Reservation-loop verify probe records: `1745`.
+- Reservation-loop verify lane records: `4337`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `189`.
+- Max reads observed: `228488`.
+- Reservation verify records still included nonzero failure/read-failure/
+  unexpected counts, so these counters remain route-triage only and are not
+  HLE/GPU promotion evidence.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `small-left200-movement-clean`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says not to repeat
+  `loader-control-left200x2`; it failed twice in the recent window after a
+  lower boundary was clean. Repair route control or switch to focused SPU
+  kernel HLE/codegen/verifier analysis before another movement run.
+
+## 2026-05-28 Latest Pointer: Stop Repeating Left200x2
+
+- Latest completed run: `20260528-092432-cpu4-loader-control-left200-visualgate-windows-windows`.
+- Result: `valid-field-triage` plus small route/movement tooling. Field stayed clean from `117s` through `200s` including immediately after `ls_left:200`; host checks were clean and no real fatal/access/device-lost/assertion/verification log hit appeared.
+- This is not speed, GPU migration, first-battle, Options/menu, or 200% evidence.
+- Refiner blocks another `loader-control-left200x2` repeat because that route failed twice recently. Next work should repair route control or switch to focused SPU kernel HLE/codegen/verifier analysis before another movement run.
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
+# No automatic movement rerun: loader-control-left200x2 already failed 2 time(s). Repair route control or run a focused SPU kernel HLE/codegen/verifier analysis next.
 ```
