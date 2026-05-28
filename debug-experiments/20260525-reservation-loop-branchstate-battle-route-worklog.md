@@ -2285,6 +2285,86 @@ Harness/refiner result:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
 ```
 
+## 2026-05-28 Loader-Control Left200x2 Diagonal Micro-Pulse
+
+Question:
+
+- After confirming the two-left-pulse `left200x2` boundary, add exactly one
+  tiny diagonal `ls_left+ls_down:200` pulse and require `CleanAfterField`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-060335-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`,
+  two `ls_left:200` pulses, one `combo:ls_left+ls_down:200` pulse,
+  `-MaxSeconds 225`, screenshots every `10s`, and screenshots starting at
+  `110s`.
+- Host checks were clean for all `6` snapshots: prelaunch, postlaunch, `152s`,
+  `180s`, `210s`, and postrun. Host contention summary and external contention
+  summary were both `clean`.
+- Visual gate passed `FIELD_LIKE_PRESENT`: first field-like screenshot
+  `screenshot-0117s.png` at `117s` (`2.50 MB`), all `18` screenshots
+  classified `field-like-large-png` through `220s`, `0` invalid screenshots
+  after first field-like, and field-like at-or-before `160s` passed.
+- Manual review of `screenshot-0117s.png`, `screenshot-0141s.png`, and
+  `screenshot-0220s.png` confirmed Path-to-Tenuto field visuals before the
+  diagonal pulse, immediately after it, and at the late checkpoint.
+- Window-title/FPS samples during field output ranged roughly from the mid
+  `20s` to low `40s`, so this is not speed proof and not a 200% candidate.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` were `0` bytes. Targeted `rg`
+  scan found no `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal
+  error, or assertion-failed hit. Only the normal `Show fatal error hints:
+  false` config line matched the fatal string.
+- The wrapper stalled during postrun log analysis after RPCS3 had exited and
+  paths were written. The wrapper PowerShell was killed, then
+  `tools\check_eternal_sonata_windows_visual_gate.ps1` and
+  `tools\ps3_harness_refiner.ps1 -MaxRuns 8` were run manually against the
+  finished artifact. No RPCS3/RPCSX process remained active.
+
+Counters:
+
+- Reservation-loop candidate probe records: `1766`.
+- Reservation-loop dynamic probe records: `1766`.
+- Reservation-loop wait probe records: `1893`.
+- Reservation-loop wait-PC probe records: `100595`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `710`.
+- Max reads observed: `183214`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `loader-control-left200x2-diag200-field-clean`.
+- Valid tiny diagonal movement boundary proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` says the latest
+  `loader-control-left200x2-diag200` field proof is clean and must not be
+  repeated. Bank it as route tooling only, then pivot to Options/menu proof,
+  first-battle route repair, or focused SPU kernel HLE/codegen/verifier
+  analysis. Lane-2 HLE/GPU fast modes remain blocked until field/menu/battle
+  visuals are valid.
+
+Next action:
+
+```powershell
+# No automatic duplicate: latest loader-control-left200x2-diag200 already passed field triage.
+# Next sprint step should pivot to Options/menu proof, first-battle route repair, or focused SPU kernel HLE/codegen/verifier analysis.
+```
+
 Classification:
 
 - `route-tooling`, `valid-field-triage`, `loader-control-left200x2-field-clean`.
