@@ -4473,6 +4473,72 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 No-Movement Load-Stability Reproof
+
+Question:
+
+- After `left1316-down120` passed `PATH_TO_TENUTO_PRESENT` but stayed on
+  `Now Loading...`, determine whether the same strongdismiss600 base can still
+  reach clean Path-to-Tenuto field with no movement.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-215837-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 20-token macro.
+- The load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`; path/debug/empty/unknown counts were `1/0/0/0`.
+- Manual screenshot review confirmed `screenshot-0081s-load-target-gate.png`
+  on the Path-to-Tenuto save row, `screenshot-0176s-load-complete-90s.png`
+  with the `Load complete` prompt, clean field at
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`, and clean
+  late field at `screenshot-0286s-strongdismiss600-very-late-check.png`.
+- Visual summary reported `FIELD_LIKE_PRESENT`, first field-like screenshot
+  at `195s`, `10` field-like screenshots, and zero invalid screenshots after
+  first field-like output.
+- Host contention was clean across `5` snapshots.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal scan matched only the
+  benign `Show fatal error hints: false` config line.
+- Window-title samples ranged from `26.89` to `45.89` FPS, average `35.39`,
+  but this is route/load telemetry only.
+
+Counters:
+
+- GPU probe records: `2621`.
+- Total observed DMA: `3774.28 MB`.
+- Offload fit mix: `spu-kernel-hle=1764`, `too-small=857`.
+- Hot PCs: `0x451c` `2157.06 MB`, `0x25cc` `1617.22 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`.
+- This resolves the latest no-movement load-stability control only.
+- `left1316-down120` remains a loading-only failure; movement was not tested.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- No harness code change was needed. The post-run refiner recognized this as a
+  resolved no-movement control and recommended the same strongdismiss600 base
+  with `ls_left:1275` plus immediate screenshots.
+- `AGENTS.md` now carries the same current-state rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Field Reproof After Left1317 Repair
 
 Question:

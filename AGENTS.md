@@ -57,9 +57,9 @@ Put dated run details in `debug-experiments/`, not here.
 - `20260527-210215-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-reproof-after-down120-fatal-windows` re-proved plain `left1317` as clean after the `down120` fatal.
 - `left1317` remains route/movement evidence only. It is not first-battle proof, speed proof, GPU migration, or 200%.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
-- No-movement long-gate after save-list inventory re-proved clean Path-to-Tenuto field from the initial row.
-- Latest `left1316-down120` diagnostic stayed on `Now Loading...` after the post-load-complete dismiss. Movement was not tested.
-- Next expected action is a strongdismiss600 no-movement load-stability reproof. Do not repeat `left1316-down120`, repeat `left1317-down120`, or fall back to generic `stateaware-one-step`.
+- Latest no-movement load-stability reproof `20260527-215837-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows` reached clean Path-to-Tenuto field at `195s` and stayed field-like through late checks.
+- `left1316-down120` remains a loading-only failure. Movement was not tested; do not repeat that combo.
+- Next expected action is the same strongdismiss600 base with `ls_left:1275` and immediate screenshots. Do not repeat `left1316-down120`, repeat `left1317-down120`, or fall back to generic `stateaware-one-step`.
 
 ## Banked Findings
 
