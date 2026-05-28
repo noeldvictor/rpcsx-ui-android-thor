@@ -9423,10 +9423,93 @@ Refiner result:
   valid `loader-control-left200x2` route by exactly one tiny diagonal
   micro-pulse with `CleanAfterField`; keep lane-2 HLE/GPU dry-runs blocked.
 
-## 2026-05-28 Latest Pointer: Extend Left200x2 Diagonal Carefully
+## 2026-05-28 Loader-Control Left200x2 Diagonal Reproof Restored
+
+Question:
+
+- After restoring the `left200x2-confirm` boundary, can one tiny diagonal
+  `ls_left+ls_down:200` micro-pulse be added while retaining clean
+  Path-to-Tenuto field visuals under `CleanAfterField`?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-114457-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows`.
+
+Evidence:
+
+- Ran the exact refiner command with PadApi input, `-WindowsGameScreen 1`, CPU
+  affinity `0x0F`, frame/vblank `240/240`, `ReservationLoop Verify`,
+  `CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`, two `ls_left:200`
+  pulses plus one `combo:ls_left+ls_down:200` pulse, `225s` cap,
+  screenshots from `110s`, and `-ScreenshotMaxCount 12`.
+- RPCS3 was moved to `\\.\DISPLAY2`; runtime host checks were clean at
+  prelaunch, postlaunch, `152s`, `180s`, and `210s`. The postrun host sample
+  was moderate only from Codex CPU after RPCS3 stopped, so do not use this run
+  as timing evidence.
+- RPCS3 stopped at the `225s` cap. The wrapper then stalled in postrun log
+  processing after RPCS3 exited, so only the wrapper PowerShell was killed.
+  No RPCS3/RPCSX process remained active.
+- Manual visual gate passed: `18` screenshots, first field-like
+  `screenshot-0117s.png` at `117s` (`2.50 MB`), field-like by `160s`, `0`
+  invalid screenshots after first field-like, and all screenshots through
+  `screenshot-0220s.png` were `field-like-large-png`.
+- Manual review of `screenshot-0141s.png` after the diagonal pulse and
+  `screenshot-0220s.png` confirmed clean Path-to-Tenuto field visuals with no
+  crash overlay or obvious corruption.
+- Window-title FPS samples ranged from `23.90` to `44.19`; this is not a
+  speed result because it is a capped route-boundary proof and postrun host
+  was moderate after emulator exit.
+- `rpcs3.stdout.txt` and `rpcs3.stderr.txt` were both `0` bytes. `RPCS3.log`
+  was `92.31 MB`.
+- Targeted fatal scan found no `VM: Access violation`, `VK_ERROR_DEVICE_LOST`,
+  `Assertion Failed`, `Thread terminated due to fatal error`, `Device lost`,
+  verifier failure, non-zero output mismatch, or non-zero dynamic fail hit.
+
+Targeted counters:
+
+- GPU-candidate probe records: `1632`.
+- MFC dynamic probe records: `1632`.
+- MFC list transfer probe records: `842`.
+- MFC wait probe records: `1738`.
+- MFC wait-PC probe records: `92192`.
+- Reservation-loop command probe records: `1737`.
+- Reservation-loop command-PC probe records: `47637`.
+- Reservation-loop verify probe records: `6078`.
+- Reservation-loop verify-lane records: `4341`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `212`.
+- Max reads observed: `155740`.
+- Read failures: `0`.
+- Unexpected values: `0`.
+- Lane mismatches: `0`.
+- GPU-candidate total observed DMA bytes: `2666662736`; largest single job
+  `16934592` bytes; RSX-local bytes `0`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `loader-control-left200x2-diag200-field-clean`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` says the latest
+  `loader-control-left200x2-diag200` proof is clean and must not be repeated.
+  Bank it as route-tooling only, then pivot to Options/menu proof, first-battle
+  route repair, or focused SPU kernel HLE/codegen/verifier analysis.
+
+## 2026-05-28 Latest Pointer: Pivot After Diagonal Proof
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
+# No automatic duplicate: latest loader-control-left200x2-diag200 already passed field triage.
+# Bank it as route tooling and pivot to Options/menu proof, first-battle route repair,
+# or focused SPU kernel HLE/codegen/verifier analysis.
 ```
