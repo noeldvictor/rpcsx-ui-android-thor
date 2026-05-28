@@ -8779,15 +8779,95 @@ Refiner result:
   not rerun the same field proof; isolate TopSlot post-field movement with a
   left-only diagnostic before another full `BattleRoute` retry.
 
-## 2026-05-28 Latest Pointer: TopSlot Left-Only Diagnostic
+## 2026-05-28 TopSlot Left-Only Diagnostic Fatal
 
-- Latest completed run: `20260528-082422-cpu4-stateaware-one-step-visualgate-windows-windows`.
-- Result: `valid-field-triage`: field-like screenshots at `117s` and `133s`, manual `0117s` field review clean, empty stdout/stderr, and no real fatal/access/device-lost/assertion hit.
-- This is not speed, GPU migration, first-battle, Options/menu, or 200% proof.
-- Refiner says not to rerun the same state-aware field proof. Next step is to isolate the TopSlot post-field movement branch with a left-only diagnostic before another full `BattleRoute` retry.
+Question:
+
+- After the clean state-aware field reset, isolate TopSlot post-field movement
+  with the left-only diagnostic before another full `BattleRoute` retry.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-084504-cpu4-reservation-loop-topslot-leftonly-diagnostic-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  host contention gate `ExternalFail`, `-WindowsVisualGate CleanAfterField`,
+  `-WindowsVisualGateFieldSeconds 160`, the TopSlot macro with
+  `ls_left:2600`, `-MaxSeconds 240`, screenshots every `20s`, screenshots
+  starting at `110s`, and host samples every `30s`.
+- Host checks were clean at prelaunch, postlaunch, `212s`, and `240s`.
+  Postrun host gate failed only because Codex was sampled as a hot non-run
+  process after RPCS3 stopped; this is not speed evidence either way.
+- RPCS3 moved to `\\.\DISPLAY2` while launched with `--game-screen 1`.
+- Visual gate passed byte/color triage: `10` field-like screenshots, first
+  field-like `screenshot-0117s-accepted-field-check.png` at `117s`
+  (`2.50 MB`), field-like at-or-before `160s`, field-like at-or-after
+  `220s`, and `0` invalid screenshots after first field-like.
+- Manual review of `screenshot-0117s-accepted-field-check.png` confirmed a
+  clean Path-to-Tenuto field before movement.
+- Manual review of `screenshot-0166s-left2600-check.png` showed a visible
+  crash overlay (`The PS3 application has likely crashed`) and a corrupted
+  field after `ls_left:2600`.
+- Window-title samples were live (`37.79 FPS` at `117s`, then roughly
+  `29-31 FPS` after movement), but they are invalid for speed because the run
+  hit a real fatal log and visual corruption after movement.
+- `rpcs3.stdout.txt` was `0` bytes. `rpcs3.stderr.txt` was `108` bytes and
+  reported `PPU[0x100000c] Thread () [0x002aedd0]: VM: Access violation
+  reading location 0x40 (unmapped memory)`.
+- Targeted fatal scan found the same real `RPCS3.log` hit at line `98792`.
+  The normal `Show fatal error hints: false` config line was also present.
+- RPCS3 stopped at the `240s` wall-time limit, then wrapper post-processing
+  stalled after artifact paths. No RPCS3/RPCSX process remained active; only
+  the wrapper PowerShell was killed before manual visual/log/counter/refiner
+  checks.
+
+Counters:
+
+- MFC dynamic probe records: `872`.
+- MFC wait probe records: `958`.
+- MFC wait-PC probe records: `47650`.
+- Reservation-loop command probe records: `958`.
+- Reservation-loop verify probe records: `958`.
+- Reservation-loop verify lane records: `2311`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `212`.
+- Max reads observed: `144738`.
+- Reservation verify records included nonzero failure/read-failure/unexpected
+  counts, and all counters are invalid for promotion because the fatal-log gate
+  failed.
+
+Classification:
+
+- `failed-fatal-log`.
+- `route-tooling`.
+- `topslot-left2600-crash-overlay`.
+- Not valid movement proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says the latest run had
+  fatal/crash log evidence and must not be extended. It recommends a
+  no-movement loader/control run with `CleanAfterField` before adding
+  movement.
+
+## 2026-05-28 Latest Pointer: No-Movement Loader-Control Reproof
+
+- Latest completed run: `20260528-084504-cpu4-reservation-loop-topslot-leftonly-diagnostic-windows-windows`.
+- Result: `failed-fatal-log`. Accepted field was clean at `117s`, but `ls_left:2600` produced a crash overlay/corrupt field and a real VM access violation at `0x002aedd0` reading `0x40`.
+- This is not movement proof, speed, GPU migration, first-battle, Options/menu, or 200% evidence.
+- Refiner says to run a no-movement loader/control `CleanAfterField` proof before any TopSlot movement, BattleRoute retry, HLE/GPU fast mode, speed claim, or 200% promotion.
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-reservation-loop-topslot-leftonly-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field-check;ls_left:2600;wait:45000;shot:left2600-check;wait:45000;shot:left2600-late-check" -MaxSeconds 240 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 8 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
 ```
