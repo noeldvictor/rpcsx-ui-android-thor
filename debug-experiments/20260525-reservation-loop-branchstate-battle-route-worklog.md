@@ -10082,3 +10082,86 @@ Decision:
 - Next useful step is first-battle route repair/proof under
   `Verify25ccShadow`; body/skip/GPU modes stay off until field, Options/menu,
   and first-battle visuals are valid.
+
+## 2026-05-28 Verify25ccShadow Bridge Probe From Clean Diag Field
+
+Question:
+
+- Can the clean `left200x2+diag200` loader-control route tolerate one larger
+  bridge step toward the first-battle route while `Verify25ccShadow` is on and
+  all body/skip/GPU fast paths remain off?
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:accepted-field;wait:1000;ls_left:200;wait:1000;shot:left200;wait:1000;ls_left:200;wait:1000;shot:left200x2;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:diag200;wait:1000;ls_left:800;wait:1200;shot:left800-bridge;wait:8000;combo:ls_left+ls_down:600;wait:1200;shot:diag600-bridge;wait:20000;shot:bridge-late" -MaxSeconds 230 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 16 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir "debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows"
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir "debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows" -Top 12
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows`.
+- `debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows\eternal-sonata-gpu-probe-summary.md`.
+- `debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows\eternal-sonata-25cc-counterproof-summary.md`.
+- `debug-captures\windows-lab\20260528-145806-cpu4-hle-25cc-shadow-desc-battle-bridge-left800-diag600-cleanfield-windows\eternal-sonata-spu-reservation-loop-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  reservation-loop verify, `Verify25ccShadow`, GPU probe profile, body/skip/GPU
+  fast paths off, and CPU affinity `0x0F`.
+- Host checks were clean at prelaunch, postlaunch, and postrun. `stdout` and
+  `stderr` were empty.
+- Field route stayed valid through the known boundary: screenshots at `117s`,
+  `120s`, `123s`, and `126s` were all field-like large PNGs, with the accepted
+  field first at `117s`.
+- The larger bridge step failed before battle proof. `screenshot-0129s-left800-bridge.png`
+  was a small wrong-window capture (`60.86 KB`) showing the browser after RPCS3
+  had exited; later `diag600` and `bridge-late` screenshots were skipped because
+  the game window was gone.
+- Visual gate status was
+  `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`; this is a
+  process/window-loss route-boundary failure, not a render-quality proof or a
+  GPU visual failure.
+- Targeted fatal/access/device-lost/assertion scan found `0` hits.
+- GPU probe summary extracted `865` records, `865` SPU HLE verifier records,
+  `405` 0x25cc family records, `12111` 0x25cc shadow descriptor records,
+  `442` 0x451c descriptor-batch records, and `0 B` RSX-local traffic.
+- 25cc counterproof classified the run as `partial-counterproof`: `12858`
+  0x25cc shadow verifier hits over `200.91 MB`, GET/PUT `6063/6795`,
+  match/mismatch `12858/0`, and descriptor overflow `0`.
+- Direction-split 25cc descriptor rows remained clean: GET `6051` hits over
+  `94.55 MB`, PUT `6780` hits over `105.94 MB`, and `0` 25cc mismatches.
+- Generic non-25cc shadow mismatches still appeared at `0x451c` (`59` across
+  `58` lines), blocking broad shadow claims but not the 25cc-only reading.
+- Reservation-loop summary extracted `931` reservation command rows, `25453`
+  command exact-PC rows, `48397` command-run MFC wait exact-PC rows, peak
+  snapshot hits GETLLAR/PUTLLC/Atomic/PUTLLC-fail
+  `124945/95474/29471/128538/9285`, and primary command/read deltas GETLLAR
+  `0`, PUTLLC `0`.
+- Refiner now reports newest run decision `failed-window-lost-after-field` and
+  says to use the latest valid `left200x2+diag200` field run as the route base,
+  adding only one small state-aware movement step with `CleanAfterField`.
+
+Classification:
+
+- `failed-window-lost-after-field`.
+- `partial-counterproof`.
+- `route-boundary-failure`.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not rerun this `left800+diag600` bridge as-is and do not promote lane-2
+  HLE/GPU paths from its clean counters.
+- Back off to the clean `left200x2+diag200` field route and add only one small,
+  state-aware movement step under `CleanAfterField`.
