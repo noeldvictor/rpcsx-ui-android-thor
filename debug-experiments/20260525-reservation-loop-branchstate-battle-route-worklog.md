@@ -4834,6 +4834,74 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1317 Clean Boundary Pinned
+
+Question:
+
+- After the no-movement route base was repaired, determine whether the current
+  `left1317` midpoint can pass as clean movement while the existing `left1318`
+  proof remains the fatal upper bound.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-202051-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Windows-only RPCS3 run on screen `1`, PadApi input, CPU affinity `0x0F`,
+  frame/vblank `240/240`, and the expected 23-token macro.
+- Load-target gate passed attempt `1` as `PATH_TO_TENUTO_PRESENT`; counts were
+  path/debug/empty/unknown `1/0/0/0`, with no lower-row cursor or damaged-save
+  markers.
+- Visual gate reported `FIELD_LIKE_PRESENT`; first field-like screenshot was
+  `screenshot-0196s-post-load-complete-strongdismiss600-18s.png` at `196s`.
+- Manual screenshot review confirmed the Load list was `Save File 01 / Path to
+  Tenuto / South Section / Ch. 1 Raindrops`, then clean Path-to-Tenuto field
+  after strong dismiss, after `ls_left:1317`, at `210s`, `255s`, and `290s`.
+- No prompt, corrupt overlay, load-menu stall, or likely-crashed overlay was
+  visible in the reviewed field screenshots.
+- Host checks were clean during the useful route window through the 300s sample.
+  The final postrun grade was `moderate` only from `codex#21200` after the run
+  was already stopped, so this is acceptable for route proof but not a speed
+  comparison.
+- `rpcs3.stderr.txt` contained only Qt/no-gui/media/painter warnings. Fatal scan
+  found only the benign `Show fatal error hints: false` config line.
+
+Counters:
+
+- GPU probe records: `2,608`.
+- Total observed DMA: `3,733.87 MB`.
+- Offload fit mix: `spu-kernel-hle=1780`, `too-small=828`.
+- Hot PCs: `0x451c` `2,151.72 MB`, `0x25cc` `1,582.16 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-field-clean-boundary-pinned`.
+- Clean movement boundary only: `left1317` is clean, prior `left1318` remains
+  fatal/corrupt.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes the clean `left1317` boundary
+  and no longer falls through to generic `stateaware-one-step`.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md` now
+  record that integer left-only bisection is pinned at `left1317` clean /
+  `left1318` fatal.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-immediate-check;ls_down:120;wait:1200;shot:left1317-down120-immediate-check;wait:10800;shot:left1317-down120-check;wait:45000;shot:left1317-down120-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 Save-List Inventory After Left1317 Drift
 
 Question:

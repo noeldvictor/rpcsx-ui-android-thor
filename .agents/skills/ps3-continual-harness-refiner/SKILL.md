@@ -625,10 +625,16 @@ save-list inventory, classify it more narrowly as
 `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean-after-left1317-repair`.
 Keep the current `left1316` clean / `left1318` fatal bracket and retry
 `ls_left:1317` with immediate screenshots.
-This is a repaired field route base only, not movement or speed evidence. Do not
-fall through to generic `stateaware-one-step`, old loader-control, verifier,
-HLE, RSX, GPU, or speed work; resume the same strongdismiss600 base with
-`ls_left:1275` and immediate screenshots.
+This is a repaired field route base only, not movement or speed evidence.
+If that repaired `ls_left:1317` run passes `PATH_TO_TENUTO_PRESENT`, reaches
+clean Path-to-Tenuto field, accepts the left pulse, and remains field-clean
+while the existing `left1318` proof remains fatal/corrupt, classify it as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-field-clean-boundary-pinned`.
+Bank `left1317` as the clean movement boundary, keep `left1318` as the fatal
+upper bound, and stop left-only bisection. Do not fall through to generic
+`stateaware-one-step`, old loader-control, verifier, HLE, RSX, GPU, or speed
+work. The next route step should probe an alternate battle approach, starting
+with one `ls_down:120` nudge after `left1317` and immediate screenshots.
 
 ## Acceptance
 

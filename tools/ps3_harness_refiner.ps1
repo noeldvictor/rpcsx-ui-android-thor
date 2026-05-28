@@ -438,6 +438,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1317LongGate
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120LongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1317;wait:1200;shot:left1317-immediate-check;ls_down:120;wait:1200;shot:left1317-down120-immediate-check;wait:10800;shot:left1317-down120-check;wait:45000;shot:left1317-down120-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-down120-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1321,6 +1326,8 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate = $f
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316FieldPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveDamagedSaveTarget = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLoadCompleteStuck = $false
@@ -1931,6 +1938,14 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1316*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass =
+        -not $latestFatal -and
+        $latestRun.Decision -eq "valid-field-triage" -and
+        $latestRun.LoadTarget -and
+        $latestRun.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-left1317-longgate*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt =
         $latestFatal -and
         $latestRun.LoadTarget -and
@@ -2592,6 +2607,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass)
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316FieldPass) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-field-clean" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 left1316 run proved Path-to-Tenuto field at {0}s, accepted the left1316 pulse, and stayed field-clean through late screenshots." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank left1316 as the clean lower movement boundary below the left1321 fatal/corrupt upper boundary. Try the left1318 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-field-clean-boundary-pinned" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 left1317 run proved Path-to-Tenuto field at {0}s, accepted the left1317 pulse, and stayed field-clean through late screenshots; prior left1318 remains fatal/corrupt." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank left1317 as the clean movement boundary and keep left1318 as the fatal upper bound. Integer left-only bisection is pinned; do not fall back to generic stateaware-one-step. Try one down120 nudge after left1317 with immediate screenshots, or pivot to route-state/battle-trigger analysis before HLE, RSX, GPU, or speed work."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1331-vm40-corrupt-field" -Severity "blocker" -Evidence "Newest strongdismiss600 left1331 run passed PATH_TO_TENUTO_PRESENT and reached a clean pre-movement field, but the immediate post-left screenshot showed the RPCS3 likely-crashed overlay and corrupt/frozen field while stderr/RPCS3.log reported a PPU VM access violation at 0x40." -Action "Do not count this as clean movement, speed, first-battle, or GPU migration proof. Keep left1312 as the clean lower boundary and left1331 as the fatal/corrupt upper boundary; try the left1321 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
@@ -2820,6 +2838,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 left1312 movement proof is field-clean after the left1350 VM40/corrupt-field fatal. Bank left1312 as the clean lower boundary and try the left1331 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316FieldPass) {
     "Latest stock Down160 strongdismiss600 left1316 movement proof is field-clean after the left1321 VM40/corrupt-field fatal. Bank left1316 as the clean lower boundary and try the left1318 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass) {
+    "Latest stock Down160 strongdismiss600 left1317 movement proof is field-clean and left1318 remains fatal/corrupt. Integer left-only bisection is pinned; do not fall back to generic stateaware-one-step. Try one down120 nudge after left1317 with immediate screenshots, or pivot to route-state/battle-trigger analysis."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     "Latest stock Down160 strongdismiss600 left1331 reached clean field first, but post-left screenshots showed the likely-crashed overlay/corrupt field and a PPU VM access violation at 0x40. Bank left1312 as the clean lower boundary, left1331 as the fatal upper boundary, and try the left1321 midpoint with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {
@@ -3116,6 +3136,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1331LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316FieldPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1318LongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1317Down120LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1331Vm40Corrupt) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1321LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1321Vm40Corrupt) {
