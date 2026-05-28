@@ -4610,6 +4610,80 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-inventory;down:160;wait:900;shot:title-after-down160-inventory;cross:120;wait:60000;shot:load-list-initial-after60;down:120;wait:900;shot:load-list-after-down1;down:120;wait:900;shot:load-list-after-down2;down:120;wait:900;shot:load-list-after-down3;down:120;wait:900;shot:load-list-after-down4;down:120;wait:900;shot:load-list-after-down5;down:120;wait:900;shot:load-list-after-down6" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Save-List Inventory Black Transition
+
+Question:
+
+- After the `left1316-down60` gate selected `Save File 01 / Debug Save /
+  Prologue`, can the no-slot inventory observe the current save-list rows and
+  identify the Path-to-Tenuto cursor state?
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-230232-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 26-token no-slot inventory
+  macro.
+- Manual screenshot review confirmed the title menu at
+  `screenshot-0068s-title-settle-before-inventory.png`, then `LOAD` selected at
+  `screenshot-0069s-title-after-down160-inventory.png`.
+- Every intended row screenshot was black-overlay only:
+  `screenshot-0130s-load-list-initial-after60.png`,
+  `screenshot-0132s-load-list-after-down1.png`,
+  `screenshot-0133s-load-list-after-down2.png`,
+  `screenshot-0135s-load-list-after-down3.png`,
+  `screenshot-0136s-load-list-after-down4.png`,
+  `screenshot-0138s-load-list-after-down5.png`, and
+  `screenshot-0139s-load-list-after-down6.png`.
+- No save slot was loaded, no field was reached, and no save-list row was
+  actually observed. This invalidates any old inference that the inventory
+  proved initial Path rows.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal scan found only Vulkan init
+  lines and the benign `Show fatal error hints: false` config line.
+- Host was clean during the useful route samples; postrun was `moderate`
+  because Codex was hot after the macro.
+- Window-title samples across screenshots ranged from `38.63` to `59.12` FPS;
+  this is title/black-transition telemetry only and not comparable speed
+  evidence.
+
+Counters:
+
+- GPU probe records: `1375`.
+- Total observed DMA: `1321.07 MB`.
+- Offload fit mix: `too-small=737`, `spu-kernel-hle=638`.
+- Hot PCs: `0x451c` `868.57 MB`, `0x25cc` `452.50 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-black-overlay-visual`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-black-transition`.
+- Not row inventory proof.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now blocks the previous false
+  `save-list-inventory-initial-path-rows` inference when the latest inventory
+  screenshots are black-overlay only.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-blackgate;down:160;wait:900;shot:title-after-down160-blackgate;cross:120;wait:12000;shot:pregate-12s;wait:18000;shot:pregate-30s;wait:15000;shot:pregate-45s;wait:15000;shot:pregate-60s;gate_load_target:60000;shot:path-target-after-pregate-black-diagnostic" -MaxSeconds 210 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Load-Stability Reproof
 
 Question:

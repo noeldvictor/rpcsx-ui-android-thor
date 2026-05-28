@@ -1925,8 +1925,15 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-titleload-pregate-black-diagnostic*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition =
+        -not $latestFatal -and
+        $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and
+        $latestText -like "*25cc*" -and
+        $latestText -like "*shadow-desc*" -and
+        $latestText -like "*battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave*"
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows =
         -not $latestFatal -and
+        -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition -and
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-save-list-inventory-after-pregate-debugsave*"
@@ -2732,6 +2739,9 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveCursorAwareB
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-titleload-pregate-debug-save-target" -Severity "route-repair" -Evidence "Newest title-to-Load pre-gate diagnostic selected LOAD and reached a stable Load list by 12s, but the selected row was Save File 01 / Debug Save / Prologue through 60s and the load-target gate aborted before slot Cross." -Action "Do not treat this as black-gate timing, movement, speed, or GPU proof. Inventory the current save-list rows with repeated Down screenshots and no slot Cross so the Path-to-Tenuto row/cursor state can be repaired precisely."
 }
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-black-transition" -Severity "route-repair" -Evidence "Newest save-list inventory selected LOAD from the title menu, but every intended Load-list row screenshot was black-overlay only, so no save rows were observed." -Action "Do not infer Path rows, do not run no-movement or movement, and do not repeat this inventory shape. Run the title-to-Load pre-gate black diagnostic with 12s/30s/45s/60s screenshots and the load-target gate to distinguish slow Load-list entry from wrong-state transition."
+}
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-save-list-inventory-initial-path-rows" -Severity "resolved-control" -Evidence "Newest save-list inventory screenshots show the initial Load-list position has Save File 01 Path to Tenuto, Down1 selects an empty row, Down2 selects Save File 03 Path to Tenuto, and Down4+ reaches Save File 05 Path to Tenuto." -Action "Do not normalize with save-list Down/Up and do not fall back to generic loader-control. Resume the strongdismiss600 no-movement long-gate proof from the initial Path row, then add movement only after clean field is re-proven."
 }
@@ -2952,6 +2962,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 cursor-aware no-movement proof black-overlayed through the entire load-target gate before any save-slot Cross. Do not restore saves or move; run the title-to-Load pre-gate timing diagnostic with 12s/30s/45s/60s screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     "Latest stock Down160 strongdismiss600 title-to-Load pre-gate diagnostic proved the black gate was timing/state-sensitive, but the stable Load list selected Debug Save / Prologue. Do not restore or move; inventory the current save-list cursor rows with repeated Down screenshots and no slot Cross."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
+    "Latest stock Down160 strongdismiss600 save-list inventory selected LOAD, but every intended row screenshot was black-overlay only. Do not infer Path rows or resume no-movement; run the title-to-Load pre-gate black diagnostic with timed screenshots and the load-target gate."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     "Latest stock Down160 strongdismiss600 save-list inventory shows the initial Load-list position is Save File 01 Path to Tenuto, while Down moves through empty and alternate Path rows. Do not normalize with Down/Up; resume the no-movement long-gate proof from the initial Path row before another movement attempt."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {
@@ -3260,6 +3272,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateDebugSaveTarget) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryBlackTransition) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600TitleLoadPregateBlackDiagnosticCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryInitialPathRows) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600LoadListUpRepairTargetPass) {

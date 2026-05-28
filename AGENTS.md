@@ -62,7 +62,8 @@ Put dated run details in `debug-experiments/`, not here.
 - Latest no-movement load-stability reproof `20260527-215837-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows` reached clean Path-to-Tenuto field at `195s` and stayed field-like through late checks.
 - `left1316-down120` remains a loading-only failure. Movement was not tested; do not repeat that combo.
 - `left1316-down60` aborted before slot load on `Save File 01 / Debug Save / Prologue`. Movement was not tested; do not repeat that combo or fall back to generic `stateaware-one-step`.
-- Next expected action is save-list inventory/selected-row repair with no slot `Cross`, then only resume left/down movement after `PATH_TO_TENUTO_PRESENT` is re-proven.
+- Latest save-list inventory selected `LOAD` but all intended row screenshots were black-overlay only. Do not infer Path rows from it and do not resume no-movement from that inventory.
+- Next expected action is the title-to-Load pre-gate black diagnostic with timed 12s/30s/45s/60s screenshots and a load-target gate. Only resume row repair or movement after visible Load-list or `PATH_TO_TENUTO_PRESENT` evidence.
 
 ## Banked Findings
 
