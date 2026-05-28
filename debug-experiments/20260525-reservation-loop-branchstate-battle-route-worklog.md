@@ -10383,3 +10383,76 @@ Decision:
 - The black-overlay failure did not invalidate the `left200x2` visual base.
 - Next non-duplicative action is the refiner-selected `left200x2+diag200`
   `CleanAfterField` reproof; keep lane-2 HLE/GPU modes blocked.
+
+## 2026-05-28 loader-control left200x2 + diag200 Reproof
+
+Question:
+
+- Can the newly re-proved `left200x2` visual base survive exactly one tiny
+  `left+down 200ms` diagonal micro-pulse under `CleanAfterField`, with
+  reservation-loop verify on and all fast/HLE/GPU modes off?
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir "debug-captures\windows-lab\20260528-162812-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows" -RequireFieldLike -RequireFieldAtOrBeforeSeconds 160 -RequireNoInvalidAfterFirstField
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir "debug-captures\windows-lab\20260528-162812-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows" -Top 12
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-162812-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows`.
+- `debug-captures\windows-lab\20260528-162812-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-162812-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows\eternal-sonata-spu-reservation-loop-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  reservation-loop verify, body/skip/GPU fast paths off, and CPU affinity
+  `0x0F`.
+- Host grade was clean at prelaunch, postlaunch, runtime samples `152s`,
+  `180s`, `210s`, and postrun.
+- RPCS3 reached the planned `225s` timeout and stopped. The wrapper then
+  stalled after RPCS3 exit; no emulator process remained, so only the stuck
+  PowerShell wrapper was killed before manual analysis.
+- Visual gate failed: `NO_FIELD_LIKE_SCREENSHOT`, `18` screenshots, first
+  field-like none, required field before `160s` failed, and all screenshots
+  classified `cutscene-or-nonfield-small-png`.
+- Manual image review of `screenshot-0117s.png` and `screenshot-0220s.png`
+  confirmed blue/starry wrong-scene sky output, not Path-to-Tenuto field.
+- `stdout` and `stderr` were empty.
+- Targeted fatal/access/device-lost/assertion/verification scan found only
+  config text (`SPU Verification` and `Show fatal error hints: false`), with no
+  real fatal/access/device-lost/assertion/verification hit.
+- Reservation-loop summary had no command CSVs because the wrapper was killed
+  after RPCS3 exit and before postrun CSV collection. It reports
+  `command-correlation-data-missing` and `collect-missing-proof`.
+- Window-title FPS samples were steady around `34.22`, but they are invalid for
+  speed comparison because the visual route missed the field.
+- Refiner now classifies the run as `failed-visual-gate` and says to back off
+  to the last clean `loader-control-left200x2` boundary before adding any
+  diagonal or HLE/GPU fast mode.
+
+Classification:
+
+- `failed-visual-gate`.
+- `route-miss`.
+- `cutscene-or-nonfield-frames`.
+- Not valid field proof.
+- Not reservation-loop counter proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not promote or reuse this `diag200` attempt as a valid diagonal boundary.
+- Back off to the last clean `loader-control-left200x2` route and re-prove it
+  with `CleanAfterField` before any diagonal movement, first-battle route, or
+  HLE/GPU fast-mode work.
