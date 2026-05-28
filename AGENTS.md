@@ -51,14 +51,14 @@ Put dated run details in `debug-experiments/`, not here.
 ## Current PS3 State
 
 - Current route base: Down160 title route, `PATH_TO_TENUTO_PRESENT` gate, strong post-load dismiss, Path-to-Tenuto field.
-- Current movement bracket: `left1317` is mixed, `left1318` is fatal/corrupt; do not call `left1317` stable until re-proven.
+- Current movement bracket: `left1317` is clean single-axis movement, `left1318` is fatal/corrupt, and `left1317-down120` is failed.
 - Clean lower proof: `20260527-202051-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic-windows`.
 - Fatal upper proof: `20260527-181934-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows`.
-- Newest `left1317-down120` attempt fataled at the immediate post-`left1317` screenshot before `down120` could be trusted.
-- The earlier clean `left1317` proof is route evidence only. It is not first-battle proof, speed proof, GPU migration, or 200%.
+- `20260527-210215-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-reproof-after-down120-fatal-windows` re-proved plain `left1317` as clean after the `down120` fatal.
+- `left1317` remains route/movement evidence only. It is not first-battle proof, speed proof, GPU migration, or 200%.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
 - No-movement long-gate after save-list inventory re-proved clean Path-to-Tenuto field from the initial row.
-- Next expected action is a plain `left1317` reproof after the `down120` fatal; if it repeats fatal/corrupt, demote the stable lower boundary to `left1316`. Do not fall back to generic `stateaware-one-step`.
+- Next expected action is a lower-bound `left1316-down120` diagnostic with immediate screenshots. Do not repeat `left1317-down120` or fall back to generic `stateaware-one-step`.
 
 ## Banked Findings
 

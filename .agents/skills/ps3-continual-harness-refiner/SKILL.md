@@ -643,6 +643,15 @@ earlier single clean pass. Re-prove the plain `left1317` boundary once; if that
 also fatal/corrupts, demote the stable lower boundary to `left1316`. Do not
 fall through to generic `stateaware-one-step`, old loader-control, verifier,
 HLE, RSX, GPU, or speed work.
+If that plain `left1317` reproof after the `down120` fatal passes
+`PATH_TO_TENUTO_PRESENT`, reaches clean Path-to-Tenuto field, accepts the
+`left1317` pulse, and remains field-clean through late screenshots, classify it
+as
+`hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-reproof-after-down120-fatal-passed`.
+Bank `left1317` as clean single-axis movement, but keep `left1317-down120`
+failed and do not repeat that exact combo. The next route step is a lower-bound
+`left1316-down120` diagnostic with immediate screenshots, not generic routing,
+verifier, HLE, RSX, GPU, speed, or first-battle promotion.
 
 ## Acceptance
 
