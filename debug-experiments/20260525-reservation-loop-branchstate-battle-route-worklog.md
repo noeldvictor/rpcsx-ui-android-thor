@@ -8099,3 +8099,79 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-confirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
 ```
+
+## 2026-05-28 Loader-Control Left200x2 Confirmation
+
+Question:
+
+- After the previous `left200x2` run produced blue/starry non-field frames,
+  re-run the exact two-pulse route and require `CleanAfterField`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-054511-cpu4-loader-control-left200x2-confirm-visualgate-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`,
+  two `ls_left:200` pulses, `-MaxSeconds 215`, screenshots every `10s`, and
+  screenshots starting at `110s`.
+- Host checks were clean in-run at prelaunch, postlaunch, `149s`, `152s`,
+  `180s`, and `210s`. Aggregate host summary was moderate only because postrun
+  Codex CPU was `20.9%`.
+- Visual gate passed `FIELD_LIKE_PRESENT`: first field-like screenshot
+  `screenshot-0117s.png` at `117s` (`2.50 MB`), all `16` screenshots
+  classified `field-like-large-png` through `210s`, `0` invalid screenshots
+  after first field-like, and field-like at-or-before `160s` passed.
+- Manual review of `screenshot-0117s.png`, `screenshot-0138s.png`, and
+  `screenshot-0210s.png` confirmed the Path-to-Tenuto field before and after
+  the second left pulse. This specifically clears the prior blue/starry
+  non-field failure for the same route boundary.
+- Window-title/FPS samples during field output ranged roughly from the high
+  `20s` to upper `30s`, so this is not a speed proof and not a 200% candidate.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` were `0` bytes. Targeted `rg`
+  scan found no `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal
+  error, or assertion-failed hit. Only the normal `Show fatal error hints:
+  false` config line matched the fatal string.
+- The wrapper stalled during postrun log analysis after RPCS3 had exited and
+  paths were written. The wrapper PowerShell was killed, then
+  `tools\check_eternal_sonata_windows_visual_gate.ps1` and
+  `tools\ps3_harness_refiner.ps1 -MaxRuns 8` were run manually against the
+  finished artifact. No RPCS3/RPCSX process remained active.
+
+Counters:
+
+- Reservation-loop candidate probe records: `1573`.
+- Reservation-loop dynamic probe records: `1573`.
+- Reservation-loop wait probe records: `1695`.
+- Reservation-loop wait-PC probe records: `88724`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `212`.
+- Max reads observed: `211493`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `loader-control-left200x2-confirmed-field`.
+- Valid small movement boundary proof for the two-pulse route.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says to extend the newest
+  valid `loader-control-left200x2` route by exactly one tiny diagonal
+  micro-pulse with `CleanAfterField`; lane-2 HLE/GPU dry-runs remain blocked.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
+```
