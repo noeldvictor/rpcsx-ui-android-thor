@@ -8629,15 +8629,90 @@ Refiner result:
   the newest clean `loader-control-left200x2` boundary with `CleanAfterField`
   before adding another pulse.
 
-## 2026-05-28 Latest Pointer: Reconfirm Left200x2 Boundary
+## 2026-05-28 Loader-Control Left200x2 Reconfirm Loading-Stuck
 
-- Latest completed run: `20260528-074420-cpu4-loader-control-left200x2-confirm-visualgate-windows-windows`.
-- Result: `failed-fatal-log` plus `failed-visual-gate`. All `16` screenshots were black-overlay frames, and `RPCS3.log`/stderr reported `VK_ERROR_DEVICE_LOST`.
-- Host contention was clean, but visuals, fatal log, counters, and FPS samples are not promotion evidence.
-- Refiner says to re-prove the newest clean `loader-control-left200x2` boundary before any diagonal pulse, battle route, HLE/GPU fast mode, speed claim, or 200% promotion.
+Question:
+
+- After the previous left200x2 reproof hit black frames plus device lost,
+  reconfirm the newest clean left200x2 boundary before any extension.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-080430-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`.
+
+Evidence:
+
+- Command used PadApi input, `-WindowsGameScreen 1`, CPU affinity `0x0F`,
+  frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, `-WindowsVisualGateFieldSeconds 160`,
+  two `ls_left:200` pulses, `-MaxSeconds 215`, screenshots every `10s`, and
+  screenshots starting at `110s`.
+- Host contention was clean at prelaunch, postlaunch, `149s`, `152s`,
+  `180s`, `210s`, and postrun: `7` clean snapshots, external contention
+  clean.
+- RPCS3 moved to `\\.\DISPLAY2` while launched with `--game-screen 1`.
+- Visual gate failed `NO_FIELD_LIKE_SCREENSHOT`: all `16` screenshots from
+  `117s` through `210s` were `loading-like-small-png`, roughly `116-118 KB`.
+  There was no field-like screenshot at or before `160s`, none at or after
+  `210s`, and `0` field-like screenshots total.
+- Manual review of `screenshot-0117s.png` confirmed `Now Loading...` with
+  overlay, not the Path-to-Tenuto field. Late screenshots stayed in the same
+  loading-like class.
+- Window-title samples reported about `119.89-120.32 FPS`, but these are
+  invalid for speed because the run never reached the field visual gate.
+- `rpcs3.stdout.txt` and `rpcs3.stderr.txt` were `0` bytes. Targeted fatal
+  scan found no real `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal, or
+  assertion line. Only the normal `Show fatal error hints: false` config line
+  matched the fatal string.
+- RPCS3 stopped at the `215s` wall-time limit, then wrapper post-processing
+  stalled after artifact paths. No RPCS3/RPCSX process remained active; only
+  the wrapper PowerShell was killed before manual visual/log/counter/refiner
+  checks.
+
+Counters:
+
+- MFC dynamic probe records: `1782`.
+- MFC wait probe records: `1864`.
+- MFC wait-PC probe records: `106541`.
+- Reservation-loop command probe records: `1864`.
+- Reservation-loop verify probe records: `1864`.
+- Reservation-loop verify lane records: `5087`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `493`.
+- Max reads observed: `110157`.
+- Reservation verify records included nonzero failure/read-failure/unexpected
+  counts, and all counters are invalid for promotion because the field visual
+  gate failed.
+
+Classification:
+
+- `failed-visual-gate`.
+- `loading-like-small-png`.
+- `loader-control-left200x2-reconfirm-loading-stuck`.
+- Not valid field proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says to use the newest
+  valid-field run as the route base and add only one small state-aware movement
+  step with `CleanAfterField`.
+
+## 2026-05-28 Latest Pointer: State-Aware One-Step Reset
+
+- Latest completed run: `20260528-080430-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`.
+- Result: `failed-visual-gate`, `loading-like-small-png`. All `16` screenshots stayed on `Now Loading...`; no fatal/device-lost log recurred.
+- Host contention was clean, but visuals, counters, and FPS samples are not promotion evidence.
+- Refiner says to return to the newest valid-field base and run only `cpu4-stateaware-one-step-visualgate-windows` with `CleanAfterField` before any loader-control left200x2, diagonal, battle, HLE/GPU, speed, or 200% promotion.
 
 Next exact command:
 
 ```powershell
-.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
 ```
