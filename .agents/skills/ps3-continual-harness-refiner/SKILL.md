@@ -48,8 +48,15 @@ override the Windows-only 200% gate.
    - route/window repair if the latest proof missed a checkpoint;
    - stack bisect if a combined stack failed;
    - component repeat only if host/noise invalidated an otherwise useful result;
+   - SPU contract extraction if route repeats are blocked and hot SPU evidence
+     is already available;
    - new experiment only when the newest run is clean and no blocker outranks it.
 5. Update the narrowest ledger before another run.
+
+When the newest route/movement proof is fatal or invalid and the refiner blocks
+another repeat, prefer `tools\spu_contract_pipeline.ps1` over another movement
+rerun. The contract path is analysis only until verify-only counters and
+field/Options/first-battle visuals are clean.
 
 ## Result Classes
 

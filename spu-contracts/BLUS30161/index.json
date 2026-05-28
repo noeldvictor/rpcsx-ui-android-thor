@@ -1,0 +1,38 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-05-28T19:45:21.8676015-04:00",
+    "title_id":  "BLUS30161",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows",
+    "target_pcs":  [
+                       "0x25cc",
+                       "0x451c"
+                   ],
+    "target_eas":  [
+                       "0x9e4000"
+                   ],
+    "ghidra_available":  false,
+    "contracts":  [
+                      {
+                          "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+                          "path":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\spu-contracts\\BLUS30161\\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json",
+                          "pc":  "0x025cc",
+                          "image_sig":  "0x958dfe208b686622",
+                          "classes":  [
+                                          "dma-window",
+                                          "spurs-kernel"
+                                      ],
+                          "hot_log_hits":  80
+                      },
+                      {
+                          "contract_id":  "BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0",
+                          "path":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\spu-contracts\\BLUS30161\\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json",
+                          "pc":  "0x0451c",
+                          "image_sig":  "0x958dfe208b686622",
+                          "classes":  [
+                                          "dma-window",
+                                          "spurs-kernel"
+                                      ],
+                          "hot_log_hits":  80
+                      }
+                  ]
+}

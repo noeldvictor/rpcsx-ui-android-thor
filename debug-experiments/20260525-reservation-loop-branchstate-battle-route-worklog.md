@@ -10995,3 +10995,107 @@ Decision:
 - Next action is the refiner command: re-prove the clean
   `left200x1` loader-control boundary, then only add route complexity after
   visuals and fatal logs are clean.
+
+## 2026-05-28 left200x1 refiner reproof fatal
+
+Question:
+
+- Does the clean `left200x1` loader-control boundary still hold after the
+  TopSlot stock-control failure?
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-192415-cpu4-loader-control-left200-reconfirm-visualgate-windows-windows`
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched on screen 1 with CPU affinity `0x0F`.
+- Manual review: `screenshot-0136s.png` showed the correct Path-to-Tenuto
+  field.
+- Manual review: `screenshot-0190s.png` showed black output with RPCS3's
+  likely-crashed overlay.
+- Visual gate status was `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`:
+  first field-like at `136s`, then invalid frames after field.
+- Fatal scan found real SPU unknown STOP codes in stderr/RPCS3 log, including
+  `TCX_CellSpursKernel4 [0x25a40] Unknown STOP code 0x0`,
+  `TCX_CellSpursKernel0 [0x05240] Unknown STOP code 0x0`,
+  `TCX_CellSpursKernel1 [0x3be40] Unknown STOP code 0x18`,
+  `TCX_CellSpursKernel3 [0x09240] Unknown STOP code 0x2c`, and
+  `TCX_CellSpursKernel2 [0x0f644] Unknown STOP code 0x23`.
+- Host checks were clean.
+- The wrapper stalled after RPCS3 exited and was killed; no emulator process
+  remained active.
+
+Classification:
+
+- `failed-fatal-log`.
+- `failed-visual-gate`.
+- Not movement proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not first-battle proof.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Do not keep rerunning or extending the loader-control movement ladder from
+  this state.
+- The next useful work is focused SPU contract/compiler analysis unless a new
+  route repair is explicitly justified by the refiner.
+
+## 2026-05-28 SPU contract compiler scaffold
+
+Question:
+
+- Can the repeated hot SPU evidence be converted into durable contracts before
+  any new HLE/codegen fast path?
+
+Command:
+
+```powershell
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+Artifacts:
+
+- `tools\spu_contract_pipeline.ps1`
+- `.agents\skills\ps3-spu-contract-compiler\SKILL.md`
+- `debug-experiments\20260528-spu-contract-pipeline-plan.md`
+- `spu-contracts\BLUS30161\latest-summary.md`
+- `spu-contracts\BLUS30161\index.json`
+
+Evidence:
+
+- The pipeline extracted two SPU windows from the stock-control TopSlot run:
+  `0x25cc` / `CellSpursKernel0` and `0x451c` /
+  `TCX_CellSpursKernel0`, both image signature
+  `0x958dfe208b686622`.
+- Both contracts emitted runtime log evidence, source disassembly anchors, Cell
+  semantics requirements, and verify-only requirements.
+- `0x25cc` sample evidence includes dynamic MFC/SPURS logging and repeated
+  max-DMA `0x9e4000` records with `output_mismatches=0`.
+- `0x451c` sample evidence now uses canonical PC matching, so leading-zero
+  disasm filenames do not hide the actual log evidence.
+
+Classification:
+
+- `analysis`.
+- `spu-contract-scaffold`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- Adopt the contract compiler as the default SPU path:
+  runtime logs -> SPU windows -> Ghidra headless/static tightening -> contract
+  JSON -> verify-only emulator counters -> fast path.
+- First implementation target remains `0x25cc/0x9e4000`; `0x451c` is tracked
+  as a separate TCX/SPURS pressure lane.

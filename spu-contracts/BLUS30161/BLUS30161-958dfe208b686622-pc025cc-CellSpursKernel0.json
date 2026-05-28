@@ -1,0 +1,62 @@
+﻿{
+    "schema_version":  1,
+    "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+    "generated_at":  "2026-05-28T19:45:21.7165978-04:00",
+    "title_id":  "BLUS30161",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows",
+    "runtime_anchor":  {
+                           "image_sig":  "0x958dfe208b686622",
+                           "entry":  "0x00818",
+                           "pc":  "0x025cc",
+                           "group":  "CellSpursKernelGroup",
+                           "spu_index":  0,
+                           "spu_name":  "CellSpursKernel0",
+                           "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt"
+                       },
+    "inferred_classes":  [
+                             "dma-window",
+                             "spurs-kernel"
+                         ],
+    "evidence":  {
+                     "hot_log_hits":  80,
+                     "pc_hot_log_hits":  80,
+                     "ea_hot_log_hits":  80,
+                     "sample_lines":  [
+                                          "·W 0:00:10.644446 {SPU Worker 2} SPU: [0x25cc] MFC_Cmd: $11 is not a constant",
+                                          "·! 0:00:16.036009 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU probe SPU disasm dump: title=BLUS30161 group_name=\"CellSpursKernelGroup\" spu_name=\"CellSpursKernel0\" image_sig=0x958dfe208b686622 entry=0x818 pc=0x25cc path=\"C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows\\spu-images/BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt\"",
+                                          "·! 0:00:16.036087 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU candidate probe: mode=profile dma_mode=disabled title=BLUS30161 ppu=0x1000009 ppu_name=\"PPU[0x1000009] SpursHdlr0\" group=0x4000200 group_name=\"CellSpursKernelGroup\" spu=0x200 spu_index=0 spu_name=\"CellSpursKernel0\" entry=0x818 image_sig=0x958dfe208b686622 pattern_sig=0x646b5bed8b8df897 duration_us=2033 total_bytes=557680 get_bytes=56176 put_bytes=501504 list_get_bytes=0 list_put_bytes=0 rsx_get_bytes=0 rsx_put_bytes=0 cmd_count=39 list_cmd_count=0 get_payload_hash=0x14650fb0739d0383 put_payload_hash=0x14650fb0739d0383 get_payload_bytes=0 put_payload_bytes=0 sampled_get_payload_bytes=0 sampled_put_payload_bytes=0 ls_start_hash=0x0 ls_end_hash=0x0 repeat_hits=0 output_mismatches=0 max_dma_size=16384 max_dma_pc=0x25cc max_dma_ea=0x4f0b80 block_hash=0x0 max_dma_block_hash=0x0 cause=0x1 status=0x0",
+                                          "·! 0:00:16.037424 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU candidate probe: mode=profile dma_mode=disabled title=BLUS30161 ppu=0x1000009 ppu_name=\"PPU[0x1000009] SpursHdlr0\" group=0x4000200 group_name=\"CellSpursKernelGroup\" spu=0x200 spu_index=0 spu_name=\"CellSpursKernel0\" entry=0x818 image_sig=0x958dfe208b686622 pattern_sig=0x49dc569c9b18f0ff duration_us=1247 total_bytes=1606416 get_bytes=249856 put_bytes=1356560 list_get_bytes=0 list_put_bytes=0 rsx_get_bytes=0 rsx_put_bytes=0 cmd_count=160 list_cmd_count=0 get_payload_hash=0x14650fb0739d0383 put_payload_hash=0x14650fb0739d0383 get_payload_bytes=0 put_payload_bytes=0 sampled_get_payload_bytes=0 sampled_put_payload_bytes=0 ls_start_hash=0x0 ls_end_hash=0x0 repeat_hits=0 output_mismatches=0 max_dma_size=16384 max_dma_pc=0x25cc max_dma_ea=0x9e4000 block_hash=0x0 max_dma_block_hash=0x0 cause=0x1 status=0x0",
+                                          "·! 0:00:16.144770 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU candidate probe: mode=profile dma_mode=disabled title=BLUS30161 ppu=0x1000009 ppu_name=\"PPU[0x1000009] SpursHdlr0\" group=0x4000200 group_name=\"CellSpursKernelGroup\" spu=0x200 spu_index=0 spu_name=\"CellSpursKernel0\" entry=0x818 image_sig=0x958dfe208b686622 pattern_sig=0x30540805202a855f duration_us=922 total_bytes=1602320 get_bytes=249856 put_bytes=1352464 list_get_bytes=0 list_put_bytes=0 rsx_get_bytes=0 rsx_put_bytes=0 cmd_count=159 list_cmd_count=0 get_payload_hash=0x14650fb0739d0383 put_payload_hash=0x14650fb0739d0383 get_payload_bytes=0 put_payload_bytes=0 sampled_get_payload_bytes=0 sampled_put_payload_bytes=0 ls_start_hash=0x0 ls_end_hash=0x0 repeat_hits=0 output_mismatches=0 max_dma_size=16384 max_dma_pc=0x25cc max_dma_ea=0x9e4000 block_hash=0x0 max_dma_block_hash=0x0 cause=0x1 status=0x0",
+                                          "·! 0:00:16.586814 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU candidate probe: mode=profile dma_mode=disabled title=BLUS30161 ppu=0x1000009 ppu_name=\"PPU[0x1000009] SpursHdlr0\" group=0x4000200 group_name=\"CellSpursKernelGroup\" spu=0x200 spu_index=0 spu_name=\"CellSpursKernel0\" entry=0x818 image_sig=0x958dfe208b686622 pattern_sig=0x30540805202a855f duration_us=1183 total_bytes=1602320 get_bytes=249856 put_bytes=1352464 list_get_bytes=0 list_put_bytes=0 rsx_get_bytes=0 rsx_put_bytes=0 cmd_count=159 list_cmd_count=0 get_payload_hash=0x14650fb0739d0383 put_payload_hash=0x14650fb0739d0383 get_payload_bytes=0 put_payload_bytes=0 sampled_get_payload_bytes=0 sampled_put_payload_bytes=0 ls_start_hash=0x0 ls_end_hash=0x0 repeat_hits=0 output_mismatches=0 max_dma_size=16384 max_dma_pc=0x25cc max_dma_ea=0x9e4000 block_hash=0x0 max_dma_block_hash=0x0 cause=0x1 status=0x0",
+                                          "·! 0:00:17.780369 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU candidate probe: mode=profile dma_mode=disabled title=BLUS30161 ppu=0x1000009 ppu_name=\"PPU[0x1000009] SpursHdlr0\" group=0x4000200 group_name=\"CellSpursKernelGroup\" spu=0x200 spu_index=0 spu_name=\"CellSpursKernel0\" entry=0x818 image_sig=0x958dfe208b686622 pattern_sig=0x4318b5fc803b855f duration_us=1150 total_bytes=1602320 get_bytes=249856 put_bytes=1352464 list_get_bytes=0 list_put_bytes=0 rsx_get_bytes=0 rsx_put_bytes=0 cmd_count=159 list_cmd_count=0 get_payload_hash=0x14650fb0739d0383 put_payload_hash=0x14650fb0739d0383 get_payload_bytes=0 put_payload_bytes=0 sampled_get_payload_bytes=0 sampled_put_payload_bytes=0 ls_start_hash=0x0 ls_end_hash=0x0 repeat_hits=0 output_mismatches=0 max_dma_size=16384 max_dma_pc=0x25cc max_dma_ea=0x9e4000 block_hash=0x0 max_dma_block_hash=0x0 cause=0x1 status=0x0",
+                                          "·! 0:00:18.335359 {PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc948c]} sys_spu: Eternal Sonata GPU candidate probe: mode=profile dma_mode=disabled title=BLUS30161 ppu=0x1000009 ppu_name=\"PPU[0x1000009] SpursHdlr0\" group=0x4000200 group_name=\"CellSpursKernelGroup\" spu=0x200 spu_index=0 spu_name=\"CellSpursKernel0\" entry=0x818 image_sig=0x958dfe208b686622 pattern_sig=0xf7bf30bddad5855f duration_us=29701 total_bytes=1602320 get_bytes=249856 put_bytes=1352464 list_get_bytes=0 list_put_bytes=0 rsx_get_bytes=0 rsx_put_bytes=0 cmd_count=159 list_cmd_count=0 get_payload_hash=0x14650fb0739d0383 put_payload_hash=0x14650fb0739d0383 get_payload_bytes=0 put_payload_bytes=0 sampled_get_payload_bytes=0 sampled_put_payload_bytes=0 ls_start_hash=0x0 ls_end_hash=0x0 repeat_hits=0 output_mismatches=0 max_dma_size=16384 max_dma_pc=0x25cc max_dma_ea=0x9e4000 block_hash=0x0 max_dma_block_hash=0x0 cause=0x1 status=0x0"
+                                      ]
+                 },
+    "cell_semantics_contract":  {
+                                    "preserve_mfc_order":  true,
+                                    "preserve_tags":  true,
+                                    "preserve_waits":  true,
+                                    "preserve_dma_size_alignment":  true,
+                                    "preserve_local_store_ranges":  true,
+                                    "preserve_reservation_state":  false
+                                },
+    "ghidra":  {
+                   "status":  "missing-or-skipped",
+                   "headless_path":  "C:\\Users\\leanerdesigner\\Documents\\SteamPortableTools\\toolchains\\ghidra_12.0.4_PUBLIC\\support\\analyzeHeadless.bat",
+                   "note":  "Use Ghidra output to tighten this contract; do not bypass verify-only emulator checks."
+               },
+    "verifier":  {
+                     "mode":  "verify-only-required",
+                     "required_visuals":  [
+                                              "field",
+                                              "options-menu",
+                                              "first-battle"
+                                          ],
+                     "required_counters":  [
+                                               "output_mismatch=0",
+                                               "descriptor_overflow=0",
+                                               "fatal_log_hits=0"
+                                           ],
+                     "fast_mode":  "blocked"
+                 }
+}

@@ -12,16 +12,28 @@ Use this repo-only skill for Cell-side speed work. Keep scene routing in `thor-s
 ## Workflow
 
 1. Start from a known scene and cache state.
-2. Choose one gate or probe, not a mixed pile:
+2. If the target is a repeated SPU/MFC window such as `0x25cc`, `0x451c`, or
+   `0x9e4000`, generate or update a contract before codegen work:
+
+```powershell
+.\tools\spu_contract_pipeline.ps1 -RunDir <run-dir> -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000
+```
+
+3. Choose one gate or probe, not a mixed pile:
    - `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -EternalSonataKernelCapsule Profile -WindowsInputBackend PadApi -WindowsGameScreen 1`
    - `.\tools\set_thor_logging.ps1 -Mode ReducedLoop`
    - `.\tools\set_thor_logging.ps1 -Mode ReducedLoopEmit`
    - `.\tools\set_thor_logging.ps1 -Mode DmaProfile`
    - `.\tools\set_thor_logging.ps1 -Mode DmaVerify`
    - `.\tools\set_thor_logging.ps1 -Mode SpursProbe`
-3. Prefer verify/profile mode before fast mode.
-4. Keep experimental compiler/cache paths separate so normal SPU cache is not poisoned.
-5. Build/push native core through `tools/build_push_thor_core.ps1`.
+4. Prefer verify/profile mode before fast mode.
+5. Keep experimental compiler/cache paths separate so normal SPU cache is not poisoned.
+6. Build/push native core through `tools/build_push_thor_core.ps1`.
+
+For the current Windows 200% lane, contract JSON in
+`spu-contracts\BLUS30161` is the handoff into codegen/HLE. Fast paths stay
+blocked until the contract has verify-only counters and clean field,
+Options/menu, and first-battle visuals.
 
 ## Current Targets
 

@@ -34,7 +34,7 @@ Put dated run details in `debug-experiments/`, not here.
 - Active goal: prove a stable Windows-only Eternal Sonata `BLUS30161` 200% or better moving-gameplay result with correct field, title Options/menu, and first-battle visuals.
 - Until that Windows gate is met, do not run Android, ADB, Thor installs, or Thor captures for this lane.
 - Keep RPCS3 gameplay on screen 1 with `-WindowsGameScreen 1`.
-- Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, and `ps3-continual-harness-refiner`.
+- Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, `ps3-continual-harness-refiner`, and `ps3-spu-contract-compiler`.
 - Always start by checking for an active meaningful run/edit. Do not duplicate live work.
 - Newest failed visual/log/window/route evidence overrides older opportunities.
 
@@ -42,7 +42,7 @@ Put dated run details in `debug-experiments/`, not here.
 
 1. Read this file, the relevant `.agents/skills/*/SKILL.md`, and the narrowest `debug-experiments/` ledger.
 2. Run `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`.
-3. Take one concrete Windows-only step: route repair, boundary bisection, harness fix, analysis, or one gated experiment.
+3. Take one concrete Windows-only step: route repair, boundary bisection, harness fix, contract extraction, analysis, or one gated experiment.
 4. Verify screenshots, fatal logs, host grade, and counters.
 5. Classify honestly: `speed-win`, `windows-micro-win`, `stackable-cpu-pressure`, `gpu-migration-credit`, `valid-field-triage`, `valid-options-counterproof`, `route-tooling`, `failed`, `stack-regression`, `parked`, or `not-comparable`.
 6. Update the narrowest ledger before stopping.
@@ -127,11 +127,14 @@ Put dated run details in `debug-experiments/`, not here.
 - Latest current-format `Verify25ccShadow` Options counterproof `20260528-182410-cpu4-hle-25cc-shadow-desc-options-fastselect-currentproof-windows` reached the full title Options page (`screenshot-0079s-options-candidate.png`, `screenshot-0089s-options-late.png`), had clean host/fatal checks, and summarized as `valid-options-counterproof`: 25cc descriptors `8958` rows / `9498` hits / `148.41 MB`, GET/PUT `4473/5025`, output mismatches `0`, overflow `0`. Refiner says do not rerun field or Options; next proof target is first battle under `Verify25ccShadow`.
 - Latest first-battle `Verify25ccShadow` attempt `20260528-184420-cpu4-hle-25cc-shadow-desc-battle-topslot-battleroute-windows` failed: it reached clean field at `117s`, then hit a real PPU VM access violation at `0x002aedd0` reading `0x40`; `169s+` screenshots show the likely-crashed overlay/corrupt frozen field and no battle-like frame. 25cc descriptors stayed mismatch/overflow clean (`9918` rows / `10833` hits / `169.27 MB`), but this is `failed-fatal-log`, not first-battle proof. Refiner next action is the same TopSlot battle route with `Verify25ccShadow` off to isolate route-vs-verifier fatal.
 - Latest stock-control TopSlot isolation `20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows` also failed with `Verify25ccShadow` off: all `15` screenshots were black-overlay frames, visual gate found no field or battle visuals, host checks were clean, and stderr/RPCS3 log hit real RSX `VK_ERROR_DEVICE_LOST` in `vk::wait_for_event`. GPU probe saw `724.84 MB` DMA, hot PCs `0x451c`/`0x25cc`, and `0 B` RSX-local. Treat as route/RSX-device-loss evidence only; refiner next action is to re-prove the clean `left200x1` loader-control boundary before extending movement or battle routing.
+- Latest `left200x1` refiner reproof `20260528-192415-cpu4-loader-control-left200-reconfirm-visualgate-windows-windows` reached correct Path-to-Tenuto field at `136s`, then later invalid/crash-overlay screenshots appeared; visual gate reported `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`, and stderr/RPCS3 log had real SPU unknown STOP fatals. Treat it as `failed-fatal-log` / `failed-visual-gate`, not movement, speed, GPU, first-battle, or 200% proof.
+- Current route lesson: do not keep extending or rerunning the loader-control movement ladder from the latest fatal. Prefer focused SPU contract/compiler analysis until a new route repair is justified.
 
 ## Banked Findings
 
 - Promoted workflow: Thor dev-core speed pushes use RelWithDebInfo as the official baseline. Debug native cores are invalid for FPS/Rocknix comparisons and `tools/build_push_thor_core.ps1` now blocks Debug tasks or newest-Debug-library pushes unless `-AllowDebugFallback` is explicit. This is workflow promotion only; reduced-loop u4, `0x25cc bodyfast`, and HLE/GPU fast paths remain gated until field, Options/menu, and first-battle proof all pass.
 - Ghidra/static analysis has been used for SPURS/semaphore and SPU-window understanding, and current 25cc work has source/disasm anchors. There is no promoted fusion superpath from Ghidra. Existing fused RSX paths are experimental/parked, and `0x25cc/0x9e4000` remains a CPU/SPU HLE/codegen candidate, not a GPU-resident fused path.
+- Default SPU speed lane is now the contract compiler: runtime logs -> SPU windows -> Ghidra headless/static tightening -> `spu-contracts\BLUS30161` JSON -> verify-only emulator counters -> fast path. Start with `0x25cc/0x9e4000` and `0x451c`; GPU compute stays parked until contracts prove stable batching, low readback pressure, and RSX-consumed data.
 - `0x25cc bodyfast` is banked only as stackable CPU-pressure reduction: RPCS3 process CPU `42.60%` to `37.10%` (`-5.50 pp`, `-12.91%`) on clean capped BattleRoute repeat. It is not an FPS win, GPU migration, or 200% candidate.
 - Final bodyfast plus RSX-local stack is visually compatible on the capped TopSlot BattleRoute, but it remains around `120 FPS` and reports `0 B` promoted CPU/SPU-to-GPU replacement. Do not keep stacking RSX toggles or rerun the auditor.
 - RSX-local accounting is useful but separate from CPU/SPU-to-GPU migration. Current promoted CPU/SPU-to-GPU credit remains `0 B`.
@@ -206,6 +209,10 @@ Put dated run details in `debug-experiments/`, not here.
 ## Durable Memory
 
 - Current detailed sprint ledger: `debug-experiments/20260525-reservation-loop-branchstate-battle-route-worklog.md`.
+- Current SPU contract plan: `debug-experiments/20260528-spu-contract-pipeline-plan.md`.
+- Current SPU contract tool: `tools/spu_contract_pipeline.ps1`.
+- Current SPU contract outputs: `spu-contracts/BLUS30161/latest-summary.md`.
 - Current refiner: `tools/ps3_harness_refiner.ps1`.
 - Current refiner skill: `.agents/skills/ps3-continual-harness-refiner/SKILL.md`.
+- Current SPU contract skill: `.agents/skills/ps3-spu-contract-compiler/SKILL.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

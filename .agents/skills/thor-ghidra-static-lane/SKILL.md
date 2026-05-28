@@ -24,17 +24,26 @@ ignored `debug-captures/`.
    - DMA/GPU probe image hash and hot PC;
    - OODA crash/log address;
    - RenderDoc/RSX event identity.
-2. Map the runtime evidence to a guest artifact:
+2. For SPU hot windows, run the contract pipeline before manual exploration:
+
+```powershell
+.\tools\spu_contract_pipeline.ps1 -RunDir <run-dir> -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000
+```
+
+3. Map the runtime evidence to a guest artifact:
    - PPU/PRX: module name plus address, then `tools/run_thor_ghidra_prx_probe.ps1`.
    - SPU: image hash plus PC/block hash/raddr, then SPU LS capture or RPCS3 SPU disassembly.
-3. Analyze only the hot window first. Prefer decompiling or disassembling
+4. Analyze only the hot window first. Prefer decompiling or disassembling
    a few functions/loops over importing the entire title.
-4. Convert the static finding into emulator-side work:
+5. Convert the static finding into emulator-side work:
    - SPU reduced-loop/codegen candidate;
    - GETLLAR/PUTLLC/MFC wait specialization;
    - syscall/SPURS fast path;
    - title/signature-gated CPU or GPU superpath.
-5. Validate on field, battle, and menu before claiming a speed win.
+6. Validate on field, battle, and menu before claiming a speed win.
+
+Static findings for SPU must tighten `spu-contracts\BLUS30161\*.json`; they
+must not become one-off notes or skip verify-only emulator checks.
 
 ## Tooling
 

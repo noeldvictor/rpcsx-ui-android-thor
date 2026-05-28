@@ -23,6 +23,8 @@ Common searches:
 - `-Query "DepthReadOnly"`
 - `-Query "RSX-local credit"`
 - `-Query "0x25cc"`
+- `-Query "SPU contract"`
+- `-Query "contract compiler"`
 - `-Query "battle route"`
 - `-Query "do not port"`
 
@@ -53,6 +55,8 @@ Write the durable record in the narrowest location:
 - `AGENTS.md`: standing rules, current best proof, promotion gates, and current default workflows.
 - `debug-experiments/*.md`: experiment-specific results, failed hypotheses, commands, run dirs, screenshots, and next action.
 - `.agents/skills/*`: reusable procedure, not one-off result spam.
+- `spu-contracts/BLUS30161/*.json`: generated SPU contracts. Treat as
+  analysis/verification scaffolding, not speed proof.
 
 Minimum durable fact:
 

@@ -18704,3 +18704,22 @@ observed `1,054.90 MB`, with hot PCs still dominated by `0x451c` and `0x25cc`.
 Next research-safe step is a Down160 title-to-Load diagnostic with explicit
 screenshots. Do not retry movement, bodyfast, verifier, RSX, GPU, or speed work
 until the title-to-Load state is deterministic again.
+
+## 2026-05-28 - SPU Contract Compiler Pivot
+
+Current research direction is contract-first, not manual Ghidra-first. Cell SPU
+windows are good static+runtime targets because local store, registers, DMA
+commands, tags, waits, and reservations are explicit enough to describe as
+contracts.
+
+Adopt this pipeline for the active 25cc/451c lane:
+
+`runtime logs -> SPU window extractor -> Ghidra headless/static tightening -> contract JSON -> emulator verifier -> fast path`
+
+The first implementation artifact is `tools\spu_contract_pipeline.ps1`, with
+contracts under `spu-contracts\BLUS30161`. The first generated contracts cover
+`0x25cc/0x9e4000` and `0x451c` for image signature
+`0x958dfe208b686622`. This is analysis scaffolding only: GPU compute remains
+parked while captures show `0 B` RSX-local and no stable coarse batch. The next
+research-safe code step is verify-only emulator counters keyed from the
+contract, not bodyfast or Vulkan compute.
