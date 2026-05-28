@@ -52,6 +52,8 @@ Put dated run details in `debug-experiments/`, not here.
 
 - Current route base: Down160 title route, `PATH_TO_TENUTO_PRESENT` gate, strong post-load dismiss, Path-to-Tenuto field.
 - Current movement bracket: `left1317` is clean single-axis movement, `left1318` is fatal/corrupt, and `left1317-down120` is failed.
+- Latest refreshed lower proof: `20260527-221838-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows` re-proved the route and left movement clean after the no-movement load-stability control.
+- Historical left-only ladder already includes clean `left1312`, fatal `left1331`, fatal `left1321`, clean `left1316`, fatal `left1318`, and clean `left1317`; do not loop back through those midpoint proofs from a fresh `left1275`.
 - Clean lower proof: `20260527-202051-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic-windows`.
 - Fatal upper proof: `20260527-181934-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows`.
 - `20260527-210215-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1317-reproof-after-down120-fatal-windows` re-proved plain `left1317` as clean after the `down120` fatal.
@@ -59,7 +61,7 @@ Put dated run details in `debug-experiments/`, not here.
 - `left1318` has VM/access/corrupt-field evidence. Treat it as failed even if byte-size visual triage looks field-like.
 - Latest no-movement load-stability reproof `20260527-215837-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows` reached clean Path-to-Tenuto field at `195s` and stayed field-like through late checks.
 - `left1316-down120` remains a loading-only failure. Movement was not tested; do not repeat that combo.
-- Next expected action is the same strongdismiss600 base with `ls_left:1275` and immediate screenshots. Do not repeat `left1316-down120`, repeat `left1317-down120`, or fall back to generic `stateaware-one-step`.
+- Next expected action is the same strongdismiss600 base with a new `left1316-down60` nudge and immediate screenshots. Do not repeat old `left1312`/`left1331`/`left1321`/`left1316`/`left1318`/`left1317` midpoint proofs, repeat `left1316-down120`, repeat `left1317-down120`, or fall back to generic `stateaware-one-step`.
 
 ## Banked Findings
 

@@ -472,6 +472,13 @@ GPU migration, and not 200% evidence. Bank `left1275` as the clean lower
 boundary below the `left1350` fatal/corrupt upper boundary, then try the
 `ls_left:1312` midpoint with immediate screenshots before verifier, battle,
 HLE, RSX, GPU, or speed work.
+If a fresh `left1275` proof occurs after the durable ledger already contains
+the completed left-only ladder (`left1312` clean, `left1331` fatal,
+`left1321` fatal, `left1316` clean, `left1318` fatal, and `left1317` clean),
+do not loop back through those historical midpoint proofs. Classify the fresh
+`left1275` as route revalidation only, keep the left-only bracket pinned, and
+move to a new smaller down-nudge diagnostic such as `left1316-down60` before
+verifier, battle, HLE, RSX, GPU, or speed work.
 If that `ls_left:1312` proof passes `PATH_TO_TENUTO_PRESENT`, reaches clean
 Path-to-Tenuto field, visibly accepts the left movement pulse, and stays
 field-clean through late screenshots, classify it as

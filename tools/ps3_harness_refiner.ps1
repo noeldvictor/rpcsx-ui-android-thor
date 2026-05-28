@@ -453,6 +453,11 @@ function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down120L
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down120-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
 }
 
+function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60LongGateCommand {
+    $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1316;wait:1200;shot:left1316-immediate-check;ls_down:60;wait:1200;shot:left1316-down60-immediate-check;wait:10800;shot:left1316-down60-check;wait:45000;shot:left1316-down60-late-check"
+    return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
+}
+
 function New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand {
     $macro = "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check"
     return ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro `"$macro`" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30"
@@ -1241,6 +1246,17 @@ $runEvidence = foreach ($run in $runs) {
     $item
 }
 
+$allRunNames = @(Get-ChildItem -LiteralPath $RunRoot -Directory |
+    Where-Object { $_.Name -notlike "_*" } |
+    Select-Object -ExpandProperty Name)
+$historicalHle25ccShadowDescBattleStockDown160StrongDismiss600LeftOnlyLadderPinned =
+    @($allRunNames | Where-Object { $_ -like "*battle-stock-down160-strongdismiss600-left1312-longgate-diagnostic-windows" }).Count -gt 0 -and
+    @($allRunNames | Where-Object { $_ -like "*battle-stock-down160-strongdismiss600-left1331-longgate-diagnostic-windows" }).Count -gt 0 -and
+    @($allRunNames | Where-Object { $_ -like "*battle-stock-down160-strongdismiss600-left1321-longgate-diagnostic-windows" }).Count -gt 0 -and
+    @($allRunNames | Where-Object { $_ -like "*battle-stock-down160-strongdismiss600-left1316-longgate-diagnostic-windows" }).Count -gt 0 -and
+    @($allRunNames | Where-Object { $_ -like "*battle-stock-down160-strongdismiss600-left1318-longgate-diagnostic-windows" }).Count -gt 0 -and
+    @($allRunNames | Where-Object { $_ -like "*battle-stock-down160-strongdismiss600-left1317-longgate-diagnostic-windows" }).Count -gt 0
+
 $antiPatterns = New-Object System.Collections.Generic.List[object]
 $blackRuns = @($runEvidence | Where-Object { $_.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $_.Visual.Status -ne "FIELD_LIKE_PRESENT" })
 $loadingRuns = @($runEvidence | Where-Object { $_.Visual.PrimarySmallClass -eq "loading-like-small-png" -and $_.Visual.Status -ne "FIELD_LIKE_PRESENT" })
@@ -1335,6 +1351,7 @@ $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1350Vm40Corrupt = 
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275BlackGate = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass = $false
+$latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPassWithHistoricalPinnedLadder = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1316FieldPass = $false
 $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1317FieldPass = $false
@@ -1935,6 +1952,9 @@ if ($latestRun) {
         $latestText -like "*25cc*" -and
         $latestText -like "*shadow-desc*" -and
         $latestText -like "*battle-stock-down160-strongdismiss600-left1275*"
+    $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPassWithHistoricalPinnedLadder =
+        $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass -and
+        $historicalHle25ccShadowDescBattleStockDown160StrongDismiss600LeftOnlyLadderPinned
     $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass =
         -not $latestFatal -and
         $latestRun.Decision -eq "valid-field-triage" -and
@@ -2636,7 +2656,10 @@ if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275DebugSaveT
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-loading-only" -Severity "route-repair" -Evidence "Newest strongdismiss600 left1275 rerun passed PATH_TO_TENUTO_PRESENT, but after the strongdismiss600 post-load Cross it stayed on Now Loading through immediate and late post-left screenshots with fatal-clean logs." -Action "Do not count this as movement, speed, first-battle, or GPU migration proof and do not fall back to generic state-aware routes. Re-prove the same strongdismiss600 base with no movement / post-load stability before another left1275 or larger movement retry."
 }
-if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass) {
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPassWithHistoricalPinnedLadder) {
+    Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-field-clean-after-pinned-ladder" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 left1275 rerun proved Path-to-Tenuto field at {0}s and stayed field-clean, but older durable evidence already pins the left-only ladder through left1312/1331/1321/1316/1318/1317." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not loop back through historical left1312/1331/1321/1316/1318/1317 midpoint proofs. Keep the left-only bracket pinned and test a new smaller down nudge, left1316-down60, before verifier, battle, HLE, RSX, GPU, or speed work."
+}
+if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass -and -not $latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPassWithHistoricalPinnedLadder) {
     Add-AntiPattern -List $antiPatterns -Name "hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-field-clean" -Severity "resolved-control" -Evidence ("Newest strongdismiss600 left1275 run proved Path-to-Tenuto field at {0}s, accepted the left1275 pulse, and stayed field-clean through late screenshots." -f $latestRun.Visual.FirstFieldSeconds) -Action "Bank left1275 as the clean lower movement boundary below the left1350 fatal/corrupt upper boundary. Try the left1312 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 }
 if ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass) {
@@ -2879,6 +2902,8 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Latest stock Down160 strongdismiss600 left1275 aborted before save-slot Cross on Debug Save / Prologue. Movement was not tested; inventory the current save-list rows without pressing the slot, repair selected-row targeting, and do not fall back to generic state-aware routing."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     "Latest stock Down160 strongdismiss600 left1275 passed the load target but stayed on Now Loading through all post-left screenshots. Treat this as route/load stability, not movement; re-prove the strongdismiss600 base with no movement before any left1275, battle, HLE, RSX, GPU, or speed work."
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPassWithHistoricalPinnedLadder) {
+    "Latest stock Down160 strongdismiss600 left1275 rerun is field-clean, but older durable evidence already pins the left-only ladder through left1312, left1331, left1321, left1316, left1318, and left1317. Do not rerun those historical midpoint proofs; test a new smaller left1316-down60 nudge with immediate screenshots."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass) {
     "Latest stock Down160 strongdismiss600 left1275 movement proof is field-clean after the left1350 VM40/corrupt-field fatal. Bank left1275 as the clean lower boundary and try the left1312 midpoint with immediate screenshots before verifier, battle, HLE, RSX, GPU, or speed work."
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass) {
@@ -3183,6 +3208,8 @@ $suggestedCommand = if ($latestStateAwarePromptStuck) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600SaveListInventoryAfterPregateDebugSaveCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275LoadingOnly) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600NoMoveLongGateCommand
+} elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPassWithHistoricalPinnedLadder) {
+    New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1316Down60LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1275FieldPass) {
     New-Hle25ccShadowDescBattleStockDown160StrongDismiss600Left1312LongGateCommand
 } elseif ($latestHle25ccShadowDescBattleStockDown160StrongDismiss600Left1312FieldPass) {

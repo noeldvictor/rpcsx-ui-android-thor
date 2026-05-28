@@ -4473,6 +4473,78 @@ Next exact command:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
 
+## 2026-05-27 StrongDismiss600 Left1275 Fresh Route Revalidation
+
+Question:
+
+- After the latest no-movement load-stability control passed, revalidate the
+  same strongdismiss600 route with `ls_left:1275`, then prevent the refiner from
+  looping through older left-only midpoint proofs already present in the ledger.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260527-221838-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 23-token macro.
+- The load-target gate passed on attempt `1` with
+  `PATH_TO_TENUTO_PRESENT`; path/debug/empty/unknown counts were `1/0/0/0`.
+- Manual screenshot review confirmed `screenshot-0081s-load-target-gate.png`
+  on `Save File 01 / Path to Tenuto`, clean pre-movement field at
+  `screenshot-0196s-post-load-complete-strongdismiss600-18s.png`, accepted
+  left movement at `screenshot-0199s-left1275-immediate-check.png`, and clean
+  late movement at `screenshot-0255s-left1275-late-check.png`.
+- Visual summary reported `FIELD_LIKE_PRESENT`, first field-like screenshot
+  at `196s`, `11` field-like screenshots, and zero invalid screenshots after
+  first field-like output.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal scan matched only the
+  benign `Show fatal error hints: false` config line.
+- Host samples were clean during the route. The final postrun sample was
+  `moderate` because `codex` was hot after the macro, so this run is not
+  speed-comparable.
+- Window-title samples ranged from `27.57` to `45.58` FPS, average `34.42`;
+  this is route telemetry only.
+
+Counters:
+
+- GPU probe records: `2615`.
+- Total observed DMA: `3740.25 MB`.
+- Offload fit mix: `spu-kernel-hle=1753`, `too-small=862`.
+- Hot PCs: `0x451c` `2196.81 MB`, `0x25cc` `1543.44 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `route-tooling`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-field-clean-after-pinned-ladder`.
+- This revalidates the route and left movement only.
+- Older durable evidence already contains the left-only ladder:
+  `left1312` clean, `left1331` fatal, `left1321` fatal, `left1316` clean,
+  `left1318` fatal, and `left1317` clean.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner/Skill updates:
+
+- `tools\ps3_harness_refiner.ps1` now recognizes fresh `left1275` clean proof
+  after the historical left-only ladder is already pinned, and skips stale
+  `left1312` / `left1331` / `left1321` / `left1316` / `left1318` / `left1317`
+  midpoint reruns.
+- `.agents\skills\ps3-continual-harness-refiner\SKILL.md` and `AGENTS.md`
+  carry the same anti-loop rule.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1316-down60-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1316;wait:1200;shot:left1316-immediate-check;ls_down:60;wait:1200;shot:left1316-down60-immediate-check;wait:10800;shot:left1316-down60-check;wait:45000;shot:left1316-down60-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
 ## 2026-05-27 StrongDismiss600 No-Movement Load-Stability Reproof
 
 Question:
