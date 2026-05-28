@@ -10312,3 +10312,74 @@ Decision:
   25cc counters.
 - Re-prove the clean `loader-control-left200x2` boundary with `CleanAfterField`
   before adding any more movement or BattleRoute probes.
+
+## 2026-05-28 loader-control left200x2 Reproof After Black Overlay
+
+Question:
+
+- After the `Verify25ccShadow` BattleRoute probe black-overlayed before field,
+  can the newest clean `loader-control-left200x2` boundary still produce stable
+  Path-to-Tenuto field visuals with `CleanAfterField`?
+
+Command:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir "debug-captures\windows-lab\20260528-160536-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows" -RequireFieldLike -RequireFieldAtOrBeforeSeconds 160 -RequireNoInvalidAfterFirstField
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir "debug-captures\windows-lab\20260528-160536-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows" -Top 12
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+```
+
+Artifacts:
+
+- `debug-captures\windows-lab\20260528-160536-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`.
+- `debug-captures\windows-lab\20260528-160536-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows\eternal-sonata-windows-visual-gate-summary.md`.
+- `debug-captures\windows-lab\20260528-160536-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows\eternal-sonata-spu-reservation-loop-summary.md`.
+
+Evidence:
+
+- No active `rpcs3` or `rpcsx` process existed before the run.
+- RPCS3 launched through the Windows harness with `--game-screen 1`,
+  reservation-loop verify, body/skip/GPU fast paths off, and CPU affinity
+  `0x0F`.
+- Runtime host samples were clean at `150s`, `180s`, and `210s`; postrun was
+  moderate only because Codex CPU was sampled after RPCS3 exited.
+- RPCS3 reached the planned `215s` timeout and stopped. The wrapper then
+  stalled in postrun analysis, matching the known loader-control postrun hang;
+  no emulator process remained active, so only the stuck PowerShell wrapper was
+  killed before manual analysis.
+- Visual gate passed: `FIELD_LIKE_PRESENT`, `16` screenshots, first field-like
+  `screenshot-0117s.png` at `117s`, required field before `160s` passed, and
+  invalid screenshots after first field-like `0`.
+- Manual image review of `screenshot-0117s.png` and `screenshot-0210s.png`
+  confirmed clean Path-to-Tenuto field visuals after the two left pulses.
+- `stdout` and `stderr` were empty.
+- Targeted fatal/access/device-lost/assertion/verification scan found only
+  config text (`SPU Verification` and `Show fatal error hints: false`), with no
+  real fatal/access/device-lost/assertion/verification hit.
+- Reservation-loop summary had no command CSVs because the wrapper was killed
+  after RPCS3 exit and before postrun CSV collection. It reports
+  `command-correlation-data-missing` and `collect-missing-proof`; do not use
+  this run for counter, HLE, GPU, or speed promotion.
+- Refiner now marks the black-overlay control resolved and says to extend the
+  valid `loader-control-left200x2` base by exactly one tiny `diag200`
+  micro-pulse with `CleanAfterField`.
+
+Classification:
+
+- `valid-field-triage`.
+- `loader-control-left200x2-reproved`.
+- `visual-route-proof-only`.
+- Not reservation-loop counter proof.
+- Not Options/menu proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Decision:
+
+- The black-overlay failure did not invalidate the `left200x2` visual base.
+- Next non-duplicative action is the refiner-selected `left200x2+diag200`
+  `CleanAfterField` reproof; keep lane-2 HLE/GPU modes blocked.
