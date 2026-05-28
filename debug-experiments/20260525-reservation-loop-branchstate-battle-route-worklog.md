@@ -2285,6 +2285,79 @@ Harness/refiner result:
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
 ```
 
+## 2026-05-28 Reservation-Loop First-Battle TopSlot Window-Lost Failure
+
+Question:
+
+- After field and title Options were proven for the reservation-loop lane, run
+  the refiner-selected TopSlot first-battle proof with `BattleRoute`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-064514-cpu4-reservation-loop-battle-topslot-route-proof-windows`.
+
+Evidence:
+
+- Command used `-Action WindowsScene -Scene battle`, PadApi input,
+  `-WindowsGameScreen 1`, `-WindowsBattleLoadRoute TopSlot`, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  host contention gate `ExternalFail`, `-MaxSeconds 330`, screenshots every
+  `20s` starting at `120s`, and `-WindowsVisualGate BattleRoute`.
+- Host checks were clean at prelaunch, postlaunch, and postrun. RPCS3 was
+  moved to `\\.\DISPLAY2` while launched with `--game-screen 1`.
+- The only captured screenshot was `screenshot-0117s.png` at `117s`
+  (`2.50 MB`). Manual review showed a correct Path-to-Tenuto field frame with
+  RPCS3 title sample `FPS: 39.22` and overlay FPS around `45.00`.
+- RPCS3 exited before the next screenshots: the wrapper reported missing game
+  window at `169s`, `230s`, and `290s`, then `Process exited at 290s before
+  max 330s`.
+- Manual `BattleRoute` visual gate failed: field-like present at `117s`, but
+  no field-like screenshot at or after `220s`, only `1` field-like screenshot
+  instead of `2`, and no battle-like screenshot at or after `200s`.
+- `rpcs3.stderr.txt` and `rpcs3.stdout.txt` were `0` bytes. Targeted fatal
+  scan found no `VM: Access`, access violation, `VK_ERROR_DEVICE_LOST`,
+  device-lost, segfault, verification-failed, unimplemented syscall, fatal
+  error, or assertion-failed hit. Only the normal `Show fatal error hints:
+  false` config line matched the fatal string.
+- The wrapper stalled after postrun artifact paths were written. No
+  RPCS3/RPCSX process remained active; only the wrapper PowerShell was killed,
+  then visual gate, fatal scan, counters, and refiner were checked manually.
+
+Counters:
+
+- Reservation-loop candidate probe records: `888`.
+- Reservation-loop dynamic probe records: `888`.
+- Reservation-loop wait probe records: `968`.
+- Reservation-loop wait-PC probe records: `48654`.
+- Max output mismatches: `0`.
+- Max dynamic fail: `0`.
+- Max overflow reads: `212`.
+- Max reads observed: `124853`.
+- Counters are not promotion evidence because late field and first-battle
+  visuals failed.
+
+Classification:
+
+- `failed-window-lost-after-field`.
+- `route-tooling`.
+- `reservation-loop-battle-topslot-window-lost-after-field`.
+- Not valid first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now says to use the newest
+  valid-field run as route base and add only one small state-aware movement
+  step with `CleanAfterField`.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+```
+
 ## 2026-05-28 Loader-Control Left200x2 Diagonal Micro-Pulse
 
 Question:
