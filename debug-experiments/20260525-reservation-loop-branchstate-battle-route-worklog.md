@@ -7206,3 +7206,69 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
 ```
+
+## 2026-05-28 Polling Repair Still Hit Debug Save
+
+Question:
+
+- After the target-only reproof hit `Debug Save / Prologue`, test the
+  polling load-target-gated repair route and refuse to continue unless the
+  gate sees `PATH_TO_TENUTO_PRESENT`.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-014240-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, `-EternalSonataReservationLoop Verify`,
+  `-WindowsVisualGate CleanAfterField`, and the intended 41-token repair macro.
+- Host contention was clean for prelaunch, postlaunch, and postrun.
+- The load-target gate failed at `63s` with `DEBUG_SAVE_PROLOGUE_PRESENT`:
+  path-to-tenuto `0`, debug-save-prologue `1`, empty-load-slot `0`, unknown
+  `0`, lower-row cursor markers `0`, and damaged-save text markers `1`.
+- Manual review of `screenshot-0063s-load-target-gate.png` confirmed
+  `Save File 01 / Debug Save / Prologue` with damaged-save rows.
+- The macro aborted before save-slot `Cross`; `ls_left:200` was never reached.
+- Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`; the only screenshot was the
+  load-target gate frame, so no field-like frame existed before `215s`.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `440`.
+- Total observed DMA: `449.05 MB`.
+- Offload fit mix: `spu-kernel-hle=234`, `too-small=206`.
+- Hot PCs: `0x451c` `225.39 MB`, `0x25cc` `223.66 MB`.
+- Reservation-loop verify attempts/completed: `95875/26484`; success/failure
+  `15233/11251`, unexpected `4662`, dirty multi-slot observations `2`.
+- Lane-2 verify completed cleanly: `7614/7614`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `failed-load-target-gate`.
+- `route-tooling`.
+- `stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-debug-save`.
+- Movement was not tested because the run aborted before save-slot `Cross`.
+- Not field proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` still blocks speed/HLE/RSX
+  experiments and recommends the polling load-target-gated route until
+  `PATH_TO_TENUTO_PRESENT` is observed.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
