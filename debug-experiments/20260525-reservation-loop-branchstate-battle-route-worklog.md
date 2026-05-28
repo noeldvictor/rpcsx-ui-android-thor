@@ -7013,3 +7013,73 @@ Next exact command:
 ```powershell
 .\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;wait:45000;shot:strongdismiss600-late-check;wait:45000;shot:strongdismiss600-very-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
 ```
+
+## 2026-05-28 StrongDismiss600 No-Movement Route Reproof After Save Inventory
+
+Question:
+
+- After the save-list inventory showed the initial Load-list row is
+  Path-to-Tenuto and save-list `Down` creates stale preview/cursor drift, rerun
+  the no-movement long-gate from the initial Path row with no save-list
+  normalization.
+
+Artifact:
+
+- `debug-captures\windows-lab\20260528-004219-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows`.
+
+Evidence:
+
+- Screen placement used `-WindowsGameScreen 1`, PadApi input, CPU affinity
+  `0x0F`, frame/vblank `240/240`, and the intended 20-token no-movement macro.
+- The load-target gate passed on attempt `1` with `PATH_TO_TENUTO_PRESENT`:
+  path-to-tenuto `1`, debug-save-prologue `0`, empty-load-slot `0`, unknown
+  `0`, lower-row cursor markers `0`, and damaged-save text markers `0`.
+- Manual review of `screenshot-0081s-load-target-gate.png` confirmed
+  Path-to-Tenuto rows on the Load screen.
+- Visual gate reported `FIELD_LIKE_PRESENT`; first field-like screenshot was
+  `screenshot-0195s-post-load-complete-strongdismiss600-18s.png` at `195s`.
+- Manual review of `screenshot-0195s-post-load-complete-strongdismiss600-18s.png`
+  and `screenshot-0287s-strongdismiss600-very-late-check.png` confirmed clean
+  Path-to-Tenuto field visuals.
+- The visual gate saw `10` field-like large PNGs and `0` invalid screenshots
+  after the first field-like frame; the required field-like frame before `260s`
+  passed.
+- Host contention was clean for prelaunch, postlaunch, and the in-run samples at
+  `287s` and `300s`; postrun was moderate because Codex used CPU after RPCS3
+  had already been stopped.
+- `rpcs3.stderr.txt` was `0` bytes. Targeted fatal/log scan found no access
+  violation, device-lost, assertion, crash, segfault, verification failure, or
+  unimplemented line.
+
+Counters:
+
+- GPU probe records: `2618`.
+- Total observed DMA: `3745.25 MB`.
+- Offload fit mix: `spu-kernel-hle=1787`, `too-small=831`.
+- Hot PCs: `0x451c` `2065.50 MB`, `0x25cc` `1679.75 MB`.
+- Promoted CPU/SPU-to-GPU replacement, direct RSX-local traffic, and indirect
+  SPU-DMA/RSX-resource overlap stayed `0 B`.
+
+Classification:
+
+- `valid-field-triage`.
+- `hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-field-clean`.
+- This banks the repaired no-movement route base only.
+- Not movement proof.
+- Not first-battle proof.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Refiner result:
+
+- `tools\ps3_harness_refiner.ps1 -MaxRuns 8` now detects this as
+  `nomove-field-clean` and recommends resuming the same strongdismiss600 base
+  with `ls_left:1275` and immediate screenshots before verifier, battle, HLE,
+  RSX, GPU, or speed work.
+
+Next exact command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "wait:65000;down:160;wait:900;cross:120;wait:12000;gate_load_target:60000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:90000;shot:load-complete-90s;cross:600;wait:18000;shot:post-load-complete-strongdismiss600-18s;ls_left:1275;wait:1200;shot:left1275-immediate-check;wait:10800;shot:left1275-check;wait:45000;shot:left1275-late-check" -MaxSeconds 300 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 170 -ScreenshotMaxCount 9 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
