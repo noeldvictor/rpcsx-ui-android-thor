@@ -1,6 +1,6 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-29T16:13:32.3421680-04:00`
+- Generated: `2026-05-29T16:31:38.7109565-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
 - Target PCs: `0x25cc, 0x451c`
