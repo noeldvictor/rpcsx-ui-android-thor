@@ -1,5 +1,61 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 18:12:47-04:00 Refiner-Blocked SPU Verify Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T18:12:13.9167567-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement is still blocked by pre-field black-overlay and non-field-cutscene evidence; stay on SPU verifier lane and avoid movement reruns.`
+- Route pressure state: anti-patterns remain active; parser now shows log rows only on stock capture, but no clean field visual proof for that capture.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+```
+
+## Verification
+
+- Refiner still blocks loader-control movement: repeated `repeated-black-overlay-pre-field`, `cutscene-or-nonfield-frames`, `fatal-log-hit` and `single-next-loader-control-failure` remain in recency band.
+- SPU artifacts refreshed from source run `20260529-175303`:
+  - `spu-contracts/BLUS30161/index.json`
+  - `spu-contracts/BLUS30161/latest-summary.md`
+  - `spu-contracts/BLUS30161/source-alignment.*`
+  - `spu-contracts/BLUS30161/verify-counter-plan.*`
+  - `spu-contracts/BLUS30161/verify-counter-schema.*`
+  - `spu-contracts/BLUS30161/verify-logrow-implementation.*`
+- Contract IDs in `spu-contracts/BLUS30161/index.json` remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+- Visual gate result:
+  - `NO_FIELD_LIKE_SCREENSHOT` (`first field-like screenshot: none`)
+  - This run is not route/menu/battle comparable.
+- Parser result:
+  - `rows=763`, `accepted_rows=763`, `rejected_rows=0`
+  - `total_contract_hits=1529`, `total_contract_bytes=25051136`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `strict_failures` none.
+- Reservation summary:
+  - `Kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `command-correlation-data-missing`
+  - Decision: `collect-missing-proof`
+- Log quick-scan: no real `VM access violation`, `SPU unknown STOP`, or `VK_ERROR_DEVICE_LOST` lines in this run (`Show fatal error hints: false` only).
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Plan for verify-only emulator counters under `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow` only; keep this on clean field proof run first, then Options/menu and first-battle in the same schema.
+- Continue to postpone any bodyfast/codegen/GPU fast modes until all three gates (field, Options/menu, first-battle) are clean with zero rejects/mismatches/overflow.
+
 ## 2026-05-29 18:04:15-04:00 Refiner-Blocked SPU Verify Gate Hold
 
 ## Run Stamp
