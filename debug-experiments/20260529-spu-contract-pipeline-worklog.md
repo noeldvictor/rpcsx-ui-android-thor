@@ -1,5 +1,61 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-28 23:38:00-04:00 Reproof + Pipeline Sync
+
+## Run Stamp
+- Timestamp: `2026-05-28T23:38:00-04:00` (local)
+- Branch: `master`
+- Route pressure state: refiner had blocked repeat extension after fatal/invalid route evidence; we executed one non-duplicative Windows-only `loader-control-left200x2` clean-boundary reproof and then re-ran contract sync.
+- Refiner decision from prior run: `Latest run had fatal/crash log evidence; do not extend it. Re-prove the newest clean loader-control-left200x2 boundary with CleanAfterField before adding movement.`
+
+## Run Command (Windows-only, non-duplicative)
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-reconfirm-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;shot:100;wait:1000;ls_left:200;wait=1000;shot:100;wait=1000;ls_left:200;wait=1000;shot:100;wait:10000;shot:100" -MaxSeconds 215 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 11
+```
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260528-233236-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Screenshot status: `FIELD_LIKE_PRESENT`
+- First field-like screenshot: `screenshot-0117s.png` (`2.50 MB`)
+- Invalid-after-field screenshots: none
+
+## Log Verification
+- Target log check: `debug-captures\windows-lab\20260528-233236-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows\RPCS3.log`
+- Target parse check: `.\tools\parse_spu_contract_verify_log.ps1 -LogPath ...\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `total_contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1` (expected while verifier row is not yet emitted)
+- Fatal/blocker scan: no new `VM access violation`, `SPU unknown STOP`, or `VK_ERROR_DEVICE_LOST` in this capture; only startup/capability RSX noise plus save-load init errors consistent with earlier field tooling.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260528-233236-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`
+- Result: zero reservation-loop command/eat/match CSV rows; `command-correlation-data-missing` and decision `collect-missing-proof`.
+- No claim of counter-based speed/route gain from this run.
+
+## SPU Contract Pipeline Sync
+- Re-ran command to refresh artifacts:
+```powershell
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+- Regenerated files:
+  - `spu-contracts\BLUS30161\latest-summary.md`
+  - `spu-contracts\BLUS30161\verify-counter-plan.md`
+  - `spu-contracts\BLUS30161\verify-counter-schema.md`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.md`
+  - `spu-contracts\BLUS30161\source-alignment.md`
+  - `spu-contracts\BLUS30161\index.json`
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `route-tooling`
+- `verify-counter-plan`
+- `spu-contract-scaffold`
+
+## Next Step
+- Keep this strictly in `verify-only` planning mode.
+- Next required action remains: implement/port the contract verifier parseable row and counters in Windows upstream (no copy/body behavior yet), then rerun route field + Options + first-battle under verify schema.
+
+## 2026-05-29 02:09:44-04:00 Prior Checkpoint
+
 ## Run Stamp
 - Timestamp: `2026-05-29T02:09:44-04:00` (local)
 - Branch: `master`
