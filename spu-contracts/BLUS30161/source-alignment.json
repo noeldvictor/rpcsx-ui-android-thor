@@ -1,0 +1,246 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-05-28T20:16:05.4185464-04:00",
+    "title_id":  "BLUS30161",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows",
+    "classification":  [
+                           "analysis",
+                           "source-alignment"
+                       ],
+    "contracts":  [
+                      {
+                          "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+                          "pc":  "0x025cc",
+                          "image_sig":  "0x958dfe208b686622",
+                          "group":  "CellSpursKernelGroup",
+                          "spu_name":  "CellSpursKernel0"
+                      },
+                      {
+                          "contract_id":  "BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0",
+                          "pc":  "0x0451c",
+                          "image_sig":  "0x958dfe208b686622",
+                          "group":  "TCX_CellSpursKernelGroup",
+                          "spu_name":  "TCX_CellSpursKernel0"
+                      }
+                  ],
+    "sources":  [
+                    {
+                        "role":  "windows-upstream",
+                        "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                        "exists":  true
+                    },
+                    {
+                        "role":  "windows-upstream-llvm",
+                        "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPULLVMRecompiler.cpp",
+                        "exists":  true
+                    },
+                    {
+                        "role":  "vendored-rpcsx-core",
+                        "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\app\\src\\main\\cpp\\rpcsx\\kernel\\cellos\\src\\sys_spu.cpp",
+                        "exists":  true
+                    }
+                ],
+    "features":  [
+                     {
+                         "source_role":  "windows-upstream",
+                         "lane":  "mfc-descriptor-family-25cc-9e4000",
+                         "feature":  "25cc runtime family predicate",
+                         "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                         "source_exists":  true,
+                         "status":  "present",
+                         "present_patterns":  5,
+                         "total_patterns":  5,
+                         "expectation":  "Priority-1 contract can be keyed by image, PC, tag, size, EA family, and command shape.",
+                         "interpretation":  "If present, the next useful change is counter labeling/reject accounting, not inventing a new predicate.",
+                         "patterns":  [
+                                          {
+                                              "pattern":  "get_es_mfc_25cc_runtime_family_raw",
+                                              "present":  true,
+                                              "line":  656
+                                          },
+                                          {
+                                              "pattern":  "cmd.tag != 31",
+                                              "present":  true,
+                                              "line":  672
+                                          },
+                                          {
+                                              "pattern":  "cmd.size != 0x4000",
+                                              "present":  true,
+                                              "line":  673
+                                          },
+                                          {
+                                              "pattern":  "cmd.eal == 0x9e4000",
+                                              "present":  true,
+                                              "line":  683
+                                          },
+                                          {
+                                              "pattern":  "get_es_mfc_25cc_runtime_family(spu, cmd)",
+                                              "present":  true,
+                                              "line":  1938
+                                          }
+                                      ]
+                     },
+                     {
+                         "source_role":  "windows-upstream",
+                         "lane":  "tcx-spurs-descriptor-family-451c",
+                         "feature":  "451c dynamic list predicate",
+                         "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                         "source_exists":  true,
+                         "status":  "present",
+                         "present_patterns":  3,
+                         "total_patterns":  3,
+                         "expectation":  "Priority-2 contract can reuse the existing 451c list-family classifier after the 25cc lane is labeled.",
+                         "interpretation":  "Use as a second lane after the 25cc verify counters are explicit.",
+                         "patterns":  [
+                                          {
+                                              "pattern":  "get_es_mfc_451c_dynamic_list_family",
+                                              "present":  true,
+                                              "line":  616
+                                          },
+                                          {
+                                              "pattern":  "spu-\u003epc != 0x451c",
+                                              "present":  true,
+                                              "line":  580
+                                          },
+                                          {
+                                              "pattern":  "record_es_mfc_dynamic_cmd",
+                                              "present":  true,
+                                              "line":  711
+                                          }
+                                      ]
+                     },
+                     {
+                         "source_role":  "windows-upstream",
+                         "lane":  "verify-only-emulator-counters",
+                         "feature":  "SPU HLE verify hooks",
+                         "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                         "source_exists":  true,
+                         "status":  "present",
+                         "present_patterns":  4,
+                         "total_patterns":  4,
+                         "expectation":  "Verify-only counters should extend existing HLE verification hooks instead of adding fast mode.",
+                         "interpretation":  "Use these hooks for contract-id counters, reject buckets, and source/destination hashes.",
+                         "patterns":  [
+                                          {
+                                              "pattern":  "RPCS3_ES_SPU_HLE_VERIFY",
+                                              "present":  true,
+                                              "line":  349
+                                          },
+                                          {
+                                              "pattern":  "record_es_spu_hle_verify_candidate",
+                                              "present":  true,
+                                              "line":  1883
+                                          },
+                                          {
+                                              "pattern":  "is_es_spu_hle_25cc_shadow_enabled",
+                                              "present":  true,
+                                              "line":  401
+                                          },
+                                          {
+                                              "pattern":  "is_es_spu_hle_25cc_body_enabled",
+                                              "present":  true,
+                                              "line":  455
+                                          }
+                                      ]
+                     },
+                     {
+                         "source_role":  "windows-upstream",
+                         "lane":  "llvm-verify-candidate",
+                         "feature":  "LLVM verify callout",
+                         "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream\\rpcs3\\Emu\\Cell\\SPULLVMRecompiler.cpp",
+                         "source_exists":  true,
+                         "status":  "present",
+                         "present_patterns":  4,
+                         "total_patterns":  4,
+                         "expectation":  "LLVM-generated paths can report the same contract counters as interpreter/MFC paths.",
+                         "interpretation":  "Keep this in verify-only parity before any codegen-fast path.",
+                         "patterns":  [
+                                          {
+                                              "pattern":  "exec_es_spu_hle_verify_candidate",
+                                              "present":  true,
+                                              "line":  4401
+                                          },
+                                          {
+                                              "pattern":  "pc != 0x25cc",
+                                              "present":  true,
+                                              "line":  4412
+                                          },
+                                          {
+                                              "pattern":  "else if (pc == 0x451c)",
+                                              "present":  true,
+                                              "line":  4497
+                                          },
+                                          {
+                                              "pattern":  "spu_es_hle_verify_candidate",
+                                              "present":  true,
+                                              "line":  5511
+                                          }
+                                      ]
+                     },
+                     {
+                         "source_role":  "vendored-rpcsx-core",
+                         "lane":  "generic-dma-probe",
+                         "feature":  "Thor generic DMA probe",
+                         "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\app\\src\\main\\cpp\\rpcsx\\kernel\\cellos\\src\\sys_spu.cpp",
+                         "source_exists":  true,
+                         "status":  "present",
+                         "present_patterns":  3,
+                         "total_patterns":  3,
+                         "expectation":  "Vendored core has generic DMA profiling, but this is not the 25cc/451c contract lane.",
+                         "interpretation":  "Do not port or enable Android fast paths during the Windows gate; use this only as later porting context.",
+                         "patterns":  [
+                                          {
+                                              "pattern":  "thor_es_dma_superpath_mode",
+                                              "present":  true,
+                                              "line":  288
+                                          },
+                                          {
+                                              "pattern":  "record_thor_es_dma_seen",
+                                              "present":  true,
+                                              "line":  428
+                                          },
+                                          {
+                                              "pattern":  "log_thor_es_dma_probe",
+                                              "present":  true,
+                                              "line":  455
+                                          }
+                                      ]
+                     },
+                     {
+                         "source_role":  "vendored-rpcsx-core",
+                         "lane":  "mfc-descriptor-family-25cc-9e4000",
+                         "feature":  "Vendored 25cc/451c contract predicates",
+                         "file":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\app\\src\\main\\cpp\\rpcsx\\kernel\\cellos\\src\\sys_spu.cpp",
+                         "source_exists":  true,
+                         "status":  "absent",
+                         "present_patterns":  0,
+                         "total_patterns":  3,
+                         "expectation":  "These should remain absent or partial until Windows proof is clean enough to port.",
+                         "interpretation":  "Current vendored core is not the implementation target for this heartbeat lane.",
+                         "patterns":  [
+                                          {
+                                              "pattern":  "get_es_mfc_25cc_runtime_family_raw",
+                                              "present":  false,
+                                              "line":  null
+                                          },
+                                          {
+                                              "pattern":  "get_es_mfc_451c_dynamic_list_family",
+                                              "present":  false,
+                                              "line":  null
+                                          },
+                                          {
+                                              "pattern":  "record_es_mfc_dynamic_cmd",
+                                              "present":  false,
+                                              "line":  null
+                                          }
+                                      ]
+                     }
+                 ],
+    "conclusions":  [
+                        "The Windows upstream source already contains the priority-1 25cc runtime-family predicate for the 0x9e4000 descriptor family.",
+                        "The Windows upstream source also contains the 451c dynamic-list classifier, but it should stay priority 2.",
+                        "The vendored RPCSX core currently has a generic Thor DMA probe, not the Windows 25cc/451c contract predicate lane.",
+                        "The next non-duplicative implementation step is explicit verify-only contract counters and reject buckets in the Windows upstream hooks."
+                    ],
+    "next_action":  "Add contract-id labeled verify-only counters for mfc-descriptor-family-25cc-9e4000, then re-run field, Options/menu, and first-battle gates before any fast path."
+}

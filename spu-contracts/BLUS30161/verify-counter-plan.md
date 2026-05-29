@@ -1,6 +1,6 @@
 ﻿# SPU Verify Counter Plan
 
-- Generated: `2026-05-28T19:54:17.0977542-04:00`
+- Generated: `2026-05-28T20:16:05.3058373-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`
 - Classification: `analysis`, `verify-counter-plan`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.

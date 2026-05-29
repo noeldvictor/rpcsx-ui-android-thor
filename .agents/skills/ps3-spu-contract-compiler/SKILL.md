@@ -43,14 +43,18 @@ GETLLAR/PUTLLC reservation loops, and repeated SPURS/SPU kernels.
    - required verifier checks.
 4. Inspect `spu-contracts\BLUS30161\verify-counter-plan.md` for the next
    verify-only source anchors, predicates, and counters.
-5. Use Ghidra/headless output to tighten the contract, not to skip verification.
-6. Add emulator verify-only counters for the contract. Promote only after clean
+5. Inspect `spu-contracts\BLUS30161\source-alignment.md` before code edits:
+   confirm whether the target predicate already exists in Windows upstream and
+   whether vendored RPCSX only has generic probes.
+6. Use Ghidra/headless output to tighten the contract, not to skip verification.
+7. Add emulator verify-only counters for the contract. Promote only after clean
    field, Options/menu, and first-battle visuals and zero mismatches.
 
 ## First Lanes
 
 - `0x25cc/0x9e4000`: MFC descriptor and PUT-heavy DMA family; CPU/SPU
-  HLE/codegen first, not GPU.
+  HLE/codegen first, not GPU. Windows upstream already has the family
+  predicate; add contract-id counters/reject buckets before changing fast mode.
 - `0x451c`: SPURS/kernel descriptor/list-copy pressure; contract before fast
   mode.
 - Reservation loops: GETLLAR/PUTLLC wait/retry HLE; preserve linked state and

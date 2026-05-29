@@ -6,6 +6,7 @@ param(
     [string[]]$Pc = @("0x25cc", "0x451c"),
     [string[]]$Ea = @("0x9e4000"),
     [string]$GhidraHeadless = "",
+    [string]$UpstreamSourceRoot = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream",
     [switch]$NoGhidra,
     [int]$MaxWindows = 12
 )
@@ -321,6 +322,153 @@ function New-VerifyCounterPlan {
     }
 }
 
+function Test-SourceFeature {
+    param(
+        [string]$SourceRole,
+        [string]$Lane,
+        [string]$Name,
+        [string]$Path,
+        [string[]]$Patterns,
+        [string]$Expectation,
+        [string]$Interpretation
+    )
+
+    $exists = Test-Path -LiteralPath $Path -PathType Leaf
+    $patternRows = New-Object System.Collections.Generic.List[object]
+    foreach ($pattern in $Patterns) {
+        $match = $null
+        if ($exists) {
+            $match = Select-String -LiteralPath $Path -SimpleMatch -Pattern $pattern | Select-Object -First 1
+        }
+        $patternRows.Add([pscustomobject]@{
+            pattern = $pattern
+            present = [bool]$match
+            line = $(if ($match) { $match.LineNumber } else { $null })
+        }) | Out-Null
+    }
+
+    $presentCount = @($patternRows | Where-Object { $_.present }).Count
+    $status = if (-not $exists) {
+        "source-missing"
+    } elseif ($presentCount -eq $Patterns.Count) {
+        "present"
+    } elseif ($presentCount -gt 0) {
+        "partial"
+    } else {
+        "absent"
+    }
+
+    return [pscustomobject]@{
+        source_role = $SourceRole
+        lane = $Lane
+        feature = $Name
+        file = $Path
+        source_exists = $exists
+        status = $status
+        present_patterns = $presentCount
+        total_patterns = $Patterns.Count
+        expectation = $Expectation
+        interpretation = $Interpretation
+        patterns = $patternRows.ToArray()
+    }
+}
+
+function New-SourceAlignment {
+    param(
+        [string]$Title,
+        [string]$RunPath,
+        [object[]]$ContractRows,
+        [string]$UpstreamRoot
+    )
+
+    $upstreamRootPath = Resolve-RepoPath $UpstreamRoot
+    $upstreamSpuThread = Join-Path $upstreamRootPath "rpcs3\Emu\Cell\SPUThread.cpp"
+    $upstreamLlvm = Join-Path $upstreamRootPath "rpcs3\Emu\Cell\SPULLVMRecompiler.cpp"
+    $vendoredSysSpu = Resolve-RepoPath "app\src\main\cpp\rpcsx\kernel\cellos\src\sys_spu.cpp"
+
+    $contractRefs = @($ContractRows | ForEach-Object {
+        [pscustomobject]@{
+            contract_id = $_.contract_id
+            pc = $_.runtime_anchor.pc
+            image_sig = $_.runtime_anchor.image_sig
+            group = $_.runtime_anchor.group
+            spu_name = $_.runtime_anchor.spu_name
+        }
+    })
+
+    $features = New-Object System.Collections.Generic.List[object]
+    $features.Add((Test-SourceFeature `
+        -SourceRole "windows-upstream" `
+        -Lane "mfc-descriptor-family-25cc-9e4000" `
+        -Name "25cc runtime family predicate" `
+        -Path $upstreamSpuThread `
+        -Patterns @("get_es_mfc_25cc_runtime_family_raw", "cmd.tag != 31", "cmd.size != 0x4000", "cmd.eal == 0x9e4000", "get_es_mfc_25cc_runtime_family(spu, cmd)") `
+        -Expectation "Priority-1 contract can be keyed by image, PC, tag, size, EA family, and command shape." `
+        -Interpretation "If present, the next useful change is counter labeling/reject accounting, not inventing a new predicate.")) | Out-Null
+    $features.Add((Test-SourceFeature `
+        -SourceRole "windows-upstream" `
+        -Lane "tcx-spurs-descriptor-family-451c" `
+        -Name "451c dynamic list predicate" `
+        -Path $upstreamSpuThread `
+        -Patterns @("get_es_mfc_451c_dynamic_list_family", "spu->pc != 0x451c", "record_es_mfc_dynamic_cmd") `
+        -Expectation "Priority-2 contract can reuse the existing 451c list-family classifier after the 25cc lane is labeled." `
+        -Interpretation "Use as a second lane after the 25cc verify counters are explicit.")) | Out-Null
+    $features.Add((Test-SourceFeature `
+        -SourceRole "windows-upstream" `
+        -Lane "verify-only-emulator-counters" `
+        -Name "SPU HLE verify hooks" `
+        -Path $upstreamSpuThread `
+        -Patterns @("RPCS3_ES_SPU_HLE_VERIFY", "record_es_spu_hle_verify_candidate", "is_es_spu_hle_25cc_shadow_enabled", "is_es_spu_hle_25cc_body_enabled") `
+        -Expectation "Verify-only counters should extend existing HLE verification hooks instead of adding fast mode." `
+        -Interpretation "Use these hooks for contract-id counters, reject buckets, and source/destination hashes.")) | Out-Null
+    $features.Add((Test-SourceFeature `
+        -SourceRole "windows-upstream" `
+        -Lane "llvm-verify-candidate" `
+        -Name "LLVM verify callout" `
+        -Path $upstreamLlvm `
+        -Patterns @("exec_es_spu_hle_verify_candidate", "pc != 0x25cc", "else if (pc == 0x451c)", "spu_es_hle_verify_candidate") `
+        -Expectation "LLVM-generated paths can report the same contract counters as interpreter/MFC paths." `
+        -Interpretation "Keep this in verify-only parity before any codegen-fast path.")) | Out-Null
+    $features.Add((Test-SourceFeature `
+        -SourceRole "vendored-rpcsx-core" `
+        -Lane "generic-dma-probe" `
+        -Name "Thor generic DMA probe" `
+        -Path $vendoredSysSpu `
+        -Patterns @("thor_es_dma_superpath_mode", "record_thor_es_dma_seen", "log_thor_es_dma_probe") `
+        -Expectation "Vendored core has generic DMA profiling, but this is not the 25cc/451c contract lane." `
+        -Interpretation "Do not port or enable Android fast paths during the Windows gate; use this only as later porting context.")) | Out-Null
+    $features.Add((Test-SourceFeature `
+        -SourceRole "vendored-rpcsx-core" `
+        -Lane "mfc-descriptor-family-25cc-9e4000" `
+        -Name "Vendored 25cc/451c contract predicates" `
+        -Path $vendoredSysSpu `
+        -Patterns @("get_es_mfc_25cc_runtime_family_raw", "get_es_mfc_451c_dynamic_list_family", "record_es_mfc_dynamic_cmd") `
+        -Expectation "These should remain absent or partial until Windows proof is clean enough to port." `
+        -Interpretation "Current vendored core is not the implementation target for this heartbeat lane.")) | Out-Null
+
+    return [pscustomobject]@{
+        schema_version = 1
+        generated_at = (Get-Date).ToString("o")
+        title_id = $Title
+        source_run = $RunPath
+        classification = @("analysis", "source-alignment")
+        contracts = $contractRefs
+        sources = @(
+            [pscustomobject]@{ role = "windows-upstream"; file = $upstreamSpuThread; exists = (Test-Path -LiteralPath $upstreamSpuThread -PathType Leaf) },
+            [pscustomobject]@{ role = "windows-upstream-llvm"; file = $upstreamLlvm; exists = (Test-Path -LiteralPath $upstreamLlvm -PathType Leaf) },
+            [pscustomobject]@{ role = "vendored-rpcsx-core"; file = $vendoredSysSpu; exists = (Test-Path -LiteralPath $vendoredSysSpu -PathType Leaf) }
+        )
+        features = $features.ToArray()
+        conclusions = @(
+            "The Windows upstream source already contains the priority-1 25cc runtime-family predicate for the 0x9e4000 descriptor family.",
+            "The Windows upstream source also contains the 451c dynamic-list classifier, but it should stay priority 2.",
+            "The vendored RPCSX core currently has a generic Thor DMA probe, not the Windows 25cc/451c contract predicate lane.",
+            "The next non-duplicative implementation step is explicit verify-only contract counters and reject buckets in the Windows upstream hooks."
+        )
+        next_action = "Add contract-id labeled verify-only counters for mfc-descriptor-family-25cc-9e4000, then re-run field, Options/menu, and first-battle gates before any fast path."
+    }
+}
+
 $runPath = if ([string]::IsNullOrWhiteSpace($RunDir)) {
     Find-LatestRun -Root $RunRoot
 } else {
@@ -411,6 +559,7 @@ foreach ($contractRow in $contracts) {
 $summary.Add("") | Out-Null
 $summary.Add("Classification: $($bt)analysis$bt, $($bt)spu-contract-scaffold$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
 $summary.Add("Next: wire the selected contract into a verify-only emulator counter before any fast path.") | Out-Null
+$summary.Add("Source alignment: $($bt)source-alignment.md$bt.") | Out-Null
 $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
 $verifyPlan = New-VerifyCounterPlan -Title $TitleId -RunPath $runPath -ContractRows ($contractDetails.ToArray())
@@ -440,7 +589,50 @@ foreach ($anchor in $verifyPlan.source_anchors) {
 }
 $verifyMd | Set-Content -LiteralPath $verifyMdPath -Encoding UTF8
 
+$sourceAlignment = New-SourceAlignment -Title $TitleId -RunPath $runPath -ContractRows ($contractDetails.ToArray()) -UpstreamRoot $UpstreamSourceRoot
+$sourceAlignmentPath = Join-Path $outRoot "source-alignment.json"
+$sourceAlignment | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sourceAlignmentPath -Encoding UTF8
+
+$sourceMdPath = Join-Path $outRoot "source-alignment.md"
+$sourceMd = New-Object System.Collections.Generic.List[string]
+$sourceMd.Add("# SPU Contract Source Alignment") | Out-Null
+$sourceMd.Add("") | Out-Null
+$sourceMd.Add("- Generated: $bt$generatedAt$bt") | Out-Null
+$sourceMd.Add("- Title: $bt$TitleId$bt") | Out-Null
+$sourceMd.Add("- Source run: $bt$runPath$bt") | Out-Null
+$sourceMd.Add("- Classification: $($bt)analysis$bt, $($bt)source-alignment$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
+$sourceMd.Add("") | Out-Null
+$sourceMd.Add("| Source | Lane | Feature | Status | Patterns |") | Out-Null
+$sourceMd.Add("| --- | --- | --- | --- | ---: |") | Out-Null
+foreach ($feature in $sourceAlignment.features) {
+    $sourceMd.Add("| $bt$($feature.source_role)$bt | $bt$($feature.lane)$bt | $bt$($feature.feature)$bt | $bt$($feature.status)$bt | $($feature.present_patterns)/$($feature.total_patterns) |") | Out-Null
+}
+$sourceMd.Add("") | Out-Null
+$sourceMd.Add("## Conclusions") | Out-Null
+foreach ($conclusion in $sourceAlignment.conclusions) {
+    $sourceMd.Add("- $conclusion") | Out-Null
+}
+$sourceMd.Add("") | Out-Null
+$sourceMd.Add("## Pattern Lines") | Out-Null
+foreach ($feature in $sourceAlignment.features) {
+    $sourceMd.Add("") | Out-Null
+    $sourceMd.Add("### $($feature.source_role): $($feature.feature)") | Out-Null
+    $sourceMd.Add("") | Out-Null
+    $sourceMd.Add("- File: $bt$($feature.file)$bt") | Out-Null
+    $sourceMd.Add("- Expectation: $($feature.expectation)") | Out-Null
+    $sourceMd.Add("- Interpretation: $($feature.interpretation)") | Out-Null
+    foreach ($patternRow in $feature.patterns) {
+        $lineText = if ($patternRow.present) { "line $($patternRow.line)" } else { "missing" }
+        $sourceMd.Add("- $bt$($patternRow.pattern)${bt}: $lineText") | Out-Null
+    }
+}
+$sourceMd.Add("") | Out-Null
+$sourceMd.Add("Next action: $($sourceAlignment.next_action)") | Out-Null
+$sourceMd | Set-Content -LiteralPath $sourceMdPath -Encoding UTF8
+
 Write-Output "SPU contract index: $indexPath"
 Write-Output "SPU contract summary: $summaryPath"
 Write-Output "SPU verify plan: $verifyPlanPath"
 Write-Output "SPU verify plan summary: $verifyMdPath"
+Write-Output "SPU source alignment: $sourceAlignmentPath"
+Write-Output "SPU source alignment summary: $sourceMdPath"

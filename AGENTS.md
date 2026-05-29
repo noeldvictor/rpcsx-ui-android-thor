@@ -135,6 +135,7 @@ Put dated run details in `debug-experiments/`, not here.
 - Promoted workflow: Thor dev-core speed pushes use RelWithDebInfo as the official baseline. Debug native cores are invalid for FPS/Rocknix comparisons and `tools/build_push_thor_core.ps1` now blocks Debug tasks or newest-Debug-library pushes unless `-AllowDebugFallback` is explicit. This is workflow promotion only; reduced-loop u4, `0x25cc bodyfast`, and HLE/GPU fast paths remain gated until field, Options/menu, and first-battle proof all pass.
 - Ghidra/static analysis has been used for SPURS/semaphore and SPU-window understanding, and current 25cc work has source/disasm anchors. There is no promoted fusion superpath from Ghidra. Existing fused RSX paths are experimental/parked, and `0x25cc/0x9e4000` remains a CPU/SPU HLE/codegen candidate, not a GPU-resident fused path.
 - Default SPU speed lane is now the contract compiler: runtime logs -> SPU windows -> Ghidra headless/static tightening -> `spu-contracts\BLUS30161` JSON -> verify-only emulator counters -> fast path. Start with `0x25cc/0x9e4000` and `0x451c`; GPU compute stays parked until contracts prove stable batching, low readback pressure, and RSX-consumed data.
+- Current source alignment says Windows upstream already has the priority-1 `0x25cc/0x9e4000` runtime-family predicate and `0x451c` dynamic-list helper; vendored RPCSX has only the generic Thor DMA probe. Next implementation target is Windows verify-only contract counters and reject buckets, not Android porting or fast mode.
 - `0x25cc bodyfast` is banked only as stackable CPU-pressure reduction: RPCS3 process CPU `42.60%` to `37.10%` (`-5.50 pp`, `-12.91%`) on clean capped BattleRoute repeat. It is not an FPS win, GPU migration, or 200% candidate.
 - Final bodyfast plus RSX-local stack is visually compatible on the capped TopSlot BattleRoute, but it remains around `120 FPS` and reports `0 B` promoted CPU/SPU-to-GPU replacement. Do not keep stacking RSX toggles or rerun the auditor.
 - RSX-local accounting is useful but separate from CPU/SPU-to-GPU migration. Current promoted CPU/SPU-to-GPU credit remains `0 B`.
@@ -213,6 +214,7 @@ Put dated run details in `debug-experiments/`, not here.
 - Current SPU contract tool: `tools/spu_contract_pipeline.ps1`.
 - Current SPU contract outputs: `spu-contracts/BLUS30161/latest-summary.md`.
 - Current SPU verify-counter plan: `spu-contracts/BLUS30161/verify-counter-plan.md`.
+- Current SPU source alignment: `spu-contracts/BLUS30161/source-alignment.md`.
 - Current refiner: `tools/ps3_harness_refiner.ps1`.
 - Current refiner skill: `.agents/skills/ps3-continual-harness-refiner/SKILL.md`.
 - Current SPU contract skill: `.agents/skills/ps3-spu-contract-compiler/SKILL.md`.

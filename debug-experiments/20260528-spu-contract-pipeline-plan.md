@@ -94,3 +94,36 @@ Next:
   `bodyfast`, `codegen-fast`, and `vulkan-compute` blocked until field,
   Options/menu, and first-battle visuals pass with zero mismatches, zero
   descriptor overflow, and zero fatal log hits.
+
+## 2026-05-28 Source-Alignment Output
+
+Update:
+
+- `tools\spu_contract_pipeline.ps1` now emits
+  `spu-contracts\BLUS30161\source-alignment.json` and
+  `spu-contracts\BLUS30161\source-alignment.md`.
+- The alignment was generated from
+  `20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`.
+- Windows upstream has all checked priority-1 `0x25cc/0x9e4000` predicate
+  patterns present in `SPUThread.cpp`: runtime family classifier, tag check,
+  size check, EA family, and existing callsite.
+- Windows upstream also has the `0x451c` dynamic-list predicate and LLVM verify
+  callout anchors present.
+- Vendored RPCSX has the generic Thor DMA probe hooks, but the checked
+  `0x25cc`/`0x451c` contract predicates are absent there.
+
+Classification:
+
+- `analysis`.
+- `source-alignment`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Add explicit contract-id labeled verify-only counters and reject buckets in
+  the Windows upstream hooks for `mfc-descriptor-family-25cc-9e4000`.
+- Do not port this to vendored RPCSX or enable `bodyfast`, `codegen-fast`, or
+  `vulkan-compute` until field, Options/menu, and first-battle visual gates pass
+  with zero mismatches, zero descriptor overflow, and zero fatal log hits.
