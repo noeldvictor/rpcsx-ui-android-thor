@@ -229,3 +229,34 @@ Next:
 - When the upstream checkout is isolated, implement only the log-only verifier
   row and run this parser on the resulting RPCS3 log before any fast/body/codegen
   path is considered.
+
+## 2026-05-28 Strict Verify Log-Row Gate
+
+Update:
+
+- `tools\parse_spu_contract_verify_log.ps1` now supports strict verifier gating
+  flags: `-RequireAcceptedRow`, `-RequireNoRejected`, `-MinContractHits`, and
+  `-FailOnGate`.
+- `spu-contracts\BLUS30161\verify-logrow-implementation.json` and `.md` now
+  include the strict parser command for future RPCS3 logs:
+  `.\tools\parse_spu_contract_verify_log.ps1 -LogPath <RPCS3.log> -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`.
+- Validated parser behavior:
+  generated zero-hit example parses in non-strict mode; a synthetic one-hit row
+  passes strict mode; the zero-hit example and a noise-only input both exit `2`
+  under strict `-MinContractHits 1 -FailOnGate`.
+- The gate is still parser/counter consistency only. It is not speed, not GPU
+  migration, not first-battle proof, and not a 200% candidate.
+
+Classification:
+
+- `analysis`.
+- `verify-logrow-strict-gate`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Implement the log-only upstream row only after isolating the dirty upstream
+  checkout, then require this strict parser gate before any bodyfast/codegen or
+  GPU fast-path promotion discussion.

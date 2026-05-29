@@ -53,8 +53,10 @@ GETLLAR/PUTLLC reservation loops, and repeated SPURS/SPU kernels.
    concrete log-only row, existing upstream rows to reuse, derived fields,
    implementation order, and acceptance checks.
 8. Run `tools\parse_spu_contract_verify_log.ps1` on the generated example and
-   on future RPCS3 logs before discussing promotion. The parser validates row
-   shape and counter consistency only; it does not replace visual/fatal gates.
+   on future RPCS3 logs before discussing promotion. For real logs, use
+   `-RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`.
+   The parser validates row shape and counter consistency only; it does not
+   replace visual/fatal gates.
 9. Use Ghidra/headless output to tighten the contract, not to skip verification.
 10. Add emulator verify-only counters for the contract. Promote only after clean
    field, Options/menu, and first-battle visuals and zero mismatches.

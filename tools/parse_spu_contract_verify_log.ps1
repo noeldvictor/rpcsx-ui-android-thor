@@ -3,7 +3,11 @@ param(
     [string[]]$InputLine = @(),
     [string]$SchemaPath = "spu-contracts\BLUS30161\verify-logrow-implementation.json",
     [string]$OutJson = "",
-    [string]$OutMarkdown = ""
+    [string]$OutMarkdown = "",
+    [switch]$RequireAcceptedRow,
+    [switch]$RequireNoRejected,
+    [Int64]$MinContractHits = 0,
+    [switch]$FailOnGate
 )
 
 $ErrorActionPreference = "Stop"
@@ -173,6 +177,28 @@ if ($lines.Count -eq 0) {
     }
 }
 
+$strictRequested = $RequireAcceptedRow -or $RequireNoRejected -or ($MinContractHits -gt 0)
+$strictFailures = New-Object System.Collections.Generic.List[string]
+if ($RequireAcceptedRow -and $result.accepted_rows -lt 1) {
+    $strictFailures.Add("accepted_rows_lt_1") | Out-Null
+}
+if ($RequireNoRejected -and $result.rejected_rows -gt 0) {
+    $strictFailures.Add("rejected_rows_nonzero") | Out-Null
+}
+if (($MinContractHits -gt 0) -and ([Int64]$result.total_contract_hits -lt $MinContractHits)) {
+    $strictFailures.Add("contract_hits_lt_$MinContractHits") | Out-Null
+}
+if ($strictRequested -and ([Int64]$result.total_output_mismatch -ne 0)) {
+    $strictFailures.Add("output_mismatch_nonzero") | Out-Null
+}
+if ($strictRequested -and ([Int64]$result.total_desc_overflow -ne 0)) {
+    $strictFailures.Add("desc_overflow_nonzero") | Out-Null
+}
+$strictGatePass = $strictRequested -and ($strictFailures.Count -eq 0)
+$result | Add-Member -NotePropertyName strict_gate_requested -NotePropertyValue $strictRequested
+$result | Add-Member -NotePropertyName strict_gate_pass -NotePropertyValue $strictGatePass
+$result | Add-Member -NotePropertyName strict_failures -NotePropertyValue @($strictFailures)
+
 if (-not [string]::IsNullOrWhiteSpace($OutJson)) {
     $outJsonPath = Resolve-RepoPath $OutJson
     $parent = Split-Path -Parent $outJsonPath
@@ -198,8 +224,17 @@ if (-not [string]::IsNullOrWhiteSpace($OutMarkdown)) {
     $md.Add("- Total bytes: $bt$($result.total_contract_bytes)$bt") | Out-Null
     $md.Add("- Output mismatch: $bt$($result.total_output_mismatch)$bt") | Out-Null
     $md.Add("- Descriptor overflow: $bt$($result.total_desc_overflow)$bt") | Out-Null
+    $md.Add("- Strict gate requested: $bt$($result.strict_gate_requested)$bt") | Out-Null
+    $md.Add("- Strict gate pass: $bt$($result.strict_gate_pass)$bt") | Out-Null
     $md.Add("") | Out-Null
     $md.Add("Classification: $($bt)analysis$bt, $($bt)verify-logrow-parser$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
+    if ($result.strict_failures.Count -gt 0) {
+        $md.Add("") | Out-Null
+        $md.Add("## Strict Gate Failures") | Out-Null
+        foreach ($failure in $result.strict_failures) {
+            $md.Add("- $bt$failure$bt") | Out-Null
+        }
+    }
     if ($result.failures.Count -gt 0) {
         $md.Add("") | Out-Null
         $md.Add("## Failures") | Out-Null
@@ -211,3 +246,6 @@ if (-not [string]::IsNullOrWhiteSpace($OutMarkdown)) {
 }
 
 $result | ConvertTo-Json -Depth 16
+if ($FailOnGate -and $strictRequested -and -not $strictGatePass) {
+    exit 2
+}

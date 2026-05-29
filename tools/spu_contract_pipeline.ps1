@@ -685,6 +685,7 @@ function New-VerifyLogRowImplementation {
                 "status"
             )
             example = "Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=$contractId title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled group_name=`"CellSpursKernelGroup`" spu_name=`"CellSpursKernel0`" entry=0x0 image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 reject_title=0 reject_image_sig=0 reject_pc=0 reject_group=0 reject_spu_name=0 reject_cmd=0 reject_list=0 reject_tag=0 reject_size=0 reject_eah=0 reject_eal_family=0 reject_lsa_range=0 reject_mfc_shuffle=0 reject_accurate_dma=0 reject_fast_mode=0 output_mismatch=0 desc_overflow=0 last_src_hash=0x0 last_dst_pre_hash=0x0 last_dst_post_hash=0x0 cause=0x0 status=0x0"
+            strict_parser_command = ".\tools\parse_spu_contract_verify_log.ps1 -LogPath <RPCS3.log> -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate"
         }
         derived_from_existing = @(
             [pscustomobject]@{ target = "contract_hits"; source = "spu_hle_25cc_shadow_ea9e4000_hits or sum(desc.hits where desc.family == 1)" },
@@ -718,12 +719,13 @@ function New-VerifyLogRowImplementation {
             [pscustomobject]@{ step = 1; file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; action = "emit one additional parseable notice row after the existing 25cc shadow descriptor rows" },
             [pscustomobject]@{ step = 2; file = "rpcs3\Emu\Cell\SPUThread.cpp"; action = "if reject buckets cannot be derived at dump time, add a verify-only classifier helper that mirrors get_es_mfc_25cc_runtime_family_raw without changing behavior" },
             [pscustomobject]@{ step = 3; file = "rpcs3\Emu\Cell\SPUThread.h"; action = "add persistent reject-bucket counters only if the dump-time derivation is insufficient" },
-            [pscustomobject]@{ step = 4; file = "tools/windows log parser"; action = "accept only rows with contract_id=mfc-descriptor-family-25cc-9e4000 and hle_mode=contract-25cc-9e4000" }
+            [pscustomobject]@{ step = 4; file = "tools/windows log parser"; action = "accept only rows with contract_id=$contractId and hle_mode=contract-25cc-9e4000" }
         )
         acceptance_checks = @(
             "No memcpy/body/fast path behavior changes in the first patch.",
             "The row appears under RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow.",
             "The row does not appear under blocked fast modes except as reject_fast_mode > 0.",
+            "The strict parser command exits 0 only when at least one accepted row exists and contract_hits >= 1.",
             "contract_hits equals contract_get_hits + contract_put_hits.",
             "output_mismatch == 0 and desc_overflow == 0 are required before any promotion.",
             "Field, Options/menu, and first-battle visual gates are still required."
@@ -971,6 +973,7 @@ $logRowMd.Add("") | Out-Null
 $logRowMd.Add("- Prefix: $bt$($logRowImplementation.target_log_row.prefix)$bt") | Out-Null
 $logRowMd.Add("- HLE mode: $bt$($logRowImplementation.target_log_row.hle_mode)$bt") | Out-Null
 $logRowMd.Add("- Example: $bt$($logRowImplementation.target_log_row.example)$bt") | Out-Null
+$logRowMd.Add("- Strict parser command: $bt$($logRowImplementation.target_log_row.strict_parser_command)$bt") | Out-Null
 $logRowMd.Add("") | Out-Null
 $logRowMd.Add("Required keys:") | Out-Null
 foreach ($key in $logRowImplementation.target_log_row.format_keys) {
