@@ -1,5 +1,150 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 10:20:58-04:00 SPU Contract Refresh + Visual/Parser Recheck (Refiner-Blocked Window Step)
+
+## Run Stamp
+- Timestamp: `2026-05-29T10:20:58-04:00` (local)
+- Branch: `master`
+- Refiner decision (from immediate pre-pass): `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or run focused SPU kernel HLE/codegen/verifier analysis next.`
+- Route pressure state: the latest route proof was invalid (`NO_FIELD_LIKE_SCREENSHOT` on `20260529-100836...`), so movement was blocked by anti-patterns; this round stayed in SPU analysis lane.
+
+## Action Taken
+
+Per refiner block, we skipped a duplicate Windows movement rerun and updated the SPU contract pipeline using the cleanest available base run:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `FIELD_LIKE_PRESENT`
+- First field-like screenshot: `screenshot-0118s.png` at `118s` (`2.50 MB`)
+- Class counts: `field-like-large-png: 10`
+- Invalid screenshots after first field-like: `0`
+
+- Latest attempted rerun (for route-pressure check): `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `NO_FIELD_LIKE_SCREENSHOT`
+- Class counts: `loading-like-small-png: 14`
+- Invalid screenshots after first field-like: `0` (never reached)
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+  - Rows: `0`
+  - Accepted: `0`
+  - Contract hits: `0`
+  - Strict failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+  - Strict parser result: failed (`no contract verifier rows found`)
+
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+  - Rows: `0`
+  - Accepted: `0`
+  - Contract hits: `0`
+  - Strict failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+  - Strict parser result: failed (`no contract verifier rows found`)
+
+Targeted fatal scan on `20260529-100836` (`VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, `Segmentation fault`) returned `0` hits each.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+  - `Kernel capsule rows: 0`, `MFC wait exact-PC rows: 0`, `Command-run MFC wait exact-PC rows: 0`
+  - Decision: `collect-missing-proof` (no kernel exact-PC correlation files in this run)
+
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -Top 12`
+  - `Kernel capsule rows: 0`, `Reservation command rows: 1767`, `Command-run MFC wait exact-PC rows: 100813`
+  - Decision: `collect-missing-proof` (missing kernel capsule and pair verifier rows for narrow fast-path proof)
+
+## SPU Contract Artifact Inspection
+- `spu-contracts/BLUS30161/index.json`: source run now set to `20260529-095956`, contracts `pc025cc` + `pc0451c`, both `hot_log_hits=80`.
+- `spu-contracts/BLUS30161/source-alignment.md`: Windows upstream still has priority-1 `0x25cc/0x9e4000` and priority-2 `0x451c` predicates; vendored RPCSX still lacks contract predicates.
+- `spu-contracts/BLUS30161/verify-counter-plan.md`: priority-1 lane remains `mfc-descriptor-family-25cc-9e4000`; `fast_mode=blocked`; required verifier environment remains `verify-only-required` with required visuals (`field`, `options-menu`, `first-battle`) plus zero mismatch/overflow/fatal.
+- `spu-contracts/BLUS30161/verify-counter-schema.md`: verify-only counter schema confirms required `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow` and explicit reject buckets.
+- `spu-contracts/BLUS30161/verify-logrow-implementation.md`: scaffold still points to parseable row `Eternal Sonata SPU contract verifier` with `hle_mode=contract-25cc-9e4000`.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `spu-contract-pipeline`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-clean`
+- `route-tooling`
+
+## Next Step
+- Keep this as route-tooling/evidence-only; no speed, first-battle, or `gpu-migration-credit` claim.
+- Next required action is implementation work for priority-1 verify-only counter/reject buckets in Windows upstream before any fast-mode change:
+  - emit log row with `contract_id=mfc-descriptor-family-25cc-9e4000`
+  - add reject-bucket counters
+  - re-run `check_eternal_sonata_windows_visual_gate.ps1` for field + Options + first-battle under clean conditions
+  - only then evaluate a fast-path candidate.
+
+## 2026-05-29 10:08:36-04:00 Loader-Control Left200 Visual-Fail + Contract Pipeline Refresh
+
+## Run Stamp
+- Timestamp: `2026-05-29T10:08:36-04:00` (local)
+- Branch: `master`
+- Refiner decision (from immediate pre-pass): `Use newest valid loader-control as route base, then add one small state-aware movement step with CleanAfterField; keep lane-2 HLE/GPU dry-runs blocked.`
+- Route pressure state: clean host, but loader-control step still blocked by no field-like capture.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireFieldAtOrBeforeSeconds 160 -RequireNoInvalidAfterFirstField`
+- Status: `NO_FIELD_LIKE_SCREENSHOT`
+- First field-like screenshot: `none`
+- Class counts: `loading-like-small-png: 14`
+- Host contention summary: clean (`6` snapshots)
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`
+- strict_failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+- Targeted fatal scan: no route-blocking `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, assert, or hard crash hit found; only startup `Show fatal error hints: false`.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -Top 12`
+- Kernel capsule rows: `0`
+- MFC wait exact-PC rows: `0`
+- Reservation command rows: `1767`
+- Reservation command exact-PC rows: `49648`
+- Command-run MFC wait exact-PC rows: `100813`
+- Decision: `collect-missing-proof` (no kernel-capsule or exact-PC command pair evidence for narrow fast-path proof)
+
+## SPU Contract Pipeline Sync
+- `.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000`
+- Refreshed `spu-contracts\BLUS30161` artifacts and kept priority-1 / priority-2 rows:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+- Lane-1 counter plan stays `mfc-descriptor-family-25cc-9e4000`, with `fast_mode=blocked` and `verifier.mode=verify-only-required`.
+- `spu-contracts\BLUS30161\source-alignment.md` continues to show Windows upstream predicate presence for `0x025cc`/`0x9e4000` and missing vendored predicates.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `route-tooling`
+- `spu-contract-pipeline`
+- `collect-missing-proof`
+- `host-contention-clean`
+
+## Next Step
+- Keep this as route-tooling evidence only; no speed, first-battle, or `gpu-migration-credit` claim.
+- Do not rerun the same `cpu4-loader-control-left200-visualgate-windows` command sequence.
+- Next required action remains: implement/port verify-only contract row and reject buckets for `mfc-descriptor-family-25cc-9e4000` in Windows upstream, then rerun field + Options/menu + first-battle under strict visual and parser gates.
+
 ## 2026-05-29 10:06:41-04:00 Field-Recovered Loader-Control Route Repair (v15)
 
 ## Run Stamp
