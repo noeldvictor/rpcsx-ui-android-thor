@@ -2,6 +2,117 @@
 
 
 
+## 2026-05-29 03:40:42-04:00 TopSlot Battle Isolation (Verify Off)
+
+## Run Stamp
+- Timestamp: `2026-05-29T03:40:42-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest 0x25cc descriptor first-battle Verify25ccShadow run reached battle/tutorial visuals but fataled at PPU VM access. Isolate route without Verify25ccShadow and avoid counters changes.`
+- Route pressure state: verify-off isolation was requested to check whether TopSlot failure is route-bound; route was not preserved long enough to reach battle visuals.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-isolation -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-034042-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-isolation-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-034042-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-isolation-windows -RequireFieldLike -RequireBattleLikeAtOrAfterSeconds 120 -RequireNoInvalidAfterFirstField`
+- Classification: `FIELD_LIKE_PRESENT` (insufficient field duration + no battle-like frame).
+- Screenshot status: `1` field-like frame at `117s`, no other clean field-like frame.
+- Targeted battle visual scan: `0` battle-like screenshots after `120s`.
+- Summary: `FIELD_LIKE_PRESENT` with gate failures for late field and first-battle criteria.
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-034042-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-isolation-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`, `total_output_mismatch=0`, `total_desc_overflow=0`, `strict_failures: accepted_rows_lt_1, contract_hits_lt_1` (`failed to emit verifier rows`).
+- Targeted fatal scan: only `Show fatal error hints: false`.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260529-034042-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-isolation-windows`
+- `Classification: failed-counterproof`.
+- 25cc counters were absent due verify disabled in this capture (`0` rows/`0` hits).
+- `.\tools/summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-034042-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-isolation-windows`
+- Reservation-loop summary remained `command-correlation-data-missing`; no command or pair-verifier rows for fast-path qualification.
+
+## SPU Contract Artifacts
+- `spu-contracts\BLUS30161\source-alignment.json` unchanged.
+- `2` contracts remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `failed-counterproof`
+- `failed-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-clean`
+
+## Next Step
+- Refiner now requires **black-overlay-safe field-boundary control** before re-adding TopSlot battle movement: rerun clean `loader-control-left200x2` field boundary with stricter overlay guard, then return to `Verify25ccShadow` first-battle under that boundary.
+
+
+## 2026-05-29 03:31:12-04:00 TopSlot nocombo Repair (Verify25ccShadow)
+
+## Run Stamp
+- Timestamp: `2026-05-29T03:31:12-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest 0x25cc descriptor first-battle Verify25ccShadow run reached battle/tutorial visuals but fataled at PPU VM access 0x002aedd0; do not count as first-battle proof and run isolate step before any fast-path claims.`
+- Route pressure state: same TopSlot macro with no combo removed was attempted but still produced post-field black-overlay and fatal.
+
+## Windows-only Step
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-topslot-nocombo-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify25ccShadow -WindowsHostContentionGate ExternalFail -EternalSonataGpuProbe Profile -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-033112-cpu4-hle-25cc-shadow-desc-battle-topslot-nocombo-proof-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-033112-cpu4-hle-25cc-shadow-desc-battle-topslot-nocombo-proof-windows -RequireFieldLike -RequireBattleLikeAtOrAfterSeconds 120 -RequireNoInvalidAfterFirstField`
+- Classification: `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`.
+- Screenshot status: `1` clean field-like frame at `117s`, `14` black-overlay-small-png frames afterward, `0` battle-like screenshots.
+- Gate failure: invalid post-field screenshots + no battle-like imagery.
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-033112-cpu4-hle-25cc-shadow-desc-battle-topslot-nocombo-proof-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=375`, `accepted_rows=375`, `rejected_rows=0`, `total_contract_hits=809`, `total_contract_bytes=13254656`, `total_output_mismatch=0`, `total_desc_overflow=0`, `strict_failures: none`.
+- Targeted fatal scan: `VM: Access violation reading location 0x40 (unmapped memory)` at `PPU[0x100000c]`.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260529-033112-cpu4-hle-25cc-shadow-desc-battle-topslot-nocombo-proof-windows`
+- `Classification: partial-counterproof`.
+- 25cc counters: `11238` rows / `12138` hits / `189.66 MB`, GET/PUT `5613/6525`, output mismatches `0`, max overflow `0`.
+- Generic non-25cc mismatches remained on `0x451c` (`131` total across `106` lines), so broad shadow claims remain invalid.
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-033112-cpu4-hle-25cc-shadow-desc-battle-topslot-nocombo-proof-windows`
+- Reservation-loop summary: `collect-missing-proof` (missing exact command/exact-PC/pair-verifier correlation).
+
+## SPU Contract Artifacts
+- `spu-contracts\BLUS30161\source-alignment.json` unchanged.
+- `2` contracts remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+
+## Classification
+- `analysis`
+- `failed-fatal-log`
+- `failed-visual-gate`
+- `partial-counterproof`
+- `host-contention-failed`
+- `collect-missing-proof`
+- `spu-reservation-loop-summary`
+
+## Next Step
+- Add or rerun clean `loader-control-left200x2` field control with explicit overlay guard, then return to `Verify25ccShadow` first-battle under that boundary.
+
+
 ## 2026-05-29 03:10:22-04:00 Left200x2 Diag200 Field Extension (Route Tooling)
 
 ## Run Stamp
