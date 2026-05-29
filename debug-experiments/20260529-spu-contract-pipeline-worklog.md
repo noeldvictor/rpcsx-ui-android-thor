@@ -1,5 +1,71 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 08:27:35-04:00 Stateaware One-Step Visual Regression + Pipeline Retune
+
+## Run Stamp
+- Timestamp: `2026-05-29T08:27:35-04:00` (local)
+- Branch: `master`
+- Refiner decision (from immediate pre-pass): `Use the newest valid-field run as the route base, but only add one small state-aware movement step with CleanAfterField.`
+- Route pressure state: latest route proof is invalid on visuals (`black-overlay-small-png`), so this cycle remains route-tooling and contract-scaffold only; no field/Options/battle movement proof.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-v5-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 240 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 14
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-081926-cpu4-stateaware-one-step-visualgate-v5-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-081926-cpu4-stateaware-one-step-visualgate-v5-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `NO_FIELD_LIKE_SCREENSHOT`
+- First field-like screenshot: `none`
+- Class counts: `black-overlay-small-png: 16`
+- Invalid-after-field screenshots: `0` (none reached)
+- Host contention summary: clean (`8` samples)
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-081926-cpu4-stateaware-one-step-visualgate-v5-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`
+- strict_failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+- Targeted fatal scan: no route-blocking VM access violation, SPU unknown STOP, VK_ERROR_DEVICE_LOST, assert, or hard crash log hit; only startup/config export lines (e.g., `Show fatal error hints: false`, `_sys_panic` in loader table).
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-081926-cpu4-stateaware-one-step-visualgate-v5-windows-windows`
+- Reservation command rows: `0`
+- Reservation command exact-PC rows: `0`
+- Command-run MFC wait exact-PC rows: `0`
+- Command/read decision: `command-correlation-data-missing`
+- Decision: `collect-missing-proof`
+
+## SPU Contract Pipeline Sync
+- `.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-073954-cpu4-stateaware-one-step-visualgate-v4-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6`
+- JSON/MD inspection shows:
+  - priority-1 contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - priority-2 contract: `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+  - both `inferred_classes`: `dynamic-mfc-shape,dma-window,spurs-kernel`
+  - both `verifier.mode`: `verify-only-required`
+  - `required_visuals`: `field`, `options-menu`, `first-battle`
+  - both `fast_mode = blocked`
+  - required counters unchanged: `output_mismatch=0`, `descriptor_overflow=0`, `fatal_log_hits=0`
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `route-tooling`
+- `spu-contract-scaffold`
+- `spu-contract-pipeline`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-clean`
+
+## Next Step
+- Do not claim speed, `gpu-migration-credit`, or 200% progress from this run.
+- Next action is verify-only counter and route repair work: add/validate `0x25cc/0x9e4000` verify-only counters from `verify-counter-plan.md`, then rerun clean Field + Options + first-battle under strict `-FailOnGate` before any fast-mode experiments.
+
 ## 2026-05-29 07:39:54-04:00 Stateaware One-Step Visual Retry + Missing Verifier Rows
 
 ## Run Stamp
