@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-29T18:52:41.1314380-04:00",
+    "generated_at":  "2026-05-29T19:12:03.6052870-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-175303-eternal-sonata-field-stock-qualcomm-windows",
     "target_pcs":  [
                        "0x25cc",
                        "0x451c"
@@ -18,7 +18,6 @@
                           "pc":  "0x025cc",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "dynamic-mfc-shape",
                                           "dma-window",
                                           "spurs-kernel"
                                       ],
@@ -30,7 +29,6 @@
                           "pc":  "0x0451c",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "dynamic-mfc-shape",
                                           "dma-window",
                                           "spurs-kernel"
                                       ],
