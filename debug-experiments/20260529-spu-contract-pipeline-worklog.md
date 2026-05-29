@@ -1,5 +1,54 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 14:52:06-04:00 Refiner-Blocked SPU Verify Gate Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T14:52:06.0611791-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200.`
+- Route pressure state: movement remains blocked (`20260529-100836` is still invalid field), so we stayed on SPU contract analysis only.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Visual gate:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+    - `FIELD_LIKE_PRESENT`
+    - First field-like: `screenshot-0118s.png` at `118s`
+- Parser strict check (field log):
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+    - `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+- Parser strict check (movement log):
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+    - `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+- SPU reservation loop summaries:
+  - `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+    - missing cmd/exact-PC/wait CSVs, decision `collect-missing-proof`
+  - `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
+    - `Reservation command rows: 1767`, `Reservation command exact-PC rows: 49648`, `Command-run MFC wait exact-PC rows: 100813`, decision `collect-missing-proof`
+
+## Artifact Inspection
+- `spu-contracts/BLUS30161/latest-summary.md` regenerated at `2026-05-29T14:51:37.8095997-04:00`.
+- Contract JSON + verify artifacts (12 files) were refreshed by the pipeline run; no behavior code changes yet.
+- `verify-counter-plan.md` / `verify-counter-schema.md` unchanged in substance: priority lane remains `mfc-descriptor-family-25cc-9e4000`, all fast modes blocked pending field+Options+first-battle proof with zero mismatches/overflow/fatals.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Implement/align `hle_mode=contract-25cc-9e4000` log row + reject bucket emit in Windows upstream next, then run strict parser and Field + Options + first-battle captures before any fast route.
+
 ## 2026-05-29 14:50:00-04:00 SPU Contract Rebuild + Verify-Only Evidence Check
 
 ## Run Stamp
