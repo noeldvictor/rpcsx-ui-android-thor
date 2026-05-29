@@ -2,6 +2,67 @@
 
 
 
+## 2026-05-29 02:30:27-04:00 TopSlot Control Battle Isolation (Stock-Control)
+
+## Run Stamp
+- Timestamp: `2026-05-29T02:30:27-04:00` (local)
+- Branch: `master`
+- Route pressure state: latest refiner command executed with `EternalSonataSpuHleVerify` off and `EternalSonataGpuProbe Profile`; route still dies/fails after first field-like checkpoint.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-novo-verify -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsBattleLoadRoute TopSlot -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -WindowsVisualGate BattleRoute -WindowsVisualGateFieldSeconds 160 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-023027-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-novo-verify-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-023027-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-novo-verify-windows`
+- Classification: `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`
+- Screenshot status: `14` black-overlay-small-png after the first valid field screenshot (`screenshot-0117s.png`).
+- First/only field-like screenshot: `screenshot-0117s.png` at `117s` (`2.50 MB`)
+- Gate failures:
+  - Invalid small screenshot(s) after the first field-like image.
+  - No field-like at/after `220s`.
+  - Only `1` field-like screenshot found, minimum required `2`.
+  - No battle-like screenshot at/after `200s`.
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-023027-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-novo-verify-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`, `total_output_mismatch=0`, `total_desc_overflow=0`, `strict_failures: accepted_rows_lt_1, contract_hits_lt_1`
+- Targeted fatal scan hit: `VM: Access violation reading location 0x40 (unmapped memory)` (in `RPCS3.stderr.txt`/`RPCS3.log`).
+- Failure classification: `no contract verifier rows found` and `failed-fatal-log`.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260529-023027-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-novo-verify-windows`
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-023027-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-novo-verify-windows`
+- 25cc counterproof classification: `failed-counterproof`.
+- Counter detail: `0` 25cc shadow rows/hits and `1` targeted fatal in log.
+- Reservation-loop summary: `command-correlation-data-missing`, decision `collect-missing-proof`.
+
+## SPU Contract Artifacts
+- `spu-contracts\BLUS30161\source-alignment.json` inspected and unchanged.
+- `2` contracts remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+- `next_action` unchanged: add verify-only counters for `mfc-descriptor-family-25cc-9e4000`, then re-run field/Options/first-battle under verify mode before any fast paths.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `failed-fatal-log`
+- `failed-counterproof`
+- `collect-missing-proof`
+- `clean-lane-counters-with-invalid-visuals`
+- `host-contention-clean`
+
+## Next Step
+- Refiner now blocks movement extension and requests re-proving the newest clean loader-control-left200x2 boundary with `CleanAfterField`.
+
+
 ## 2026-05-29 02:10:17-04:00 First-Battle Route Repair Under Verify25ccShadow
 
 ## Run Stamp
