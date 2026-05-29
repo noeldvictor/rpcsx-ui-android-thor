@@ -1,6 +1,6 @@
 ﻿# SPU Verify Counter Plan
 
-- Generated: `2026-05-29T15:31:40.4037157-04:00`
+- Generated: `2026-05-29T15:51:55.5970986-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
 - Classification: `analysis`, `verify-counter-plan`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
