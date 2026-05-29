@@ -1,4 +1,79 @@
-# 2026-05-29 SPU Contract Pipeline Round
+﻿# 2026-05-29 SPU Contract Pipeline Round
+
+
+
+## 2026-05-29 01:50:56-04:00 Descriptor Direction Counterproof + Pipeline Rerun
+
+## Run Stamp
+- Timestamp: `2026-05-29T01:50:56-04:00` (local)
+- Branch: `master`
+- Route pressure state: refiner output confirmed `Field` clean but flagged exact-EA 0x9e4000 shadowing as too narrow. This checkpoint is verify-counter only and avoids movement extension.
+
+## Refiner + Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Screenshot status: `FIELD_LIKE_PRESENT`
+- First field-like screenshot: `screenshot-0117s.png` at `117s` (`2.50 MB`)
+- Invalid-after-field screenshots: none
+- Targeted fatal scan: `0` hits
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=824`, `accepted_rows=824`, `rejected_rows=0`, `total_contract_hits=1782`, `total_contract_bytes=29196288`, `total_output_mismatch=0`, `total_desc_overflow=0`
+- `strict_failures`: none
+- `promotion_ready`: `false` (field proof only; Options/menu and first-battle verify gates still required for fast-path eligibility)
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows`
+- Classification: `valid-field-counterproof`
+- 25cc shadow descriptors: `24708` rows, `26733` hits, `417.70 MB`, GET/PUT hits `12363/14370`, output mismatches `0`, max descriptor overflow `0`
+- Direction summary:
+  - GET (`0x40`): `12348` rows, `12363` hits, `193.17 MB`, `changed/unchanged 827/11536`
+  - PUT (`0x20`): `12360` rows, `14370` hits, `224.53 MB`, `changed/unchanged 8612/5758`
+- Generic non-25cc shadow mismatches remained in 0x451c (`142` total across `122` lines) and do not invalidate this 25cc counterproof path.
+
+## SPU Contract Pipeline Sync + JSON inspection
+- Refreshed contract artifacts with the same source run as above:
+  - `spu-contracts\BLUS30161\latest-summary.md`
+  - `spu-contracts\BLUS30161\index.json`
+  - `spu-contracts\BLUS30161\verify-counter-plan.md`
+  - `spu-contracts\BLUS30161\source-alignment.md`
+  - `spu-contracts\BLUS30161\verify-counter-schema.md`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.md`
+  - `spu-contracts\BLUS30161\verify-counter-plan.json`
+  - `spu-contracts\BLUS30161\source-alignment.json`
+  - `spu-contracts\BLUS30161\verify-counter-schema.json`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.json`
+- `spu-contracts\BLUS30161\verify-counter-schema.json` confirms priority lane `mfc-descriptor-family-25cc-9e4000` requires:
+  - contract-level counters (`contract_hits`, `contract_bytes`, `contract_get_hits`, `contract_put_hits`, `contract_reject_total`)
+  - reject buckets (`reject_title`, `reject_image_sig`, `reject_pc`, `reject_group`, `reject_cmd`, `reject_list`, `reject_tag`, `reject_size`, `reject_eal_family`, etc.)
+  - row hash fields (`last_src_hash`, `last_dst_pre_hash`, `last_dst_post_hash`)
+  - and `spu_hle_25cc_shadow_output_mismatch == 0` / `desc_overflow == 0` for promotion gating.
+- `spu-contracts\BLUS30161\source-alignment.json` remains at:
+  - `2` contracts total
+  - `next_action`: implement verify-only counters/reject buckets for priority-1 lane before any fast/body/codegen path.
+
+## Classification
+- `analysis`
+- `valid-field-counterproof`
+- `verify-counterproof`
+- `spu-contract-scaffold`
+- `spu-contract-inspection`
+
+## Next Step
+- Keep `WindowsScene field` on hold for movement extension.
+- Implement only verify-only counters/reject buckets in upstream and rerun field + Options/menu + first-battle in verify mode before any fast/body/codegen/Vulkan movement.
+
 
 ## 2026-05-29 01:34:31-04:00 Field Counterproof + Pipeline Refresh
 
@@ -330,3 +405,4 @@
 ## Next Step
 - Keep route blocked until `left200x1` boundary is re-proven in clean visual state.
 - Implement/port only the contract verifier log-row in an isolated Windows upstream checkout, then rerun strict parser + visual triage gates.
+
