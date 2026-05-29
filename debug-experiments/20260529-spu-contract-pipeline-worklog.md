@@ -1,5 +1,53 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 19:32:56-04:00 SPU Scaffold Refresh and Verification Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T19:32:09.1362708-04:00` / `2026-05-29T19:32:56.6033608-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement.`
+- Route pressure state: movement remains blocked; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+```
+
+## Verification
+
+- SPU artifacts were refreshed from the `175303` evidence and source timestamps were bumped across all contract outputs (`index`, `latest-summary`, `source-alignment`, verify plan/schema, and log-row scaffold).
+- Contract IDs are unchanged.
+- Visual gate on the source run still fails:
+  - `NO_FIELD_LIKE_SCREENSHOT` (`first field-like screenshot: none`)
+  - `screenshot-0118s` classified as `cutscene-or-nonfield-large-png`, plus seven small non-field clips.
+- Parser result for the source run:
+  - `rows=763`, `accepted_rows=763`, `rejected_rows=0`
+  - `total_contract_hits=1529`, `total_contract_bytes=25051136`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - strict mode passed.
+- Reservation-loop summary:
+  - `Kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `Reservation command rows=0`, `Command-run MFC wait exact-PC rows=90997`
+  - `command-correlation-data-missing`
+  - Decision: `collect-missing-proof`.
+- Log quick scan (`RPCS3.log`): no `VM access violation`, `SPU unknown STOP`, or `VK_ERROR_DEVICE_LOST` signatures.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep lane locked to verify-only planning and implement the priority-1 `mfc-descriptor-family-25cc-9e4000` verifier-only row in the Windows upstream checkout when route visuals are first-clean.
+- Do not switch to bodyfast/codegen/GPU fast mode until clean `field -> options -> first-battle` captures under `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow` exist.
+
 ## 2026-05-29 19:12:13-04:00 SPU Verify-Lane Hold and Counter-Plan Refresh
 
 ## Run Stamp
