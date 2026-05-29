@@ -1,6 +1,6 @@
 ﻿# SPU Contract Source Alignment
 
-- Generated: `2026-05-29T12:30:19.3932796-04:00`
+- Generated: `2026-05-29T12:50:14.1218718-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
 - Classification: `analysis`, `source-alignment`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
