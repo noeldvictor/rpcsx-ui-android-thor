@@ -49,8 +49,11 @@ GETLLAR/PUTLLC reservation loops, and repeated SPURS/SPU kernels.
 6. Inspect `spu-contracts\BLUS30161\verify-counter-schema.md` for the exact
    verify environment, blocked fast modes, predicate fields, reject buckets, and
    parser acceptance rules.
-7. Use Ghidra/headless output to tighten the contract, not to skip verification.
-8. Add emulator verify-only counters for the contract. Promote only after clean
+7. Inspect `spu-contracts\BLUS30161\verify-logrow-implementation.md` for the
+   concrete log-only row, existing upstream rows to reuse, derived fields,
+   implementation order, and acceptance checks.
+8. Use Ghidra/headless output to tighten the contract, not to skip verification.
+9. Add emulator verify-only counters for the contract. Promote only after clean
    field, Options/menu, and first-battle visuals and zero mismatches.
 
 ## First Lanes

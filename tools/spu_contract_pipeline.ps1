@@ -609,6 +609,128 @@ function New-VerifyCounterSchema {
     }
 }
 
+function New-VerifyLogRowImplementation {
+    param(
+        [string]$Title,
+        [string]$RunPath,
+        [object]$CounterSchema
+    )
+
+    $contractId = $CounterSchema.contract_id
+    $lane = $CounterSchema.lane
+    $logPrefix = "Eternal Sonata SPU contract verifier"
+
+    return [pscustomobject]@{
+        schema_version = 1
+        generated_at = (Get-Date).ToString("o")
+        title_id = $Title
+        source_run = $RunPath
+        classification = @("analysis", "verify-logrow-implementation-scaffold")
+        lane = $lane
+        contract_id = $contractId
+        source_context = [pscustomobject]@{
+            upstream_checkout = "C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream"
+            note = "Do not apply automatically when the upstream checkout is dirty. This scaffold is log-only and does not change copy/body behavior."
+        }
+        existing_log_rows = @(
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; row = "Eternal Sonata SPU HLE 25cc family verifier"; use = "family hits, bytes, GET/PUT split, EA-family split, last command fields" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; row = "Eternal Sonata SPU HLE 25cc shadow verifier"; use = "shadow hits, hashes, output match/mismatch, descriptor overflow context" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; row = "Eternal Sonata SPU HLE 25cc shadow descriptor"; use = "per-descriptor family, direction, command shape, hashes, mismatch, overflow" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; row = "Eternal Sonata SPU HLE 25cc body verifier"; use = "body verify/fast guard visibility and PUT rejects" }
+        )
+        target_log_row = [pscustomobject]@{
+            prefix = $logPrefix
+            hle_mode = "contract-25cc-9e4000"
+            format_keys = @(
+                "contract_id",
+                "title",
+                "mode",
+                "verify_mode",
+                "body_mode",
+                "group_name",
+                "spu_name",
+                "entry",
+                "image_sig",
+                "pc",
+                "tag",
+                "size",
+                "eal",
+                "contract_hits",
+                "contract_bytes",
+                "contract_get_hits",
+                "contract_put_hits",
+                "contract_reject_total",
+                "reject_title",
+                "reject_image_sig",
+                "reject_pc",
+                "reject_group",
+                "reject_spu_name",
+                "reject_cmd",
+                "reject_list",
+                "reject_tag",
+                "reject_size",
+                "reject_eah",
+                "reject_eal_family",
+                "reject_lsa_range",
+                "reject_mfc_shuffle",
+                "reject_accurate_dma",
+                "reject_fast_mode",
+                "output_mismatch",
+                "desc_overflow",
+                "last_src_hash",
+                "last_dst_pre_hash",
+                "last_dst_post_hash",
+                "cause",
+                "status"
+            )
+            example = "Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=mfc-descriptor-family-25cc-9e4000 title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 output_mismatch=0 desc_overflow=0"
+        }
+        derived_from_existing = @(
+            [pscustomobject]@{ target = "contract_hits"; source = "spu_hle_25cc_shadow_ea9e4000_hits or sum(desc.hits where desc.family == 1)" },
+            [pscustomobject]@{ target = "contract_bytes"; source = "sum(desc.bytes where desc.family == 1 and desc.eal == 0x9e4000)" },
+            [pscustomobject]@{ target = "contract_get_hits"; source = "sum(desc.hits where desc.family == 1 and desc.direction == 1)" },
+            [pscustomobject]@{ target = "contract_put_hits"; source = "sum(desc.hits where desc.family == 1 and desc.direction == 2)" },
+            [pscustomobject]@{ target = "output_mismatch"; source = "spu_hle_25cc_shadow_output_mismatch or sum matching descriptor output_mismatch" },
+            [pscustomobject]@{ target = "desc_overflow"; source = "spu_hle_25cc_shadow_desc_overflow" },
+            [pscustomobject]@{ target = "last_src_hash"; source = "spu_hle_25cc_shadow_last_src_hash" },
+            [pscustomobject]@{ target = "last_dst_pre_hash"; source = "spu_hle_25cc_shadow_last_dst_pre_hash" },
+            [pscustomobject]@{ target = "last_dst_post_hash"; source = "spu_hle_25cc_shadow_last_dst_post_hash" }
+        )
+        reject_bucket_strategy = @(
+            [pscustomobject]@{ bucket = "reject_title"; source = "derived before title gate; should stay zero inside BLUS30161-only logger" },
+            [pscustomobject]@{ bucket = "reject_image_sig"; source = "increment when image_sig != 0x958dfe208b686622" },
+            [pscustomobject]@{ bucket = "reject_pc"; source = "increment when pc != 0x25cc" },
+            [pscustomobject]@{ bucket = "reject_group"; source = "increment when group_name != CellSpursKernelGroup" },
+            [pscustomobject]@{ bucket = "reject_spu_name"; source = "increment when spu_name != CellSpursKernel0" },
+            [pscustomobject]@{ bucket = "reject_cmd"; source = "increment when base command is not MFC GET or PUT" },
+            [pscustomobject]@{ bucket = "reject_list"; source = "increment when MFC list bit is set" },
+            [pscustomobject]@{ bucket = "reject_tag"; source = "increment when tag != 31" },
+            [pscustomobject]@{ bucket = "reject_size"; source = "increment when size != 0x4000" },
+            [pscustomobject]@{ bucket = "reject_eah"; source = "increment when eah != 0" },
+            [pscustomobject]@{ bucket = "reject_eal_family"; source = "increment when eal != 0x9e4000 for this priority-1 row" },
+            [pscustomobject]@{ bucket = "reject_lsa_range"; source = "increment when lsa + size exceeds SPU_LS_SIZE" },
+            [pscustomobject]@{ bucket = "reject_mfc_shuffle"; source = "increment when MFC transfer shuffling is enabled" },
+            [pscustomobject]@{ bucket = "reject_accurate_dma"; source = "increment when accurate DMA is enabled" },
+            [pscustomobject]@{ bucket = "reject_fast_mode"; source = "increment when verify skip/fast, 25cc body fast, GPU fast, or Vulkan compute fast path is active" }
+        )
+        implementation_order = @(
+            [pscustomobject]@{ step = 1; file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; action = "emit one additional parseable notice row after the existing 25cc shadow descriptor rows" },
+            [pscustomobject]@{ step = 2; file = "rpcs3\Emu\Cell\SPUThread.cpp"; action = "if reject buckets cannot be derived at dump time, add a verify-only classifier helper that mirrors get_es_mfc_25cc_runtime_family_raw without changing behavior" },
+            [pscustomobject]@{ step = 3; file = "rpcs3\Emu\Cell\SPUThread.h"; action = "add persistent reject-bucket counters only if the dump-time derivation is insufficient" },
+            [pscustomobject]@{ step = 4; file = "tools/windows log parser"; action = "accept only rows with contract_id=mfc-descriptor-family-25cc-9e4000 and hle_mode=contract-25cc-9e4000" }
+        )
+        acceptance_checks = @(
+            "No memcpy/body/fast path behavior changes in the first patch.",
+            "The row appears under RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow.",
+            "The row does not appear under blocked fast modes except as reject_fast_mode > 0.",
+            "contract_hits equals contract_get_hits + contract_put_hits.",
+            "output_mismatch == 0 and desc_overflow == 0 are required before any promotion.",
+            "Field, Options/menu, and first-battle visual gates are still required."
+        )
+        next_action = "Apply the log-only row in the Windows upstream checkout after isolating or stashing unrelated upstream changes; then run field/Options/first-battle verifier captures."
+    }
+}
+
 $runPath = if ([string]::IsNullOrWhiteSpace($RunDir)) {
     Find-LatestRun -Root $RunRoot
 } else {
@@ -701,6 +823,7 @@ $summary.Add("Classification: $($bt)analysis$bt, $($bt)spu-contract-scaffold$bt,
 $summary.Add("Next: wire the selected contract into a verify-only emulator counter before any fast path.") | Out-Null
 $summary.Add("Source alignment: $($bt)source-alignment.md$bt.") | Out-Null
 $summary.Add("Verify counter schema: $($bt)verify-counter-schema.md$bt.") | Out-Null
+$summary.Add("Verify log-row scaffold: $($bt)verify-logrow-implementation.md$bt.") | Out-Null
 $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
 $verifyPlan = New-VerifyCounterPlan -Title $TitleId -RunPath $runPath -ContractRows ($contractDetails.ToArray())
@@ -827,6 +950,72 @@ $counterMd.Add("") | Out-Null
 $counterMd.Add("Next action: $($counterSchema.next_action)") | Out-Null
 $counterMd | Set-Content -LiteralPath $counterMdPath -Encoding UTF8
 
+$logRowImplementation = New-VerifyLogRowImplementation -Title $TitleId -RunPath $runPath -CounterSchema $counterSchema
+$logRowPath = Join-Path $outRoot "verify-logrow-implementation.json"
+$logRowImplementation | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $logRowPath -Encoding UTF8
+
+$logRowMdPath = Join-Path $outRoot "verify-logrow-implementation.md"
+$logRowMd = New-Object System.Collections.Generic.List[string]
+$logRowMd.Add("# SPU Verify Log-Row Implementation Scaffold") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("- Generated: $bt$generatedAt$bt") | Out-Null
+$logRowMd.Add("- Title: $bt$TitleId$bt") | Out-Null
+$logRowMd.Add("- Source run: $bt$runPath$bt") | Out-Null
+$logRowMd.Add("- Lane: $bt$($logRowImplementation.lane)$bt") | Out-Null
+$logRowMd.Add("- Contract: $bt$($logRowImplementation.contract_id)$bt") | Out-Null
+$logRowMd.Add("- Classification: $($bt)analysis$bt, $($bt)verify-logrow-implementation-scaffold$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("## Target Row") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("- Prefix: $bt$($logRowImplementation.target_log_row.prefix)$bt") | Out-Null
+$logRowMd.Add("- HLE mode: $bt$($logRowImplementation.target_log_row.hle_mode)$bt") | Out-Null
+$logRowMd.Add("- Example: $bt$($logRowImplementation.target_log_row.example)$bt") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("Required keys:") | Out-Null
+foreach ($key in $logRowImplementation.target_log_row.format_keys) {
+    $logRowMd.Add("- $bt$key$bt") | Out-Null
+}
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("## Existing Rows To Reuse") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("| Row | File | Use |") | Out-Null
+$logRowMd.Add("| --- | --- | --- |") | Out-Null
+foreach ($row in $logRowImplementation.existing_log_rows) {
+    $logRowMd.Add("| $bt$($row.row)$bt | $bt$($row.file)$bt | $($row.use) |") | Out-Null
+}
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("## Derived Fields") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("| Target | Source |") | Out-Null
+$logRowMd.Add("| --- | --- |") | Out-Null
+foreach ($field in $logRowImplementation.derived_from_existing) {
+    $logRowMd.Add("| $bt$($field.target)$bt | $($field.source) |") | Out-Null
+}
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("## Reject Buckets") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("| Bucket | Source |") | Out-Null
+$logRowMd.Add("| --- | --- |") | Out-Null
+foreach ($bucket in $logRowImplementation.reject_bucket_strategy) {
+    $logRowMd.Add("| $bt$($bucket.bucket)$bt | $($bucket.source) |") | Out-Null
+}
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("## Implementation Order") | Out-Null
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("| Step | File | Action |") | Out-Null
+$logRowMd.Add("| ---: | --- | --- |") | Out-Null
+foreach ($step in $logRowImplementation.implementation_order) {
+    $logRowMd.Add("| $($step.step) | $bt$($step.file)$bt | $($step.action) |") | Out-Null
+}
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("## Acceptance Checks") | Out-Null
+foreach ($check in $logRowImplementation.acceptance_checks) {
+    $logRowMd.Add("- $check") | Out-Null
+}
+$logRowMd.Add("") | Out-Null
+$logRowMd.Add("Next action: $($logRowImplementation.next_action)") | Out-Null
+$logRowMd | Set-Content -LiteralPath $logRowMdPath -Encoding UTF8
+
 Write-Output "SPU contract index: $indexPath"
 Write-Output "SPU contract summary: $summaryPath"
 Write-Output "SPU verify plan: $verifyPlanPath"
@@ -835,3 +1024,5 @@ Write-Output "SPU source alignment: $sourceAlignmentPath"
 Write-Output "SPU source alignment summary: $sourceMdPath"
 Write-Output "SPU verify counter schema: $counterSchemaPath"
 Write-Output "SPU verify counter schema summary: $counterMdPath"
+Write-Output "SPU verify log-row scaffold: $logRowPath"
+Write-Output "SPU verify log-row scaffold summary: $logRowMdPath"

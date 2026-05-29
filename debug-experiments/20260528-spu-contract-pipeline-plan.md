@@ -164,3 +164,36 @@ Next:
 - Implement only the parseable log-label/reject-bucket row for this contract in
   the Windows upstream hooks.
 - Do not change copy/body behavior, port to vendored RPCSX, or enable fast mode.
+
+## 2026-05-28 Verify Log-Row Scaffold
+
+Update:
+
+- `tools\spu_contract_pipeline.ps1` now emits
+  `spu-contracts\BLUS30161\verify-logrow-implementation.json` and
+  `spu-contracts\BLUS30161\verify-logrow-implementation.md`.
+- The scaffold targets a single additional parseable Windows upstream notice row:
+  `Eternal Sonata SPU contract verifier` with
+  `hle_mode=contract-25cc-9e4000` and
+  `contract_id=mfc-descriptor-family-25cc-9e4000`.
+- It reuses existing upstream 25cc family, shadow, descriptor, and body verifier
+  rows instead of adding behavior changes.
+- Required keys include contract identity, image/PC/tag/size/EAL, hits, bytes,
+  GET/PUT split, reject buckets, mismatch/overflow, hashes, cause, and status.
+- The upstream RPCS3 checkout is currently dirty with unrelated work, so this
+  round deliberately produced a repo-local scaffold and did not edit upstream
+  C++ directly.
+
+Classification:
+
+- `analysis`.
+- `verify-logrow-implementation-scaffold`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Isolate the dirty upstream checkout, then apply only the log-only row.
+- Do not modify memcpy/body behavior, port to vendored RPCSX, or enable fast
+  mode before clean field, Options/menu, and first-battle verifier captures.

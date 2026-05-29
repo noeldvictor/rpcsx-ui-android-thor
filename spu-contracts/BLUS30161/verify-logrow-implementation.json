@@ -1,0 +1,216 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-05-28T20:54:34.7000053-04:00",
+    "title_id":  "BLUS30161",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows",
+    "classification":  [
+                           "analysis",
+                           "verify-logrow-implementation-scaffold"
+                       ],
+    "lane":  "mfc-descriptor-family-25cc-9e4000",
+    "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+    "source_context":  {
+                           "upstream_checkout":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcs3-upstream",
+                           "note":  "Do not apply automatically when the upstream checkout is dirty. This scaffold is log-only and does not change copy/body behavior."
+                       },
+    "existing_log_rows":  [
+                              {
+                                  "file":  "rpcs3\\Emu\\Cell\\lv2\\sys_spu.cpp",
+                                  "row":  "Eternal Sonata SPU HLE 25cc family verifier",
+                                  "use":  "family hits, bytes, GET/PUT split, EA-family split, last command fields"
+                              },
+                              {
+                                  "file":  "rpcs3\\Emu\\Cell\\lv2\\sys_spu.cpp",
+                                  "row":  "Eternal Sonata SPU HLE 25cc shadow verifier",
+                                  "use":  "shadow hits, hashes, output match/mismatch, descriptor overflow context"
+                              },
+                              {
+                                  "file":  "rpcs3\\Emu\\Cell\\lv2\\sys_spu.cpp",
+                                  "row":  "Eternal Sonata SPU HLE 25cc shadow descriptor",
+                                  "use":  "per-descriptor family, direction, command shape, hashes, mismatch, overflow"
+                              },
+                              {
+                                  "file":  "rpcs3\\Emu\\Cell\\lv2\\sys_spu.cpp",
+                                  "row":  "Eternal Sonata SPU HLE 25cc body verifier",
+                                  "use":  "body verify/fast guard visibility and PUT rejects"
+                              }
+                          ],
+    "target_log_row":  {
+                           "prefix":  "Eternal Sonata SPU contract verifier",
+                           "hle_mode":  "contract-25cc-9e4000",
+                           "format_keys":  [
+                                               "contract_id",
+                                               "title",
+                                               "mode",
+                                               "verify_mode",
+                                               "body_mode",
+                                               "group_name",
+                                               "spu_name",
+                                               "entry",
+                                               "image_sig",
+                                               "pc",
+                                               "tag",
+                                               "size",
+                                               "eal",
+                                               "contract_hits",
+                                               "contract_bytes",
+                                               "contract_get_hits",
+                                               "contract_put_hits",
+                                               "contract_reject_total",
+                                               "reject_title",
+                                               "reject_image_sig",
+                                               "reject_pc",
+                                               "reject_group",
+                                               "reject_spu_name",
+                                               "reject_cmd",
+                                               "reject_list",
+                                               "reject_tag",
+                                               "reject_size",
+                                               "reject_eah",
+                                               "reject_eal_family",
+                                               "reject_lsa_range",
+                                               "reject_mfc_shuffle",
+                                               "reject_accurate_dma",
+                                               "reject_fast_mode",
+                                               "output_mismatch",
+                                               "desc_overflow",
+                                               "last_src_hash",
+                                               "last_dst_pre_hash",
+                                               "last_dst_post_hash",
+                                               "cause",
+                                               "status"
+                                           ],
+                           "example":  "Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=mfc-descriptor-family-25cc-9e4000 title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 output_mismatch=0 desc_overflow=0"
+                       },
+    "derived_from_existing":  [
+                                  {
+                                      "target":  "contract_hits",
+                                      "source":  "spu_hle_25cc_shadow_ea9e4000_hits or sum(desc.hits where desc.family == 1)"
+                                  },
+                                  {
+                                      "target":  "contract_bytes",
+                                      "source":  "sum(desc.bytes where desc.family == 1 and desc.eal == 0x9e4000)"
+                                  },
+                                  {
+                                      "target":  "contract_get_hits",
+                                      "source":  "sum(desc.hits where desc.family == 1 and desc.direction == 1)"
+                                  },
+                                  {
+                                      "target":  "contract_put_hits",
+                                      "source":  "sum(desc.hits where desc.family == 1 and desc.direction == 2)"
+                                  },
+                                  {
+                                      "target":  "output_mismatch",
+                                      "source":  "spu_hle_25cc_shadow_output_mismatch or sum matching descriptor output_mismatch"
+                                  },
+                                  {
+                                      "target":  "desc_overflow",
+                                      "source":  "spu_hle_25cc_shadow_desc_overflow"
+                                  },
+                                  {
+                                      "target":  "last_src_hash",
+                                      "source":  "spu_hle_25cc_shadow_last_src_hash"
+                                  },
+                                  {
+                                      "target":  "last_dst_pre_hash",
+                                      "source":  "spu_hle_25cc_shadow_last_dst_pre_hash"
+                                  },
+                                  {
+                                      "target":  "last_dst_post_hash",
+                                      "source":  "spu_hle_25cc_shadow_last_dst_post_hash"
+                                  }
+                              ],
+    "reject_bucket_strategy":  [
+                                   {
+                                       "bucket":  "reject_title",
+                                       "source":  "derived before title gate; should stay zero inside BLUS30161-only logger"
+                                   },
+                                   {
+                                       "bucket":  "reject_image_sig",
+                                       "source":  "increment when image_sig != 0x958dfe208b686622"
+                                   },
+                                   {
+                                       "bucket":  "reject_pc",
+                                       "source":  "increment when pc != 0x25cc"
+                                   },
+                                   {
+                                       "bucket":  "reject_group",
+                                       "source":  "increment when group_name != CellSpursKernelGroup"
+                                   },
+                                   {
+                                       "bucket":  "reject_spu_name",
+                                       "source":  "increment when spu_name != CellSpursKernel0"
+                                   },
+                                   {
+                                       "bucket":  "reject_cmd",
+                                       "source":  "increment when base command is not MFC GET or PUT"
+                                   },
+                                   {
+                                       "bucket":  "reject_list",
+                                       "source":  "increment when MFC list bit is set"
+                                   },
+                                   {
+                                       "bucket":  "reject_tag",
+                                       "source":  "increment when tag != 31"
+                                   },
+                                   {
+                                       "bucket":  "reject_size",
+                                       "source":  "increment when size != 0x4000"
+                                   },
+                                   {
+                                       "bucket":  "reject_eah",
+                                       "source":  "increment when eah != 0"
+                                   },
+                                   {
+                                       "bucket":  "reject_eal_family",
+                                       "source":  "increment when eal != 0x9e4000 for this priority-1 row"
+                                   },
+                                   {
+                                       "bucket":  "reject_lsa_range",
+                                       "source":  "increment when lsa + size exceeds SPU_LS_SIZE"
+                                   },
+                                   {
+                                       "bucket":  "reject_mfc_shuffle",
+                                       "source":  "increment when MFC transfer shuffling is enabled"
+                                   },
+                                   {
+                                       "bucket":  "reject_accurate_dma",
+                                       "source":  "increment when accurate DMA is enabled"
+                                   },
+                                   {
+                                       "bucket":  "reject_fast_mode",
+                                       "source":  "increment when verify skip/fast, 25cc body fast, GPU fast, or Vulkan compute fast path is active"
+                                   }
+                               ],
+    "implementation_order":  [
+                                 {
+                                     "step":  1,
+                                     "file":  "rpcs3\\Emu\\Cell\\lv2\\sys_spu.cpp",
+                                     "action":  "emit one additional parseable notice row after the existing 25cc shadow descriptor rows"
+                                 },
+                                 {
+                                     "step":  2,
+                                     "file":  "rpcs3\\Emu\\Cell\\SPUThread.cpp",
+                                     "action":  "if reject buckets cannot be derived at dump time, add a verify-only classifier helper that mirrors get_es_mfc_25cc_runtime_family_raw without changing behavior"
+                                 },
+                                 {
+                                     "step":  3,
+                                     "file":  "rpcs3\\Emu\\Cell\\SPUThread.h",
+                                     "action":  "add persistent reject-bucket counters only if the dump-time derivation is insufficient"
+                                 },
+                                 {
+                                     "step":  4,
+                                     "file":  "tools/windows log parser",
+                                     "action":  "accept only rows with contract_id=mfc-descriptor-family-25cc-9e4000 and hle_mode=contract-25cc-9e4000"
+                                 }
+                             ],
+    "acceptance_checks":  [
+                              "No memcpy/body/fast path behavior changes in the first patch.",
+                              "The row appears under RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow.",
+                              "The row does not appear under blocked fast modes except as reject_fast_mode \u003e 0.",
+                              "contract_hits equals contract_get_hits + contract_put_hits.",
+                              "output_mismatch == 0 and desc_overflow == 0 are required before any promotion.",
+                              "Field, Options/menu, and first-battle visual gates are still required."
+                          ],
+    "next_action":  "Apply the log-only row in the Windows upstream checkout after isolating or stashing unrelated upstream changes; then run field/Options/first-battle verifier captures."
+}
