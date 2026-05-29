@@ -1,5 +1,52 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 17:12:21-04:00 Refiner-Blocked SPU Verify Gate Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T17:12:21.0414981-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: movement reruns remain blocked; latest clean base remains `20260529-095956` and SPU verifier lane remains the clean lane.
+
+## Action Taken
+
+```powershell
+.\\tools\\ps3_harness_refiner.ps1 -MaxRuns 8
+.\\tools\\spu_contract_pipeline.ps1 -RunDir .\\debug-captures\\windows-lab\\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Refiner continues to block movement with `single-next-loader-control-failure`, `repeated-black-overlay-pre-field`, and `fatal-log-hit` anti-patterns.
+- Visual gate on SPU evidence base:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - `FIELD_LIKE_PRESENT` (`screenshot-0118s.png` at `118s`, `2.50 MB`)
+- Strict SPU parser:
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1` (`no contract verifier rows found`)
+- SPU reservation-loop summary:
+  - `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+  - `kernel rows 0`, `exact-PC rows 0`, `correlation rows 0`, `decision=collect-missing-proof`
+- SPU artifacts regenerated (timestamps only):
+  - `spu-contracts/BLUS30161/latest-summary.md`
+  - `spu-contracts/BLUS30161/index.json`
+  - `spu-contracts/BLUS30161/source-alignment.*`
+  - `spu-contracts/BLUS30161/verify-counter-plan.*`
+  - `spu-contracts/BLUS30161/verify-counter-schema.*`
+  - `spu-contracts/BLUS30161/verify-logrow-implementation.*`
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Apply log-only parseable contract-row in Windows upstream with reject buckets only, then run verify-only counters with field + options + first-battle captures under this schema.
+
 ## 2026-05-29 16:51:39-04:00 Refiner-Blocked SPU Verify Gate Hold
 
 ## Run Stamp
