@@ -2,6 +2,64 @@
 
 
 
+## 2026-05-29 03:50:21-04:00 Loader-Control Field Reproof (Verify Off)
+
+## Run Stamp
+- Timestamp: `2026-05-29T03:50:21-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Add or use black-overlay route control before any movement or lane-2 HLE/GPU dry-run.`
+- Route pressure state: repeated black-overlay/fatal blockers remain; this is a clean field-boundary control rerun with no battle/options/fast-path claims.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-035021-cpu4-loader-control-visualgate-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-035021-cpu4-loader-control-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Classification: `FIELD_LIKE_PRESENT`.
+- Screenshot status: `10` field-like large PNG frames.
+- First field-like screenshot: `screenshot-0117s.png` at `117s`.
+- Invalid screenshots after first field-like: `0`.
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-035021-cpu4-loader-control-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`, `total_output_mismatch=0`, `total_desc_overflow=0`.
+- Strict failures: `accepted_rows_lt_1`, `contract_hits_lt_1` (`no contract verifier rows found`).
+- Targeted fatal scan: only `Show fatal error hints: false`.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_25cc_counterproof.ps1 -RunDir .\debug-captures\windows-lab\20260529-035021-cpu4-loader-control-visualgate-windows-windows`
+- `Classification: failed-counterproof` (no 25cc verifier rows/hits due verifier lane off in this run).
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-035021-cpu4-loader-control-visualgate-windows-windows`
+- Reservation-loop summary: `collect-missing-proof` (missing kernel-capsule/pair-verifier rows); no evidence for fast-path promotion.
+
+## SPU Contract Artifacts
+- `spu-contracts\BLUS30161\source-alignment.json` unchanged.
+- `2` contracts remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `route-tooling`
+- `failed-logrow-parser`
+- `failed-counterproof`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-moderate-postrun`
+
+## Next Step
+- Treat this as a clean field boundary update only; it is not speed, first-battle, menu, or 200% proof.
+- Re-run `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` before any next movement, battle, or fast-mode/HLE/GPU step. Expect field boundary verification to remain the gate.
+
+
 ## 2026-05-29 03:40:42-04:00 TopSlot Battle Isolation (Verify Off)
 
 ## Run Stamp
