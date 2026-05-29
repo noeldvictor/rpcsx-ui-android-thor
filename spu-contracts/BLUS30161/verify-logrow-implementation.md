@@ -1,6 +1,6 @@
 ﻿# SPU Verify Log-Row Implementation Scaffold
 
-- Generated: `2026-05-29T11:09:36.9792741-04:00`
+- Generated: `2026-05-29T11:28:37.4758459-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`

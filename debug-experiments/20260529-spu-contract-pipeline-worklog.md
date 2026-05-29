@@ -1,5 +1,73 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 11:28:39-04:00 Refiner-Blocked SPU Re-Validation + Parser/Counter Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T11:28:39-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: route movement remains blocked; base remains `FIELD_LIKE_PRESENT` (`095956`) while `100836` remains no-field movement miss.
+
+## Action Taken
+
+Per repeated refiner block, we re-ran the SPU pipeline only:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+
+## Visual Verification
+- Base run stayed field-clean:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `FIELD_LIKE_PRESENT`
+  - First field-like: `screenshot-0118s.png` at `118s`
+- Movement rerun remained invalid:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+
+## Log Verification
+- Strict parser checks remained empty of contract rows on both checked logs:
+  - Base log strict:
+    - `rows=0`, `accepted_rows=0`, `total_contract_hits=0`
+    - strict failures `accepted_rows_lt_1`, `contract_hits_lt_1`
+  - Movement log strict:
+    - same strict failures, no accepted rows.
+
+- Targeted fatal scan:
+  - `Show fatal error hints: false` only; no `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, or `Segmentation fault`.
+
+## Counter Verification
+- Base run command/PC/mfc exact data are still missing:
+  - `command-correlation-data-missing` (`collect-missing-proof`)
+- Movement run still has no kernel capsule/pair-verifier rows:
+  - `Kernel capsule rows: 0`
+  - `Reservation command rows: 1767`
+  - `Reservation command exact-PC rows: 49648`
+  - `Command-run MFC wait exact-PC rows: 100813`
+  - Decision: `collect-missing-proof`
+
+## SPU Contract Artifact Inspection
+- `spu-contracts/BLUS30161/index.json` regenerated with:
+  - `generated_at: 2026-05-29T11:28:37.4758459-04:00`
+  - unchanged two-contract set (`0x025cc`, `0x0451c` at `image_sig 0x958dfe208b686622`).
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Hold until Windows upstream emits `hle_mode=contract-25cc-9e4000` contract rows and kernel-capsule + pair-verifier correlation data under clean route/tooling; then re-run strict field + Options + first-battle verify sequence before any fast mode.
+
+
 ## 2026-05-29 11:09:48-04:00 Refiner-Blocked SPU Refresh + Verify-Only Readiness Recheck
 
 ## Run Stamp
