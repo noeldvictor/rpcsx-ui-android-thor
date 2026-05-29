@@ -1,5 +1,47 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 15:12:31-04:00 Refiner-Blocked SPU Verify Gate Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T15:12:31.7925116-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200.`
+- Route pressure state: repeated `NO_FIELD_LIKE_SCREENSHOT` on the latest left200 attempt (`20260529-100836`) keeps movement blocked; clean no-movement boundary remains `20260529-095956`.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Refiner summary: route/movement reruns remain blocked; SPU contract verifier lane is now the preferred step.
+- Strict parser checks:
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+    - `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+    - `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+  - missing command/exact-PC/wait CSVs; decision `collect-missing-proof`.
+
+## Artifact Inspection
+- `spu-contracts/BLUS30161/latest-summary.md` regenerated at `2026-05-29T15:12:09.0406848-04:00` and still shows 2 contracts.
+- `spu-contracts/BLUS30161/source-alignment.md` still confirms Windows upstream has 25cc family and 451c list predicates already present; vendored core remains generic-only.
+- `spu-contracts/BLUS30161/verify-counter-schema.md` and `verify-logrow-implementation.md` still require an explicit Windows-upstream verify-only row (`hle_mode=contract-25cc-9e4000`) plus reject buckets before any fast-path behavior change.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Implement/align Windows-upstream `hle_mode=contract-25cc-9e4000` log-only row and reject buckets (no fast/body changes), then rerun strict parser + field + Options + first-battle captures before any promotion.
+
 ## 2026-05-29 14:52:06-04:00 Refiner-Blocked SPU Verify Gate Hold
 
 ## Run Stamp
