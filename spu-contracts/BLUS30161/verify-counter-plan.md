@@ -1,8 +1,8 @@
 ﻿# SPU Verify Counter Plan
 
-- Generated: `2026-05-29T11:28:37.4758459-04:00`
+- Generated: `2026-05-29T11:49:46.9690177-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
 - Classification: `analysis`, `verify-counter-plan`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
 
 | Priority | Lane | Contract | PC | Fast modes |
