@@ -1,6 +1,6 @@
 ﻿# SPU Verify Log-Row Implementation Scaffold
 
-- Generated: `2026-05-28T20:54:34.5330853-04:00`
+- Generated: `2026-05-28T21:15:30.5128727-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`
@@ -11,9 +11,10 @@
 
 - Prefix: `Eternal Sonata SPU contract verifier`
 - HLE mode: `contract-25cc-9e4000`
-- Example: `Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=mfc-descriptor-family-25cc-9e4000 title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 output_mismatch=0 desc_overflow=0`
+- Example: `Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0 title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled group_name="CellSpursKernelGroup" spu_name="CellSpursKernel0" entry=0x0 image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 reject_title=0 reject_image_sig=0 reject_pc=0 reject_group=0 reject_spu_name=0 reject_cmd=0 reject_list=0 reject_tag=0 reject_size=0 reject_eah=0 reject_eal_family=0 reject_lsa_range=0 reject_mfc_shuffle=0 reject_accurate_dma=0 reject_fast_mode=0 output_mismatch=0 desc_overflow=0 last_src_hash=0x0 last_dst_pre_hash=0x0 last_dst_post_hash=0x0 cause=0x0 status=0x0`
 
 Required keys:
+- `hle_mode`
 - `contract_id`
 - `title`
 - `mode`

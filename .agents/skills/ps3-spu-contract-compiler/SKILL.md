@@ -52,8 +52,11 @@ GETLLAR/PUTLLC reservation loops, and repeated SPURS/SPU kernels.
 7. Inspect `spu-contracts\BLUS30161\verify-logrow-implementation.md` for the
    concrete log-only row, existing upstream rows to reuse, derived fields,
    implementation order, and acceptance checks.
-8. Use Ghidra/headless output to tighten the contract, not to skip verification.
-9. Add emulator verify-only counters for the contract. Promote only after clean
+8. Run `tools\parse_spu_contract_verify_log.ps1` on the generated example and
+   on future RPCS3 logs before discussing promotion. The parser validates row
+   shape and counter consistency only; it does not replace visual/fatal gates.
+9. Use Ghidra/headless output to tighten the contract, not to skip verification.
+10. Add emulator verify-only counters for the contract. Promote only after clean
    field, Options/menu, and first-battle visuals and zero mismatches.
 
 ## First Lanes

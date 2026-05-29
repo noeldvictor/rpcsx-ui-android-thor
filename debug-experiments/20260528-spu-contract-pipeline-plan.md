@@ -175,7 +175,7 @@ Update:
 - The scaffold targets a single additional parseable Windows upstream notice row:
   `Eternal Sonata SPU contract verifier` with
   `hle_mode=contract-25cc-9e4000` and
-  `contract_id=mfc-descriptor-family-25cc-9e4000`.
+  `contract_id=BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`.
 - It reuses existing upstream 25cc family, shadow, descriptor, and body verifier
   rows instead of adding behavior changes.
 - Required keys include contract identity, image/PC/tag/size/EAL, hits, bytes,
@@ -197,3 +197,35 @@ Next:
 - Isolate the dirty upstream checkout, then apply only the log-only row.
 - Do not modify memcpy/body behavior, port to vendored RPCSX, or enable fast
   mode before clean field, Options/menu, and first-battle verifier captures.
+
+## 2026-05-28 Verify Log-Row Parser
+
+Update:
+
+- Added `tools\parse_spu_contract_verify_log.ps1` for future
+  `Eternal Sonata SPU contract verifier` rows.
+- The parser loads `spu-contracts\BLUS30161\verify-logrow-implementation.json`,
+  filters only matching verifier rows, and validates required keys,
+  `hle_mode`, full contract id, GET/PUT hit split, `output_mismatch=0`, and
+  `desc_overflow=0`.
+- The generated scaffold example now includes all required fields and the full
+  contract id.
+- Validation result: the generated example parsed as `accepted_rows=1`,
+  `rejected_rows=0`; a noise line parsed as `rows=0` with
+  `no contract verifier rows found`.
+- The parser always emits `promotion_ready=false`; field, Options/menu,
+  first-battle visuals, host grade, and fatal-log checks remain external gates.
+
+Classification:
+
+- `analysis`.
+- `verify-logrow-parser`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- When the upstream checkout is isolated, implement only the log-only verifier
+  row and run this parser on the resulting RPCS3 log before any fast/body/codegen
+  path is considered.
