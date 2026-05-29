@@ -1,5 +1,64 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 09:20:43-04:00 Black-Overlay Loader Control Reproof + Pipeline Refresh (Non-duplicate v9)
+
+## Run Stamp
+- Timestamp: `2026-05-29T09:20:43-04:00` (local)
+- Branch: `master`
+- Refiner decision (from immediate pre-pass): `Add or use black-overlay route control before any movement or lane-2 HLE/GPU dry-run.`
+- Route pressure state: route-control repeat blocker is active (`repeated-black-overlay-pre-field`); this step is route-tooling only and non-promotional.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-090732-cpu4-loader-control-visualgate-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-090732-cpu4-loader-control-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `NO_FIELD_LIKE_SCREENSHOT`
+- First field-like screenshot: `none`
+- Class counts: `black-overlay-small-png: 10`
+- Invalid screenshots after first field-like: `0` (none reached)
+- Host contention summary: clean (`6` snapshots)
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-090732-cpu4-loader-control-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`
+- strict_failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+- Targeted fatal scan: no route-blocking `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, assert, or hard crash hit found in this artifact.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-090732-cpu4-loader-control-visualgate-windows-windows`
+- No reservation-loop CSVs were available (`command`, `command exact-PC`, `MFC-wait`), so no counter attribution is possible.
+- Decision: `collect-missing-proof`
+
+## SPU Contract Pipeline Sync
+- `.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-090031-cpu4-stateaware-one-step-visualgate-v8-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6`
+- Refreshed: `spu-contracts\BLUS30161\latest-summary.md`, `index.json`, `verify-counter-plan.md/json`, `source-alignment.md/json`, `verify-counter-schema.md/json`, `verify-logrow-implementation.md/json`, and per-PC JSON rows.
+- Priority-1 contract remains `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`; priority-2 remains `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`.
+- `fast_mode=blocked` and `verifier.mode=verify-only-required` remain unchanged.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `route-tooling`
+- `spu-contract-scaffold`
+- `spu-contract-pipeline`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-clean`
+
+## Next Step
+- Keep this as route-tooling evidence only. Do not claim speed, first-battle, `gpu-migration-credit`, or 200% progress.
+- Next action remains priority-1 verify-only counter instrumentation only for `0x25cc/0x9e4000`; do not enable lane-2 HLE/GPU fast modes until field + Options + first-battle visuals are clean with zero mismatch/overflow/fatal logs.
+
 ## 2026-05-29 08:45:23-04:00 Stateaware One-Step Visual Gate + Missing Verifier Rows (Non-duplicate v7)
 
 ## Run Stamp
