@@ -1,5 +1,67 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 12:31:18-04:00 Refiner-Blocked SPU Pipeline Re-Bind (No New Evidence)
+
+## Run Stamp
+- Timestamp: `2026-05-29T12:31:18-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: route movement remains blocked by `NO_FIELD_LIKE_SCREENSHOT` (`100836`) while `095956` remains clean field-only.
+
+## Action Taken
+
+Per refiner block, we re-ran the non-duplicative SPU-only lane:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+
+## Visual Verification
+- Base field run remained valid:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `FIELD_LIKE_PRESENT`
+  - First field-like: `screenshot-0118s.png` at `118s`
+- Movement rerun remained invalid:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+
+## Log Verification
+- Strict parser on clean field log:
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+  - `rows=0`, `accepted_rows=0`, `contract_hits=0`, strict failures `accepted_rows_lt_1`, `contract_hits_lt_1`
+- Strict parser on movement log:
+  - same strict failures, no accepted rows.
+- Targeted fatal scan in both logs: only `Show fatal error hints: false`; no `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, or `Segmentation fault`.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+  - `command-correlation-data-missing` / `collect-missing-proof` (no command / exact-PC / MFC wait CSVs)
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`, `Reservation command rows: 1767`, `Reservation command exact-PC rows: 49648`, `Command-run MFC wait exact-PC rows: 100813`
+  - `collect-missing-proof` (no capsule/pair-verifier rows yet)
+
+## SPU Contract Artifact Inspection
+- `spu-contracts/BLUS30161/index.json` refreshed against the same clean source run.
+- Contracts unchanged (`2`): `0x025cc` and `0x0451c` (`image_sig 0x958dfe208b686622`), with generated timestamps re-synced.
+- `source alignment`, `verify-counter-plan`, `verify-counter-schema`, and `verify-logrow-implementation` remain verify-only (`fast_mode=blocked`) on `mfc-descriptor-family-25cc-9e4000`.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Stay on verify-only SPU contract work only.
+- Implement/align Windows upstream `hle_mode=contract-25cc-9e4000` log-row and counter reject buckets, then rerun strict parser + visual checks for clean field, Options, and first battle before any fast-path attempts.
+
 ## 2026-05-29 11:50:35-04:00 Refiner-Blocked SPU Verification Lane Hold
 
 ## Run Stamp
