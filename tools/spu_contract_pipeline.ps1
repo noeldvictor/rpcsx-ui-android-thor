@@ -469,6 +469,146 @@ function New-SourceAlignment {
     }
 }
 
+function New-VerifyCounterSchema {
+    param(
+        [string]$Title,
+        [string]$RunPath,
+        [object[]]$ContractRows
+    )
+
+    $priorityContract = @($ContractRows | Where-Object { (Normalize-HexKey $_.runtime_anchor.pc) -eq "25cc" } | Select-Object -First 1)
+    if (-not $priorityContract) {
+        $priorityContract = @($ContractRows | Select-Object -First 1)
+    }
+
+    return [pscustomobject]@{
+        schema_version = 1
+        generated_at = (Get-Date).ToString("o")
+        title_id = $Title
+        source_run = $RunPath
+        classification = @("analysis", "verify-counter-schema")
+        lane = "mfc-descriptor-family-25cc-9e4000"
+        contract_id = $priorityContract.contract_id
+        mode = "verify-only"
+        required_environment = [pscustomobject]@{
+            RPCS3_ES_SPU_HLE_VERIFY = "verify-25cc-shadow"
+            RPCS3_ES_SPU_HLE_25CC_BODY = "disabled-or-verify-only"
+            blocked_values = @(
+                "RPCS3_ES_SPU_HLE_VERIFY=skip",
+                "RPCS3_ES_SPU_HLE_VERIFY=fast",
+                "RPCS3_ES_SPU_HLE_25CC_BODY=fast",
+                "RPCS3_ES_GPU_PROBE=fast",
+                "vulkan-compute-fast-path"
+            )
+        }
+        contract_predicate = @(
+            [pscustomobject]@{ field = "title_id"; op = "equals"; value = "BLUS30161"; reject_bucket = "reject_title" },
+            [pscustomobject]@{ field = "image_sig"; op = "equals"; value = "0x958dfe208b686622"; reject_bucket = "reject_image_sig" },
+            [pscustomobject]@{ field = "pc"; op = "equals"; value = "0x25cc"; reject_bucket = "reject_pc" },
+            [pscustomobject]@{ field = "group"; op = "equals"; value = "CellSpursKernelGroup"; reject_bucket = "reject_group" },
+            [pscustomobject]@{ field = "spu_name"; op = "equals"; value = "CellSpursKernel0"; reject_bucket = "reject_spu_name" },
+            [pscustomobject]@{ field = "base_cmd"; op = "in"; value = @("MFC_GET_CMD", "MFC_PUT_CMD"); reject_bucket = "reject_cmd" },
+            [pscustomobject]@{ field = "list_bit"; op = "equals"; value = $false; reject_bucket = "reject_list" },
+            [pscustomobject]@{ field = "tag"; op = "equals"; value = 31; reject_bucket = "reject_tag" },
+            [pscustomobject]@{ field = "size"; op = "equals"; value = "0x4000"; reject_bucket = "reject_size" },
+            [pscustomobject]@{ field = "eah"; op = "equals"; value = "0x0"; reject_bucket = "reject_eah" },
+            [pscustomobject]@{ field = "eal"; op = "equals"; value = "0x9e4000"; reject_bucket = "reject_eal_family" },
+            [pscustomobject]@{ field = "lsa"; op = "local-store-range"; value = "lsa + size <= SPU_LS_SIZE"; reject_bucket = "reject_lsa_range" },
+            [pscustomobject]@{ field = "mfc_transfers_shuffling"; op = "equals"; value = $false; reject_bucket = "reject_mfc_shuffle" },
+            [pscustomobject]@{ field = "spu_accurate_dma"; op = "equals"; value = $false; reject_bucket = "reject_accurate_dma" },
+            [pscustomobject]@{ field = "fast_mode"; op = "equals"; value = $false; reject_bucket = "reject_fast_mode" }
+        )
+        existing_upstream_counters = @(
+            "spu_hle_25cc_family_hits",
+            "spu_hle_25cc_family_success",
+            "spu_hle_25cc_family_fail",
+            "spu_hle_25cc_family_bytes",
+            "spu_hle_25cc_family_total_us",
+            "spu_hle_25cc_family_max_total_us",
+            "spu_hle_25cc_family_get_hits",
+            "spu_hle_25cc_family_put_hits",
+            "spu_hle_25cc_family_ea9e4000_hits",
+            "spu_hle_25cc_family_ea4f0b80_hits",
+            "spu_hle_25cc_family_exact_a1c000_hits",
+            "spu_hle_25cc_family_other_ea_hits",
+            "spu_hle_25cc_family_last_family",
+            "spu_hle_25cc_family_last_pc",
+            "spu_hle_25cc_family_last_cmd",
+            "spu_hle_25cc_family_last_tag",
+            "spu_hle_25cc_family_last_size",
+            "spu_hle_25cc_family_last_lsa",
+            "spu_hle_25cc_family_last_eal",
+            "spu_hle_25cc_shadow_hits",
+            "spu_hle_25cc_shadow_bytes",
+            "spu_hle_25cc_shadow_get_hits",
+            "spu_hle_25cc_shadow_put_hits",
+            "spu_hle_25cc_shadow_ea9e4000_hits",
+            "spu_hle_25cc_shadow_src_repeats",
+            "spu_hle_25cc_shadow_dst_pre_repeats",
+            "spu_hle_25cc_shadow_dst_post_repeats",
+            "spu_hle_25cc_shadow_dst_changed",
+            "spu_hle_25cc_shadow_dst_unchanged",
+            "spu_hle_25cc_shadow_output_match",
+            "spu_hle_25cc_shadow_output_mismatch",
+            "spu_hle_25cc_shadow_last_src_hash",
+            "spu_hle_25cc_shadow_last_dst_pre_hash",
+            "spu_hle_25cc_shadow_last_dst_post_hash",
+            "spu_hle_25cc_shadow_desc_overflow",
+            "spu_hle_25cc_body_put_rejects"
+        )
+        counters_to_add_or_label = @(
+            "contract_id=mfc-descriptor-family-25cc-9e4000",
+            "contract_hits",
+            "contract_bytes",
+            "contract_get_hits",
+            "contract_put_hits",
+            "contract_reject_total",
+            "reject_title",
+            "reject_image_sig",
+            "reject_pc",
+            "reject_group",
+            "reject_spu_name",
+            "reject_cmd",
+            "reject_list",
+            "reject_tag",
+            "reject_size",
+            "reject_eah",
+            "reject_eal_family",
+            "reject_lsa_range",
+            "reject_mfc_shuffle",
+            "reject_accurate_dma",
+            "reject_fast_mode",
+            "last_src_hash",
+            "last_dst_pre_hash",
+            "last_dst_post_hash"
+        )
+        parser_acceptance = @(
+            "contract_id is present in the log row",
+            "contract_hits == spu_hle_25cc_family_ea9e4000_hits for the 0x9e4000 lane",
+            "contract_hits == contract_get_hits + contract_put_hits",
+            "spu_hle_25cc_shadow_output_mismatch == 0",
+            "spu_hle_25cc_shadow_desc_overflow == 0",
+            "fatal_log_hits == 0",
+            "visual_gate in field, Options/menu, and first-battle is clean before promotion"
+        )
+        implementation_sites = @(
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\SPUThread.h"; area = "es_gpu_probe_state_t"; action = "add contract-id/reject bucket fields only if log labeling cannot derive them" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\SPUThread.cpp"; area = "get_es_mfc_25cc_runtime_family_raw"; action = "preserve predicate; optionally split reject reasons in a verify-only helper" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\SPUThread.cpp"; area = "record_es_mfc_dynamic_cmd"; action = "label 0x9e4000 family rows with contract_id and reject buckets" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\SPUThread.cpp"; area = "record_es_spu_hle_25cc_shadow_sample"; action = "reuse src/dst hashes, mismatch, descriptor overflow, and direction fields" },
+            [pscustomobject]@{ file = "rpcs3\Emu\Cell\lv2\sys_spu.cpp"; area = "probe log dump"; action = "emit contract_id, reject buckets, existing family counters, shadow hashes, mismatch, and overflow in one parseable row" }
+        )
+        promotion_blockers = @(
+            "Any nonzero output mismatch",
+            "Any nonzero descriptor overflow",
+            "Any fatal/access/device-lost/assertion log hit",
+            "Any black, wrong-window, loading-only, corrupt, crash-overlay, or nonfield visual where field/menu/battle is required",
+            "Any fast/body/codegen/Vulkan mode enabled before verify-only proof"
+        )
+        next_action = "Implement the log-label/reject-bucket row for the priority-1 lane; do not change copy/body behavior."
+    }
+}
+
 $runPath = if ([string]::IsNullOrWhiteSpace($RunDir)) {
     Find-LatestRun -Root $RunRoot
 } else {
@@ -560,6 +700,7 @@ $summary.Add("") | Out-Null
 $summary.Add("Classification: $($bt)analysis$bt, $($bt)spu-contract-scaffold$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
 $summary.Add("Next: wire the selected contract into a verify-only emulator counter before any fast path.") | Out-Null
 $summary.Add("Source alignment: $($bt)source-alignment.md$bt.") | Out-Null
+$summary.Add("Verify counter schema: $($bt)verify-counter-schema.md$bt.") | Out-Null
 $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
 $verifyPlan = New-VerifyCounterPlan -Title $TitleId -RunPath $runPath -ContractRows ($contractDetails.ToArray())
@@ -630,9 +771,67 @@ $sourceMd.Add("") | Out-Null
 $sourceMd.Add("Next action: $($sourceAlignment.next_action)") | Out-Null
 $sourceMd | Set-Content -LiteralPath $sourceMdPath -Encoding UTF8
 
+$counterSchema = New-VerifyCounterSchema -Title $TitleId -RunPath $runPath -ContractRows ($contractDetails.ToArray())
+$counterSchemaPath = Join-Path $outRoot "verify-counter-schema.json"
+$counterSchema | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $counterSchemaPath -Encoding UTF8
+
+$counterMdPath = Join-Path $outRoot "verify-counter-schema.md"
+$counterMd = New-Object System.Collections.Generic.List[string]
+$counterMd.Add("# SPU Verify Counter Schema") | Out-Null
+$counterMd.Add("") | Out-Null
+$counterMd.Add("- Generated: $bt$generatedAt$bt") | Out-Null
+$counterMd.Add("- Title: $bt$TitleId$bt") | Out-Null
+$counterMd.Add("- Source run: $bt$runPath$bt") | Out-Null
+$counterMd.Add("- Lane: $bt$($counterSchema.lane)$bt") | Out-Null
+$counterMd.Add("- Contract: $bt$($counterSchema.contract_id)$bt") | Out-Null
+$counterMd.Add("- Classification: $($bt)analysis$bt, $($bt)verify-counter-schema$bt, not speed, not $($bt)gpu-migration-credit$bt, not a 200% gate candidate.") | Out-Null
+$counterMd.Add("") | Out-Null
+$counterMd.Add("## Required Environment") | Out-Null
+$counterMd.Add("") | Out-Null
+$counterMd.Add("- $($bt)RPCS3_ES_SPU_HLE_VERIFY=$($counterSchema.required_environment.RPCS3_ES_SPU_HLE_VERIFY)$bt") | Out-Null
+$counterMd.Add("- $($bt)RPCS3_ES_SPU_HLE_25CC_BODY=$($counterSchema.required_environment.RPCS3_ES_SPU_HLE_25CC_BODY)$bt") | Out-Null
+$counterMd.Add("- Blocked: $bt$($counterSchema.required_environment.blocked_values -join ', ')$bt") | Out-Null
+$counterMd.Add("") | Out-Null
+$counterMd.Add("## Predicate And Reject Buckets") | Out-Null
+$counterMd.Add("") | Out-Null
+$counterMd.Add("| Field | Op | Value | Reject bucket |") | Out-Null
+$counterMd.Add("| --- | --- | --- | --- |") | Out-Null
+foreach ($predicate in $counterSchema.contract_predicate) {
+    $valueText = if ($predicate.value -is [array]) { $predicate.value -join "," } else { [string]$predicate.value }
+    $counterMd.Add("| $bt$($predicate.field)$bt | $bt$($predicate.op)$bt | $bt$valueText$bt | $bt$($predicate.reject_bucket)$bt |") | Out-Null
+}
+$counterMd.Add("") | Out-Null
+$counterMd.Add("## Existing Upstream Counters") | Out-Null
+foreach ($counter in $counterSchema.existing_upstream_counters) {
+    $counterMd.Add("- $bt$counter$bt") | Out-Null
+}
+$counterMd.Add("") | Out-Null
+$counterMd.Add("## Counters To Add Or Label") | Out-Null
+foreach ($counter in $counterSchema.counters_to_add_or_label) {
+    $counterMd.Add("- $bt$counter$bt") | Out-Null
+}
+$counterMd.Add("") | Out-Null
+$counterMd.Add("## Parser Acceptance") | Out-Null
+foreach ($rule in $counterSchema.parser_acceptance) {
+    $counterMd.Add("- $rule") | Out-Null
+}
+$counterMd.Add("") | Out-Null
+$counterMd.Add("## Implementation Sites") | Out-Null
+$counterMd.Add("") | Out-Null
+$counterMd.Add("| File | Area | Action |") | Out-Null
+$counterMd.Add("| --- | --- | --- |") | Out-Null
+foreach ($site in $counterSchema.implementation_sites) {
+    $counterMd.Add("| $bt$($site.file)$bt | $bt$($site.area)$bt | $($site.action) |") | Out-Null
+}
+$counterMd.Add("") | Out-Null
+$counterMd.Add("Next action: $($counterSchema.next_action)") | Out-Null
+$counterMd | Set-Content -LiteralPath $counterMdPath -Encoding UTF8
+
 Write-Output "SPU contract index: $indexPath"
 Write-Output "SPU contract summary: $summaryPath"
 Write-Output "SPU verify plan: $verifyPlanPath"
 Write-Output "SPU verify plan summary: $verifyMdPath"
 Write-Output "SPU source alignment: $sourceAlignmentPath"
 Write-Output "SPU source alignment summary: $sourceMdPath"
+Write-Output "SPU verify counter schema: $counterSchemaPath"
+Write-Output "SPU verify counter schema summary: $counterMdPath"

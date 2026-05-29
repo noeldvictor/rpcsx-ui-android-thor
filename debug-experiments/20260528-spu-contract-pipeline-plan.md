@@ -127,3 +127,40 @@ Next:
 - Do not port this to vendored RPCSX or enable `bodyfast`, `codegen-fast`, or
   `vulkan-compute` until field, Options/menu, and first-battle visual gates pass
   with zero mismatches, zero descriptor overflow, and zero fatal log hits.
+
+## 2026-05-28 Verify-Counter Schema Output
+
+Update:
+
+- `tools\spu_contract_pipeline.ps1` now emits
+  `spu-contracts\BLUS30161\verify-counter-schema.json` and
+  `spu-contracts\BLUS30161\verify-counter-schema.md`.
+- The schema is for priority-1 lane
+  `mfc-descriptor-family-25cc-9e4000`, contract
+  `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`.
+- Required verify-only environment:
+  `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow` and
+  `RPCS3_ES_SPU_HLE_25CC_BODY=disabled-or-verify-only`.
+- Blocked fast values include `RPCS3_ES_SPU_HLE_VERIFY=skip/fast`,
+  `RPCS3_ES_SPU_HLE_25CC_BODY=fast`, `RPCS3_ES_GPU_PROBE=fast`, and any
+  Vulkan compute fast path.
+- Predicate/reject buckets are now explicit for title, image signature, PC,
+  group, SPU name, command, list bit, tag, size, EAH/EAL family, local-store
+  range, MFC shuffling, accurate DMA, and fast mode.
+- Existing upstream counters were mapped to the schema: family hits/bytes,
+  GET/PUT split, EA family split, shadow hashes, output match/mismatch,
+  descriptor overflow, and body PUT rejects.
+
+Classification:
+
+- `analysis`.
+- `verify-counter-schema`.
+- Not speed.
+- Not `gpu-migration-credit`.
+- Not a 200% gate candidate.
+
+Next:
+
+- Implement only the parseable log-label/reject-bucket row for this contract in
+  the Windows upstream hooks.
+- Do not change copy/body behavior, port to vendored RPCSX, or enable fast mode.

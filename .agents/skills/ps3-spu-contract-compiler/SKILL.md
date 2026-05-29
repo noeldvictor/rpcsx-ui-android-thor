@@ -46,8 +46,11 @@ GETLLAR/PUTLLC reservation loops, and repeated SPURS/SPU kernels.
 5. Inspect `spu-contracts\BLUS30161\source-alignment.md` before code edits:
    confirm whether the target predicate already exists in Windows upstream and
    whether vendored RPCSX only has generic probes.
-6. Use Ghidra/headless output to tighten the contract, not to skip verification.
-7. Add emulator verify-only counters for the contract. Promote only after clean
+6. Inspect `spu-contracts\BLUS30161\verify-counter-schema.md` for the exact
+   verify environment, blocked fast modes, predicate fields, reject buckets, and
+   parser acceptance rules.
+7. Use Ghidra/headless output to tighten the contract, not to skip verification.
+8. Add emulator verify-only counters for the contract. Promote only after clean
    field, Options/menu, and first-battle visuals and zero mismatches.
 
 ## First Lanes

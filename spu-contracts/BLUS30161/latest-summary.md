@@ -1,6 +1,6 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-28T20:16:05.3058373-04:00`
+- Generated: `2026-05-28T20:34:55.1634463-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260528-190511-cpu4-hle-25cc-shadow-desc-battle-stock-control-topslot-battleroute-windows`
 - Target PCs: `0x25cc, 0x451c`
@@ -16,3 +16,4 @@
 Classification: `analysis`, `spu-contract-scaffold`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
 Next: wire the selected contract into a verify-only emulator counter before any fast path.
 Source alignment: `source-alignment.md`.
+Verify counter schema: `verify-counter-schema.md`.
