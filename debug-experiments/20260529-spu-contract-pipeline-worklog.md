@@ -27,7 +27,7 @@
 
 ## Counter Verification
 - `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260528-233236-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows`
-- Result: zero reservation-loop command/eat/match CSV rows; `command-correlation-data-missing` and decision `collect-missing-proof`.
+- Result: zero reservation-loop command/exact-PC/match CSV rows; `command-correlation-data-missing` and decision `collect-missing-proof`.
 - No claim of counter-based speed/route gain from this run.
 
 ## SPU Contract Pipeline Sync
