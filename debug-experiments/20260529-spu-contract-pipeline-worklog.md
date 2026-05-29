@@ -2,6 +2,68 @@
 
 
 
+## 2026-05-29 05:49:12-04:00 Stateaware Repair + Pipeline Sync
+
+## Run Stamp
+- Timestamp: `2026-05-29T05:49:12-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Use the newest valid-field run as the route base, then add one small state-aware movement step with CleanAfterField.`
+- Route pressure state: route-tooling with clean field triage only; no verified movement, Options/menu, battle, or 200% route claim.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-054912-cpu4-stateaware-one-step-visualgate-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-054912-cpu4-stateaware-one-step-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `FIELD_LIKE_PRESENT`
+- First field-like screenshot: `screenshot-0117s.png` (`2.50 MB`, `117s`)
+- Invalid screenshots after first field-like: `0`
+- Host contention samples were clean across prelaunch, postlaunch, host-sample, and postrun.
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-054912-cpu4-stateaware-one-step-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+- Targeted fatal/log scan: no VM access violation, SPU unknown STOP, VK device-loss, or assertion signatures in this run.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-054912-cpu4-stateaware-one-step-visualgate-windows-windows`
+- Decision: `collect-missing-proof` (`command/read/pair correlation evidence absent`).
+- Reservation-loop evidence remained missing (`rows=0` for kernel-capsule, command/exact-PC, and MFC wait exact-PC).
+
+## SPU Contract Pipeline Sync
+- `.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-053934-cpu4-loader-control-left200x3-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6`
+- Pipeline refresh regenerated:
+  - `spu-contracts\BLUS30161\latest-summary.md`
+  - `spu-contracts\BLUS30161\verify-counter-plan.md`
+  - `spu-contracts\BLUS30161\verify-counter-schema.md`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.md`
+  - `spu-contracts\BLUS30161\source-alignment.md`
+  - `spu-contracts\BLUS30161\index.json`
+  - both `BLUS30161-958dfe208b686622-...-CellSpursKernel...` JSON contracts
+- Both contracts still report `inferred_classes=["no-log"]`, `verifier.mode="verify-only-required"`, required counters `output_mismatch=0`, `descriptor_overflow=0`, `fatal_log_hits=0`, and `fast_mode=blocked`.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `route-tooling`
+- `failed-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `verify-counter-plan`
+- `collect-missing-proof`
+- `host-contention-clean`
+
+## Next Step
+- Do not claim any speed, `gpu-migration-credit`, or 200% progress from this cycle.
+- Next required action: run verify-only counter collection for the `0x25cc/0x9e4000` contract lane in an instrumented Windows run that emits kernel-capsule command rows, then re-verify field + Options + first-battle in the same verify schema before any fast-mode work.
+
 ## 2026-05-29 05:39:34-04:00 Loader-Control Left200x3 Micro-Pulse Extension
 
 ## Run Stamp
