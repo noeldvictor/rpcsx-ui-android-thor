@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-29T05:54:27.5299594-04:00",
+    "generated_at":  "2026-05-29T07:31:11.3746044-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-053934-cpu4-loader-control-left200x3-visualgate-windows-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-071401-cpu4-stateaware-one-step-visualgate-windows-windows",
     "target_pcs":  [
                        "0x25cc",
                        "0x451c"
@@ -18,9 +18,11 @@
                           "pc":  "0x025cc",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "no-log"
+                                          "dynamic-mfc-shape",
+                                          "dma-window",
+                                          "spurs-kernel"
                                       ],
-                          "hot_log_hits":  0
+                          "hot_log_hits":  80
                       },
                       {
                           "contract_id":  "BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0",
@@ -28,9 +30,11 @@
                           "pc":  "0x0451c",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "no-log"
+                                          "dynamic-mfc-shape",
+                                          "dma-window",
+                                          "spurs-kernel"
                                       ],
-                          "hot_log_hits":  0
+                          "hot_log_hits":  80
                       }
                   ]
 }

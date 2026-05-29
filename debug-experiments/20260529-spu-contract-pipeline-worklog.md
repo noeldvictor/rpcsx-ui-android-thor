@@ -1,5 +1,79 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 07:31:11-04:00 Stateaware One-Step Visual Miss + Pipeline Refresh
+
+## Run Stamp
+- Timestamp: `2026-05-29T07:24:25-04:00` (local)
+- Branch: `master`
+- Refiner decision (from immediate pre-pass): `Use the newest valid-field run as the route base, but only add one small state-aware movement step with CleanAfterField.`
+- Route pressure state: route-tooling; latest run missed visual gate, forcing SPU verify-lane refresh.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-v3-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-072425-cpu4-stateaware-one-step-visualgate-v3-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-072425-cpu4-stateaware-one-step-visualgate-v3-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `NO_FIELD_LIKE_SCREENSHOT`
+- First field-like screenshot: `none`
+- `loading-like-small-png`: `3`
+- Invalid-after-first-field screenshots: `0` (none reached)
+- Host contention: `prelaunch/postlaunch/runtime/postrun all clean`; external no-emulator contention.
+
+## Log Verification
+- `parse_spu_contract_verify_log` result:
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`
+  - strict failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+  - failure reason: `no contract verifier rows found`
+- Targeted fatal scan (`VM access`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, `fatal config hints`) found no blocking crash signatures in `RPCS3.log`/`rpcs3.stderr.txt`.
+
+## Counter Verification
+- `summarize_eternal_sonata_spu_reservation_loop.ps1` result:
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 1126`
+  - `Reservation command exact-PC rows: 31023`
+  - `Command-run MFC wait exact-PC rows: 60316`
+  - `Command/read decision: whole-loop-recognizer-preflight`
+  - Decision: `collect-missing-proof`
+
+## SPU Contract Pipeline Sync
+- `.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-071401-cpu4-stateaware-one-step-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6`
+- Refreshed:
+  - `spu-contracts\BLUS30161\index.json`
+  - `spu-contracts\BLUS30161\latest-summary.md`
+  - `spu-contracts\BLUS30161\verify-counter-plan.md`
+  - `spu-contracts\BLUS30161\verify-counter-schema.md`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.md`
+  - `spu-contracts\BLUS30161\source-alignment.md`
+  - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+  - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+- Inspecting JSON confirms priority-1 lane is `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0` and priority-2 lane is `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`.
+- Both contracts remain `inferred_classes=[dynamic-mfc-shape,dma-window,spurs-kernel]`, `verifier.mode=verify-only-required`, and `fast_mode=blocked`.
+- `source-alignment` and `verify-counter-plan` still indicate `0x25cc/0x9e4000` verify-only counter work only; no verifier rows yet.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `route-tooling`
+- `collect-missing-proof`
+- `spu-contract-scaffold`
+- `spu-contract-pipeline`
+- `spu-reservation-loop-summary`
+- `host-contention-clean`
+
+## Next Step
+- Do not claim speed, `gpu-migration-credit`, or 200% progress from this run.
+- Keep route in repair mode while waiting for field + Options + first-battle visual proof.
+- Before any fast-path candidate, implement/verify priority-1 `0x25cc`/`0x9e4000` verify-only counters and reject buckets (`contract_id`, `contract_hits`, `reject_*`, etc.), then rerun clean Field, menu, and first-battle under the same strict verify gate.
+
 ## 2026-05-29 07:14:01-04:00 Stateaware One-Step Visual Gate (Field + Missing-SPU Evidence)
 
 ## Run Stamp
