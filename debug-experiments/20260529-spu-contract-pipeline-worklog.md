@@ -1,5 +1,61 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 18:52:42-04:00 SPU Verify-Lane Hold and Contract-Index Refresh
+
+## Run Stamp
+- Timestamp: `2026-05-29T18:52:42.0943116-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement.`
+- Route pressure state: movement remains blocked; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows
+```
+
+## Verification
+
+- Refiner output remains blocking movement and points back to route-state repair or SPU verifier analysis.
+- SPU artifacts refreshed from the `095956` evidence:
+  - `spu-contracts/BLUS30161/index.json`
+  - `spu-contracts/BLUS30161/latest-summary.md`
+  - `spu-contracts/BLUS30161/source-alignment.*`
+  - `spu-contracts/BLUS30161/verify-counter-plan.*`
+  - `spu-contracts/BLUS30161/verify-counter-schema.*`
+  - `spu-contracts/BLUS30161/verify-logrow-implementation.*`
+- Contract IDs in `spu-contracts/BLUS30161/index.json` remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+- `spu-contracts/BLUS30161/index.json` now reflects source run `20260529-095956...` and includes `dynamic-mfc-shape` in both contracts.
+- Visual gate result:
+  - `FIELD_LIKE_PRESENT` (`screenshot-0118s.png` at `118s`, `2.50 MB`)
+  - No later invalid-after-field screenshots reported.
+- Parser result:
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`, `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `strict_failures: accepted_rows_lt_1, contract_hits_lt_1` (`no contract verifier rows found`)
+- Reservation-loop summary:
+  - `Kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `reservation-command rows=0`, `command-correlation-data-missing`
+  - Decision: `collect-missing-proof`
+- Log quick scan (`RPCS3.log`): only `Show fatal error hints: false`; no `VM access violation`, `SPU unknown STOP`, or `VK_ERROR_DEVICE_LOST` signatures.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `verify-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep the lane in SPU verify-only planning mode.
+- Keep contract IDs as current selection and complete parser/counter emit in Windows upstream (`RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow`), then rerun strict `field -> options -> first-battle` captures before any fast-mode proposal.
+
 ## 2026-05-29 18:32:40-04:00 SPU Verify-Lane Refresh and Hold
 
 ## Run Stamp
