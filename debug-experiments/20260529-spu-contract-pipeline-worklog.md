@@ -1,5 +1,50 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 19:52:13-04:00 SPU Pipeline Refresh on Non-Field Movement Evidence
+
+## Run Stamp
+- Timestamp: `2026-05-29T19:51:43.7596511-04:00` / `2026-05-29T19:52:13.3736401-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement.`
+- Route pressure state: movement blocked; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows
+```
+
+## Verification
+
+- SPU artifacts were refreshed from the `100836` evidence and timestamps/`source_run` now point to that run.
+- `0x25cc`/`0x451c` contract IDs are unchanged.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT` (`first field-like: none`).
+- Parser:
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - strict failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+  - `total_contract_hits=0`, `total_contract_bytes=0`, `total_output_mismatch=0`, `total_desc_overflow=0`.
+- Reservation-loop summary:
+  - `Kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `Reservation command rows=1767`, `Reservation command exact-PC rows=49648`
+  - `Command-run MFC wait exact-PC rows=100813`
+  - `command-correlation-data=whole-loop-recognizer-preflight`
+  - Decision: `collect-missing-proof`.
+- `RPCS3.log` had no VM access violation, SPU unknown STOP, or Vulkan device-lost signatures.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep the lane in SPU verify-only planning. Do not advance any fast/body/codegen path from this run because visuals were invalid and no contract verifier rows were emitted.
+- Re-run the source evidence under a visual/route-comparable capture (`field/options/battle`) before attempting implementation work.
+
 ## 2026-05-29 19:32:56-04:00 SPU Scaffold Refresh and Verification Hold
 
 ## Run Stamp

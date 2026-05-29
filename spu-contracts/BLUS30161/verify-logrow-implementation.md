@@ -1,8 +1,8 @@
 ﻿# SPU Verify Log-Row Implementation Scaffold
 
-- Generated: `2026-05-29T19:32:15.1722734-04:00`
+- Generated: `2026-05-29T19:51:52.5386033-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`
 - Contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
 - Classification: `analysis`, `verify-logrow-implementation-scaffold`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
