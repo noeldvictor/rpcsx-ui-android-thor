@@ -1,11 +1,11 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-29T10:20:58.9920302-04:00`
+- Generated: `2026-05-29T10:29:45.5390524-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
 - Target PCs: `0x25cc, 0x451c`
 - Target EAs: `0x9e4000`
-- Ghidra headless: `C:\Users\leanerdesigner\Documents\SteamPortableTools\toolchains\ghidra_12.0.4_PUBLIC\support\analyzeHeadless.bat`
+- Ghidra headless: `missing-or-skipped`
 - Contracts: `2`
 
 | Contract | PC | Image | Classes | Hot log hits |
