@@ -1,6 +1,6 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-29T17:31:43.3066000-04:00",
+    "generated_at":  "2026-05-29T18:04:07.7667252-04:00",
     "title_id":  "BLUS30161",
     "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows",
     "target_pcs":  [
@@ -10,7 +10,7 @@
     "target_eas":  [
                        "0x9e4000"
                    ],
-    "ghidra_available":  false,
+    "ghidra_available":  true,
     "contracts":  [
                       {
                           "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
