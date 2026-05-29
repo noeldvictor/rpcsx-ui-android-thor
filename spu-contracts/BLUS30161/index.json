@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-29T01:50:18.1971037-04:00",
+    "generated_at":  "2026-05-29T05:39:02.7421037-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-013434-cpu4-hle-25cc-shadow-desc-field-loader-control-left200x2-diag200-freshcounterproof-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows",
     "target_pcs":  [
                        "0x25cc",
                        "0x451c"
@@ -29,7 +29,6 @@
                           "pc":  "0x0451c",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "dynamic-mfc-shape",
                                           "dma-window",
                                           "spurs-kernel"
                                       ],

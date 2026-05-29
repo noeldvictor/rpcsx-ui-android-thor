@@ -2,6 +2,58 @@
 
 
 
+## 2026-05-29 05:39:34-04:00 Loader-Control Left200x3 Micro-Pulse Extension
+
+## Run Stamp
+- Timestamp: `2026-05-29T05:39:34-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not repeat rejected diag200 route; extend clean left200x2 boundary by one extra micro pulse.`
+- Route pressure state: field triage only; no movement route proof, Options/menu, battle, or speed/FPS claim.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x3-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait=1000;ls_left:200;wait=1000;shot:100;wait=1000;ls_left:200;wait=1000;shot:100;wait=1000;ls_left:200;wait=1000;shot:100;wait=10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-053934-cpu4-loader-control-left200x3-visualgate-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-053934-cpu4-loader-control-left200x3-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `FIELD_LIKE_PRESENT`
+- First field-like screenshot: `screenshot-0117s.png` (`2.50 MB`, `117s`)
+- Invalid-after-field screenshots: `0`
+- Host contention samples: clean at `prelaunch`, `postlaunch`, `sample-0138s`, and `sample-0150s`.
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-053934-cpu4-loader-control-left200x3-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- `RPCS3.log` was not present in the run folder; parser executed against captured stdout lines only.
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`, strict failures `accepted_rows_lt_1`, `contract_hits_lt_1`.
+- Targeted fatal/log scan on `rpcs3.stdout.txt`/`rpcs3.stderr.txt`: no VM access violation, SPU STOP, `VK_ERROR_DEVICE_LOST`, or assertion entries.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-053934-cpu4-loader-control-left200x3-visualgate-windows-windows`
+- Reservation-loop evidence was missing (`command rows=0`, `exact-PC rows=0`, `MFC wait exact-PC rows=0`).
+- Decision: `collect-missing-proof` (missing command/correlation evidence).
+
+## SPU Contract Artifacts
+- No `tools\spu_contract_pipeline.ps1` rerun on this checkpoint.
+- Contract set remains `2`.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `route-tooling`
+- `failed-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-clean`
+
+## Next Step
+- Run `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8` next and execute the recommended non-duplicative Windows-only step.
+
 ## 2026-05-29 04:50:49-04:00 Loader-Control Left200x2 Tiny-Pulse Re-proof
 
 ## Run Stamp
