@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-29T09:20:40.0572126-04:00",
+    "generated_at":  "2026-05-29T09:59:18.1565962-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-090031-cpu4-stateaware-one-step-visualgate-v8-windows-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-095200-cpu4-loader-control-visualgate-windows-v14-windows",
     "target_pcs":  [
                        "0x25cc",
                        "0x451c"
@@ -18,7 +18,7 @@
                           "pc":  "0x025cc",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "reservation-loop",
+                                          "dynamic-mfc-shape",
                                           "dma-window",
                                           "spurs-kernel"
                                       ],
@@ -30,7 +30,7 @@
                           "pc":  "0x0451c",
                           "image_sig":  "0x958dfe208b686622",
                           "classes":  [
-                                          "reservation-loop",
+                                          "dynamic-mfc-shape",
                                           "dma-window",
                                           "spurs-kernel"
                                       ],
