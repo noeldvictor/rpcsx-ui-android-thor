@@ -1,5 +1,55 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 07:39:54-04:00 Stateaware One-Step Visual Retry + Missing Verifier Rows
+
+## Run Stamp
+- Timestamp: `2026-05-29T07:39:54-04:00` (local)
+- Branch: `master`
+- Refiner decision (from immediate pre-pass): `Use the newest valid-field run as the route base, but only add one small state-aware movement step with CleanAfterField.`
+- Route pressure state: visual route-tooling. The new state-aware pass is field-clean; verifier rows are still absent, so SPU fast paths remain verify-only and non-promotional.
+
+## Windows-only Step
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-v4-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-073954-cpu4-stateaware-one-step-visualgate-v4-windows-windows`
+
+## Visual Verification
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-073954-cpu4-stateaware-one-step-visualgate-v4-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+- Status: `FIELD_LIKE_PRESENT`
+- First field-like screenshot: `screenshot-0117s.png` at `117s` (`2.50 MB`)
+- Class counts: `3` `field-like-large-png`
+- Invalid-after-field screenshots: `0`
+- Host contention samples: `clean` (`4` snapshots)
+
+## Log Verification
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-073954-cpu4-stateaware-one-step-visualgate-v4-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+- Parse output: `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`
+- strict_failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+- Targeted fatal scan: no route-blocking `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, or hard crash hit; only startup/config log lines (`Show fatal error hints: false`, `_sys_panic` in loader export table).
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-073954-cpu4-stateaware-one-step-visualgate-v4-windows-windows`
+- Reservation command rows: `1097`
+- Reservation command exact-PC rows: `29762`
+- Command-run MFC wait exact-PC rows: `55453`
+- Command/read decision: `whole-loop-recognizer-preflight`
+- Primary peaks remain GETLLAR/PUTLLC split across `TCX_CellSpursKernel0/1` with `PUTLLC16 pair verifier rows` unavailable.
+- Decision: `collect-missing-proof`
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `route-tooling`
+- `failed-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `host-contention-clean`
+
 ## 2026-05-29 07:31:11-04:00 Stateaware One-Step Visual Miss + Pipeline Refresh
 
 ## Run Stamp
