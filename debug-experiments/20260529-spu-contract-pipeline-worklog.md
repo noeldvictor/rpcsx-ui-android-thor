@@ -60,6 +60,66 @@ Per refiner block, we took the non-duplicative SPU analysis step only:
 ## Next Step
 - Hold on verify-only SPU contract counter instrumentation only. Add/align the 25cc contract log-row in Windows upstream, then rerun strict parser checks on clean field + Options + first-battle runs.
 
+## 2026-05-29 12:09:43-04:00 Refiner-Blocked SPU Pipeline Re-Bind to Clean Field Evidence
+
+## Run Stamp
+- Timestamp: `2026-05-29T12:09:43-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: no movement progress; base run remains clean field route, with 100836 still no-field route miss.
+
+## Action Taken
+
+Per refiner block, we executed a non-duplicative SPU lane refresh on the clean base field evidence:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+
+## Visual Verification
+- Clean-field route evidence stayed valid:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `FIELD_LIKE_PRESENT`
+  - First field-like: `screenshot-0118s.png` at `118s`
+- `100836` route remained invalid under the same command family:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+
+## Log Verification
+- Strict parser checks remained empty of contract rows:
+  - `20260529-095956`: `rows=0`, `accepted_rows=0`, `contract_hits=0`, strict failures `accepted_rows_lt_1`, `contract_hits_lt_1`.
+  - `20260529-100836`: same strict failures, no accepted rows.
+- Targeted fatal scan:
+  - No `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, or `Segmentation fault` markers in either log.
+
+## Counter Verification
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+  - Still missing command/PC/mfc-wait CSVs.
+  - Decision: `collect-missing-proof` (`command-correlation-data-missing`).
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`, `Reservation command rows: 1767`, `Reservation command exact-PC rows: 49648`, `Command-run MFC wait exact-PC rows: 100813`
+  - No capsule/pair-verifier rows available; decision `collect-missing-proof`.
+
+## SPU Contract Artifact Inspection
+- `spu-contracts/BLUS30161/index.json` source run is now `20260529-095956`.
+- Contracts remain `2` (`0x025cc` and `0x0451c`) with `image_sig 0x958dfe208b686622`; schema/plan/source alignment JSON/MD files updated from this fresh source binding.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Continue verify-only SPU lane: add/align Windows upstream contract-row/log labeling + reject buckets for `mfc-descriptor-family-25cc-9e4000`, then rerun strict parser + visual checks for field + Options + first-battle before any fast-mode path.
+
 ## 2026-05-29 11:28:39-04:00 Refiner-Blocked SPU Re-Validation + Parser/Counter Hold
 
 ## Run Stamp
