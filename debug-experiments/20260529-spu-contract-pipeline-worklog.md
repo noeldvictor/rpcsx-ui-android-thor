@@ -1,5 +1,46 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 14:24:10-04:00 Verify-Only Counter-Row Planning Pass
+
+## Run Stamp
+- Timestamp: `2026-05-29T14:24:10.0000000-04:00` (local)
+- Branch: `master`
+- Refiner decision (re-read): `Do not auto-rerun loader-control-left200.`
+- Route pressure state: unchanged; movement remains blocked, no fresh field+Options+battle proof since earlier runs.
+
+## Action Taken
+
+- Re-opened and inspected updated SPU contract artifacts:
+  - `spu-contracts/BLUS30161/index.json`
+  - `spu-contracts/BLUS30161/BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+  - `spu-contracts/BLUS30161/BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+  - `spu-contracts/BLUS30161/verify-counter-plan.md`
+  - `spu-contracts/BLUS30161/verify-counter-schema.md`
+  - `spu-contracts/BLUS30161/verify-logrow-implementation.md`
+  - `spu-contracts/BLUS30161/source-alignment.md`
+
+## Contract/Schema Inspection Summary
+- Target lane remains priority `mfc-descriptor-family-25cc-9e4000` on contract `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`.
+- Fast mode remains `blocked`.
+- Required visuals remain `field`, `options-menu`, `first-battle`.
+- Verify row scaffold is concrete and still parser-ready:
+  - Required row keys include `contract_id`, `contract_hits`, `contract_bytes`, `reject_*` buckets, `desc_overflow`, `output_mismatch`, and source hash fields.
+  - Example row in `verify-logrow-implementation.md` uses `reject_fast_mode` and `contract_hits == get + put` checks.
+- Source alignment confirms:
+  - Priority-1 25cc runtime-family predicate is present in `rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp`.
+  - Vendored RPCSX core still lacks the 25cc/451c contract predicate lane and should not be treated as ready for fast-path promotion.
+
+## Next Step (Verified and Logged)
+- No movement/fast-mode change this checkpoint.
+- Do an upstream Windows log-only patch for the `contract-25cc-9e4000` row + reject buckets (no behavior change), then rerun field/Options/first-battle captures under strict parser gates.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `verify-counter-plan`
+
 ## 2026-05-29 14:11:54-04:00 SPU Verify-Only Hold + Pipeline Refresh
 
 ## Run Stamp
