@@ -1,5 +1,64 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 18:32:40-04:00 SPU Verify-Lane Refresh and Hold
+
+## Run Stamp
+- Timestamp: `2026-05-29T18:32:19.1977541-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement.`
+- Route pressure state: movement reruns remain blocked; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+```
+
+## Verification
+
+- Refiner output still blocks movement and points at route-state repair or SPU verifier analysis.
+- SPU artifacts updated from the `175303` evidence:
+  - `spu-contracts/BLUS30161/index.json`
+  - `spu-contracts/BLUS30161/latest-summary.md`
+  - `spu-contracts/BLUS30161/source-alignment.*`
+  - `spu-contracts/BLUS30161/verify-counter-plan.*`
+  - `spu-contracts/BLUS30161/verify-counter-schema.*`
+  - `spu-contracts/BLUS30161/verify-logrow-implementation.*`
+- Contract IDs in `spu-contracts/BLUS30161/index.json` remain:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+- Visual gate result:
+  - `NO_FIELD_LIKE_SCREENSHOT` (`first field-like screenshot: none`).
+  - This run is route-compare invalid.
+- Parser result:
+  - `rows=763`, `accepted_rows=763`, `rejected_rows=0`
+  - `total_contract_hits=1529`, `total_contract_bytes=25051136`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `strict_failures`: none
+- Reservation summary:
+  - `Kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `Command-run MFC wait exact-PC rows=90997`
+  - `command-correlation-data-missing`
+  - Decision: `collect-missing-proof`
+- Log quick scan:
+  - no real `VM access violation`, `SPU unknown STOP`, or `VK_ERROR_DEVICE_LOST` lines.
+  - only `Show fatal error hints: false` was present.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep SPU lane locked to verify-only work: ensure clean `field -> options -> first-battle` captures under `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow` before any fast-mode discussion.
+- Continue to treat the contract parser as scaffold only until route visuals are clean; no bodyfast/codegen/GPU changes yet.
+
 ## 2026-05-29 18:12:47-04:00 Refiner-Blocked SPU Verify Hold
 
 ## Run Stamp
