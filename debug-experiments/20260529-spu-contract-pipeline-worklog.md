@@ -1,5 +1,68 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 10:48:54-04:00 Refiner-Blocked SPU Refresh + Missing Verifier Rows
+
+## Run Stamp
+- Timestamp: `2026-05-29T10:48:54-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: latest valid base (`095956`) still only field-triage and movement lane remains blocked by `NO_FIELD_LIKE_SCREENSHOT` on `100836`.
+
+## Action Taken
+
+Per refiner block, reran the SPU pipeline and did not execute any additional Windows movement route:
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Run Dir
+- `debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+
+## Visual Verification
+- Base field run remained clean:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `FIELD_LIKE_PRESENT`
+  - First field-like: `screenshot-0118s.png` at `118s`
+- Movement rerun remained a gate miss:
+  - `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+
+## Log Verification
+- `parse_spu_contract_verify_log` on base run (strict):
+  - `.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+  - `rows=0`, `accepted_rows=0`, `contract_hits=0`, failures `accepted_rows_lt_1`, `contract_hits_lt_1` (`no contract verifier rows found`)
+- Same strict result on movement run (`100836`):
+  - `rows=0`, `accepted_rows=0`, `contract_hits=0`, failures `accepted_rows_lt_1`, `contract_hits_lt_1`
+- Fatal-string scan on both checked logs found only `Show fatal error hints: false`; no `VM access violation`, `SPU unknown STOP`, `VK_ERROR_DEVICE_LOST`, `assert`, or `Segmentation fault`.
+
+## Counter Verification
+- Base run still lacked command/exact-PC/mfc exact-PC captures:
+  - `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+  - `collect-missing-proof` (`command-correlation-data-missing`)
+- Movement run:
+  - `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`, `Reservation command rows: 1767`, `Reservation command exact-PC rows: 49648`, `Command-run MFC wait exact-PC rows: 100813`
+  - Decision: `collect-missing-proof` (still missing kernel capsule/pair verifier rows for narrow fast-path claims).
+
+## SPU Contract Artifact Inspection
+- `spu-contracts/BLUS30161/index.json` refreshed with source run timestamp `2026-05-29T10:48:46.3177066-04:00`.
+- Contracts unchanged: the same two contracts for PCs `0x025cc` and `0x0451c`; no source-run scope changes.
+- `verify-counter-plan.md` still keeps `mfc-descriptor-family-25cc-9e4000` as priority-1 with `verify-only` gating.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed-visual-gate`
+- `failed-logrow-parser`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Hold in verify-planning only. No route progress and no fast-path change until Windows upstream emits verify-only contract rows for priority-1 `hle_mode=contract-25cc-9e4000` and field/options/first-battle are revalidated under that row.
+
 ## 2026-05-29 10:30:22-04:00 Refiner Block + SPU Verify-Only Collect-Missing Check
 
 ## Run Stamp
