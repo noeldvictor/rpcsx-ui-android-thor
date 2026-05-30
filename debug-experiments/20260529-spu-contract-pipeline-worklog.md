@@ -1,5 +1,57 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 00:32:03-04:00 SPU Verify-Lane Re-Sync (Clean Field, Missing Verifier Rows)
+
+## Run Stamp
+- Timestamp: `2026-05-30T00:31:57.1828979-04:00` / `2026-05-30T00:32:03.6452491-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field proof, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement remains blocked by anti-patterns; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows
+```
+
+## Verification
+
+- SPU contract artifacts were refreshed at `2026-05-30T00:32:03.6452491-04:00` with the 175303 evidence run and now show contracts on `0x025cc`/`0x0451c` with classes `dma-window,spurs-kernel` only.
+- Visual gate (`20260529-095956`):
+  - `FIELD_LIKE_PRESENT`
+  - `First field-like`: `screenshot-0118s.png` at `118s` (`2.50 MB`)
+  - `RequireNoInvalidAfterFirstField` passed.
+- Parser (`-FailOnGate`) on `20260529-095956`:
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `contract_hits=0`, `contract_bytes=0`, `output_mismatch=0`, `desc_overflow=0`
+  - strict failures: `accepted_rows_lt_1`, `contract_hits_lt_1`
+  - `promotion_ready=false` (`-FailOnGate` result: false).
+- Reservation-loop summary:
+  - `Kernel capsule rows=0`, `Reservation command rows=0`, `Reservation command exact-PC rows=0`
+  - `Command-run MFC wait exact-PC rows=0`, `PUTLLC16 pair verifier rows=0`
+  - No reservation-loop CSVs available.
+  - Decision remains `collect-missing-proof` (`command-correlation-data-missing`).
+- SPU contract JSON/schema artifacts now point to source run `20260529-175303...` and remain `analysis` scope only; verify-only counters and log-row work remains to be implemented.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed`
+- `spu-contract-scaffold`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `verify-counter-plan`
+- `collect-missing-proof`
+
+## Next Step
+- Keep movement/speed lanes blocked.
+- Implement/validate Windows verify-only log-row and contract counters for the priority-1 lane (`mfc-descriptor-family-25cc-9e4000`) without behavior changes.
+- Continue to require clean field, Options/menu, and first-battle visuals with parser strict gates before any fast path.
+
 ## 2026-05-30 00:12:15-04:00 SPU Verify-Lane Re-Sync (Clean Field, No Verifier Rows)
 
 ## Run Stamp
