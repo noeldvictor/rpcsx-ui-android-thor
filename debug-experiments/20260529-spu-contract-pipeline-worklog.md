@@ -1,5 +1,65 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 23:12:40-04:00 SPU Verify-Only Re-Sync (Counter Scaffold Refresh)
+
+## Run Stamp
+- Timestamp: `2026-05-29T23:12:16.2377200-04:00` / `2026-05-29T23:12:39.4366702-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement remains blocked by anti-patterns; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows
+```
+
+## Verification
+
+- SPU pipeline artifacts were refreshed at `2026-05-29T23:12:16.2377200-04:00` and retained the same 2 contracts:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0` (priority-1 lane)
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0` (priority-2 lane)
+- `source-alignment.json` confirms the Windows upstream already has the 25cc predicate and 451c family paths, while vendored RPCSX still has only generic DMA probe hooks.
+- Visual gate:
+  - `FIELD_LIKE_PRESENT`
+  - `First field-like`: `screenshot-0118s.png` at `118s` (`2.50 MB`)
+  - `RequireNoInvalidAfterFirstField` passed.
+- Parser check:
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `contract_hits=0`, `contract_bytes=0`, `output_mismatch=0`, `desc_overflow=0`
+  - `failures=no contract verifier rows found`
+  - Strict mode remains failing (`accepted_rows_lt_1`, `contract_hits_lt_1`) when `-FailOnGate` is applied.
+- Reservation-loop summary:
+  - `Kernel capsule rows=0`
+  - `Reservation command rows=0`
+  - `Reservation command exact-PC rows=0`
+  - `Command-run MFC wait exact-PC rows=0`
+  - `PUTLLC16 pair verifier rows=0`
+  - Decision remains `collect-missing-proof` (`command-correlation-data-missing`).
+- SPU contract JSON inspection:
+  - `verify-counter-schema` now requires contract-id/lane-1 fields:
+    - `contract_id`, `contract_hits`, `contract_bytes`, `contract_get_hits`, `contract_put_hits`,
+      `contract_reject_total`, reject buckets, `last_src_hash`, `last_dst_pre_hash`, `last_dst_post_hash`.
+  - `verify-logrow-implementation` defines a new `Eternal Sonata SPU contract verifier` row keyed by `hle_mode=contract-25cc-9e4000`.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `verify-logrow-parser`
+- `collect-missing-proof`
+
+## Next Step
+- Keep movement and speed lanes blocked.
+- Plan implementation work now shifts to first applying the contract verifier log-row in Windows upstream (`rpcs3-upstream`) and verify-only counters, then re-running this same clean visual field + verify pipeline under `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow`.
+- Do not unblock fast paths or route movement until clean field/options/first-battle with zero `output_mismatch` and zero `desc_overflow` are confirmed.
+
 ## 2026-05-29 22:52:18-04:00 SPU Verify-Only Re-Sync (Verifier Rows + No-Field)
 
 ## Run Stamp
