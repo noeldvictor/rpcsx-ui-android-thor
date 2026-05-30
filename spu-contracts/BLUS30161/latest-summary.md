@@ -1,8 +1,8 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-30T10:19:48.2346073-04:00`
+- Generated: `2026-05-30T11:08:15.4720274-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260530-101536-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`
 - Target PCs: `0x25cc, 0x451c`
 - Target EAs: `0x9e4000`
 - Ghidra headless: `missing-or-skipped`

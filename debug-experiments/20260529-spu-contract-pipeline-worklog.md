@@ -1,5 +1,71 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 11:08:00-04:00 State-Aware Damaged-Confirm Retry (Wrong-Window Repeat, Visual Gate Fail)
+
+## Run Stamp
+- Timestamp: `2026-05-30T11:03:01.4657911-04:00` / `2026-05-30T11:08:07.2806415-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest state-aware one-step repair reached the load-confirm prompt and never accepted field. Do not rerun the default field macro; use the damaged-save-confirm variant with an extra Cross after the prompt and delayed screenshots.`
+- Route pressure state: still field-missing; the updated damaged-confirm attempt did not reach game field.
+- Source evidence for this checkpoint:
+  - `20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-damaged-confirm-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;cross:120;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100"
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson .\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows\spu-contract-parse-strict-110301.json -OutMarkdown .\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows\spu-contract-parse-strict-110301.md
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-110301-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Visual check:
+  - `8` screenshots.
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`.
+  - `First field-like`: `none`.
+  - Class counts: `wrong-window-or-other-small-png: 8`.
+- Verifier parse strict:
+  - `rows=0`
+  - `accepted_rows=0`
+  - `contract_hits=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `strict_gate_pass=False`
+- Reservation-loop summary:
+  - `command-correlation-data-missing`
+  - `decision=collect-missing-proof`
+  - `kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `command rows=0`
+- SPU contract pipeline refresh (`spu_contract_pipeline.ps1`):
+  - Source run updated to `20260530-110301...`
+  - `spu-contracts\BLUS30161\latest-summary.md` source run updated to this path; contract count remains `2`.
+  - Regenerated artifacts:
+    - `spu-contracts\BLUS30161\latest-summary.md`
+    - `spu-contracts\BLUS30161\source-alignment.{json,md}`
+    - `spu-contracts\BLUS30161\verify-counter-plan.{json,md}`
+    - `spu-contracts\BLUS30161\verify-counter-schema.{json,md}`
+    - `spu-contracts\BLUS30161\verify-logrow-implementation.{json,md}`
+    - `spu-contracts\BLUS30161\index.json`
+    - Contract JSONs:
+      - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+      - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `spu-contract-pipeline`
+
+## Next Step
+- Do not treat this as route/tooling progress for movement or performance claims.
+- Hold speed claims; remain in verify-only planning.
+- Run explicit SPU verifier-row + counter patching work in Windows upstream next, then rerun strict field -> Options -> first-battle path only after clean visuals.
+
 ## 2026-05-30 10:19:00-04:00 State-Aware Damaged-Confirm Route Attempt (Visual Fail, Counter Missing)
 
 ## Run Stamp
