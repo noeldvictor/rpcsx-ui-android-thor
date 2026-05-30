@@ -40,7 +40,7 @@ $runDir = '.\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visu
 - `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/eternal-sonata-windows-visual-gate-summary.md`
 - `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/spu-contract-verify-check-0911.json`
 - `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/spu-contract-verify-check-0911.md`
-- `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/summarize-spu-reservation-loop.json`
+- `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/eternal-sonata-spu-reservation-loop-summary.md`
 - `spu-contracts\\BLUS30161` (active verify-only planning artifacts unchanged)
 
 ## Classification
