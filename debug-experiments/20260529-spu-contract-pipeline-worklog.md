@@ -1,5 +1,61 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 05:12:00-04:00 SPU Verify-Lane Non-Duplicative Follow-Up (Parse-Only Counterproof)
+
+## Run Stamp
+- Timestamp: `2026-05-30T05:12:30.2901098-04:00` / `2026-05-30T05:12:00-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement still blocked by anti-patterns; SPU verifier lane remains active. Latest clean field source remains `20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+$runDir = '.\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows'
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath (Join-Path $runDir 'RPCS3.log') -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson (Join-Path $runDir 'spu-contract-verify-check-0911.json') -OutMarkdown (Join-Path $runDir 'spu-contract-verify-check-0911.md')
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir $runDir
+```
+
+## Verification
+
+- Visual gate (pre-existing check on the same field run): `FIELD_LIKE_PRESENT` (`screenshot-0118s.png` at `118s`) with `10` field-like samples and `0` invalid-after-field. This remains visual-route-only evidence, not first-battle/menu.
+- Verifier strict parse on `20260529-095956`:
+  - `rows=0`
+  - `accepted_rows=0`
+  - `rejected_rows=0`
+  - `total_contract_hits=0`
+  - `strict_gate_pass=false`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `failures=no contract verifier rows found`
+- Reservation-loop summary for the same run:
+  - `kernel-capsule rows=0`
+  - `reservation command rows=0`
+  - `reservation command exact-PC rows=0`
+  - `command-run MFC wait exact-PC rows=0`
+  - `putllc16 pair verifier rows=0`
+  - `decision=collect-missing-proof`
+
+## Source/Artifacts Inspected
+- `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/eternal-sonata-windows-visual-gate-summary.md`
+- `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/spu-contract-verify-check-0911.json`
+- `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/spu-contract-verify-check-0911.md`
+- `debug-captures/windows-lab/20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows/summarize-spu-reservation-loop.json`
+- `spu-contracts\\BLUS30161` (active verify-only planning artifacts unchanged)
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `collect-missing-proof`
+
+## Next Step
+- Continue SPU verify-only lane.
+- Capture evidence that can emit the 25cc contract rows on a cleaned command-read path, then run the strict sequence `FIELD -> Options -> first-battle` under this same verify contract scaffold before any fast-mode discussion.
+
 ## 2026-05-30 04:53:28-04:00 SPU Verify-Lane Checkpoint (Verifier Rows Only, Non-Field)
 
 ## Run Stamp
