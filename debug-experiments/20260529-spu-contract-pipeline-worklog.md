@@ -1,5 +1,134 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 07:14:24-04:00 SPU Verify-Lane No-Duplicate Recovery (Cutscene-Frame Non-Field, Missing Verifier Rows)
+
+## Run Stamp
+- Timestamp: `2026-05-30T07:14:19.1156764-04:00` / `2026-05-30T07:14:24.4118467-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement still blocked by non-field visuals and missing verifier rows; verifier lane remains active.
+- Source evidence for this checkpoint: `20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\spu-contract-parse-strict-100836.json -OutMarkdown .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\spu-contract-parse-strict-100836.md
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows
+```
+
+## Verification
+
+- Refiner output: same-blocked movement decision remains; no auto rerun on loader-control movement.
+- Visual check (source): `./debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/eternal-sonata-windows-visual-gate-summary.md`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - First field-like: none
+  - Class counts: `loading-like-small-png=14`
+- Verifier parse strict (source): `./debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/spu-contract-parse-strict-100836.md`
+  - `rows=0`
+  - `accepted_rows=0`
+  - `rejected_rows=0`
+  - `contract_hits=0`
+  - `strict_gate_pass=False`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `failures=no contract verifier rows found`
+- Counter summary (source): `./debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/eternal-sonata-spu-reservation-loop-summary.md`
+  - `command-correlation-data-missing` plus `decision=collect-missing-proof`
+  - `reservation command exact-PC rows=49648`
+  - `command-run MFC wait exact-PC rows=100813`
+  - `kernel-capsule rows=0`, `pair rows=0`
+- SPU contract artifacts refreshed from this source run:
+  - `spu-contracts\\BLUS30161\\latest-summary.md`
+  - `spu-contracts\\BLUS30161\\source-alignment.{json,md}`
+  - `spu-contracts\\BLUS30161\\verify-counter-plan.{json,md}`
+  - `spu-contracts\\BLUS30161\\verify-counter-schema.{json,md}`
+  - `spu-contracts\\BLUS30161\\verify-logrow-implementation.{json,md}`
+  - `spu-contracts\\BLUS30161\\index.json`
+  - `spu-contracts\\BLUS30161\\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+  - `spu-contracts\\BLUS30161\\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `collect-missing-proof`
+
+## Next Step
+- Remain on verify-only implementation lane.
+- No movement or fast-mode claims are valid from this capture because visuals are non-field and verifier rows are absent.
+- Next required action: emit/verify `contract-25cc-9e4000` rows in Windows upstream (`RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow`) and rerun clean Field -> Options -> first-battle with strict counter/log gates before any speed/HLE fast-path discussion.
+
+## 2026-05-30 07:12:24-04:00 Verify-Lane Revalidation (Parser Pass, Visual Fail, No-Speed Promotion)
+
+## Run Stamp
+- Timestamp: `2026-05-30T07:12:24.3385596-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: movement remains blocked on repeated visual misses/fatal route noise; verify lane remains active.
+- Source evidence for pipeline refresh: `20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows`.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson .\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows\spu-contract-parse-strict-051307-rerun.json
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows
+```
+
+## Verification
+
+- Refiner output (latest): `Do not auto-rerun loader-control-left200...`; counters/lanes remain blocked and `verify-only` remains required.
+- Visual check (source): `./debug-captures/windows-lab/20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows/eternal-sonata-windows-visual-gate-summary.md`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - First field-like: none
+  - Invalid-after-field: `0`
+- Verifier parse strict (source): `./debug-captures/windows-lab/20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows/spu-contract-parse-strict-051307-rerun.json`
+  - `rows=1480`
+  - `accepted_rows=1480`
+  - `rejected_rows=0`
+  - `total_contract_hits=3068`
+  - `total_output_mismatch=0`
+  - `total_desc_overflow=0`
+  - `strict_failures=[]`
+- Counter summary (source): `./debug-captures/windows-lab/20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows/eternal-sonata-spu-reservation-loop-summary.md`
+  - `decision=collect-missing-proof`
+  - `command rows=1953`
+  - `reservation command exact-PC rows=55112`
+  - `command-run MFC wait exact-PC rows=115052`
+  - `kernel-capsule rows=0`
+  - `MFC wait exact-PC rows=0`
+  - `PUTLLC16 pair verifier rows=0`
+- SPU contract artifacts refreshed from this source run:
+  - `spu-contracts\BLUS30161\latest-summary.md`
+  - `spu-contracts\BLUS30161\source-alignment.{json,md}`
+  - `spu-contracts\BLUS30161\verify-counter-plan.{json,md}`
+  - `spu-contracts\BLUS30161\verify-counter-schema.{json,md}`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.{json,md}`
+  - `spu-contracts\BLUS30161\index.json`
+  - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+  - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `route-tooling`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `spu-contract-pipeline`
+- `collect-missing-proof`
+- `failed-visual-gate`
+
+## Next Step
+- Keep strictly in verify-only planning and implementation lane.
+- No speed, HLE fast-mode, or route-movement claims are valid from this capture because visuals are non-field.
+- Next action remains: apply/verify the `contract-25cc-9e4000` log-row in Windows upstream with reject buckets, then rerun clean Field + Options/menu + first-battle using `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow`.
+
 ## 2026-05-30 06:52:46-04:00 SPU Verify-Lane Non-Duplicative Refresh (Field Triage, No Verifier Rows)
 
 ## Run Stamp

@@ -1,8 +1,8 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-30T06:52:33.4380273-04:00`
+- Generated: `2026-05-30T07:14:19.0549960-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
 - Target PCs: `0x25cc, 0x451c`
 - Target EAs: `0x9e4000`
 - Ghidra headless: `missing-or-skipped`
