@@ -1,5 +1,68 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 07:33:14-04:00 SPU Verify-Lane Non-Duplicative Checkpoint (Contract Rows Parsed, Visual Gate Fail, Missing Correlation)
+
+## Run Stamp
+- Timestamp: `2026-05-30T07:32:44.3338396-04:00` / `2026-05-30T07:33:14.0000000-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement remains blocked by multiple non-field/fatal anti-patterns; verifier lane remains active.
+- Source evidence for this checkpoint: `20260529-175303-eternal-sonata-field-stock-qualcomm-windows`.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\spu-contract-parse-strict-175303.json -OutMarkdown .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\spu-contract-parse-strict-175303.md
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+```
+
+## Verification
+
+- Refiner output: same-blocked movement decision continues; no auto rerun on loader-control movement.
+- Visual check (source): `./debug-captures/windows-lab/20260529-175303-eternal-sonata-field-stock-qualcomm-windows/eternal-sonata-windows-visual-gate-summary.md`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - First field-like screenshot: none
+  - Class counts: `cutscene-or-nonfield-large-png=1`, `cutscene-or-nonfield-small-png=7`
+- Verifier parse strict (source): `./debug-captures/windows-lab/20260529-175303-eternal-sonata-field-stock-qualcomm-windows/spu-contract-parse-strict-175303.md`
+  - `rows=763`
+  - `accepted_rows=763`
+  - `rejected_rows=0`
+  - `contract_hits=1529`
+  - `contract_bytes=25051136`
+  - `strict_gate_pass=True`
+  - `failures=[]`
+- Counter summary (source): `./debug-captures/windows-lab/20260529-175303-eternal-sonata-field-stock-qualcomm-windows/eternal-sonata-spu-reservation-loop-summary.md`
+  - `command-correlation-data-missing`
+  - `decision=collect-missing-proof`
+  - `command rows=0`, `reservation command rows=0`, `reservation command exact-PC rows=0`
+  - `kernel-capsule rows=0`, `putllc16 pair verifier rows=0`
+  - `command-run MFC wait exact-PC rows=90997`
+- SPU contract artifacts refreshed from this source run:
+  - `spu-contracts\\BLUS30161\\latest-summary.md`
+  - `spu-contracts\\BLUS30161\\source-alignment.{json,md}`
+  - `spu-contracts\\BLUS30161\\verify-counter-plan.{json,md}`
+  - `spu-contracts\\BLUS30161\\verify-counter-schema.{json,md}`
+  - `spu-contracts\\BLUS30161\\verify-logrow-implementation.{json,md}`
+  - `spu-contracts\\BLUS30161\\index.json`
+  - `spu-contracts\\BLUS30161\\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+  - `spu-contracts\\BLUS30161\\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `spu-contract-pipeline`
+- `collect-missing-proof`
+
+## Next Step
+- Keep verifier-only implementation lane active; no movement, speed, or fast-mode claim is valid from this run because visuals are non-field.
+- Next action: use `verify-only` emulator counters/reject buckets for 25cc runtime-family and 451c list-family in Windows upstream, then rerun clean Field + Options/menu + first-battle with strict contract log/counter gates.
+
 ## 2026-05-30 07:14:24-04:00 SPU Verify-Lane No-Duplicate Recovery (Cutscene-Frame Non-Field, Missing Verifier Rows)
 
 ## Run Stamp
