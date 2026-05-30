@@ -1,5 +1,116 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 11:20:00-04:00 State-Aware Damaged-Confirm Visual-Gate Repeat
+
+## Run Stamp
+- Timestamp: `2026-05-30T11:16:39.2968808-04:00` / `2026-05-30T11:21:53.6369564-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest state-aware one-step repair reached the load-confirm prompt and never accepted field. Do not rerun the default field macro; use the damaged-save-confirm variant with an extra Cross after the prompt and delayed screenshots.`
+- Route pressure state: this route lane still fails visual gate and still has no accepted field; no movement/speed/Options/first-battle progress from this checkpoint.
+- Source evidence for this checkpoint:
+  - `20260530-111639-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-damaged-confirm-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;cross:120;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 175 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260530-111639-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260530-111639-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260530-111639-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-111639-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Visual check:
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`.
+  - First field-like screenshot: `none`.
+  - Required gate at or before 160s: failed (`no field-like screenshot was found by 160s`; run capped at 175s).
+  - Class counts: `cutscene-or-nonfield-small-png: 8`.
+- Verifier parse strict:
+  - `rows=0`
+  - `accepted_rows=0`
+  - `contract_hits=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `strict_gate_pass=False`
+  - Failure message: `no contract verifier rows found`
+- Reservation-loop summary:
+  - Missing CSV artifacts (`command`, `command-pc`, `command-run mfc wait`) for this run.
+  - `kernel capsule rows=0`
+  - `Decision=command-correlation-data-missing` / `collect-missing-proof`
+- SPU contract pipeline refresh:
+  - Source run updated to `20260530-111639-...`.
+  - Contract JSON `source_run` and alignment/plan/schema/log-row artifacts regenerated with updated run metadata.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `spu-contract-pipeline`
+
+## Next Step
+- Continue in `failed-visual-gate` hold mode: do not claim route/movement/speed/200% from this run.
+- Keep screen and route repairs Windows-only, then re-run `ps3_harness_refiner.ps1` and follow next non-duplicative action.
+- `spu-contracts/BLUS30161` has been refreshed from this evidence, but no new SPU verification counterproof is valid; continue verify-only planning before any fast paths.
+
+## 2026-05-30 11:15:00-04:00 State-Aware One-Step VisualGate Repeat (No Field)
+
+## Run Stamp
+- Timestamp: `2026-05-30T11:09:52.0844877-04:00` / `2026-05-30T11:15:44.1363310-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Use the newest valid-field run as the route base, but only add one small state-aware movement step with CleanAfterField.`
+- Route pressure state: this clean-field carry-over step still did not produce accepted field output; it is still `failed-visual-gate` and does not progress movement/speed evidence.
+- Source evidence for this checkpoint:
+  - `20260530-110952-cpu4-stateaware-one-step-visualgate-windows-windows`
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260530-110952-cpu4-stateaware-one-step-visualgate-windows-windows
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260530-110952-cpu4-stateaware-one-step-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260530-110952-cpu4-stateaware-one-step-visualgate-windows-windows
+```
+
+## Verification
+
+- Visual check:
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`.
+  - First field-like screenshot: `none`.
+  - Required gate at or before `160s`: failed (`No field-like screenshot was found at or before 160s`).
+  - Class counts: `wrong-window-or-other-small-png: 3`.
+- Verifier parse strict:
+  - `rows=0`
+  - `accepted_rows=0`
+  - `contract_hits=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `strict_gate_pass=False`
+  - Failure message: `no contract verifier rows found`
+- Reservation-loop summary:
+  - `kernel capsule rows=0`, `MFC wait exact-PC rows=0`
+  - `Reservation command rows=1070`, `Reservation command exact-PC rows=28454`
+  - `Command-run MFC wait exact-PC rows=51125`
+  - `Decision=collect-missing-proof`
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Stay on `failed-visual-gate` handling only.
+- Keep host/process checks valid but route remains invalid for movement, speed, options, or first-battle claims.
+- Do not promote counters or SPU contract rows from this run.
+- Re-run `ps3_harness_refiner.ps1` in the next checkpoint and follow its next single Windows-only step without assumptions; avoid repeating a known-failing identical one-step path unless the refiner unblocks it.
+
 ## 2026-05-30 11:08:00-04:00 State-Aware Damaged-Confirm Retry (Wrong-Window Repeat, Visual Gate Fail)
 
 ## Run Stamp
