@@ -1,8 +1,8 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-30T04:52:55.7145929-04:00`
+- Generated: `2026-05-30T05:32:12.8877360-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows`
 - Target PCs: `0x25cc, 0x451c`
 - Target EAs: `0x9e4000`
 - Ghidra headless: `missing-or-skipped`
