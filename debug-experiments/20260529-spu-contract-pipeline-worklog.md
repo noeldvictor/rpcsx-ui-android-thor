@@ -51,6 +51,63 @@
 - Keep this lane in verify-only planning.
 - `inspect spu-contracts\BLUS30161` for schema/anchor updates (already refreshed), then add/port contract-id verify counters in `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream` and rerun strict `field -> Options -> first-battle` under the same verify schema before any fast-path toggle.
 
+## 2026-05-29 20:52:13-04:00 SPU Verify-Only Contract Re-sync on Non-Field Evidence
+
+## Run Stamp
+- Timestamp: `2026-05-29T20:51:38.9142842-04:00` / `2026-05-29T20:52:13.0000000-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement.`
+- Route pressure state: movement stays blocked; SPU verifier lane remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+```
+
+## Verification
+
+- SPU pipeline outputs were refreshed from `175303` evidence and source run updated accordingly.
+- `latest-summary` now points to this source run and contracts remain `2`:
+  - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
+  - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`
+- Contract inference classes were adjusted to `dma-window,spurs-kernel` for both contracts.
+- Visual gate result:
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - `first field-like screenshot`: `none` (`8` screenshots, `cutscene-or-nonfield` classes `1 large + 7 small`)
+  - Gate failed (classifies as invalid route-equivalent evidence).
+- Contract parser result on same run:
+  - `rows=763`, `accepted_rows=763`, `rejected_rows=0`
+  - `total_contract_hits=1529`, `total_contract_bytes=25051136`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `strict_gate_pass=true`
+  - No strict failures (parser itself passes on this log).
+- Reservation-loop summary:
+  - Kernel capsule rows: `0`
+  - Reservation command rows: `0`
+  - Reservation command exact-PC rows: `0`
+  - MFC wait rows: `0` (command-run exact-PC rows `90997`)
+  - Decision: `collect-missing-proof` (command-correlation data missing).
+- `RPCS3.log` check: only `Show fatal error hints: false`; no new VM access violation/SPU unknown STOP/Vulkan device-lost hits.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `spu-contract-scaffold`
+- `spu-reservation-loop-summary`
+- `verify-counter-plan`
+- `verify-logrow-parser`
+- `collect-missing-proof`
+
+## Next Step
+- Continue in verify-only planning.
+- Inspect updated `spu-contracts\BLUS30161` JSON/schema outputs and implement `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream` verify-only contract counters for priority-1 `0x25cc/0x9e4000` next, then rerun strict `field -> Options -> first-battle` captures for promotion gates.
+
 ## 2026-05-29 20:12:05-04:00 SPU Pipeline Re-sync on Non-Field Evidence
 
 ## Run Stamp
