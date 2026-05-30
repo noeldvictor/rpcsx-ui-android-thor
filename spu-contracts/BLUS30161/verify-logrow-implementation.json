@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-29T20:12:06.0382542-04:00",
+    "generated_at":  "2026-05-29T20:32:23.2055969-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-175303-eternal-sonata-field-stock-qualcomm-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows",
     "classification":  [
                            "analysis",
                            "verify-logrow-implementation-scaffold"

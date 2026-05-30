@@ -1,5 +1,56 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-29 20:32:34-04:00 SPU Verify-Planning Refresh
+
+## Run Stamp
+- Timestamp: `2026-05-29T20:32:17.3380090-04:00` / `2026-05-29T20:32:34.0000000-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement.`
+- Route pressure state: movement remains blocked; lane-2 SPU verifier work remains active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visualgate-windows-v15-windows
+```
+
+## Verification
+
+- SPU pipeline outputs were refreshed from the same clean 095956 field evidence.
+- `latest-summary` source run now points to `20260529-095956` and contract classes are `dynamic-mfc-shape,dma-window,spurs-kernel` for both `0x025cc`/`0x0451c`.
+- Visual verification:
+  - `FIELD_LIKE_PRESENT`
+  - First field-like screenshot: `screenshot-0118s.png` (`2.50 MB`)
+  - No invalid screenshot after first field-like.
+- Contract parser result on this evidence:
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`, `total_contract_hits=0`, `total_contract_bytes=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1` (strict gate failed)
+- SPU reservation-loop summarize on the source run:
+  - Kernel capsule rows: `0`
+  - Command rows: `0`
+  - Exact command-PC rows: `0`
+  - MFC wait rows: `0`
+  - Decision: `collect-missing-proof` (correlation data missing)
+- No new real `VM access violation`, `SPU unknown STOP`, or `VK_ERROR_DEVICE_LOST` signatures in this run; only startup/standard `Show fatal error hints: false`.
+
+## Classification
+- `analysis`
+- `valid-field-triage`
+- `failed`
+- `spu-contract-scaffold`
+- `verify-counter-plan`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `verify-logrow-parser`
+
+## Next Step
+- Keep this lane in verify-only planning.
+- `inspect spu-contracts\BLUS30161` for schema/anchor updates (already refreshed), then add/port contract-id verify counters in `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream` and rerun strict `field -> Options -> first-battle` under the same verify schema before any fast-path toggle.
+
 ## 2026-05-29 20:12:05-04:00 SPU Pipeline Re-sync on Non-Field Evidence
 
 ## Run Stamp
