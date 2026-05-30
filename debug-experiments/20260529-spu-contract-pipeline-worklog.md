@@ -1,5 +1,129 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 10:19:00-04:00 State-Aware Damaged-Confirm Route Attempt (Visual Fail, Counter Missing)
+
+## Run Stamp
+- Timestamp: `2026-05-30T10:15:34.9492601-04:00` / `2026-05-30T10:19:48.2346073-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest state-aware one-step repair reached the load-confirm prompt and never accepted field. Do not rerun the default field macro; use the damaged-save-confirm variant with an extra Cross after the prompt and delayed screenshots.`
+- Route pressure state: current route proof still misses field; no field/options/battle visuals were obtained in this step.
+- Source evidence for this checkpoint:
+  - `20260530-101536-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-damaged-confirm-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;cross:120;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 175 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 135 -ScreenshotMaxCount 8
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260530-101536-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260530-101536-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260530-101536-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-101536-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Visual check (`check_eternal_sonata_windows_visual_gate`):
+  - Run had `8` screenshots.
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+- Verifier parse strict (`parse_spu_contract_verify_log`):
+  - `rows=0`
+  - `accepted_rows=0`
+  - `contract_hits=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+- Reservation-loop summary (`summarize_eternal_sonata_spu_reservation_loop`):
+  - `command-correlation-data-missing`
+  - `decision=collect-missing-proof`
+  - `kernel capsule rows=0`, `MFC wait exact-PC rows=0`
+- SPU contract pipeline refresh (`spu_contract_pipeline.ps1`):
+  - Source run updated to `20260530-101536...`
+  - `spu-contracts\BLUS30161\latest-summary.md` now shows:
+    - Contracts: `2` (`pc025cc` + `pc0451c`)
+    - Contract 0x25cc hits: `80`, `source_run`: this same run path
+  - Regenerated artifacts:
+    - `spu-contracts\BLUS30161\source-alignment.{json,md}`
+    - `spu-contracts\BLUS30161\verify-counter-plan.{json,md}`
+    - `spu-contracts\BLUS30161\verify-counter-schema.{json,md}`
+    - `spu-contracts\BLUS30161\verify-logrow-implementation.{json,md}`
+    - `spu-contracts\BLUS30161\index.json`
+    - Contract JSONs:
+      - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+      - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `spu-contract-pipeline`
+
+## Next Step
+- Hold route proof and speed claims. Next required action is explicit SPU verify-only implementation under `verify-25cc-shadow` in Windows upstream, then strict field -> Options -> first-battle verifier captures before any fast path changes.
+
+## 2026-05-30 09:42:00-04:00 Load-Gate Repair (Poll-Gated Downward Crash, No Field)
+
+## Run Stamp
+- Timestamp: `2026-05-30T09:39:19.1179805-04:00` / `2026-05-30T09:42:09.5068535-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status UNKNOWN_LOAD_TARGET...` then `path-to-tenuto` repair lane.
+- Route pressure state: load-target stability is still broken on the same route family; no field/options/first-battle visuals this round.
+- Source evidence for this checkpoint:
+  - `20260530-093612-cpu4-hle-25cc-shadow-desc-battle-stock-down160-leftonly-diagnostic-windows`
+  - `20260530-093919-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait=1000;shot:100;wait=10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260530-093919-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260530-093919-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260530-093919-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-093919-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Prior checked run `20260530-093612...` had:
+  - `Load target`: `UNKNOWN_LOAD_TARGET` with black-overlay gate frames.
+  - Visual gate status: `NO_FIELD_LIKE_SCREENSHOT` (`10` black-overlay-small-png).
+  - `RPCS3.log`: `VM: Access violation` at `PPU` `0x0007dccc` (unmapped `0x4`) plus startup `Show fatal error hints: false`.
+  - Verifier parse strict: `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`.
+  - Counter summary: missing capsule/read CSV evidence, decision `collect-missing-proof`.
+- New run `20260530-093919...` load-target check:
+  - `Load target gate failed at 65s` with `DEBUG_SAVE_PROLOGUE_PRESENT`.
+  - Visual gate summary status: `NO_FIELD_LIKE_SCREENSHOT`; `2` `wrong-window-or-other-small-png` screenshots.
+  - Verifier parse strict: `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`.
+  - Counter summary: missing correlation CSVs, decision `collect-missing-proof`.
+  - `RPCS3.log`: no additional `VM access violation`/`SPU unknown STOP`/`VK_ERROR_DEVICE_LOST` strings beyond startup `Show fatal error hints: false`.
+- SPU artifacts refreshed from the new source run:
+  - `spu-contracts\BLUS30161\latest-summary.md` (source run updated to `20260530-093919...`)
+  - `spu-contracts\BLUS30161\source-alignment.{json,md}`
+  - `spu-contracts\BLUS30161\verify-counter-plan.{json,md}`
+  - `spu-contracts\BLUS30161\verify-counter-schema.{json,md}`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.{json,md}`
+  - `spu-contracts\BLUS30161\index.json`
+  - Contract JSONs:
+    - `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+    - `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `failed-load-target`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `spu-contract-pipeline`
+- `route-tooling`
+
+## Next Step
+- Hold movement/fixed-speed/RSX claims. Repair load-target selector drift first with no-slot movement and explicit DEBUG_SAVE_LIST/`PATH_TO_TENUTO_PRESENT` stabilization; then rerun a clean no-movement or direct-left base before any first-battle extension.
+
 ## 2026-05-30 09:33:00-04:00 Verify-Lane Isolation (NoVerify TopSlot Battle, Visual/Parser Fail, Missing Correlation)
 
 ## Run Stamp
