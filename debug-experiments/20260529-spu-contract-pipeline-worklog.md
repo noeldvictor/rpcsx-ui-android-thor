@@ -1,5 +1,57 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 03:54:24-04:00 SPU Verify-Lane Windows Gating Re-check (No Field Gate, Rows Present)
+
+## Run Stamp
+- Timestamp: `2026-05-30T03:54:02.3191724-04:00` / `2026-05-30T03:54:24-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement remains blocked; SPU verifier lane active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+$runDir = ".\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows"
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir $runDir -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath (Join-Path $runDir "RPCS3.log") -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson (Join-Path $runDir "spu-contract-parse-summary.json")
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir $runDir
+```
+
+## Verification
+
+- Refiner anti-patterns remain `repeated-black-overlay-pre-field`, `cutscene-or-nonfield-frames`, `fatal-log-hit`, `clean-lane-counters-with-invalid-visuals` and `single-next-loader-control-failure`; movement remains blocked.
+- Visual gate (`check_eternal_sonata_windows_visual_gate.ps1`) on `20260529-051307...`: `NO_FIELD_LIKE_SCREENSHOT`
+  - first field-like: `none`
+  - gate failure: `No field-like screenshot was found`
+- Verifier parser output (`parse_spu_contract_verify_log.ps1`, `-FailOnGate`):
+  - `rows=1480`
+  - `accepted_rows=1480`
+  - `rejected_rows=0`
+  - `total_contract_hits=3068`
+  - `total_contract_bytes=50266112`
+  - `total_output_mismatch=0`
+  - `total_desc_overflow=0`
+  - `promotion_ready=false` (parse lane only; visual gate still blocks proof)
+- Reservation-loop summary (`summarize_eternal_sonata_spu_reservation_loop.ps1`) decision: `collect-missing-proof`
+  - `Kernel capsule rows=0`
+  - `Reservation command rows=1953`
+  - `Reservation command exact-PC rows=55112`
+  - `Command-run MFC wait exact-PC rows=115052`
+  - `PUTLLC16 pair verifier rows=0`
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep movement and battle routes blocked until new clean `FIELD + options + first-battle` evidence is re-proven.
+- Continue verify-only contract work on Windows (no fast-mode changes): keep `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow` and require visual triage on a clean `FIELD -> Options/menu -> first-battle` sequence before any speed/fast-path shift.
+
 ## 2026-05-30 03:33:44-04:00 SPU Verify-Lane Focused Dry-Run (Field Clean, No Verifier Rows)
 
 ## Run Stamp
