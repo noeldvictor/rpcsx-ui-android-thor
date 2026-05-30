@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-05-30T05:32:12.8877360-04:00",
+    "generated_at":  "2026-05-30T05:52:14.4187262-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows",
     "classification":  [
                            "analysis",
                            "verify-counter-plan"
@@ -56,7 +56,7 @@
                                              "group":  "CellSpursKernelGroup",
                                              "spu_index":  0,
                                              "spu_name":  "CellSpursKernel0",
-                                             "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt"
+                                             "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-025cc-group-CellSpursKernelGroup-spu-0-CellSpursKernel0.disasm.txt"
                                          },
                       "predicate":  [
                                         "title_id == BLUS30161",
@@ -120,7 +120,7 @@
                                              "group":  "TCX_CellSpursKernelGroup",
                                              "spu_index":  0,
                                              "spu_name":  "TCX_CellSpursKernel0",
-                                             "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-0451c-group-TCX_CellSpursKernelGroup-spu-0-TCX_CellSpursKernel0.disasm.txt"
+                                             "disasm":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\\spu-images\\BLUS30161-spu-image-958dfe208b686622-entry-00818-pc-0451c-group-TCX_CellSpursKernelGroup-spu-0-TCX_CellSpursKernel0.disasm.txt"
                                          },
                       "predicate":  [
                                         "title_id == BLUS30161",

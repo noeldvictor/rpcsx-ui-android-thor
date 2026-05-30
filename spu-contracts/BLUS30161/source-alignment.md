@@ -1,8 +1,8 @@
 ﻿# SPU Contract Source Alignment
 
-- Generated: `2026-05-30T05:32:12.8877360-04:00`
+- Generated: `2026-05-30T05:52:14.4029217-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left200x2-diag200-verify-counterproof-windows-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows`
 - Classification: `analysis`, `source-alignment`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
 
 | Source | Lane | Feature | Status | Patterns |

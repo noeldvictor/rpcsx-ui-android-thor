@@ -1,5 +1,66 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 05:52:44-04:00 SPU Verify-Lane Non-Duplicative Follow-Up (Loading-only Visual Fail, No Contract Rows on Parse)
+
+## Run Stamp
+- Timestamp: `2026-05-30T05:52:18.3763435-04:00` / `2026-05-30T05:52:44-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: movement remains blocked by anti-patterns; SPU verifier lane remains active. Latest clean field remains `20260529-095956...`; latest run in this lane had no verifier-row emissions.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\spu-contract-parse-strict-100836.json -OutMarkdown .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows\spu-contract-parse-strict-100836.md
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows
+```
+
+## Verification
+
+- Visual gate summary on `20260529-100836...`: `NO_FIELD_LIKE_SCREENSHOT` with `14` `loading-like-small-png` frames; no field-like sample.
+- Verifier parse strict gate on `20260529-100836...`:
+  - `rows=0`
+  - `accepted_rows=0`
+  - `rejected_rows=0`
+  - `contract_hits=0`
+  - `total_contract_bytes=0`
+  - `output_mismatch=0`
+  - `overflow=0`
+  - `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+  - `strict_gate_pass=False`
+  - `failures=no contract verifier rows found`
+- Reservation-loop summary for the same run:
+  - `kernel-capsule rows=0`
+- `putllc16 pair verifier rows=0`
+  - `reservation command rows=1767`
+  - `reservation command exact-PC rows=49648`
+  - `command-run MFC wait exact-PC rows=100813`
+  - `Command-run MFC wait peaks: primary GETLLAR/PUTLLC command/relation with zero command-read deltas`
+  - `Decision=collect-missing-proof`
+- SPU contract artifacts refreshed against this source run: both contracts (`0x025cc` and `0x0451c`) and verify artifacts under `spu-contracts\BLUS30161`.
+
+## Source/Artifacts Inspected
+- `debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/eternal-sonata-windows-visual-gate-summary.md`
+- `debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/spu-contract-parse-strict-100836.json`
+- `debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/spu-contract-parse-strict-100836.md`
+- `debug-captures/windows-lab/20260529-100836-cpu4-loader-control-left200-visualgate-windows-windows/eternal-sonata-spu-reservation-loop-summary.md`
+- `spu-contracts\BLUS30161\latest-summary.md`
+- `spu-contracts\BLUS30161\verify-counter-plan.md`
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `collect-missing-proof`
+
+## Next Step
+- Continue verifier lane only on the clean-field/Options/battle path once visuals are available.
+- Re-run `Verify25ccShadow` route proof with clean visual boundary, then strict `FIELD -> Options -> first-battle` using counter rows once parser row and pair-capsule evidence can be reliably emitted.
+
 ## 2026-05-30 05:32:39-04:00 SPU Verify-Lane Non-Duplicative Follow-Up (Parser Pass, Visual Fail, Missing Capsule/Pair Evidence)
 
 ## Run Stamp
