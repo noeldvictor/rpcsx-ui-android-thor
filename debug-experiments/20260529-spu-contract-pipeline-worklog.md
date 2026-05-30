@@ -1,5 +1,55 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 04:53:28-04:00 SPU Verify-Lane Checkpoint (Verifier Rows Only, Non-Field)
+
+## Run Stamp
+- Timestamp: `2026-05-30T04:53:28.1785450-04:00` / `2026-05-30T04:53:28-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis.`
+- Route pressure state: route proof blocked by anti-patterns; keeping SPU verifier lane active.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -RequireFieldLike -RequireNoInvalidAfterFirstField
+.\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate -OutJson .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\spu_contract_verify_parse.json -OutMarkdown .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows\spu_contract_verify_parse.md
+.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows
+```
+
+## Verification
+
+- SPU contract rerun refreshed BLUS30161 artifacts to source run `20260529-175303...` with timestamps around `04:52:55-04:00` in `spu-contracts\BLUS30161`.
+- Visual gate:
+  - `NO_FIELD_LIKE_SCREENSHOT` (`0` field-like screenshots)
+  - Failure: `No field-like screenshot was found` (cutscene/nonfield class profile).
+- Verifier parse strict gate on `20260529-175303...`:
+  - `rows=763`
+  - `accepted_rows=763`
+  - `rejected_rows=0`
+  - `total_contract_hits=1529`
+  - `total_contract_bytes=25051136`
+  - `strict_gate_pass=true`
+- SPU reservation-loop evidence:
+  - `Decision: collect-missing-proof` (`command-correlation-data-missing`)
+  - `Kernel capsule rows=0`, `MFC wait exact-PC rows=0`, `PUTLLC16 pair verifier rows=0`
+  - `Reservation command rows=0`, `Reservation command exact-PC rows=0`, `Command-run MFC wait exact-PC rows=90997`.
+- Fatal scan:
+  - No `VM access violation`, `VK_ERROR_DEVICE_LOST`, or `unknown STOP` in this capture log.
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `collect-missing-proof`
+
+## Next Step
+- Keep movement and battle reruns blocked.
+- Stay on SPU verifier lane: capture command-read/PAIR verification evidence on a clean field run, then run verified `FIELD → Options → first-battle` under `Verify25ccShadow` before any fast-mode proposals.
+
 ## 2026-05-30 04:32:31-04:00 SPU Verify-Lane Re-Run (Field Clean, No Verifier Rows)
 
 ## Run Stamp
