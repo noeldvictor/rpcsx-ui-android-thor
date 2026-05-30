@@ -1,6 +1,6 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-05-30T08:32:41.6339956-04:00`
+- Generated: `2026-05-30T08:54:50.5388894-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows`
 - Target PCs: `0x25cc, 0x451c`

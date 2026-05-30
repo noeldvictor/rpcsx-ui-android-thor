@@ -1,6 +1,6 @@
 ﻿# SPU Verify Counter Plan
 
-- Generated: `2026-05-30T08:32:41.6339956-04:00`
+- Generated: `2026-05-30T08:54:50.5388894-04:00`
 - Title: `BLUS30161`
 - Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows`
 - Classification: `analysis`, `verify-counter-plan`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
