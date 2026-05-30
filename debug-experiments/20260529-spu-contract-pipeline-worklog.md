@@ -1,5 +1,60 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+# 2026-05-30 12:41:00-04:00 State-Aware One-Step Visual Gate Repeat (Visual Gate Fail + Missing Proof)
+
+## Run Stamp
+- Timestamp: `2026-05-30T12:41:26.2957288-04:00` / `2026-05-30T12:45:48.8011118-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Use the newest valid-field run as the route base, but only add one small state-aware movement step with CleanAfterField.`
+- Route pressure state: the new one-step movement probe still missed field; no route/speed/Options/battle progress.
+
+## Action Taken
+
+```powershell
+. \tools\ps3_harness_refiner.ps1 -MaxRuns 8
+. \tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField
+```
+
+## Verification
+
+- `.\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260530-124130-cpu4-stateaware-one-step-visualgate-windows-windows -RequireFieldLike -RequireNoInvalidAfterFirstField`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - First field-like screenshot: `none`
+  - 3 screenshots captured
+- `.\tools\parse_spu_contract_verify_log.ps1 -LogPath ...\RPCS3.log -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate`
+  - `rows=0`, `accepted_rows=0`, `contract_hits=0`, `strict_failures=accepted_rows_lt_1, contract_hits_lt_1`
+- `.\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir ...\20260530-124130-cpu4-stateaware-one-step-visualgate-windows-windows`
+  - Missing all reservation-loop CSVs; decision `collect-missing-proof`
+
+## Counterevidence
+
+- `RPCS3.log`:
+  - only `Show fatal error hints: false` (benign)
+- Host samples in `host-system\sample-0133s.json` were `clean`
+- `window-title-samples.csv` showed valid FPS overlay titles at `screenshot-0117s` / `0133s`, but visual gate still failed.
+
+## SPU Contract Pipeline Attempt
+
+```powershell
+. \tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-124130-cpu4-stateaware-one-step-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+- Failed: no SPU disassembly windows found for PCs `0x9676`,`17692` under that run’s `spu-images` path.
+- `spu-contracts\BLUS30161` was **not** regenerated from this run.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this in route repair mode; do not claim movement, speed, GPU, or 200% from this run.
+- Back off to the last clean non-missing evidence route base (`loader-control-left200` ladder) before another movement rerun.
+- Next required action remains: keep route/tooling disciplined and run SPU verify-only instrumentation on a run with valid SPU-image windows when available.
+
 ## 2026-05-30 11:20:00-04:00 State-Aware Damaged-Confirm Visual-Gate Repeat
 
 ## Run Stamp

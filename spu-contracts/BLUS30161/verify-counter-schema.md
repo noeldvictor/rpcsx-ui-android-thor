@@ -1,8 +1,8 @@
 ﻿# SPU Verify Counter Schema
 
-- Generated: `2026-05-30T11:21:53.4788368-04:00`
+- Generated: `2026-05-30T11:45:21.7623599-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260530-111639-cpu4-stateaware-damaged-confirm-left200-visualgate-windows-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260530-114004-cpu4-stateaware-one-step-visualgate-windows-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`
 - Contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
 - Classification: `analysis`, `verify-counter-schema`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
