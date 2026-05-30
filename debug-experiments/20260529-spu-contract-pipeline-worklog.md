@@ -1,5 +1,59 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+## 2026-05-30 08:33:00-04:00 SPU Verify-Lane Recheck (Pipeline Refresh, Visual-Invalid + Missing Correlation)
+
+## Run Stamp
+- Timestamp: `2026-05-30T08:32:33.2334361-04:00` / `2026-05-30T08:33:00.0000000-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Route pressure state: movement remains blocked by repeated black/cutscene/load misses and occasional fatals; verifier lane remains active.
+- Source evidence for this checkpoint: `20260529-175303-eternal-sonata-field-stock-qualcomm-windows`.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260529-175303-eternal-sonata-field-stock-qualcomm-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
+```
+
+## Verification
+
+- Refiner output continues to block movement reruns from `loader-control-left200` and keep verifier lane active.
+- Visual check (source): `./debug-captures/windows-lab/20260529-175303-eternal-sonata-field-stock-qualcomm-windows/eternal-sonata-windows-visual-gate-summary.md`
+  - Status: `NO_FIELD_LIKE_SCREENSHOT`
+  - Class counts: `cutscene-or-nonfield-large-png=1`, `cutscene-or-nonfield-small-png=7`
+- Verifier parse strict (source): `./debug-captures/windows-lab/20260529-175303-eternal-sonata-field-stock-qualcomm-windows/spu-contract-parse-strict-175303-0752.md`
+  - `rows=763`
+  - `accepted_rows=763`
+  - `rejected_rows=0`
+  - `contract_hits=1529`
+  - `strict_gate_pass=True`
+- Counter summary (source): `./debug-captures/windows-lab/20260529-175303-eternal-sonata-field-stock-qualcomm-windows/eternal-sonata-spu-reservation-loop-summary.md`
+  - `command-correlation-data-missing`
+  - `decision=collect-missing-proof`
+- SPU contract artifacts refreshed from this source run:
+  - `spu-contracts\BLUS30161\latest-summary.md`
+  - `spu-contracts\BLUS30161\source-alignment.{json,md}`
+  - `spu-contracts\BLUS30161\verify-counter-plan.{json,md}`
+  - `spu-contracts\BLUS30161\verify-counter-schema.{json,md}`
+  - `spu-contracts\BLUS30161\verify-logrow-implementation.{json,md}`
+  - `spu-contracts\BLUS30161\index.json`
+  - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0.json`
+  - `spu-contracts\BLUS30161\BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0.json`
+
+## Classification
+- `analysis`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `spu-contract-scaffold`
+- `spu-contract-pipeline`
+- `collect-missing-proof`
+
+## Next Step
+- Keep verifier-only planning mode. Do not run movement or any speed/fast-mode claims.
+- Implement/verify one log-row+reject-counter pass in Windows upstream for `mfc-descriptor-family-25cc-9e4000` (`BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`) and then rerun clean **field -> Options -> first-battle** captures with strict contract gates before any fast path.
+
 ## 2026-05-30 08:20:31-04:00 SPU Verify-Lane Field Triage + Missing Verifier Rows
 
 ## Run Stamp
