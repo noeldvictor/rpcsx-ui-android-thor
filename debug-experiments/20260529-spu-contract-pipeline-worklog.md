@@ -1,5 +1,64 @@
 # 2026-05-29 SPU Contract Pipeline Round
 
+# 2026-06-01 13:19:27-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T13:19:27.1942527-04:00` / `2026-06-01T13:21:31.0000000-04:00` (local, run ended at 94s)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET`; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1719 -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-131927-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1719-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-131927-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1719-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Class counts`: `wrong-window-or-other-small-png` on all `17` captures
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s`.
+  - `Load target gate`: `failed-no-status` with `UNKNOWN_LOAD_TARGET` on all `17` samples.
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-131927-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1719-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: no contract verifier rows found`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-131927-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1719-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 0`
+  - `Reservation command exact-PC rows: 0`
+  - `Command-run MFC wait exact-PC rows: 0`
+  - `Total kernel bytes: 0.00 MB`
+  - `Total RSX-local bytes: 0.00 MB`
+  - `Peak command/read decision: command-correlation-data-missing`
+  - `Decision: collect-missing-proof`
+- `RPCS3.log` fatal/log scan (`fatal|access violation|VK_ERROR|device lost|unknown STOP|Assert|Show fatal error hints|Eternal Sonata SPU contract verifier`):
+  - `fatal=1` (`Show fatal error hints: false`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`
+  - `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-control baseline only; no movement, menu/Options, first-battle, speed, or 200% claim.
+- Continue load-target polling repair only on clean lane/host state and require `PATH_TO_TENUTO_PRESENT` before any speed/HLE/RSX experiments.
+
 # 2026-06-01 12:49:25-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
 
 ## Run Stamp
