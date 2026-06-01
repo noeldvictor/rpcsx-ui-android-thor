@@ -1,4 +1,288 @@
+# 2026-06-01 16:19:29-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T16:19:29.4518866-04:00` / `2026-06-01T16:22:33.0000000-04:00` (local, run ended at ~94s)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET`; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-161929-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-161929-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Class counts`: `wrong-window-or-other-small-png` on `17` captures
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s`
+  - `Load target gate`: `failed-no-status` with `UNKNOWN_LOAD_TARGET` on all `17` attempts; timed out at `93s`.
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-161929-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: "no contract verifier rows found"`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-161929-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 0`
+  - `Reservation command exact-PC rows: 0`
+  - `Command-run MFC wait exact-PC rows: 0`
+  - `Decision: collect-missing-proof`
+  - `Command/read decision: command-correlation-data-missing`
+- `RPCS3.log` fatal/log scan (`fatal|access violation|VK_ERROR|device lost|unknown STOP|Assert|Eternal Sonata SPU contract verifier|Show fatal error hints`)
+  - `fatal=1` (`Show fatal error hints: false`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-control baseline only; no movement, menu/Options, first-battle, speed, or 200% claim.
+- Continue load-target polling repair only; inspect/load `PATH_TO_TENUTO_PRESENT` recovery path and check why run remains unknown target with window-capture drift.
+
+# 2026-06-01 15:49:45-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T15:49:45.9494516-04:00` / `2026-06-01T15:51:47.0000000-04:00` (local, run ended at ~94s)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET`; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-154945-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-154945-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Class counts`: `wrong-window-or-other-small-png` on `17` captures
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s`
+  - `Load target gate`: `failed-no-status` with `UNKNOWN_LOAD_TARGET` on all `17` attempts; timed out at `93s`.
+  - `Note`: summary file still reports `Gate result: passed-for-triage` with the same non-field capture classes.
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-154945-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: "no contract verifier rows found"`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-154945-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 0`
+  - `Reservation command exact-PC rows: 0`
+  - `Command-run MFC wait exact-PC rows: 0`
+  - `Decision: collect-missing-proof`
+  - `Command/read decision: command-correlation-data-missing`
+- `RPCS3.log` fatal/log scan (`fatal|access violation|VK_ERROR|device lost|unknown STOP|Assert|Eternal Sonata SPU contract verifier|Show fatal error hints`)
+  - `fatal=1` (`Show fatal error hints: false`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-control baseline only; no movement, menu/Options, first-battle, speed, or 200% claim.
+- Continue load-target polling repair only: inspect/load `PATH_TO_TENUTO_PRESENT` and right now still fails before slot cross as unknown target.
+
 # 2026-05-29 SPU Contract Pipeline Round
+
+# 2026-06-01 15:19:26-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T15:19:26.5789788-04:00` / `2026-06-01T15:21:00.0000000-04:00` (local, run ended at 94s)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET`; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-151926-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-151926-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Class counts`: `wrong-window-or-other-small-png` on `17` captures
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s`.
+  - `Load target gate`: `failed-no-status` with `UNKNOWN_LOAD_TARGET` on all `17` attempts; timed out at `93s`.
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-151926-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: "no contract verifier rows found"`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-151926-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 0`
+  - `Reservation command exact-PC rows: 0`
+  - `Command-run MFC wait exact-PC rows: 0`
+  - `Decision: collect-missing-proof`
+  - `Command/read decision: command-correlation-data-missing`
+- `RPCS3.log` fatal/log scan (`fatal|access violation|VK_ERROR|device lost|unknown STOP|Assert|Show fatal error hints|Eternal Sonata SPU contract verifier`):
+  - `fatal=1` (`Show fatal error hints: false`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`
+  - `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-control baseline only; no movement, menu/Options, first-battle, speed, or 200% claim.
+- Continue load-target polling repair only: inspect/load `PATH_TO_TENUTO_PRESENT` recovery path before any speed/HLE/RSX experiments.
+
+# 2026-06-01 14:53:34-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T14:53:34.7374059-04:00` / `2026-06-01T14:55:08.0000000-04:00` (local, run ended at 94s)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET`; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-145334-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-145334-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Class counts`: `wrong-window-or-other-small-png` on `17` captures
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s`.
+  - `Load target gate`: `failed-no-status` with `UNKNOWN_LOAD_TARGET` on `17` attempts; timed out at `93s`.
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-145334-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: "no contract verifier rows found"`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-145334-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 0`
+  - `Reservation command exact-PC rows: 0`
+  - `Command-run MFC wait exact-PC rows: 0`
+  - `Decision: collect-missing-proof`
+  - `Command/read decision: command-correlation-data-missing`
+- `RPCS3.log` fatal/log scan (`fatal|access violation|VK_ERROR|device lost|unknown STOP|Assert|Show fatal error hints|Eternal Sonata SPU contract verifier`):
+  - `fatal=1` (`Show fatal error hints: false`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`
+  - `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-control baseline only; no movement, menu/Options, first-battle, speed, or 200% claim.
+- Continue load-target polling repair only: inspect/load `PATH_TO_TENUTO_PRESENT` recovery path before any speed/HLE/RSX experiments.
+
+# 2026-06-01 14:22:56-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T14:22:56.6308537-04:00` / `2026-06-01T14:24:30.0000000-04:00` (local, run ended at 94s)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET` after 17 attempts; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1831 -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-142256-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1831-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-142256-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1831-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Class counts`: `wrong-window-or-other-small-png` on `17` captures
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s`.
+  - `Load target gate`: `failed-no-status` with `UNKNOWN_LOAD_TARGET` on all attempts; timed out at 93s.
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-142256-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1831-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: "no contract verifier rows found"`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-142256-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-run20260601-1831-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 0`
+  - `Reservation command exact-PC rows: 0`
+  - `Command-run MFC wait exact-PC rows: 0`
+  - `Decision: collect-missing-proof`
+  - `Command/read decision: command-correlation-data-missing`
+- `RPCS3.log` fatal/log scan (`fatal|access violation|VK_ERROR|device lost|unknown STOP|Assert|Show fatal error hints|Eternal Sonata SPU contract verifier`):
+  - `fatal=1` (`Show fatal error hints: 1`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`
+  - `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-control baseline only; no movement, menu/Options, first-battle, speed, or 200% claim.
+- Continue load-target polling repair only: inspect/load `PATH_TO_TENUTO_PRESENT` recovery path before any speed/HLE/RSX experiments.
 
 # 2026-06-01 13:49:55-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, route-control only)
 
@@ -8684,6 +8968,64 @@ Run directory: `debug-captures/windows-lab/20260601-081924-cpu4-stateaware-loadt
   - `fatal=1` (`Show fatal error hints: 1`)
   - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`
   - `Eternal Sonata SPU contract verifier=0`
+
+## Classification
+
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+
+## Next Step
+- Keep this as route-tooling baseline only; no movement, menu/Options, first-battle, speed, or 200% claim from this run.
+- Continue `load-target` poll-gated recovery on clean repair path only (`PATH_TO_TENUTO_PRESENT`) until UNKNOWN transitions to PASS. No speed/HLE/RSX experiments in this lane.
+# 2026-06-01 16:49:50-04:00 State-Aware Poll-Gated Load-Target Recovery Replay (Windows-only, field-triage only)
+
+## Run Stamp
+- Timestamp: `2026-06-01T16:49:50.4484220-04:00` / `2026-06-01T16:53:51.4961577-04:00` (local)
+- Branch: `master`
+- Refiner decision: `Latest load-target gate aborted before save-slot Cross with status . Do not run speed/HLE/RSX experiments; use the polling load-target gate and require PATH_TO_TENUTO_PRESENT before continuing.`
+- Route pressure state: load-target gate still fails with `UNKNOWN_LOAD_TARGET`; this remains route-control evidence only and blocks movement/Options/battle/speed claims.
+
+## Action Taken
+
+```powershell
+.\tools\ps3_harness_refiner.ps1 -MaxRuns 8
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10
+```
+
+Run directory: `debug-captures/windows-lab/20260601-164950-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+
+## Verification
+
+- `\tools\check_eternal_sonata_windows_visual_gate.ps1 -RunDir .\debug-captures\windows-lab\20260601-164950-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Status: NO_FIELD_LIKE_SCREENSHOT`
+  - `First field-like`: `none`
+  - `Gate failures`: `No field-like screenshot was found.` and `No field-like screenshot was found at or before 215s.`
+  - `Class counts`: `wrong-window-or-other-small-png: 17`
+  - `Screenshots`: `17`
+- `\tools\parse_spu_contract_verify_log.ps1 -LogPath .\debug-captures\windows-lab\20260601-164950-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows\RPCS3.log`
+  - `rows=0`, `accepted_rows=0`, `rejected_rows=0`
+  - `total_contract_hits=0`, `total_contract_bytes=0`
+  - `total_output_mismatch=0`, `total_desc_overflow=0`
+  - `failures: no contract verifier rows found`
+- `\tools\summarize_eternal_sonata_spu_reservation_loop.ps1 -CommandRunDir .\debug-captures\windows-lab\20260601-164950-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`
+  - `Kernel capsule rows: 0`
+  - `MFC wait exact-PC rows: 0`
+  - `PUTLLC16 pair verifier rows: 0`
+  - `Reservation command rows: 693`
+  - `Reservation command exact-PC rows: 18721`
+  - `Command-run MFC wait exact-PC rows: 34246`
+  - `Total kernel bytes: 0.00 MB`
+  - `Total RSX-local bytes: 0.00 MB`
+  - `Command/read decision: whole-loop-recognizer-preflight`
+  - `Decision: collect-missing-proof`
+- `RPCS3.log` fatal/log scan (`fatal`, `access violation`, `VK_ERROR`, `device lost`, `unknown STOP`, `Assert`, `Show fatal error hints`, `Eternal Sonata SPU contract verifier`):
+  - `fatal=1` (`Show fatal error hints: 1`)
+  - `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`
+  - `Show fatal error hints=1`, `Eternal Sonata SPU contract verifier=0`
 
 ## Classification
 
