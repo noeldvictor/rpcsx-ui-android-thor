@@ -9706,3 +9706,27 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No speed increase and no 200% candidate. The single `93s` field-like triage frame is not Path-to-Tenuto gameplay proof, not Options/menu proof, and not first-battle proof.
 - The next route repair should either add a strict visual/title-ready gate before `Down`, or test a tighter immediate-input timing around the `92-94s` window with pre/post shots. Do not add movement, battle routing, HLE, RSX, or speed toggles until selector and no-movement field proof are restored.
+
+## 2026-06-02 00:30:45-04:00 Immediate93 Loader-Control Reproof Still Never Reaches Field
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T04:19:34.494Z`.
+- Refiner decision: back off from the latest non-field/cutscene route and re-prove the loader-control-left200x2 lane before trying diagonal, HLE, GPU, or other fast paths.
+- Non-duplicative step chosen: kept the left200x2 loader-control route, but moved first route input to the narrow 93s window from the prior title/load selector diagnostic instead of repeating the known-bad 45s or 95s timings.
+- Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-immediate93-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 205 -InputMacro "wait:93000;shot:100;down:20;wait:120;shot:100;cross:80;wait:12000;shot:100;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 150 -ScreenshotMaxCount 12
+```
+
+- Run directory: `debug-captures/windows-lab/20260602-002118-cpu4-loader-control-left200x2-immediate93-visualgate-windows-windows`.
+- Harness note: the outer Codex shell hit its 540s timeout, but the harness output shows RPCS3 exceeded the requested 260s run window, stopped PID 28464, wrote `RPCS3.log`, and completed postrun host sampling.
+- Host contention: clean at prelaunch, postlaunch, samples 198s/210s/240s, and postrun; no competing emulator or heavy host load detected.
+- FPS/title samples: sustained roughly 119.8-120.3 FPS in the RPCS3 window title. This is only title-bar speed telemetry and is not a speed proof because the route visuals are invalid.
+- Screenshot verification: 20 PNGs from 96s through 260s.
+- Visual gate result: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot: none; class counts: `loading-like-small-png=20`; invalid-after-first-field-like: 0 because no field-like frame existed.
+- Fatal/log scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`; `VK_ERROR=0`; `device lost=0`; `unknown STOP=0`; `Assert=0`; `Eternal Sonata SPU contract verifier=0`.
+- SPU contract parser: rows 0, accepted 0, rejected 0, total hits 0, failure `no contract verifier rows found`, promotion-ready false.
+- Reservation loop summary: all command/exact-PC/MFC wait/pair verifier rows 0 or missing; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `failed`, `failed-visual-gate`, `route-control`, `immediate93-title-route`, `windows-only`, `not-a-speed-proof`.
+- Conclusion: immediate input at the 93s window did not restore the route. It appears the visible 93s frame from the prior selector diagnostic was not an actionable title/load selector state for `Down/Cross`; the route remained in a loading-like/nonfield state for the full 260s window. Do not use this 120 FPS title-bar result as progress toward the 200% field/menu/battle proof.
+- Next narrow step: stop guessing route timing and add a verify-only visual/title selector gate before pressing `Down`, ideally with an OCR or image-template trigger that waits for a concrete title/load/options selector state and captures pre/post input screenshots; keep SPU/reservation counters verify-only until a valid field route is back.
