@@ -9977,3 +9977,19 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `failed-options-route`, `cutscene-route-miss`, `spu-contract-verifier-evidence`, `reservation-csv-restored`, not `valid-options-counterproof`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
 - Conclusion: no speed increase. This run improves the counter plumbing story because reservation-loop CSV correlation is present again under simplified verifier settings, but it does not count as Options/menu proof because the route went to cutscene/background frames instead of the Options page.
 - Narrow next step: keep the simplified verifier settings, but repair the `Scene menu`/Options macro before rerunning Options proof; do not enable fast/body/GPU behavior and do not proceed to battle until field plus Options/menu are both valid under the same proof discipline.
+
+## 2026-06-02 06:50 EDT - heartbeat: loader-control left200x2 field reproof after failed Options/cutscene route
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T10:49:45.311Z`.
+- Refiner: latest Options/menu attempt was classified as `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS` / cutscene route miss. Decision: back off from the non-field/cutscene route and re-prove the last clean loader-control `left200x2` route with `CleanAfterField` before adding diagonal, HLE, GPU, or fast-mode work.
+- Step taken: Windows-only loader-control `left200x2` reproof, label `cpu4-loader-control-left200x2-confirm-visualgate-windows-windows`. No Android/ADB/Thor, no HLE verifier/body fast mode, no GPU fast mode.
+- Run dir: `debug-captures/windows-lab/20260602-065027-cpu4-loader-control-left200x2-confirm-visualgate-windows-windows`.
+- Wrapper status: outer command timed out at 520s while wrapper output shows RPCS3 reached the requested `215s` cap, stopped PID `21084`, wrote `RPCS3.log`, and completed host sampling. Manual verification found no remaining `rpcs3` process.
+- Host contention: clean prelaunch/postlaunch/postrun and runtime samples; no competing emulator or heavy host load detected.
+- Screenshots/visual gate: `16` screenshots from `118s` through `210s`, `2,618,136` to `2,631,592` bytes; status `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0118s.png` at `118s`; invalid-after-first-field-like `0`; manual spot-check of `screenshot-0210s.png` confirmed correct Path-to-Tenuto field with character visible after the two left pulses.
+- Fatal/log scan: no access violation, `VK_ERROR`, device lost, unknown STOP, or assert hits. The only `fatal` match was the benign config line `Show fatal error hints: false`. `Eternal Sonata SPU contract verifier` rows: `0` because verifier mode was intentionally off.
+- SPU contract verifier: `0` rows, `0` accepted, parser failure `no contract verifier rows found`, `promotion_ready=false`.
+- Reservation-loop counters: reservation command CSV, command exact-PC CSV, and command-run MFC wait exact-PC CSV were missing; all reservation/MFC/pair rows were `0`; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `valid-field-triage`, `route-tooling`, `left200x2-reproof`, not `valid-options-counterproof`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
+- Conclusion: no speed increase. The requested backoff re-established the clean field route after the failed Options/cutscene attempt, but it does not provide Options/menu proof, first-battle proof, verifier rows, or reservation-loop CSV correlation.
+- Narrow next step: repair the Options/menu macro from this now-reproved loader-control baseline, or run simplified `Verify25ccShadow + 25ccBody Verify + ReservationLoop Verify` against a proven Options macro. Do not enable fast/body/GPU behavior until field, Options/menu, and first-battle visuals are all valid.
