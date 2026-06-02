@@ -9592,3 +9592,40 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No speed increase and no 200% candidate. The run did not reach Path-to-Tenuto field, title Options/menu, or first battle, and all FPS samples came from invalid route/cutscene/nonfield states.
 - The current blocker is earlier than the save-slot gate: the route-phase capture starts from a cutscene/nonfield state at the first explicit screenshot, then remains in wrong-window/nonfield output. Next work should repair or instrument title-to-load state detection/timing before pressing `Down/Cross`, not add movement, battle routing, HLE, RSX, or speed toggles.
+
+# 2026-06-01 22:50:17-04:00 No-Input Title-Readiness Diagnostic Shows 45s Route Press Is Too Early
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` reran the refiner after the route-phase diagnostic showed the first explicit route screenshot was already cutscene/nonfield.
+- Refiner still asked for a no-movement loader-control baseline, but the exact baseline had already failed and the route-phase diagnostic showed the failure begins before `Down/Cross`. This turn therefore took a non-duplicative title-readiness diagnostic with no route inputs, only timed screenshots before any `Down/Cross`.
+
+## Command
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-title-readiness-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -InputMacro "wait:45000;shot:100;wait:15000;shot:100;wait:15000;shot:100;wait:15000;shot:100;wait:15000;shot:100" -MaxSeconds 110 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 40 -ScreenshotMaxCount 12`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-225017-cpu4-loader-control-title-readiness-diagnostic-windows-windows`.
+- Harness note: the emulator stopped at the 110s max wall-time and no `rpcs3` process remained afterward, but the outer shell command timed out during post-processing; verification was run manually against the artifact.
+- Host contention: clean at prelaunch, postlaunch, `110s`, and postrun; external contention clean; no competing emulator.
+- Visual gate: `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`; first field-like screenshot was `screenshot-0094s.png` at `94s` (`1.06 MB`), but later invalid screenshots appeared at `110s`; class counts were `cutscene-or-nonfield-large-png: 5` and `field-like-large-png: 1`; triage gate result `passed-for-triage`, not proof.
+- Timing finding: with no inputs, `48s`, `63s`, and `79s` stayed cutscene/nonfield; `94s` briefly crossed the field-like byte/color heuristic; `110s` returned to cutscene/nonfield. This confirms the existing route input at about `45s` is too early and can hit the cutscene/nonfield state before the title/load route is ready.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop summary: command CSVs were missing, so reservation command rows `0`, command exact-PC rows `0`, command-run MFC wait exact-PC rows `0`, total RSX-local bytes `0.00 MB`, command/read decision `command-correlation-data-missing`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `title-readiness-diagnostic`
+- `cutscene-or-nonfield-large-png`
+- `field-like-triage-only`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No speed increase and no 200% candidate. The single field-like triage frame at `94s` is not Path-to-Tenuto gameplay proof, not Options/menu proof, and not first-battle proof.
+- The useful finding is route timing: do not press `Down/Cross` at `45s` on the next route attempt. Next work should add a title-ready visual gate or delay/retry around the `90-100s` window before selecting Load, then re-test the no-movement loader-control baseline.
