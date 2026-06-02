@@ -9454,3 +9454,36 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Next Step
 - Keep this as route-tooling baseline only; no movement, menu/Options, first-battle, speed, or 200% claim from this run.
 - Continue `load-target` poll-gated recovery on clean repair path only (`PATH_TO_TENUTO_PRESENT`) until UNKNOWN or wrong-state/cutscene transitions to PASS. No speed/HLE/RSX experiments in this lane.
+
+# 2026-06-01 20:50:58-04:00 State-Aware Load-Target Poll-Gated Replay Still Missing Path-to-Tenuto Exemplar
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` reran the refiner-selected Windows-only recovery path after the prior load-target gate stopped before save-slot Cross.
+- Refiner decision was unchanged: do not run speed, HLE, or RSX experiments until the polling load-target gate can prove `PATH_TO_TENUTO_PRESENT`.
+
+## Command
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 215 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;gate_load_target:30000;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;up:80;wait:300;cross:120;wait:1200;cross:120;wait:35000;shot:100;down:80;wait:300;cross:120;wait:1500;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 260 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 155 -ScreenshotMaxCount 10`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-205058-cpu4-stateaware-loadtarget-pollgated-doubleconfirm-dismisssave-left200-visualgate-windows-windows`.
+- Host contention: clean at prelaunch, postlaunch, and postrun; external contention clean; no competing emulator; CPU/memory/GPU samples stayed low enough for comparison hygiene.
+- Route result: input macro aborted at 93s before the save-slot Cross because `gate_load_target:30000` timed out after 17 polling screenshots.
+- Marker: `load-target-gate-failed.txt` says last status was `UNKNOWN_LOAD_TARGET`; the Path-to-Tenuto exemplar was not found at `debug-captures/windows-lab/20260526-001938-cpu4-stateaware-late-load-confirm-left200-visualgate-windows-windows/screenshots/screenshot-0117s.png`.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; required field-like before 215s failed; all 17 screenshots were `loading-like-small-png`.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop counters: reservation command rows `741`, reservation command exact-PC rows `20901`, command-run MFC wait exact-PC rows `42655`, kernel capsule rows `0`, pair verifier rows `0`, total RSX-local bytes `0.00 MB`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No new speed increase and no 200% candidate. The observed title FPS near 120 during the loading-like gate cannot be counted because there was no field proof, no Options/menu proof, and no first-battle proof.
+- Stay on the load-target poll-gated route until the missing Path-to-Tenuto exemplar problem is fixed or a valid field screenshot passes the gate; do not spend the next turn on speed/HLE/RSX fast paths.
