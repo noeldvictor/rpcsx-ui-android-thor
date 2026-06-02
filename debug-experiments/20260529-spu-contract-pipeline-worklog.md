@@ -9894,3 +9894,20 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `failed-wrong-window-or-other-visual`, `route-capture-repro`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
 - Conclusion: no speed increase. The black/wrong-window visual blocker is still ahead of speed testing; do not add movement or claim counters until field proof is recovered.
 - Narrow next step: use a genuinely changed capture/route control, for example `-WindowsRsxForceHwMsaaResolve On` or a route reset/black-overlay detector, then only return to movement once no-movement field proof is restored.
+
+## 2026-06-02 04:20 EDT - heartbeat: no-movement route/capture repro with ForceHwMsaaResolve On
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T08:19:43.338Z`.
+- Refiner: still blocks `loader-control-left200`; repeated pre-field visual failures, window/capture instability, and clean lane counters with invalid visuals mean counters alone cannot promote HLE/GPU fast paths. Required action remains route/capture control or SPU verifier analysis before movement.
+- Step taken: Windows-only no-movement field route/capture diagnostic, label `cpu4-loader-control-blackoverlay-msaaon-nomove-visualgate-windows-windows`.
+- Command intent: same baseline-safe no-movement route with `PadApi`, game screen 1, CPU mask `0x0F`, 240/240 frame/vblank, reservation-loop `Verify`, visual gate `CleanAfterField`, and `-WindowsRsxForceHwMsaaResolve On` as the single non-duplicative perturbation.
+- Config result: `Force Hardware MSAA Resolve override: false -> true changed=True`; restored after run with `true -> false changed=True`.
+- Run dir: `debug-captures/windows-lab/20260602-042011-cpu4-loader-control-blackoverlay-msaaon-nomove-visualgate-windows-windows`.
+- Host contention: clean prelaunch/postlaunch/postrun and periodic samples; no competing emulator or heavy host load detected.
+- Screenshots/visual gate: 24 screenshots from 117s through 205s, 788,040 to 789,515 bytes; status `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; required field-like by 160s failed; class counts `wrong-window-or-other-small-png: 24`; gate failed.
+- Fatal/log scan: no access violation, `VK_ERROR`, device lost, unknown STOP, or assert hits. The only `fatal` match was the benign config line `Show fatal error hints: false`.
+- SPU contract verifier: parser found 0 rows, 0 accepted rows, 0 contract hits, failure `no contract verifier rows found`; not promotion-ready.
+- Reservation-loop counters: command/read summary emitted rows despite invalid visuals: reservation command rows 1701, reservation command exact-PC rows 44963, command-run MFC wait exact-PC rows 79823, primary front `0xa70 -> 0xa74` GETLLAR/AtomicStat and `0xad4 -> 0xad8` PUTLLC/AtomicStat, command/read deltas GETLLAR 0 and PUTLLC 0. Because visuals failed, these counters remain analysis-only and cannot promote a fast path.
+- Classification: `failed-wrong-window-or-other-visual`, `route-capture-repro`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
+- Conclusion: no speed increase. Forcing hardware MSAA resolve on changed screenshot byte size but did not recover field proof; route/capture remains blocked ahead of any movement or speed path.
+- Narrow next step: add/use a route reset or black-overlay detector rather than more MSAA toggles; alternatively run SPU contract verifier-only plumbing after a visually valid no-movement field route is restored.
