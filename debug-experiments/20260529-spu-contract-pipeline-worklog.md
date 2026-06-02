@@ -9829,3 +9829,27 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `analysis`, `valid-field-triage`, `route-tooling`, `left40-after-left200-black-overlay`, `capture-route-control`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
 - Conclusion: shrinking the movement pulse to `left40` preserved clean Path-to-Tenuto field visuals in the same run where `left200` previously collapsed to black-overlay capture. This is a useful lower movement/capture boundary, not speed, not first-battle, not Options/menu, and not HLE/GPU promotion evidence.
 - Next narrow step: use `left40` as the newest safe tiny-movement floor and bisect upward cautiously toward `left200`, requiring pre/post field screenshots in the same run before any larger movement; keep SPU/HLE/GPU fast paths blocked until field, Options/menu, and first-battle proof are all valid.
+
+## 2026-06-02 02:59:40-04:00 Left120 Midpoint Bisection Fails With Black Overlay Frames
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T06:49:40.162Z`.
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Non-duplicative step chosen: true midpoint bisection between the safe `left40` floor and failed `left200` upper bound: field-guarded `ls_left:120`, with pre/post field screenshots in the same run. No Android/ADB/Thor and no HLE/body/GPU fast mode.
+- Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-fieldguard-left120-bisect-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:120;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
+```
+
+- Run directory: `debug-captures/windows-lab/20260602-025035-cpu4-loader-control-fieldguard-left120-bisect-windows-windows`.
+- Harness note: outer Codex shell timed out after `520s`, but the harness output shows RPCS3 hit the requested `205s` cap, stopped PID `11124`, wrote `RPCS3.log`, and completed postrun host sampling.
+- Host contention: clean at prelaunch, postlaunch, samples `146s`/`150s`/`180s`, and postrun; no competing emulator or heavy host load detected.
+- Screenshot verification: `14` PNGs from `117s` through `200s`, all tiny black-overlay frames around `30-32 KB`.
+- Visual gate result: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot: none; class counts: `black-overlay-small-png=14`; invalid-after-first-field-like `0` because no field-like frame existed.
+- FPS/title samples: title bar reported roughly `32.93` to `58.19` FPS during the capture window, but screenshots are black overlay only, so these samples are invalid for speed or regression comparison.
+- Fatal/log scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`; `VK_ERROR=0`; `device lost=0`; `unknown STOP=0`; `Assert=0`; `Eternal Sonata SPU contract verifier=0`.
+- SPU contract parser: rows `0`, accepted `0`, rejected `0`, total hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation loop summary: reservation command CSVs and exact-PC CSVs missing; all reservation/MFC/pair rows `0`; total RSX-local bytes `0.00 MB`; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `left120-bisection`, `black-overlay-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
+- Conclusion: `left120` is not a safe midpoint. The current movement/capture bracket is now safe `left40` versus unsafe `left120`/`left200`. This invalidates all movement/FPS/counter use for the run. No speed increase, no 200% candidate, no Options/menu proof, and no first-battle proof.
+- Next narrow step: bisect downward between `left40` and `left120` with same-run pre/post field screenshots, or switch to black-overlay/capture route control before attempting larger movement. Keep HLE/GPU fast paths blocked until field, Options/menu, and first-battle proof are all valid.
