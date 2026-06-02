@@ -74,6 +74,24 @@ function Resolve-RepoPath {
     return [System.IO.Path]::GetFullPath((Join-Path $Root $Path))
 }
 
+function Resolve-FirstExistingRepoPath {
+    param(
+        [string]$Root,
+        [string[]]$Paths
+    )
+
+    foreach ($path in @($Paths)) {
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            continue
+        }
+        $resolved = Resolve-RepoPath -Root $Root -Path $path
+        if (Test-Path -LiteralPath $resolved -PathType Leaf) {
+            return $resolved
+        }
+    }
+    return ""
+}
+
 function Get-ScreenshotSecond {
     param([string]$Name)
 
@@ -162,8 +180,10 @@ function Get-TargetClass {
         [double]$TextBrightRatio
     )
 
+    $knownDiff = if ([double]::IsPositiveInfinity($BadDiff)) { $GoodDiff } else { [math]::Min($GoodDiff, $BadDiff) }
+
     if ($TextBrightRatio -lt $MinLoadTargetTextBrightRatio -and
-        ([math]::Min($GoodDiff, $BadDiff) -le $MaxEmptyKnownDiff)) {
+        ($knownDiff -le $MaxEmptyKnownDiff)) {
         return "empty-load-slot"
     }
     if ($GoodDiff -le $MaxKnownDiff -and ($BadDiff - $GoodDiff) -ge $DecisionMargin) {
@@ -296,7 +316,11 @@ function Get-BestTargetMatch {
 
     $matches = foreach ($candidateY in $CropYs) {
         $goodDiff = Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $GoodExemplarPath -CandidateY $candidateY
-        $badDiff = Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $BadExemplarPath -CandidateY $candidateY
+        $badDiff = if ([string]::IsNullOrWhiteSpace($BadExemplarPath) -or -not (Test-Path -LiteralPath $BadExemplarPath -PathType Leaf)) {
+            [double]::PositiveInfinity
+        } else {
+            Get-RegionDiff -CandidatePath $CandidatePath -ExemplarPath $BadExemplarPath -CandidateY $candidateY
+        }
         $textBrightRatio = Get-RegionTextBrightRatio -CandidatePath $CandidatePath -CandidateY $candidateY
         $target = Get-TargetClass -GoodDiff $goodDiff -BadDiff $badDiff -TextBrightRatio $textBrightRatio
         [pscustomobject]@{
@@ -381,8 +405,12 @@ if ($DamagedExemplarRows.Count -eq 0) {
 }
 
 $resolvedRunDir = Resolve-RepoPath -Root $repoRoot -Path $RunDir
-$resolvedGoodExemplar = Resolve-RepoPath -Root $repoRoot -Path $GoodExemplar
-$resolvedBadExemplar = Resolve-RepoPath -Root $repoRoot -Path $BadExemplar
+$resolvedGoodExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @(
+    $GoodExemplar,
+    "debug-captures\windows-lab\20260602-165106-cpu4-titleload-blackcontrol-resloop-diagnostic-windows-windows\screenshots\screenshot-0192s-load-target-gate-33.png",
+    "debug-captures\windows-lab\20260601-212031-cpu4-stateaware-loadtarget-savecheck-diagnostic-windows-windows\screenshots\screenshot-0069s.png"
+)
+$resolvedBadExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @($BadExemplar)
 $resolvedDamagedExemplar = Resolve-RepoPath -Root $repoRoot -Path $DamagedExemplar
 
 if (-not (Test-Path -LiteralPath $resolvedRunDir -PathType Container)) {
@@ -391,9 +419,7 @@ if (-not (Test-Path -LiteralPath $resolvedRunDir -PathType Container)) {
 if (-not (Test-Path -LiteralPath $resolvedGoodExemplar -PathType Leaf)) {
     throw "Path-to-Tenuto exemplar not found: $resolvedGoodExemplar"
 }
-if (-not (Test-Path -LiteralPath $resolvedBadExemplar -PathType Leaf)) {
-    throw "Debug-Save exemplar not found: $resolvedBadExemplar"
-}
+$badGuardEnabled = (-not [string]::IsNullOrWhiteSpace($resolvedBadExemplar)) -and (Test-Path -LiteralPath $resolvedBadExemplar -PathType Leaf)
 $damagedGuardEnabled = Test-Path -LiteralPath $resolvedDamagedExemplar -PathType Leaf
 
 Add-Type -AssemblyName System.Drawing -ErrorAction Stop
@@ -475,7 +501,11 @@ $summary.Add(("- Run directory: ``{0}``" -f $resolvedRunDir))
 $summary.Add(("- Screenshot directory: ``{0}``" -f $screenshotDir))
 $summary.Add(("- Method: stable Load-list crop comparison across visible save rows plus lower-row cursor-marker and damaged-save text detection, not OCR."))
 $summary.Add(("- Path-to-Tenuto exemplar: ``{0}``" -f $resolvedGoodExemplar))
-$summary.Add(("- Debug-Save exemplar: ``{0}``" -f $resolvedBadExemplar))
+if ($badGuardEnabled) {
+    $summary.Add(("- Debug-Save exemplar: ``{0}``" -f $resolvedBadExemplar))
+} else {
+    $summary.Add(("- Debug-Save exemplar: disabled; no existing fallback found from ``{0}``." -f $BadExemplar))
+}
 $summary.Add(("- Crop reference: x={0}, y={1}, width={2}, height={3} on 1296x759 screenshots." -f $CropX, $CropY, $CropWidth, $CropHeight))
 $summary.Add(("- Candidate crop Y rows: ``{0}``." -f ($CandidateCropYs -join ", ")))
 $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $DecisionMargin, $MaxKnownDiff))
