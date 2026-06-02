@@ -9730,3 +9730,27 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `failed`, `failed-visual-gate`, `route-control`, `immediate93-title-route`, `windows-only`, `not-a-speed-proof`.
 - Conclusion: immediate input at the 93s window did not restore the route. It appears the visible 93s frame from the prior selector diagnostic was not an actionable title/load selector state for `Down/Cross`; the route remained in a loading-like/nonfield state for the full 260s window. Do not use this 120 FPS title-bar result as progress toward the 200% field/menu/battle proof.
 - Next narrow step: stop guessing route timing and add a verify-only visual/title selector gate before pressing `Down`, ideally with an OCR or image-template trigger that waits for a concrete title/load/options selector state and captures pre/post input screenshots; keep SPU/reservation counters verify-only until a valid field route is back.
+
+## 2026-06-02 00:58:45-04:00 Accepted-Field Gate Repair Captures Wrong-Window/Small Frames Only
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T04:49:36.194Z`.
+- Refiner decision: `Repair accepted-field loader gating before adding movement.`
+- Non-duplicative step chosen: no added movement or fast mode; reran the loader-control accepted-field lane with a denser early screenshot window to characterize the 85s-200s field transition instead of repeating the failed 93s/95s movement timing guesses.
+- Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-acceptedfield-gate-repair-earlywindow-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 170 -MaxSeconds 200 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 85 -ScreenshotMaxCount 26
+```
+
+- Run directory: `debug-captures/windows-lab/20260602-005023-cpu4-loader-control-acceptedfield-gate-repair-earlywindow-windows-windows`.
+- Harness note: outer Codex shell timed out after 480s, but the harness output shows RPCS3 hit the requested 200s cap, stopped PID 21940, wrote `RPCS3.log`, and completed postrun host sampling.
+- Host contention: clean at prelaunch, postlaunch, samples `133s`/`150s`/`180s`, and postrun; no competing emulator or heavy host load detected.
+- FPS/title samples: roughly `38.06` to `61.71` FPS during the dense screenshot window. These samples are invalid for speed comparison because the visual gate never found accepted field output.
+- Screenshot verification: `26` PNGs from `117s` through `200s`.
+- Visual gate result: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot: none; class counts: `wrong-window-or-other-small-png=26`; invalid-after-first-field-like: `0` because no field-like frame existed.
+- Fatal/log scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`; `VK_ERROR=0`; `device lost=0`; `unknown STOP=0`; `Assert=0`; `Eternal Sonata SPU contract verifier=0`.
+- SPU contract parser: rows `0`, accepted `0`, rejected `0`, total hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation loop summary: reservation command CSVs and exact-PC CSVs missing; all reservation/MFC/pair rows `0`; total RSX-local bytes `0.00 MB`; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `accepted-field-gate-repair`, `wrong-window-or-other-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
+- Conclusion: accepted-field gating is still broken or pointing at the wrong capture/route phase. This run is useful mainly because it rules out using the current loader-control default route as a fresh field baseline under the present capture setup. Do not treat the low FPS title samples as a regression proof or speed result; visuals are invalid.
+- Next narrow step: fix the gate/capture layer itself before more route timing: require a concrete RPCS3 frame/window identity plus a title/load/field image predicate before route inputs, or patch the visual-gate classifier to distinguish these repeated ~805 KB reddish wrong-window frames from real Path-to-Tenuto field.
