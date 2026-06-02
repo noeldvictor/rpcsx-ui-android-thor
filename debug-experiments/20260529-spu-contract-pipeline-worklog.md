@@ -9853,3 +9853,27 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `left120-bisection`, `black-overlay-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
 - Conclusion: `left120` is not a safe midpoint. The current movement/capture bracket is now safe `left40` versus unsafe `left120`/`left200`. This invalidates all movement/FPS/counter use for the run. No speed increase, no 200% candidate, no Options/menu proof, and no first-battle proof.
 - Next narrow step: bisect downward between `left40` and `left120` with same-run pre/post field screenshots, or switch to black-overlay/capture route control before attempting larger movement. Keep HLE/GPU fast paths blocked until field, Options/menu, and first-battle proof are all valid.
+
+## 2026-06-02 03:29:35-04:00 No-Movement Black-Overlay Reset Diagnostic Still Captures Only Overlay Frames
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T07:19:40.612Z`.
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.` Anti-pattern also flagged `repeated-black-overlay-pre-field` and recommended re-proving no-movement loader/control or adding a route reset/black-overlay detector before more movement.
+- Non-duplicative step chosen: no-movement black-overlay reset diagnostic with dense screenshots from `100s` through `205s`. No Android/ADB/Thor, no movement pulse, and no HLE/body/GPU fast mode.
+- Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-blackoverlay-reset-nomove-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 205 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 100 -ScreenshotMaxCount 24
+```
+
+- Run directory: `debug-captures/windows-lab/20260602-032032-cpu4-loader-control-blackoverlay-reset-nomove-visualgate-windows-windows`.
+- Harness note: outer Codex shell timed out after `520s`, but the harness output shows RPCS3 hit the requested `205s` cap, stopped PID `28584`, wrote `RPCS3.log`, and completed postrun host sampling.
+- Host contention: clean at prelaunch, postlaunch, samples `133s`/`150s`/`180s`, and postrun; no competing emulator or heavy host load detected.
+- Screenshot verification: `24` PNGs from `117s` through `205s`, all tiny black-overlay frames around `30-32 KB`.
+- Visual gate result: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot: none; class counts: `black-overlay-small-png=24`; invalid-after-first-field-like `0` because no field-like frame existed.
+- FPS/title samples: title bar reported roughly `39.22` to `60.41` FPS during the capture window, but screenshots are black overlay only, so these samples are invalid for speed or regression comparison.
+- Fatal/log scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`; `VK_ERROR=0`; `device lost=0`; `unknown STOP=0`; `Assert=0`; `Eternal Sonata SPU contract verifier=0`.
+- SPU contract parser: rows `0`, accepted `0`, rejected `0`, total hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation loop summary: reservation command CSVs and exact-PC CSVs missing; all reservation/MFC/pair rows `0`; total RSX-local bytes `0.00 MB`; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `black-overlay-reset-diagnostic`, `no-movement-control`, `black-overlay-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
+- Conclusion: black-overlay capture now reproduces even without movement, so the latest failure is not just `left120` or `left200` pulse size. This invalidates all FPS/counter use for the run. No speed increase, no 200% candidate, no Options/menu proof, and no first-battle proof.
+- Next narrow step: repair black-overlay route/capture state before any movement bisection. Prefer a route reset or black-overlay detector that aborts before movement and reruns only after a real Path-to-Tenuto field frame is captured in the same run; keep HLE/GPU fast paths blocked until field, Options/menu, and first-battle proof are all valid.
