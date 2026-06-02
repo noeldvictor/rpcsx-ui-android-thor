@@ -9754,3 +9754,29 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `accepted-field-gate-repair`, `wrong-window-or-other-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
 - Conclusion: accepted-field gating is still broken or pointing at the wrong capture/route phase. This run is useful mainly because it rules out using the current loader-control default route as a fresh field baseline under the present capture setup. Do not treat the low FPS title samples as a regression proof or speed result; visuals are invalid.
 - Next narrow step: fix the gate/capture layer itself before more route timing: require a concrete RPCS3 frame/window identity plus a title/load/field image predicate before route inputs, or patch the visual-gate classifier to distinguish these repeated ~805 KB reddish wrong-window frames from real Path-to-Tenuto field.
+
+## 2026-06-02 01:29:20-04:00 No-Movement Loader-Control Baseline Recovers Valid Field Capture
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T05:19:37.818Z`.
+- Refiner decision: `Run a no-movement Windows loader/control with CleanAfterField to regain a valid field baseline.`
+- Non-duplicative step chosen: no movement, no HLE/body/GPU fast mode, no Android/ADB/Thor. Ran the loader-control baseline as a capture-threshold probe by lowering `WindowsVisualGateMinFieldPngBytes` to `700000` after repeated small/wrong-window captures; manual/default verification showed the threshold change was not needed for this artifact because screenshots were `2.49 MB`.
+- Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-min700k-captureprobe-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -WindowsVisualGateMinFieldPngBytes 700000 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
+```
+
+- Run directory: `debug-captures/windows-lab/20260602-012052-cpu4-loader-control-visualgate-min700k-captureprobe-windows-windows`.
+- Harness note: outer Codex shell timed out after `480s`, but the harness output shows RPCS3 hit the requested `190s` cap, stopped PID `5260`, wrote `RPCS3.log`, and completed postrun host sampling.
+- Host contention: clean at prelaunch, postlaunch, samples `133s`/`150s`/`180s`, and postrun; no competing emulator or heavy host load detected.
+- Screenshot verification: `10` PNGs from `117s` through `190s`, all around `2.49 MB`.
+- Visual gate result with default threshold: `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0117s.png` at `117s`; invalid-after-first-field-like `0`; class counts `field-like-large-png=10`.
+- Visual gate result with `MinFieldPngBytes=700000`: same `FIELD_LIKE_PRESENT`; this proves the run did not rely on the lowered threshold.
+- Manual screenshot spot-check: `screenshot-0117s.png` shows correct Path-to-Tenuto field gameplay with character visible and no black/cutscene/wrong-window artifact.
+- FPS/title samples: roughly `27.47` to `38.90` FPS during the field window. These are not a speed claim because this is only a no-movement field baseline and still lacks title Options/menu plus first-battle proof.
+- Fatal/log scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`; `VK_ERROR=0`; `device lost=0`; `unknown STOP=0`; `Assert=0`; `Eternal Sonata SPU contract verifier=0`.
+- SPU contract parser: rows `0`, accepted `0`, rejected `0`, total hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation loop summary: reservation command CSVs and exact-PC CSVs missing; all reservation/MFC/pair rows `0`; total RSX-local bytes `0.00 MB`; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `analysis`, `valid-field-triage`, `route-tooling`, `accepted-field-baseline-recovered`, `capture-threshold-probe`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
+- Conclusion: the accepted-field baseline is recovered for this turn, and the previous repeated `~805 KB` wrong-window/small frames were likely capture/window instability rather than a permanent loader-control route failure or visual-threshold problem. This is still not speed, not Options/menu proof, not first-battle proof, and not HLE/GPU promotion evidence.
+- Next narrow step: with a field baseline restored, rerun the refiner and choose the smallest non-duplicative route/counter step it recommends; do not use the low field FPS as a regression claim, and keep any future movement or verifier work gated by clean field plus menu/battle visuals.
