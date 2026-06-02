@@ -1,8 +1,8 @@
 ﻿# SPU Verify Log-Row Implementation Scaffold
 
-- Generated: `2026-05-30T11:45:21.7623599-04:00`
+- Generated: `2026-06-02T15:50:44.8718092-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260530-114004-cpu4-stateaware-one-step-visualgate-windows-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260602-122048-cpu4-spu-verify25cc-loadrow-upclamp-dismiss-save-left200-counterproof-windows-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`
 - Contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
 - Classification: `analysis`, `verify-logrow-implementation-scaffold`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
