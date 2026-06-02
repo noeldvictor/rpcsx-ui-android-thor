@@ -9667,3 +9667,42 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No speed increase and no 200% candidate. The delayed left200x2 route did not reach Path-to-Tenuto field, title Options/menu, or first battle; all FPS samples were from invalid nonfield/cutscene visuals.
 - Delaying from `45s` to `95s` changed the failure class but did not restore the route. Next work should gate on a concrete title/load selector state before route inputs, or run a finer title-readiness/load-menu diagnostic around the `90-110s` window; do not add movement, battle routing, HLE, RSX, or speed toggles yet.
+
+# 2026-06-01 23:50:20-04:00 Title/Load Selector Diagnostic Finds Narrow 93s Triage Window Then Nonfield
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` reran the refiner after the delayed95 left200x2 route still fell into blue nonfield frames.
+- Refiner decision still asked to back off and re-prove the last clean loader-control-left200x2 route before adding diagonal or HLE/GPU fast mode.
+- To avoid another duplicate route miss, this turn took a narrower title/load selector diagnostic around the `90-110s` readiness window before attempting another field route.
+
+## Command
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-titleload-selector-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -InputMacro "wait:90000;shot:100;wait:4000;shot:100;down:20;wait:500;shot:100;cross:80;wait:3000;shot:100;wait:5000;shot:100;up:80;wait:500;shot:100;cross:80;wait:12000;shot:100;wait:10000;shot:100" -MaxSeconds 135 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 85 -ScreenshotMaxCount 18`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-235020-cpu4-loader-control-titleload-selector-diagnostic-windows-windows`.
+- Harness note: the emulator stopped at the 135s max wall-time and no `rpcs3` process remained afterward, but the outer shell command timed out during post-processing; verification was run manually against the artifact.
+- Host contention: clean at prelaunch, postlaunch, `132s`, and postrun; external contention clean; no competing emulator.
+- Visual gate: `FIELD_LIKE_PRESENT_WITH_LATER_INVALID_SCREENSHOTS`; first field-like screenshot was `screenshot-0093s.png` at `93s` (`1.05 MB`), but there were `9` later invalid screenshots; class counts were `field-like-large-png: 1`, `cutscene-or-nonfield-large-png: 6`, and `cutscene-or-nonfield-small-png: 3`; triage gate result `passed-for-triage`, not proof.
+- Timing/control sequence: `93s` was field-like by triage before any input; `97s` was already cutscene/nonfield before the `Down` press; `98s` after `Down` was still nonfield; `102s` and `107s` after `Cross` were blue cutscene/nonfield; `132s+` fell into small blue nonfield frames. The usable selector window, if real, is narrower than the current `90s + 4s` wait pattern, or the `93s` field-like classifier is a false positive.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop summary: command CSVs were missing, so reservation command rows `0`, command exact-PC rows `0`, command-run MFC wait exact-PC rows `0`, total RSX-local bytes `0.00 MB`, command/read decision `command-correlation-data-missing`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `title-load-selector-diagnostic`
+- `field-like-triage-only`
+- `cutscene-or-nonfield-large-png`
+- `cutscene-or-nonfield-small-png`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No speed increase and no 200% candidate. The single `93s` field-like triage frame is not Path-to-Tenuto gameplay proof, not Options/menu proof, and not first-battle proof.
+- The next route repair should either add a strict visual/title-ready gate before `Down`, or test a tighter immediate-input timing around the `92-94s` window with pre/post shots. Do not add movement, battle routing, HLE, RSX, or speed toggles until selector and no-movement field proof are restored.
