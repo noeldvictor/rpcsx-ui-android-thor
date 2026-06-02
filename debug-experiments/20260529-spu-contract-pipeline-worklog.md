@@ -9556,3 +9556,39 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No speed increase and no 200% candidate. This no-movement baseline did not reach Path-to-Tenuto field, title Options/menu, or first battle.
 - The current blocker is now a repeatable wrong-window/nonfield capture on the route baseline itself. Next step should repair or instrument the loader-control route/window/target classification before any movement, battle, HLE, RSX, or speed attempt.
+
+# 2026-06-01 22:20:29-04:00 Loader-Control Route-Phase Diagnostic Shows Cutscene Then Stable Wrong-Window
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` reran the refiner after the no-movement baseline stayed wrong-window/nonfield.
+- Refiner still asked for a no-movement loader-control `CleanAfterField` baseline, but the immediately previous run had already executed that exact baseline and failed. This turn therefore took a non-duplicative route-phase diagnostic under the same route-repair intent, adding explicit screenshots around title, load selection, save-list normalization, slot Cross, and post-load waits.
+
+## Command
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-routephase-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -InputMacro "wait:45000;shot:100;down:20;wait:500;cross:80;wait:12000;shot:100;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;shot:100;cross:80;wait:3000;shot:100;up:80;wait:500;shot:100;cross:80;wait:32000;shot:100;cross:120;wait:18000;shot:100;wait:12000;shot:100" -MaxSeconds 145 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 45 -ScreenshotMaxCount 20`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-222029-cpu4-loader-control-routephase-diagnostic-windows-windows`.
+- Harness note: the emulator stopped at the 145s max wall-time and no `rpcs3` process remained afterward, but the outer shell command timed out during post-processing; verification was run manually against the artifact.
+- Host contention: clean at prelaunch, postlaunch, `133s`, and postrun; external contention clean; no competing emulator.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; `26` screenshots total; class counts were `cutscene-or-nonfield-large-png: 1` and `wrong-window-or-other-small-png: 25`; triage gate result `passed-for-triage`, not proof.
+- Phase finding: the explicit `48s` shot was a large blue cutscene/nonfield frame (`1494960` bytes, blue ratio `0.627`), then `61s` and `64s` were `265 KB` wrong-window frames, and all later post-selection/post-slot screenshots settled around `751-770 KB` wrong-window/nonfield frames. This suggests the route starts from the wrong title/cutscene state before the load sequence rather than merely failing after slot Cross.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop summary: command CSVs were missing, so reservation command rows `0`, command exact-PC rows `0`, command-run MFC wait exact-PC rows `0`, total RSX-local bytes `0.00 MB`, command/read decision `command-correlation-data-missing`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `cutscene-or-nonfield-large-png`
+- `wrong-window-or-other-small-png`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No speed increase and no 200% candidate. The run did not reach Path-to-Tenuto field, title Options/menu, or first battle, and all FPS samples came from invalid route/cutscene/nonfield states.
+- The current blocker is earlier than the save-slot gate: the route-phase capture starts from a cutscene/nonfield state at the first explicit screenshot, then remains in wrong-window/nonfield output. Next work should repair or instrument title-to-load state detection/timing before pressing `Down/Cross`, not add movement, battle routing, HLE, RSX, or speed toggles.
