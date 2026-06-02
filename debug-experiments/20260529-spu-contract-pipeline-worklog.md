@@ -9911,3 +9911,20 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `failed-wrong-window-or-other-visual`, `route-capture-repro`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
 - Conclusion: no speed increase. Forcing hardware MSAA resolve on changed screenshot byte size but did not recover field proof; route/capture remains blocked ahead of any movement or speed path.
 - Narrow next step: add/use a route reset or black-overlay detector rather than more MSAA toggles; alternatively run SPU contract verifier-only plumbing after a visually valid no-movement field route is restored.
+
+## 2026-06-02 04:50 EDT - heartbeat: SPU contract verifier-only run after repeated invalid visuals
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T08:49:43.674Z`.
+- Refiner: still blocks `loader-control-left200`; repeated pre-field visual failures, window/capture instability, clean lane counters with invalid visuals, and repeated zero RSX-local traffic mean no movement rerun and no GPU/HLE promotion from counters alone. Refiner branch used here: focused SPU kernel HLE/codegen/verifier analysis before another movement run.
+- Step taken: Windows-only no-movement field route with verifier/profile instrumentation, label `cpu4-spu-contract-verify25cc-451c-nomove-visualgate-windows-windows`.
+- Command intent: keep `PadApi`, game screen 1, CPU mask `0x0F`, 240/240 frame/vblank, no fast modes, and enable verify/profile instrumentation only: `EternalSonataSpuHleVerify=Verify25ccShadow`, `EternalSonataSpuHle25ccBody=Verify`, `EternalSonataSpuHle451cPreserveBody=Verify`, `EternalSonataSpuHleSize16Body=Verify`, `EternalSonataKernelCapsule=Profile`, `EternalSonataPutllc16Pair=Verify`, `EternalSonataReservationLoop=Verify`.
+- Run dir: `debug-captures/windows-lab/20260602-045105-cpu4-spu-contract-verify25cc-451c-nomove-visualgate-windows-windows`.
+- Wrapper status: outer command timed out at 520s while the wrapper had already stopped RPCS3 after the 205s run and written the main artifacts; manual evidence pass confirmed no remaining `rpcs3` process.
+- Host contention: clean prelaunch/postlaunch/postrun and periodic samples; no competing emulator or heavy host load detected.
+- Screenshots/visual gate: 24 screenshots from 117s through 205s, 795,424 to 797,251 bytes; manual visual gate status `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; class counts `wrong-window-or-other-small-png: 24`. This is not a field proof.
+- Fatal/log scan: no access violation, `VK_ERROR`, device lost, unknown STOP, or assert hits. The only `fatal` match was the benign config line `Show fatal error hints: false`.
+- SPU contract verifier: 556 rows, 556 accepted, 0 rejected, 1171 total contract hits, 19,185,664 contract bytes, 0 output mismatches, 0 desc overflows. Parser still reports `promotion_ready=false` because this is verify evidence only and visuals are invalid.
+- Reservation-loop counters: reservation summary found no reservation command CSV, no command exact-PC CSV, and no command-run MFC wait exact-PC CSV for this run; kernel capsule rows 0, MFC wait exact-PC rows 0, PUTLLC16 pair verifier rows 0, reservation command rows 0, decision `collect-missing-proof` / `command-correlation-data-missing`.
+- Classification: `spu-contract-verifier-evidence`, `failed-wrong-window-or-other-visual`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
+- Conclusion: no speed increase. This is a good correctness signal for the 0x25cc contract shadow path, but field/menu/battle visuals and reservation-loop correlation are still required before any fast path or promotion.
+- Narrow next step: update/run the SPU contract pipeline summary against this 556-row 0x25cc evidence and plan a verifier-only counter run that preserves reservation-loop CSV output; do not add movement until no-movement field proof is recovered.
