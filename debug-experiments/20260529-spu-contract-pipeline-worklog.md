@@ -9629,3 +9629,41 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No speed increase and no 200% candidate. The single field-like triage frame at `94s` is not Path-to-Tenuto gameplay proof, not Options/menu proof, and not first-battle proof.
 - The useful finding is route timing: do not press `Down/Cross` at `45s` on the next route attempt. Next work should add a title-ready visual gate or delay/retry around the `90-100s` window before selecting Load, then re-test the no-movement loader-control baseline.
+
+# 2026-06-01 23:20:22-04:00 Delayed95 Left200x2 Loader-Control Reproof Still Falls Into Blue Nonfield
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` reran the refiner after the title-readiness diagnostic showed the original `45s` title-route input was too early.
+- Refiner decision: `Back off from the latest non-field/cutscene route and re-prove the last clean loader-control-left200x2 route with CleanAfterField before adding any diagonal or HLE/GPU fast mode.`
+- To avoid duplicating the known-too-early `45s` route, this turn kept the refiner's left200x2 route shape but delayed the initial `Down/Cross` to `95s`.
+
+## Command
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-delayed95-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 210 -InputMacro "wait:95000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 265 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 160 -ScreenshotMaxCount 11`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-232022-cpu4-loader-control-left200x2-delayed95-visualgate-windows-windows`.
+- Harness note: the emulator stopped at the 265s max wall-time and no `rpcs3` process remained afterward, but the outer shell command timed out during post-processing; verification was run manually against the artifact.
+- Host contention: clean at prelaunch, postlaunch, `199s`, `210s`, `240s`, and postrun; external contention clean; no competing emulator.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; `16` screenshots total; class counts were `cutscene-or-nonfield-large-png: 1` and `cutscene-or-nonfield-small-png: 15`; triage gate result `passed-for-triage`, not proof.
+- Visual sequence: `screenshot-0167s.png` was large nonfield/cutscene (`1459927` bytes), then `0183s` was `52398` bytes and `0185s+` settled into repeated `34466` byte tiny blue nonfield frames through `260s`. The delayed title start avoids the old wrong-window size class but still misses the correct Path-to-Tenuto field route.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop summary: command CSVs were missing, so reservation command rows `0`, command exact-PC rows `0`, command-run MFC wait exact-PC rows `0`, total RSX-local bytes `0.00 MB`, command/read decision `command-correlation-data-missing`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `delayed-title-route`
+- `cutscene-or-nonfield-large-png`
+- `cutscene-or-nonfield-small-png`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No speed increase and no 200% candidate. The delayed left200x2 route did not reach Path-to-Tenuto field, title Options/menu, or first battle; all FPS samples were from invalid nonfield/cutscene visuals.
+- Delaying from `45s` to `95s` changed the failure class but did not restore the route. Next work should gate on a concrete title/load selector state before route inputs, or run a finer title-readiness/load-menu diagnostic around the `90-110s` window; do not add movement, battle routing, HLE, RSX, or speed toggles yet.
