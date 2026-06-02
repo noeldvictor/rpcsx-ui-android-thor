@@ -9487,3 +9487,38 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No new speed increase and no 200% candidate. The observed title FPS near 120 during the loading-like gate cannot be counted because there was no field proof, no Options/menu proof, and no first-battle proof.
 - Stay on the load-target poll-gated route until the missing Path-to-Tenuto exemplar problem is fixed or a valid field screenshot passes the gate; do not spend the next turn on speed/HLE/RSX fast paths.
+
+# 2026-06-01 21:20:31-04:00 Save-Check Diagnostic Confirms Wrong-Window/Nonfield Route Capture
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` refreshed the refiner after repeated `UNKNOWN_LOAD_TARGET` failures.
+- Refiner still blocked speed/HLE/RSX work until `PATH_TO_TENUTO_PRESENT` passes. Because the latest exact replay had already timed out on UNKNOWN, this turn used the refiner anti-pattern guidance to inspect the save-check/checkpoint state instead of duplicating the same full gate replay.
+
+## Command
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-loadtarget-savecheck-diagnostic-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;shot:100;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;shot:100;wait:5000;shot:100;wait:10000;shot:100" -MaxSeconds 95 -ScreenshotEverySeconds 5 -ScreenshotStartSeconds 50 -ScreenshotMaxCount 12`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-212031-cpu4-stateaware-loadtarget-savecheck-diagnostic-windows-windows`.
+- Harness note: the emulator process stopped at the 95s max wall-time and no `rpcs3` process remained afterward, but the outer shell command hit a post-processing timeout before returning success; treat the artifact files as the source of truth.
+- Host contention: clean at prelaunch, postlaunch, `80s`, `90s`, and postrun; external contention clean; no competing emulator.
+- Visual check: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; `14` screenshots total; all `14` classified as `wrong-window-or-other-small-png`; triage gate result `passed-for-triage` only because this was an intentional non-field diagnostic.
+- Screenshot sizes shifted from the previous loading-like `~112 KB` gate frames to `264 KB` early and `787-788 KB` later frames, confirming this run observed a different non-field/wrong-window state rather than a duplicate loading timeout.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop summary: command CSVs were missing for this short diagnostic, so reservation command rows `0`, command exact-PC rows `0`, command-run MFC wait exact-PC rows `0`, total RSX-local bytes `0.00 MB`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `wrong-window-or-other-small-png`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No new speed increase and no 200% candidate. The diagnostic did not reach field, Options/menu, or first battle, and its title/window FPS samples are invalid for speed.
+- The useful finding is narrower: after the title-to-load sequence and Up normalization, screenshots landed in a stable wrong-window/nonfield class, so the next heartbeat should repair or instrument target/window capture around the save-check screen before pressing slot Cross. Do not advance to speed/HLE/RSX fast paths until `PATH_TO_TENUTO_PRESENT` is actually proven again.
