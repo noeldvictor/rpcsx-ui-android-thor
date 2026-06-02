@@ -9804,3 +9804,28 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `left200-after-baseline-recovery`, `black-overlay-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
 - Conclusion: the immediately prior no-movement field baseline was valid, but adding a single `left200` pulse fell back to black-overlay capture output before any usable field proof. This invalidates all movement/FPS/counter use for the run. No speed increase, no 200% candidate, no Options/menu proof, and no first-battle proof.
 - Next narrow step: do not add more movement yet. Re-run the no-movement loader-control baseline or add a capture/window identity guard around the first post-load field screenshot before movement, then only reattempt `left200` after the first field frame is confirmed real in the same run.
+
+## 2026-06-02 02:29:30-04:00 Field-Guarded Left40 Keeps Valid Field After Left200 Black-Overlay Failure
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T06:19:38.668Z`.
+- Refiner decision: `Do not auto-rerun loader-control-left200. It already failed after a clean no-movement boundary; add or use black-overlay route control, shrink/change the movement pulse, or switch to SPU kernel HLE/codegen/verifier analysis before another movement run.`
+- Non-duplicative step chosen: changed the failed `left200` movement into a tiny field-guarded `ls_left:40` pulse, with two post-load field screenshots before movement and post-pulse/late screenshots after movement. No Android/ADB/Thor and no HLE/body/GPU fast mode.
+- Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-fieldguard-left40-captureprobe-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:40;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 205 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 10
+```
+
+- Run directory: `debug-captures/windows-lab/20260602-022025-cpu4-loader-control-fieldguard-left40-captureprobe-windows-windows`.
+- Harness note: outer Codex shell timed out after `520s`, but the harness output shows RPCS3 hit the requested `205s` cap, stopped PID `27088`, wrote `RPCS3.log`, and completed postrun host sampling.
+- Host contention: clean at prelaunch, postlaunch, samples `146s`/`150s`/`180s`, and postrun; no competing emulator or heavy host load detected.
+- Screenshot verification: `14` PNGs from `117s` through `200s`, all around `2.49 MB`.
+- Visual gate result: `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0117s.png` at `117s`; invalid-after-first-field-like `0`; class counts `field-like-large-png=14`.
+- Manual screenshot spot-check: post-pulse `screenshot-0135s.png` shows correct Path-to-Tenuto field gameplay with character visible and no black/cutscene/wrong-window artifact.
+- FPS/title samples: roughly `23.72` to `38.25` FPS during the capture window. These are not a speed claim because this is only a tiny movement/capture route probe and still lacks Options/menu and first-battle proof.
+- Fatal/log scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`; `VK_ERROR=0`; `device lost=0`; `unknown STOP=0`; `Assert=0`; `Eternal Sonata SPU contract verifier=0`.
+- SPU contract parser: rows `0`, accepted `0`, rejected `0`, total hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation loop summary: reservation command CSVs and exact-PC CSVs missing; all reservation/MFC/pair rows `0`; total RSX-local bytes `0.00 MB`; command/read decision `command-correlation-data-missing`; decision `collect-missing-proof`.
+- Classification: `analysis`, `valid-field-triage`, `route-tooling`, `left40-after-left200-black-overlay`, `capture-route-control`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
+- Conclusion: shrinking the movement pulse to `left40` preserved clean Path-to-Tenuto field visuals in the same run where `left200` previously collapsed to black-overlay capture. This is a useful lower movement/capture boundary, not speed, not first-battle, not Options/menu, and not HLE/GPU promotion evidence.
+- Next narrow step: use `left40` as the newest safe tiny-movement floor and bisect upward cautiously toward `left200`, requiring pre/post field screenshots in the same run before any larger movement; keep SPU/HLE/GPU fast paths blocked until field, Options/menu, and first-battle proof are all valid.
