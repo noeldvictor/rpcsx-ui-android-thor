@@ -9522,3 +9522,37 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 ## Conclusion
 - No new speed increase and no 200% candidate. The diagnostic did not reach field, Options/menu, or first battle, and its title/window FPS samples are invalid for speed.
 - The useful finding is narrower: after the title-to-load sequence and Up normalization, screenshots landed in a stable wrong-window/nonfield class, so the next heartbeat should repair or instrument target/window capture around the save-check screen before pressing slot Cross. Do not advance to speed/HLE/RSX fast paths until `PATH_TO_TENUTO_PRESENT` is actually proven again.
+
+# 2026-06-01 21:50:05-04:00 No-Movement Loader-Control Baseline Still Wrong-Window/Nonfield
+
+## Intent
+- Heartbeat `ps3-200-windows-speed-loop` reran the refiner after the save-check diagnostic showed stable wrong-window/nonfield captures.
+- Refiner decision: `Run a no-movement Windows loader/control with CleanAfterField to regain a valid field baseline.`
+
+## Command
+- `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`
+- `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8`
+
+## Evidence
+- Run dir: `debug-captures/windows-lab/20260601-215005-cpu4-loader-control-visualgate-windows-windows`.
+- Harness note: the emulator stopped at the 190s max wall-time and no `rpcs3` process remained afterward, but the outer shell command timed out during post-processing; verification was run manually against the artifact.
+- Host contention: clean at prelaunch, postlaunch, `133s`, `150s`, `180s`, and postrun; external contention clean; no competing emulator.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; `10` screenshots total from `117s` through `190s`; all `10` classified as `wrong-window-or-other-small-png`; triage gate result `passed-for-triage`, not proof.
+- Fatal scan: `fatal=1` only from `Show fatal error hints: false`; `access violation=0`, `VK_ERROR=0`, `device lost=0`, `unknown STOP=0`, `Assert=0`, and no `Eternal Sonata SPU contract verifier` lines.
+- SPU contract verifier parser: rows `0`, accepted `0`, rejected `0`, total contract hits `0`, failure `no contract verifier rows found`, promotion-ready `false`.
+- Reservation-loop summary: command CSVs were missing, so reservation command rows `0`, command exact-PC rows `0`, command-run MFC wait exact-PC rows `0`, total RSX-local bytes `0.00 MB`, command/read decision `command-correlation-data-missing`, decision `collect-missing-proof`.
+
+## Classification
+- `analysis`
+- `failed`
+- `failed-visual-gate`
+- `route-tooling`
+- `wrong-window-or-other-small-png`
+- `verify-logrow-parser`
+- `spu-reservation-loop-summary`
+- `collect-missing-proof`
+- `not-a-speed-proof`
+
+## Conclusion
+- No speed increase and no 200% candidate. This no-movement baseline did not reach Path-to-Tenuto field, title Options/menu, or first battle.
+- The current blocker is now a repeatable wrong-window/nonfield capture on the route baseline itself. Next step should repair or instrument the loader-control route/window/target classification before any movement, battle, HLE, RSX, or speed attempt.
