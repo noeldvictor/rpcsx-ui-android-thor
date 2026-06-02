@@ -9877,3 +9877,20 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `analysis`, `failed`, `failed-visual-gate`, `route-tooling`, `black-overlay-reset-diagnostic`, `no-movement-control`, `black-overlay-small-png`, `verify-logrow-parser`, `spu-reservation-loop-summary`, `collect-missing-proof`, `not-a-speed-proof`.
 - Conclusion: black-overlay capture now reproduces even without movement, so the latest failure is not just `left120` or `left200` pulse size. This invalidates all FPS/counter use for the run. No speed increase, no 200% candidate, no Options/menu proof, and no first-battle proof.
 - Next narrow step: repair black-overlay route/capture state before any movement bisection. Prefer a route reset or black-overlay detector that aborts before movement and reruns only after a real Path-to-Tenuto field frame is captured in the same run; keep HLE/GPU fast paths blocked until field, Options/menu, and first-battle proof are all valid.
+
+## 2026-06-02 03:51 EDT - heartbeat: no-movement route/capture repro with ForceHwMsaaResolve Off request
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat at `2026-06-02T07:49:41.115Z`.
+- Refiner: `Do not auto-rerun loader-control-left200`; repeated pre-field visual failures remain a blocker. Recommended route was black-overlay route control, movement shrink/change, or SPU verifier analysis before another movement run.
+- Step taken: Windows-only no-movement field route/capture diagnostic, label `cpu4-loader-control-blackoverlay-msaaoff-nomove-visualgate-windows-windows`.
+- Command intent: keep baseline-safe no-movement route, `PadApi`, game screen 1, CPU mask `0x0F`, 240/240 frame/vblank, reservation-loop `Verify`, visual gate `CleanAfterField`, and request `-WindowsRsxForceHwMsaaResolve Off` as the one render/capture-state perturbation.
+- Important caveat: `Force Hardware MSAA Resolve override: false -> false changed=False`, so the requested `Off` perturbation was a no-op against the current run config. Treat this as a fresh no-movement route/capture repro, not proof that toggling MSAA resolve fixed anything.
+- Run dir: `debug-captures/windows-lab/20260602-035110-cpu4-loader-control-blackoverlay-msaaoff-nomove-visualgate-windows-windows`.
+- Host contention: clean prelaunch/postlaunch/postrun and periodic samples; no competing emulator or heavy host load detected.
+- Screenshots/visual gate: 24 screenshots from 117s through 205s, all around 751,368 to 753,209 bytes; status `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; required field-like by 160s failed; class counts `wrong-window-or-other-small-png: 24`.
+- Fatal/log scan: no access violation, `VK_ERROR`, device lost, unknown STOP, or assert hits. The only `fatal` match was the benign config line `Show fatal error hints: false`.
+- SPU contract verifier: parser found 0 rows, 0 accepted rows, 0 contract hits, failure `no contract verifier rows found`; not promotion-ready.
+- Reservation-loop counters: command/read summary emitted rows despite invalid visuals: reservation command rows 1705, reservation command exact-PC rows 45244, command-run MFC wait exact-PC rows 80562, primary front `0xa70 -> 0xa74` GETLLAR/AtomicStat and `0xad4 -> 0xad8` PUTLLC/AtomicStat, command/read deltas GETLLAR 0 and PUTLLC 0. Because visuals failed, these counters remain analysis-only and cannot promote a fast path.
+- Classification: `failed-wrong-window-or-other-visual`, `route-capture-repro`, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
+- Conclusion: no speed increase. The black/wrong-window visual blocker is still ahead of speed testing; do not add movement or claim counters until field proof is recovered.
+- Narrow next step: use a genuinely changed capture/route control, for example `-WindowsRsxForceHwMsaaResolve On` or a route reset/black-overlay detector, then only return to movement once no-movement field proof is restored.
