@@ -10270,3 +10270,17 @@ Run directory: `debug-captures/windows-lab/20260601-202008-cpu4-stateaware-loadt
 - Classification: `analysis`, `spu-contract-scaffold`, `spu-contract-verifier-evidence`, `valid-field-source`, `reservation-csv-present`, not `valid-options-counterproof` for this step, not first-battle proof, not `windows-micro-win`, not `gpu-migration-credit`, not 200% proof.
 - Conclusion: no speed increase. This is useful because the contract scaffold is now aligned to the current valid `0x25cc/0x451c/0x9e4000` field counterproof instead of the stale May source, but it is still analysis/verify-counter setup only.
 - Narrow next step: wire or run a verify-only emulator counter from the refreshed contract artifacts, or repair title-to-Load route-state detection without changing movement, before any fast/body/GPU behavior or first-battle retry.
+
+## 2026-06-02T16:33:15-04:00 - hle-451c size16 field reproof plus reservation-loop counterproof stayed on loading overlay
+
+- Context: heartbeat ps3-200-windows-speed-loop; refiner generated 2026-06-02T16:21:40.6368108-04:00 and blocked another loader-control-left200 rerun after the clean no-movement boundary plus failed movement attempts. Chosen step was the Windows-only SPU verifier/HLE direction, with reservation-loop verification added so this would not be another visuals-only run.
+- Command: `.	ools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label hle-451c-size16-candidate-reproof-field-resloop-counterproof ... -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataReservationLoop Verify -WindowsGameScreen 1 -WindowsVisualGate CleanAfterField`.
+- Run: debug-captures/windows-lab/20260602-162243-hle-451c-size16-candidate-reproof-field-resloop-counterproof-windows.
+- Visual verification: NO_FIELD_LIKE_SCREENSHOT; screenshots screenshot-0117s.png through screenshot-0190s.png were all loading-like-small-png. Manual inspection of screenshot-0117s.png and screenshot-0190s.png confirmed the black Now Loading... overlay persisted for the whole capture window, so this is not a valid field/menu/battle proof.
+- Fatal/log verification: RPCS3 process exited after the harness stop; fatal scan was clean after excluding the benign Show fatal error hints: false text. Host snapshots were clean prelaunch, postlaunch, periodic samples, and postrun.
+- SPU verifier/counter verification: GPU summary recorded 1547 SPU HLE verifier records, 1546 shadow records, 1074 0x25cc-family records, 454 0x451c descriptor-batch records, and   RSX-local traffic records. The SPU contract log-row parser reported   accepted contract rows for this generic Verify run, so it is counter evidence only, not refreshed contract-row proof.
+- Reservation-loop verification: reservation-loop artifacts were present. Summary counters: 1638 reservation-loop command records, 45671 command exact-PC records, 6041 reservation-loop verify records, and 92128 MFC wait exact-PC records.
+- Classification: ailed-visual-gate, loading-only-route, spu-hle-verifier-counter-evidence, 
+eservation-loop-counter-evidence, 
+ot-speed. No 200% field+Options+first-battle proof, no HLE/GPU promotion, and no speed increase.
+- Next narrow step: do not rerun this exact loading-overlay route. Either add black-overlay route-state control/load-complete detection before field movement, or use the refreshed 0x25cc/0x451c contracts to wire a verify-only emulator counter that emits parseable contract rows before any fast path.
