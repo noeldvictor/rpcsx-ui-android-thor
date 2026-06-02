@@ -401,7 +401,7 @@ if ([string]::IsNullOrWhiteSpace($DamagedExemplar)) {
     $DamagedExemplar = "debug-captures\windows-lab\20260527-152343-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-nomove-longgate-diagnostic-windows\screenshots\screenshot-0081s-load-target-gate.png"
 }
 if ($DamagedExemplarRows.Count -eq 0) {
-    $DamagedExemplarRows = @($CropY, 365)
+    $DamagedExemplarRows = @($CropY, 365, 535)
 }
 
 $resolvedRunDir = Resolve-RepoPath -Root $repoRoot -Path $RunDir
@@ -410,8 +410,14 @@ $resolvedGoodExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @(
     "debug-captures\windows-lab\20260602-165106-cpu4-titleload-blackcontrol-resloop-diagnostic-windows-windows\screenshots\screenshot-0192s-load-target-gate-33.png",
     "debug-captures\windows-lab\20260601-212031-cpu4-stateaware-loadtarget-savecheck-diagnostic-windows-windows\screenshots\screenshot-0069s.png"
 )
-$resolvedBadExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @($BadExemplar)
-$resolvedDamagedExemplar = Resolve-RepoPath -Root $repoRoot -Path $DamagedExemplar
+$resolvedBadExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @(
+    $BadExemplar,
+    "debug-captures\windows-lab\20260602-182050-cpu4-livegate-slotconfirm-nomove-field-reproof-windows-windows\screenshots\screenshot-0085s-load-target-gate-2.png"
+)
+$resolvedDamagedExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @(
+    $DamagedExemplar,
+    "debug-captures\windows-lab\20260602-182050-cpu4-livegate-slotconfirm-nomove-field-reproof-windows-windows\screenshots\screenshot-0085s-load-target-gate-2.png"
+)
 
 if (-not (Test-Path -LiteralPath $resolvedRunDir -PathType Container)) {
     throw "Run directory not found: $resolvedRunDir"
