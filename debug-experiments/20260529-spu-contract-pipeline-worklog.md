@@ -10974,3 +10974,19 @@ ot-speed.
 - Classification: `valid-field-triage`, `route-boundary-restored`, `left200x2-clean-after-fatal`, `cpu-spu-pressure-plan-unblocked`, `gpu-offload-parked`, `not-speed`.
 - Speed status: `0%` confirmed increase. Field-only overlay FPS is not accepted; no Options/menu plus first-battle A/B proof exists.
 - Next hypothesis: use this restored clean route boundary for the next `Verify25ccShadow` contract-row capture. If that capture reaches the field with strict parser pass, proceed to Options/menu and first-battle verifier captures before any bodyfast/codegen-fast/Vulkan mode.
+
+## 2026-06-03 15:50 ET - diag200 route extension regresses to damaged Load list (no speed)
+
+- Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane.
+- Refiner: `2026-06-03T15:50:49.6039703-04:00`; decision was to extend the newest valid loader-control `left200x2` route by exactly one tiny diagonal micro-pulse with `CleanAfterField`, while keeping lane-2 HLE/GPU dry-runs blocked.
+- Command: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -InputMacro "wait:45000;down:20;wait:500;cross:80;wait:12000;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:160;up:80;wait:500;cross:80;wait:3000;up:80;wait:500;cross:80;wait:32000;cross:120;wait:18000;shot:100;wait:15000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;ls_left:200;wait:1000;shot:100;wait:1000;combo:ls_left+ls_down:200;wait:1000;shot:100;wait:10000;shot:100" -MaxSeconds 225 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 110 -ScreenshotMaxCount 12`.
+- Run directory: `debug-captures/windows-lab/20260603-155107-cpu4-loader-control-left200x2-diag200-visualgate-windows-windows`.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot `none`; required field-like by `160s` failed; 18/18 screenshots classified `wrong-window-or-other-small-png`.
+- Manual screenshot check: `screenshot-0117s.png` and `screenshot-0220s.png` both show the Eternal Sonata Load list on `Save File 01 / Path to Tenuto` plus the message `Save file has been damaged.` They are not Path-to-Tenuto field gameplay.
+- Fatal/log verification: targeted scan found no real crash/access/device-lost/assertion/verification failure; the matching `RPCS3.log` lines were startup/config/VFS path lines only. stdout/stderr did not report a crash.
+- Host verification: clean across 6 snapshots (`prelaunch`, `postlaunch`, `sample-0152s`, `sample-0180s`, `sample-0210s`, `postrun`); no competing emulator or heavy host load.
+- Counter verification: SPU HLE verifier records `0`; reservation-loop command records `1881`; exact-PC records `49753`; verify records `6246`; RDCH join `3`; lane-join `3`; raw-lane `8`; PUTLLC16 analyzer `43`; runtime PUTLLC16 `0`; total observed DMA `1,628.51 MB`.
+- GPU/offload evidence: offload fit mix `spu-kernel-hle=853`, `too-small=756`; direct RSX-local scout traffic `0 B`; indirect SPU-DMA/RSX-resource overlap `0 B`; new promoted CPU/SPU -> GPU replacement `0 B`.
+- Classification: `failed-visual-gate`, `damaged-load-list`, `route-control-regression`, `clean-counters-invalid-visuals`, `cpu-spu-pressure-candidate`, `gpu-offload-parked`, `not-speed`.
+- Speed status: `0%` confirmed increase. The 40-50 FPS overlay samples are Load-list/menu samples, not field + Options/menu + first-battle A/B proof.
+- Next hypothesis: do not extend `diag200` or run HLE/GPU dry-runs from this state. Return to the restored clean `left200x2` field boundary and either add a load-target/damaged-save guard before the diagonal pulse or run a verify-only `Verify25ccShadow` capture only when the route reaches clean field first.
