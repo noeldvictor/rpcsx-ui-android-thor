@@ -10941,3 +10941,19 @@ ot-speed.
 - Classification: `failed-visual-gate`, `load-list-stall`, `route-control-regression-after-verify25cc`, `cpu-spu-pressure-candidate`, `gpu-offload-parked`, `not-speed`.
 - Speed status: `0%` confirmed increase. Overlay FPS on the load list is not accepted; no field + Options/menu + first-battle A/B proof exists.
 - Next hypothesis: repair the loader route/control state before another Verify25cc field capture. The useful acceleration signal is still CPU/SPU-side HLE/codegen/SIMD pressure, not a GPU compute promotion yet, because RSX-local and promoted GPU replacement counters remain zero.
+
+## 2026-06-03 14:50 ET - state-aware one-step route replay crashes before valid field (no speed)
+
+- Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane.
+- Refiner: `2026-06-03T14:50:47.7870195-04:00`; decision was to use the newest valid-field run as route base and add exactly one small state-aware movement step with `CleanAfterField`.
+- Command: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160`.
+- Run directory: `debug-captures/windows-lab/20260603-145057-cpu4-stateaware-one-step-visualgate-windows-windows`.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot `none`; required field-like by `160s` failed; 3/3 screenshots classified `cutscene-or-nonfield-small-png`.
+- Manual screenshot check: `screenshot-0117s.png` shows blue/starry non-field output with overlay; `screenshot-0133s.png` shows the same blue output plus RPCS3 crash notification (`The PS3 application has likely crashed`). This is not a Path-to-Tenuto field proof.
+- Fatal/log verification: `rpcs3.stderr.txt` reports `RPCS3: PPU[0x1000000] Thread (main_thread) [0x002c067c]: VM: Access violation reading location 0x14 (unmapped memory)`. RPCS3.log fatal-pattern hits were startup/config/VFS lines only.
+- Host verification: host contention summary was clean across 4 snapshots; no competing emulator or heavy host load was reported.
+- Counter verification: SPU HLE verifier records `0`; reservation-loop command records `1033`; exact-PC records `28230`; verify records `3625`; RDCH join `5`; lane-join `3`; raw-lane `8`; PUTLLC16 analyzer `43`; runtime PUTLLC16 `0`; total observed DMA `1,413.93 MB`.
+- GPU/offload evidence: offload fit mix `spu-kernel-hle=711`, `too-small=239`; direct RSX-local scout traffic `0 B`; indirect SPU-DMA/RSX-resource overlap `0 B`; new promoted CPU/SPU -> GPU replacement `0 B`.
+- Classification: `failed-fatal-log`, `failed-visual-gate`, `cutscene-or-nonfield`, `route-control-regression`, `cpu-spu-pressure-candidate`, `gpu-offload-parked`, `not-speed`.
+- Speed status: `0%` confirmed increase. Overlay FPS on invalid/crashed blue output is rejected; no field + Options/menu + first-battle A/B proof exists.
+- Next hypothesis: do not advance HLE/bodyfast/GPU mode from this route. Return to the latest valid field run and repair the state-aware route/camera transition, or run a verify-only contract capture only after a route reaches clean field again.
