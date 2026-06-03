@@ -1020,6 +1020,146 @@ $logRowMd.Add("") | Out-Null
 $logRowMd.Add("Next action: $($logRowImplementation.next_action)") | Out-Null
 $logRowMd | Set-Content -LiteralPath $logRowMdPath -Encoding UTF8
 
+$promotionRows = New-Object System.Collections.Generic.List[object]
+foreach ($contract in $contractDetails) {
+    $pcKey = Normalize-HexKey $contract.runtime_anchor.pc
+    $hotHits = [int]$contract.evidence.hot_log_hits
+    $pcHits = [int]$contract.evidence.pc_hot_log_hits
+    $eaHits = [int]$contract.evidence.ea_hot_log_hits
+    $classes = @($contract.inferred_classes)
+    $is25cc9e4000 = ($pcKey -eq "25cc") -and ($eaHits -gt 0)
+    $is451c = ($pcKey -eq "451c")
+    $isReservation = $classes -contains "reservation-loop"
+    $isDmaWindow = $classes -contains "dma-window"
+    $isDynamicMfc = $classes -contains "dynamic-mfc-shape"
+    $isSpurs = $classes -contains "spurs-kernel"
+
+    $coverageScore = 0
+    if ($hotHits -ge 80) {
+        $coverageScore = 5
+    } elseif ($hotHits -ge 40) {
+        $coverageScore = 4
+    } elseif ($hotHits -ge 12) {
+        $coverageScore = 3
+    } elseif ($hotHits -gt 0) {
+        $coverageScore = 2
+    }
+
+    $cpuHleScore = $coverageScore
+    if ($is25cc9e4000) { $cpuHleScore += 3 }
+    if ($is451c) { $cpuHleScore += 2 }
+    if ($isReservation) { $cpuHleScore += 2 }
+    if ($isDynamicMfc) { $cpuHleScore += 1 }
+    if ($isSpurs) { $cpuHleScore += 1 }
+    if ($cpuHleScore -gt 10) { $cpuHleScore = 10 }
+
+    $simdScore = $coverageScore
+    if ($isDmaWindow -or $isDynamicMfc) { $simdScore += 2 }
+    if ($is25cc9e4000) { $simdScore += 2 }
+    if ($isReservation) { $simdScore -= 1 }
+    if ($simdScore -lt 0) { $simdScore = 0 }
+    if ($simdScore -gt 10) { $simdScore = 10 }
+
+    $gpuScore = $coverageScore
+    if ($isDmaWindow) { $gpuScore += 2 }
+    if ($isReservation -or $isSpurs) { $gpuScore -= 3 }
+    if ($is25cc9e4000 -and -not $isDmaWindow) { $gpuScore -= 2 }
+    if ($gpuScore -lt 0) { $gpuScore = 0 }
+    if ($gpuScore -gt 10) { $gpuScore = 10 }
+
+    $readbackRisk = if ($isReservation -or $isSpurs) {
+        "high"
+    } elseif ($isDmaWindow -and $eaHits -gt 0) {
+        "medium"
+    } else {
+        "unknown"
+    }
+    $rsxEvidence = "none-observed"
+    $recommendedLane = if ($cpuHleScore -ge 7) {
+        "verify-only-cpu-hle-or-codegen"
+    } elseif ($simdScore -ge 6) {
+        "verify-only-host-simd"
+    } elseif (($gpuScore -ge 7) -and ($readbackRisk -ne "high") -and ($rsxEvidence -ne "none-observed")) {
+        "verify-only-vulkan-compute"
+    } else {
+        "park-until-more-evidence"
+    }
+
+    $promotionRows.Add([pscustomobject]@{
+        contract_id = $contract.contract_id
+        pc = $contract.runtime_anchor.pc
+        image_sig = $contract.runtime_anchor.image_sig
+        group = $contract.runtime_anchor.group
+        spu_name = $contract.runtime_anchor.spu_name
+        classes = $classes
+        hot_log_hits = $hotHits
+        pc_hot_log_hits = $pcHits
+        ea_hot_log_hits = $eaHits
+        coverage_score = $coverageScore
+        cpu_hle_score = $cpuHleScore
+        host_simd_score = $simdScore
+        vulkan_gpu_score = $gpuScore
+        readback_risk = $readbackRisk
+        rsx_destination_evidence = $rsxEvidence
+        recommended_lane = $recommendedLane
+        promotion_gate = @(
+            "verify-only field visual",
+            "verify-only Options/menu visual",
+            "verify-only first-battle visual",
+            "output_mismatches == 0",
+            "descriptor_overflow == 0",
+            "fatal_log_hits == 0",
+            "rollback path preserved"
+        )
+        notes = @(
+            "Scores rank implementation direction only; they are not speed, FPS, or GPU migration credit.",
+            "Vulkan/GPU score is capped by missing RSX destination evidence until a scout proves GPU-resident or RSX-consumed output.",
+            "Host SIMD score maps to x86 AVX-class work on Windows and AArch64 NEON/DOTPROD-friendly lowering on Thor, subject to runtime feature gates."
+        )
+    }) | Out-Null
+}
+
+$promotionScore = [pscustomobject]@{
+    schema_version = 1
+    generated_at = (Get-Date).ToString("o")
+    title_id = $TitleId
+    source_run = $runPath
+    classification = @("analysis", "contract-promotion-score", "not-speed", "not-gpu-migration-credit")
+    score_scale = "0..10; higher means better next implementation target, not measured speed"
+    rows = @($promotionRows | Sort-Object -Property @{Expression="cpu_hle_score";Descending=$true},@{Expression="host_simd_score";Descending=$true},@{Expression="vulkan_gpu_score";Descending=$true},@{Expression="hot_log_hits";Descending=$true})
+    conclusions = @(
+        "Prioritize CPU/SPU HLE or codegen when reservation/SPURS semantics and zero RSX-local evidence dominate.",
+        "Prioritize host SIMD when the contract is a stable bulk DMA/window body with bounded buffers.",
+        "Keep Vulkan compute parked unless the contract has bulk work, low readback risk, and RSX destination evidence."
+    )
+}
+$promotionScorePath = Join-Path $outRoot "promotion-score.json"
+$promotionScore | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $promotionScorePath -Encoding UTF8
+
+$promotionMdPath = Join-Path $outRoot "promotion-score.md"
+$promotionMd = New-Object System.Collections.Generic.List[string]
+$promotionMd.Add("# SPU Contract Promotion Score") | Out-Null
+$promotionMd.Add("") | Out-Null
+$promotionMd.Add("- Generated: $bt$generatedAt$bt") | Out-Null
+$promotionMd.Add("- Title: $bt$TitleId$bt") | Out-Null
+$promotionMd.Add("- Source run: $bt$runPath$bt") | Out-Null
+$promotionMd.Add("- Classification: $($bt)analysis$bt, $($bt)contract-promotion-score$bt, $($bt)not-speed$bt, not $($bt)gpu-migration-credit$bt.") | Out-Null
+$promotionMd.Add("- Score scale: $bt$($promotionScore.score_scale)$bt") | Out-Null
+$promotionMd.Add("") | Out-Null
+$promotionMd.Add("| Contract | PC | Classes | Hits | CPU/HLE | Host SIMD | Vulkan/GPU | Readback | RSX dest | Recommendation |") | Out-Null
+$promotionMd.Add("| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |") | Out-Null
+foreach ($row in $promotionScore.rows) {
+    $promotionMd.Add("| $bt$($row.contract_id)$bt | $bt$($row.pc)$bt | $bt$($row.classes -join ',')$bt | $($row.hot_log_hits) | $($row.cpu_hle_score) | $($row.host_simd_score) | $($row.vulkan_gpu_score) | $bt$($row.readback_risk)$bt | $bt$($row.rsx_destination_evidence)$bt | $bt$($row.recommended_lane)$bt |") | Out-Null
+}
+$promotionMd.Add("") | Out-Null
+$promotionMd.Add("## Conclusions") | Out-Null
+foreach ($conclusion in $promotionScore.conclusions) {
+    $promotionMd.Add("- $conclusion") | Out-Null
+}
+$promotionMd.Add("") | Out-Null
+$promotionMd.Add("Next action: implement or run verify-only counters for the highest CPU/HLE ranked contract before any bodyfast, codegen-fast, or Vulkan compute mode.") | Out-Null
+$promotionMd | Set-Content -LiteralPath $promotionMdPath -Encoding UTF8
+
 Write-Output "SPU contract index: $indexPath"
 Write-Output "SPU contract summary: $summaryPath"
 Write-Output "SPU verify plan: $verifyPlanPath"
@@ -1030,3 +1170,5 @@ Write-Output "SPU verify counter schema: $counterSchemaPath"
 Write-Output "SPU verify counter schema summary: $counterMdPath"
 Write-Output "SPU verify log-row scaffold: $logRowPath"
 Write-Output "SPU verify log-row scaffold summary: $logRowMdPath"
+Write-Output "SPU promotion score: $promotionScorePath"
+Write-Output "SPU promotion score summary: $promotionMdPath"

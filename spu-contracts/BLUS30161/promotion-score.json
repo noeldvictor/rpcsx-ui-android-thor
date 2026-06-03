@@ -1,0 +1,92 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-06-03T12:53:01.4775816-04:00",
+    "title_id":  "BLUS30161",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows",
+    "classification":  [
+                           "analysis",
+                           "contract-promotion-score",
+                           "not-speed",
+                           "not-gpu-migration-credit"
+                       ],
+    "score_scale":  "0..10; higher means better next implementation target, not measured speed",
+    "rows":  [
+                 {
+                     "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+                     "pc":  "0x025cc",
+                     "image_sig":  "0x958dfe208b686622",
+                     "group":  "CellSpursKernelGroup",
+                     "spu_name":  "CellSpursKernel0",
+                     "classes":  [
+                                     "dynamic-mfc-shape",
+                                     "dma-window",
+                                     "spurs-kernel"
+                                 ],
+                     "hot_log_hits":  80,
+                     "pc_hot_log_hits":  80,
+                     "ea_hot_log_hits":  80,
+                     "coverage_score":  5,
+                     "cpu_hle_score":  10,
+                     "host_simd_score":  9,
+                     "vulkan_gpu_score":  4,
+                     "readback_risk":  "high",
+                     "rsx_destination_evidence":  "none-observed",
+                     "recommended_lane":  "verify-only-cpu-hle-or-codegen",
+                     "promotion_gate":  [
+                                            "verify-only field visual",
+                                            "verify-only Options/menu visual",
+                                            "verify-only first-battle visual",
+                                            "output_mismatches == 0",
+                                            "descriptor_overflow == 0",
+                                            "fatal_log_hits == 0",
+                                            "rollback path preserved"
+                                        ],
+                     "notes":  [
+                                   "Scores rank implementation direction only; they are not speed, FPS, or GPU migration credit.",
+                                   "Vulkan/GPU score is capped by missing RSX destination evidence until a scout proves GPU-resident or RSX-consumed output.",
+                                   "Host SIMD score maps to x86 AVX-class work on Windows and AArch64 NEON/DOTPROD-friendly lowering on Thor, subject to runtime feature gates."
+                               ]
+                 },
+                 {
+                     "contract_id":  "BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0",
+                     "pc":  "0x0451c",
+                     "image_sig":  "0x958dfe208b686622",
+                     "group":  "TCX_CellSpursKernelGroup",
+                     "spu_name":  "TCX_CellSpursKernel0",
+                     "classes":  [
+                                     "dynamic-mfc-shape",
+                                     "dma-window",
+                                     "spurs-kernel"
+                                 ],
+                     "hot_log_hits":  80,
+                     "pc_hot_log_hits":  80,
+                     "ea_hot_log_hits":  80,
+                     "coverage_score":  5,
+                     "cpu_hle_score":  9,
+                     "host_simd_score":  7,
+                     "vulkan_gpu_score":  4,
+                     "readback_risk":  "high",
+                     "rsx_destination_evidence":  "none-observed",
+                     "recommended_lane":  "verify-only-cpu-hle-or-codegen",
+                     "promotion_gate":  [
+                                            "verify-only field visual",
+                                            "verify-only Options/menu visual",
+                                            "verify-only first-battle visual",
+                                            "output_mismatches == 0",
+                                            "descriptor_overflow == 0",
+                                            "fatal_log_hits == 0",
+                                            "rollback path preserved"
+                                        ],
+                     "notes":  [
+                                   "Scores rank implementation direction only; they are not speed, FPS, or GPU migration credit.",
+                                   "Vulkan/GPU score is capped by missing RSX destination evidence until a scout proves GPU-resident or RSX-consumed output.",
+                                   "Host SIMD score maps to x86 AVX-class work on Windows and AArch64 NEON/DOTPROD-friendly lowering on Thor, subject to runtime feature gates."
+                               ]
+                 }
+             ],
+    "conclusions":  [
+                        "Prioritize CPU/SPU HLE or codegen when reservation/SPURS semantics and zero RSX-local evidence dominate.",
+                        "Prioritize host SIMD when the contract is a stable bulk DMA/window body with bounded buffers.",
+                        "Keep Vulkan compute parked unless the contract has bulk work, low readback risk, and RSX destination evidence."
+                    ]
+}

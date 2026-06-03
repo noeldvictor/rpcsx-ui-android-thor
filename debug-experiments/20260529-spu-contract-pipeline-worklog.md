@@ -10882,3 +10882,17 @@ ot-speed.
   - Priority 4: Vulkan compute only after a contract proves a stable bulk body with bounded buffers and no immediate CPU readback. Tiny `too-small` rows and SPURS control loops are bad GPU candidates.
 - Classification: `hardware-rag`, `stackable-cpu-pressure-plan`, `gpu-offload-parked-until-bulk-contract`, `not-speed`.
 - Next narrow action: update or run `tools/spu_contract_pipeline.ps1` / `spu-contracts/BLUS30161` around `0x25cc`, `0x451c`, and `0x9e4000` to emit a promotion score per contract: bytes covered, hit count, GET/PUT split, mismatch/overflow, readback risk, RSX-destination evidence, and SIMD/GPU suitability. Only then choose AVX/NEON/HLE or Vulkan compute.
+
+## 2026-06-03T12:54:00.8022620-04:00 - SPU contract promotion-score artifact for hardware acceleration lane
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat `2026-06-03T16:50:25.254Z`.
+- Refiner context: `tools/ps3_harness_refiner.ps1 -MaxRuns 8` still recommends a tiny diagonal route replay from the newest clean loader-control `left200x2` base, but the hardware-lane anti-pattern remains `zero-rsx-local-repeated`; the lane direction says broad SPU-to-Vulkan compute stays parked unless a scout proves RSX-consumed data.
+- Non-duplicative step: updated `tools/spu_contract_pipeline.ps1` to emit `spu-contracts/BLUS30161/promotion-score.json` and `promotion-score.md` after the existing contract/index/source-alignment/verify-plan outputs.
+- Pipeline run: `tools/spu_contract_pipeline.ps1 -RunDir debug-captures/windows-lab/20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra`.
+- Scoring schema: `coverage_score`, `cpu_hle_score`, `host_simd_score`, `vulkan_gpu_score`, `readback_risk`, `rsx_destination_evidence`, and `recommended_lane`. Scores rank next implementation direction only; they are not FPS, speed, or GPU migration credit.
+- Promotion score result 1: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`, PC `0x025cc`, classes `dynamic-mfc-shape,dma-window,spurs-kernel`, hits `80`, CPU/HLE `10`, host SIMD `9`, Vulkan/GPU `4`, readback risk `high`, RSX destination `none-observed`, recommendation `verify-only-cpu-hle-or-codegen`.
+- Promotion score result 2: `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`, PC `0x0451c`, classes `dynamic-mfc-shape,dma-window,spurs-kernel`, hits `80`, CPU/HLE `9`, host SIMD `7`, Vulkan/GPU `4`, readback risk `high`, RSX destination `none-observed`, recommendation `verify-only-cpu-hle-or-codegen`.
+- Hardware interpretation: GPU underuse is still most likely CPU/SPU feed pressure. The best immediate acceleration path is verifier-safe SPU HLE/codegen and host SIMD lowering; Vulkan compute remains parked because both candidates have high readback/synchronization risk and no RSX-destination evidence.
+- Classification: `hardware-lane-tooling`, `contract-promotion-score`, `stackable-cpu-pressure-plan`, `gpu-offload-parked`, `not-speed`.
+- Speed accounting: confirmed speed increase remains `0%`; no field + Options/menu + first-battle A/B proof was run or claimed.
+- Next narrow action: implement or run verify-only counters/log rows for the top `0x25cc/0x9e4000` contract lane, then decide between CPU HLE/codegen and AVX/NEON lowering only after zero mismatch/overflow/fatal evidence across field, Options/menu, and first battle.

@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-06-02T15:50:45.0622527-04:00",
+    "generated_at":  "2026-06-03T12:53:01.4461792-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260602-122048-cpu4-spu-verify25cc-loadrow-upclamp-dismiss-save-left200-counterproof-windows-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows",
     "classification":  [
                            "analysis",
                            "verify-logrow-implementation-scaffold"
