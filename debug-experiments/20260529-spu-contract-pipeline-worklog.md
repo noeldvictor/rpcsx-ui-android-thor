@@ -10518,3 +10518,19 @@ Reservation/GPU counters: GPU summary emitted MFC dynamic `1037`, MFC list trans
 Classification: `route-tooling`, `failed-visual-gate`, `stateaware-stale-route`, `missing-post-load-dismiss`, `loading-screen-stall`, `reservation-counters-invalid`, `not-speed`.
 
 Conclusion: no speed increase. The repaired no-movement field baseline remains the latest good route base, but the refiner's stock `stateaware-one-step` macro is stale because it does not carry the post-`Load complete.` dismiss. The next narrow action should update/refine the state-aware one-step route to include the repaired post-load dismiss before attempting any movement, first-battle route, HLE fast path, RSX/GPU path, or 200% claim.
+
+## 2026-06-03T00:38:25-04:00 - repaired post-load dismiss route survives left200 one-step field movement
+
+- Automation: ps3-200-windows-speed-loop heartbeat 2026-06-03T04:20:07.601Z.
+- Refiner run: 	ools\ps3_harness_refiner.ps1 -MaxRuns 8; decision remained to use the newest valid-field route base and add one small state-aware movement step with CleanAfterField.
+- Non-duplicative Windows-only step: ran the repaired post-load dismiss route instead of the stale stock state-aware macro, adding one ls_left:200 field movement after dismissing Load complete.
+- Command label: cpu4-postload-dismiss-left200-one-step-visualgate-windows; Windows-only, PadApi backend, game screen 1, CPU affinity  x0F, frame/vblank 240, reservation loop Verify, host contention gate ExternalFail, visual gate CleanAfterField, no Android/ADB/Thor.
+- Capture: debug-captures/windows-lab/20260603-002115-cpu4-postload-dismiss-left200-one-step-visualgate-windows-windows.
+- Harness note: outer shell timed out after 900s during post-run cleanup, after the emulator had already stopped at the requested 345s; no RPCS3 process remained for the manual verification pass.
+- Screenshot verification: screenshot-0309s-field-before-left200-postload.png showed a clean Path-to-Tenuto field before movement; screenshot-0311s-field-after-left200-postload.png showed a clean field after ls_left:200 with Polka shifted left near the save point; screenshot-0327s-field-late-left200-postload.png stayed clean late after movement.
+- Load target verifier: PATH_TO_TENUTO_PRESENT; counts were path-to-tenuto=2, debug-save-prologue=0, empty=0, black=0, unknown=2, lower-row cursor markers=0, damaged text markers=2.
+- Fatal/log scan: no fatal/access violation/VK_ERROR/device-lost/unhandled/assert/unknown STOP/crash lines found; stdout/stderr were empty; host pre/post/runtime gates were clean.
+- SPU verifier rows: 0.
+- Reservation-loop counters from the RPCS3 log: mfc_dynamic=2642, mfc_list=1542, mfc_wait=2930, mfc_wait_pc=145552, reservation_cmd=2930, reservation_cmd_pc=78899, reservation_verify=2930, reservation_lane=7030, rsx_local_lines=0.
+- Classification: valid-field-triage, route-tooling, stateaware-route-repaired, post-load-dismiss-left200, clean-small-movement, reservation-counters-present, not-speed.
+- Conclusion: no speed increase. This repaired route proves the post-load dismiss path can survive a small field movement with clean screenshots and clean fatal logs, but it is still not a 200% proof because there is no Options/menu proof and no first-battle proof. The refiner's stock printed state-aware macro is stale and should be updated to include the repaired post-load dismiss route before any next movement or first-battle expansion.
