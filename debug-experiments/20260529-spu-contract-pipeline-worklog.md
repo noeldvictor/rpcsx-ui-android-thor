@@ -10847,3 +10847,17 @@ ot-speed.
 - SPU/reservation counters: `SPU HLE verifier records=0`; reservation-loop command records `1477`; exact-PC records `40350`; verify records `5027`; RDCH join records `3`; lane-join records `3`; raw-lane records `8`; PUTLLC16 analyzer records `43`; PUTLLC16 runtime and pair-verify records `0`; total observed DMA `1418.27 MB`; offload fit mix `too-small=761`, `spu-kernel-hle=666`; direct RSX-local scout traffic `0`.
 - Classification: `failed`, `failed-visual-gate`, `black-overlay-after-post-prompt-confirm`, `left200-not-field-tested`, `reservation-counters-invalid`, `not-speed`.
 - Speed accounting: confirmed speed increase remains `0%`; latest valid small-movement field proof remains `20260603-095109-cpu4-loader-control-left200x2-reproof-after-save-menu-invalid-visualgate-windows-windows`, and this run is not movement proof, Options/menu proof, first-battle proof, 200% proof, HLE/GPU credit, or counter-derived speed evidence.
+
+## 2026-06-03T12:03:13.9982070-04:00 - Windows field reproof: left200x2 after black-overlay miss
+
+- Run: `debug-captures/windows-lab/20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows`
+- Refiner decision followed: newest black-overlay run invalidated the next movement step, so this heartbeat re-proved the newest clean loader-control `left200x2` boundary with `CleanAfterField` before adding more movement.
+- Command class: Windows-only RPCS3 field route proof, `-WindowsGameScreen 1`, PadApi, CPU affinity `0x0F`, frame/vblank `240`, reservation loop `Verify`, host contention gate `ExternalFail`.
+- Visual result: `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0117s.png` at 117s, 16 field-like screenshots total, invalid screenshots after first field-like `0`, required field-like by 160s passed.
+- Manual screenshot check: `screenshot-0117s.png`, `screenshot-0138s.png`, and `screenshot-0210s.png` are all valid field frames; no black overlay, no load/menu stall, no damaged save-confirm frame.
+- Fatal/log result: targeted fatal scan clean for `RPCS3.log`, `rpcs3.stdout.txt`, and `rpcs3.stderr.txt`; stdout/stderr both 0 bytes.
+- Host result: clean prelaunch/postlaunch/postrun and sampled host snapshots; no competing emulator or heavy external host load detected.
+- Reservation-loop evidence: command records `1817`, exact-PC records `49697`, verify records `6385`, RDCH join `6`, lane-join `3`, raw-lane `8`, PUTLLC16 analyzer `43`, PUTLLC16 runtime `0`.
+- Speed evidence: `New promoted CPU/SPU -> GPU replacement` remains `0` / `0 B` / `0.000%`; `Direct RSX-local scout traffic` remains `0` / `0 B` / `0.000%`. This is not a speed increase and not a 200% proof.
+- Classification: valid field-triage route/movement re-confirmation, movement baseline clean after the black-overlay miss, reservation counters present but diagnostic only, no Options/menu proof, no first-battle proof, no emulator speedup.
+- Next narrow step: stop treating FPS overlay variation as speed. Use this clean boundary to either run a verify-only Options/first-battle counter capture or implement a single contract-gated reservation/SPU verifier candidate, then require field + Options + first-battle A/B proof before any speed claim.
