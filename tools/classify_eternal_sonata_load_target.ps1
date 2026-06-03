@@ -47,6 +47,8 @@ param(
 
     [double]$DamagedTextMaxDiff = 14.0,
 
+    [int]$MaxBlackOverlayBytes = 150000,
+
     [switch]$RequirePathToTenuto,
 
     [switch]$NoWriteSummary
@@ -453,6 +455,7 @@ if ($screenshots.Count -eq 0) {
 
 $rows = foreach ($shot in $screenshots) {
     $bestMatch = Get-BestTargetMatch -CandidatePath $shot.FullName -GoodExemplarPath $resolvedGoodExemplar -BadExemplarPath $resolvedBadExemplar -CropYs $CandidateCropYs
+    $isSmallBlackOverlay = ($shot.Length -le $MaxBlackOverlayBytes -and $bestMatch.Target -eq "unknown-load-target")
     $lowerCursorRows = @(Get-LowerCursorRows -CandidatePath $shot.FullName -CropYs $CandidateCropYs)
     $damagedTextRows = if ($damagedGuardEnabled) {
         @(Get-DamagedTextRows -CandidatePath $shot.FullName -ExemplarPath $resolvedDamagedExemplar -CandidateYs $CandidateCropYs -ExemplarYs $DamagedExemplarRows)
@@ -467,10 +470,11 @@ $rows = foreach ($shot in $screenshots) {
         GoodDiff = $bestMatch.GoodDiff
         BadDiff = $bestMatch.BadDiff
         TextBrightRatio = $bestMatch.TextBrightRatio
-        Target = $bestMatch.Target
+        Target = if ($isSmallBlackOverlay) { "black-overlay-or-crash" } else { $bestMatch.Target }
         PathCandidateYs = @($bestMatch.PathCandidateYs) -join ","
         DebugCandidateYs = @($bestMatch.DebugCandidateYs) -join ","
         TopPathOnly = [bool]$bestMatch.TopPathOnly
+        SmallBlackOverlay = [bool]$isSmallBlackOverlay
         LowerCursorYs = $lowerCursorRows -join ","
         DamagedTextYs = $damagedTextRows -join ","
     }
@@ -479,6 +483,7 @@ $rows = foreach ($shot in $screenshots) {
 $pathRows = @($rows | Where-Object { $_.Target -eq "path-to-tenuto" })
 $debugRows = @($rows | Where-Object { $_.Target -eq "debug-save-prologue" })
 $emptyRows = @($rows | Where-Object { $_.Target -eq "empty-load-slot" })
+$blackOverlayRows = @($rows | Where-Object { $_.Target -eq "black-overlay-or-crash" })
 $unknownRows = @($rows | Where-Object { $_.Target -eq "unknown-load-target" })
 $lowerCursorRows = @($rows | Where-Object { -not [string]::IsNullOrWhiteSpace($_.LowerCursorYs) })
 $damagedTextRows = @($rows | Where-Object { -not [string]::IsNullOrWhiteSpace($_.DamagedTextYs) })
@@ -490,6 +495,8 @@ $damagedRows = @($rows | Where-Object {
     })
 $status = if ($damagedRows.Count -gt 0) {
     "DAMAGED_SAVE_TARGET"
+} elseif ($blackOverlayRows.Count -gt 0 -and $pathRows.Count -eq 0 -and $debugRows.Count -eq 0) {
+    "BLACK_OVERLAY_OR_CRASH_PRESENT"
 } elseif ($pathRows.Count -gt 0 -and $debugRows.Count -eq 0) {
     "PATH_TO_TENUTO_PRESENT"
 } elseif ($debugRows.Count -gt 0 -and $pathRows.Count -eq 0) {
@@ -517,24 +524,25 @@ $summary.Add(("- Candidate crop Y rows: ``{0}``." -f ($CandidateCropYs -join ", 
 $summary.Add(("- Decision margin: ``{0}``; max known diff: ``{1}``." -f $DecisionMargin, $MaxKnownDiff))
 $summary.Add(("- Loose lower-row Path-to-Tenuto margin: ``{0}``; loose max diff: ``{1}``." -f $LoosePathDecisionMargin, $LoosePathMaxDiff))
 $summary.Add(("- Empty-slot guard: bright-text ratio below ``{0}`` with best known diff <= ``{1}``." -f $MinLoadTargetTextBrightRatio, $MaxEmptyKnownDiff))
+$summary.Add(("- Black-overlay/crash guard: unknown load-target screenshots with PNG bytes <= ``{0}`` are classified as ``black-overlay-or-crash``." -f $MaxBlackOverlayBytes))
 if ($damagedGuardEnabled) {
     $summary.Add(("- Damaged-save text guard: exemplar ``{0}``, rows ``{1}``, max diff ``{2}``." -f $resolvedDamagedExemplar, ($DamagedExemplarRows -join ", "), $DamagedTextMaxDiff))
 } else {
     $summary.Add(("- Damaged-save text guard: disabled; exemplar not found at ``{0}``." -f $resolvedDamagedExemplar))
 }
 $summary.Add(("- Status: ``{0}``" -f $status))
-$summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, empty-load-slot={2}, unknown={3}." -f $pathRows.Count, $debugRows.Count, $emptyRows.Count, $unknownRows.Count))
+$summary.Add(("- Counts: path-to-tenuto={0}, debug-save-prologue={1}, empty-load-slot={2}, black-overlay-or-crash={3}, unknown={4}." -f $pathRows.Count, $debugRows.Count, $emptyRows.Count, $blackOverlayRows.Count, $unknownRows.Count))
 $summary.Add(("- Lower-row cursor markers: ``{0}`` screenshot(s)." -f $lowerCursorRows.Count))
 $summary.Add(("- Damaged-save text markers: ``{0}`` screenshot(s)." -f $damagedTextRows.Count))
 if ($damagedRows.Count -gt 0) {
     $summary.Add(("- Damaged target guard: ``{0}`` Path-to-Tenuto preview row(s) had lower-row cursor drift and/or damaged-save text markers." -f $damagedRows.Count))
 }
 $summary.Add("")
-$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Text bright | Path Ys | Debug Ys | Top path only | Lower cursor Ys | Damaged text Ys | Target |")
-$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- |")
+$summary.Add("| Screenshot | Seconds | Bytes | Crop Y | Good diff | Bad diff | Text bright | Path Ys | Debug Ys | Top path only | Small black | Lower cursor Ys | Damaged text Ys | Target |")
+$summary.Add("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- |")
 foreach ($row in $rows) {
     $seconds = if ($null -eq $row.Seconds) { "" } else { $row.Seconds }
-    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | {6:N4} | ``{7}`` | ``{8}`` | ``{9}`` | ``{10}`` | ``{11}`` | ``{12}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.TextBrightRatio, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.LowerCursorYs, $row.DamagedTextYs, $row.Target))
+    $summary.Add(("| ``{0}`` | {1} | {2} | {3} | {4:N3} | {5:N3} | {6:N4} | ``{7}`` | ``{8}`` | ``{9}`` | ``{10}`` | ``{11}`` | ``{12}`` | ``{13}`` |" -f $row.Screenshot, $seconds, $row.Bytes, $row.CropY, $row.GoodDiff, $row.BadDiff, $row.TextBrightRatio, $row.PathCandidateYs, $row.DebugCandidateYs, $row.TopPathOnly, $row.SmallBlackOverlay, $row.LowerCursorYs, $row.DamagedTextYs, $row.Target))
 }
 
 $outPath = Join-Path $resolvedRunDir "eternal-sonata-load-target-summary.md"
