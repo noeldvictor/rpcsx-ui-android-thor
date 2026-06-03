@@ -10990,3 +10990,19 @@ ot-speed.
 - Classification: `failed-visual-gate`, `damaged-load-list`, `route-control-regression`, `clean-counters-invalid-visuals`, `cpu-spu-pressure-candidate`, `gpu-offload-parked`, `not-speed`.
 - Speed status: `0%` confirmed increase. The 40-50 FPS overlay samples are Load-list/menu samples, not field + Options/menu + first-battle A/B proof.
 - Next hypothesis: do not extend `diag200` or run HLE/GPU dry-runs from this state. Return to the restored clean `left200x2` field boundary and either add a load-target/damaged-save guard before the diagonal pulse or run a verify-only `Verify25ccShadow` capture only when the route reaches clean field first.
+
+## 2026-06-03 16:20 ET - state-aware one-step field recovery after damaged diag route (no speed)
+
+- Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane.
+- Refiner: `2026-06-03T16:20:55.6358567-04:00`; decision was to use the newest valid-field run as route base and add one small state-aware movement step with `CleanAfterField`, while keeping lane-2 HLE/GPU fast modes blocked.
+- Command: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-after-diag-damaged-loadlist-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160`.
+- Run directory: `debug-captures/windows-lab/20260603-162118-cpu4-stateaware-one-step-after-diag-damaged-loadlist-visualgate-windows-windows`.
+- Visual gate: `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0117s.png` at `117s`; required field-like by `160s` passed; 3/3 screenshots `field-like-large-png`; invalid screenshots after first field-like `0`.
+- Manual screenshot check: `screenshot-0117s.png` and `screenshot-0133s-01.png` both show clean Path-to-Tenuto field at the save point. No damaged Load-list or blue/starry route miss was present in the captured field frames.
+- Fatal/log verification: targeted scan found no real crash/access/device-lost/assertion/verification failure. The matching `RPCS3.log` lines were startup/config/VFS path lines only; stdout/stderr did not report a crash.
+- Host verification: clean across 4 snapshots (`prelaunch`, `postlaunch`, `sample-0133s`, `postrun`); no competing emulator or heavy host load. The sample host GPU-engine sum reached `31.8%`, but that is route telemetry only, not proof of new GPU offload.
+- Counter verification: SPU HLE verifier records `0`; reservation-loop command records `1067`; exact-PC records `28904`; verify records `3649`; RDCH join `3`; lane-join `3`; raw-lane `8`; PUTLLC16 analyzer `43`; runtime PUTLLC16 `0`; total observed DMA `1,306.77 MB`.
+- GPU/offload evidence: offload fit mix `spu-kernel-hle=624`, `too-small=364`; direct RSX-local scout traffic `0 B`; indirect SPU-DMA/RSX-resource overlap `0 B`; new promoted CPU/SPU -> GPU replacement `0 B`.
+- Classification: `valid-field-triage`, `route-recovery-after-damaged-diag`, `cpu-spu-pressure-plan-unblocked`, `gpu-offload-parked`, `not-speed`.
+- Speed status: `0%` confirmed increase. Field-only overlay FPS is not accepted; no Options/menu plus first-battle A/B proof exists.
+- Next hypothesis: this restores the route enough to retry a verify-only `Verify25ccShadow` field capture or add a load-target/damaged-save guard before any diagonal pulse. Continue to keep HLE bodyfast/GPU/Vulkan modes blocked until field + Options/menu + first-battle verifier captures pass.
