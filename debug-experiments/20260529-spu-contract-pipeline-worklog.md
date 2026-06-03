@@ -10446,3 +10446,27 @@ Reservation-loop counter verification from `RPCS3.log`: MFC dynamic `2093`, MFC 
 Classification: `route-tooling`, `initial-row-gate-live-pass`, `slot-confirm-no-load`, `load-screen-stuck`, `no-field-baseline`, `reservation-counters-invalid`, `not-speed`.
 
 Conclusion: no speed increase. The current route can prove the initial Path-to-Tenuto row without drifting to lower rows, but the slot-confirm sequence does not leave the Load screen. The next narrow step should inspect or alter the slot-confirm/load activation sequence from this proven initial row before any movement, first-battle route, SPU fast path, RSX/GPU path, or 200% claim.
+
+## 2026-06-02T23:04:22-04:00 - up-confirm reaches Load complete dialog but not field
+
+Refiner decision: run a no-movement Windows loader/control with `CleanAfterField` to regain a valid field baseline. Because the canned loader-control command and the previous initial-row double-`Cross` route were already proven non-duplicative failures, this step kept the same no-movement field-baseline objective but altered only the slot-confirm activation from the proven initial Path row: `Cross`, wait for the confirmation dialog, `Up`, then `Cross`. No movement, Android, ADB, Thor, HLE fast path, RSX/GPU fast path, or first-battle route was run.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-initialrow-upconfirm-nomove-field-reproof-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 230 -InputMacro "wait:65000;shot:title-settle-upconfirm;down:160;wait:900;shot:title-load-selected-upconfirm;cross:120;wait:60000;shot:load-list-initial-before-upconfirm;gate_load_target:30000;shot:path-target-before-upconfirm;cross:120;wait:3000;up:120;wait:500;shot:after-up-on-confirm;cross:160;wait:90000;shot:field-arrival-upconfirm;wait:45000;shot:field-late-upconfirm" -MaxSeconds 285 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 14 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Run: `debug-captures/windows-lab/20260602-225051-cpu4-initialrow-upconfirm-nomove-field-reproof-windows-windows`.
+
+Result: the route target and confirm-dialog selection are now understood, but field baseline was not regained. Visual gate failed with `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot `none`; required field-like at or before `230s` failed; class counts were `cutscene-or-nonfield-large-png=2` and `wrong-window-or-other-small-png=20`.
+
+Screenshot/load-target verification: live load-target gate passed on attempt 1 with `PATH_TO_TENUTO_PRESENT`; counts were `path-to-tenuto=2`, `debug-save-prologue=0`, `empty-load-slot=0`, `black-overlay-or-crash=0`, `unknown=2`, and lower-row cursor markers `0`. `screenshots/screenshot-0137s-after-up-on-confirm.png` visibly shows the `Load data from this file. Proceed?` dialog with `Yes` selected, so the `Up` confirm pattern reached the intended dialog state. `screenshots/screenshot-0274s-field-late-upconfirm.png` visibly shows `Load complete.` while still on the Load screen; no Path-to-Tenuto field gameplay, Options/menu, or first-battle visual proof exists. Title-bar FPS samples are menu/dialog evidence only and cannot count as speed.
+
+Fatal/log verification: exact fatal/access-violation/VK_ERROR/device-lost/unhandled-exception/assert/unknown-STOP/crash scan was clean; stdout and stderr were empty; no RPCS3 process remained after the wrapper stopped it at the run limit. Host contention stayed clean across `4` snapshots. SPU verifier rows were `0` because `EternalSonataSpuHleVerify` was intentionally off for this route-control reproof.
+
+Reservation/GPU counters: GPU summary emitted MFC dynamic `2124`, MFC list transfer `1409`, MFC wait `2413`, MFC wait exact-PC `113769`, reservation-loop command `2412`, reservation-loop command exact-PC `64154`, reservation-loop verify `8026`, lane-join `3`, raw-lane `8`, total observed DMA `2,065.60 MB`, SPU HLE verifier records `0`, RSX-local traffic records `0`, and offload fit mix `too-small=1070, spu-kernel-hle=1054`. These counters are invalid for speed/HLE promotion because visuals never reached field gameplay.
+
+Classification: `route-tooling`, `initial-row-gate-live-pass`, `confirm-dialog-yes-selected`, `load-complete-dialog-stuck`, `no-field-baseline`, `reservation-counters-invalid`, `not-speed`.
+
+Conclusion: no speed increase. The route now reaches the load confirmation and completes the load, but needs an additional post-`Load complete.` dismiss before it can become a valid no-movement field baseline. Next narrow step should add only that post-load-complete `Cross`/dismiss proof before movement, first battle, SPU fast path, RSX/GPU path, or 200% claims.
