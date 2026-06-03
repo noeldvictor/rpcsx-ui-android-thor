@@ -10494,3 +10494,27 @@ Reservation-loop counter verification from `RPCS3.log`: MFC dynamic `2849`, MFC 
 Classification: `valid-field-triage`, `route-tooling`, `initial-row-gate-live-pass`, `load-complete-dismiss-repaired`, `no-movement-field-baseline`, `reservation-counters-present`, `not-speed`.
 
 Conclusion: no speed increase. The no-movement field baseline is restored by adding a post-`Load complete.` `Cross` dismiss. Next narrow route step can use this repaired baseline before attempting any movement or first-battle route, but speed/HLE/RSX promotion still requires field plus Options/menu plus first-battle proof.
+
+## 2026-06-02T23:58:05-04:00 - refiner state-aware one-step uses stale route and stalls on Now Loading
+
+Refiner decision: use the newest valid-field run as the route base and add one small state-aware movement step with `CleanAfterField`. This heartbeat ran the refiner-proposed Windows-only command exactly as the single concrete step. No Android, ADB, Thor, HLE fast path, RSX/GPU fast path, Options/menu route, or first-battle route was run.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160
+```
+
+Run: `debug-captures/windows-lab/20260602-235108-cpu4-stateaware-one-step-visualgate-windows-windows`.
+
+Result: failed visual gate. The refiner command expanded to the older short state-aware macro (`MaxSeconds 120`) and did not include the newly discovered post-`Load complete.` dismiss repair. Visual gate reported `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot `none`; required field-like at or before `160s` failed; all `3` screenshots classified as `loading-like-small-png`.
+
+Screenshot verification: `screenshots/screenshot-0117s.png` and `screenshots/screenshot-0133s.png` both visibly show the black `Now Loading...` screen, not Path-to-Tenuto field gameplay. The window title/overlay sampled about `120 FPS`, but those samples are loading-screen evidence only and cannot be counted as speed, movement, route success, or 200% proof.
+
+Fatal/log verification: exact fatal/access-violation/VK_ERROR/device-lost/unhandled-exception/assert/unknown-STOP/crash scan was clean; stdout and stderr were empty; no RPCS3 process remained after the wrapper stopped it at the run limit. Host contention stayed clean across `4` snapshots. SPU verifier rows were `0` because `EternalSonataSpuHleVerify` was intentionally off.
+
+Reservation/GPU counters: GPU summary emitted MFC dynamic `1037`, MFC list transfer `455`, MFC wait `1122`, MFC wait exact-PC `58982`, reservation-loop command `1122`, reservation-loop command exact-PC `30720`, reservation-loop verify `3966`, lane-join `3`, raw-lane `8`, total observed DMA `1,212.55 MB`, SPU HLE verifier records `0`, RSX-local traffic records `0`, and offload fit mix `spu-kernel-hle=689, too-small=348`. These counters are invalid for speed/HLE promotion because visuals never reached field gameplay.
+
+Classification: `route-tooling`, `failed-visual-gate`, `stateaware-stale-route`, `missing-post-load-dismiss`, `loading-screen-stall`, `reservation-counters-invalid`, `not-speed`.
+
+Conclusion: no speed increase. The repaired no-movement field baseline remains the latest good route base, but the refiner's stock `stateaware-one-step` macro is stale because it does not carry the post-`Load complete.` dismiss. The next narrow action should update/refine the state-aware one-step route to include the repaired post-load dismiss before attempting any movement, first-battle route, HLE fast path, RSX/GPU path, or 200% claim.
