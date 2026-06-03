@@ -10910,3 +10910,18 @@ ot-speed.
 - Classification: `hardware-lane-tooling`, `verify-logrow-parser`, `strict-gate-failed-missing-row`, `stackable-cpu-pressure-plan`, `gpu-offload-parked`, `not-speed`.
 - Speed accounting: confirmed speed increase remains `0%`; no field + Options/menu + first-battle A/B proof was run or claimed.
 - Next narrow action: add or isolate the Windows upstream parseable notice row for `hle_mode=contract-25cc-9e4000`, then rerun field/Options/first-battle verifier captures under strict parser gates before any bodyfast/codegen-fast/Vulkan mode.
+
+## 2026-06-03T14:01:56.7450664-04:00 - Verify25ccShadow contract row capture passes parser but fails visual gate
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat `2026-06-03T17:50:26.336Z`.
+- Refiner context: `tools/ps3_harness_refiner.ps1 -MaxRuns 8` still recommends a tiny diagonal route replay, but the hardware-lane direction remains CPU/SPU contract verification because recent RSX-local and promoted CPU/SPU-to-GPU counters are still `0 B`.
+- Source anchor check: Windows upstream `rpcs3/Emu/Cell/lv2/sys_spu.cpp` already contains a parseable `Eternal Sonata SPU contract verifier` row for `hle_mode=contract-25cc-9e4000`; the previous clean loader-control run lacked rows because it was not a `Verify25ccShadow` capture.
+- Windows-only verifier run: `debug-captures/windows-lab/20260603-135154-cpu4-hle-25cc-contract-logrow-field-loader-left200x2-visualgate-windows-windows`, with `-EternalSonataSpuHleVerify Verify25ccShadow`, `-EternalSonataReservationLoop Verify`, `-WindowsGameScreen 1`, `CleanAfterField`, and no Android/ADB/Thor.
+- Visual result: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot none; required field-like by 160s failed; all 16 screenshots were `wrong-window-or-other-small-png`. Manual screenshots `screenshot-0117s.png` and `screenshot-0210s.png` show the Load list on `Save File 01 / Path to Tenuto` and `Save File 02 / Path to Tenuto`, not field gameplay.
+- Fatal/log result: targeted fatal scan clean for `RPCS3.log`, `rpcs3.stdout.txt`, and `rpcs3.stderr.txt`; stdout/stderr both 0 bytes. Host contention stayed clean across 7 snapshots.
+- Strict parser result against this run: rows `561`, accepted rows `561`, rejected rows `0`, total contract hits `1205`, total contract bytes `19,742,720`, output mismatch `0`, descriptor overflow `0`, promotion score available `true`, recommended lane `verify-only-cpu-hle-or-codegen`, CPU/HLE score `10`, host SIMD score `9`, Vulkan/GPU score `4`, readback risk `high`, RSX destination evidence `none-observed`, strict gate pass `true`.
+- SPU/reservation counters: SPU HLE verifier records `1199`; reservation-loop command records `1361`; command exact-PC records `36604`; verify records `4671`; RDCH join `3`; lane-join `3`; raw-lane `8`; total observed DMA `1446.22 MB`; offload fit mix `spu-kernel-hle=759`, `too-small=440`; promoted CPU/SPU-to-GPU replacement `0 B`; direct RSX-local scout traffic `0 B`.
+- Classification: `verify-logrow-progress`, `strict-parser-pass`, `failed-visual-gate`, `load-list-stall`, `stackable-cpu-pressure-plan`, `gpu-offload-parked`, `not-speed`.
+- Promotion status: blocked. The contract parser/log-row lane now works, but this capture is invalid for promotion because field visuals failed. It cannot count as field proof, Options/menu proof, first-battle proof, speed proof, or GPU migration credit.
+- Speed accounting: confirmed speed increase remains `0%`.
+- Next narrow action: rerun the same `Verify25ccShadow` contract-row capture on a route that actually reaches clean field, then repeat Options/menu and first-battle under the strict parser before any bodyfast/codegen-fast/Vulkan mode.
