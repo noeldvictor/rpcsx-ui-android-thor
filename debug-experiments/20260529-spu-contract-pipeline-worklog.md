@@ -10925,3 +10925,19 @@ ot-speed.
 - Promotion status: blocked. The contract parser/log-row lane now works, but this capture is invalid for promotion because field visuals failed. It cannot count as field proof, Options/menu proof, first-battle proof, speed proof, or GPU migration credit.
 - Speed accounting: confirmed speed increase remains `0%`.
 - Next narrow action: rerun the same `Verify25ccShadow` contract-row capture on a route that actually reaches clean field, then repeat Options/menu and first-battle under the strict parser before any bodyfast/codegen-fast/Vulkan mode.
+
+## 2026-06-03 14:20 ET - loader-control reproof after Verify25cc load-list stall (no speed)
+
+- Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane.
+- Refiner: `2026-06-03T14:20:54.9340784-04:00`; decision remained to reprove the black-overlay/load route before any movement or lane-2 HLE/GPU dry-run.
+- Command: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-reproof-after-verify25cc-loadlist-stall-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8`.
+- Run directory: `debug-captures/windows-lab/20260603-142119-cpu4-loader-control-reproof-after-verify25cc-loadlist-stall-visualgate-windows-windows`.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot `none`; required field-like by `160s` failed; 10/10 screenshots classified `wrong-window-or-other-small-png`.
+- Manual screenshot check: `screenshot-0117s.png` and `screenshot-0190s.png` both show the Eternal Sonata Load list (`Save File 01`, `Save File 02`, `Path to Tenuto`, `File does not exist.`), not field gameplay.
+- Fatal/log verification: RPCS3 stdout/stderr had no fatal lines; RPCS3 log scan showed only startup/config/VFS path lines matching the fatal/error pattern, not a crash.
+- Host verification: host contention snapshots present under `host-system`; pre/post checks were clean in the run output.
+- Counter verification: SPU HLE verifier records `0`; reservation-loop command records `1521`; exact-PC records `40471`; verify records `5072`; RDCH join `3`; lane-join `3`; raw-lane `8`; PUTLLC16 analyzer `43`; runtime PUTLLC16 `0`; RSX auditor `0`; total observed DMA `1,361.03 MB`.
+- GPU/offload evidence: offload fit mix `spu-kernel-hle=726`, `too-small=606`; direct RSX-local scout traffic `0 B`; indirect SPU-DMA/RSX-resource overlap `0 B`; new promoted CPU/SPU -> GPU replacement `0 B`.
+- Classification: `failed-visual-gate`, `load-list-stall`, `route-control-regression-after-verify25cc`, `cpu-spu-pressure-candidate`, `gpu-offload-parked`, `not-speed`.
+- Speed status: `0%` confirmed increase. Overlay FPS on the load list is not accepted; no field + Options/menu + first-battle A/B proof exists.
+- Next hypothesis: repair the loader route/control state before another Verify25cc field capture. The useful acceleration signal is still CPU/SPU-side HLE/codegen/SIMD pressure, not a GPU compute promotion yet, because RSX-local and promoted GPU replacement counters remain zero.
