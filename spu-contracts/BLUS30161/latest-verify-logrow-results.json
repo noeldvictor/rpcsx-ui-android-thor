@@ -1,0 +1,39 @@
+﻿{
+    "schema_version":  1,
+    "generated_at":  "2026-06-03T13:22:15.2249867-04:00",
+    "classification":  [
+                           "analysis",
+                           "verify-logrow-parser"
+                       ],
+    "source":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows\\RPCS3.log",
+    "contract_id":  "BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0",
+    "hle_mode":  "contract-25cc-9e4000",
+    "rows":  0,
+    "accepted_rows":  0,
+    "rejected_rows":  0,
+    "total_contract_hits":  0,
+    "total_contract_bytes":  0,
+    "total_output_mismatch":  0,
+    "total_desc_overflow":  0,
+    "missing_required_keys":  [
+
+                              ],
+    "failures":  [
+                     "no contract verifier rows found"
+                 ],
+    "promotion_ready":  false,
+    "promotion_score_available":  true,
+    "promotion_score_source":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\spu-contracts\\BLUS30161\\promotion-score.json",
+    "recommended_lane":  "verify-only-cpu-hle-or-codegen",
+    "cpu_hle_score":  10,
+    "host_simd_score":  9,
+    "vulkan_gpu_score":  4,
+    "readback_risk":  "high",
+    "rsx_destination_evidence":  "none-observed",
+    "strict_gate_requested":  true,
+    "strict_gate_pass":  false,
+    "strict_failures":  [
+                            "accepted_rows_lt_1",
+                            "contract_hits_lt_1"
+                        ]
+}

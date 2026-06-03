@@ -10896,3 +10896,17 @@ ot-speed.
 - Classification: `hardware-lane-tooling`, `contract-promotion-score`, `stackable-cpu-pressure-plan`, `gpu-offload-parked`, `not-speed`.
 - Speed accounting: confirmed speed increase remains `0%`; no field + Options/menu + first-battle A/B proof was run or claimed.
 - Next narrow action: implement or run verify-only counters/log rows for the top `0x25cc/0x9e4000` contract lane, then decide between CPU HLE/codegen and AVX/NEON lowering only after zero mismatch/overflow/fatal evidence across field, Options/menu, and first battle.
+
+## 2026-06-03T13:22:45.6168382-04:00 - Verify log-row parser now gates against promotion-score lane
+
+- Automation: `ps3-200-windows-speed-loop` heartbeat `2026-06-03T17:20:25.688Z`.
+- Refiner context: `tools/ps3_harness_refiner.ps1 -MaxRuns 8` still recommends one tiny diagonal route replay from the clean loader-control `left200x2` base, but the hardware-lane anti-pattern remains `zero-rsx-local-repeated`; this heartbeat stayed on focused SPU contract/compiler tooling instead of repeating movement.
+- Non-duplicative tooling step: updated `tools/parse_spu_contract_verify_log.ps1` to load `spu-contracts/BLUS30161/promotion-score.json` and attach the matching contract's `recommended_lane`, CPU/HLE score, host SIMD score, Vulkan/GPU score, readback risk, and RSX destination evidence to parse results.
+- New strict switches: `-RequirePromotionScore` and `-RequireCpuHleRecommendation`; these now participate in `strict_gate_requested` alongside accepted-row and minimum-hit checks.
+- Parser run: `tools/parse_spu_contract_verify_log.ps1 -LogPath debug-captures/windows-lab/20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows/RPCS3.log -OutJson spu-contracts/BLUS30161/latest-verify-logrow-results.json -OutMarkdown spu-contracts/BLUS30161/latest-verify-logrow-results.md -RequireAcceptedRow -RequirePromotionScore -RequireCpuHleRecommendation -MinContractHits 1`.
+- Parse result: rows `0`, accepted rows `0`, rejected rows `0`, total contract hits `0`, promotion score available `true`, recommended lane `verify-only-cpu-hle-or-codegen`, CPU/HLE score `10`, host SIMD score `9`, Vulkan/GPU score `4`, readback risk `high`, RSX destination evidence `none-observed`.
+- Strict gate result: requested `true`, pass `false`, failures `accepted_rows_lt_1` and `contract_hits_lt_1`. This is expected because the clean loader-control log does not yet emit the parseable `contract-25cc-9e4000` verifier row.
+- Hardware interpretation: the scorer and parser now agree that the top `0x25cc/0x9e4000` lane is CPU/HLE/codegen-first, not Vulkan compute. The immediate blocker is log-row emission/counter labeling in the Windows upstream verifier path, not Android/Thor and not GPU fast mode.
+- Classification: `hardware-lane-tooling`, `verify-logrow-parser`, `strict-gate-failed-missing-row`, `stackable-cpu-pressure-plan`, `gpu-offload-parked`, `not-speed`.
+- Speed accounting: confirmed speed increase remains `0%`; no field + Options/menu + first-battle A/B proof was run or claimed.
+- Next narrow action: add or isolate the Windows upstream parseable notice row for `hle_mode=contract-25cc-9e4000`, then rerun field/Options/first-battle verifier captures under strict parser gates before any bodyfast/codegen-fast/Vulkan mode.

@@ -2,10 +2,13 @@ param(
     [string]$LogPath = "",
     [string[]]$InputLine = @(),
     [string]$SchemaPath = "spu-contracts\BLUS30161\verify-logrow-implementation.json",
+    [string]$PromotionScorePath = "spu-contracts\BLUS30161\promotion-score.json",
     [string]$OutJson = "",
     [string]$OutMarkdown = "",
     [switch]$RequireAcceptedRow,
     [switch]$RequireNoRejected,
+    [switch]$RequirePromotionScore,
+    [switch]$RequireCpuHleRecommendation,
     [Int64]$MinContractHits = 0,
     [switch]$FailOnGate
 )
@@ -52,6 +55,13 @@ $prefix = [string]$schema.target_log_row.prefix
 $expectedHleMode = [string]$schema.target_log_row.hle_mode
 $expectedContractId = [string]$schema.contract_id
 $requiredKeys = @($schema.target_log_row.format_keys)
+
+$promotionFullPath = Resolve-RepoPath $PromotionScorePath
+$promotionRow = $null
+if (Test-Path -LiteralPath $promotionFullPath -PathType Leaf) {
+    $promotionScore = Get-Content -Raw -LiteralPath $promotionFullPath | ConvertFrom-Json
+    $promotionRow = @($promotionScore.rows | Where-Object { [string]$_.contract_id -eq $expectedContractId } | Select-Object -First 1)
+}
 
 $lines = New-Object System.Collections.Generic.List[string]
 foreach ($line in $InputLine) {
@@ -177,7 +187,26 @@ if ($lines.Count -eq 0) {
     }
 }
 
-$strictRequested = $RequireAcceptedRow -or $RequireNoRejected -or ($MinContractHits -gt 0)
+$promotionAvailable = [bool]$promotionRow
+$result | Add-Member -NotePropertyName promotion_score_available -NotePropertyValue $promotionAvailable
+$result | Add-Member -NotePropertyName promotion_score_source -NotePropertyValue $promotionFullPath
+if ($promotionRow) {
+    $result | Add-Member -NotePropertyName recommended_lane -NotePropertyValue ([string]$promotionRow.recommended_lane)
+    $result | Add-Member -NotePropertyName cpu_hle_score -NotePropertyValue ([int]$promotionRow.cpu_hle_score)
+    $result | Add-Member -NotePropertyName host_simd_score -NotePropertyValue ([int]$promotionRow.host_simd_score)
+    $result | Add-Member -NotePropertyName vulkan_gpu_score -NotePropertyValue ([int]$promotionRow.vulkan_gpu_score)
+    $result | Add-Member -NotePropertyName readback_risk -NotePropertyValue ([string]$promotionRow.readback_risk)
+    $result | Add-Member -NotePropertyName rsx_destination_evidence -NotePropertyValue ([string]$promotionRow.rsx_destination_evidence)
+} else {
+    $result | Add-Member -NotePropertyName recommended_lane -NotePropertyValue "unknown"
+    $result | Add-Member -NotePropertyName cpu_hle_score -NotePropertyValue 0
+    $result | Add-Member -NotePropertyName host_simd_score -NotePropertyValue 0
+    $result | Add-Member -NotePropertyName vulkan_gpu_score -NotePropertyValue 0
+    $result | Add-Member -NotePropertyName readback_risk -NotePropertyValue "unknown"
+    $result | Add-Member -NotePropertyName rsx_destination_evidence -NotePropertyValue "unknown"
+}
+
+$strictRequested = $RequireAcceptedRow -or $RequireNoRejected -or $RequirePromotionScore -or $RequireCpuHleRecommendation -or ($MinContractHits -gt 0)
 $strictFailures = New-Object System.Collections.Generic.List[string]
 if ($RequireAcceptedRow -and $result.accepted_rows -lt 1) {
     $strictFailures.Add("accepted_rows_lt_1") | Out-Null
@@ -193,6 +222,12 @@ if ($strictRequested -and ([Int64]$result.total_output_mismatch -ne 0)) {
 }
 if ($strictRequested -and ([Int64]$result.total_desc_overflow -ne 0)) {
     $strictFailures.Add("desc_overflow_nonzero") | Out-Null
+}
+if ($RequirePromotionScore -and -not $promotionAvailable) {
+    $strictFailures.Add("promotion_score_missing") | Out-Null
+}
+if ($RequireCpuHleRecommendation -and ([string]$result.recommended_lane -ne "verify-only-cpu-hle-or-codegen")) {
+    $strictFailures.Add("recommended_lane_not_cpu_hle_or_codegen:$($result.recommended_lane)") | Out-Null
 }
 $strictGatePass = $strictRequested -and ($strictFailures.Count -eq 0)
 $result | Add-Member -NotePropertyName strict_gate_requested -NotePropertyValue $strictRequested
@@ -224,6 +259,13 @@ if (-not [string]::IsNullOrWhiteSpace($OutMarkdown)) {
     $md.Add("- Total bytes: $bt$($result.total_contract_bytes)$bt") | Out-Null
     $md.Add("- Output mismatch: $bt$($result.total_output_mismatch)$bt") | Out-Null
     $md.Add("- Descriptor overflow: $bt$($result.total_desc_overflow)$bt") | Out-Null
+    $md.Add("- Promotion score available: $bt$($result.promotion_score_available)$bt") | Out-Null
+    $md.Add("- Recommended lane: $bt$($result.recommended_lane)$bt") | Out-Null
+    $md.Add("- CPU/HLE score: $bt$($result.cpu_hle_score)$bt") | Out-Null
+    $md.Add("- Host SIMD score: $bt$($result.host_simd_score)$bt") | Out-Null
+    $md.Add("- Vulkan/GPU score: $bt$($result.vulkan_gpu_score)$bt") | Out-Null
+    $md.Add("- Readback risk: $bt$($result.readback_risk)$bt") | Out-Null
+    $md.Add("- RSX destination evidence: $bt$($result.rsx_destination_evidence)$bt") | Out-Null
     $md.Add("- Strict gate requested: $bt$($result.strict_gate_requested)$bt") | Out-Null
     $md.Add("- Strict gate pass: $bt$($result.strict_gate_pass)$bt") | Out-Null
     $md.Add("") | Out-Null
