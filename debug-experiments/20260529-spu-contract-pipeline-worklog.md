@@ -10402,3 +10402,23 @@ ot-speed. No 200% claim: this does not include field+Options+first-battle proof 
 - Reservation/GPU counters: GPU summary emitted MFC dynamic `1207`, MFC list transfer `800`, MFC wait `1343`, MFC wait exact-PC `64496`, reservation-loop command records `1343`, reservation-loop command exact-PC records `36041`, reservation-loop verify records `4520`, RDCH join `3`, lane join `3`, raw-lane `8`, RSX-local traffic `0`, offload fit `too-small=619, spu-kernel-hle=588`. Manual RPCS3.log pass counted reservation command rows `1343`, reservation command exact-PC rows `36041`, reservation verify rows `1343`, reservation verify lane rows `3177`. These counters are invalid for speed/HLE promotion because this was a menu inventory only.
 - Classification: `route-tooling`, `save-list-inventory`, `targeting-repair-evidence`, `valid-target-row-at-initial-load-list`, `down-drift-to-empty-rows`, `reservation-counters-invalid`, `not-speed`. No 200 percent proof, no Windows micro-win, and no first-battle proof.
 - Conclusion: no speed increase. The next narrow route repair should stop the state-aware pre-gate Up/Down normalization from moving off the initial Path-to-Tenuto row; prove the initial row with the repaired gate, then slot-confirm only from that row before any movement or fast path.
+
+## 2026-06-02T22:01:06-04:00 - loader control still lands on Debug Save load screen
+
+Refiner decision: run a no-movement Windows loader/control with `CleanAfterField` to regain a valid field baseline before touching any fast path.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160 -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 8
+```
+
+Run: `debug-captures/windows-lab/20260602-215138-cpu4-loader-control-visualgate-windows-windows`.
+
+Result: visual gate failed, so this is not a valid field baseline and not a speed result. The gate summary reported `NO_FIELD_LIKE_SCREENSHOT`, first field-like screenshot `none`, required field-like at or before `160s` failed, and all 10 screenshots classified as `wrong-window-or-other-small-png`. The checked visual sample `screenshots/screenshot-0190s.png` is still the `Load` screen on `Save File 01 / Debug Save / Prologue` with damaged-save rows, not gameplay. Title-bar FPS samples (`39.58` at 117s, `59.94` at 150s, `43.69` at 190s) are menu-only evidence and cannot be counted as speed.
+
+Verification: exact fatal scan found no RPCS3 `F` crash prefix or fatal exception; normal config lines such as `F: 0x40000` were ignored. Host contention stayed clean across prelaunch, postlaunch, periodic samples, and postrun. SPU HLE verifier records were `0`. Reservation-loop evidence exists but is invalid for speed because visuals never reached field: MFC dynamic `1357`, MFC list transfer `836`, MFC wait `1561`, MFC wait exact-PC `74110`, reservation command `1561`, reservation command exact-PC `41514`, reservation verify `5213`, lane-join `3`, raw-lane `8`. RSX-local traffic records remained `0`; offload fit mix was `too-small=682, spu-kernel-hle=675`; observed DMA was `1,318.68 MB`.
+
+Classification: `route-tooling`, `loader-control-visualgate-fail`, `debug-save-selected`, `damaged-save-screen`, `no-field-baseline`, `reservation-counters-invalid`, `not-speed`.
+
+Conclusion: no speed increase. The route is still selecting or returning to the Debug Save/damaged load path, so the next non-duplicative step should repair the load-row target and prove the initial `Path to Tenuto / South Section` row before any movement or fast-path experiment.
