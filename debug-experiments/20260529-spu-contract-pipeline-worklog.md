@@ -10470,3 +10470,27 @@ Reservation/GPU counters: GPU summary emitted MFC dynamic `2124`, MFC list trans
 Classification: `route-tooling`, `initial-row-gate-live-pass`, `confirm-dialog-yes-selected`, `load-complete-dialog-stuck`, `no-field-baseline`, `reservation-counters-invalid`, `not-speed`.
 
 Conclusion: no speed increase. The route now reaches the load confirmation and completes the load, but needs an additional post-`Load complete.` dismiss before it can become a valid no-movement field baseline. Next narrow step should add only that post-load-complete `Cross`/dismiss proof before movement, first battle, SPU fast path, RSX/GPU path, or 200% claims.
+
+## 2026-06-02T23:37:33-04:00 - post-Load-complete dismiss restores no-movement field baseline
+
+Refiner decision: run a no-movement Windows loader/control with `CleanAfterField` to regain a valid field baseline. Because the latest non-duplicative route evidence showed the route reached `Load complete.` but stayed on the Load screen, this step kept the same no-movement field-baseline objective and added exactly one route repair: press `Cross` once after the `Load complete.` dialog before checking for field. No movement, Android, ADB, Thor, HLE fast path, RSX/GPU fast path, Options/menu route, or first-battle route was run.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-initialrow-postload-dismiss-nomove-field-reproof-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 335 -InputMacro "wait:65000;shot:title-settle-postload-dismiss;down:160;wait:900;shot:title-load-selected-postload-dismiss;cross:120;wait:60000;shot:load-list-initial-before-postload-dismiss;gate_load_target:30000;shot:path-target-before-postload-dismiss;cross:120;wait:3000;up:120;wait:500;shot:yes-confirm-before-load;cross:160;wait:125000;shot:load-complete-before-dismiss;cross:160;wait:45000;shot:post-dismiss-field-candidate;wait:45000;shot:post-dismiss-late-field" -MaxSeconds 365 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 18 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Run: `debug-captures/windows-lab/20260602-232053-cpu4-initialrow-postload-dismiss-nomove-field-reproof-windows-windows`.
+
+Result: field baseline restored. The outer shell timed out after `900s` during post-run cleanup, after RPCS3 had already been stopped at the `365s` run limit, so no visual-gate or GPU-summary markdown was emitted. Manual verification showed no RPCS3 process remained and artifacts/logs were complete enough for screenshot and counter checks.
+
+Screenshot/load-target verification: live load-target gate passed on attempt 1 with `PATH_TO_TENUTO_PRESENT`; counts were `path-to-tenuto=2`, `debug-save-prologue=0`, `empty-load-slot=0`, `black-overlay-or-crash=0`, `unknown=2`, and lower-row cursor markers `0`. `screenshots/screenshot-0263s-load-complete-before-dismiss.png` shows `Load complete.` on the Load screen. After the extra `Cross`, `screenshots/screenshot-0309s-post-dismiss-field-candidate.png` and `screenshots/screenshot-0354s-post-dismiss-late-field.png` both show clean Path-to-Tenuto field gameplay with Polka standing in the field. This is no-movement field proof only; it does not include Options/menu or first-battle proof.
+
+Fatal/log verification: exact fatal/access-violation/VK_ERROR/device-lost/unhandled-exception/assert/unknown-STOP/crash scan was clean; stdout and stderr were empty. Host contention stayed clean across `5` snapshots. SPU verifier rows were `0` because `EternalSonataSpuHleVerify` was intentionally off for this route-control proof.
+
+Reservation-loop counter verification from `RPCS3.log`: MFC dynamic `2849`, MFC list transfer `1646`, MFC wait `3193`, MFC wait exact-PC `158555`, reservation-loop command `3192`, reservation-loop command exact-PC `85720`, reservation-loop verify `3192`, reservation-loop lane rows `7614`, SPU verifier rows `0`, RSX-local lines `0`. These counters are valid as route/control evidence but are not speed/HLE promotion evidence because the run did not include Options/menu and first-battle correctness proof.
+
+Classification: `valid-field-triage`, `route-tooling`, `initial-row-gate-live-pass`, `load-complete-dismiss-repaired`, `no-movement-field-baseline`, `reservation-counters-present`, `not-speed`.
+
+Conclusion: no speed increase. The no-movement field baseline is restored by adding a post-`Load complete.` `Cross` dismiss. Next narrow route step can use this repaired baseline before attempting any movement or first-battle route, but speed/HLE/RSX promotion still requires field plus Options/menu plus first-battle proof.
