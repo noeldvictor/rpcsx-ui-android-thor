@@ -10422,3 +10422,27 @@ Verification: exact fatal scan found no RPCS3 `F` crash prefix or fatal exceptio
 Classification: `route-tooling`, `loader-control-visualgate-fail`, `debug-save-selected`, `damaged-save-screen`, `no-field-baseline`, `reservation-counters-invalid`, `not-speed`.
 
 Conclusion: no speed increase. The route is still selecting or returning to the Debug Save/damaged load path, so the next non-duplicative step should repair the load-row target and prove the initial `Path to Tenuto / South Section` row before any movement or fast-path experiment.
+
+## 2026-06-02T22:32:08-04:00 - initial-row gate passes but slot confirm stays on Load screen
+
+Refiner decision: run a no-movement Windows loader/control with `CleanAfterField` to regain a valid field baseline. To avoid duplicating the immediately previous stock loader-control failure on `Debug Save / Prologue`, this step kept the same no-movement baseline goal but used an explicit initial-row route repair: select `LOAD`, wait for the initial Load-list row, require `PATH_TO_TENUTO_PRESENT`, then slot-confirm from that row with no movement or fast path.
+
+Command:
+
+```powershell
+.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-initialrow-gated-nomove-field-reproof-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -EternalSonataGpuProbe Profile -WindowsHostContentionGate ExternalFail -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 220 -InputMacro "wait:65000;shot:title-settle-initialrow;down:160;wait:900;shot:title-load-selected-initialrow;cross:120;wait:60000;shot:load-list-initial-before-gate;gate_load_target:30000;shot:path-target-before-slot;cross:120;wait:600;cross:600;wait:85000;shot:field-arrival-initialrow;wait:45000;shot:field-late-initialrow" -MaxSeconds 270 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 120 -ScreenshotMaxCount 12 -HostSampleSeconds 1 -HostSampleEverySeconds 30
+```
+
+Run: `debug-captures/windows-lab/20260602-222054-cpu4-initialrow-gated-nomove-field-reproof-windows-windows`.
+
+Result: route target repair partially worked, but the field baseline was not regained. The shell timed out after `600s` during post-run cleanup even though RPCS3 had already been stopped at the `270s` run limit; no RPCS3 process remained. Because the wrapper timeout skipped `eternal-sonata-windows-visual-gate-summary.md` and GPU summary generation, verification below is from manual screenshots and a direct `RPCS3.log` counter pass.
+
+Screenshot/load-target verification: `screenshots/screenshot-0130s-load-list-initial-before-gate.png` visibly shows the desired top row, `Save File 01 / Path to Tenuto / South Section / Ch. 1 Raindrops`, with lower rows `File does not exist.` The live load-target gate passed on attempt 1 with status `PATH_TO_TENUTO_PRESENT`; counts were `path-to-tenuto=2`, `debug-save-prologue=0`, `empty-load-slot=0`, `black-overlay-or-crash=0`, `unknown=2`, and lower-row cursor markers `0`. The late samples `screenshots/screenshot-0229s-field-arrival-initialrow.png` and `screenshots/screenshot-0275s-field-late-initialrow.png` still show the same Load screen, not Path-to-Tenuto field gameplay. Title-bar FPS samples around `43-48 FPS` are menu-only evidence and cannot count as speed.
+
+Fatal/log verification: exact fatal/access-violation/VK_ERROR/device-lost/unhandled-exception/assert/unknown-STOP/crash scan was clean; stdout and stderr were empty. Host contention stayed clean across prelaunch, postlaunch, runtime, and postrun snapshots. SPU verifier rows were `0` because `EternalSonataSpuHleVerify` was intentionally off for this route-control reproof.
+
+Reservation-loop counter verification from `RPCS3.log`: MFC dynamic `2093`, MFC list transfer `1265`, MFC wait `2331`, MFC wait exact-PC `114180`, reservation-loop command `2331`, reservation-loop command exact-PC `62627`, reservation-loop verify `2331`, reservation-loop lane rows `5545`, SPU verifier rows `0`, RSX-local lines `0`. These counters are invalid for speed/HLE promotion because the run never reached field gameplay.
+
+Classification: `route-tooling`, `initial-row-gate-live-pass`, `slot-confirm-no-load`, `load-screen-stuck`, `no-field-baseline`, `reservation-counters-invalid`, `not-speed`.
+
+Conclusion: no speed increase. The current route can prove the initial Path-to-Tenuto row without drifting to lower rows, but the slot-confirm sequence does not leave the Load screen. The next narrow step should inspect or alter the slot-confirm/load activation sequence from this proven initial row before any movement, first-battle route, SPU fast path, RSX/GPU path, or 200% claim.
