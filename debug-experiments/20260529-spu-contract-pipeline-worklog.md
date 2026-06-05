@@ -1,3 +1,20 @@
+# 2026-06-05 15:24 ET - Up-repair target diagnostic stays on Debug Save damaged row (no speed)
+
+- Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane, heartbeat `2026-06-05T19:23:56.405Z`.
+- Refiner: `2026-06-05T15:24:18.4302464-04:00`; decision was to stop route retries/speed toggles and run only the stable-load-list Up-repair target diagnostic. It explicitly warned not to press the slot `Cross` unless `PATH_TO_TENUTO_PRESENT` was proved.
+- Core identity: Windows RPCS3 0.0.41 build from `rpcs3-upstream\build-msvc\bin\rpcs3.exe`; title samples reported `0.0.41-595`.
+- Command: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -WindowsVisualGate Off -InputMacro "wait:65000;shot:title-settle-before-uprepair;down:160;wait:900;shot:title-after-down160-uprepair;cross:120;wait:30000;shot:load-list-before-uprepair;up:100;wait:700;shot:load-list-uprepair-up1;up:100;wait:700;shot:load-list-uprepair-up2;up:100;wait:700;shot:load-list-uprepair-up3;up:100;wait:700;shot:load-list-uprepair-up4;up:100;wait:700;shot:load-list-uprepair-up5;gate_load_target:30000;shot:path-target-after-uprepair" -MaxSeconds 165 -ScreenshotEverySeconds 0 -ScreenshotStartSeconds 0 -ScreenshotMaxCount 0 -HostSampleSeconds 1 -HostSampleEverySeconds 30`.
+- Run directory: `debug-captures/windows-lab/20260605-152433-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-loadlist-uprepair-target-diagnostic-windows`.
+- Load-target gate: failed at `107s` and correctly aborted before slot `Cross`; marker said `expected only Path to Tenuto, got DEBUG_SAVE_PROLOGUE_PRESENT`.
+- Manual screenshot verification: `screenshot-0100s-load-list-before-uprepair.png` and `screenshot-0107s-load-target-gate.png` both show `Save File 01 / Debug Save / Prologue / Lv.00 / Time 00:00:00` selected, with two visible `Save file has been damaged.` rows. The five `Up` pulses did not recover a Path-to-Tenuto row in this timing state.
+- Visual status: visual gate was intentionally off for this target-only diagnostic. No field, Options/menu, battle, or movement screenshots were produced.
+- Fatal/log verification: targeted scan found `0` real `VM: Access violation`, `VK_ERROR`, device-lost, unhandled, unknown STOP, assertion, verification-failed, verifier-mismatch, output-mismatch, or dynamic-fail lines. `rpcs3.stdout.txt` length `0`; `rpcs3.stderr.txt` length `73` with only the MIDI-input warning.
+- Host verification: clean across prelaunch, postlaunch, and postrun; no competing emulator or heavy host load.
+- GPU/counter verification: GPU probe records `900`; total observed DMA `920.29 MB`; offload fit mix `spu-kernel-hle=464`, `too-small=436`; largest DMA candidates stayed SPU-side at `0x451c` and `0x25cc/0x9e4000`. `RSX-local traffic=0`, `New promoted CPU/SPU=0`, SPU verifier rows `0`, contract verifier rows `0`, and reservation-loop verifier rows `0`; the run does not advance GPU-feed/offload.
+- Classification: `failed-load-target-gate`, `debug-save-prologue-route-miss`, `damaged-save-selected-row`, `route-tooling`, `gpu-offload-parked`, `not-speed`.
+- Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
+- Next hypothesis: Up-repair is not the right correction for the current timing state. The route needs a target-only selected-row diagnostic that either scrolls to the visible `Save File 04 / Path to Tenuto` row from the damaged top row, or captures enough load-list frames to map selected-row movement before any slot confirm, verifier, bodyfast/codegen-fast, Vulkan/compute, or RSX experiment resumes.
+
 # 2026-06-05 14:55 ET - no-movement long-gate aborts on damaged-marker false block over visible Path row (no speed)
 
 - Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane, heartbeat `2026-06-05T18:53:55.878Z`.
