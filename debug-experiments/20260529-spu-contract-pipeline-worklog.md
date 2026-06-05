@@ -11006,3 +11006,20 @@ ot-speed.
 - Classification: `valid-field-triage`, `route-recovery-after-damaged-diag`, `cpu-spu-pressure-plan-unblocked`, `gpu-offload-parked`, `not-speed`.
 - Speed status: `0%` confirmed increase. Field-only overlay FPS is not accepted; no Options/menu plus first-battle A/B proof exists.
 - Next hypothesis: this restores the route enough to retry a verify-only `Verify25ccShadow` field capture or add a load-target/damaged-save guard before any diagonal pulse. Continue to keep HLE bodyfast/GPU/Vulkan modes blocked until field + Options/menu + first-battle verifier captures pass.
+
+## 2026-06-05 11:54 ET - Verify25ccShadow state-aware capture passes parser but fails visual gate (no speed)
+
+- Automation: `ps3-200-windows-speed-loop` hardware-acceleration lane.
+- Refiner: `2026-06-05T11:53:50.1210357-04:00`; recommended repeating the newest valid state-aware field route. To avoid a duplicate route-only proof, this heartbeat kept the same safe route shape but enabled verify-only `Verify25ccShadow`; no bodyfast, codegen-fast, Vulkan/GPU, Android, ADB, or Thor run was used.
+- Command: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-verify25cc-shadow-stateaware-field-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160`.
+- Run directory: `debug-captures/windows-lab/20260605-115427-cpu4-verify25cc-shadow-stateaware-field-visualgate-windows-windows`.
+- Visual gate: `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot `none`; required field-like by `160s` failed; 3/3 screenshots classified `wrong-window-or-other-small-png`.
+- Manual screenshot check: `screenshot-0119s.png` and `screenshot-0135s-01.png` both show the Eternal Sonata Load prompt (`Load data from this file. Proceed?`) over the save list, not Path-to-Tenuto field gameplay.
+- Fatal/log verification: targeted scan found no real crash/access/device-lost/assertion/verification failure. The matching `RPCS3.log` lines were startup/config/VFS path lines only; stdout/stderr did not report a crash.
+- Host verification: clean across 4 snapshots (`prelaunch`, `postlaunch`, `sample-0135s`, `postrun`); no competing emulator or heavy host load. Config DB refresh timed out before launch but cached BLUS30161 config was present.
+- SPU verifier/parser result: SPU HLE verifier records `693`; strict parser rows `296`; accepted rows `296`; rejected rows `0`; total contract hits `629`; total contract bytes `10,305,536`; output mismatch `0`; descriptor overflow `0`; strict gate pass `true`.
+- Promotion-score lane: promotion score available; recommendation `verify-only-cpu-hle-or-codegen`; CPU/HLE score `10`; host SIMD score `9`; Vulkan/GPU score `4`; readback risk `high`; RSX destination evidence `none-observed`.
+- Reservation/GPU counters: reservation-loop command records `736`; exact-PC records `20063`; verify records `2529`; RDCH join `3`; lane-join `3`; raw-lane `8`; PUTLLC16 analyzer `43`; total observed DMA `827.97 MB`; offload fit mix `spu-kernel-hle=415`, `too-small=278`; RSX-local traffic `0 B`; new promoted CPU/SPU -> GPU replacement `0 B`.
+- Classification: `verify-logrow-progress`, `strict-parser-pass`, `failed-visual-gate`, `load-prompt-stall`, `stackable-cpu-pressure-plan`, `gpu-offload-parked`, `not-speed`.
+- Speed status: `0%` confirmed increase. Load-prompt FPS and clean verifier rows are not accepted without field + Options/menu + first-battle A/B proof.
+- Next hypothesis: the `Verify25ccShadow` CPU/HLE contract lane is parser-clean but still route-blocked. Add or use a load-prompt dismiss/target guard so the verify capture reaches clean field before trying Options/menu, first-battle, bodyfast/codegen-fast, or Vulkan modes.
