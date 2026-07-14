@@ -1,5 +1,6 @@
 param(
     [string]$Package = "net.rpcsx.easy",
+    [string]$Serial = "",
     [string]$Label = "dev-core",
     [string]$CoreName = "librpcsx-android.so",
     [string]$GradleTask = ":app:buildCMakeRelWithDebInfo[arm64-v8a]",
@@ -21,6 +22,44 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -Er
 
 $RepoRoot = Get-ThorRepoRoot
 $Adb = Resolve-ThorAdb
+
+function Resolve-DevCoreDeviceSerial {
+    $requestedSerial = $Serial
+    if ([string]::IsNullOrWhiteSpace($requestedSerial)) {
+        $requestedSerial = $env:ANDROID_SERIAL
+    }
+
+    $deviceRows = @(& $Adb devices 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb devices failed: $($deviceRows -join ' ')"
+    }
+
+    $onlineSerials = @(
+        $deviceRows |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object { $_ -match '^(\S+)\s+device$' } |
+            ForEach-Object { $Matches[1] }
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($requestedSerial)) {
+        if ($requestedSerial -notin $onlineSerials) {
+            throw "Requested Android device '$requestedSerial' is not online. Online devices: $($onlineSerials -join ', ')"
+        }
+        return $requestedSerial
+    }
+
+    if ($onlineSerials.Count -eq 1) {
+        return $onlineSerials[0]
+    }
+    if ($onlineSerials.Count -eq 0) {
+        throw "No online Android device found."
+    }
+
+    throw "Multiple Android devices are online: $($onlineSerials -join ', '). Pass -Serial or set ANDROID_SERIAL before building or pushing."
+}
+
+$DeviceSerial = Resolve-DevCoreDeviceSerial
+$AdbTargetArgs = @("-s", $DeviceSerial)
 $safeLabel = New-ThorSafeLabel $Label
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $outRoot = Join-Path $RepoRoot "debug-captures"
@@ -89,7 +128,7 @@ function Invoke-DevCoreRunAs {
 
     $appDataDir = "/data/data/$Package"
     $escapedCommand = "cd $appDataDir && $Command" -replace "'", "'\''"
-    & $Adb shell "run-as $Package sh -c '$escapedCommand'"
+    & $Adb @AdbTargetArgs shell "run-as $Package sh -c '$escapedCommand'"
 }
 
 function Test-DevCoreDebugTask {
@@ -190,12 +229,12 @@ if ($ResetToBundled) {
     Write-DevCoreLog "# Reset Thor dev core override"
     Assert-DevCoreCommand "remove active dev-core markers" {
         Invoke-DevCoreRunAs "rm -f $internalRelativeDir/active-core.path $internalRelativeDir/active-core.json $internalRelativeDir/$CoreName"
-        & $Adb shell "rm -f '$StagingDir/active-core.path' '$StagingDir/active-core.json'"
+        & $Adb @AdbTargetArgs shell "rm -f '$StagingDir/active-core.path' '$StagingDir/active-core.json'"
     }
     if (-not $NoLaunch) {
         Assert-DevCoreCommand "relaunch app" {
-            & $Adb shell am force-stop $Package
-            & $Adb shell monkey -p $Package 1
+            & $Adb @AdbTargetArgs shell am force-stop $Package
+            & $Adb @AdbTargetArgs shell monkey -p $Package 1
         }
     }
     Write-Host "Thor dev core override reset. Log: $logPath"
@@ -205,11 +244,16 @@ if ($ResetToBundled) {
 Write-DevCoreLog "# Thor dev core build/push"
 Write-DevCoreLog "- Started: $(Get-Date -Format o)"
 Write-DevCoreLog "- Package: $Package"
+Write-DevCoreLog "- Device serial: $DeviceSerial"
 Write-DevCoreLog "- Staging dir: $StagingDir"
 Write-DevCoreLog "- Internal core: $internalCorePath"
 Write-DevCoreLog "- Gradle task: $GradleTask"
 Write-DevCoreLog "- Build policy: RelWithDebInfo is the promoted speed baseline; Debug native cores require -AllowDebugFallback and are debug-only evidence."
 Write-DevCoreLog "- Repo: $(Get-DevCoreGitText @('rev-parse', '--short', 'HEAD'))"
+
+Assert-DevCoreCommand "verify package run-as access" {
+    Invoke-DevCoreRunAs "test -d ."
+}
 
 if (-not $NoBuild) {
     Invoke-DevCoreBuild
@@ -248,28 +292,34 @@ Write-DevCoreLog "- Staged core: $stagedCorePath"
 Write-DevCoreLog "- Active internal core: $internalCorePath"
 
 Assert-DevCoreCommand "push core and markers" {
-    & $Adb shell "mkdir -p '$StagingDir'"
-    & $Adb push $core.FullName $stagedCorePath
-    & $Adb push $localPathMarker "$StagingDir/active-core.path"
-    & $Adb push $localManifest "$StagingDir/active-core.json"
+    & $Adb @AdbTargetArgs shell "mkdir -p '$StagingDir'"
+    & $Adb @AdbTargetArgs push $core.FullName $stagedCorePath
+    & $Adb @AdbTargetArgs push $localPathMarker "$StagingDir/active-core.path"
+    & $Adb @AdbTargetArgs push $localManifest "$StagingDir/active-core.json"
     Invoke-DevCoreRunAs "mkdir -p $internalRelativeDir && cp $stagedCorePath $internalRelativeDir/$CoreName && cp $StagingDir/active-core.path $internalRelativeDir/active-core.path && cp $StagingDir/active-core.json $internalRelativeDir/active-core.json && chmod 700 $internalRelativeDir $internalRelativeDir/$CoreName && chmod 600 $internalRelativeDir/active-core.path $internalRelativeDir/active-core.json"
 }
 
 Assert-DevCoreCommand "verify remote core" {
-    & $Adb shell "ls -l '$stagedCorePath' '$StagingDir/active-core.path' '$StagingDir/active-core.json'"
+    & $Adb @AdbTargetArgs shell "ls -l '$stagedCorePath' '$StagingDir/active-core.path' '$StagingDir/active-core.json'"
     Invoke-DevCoreRunAs "ls -l $internalRelativeDir/$CoreName $internalRelativeDir/active-core.path $internalRelativeDir/active-core.json"
 }
 
 if (-not $NoLaunch) {
     Assert-DevCoreCommand "relaunch app" {
-        & $Adb shell am force-stop $Package
-        & $Adb shell monkey -p $Package 1
+        & $Adb @AdbTargetArgs shell am force-stop $Package
+        & $Adb @AdbTargetArgs shell monkey -p $Package 1
     }
 }
 
 if (-not $NoStream) {
     Assert-DevCoreCommand "start OODA stream without APK reinstall" {
-        & "$PSScriptRoot\thor_ooda.ps1" -Action Start -NoBuildInstall -Profile $Profile -Label $safeLabel
+        $previousSerial = $env:ANDROID_SERIAL
+        try {
+            $env:ANDROID_SERIAL = $DeviceSerial
+            & "$PSScriptRoot\thor_ooda.ps1" -Action Start -NoBuildInstall -Profile $Profile -Label $safeLabel
+        } finally {
+            $env:ANDROID_SERIAL = $previousSerial
+        }
     }
 }
 
@@ -278,6 +328,7 @@ if (-not $NoStream) {
     "",
     "- Pushed: $(Get-Date -Format o)",
     "- Package: $Package",
+    "- Device serial: $DeviceSerial",
     "- Local core: $($core.FullName)",
     "- Staged core: $stagedCorePath",
     "- Active internal core: $internalCorePath",
@@ -290,7 +341,7 @@ if (-not $NoStream) {
     "Reset with:",
     "",
     '```powershell',
-    ".\tools\build_push_thor_core.ps1 -ResetToBundled",
+    ".\tools\build_push_thor_core.ps1 -Serial $DeviceSerial -ResetToBundled",
     '```'
 ) | Set-Content -LiteralPath (Join-Path $logDir "README.md") -Encoding UTF8
 

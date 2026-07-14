@@ -446,3 +446,59 @@ Reading: this is another compile-proven ARM64 codegen candidate, not a measured
 speed win. It should be validated together with the preceding I8MM, WFE,
 ROTQBY/TBL1, and USHL changes in one short cool-device field run before any
 additional broad JIT or synchronization backports are stacked.
+
+## 2026-07-14 Cool-Device Boot Check and ARM64 Verification Follow-Up
+
+Status: `boot-only-new-core-compile-proven`.
+
+Short Thor validation of the previously consolidated core:
+
+- Installed the profile-v13 debuggable loader and activated consolidated core
+  SHA256 `170947B2108A4D41873CE6D13C1BC49E4E574255876C11D8714E9A2E7066DC3F`.
+- Moved only the five `BLUS30161` generated `spu-*.dat` files to the reversible
+  device backup
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/codex-cache-backups/20260714-1728-arm64-codegen-validation/`
+  before launch.
+- Capture directories:
+  `debug-captures/android-speed-sprint/20260714-172856-thor-input-custom/`
+  and
+  `debug-captures/android-speed-sprint/20260714-172941-thor-input-custom/`.
+- The app ran for under one minute, produced black boot frames at both sampled
+  points, and was force-stopped. Logcat confirmed the internal dev-core override,
+  profile-v13 application, and Adreno Vulkan initialization, with no fatal,
+  `SIGSEGV`, or `VK_ERROR` in the sampled log. This did not reach field, menu, or
+  battle and therefore is not a speed, correctness, or flicker pass.
+- Thor battery temperature remained `25.0 C` before and after, and Android
+  thermal status remained `0`. No screen recording, Perfetto, or sustained load
+  was used.
+
+Upstream ARM64 verification/codegen follow-up:
+
+- Backported upstream RPCS3 `ed14554` for NEON multiply-accumulate SPU runtime
+  data comparisons and the AArch64 dot-product verification lane.
+- Backported upstream RPCS3 `35f65c2` so large safe-mode SPU integrity checks use
+  four 128-bit AArch64 accumulators and the `add(uabd)` pattern LLVM selects as
+  `UABA`, instead of emulating a 512-bit checksum through generic vectors.
+- Backported upstream RPCS3 `fa5b899` so the dot-product verification result is
+  reduced with AArch64 `UADDV` before the expected-value comparison.
+- Improved `tools/build_push_thor_core.ps1`: it now resolves and pins exactly one
+  device (or accepts `-Serial`), rejects ambiguous/offline targets before build,
+  and verifies `run-as` access before compiling or uploading the large core.
+  The multiple-device rejection, PowerShell parser, and an explicit-serial
+  successful `run-as` preflight were smoke-tested without launching RPCSX or
+  pushing a core.
+
+Local build proof:
+
+- Command:
+  `.\gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon`
+- Result: success in `102.3s`; only existing LLVM/libc++ deprecation warnings.
+- Native core SHA256:
+  `350E2F75C9062477A05854BD9E363E730197C0025361B3F16E46795BC27EC038`.
+- Deployment of this newer core: none. The Thor remains force-stopped with the
+  preceding `170947...DC3F` core active.
+
+Reading: the short device session proves loader/core bring-up only. The new
+verification changes are current-upstream, ARM64-specific, and compile-proven,
+but remain unmeasured. Do not claim a performance or flicker improvement until a
+later cool-device field/menu/battle route validates the new cache and visuals.
