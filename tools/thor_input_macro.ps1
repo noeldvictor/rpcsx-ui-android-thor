@@ -375,6 +375,10 @@ if ($ForceStop -or $BootGame) {
 }
 
 if ($BootGame) {
+    Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "dismiss-keyguard.txt" @("shell", "wm dismiss-keyguard") -AllowFailure | Out-Null
+    Start-Sleep -Milliseconds 500
+
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
     Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath") -AllowFailure | Out-Null
 }

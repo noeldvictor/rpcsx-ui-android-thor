@@ -502,3 +502,76 @@ Reading: the short device session proves loader/core bring-up only. The new
 verification changes are current-upstream, ARM64-specific, and compile-proven,
 but remain unmeasured. Do not claim a performance or flicker improvement until a
 later cool-device field/menu/battle route validates the new cache and visuals.
+
+## 2026-07-14 Cool-Device Field and Menu Validation
+
+Status: `field-menu-pass-battle-pending`.
+
+Deployment and cache state:
+
+- Deployed ARM64 verification core SHA256
+  `350E2F75C9062477A05854BD9E363E730197C0025361B3F16E46795BC27EC038`
+  with the explicit-serial, no-build, no-launch path in
+  `tools/build_push_thor_core.ps1`.
+- Deployment capture:
+  `debug-captures/20260714-190044-thor-arm64-spu-verify-uaba-uaddv-dev-core-push/build-push.txt`.
+- The device-side dev-core SHA256 matched the local core after the run.
+- The prior five generated SPU cache files remain in the reversible backup
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/codex-cache-backups/20260714-1728-arm64-codegen-validation/`.
+  This run started without an active generated SPU cache and produced a fresh
+  `spu-safe-v1-tane.dat`.
+
+Launcher correction:
+
+- The first bounded launch stayed black and nearly idle because Android reported
+  `mWakefulness=Asleep` and both displays were off; the native activity had no
+  active surface. This also explains the misleading black boot-only captures in
+  the preceding round.
+- `tools/thor_input_macro.ps1` now sends `KEYCODE_WAKEUP`, dismisses the keyguard,
+  and waits 500 ms before the debug-boot intent. The next launch immediately
+  progressed through Vulkan initialization and normal guest execution.
+
+Bounded visual validation:
+
+- Awake boot captures:
+  `debug-captures/android-speed-sprint/20260714-190731-thor-input-custom/01-boot-awake-30s.png`
+  and
+  `debug-captures/android-speed-sprint/20260714-190828-thor-input-custom/01-boot-awake-60s.png`.
+  The second frame shows the correct Eternal Sonata title at `30.00 FPS`.
+- New-game chapter capture:
+  `debug-captures/android-speed-sprint/20260714-190929-thor-input-custom/01-post-skip.png`.
+  It shows the correct Chapter 1 `Raindrops` splash at `30 FPS`.
+- Field captures:
+  `debug-captures/android-speed-sprint/20260714-191024-thor-input-custom/01-field-candidate.png`
+  and
+  `debug-captures/android-speed-sprint/20260714-191155-thor-input-custom/01-field-second.png`.
+  Both show the correct playable opening forest field at approximately `30 FPS`.
+- Menu capture:
+  `debug-captures/android-speed-sprint/20260714-191155-thor-input-custom/02-menu.png`.
+  It shows the correct pause overlay over the rendered field at `30.00 FPS`.
+- Short movement captures:
+  `debug-captures/android-speed-sprint/20260714-191243-thor-input-custom/01-battle-approach.png`
+  and
+  `debug-captures/android-speed-sprint/20260714-191243-thor-input-custom/02-battle-transition.png`.
+  They show valid moving-field frames with instantaneous overlay samples of
+  `17.74 FPS` and `28.71 FPS`. The route missed the visible enemy and did not
+  enter battle, so these are not first-battle proof.
+- No missing textures, black regions, or obvious flicker appeared in the sampled
+  title, field, movement, and menu frames. Screenshot samples cannot prove the
+  complete absence of temporal flicker.
+
+Safety and error checks:
+
+- The entire awake validation used screenshots only: no screen recording,
+  Perfetto, or sustained profiler.
+- Battery temperature stayed between `23.0 C` and `25.0 C`; Android thermal
+  status stayed `0`. RPCSX was force-stopped after the short battle route missed,
+  and its process was confirmed absent.
+- Final logcat and `RPCSX.log` scans found no fatal exception, fatal signal,
+  `SIGSEGV`, `VK_ERROR`, LLVM error, or SPU verification failure.
+
+Reading: promote this core from boot-only to title/field/menu and moving-field
+correctness pass. Do not claim a performance win because there is no matched A/B,
+and do not claim a complete flicker fix or battle pass. The next device action,
+after another cool-device check, is a short deterministic first-battle route;
+only then should a bounded matched performance comparison be considered.
