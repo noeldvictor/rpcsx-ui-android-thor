@@ -382,3 +382,37 @@ Reading: retain the source changes and successful compile proof, but do not
 classify this round as a speed win or flicker fix yet. Any later validation must
 start only with a cool device and explicit user approval, use a short
 screenshot-only field check first, and avoid sustained profiling or recording.
+
+## 2026-07-14 ARM64 SPU Shuffle and Variable-Shift Follow-Up
+
+Status: `parked-device-validation`.
+
+Source-only follow-up while the Thor remained stopped:
+
+- Backported upstream RPCS3 `2d1be09` so the SPU LLVM byte-rotate and
+  byte-shift family emits AArch64 `TBL` directly instead of passing through the
+  generic x86 `PSHUFB` compatibility lowering and its extra index mask.
+- Added the single-table helper from upstream `dff29a7`. The broader
+  `TBL2`/`TBX2` SHUFB and PPU VPERM conversion was deliberately not ported:
+  upstream needed the much larger `a87d175` JIT retry mechanism for rare
+  AArch64 register-scavenger failures. This round keeps only the safe
+  single-table portion.
+- Backported upstream RPCS3 `18fe6ee` so bounded infinite-precision SPU shifts
+  use the AArch64 `USHL` intrinsic instead of LLVM's select-based poison-value
+  workaround.
+
+Local build proof:
+
+- Command:
+  `.\gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon`
+- Result: success in `102s`; only pre-existing LLVM/libc++ deprecation
+  warnings were emitted.
+- Native core SHA256:
+  `8ED415E408BAA2D44413E0A509EAF4BAD5CC43332C53DA0A241F54987BCA8832`
+- Deployment: none. No ADB, APK install, app launch, capture, or device test was
+  performed.
+
+Reading: this is a compile-proven ARM64 codegen candidate, not a measured speed
+win. It changes generated SPU code, so a later approved cool-device check must
+use a deliberately fresh SPU cache and the normal field/menu/battle correctness
+gates before promotion.
