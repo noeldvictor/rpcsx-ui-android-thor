@@ -3764,6 +3764,18 @@ public:
 		return result;
 	}
 
+	template <typename T1, typename T2, typename T3>
+	value_t<u8[16]> tbx(T1 fallback, T2 a, T3 indices)
+	{
+		value_t<u8[16]> result;
+		const auto v_fallback = fallback.eval(m_ir);
+		const auto data0 = a.eval(m_ir);
+		const auto index = indices.eval(m_ir);
+
+		result.value = m_ir->CreateCall(get_intrinsic<u8[16]>(llvm::Intrinsic::aarch64_neon_tbx1), {v_fallback, data0, index});
+		return result;
+	}
+
 	template <typename T1, typename T2>
 	auto addp(T1 a, T2 b)
 	{

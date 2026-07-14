@@ -6531,6 +6531,42 @@ public:
 		const auto a = get_vr<u8[16]>(op.ra);
 		const auto b = get_vr<u8[16]>(op.rb);
 
+#ifdef ARCH_ARM64
+		// Use only the single-table portion of upstream's ARM64 SHUFB path.
+		// Two-source TBL2/TBX2 remains on the established fallback because some
+		// SPU programs require upstream's larger JIT retry mechanism for it.
+		if (op.ra == op.rb)
+		{
+			if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
+			{
+				if (perm_only)
+				{
+					set_vr(op.rt4, tbl(as, eval(c & 0x0f)));
+					return;
+				}
+
+				const auto x = tbl(build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80), (c >> 4));
+				set_vr(op.rt4, tbx(x, as, eval(c & 0x8f)));
+				return;
+			}
+
+			if (!m_interp_magn)
+			{
+				if (perm_only)
+				{
+					const auto cm = eval(c & 0x0f);
+					set_vr(op.rt4, tbl(a, eval(cm ^ 0x0f)));
+					return;
+				}
+
+				const auto x = tbl(build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80), (c >> 4));
+				const auto cm = eval(c & 0x8f);
+				set_vr(op.rt4, tbx(x, a, eval(cm ^ 0x0f)));
+				return;
+			}
+		}
+#endif
+
 		// Data with swapped endian from a load instruction
 		if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
 		{

@@ -416,3 +416,33 @@ Reading: this is a compile-proven ARM64 codegen candidate, not a measured speed
 win. It changes generated SPU code, so a later approved cool-device check must
 use a deliberately fresh SPU cache and the normal field/menu/battle correctness
 gates before promotion.
+
+## 2026-07-14 ARM64 Single-Table SHUFB/VPERM Follow-Up
+
+Status: `parked-device-validation`.
+
+Continued the safe subset of upstream RPCS3 `dff29a7` while the Thor remained
+stopped:
+
+- Added the AArch64 `TBX1` LLVM helper.
+- Same-source SPU `SHUFB` now uses `TBL1`/`TBX1`, including the encoded fixed
+  value selectors handled by the fallback table.
+- Same-source PPU `VPERM` now uses `TBL1` directly.
+- Two-source SPU `SHUFB` and PPU `VPERM` deliberately retain the existing
+  lowering. No `TBL2`/`TBX2` instruction or JIT retry machinery was added.
+
+Local build proof:
+
+- Command:
+  `.\gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon`
+- Result: success in `96.5s`; only the existing LLVM/libc++ deprecation
+  warnings were emitted.
+- Native core SHA256:
+  `170947B2108A4D41873CE6D13C1BC49E4E574255876C11D8714E9A2E7066DC3F`
+- Deployment: none. No ADB, install, launch, capture, cache mutation, or Thor
+  workload occurred.
+
+Reading: this is another compile-proven ARM64 codegen candidate, not a measured
+speed win. It should be validated together with the preceding I8MM, WFE,
+ROTQBY/TBL1, and USHL changes in one short cool-device field run before any
+additional broad JIT or synchronization backports are stacked.

@@ -1609,7 +1609,11 @@ void PPUTranslator::VPERM(ppu_opcode_t op)
 
 	if (op.ra == op.rb)
 	{
+#ifdef ARCH_ARM64
+		set_vr(op.vd, tbl(a, ~c & 0xf));
+#else
 		set_vr(op.vd, pshufb(a, ~c & 0xf));
+#endif
 		return;
 	}
 
