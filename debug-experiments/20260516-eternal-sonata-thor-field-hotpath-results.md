@@ -575,3 +575,66 @@ correctness pass. Do not claim a performance win because there is no matched A/B
 and do not claim a complete flicker fix or battle pass. The next device action,
 after another cool-device check, is a short deterministic first-battle route;
 only then should a bounded matched performance comparison be considered.
+
+## 2026-07-14 Deterministic First-Battle Route and Fatal Isolation
+
+Status: `battle-visual-reached-fatal-invalid`.
+
+Bounded checkpoint route:
+
+- Kept ARM64 verification core SHA256
+  `350E2F75C9062477A05854BD9E363E730197C0025361B3F16E46795BC27EC038`
+  active and used the existing top save slot, `Path to Tenuto / South Section`.
+- Staged screenshots confirmed the correct title, top save slot, load-complete
+  prompt, and correct checkpoint field:
+  `debug-captures/android-speed-sprint/20260714-192209-thor-input-custom/01-title-ready-70s.png`,
+  `debug-captures/android-speed-sprint/20260714-192320-thor-input-custom/01-save-list.png`,
+  `debug-captures/android-speed-sprint/20260714-192415-thor-input-custom/01-loaded-checkpoint.png`,
+  and
+  `debug-captures/android-speed-sprint/20260714-192526-thor-input-custom/01-loaded-field.png`.
+- The previous `left:2600` plus `down_left:2200` movement was too long. From
+  the exact save checkpoint, `down_left:700`, then `left:900`, hit the visible
+  enemy. The transition capture is
+  `debug-captures/android-speed-sprint/20260714-192709-thor-input-custom/01-enemy-approach-left900.png`
+  at an instantaneous `29.77 FPS`.
+- Ten seconds later, the first-battle tutorial prompt rendered correctly at
+  `30.00 FPS`, with Polka, the arena, HP, timer, and battle UI intact:
+  `debug-captures/android-speed-sprint/20260714-192756-thor-input-custom/01-battle-state-10s.png`.
+
+Fatal classification:
+
+- Manual inspection between staged inputs left the tutorial prompt idle. Before
+  the attempted post-tutorial input, `RPCSX.log` reported
+  `VM: Access violation reading location 0x40` on PPU thread `0x100000c` at CIA
+  `0x002aedd0`, then `Emulation has been frozen!` at emulation time `0:08:03`.
+- The attempted post-tutorial capture still showed the prompt and the RPCSX
+  frozen-app notification at `29.68 FPS`:
+  `debug-captures/android-speed-sprint/20260714-192916-thor-input-custom/01-first-battle-active.png`.
+  It is failure evidence, not active-combat proof.
+- Android logcat had no native fatal signal or process crash. This is a guest PPU
+  fatal at the same `0x002aedd0` / `0x40` signature already documented in older
+  Windows route failures, not evidence of a native ARM64 verifier crash.
+- Because the same run later fatally froze, the earlier correct battle prompt is
+  not a promotable first-battle pass. Field/menu correctness from the preceding
+  bounded run remains valid, but full battle and speed promotion remain pending.
+
+Harness correction, source-only after stopping the device:
+
+- Replaced the over-eight-minute `eternal-sonata-battle-intro-route` with the
+  observed checkpoint timings and the deterministic `down_left:700` plus
+  `left:900` enemy path. The new route immediately selects `No` at the tutorial
+  instead of idling there for several minutes.
+- Added explicit `-Serial` device selection with early ambiguity/offline errors.
+- Added a default `39.0 C` battery-temperature ceiling. Long waits are split into
+  five-second thermal checks, and reaching the ceiling force-stops RPCSX.
+- Added `check:guest:LABEL` to scan the current `RPCSX.log` tail for guest VM,
+  frozen-emulation, SPU STOP, Vulkan device-lost, LLVM, and verification fatals;
+  a match force-stops RPCSX. Added a final `stop` macro token so the corrected
+  battle profile cannot leave the emulator running.
+- These harness changes were not used for another Thor launch in this round.
+
+Safety: the device stayed at `25.0-26.0 C` with Android thermal status `0` and
+was confirmed stopped. Do not immediately rerun after this fatal. The next proof
+should use the corrected one-shot profile on a separately cool device; it must
+show a post-tutorial active-battle frame and a clean guest-fatal guard before any
+performance comparison.

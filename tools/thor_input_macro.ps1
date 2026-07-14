@@ -1,5 +1,6 @@
 param(
     [string]$Package = "net.rpcsx.easy",
+    [string]$Serial = "",
     [string]$Profile = "custom",
     [string]$Macro = "",
     [string]$GamePath = "/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso",
@@ -8,6 +9,7 @@ param(
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$InputMode = "Virtual",
     [string]$RawInputDevice = "/dev/input/event9",
+    [double]$MaxBatteryTemperatureC = 39.0,
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot
@@ -18,6 +20,44 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Get-ThorRepoRoot
 $Adb = Resolve-ThorAdb
+
+function Resolve-ThorInputDeviceSerial {
+    $requestedSerial = $Serial
+    if ([string]::IsNullOrWhiteSpace($requestedSerial)) {
+        $requestedSerial = $env:ANDROID_SERIAL
+    }
+
+    $deviceRows = @(& $Adb devices 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb devices failed: $($deviceRows -join ' ')"
+    }
+
+    $onlineSerials = @(
+        $deviceRows |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object { $_ -match '^(\S+)\s+device$' } |
+            ForEach-Object { $Matches[1] }
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($requestedSerial)) {
+        if ($requestedSerial -notin $onlineSerials) {
+            throw "Requested Android device '$requestedSerial' is not online. Online devices: $($onlineSerials -join ', ')"
+        }
+        return $requestedSerial
+    }
+
+    if ($onlineSerials.Count -eq 1) {
+        return $onlineSerials[0]
+    }
+    if ($onlineSerials.Count -eq 0) {
+        throw "No online Android device found."
+    }
+
+    throw "Multiple Android devices are online: $($onlineSerials -join ', '). Pass -Serial or set ANDROID_SERIAL before running an input macro."
+}
+
+$DeviceSerial = Resolve-ThorInputDeviceSerial
+$env:ANDROID_SERIAL = $DeviceSerial
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $safeProfile = New-ThorSafeLabel $Profile
 $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-thor-input-$safeProfile"
@@ -129,7 +169,7 @@ function Get-ThorMacroForProfile {
             return "wait:90000;shot:title-before-load;dpad_down;wait:800;shot:title-load-selected;cross;wait:55000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:65000;shot:load-complete;cross;wait:30000;shot:loaded-field;threads:load-field-route"
         }
         "eternal-sonata-battle-intro-route" {
-            return "wait:90000;shot:title-before-load;dpad_down;wait:800;shot:title-load-selected;cross;wait:55000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:65000;shot:load-complete;cross;wait:30000;shot:loaded-field;stick:left:left:2600;wait:1000;shot:battle-approach;stick:left:down_left:2200;wait:25000;shot:battle-transition;wait:60000;shot:battle-story-1;wait:120000;shot:battle-story-2;wait:60000;shot:first-battle-visual;threads:battle-intro-route"
+            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;stick:left:left:900;wait:12000;shot:first-battle-prompt;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active;check:guest:battle;threads:battle-intro-route;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -349,6 +389,74 @@ function Save-ThorThreadSnapshot {
     & $snapshotScript -Package $Package -Label $safe -Samples 3 -IntervalMs 1000 -OutputRoot $captureDir
 }
 
+function Get-ThorBatteryTemperatureC {
+    $batteryLines = @(& $Adb shell dumpsys battery 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    foreach ($line in $batteryLines) {
+        if ($line -match '^\s*temperature:\s*(-?\d+)\s*$') {
+            return ([double]$Matches[1] / 10.0)
+        }
+    }
+
+    return $null
+}
+
+function Assert-ThorThermalBudget {
+    param([string]$Stage)
+
+    if ($MaxBatteryTemperatureC -le 0) {
+        return
+    }
+
+    $temperatureC = Get-ThorBatteryTemperatureC
+    $temperatureText = if ($null -eq $temperatureC) { "unknown" } else { $temperatureC.ToString("F1", [Globalization.CultureInfo]::InvariantCulture) }
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$temperatureText limit_c=$MaxBatteryTemperatureC" |
+        Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+
+    if ($null -ne $temperatureC -and $temperatureC -ge $MaxBatteryTemperatureC) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Thor battery temperature is $temperatureText C at '$Stage', at or above the $MaxBatteryTemperatureC C limit. RPCSX was force-stopped."
+    }
+}
+
+function Wait-ThorThermallyBounded {
+    param([int]$Milliseconds)
+
+    $remaining = $Milliseconds
+    while ($remaining -gt 0) {
+        $slice = [Math]::Min($remaining, 5000)
+        Start-Sleep -Milliseconds $slice
+        $remaining -= $slice
+        Assert-ThorThermalBudget "wait-$Milliseconds-ms"
+    }
+}
+
+function Assert-ThorGuestHealthy {
+    param([string]$Label = "guest")
+
+    $safeLabel = New-ThorSafeLabel $Label
+    $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
+    $logTail = @(& $Adb shell tail -n 800 $remoteLog 2>&1)
+    $logExitCode = $LASTEXITCODE
+    $logTail | Set-Content -LiteralPath (Join-Path $captureDir "guest-health-$safeLabel.log") -Encoding UTF8
+
+    if ($logExitCode -ne 0) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Could not read the guest log at '$Label'. RPCSX was force-stopped; see guest-health-$safeLabel.log."
+    }
+
+    $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Thread terminated due to fatal error'
+    $fatalMatches = @($logTail | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
+    if ($fatalMatches.Count -gt 0) {
+        $fatalMatches.Line | Set-Content -LiteralPath (Join-Path $captureDir "guest-fatal-$safeLabel.txt") -Encoding UTF8
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Guest fatal detected at '$Label'. RPCSX was force-stopped; see guest-fatal-$safeLabel.txt."
+    }
+}
+
 $resolvedMacro = Get-ThorMacroForProfile $Profile
 
 @(
@@ -356,19 +464,23 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "",
     "- Created: $(Get-Date -Format o)",
     "- Package: $Package",
+    "- Device serial: $DeviceSerial",
     "- Profile: $Profile",
     "- Game path: $GamePath",
     "- Display: $Display",
     "- Input mode: $InputMode",
     "- Raw input device: $RawInputDevice",
+    "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`."
+    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`."
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
+
+Assert-ThorThermalBudget "pre-run"
 
 if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
@@ -394,10 +506,16 @@ foreach ($token in $tokens) {
     $line | Out-File -LiteralPath (Join-Path $captureDir "macro.log") -Append -Encoding UTF8
 
     if ($token -match '^wait:(\d+)$') {
-        Start-Sleep -Milliseconds ([int]$Matches[1])
+        Wait-ThorThermallyBounded ([int]$Matches[1])
     } elseif ($token -match '^shot:(.+)$') {
         Save-ThorScreenshot $Matches[1] $index
         $index++
+        Assert-ThorThermalBudget "screenshot-$($Matches[1])"
+    } elseif ($token -match '^check:guest(?::(.+))?$') {
+        $healthLabel = if ($Matches[1]) { $Matches[1] } else { "guest" }
+        Assert-ThorGuestHealthy $healthLabel
+    } elseif ($token -eq 'stop') {
+        Invoke-ThorAdbText $Adb $captureDir "macro-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     } elseif ($token -match '^threads:(.+)$') {
         Save-ThorThreadSnapshot $Matches[1]
     } elseif ($token -match '^virtual:(.+)$') {
@@ -423,6 +541,8 @@ foreach ($token in $tokens) {
         Start-Sleep -Milliseconds $DefaultWaitMs
     }
 }
+
+Assert-ThorThermalBudget "post-run"
 
 if ($PostSnapshot) {
     Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "post"
