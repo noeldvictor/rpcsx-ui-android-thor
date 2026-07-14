@@ -3,6 +3,7 @@
 #include "nv47_sync.hpp"
 
 #include "Emu/RSX/RSXThread.h"
+#include "rx/asm.hpp"
 
 #include "context_accessors.define.h"
 
@@ -79,7 +80,18 @@ namespace rsx
 					}
 				}
 
-				RSX(ctx)->cpu_wait({});
+				if (RSX(ctx)->external_interrupt_lock ||
+					(RSX(ctx)->state & (cpu_flag::dbg_global_pause + cpu_flag::exit)) == cpu_flag::dbg_global_pause)
+				{
+					RSX(ctx)->cpu_wait({});
+					continue;
+				}
+
+				RSX(ctx)->on_semaphore_acquire_wait();
+
+				// Wait once for the observed value to change. The loop above still
+				// owns stop, debugger, and driver-timeout handling.
+				rx::spin_on_cacheline_once(sema, sema.load(), 100);
 			}
 
 			RSX(ctx)->fifo_wake_delay();

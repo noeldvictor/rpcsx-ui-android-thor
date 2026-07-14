@@ -79,4 +79,8 @@ done
 '@
 
 $remote = $remote.Replace("__PACKAGE__", $Package).Replace("__MODE__", $Mode)
+# PowerShell here-strings use CRLF on Windows. Android's /system/bin/sh treats
+# the trailing carriage returns as part of tokens (for example "in\r"), which
+# breaks the case statement and can leave an A/B affinity run half-applied.
+$remote = $remote.Replace("`r`n", "`n")
 & $adb shell $remote

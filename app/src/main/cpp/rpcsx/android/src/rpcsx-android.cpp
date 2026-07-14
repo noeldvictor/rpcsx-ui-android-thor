@@ -134,6 +134,7 @@ static std::string arm64_jit_target_attributes() {
 
   attributes.push_back(utils::has_sha3() ? "+sha3" : "-sha3");
   attributes.push_back(utils::has_dotprod() ? "+dotprod" : "-dotprod");
+  attributes.push_back(utils::has_i8mm() ? "+i8mm" : "-i8mm");
   attributes.push_back(utils::has_sve() ? "+sve" : "-sve");
   attributes.push_back(utils::has_sve2() ? "+sve2" : "-sve2");
 

@@ -63,6 +63,8 @@ namespace utils
 
 	bool has_dotprod();
 
+	bool has_i8mm();
+
 	bool has_sve();
 
 	bool has_sve2();

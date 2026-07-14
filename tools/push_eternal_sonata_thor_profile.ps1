@@ -98,7 +98,7 @@ Video:
   Shader Precision: Low
   Write Color Buffers: $writeColorBuffers
   Accurate ZCULL stats: false
-  Relaxed ZCULL Sync: true
+  Relaxed ZCULL Sync: false
   Multithreaded RSX: false
   Disable On-Disk Shader Cache: false
   Resolution Scale: $resolutionScale

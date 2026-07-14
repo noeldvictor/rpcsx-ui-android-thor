@@ -469,6 +469,20 @@ bool utils::has_dotprod()
 	return g_value;
 }
 
+bool utils::has_i8mm()
+{
+	static const bool g_value = []() -> bool
+	{
+#if defined(__linux__) && defined(HWCAP2_I8MM)
+		return (getauxval(AT_HWCAP2) & HWCAP2_I8MM) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return g_value;
+}
+
 bool utils::has_sve()
 {
 	static const bool g_value = []() -> bool

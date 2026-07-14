@@ -8,9 +8,12 @@ import net.rpcsx.utils.GeneralSettings
 
 object ThorPerformanceProfile {
     private const val TAG = "ThorPerformanceProfile"
-    private const val PROFILE_VERSION = 12
+    private const val PROFILE_VERSION = 13
     private const val PROFILE_PREF = "thor_compile_profile_version"
-    private const val PERFORMANCE_CORE_MASK = 0xF8
+    // Keep the full SoC available to Android and the OS scheduler. Restricting
+    // the entire process to CPUs 3-7 also pins Java, audio, compiler, and
+    // service threads onto the same five cores as PPU/SPU/RSX work.
+    private const val PERFORMANCE_CORE_MASK = 0xFF
 
     data class ApplyResult(
         val applied: Boolean,
@@ -141,7 +144,7 @@ object ThorPerformanceProfile {
         val result = runCatching {
             RPCSX.instance.setProcessAffinityMask(PERFORMANCE_CORE_MASK)
         }.getOrElse {
-            Log.w(TAG, "Could not set Thor performance-core affinity", it)
+            Log.w(TAG, "Could not set Thor all-core affinity", it)
             false
         }
 

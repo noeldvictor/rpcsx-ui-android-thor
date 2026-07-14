@@ -784,6 +784,14 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 	else
 		attributes.push_back("-dotprod");
 
+	// The SPU recompilers emit UMMLA/SMMLA intrinsics when I8MM is present.
+	// Advertise the feature explicitly because the Android cortex-a78 fallback
+	// CPU does not imply it even though Snapdragon 8 Gen 2 supports it.
+	if (utils::has_i8mm())
+		attributes.push_back("+i8mm");
+	else
+		attributes.push_back("-i8mm");
+
 	if (utils::has_sve())
 		attributes.push_back("+sve");
 	else

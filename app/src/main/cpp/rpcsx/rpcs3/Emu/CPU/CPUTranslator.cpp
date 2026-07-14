@@ -202,6 +202,12 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 		m_use_dotprod = true;
 		llvm_log.notice("AArch64 dot-product SPU fast paths enabled.");
 	}
+
+	if (utils::has_i8mm())
+	{
+		m_use_i8mm = true;
+		llvm_log.notice("AArch64 I8MM SPU fast paths enabled.");
+	}
 #endif
 }
 

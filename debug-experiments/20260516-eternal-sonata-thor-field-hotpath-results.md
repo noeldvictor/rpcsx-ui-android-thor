@@ -328,3 +328,57 @@ Next action: keep u4 as the current reduced-loop experiment setting, then find
 or create a first-battle checkpoint. After battle validation, profile u4 with
 simpleperf/Perfetto to see whether SPU loop codegen or RSX FIFO becomes the new
 dominant limit.
+
+## 2026-07-14 Upstream ARM/RSX Backport and Flicker Profile Correction
+
+Status: `parked-device-validation`.
+
+Scope:
+
+- Changed the Thor process-affinity default from `0xF8` to `0xFF`. A matched
+  pre-patch static-field A/B measured `23.28 FPS` median with `0xF8` and
+  `27.71 FPS` median with `0xFF` (`+19.0%`). This gives Android's scheduler
+  access to the efficiency cores for Java, audio, compiler, and service work
+  instead of crowding all process threads onto CPUs 3-7.
+- Backported the focused RPCS3 ARM I8MM work: Linux `HWCAP2_I8MM` detection,
+  LLVM `+i8mm` target advertisement, and SPU LLVM `GBH`/`GBB` UMMLA/SMMLA
+  lowering.
+- Backported the focused RPCS3 ARM64 RSX wait work: cacheline-aware WFE waits
+  for Vulkan flush coordination and the RSX semaphore acquire loop, while
+  preserving RPCSX stop/debug/timeout checks.
+- Corrected `push_eternal_sonata_thor_profile.ps1` so Rocknix-compatible Thor
+  profiles write `Relaxed ZCULL Sync: false`. The prior generated profile had
+  it enabled while the observed field run repeatedly missed the same texture
+  cache keys; this is a flicker-risk correction, not yet a visual proof.
+- Normalized the runtime-affinity helper's generated Android shell script from
+  CRLF to LF, fixing the observed `case ... in\r` parse failure.
+
+Local build proof:
+
+- Native command:
+  `.\gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon`
+- Native result: success.
+- Native core SHA256:
+  `4A1C8A7E4AAE8568253CDAC43969D2D414FC216658834C7B04545771FE26D74D`
+- Loader/package command:
+  `.\gradlew.bat :app:assembleRelease -PbuildBundledRpcsxCore=false --no-daemon`
+- Loader/package result: success; the APK was built locally but deliberately
+  not installed after the user reported that the Thor had been hot too long.
+- Local APK SHA256:
+  `099431C919760990C68C95338A5777209A93C927717CA02486203E002A316A2C`
+
+Device state at stop:
+
+- Corrected `BLUS30161` profile and optimized native dev core were copied
+  before the heat stop. The profile backup is
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/config/custom_configs/config_BLUS30161.pre-thor-speed-20260714-135736.yml`.
+- The installed loader still contains profile version 12 and therefore still
+  applies `0xF8`; the locally built APK containing profile version 13 and
+  `0xFF` was not installed.
+- RPCSX was force-stopped immediately when requested. No post-patch field,
+  menu, battle, flicker, or performance run was performed.
+
+Reading: retain the source changes and successful compile proof, but do not
+classify this round as a speed win or flicker fix yet. Any later validation must
+start only with a cool device and explicit user approval, use a short
+screenshot-only field check first, and avoid sustained profiling or recording.

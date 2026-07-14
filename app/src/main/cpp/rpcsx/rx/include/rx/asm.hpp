@@ -3,8 +3,10 @@
 #include "rx/tsc.hpp"
 #include "types.hpp"
 #include <atomic>
+#include <bit>
 #include <cstdlib>
 #include <thread>
+#include <type_traits>
 
 #if defined(ARCH_ARM64) && defined(ANDROID)
 #include <sys/system_properties.h>
@@ -367,6 +369,96 @@ inline void busy_wait(usz cycles = 3000) {
   do
     pause();
   while (get_tsc() < stop);
+}
+
+// Sleep on an atomic cacheline where the architecture provides a low-overhead
+// primitive. On AArch64, the exclusive monitor plus WFE avoids repeatedly
+// yielding hot RSX/SPU host threads back through the Android scheduler.
+template <typename T, usz Align>
+inline void spin_on_cacheline_once(const atomic_t<T, Align> &var, T old_value,
+                                   u64 timeout_us) {
+  const void *addr = &var.raw();
+
+#if defined(ARCH_ARM64)
+  // WFE wakes from the periodic event stream, so the explicit timeout is not
+  // needed on ARM. The caller rechecks its own timeout/stop conditions.
+  (void)timeout_us;
+
+  using wait_type = std::remove_cvref_t<decltype(var.raw())>;
+  using raw_type = std::conditional_t<
+      sizeof(wait_type) == 8, u64,
+      std::conditional_t<sizeof(wait_type) == 4, u32,
+                         std::conditional_t<sizeof(wait_type) == 2, u16, u8>>>;
+
+  static_assert(sizeof(wait_type) <= 8,
+                "Unsupported atomic size for spin_on_cacheline_once");
+
+  raw_type value{};
+  const auto *wait_addr = static_cast<const volatile raw_type *>(addr);
+
+  if constexpr (sizeof(raw_type) == 1)
+    __asm__ volatile("ldaxrb %w0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+  else if constexpr (sizeof(raw_type) == 2)
+    __asm__ volatile("ldaxrh %w0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+  else if constexpr (sizeof(raw_type) == 4)
+    __asm__ volatile("ldaxr %w0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+  else if constexpr (sizeof(raw_type) == 8)
+    __asm__ volatile("ldaxr %x0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+
+  if (std::bit_cast<wait_type>(value) != old_value) {
+    __asm__ volatile("clrex" ::: "memory");
+    return;
+  }
+
+  __asm__ volatile("wfe" ::: "memory");
+  __asm__ volatile("clrex" ::: "memory");
+#else
+  (void)addr;
+  (void)old_value;
+  (void)timeout_us;
+  std::this_thread::yield();
+#endif
+}
+
+template <typename T, usz Align, typename Pred>
+inline void spin_wait(const atomic_t<T, Align> &var, Pred predicate) {
+  const auto read_mem = [&]() { return var.load(); };
+  const void *addr = &var.raw();
+
+  while (true) {
+    if (predicate(read_mem()))
+      return;
+
+#if defined(ARCH_ARM64)
+    using value_type = decltype(read_mem());
+    using wait_type = std::remove_cvref_t<decltype(var.raw())>;
+
+    wait_type value{};
+    const auto *wait_addr = static_cast<const volatile wait_type *>(addr);
+
+    if constexpr (sizeof(wait_type) == 1)
+      __asm__ volatile("ldaxrb %w0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+    else if constexpr (sizeof(wait_type) == 2)
+      __asm__ volatile("ldaxrh %w0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+    else if constexpr (sizeof(wait_type) == 4)
+      __asm__ volatile("ldaxr %w0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+    else if constexpr (sizeof(wait_type) == 8)
+      __asm__ volatile("ldaxr %x0, %1" : "=r"(value) : "Q"(*wait_addr) : "memory");
+    else
+      static_assert(sizeof(wait_type) <= 8,
+                    "Unsupported atomic size for spin_wait");
+
+    if (predicate(static_cast<value_type>(value))) {
+      __asm__ volatile("clrex" ::: "memory");
+      return;
+    }
+
+    __asm__ volatile("wfe" ::: "memory");
+    __asm__ volatile("clrex" ::: "memory");
+#else
+    pause();
+#endif
+  }
 }
 
 // Align to power of 2
