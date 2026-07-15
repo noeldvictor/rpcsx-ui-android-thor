@@ -760,3 +760,72 @@ Decision: retain the upstream fixes and deployed candidate. Do not claim the
 battle corruption fixed until a later cool-device run visibly reaches live
 combat and remains free of the guest parser fatal. Do not repeat this route
 unchanged; repair its collision movement/state gate first.
+
+## 2026-07-15 State-Gated First-Battle Pass and Android TTY Stall Fix
+
+Status: `valid-first-battle-triage-with-guest-draw-warnings`; not a matched
+speed result and not a complete temporal-flicker proof.
+
+Route repair:
+
+- The prior miss was not a wrong save and the direct-stick durations were not
+  truncated. Manual and automated captures showed wall-time movement distance
+  varied while SPU/shader work warmed, so a single blind collision pulse was
+  not a reliable state gate.
+- `tools/thor_debug_common.ps1` now classifies Eternal Sonata's battle HUD from
+  the normalized cyan action-time bar at the left edge. Known field captures
+  measured `0 / 13488` matching samples while known tutorial/live-battle
+  captures measured `463 / 13488` (`3.433%`).
+- `tools/thor_input_macro.ps1` now uses
+  `approach:battle:left:left:900:3:11000`: a maximum of three thermally bounded
+  pulses, with a screenshot and guest-fatal check after each. It stops adding
+  movement as soon as the battle HUD is present and force-stops RPCSX on any
+  unexpected macro failure. The route also keeps 10-second and 20-second live
+  battle checkpoints and records unknown-draw messages into sidecars.
+
+Single guarded Thor proof:
+
+- Core under test: the previously deployed upstream-RCHCNT candidate SHA256
+  `A7D5A628128A2D4949CA5E0A641CF6C2B1D4EAB061129C202ECE40AAA6899593`.
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-144058-thor-input-eternal-sonata-battle-intro-route`.
+- The first approach attempt passed the visual gate with `463 / 13488` cyan
+  samples. Screenshots show the correct field at `27.68 FPS`, tutorial prompt
+  at `29.99-30.00 FPS`, live battle at `30.00 FPS`, live battle after 10 seconds
+  at `29.99 FPS`, and live battle after 20 seconds at `30.00 FPS`.
+- All three live-battle frames show the arena, Polka, HP/timer, and command UI
+  without the old frozen-app notification or visible black/corrupt regions.
+  Guest guards found no VM access violation, frozen emulation, STOP,
+  verification failure, LLVM fatal, or Vulkan device loss.
+- The game did still print internal unknown draw commands `3f800000`,
+  `30b12f20`, `3e21bf94`, and `bf7a924b`. They no longer escalated to the old
+  `0x002ad588` / `0x3f80000c` fatal during this bounded run, but they keep full
+  temporal-flicker promotion open.
+- The one 205.9-second run stayed exactly `25.0 C` across 54 battery guard
+  samples with Android thermal status `0`. RPCSX was force-stopped and the PID
+  was absent. No second launch, video, Perfetto, or sustained profiler was used.
+
+Android logging hot-path fix:
+
+- Each non-warning guest TTY message was also triggering upstream's
+  `dump_useful_thread_info()` all-thread diagnostic walk. The unknown-draw
+  prints therefore produced large PPU/SPU context dumps and mobile log I/O on
+  the gameplay path.
+- `app/src/main/cpp/rpcsx/kernel/cellos/src/sys_tty.cpp` now skips that full
+  context dump for routine TTY output on Android while preserving the actual
+  guest message and preserving full context dumps for warning-class output.
+  This is a semantics-neutral mobile frame-time/log-I/O optimization, not a
+  guest draw-parser bypass.
+- RelWithDebInfo ARM64 build completed successfully in `100.3s`. The resulting
+  core SHA256 is
+  `548A4CF44904223E5B47E6817EC15C19B4FDA57CADA72E2C67D0BA4927537264`.
+- The core was copied and hash-verified at
+  `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so` using
+  `tools/build_push_thor_core.ps1 -NoBuild -NoLaunch -NoStream`. Thor remained
+  stopped at `25.0 C`, thermal status `0`; this newest logging-only core is
+  host-build/deploy validated but intentionally has no second gameplay run.
+
+Decision: bank the RCHCNT candidate as a bounded first-battle correctness pass,
+not a speed win. Keep the new Android TTY optimization installed without a
+same-day rerun. The next cool-device proof should focus on temporal flicker and
+unknown-draw frequency; do not repeat the already-clean route merely for FPS.

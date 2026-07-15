@@ -43,6 +43,64 @@ function New-ThorSafeLabel {
     return $safe
 }
 
+function Get-ThorBattleUiClassification {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
+    Add-Type -AssemblyName System.Drawing
+
+    $bitmap = [System.Drawing.Bitmap]::FromFile($resolvedPath)
+    try {
+        if ($bitmap.Width -lt 320 -or $bitmap.Height -lt 180) {
+            throw "Screenshot '$resolvedPath' is too small for the battle-UI gate ($($bitmap.Width)x$($bitmap.Height))."
+        }
+
+        # Eternal Sonata's battle HUD has a tall cyan action-time bar in this
+        # normalized left-edge region. Field, title, load, and menu captures do
+        # not. Sampling every third pixel keeps the gate cheap enough to run
+        # between short, thermally bounded movement attempts.
+        $xStart = [int]($bitmap.Width * 0.055)
+        $xEnd = [int]($bitmap.Width * 0.130)
+        $yStart = [int]($bitmap.Height * 0.180)
+        $yEnd = [int]($bitmap.Height * 0.960)
+        $cyanSamples = 0
+        $totalSamples = 0
+
+        for ($y = $yStart; $y -lt $yEnd; $y += 3) {
+            for ($x = $xStart; $x -lt $xEnd; $x += 3) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $totalSamples++
+                if (
+                    $pixel.B -ge 120 -and
+                    $pixel.G -ge 80 -and
+                    ($pixel.B - $pixel.G) -ge 15 -and
+                    ($pixel.G - $pixel.R) -ge 30
+                ) {
+                    $cyanSamples++
+                }
+            }
+        }
+
+        $cyanPercent = if ($totalSamples -gt 0) {
+            100.0 * $cyanSamples / $totalSamples
+        } else {
+            0.0
+        }
+
+        return [pscustomobject]@{
+            path = $resolvedPath
+            width = $bitmap.Width
+            height = $bitmap.Height
+            cyan_samples = $cyanSamples
+            total_samples = $totalSamples
+            cyan_percent = [Math]::Round($cyanPercent, 3)
+            battle_ui_present = ($cyanSamples -ge 100 -and $cyanPercent -ge 1.5)
+        }
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
 function Join-ThorNativeArguments {
     param([string[]]$NativeArgs)
 

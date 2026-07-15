@@ -170,7 +170,7 @@ function Get-ThorMacroForProfile {
         }
         "eternal-sonata-battle-intro-route" {
             # Screenshot labels remain candidates until visual review confirms the battle UI.
-            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;stick:left:left:900;wait:12000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle;threads:battle-intro-route;stop"
+            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle-active;wait:10000;shot:first-battle-live-10s-candidate;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:guest:battle-live-20s;threads:battle-intro-route;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -380,6 +380,7 @@ function Save-ThorScreenshot {
     Invoke-ThorAdbText $Adb $captureDir "$localName.screencap.txt" @("shell", "mkdir -p '/sdcard/Android/data/$Package/files/debug-captures' && screencap -p '$remote'") -AllowFailure | Out-Null
     Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remote -LocalName $localName | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "$localName.cleanup.txt" @("shell", "rm -f '$remote'") -AllowFailure | Out-Null
+    $script:LastThorScreenshotPath = Join-Path $captureDir $localName
 }
 
 function Save-ThorThreadSnapshot {
@@ -451,6 +452,13 @@ function Assert-ThorGuestHealthy {
 
     $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Thread terminated due to fatal error'
     $fatalMatches = @($logTail | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
+    $unknownDrawMatches = @($logTail | Select-String -Pattern 'unknown draw command' -CaseSensitive:$false)
+    if ($unknownDrawMatches.Count -gt 0) {
+        $unknownDrawMatches.Line |
+            Sort-Object -Unique |
+            Set-Content -LiteralPath (Join-Path $captureDir "guest-unknown-draw-$safeLabel.txt") -Encoding UTF8
+    }
+
     if ($fatalMatches.Count -gt 0) {
         $fatalMatches.Line | Set-Content -LiteralPath (Join-Path $captureDir "guest-fatal-$safeLabel.txt") -Encoding UTF8
         & $Adb shell am force-stop $Package | Out-Null
@@ -479,6 +487,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`."
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
+    "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
 Assert-ThorThermalBudget "pre-run"
@@ -502,45 +511,90 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 }
 
 $index = 1
-foreach ($token in $tokens) {
-    $line = "$(Get-Date -Format o) $token"
-    $line | Out-File -LiteralPath (Join-Path $captureDir "macro.log") -Append -Encoding UTF8
+$script:LastThorScreenshotPath = $null
+try {
+    foreach ($token in $tokens) {
+        $line = "$(Get-Date -Format o) $token"
+        $line | Out-File -LiteralPath (Join-Path $captureDir "macro.log") -Append -Encoding UTF8
 
-    if ($token -match '^wait:(\d+)$') {
-        Wait-ThorThermallyBounded ([int]$Matches[1])
-    } elseif ($token -match '^shot:(.+)$') {
-        Save-ThorScreenshot $Matches[1] $index
-        $index++
-        Assert-ThorThermalBudget "screenshot-$($Matches[1])"
-    } elseif ($token -match '^check:guest(?::(.+))?$') {
-        $healthLabel = if ($Matches[1]) { $Matches[1] } else { "guest" }
-        Assert-ThorGuestHealthy $healthLabel
-    } elseif ($token -eq 'stop') {
-        Invoke-ThorAdbText $Adb $captureDir "macro-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
-    } elseif ($token -match '^threads:(.+)$') {
-        Save-ThorThreadSnapshot $Matches[1]
-    } elseif ($token -match '^virtual:(.+)$') {
-        Invoke-ThorVirtualKey $Matches[1]
-        Start-Sleep -Milliseconds $DefaultWaitMs
-    } elseif ($token -match '^raw:(.+)$') {
-        Invoke-ThorRawKey -Key $Matches[1] -DurationMs 80
-        Start-Sleep -Milliseconds $DefaultWaitMs
-    } elseif ($token -match '^direct:(.+)$') {
-        Invoke-ThorDirectPadKey -Key $Matches[1] -DurationMs 80
-        Start-Sleep -Milliseconds $DefaultWaitMs
-    } elseif ($token -match '^stick:([^:]+):([^:]+)(?::(\d+))?$') {
-        $duration = if ($Matches[3]) { [int]$Matches[3] } else { 500 }
-        Invoke-ThorDirectStick -Stick $Matches[1] -Direction $Matches[2] -DurationMs $duration
-        Start-Sleep -Milliseconds $DefaultWaitMs
-    } elseif ($token -match '^combo:([^:]+)(?::(\d+))?$') {
-        $keys = $Matches[1].Split('+') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-        $duration = if ($Matches[2]) { [int]$Matches[2] } else { 500 }
-        Invoke-ThorPadCombo $keys $duration
-        Start-Sleep -Milliseconds $DefaultWaitMs
-    } else {
-        Invoke-ThorPadKey $token
-        Start-Sleep -Milliseconds $DefaultWaitMs
+        if ($token -match '^wait:(\d+)$') {
+            Wait-ThorThermallyBounded ([int]$Matches[1])
+        } elseif ($token -match '^shot:(.+)$') {
+            Save-ThorScreenshot $Matches[1] $index
+            $index++
+            Assert-ThorThermalBudget "screenshot-$($Matches[1])"
+        } elseif ($token -match '^check:guest(?::(.+))?$') {
+            $healthLabel = if ($Matches[1]) { $Matches[1] } else { "guest" }
+            Assert-ThorGuestHealthy $healthLabel
+        } elseif ($token -match '^approach:battle:([^:]+):([^:]+):(\d+):(\d+):(\d+)$') {
+            $approachStick = $Matches[1]
+            $approachDirection = $Matches[2]
+            $approachDurationMs = [int]$Matches[3]
+            $approachAttempts = [int]$Matches[4]
+            $approachSettleMs = [int]$Matches[5]
+            $battleUiReached = $false
+
+            if ($approachAttempts -lt 1 -or $approachAttempts -gt 6) {
+                throw "Battle approach attempts must be between 1 and 6."
+            }
+
+            for ($attempt = 1; $attempt -le $approachAttempts; $attempt++) {
+                Assert-ThorThermalBudget "battle-approach-$attempt-pre"
+                Invoke-ThorDirectStick -Stick $approachStick -Direction $approachDirection -DurationMs $approachDurationMs
+                Wait-ThorThermallyBounded ($approachDurationMs + $approachSettleMs)
+
+                $label = "battle-approach-$attempt-candidate"
+                Save-ThorScreenshot $label $index
+                $index++
+                Assert-ThorThermalBudget "screenshot-$label"
+                Assert-ThorGuestHealthy "battle-approach-$attempt"
+
+                $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+                "$(Get-Date -Format o) attempt=$attempt battle_ui_present=$($classification.battle_ui_present) cyan_samples=$($classification.cyan_samples) total_samples=$($classification.total_samples) cyan_percent=$($classification.cyan_percent) path=$($classification.path)" |
+                    Out-File -LiteralPath (Join-Path $captureDir "battle-visual-gate.log") -Append -Encoding UTF8
+
+                if ($classification.battle_ui_present) {
+                    $battleUiReached = $true
+                    break
+                }
+            }
+
+            if (-not $battleUiReached) {
+                throw "Battle UI was not detected after $approachAttempts bounded movement attempts."
+            }
+        } elseif ($token -eq 'stop') {
+            Invoke-ThorAdbText $Adb $captureDir "macro-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
+        } elseif ($token -match '^threads:(.+)$') {
+            Save-ThorThreadSnapshot $Matches[1]
+        } elseif ($token -match '^virtual:(.+)$') {
+            Invoke-ThorVirtualKey $Matches[1]
+            Start-Sleep -Milliseconds $DefaultWaitMs
+        } elseif ($token -match '^raw:(.+)$') {
+            Invoke-ThorRawKey -Key $Matches[1] -DurationMs 80
+            Start-Sleep -Milliseconds $DefaultWaitMs
+        } elseif ($token -match '^direct:(.+)$') {
+            Invoke-ThorDirectPadKey -Key $Matches[1] -DurationMs 80
+            Start-Sleep -Milliseconds $DefaultWaitMs
+        } elseif ($token -match '^stick:([^:]+):([^:]+)(?::(\d+))?$') {
+            $duration = if ($Matches[3]) { [int]$Matches[3] } else { 500 }
+            Invoke-ThorDirectStick -Stick $Matches[1] -Direction $Matches[2] -DurationMs $duration
+            Start-Sleep -Milliseconds $DefaultWaitMs
+        } elseif ($token -match '^combo:([^:]+)(?::(\d+))?$') {
+            $keys = $Matches[1].Split('+') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+            $duration = if ($Matches[2]) { [int]$Matches[2] } else { 500 }
+            Invoke-ThorPadCombo $keys $duration
+            Start-Sleep -Milliseconds $DefaultWaitMs
+        } else {
+            Invoke-ThorPadKey $token
+            Start-Sleep -Milliseconds $DefaultWaitMs
+        }
     }
+} catch {
+    $failure = $_
+    if ($tokens -contains 'stop') {
+        Invoke-ThorAdbText $Adb $captureDir "macro-failure-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
+    }
+    throw $failure
 }
 
 Assert-ThorThermalBudget "post-run"

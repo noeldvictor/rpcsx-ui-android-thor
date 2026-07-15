@@ -123,7 +123,7 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread &ppu, s32 ch,
 
   sample = {}; // Remove reference to string
 
-  if (msg.size() >= 2u && [&]() {
+  bool dump_thread_context = msg.size() >= 2u && [&]() {
         static thread_local u64 last_write = 0;
 
         // Dump thread about every period which TTY was not being touched for
@@ -131,7 +131,17 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread &ppu, s32 ch,
         const u64 current = get_system_time();
         return current - std::exchange(last_write, current) >=
                (warning ? 500'000 : 3'000'000);
-      }()) {
+      }();
+
+#ifdef __ANDROID__
+  // Routine guest TTY messages can otherwise trigger a full all-thread dump.
+  // That diagnostic walk and its log I/O are disproportionately expensive on
+  // mobile storage and can create visible frame-time spikes. Keep the actual
+  // guest message, and retain context dumps for warning-class output.
+  dump_thread_context &= warning;
+#endif
+
+  if (dump_thread_context) {
     ppu_log.notice("\n%s", dump_useful_thread_info());
   }
 
