@@ -432,10 +432,37 @@ function Get-ThorPackageProcessId {
 }
 
 function Save-ThorProcessFailureEvidence {
-    param([string]$Stage)
+    param(
+        [string]$Stage,
+        [string]$CurrentProcessId = "unknown"
+    )
 
     $safeStage = New-ThorSafeLabel $Stage
-    Invoke-ThorAdbText $Adb $captureDir "process-failure-$safeStage-logcat.txt" @("logcat", "-v", "threadtime", "-t", "400") -AllowFailure | Out-Null
+    $baseName = "process-failure-$safeStage"
+    @(
+        "stage=$Stage",
+        "expected_pid=$($script:ExpectedThorPackageProcessId)",
+        "current_pid=$CurrentProcessId",
+        "captured_at=$(Get-Date -Format o)"
+    ) | Set-Content -LiteralPath (Join-Path $captureDir "$baseName-metadata.txt") -Encoding UTF8
+
+    # Failure evidence is rare, so retain the complete in-memory logcat buffer.
+    # A replacement process can emit hundreds of shader lines in seconds and
+    # push the original fatal out of a short tail before the PID guard fires.
+    $logcatLines = @(& $Adb logcat -d -v threadtime 2>&1)
+    $logcatExitCode = $LASTEXITCODE
+    $logcatLines | Set-Content -LiteralPath (Join-Path $captureDir "$baseName-logcat-full.txt") -Encoding UTF8
+
+    $packagePattern = [regex]::Escape($Package)
+    $expectedPattern = if ([string]::IsNullOrWhiteSpace($script:ExpectedThorPackageProcessId)) { '(?!)' } else { [regex]::Escape($script:ExpectedThorPackageProcessId) }
+    $evidencePattern = "$packagePattern|$expectedPattern|RPCSX|RPCS3|ActivityManager|Zygote|libc|DEBUG|Fatal signal|signal 11|Segfault|terminated abnormally"
+    @($logcatLines | Select-String -Pattern $evidencePattern -CaseSensitive:$false | ForEach-Object { $_.Line }) |
+        Set-Content -LiteralPath (Join-Path $captureDir "$baseName-logcat-filtered.txt") -Encoding UTF8
+
+    if ($logcatExitCode -ne 0) {
+        "adb logcat exited with code $logcatExitCode" |
+            Set-Content -LiteralPath (Join-Path $captureDir "$baseName-logcat-error.txt") -Encoding UTF8
+    }
 }
 
 function Initialize-ThorProcessIdentity {
@@ -454,9 +481,9 @@ function Initialize-ThorProcessIdentity {
         Start-Sleep -Milliseconds 250
     }
 
-    Save-ThorProcessFailureEvidence "boot-no-process"
+    Save-ThorProcessFailureEvidence "boot-no-process" "absent"
     & $Adb shell am force-stop $Package | Out-Null
-    throw "RPCSX did not start within 5 seconds of the debug boot request. See process-failure-boot-no-process-logcat.txt."
+    throw "RPCSX did not start within 5 seconds of the debug boot request. See the process-failure-boot-no-process logcat files."
 }
 
 function Assert-ThorProcessIdentity {
@@ -478,7 +505,7 @@ function Assert-ThorProcessIdentity {
 
     "$(Get-Date -Format o) stage=$Stage expected_pid=$($script:ExpectedThorPackageProcessId) current_pid=$currentText status=failed" |
         Out-File -LiteralPath (Join-Path $captureDir "process-guard.log") -Append -Encoding UTF8
-    Save-ThorProcessFailureEvidence $Stage
+    Save-ThorProcessFailureEvidence $Stage $currentText
     & $Adb shell am force-stop $Package | Out-Null
     throw "RPCSX process changed at '$Stage' (expected PID $($script:ExpectedThorPackageProcessId), current PID $currentText). A native crash or app restart is assumed and RPCSX was force-stopped."
 }
@@ -569,7 +596,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
     "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
-    "Booted runs pin the initial RPCSX PID and fail closed if Android restarts the process; the last 400 logcat lines are captured before force-stop."
+    "Booted runs pin the initial RPCSX PID and fail closed if Android restarts the process; complete and filtered logcat evidence is captured before force-stop."
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
 Assert-ThorThermalBudget "pre-run"

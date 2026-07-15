@@ -1021,3 +1021,71 @@ proof, but do not call the intermittent battle fault fixed yet. The next run
 must be one PID-guarded, screenshot-only battle route; a process change is an
 automatic failure, while a clean route still needs repetition in a later cool
 round before stability promotion.
+
+## 2026-07-15 PID-Guarded Native Fault Resolution and PPU Worker Recycle
+
+Status: `failed-before-battle` for gameplay; the replacement core is
+`host-build-and-deploy-only` and has not been launched.
+
+Guarded Thor result:
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-164549-thor-input-eternal-sonata-battle-intro-route`.
+- The route reached a visually clean field at `27.33 FPS`, but it did not
+  produce a first-battle frame. Expected PID `27977` died and replacement PID
+  `29264` appeared before the `wait-11900-ms` checkpoint at `167.7s`; the PID
+  guard force-stopped the replacement and failed the run.
+- The original process reported signal 11 while reading
+  `0x0000000ff88a6ff8` at native PC `0x0000007a2f4c180c`. Its VM, sudo, and
+  executable bases were `0x1000000000`, `0x1100000000`, and `0x1200000000`.
+  ARM64 instruction `0xb8686ac8` decodes as `LDR W8, [X22, X8]`; `X22` held
+  the VM base and `X8` held the sign-extended bad guest address
+  `0xfffffffff88a6ff8`. The active PPU CIA was `0x002ad294`.
+- Corrected EBOOT disassembly identifies `0x002ad294` as
+  `rldicl r11,r31,0,32`, followed by `lwz r3,0(r11)` at `0x002ad2a4` and
+  `lfsx` at `0x002ad2bc`. This is in the same corrupt command-stream family as
+  the prior `0x002ad588` / `lwz r4,0(r9)` failure. The upstream exit-recovery
+  backport did not repair the invalid guest state.
+- No broad address mask was added. Masking would diverge from checked
+  interpreter address semantics and could hide the corrupt producer/publisher
+  state rather than fix it. The stream-corruption root cause remains open.
+- Thor stayed at `26.0 C` with thermal status `0`. RPCSX was stopped after the
+  guarded failure and no second gameplay route, recording, Perfetto trace, or
+  sustained profiler was used.
+
+Upstream and diagnostic follow-up:
+
+- Compared the Android fork with current upstream RPCS3 `origin/master`
+  `49b0306`, the official Windows build that previously completed the corrected
+  battle route. Relevant ARM64 `cmp_rdata` NEON and I8MM work is already in
+  this fork; duplicating it would not address this failure.
+- Adapted upstream `24a1576`, "PPU LLVM: Recycle current thread for execution."
+  PPU module compilation now runs one worker on the caller and creates one
+  fewer background thread while preserving the local memory and compiler-core
+  limits. This reduces compilation contention and transient thread pressure;
+  it is not evidence of higher gameplay FPS.
+- Android ARM64 fatal logging now emits a same-page nine-instruction window
+  around the native PC. The PID guard now saves the complete in-memory logcat,
+  a filtered fatal/process view, and PID metadata before force-stop. This avoids
+  losing the original crash when a replacement process floods a short log tail
+  with shader startup messages.
+
+Build and cool deployment proof:
+
+- `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain` completed successfully in `98s`; only existing deprecation
+  warnings were emitted.
+- Replacement ARM64 core SHA256:
+  `C1A5E6A0E8982A02A6C06C6C72B566F00E11EFBC372DE62449BD494EC981B16A`.
+- `tools/build_push_thor_core.ps1 -NoBuild -NoLaunch -NoStream -Label
+  ppu-worker-recycle` deployed the core without launching RPCSX. Push record:
+  `debug-captures/20260715-171237-ppu-worker-recycle-dev-core-push/build-push.txt`.
+  `run-as` verified the same hash at
+  `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so`.
+- Final device state was RPCSX stopped, `26.0 C`, thermal status `0`.
+
+Decision: retain the worker-recycle and crash-evidence improvements. Do not
+claim faster or stable gameplay from this round. A later separately cool round
+may spend at most one PID-guarded battle route on this core; promotion still
+requires a live battle with no process replacement, correct field/battle/menu
+visuals, and a later independent clean repetition.

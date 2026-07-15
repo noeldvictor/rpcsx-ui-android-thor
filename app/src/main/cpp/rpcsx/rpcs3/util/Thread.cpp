@@ -2038,7 +2038,18 @@ static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 	fmt::append(msg, "VM Addr: %p, Sudo Addr: %p, Exec Addr: %p.\n", vm::g_base_addr, vm::g_sudo_addr, vm::g_exec_addr);
 	if (!is_executing)
 	{
-		fmt::append(msg, "ARM64 instruction: 0x%08x.\n", *reinterpret_cast<const u32*>(RIP(context)));
+		const uptr pc = RIP(context);
+		fmt::append(msg, "ARM64 instruction: 0x%08x.\n", *reinterpret_cast<const u32*>(pc));
+		fmt::append(msg, "ARM64 instruction window:");
+		for (s32 offset = -4; offset <= 4; offset++)
+		{
+			const uptr instruction_addr = static_cast<uptr>(static_cast<s64>(pc) + static_cast<s64>(offset) * sizeof(u32));
+			if ((instruction_addr & ~uptr{0xfff}) == (pc & ~uptr{0xfff}))
+			{
+				fmt::append(msg, " %c%p=%08x", offset ? ' ' : '>', reinterpret_cast<const void*>(instruction_addr), *reinterpret_cast<const u32*>(instruction_addr));
+			}
+		}
+		fmt::append(msg, "\n");
 	}
 	if (const auto ppu = cpu_thread::get_current<ppu_thread>())
 	{
