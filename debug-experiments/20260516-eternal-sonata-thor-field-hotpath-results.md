@@ -1426,3 +1426,79 @@ Decision: reject and remove the publication-fence experiment. Retain the
 upstream ARM64/SPU fixes as the next candidate, but make no speed or stability
 claim until one later, separately cool guarded route rebuilds the SPU cache and
 reaches live battle. Do not spend a second device run in this round.
+
+## 2026-07-15 ARM64 SPU Cold-Cache Failure and Official-Stable Profile
+
+Status: `clean-field-and-tutorial-fatal-invalid`; the ARM64/SPU backports are
+retained as upstream correctness fixes but are not a stability or speed
+promotion. The replacement settings are `profile-deployed-no-launch`.
+
+Single guarded Thor proof:
+
+- Core SHA256 under test:
+  `3D30A94B01D797D204453035CCE8A2759DF90E58F2693A3D12F69088F6DAEDC3`.
+  Capture:
+  `debug-captures/android-speed-sprint/20260715-192032-thor-input-eternal-sonata-battle-intro-route`.
+- The deliberately absent SPU cache was rebuilt with the corrected compiler;
+  the new `spu-safe-v1-tane.dat` is `383968` bytes. The PPU-compilation visual
+  gate accepted real gameplay (cyan `0.052%`, progress bar `1.629%`).
+- Retained screenshots are visually clean: loaded field `27.89 FPS`, first
+  enemy approach `28.01 FPS`, and first-battle tutorial prompt `30.00 FPS`.
+  The first approach frame correctly failed the battle classifier with zero
+  cyan samples; the second frame visibly reached the real tutorial UI.
+- At emulation time `0:03:00.681622`, the parser reported unknown draw values
+  `3e21bf94` and `bf7a924b`, then repeated them at `0:03:01.031602`. At
+  `0:03:06.145964`, PPU thread `0x100000c` faulted at CIA `0x002aedd0` while
+  reading guest address `0x40`; frozen emulation followed. This is the same
+  historical draw-stream family seen in stock Windows and earlier Android
+  routes, not an SPU unknown-STOP, native ARM64 signal, or Vulkan device loss.
+- The register dump again shows a valid command-buffer cursor with valid-looking
+  small command words being consumed as object pointers. This is stream
+  desynchronization, not evidence that the clean tutorial image remained live
+  after the fatal.
+- Cold SPU compilation raised measured peak RSS to `9479 MB`, then it fell to
+  `7053 MB` near the fatal. Treat this cold-cache behavior as `max-first` until
+  Base/Pro memory pressure is measured; the next proof is warm-cache.
+- The route ran `189.7s`. Thermal samples were `27.0 C`, rising only to
+  `28.0 C` near the end, under the `35 C` cutoff. Battery ended at `78%`,
+  Android thermal status was `0`, and the failure path force-stopped RPCSX.
+  No second route, recording, Perfetto trace, or sustained profiler was used.
+
+Candidate classification:
+
+- The backported AArch64 FCGT `bsl`, initialized SPU compiler state, and SPU
+  analyzer bounds fixes compiled and executed far enough to rebuild the cache,
+  load the field, and enter the tutorial. The observed fatal predates those
+  changes, so they remain in source; this run still supplies no measurable
+  speed or stability credit.
+- The prior Rocknix-mirror config differed from the clean current-upstream
+  first-battle control in four stability-sensitive settings: `As Host` versus
+  `Usleep Only`, low versus high shader precision, inaccurate versus accurate
+  ZCULL statistics, and driver wake delay `1` versus `0`. The current-upstream
+  control survived active battle for about `34s` with no unknown draw or fatal.
+
+Official-stable profile follow-up:
+
+- Added `OfficialStable` to `tools/push_eternal_sonata_thor_profile.ps1` and
+  made it the safe default instead of the known-slow busy-wait scheduler
+  profile. The tool now requires unambiguous ADB device selection and accepts
+  explicit `-Serial`; all ADB failures are checked.
+- The built-in BLUS30161 Thor override and `OfficialStable` both use OS
+  scheduling, accurate SPU reservations, SPU verification, `Usleep Only`, high
+  shader precision, WCB, accurate ZCULL statistics, no relaxed ZCULL, no
+  multithreaded RSX, and driver wake delay `0`. The 30-FPS cap and 3-GB Vulkan
+  allocation limit remain.
+- Applied the profile to serial `c3ca0370` with `-StopApp` and no launch. The
+  previous device config is preserved at
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/config/custom_configs/config_BLUS30161.pre-thor-speed-20260715-193402.yml`.
+  The installed profile header is `RPCSX_THOR_OFFICIAL_STABLE_PROFILE`.
+- PowerShell parsing and whitespace validation passed. Host-only
+  `./gradlew.bat :app:compileDebugKotlin --console=plain` completed with
+  `BUILD SUCCESSFUL` in `15s`. Final device state was stopped, `27.0 C`,
+  thermal status `0`, and battery `78%`.
+
+Decision: keep the upstream ARM64/SPU fixes but do not promote them from this
+failed route. Use one later, separately cool warm-cache route to isolate the
+official-stable profile. It must contain no unknown draw commands, preserve
+field/tutorial/active-battle visuals, and pass the temporal liveness gate
+before any stability or performance claim. Do not run it in this round.
