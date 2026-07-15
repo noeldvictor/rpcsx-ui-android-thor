@@ -1,6 +1,9 @@
 #ifdef LLVM_AVAILABLE
 
 #include "Emu/system_config.h"
+#ifdef ANDROID
+#include "Emu/System.h"
+#endif
 #include "Emu/Cell/Common.h"
 #include "cellos/sys_sync.h"
 #include "PPUTranslator.h"
@@ -837,6 +840,16 @@ Value* PPUTranslator::ReadMemory(Value* addr, Type* type, bool is_be, u32 align)
 {
 	const u32 size = ::narrow<u32>(+type->getPrimitiveSizeInBits());
 
+#ifdef ANDROID
+	// Eternal Sonata publishes a double-buffer selector without a guest barrier. Keep the
+	// selector read ahead of the selected buffer load on weakly ordered Android hosts.
+	const u64 cia = m_addr + (m_reloc ? m_reloc->addr : 0);
+	if (cia == 0x002acc4c && Emu.GetTitleID() == "BLUS30161")
+	{
+		m_ir->CreateFence(AtomicOrdering::Acquire);
+	}
+#endif
+
 	if (m_may_be_mmio && size == 32)
 	{
 		// Test for MMIO patterns
@@ -936,6 +949,14 @@ void PPUTranslator::WriteMemory(Value* addr, Value* value, bool is_be, u32 align
 	}
 
 	// Write
+#ifdef ANDROID
+	// Publish all command payload stores before Eternal Sonata flips its active-buffer flag.
+	const u64 cia = m_addr + (m_reloc ? m_reloc->addr : 0);
+	if (cia == 0x002ac638 && Emu.GetTitleID() == "BLUS30161")
+	{
+		m_ir->CreateFence(AtomicOrdering::Release);
+	}
+#endif
 	m_ir->CreateAlignedStore(value, GetMemory(addr), llvm::MaybeAlign{align})->setVolatile(true);
 }
 

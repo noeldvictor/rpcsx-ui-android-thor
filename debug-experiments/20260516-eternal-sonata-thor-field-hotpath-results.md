@@ -1156,3 +1156,74 @@ but keep the stability issue open. Do not rerun on the hot path in this round.
 The next separately cool proof may spend one guarded battle route on
 `90646E...1F0A`; even a clean run remains provisional until repeated in a
 later cool round.
+
+## 2026-07-15 Live-Battle Guest Fatal and Title-Gated Publish Fence
+
+Status: `active-battle-live-fatal-invalid` for gameplay; the replacement core
+is `host-build-and-deploy-only` and has not been launched.
+
+Single guarded Thor result:
+
+- Core SHA256 under test:
+  `90646E5386E922DC65FDA1E4006E6A3026C0FAB7F45832756FC1EC3AC4681F0A`.
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-175013-thor-input-eternal-sonata-battle-intro-route`.
+- The route showed a visually clean field at `26.68 FPS` and a visually clean
+  active-battle candidate at `29.99 FPS`. The battle gate passed on attempt one
+  (`463 / 13488` cyan samples, `3.433%`). The fourth temporal still and the
+  ten-second live candidate were the same frozen battle image with the guest
+  crash toast; their approximately 30-FPS overlays were stale and are not
+  performance evidence.
+- Draw-command corruption began at emulation time `0:02:45.673` with
+  `3f800000`, followed by `32dfda10`, `1c005505`, `18018184`, `207ffa8e`,
+  `461c4000`, `30b12f20`, and another `3f800000`. At `0:03:09.773`, PPU thread
+  `0x100000c` faulted at CIA `0x002ad588` while reading guest address
+  `0x3f80000c`.
+- The fault registers make the stream desynchronization concrete: the command
+  buffer pointer in `r31` remained valid, while `r4`, `r8`, and `r24` held
+  float `1.0` (`0x3f800000`) and the handler dereferenced it at offset `+0x0c`.
+  A broad VM address mask would hide this corrupt guest state and was not used.
+- PID `16952` remained the original RPCSX process throughout; there was no
+  Android process replacement. Peak RSS was `9312 MB`, falling to `6983 MB`
+  after the guest froze. The improved failure path captured the full snapshot,
+  original PID, and thermal state before force-stop.
+- Every guarded sample was exactly `26.0 C`, below the `35 C` cutoff. RPCSX was
+  stopped after the failure, and no second route, screen recording, Perfetto
+  trace, or sustained profiler was used.
+
+Static-analysis result and narrow workaround:
+
+- Ghidra traced the EBOOT command producer through `0x002f76a4` into publisher
+  `0x002ac618`. The publisher terminates the current buffer at `0x002ac620`,
+  then stores the new active-buffer flag at `0x002ac638`; it contains no guest
+  `sync` or `lwsync`. The consumer reads the selector at `0x002acc24` and the
+  selected buffer pointer at `0x002acc4c` before entering the command loop.
+- Current upstream RPCS3 has no PPU memory-ordering change at these paths. The
+  Android ARM64 LLVM translator now emits a release fence immediately before
+  the exact publisher store and an acquire fence immediately before the exact
+  selected-buffer load. Both fences require title ID `BLUS30161`, so other
+  games and desktop builds are unchanged; there is no per-frame broad fence.
+- The PPU object-cache settings include a matching BLUS30161 Android bit. Old
+  cached objects therefore cannot silently bypass the new code generation.
+  This is an evidence-backed experiment, not a confirmed fix until a later
+  cool guarded route reaches and remains in live battle.
+
+Build and cool deployment proof:
+
+- `tools/build_push_thor_core.ps1 -Serial c3ca0370 -Label
+  es-command-publish-fence -NoLaunch -NoStream -NoFallbackBuild` completed the
+  optimized RelWithDebInfo ARM64 build successfully in `99.8s`; only existing
+  deprecation warnings were emitted.
+- Replacement ARM64 core SHA256:
+  `15291FA7A30276BB91CB92F06187D57CA1D277F7FA4637D0C8D10A7C33C35EA6`.
+  Push record:
+  `debug-captures/20260715-181251-es-command-publish-fence-dev-core-push/build-push.txt`.
+- RPCSX remained stopped after deployment. The post-push battery temperature
+  was `27.0 C` and Android thermal status was `0`; the replacement core was not
+  launched.
+
+Decision: retain the title-gated fence as the next stability candidate, but do
+not call it fixed or faster yet. The next separately cool round may spend one
+PID-guarded, screenshot-only route; it must keep the same process alive and the
+battle live past the temporal gate. A clean result still needs a later
+independent repetition before promotion.
