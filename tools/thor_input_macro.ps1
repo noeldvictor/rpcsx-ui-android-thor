@@ -709,9 +709,26 @@ try {
     }
 } catch {
     $failure = $_
-    if ($tokens -contains 'stop') {
+    if ($BootGame -or $tokens -contains 'stop') {
         Invoke-ThorAdbText $Adb $captureDir "macro-failure-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     }
+
+    $failure.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "macro-failure.txt") -Encoding UTF8
+
+    try {
+        Assert-ThorThermalBudget "failure-post-stop"
+    } catch {
+        $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "macro-failure-thermal-error.txt") -Encoding UTF8
+    }
+
+    if ($PostSnapshot) {
+        try {
+            Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "failure"
+        } catch {
+            $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "macro-failure-snapshot-error.txt") -Encoding UTF8
+        }
+    }
+
     throw $failure
 }
 

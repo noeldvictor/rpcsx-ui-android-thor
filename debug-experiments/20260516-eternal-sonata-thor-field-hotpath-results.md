@@ -1089,3 +1089,70 @@ claim faster or stable gameplay from this round. A later separately cool round
 may spend at most one PID-guarded battle route on this core; promotion still
 requires a live battle with no process replacement, correct field/battle/menu
 visuals, and a later independent clean repetition.
+
+## 2026-07-15 Battle-Visual Guest Fatal and JIT-Manager Concurrency Backport
+
+Status: `active-battle-visual-fatal-invalid` for gameplay; the replacement
+core is `host-build-and-deploy-only` and has not been launched.
+
+Single guarded Thor result:
+
+- Core SHA256 under test:
+  `C1A5E6A0E8982A02A6C06C6C72B566F00E11EFBC372DE62449BD494EC981B16A`.
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-171802-thor-input-eternal-sonata-battle-intro-route`.
+- The route showed a visually clean field at `26.04 FPS`, tutorial/battle
+  prompt frames at `28.02` and `30.01 FPS`, and a visually clean active-battle
+  frame at `30.48 FPS`. The battle HUD gate passed on approach attempt one
+  (`463 / 13488` cyan samples, `3.433%`). These stills prove route position,
+  not live stability: the guest log had already reported corrupt draw values.
+- At emulation time `0:02:51.134`, the draw parser received float-like command
+  values `bf26f13a`, `bfca2f4e`, `3f955080`, `3f800001`, and `3fd20001`.
+  At `0:03:00.849`, PPU thread `0x100000c` then faulted at CIA `0x002ad588`
+  while reading unmapped guest address `0x3f80000c`; frozen emulation followed.
+  This is the same intermittent corrupt command-stream family as the earlier
+  `0x002ad588` failures, so the worker-recycle change is neither a fix nor a
+  newly introduced regression.
+- PID `7993` remained the original process until the guest-health guard found
+  the fatal; there was no Android process replacement in this run. The harness
+  force-stopped RPCSX immediately. No second gameplay run, recording, Perfetto
+  trace, or sustained profiler was used.
+- All guarded thermal samples were exactly `26.0 C` under the `35 C` cutoff.
+  The final cool-state check also reported `26.0 C`, Android thermal status
+  `0`, and no RPCSX PID.
+
+Upstream performance and harness follow-up:
+
+- Adapted current upstream RPCS3 `f05ece4`, "PPU LLVM: Fix concurrency
+  weakness of jit_module_manager." The PPU JIT manager now uses 256 buckets
+  instead of 30, hashes cache-relative module names with the upstream FNV
+  helper, and removes the dead extra-large-module lock path. This reduces
+  PPU-module compilation contention without changing guest execution or the
+  battle command parser. It is a compile/loading performance improvement, not
+  evidence of higher warm-cache battle FPS or of a stability fix.
+- A booted input-macro failure now always force-stops RPCSX, records the
+  original failure text and a post-stop thermal sample, and writes the
+  requested failure snapshot before rethrowing. This closes the prior gap
+  where `-PostSnapshot` was skipped on a guest-fatal exception. PowerShell
+  parser validation passed; the change was not used to justify another run.
+
+Build and cool deployment proof:
+
+- `tools/build_push_thor_core.ps1 -Serial c3ca0370 -Label
+  ppu-jit-manager-concurrency -NoLaunch -NoStream` completed the optimized
+  RelWithDebInfo ARM64 build successfully in `2m 38s`; only existing
+  deprecation warnings were emitted.
+- Replacement ARM64 core SHA256:
+  `90646E5386E922DC65FDA1E4006E6A3026C0FAB7F45832756FC1EC3AC4681F0A`.
+  Push record:
+  `debug-captures/20260715-174253-ppu-jit-manager-concurrency-dev-core-push/build-push.txt`.
+  `run-as` verified the identical hash at
+  `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so`.
+- RPCSX remained stopped after deployment at `26.0 C`, thermal status `0`.
+  The new core was not launched, so no gameplay claim is attached to it.
+
+Decision: retain the upstream JIT-manager and failure-snapshot improvements,
+but keep the stability issue open. Do not rerun on the hot path in this round.
+The next separately cool proof may spend one guarded battle route on
+`90646E...1F0A`; even a clean run remains provisional until repeated in a
+later cool round.
