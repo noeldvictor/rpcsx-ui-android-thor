@@ -494,6 +494,15 @@ namespace vm
 		{
 			auto& bits = get_range_lock_bits(true);
 
+			// Upstream RPCS3 e379fba: a short, opt-in head start for a
+			// contending PPU writer prevents SPU reservation traffic from
+			// repeatedly winning the range lock. Keep this config-gated because
+			// it is useful only for titles with this contention pattern.
+			if (bits && i == 0 && g_cfg.core.ppu_reservation_priority_over_spu)
+			{
+				busy_wait(5000);
+			}
+
 			if (!range_lock)
 			{
 				if (!bits && bits.compare_and_swap_test(0, u64{umax}))

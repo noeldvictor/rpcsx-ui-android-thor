@@ -170,7 +170,11 @@ function Get-ThorMacroForProfile {
         }
         "eternal-sonata-battle-intro-route" {
             # Screenshot labels remain candidates until visual review confirms the battle UI.
-            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle-active;wait:10000;shot:first-battle-live-10s-candidate;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:guest:battle-live-20s;threads:battle-intro-route;stop"
+            # A short screenshot burst samples transient corruption/flicker without
+            # the sustained encoder load of screen recording. The later 10/20s
+            # checkpoints still cover battle stability. Thread snapshots stay out
+            # of this visual route so profiling overhead cannot perturb the proof.
+            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;wait:750;shot:first-battle-temporal-02;wait:750;shot:first-battle-temporal-03;wait:750;shot:first-battle-temporal-04;wait:4000;shot:first-battle-live-10s-candidate;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"

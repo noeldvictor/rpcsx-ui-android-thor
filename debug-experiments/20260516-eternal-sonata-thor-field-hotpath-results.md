@@ -829,3 +829,76 @@ Decision: bank the RCHCNT candidate as a bounded first-battle correctness pass,
 not a speed win. Keep the new Android TTY optimization installed without a
 same-day rerun. The next cool-device proof should focus on temporal flicker and
 unknown-draw frequency; do not repeat the already-clean route merely for FPS.
+
+## 2026-07-15 Intermittent Battle Fatal and PPU Reservation-Priority Candidate
+
+- Status: `failed` for the logging-only core battle proof; `proposed` and
+  build/deploy-only for the reservation-priority candidate.
+- Scope: `spu-codegen` / PPU-SPU reservation contention / battle stability.
+- Hypothesis: the prior successful battle pass did not remove the underlying
+  PPU/SPU shared-state race. Giving a contending PPU writer the opt-in head
+  start added by upstream RPCS3 commit `e379fba` may prevent reservation-heavy
+  SPU work from repeatedly winning the VM range lock.
+
+Failed single guarded proof:
+
+- Core SHA256:
+  `548A4CF44904223E5B47E6817EC15C19B4FDA57CADA72E2C67D0BA4927537264`.
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-154520-thor-input-eternal-sonata-battle-intro-route`.
+- The same state gate reached the correct field and detected the battle HUD on
+  approach attempt one (`463 / 13488`, `3.433%`). The field screenshot was
+  visually clean at `27.13 FPS`; the active-battle screenshot was visually
+  clean at `29.99 FPS`.
+- The first active-battle guest guard then found the exact historical fatal:
+  CIA `0x002ad588`, VM read at `0x3f80000c`, followed by frozen emulation.
+  Preceding internal draw values included `3e21bf94`, `bf7a924b`, and
+  `3f800000`. This supersedes the prior one-pass stability conclusion: the
+  RCHCNT change lowered or shifted the failure probability but did not fix it.
+- The harness force-stopped RPCSX immediately. The planned temporal burst and
+  10/20-second checkpoints were not executed, so this run provides no flicker
+  clearance and no speed result.
+- Device temperature moved only from `24.0 C` to `25.0 C`; Android thermal
+  status remained `0`. There was no second gameplay run, screen recording,
+  Perfetto capture, or sustained profiler.
+
+Logging optimization result:
+
+- The Android TTY optimization behaved as intended even though gameplay later
+  failed. All three routine unknown-draw messages in the new health log had
+  zero attached all-thread context dumps. In the preceding core's comparable
+  battle-active health log, two of four unknown-draw messages carried 332-line
+  context blocks. Keep the logging optimization; it is not the cause of the
+  guest VM fault and it removes avoidable mobile log work.
+
+Source candidate and deployment:
+
+- Backported the runtime half of upstream RPCS3 `e379fba`: a new
+  `PPU Reservation Priority Over SPUs` core option performs one short
+  `busy_wait(5000)` when a writer first encounters a contended exclusive range
+  lock. The option defaults off globally.
+- `tools/push_eternal_sonata_thor_profile.ps1` exposes the option as
+  `-PpuReservationPriority`; the deployed BLUS30161 custom profile enables it,
+  keeping the experiment title-scoped and reversible.
+- The battle macro now schedules four short still captures after active battle
+  and omits the broken thread snapshot. This is lower-load temporal evidence
+  than screen recording and does not mix profiling overhead into the route.
+- `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain` completed with `BUILD SUCCESSFUL`. Candidate ARM64 core
+  SHA256:
+  `AE07E245D4FD40C01FF34B6C433755227E56F39F79C55C00528829497228B3E8`.
+- The candidate core and profile were pushed with no launch. The same SHA was
+  verified at `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so`;
+  RPCSX remained stopped at `25.0 C`, thermal status `0`.
+- Rollback: rerun `tools/push_eternal_sonata_thor_profile.ps1` without
+  `-PpuReservationPriority` (which writes the setting as `false`), or restore
+  `config_BLUS30161.pre-thor-speed-20260715-155905.yml`. The code option itself
+  remains inert unless enabled.
+
+Decision: do not call the game stable or faster yet. On the next cool-device
+round, run at most one guarded state-gated battle proof with `AE07...B3E8`.
+Because the failure is intermittent, one pass is only a candidate; require two
+consecutive clean battle proofs across separate cool rounds before stability
+promotion. If the exact `0x002ad588` / `0x3f80000c` fatal repeats, turn the
+setting back off and pivot to deeper SPU/PPU reservation-semantics analysis
+instead of repeating the route.

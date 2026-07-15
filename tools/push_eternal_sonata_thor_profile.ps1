@@ -5,6 +5,7 @@ param(
     [int]$VramMb = 3072,
     [ValidateRange(0, 8)]
     [int]$ShaderCompilerThreads = 2,
+    [switch]$PpuReservationPriority,
     [switch]$StopApp,
     [switch]$LaunchApp
 )
@@ -21,6 +22,7 @@ $remoteDir = "/storage/emulated/0/Android/data/$packageName/files/config/custom_
 $remoteConfig = "$remoteDir/config_BLUS30161.yml"
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $remoteBackup = "$remoteDir/config_BLUS30161.pre-thor-speed-$timestamp.yml"
+$ppuReservationPriorityValue = if ($PpuReservationPriority) { "true" } else { "false" }
 
 $schedulerMode = "Operating System"
 $affinityNote = "OS scheduler/process affinity only."
@@ -81,6 +83,7 @@ if ($Mode -in @("RocknixFast", "RocknixCorrect", "Rocknix720Fast", "Rocknix720Co
 Core:
   Thread Scheduler Mode: Operating System
   LLVM Precompilation: false
+  PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
   SPU Reservation Busy Waiting Percentage: 0
   SPU Reservation Busy Waiting Enabled: false
   SPU GETLLAR Busy Waiting Percentage: 100
@@ -118,6 +121,8 @@ Video:
 # Source: local Thor Eternal Sonata compatibility baseline.
 # Title ID: BLUS30161
 # This keeps official DB-critical WCB and avoids SPURS/scheduler overrides.
+Core:
+  PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
 Video:
   Frame limit: 30
   Write Color Buffers: true
@@ -146,6 +151,7 @@ Video:
 # $affinityNote
 Core:
   Thread Scheduler Mode: $schedulerMode
+  PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
   SPU Reservation Busy Waiting Percentage: 0
   SPU Reservation Busy Waiting Enabled: false
   Max SPURS Threads: 6
@@ -175,6 +181,7 @@ ${rsxThreadedLine}  Accurate ZCULL stats: false
 # Official DB requires Write Color Buffers. Vulkan VRAM is capped for shared-memory Adreno.
 Core:
   Thread Scheduler Mode: RPCS3 Scheduler
+  PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
   SPU Reservation Busy Waiting Percentage: 100
   SPU Reservation Busy Waiting Enabled: true
   Max SPURS Threads: 6
@@ -222,6 +229,7 @@ if ($LaunchApp) {
 "Pushed $remoteConfig"
 "Backup: $remoteBackup"
 "Mode: $Mode"
+"PPU reservation priority over SPUs: $ppuReservationPriorityValue"
 "Vulkan VRAM allocation limit (MB): $VramMb"
 "Shader Compiler Threads: $ShaderCompilerThreads"
 if ($StopApp) {
