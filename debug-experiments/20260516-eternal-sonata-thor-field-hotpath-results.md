@@ -1355,3 +1355,74 @@ next separately cool round may spend one guarded repeat with the same core and
 harness. A second independent live route would support a stronger stability
 promotion, while residual unknown draw commands must remain monitored even if
 the repeat passes.
+
+## 2026-07-15 Publication-Fence Rejection and ARM64 SPU Upstream Candidate
+
+Status: `repeat-live-then-fatal`; the publication fence is rejected and the
+replacement ARM64/SPU core is `host-build-and-deploy-only`.
+
+Single guarded Thor repeat:
+
+- Core SHA256 under test:
+  `037F2B4FFC3B6A4EF19282C08904CAB857557D8262B299274E577549A4689A13`.
+  Capture:
+  `debug-captures/android-speed-sprint/20260715-185639-thor-input-eternal-sonata-battle-intro-route`.
+- The PPU-compilation gate accepted real gameplay (cyan `0.156%`, progress
+  bar `1.466%`). The field rendered cleanly at `28.03 FPS`; the tutorial
+  prompt, active battle, temporal frame, and ten-second battle frame were
+  visually clean at approximately `30 FPS`. The battle gate passed on attempt
+  one (`463 / 13488` cyan samples, `3.433%`).
+- The central-arena liveness check passed before the fatal: temporal-to-
+  ten-second motion measured `6059 / 63360` changed samples (`9.563%`) and
+  mean RGB delta `15.31`. This proves that the repeat reached live battle; it
+  does not make the later failure valid performance evidence.
+- Unknown draw values reappeared in the established corrupt-stream family:
+  `32c7d890`, `30323900`, `80040033`, `001b0001`, `3e21bf94`, `bf7a924b`,
+  `3f800000`, `30b12f20`, `3ef10000`, `bea60000`, and `be5b8000`. At emulation
+  time `0:03:15.653814`, PPU thread `0x100000c` faulted at CIA `0x002ad588`
+  while reading guest address `0x3f80000c`; frozen emulation followed.
+- The route ran `200.2s`. Every guarded sample remained exactly `27.0 C`,
+  Android thermal status was `0`, and battery remained `79%`. The harness
+  force-stopped RPCSX immediately after the fatal. No second device run,
+  recording, Perfetto trace, or sustained profiler was used.
+
+Fence rejection and upstream replacement:
+
+- A first live pass followed by this repeat fatal disproves the title-gated
+  PPU publication fence as a reliable fix. Its acquire/release fences and
+  per-object PPU cache-key bit were removed; they are not retained as hidden
+  per-frame overhead. The narrowed PPU invalidation and fail-closed visual and
+  temporal harness gates remain.
+- Backported upstream RPCS3 `320e8d6`, which replaces LLVM's known long and
+  incorrect AArch64 FCGT vector-select sequence with the intended `bsl`
+  instruction. This is both a direct ARM64 code-quality improvement and a
+  correctness fix, but it has not yet been measured on Thor.
+- Backported the compatible portions of upstream `4cc0e4c` and `53d76db`:
+  initialize SPU recompiler state, prevent exact-end-of-local-storage block-map
+  indexing, and deterministically select only the dominant analyzed jump
+  table. These remove undefined behavior and out-of-bounds risks on the SPU
+  compile path; they are not yet evidence that Eternal Sonata's PPU command
+  corruption is fixed.
+
+Build, deployment, and cache proof:
+
+- `tools/build_push_thor_core.ps1 -Serial c3ca0370 -Label
+  arm64-spu-upstream-correctness -NoLaunch -NoStream -NoFallbackBuild`
+  completed the optimized RelWithDebInfo ARM64 build successfully in `95.6s`;
+  only existing deprecation warnings were emitted. Push record:
+  `debug-captures/20260715-191359-arm64-spu-upstream-correctness-dev-core-push/build-push.txt`.
+- Replacement ARM64 core SHA256:
+  `3D30A94B01D797D204453035CCE8A2759DF90E58F2693A3D12F69088F6DAEDC3`.
+  `run-as` verified the identical app-internal core hash.
+- The old `spu-safe-v1-tane.dat` was moved, not deleted, to
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/codex-cache-backups/20260715-1916-arm64-spu-upstream-correctness/`.
+  The next route will therefore compile SPU code with the corrected ARM64
+  generator while retaining reusable PPU objects.
+- RPCSX remained stopped after deployment and cache backup. The final device
+  check reported `27.0 C`, thermal status `0`, and battery `79%`. The new core
+  was not launched.
+
+Decision: reject and remove the publication-fence experiment. Retain the
+upstream ARM64/SPU fixes as the next candidate, but make no speed or stability
+claim until one later, separately cool guarded route rebuilds the SPU cache and
+reaches live battle. Do not spend a second device run in this round.

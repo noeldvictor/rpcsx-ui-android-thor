@@ -3349,7 +3349,9 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 						ensure(jt_abs.size() != jt_rel.size());
 					}
 
-					if (jt_abs.size() >= jt_rel.size())
+					const bool abs_dominates = jt_abs.size() > jt_rel.size();
+
+					if (abs_dominates)
 					{
 						const u32 new_size = (start - lsa) / 4 + ::size32(jt_abs);
 
@@ -3368,7 +3370,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 						m_targets.emplace(pos, std::move(jt_abs));
 					}
 
-					if (jt_rel.size() >= jt_abs.size())
+					else
 					{
 						const u32 new_size = (start - lsa) / 4 + ::size32(jt_rel);
 

@@ -76,10 +76,10 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	u32 m_op_const_mask = -1;
 
 	// Current function chunk entry point
-	u32 m_entry;
+	u32 m_entry = 0;
 
 	// Main entry point offset
-	u32 m_base;
+	u32 m_base = 0;
 
 	// Module name
 	std::string m_hash;
@@ -91,26 +91,26 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	u32 m_next_op = 0;
 
 	// Current function (chunk)
-	llvm::Function* m_function;
+	llvm::Function* m_function{};
 
-	llvm::Value* m_thread;
-	llvm::Value* m_lsptr;
-	llvm::Value* m_interp_op;
-	llvm::Value* m_interp_pc;
-	llvm::Value* m_interp_table;
-	llvm::Value* m_interp_7f0;
-	llvm::Value* m_interp_regs;
+	llvm::Value* m_thread{};
+	llvm::Value* m_lsptr{};
+	llvm::Value* m_interp_op{};
+	llvm::Value* m_interp_pc{};
+	llvm::Value* m_interp_table{};
+	llvm::Value* m_interp_7f0{};
+	llvm::Value* m_interp_regs{};
 
 	// Helpers
-	llvm::Value* m_base_pc;
-	llvm::Value* m_interp_pc_next;
-	llvm::BasicBlock* m_interp_bblock;
+	llvm::Value* m_base_pc{};
+	llvm::Value* m_interp_pc_next{};
+	llvm::BasicBlock* m_interp_bblock{};
 
 	// i8*, contains constant vm::g_base_addr value
-	llvm::Value* m_memptr;
+	llvm::Value* m_memptr{};
 
 	// Pointers to registers in the thread context
-	std::array<llvm::Value*, s_reg_max> m_reg_addr;
+	std::array<llvm::Value*, s_reg_max> m_reg_addr{};
 
 	// Global variable (function table)
 	llvm::GlobalVariable* m_function_table{};
@@ -130,10 +130,10 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Chunk for external tail call (dispatch)
 	llvm::Function* m_dispatch{};
 
-	llvm::MDNode* m_md_unlikely;
-	llvm::MDNode* m_md_likely;
-	llvm::MDNode* m_md_spu_memory_domain;
-	llvm::MDNode* m_md_spu_context_domain;
+	llvm::MDNode* m_md_unlikely{};
+	llvm::MDNode* m_md_likely{};
+	llvm::MDNode* m_md_spu_memory_domain{};
+	llvm::MDNode* m_md_spu_context_domain{};
 
 	struct block_info
 	{
@@ -2654,7 +2654,7 @@ public:
 					{
 						m_pos = opt_pos;
 
-						if (m_pos != baddr && m_block_info[m_pos / 4] && reduced_loop_info->loop_end < m_pos)
+						if (m_pos != baddr && m_pos != SPU_LS_SIZE && m_block_info[m_pos / 4] && reduced_loop_info->loop_end < m_pos)
 						{
 							fmt::throw_exception("LLVM: Reduced Loop Pattern: Exit too early at 0x%x", m_pos);
 						}
@@ -3177,7 +3177,7 @@ public:
 
 							for (u32 target : m_bbs[cur].targets)
 							{
-								if (!m_block_info[target / 4])
+								if (target == SPU_LS_SIZE || !m_block_info[target / 4])
 								{
 									continue;
 								}
@@ -7338,7 +7338,21 @@ public:
 				const auto ai = eval(bitcast<s32[4]>(a));
 				const auto bi = eval(bitcast<s32[4]>(b));
 
+				// Work around LLVM AArch64 selecting a long and incorrect sequence for
+				// this vector select. The direct BSL matches the intended SPU mask blend.
+#if defined(ARCH_ARM64)
+				const auto select_bsl = [&](auto mask, auto t, auto f)
+				{
+					const auto asm_type = llvm::FunctionType::get(get_type<s32[4]>(), {get_type<s32[4]>(), get_type<s32[4]>(), get_type<s32[4]>()}, false);
+					const auto bsl_asm = llvm::InlineAsm::get(asm_type, "bsl $0.16b, $1.16b, $2.16b", "=w,w,w,0", false);
+
+					return value<s32[4]>(m_ir->CreateCall(asm_type, bsl_asm, {eval(sext<s32[4]>(t)).value, eval(sext<s32[4]>(f)).value, eval(sext<s32[4]>(mask)).value}));
+				};
+
+				return eval(sext<s32[4]>(fcmp_uno(a != b)) & select_bsl((ai & bi) >= 0, ai > bi, ai < bi));
+#else
 				return eval(sext<s32[4]>(fcmp_uno(a != b) & select((ai & bi) >= 0, ai > bi, ai < bi)));
+#endif
 			});
 
 		set_vr(op.rt, fcgt(get_vr<f32[4]>(op.ra), get_vr<f32[4]>(op.rb)));
@@ -9107,7 +9121,7 @@ public:
 
 			for (u32 target : tfound->second)
 			{
-				if (m_block_info[target / 4])
+				if (target != SPU_LS_SIZE && m_block_info[target / 4])
 				{
 					targets.emplace(target, nullptr);
 				}

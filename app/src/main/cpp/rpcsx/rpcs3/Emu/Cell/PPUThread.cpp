@@ -5432,9 +5432,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				accurate_vnan,
 				accurate_nj_mode,
 				contains_symbol_resolver,
-				thor_eternal_sonata_publish_fence,
 
-				bitset_last = thor_eternal_sonata_publish_fence,
+				bitset_last = contains_symbol_resolver,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -5464,19 +5463,6 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::accurate_nj_mode, settings -= ppu_settings::fixup_nj_denormals, fmt::throw_exception("NJ Not implemented");
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
-#ifdef ANDROID
-			const auto part_funcs = part.get_funcs();
-			const bool needs_thor_eternal_sonata_publish_fence =
-				Emu.GetTitleID() == "BLUS30161" &&
-				std::any_of(part_funcs.begin(), part_funcs.end(), [](const ppu_function& func)
-				{
-					const u64 end = static_cast<u64>(func.addr) + func.size;
-					return (func.addr <= 0x002ac638 && 0x002ac638 < end) ||
-						(func.addr <= 0x002acc4c && 0x002acc4c < end);
-				});
-			if (needs_thor_eternal_sonata_publish_fence)
-				settings += ppu_settings::thor_eternal_sonata_publish_fence;
-#endif
 
 			// Write version, hash, CPU, settings
 			fmt::append(obj_name, "v7-kusa-%s-%s-%s.obj", fmt::base57(output, 16), fmt::base57(settings), jit_compiler::cpu(g_cfg.core.llvm_cpu));

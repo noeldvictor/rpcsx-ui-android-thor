@@ -353,15 +353,15 @@ public:
 protected:
 	spu_runtime* m_spurt{};
 
-	u32 m_pos;
-	u32 m_size;
-	u64 m_hash_start;
+	u32 m_pos = 0;
+	u32 m_size = 0;
+	u64 m_hash_start = 0;
 
 	// Bit indicating start of the block
 	std::bitset<0x10000> m_block_info;
 
 	// GPR modified by the instruction (-1 = not set)
-	std::array<u8, 0x10000> m_regmod;
+	std::array<u8, 0x10000> m_regmod{};
 
 	std::bitset<0x10000> m_use_ra;
 	std::bitset<0x10000> m_use_rb;
