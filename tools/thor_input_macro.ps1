@@ -169,7 +169,8 @@ function Get-ThorMacroForProfile {
             return "wait:90000;shot:title-before-load;dpad_down;wait:800;shot:title-load-selected;cross;wait:55000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:65000;shot:load-complete;cross;wait:30000;shot:loaded-field;threads:load-field-route"
         }
         "eternal-sonata-battle-intro-route" {
-            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;stick:left:left:900;wait:12000;shot:first-battle-prompt;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active;check:guest:battle;threads:battle-intro-route;stop"
+            # Screenshot labels remain candidates until visual review confirms the battle UI.
+            return "wait:75000;shot:title-before-load;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;stick:left:left:900;wait:12000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle;threads:battle-intro-route;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"

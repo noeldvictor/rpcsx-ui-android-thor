@@ -74,6 +74,8 @@ param(
     [int]$WindowsVblankRate = 0,
     [ValidateSet("Keep", "On", "Off")]
     [string]$WindowsSpuAccurateReservations = "Keep",
+    [ValidateSet("Keep", "On", "Off")]
+    [string]$WindowsSpuAccurateDma = "Keep",
     [int]$WindowsGameScreen = 1,
     [int]$MaxSeconds = 120,
     [int]$AndroidSceneSeconds = 20,
@@ -91,6 +93,7 @@ param(
     [ValidateSet("Off", "Warn", "Fail", "ExternalFail")]
     [string]$WindowsHostContentionGate = "Off",
     [string]$WindowsCpuAffinityMask = "",
+    [string]$WindowsRpcs3Bin = "",
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$AndroidInputMode = "Direct",
     [ValidateSet("Keep", "Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU4", "ReducedLoopEmitU4Quiet", "ReducedLoopEmitU4DynMfcQuiet", "ReducedLoopEmitU8", "ReducedLoopEmitU8Quiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock")]
@@ -501,6 +504,7 @@ switch ($Action) {
             FrameLimit = $WindowsFrameLimit
             VblankRate = $WindowsVblankRate
             SpuAccurateReservations = $WindowsSpuAccurateReservations
+            SpuAccurateDma = $WindowsSpuAccurateDma
             GameScreen = $WindowsGameScreen
             MaxSeconds = $effectiveMaxSeconds
             InputBackend = $WindowsInputBackend
@@ -513,6 +517,9 @@ switch ($Action) {
         }
         if (-not [string]::IsNullOrWhiteSpace($WindowsCpuAffinityMask)) {
             $runParams.CpuAffinityMask = $WindowsCpuAffinityMask
+        }
+        if (-not [string]::IsNullOrWhiteSpace($WindowsRpcs3Bin)) {
+            $runParams.Rpcs3BinOverride = $WindowsRpcs3Bin
         }
         if ($BootTarget) {
             $runParams.BootTarget = $BootTarget

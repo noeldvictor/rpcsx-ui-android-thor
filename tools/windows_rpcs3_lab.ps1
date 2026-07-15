@@ -66,6 +66,7 @@ param(
     [ValidateSet("Keep", "On", "Off")]
     [string]$RsxForceHwMsaaResolve = "Keep",
     [string[]]$SearchRoots = @(),
+    [string]$Rpcs3BinOverride = "",
     [int]$MaxSeconds = 20,
     [string]$InputMacro = "",
     [ValidateSet("Keyboard", "PadApi")]
@@ -77,6 +78,8 @@ param(
     [int]$VblankRate = 0,
     [ValidateSet("Keep", "On", "Off")]
     [string]$SpuAccurateReservations = "Keep",
+    [ValidateSet("Keep", "On", "Off")]
+    [string]$SpuAccurateDma = "Keep",
     [int]$GameScreen = 1,
     [int]$ScreenshotEverySeconds = 0,
     [int]$ScreenshotStartSeconds = 20,
@@ -740,6 +743,22 @@ function Get-LabVirtualKey {
     return [byte]$map[$key]
 }
 
+function Get-LabKeyboardEventFlags {
+    param(
+        [byte]$VirtualKey,
+        [switch]$KeyUp
+    )
+
+    # Navigation keys are encoded as extended keys by Win32. Without this flag,
+    # arrow presses can be interpreted as keypad scan codes and never reach the
+    # RPCS3 keyboard handler even though ordinary keys (for example X) work.
+    $flags = if (($VirtualKey -ge 0x21 -and $VirtualKey -le 0x28) -or $VirtualKey -eq 0x2D -or $VirtualKey -eq 0x2E) { 0x1 } else { 0x0 }
+    if ($KeyUp) {
+        $flags = $flags -bor 0x2
+    }
+    return [uint32]$flags
+}
+
 function Convert-LabAffinityMask {
     param([string]$Mask)
 
@@ -1382,11 +1401,11 @@ function Invoke-LabInputMacro {
 
                     $comboVks = @($comboKeys | ForEach-Object { Get-LabVirtualKey $_ })
                     foreach ($vk in $comboVks) {
-                        [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+                        [LabInput.Win32]::keybd_event($vk, 0, (Get-LabKeyboardEventFlags -VirtualKey $vk), [UIntPtr]::Zero)
                     }
                     Start-Sleep -Milliseconds $duration
                     for ($i = $comboVks.Count - 1; $i -ge 0; $i--) {
-                        [LabInput.Win32]::keybd_event($comboVks[$i], 0, 2, [UIntPtr]::Zero)
+                        [LabInput.Win32]::keybd_event($comboVks[$i], 0, (Get-LabKeyboardEventFlags -VirtualKey $comboVks[$i] -KeyUp), [UIntPtr]::Zero)
                     }
                 }
                 Start-Sleep -Milliseconds 80
@@ -1409,9 +1428,9 @@ function Invoke-LabInputMacro {
             }
 
             $vk = Get-LabVirtualKey $name
-            [LabInput.Win32]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+            [LabInput.Win32]::keybd_event($vk, 0, (Get-LabKeyboardEventFlags -VirtualKey $vk), [UIntPtr]::Zero)
             Start-Sleep -Milliseconds $duration
-            [LabInput.Win32]::keybd_event($vk, 0, 2, [UIntPtr]::Zero)
+            [LabInput.Win32]::keybd_event($vk, 0, (Get-LabKeyboardEventFlags -VirtualKey $vk -KeyUp), [UIntPtr]::Zero)
         }
         Start-Sleep -Milliseconds 80
     }
@@ -1763,10 +1782,11 @@ function New-LabRunConfig {
         [string]$FrameLimit,
         [int]$VblankRate,
         [string]$SpuAccurateReservations,
+        [string]$SpuAccurateDma,
         [string]$RunLog
     )
 
-    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep") {
+    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep" -and $SpuAccurateDma -eq "Keep") {
         return $null
     }
     if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
@@ -1792,6 +1812,11 @@ function New-LabRunConfig {
         "Off" { "false" }
         default { "" }
     }
+    $accurateDmaValue = switch ($SpuAccurateDma) {
+        "On" { "true" }
+        "Off" { "false" }
+        default { "" }
+    }
 
     $inCore = $false
     $inVideo = $false
@@ -1810,6 +1835,8 @@ function New-LabRunConfig {
 
         if ($inCore -and $accurateReservationsValue -and $line -match '^  Accurate SPU Reservations: ') {
             $newLine = "  Accurate SPU Reservations: $accurateReservationsValue"
+        } elseif ($inCore -and $accurateDmaValue -and $line -match '^  Accurate SPU DMA: ') {
+            $newLine = "  Accurate SPU DMA: $accurateDmaValue"
         }
 
         if ($inVideo) {
@@ -1831,6 +1858,7 @@ function New-LabRunConfig {
         frame_limit               = $(if ($frameValue) { $frameValue } else { "default" })
         vblank_rate               = $(if ($VblankRate -gt 0) { $VblankRate } else { "default" })
         spu_accurate_reservations = $(if ($accurateReservationsValue) { $accurateReservationsValue } else { "default" })
+        spu_accurate_dma          = $(if ($accurateDmaValue) { $accurateDmaValue } else { "default" })
     }
 }
 
@@ -1896,8 +1924,12 @@ function Update-LabConfigDatabase {
 $repoRoot = Get-LabRepoRoot
 $workspaceRoot = Split-Path -Parent $repoRoot
 $rpcs3Root = Join-Path $workspaceRoot "rpcs3-upstream"
-$rpcs3Exe = Join-Path $rpcs3Root "build-msvc\bin\rpcs3.exe"
-$rpcs3Bin = Split-Path -Parent $rpcs3Exe
+$rpcs3Bin = if ([string]::IsNullOrWhiteSpace($Rpcs3BinOverride)) {
+    Join-Path $rpcs3Root "build-msvc\bin"
+} else {
+    Resolve-LabPath $Rpcs3BinOverride
+}
+$rpcs3Exe = Join-Path $rpcs3Bin "rpcs3.exe"
 $rpcs3LogDir = Join-Path $rpcs3Bin "log"
 $rpcs3Config = Join-Path $rpcs3Bin "config\config.yml"
 $rpcs3ConfigDb = Join-Path $rpcs3Bin "GuiConfigs\config_database.dat"
@@ -1946,7 +1978,7 @@ if ($null -eq $forceHwMsaaResolveOverride) {
 } else {
     Write-LabLine $runLog "- Force Hardware MSAA Resolve override: key missing"
 }
-$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -RunLog $runLog
+$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -SpuAccurateDma $SpuAccurateDma -RunLog $runLog
 if ($null -eq $runConfigOverride) {
     Write-LabLine $runLog "- Run config override: keep"
 } else {
@@ -1954,6 +1986,7 @@ if ($null -eq $runConfigOverride) {
     Write-LabLine $runLog "- Run config frame limit: $($runConfigOverride.frame_limit)"
     Write-LabLine $runLog "- Run config vblank rate: $($runConfigOverride.vblank_rate)"
     Write-LabLine $runLog "- Run config Accurate SPU Reservations: $($runConfigOverride.spu_accurate_reservations)"
+    Write-LabLine $runLog "- Run config Accurate SPU DMA: $($runConfigOverride.spu_accurate_dma)"
     Write-LabLine $runLog "- Run config Write Color Buffers: forced true"
 }
 Update-LabConfigDatabase -ConfigDbPath $rpcs3ConfigDb -TitleId $TitleId -Force ([bool]$RefreshConfigDb) -Skip ([bool]$SkipConfigDbRefresh) -RunLog $runLog

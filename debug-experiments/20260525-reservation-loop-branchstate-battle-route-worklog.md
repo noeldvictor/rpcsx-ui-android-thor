@@ -11099,3 +11099,53 @@ Decision:
   JSON -> verify-only emulator counters -> fast path.
 - First implementation target remains `0x25cc/0x9e4000`; `0x451c` is tracked
   as a separate TCX/SPURS pressure lane.
+
+## 2026-07-14 Current-Upstream First-Battle Counterproof
+
+Question:
+
+- Is the recurring `0x002ad588` / `0x002aedd0` draw-parser failure inherent to
+  the route, or fixed by current upstream RPCS3?
+
+Evidence:
+
+- Official RPCS3 `0.0.41-19570-49b0306b` completed the corrected Windows route
+  in
+  `debug-captures/windows-lab/20260714-231021-official19570-extendedkey-first-battle-windows`.
+  Visuals showed the enemy field, tutorial prompt, and active tutorial combat;
+  the active battle remained clean at `30 FPS` for roughly `34s` with no unknown
+  draw, access violation, or fatal hit.
+- The lab keyboard injector now emits the Win32 extended-key flag for navigation
+  keys. This fixed arrow input in the official binary and is required for the
+  route above to be valid.
+- The older instrumented Windows base permitted one CellSpurs JobChain
+  `PUTLLC16` pattern even with Accurate SPU Reservations enabled. Upstream
+  `e379fba` disables that hash. This explains the old Windows failure and the
+  current official pass.
+- Android already skipped all `PUTLLC16` emission when Accurate SPU Reservations
+  is enabled, so `e379fba` is not by itself the remaining Android fix. Its fresh
+  log showed no emitted `PUTLLC16` pattern; the only completed special loop was
+  the `RCHCNT` loop at `0xa7c` for function hash
+  `7PiXnkUPiv7ZdGvUkndsHKRu6ZNZ`.
+- Ghidra maps the corrupt guest stream to producer `0x002f7540`, publish call
+  `0x002f76a4`, publish helper `0x002ac618`, consumer `0x002afce0`, and parser
+  `0x002acbc8`. The object owns two `0x180000`-byte command buffers at `+0x14`
+  and `+0x18`, with write pointer `+0x1c` and index/flags `+0x20`. Corrupt float
+  payload can decode as valid-looking opcodes before reaching the fatal handlers
+  at `0x002ad588` or `0x002aedd0`, so a first-unknown-opcode parser guard was
+  insufficient.
+
+Classification:
+
+- `valid-current-upstream-windows-battle-counterproof`.
+- `android-field-clean-battle-route-missed` for the guarded `A7D5A6...` core.
+- Not Android battle proof.
+- Not speed promotion.
+
+Decision:
+
+- Keep the Android backport of upstream `7d0df30` for blocking output-mailbox
+  channel loops and `42242b3` for the Giga analyzer divisor repair.
+- The next Android proof must first repair the route collision/state gate, then
+  use one cool-device guarded run. A screenshot filename alone is not battle
+  evidence.

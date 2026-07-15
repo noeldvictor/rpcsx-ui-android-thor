@@ -549,13 +549,18 @@ function Start-OodaStream {
 
     Set-OodaLogging $EffectiveMode $ProfileObject $Issue
 
-    $args = @("-Label", $Issue["id"], "-Package", $Package, "-ClearLogcat", "-PollSeconds", "$EffectiveStreamPollSeconds")
+    $streamArgs = @{
+        Label = $Issue["id"]
+        Package = $Package
+        ClearLogcat = $true
+        PollSeconds = $EffectiveStreamPollSeconds
+    }
     if (-not $NoLaunch) {
-        $args += "-Launch"
+        $streamArgs["Launch"] = $true
     }
 
     $logPath = Join-Path $Issue["issueDir"] "start-stream.txt"
-    & "$PSScriptRoot\start_thor_debug_stream.ps1" @args 2>&1 |
+    & "$PSScriptRoot\start_thor_debug_stream.ps1" @streamArgs 2>&1 |
         Tee-Object -FilePath $logPath
 
     $latestPath = Join-Path (Join-Path $RepoRoot "debug-captures") "latest-stream.txt"

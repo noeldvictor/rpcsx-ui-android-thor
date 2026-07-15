@@ -705,3 +705,58 @@ Source-only upstream candidates:
   core. The next device action, after an explicit cool-device check, is one
   bounded corrected route with the new core. Promotion still requires clean
   field, menu, tutorial, and live battle evidence with no guest-fatal guard hit.
+
+## 2026-07-14 Upstream RCHCNT Fix and Guarded Field Result
+
+Status: `field-clean-battle-route-missed`; correctness candidate remains
+`battle-pending`.
+
+Source findings and fixes:
+
+- Current official RPCS3 includes `7d0df30`, which fixes SPU output-mailbox
+  `RCHCNT` loops by blocking in `wait_rchcnt` for `SPU_WrOutMbox` and
+  `SPU_WrOutIntrMbox`. The vendored Android core lacked both cases and therefore
+  kept polling those write channels. The two upstream cases were backported
+  using this tree's `OFFSET_OF` convention. This is both a timing-correctness
+  candidate and a CPU/thermal improvement; it is not a title-specific shortcut.
+- Backported upstream `42242b3`, correcting the Giga analyzer re-decode index
+  from `/ 41` to `/ 4`. Eternal Sonata currently uses Safe block size, so this
+  is a general codebase correctness repair rather than the explanation for this
+  run.
+- Fixed `tools/thor_ooda.ps1` to splat named stream parameters with a hashtable.
+  Its previous array splat bound literal option names positionally and attempted
+  to convert `net.rpcsx.easy` into `PollSeconds`.
+- Future battle-route screenshots now use `-candidate` labels until visual
+  review confirms that combat was actually reached.
+
+Host and deployment proof:
+
+- `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain` completed successfully in `151.9s`.
+- RelWithDebInfo ARM64 core SHA256:
+  `A7D5A628128A2D4949CA5E0A641CF6C2B1D4EAB061129C202ECE40AAA6899593`.
+- The same SHA256 was verified at
+  `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so` after deploy.
+- The previous Eternal Sonata SPU cache was moved, not deleted, to
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/codex-cache-backups/20260714-2340-rchcnt-upstream-fix/spu-safe-v1-tane.dat`.
+
+Single guarded Thor result:
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260714-233735-thor-input-eternal-sonata-battle-intro-route`.
+- The route loaded the correct `Path to Tenuto / South Section` save and showed
+  a clean field at `27.27 FPS`. The later candidate frames remained in the
+  field at `27.04` and `28.61 FPS`; the movement missed the enemy, so there is
+  no tutorial or active-battle proof and no battle-speed claim.
+- The fresh `RPCSX.log` was `635820` bytes and contained zero targeted unknown
+  draw, VM access, frozen-emulation, fatal, SPU STOP, verification, or Vulkan
+  device-loss hits. This is a clean field result only.
+- Battery temperature stayed between `24.0 C` and `25.0 C` under a `35 C`
+  ceiling, Android thermal status remained `0`, and RPCSX was force-stopped and
+  confirmed absent. No second run, recording, Perfetto, or sustained profiler
+  was used.
+
+Decision: retain the upstream fixes and deployed candidate. Do not claim the
+battle corruption fixed until a later cool-device run visibly reaches live
+combat and remains free of the guest parser fatal. Do not repeat this route
+unchanged; repair its collision movement/state gate first.
