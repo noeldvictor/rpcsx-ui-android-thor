@@ -1,0 +1,50 @@
+﻿{
+    "id":  "20260714-233533-es-rchcnt-upstream-fix",
+    "created":  "2026-07-14T23:35:33.8652718-04:00",
+    "action":  "Start",
+    "label":  "es-rchcnt-upstream-fix",
+    "symptom":  "",
+    "package":  "net.rpcsx.easy",
+    "profile":  "default",
+    "profilePath":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-profiles\\default.json",
+    "mode":  "Normal",
+    "status":  "failed",
+    "failure":  "Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\"",
+    "settings":  {
+                     "logcatLines":  12000,
+                     "summaryTailLines":  80,
+                     "streamPollSeconds":  3,
+                     "postMode":  "Quiet",
+                     "postModeApplied":  ""
+                 },
+    "repo":  {
+                 "head":  "987b31b66",
+                 "branch":  "master",
+                 "status":  "M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp\n M app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp\n M tools/eternal_sonata_speed_sprint.ps1\n M tools/windows_rpcs3_lab.ps1\n?? \"debug-experiments/ps3-200-windows-speed-loop-refiner-$(Get-Date -Format \u0027yyyyMMdd-HHmmss\u0027).txt\"\n?? debug-experiments/ps3-200-windows-speed-loop-refiner-latest.log"
+             },
+    "apk":  {
+
+            },
+    "device":  {
+                   "serial":  "c3ca0370",
+                   "model":  "AYN Thor",
+                   "product":  "kalama",
+                   "board":  "kalama",
+                   "packagePath":  "package:/data/app/~~yxfKal-xlY67pJon3jUN7g==/net.rpcsx.easy-89NlKJsrdewwnTVzkufF0g==/base.apk",
+                   "propsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260714-233533-es-rchcnt-upstream-fix\\device-props.txt",
+                   "appPrefsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260714-233533-es-rchcnt-upstream-fix\\app-prefs.txt"
+               },
+    "captures":  [
+
+                 ],
+    "summaries":  [
+
+                  ],
+    "quickRead":  [
+
+                  ],
+    "ghidra":  [
+
+               ],
+    "nextAction":  "Run failed: Cannot process argument transformation on parameter \u0027PollSeconds\u0027. Cannot convert value \"net.rpcsx.easy\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\""
+}
