@@ -638,3 +638,70 @@ was confirmed stopped. Do not immediately rerun after this fatal. The next proof
 should use the corrected one-shot profile on a separately cool device; it must
 show a post-tutorial active-battle frame and a clean guest-fatal guard before any
 performance comparison.
+
+## 2026-07-14 Guarded One-Shot Battle Result and ARM64 Upstream Backports
+
+Status: `active-battle-visual-fatal-invalid`; new core is `host-build-only`.
+
+Corrected one-shot route:
+
+- Ran `eternal-sonata-battle-intro-route` exactly once against serial
+  `c3ca0370`, with `-BootGame`, `-ForceStop`, direct input, the `39 C` ceiling,
+  and guest-fatal checks. Evidence is under
+  `debug-captures/android-speed-sprint/20260714-201323-thor-input-eternal-sonata-battle-intro-route`.
+- The installed core remained SHA256
+  `350E2F75C9062477A05854BD9E363E730197C0025361B3F16E46795BC27EC038`.
+  All Eternal Sonata superpath/fast-wait/RSX experiment gates were off; SPU
+  verification and accurate reservations remained enabled.
+- The route reproduced the correct field at `27.15 FPS`, first-battle tutorial
+  prompt at `30.00 FPS`, and visually complete active-battle UI/arena at
+  `29.53 FPS` in `04-loaded-field.png`, `05-first-battle-prompt.png`, and
+  `06-first-battle-active.png` respectively.
+- The active-battle capture also contains the frozen-application notification.
+  The guest-fatal guard detected the fault, pulled the log, force-stopped RPCSX,
+  and prevented the route from continuing. The displayed FPS is therefore a
+  frozen instantaneous sample, not a valid battle-speed result.
+
+New fatal boundary:
+
+- At emulation time `0:02:50.539004`, PPU thread `0x100000c` faulted at CIA
+  `0x002ad588` while reading `0x3f80000c`, then froze emulation. The call stack
+  is `0x002ad588 <- 0x002fa0f0 <- 0x002ad5a8 <- 0x002afd14`.
+- The command stream supplied `r4/r8 = 0x3f800000` (IEEE-754 `1.0`) where the
+  callee treated the value as an object pointer and read its `+0x0c` member.
+  Immediately before the fault, the game reported unknown draw commands
+  `3f800001` and `3fd20001`. This is consistent with guest draw-command/object
+  stream desynchronization, not a native Android signal or Vulkan device loss.
+- The exact CIA differs from the older Windows/Android
+  `0x002aedd0 -> 0x40` boundary, but it remains in the same guest PPU command
+  parser thread. No title-specific fast gate was enabled, and older stock
+  Windows controls have shown the same class of guest failure. Do not attribute
+  this fault to a performance gate without a matched reproducer.
+
+Thermal/safety result:
+
+- Every five-second guard sample remained exactly `25.0 C`; Android thermal
+  status was `0` before and after the route. RPCSX was confirmed stopped.
+- No second Thor run, screen recording, Perfetto capture, APK install, or new
+  core deployment was performed in this round.
+
+Source-only upstream candidates:
+
+- Adapted upstream RPCS3 commits `3f27cb8` and `03647fd` to the Android ARM64
+  SPU LLVM verifier. Large hole-free verification regions now use a generated
+  loop over 96-byte/six-NEON-vector checksum blocks; partial/holey regions keep
+  the checked fallback. SPU verification is not disabled or weakened.
+- Adapted upstream RPCS3 commit `b90eef3` to the vendored PPU LLVM worker
+  callback. It checks for remaining work before locking a compiler core and
+  explicitly unlocks if the post-lock recheck fails, avoiding a retained core
+  lock during compiler-worker shutdown.
+- `./gradlew.bat :app:assembleDebug --no-daemon --console=plain` completed with
+  `BUILD SUCCESSFUL`; both `buildCMakeDebug[arm64-v8a]` and
+  `buildCMakeDebug[x86_64]` are current. The debug APK SHA256 is
+  `F17D1927DBAA98162572AD097354AE9B61BAC6D65F252CBC9AB8E1D8FC7132CE`;
+  its stripped ARM64 `librpcsx-android.so` SHA256 is
+  `E560C2D7643A152B9E7E5DF2F17BDD890FBD05CB13986AA72CEF762E1A9920F2`.
+- This candidate is host-build validated only and is not the installed Thor
+  core. The next device action, after an explicit cool-device check, is one
+  bounded corrected route with the new core. Promotion still requires clean
+  field, menu, tutorial, and live battle evidence with no guest-fatal guard hit.
