@@ -1227,3 +1227,71 @@ not call it fixed or faster yet. The next separately cool round may spend one
 PID-guarded, screenshot-only route; it must keep the same process alive and the
 battle live past the temporal gate. A clean result still needs a later
 independent repetition before promotion.
+
+## 2026-07-15 Cold PPU Recompile Route Miss and Cache-Key Narrowing
+
+Status: `invalid-ppu-compilation-route-miss`; the narrowed replacement core is
+`host-build-and-deploy-only` and has not been launched.
+
+Single guarded Thor result:
+
+- Core SHA256 under test:
+  `15291FA7A30276BB91CB92F06187D57CA1D277F7FA4637D0C8D10A7C33C35EA6`.
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-181722-thor-input-eternal-sonata-battle-intro-route`.
+- The macro exited zero after `209.7s`, but visual review invalidated the entire
+  route. Every intended title, field, and battle screenshot still showed the
+  `Compiling PPU Modules...` splash. Progress moved from file `71 / 78`, module
+  `92 / 94` to file `78 / 78`, module `108 / 140`; gameplay never started.
+  There is no field, battle, menu, FPS, frame-pacing, or stability credit.
+- The cyan-only battle gate falsely accepted the splash on approach attempt one
+  with `7005 / 13488` samples (`51.935%`). Historical real battle frames from
+  the two preceding routes each measure `463 / 13488` (`3.433%`), while clean
+  field frames measure zero. The zero macro exit was therefore a harness
+  false-positive, not evidence that the publication fence fixed the fatal.
+- PID `24556` remained the original process and the guest-health logs contained
+  no fatal/access-violation/device-lost signature, but those facts cover PPU
+  compilation only. All guarded temperatures were `26.0-27.0 C`; RPCSX was
+  force-stopped at the scripted end, and no second device run, recording,
+  Perfetto trace, or sustained profiler was used.
+
+Cache and harness follow-up:
+
+- The first cache-version bit was title-wide, so it needlessly changed the PPU
+  object key for every module compiled under BLUS30161. The bit is now set only
+  for a JIT object part whose function range actually contains publisher CIA
+  `0x002ac638` or consumer CIA `0x002acc4c`. The runtime fence remains exactly
+  title/address-gated, while unaffected firmware and EBOOT objects can reuse
+  their prior cache keys.
+- The battle classifier now recognizes the compilation splash by combining its
+  cyan-heavy left region with the long white center progress bar. Battle
+  acceptance also requires cyan coverage at or below `10%`, closing the broad
+  blue-background false positive.
+- The battle route now performs `check:visual:not-ppu-compilation` immediately
+  after its first title screenshot. A cold rebuild still visible after the
+  75-second boot wait fails closed before route inputs. The battle gate logs
+  both compilation and progress-bar classifications for later audit.
+- PowerShell parsing passed. Offline classifier regression passed on five
+  retained screenshots: the compilation splash was compile=true/battle=false;
+  two real battle frames were compile=false/battle=true; clean field and title
+  frames were false for both classifications.
+
+Build and cool deployment proof:
+
+- `tools/build_push_thor_core.ps1 -Serial c3ca0370 -Label
+  es-fence-narrow-cache-gate -NoLaunch -NoStream -NoFallbackBuild` completed the
+  optimized RelWithDebInfo ARM64 build successfully in `71s`; only existing
+  deprecation warnings were emitted.
+- Replacement ARM64 core SHA256:
+  `037F2B4FFC3B6A4EF19282C08904CAB857557D8262B299274E577549A4689A13`.
+  Local and app-internal device hashes match. Push record:
+  `debug-captures/20260715-182904-es-fence-narrow-cache-gate-dev-core-push/build-push.txt`.
+- RPCSX remained stopped after deployment at `27.0 C`, Android thermal status
+  `0`, and battery `79%`. The replacement core was not launched.
+
+Decision: retain the runtime publication-fence candidate, the per-object cache
+key, and the fail-closed visual gate. Do not claim the fence fixed gameplay
+until a later separately cool run reaches real field and battle frames. The
+next run may spend one guarded route only; if compilation is still visible at
+75 seconds, the new early gate must stop it and the result remains a cache-warm
+step rather than gameplay proof.

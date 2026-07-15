@@ -87,6 +87,46 @@ function Get-ThorBattleUiClassification {
             0.0
         }
 
+        # The PPU compilation splash uses the same cyan-heavy background as
+        # the battle region. Detect its long center progress bar so cold-cache
+        # boots fail closed instead of being accepted as a battle scene.
+        $barXStart = [int]($bitmap.Width * 0.180)
+        $barXEnd = [int]($bitmap.Width * 0.820)
+        $barYStart = [int]($bitmap.Height * 0.600)
+        $barYEnd = [int]($bitmap.Height * 0.630)
+        $progressBarWhiteSamples = 0
+        $progressBarTotalSamples = 0
+
+        for ($y = $barYStart; $y -lt $barYEnd; $y++) {
+            $rowWhiteSamples = 0
+            $rowTotalSamples = 0
+            for ($x = $barXStart; $x -lt $barXEnd; $x += 2) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $rowTotalSamples++
+                if (
+                    $pixel.R -ge 185 -and
+                    $pixel.G -ge 185 -and
+                    $pixel.B -ge 185 -and
+                    [Math]::Abs($pixel.R - $pixel.G) -le 15 -and
+                    [Math]::Abs($pixel.G - $pixel.B) -le 15
+                ) {
+                    $rowWhiteSamples++
+                }
+            }
+
+            if ($rowWhiteSamples -gt $progressBarWhiteSamples) {
+                $progressBarWhiteSamples = $rowWhiteSamples
+                $progressBarTotalSamples = $rowTotalSamples
+            }
+        }
+
+        $progressBarWhitePercent = if ($progressBarTotalSamples -gt 0) {
+            100.0 * $progressBarWhiteSamples / $progressBarTotalSamples
+        } else {
+            0.0
+        }
+        $ppuCompilationScreenPresent = $cyanPercent -ge 25.0 -and $progressBarWhitePercent -ge 30.0
+
         return [pscustomobject]@{
             path = $resolvedPath
             width = $bitmap.Width
@@ -94,7 +134,16 @@ function Get-ThorBattleUiClassification {
             cyan_samples = $cyanSamples
             total_samples = $totalSamples
             cyan_percent = [Math]::Round($cyanPercent, 3)
-            battle_ui_present = ($cyanSamples -ge 100 -and $cyanPercent -ge 1.5)
+            progress_bar_white_samples = $progressBarWhiteSamples
+            progress_bar_total_samples = $progressBarTotalSamples
+            progress_bar_white_percent = [Math]::Round($progressBarWhitePercent, 3)
+            ppu_compilation_screen_present = $ppuCompilationScreenPresent
+            battle_ui_present = (
+                -not $ppuCompilationScreenPresent -and
+                $cyanSamples -ge 100 -and
+                $cyanPercent -ge 1.5 -and
+                $cyanPercent -le 10.0
+            )
         }
     } finally {
         $bitmap.Dispose()

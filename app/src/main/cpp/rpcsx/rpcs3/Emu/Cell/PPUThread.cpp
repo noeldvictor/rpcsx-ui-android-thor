@@ -5465,7 +5465,16 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 #ifdef ANDROID
-			if (Emu.GetTitleID() == "BLUS30161")
+			const auto part_funcs = part.get_funcs();
+			const bool needs_thor_eternal_sonata_publish_fence =
+				Emu.GetTitleID() == "BLUS30161" &&
+				std::any_of(part_funcs.begin(), part_funcs.end(), [](const ppu_function& func)
+				{
+					const u64 end = static_cast<u64>(func.addr) + func.size;
+					return (func.addr <= 0x002ac638 && 0x002ac638 < end) ||
+						(func.addr <= 0x002acc4c && 0x002acc4c < end);
+				});
+			if (needs_thor_eternal_sonata_publish_fence)
 				settings += ppu_settings::thor_eternal_sonata_publish_fence;
 #endif
 
