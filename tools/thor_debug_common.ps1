@@ -150,6 +150,71 @@ function Get-ThorBattleUiClassification {
     }
 }
 
+function Get-ThorScreenshotChangeClassification {
+    param(
+        [Parameter(Mandatory = $true)][string]$ReferencePath,
+        [Parameter(Mandatory = $true)][string]$CandidatePath
+    )
+
+    $resolvedReferencePath = (Resolve-Path -LiteralPath $ReferencePath).Path
+    $resolvedCandidatePath = (Resolve-Path -LiteralPath $CandidatePath).Path
+    Add-Type -AssemblyName System.Drawing
+
+    $reference = [System.Drawing.Bitmap]::FromFile($resolvedReferencePath)
+    $candidate = [System.Drawing.Bitmap]::FromFile($resolvedCandidatePath)
+    try {
+        if ($reference.Width -ne $candidate.Width -or $reference.Height -ne $candidate.Height) {
+            throw "Screenshot dimensions differ: '$resolvedReferencePath' is $($reference.Width)x$($reference.Height), '$resolvedCandidatePath' is $($candidate.Width)x$($candidate.Height)."
+        }
+        if ($reference.Width -lt 320 -or $reference.Height -lt 180) {
+            throw "Screenshots are too small for the temporal-change gate ($($reference.Width)x$($reference.Height))."
+        }
+
+        # Compare the central arena only. This excludes the FPS overlay, the
+        # left battle meter, the command HUD, and Android's top-left crash toast.
+        # Idle character/world animation still changes this region in live battle.
+        $xStart = [int]($reference.Width * 0.300)
+        $xEnd = [int]($reference.Width * 0.850)
+        $yStart = [int]($reference.Height * 0.250)
+        $yEnd = [int]($reference.Height * 0.750)
+        $changedSamples = 0
+        $totalSamples = 0
+        [long]$rgbDeltaSum = 0
+
+        for ($y = $yStart; $y -lt $yEnd; $y += 3) {
+            for ($x = $xStart; $x -lt $xEnd; $x += 3) {
+                $referencePixel = $reference.GetPixel($x, $y)
+                $candidatePixel = $candidate.GetPixel($x, $y)
+                $rgbDelta =
+                    [Math]::Abs($referencePixel.R - $candidatePixel.R) +
+                    [Math]::Abs($referencePixel.G - $candidatePixel.G) +
+                    [Math]::Abs($referencePixel.B - $candidatePixel.B)
+                $totalSamples++
+                $rgbDeltaSum += $rgbDelta
+                if ($rgbDelta -ge 30) {
+                    $changedSamples++
+                }
+            }
+        }
+
+        $changedPercent = if ($totalSamples -gt 0) { 100.0 * $changedSamples / $totalSamples } else { 0.0 }
+        $meanRgbDelta = if ($totalSamples -gt 0) { 1.0 * $rgbDeltaSum / $totalSamples } else { 0.0 }
+
+        return [pscustomobject]@{
+            reference_path = $resolvedReferencePath
+            candidate_path = $resolvedCandidatePath
+            changed_samples = $changedSamples
+            total_samples = $totalSamples
+            changed_percent = [Math]::Round($changedPercent, 3)
+            mean_rgb_delta = [Math]::Round($meanRgbDelta, 3)
+            meaningful_change_present = ($changedPercent -ge 0.25 -and $meanRgbDelta -ge 1.0)
+        }
+    } finally {
+        $candidate.Dispose()
+        $reference.Dispose()
+    }
+}
+
 function Join-ThorNativeArguments {
     param([string[]]$NativeArgs)
 

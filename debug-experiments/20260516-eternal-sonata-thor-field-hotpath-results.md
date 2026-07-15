@@ -1295,3 +1295,63 @@ until a later separately cool run reaches real field and battle frames. The
 next run may spend one guarded route only; if compilation is still visible at
 75 seconds, the new early gate must stop it and the result remains a cache-warm
 step rather than gameplay proof.
+
+## 2026-07-15 Publication-Fence First Real Battle Pass
+
+Status: `provisional-first-pass-with-residual-draw-warnings`; this is one clean
+route, not a stability promotion.
+
+Single guarded Thor result:
+
+- Core SHA256 under test:
+  `037F2B4FFC3B6A4EF19282C08904CAB857557D8262B299274E577549A4689A13`.
+  Capture:
+  `debug-captures/android-speed-sprint/20260715-183435-thor-input-eternal-sonata-battle-intro-route`.
+- The early compilation-screen gate correctly accepted real gameplay
+  (`ppu_compilation_screen_present=False`, cyan `0.519%`, progress bar
+  `0.814%`). The title was visually clean at `29.99 FPS`; the field was
+  visually clean at `27.25 FPS`.
+- The first-battle gate passed on its first attempt (`463 / 13488` cyan
+  samples, `3.433%`). The tutorial prompt rendered cleanly at `30.00 FPS`.
+  Active, temporal, 10-second, and 20-second battle frames remained visually
+  clean at `29.90-30.00 FPS`. Character pose and the `Next` marker changed
+  between the retained frames, proving that the guest remained live through
+  the 20-second checkpoint rather than displaying a stale FPS overlay.
+- PID `29973` remained the original RPCSX process. Capture-wide fatal scanning
+  found no guest VM/access violation, crash marker, native signal, Vulkan
+  device loss, assertion, or verification failure.
+- Four retained log occurrences remain warning evidence: draw-command value
+  `30b12f20` appeared at emulation times `0:02:41.308` and `0:02:53.074`, and
+  values `30b12f20` plus `3e9e0000` appeared at `0:03:15.896`. They did not
+  become fatal during this route, but they are pointer/float-like values and
+  clean official Windows controls generally contain no unknown draw commands.
+  The candidate's two-value warning set is smaller than the prior failing
+  routes, but that comparison is not proof that the publication fence fixed
+  the race.
+- The route took `211.7s`; every guarded battery-temperature sample was exactly
+  `27.0 C`, below the `35 C` cutoff. Battery ended near `79%`. RPCSX was
+  force-stopped at the scripted end. No second run, screen recording, Perfetto
+  trace, or sustained profiler was used.
+
+Fail-closed temporal-liveness follow-up:
+
+- The guarded route now compares the central battle arena between its existing
+  temporal, 10-second, and 20-second screenshots. It excludes the FPS overlay,
+  left battle meter, bottom command HUD, and Android crash-toast region, and
+  fails closed when neither enough changed samples nor enough mean RGB change
+  is present. This reuses retained screenshots and adds no work to the device.
+- Offline fixtures separated live and invalid states: the current temporal-to-
+  10-second pair measured `2.090%` changed samples and mean RGB delta `6.778`;
+  the 10-to-20-second pair measured `1.698%` and `2.333`. A prior fatal frozen
+  pair measured exactly `0%` and `0`, while the compilation-splash pair
+  measured `0.292%` and `0.690` and was also rejected. PowerShell parser and
+  whitespace validation passed.
+- No runtime source changed, and no replacement core was built or deployed.
+  The same hash remains installed on the Thor so the next proof tests an
+  identical candidate.
+
+Decision: retain the title-gated publication-fence candidate unchanged. The
+next separately cool round may spend one guarded repeat with the same core and
+harness. A second independent live route would support a stronger stability
+promotion, while residual unknown draw commands must remain monitored even if
+the repeat passes.

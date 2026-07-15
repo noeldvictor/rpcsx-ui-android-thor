@@ -174,7 +174,7 @@ function Get-ThorMacroForProfile {
             # the sustained encoder load of screen recording. The later 10/20s
             # checkpoints still cover battle stability. Thread snapshots stay out
             # of this visual route so profiling overhead cannot perturb the proof.
-            return "wait:75000;shot:title-before-load;check:visual:not-ppu-compilation;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;wait:750;shot:first-battle-temporal-02;wait:750;shot:first-battle-temporal-03;wait:750;shot:first-battle-temporal-04;wait:4000;shot:first-battle-live-10s-candidate;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:guest:battle-live-20s;stop"
+            return "wait:75000;shot:title-before-load;check:visual:not-ppu-compilation;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;wait:750;shot:first-battle-temporal-02;wait:750;shot:first-battle-temporal-03;wait:750;shot:first-battle-temporal-04;wait:4000;shot:first-battle-live-10s-candidate;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -592,7 +592,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`."
+    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`."
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
     "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
@@ -651,6 +651,26 @@ try {
 
             if ($classification.ppu_compilation_screen_present) {
                 throw "PPU compilation is still visible after the boot wait; route inputs and gameplay claims are invalid."
+            }
+        } elseif ($token -match '^check:visual:changed:(.+)$') {
+            if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
+                throw "The temporal-change visual check requires a preceding candidate screenshot."
+            }
+
+            $referenceLabel = $Matches[1]
+            $referenceScreenshot = Get-ChildItem -LiteralPath $captureDir -Filter "*-$referenceLabel.png" -File |
+                Sort-Object Name |
+                Select-Object -Last 1
+            if (-not $referenceScreenshot) {
+                throw "Temporal-change reference screenshot '$referenceLabel' was not found in '$captureDir'."
+            }
+
+            $classification = Get-ThorScreenshotChangeClassification -ReferencePath $referenceScreenshot.FullName -CandidatePath $script:LastThorScreenshotPath
+            "$(Get-Date -Format o) reference_label=$referenceLabel meaningful_change_present=$($classification.meaningful_change_present) changed_samples=$($classification.changed_samples) total_samples=$($classification.total_samples) changed_percent=$($classification.changed_percent) mean_rgb_delta=$($classification.mean_rgb_delta) reference_path=$($classification.reference_path) candidate_path=$($classification.candidate_path)" |
+                Out-File -LiteralPath (Join-Path $captureDir "battle-temporal-change-gate.log") -Append -Encoding UTF8
+
+            if (-not $classification.meaningful_change_present) {
+                throw "Battle image did not change meaningfully from '$referenceLabel'; frozen emulation is assumed."
             }
         } elseif ($token -match '^approach:battle:([^:]+):([^:]+):(\d+):(\d+):(\d+)$') {
             $approachStick = $Matches[1]
