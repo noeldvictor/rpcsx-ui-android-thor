@@ -1502,3 +1502,80 @@ failed route. Use one later, separately cool warm-cache route to isolate the
 official-stable profile. It must contain no unknown draw commands, preserve
 field/tutorial/active-battle visuals, and pass the temporal liveness gate
 before any stability or performance claim. Do not run it in this round.
+
+## 2026-07-15 Official-Stable Rejection and RCHCNT Fallback Candidate
+
+Status: `warm-cache-tutorial-fatal-invalid`; the official-stable settings are
+rejected and restored. The exact Eternal Sonata RCHCNT fallback is
+`built-and-deployed-no-launch`.
+
+Single guarded Thor proof:
+
+- Core SHA256 under test:
+  `3D30A94B01D797D204453035CCE8A2759DF90E58F2693A3D12F69088F6DAEDC3`.
+  Capture:
+  `debug-captures/android-speed-sprint/20260715-194013-thor-input-eternal-sonata-battle-intro-route`.
+- The warm SPU cache was `383968` bytes. The PPU-compilation gate accepted
+  real gameplay (cyan `0.326%`, progress bar `1.629%`). The field screenshot
+  was visually clean at `27.01 FPS`, below the preceding `27.89` and `28.03`
+  class results. The first-battle tutorial became visible at `29.68 FPS`, but
+  already contained the Android crash toast and is invalid performance data.
+- At emulation time `0:02:43.280765`, unknown draw values `32c7d930`,
+  `30323900`, `80040033`, `001b0001`, and `00000233` appeared. Values
+  `3e21bf94` and `bf7a924b` followed at `0:02:44.057065`. At
+  `0:02:46.865930`, PPU thread `0x100000c` faulted at CIA `0x002aedd0` while
+  reading guest address `0x40`; frozen emulation followed.
+- The register state matches the prior fatal family: `r3=4`, `r4=0x48`, `r10`
+  points to those small command words, and `r31` remains a valid stream cursor
+  followed by words `0` and `0x43`. This is deterministic guest draw-stream
+  desynchronization, not a native ARM64 crash, SPU unknown STOP, or Vulkan
+  device loss.
+- Warm-cache peak RSS still reached `9412 MB` before falling to `7285 MB`, so
+  the memory spike is not exclusively cold SPU compilation. Retain the
+  Max-first classification until Base/Pro memory pressure is measured.
+- The route ran `175.3s`. Every guarded battery-temperature sample was exactly
+  `27.0 C`; battery ended at `78%` and Android thermal status was `0`. The
+  failure path force-stopped RPCSX. No second route, recording, Perfetto trace,
+  or sustained profiler was used.
+
+Profile rejection and restoration:
+
+- Matching the Windows control's timer, shader-precision, ZCULL, and driver
+  wake-delay settings neither prevented the identical fatal nor improved the
+  field result. `OfficialStable` was removed from the profile tool and from the
+  built-in BLUS30161 override. The tool now defaults to `OfficialMinimal` while
+  retaining its explicit-serial and checked-ADB safety improvements.
+- Restored the pre-test device config from
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/config/custom_configs/config_BLUS30161.pre-thor-speed-20260715-193402.yml`.
+  The current header is `RPCSX_THOR_ROCKNIX_MIRROR_PROFILE`, with `As Host`,
+  low shader precision, inaccurate ZCULL statistics, and driver wake delay
+  `1`. The app remained stopped after restoration.
+
+Narrow RCHCNT fallback candidate:
+
+- Fresh Android logs identify only one completed special SPU channel loop:
+  CellSpursKernel function `0xa7c-7PiXnkUPiv7ZdGvUkndsHKRu6ZNZ`, with
+  `read_pc=0xa7c`. The current core already contains upstream's RCHCNT loop fix,
+  yet the draw stream still corrupts. The next isolation therefore declines
+  `inst_attr::rchcnt_loop` only when all four gates match: Android,
+  `BLUS30161`, entry/read PC `0xa7c`, and the exact function hash. All other
+  titles and functions retain the optimized path and normal channel semantics
+  handle this one loop.
+- `tools/build_push_thor_core.ps1 -Serial c3ca0370 -Label
+  es-rchcnt-loop-disable -NoLaunch -NoStream -NoFallbackBuild` completed the
+  optimized RelWithDebInfo ARM64 build and deploy successfully in `65.7s`;
+  only existing warnings were emitted. Push record:
+  `debug-captures/20260715-194843-es-rchcnt-loop-disable-dev-core-push/build-push.txt`.
+- Replacement core SHA256:
+  `6B97B0964C57A0AEFD51CF9655528245FDCCA4515EA9137041564E14BA0CD47E`.
+  The previous analyzed SPU cache was moved, not deleted, to
+  `/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/codex-cache-backups/20260715-195012-es-rchcnt-loop-disable/spu-safe-v1-tane.dat`.
+  The next proof must rebuild the cache to exercise the fallback.
+- The replacement core was not launched. Final verification left RPCSX
+  stopped at `27.0 C`, thermal status `0`, and battery `78%`.
+
+Decision: reject the official-stable settings and restore the prior profile.
+Retain the exact RCHCNT fallback only as an unproven stability candidate. Spend
+one later, separately cool guarded route to confirm that the skip notice is
+logged, the cache is rebuilt, battle remains live, and no unknown draw or
+fatal appears. Do not run it in this round.

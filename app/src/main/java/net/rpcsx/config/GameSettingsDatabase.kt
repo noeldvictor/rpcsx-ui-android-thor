@@ -35,7 +35,6 @@ object GameSettingsDatabase {
             # RPCSX_THOR_PROFILE_OVERRIDE
             # Eternal Sonata stability/speed profile for AYN Thor.
             # Official DB requires Write Color Buffers; keep it for black-spot correctness.
-            # Match the clean current-upstream battle control for timer, precision, ZCULL, and wake-delay stability.
             # 30 FPS matches the practical full-speed target for this title on Thor.
             # Cap Vulkan VRAM on shared-memory Adreno so cache/shader spikes do not eat the device.
             # Do not cap SPURS here; SPURS 4 caused a black-screen-alive load hang on Thor.
@@ -47,16 +46,14 @@ object GameSettingsDatabase {
               Max SPURS Threads: 6
               Accurate SPU Reservations: true
               SPU Verification: true
-              Sleep Timers Accuracy: Usleep Only
+              Sleep Timers Accuracy: As Host
             Video:
               Frame limit: 30
-              Shader Precision: High
               Write Color Buffers: true
-              Accurate ZCULL stats: true
+              Accurate ZCULL stats: false
               Relaxed ZCULL Sync: false
               Multithreaded RSX: false
               Shader Compiler Threads: 2
-              Driver Wake-Up Delay: 0
               Vulkan:
                 VRAM allocation limit (MB): 3072
               Performance Overlay:

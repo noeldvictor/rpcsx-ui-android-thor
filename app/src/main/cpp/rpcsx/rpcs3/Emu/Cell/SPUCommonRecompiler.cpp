@@ -7938,6 +7938,18 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			continue;
 		}
 
+#ifdef ANDROID
+		// Eternal Sonata's CellSpursKernel channel loop is the only RCHCNT fast path
+		// observed before its Android draw-command stream desynchronizes. Keep the
+		// normal channel semantics for this exact function while leaving every other
+		// title and SPU function on the optimized path.
+		if (Emu.GetTitleID() == "BLUS30161" && read_pc == 0xa7c && entry_point == 0xa7c && func_hash == "7PiXnkUPiv7ZdGvUkndsHKRu6ZNZ")
+		{
+			spu_log.notice("Eternal Sonata Android: disabled RCHCNT loop fast path (read_pc=0x%x, 0x%x-%s)", read_pc, entry_point, func_hash);
+			continue;
+		}
+#endif
+
 		if (pattern.active)
 		{
 			spu_log.error("Channel loop error! (get_pc=0x%x,  0x%x-%s)", read_pc, entry_point, func_hash);

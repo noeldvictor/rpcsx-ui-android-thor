@@ -1,6 +1,6 @@
 param(
-    [ValidateSet("OfficialStable", "SafeSpeed", "OfficialMinimal", "NeutralCore", "RsxThreaded", "OldNeutral", "AltNeutral", "AltPpuPrime", "AltSpuWide", "RocknixFast", "RocknixCorrect", "Rocknix720Fast", "Rocknix720Correct")]
-    [string]$Mode = "OfficialStable",
+    [ValidateSet("SafeSpeed", "OfficialMinimal", "NeutralCore", "RsxThreaded", "OldNeutral", "AltNeutral", "AltPpuPrime", "AltSpuWide", "RocknixFast", "RocknixCorrect", "Rocknix720Fast", "Rocknix720Correct")]
+    [string]$Mode = "OfficialMinimal",
     [string]$Serial,
     [ValidateRange(512, 8192)]
     [int]$VramMb = 3072,
@@ -140,48 +140,6 @@ Video:
   Resolution Scale: $resolutionScale
   Shader Compiler Threads: $ShaderCompilerThreads
   Driver Wake-Up Delay: 1
-  Vulkan:
-    Asynchronous Texture Streaming 2: false
-    Asynchronous Queue Scheduler: Safe
-    VRAM allocation limit (MB): $VramMb
-  Performance Overlay:
-    Enabled: true
-    Detail level: Minimal
-"@
-} elseif ($Mode -eq "OfficialStable") {
-    $profile = @"
-# RPCSX_THOR_OFFICIAL_STABLE_PROFILE
-# Source: clean current-upstream RPCS3 first-battle control plus Thor-safe resource limits.
-# Title ID: BLUS30161
-# Correctness-first profile for draw-stream stability and the reported flicker.
-# Keep experimental superpaths off; optimize only after this profile survives battle repetition.
-Core:
-  Thread Scheduler Mode: Operating System
-  LLVM Precompilation: false
-  PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
-  SPU Reservation Busy Waiting Percentage: 0
-  SPU Reservation Busy Waiting Enabled: false
-  SPU GETLLAR Busy Waiting Percentage: 100
-  Max SPURS Threads: 6
-  Accurate SPU Reservations: true
-  SPU Verification: true
-  Sleep Timers Accuracy: Usleep Only
-  XFloat Accuracy: Approximate
-
-Video:
-  Renderer: Vulkan
-  Resolution: 1280x720
-  Aspect ratio: 16:9
-  Frame limit: 30
-  Shader Precision: High
-  Write Color Buffers: true
-  Accurate ZCULL stats: true
-  Relaxed ZCULL Sync: false
-  Multithreaded RSX: false
-  Disable On-Disk Shader Cache: false
-  Resolution Scale: 100
-  Shader Compiler Threads: $ShaderCompilerThreads
-  Driver Wake-Up Delay: 0
   Vulkan:
     Asynchronous Texture Streaming 2: false
     Asynchronous Queue Scheduler: Safe
