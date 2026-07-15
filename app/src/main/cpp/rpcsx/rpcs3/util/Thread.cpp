@@ -105,7 +105,7 @@ thread_local u64 g_tls_fault_rsx = 0;
 thread_local u64 g_tls_fault_spu = 0;
 thread_local u64 g_tls_wait_time = 0;
 thread_local u64 g_tls_wait_fail = 0;
-thread_local bool g_tls_access_violation_recovered = false;
+thread_local u64 g_tls_access_violation_recovered = umax;
 extern thread_local std::string (*g_tls_log_prefix)();
 
 // Report error and call std::abort(), defined in main.cpp
@@ -1217,7 +1217,7 @@ namespace rsx
 	extern std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler;
 }
 
-bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noexcept
+bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t* context) noexcept
 {
 	g_tls_fault_all++;
 
@@ -1253,7 +1253,7 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 		}
 	} spu_protection{cpu};
 
-	if (addr < RAW_SPU_BASE_ADDR && vm::check_addr(addr) && rsx::g_access_violation_handler)
+	if (!is_exec && addr < RAW_SPU_BASE_ADDR && vm::check_addr(addr) && rsx::g_access_violation_handler)
 	{
 		bool state_changed = false;
 
@@ -1320,7 +1320,7 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 		{
 			auto thread = idm::get_unlocked<named_thread<spu_thread>>(spu_thread::find_raw_spu((addr - RAW_SPU_BASE_ADDR) / RAW_SPU_OFFSET));
 
-			if (!thread)
+			if (!thread || is_exec)
 			{
 				break;
 			}
@@ -1453,7 +1453,9 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 	static_cast<void>(context);
 #endif /* ARCH_ */
 
-	if (vm::check_addr(addr, is_writing ? vm::page_writable : vm::page_readable))
+	const auto required_page_perms = (is_writing ? vm::page_writable : vm::page_readable) + (is_exec ? vm::page_executable : 0);
+
+	if (vm::check_addr(addr, required_page_perms))
 	{
 		return true;
 	}
@@ -1461,9 +1463,7 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 	// Hack: allocate memory in case the emulator is stopping
 	const auto hack_alloc = [&]()
 	{
-		g_tls_access_violation_recovered = true;
-
-		if (vm::check_addr(addr, is_writing ? vm::page_writable : vm::page_readable))
+		if (vm::check_addr(addr, required_page_perms))
 		{
 			return true;
 		}
@@ -1475,17 +1475,45 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 			return false;
 		}
 
+		extern void ppu_register_range(u32 addr, u32 size);
+
+		bool reprotected = false;
+
 		if (vm::writer_lock mlock; area->flags & vm::preallocated || vm::check_addr(addr, 0))
 		{
 			// For allocated memory with protection lower than required (such as protection::no or read-only while writing to it)
 			utils::memory_protect(vm::base(addr & -0x1000), 0x1000, utils::protection::rw);
+			reprotected = true;
+		}
+
+		if (reprotected)
+		{
+			if (is_exec && !vm::check_addr(addr, vm::page_executable))
+			{
+				ppu_register_range(addr & -0x10000, 0x10000);
+			}
+
+			g_tls_access_violation_recovered = addr;
 			return true;
 		}
 
-		return area->falloc(addr & -0x10000, 0x10000) || vm::check_addr(addr, is_writing ? vm::page_writable : vm::page_readable);
+		const bool allocated = area->falloc(addr & -0x10000, 0x10000);
+
+		if (allocated)
+		{
+			if (is_exec && !vm::check_addr(addr, vm::page_executable))
+			{
+				ppu_register_range(addr & -0x10000, 0x10000);
+			}
+
+			g_tls_access_violation_recovered = addr;
+			return true;
+		}
+
+		return false;
 	};
 
-	if (cpu && (cpu->get_class() == thread_class::ppu || cpu->get_class() == thread_class::spu))
+	if (cpu && (cpu->get_class() == thread_class::ppu || cpu->get_class() == thread_class::spu) && !is_exec)
 	{
 		vm::temporary_unlock(*cpu);
 		u32 pf_port_id = 0;
@@ -1627,7 +1655,7 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 
 		if (cpu->get_class() == thread_class::spu)
 		{
-			if (!g_tls_access_violation_recovered)
+			if (g_tls_access_violation_recovered != addr)
 			{
 				vm_log.notice("\n%s", dump_useful_thread_info());
 				vm_log.always()("[%s] Access violation %s location 0x%x (%s)", cpu->get_name(), is_writing ? "writing" : "reading", addr, (is_writing && vm::check_addr(addr)) ? "read-only memory" : "unmapped memory");
@@ -1663,10 +1691,10 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 
 	// Note: a thread may access violate more than once after hack_alloc recovery
 	// Do not log any further access violations in this case.
-	if (!g_tls_access_violation_recovered)
+	if (g_tls_access_violation_recovered != addr)
 	{
 		vm_log.notice("\n%s", dump_useful_thread_info());
-		vm_log.fatal("Access violation %s location 0x%x (%s)", is_writing ? "writing" : (cpu && cpu->get_class() == thread_class::ppu && cpu->get_pc() == addr ? "executing" : "reading"), addr, (is_writing && vm::check_addr(addr)) ? "read-only memory" : "unmapped memory");
+		vm_log.fatal("Access violation %s location 0x%x (%s)", is_writing ? "writing" : (is_exec ? "executing" : "reading"), addr, (is_writing && vm::check_addr(addr)) ? "read-only memory" : "unmapped memory");
 	}
 
 	while (Emu.IsPausedOrReady())
@@ -1715,8 +1743,13 @@ bool handle_access_violation(u32 addr, bool is_writing, ucontext_t* context) noe
 		}
 	}
 
-	if (Emu.IsStopped() && !hack_alloc())
+	if (Emu.IsStopped())
 	{
+		while (!hack_alloc())
+		{
+			thread_ctrl::wait_for(1000);
+		}
+
 		return false;
 	}
 
@@ -1755,6 +1788,7 @@ static LONG exception_handler(PEXCEPTION_POINTERS pExp) noexcept
 	if (pExp->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && !is_executing)
 	{
 		u32 addr = 0;
+		bool is_exec = false;
 
 		if (auto [addr0, ok] = vm::try_get_addr(ptr); ok)
 		{
@@ -1762,6 +1796,7 @@ static LONG exception_handler(PEXCEPTION_POINTERS pExp) noexcept
 		}
 		else if (const usz exec64 = (ptr - vm::g_exec_addr) / 2; exec64 <= u32{umax})
 		{
+			is_exec = true;
 			addr = static_cast<u32>(exec64);
 		}
 		else
@@ -1769,7 +1804,7 @@ static LONG exception_handler(PEXCEPTION_POINTERS pExp) noexcept
 			return EXCEPTION_CONTINUE_SEARCH;
 		}
 
-		if (thread_ctrl::get_current() && handle_access_violation(addr, is_writing, pExp->ContextRecord))
+		if (thread_ctrl::get_current() && handle_access_violation(addr, is_writing, is_exec, pExp->ContextRecord))
 		{
 			return EXCEPTION_CONTINUE_EXECUTION;
 		}
@@ -1983,7 +2018,7 @@ static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 	if (auto [addr, ok] = vm::try_get_addr(info->si_addr); ok && !is_executing)
 	{
 		// Try to process access violation
-		if (thread_ctrl::get_current() && handle_access_violation(addr, is_writing, context))
+		if (thread_ctrl::get_current() && handle_access_violation(addr, is_writing, false, context))
 		{
 			return;
 		}
@@ -1991,13 +2026,30 @@ static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 
 	if (exec64 < 0x100000000ull && !is_executing)
 	{
-		if (thread_ctrl::get_current() && handle_access_violation(static_cast<u32>(exec64), is_writing, context))
+		if (thread_ctrl::get_current() && handle_access_violation(static_cast<u32>(exec64), is_writing, true, context))
 		{
 			return;
 		}
 	}
 
 	std::string msg = fmt::format("Segfault %s location %p at %p.\n", cause, info->si_addr, RIP(context));
+
+#if defined(__ANDROID__) && defined(ARCH_ARM64)
+	fmt::append(msg, "VM Addr: %p, Sudo Addr: %p, Exec Addr: %p.\n", vm::g_base_addr, vm::g_sudo_addr, vm::g_exec_addr);
+	if (!is_executing)
+	{
+		fmt::append(msg, "ARM64 instruction: 0x%08x.\n", *reinterpret_cast<const u32*>(RIP(context)));
+	}
+	if (const auto ppu = cpu_thread::get_current<ppu_thread>())
+	{
+		fmt::append(msg, "PPU CIA: 0x%08x.\n", ppu->cia);
+	}
+	for (u32 i = 0; i < 31; i++)
+	{
+		fmt::append(msg, "X%u=%016llx%c", i, context->uc_mcontext.regs[i], i % 4 == 3 ? '\n' : ' ');
+	}
+	fmt::append(msg, "SP=%016llx\n", context->uc_mcontext.sp);
+#endif
 
 	if (vm::try_get_addr(info->si_addr).second)
 	{
@@ -2304,7 +2356,7 @@ thread_base::native_entry thread_base::finalize(u64 _self) noexcept
 	g_tls_fault_spu = 0;
 	g_tls_wait_time = 0;
 	g_tls_wait_fail = 0;
-	g_tls_access_violation_recovered = false;
+	g_tls_access_violation_recovered = umax;
 
 	g_tls_log_prefix = []() -> std::string
 	{

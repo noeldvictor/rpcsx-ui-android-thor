@@ -958,3 +958,66 @@ Decision: keep the Android TTY logging optimization, keep reservation priority
 off, and do not repeat this route just to chase a pass. The next optimization
 round should investigate the recurring `PPU[0x100000c]` native address fault
 from host/static evidence first; any later Thor proof must use the PID guard.
+
+## 2026-07-15 Upstream Access-Violation Exit Fix and ARM64 Crash Context
+
+Status: `host-build-and-deploy-only`; upstream stability candidate, not a
+gameplay pass.
+
+Static fault mapping:
+
+- The replacement process's startup log shows Thor's guarded guest VM window
+  at `0x1000000000..0x10ffffffff`. The repeated native read location
+  `0x0ff88a7008` is `0x07758ff8` below that base and is exactly
+  `base + sign_extend_32(0xf88a7008)`. A zero-extended guest address would
+  instead be `0x10f88a7008`, inside the guarded 4 GiB window.
+- This proves that the terminal PPU access escaped the guest fault handler via
+  an invalid high-bit effective-address state. It does not by itself prove
+  whether the bad PPU address was the primary fault or a secondary fault while
+  the emulator was already pausing/stopping. A global address mask was not
+  added because it would diverge from the interpreter's checked `vm::cast`
+  semantics and could hide guest-state corruption.
+- The prior same-signature event at device time `10:44:19` coincided with the
+  end of the earlier clean battle route: its last health check began at local
+  `14:44:19.050`, immediately before the old thread-snapshot token. The
+  signature is therefore recurring and is not specific to reservation
+  priority.
+
+Upstream backport:
+
+- Ported the compatible core of upstream RPCS3 `bb3e268`, "Thread.cpp: Fix
+  game exit on access violation." Access-violation recovery now tracks the
+  exact recovered address instead of a process-wide boolean, distinguishes
+  data from executable faults, restores executable mappings through
+  `ppu_register_range`, and keeps retrying the emergency page recovery while
+  emulation is stopping instead of escalating a transient guest fault to a
+  native process exit.
+- The fork predates upstream's second executable-address side table, so that
+  unrelated later branch was not fabricated here. Existing base and executable
+  mirror handling is retained.
+- Android ARM64 terminal faults now add the VM/sudo/exec bases, faulting
+  instruction, PPU CIA, X0-X30, and SP to the existing fatal message. This runs
+  only after an unrecovered crash and adds no normal frame-path work. Combined
+  with the macro PID guard, a future single failure should be actionable
+  without a screen recording or sustained profiler.
+
+Build and cool deployment proof:
+
+- `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain` completed successfully in `73s`; only existing deprecation
+  warnings were emitted.
+- Candidate ARM64 core SHA256:
+  `8E4150FFF7F75233FE1C4C9537B4A78B18317FC942D1558E620D82EB580363AE`.
+- `tools/build_push_thor_core.ps1 -NoBuild -NoLaunch -NoStream` copied the
+  candidate to `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so`;
+  `run-as ... sha256sum` verified the identical remote hash.
+- RPCSX remained stopped. Thor battery temperature was `26.0 C`, Android
+  thermal status was `0`, and the deployed BLUS30161 profile still has
+  `PPU Reservation Priority Over SPUs: false`. No game launch, cache mutation,
+  recording, trace, or profiler was used.
+
+Decision: retain this upstream recovery candidate for the next separately cool
+proof, but do not call the intermittent battle fault fixed yet. The next run
+must be one PID-guarded, screenshot-only battle route; a process change is an
+automatic failure, while a clean route still needs repetition in a later cool
+round before stability promotion.
