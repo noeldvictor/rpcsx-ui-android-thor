@@ -902,3 +902,59 @@ consecutive clean battle proofs across separate cool rounds before stability
 promotion. If the exact `0x002ad588` / `0x3f80000c` fatal repeats, turn the
 setting back off and pivot to deeper SPU/PPU reservation-semantics analysis
 instead of repeating the route.
+
+## 2026-07-15 Reservation-Priority Rejection and Process-Restart Guard
+
+- Status: `failed`; the reservation-priority switch did not prevent the
+  intermittent first-battle crash and is disabled again.
+- Core SHA256 under test:
+  `AE07E245D4FD40C01FF34B6C433755227E56F39F79C55C00528829497228B3E8`.
+- Capture:
+  `debug-captures/android-speed-sprint/20260715-160625-thor-input-eternal-sonata-battle-intro-route`.
+
+Single guarded Thor result:
+
+- The state gate reached the battle HUD on approach attempt one. The correct
+  field was visually clean at `26.97 FPS`; the first active-battle image was
+  clean at `30.00 FPS`, and the first 750 ms temporal image was clean at
+  `29.90 FPS`.
+- At device log time `12:09:26.061`, PID `12630` then reported
+  `Segfault reading location 0000000ff88a7008 at 0000007a1bdd180c` on
+  `PPU[0x100000c]`. The fatal thread termination followed at `12:09:26.082`,
+  Android declared PID `12630` dead at `12:09:26.402`, and started replacement
+  PID `13909` at `12:09:26.419`.
+- The second through fourth temporal images and both nominal 10/20-second
+  images therefore show the replacement process preloading shaders and
+  analyzing PPU code, not live battle. The visible flicker was an internal
+  native-core/app restart. Those checkpoints and the script's original
+  success exit are invalid; there is no stability or speed pass.
+- The last guest-log tail from the old process contained unknown draw commands
+  `3e21bf94`, `bf7a924b`, and `30b12f20`, but no targeted guest fatal. Pulling
+  `RPCSX.log` from the replacement process hid the old process's terminal
+  lines, which explains the false-negative health check.
+- The same native address and `PPU[0x100000c]` signature is present in logcat
+  for the preceding logging-only-core failure at device time `10:44:19`.
+  Therefore this run rejects reservation priority as a fix; it does not show
+  that the switch introduced a new crash signature.
+- The one `206.6s` route stayed from `25.0 C` to `26.0 C` across 61 thermal
+  samples under the `35 C` cutoff. RPCSX was stopped, no second route was run,
+  and no recording, Perfetto trace, or sustained profiler was used.
+
+Rollback and harness hardening:
+
+- Re-pushed the title profile without `-PpuReservationPriority`; deployed
+  `config_BLUS30161.yml` now explicitly has
+  `PPU Reservation Priority Over SPUs: false`. The dormant, default-off
+  upstream code remains available but is not active for Eternal Sonata.
+- Booted input macros now pin the first RPCSX PID, validate it during bounded
+  waits and around every token, screenshot, and guest-log check, and fail
+  closed if the PID disappears or changes. A failed guard captures the final
+  400 logcat lines before force-stopping the replacement process.
+- Native `Segfault reading location` and abnormal-thread termination text was
+  also added to the guest-log fatal patterns for cases where the original log
+  remains readable.
+
+Decision: keep the Android TTY logging optimization, keep reservation priority
+off, and do not repeat this route just to chase a pass. The next optimization
+round should investigate the recurring `PPU[0x100000c]` native address fault
+from host/static evidence first; any later Thor proof must use the PID guard.

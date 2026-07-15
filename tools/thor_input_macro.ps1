@@ -381,10 +381,12 @@ function Save-ThorScreenshot {
     $safe = New-ThorSafeLabel $Label
     $remote = "/sdcard/Android/data/$Package/files/debug-captures/$stamp-$safe.png"
     $localName = "{0:D2}-{1}.png" -f $Index, $safe
+    Assert-ThorProcessIdentity "screenshot-$safe-pre"
     Invoke-ThorAdbText $Adb $captureDir "$localName.screencap.txt" @("shell", "mkdir -p '/sdcard/Android/data/$Package/files/debug-captures' && screencap -p '$remote'") -AllowFailure | Out-Null
     Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remote -LocalName $localName | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "$localName.cleanup.txt" @("shell", "rm -f '$remote'") -AllowFailure | Out-Null
     $script:LastThorScreenshotPath = Join-Path $captureDir $localName
+    Assert-ThorProcessIdentity "screenshot-$safe-post"
 }
 
 function Save-ThorThreadSnapshot {
@@ -408,6 +410,77 @@ function Get-ThorBatteryTemperatureC {
     }
 
     return $null
+}
+
+$script:ExpectedThorPackageProcessId = $null
+
+function Get-ThorPackageProcessId {
+    $processIdLines = @(& $Adb shell pidof $Package 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    foreach ($line in $processIdLines) {
+        foreach ($candidate in ($line.ToString().Trim() -split '\s+')) {
+            if ($candidate -match '^\d+$') {
+                return $candidate
+            }
+        }
+    }
+
+    return $null
+}
+
+function Save-ThorProcessFailureEvidence {
+    param([string]$Stage)
+
+    $safeStage = New-ThorSafeLabel $Stage
+    Invoke-ThorAdbText $Adb $captureDir "process-failure-$safeStage-logcat.txt" @("logcat", "-v", "threadtime", "-t", "400") -AllowFailure | Out-Null
+}
+
+function Initialize-ThorProcessIdentity {
+    if (-not $BootGame) {
+        return
+    }
+
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        $packageProcessId = Get-ThorPackageProcessId
+        if (-not [string]::IsNullOrWhiteSpace($packageProcessId)) {
+            $script:ExpectedThorPackageProcessId = $packageProcessId
+            "$(Get-Date -Format o) stage=boot expected_pid=$packageProcessId current_pid=$packageProcessId status=established" |
+                Out-File -LiteralPath (Join-Path $captureDir "process-guard.log") -Append -Encoding UTF8
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+
+    Save-ThorProcessFailureEvidence "boot-no-process"
+    & $Adb shell am force-stop $Package | Out-Null
+    throw "RPCSX did not start within 5 seconds of the debug boot request. See process-failure-boot-no-process-logcat.txt."
+}
+
+function Assert-ThorProcessIdentity {
+    param([string]$Stage)
+
+    if (-not $BootGame) {
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($script:ExpectedThorPackageProcessId)) {
+        throw "Thor process identity guard was not initialized before '$Stage'."
+    }
+
+    $currentProcessId = Get-ThorPackageProcessId
+    $currentText = if ([string]::IsNullOrWhiteSpace($currentProcessId)) { "absent" } else { $currentProcessId }
+    if ($currentText -eq $script:ExpectedThorPackageProcessId) {
+        return
+    }
+
+    "$(Get-Date -Format o) stage=$Stage expected_pid=$($script:ExpectedThorPackageProcessId) current_pid=$currentText status=failed" |
+        Out-File -LiteralPath (Join-Path $captureDir "process-guard.log") -Append -Encoding UTF8
+    Save-ThorProcessFailureEvidence $Stage
+    & $Adb shell am force-stop $Package | Out-Null
+    throw "RPCSX process changed at '$Stage' (expected PID $($script:ExpectedThorPackageProcessId), current PID $currentText). A native crash or app restart is assumed and RPCSX was force-stopped."
 }
 
 function Assert-ThorThermalBudget {
@@ -436,6 +509,7 @@ function Wait-ThorThermallyBounded {
         $slice = [Math]::Min($remaining, 5000)
         Start-Sleep -Milliseconds $slice
         $remaining -= $slice
+        Assert-ThorProcessIdentity "wait-$Milliseconds-ms"
         Assert-ThorThermalBudget "wait-$Milliseconds-ms"
     }
 }
@@ -444,6 +518,7 @@ function Assert-ThorGuestHealthy {
     param([string]$Label = "guest")
 
     $safeLabel = New-ThorSafeLabel $Label
+    Assert-ThorProcessIdentity "guest-health-$safeLabel-pre"
     $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
     $logTail = @(& $Adb shell tail -n 800 $remoteLog 2>&1)
     $logExitCode = $LASTEXITCODE
@@ -454,7 +529,7 @@ function Assert-ThorGuestHealthy {
         throw "Could not read the guest log at '$Label'. RPCSX was force-stopped; see guest-health-$safeLabel.log."
     }
 
-    $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Thread terminated due to fatal error'
+    $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally'
     $fatalMatches = @($logTail | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
     $unknownDrawMatches = @($logTail | Select-String -Pattern 'unknown draw command' -CaseSensitive:$false)
     if ($unknownDrawMatches.Count -gt 0) {
@@ -468,6 +543,8 @@ function Assert-ThorGuestHealthy {
         & $Adb shell am force-stop $Package | Out-Null
         throw "Guest fatal detected at '$Label'. RPCSX was force-stopped; see guest-fatal-$safeLabel.txt."
     }
+
+    Assert-ThorProcessIdentity "guest-health-$safeLabel-post"
 }
 
 $resolvedMacro = Get-ThorMacroForProfile $Profile
@@ -492,6 +569,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
     "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
+    "Booted runs pin the initial RPCSX PID and fail closed if Android restarts the process; the last 400 logcat lines are captured before force-stop."
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
 Assert-ThorThermalBudget "pre-run"
@@ -507,6 +585,7 @@ if ($BootGame) {
 
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
     Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath") -AllowFailure | Out-Null
+    Initialize-ThorProcessIdentity
 }
 
 $tokens = @()
@@ -520,6 +599,10 @@ try {
     foreach ($token in $tokens) {
         $line = "$(Get-Date -Format o) $token"
         $line | Out-File -LiteralPath (Join-Path $captureDir "macro.log") -Append -Encoding UTF8
+
+        if ($token -ne 'stop') {
+            Assert-ThorProcessIdentity "token-$token-pre"
+        }
 
         if ($token -match '^wait:(\d+)$') {
             Wait-ThorThermallyBounded ([int]$Matches[1])
@@ -591,6 +674,10 @@ try {
         } else {
             Invoke-ThorPadKey $token
             Start-Sleep -Milliseconds $DefaultWaitMs
+        }
+
+        if ($token -ne 'stop') {
+            Assert-ThorProcessIdentity "token-$token-post"
         }
     }
 } catch {
