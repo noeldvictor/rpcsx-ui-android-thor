@@ -11223,3 +11223,51 @@ Decision:
   draw gate. The next separately cool Thor proof must be a warm-cache repeat;
   it must stop at the first unknown draw and cannot earn speed credit unless the
   full battle route stays clean.
+
+## 2026-07-15 RCHCNT Warm-Cache Counterproof
+
+Question:
+
+- Does the exact Android/BLUS30161 `0xa7c` RCHCNT-loop fallback pass its required
+  fail-closed warm-cache battle repeat?
+
+Evidence:
+
+- Core `A599F9BC1A6DCD2C718ED17A6DE76DE4E47F0E2347B0C9E9C38F972E48144681`
+  ran one guarded route in
+  `debug-captures/android-speed-sprint/20260715-202904-thor-input-eternal-sonata-battle-intro-route`.
+- The guest log proved the exact RCHCNT skip activated at `0:00:32.243886`.
+  The field remained visually clean at `27.78 FPS`, and the first bounded
+  approach reached a clean tutorial prompt at `30.00 FPS`.
+- Guest time `0:02:48.709891` produced unknown draw command `30b12f20`, already
+  present in the first fallback proof. The strict route gate force-stopped the
+  app immediately at `battle-approach-1`. There was no fatal guest or native
+  crash before the controlled stop.
+- RAM peaked at `11229 MB` and fell to `9098 MB`; all thermal samples were
+  `27.0 C`. No second run, recorder, Perfetto trace, or sustained profiler was
+  used.
+
+Classification:
+
+- `failed-guest-draw-stream-gate`.
+- `clean-field-and-tutorial-before-stop`.
+- Not active-battle proof.
+- Not speed or stability promotion.
+- `max-first` / `pro-max` memory risk.
+
+Action:
+
+- Removed the exact Android/title/hash RCHCNT exception and restored upstream
+  RCHCNT-loop analysis. The optimized ARM64 rebuild passed in `1m 1s` and was
+  deployed without launching as core
+  `F0B66982FDF481F42E0C82AA59F5EB8D3DAA99BD9F4F8904E1FA50CD3EBE8F3B`.
+- Retained the generic upstream host-semaphore wait optimization because this
+  result cannot isolate it from the already-disproven RCHCNT candidate. It has
+  no measured FPS credit.
+- Final state: RPCSX stopped, `27.0 C`, battery `77%`, thermal status `0`.
+
+Decision:
+
+- Reject the exact RCHCNT fallback. Do not repeat or reintroduce it. Keep the
+  fail-closed unknown-draw gate and return to offline root-cause analysis before
+  spending another Thor run.

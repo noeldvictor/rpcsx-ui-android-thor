@@ -1665,3 +1665,53 @@ Decision: keep the upstream host semaphore optimization as a low-risk generic
 performance improvement. Retain the exact RCHCNT fallback as provisional and
 keep the fail-closed unknown-draw gate. A later, separately cool warm-cache
 battle repeat is still required before either stability or speed credit.
+
+## 2026-07-15 RCHCNT Warm Repeat Failure and Revert
+
+Status: `fail-closed-unknown-draw`; exact RCHCNT fallback rejected and removed.
+
+Single guarded warm-cache Thor repeat:
+
+- Core SHA256 under test:
+  `A599F9BC1A6DCD2C718ED17A6DE76DE4E47F0E2347B0C9E9C38F972E48144681`.
+  This combined the provisional exact RCHCNT fallback with the retained
+  upstream host-semaphore optimization. Capture:
+  `debug-captures/android-speed-sprint/20260715-202904-thor-input-eternal-sonata-battle-intro-route`.
+- The full guest log confirmed the exact RCHCNT exception activated at
+  emulation time `0:00:32.243886` for `read_pc=0xa7c`, entry `0xa7c`, and
+  function hash `7PiXnkUPiv7ZdGvUkndsHKRu6ZNZ`. No cache was removed between
+  the preceding cold proof and this required repeat.
+- The PPU-compilation visual gate accepted title output (`cyan=0.067%`, white
+  progress bar `1.954%`). Retained screenshots are visually clean: loaded
+  field `27.78 FPS` and the real first-battle tutorial prompt `30.00 FPS`.
+  The route reached the battle UI on its first bounded approach.
+- At emulation time `0:02:48.709891`, the parser reported unknown draw command
+  `30b12f20`. This is the same float-like corrupt-stream precursor seen in the
+  prior fallback proof. The new fail-closed gate immediately force-stopped
+  RPCSX at `battle-approach-1`; the route did not continue into active combat.
+  No VM access violation, frozen emulation, unknown STOP, native restart, or
+  Vulkan device loss occurred before the stop.
+- Performance-sensor RAM peaked at `11229 MB` and had fallen to `9098 MB` at
+  the last sample. This exceeds the earlier roughly `9.5 GB` peaks and
+  reinforces the `max-first` / `pro-max` memory classification. The run lasted
+  `175.7s`; every guarded temperature sample was `27.0 C`.
+
+Revert and deployment:
+
+- Removed the Android/title/hash-specific RCHCNT skip from
+  `SPUCommonRecompiler.cpp`, restoring normal upstream RCHCNT-loop analysis for
+  every title. The generic upstream host-semaphore no-op-CAS optimization is
+  retained, but receives no FPS or stability credit from this failed route.
+- `tools/build_push_thor_core.ps1 -Serial c3ca0370 -Label
+  es-rchcnt-fallback-revert -NoLaunch -NoStream -NoFallbackBuild` completed the
+  optimized RelWithDebInfo ARM64 build successfully in `1m 1s` and deployed
+  the result without launching. Core SHA256:
+  `F0B66982FDF481F42E0C82AA59F5EB8D3DAA99BD9F4F8904E1FA50CD3EBE8F3B`.
+- Final read-only verification found RPCSX stopped, battery `77%`, temperature
+  `27.0 C`, and Android thermal status `0`.
+
+Decision: reject the exact RCHCNT fallback. Its first cold proof remained live
+but already contained unknown commands, and its required warm repeat failed at
+the first strict guest-health check with the same precursor. Do not rerun or
+reintroduce it. Keep the fail-closed draw-stream gate and pursue a different
+root-cause lane before another separately cool device proof.
