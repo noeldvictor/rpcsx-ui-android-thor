@@ -12618,3 +12618,62 @@ Decision: keep the Thor stopped. In one later cool round, deploy exact
 guarded route, and stop. Require a logged invalid-before/valid-after wait plus
 clean battle visuals, or a clear timeout/counterproof, before widening the wait
 or changing semaphore/SPU behavior.
+
+## 2026-07-16 Dormant Async Hook Counterproof And V2 Host Candidate
+
+One guarded device result:
+
+- Exact core `A83E3DE0EC068D6698271A93303EFF3382F13B2E7FE4E3E40A2E0D3ABCFFF53B`
+  was pushed without build or launch in
+  `debug-captures/20260716-055933-es-async-draw-barrier-repair-a83e-dev-core-push`.
+  Exactly one dispatch-probe plus barrier-repair route ran in
+  `debug-captures/android-speed-sprint/20260716-060015-thor-input-eternal-sonata-battle-intro-route`.
+- The route reached the correct Path-to-Tenuto field and first-battle tutorial
+  prompt at `27.89/30.00 FPS`, then failed closed on an unknown-word burst. The
+  first recorded word was `0xbf26f13a` at `0x32dfd710`, selected-buffer offset
+  `0x2fb90`, emitter `0x002ee0c8`, inside publication ending at offset `0x33b18`.
+  Stable rereads and later float-like words remained present.
+- There was no VM access violation, native signal, Vulkan device loss, LLVM
+  fatal, or RSX FP-CAL fatal before controlled stop. Every thermal sample was
+  `23 C`, thermal status was `0`, and cleanup left the package stopped with
+  dispatch and async properties off. No second route ran.
+- Crucially, the complete log contained zero `async draw post-drain` runtime
+  records. The v1 barrier callback therefore never executed; the target hook
+  had no independent hit counter, so it also was not dynamically proven. The
+  route did not test either verification or repair behavior. Reject A83E as
+  dormant instrumentation, not as proof against the drain hypothesis and not
+  as speed or stability evidence.
+
+Static correction and bounded v2 behavior:
+
+- Saved-project instructions show the exact descriptor output is materialized
+  at `0x002ee18c`: after that instruction, `r3` is the target and `r4` is the
+  size immediately before job builder `0x002b07c8`. V2 records that full range
+  rather than inferring only an aligned header from the earlier command store.
+- Drain call `bl 0x00309160` is at `0x002f7710`. PPU LLVM instrumentation is
+  emitted after translating an instruction, so the v2 hook on the BL executes
+  after its return and before consumer signal `0x002f7720`. The old
+  `0x002f7714` no-op was absent from or not executed by the translated block.
+- Fault-only provenance now searches the bounded async ring for a target range
+  containing the bad parser address. Barrier logs include hit/target counts,
+  exact target/size, initial and before/after endpoint words, invalid counts,
+  visibility-grace time, total wait, timeout, and overflow.
+- `repair` applies one sequence fence plus `20 us` grace only when pending
+  targets exist. If a first header still exceeds command maximum `0x65`, the
+  existing `20 us` retry remains capped at `20 ms`. The path is still
+  default-off, hard-gated to `BLUS30161`, never mutates guest memory, and lets
+  timeouts enter the existing fail-closed parser path.
+- A new high `thor_es_async_draw_barrier_v2` PPU cache bit prevents v2 from
+  loading the dormant A83E objects while preserving normal/off keys.
+  `git diff --check` passes. Android ARM64 RelWithDebInfo built successfully in
+  `208s`, and the endpoint-arithmetic review relink passed in `75s`; exact
+  host-only artifact is `1,349,730,480` bytes with SHA256
+  `E4344930EF65FC698D5AE40E9696648CFF03B7E0AE69EDB2B49061074586E520`.
+  It was not deployed or launched.
+
+Decision: classify the A83E route `failed` because the intended code was
+dormant. Keep the Thor stopped for the rest of this thermal round. In one later
+cool round, deploy exact `E434...E520`, run one guarded dispatch-probe plus
+barrier-repair route, and stop. First require nonzero `post-drain v2` hits and
+targets; promotion still requires clean active-battle visuals with no unknown
+draw, fatal, timeout, or material FPS regression.

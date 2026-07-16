@@ -301,11 +301,10 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 	u64 object, u64 parser_mode, u32 cia);
 
 // Default-off, title-gated guard for Eternal Sonata's asynchronous draw-job
-// drain. It observes the exact generated-command family implicated by the
-// dispatch probe and waits only when the game's drain returned with an invalid
-// command header still present.
+// drain. It observes the exact generated-command range passed to the async job
+// builder and applies a bounded visibility grace after the game's drain returns.
 bool ppu_thor_es_async_draw_barrier_range(u32 address, u32 size);
-void ppu_thor_es_async_draw_target(ppu_thread& ppu, u64 stream_pointer, u32 cia);
+void ppu_thor_es_async_draw_target(ppu_thread& ppu, u64 target_address, u64 target_size, u32 cia);
 void ppu_thor_es_async_draw_barrier(ppu_thread& ppu, u32 cia);
 
 template <typename T>

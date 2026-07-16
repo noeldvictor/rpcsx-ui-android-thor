@@ -975,3 +975,39 @@ Next:
   enable only dispatch probe plus async barrier `repair`, run one guarded route,
   and stop. Promotion requires logged wait resolution and clean field/battle;
   a timeout or unknown draw is a counterproof, not permission for a broad wait.
+
+## 2026-07-16 Async Range Contract V2
+
+Counterproof:
+
+- Exact A83E v1 ran once in
+  `20260716-060015-thor-input-eternal-sonata-battle-intro-route`. Correct
+  field/tutorial visuals reached `27.89/30.00 FPS`, then an inside-published
+  unknown-word burst failed closed. No VM/native/Vulkan/LLVM fatal preceded
+  stop; all thermal samples were `23 C`, status `0`, properties reset, and no
+  second route ran.
+- The full log had zero async post-drain runtime records. V1's barrier hook at
+  no-op `0x002f7714` never executed, while the inferred-target hook at
+  `0x002ee0c8` had no independent hit counter and was not dynamically proven.
+  A83E is dormant instrumentation rather than a drain counterproof.
+
+Replacement contract:
+
+- Ghidra-proven descriptor-ready `0x002ee18c` supplies exact target/size in
+  `r3/r4`. Translated drain BL `0x002f7710` invokes the barrier after return and
+  before the consumer signal. The bounded event ring now preserves full output
+  ranges and correlates a later parser fault address to its async job.
+- Repair mode adds one `20 us` sequence-fenced visibility grace per drain only
+  when targets exist, then retains the invalid-header retry with a hard `20 ms`
+  ceiling. It is BLUS30161-only, default-off, non-mutating, and fail-closed.
+- New cache bit `thor_es_async_draw_barrier_v2` excludes dormant v1 objects.
+  ARM64 RelWithDebInfo builds in `208s`, with the endpoint-arithmetic review
+  relink passing in `75s`; exact host-only core is
+  `E4344930EF65FC698D5AE40E9696648CFF03B7E0AE69EDB2B49061074586E520`,
+  size `1,349,730,480`. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped. In a later cool round, run one guarded E434 route with
+  dispatch probe plus repair, then stop. Require nonzero v2 hits/targets and
+  clean active battle before assigning stability or performance credit.
