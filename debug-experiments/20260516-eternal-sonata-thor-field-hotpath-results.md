@@ -1638,3 +1638,30 @@ full window. Do not promote it yet: unknown draw commands remain and the cold
 field sample is slower. The next separately cool run must pass the new
 fail-closed draw-stream gate before any stability claim; only then compare a
 matched warm-cache field FPS sample. Do not run a second route in this round.
+
+## 2026-07-15 Offline Handoff Trace and Upstream Semaphore Optimization
+
+Status: `host-build-pass`; generic synchronization-overhead improvement, no
+device run and no speed or stability promotion.
+
+- Ghidra now proves the guest command buffers are protected by a synchronous
+  two-semaphore handshake. After publishing, the producer acquires the
+  completion token, wakes the parser, waits for parser completion, and restores
+  the token before returning. The consumer waits for work and posts completion
+  at the stream terminator. This rules out producer/consumer buffer overlap and
+  rejects another generic Android publication fence.
+- Official upstream was refreshed through `1269ebf`. Backported `537ad39`,
+  which makes an already-registered host semaphore waiter skip a redundant
+  no-op atomic RMW/CAS when no signal exists. Guest semaphore ordering, wakeups,
+  and values are unchanged.
+- `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain` completed successfully in `1m 10s`. Host-built core SHA256:
+  `A599F9BC1A6DCD2C718ED17A6DE76DE4E47F0E2347B0C9E9C38F972E48144681`.
+- The new core was not deployed or launched. Final read-only verification found
+  RPCSX stopped at `27.0 C`, battery `77%`, and Android thermal status `0`; the
+  installed exact-RCHCNT candidate remains unchanged.
+
+Decision: keep the upstream host semaphore optimization as a low-risk generic
+performance improvement. Retain the exact RCHCNT fallback as provisional and
+keep the fail-closed unknown-draw gate. A later, separately cool warm-cache
+battle repeat is still required before either stability or speed credit.

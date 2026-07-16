@@ -11149,3 +11149,77 @@ Decision:
 - The next Android proof must first repair the route collision/state gate, then
   use one cool-device guarded run. A screenshot filename alone is not battle
   evidence.
+
+## 2026-07-15 Offline Command-Handoff Trace and Host Semaphore Backport
+
+Question:
+
+- Can the intermittent Android draw-stream corruption be explained by the
+  producer reusing a command buffer while the consumer is still parsing it,
+  and is there a current-upstream synchronization optimization worth taking
+  without another hot-device route?
+
+Static evidence:
+
+- A cross-run audit found zero unknown-draw or fatal-parser hits in the valid
+  current-upstream Windows controls, while Android first-battle runs remain
+  intermittent: some produce float-like unknown commands only, some reach the
+  `0x002ad588` / `0x002aedd0` fatal family, and the latest RCHCNT-fallback run
+  remained live but still logged six unknown commands. A single live battle is
+  therefore not stability proof.
+- New Ghidra decompilation in
+  `debug-captures/ghidra-eboot-20260714-parser/producer-coordination-decompile.txt`
+  shows that producer calls `0x002ea0b8` and `0x002ea490` are ordinary render
+  preparation, not locks or semaphore operations.
+- The actual wrapper at `0x002f76f8` publishes through `0x002f7540`, then calls
+  `0x002ac7b0` and `0x002ac808`. `0x002ac7b0` sets object flag bit 2, waits on
+  the completion semaphore at object `+0x50`, then posts the consumer-work
+  semaphore at object `+0x38`. `0x002ac808` waits for the consumer completion,
+  restores the `+0x50` token, performs frame housekeeping, and clears bit 2.
+- The consumer loop at `0x002afce0` waits on the `+0x38` work semaphore before
+  parsing. Its terminator path posts `+0x50`. The producer therefore does not
+  begin the next frame until the prior parse is complete, and it does not wake
+  the consumer until after the new buffer is published. Buffer reuse overlap is
+  ruled out by the guest protocol.
+- Host `atomic_t::compare_and_swap_test` is sequentially consistent, including
+  the fast semaphore wait/post path. Together with the synchronous guest
+  handshake, this rejects another generic publication fence. The earlier
+  Android-only acquire/release fence was correctly removed after its repeat
+  fatal; do not reintroduce it.
+
+Current-upstream backport:
+
+- Official upstream was refreshed through `1269ebf`. Commit `537ad39`
+  (`Utilities/sema.cpp: Minor optimization`) applies cleanly to the Android
+  fork's host semaphore utility.
+- `semaphore_base::imp_wait()` now returns `false` from its atomic update when
+  a waiter is already registered and no signal is available. This skips a
+  redundant no-op atomic RMW/CAS before the waiter sleeps again. Signal
+  acquisition, waiter registration/removal, notification, and memory ordering
+  are unchanged.
+- Optimized ARM64 validation command:
+  `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain`. It completed successfully in `1m 10s`.
+- Host-built core SHA256:
+  `A599F9BC1A6DCD2C718ED17A6DE76DE4E47F0E2347B0C9E9C38F972E48144681`.
+  It was not deployed or launched. The installed Thor core and its provisional
+  exact RCHCNT fallback remain unchanged. Final read-only verification found
+  RPCSX stopped at `27.0 C`, battery `77%`, and thermal status `0`.
+
+Classification:
+
+- `offline-static-analysis`.
+- `upstream-host-semaphore-overhead-backport`.
+- `buffer-reuse-overlap-rejected`.
+- Not Android battle proof.
+- Not stability or FPS promotion.
+
+Decision:
+
+- Keep the small upstream host-semaphore optimization; it is generic, preserves
+  ordering, and reduces useless host atomic traffic in a known high-volume wait
+  path.
+- Keep the exact RCHCNT fallback provisional and retain the fail-closed unknown
+  draw gate. The next separately cool Thor proof must be a warm-cache repeat;
+  it must stop at the first unknown draw and cannot earn speed credit unless the
+  full battle route stays clean.
