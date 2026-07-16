@@ -8,8 +8,8 @@
     "profile":  "default",
     "profilePath":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-profiles\\default.json",
     "mode":  "Normal",
-    "status":  "ok",
-    "failure":  "",
+    "status":  "failed",
+    "failure":  "To github.com:noeldvictor/rpcsx-ui-android-thor.git",
     "settings":  {
                      "logcatLines":  12000,
                      "summaryTailLines":  80,
@@ -46,5 +46,5 @@
     "ghidra":  [
 
                ],
-    "nextAction":  "Reproduce on Thor. While it is running, use .\\tools\\thor_ooda.ps1 -Action Summarize -Label es-async-draw-v3-399f -Profile default -NoIssueCommit for quick reads; when the issue is visible, run .\\tools\\thor_ooda.ps1 -Action Stop -Label es-async-draw-v3-399f -Profile default."
+    "nextAction":  "Run failed: To github.com:noeldvictor/rpcsx-ui-android-thor.git"
 }

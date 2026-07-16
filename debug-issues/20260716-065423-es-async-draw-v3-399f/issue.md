@@ -5,7 +5,7 @@
 - Label: es-async-draw-v3-399f
 - Profile: default
 - Mode: Normal
-- Status: ok
+- Status: failed
 - Package: net.rpcsx.easy
 - Repo: f2f848bb7 on master
 - Symptom: 
@@ -27,7 +27,7 @@
 
 ## Next Action
 
-Reproduce on Thor. While it is running, use .\tools\thor_ooda.ps1 -Action Summarize -Label es-async-draw-v3-399f -Profile default -NoIssueCommit for quick reads; when the issue is visible, run .\tools\thor_ooda.ps1 -Action Stop -Label es-async-draw-v3-399f -Profile default.
+Run failed: To github.com:noeldvictor/rpcsx-ui-android-thor.git
 
 ## Notes
 

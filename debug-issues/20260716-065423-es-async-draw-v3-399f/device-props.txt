@@ -1,5 +1,5 @@
 ﻿# adb shell getprop | grep -E 'ro.product|ro.board|ro.hardware|debug.rpcsx|log.tag.RPCS|dalvik.vm|ro.build.fingerprint'
-# captured 2026-07-16T06:54:29.4116081-04:00
+# captured 2026-07-16T06:54:31.1614979-04:00
 
 [dalvik.vm.appimageformat]: [lz4]
 [dalvik.vm.dex2oat-Xms]: [64m]
