@@ -653,16 +653,50 @@ namespace
 	// Each entry is a single atomic word so the fault-only reader can never see
 	// a torn producer/publisher breadcrumb. Command entries pack address:CIA;
 	// publish entries pack buffer-base:end-pointer. Async entries pack
-	// target-address:target-size, with their initial first:last words in the
-	// parallel ring.
+	// target-address:target-size, with endpoint words and whole-target hashes in
+	// parallel rings. Zero is reserved for an unavailable hash.
 	std::array<atomic_t<u64>, thor_es_command60_event_capacity> thor_es_command60_events{};
 	std::array<atomic_t<u64>, thor_es_publish_event_capacity> thor_es_publish_events{};
 	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_events{};
 	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_initial_words{};
+	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_initial_hashes{};
+	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_before_hashes{};
+	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_after_hashes{};
 	atomic_t<u64> thor_es_command60_event_cursor = 0;
 	atomic_t<u64> thor_es_publish_event_cursor = 0;
 	atomic_t<u64> thor_es_async_draw_event_cursor = 0;
 	atomic_t<u64> thor_es_async_draw_barrier_cursor = 0;
+
+	bool hash_thor_es_async_draw_target(u32 address, u32 size, u64& hash)
+	{
+		if (!address || size < sizeof(u32) || size > thor_es_async_draw_target_max_size ||
+			static_cast<u64>(address) + size > 0x1'0000'0000ull)
+		{
+			return false;
+		}
+
+		constexpr u32 chunk_size = 1024;
+		std::array<u8, chunk_size> chunk{};
+		u64 result = rpcs3::hash64(rpcs3::fnv_seed, size);
+		for (u32 offset = 0; offset < size; offset += chunk_size)
+		{
+			const u32 count = std::min(size - offset, chunk_size);
+			if (!vm::try_access(address + offset, chunk.data(), count, false))
+			{
+				return false;
+			}
+
+			for (u32 index = 0; index < count; index++)
+			{
+				result = rpcs3::hash64(result, chunk[index]);
+			}
+		}
+
+		// Preserve zero as the unavailable sentinel without losing a successful
+		// read in the vanishingly unlikely event that FNV-1a lands on zero.
+		hash = result ? result : 1;
+		return true;
+	}
 
 	thor_es_command_interp_mode get_thor_es_command_interp_mode()
 	{
@@ -1015,6 +1049,9 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 	u32 async_event_age = umax;
 	u32 async_initial_first = 0;
 	u32 async_initial_last = 0;
+	u64 async_initial_hash = 0;
+	u64 async_before_hash = 0;
+	u64 async_after_hash = 0;
 	{
 		const u64 cursor = thor_es_async_draw_event_cursor.load();
 		const u64 event_count = std::min<u64>(cursor, thor_es_async_draw_event_capacity);
@@ -1033,10 +1070,25 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 				async_event_age = static_cast<u32>(age);
 				async_initial_first = static_cast<u32>(initial_words >> 32);
 				async_initial_last = static_cast<u32>(initial_words);
+				async_initial_hash = thor_es_async_draw_initial_hashes[index].load();
+				async_before_hash = thor_es_async_draw_before_hashes[index].load();
+				async_after_hash = thor_es_async_draw_after_hashes[index].load();
 				break;
 			}
 		}
 	}
+	u64 async_current_hash = 0;
+	const bool async_current_hash_valid = async_target &&
+		hash_thor_es_async_draw_target(async_target, async_size, async_current_hash);
+	const bool async_after_hash_expected =
+		get_thor_es_async_draw_barrier_mode() == thor_es_async_draw_barrier_mode::repair;
+	const u64 async_settled_hash = async_after_hash ? async_after_hash : async_before_hash;
+	const char* const async_hash_relation = !async_initial_hash || !async_before_hash ||
+		(async_after_hash_expected && !async_after_hash) || !async_settled_hash ||
+		!async_current_hash_valid ? "unknown" :
+		async_settled_hash != async_current_hash ? "after_barrier_changed" :
+		async_after_hash && async_before_hash != async_after_hash ? "settled_during_grace" :
+		async_initial_hash != async_before_hash ? "settled_before_barrier" : "stable";
 
 	u32 reread = 0;
 	const bool reread_valid = read_u32(address, reread);
@@ -1054,6 +1106,8 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 		"command60_event_age=%u published_end=0x%x published_end_offset=0x%x "
 		"publish_event_age=%u publish_relation=%s async_target=0x%x async_size=0x%x "
 		"async_event_age=%u async_initial_first=0x%x async_initial_last=0x%x "
+		"async_initial_hash=0x%llx async_before_hash=0x%llx async_after_hash=0x%llx "
+		"async_current_hash=0x%llx async_current_hash_valid=%u async_hash_relation=%s "
 		"window_valid=%u window_start=0x%x "
 		"window=[0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x]",
 		hit, ppu.id, cia, object_address, address, stream_offset, command_word,
@@ -1062,7 +1116,9 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 		write, write_offset, flags, command60_emitter_cia, command60_event_age,
 		published_end, published_end_offset, publish_event_age, publish_relation,
 		async_target, async_size, async_event_age, async_initial_first,
-		async_initial_last, window_valid, window_start,
+		async_initial_last, async_initial_hash, async_before_hash, async_after_hash,
+		async_current_hash, async_current_hash_valid, async_hash_relation,
+		window_valid, window_start,
 		static_cast<u32>(window[0]), static_cast<u32>(window[1]),
 		static_cast<u32>(window[2]), static_cast<u32>(window[3]),
 		static_cast<u32>(window[4]), static_cast<u32>(window[5]),
@@ -1088,7 +1144,7 @@ bool ppu_thor_es_async_draw_barrier_range(u32 address, u32 size)
 		static atomic_t<bool> logged = false;
 		if (!logged.exchange(true))
 		{
-			ppu_log.notice("Thor Eternal Sonata async draw post-drain guard v4 enabled: mode=%s descriptor=0x%x consumer_entry=0x%x max_target_size=0x%x wait_limit_us=%llu",
+			ppu_log.notice("Thor Eternal Sonata async draw post-drain guard v5 enabled: mode=%s descriptor=0x%x consumer_entry=0x%x max_target_size=0x%x wait_limit_us=%llu fingerprint=fnv1a64",
 				get_thor_es_async_draw_barrier_mode_name(get_thor_es_async_draw_barrier_mode()),
 				thor_es_async_draw_descriptor_ready, thor_es_async_draw_consumer_signal_entry,
 				thor_es_async_draw_target_max_size,
@@ -1122,11 +1178,16 @@ void ppu_thor_es_async_draw_target(ppu_thread&, u64 target_address64, u64 target
 	be_t<u32> last_word{};
 	vm::try_access(target_address, &first_word, sizeof(first_word), false);
 	vm::try_access(last_address, &last_word, sizeof(last_word), false);
+	u64 initial_hash = 0;
+	hash_thor_es_async_draw_target(target_address, target_size, initial_hash);
 
 	const u64 cursor = thor_es_async_draw_event_cursor.fetch_add(1);
 	const usz index = cursor & (thor_es_async_draw_event_capacity - 1);
 	thor_es_async_draw_initial_words[index]
 		.release(static_cast<u64>(static_cast<u32>(first_word)) << 32 | static_cast<u32>(last_word));
+	thor_es_async_draw_initial_hashes[index].release(initial_hash);
+	thor_es_async_draw_before_hashes[index].release(0);
+	thor_es_async_draw_after_hashes[index].release(0);
 	thor_es_async_draw_events[index]
 		.release(static_cast<u64>(target_address) << 32 | target_size);
 }
@@ -1162,10 +1223,15 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	u32 first_initial_last = 0;
 	u32 first_current_first = 0;
 	u32 first_current_last = 0;
+	u64 first_initial_hash = 0;
+	u64 first_current_hash = 0;
 	u32 first_invalid_address = 0;
 	u32 readable_targets = 0;
 	u64 readable_target_bytes = 0;
-	auto count_invalid = [&]()
+	u32 hashed_targets = 0;
+	u64 hashed_target_bytes = 0;
+	u64 batch_hash = 0;
+	auto count_invalid = [&](bool after_grace)
 	{
 		u32 invalid = 0;
 		first_target_address = 0;
@@ -1174,9 +1240,14 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 		first_initial_last = 0;
 		first_current_first = 0;
 		first_current_last = 0;
+		first_initial_hash = 0;
+		first_current_hash = 0;
 		first_invalid_address = 0;
 		readable_targets = 0;
 		readable_target_bytes = 0;
+		hashed_targets = 0;
+		hashed_target_bytes = 0;
+		batch_hash = 0;
 		std::atomic_thread_fence(std::memory_order_acquire);
 
 		for (u64 event_index = event_begin; event_index < event_end; event_index++)
@@ -1202,6 +1273,29 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 			const u32 last_address = static_cast<u32>(static_cast<u64>(address) + size - sizeof(u32));
 			vm::try_access(last_address, &current_last, sizeof(current_last), false);
 			const u64 initial_words = thor_es_async_draw_initial_words[index].load();
+			const u64 initial_hash = thor_es_async_draw_initial_hashes[index].load();
+			u64 current_hash = 0;
+			if (hash_thor_es_async_draw_target(address, size, current_hash))
+			{
+				hashed_targets++;
+				hashed_target_bytes += size;
+				if (!batch_hash)
+				{
+					batch_hash = rpcs3::fnv_seed;
+				}
+				batch_hash = rpcs3::hash64(batch_hash, event);
+				batch_hash = rpcs3::hash64(batch_hash, current_hash);
+			}
+
+			if (after_grace)
+			{
+				thor_es_async_draw_after_hashes[index].release(current_hash);
+			}
+			else
+			{
+				thor_es_async_draw_before_hashes[index].release(current_hash);
+			}
+
 			if (!first_target_address)
 			{
 				first_target_address = address;
@@ -1210,6 +1304,8 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 				first_initial_last = static_cast<u32>(initial_words);
 				first_current_first = current_first;
 				first_current_last = current_last;
+				first_initial_hash = initial_hash;
+				first_current_hash = current_hash;
 			}
 
 			if (static_cast<u32>(current_first) > 0x65)
@@ -1226,15 +1322,20 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	};
 
 	const u32 targets = static_cast<u32>(event_end - event_begin);
-	const u32 invalid_before = count_invalid();
+	const u32 invalid_before = count_invalid(false);
 	const u32 readable_before = readable_targets;
 	const u64 readable_bytes_before = readable_target_bytes;
+	const u32 hashed_before = hashed_targets;
+	const u64 hashed_bytes_before = hashed_target_bytes;
+	const u64 batch_hash_before = batch_hash;
 	const u32 first_before_target = first_target_address;
 	const u32 first_before_size = first_target_size;
 	const u32 first_before_initial_first = first_initial_first;
 	const u32 first_before_initial_last = first_initial_last;
 	const u32 first_before_first = first_current_first;
 	const u32 first_before_last = first_current_last;
+	const u64 first_before_initial_hash = first_initial_hash;
+	const u64 first_before_hash = first_current_hash;
 	const u32 first_before_invalid = first_invalid_address;
 	u32 invalid_after = invalid_before;
 	u64 waited_us = 0;
@@ -1248,13 +1349,13 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 		thread_ctrl::wait_for(20, false);
 		std::atomic_thread_fence(std::memory_order_seq_cst);
 		grace_us = get_system_time() - wait_start;
-		invalid_after = count_invalid();
+		invalid_after = count_invalid(true);
 		waited_us = grace_us;
 		while (invalid_after && waited_us < thor_es_async_draw_wait_limit_us && !Emu.IsStopped())
 		{
 			thread_ctrl::wait_for(20, false);
 			std::atomic_thread_fence(std::memory_order_seq_cst);
-			invalid_after = count_invalid();
+			invalid_after = count_invalid(true);
 			waited_us = get_system_time() - wait_start;
 		}
 
@@ -1267,13 +1368,16 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 
 	if (hit == 1 || invalid_before || overflow || hit % 1024 == 0)
 	{
-		ppu_log.notice("Thor Eternal Sonata async draw post-drain v4: hit=%llu mode=%s targets=%u readable_before=%u readable_bytes_before=%llu readable_after=%u readable_bytes_after=%llu invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_before_first=0x%x first_before_last=0x%x first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
+		ppu_log.notice("Thor Eternal Sonata async draw post-drain v5: hit=%llu mode=%s targets=%u readable_before=%u readable_bytes_before=%llu readable_after=%u readable_bytes_after=%llu hashed_before=%u hashed_bytes_before=%llu batch_hash_before=0x%llx hashed_after=%u hashed_bytes_after=%llu batch_hash_after=0x%llx invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_initial_hash=0x%llx first_before_first=0x%x first_before_last=0x%x first_before_hash=0x%llx first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_hash=0x%llx first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
 			hit, get_thor_es_async_draw_barrier_mode_name(mode), targets, readable_before,
-			readable_bytes_before, readable_targets, readable_target_bytes, invalid_before,
-			invalid_after, grace_us, waited_us, timed_out, overflow, first_before_target,
+			readable_bytes_before, readable_targets, readable_target_bytes, hashed_before,
+			hashed_bytes_before, batch_hash_before, hashed_targets, hashed_target_bytes,
+			batch_hash, invalid_before, invalid_after, grace_us, waited_us, timed_out,
+			overflow, first_before_target,
 			first_before_size, first_before_initial_first, first_before_initial_last,
-			first_before_first, first_before_last, first_before_invalid,
-			first_target_address, first_current_first, first_current_last,
+			first_before_initial_hash, first_before_first, first_before_last,
+			first_before_hash, first_before_invalid, first_target_address,
+			first_current_first, first_current_last, first_current_hash,
 			first_invalid_address, repair_waits.load(),
 			repair_timeouts.load(), event_overflows.load());
 	}

@@ -1102,3 +1102,48 @@ Next:
   exact `C2B0...12AF5`, run one guarded dispatch-probe plus repair route, and
   stop. Require nonzero v4 callbacks/readable targets before judging timeout,
   stability, or performance; only clean active battle can promote the change.
+
+## 2026-07-16 V4 Counterproof And V5 Whole-Target Fingerprints
+
+Counterproof:
+
+- Exact v4 `C2B0...12AF5` was deployed without launch/stream, then exactly one
+  guarded route ran in
+  `20260716-071609-thor-input-eternal-sonata-battle-intro-route`. The clean
+  field was `27.92 FPS`; the tutorial candidate showed `30.82 FPS` but had edge
+  corruption and the guest-crash overlay. Two stable unknown words led to two
+  dispatch faults and guest PPU `0x100000c` fatal at `0x002aedd0` reading
+  unmapped `0x40`. This is failed stability evidence, not speed proof.
+- V4 is dynamically live: consumer-entry hit `3072` processed `114` readable
+  targets / `256,368` bytes with a `64 us` grace, zero endpoint-invalid targets,
+  timeouts, or overflow. The fault pair `0x3e21bf94/0xbf7a924b` was inside the
+  current publication and exact target `0x32dfc7d0+0x7a0` at `+0x3d4/+0x3d8`.
+  Plausible initial endpoints prove endpoint-only readiness missed an interior
+  failure.
+- The device stayed at `24 C`, thermal status `0`, and cleanup left the package
+  stopped, properties off, and no non-daemon ADB clients. Three stale ADB
+  poll/stream clients found before the route were stopped. No second route ran.
+
+Static classification and replacement:
+
+- Saved-project table dumps resolve command `0x3a` to handler `0x002ae3e4` and
+  length `2`. Its two arguments are `0x02000000/0x3e058dc8`; the bad float pair
+  starts exactly at the next-command boundary. Reject a `0x3a` parser-length
+  fix.
+- V5 adds default-off/title-gated, fixed-buffer FNV-1a fingerprints at target
+  capture, pre-grace, post-grace, and fault time. Atomic rings preserve each
+  stage, periodic rows prove coverage, and fault rows classify stable data,
+  completion before/during the barrier, or a post-barrier overwrite. No guest
+  data is changed and the normal disabled path is untouched.
+- ARM64 RelWithDebInfo builds; the final classification-hardening rebuild took
+  `67s`. Exact host-only v5 core is
+  `7335FD767934879872E7108217AF715F3D97062AE87EC8C709FC7C61D7BCDC1B`, size
+  `1,349,750,392`. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped. In one later cool round, deploy exact `7335...DC1B`,
+  run one guarded dispatch-probe plus repair route, and stop. A stable four-stage
+  target fingerprint rejects further wait/barrier work; a changed post-barrier
+  fingerprint authorizes investigation of the writer/overwrite path. Clean
+  active battle remains mandatory for any stability or speed claim.

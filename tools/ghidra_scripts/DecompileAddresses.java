@@ -43,6 +43,10 @@ public class DecompileAddresses extends GhidraScript {
                     .getDefaultAddressSpace()
                     .getAddress(args[i]);
 
+                if (currentProgram.getListing().getInstructionAt(address) == null) {
+                    disassemble(address);
+                }
+
                 out.println("==== " + args[i] + " ====");
                 dumpNearbyInstructions(out, address);
                 dumpReferences(out, address);

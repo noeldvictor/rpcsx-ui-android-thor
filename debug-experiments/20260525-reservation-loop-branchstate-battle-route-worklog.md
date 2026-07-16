@@ -12834,3 +12834,97 @@ the rest of this thermal round. In one later cool round, deploy exact
 First require nonzero v4 callbacks/readable targets; active-battle correctness
 without unknown draw/fatal/timeout or material FPS loss remains the promotion
 gate.
+
+## 2026-07-16 V4 Runtime Counterproof, Command 0x3a Mapping, And V5 Fingerprints
+
+### 2026-07-16 - es-async-draw-v4-c2b0
+
+- Status: `failed`
+- Scope: `PPU async draw completion / Thor first battle`
+- Hypothesis: the real consumer-entry callback would expose incomplete async
+  targets after the guest drain and a bounded visibility grace would settle
+  them before draw-list consumption.
+- Safety preflight found three stale host ADB clients from older OODA work: a
+  logcat stream plus RPCSX-log and memory pollers running every three seconds.
+  Their exact client PIDs were stopped before deployment; only the ADB daemon
+  remained. Future cool-round preflights must reject stale non-daemon ADB
+  clients before starting a route.
+- Exact v4 core
+  `C2B048BBCC7E2EBD4C082674E9E64D2EE752883B9601EA52C1ED438EDC012AF5`
+  was deployed without build, launch, or stream in
+  `debug-captures/20260716-071534-es-async-draw-v4-c2b0-dev-core-push`.
+  Manifest hash and deployed source commit `de6bb9a05` matched.
+- Exactly one guarded Direct-input route ran in
+  `debug-captures/android-speed-sprint/20260716-071609-thor-input-eternal-sonata-battle-intro-route`
+  with dispatch probe `on`, barrier `repair`, and a `32 C` cutoff. It failed
+  closed at `battle-approach-1`; there was no retry.
+- `07-loaded-field.png` is a clean Path-to-Tenuto field at `27.92 FPS`.
+  `08-battle-approach-1-candidate.png` shows the tutorial/battle at `30.82 FPS`
+  but also edge corruption and the guest-crash overlay, so it is not clean
+  battle proof. The log has two stable unknown draws and two dispatch faults,
+  followed by one VM access violation. There was no Vulkan device loss, native
+  signal, LLVM fatal, RSX FP-CAL fatal, or barrier timeout.
+- Temperature was exactly `24 C` throughout, thermal status `0`. Cleanup
+  force-stopped the package, reset command-interpreter/dispatch/barrier
+  properties to `off`, and left no non-daemon ADB clients. No second route ran.
+
+Decisive v4 runtime evidence:
+
+- The v4 enable line appeared once and the real consumer-entry callback logged
+  hits `1`, `1024`, `2048`, and `3072`; there were no v3 callback rows. At hit
+  `3072`, all `114` targets and `256,368` declared bytes were readable before
+  and after the `64 us` measured grace, with zero endpoint-invalid targets,
+  timeout, or ring overflow. This solves the unreachable-hook problem and
+  dynamically proves the after-drain callback thousands of times.
+- At emulated `0:02:40.149`, the parser read stable words `0x3e21bf94` and
+  `0xbf7a924b` at selected-buffer offset `0x2f024/+4`. They were inside the
+  latest publication ending at offset `0x32268`, publisher age zero, and inside
+  exact async target `0x32dfc7d0+0x7a0` at offsets `+0x3d4/+0x3d8`, async age
+  `95`. Initial target endpoints were plausible (`0x1a` and `0x13d`), exposing
+  the v4 weakness: endpoint-only validation cannot classify an invalid command
+  in the target interior.
+- At `0:02:40.820`, guest PPU `0x100000c` fatally reached CIA `0x002aedd0`
+  while reading unmapped `0x40`. The screenshot crash overlay corresponds to
+  this fatal. The exact float pair and target offsets repeat the earlier v2
+  evidence, so the failure is deterministic enough for a fingerprint gate.
+
+Saved-project Ghidra classification:
+
+- New read-only `DumpMemoryRange.java` records byte ranges plus big-endian u32
+  words. `DecompileAddresses.java` now disassembles an undefined entry before
+  dumping/decompiling it, which made the previously unanalyzed handler visible.
+- For command `0x3a`, jump-table entry `0x002ace14` is signed offset `0x16b8`
+  from base `0x002acd2c`, resolving handler `0x002ae3e4`. Length-table entry
+  `0x0046a090` is exactly `2`.
+- The handler reads two u32 arguments at the current pointer and `+4`, advances
+  the stream by eight bytes, updates flags, and returns to common dispatch.
+  Therefore the captured window is a valid `0x3a` record with arguments
+  `0x02000000` and `0x3e058dc8`; `0x3e21bf94` is the next-command boundary.
+  Reject a command-`0x3a` length-table fix.
+
+Host-only v5 replacement diagnostic:
+
+- The existing default-off, `BLUS30161`-gated async probe now computes bounded
+  FNV-1a fingerprints for each declared target at descriptor capture, consumer
+  entry before grace, after grace, and only for the matching target on a parser
+  fault. Targets remain capped at `0x4000`; hashing uses a fixed 1 KiB stack
+  buffer, no allocation or guest mutation, and atomic parallel rings. The
+  disabled production path remains unchanged.
+- Fault logging classifies `stable`, `settled_before_barrier`,
+  `settled_during_grace`, or `after_barrier_changed`. A stable fingerprint will
+  reject the remaining timing/wait lane; a changed post-barrier fingerprint
+  will prove a late overwrite. Periodic v5 rows also report hashed counts,
+  bytes, and batch fingerprints so runtime coverage is auditable.
+- `git diff --check` passes. Android ARM64 RelWithDebInfo built successfully;
+  the final classification-hardening rebuild took `67s`. Exact host-only v5
+  artifact is `1,349,750,392` bytes with SHA256
+  `7335FD767934879872E7108217AF715F3D97062AE87EC8C709FC7C61D7BCDC1B`.
+  It was not deployed or launched.
+
+Decision: v4 is `failed`, not a stability or speed result. It proves the real
+barrier boundary but disproves endpoint-only readiness as a sufficient guard.
+Keep the Thor stopped for this thermal round. In one later cool round, deploy
+exact `7335...DC1B`, run one guarded dispatch-probe plus repair route, and
+stop. Use the four fingerprint stages before considering any behavioral fix;
+promotion still requires clean active battle without unknown draw, fatal,
+timeout, or material FPS regression.
