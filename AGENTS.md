@@ -227,4 +227,10 @@ Put dated run details in `debug-experiments/`, not here.
 - Current refiner: `tools/ps3_harness_refiner.ps1`.
 - Current refiner skill: `.agents/skills/ps3-continual-harness-refiner/SKILL.md`.
 - Current SPU contract skill: `.agents/skills/ps3-spu-contract-compiler/SKILL.md`.
+- Current safe Windows runtime base is current upstream RPCS3 `1269ebff` on local branch `codex/clean-upstream-20260715`, plus local MSVC zlib commit `c433cc7` and preserved curl/wolfSSL integration fix `6311394472`. Exact `rpcs3.exe` SHA256 is `7A9E5E0CA3465359E8E6339D14B29359A9847CBAD9450C8AC087218B404AEC28`.
+- Do not use the older monolithic instrumented fork for promotion runs. Preserve it for forensic comparison only; it has produced native/JIT and movement failures even with probes disabled.
+- CPU affinity `0x0f` is now a known invalid promotion condition for the long diagonal/left first-battle route: both custom and clean current-upstream builds can hit guest PPU `0x002aedd0` reading `0x40`. Treat four-core route failures as stress evidence, not normal-scheduler regressions.
+- Latest normal-scheduler correctness proof is `20260715-222122-clean-upstream1269ebf-allcore-adaptive-first-battle-windows`: correct field, real tutorial prompt, active/held first battle, zero actionable fatal hits, and 34 capped FPS samples averaging `29.995` (`29.96` to `30.02`). It is correctness only, not 200% speed evidence.
+- Windows load routes should use `gate_load_complete`, not fixed delays. Explicit route screenshots now fail closed on small overwhelmingly-dark crash/device-loss overlays when the live log is delayed.
+- No Android build, ADB action, Thor launch, capture, or sensor query was used for the current-upstream Windows repair/proof round; keep the handheld untouched until the Windows 200% moving-gameplay gate is real.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

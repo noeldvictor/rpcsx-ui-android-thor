@@ -972,6 +972,182 @@ Player 7 Input:
     Write-LabLine $RunLog "- Agent input profile: active map $activeStatus ($activePath)"
 }
 
+function Test-LabLoadCompleteScreenshot {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+
+    # The load-complete banner has a narrow dark border at both y=360 and
+    # y=424 in the harness' 1296x759 capture. The confirmation and loading
+    # dialogs are wider, so the same center-row samples remain gold/tan. A
+    # minimum PNG size rejects the small black-overlay/device-lost frame.
+    if ((Get-Item -LiteralPath $Path).Length -lt 500000) {
+        return $false
+    }
+
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+    } catch {
+        return $false
+    }
+
+    try {
+        if ($bitmap.Width -lt 900 -or $bitmap.Height -lt 600) {
+            return $false
+        }
+
+        $topY = [Math]::Min($bitmap.Height - 1, [int][Math]::Round($bitmap.Height * (360.0 / 759.0)))
+        $bottomY = [Math]::Min($bitmap.Height - 1, [int][Math]::Round($bitmap.Height * (424.0 / 759.0)))
+        $topDark = 0
+        $bottomDark = 0
+
+        foreach ($referenceX in 500, 525, 550, 575, 600, 625, 650, 675, 700, 725, 750, 775, 800) {
+            $x = [Math]::Min($bitmap.Width - 1, [int][Math]::Round($bitmap.Width * ($referenceX / 1296.0)))
+            $top = $bitmap.GetPixel($x, $topY)
+            $bottom = $bitmap.GetPixel($x, $bottomY)
+            if (($top.R + $top.G + $top.B) -lt 190) { $topDark++ }
+            if (($bottom.R + $bottom.G + $bottom.B) -lt 190) { $bottomDark++ }
+        }
+
+        return $topDark -ge 10 -and $bottomDark -ge 8
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
+function Invoke-LabLoadCompleteGate {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$ScreenshotDir,
+        [string]$RunLog,
+        [datetime]$LaunchTime = (Get-Date),
+        [int]$TimeoutMilliseconds = 60000,
+        [int]$PollMilliseconds = 1000
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ScreenshotDir)) {
+        Write-LabLine $RunLog "Load-complete gate failed: no screenshot directory was provided."
+        return $false
+    }
+    if ($TimeoutMilliseconds -le 0) { $TimeoutMilliseconds = 60000 }
+    if ($PollMilliseconds -le 0) { $PollMilliseconds = 1000 }
+
+    $runDir = Split-Path -Parent $ScreenshotDir
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
+    $attempt = 1
+    Write-LabLine $RunLog "Load-complete gate polling for the completion banner for up to ${TimeoutMilliseconds}ms."
+
+    while ($true) {
+        if ($Process) {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+                $marker = Join-Path $runDir "load-complete-gate-failed.txt"
+                "Load-complete gate failed at ${elapsedSeconds}s: RPCS3 exited before completion." | Set-Content -LiteralPath $marker -Encoding UTF8
+                Write-LabLine $RunLog "Load-complete gate failed: RPCS3 exited before completion."
+                return $false
+            }
+        }
+
+        $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+        $tag = if ($attempt -eq 1) { "load-complete-gate" } else { "load-complete-gate-$attempt" }
+        $screenshotPath = Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
+        if (Test-LabLoadCompleteScreenshot -Path $screenshotPath) {
+            Write-LabLine $RunLog "Load-complete gate passed after attempt ${attempt} at ${elapsedSeconds}s."
+            return $true
+        }
+
+        if ((Get-Date) -ge $deadline) {
+            $marker = Join-Path $runDir "load-complete-gate-failed.txt"
+            "Load-complete gate timed out at ${elapsedSeconds}s after ${attempt} screenshot(s)." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Load-complete gate failed: timed out after ${TimeoutMilliseconds}ms."
+            Write-LabLine $RunLog "Load-complete gate marker: $marker"
+            return $false
+        }
+
+        $remainingMs = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+        Start-Sleep -Milliseconds ([Math]::Min($PollMilliseconds, $remainingMs))
+        $attempt++
+    }
+}
+
+function Test-LabActionableFatalLog {
+    param(
+        [string]$Path,
+        [datetime]$LaunchTime
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+
+    $item = Get-Item -LiteralPath $Path
+    if ($item.LastWriteTime -lt $LaunchTime -or $item.Length -le 0) {
+        return $false
+    }
+
+    $stream = $null
+    $reader = $null
+    try {
+        $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $tailBytes = [Math]::Min([int64]262144, $stream.Length)
+        [void]$stream.Seek(-$tailBytes, [System.IO.SeekOrigin]::End)
+        $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $true, 4096, $true)
+        $tail = $reader.ReadToEnd()
+        return $tail -match '(?im)(Thread terminated due to fatal error|VM:\s+Access violation|VK_ERROR_DEVICE_LOST|Assertion Failed!|Emulation has been frozen!)'
+    } catch {
+        return $false
+    } finally {
+        if ($reader) { $reader.Dispose() }
+        if ($stream) { $stream.Dispose() }
+    }
+}
+
+function Test-LabActionableFatalScreenshot {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+
+    $item = Get-Item -LiteralPath $Path
+    if ($item.Length -le 0 -or $item.Length -gt 200000) {
+        return $false
+    }
+
+    $bitmap = $null
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bitmap = [System.Drawing.Bitmap]::new($Path)
+        if ($bitmap.Width -lt 64 -or $bitmap.Height -lt 64) {
+            return $false
+        }
+
+        $darkSamples = 0
+        $sampleCount = 0
+        for ($row = 1; $row -le 8; $row++) {
+            $y = [int][Math]::Round(($bitmap.Height - 1) * ($row / 9.0))
+            for ($column = 1; $column -le 12; $column++) {
+                $x = [int][Math]::Round(($bitmap.Width - 1) * ($column / 13.0))
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.R -le 24 -and $pixel.G -le 24 -and $pixel.B -le 24) {
+                    $darkSamples++
+                }
+                $sampleCount++
+            }
+        }
+
+        return $sampleCount -gt 0 -and ($darkSamples / [double]$sampleCount) -ge 0.85
+    } catch {
+        return $false
+    } finally {
+        if ($bitmap) { $bitmap.Dispose() }
+    }
+}
+
 function Invoke-LabLoadTargetGate {
     param(
         [System.Diagnostics.Process]$Process,
@@ -1245,6 +1421,7 @@ function Invoke-LabInputMacro {
         [int]$DefaultPressMs,
         [string]$RunLog,
         [string]$ScreenshotDir = "",
+        [string]$LiveLogPath = "",
         [datetime]$LaunchTime = (Get-Date)
     )
 
@@ -1303,6 +1480,20 @@ function Invoke-LabInputMacro {
     Start-Sleep -Milliseconds 300
 
     foreach ($token in $tokens) {
+        if (Test-LabActionableFatalLog -Path $LiveLogPath -LaunchTime $LaunchTime) {
+            $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+            $runDir = Split-Path -Parent $ScreenshotDir
+            $marker = Join-Path $runDir "live-fatal-gate-failed.txt"
+            "Actionable RPCS3 fatal detected during the input macro at ${elapsedSeconds}s." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Live fatal gate: stopping RPCS3 at ${elapsedSeconds}s instead of continuing the route."
+            Write-LabLine $RunLog "Live fatal gate marker: $marker"
+            if (-not $Process.HasExited) {
+                Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Milliseconds 500
+            }
+            return
+        }
+
         $parts = $token.Trim() -split ':', 2
         $name = $parts[0].Trim()
         $nameLower = $name.ToLowerInvariant()
@@ -1352,7 +1543,19 @@ function Invoke-LabInputMacro {
                 Write-LabLine $RunLog "Input screenshot skipped: no screenshot directory was provided."
             } else {
                 $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
-                Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $shotTag
+                $screenshotPath = Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $shotTag
+                if (Test-LabActionableFatalScreenshot -Path $screenshotPath) {
+                    $runDir = Split-Path -Parent $ScreenshotDir
+                    $marker = Join-Path $runDir "live-fatal-visual-gate-failed.txt"
+                    "Probable RPCS3 crash or device-loss overlay detected at ${elapsedSeconds}s in $screenshotPath." | Set-Content -LiteralPath $marker -Encoding UTF8
+                    Write-LabLine $RunLog "Live fatal visual gate: stopping RPCS3 at ${elapsedSeconds}s instead of continuing the route."
+                    Write-LabLine $RunLog "Live fatal visual gate marker: $marker"
+                    if (-not $Process.HasExited) {
+                        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Milliseconds 500
+                    }
+                    return
+                }
             }
             Start-Sleep -Milliseconds $duration
             continue
@@ -1364,6 +1567,21 @@ function Invoke-LabInputMacro {
             $gatePassed = Invoke-LabLoadTargetGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
             if (-not $gatePassed) {
                 Write-LabLine $RunLog "Input macro aborted before pressing Cross because the load target gate failed."
+                if (-not $Process.HasExited) {
+                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds 500
+                }
+                return
+            }
+            continue
+        }
+
+        if ($nameLower -eq "gate_load_complete" -or $nameLower -eq "wait_load_complete" -or $nameLower -eq "assert_load_complete") {
+            $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 60000 }
+            Write-LabLine $RunLog "Input load-complete gate (timeout ${gateTimeoutMilliseconds}ms)"
+            $gatePassed = Invoke-LabLoadCompleteGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
+            if (-not $gatePassed) {
+                Write-LabLine $RunLog "Input macro aborted before dismissing the load-complete banner because the gate failed."
                 if (-not $Process.HasExited) {
                     Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
                     Start-Sleep -Milliseconds 500
@@ -2475,8 +2693,10 @@ $titleSamplesPath = Join-Path $runDir "window-title-samples.csv"
 if ($RenderDocInject) {
     Invoke-LabRenderDocInject -Process $process -RunDir $runDir -SafeLabel $safeLabel -RunLog $runLog -RequestedPath $RenderDocPath -ApiValidation:$RenderDocApiValidation -CaptureCallstacks:$RenderDocCaptureCallstacks
 }
-Invoke-LabInputMacro -Process $process -Macro $InputMacro -InputBackend $InputBackend -PadApiFile $padApiFile -StartSeconds $InputStartSeconds -DefaultPressMs $InputDefaultPressMs -RunLog $runLog -ScreenshotDir $screenshotDir -LaunchTime $launchTime
+$liveRpcs3Log = Join-Path $rpcs3LogDir "RPCS3.log"
+Invoke-LabInputMacro -Process $process -Macro $InputMacro -InputBackend $InputBackend -PadApiFile $padApiFile -StartSeconds $InputStartSeconds -DefaultPressMs $InputDefaultPressMs -RunLog $runLog -ScreenshotDir $screenshotDir -LiveLogPath $liveRpcs3Log -LaunchTime $launchTime
 $exited = $false
+$processExitedBeforeDeadline = $false
 
 $nextScreenshotAt = [Math]::Max(0, $ScreenshotStartSeconds)
 $screenshotCount = 0
@@ -2487,6 +2707,7 @@ while ($true) {
     $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $launchTime).TotalSeconds)
     if ($process.HasExited) {
         $exited = $true
+        $processExitedBeforeDeadline = $true
         Write-LabLine $runLog "Process exited at ${elapsedSeconds}s before max ${MaxSeconds}s."
         break
     }
@@ -2551,12 +2772,21 @@ if (-not $SkipHostSystemCheck) {
     }
 }
 
-$exitCode = if ($exited -and $process.HasExited) {
-    if ($null -eq $process.ExitCode -or "$($process.ExitCode)" -eq "") {
-        "exited"
-    } else {
-        $process.ExitCode
+$numericExitCode = $null
+if ($exited -and $process.HasExited) {
+    try {
+        $process.WaitForExit()
+        $process.Refresh()
+        $numericExitCode = [int]$process.ExitCode
+    } catch {
+        Write-LabLine $runLog "Exit code query failed: $($_.Exception.Message)"
     }
+}
+
+$exitCode = if ($null -ne $numericExitCode) {
+    $numericExitCode
+} elseif ($exited -and $process.HasExited) {
+    "exited"
 } else {
     "timeout"
 }
@@ -2603,4 +2833,9 @@ Write-LabLine $runLog ""
 Write-LabLine $runLog "Run dir: $runDir"
 if ($hostContentionGateFailed) {
     throw "Host contention gate failed: worst=$worstHostContention; worst_external=$worstExternalHostContention; run=$runDir"
+}
+if ($processExitedBeforeDeadline) {
+    $processExitGatePath = Join-Path $runDir "process-exit-gate-failed.txt"
+    "Process exited before deadline: exit_code=$exitCode; max_seconds=$MaxSeconds" | Set-Content -LiteralPath $processExitGatePath -Encoding UTF8
+    throw "RPCS3 exited before the run deadline: exit_code=$exitCode; run=$runDir"
 }

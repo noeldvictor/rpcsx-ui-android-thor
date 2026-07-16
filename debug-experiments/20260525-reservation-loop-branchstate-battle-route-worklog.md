@@ -11540,3 +11540,105 @@ Decision:
   same binary/config/proof discipline; only after that should uncapped speed A/B
   or behavior-changing 25cc specialization be considered.
 - No Android, ADB, deployment, Thor launch, capture, or sensor action occurred.
+
+## 2026-07-15 Current-Upstream Windows Recovery and First-Battle Baseline
+
+Question:
+
+- Can current upstream replace the unsafe instrumented Windows fork, and does
+  the movement failure reproduce under normal scheduling or only the four-core
+  stress condition?
+
+Instrumented-fork isolation:
+
+- `20260715-230042-cpu4-verify25cc-e3b1b55-battle-delayed-left-cachedspu-windows`
+  was a valid no-movement field counterproof: correct field from `160s` through
+  `225s`, no actionable fatal, and 25cc descriptors `28893` hits / `451.45 MB`,
+  GET/PUT `13683/15210`, target mismatch `0`, overflow `0`. Generic PC `0x451c`
+  still had `120` mismatches across `106` rows, so it did not prove broad SPU
+  correctness.
+- Fixed-delay dismissal in
+  `20260715-230740-cpu4-verify25cc-e3b1b55-battle-delayed-left-latedismiss-windows-windows`
+  hit `VK_ERROR_DEVICE_LOST`; later screenshots were black. This established
+  that save/load timing must be state-gated.
+- The adaptive verifier route
+  `20260715-191603-cpu4-verify25cc-e3b1b55-battle-adaptive-load-complete-windows`
+  reached a correct field, then movement caused a guest PPU access violation at
+  `0x002acfb8` reading `0x43`.
+- The all-probes-off custom control
+  `20260715-192714-cpu4-e3b1b55-stockprobes-adaptive-first-battle-control-windows`
+  reached the field, then failed at guest PPU `0x002aedd0` reading `0x40`.
+  Separately, `20260715-224022-cpu4-verify25cc-e379fba-battle-delayed-left-windows`
+  exited natively at `171s`; debugger/WER review associated that line with the
+  instrumented JIT/analyzer path. Preserve the monolithic fork for forensic
+  comparison only; do not use it for promotion runs.
+
+Harness repair:
+
+- `tools/windows_rpcs3_lab.ps1` now recognizes
+  `gate_load_complete` / `wait_load_complete` / `assert_load_complete` and
+  polls for the narrow completion banner. The classifier rejects small black
+  overlays and distinguishes save confirmation, loading, completion, and field
+  screenshots.
+- The harness now fails when RPCS3 exits before the run deadline, scans the
+  live log for guest fatal/access/device-loss/assertion/freeze signatures, and
+  writes failure markers.
+- Because RPCS3 may expose the crash overlay before the log row becomes visible,
+  explicit route screenshots also stop the run when a PNG is at most `200000`
+  bytes and at least `85%` of a fixed sample grid is near-black. Regression
+  checks classified save list, completion, and field images as safe and the
+  real guest-crash/device-loss overlays as fatal.
+
+Current-upstream build recovery:
+
+- Created local sibling branch `codex/clean-upstream-20260715` from current
+  upstream `1269ebff` (`0.0.41-727`).
+- Current upstream hardcoded bundled zlib as Unix
+  `libzlibstatic.a`. Local commit `c433cc7` maps MSVC Debug/Release to the
+  generated `zsd.lib` / `zs.lib` artifacts while retaining the upstream path
+  elsewhere.
+- Current curl calls `wolfSSL_CTX_set1_groups_list` whenever `OPENSSL_EXTRA` is
+  present, but RPCS3 deliberately builds wolfSSL with TLS 1.3 off and the
+  symbol is therefore absent. Preserved local curl commit `6311394472` gates
+  the groups API on both `OPENSSL_EXTRA` and `WOLFSSL_TLS13`, falling back to
+  the exported `wolfSSL_CTX_set1_curves_list` symbol.
+- Release/LTCG link then succeeded. Exact binary SHA256:
+  `7A9E5E0CA3465359E8E6339D14B29359A9847CBAD9450C8AC087218B404AEC28`.
+
+Scheduler-bound proof:
+
+- Four-core run
+  `20260715-221242-clean-upstream1269ebf-adaptive-first-battle-windows`
+  loaded the correct field at `109s`, then reproduced guest PPU
+  `0x002aedd0` reading `0x40` and the black crash overlay by `124s`. This means
+  that guest failure is not uniquely caused by custom probes; `0x0f` affinity
+  is itself an invalid promotion/stability condition for this long route.
+- Normal-scheduler run
+  `20260715-222122-clean-upstream1269ebf-allcore-adaptive-first-battle-windows`
+  used the same adaptive macro, frame cap `30`, vblank `60`, Accurate SPU
+  Reservations on, Accurate SPU DMA off, and all custom modes off.
+- Manual frames proved the correct field at `109s`, the real `View the
+  tutorial?` prompt at `124s`, active battle UI at `130s`, and the same live
+  battle held at `151s` and through the `175s` cutoff.
+- Exact actionable fatal scan was `0`. All four host snapshots were
+  external-clean. The 34 title samples averaged `29.9947 FPS`, minimum `29.96`,
+  maximum `30.02`, which is the expected capped result.
+
+Classification:
+
+- `valid-current-upstream-first-battle-baseline`.
+- `normal-scheduler-correctness-proof`.
+- `four-core-affinity-stress-failure`.
+- Not an uncapped speed result, not GPU migration, and not a 200% result.
+
+Decision:
+
+- Use clean current upstream under normal scheduling as the Windows runtime
+  baseline. Keep all custom superpaths/probes off until each is reintroduced
+  from a small auditable commit with an uncapped A/B and full correctness gate.
+- The next meaningful run is one uncapped normal-scheduler current-upstream
+  field-to-first-battle measurement. Do not spend Thor heat until Windows
+  demonstrates stable 200% moving gameplay with correct field, Options, and
+  first battle.
+- No Android build, ADB query, deployment, Thor launch, capture, profiler, or
+  sensor read occurred in this round.

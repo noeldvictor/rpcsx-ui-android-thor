@@ -382,3 +382,39 @@ Next:
 - Enter and hold a genuine first battle on the exact repaired binary. Do not
   rerun capped field or Options, enable bodyfast, or port the contract to Android
   before that proof.
+
+## 2026-07-15 Current-Upstream Normal-Scheduler Baseline
+
+Update:
+
+- Adaptive load gating replaced unsafe fixed-delay save dismissal; a late fixed
+  dismissal had produced `VK_ERROR_DEVICE_LOST` and black output.
+- Both verifier-on and all-probes-off custom-fork routes failed after movement
+  under CPU affinity `0x0f`. Clean current upstream reproduced guest PPU
+  `0x002aedd0` reading `0x40` under the same four-core cap, so that failure is a
+  scheduler-stress result rather than verifier proof.
+- Current upstream `1269ebff` was made buildable on MSVC with local zlib commit
+  `c433cc7` and preserved curl/wolfSSL compatibility commit `6311394472`.
+  Exact Release executable SHA256:
+  `7A9E5E0CA3465359E8E6339D14B29359A9847CBAD9450C8AC087218B404AEC28`.
+- Normal scheduling cleared the same adaptive route: correct field, real
+  tutorial prompt, active first battle, and held battle through `175s`, with
+  zero actionable fatal signatures and clean host evidence.
+- The capped 34-sample title series averaged `29.9947 FPS` (`29.96` to
+  `30.02`). This is a correctness baseline only.
+- Explicit macro screenshots now provide a dark/small crash-overlay fallback
+  when the live RPCS3 log is delayed, preventing a frozen overlay from being
+  mislabeled as a battle screenshot.
+
+Classification:
+
+- `valid-current-upstream-first-battle-baseline`.
+- `four-core-affinity-stress-failure`.
+- Not speed, not `gpu-migration-credit`, and not a 200% gate candidate.
+
+Next:
+
+- Run one uncapped all-core current-upstream field-to-first-battle measurement
+  with all custom paths off and the same adaptive/fatal/visual gates.
+- Do not use the monolithic custom fork for promotion and do not spend Thor
+  heat until the Windows route demonstrates stable 200% moving gameplay.
