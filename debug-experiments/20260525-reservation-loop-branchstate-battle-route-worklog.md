@@ -13204,3 +13204,71 @@ Next:
   snapshot coverage and repair counters, clean battle visuals, no fatal, and
   no unknown draw before assigning stability credit. The out-of-target
   `0x30b12f20` boundary still needs independent classification if it remains.
+
+## 2026-07-16 Host-only V10 Completed-template Provenance
+
+Static boundary proof:
+
+- Raw capture search found the recurring `0x30b12f20` boundary in 59 prior
+  capture files. The invariant fault window is
+  `[0,9,0x404,1,0x30b12f20,0x1e,0x009c4798,0x1f,3,0x3f800000,...]`
+  at selected-buffer offset `0x2dfd0`, alternating with the game's two draw
+  buffers. It is inside current publication and outside retained async targets.
+- The saved Ghidra project
+  `debug-captures/ghidra-eboot-20260714-parser/projects/EternalSonataParser`
+  maps commands `0x00`, `0x01`, `0x09`, `0x1e`, and `0x1f` to valid parser
+  entries with lengths `0`, `0`, `1`, `1`, and `5`. The stream is structurally
+  valid through command `9` + argument `0x404`, then command `1`; the object-like
+  word is the first invalid dispatch.
+- Two statically identical builders at guest
+  `0x00313380..0x00313420` and `0x003190bc..0x00319158` intentionally emit
+  `[0x1c,0,object,0x1e,0x009c4798,0x1f,3]`. The recurring bad stream preserves
+  the five-word tail but replaces the template header `[0x1c,0]` with
+  `[0x404,1]`. This is producer overwrite/overlap evidence, not authority to
+  skip unknown parser commands or edit the command-length table.
+
+V10 diagnostic contract:
+
+- Under the existing default-off, BLUS30161-only dispatch probe, LLVM calls a
+  new helper after the final write-pointer stores at `0x00313420` and
+  `0x00319158`. Probe-off objects and other titles have no runtime hook.
+- A 4096-entry sequence-published atomic ring retains the intended seven-word
+  template, completion-time first two words, exact stream start, emitter CIA,
+  and PPU id. The helper requires the statically proven five-word tail, but does
+  not require the header to remain intact; this preserves evidence when the
+  overwrite already happened before the builder completed.
+- Fault-time lookup is bounded and runs only for the existing first eight
+  dispatch anomalies. It reports exact template word index, emitter/event age,
+  whether the faulting word itself stayed stable, the intended and current
+  seven-word records, and whether the header was already changed at completion
+  or changed afterward. All metadata is atomic and sequence-checked twice, so
+  a concurrent slot overwrite cannot produce a mixed record.
+- New cache bit `thor_es_dispatch_provenance_v4` prevents reuse of PPU objects
+  compiled before the two completion hooks. V9's narrow async repair remains
+  unchanged; this candidate does not broadly restore or reinterpret the
+  out-of-target boundary without runtime timing evidence.
+
+Verification:
+
+- `git diff --check` passes.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passes twice. The full relink took
+  `223s`; the edge-case refinement relink took `53s`. Diagnostics were existing
+  upstream deprecation warnings only. The confirming no-op build passed in
+  `10.1s`.
+- Exact host-only v10 core is
+  `475299CBADCFB2D5EB4A87BD4AA961CDBBC652AE294C044035A1B29438A6644A`, size
+  `1,349,875,560` bytes.
+- The required host-only continual refiner also completed the clean
+  current-upstream Windows field/battle gate and retained the later safe Thor
+  query as its next recommendation.
+- No ADB query, deploy, launch, screenshot, temperature poll, or device workload
+  occurred in this round. The Thor remains untouched.
+
+Next:
+
+- In one later cool round, deploy exact v10 and run one guarded repair+probe
+  route. A matching template row with `header_changed_at_complete` points to a
+  concurrent producer/reservation boundary; `header_intact_at_complete` plus
+  later `changed_since_emit` points to post-completion reuse/ownership. Use that
+  single classification to choose the narrow synchronization or restore point;
+  do not add a generic unknown-command skip.

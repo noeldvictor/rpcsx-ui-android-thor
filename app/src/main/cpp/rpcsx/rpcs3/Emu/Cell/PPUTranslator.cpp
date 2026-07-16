@@ -407,6 +407,17 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 						GetGpr(8), GetGpr(7), GetGpr(29), GetGpr(6), GetGpr(5),
 						m_ir->getInt32(guest_cia));
 					break;
+				case 0x00313420:
+				case 0x00319158:
+					// These final pointer stores run after two statically identical
+					// seven-word draw templates are complete. r4 is one record past
+					// the start, so retain the exact emitted record for fault-time
+					// overwrite classification.
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_template_probe", m_thread,
+						m_ir->CreateSub(GetGpr(4), m_ir->getInt64(0x1c)),
+						m_ir->getInt32(guest_cia));
+					break;
 				default:
 					break;
 				}
