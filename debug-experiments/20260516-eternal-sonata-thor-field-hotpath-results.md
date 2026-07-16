@@ -1579,3 +1579,62 @@ Retain the exact RCHCNT fallback only as an unproven stability candidate. Spend
 one later, separately cool guarded route to confirm that the skip notice is
 logged, the cache is rebuilt, battle remains live, and no unknown draw or
 fatal appears. Do not run it in this round.
+
+## 2026-07-15 RCHCNT Fallback First Proof
+
+Status: `live-battle-no-fatal-with-unknown-draw`; positive stability signal,
+but not a stability or speed promotion.
+
+Single guarded cold-cache Thor proof:
+
+- Core SHA256:
+  `6B97B0964C57A0AEFD51CF9655528245FDCCA4515EA9137041564E14BA0CD47E`.
+  Capture:
+  `debug-captures/android-speed-sprint/20260715-195442-thor-input-eternal-sonata-battle-intro-route`.
+- The old SPU cache was absent at boot. The full guest log proves the exact
+  gate activated at emulation time `0:00:28.440330` for
+  `read_pc=0xa7c`, entry `0xa7c`, and function hash
+  `7PiXnkUPiv7ZdGvUkndsHKRu6ZNZ`. The rebuilt `spu-safe-v1-tane.dat` is
+  `382116` bytes, smaller than the preceding optimized-loop cache as expected.
+- The PPU-compilation gate accepted real title output (cyan `0.126%`, progress
+  bar `1.303%`). The loaded field was visually clean at `25.82 FPS`; the
+  tutorial prompt was clean at `29.01 FPS`; active battle and the retained
+  10-second and 20-second frames were clean at `30.00`, `30.01`, and
+  `30.00 FPS`. The field sample is lower than the preceding 27-FPS class and
+  supplies no speed credit because this was a cold-cache stability proof.
+- The first approach frame correctly failed the battle classifier with zero
+  cyan samples; attempt two passed with `463 / 13488` samples (`3.433%`).
+  Temporal liveness passed twice: temporal-to-10-second measured
+  `4732 / 63360` changed samples (`7.468%`) with mean RGB delta `13.443`, and
+  10-to-20-second measured `1214 / 63360` (`1.916%`) with mean delta `6.466`.
+- No VM access violation, frozen emulation, unknown STOP, native signal,
+  Vulkan device loss, or verification failure appeared through the completed
+  route. This is the first fallback run to remain live through the full
+  20-second battle window, extending past the two preceding early fatal runs.
+- The result still fails a strict stability promotion. Six unknown draw rows
+  remained: `3f800000` at `0:03:08.128399`, `30b12f20` at
+  `0:03:08.782748`, `3f800000` at `0:03:17.600492` and `0:03:19.860770`,
+  then `30b12f20` plus `be9e8000` at `0:03:27.964890..4930`. The severe
+  pointer-like pre-fatal set from the prior two runs did not appear, but one
+  run cannot establish causality or long-session stability.
+- Cold-cache peak RSS reached `9465 MB`, then fell near `7.1 GB`. Continue to
+  label this memory behavior `max-first` / `pro-max` until Base/Pro pressure is
+  measured. The route lasted `227.3s`; every thermal sample was exactly
+  `27.0 C`. It ended at battery `77%`, thermal status `0`, with RPCSX stopped.
+  No second route, recording, Perfetto trace, or sustained profiler was used.
+
+Proof-harness hardening:
+
+- `tools/thor_input_macro.ps1` now treats any unknown draw command as a
+  fail-closed error for `eternal-sonata-battle-intro-route`, preserves the
+  offending rows, and immediately force-stops RPCSX. `-AllowUnknownDraw` is an
+  explicit diagnostic-only override; other profiles retain record-only
+  behavior. This prevents a live-looking 30-FPS battle from being mislabeled
+  stable while the known corrupt-stream precursor is present.
+
+Decision: retain the exact RCHCNT fallback for one warm-cache repeat because
+it eliminated the immediate fatal and kept battle visibly live through the
+full window. Do not promote it yet: unknown draw commands remain and the cold
+field sample is slower. The next separately cool run must pass the new
+fail-closed draw-stream gate before any stability claim; only then compare a
+matched warm-cache field FPS sample. Do not run a second route in this round.

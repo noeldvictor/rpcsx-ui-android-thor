@@ -12,7 +12,8 @@ param(
     [double]$MaxBatteryTemperatureC = 39.0,
     [switch]$BootGame,
     [switch]$ForceStop,
-    [switch]$PostSnapshot
+    [switch]$PostSnapshot,
+    [switch]$AllowUnknownDraw
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,6 +63,7 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $safeProfile = New-ThorSafeLabel $Profile
 $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-thor-input-$safeProfile"
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
+$strictGuestDrawStream = $Profile -eq "eternal-sonata-battle-intro-route" -and -not $AllowUnknownDraw
 
 $keyAliases = @{
     "a" = "KEYCODE_BUTTON_A"
@@ -563,6 +565,11 @@ function Assert-ThorGuestHealthy {
         $unknownDrawMatches.Line |
             Sort-Object -Unique |
             Set-Content -LiteralPath (Join-Path $captureDir "guest-unknown-draw-$safeLabel.txt") -Encoding UTF8
+
+        if ($strictGuestDrawStream) {
+            & $Adb shell am force-stop $Package | Out-Null
+            throw "Unknown guest draw command detected at '$Label'. RPCSX was force-stopped; see guest-unknown-draw-$safeLabel.txt. Pass -AllowUnknownDraw only for an explicit diagnostic capture."
+        }
     }
 
     if ($fatalMatches.Count -gt 0) {
@@ -588,11 +595,12 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Input mode: $InputMode",
     "- Raw input device: $RawInputDevice",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
+    "- Unknown draw policy: $(if ($strictGuestDrawStream) { 'fail-closed' } else { 'record-only' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`."
+    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on unknown draw commands; use `-AllowUnknownDraw` only for an explicit diagnostic capture."
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
     "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
