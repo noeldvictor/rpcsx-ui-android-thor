@@ -283,6 +283,13 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 		}
 
 		// Process the instructions
+		auto require_post_instruction_hook_point = [&]()
+		{
+			// Post-instruction hooks must never be emitted after a guest branch has
+			// terminated the current host block. Such hooks compile but are unreachable.
+			ensure(!m_ir->GetInsertBlock()->getTerminator());
+		};
+
 		for (m_addr = block.first - base; m_addr < block.first + block.second - base; m_addr += 4)
 		{
 			if (m_ir->GetInsertBlock()->getTerminator())
@@ -324,27 +331,32 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 				switch (guest_cia)
 				{
 				case 0x002caa38:
+					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
 						GetGpr(9), m_ir->getInt32(guest_cia));
 					break;
 				case 0x002cb810:
 				case 0x002ee0c8:
+					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
 						GetGpr(11), m_ir->getInt32(guest_cia));
 					break;
 				case 0x002e1340:
+					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
 						GetGpr(10), m_ir->getInt32(guest_cia));
 					break;
 				case 0x002e8050:
 				case 0x002e8a04:
 				case 0x002e8ab0:
+					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
 						GetGpr(8), m_ir->getInt32(guest_cia));
 					break;
 				case 0x002ac620:
 					// The terminator store has executed; r9 is its address and r3
 					// is the draw-stream object that will be flipped to the reader.
+					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_publish_probe", m_thread,
 						GetGpr(3), GetGpr(9), m_ir->getInt32(guest_cia));
 					break;
@@ -360,6 +372,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 				case 0x002ee18c:
 					// The descriptor target and size are materialized in r3/r4 here,
 					// immediately before the async job-builder call.
+					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_async_draw_target", m_thread,
 						GetGpr(3), GetGpr(4), m_ir->getInt32(guest_cia));
 					break;
@@ -371,6 +384,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			if (use_thor_es_dispatch_probe &&
 				(guest_cia == 0x002acc54 || guest_cia == 0x002acc9c))
 			{
+				require_post_instruction_hook_point();
 				// Ghidra proves these are the two command-word LWZ instructions.
 				// Emit only two integer checks on the normal diagnostic path and
 				// call the host logger solely for the guest's unknown-command case.

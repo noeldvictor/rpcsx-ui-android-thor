@@ -12748,3 +12748,26 @@ stopped for this thermal round. In one later cool round, deploy exact
 Require nonzero `post-drain v3` hits/targets before judging the repair; clean
 active battle without unknown draw/fatal/timeout and without material FPS loss
 is still mandatory for promotion.
+
+## 2026-07-16 Host-Only V3 Barrier Regression Hardening
+
+- Scope: host-only PPU translator and async-barrier diagnostics; the Thor was
+  not installed, launched, routed, or otherwise exercised in this pass.
+- Added a translation-time invariant before every mapped post-instruction Thor
+  probe. If its guest instruction has already terminated the LLVM host block,
+  PPU compilation now fails visibly instead of accepting an unreachable host
+  callback. The v3 consumer-signal barrier remains a deliberate pre-instruction
+  hook at `0x002f7720`.
+- Reused the barrier's existing bounded event scan to report first-word-readable
+  target counts and their declared byte total before/after repair. This adds no
+  second guest-memory walk and will quantify the next route's guarded work.
+- `git diff --check` passed. Android ARM64 RelWithDebInfo compiled and linked,
+  and an incremental confirmation returned `BUILD SUCCESSFUL`. Exact
+  superseding host-only artifact is `1,349,734,472` bytes with SHA256
+  `399F7C2F33FEF5E5FA5CAD31BCCD1EDB42A4D5776D9079497DCE739B3C334E3A`.
+  It was not deployed or launched.
+
+Decision: use `399F...34E3A`, not historical `0363...BF87`, for one later
+cool-device v3 proof route. First require nonzero barrier hits, nonzero readable
+targets, and bounded wait/timeout evidence; clean active battle without unknown
+draw, fatal, or material FPS loss remains mandatory for promotion.

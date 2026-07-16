@@ -1163,6 +1163,8 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	u32 first_current_first = 0;
 	u32 first_current_last = 0;
 	u32 first_invalid_address = 0;
+	u32 readable_targets = 0;
+	u64 readable_target_bytes = 0;
 	auto count_invalid = [&]()
 	{
 		u32 invalid = 0;
@@ -1173,6 +1175,8 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 		first_current_first = 0;
 		first_current_last = 0;
 		first_invalid_address = 0;
+		readable_targets = 0;
+		readable_target_bytes = 0;
 		std::atomic_thread_fence(std::memory_order_acquire);
 
 		for (u64 event_index = event_begin; event_index < event_end; event_index++)
@@ -1193,6 +1197,8 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 			{
 				continue;
 			}
+			readable_targets++;
+			readable_target_bytes += size;
 			const u32 last_address = static_cast<u32>(static_cast<u64>(address) + size - sizeof(u32));
 			vm::try_access(last_address, &current_last, sizeof(current_last), false);
 			const u64 initial_words = thor_es_async_draw_initial_words[index].load();
@@ -1221,6 +1227,8 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 
 	const u32 targets = static_cast<u32>(event_end - event_begin);
 	const u32 invalid_before = count_invalid();
+	const u32 readable_before = readable_targets;
+	const u64 readable_bytes_before = readable_target_bytes;
 	const u32 first_before_target = first_target_address;
 	const u32 first_before_size = first_target_size;
 	const u32 first_before_initial_first = first_initial_first;
@@ -1259,8 +1267,9 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 
 	if (hit == 1 || invalid_before || overflow || hit % 1024 == 0)
 	{
-		ppu_log.notice("Thor Eternal Sonata async draw post-drain v3: hit=%llu mode=%s targets=%u invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_before_first=0x%x first_before_last=0x%x first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
-			hit, get_thor_es_async_draw_barrier_mode_name(mode), targets, invalid_before,
+		ppu_log.notice("Thor Eternal Sonata async draw post-drain v3: hit=%llu mode=%s targets=%u readable_before=%u readable_bytes_before=%llu readable_after=%u readable_bytes_after=%llu invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_before_first=0x%x first_before_last=0x%x first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
+			hit, get_thor_es_async_draw_barrier_mode_name(mode), targets, readable_before,
+			readable_bytes_before, readable_targets, readable_target_bytes, invalid_before,
 			invalid_after, grace_us, waited_us, timed_out, overflow, first_before_target,
 			first_before_size, first_before_initial_first, first_before_initial_last,
 			first_before_first, first_before_last, first_before_invalid,

@@ -1041,3 +1041,24 @@ Next:
 - Keep the Thor stopped. In a later cool round, run one guarded 0363 route with
   dispatch probe plus repair, then stop. First require nonzero v3 hits/targets;
   only clean active battle can assign stability or speed credit.
+
+## 2026-07-16 V3 Host-Only Proof Hardening
+
+- Supersede host-only `0363...BF87` with
+  `399F7C2F33FEF5E5FA5CAD31BCCD1EDB42A4D5776D9079497DCE739B3C334E3A`, size
+  `1,349,734,472`. The ARM64 RelWithDebInfo build and incremental confirmation
+  pass; it has not been deployed or launched.
+- Every mapped post-instruction Thor probe now asserts that the decoded guest
+  instruction did not terminate its LLVM block. This prevents a repeat of the
+  unreachable post-BL v1/v2 barrier while retaining the intentional v3
+  pre-consumer-signal hook.
+- Barrier diagnostics now expose first-word-readable target counts and declared
+  target bytes before/after the bounded repair by reusing the existing scan.
+  There is no additional guest-memory pass or speculative stream parser.
+
+Next:
+
+- Keep the Thor stopped until a later cool round. Then deploy exact
+  `399F...34E3A`, run one guarded dispatch-probe plus repair route, and stop.
+  Require nonzero v3 hits/readable targets before interpreting timeout,
+  stability, or performance; promotion still requires clean active battle.
