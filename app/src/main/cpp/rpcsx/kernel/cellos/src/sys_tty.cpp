@@ -5,6 +5,7 @@
 #include "Emu/system_config.h"
 
 #include "sys_tty.h"
+#include "thor_es_draw_stream_probe.h"
 
 #include <deque>
 #include <mutex>
@@ -101,6 +102,10 @@ error_code sys_tty_write([[maybe_unused]] ppu_thread &ppu, s32 ch,
     if (!vm::try_access(buf.addr(), msg.data(), len, false)) {
       msg.clear();
     }
+  }
+
+  if (msg.find("unknown draw command") != std::string::npos) {
+    thor_es_draw_stream_probe_tty(ppu, msg);
   }
 
   auto find_word = [](std::string_view msg, std::string_view word) -> bool {

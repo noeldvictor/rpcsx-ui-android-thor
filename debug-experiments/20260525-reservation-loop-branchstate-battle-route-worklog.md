@@ -11271,3 +11271,81 @@ Decision:
 - Reject the exact RCHCNT fallback. Do not repeat or reintroduce it. Keep the
   fail-closed unknown-draw gate and return to offline root-cause analysis before
   spending another Thor run.
+
+## 2026-07-15 Offline Published-Buffer Verifier
+
+Question:
+
+- Can the next bounded route distinguish a command word already present when
+  the producer publishes the draw stream from a mutation between semaphore
+  handoff and parser execution, without another speculative ordering change?
+
+Exact hook proof:
+
+- Producer wrapper `0x002ac7b0` calls the one-count work post at
+  `0x002ac7ec`. At the syscall, `CIA=0x0031c1bc`, `LR=0x002ac7f0`, and
+  preserved `r29` is command object `+0x38`.
+- Consumer loop `0x002afce0` calls the work wait at `0x002afd04`. On the
+  successful syscall return, `CIA=0x0031c18c`, `LR=0x002afd08`, and preserved
+  `r30` is the same object `+0x38`.
+- Object fields `+0x14` / `+0x18` are the two `0x180000`-byte command buffers,
+  `+0x1c` is the current write pointer, and `+0x20` contains the selector flags.
+  The published buffer is the slot opposite flags bit 0, matching the parser's
+  Ghidra-proven selection at `0x002acc24..0x002acc4c`.
+- On an `unknown draw command` print, parser nonvolatile `r31` is the cursor
+  after the fetched word and `r22` is the command object. Those registers are
+  sampled only for that exact TTY string and only while the snapshot is valid.
+
+Implementation:
+
+- Added the off-by-default Android property
+  `debug.rpcsx.thor.es_draw_stream_probe=verify` and environment gate
+  `RPCSX_THOR_ES_DRAW_STREAM_PROBE=verify`. Accepted true values are explicit;
+  arbitrary values fail closed.
+- Before the exact producer post mutates the semaphore, copy the entire
+  published buffer into one reusable host vector. This occurs while the guest
+  protocol still keeps the consumer asleep.
+- After the exact consumer wait succeeds, compare the complete live buffer to
+  the producer snapshot before the parser call. Matching generations are
+  counted; mismatches always log the first byte and aligned producer/live word.
+- If the guest later prints `unknown draw command`, log the producer snapshot
+  word at `r31-4`, its live value, five producer-context words, the parser and
+  snapshot objects, and the preceding handoff result. This makes the next
+  failure self-classifying instead of relying on the printed opcode alone.
+- The verifier does not write guest memory, inject fences, change semaphore
+  values, skip parser work, or modify syscall results. Allocation and the
+  1.5 MiB copy/compare are verify-only. When disabled, inlined wrappers test
+  the cached false gate and do not enter the large probe functions.
+
+Offline validation:
+
+- First compile exposed and fixed one `umax` overload ambiguity in a defensive
+  object-address bounds check.
+- Final optimized ARM64 command:
+  `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain`.
+- Result: `BUILD SUCCESSFUL in 1m 9s`; only existing deprecated enum-operator
+  warnings appeared.
+- Host core SHA256:
+  `EB88FF4373292B400A0617E7396EC076010674CCF6FE2044875B99716C684785`.
+- Binary string verification found the property name plus the handoff-mismatch
+  and parser-fault records in the linked ARM64 core.
+- No ADB action, deployment, launch, capture, profiler, or device sensor query
+  was performed. Installed Thor core remains
+  `F0B66982FDF481F42E0C82AA59F5EB8D3DAA99BD9F4F8904E1FA50CD3EBE8F3B`.
+
+Classification:
+
+- `offline-verify-instrumentation`.
+- `producer-consumer-byte-proof`.
+- Default off; not a normal benchmark mode.
+- Not a speed, battle, or stability promotion.
+
+Decision:
+
+- Keep the verifier. The next device spend, when separately cool, should be one
+  short fail-closed route with only this gate enabled. A matched handoff plus a
+  matching producer/live fault word proves that the producer published the bad
+  word; a mismatched handoff identifies a post-publication memory mutation. If
+  the snapshot word differs while the live handoff still matches, investigate
+  parser/JIT cursor state rather than guest synchronization.

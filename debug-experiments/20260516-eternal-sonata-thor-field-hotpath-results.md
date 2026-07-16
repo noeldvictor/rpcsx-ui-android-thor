@@ -1715,3 +1715,43 @@ but already contained unknown commands, and its required warm repeat failed at
 the first strict guest-health check with the same precursor. Do not rerun or
 reintroduce it. Keep the fail-closed draw-stream gate and pursue a different
 root-cause lane before another separately cool device proof.
+
+## 2026-07-15 Offline Draw-Stream Handoff Verifier
+
+Status: `host-build-pass`; verify-only instrumentation, default off, no device
+run and no speed or stability promotion.
+
+- Added a separate `debug.rpcsx.thor.es_draw_stream_probe=verify` gate with
+  host equivalent `RPCSX_THOR_ES_DRAW_STREAM_PROBE=verify`. Unknown values and
+  the default state are disabled.
+- The probe is exact-title and exact-call-site scoped. It recognizes the
+  producer work post at `CIA=0x0031c1bc`, `LR=0x002ac7f0` and the consumer work
+  wait return at `CIA=0x0031c18c`, `LR=0x002afd08`. Ghidra-proven preserved
+  registers reconstruct the command object from producer `r29` and consumer
+  `r30`; the parser cursor/object use `r31`/`r22` only on an actual
+  `unknown draw command` TTY message.
+- Immediately before the producer semaphore post can wake the parser, the
+  verifier copies the full selected `0x180000`-byte published buffer. After the
+  consumer wait succeeds and before parsing begins, it compares every byte with
+  the snapshot. A mismatch records the first changed byte plus producer/live
+  words. A later parser fault records the exact producer snapshot word, live
+  word, surrounding five-word producer context, and whether the handoff compare
+  had already matched.
+- Normal emulation behavior is unchanged: the probe never alters guest memory,
+  semaphore state, parser state, or return values. Its allocation/copy/compare
+  work exists only when explicitly enabled. The disabled semaphore path uses an
+  inlined false branch and never enters the full verifier.
+- Optimized ARM64 validation command
+  `./gradlew.bat ":app:buildCMakeRelWithDebInfo[arm64-v8a]" --no-daemon
+  --console=plain` passed in `1m 9s`. Host-built core SHA256:
+  `EB88FF4373292B400A0617E7396EC076010674CCF6FE2044875B99716C684785`.
+- The core was not deployed or launched. The stopped Thor and installed core
+  `F0B66982FDF481F42E0C82AA59F5EB8D3DAA99BD9F4F8904E1FA50CD3EBE8F3B`
+  were left untouched.
+
+Decision: retain this verifier off by default. One later short, separately cool
+route can now answer the next root-cause question directly: if the consumer
+handoff matches and the TTY fault word also matches the producer snapshot, the
+bad word was already published; if the handoff differs, the first changed byte
+identifies an intervening memory mutation. This instrumentation earns no FPS
+credit and must not be enabled for normal benchmarks.
