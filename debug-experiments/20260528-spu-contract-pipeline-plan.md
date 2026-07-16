@@ -1011,3 +1011,33 @@ Next:
 - Keep the Thor stopped. In a later cool round, run one guarded E434 route with
   dispatch probe plus repair, then stop. Require nonzero v2 hits/targets and
   clean active battle before assigning stability or performance credit.
+
+## 2026-07-16 Async Target Proof And Barrier Contract V3
+
+Counterproof and contract tightening:
+
+- Exact E434 v2 ran once in
+  `20260716-063003-thor-input-eternal-sonata-battle-intro-route`. Correct field
+  and tutorial frames rendered at `28.38/30.00 FPS`, then unknown words
+  `0x3e21bf94` and `0xbf7a924b` failed closed. No targeted fatal preceded stop;
+  temperature stayed `23-24 C`, thermal status `0`, cleanup reset properties,
+  and no second route ran.
+- Both faults were inside exact descriptor target `0x32dfd1d0+0x7a0` at
+  `+0x3d4/+0x3d8`, proving v2 target/range capture. But there were zero
+  post-drain runtime records: guest BL translation tail-calls and returns, so a
+  host call emitted after drain BL `0x002f7710` is unreachable. The v2 repair
+  behavior never executed.
+- V3 emits the barrier before consumer-signal BL `0x002f7720`, the guaranteed
+  executable point after drain return and before release. Exact target capture,
+  the one `20 us` visibility grace, invalid-header `20 ms` ceiling, no mutation,
+  title gate, default-off rollback, and fail-closed behavior remain unchanged.
+- New cache bit `thor_es_async_draw_barrier_v3` prevents v2 reuse. ARM64
+  RelWithDebInfo builds in `62s`; exact host-only core is
+  `03631B5DAB944A936BF807DA9AEF8775F5A9F10D8B839708497781BCEE2DBF87`, size
+  `1,349,729,072`. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped. In a later cool round, run one guarded 0363 route with
+  dispatch probe plus repair, then stop. First require nonzero v3 hits/targets;
+  only clean active battle can assign stability or speed credit.

@@ -306,10 +306,19 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			m_may_be_mmio = true;
 
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
+			const u32 guest_cia = ::narrow<u32>(m_addr + base);
+
+			if (use_thor_es_async_draw_barrier && guest_cia == 0x002f7720)
+			{
+				// Every guest BL becomes a tail call and terminates its host block.
+				// Hook the consumer signal before translating it: the prior drain BL
+				// has returned, and the consumer has not yet been released.
+				Call(GetType<void>(), "__thor_es_async_draw_barrier", m_thread,
+					m_ir->getInt32(guest_cia));
+			}
 
 			(this->*(s_ppu_decoder.decode(op)))({op});
 
-			const u32 guest_cia = ::narrow<u32>(m_addr + base);
 			if (use_thor_es_dispatch_probe)
 			{
 				switch (guest_cia)
@@ -353,12 +362,6 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 					// immediately before the async job-builder call.
 					Call(GetType<void>(), "__thor_es_async_draw_target", m_thread,
 						GetGpr(3), GetGpr(4), m_ir->getInt32(guest_cia));
-					break;
-				case 0x002f7710:
-					// This hook is emitted after translating the drain BL, so it runs
-					// after the call returns and before the consumer is signalled.
-					Call(GetType<void>(), "__thor_es_async_draw_barrier", m_thread,
-						m_ir->getInt32(guest_cia));
 					break;
 				default:
 					break;

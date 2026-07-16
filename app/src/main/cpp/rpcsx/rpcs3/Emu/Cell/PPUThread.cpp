@@ -630,7 +630,7 @@ namespace
 	constexpr u32 thor_es_dispatch_load_next = 0x002acc9c;
 	constexpr u32 thor_es_publish_terminator_store = 0x002ac620;
 	constexpr u32 thor_es_async_draw_descriptor_ready = 0x002ee18c;
-	constexpr u32 thor_es_async_draw_drain_call = 0x002f7710;
+	constexpr u32 thor_es_async_draw_consumer_signal_call = 0x002f7720;
 	constexpr u32 thor_es_async_draw_target_max_size = 0x4000;
 	constexpr u64 thor_es_async_draw_wait_limit_us = 20'000;
 	constexpr std::array<u32, 7> thor_es_command60_stores{
@@ -1082,15 +1082,15 @@ bool ppu_thor_es_async_draw_barrier_range(u32 address, u32 size)
 	const u64 end = static_cast<u64>(address) + size;
 	const bool contains_site =
 		(address <= thor_es_async_draw_descriptor_ready && thor_es_async_draw_descriptor_ready < end) ||
-		(address <= thor_es_async_draw_drain_call && thor_es_async_draw_drain_call < end);
+		(address <= thor_es_async_draw_consumer_signal_call && thor_es_async_draw_consumer_signal_call < end);
 	if (contains_site)
 	{
 		static atomic_t<bool> logged = false;
 		if (!logged.exchange(true))
 		{
-			ppu_log.notice("Thor Eternal Sonata async draw post-drain guard v2 enabled: mode=%s descriptor=0x%x drain_call=0x%x max_target_size=0x%x wait_limit_us=%llu",
+			ppu_log.notice("Thor Eternal Sonata async draw post-drain guard v3 enabled: mode=%s descriptor=0x%x consumer_signal=0x%x max_target_size=0x%x wait_limit_us=%llu",
 				get_thor_es_async_draw_barrier_mode_name(get_thor_es_async_draw_barrier_mode()),
-				thor_es_async_draw_descriptor_ready, thor_es_async_draw_drain_call,
+				thor_es_async_draw_descriptor_ready, thor_es_async_draw_consumer_signal_call,
 				thor_es_async_draw_target_max_size,
 				thor_es_async_draw_wait_limit_us);
 		}
@@ -1135,7 +1135,7 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 {
 	const auto mode = get_thor_es_async_draw_barrier_mode();
 	if (Emu.GetTitleID() != "BLUS30161" || mode == thor_es_async_draw_barrier_mode::disabled ||
-		cia != thor_es_async_draw_drain_call)
+		cia != thor_es_async_draw_consumer_signal_call)
 	{
 		return;
 	}
@@ -1259,7 +1259,7 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 
 	if (hit == 1 || invalid_before || overflow || hit % 1024 == 0)
 	{
-		ppu_log.notice("Thor Eternal Sonata async draw post-drain v2: hit=%llu mode=%s targets=%u invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_before_first=0x%x first_before_last=0x%x first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
+		ppu_log.notice("Thor Eternal Sonata async draw post-drain v3: hit=%llu mode=%s targets=%u invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_before_first=0x%x first_before_last=0x%x first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
 			hit, get_thor_es_async_draw_barrier_mode_name(mode), targets, invalid_before,
 			invalid_after, grace_us, waited_us, timed_out, overflow, first_before_target,
 			first_before_size, first_before_initial_first, first_before_initial_last,
@@ -6113,8 +6113,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_dispatch_provenance_v1,
 				thor_es_async_draw_barrier_v1,
 				thor_es_async_draw_barrier_v2,
+				thor_es_async_draw_barrier_v3,
 
-				bitset_last = thor_es_async_draw_barrier_v2,
+				bitset_last = thor_es_async_draw_barrier_v3,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -6171,7 +6172,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (has_thor_es_dispatch_provenance)
 				settings += ppu_settings::thor_es_dispatch_provenance_v1;
 			if (has_thor_es_async_draw_barrier)
-				settings += ppu_settings::thor_es_async_draw_barrier_v2;
+				settings += ppu_settings::thor_es_async_draw_barrier_v3;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 

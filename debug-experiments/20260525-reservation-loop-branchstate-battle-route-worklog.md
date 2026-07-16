@@ -12677,3 +12677,74 @@ cool round, deploy exact `E434...E520`, run one guarded dispatch-probe plus
 barrier-repair route, and stop. First require nonzero `post-drain v2` hits and
 targets; promotion still requires clean active-battle visuals with no unknown
 draw, fatal, timeout, or material FPS regression.
+
+## 2026-07-16 V2 Async-Range Proof And Executable V3 Barrier Boundary
+
+### 2026-07-16 - es-async-draw-v2-e434
+
+- Status: `failed`
+- Scope: `PPU async draw completion / Thor first battle`
+- Hypothesis: exact descriptor target/size plus a bounded post-drain visibility
+  grace would keep generated draw output complete before consumer release.
+- Changed settings: exact dev core
+  `E4344930EF65FC698D5AE40E9696648CFF03B7E0AE69EDB2B49061074586E520`,
+  dispatch probe `on`, async barrier `repair`; every other experiment remained
+  off. Rollback is async/dispatch properties `off`.
+- Windows result: existing clean current-upstream 400% field/first-battle and
+  matching Options proof remain the promotion base; no Windows rerun was used.
+- Thor result: exact E434 was pushed without build or launch in
+  `debug-captures/20260716-062930-es-async-draw-v2-e434-dev-core-push`. Exactly
+  one guarded Direct-input route ran in
+  `debug-captures/android-speed-sprint/20260716-063003-thor-input-eternal-sonata-battle-intro-route`
+  and failed closed at `battle-approach-1`.
+- Visual correctness: `07-loaded-field.png` is the correct Path-to-Tenuto field
+  and `08-battle-approach-1-candidate.png` is the correct first-battle tutorial
+  prompt. No black frame was captured, but no stable active-battle proof exists.
+- FPS/frame-time: field overlay `28.38 FPS`; tutorial overlay `30.00 FPS`.
+- Thermal/stability: temperature stayed `23-24 C`, thermal status was `0`, the
+  package was force-stopped, properties reset, and no second route ran. No VM
+  access violation, native signal, Vulkan device loss, LLVM fatal, or RSX
+  FP-CAL fatal preceded the controlled stop.
+
+Decisive v2 evidence:
+
+- The v2 cache key activated: EBOOT module `ggSzbQkWS9QpCW6b23aynR` compiled
+  under new setting key `006wyx`. The guard-enabled line named descriptor
+  `0x002ee18c` and drain call `0x002f7710`.
+- Two stable fault words appeared at selected addresses `0x32dfd5a4` and
+  `0x32dfd5a8`: `0x3e21bf94` and `0xbf7a924b`. Both were inside publication
+  ending at `0x32e00e58` and inside exact async target
+  `0x32dfd1d0+0x7a0`, at target offsets `+0x3d4/+0x3d8`; async event age was
+  `95` and initial target endpoints were zero. This dynamically proves the
+  descriptor target/size hook and ties the parser corruption to generated async
+  output, not merely the preceding command-`0x60` header inference.
+- The full log still contained zero `post-drain v2` runtime records. Source
+  inspection explains why: `PPUTranslator::B` flushes registers, calls
+  `CallFunction`, and that helper emits a tail call plus `ret`. Instrumentation
+  emitted after guest BL `0x002f7710` is unreachable. E434 therefore never
+  applied its fence, grace, invalid-header scan, or wait and cannot disprove
+  those behaviors.
+
+Host-only v3 correction:
+
+- The barrier is now emitted before translating consumer-signal BL
+  `0x002f7720`. Ghidra order is drain BL `0x002f7710`, return continuation
+  `0x002f7714..0x002f771c`, then consumer signal `0x002f7720`; the pre-BL host
+  call is therefore executable after the drain and before consumer release.
+- Descriptor target capture stays after non-terminating instruction
+  `0x002ee18c`, which v2 dynamically proved. The bounded `20 us` grace,
+  `20 ms` invalid-header ceiling, no guest-memory mutation, BLUS30161 gate, and
+  default-off rollback remain unchanged.
+- New cache bit `thor_es_async_draw_barrier_v3` prevents reuse of v2 objects.
+  `git diff --check` passes. Android ARM64 RelWithDebInfo built successfully in
+  `62s`; exact host-only artifact is `1,349,729,072` bytes with SHA256
+  `03631B5DAB944A936BF807DA9AEF8775F5A9F10D8B839708497781BCEE2DBF87`.
+  It was not deployed or launched.
+
+Decision: E434 is `failed` because unknown draw persisted and the behavioral
+hook was unreachable, but it is decisive async-range provenance. Keep the Thor
+stopped for this thermal round. In one later cool round, deploy exact
+`0363...BF87`, run one guarded dispatch-probe plus repair route, and stop.
+Require nonzero `post-drain v3` hits/targets before judging the repair; clean
+active battle without unknown draw/fatal/timeout and without material FPS loss
+is still mandatory for promotion.
