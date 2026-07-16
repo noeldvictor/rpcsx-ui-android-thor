@@ -565,3 +565,37 @@ Next:
   Require clean visuals and zero unknown-draw/native/VM faults; a selector race
   must be logged as repaired with zero repair failures. Do not run a heat soak
   or claim stability/speed from the host build alone.
+
+## 2026-07-16 Scoped Selector Restore Candidate
+
+Counterproof:
+
+- Exact `4A33...9160` ran once under the guarded repair route. It masked three
+  other-slot selections at generations `3819`, `3878`, and `4033`, with zero
+  repair failures and zero sequence anomalies, but then produced unknown draw
+  words twice at generation `4063` and once at generation `4144`.
+- The first active-battle sample was fully black except for the `30.00 FPS`
+  overlay. Temperature was bounded at `24-25 C`; cleanup stopped the package,
+  reset the property, and no second route ran.
+- This disproves the permanent selector rewrite. Under the observed counters,
+  the other alternating layout can be the producer's prepared `N+1` state
+  while it waits for consumer completion, not a stale `N-1` regression.
+
+Replacement contract:
+
+- Repair mode now saves the observed other-slot layout, exposes generation `N`
+  only while its consumer parses, and restores the saved layout at the consumer
+  completion post before the producer can wake. Every mask must have exactly
+  one verified restore; pending or failed restores invalidate the run.
+- Visual-gate failures now capture the live guest-log tail before throwing, and
+  selector mask/restore failures are fatal to the route.
+- ARM64 RelWithDebInfo build passed. Host-only core SHA256 is
+  `52622C41A876B52CD7A26B4A4D35587FDA55CBA0DE5A6084DEEB59334E0A2F58`;
+  size is `1,349,557,264` bytes. It was not deployed or launched.
+
+Next:
+
+- No more device work in this thermal round. In one later cool round, run exact
+  `5262...2F58` once with the same guards. Require clean active-battle visuals,
+  zero parser/native/VM faults, equal nonzero mask/restore counts, no pending
+  restore, and no repair/restore failure. Only then resume performance work.

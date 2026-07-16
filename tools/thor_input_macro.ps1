@@ -543,22 +543,46 @@ function Wait-ThorThermallyBounded {
     }
 }
 
-function Assert-ThorGuestHealthy {
-    param([string]$Label = "guest")
+function Save-ThorGuestLogEvidence {
+    param([string]$Label)
 
     $safeLabel = New-ThorSafeLabel $Label
-    Assert-ThorProcessIdentity "guest-health-$safeLabel-pre"
     $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
     $logTail = @(& $Adb shell tail -n 800 $remoteLog 2>&1)
     $logExitCode = $LASTEXITCODE
     $logTail | Set-Content -LiteralPath (Join-Path $captureDir "guest-health-$safeLabel.log") -Encoding UTF8
 
-    if ($logExitCode -ne 0) {
+    return [PSCustomObject]@{
+        SafeLabel = $safeLabel
+        LogTail = $logTail
+        Success = $logExitCode -eq 0
+    }
+}
+
+function Throw-ThorVisualFailure {
+    param(
+        [string]$Message,
+        [string]$Label
+    )
+
+    Save-ThorGuestLogEvidence $Label | Out-Null
+    throw $Message
+}
+
+function Assert-ThorGuestHealthy {
+    param([string]$Label = "guest")
+
+    $safeLabel = New-ThorSafeLabel $Label
+    Assert-ThorProcessIdentity "guest-health-$safeLabel-pre"
+    $evidence = Save-ThorGuestLogEvidence $Label
+    $logTail = @($evidence.LogTail)
+
+    if (-not $evidence.Success) {
         & $Adb shell am force-stop $Package | Out-Null
         throw "Could not read the guest log at '$Label'. RPCSX was force-stopped; see guest-health-$safeLabel.log."
     }
 
-    $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally'
+    $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally|Eternal Sonata draw-stream selector (repair|restore) failed'
     $fatalMatches = @($logTail | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
     $unknownDrawMatches = @($logTail | Select-String -Pattern 'unknown draw command' -CaseSensitive:$false)
     if ($unknownDrawMatches.Count -gt 0) {
@@ -658,7 +682,7 @@ try {
                 Out-File -LiteralPath (Join-Path $captureDir "ppu-compilation-visual-gate.log") -Append -Encoding UTF8
 
             if ($classification.ppu_compilation_screen_present) {
-                throw "PPU compilation is still visible after the boot wait; route inputs and gameplay claims are invalid."
+                Throw-ThorVisualFailure "PPU compilation is still visible after the boot wait; route inputs and gameplay claims are invalid." "visual-ppu-compilation-failure"
             }
         } elseif ($token -eq 'check:visual:battle-frame') {
             if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
@@ -670,10 +694,10 @@ try {
                 Out-File -LiteralPath (Join-Path $captureDir "battle-frame-visual-gate.log") -Append -Encoding UTF8
 
             if ($classification.black_frame_present) {
-                throw "Black battle frame detected; transient renderer flicker is assumed."
+                Throw-ThorVisualFailure "Black battle frame detected; transient renderer flicker is assumed." "visual-black-battle-frame-failure"
             }
             if (-not $classification.battle_ui_present) {
-                throw "Expected live Eternal Sonata battle HUD was not present."
+                Throw-ThorVisualFailure "Expected live Eternal Sonata battle HUD was not present." "visual-battle-hud-failure"
             }
         } elseif ($token -match '^check:visual:changed:(.+)$') {
             if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
@@ -693,7 +717,7 @@ try {
                 Out-File -LiteralPath (Join-Path $captureDir "battle-temporal-change-gate.log") -Append -Encoding UTF8
 
             if (-not $classification.meaningful_change_present) {
-                throw "Battle image did not change meaningfully from '$referenceLabel'; frozen emulation is assumed."
+                Throw-ThorVisualFailure "Battle image did not change meaningfully from '$referenceLabel'; frozen emulation is assumed." "visual-battle-temporal-failure"
             }
         } elseif ($token -match '^approach:battle:([^:]+):([^:]+):(\d+):(\d+):(\d+)$') {
             $approachStick = $Matches[1]

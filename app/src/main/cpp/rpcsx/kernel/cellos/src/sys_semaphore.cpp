@@ -97,6 +97,7 @@ struct thor_es_draw_stream_probe_state {
   std::array<thor_es_draw_stream_snapshot, 2> snapshots;
   thor_es_draw_stream_layout layout{};
   thor_es_draw_stream_layout consumer_layout{};
+  thor_es_draw_stream_layout selector_restore_layout{};
   u64 generation{};
   u64 captures{};
   u64 comparisons{};
@@ -106,6 +107,9 @@ struct thor_es_draw_stream_probe_state {
   u64 previous_generation_consumers{};
   u64 selector_repairs{};
   u64 selector_repair_failures{};
+  u64 selector_restores{};
+  u64 selector_restore_failures{};
+  u64 selector_restore_generation{};
   u64 producer_work_posts{};
   u64 consumer_work_waits{};
   u64 producer_prior_completion_waits{};
@@ -124,6 +128,7 @@ struct thor_es_draw_stream_probe_state {
   bool consumer_from_previous{};
   bool consumer_checked{};
   bool consumer_match{};
+  bool selector_restore_pending{};
   bool valid{};
 };
 
@@ -357,7 +362,9 @@ log_thor_es_draw_stream_summary(const ppu_thread &ppu, const char *stage,
       "object=0x%x published=0x%x flags=0x%x write=0x%x sem_id=0x%x "
       "captures=%llu comparisons=%llu matches=%llu mismatches=%llu "
       "invalid_layouts=%llu previous_consumers=%llu selector_repairs=%llu "
-      "selector_repair_failures=%llu work_posts=%llu "
+      "selector_repair_failures=%llu selector_restores=%llu "
+      "selector_restore_failures=%llu selector_restore_pending=%u "
+      "work_posts=%llu "
       "work_waits=%llu prior_completion_waits=%llu completion_posts=%llu "
       "completion_waits=%llu completion_restores=%llu sequence_anomalies=%llu "
       "cia=0x%x lr=0x%x",
@@ -367,6 +374,8 @@ log_thor_es_draw_stream_summary(const ppu_thread &ppu, const char *stage,
       state.captures, state.comparisons, state.matches, state.mismatches,
       state.invalid_layouts, state.previous_generation_consumers,
       state.selector_repairs, state.selector_repair_failures,
+      state.selector_restores, state.selector_restore_failures,
+      state.selector_restore_pending,
       state.producer_work_posts, state.consumer_work_waits,
       state.producer_prior_completion_waits, state.consumer_completion_posts,
       state.producer_completion_waits, state.producer_completion_restores,
@@ -478,7 +487,8 @@ static bool can_repair_thor_es_draw_stream_selector(
     const thor_es_draw_stream_layout &consumer) {
   if (!thor_es_draw_stream_repair_enabled() || !state.producer_work_posts ||
       state.current_slot >= state.snapshots.size() ||
-      state.previous_slot >= state.snapshots.size()) {
+      state.previous_slot >= state.snapshots.size() ||
+      state.selector_restore_pending) {
     return false;
   }
 
@@ -490,9 +500,11 @@ static bool can_repair_thor_es_draw_stream_selector(
     return false;
   }
 
-  // Repair only the exact race observed on Thor: one work token is pending,
-  // all completion edges are from the immediately preceding generation, and
-  // the shared object has regressed wholesale to that preceding layout.
+  // Mask only the exact race observed on Thor: one work token is pending, all
+  // completion edges are from the immediately preceding generation, and the
+  // shared object already describes the other alternating slot. The producer
+  // can prepare that next slot before blocking on completion, so the observed
+  // layout must be restored before the consumer wakes it.
   const bool exact_sequence =
       state.consumer_work_waits + 1 == state.producer_work_posts &&
       state.producer_prior_completion_waits + 1 ==
@@ -544,16 +556,77 @@ static bool repair_thor_es_draw_stream_selector(
   }
 
   state.selector_repairs++;
+  state.selector_restore_layout = observed;
+  state.selector_restore_generation = state.generation;
+  state.selector_restore_pending = true;
   sys_semaphore.notice(
       "Eternal Sonata draw-stream selector repaired: generation=%llu "
       "object=0x%x observed_write=0x%x observed_flags=0x%x "
       "observed_published=0x%x repaired_write=0x%x repaired_flags=0x%x "
-      "repaired_published=0x%x repairs=%llu work_posts=%llu work_waits=%llu "
-      "cia=0x%x lr=0x%x",
+      "repaired_published=0x%x repairs=%llu restore_pending=1 "
+      "work_posts=%llu work_waits=%llu cia=0x%x lr=0x%x",
       state.generation, expected.object, observed.write, observed.flags,
       observed.published, consumer.write, consumer.flags, consumer.published,
       state.selector_repairs, state.producer_work_posts,
       state.consumer_work_waits + 1, ppu.cia, static_cast<u32>(ppu.lr));
+  return true;
+}
+
+static bool restore_thor_es_draw_stream_selector(
+    const ppu_thread &ppu, thor_es_draw_stream_probe_state &state) {
+  if (!state.selector_restore_pending) {
+    return true;
+  }
+
+  const thor_es_draw_stream_layout masked = state.layout;
+  const thor_es_draw_stream_layout restore = state.selector_restore_layout;
+  thor_es_draw_stream_layout live{};
+  const bool exact_generation =
+      state.selector_restore_generation == state.generation &&
+      state.consumer_generation == state.generation;
+  const bool masked_state =
+      get_thor_es_draw_stream_layout(masked.object, live) &&
+      live.buffer0 == masked.buffer0 && live.buffer1 == masked.buffer1 &&
+      live.write == masked.write && live.flags == masked.flags &&
+      live.published == masked.published;
+  const bool restored =
+      exact_generation && masked_state &&
+      write_thor_es_draw_stream_state(restore.object, restore) &&
+      get_thor_es_draw_stream_layout(restore.object, live) &&
+      live.buffer0 == restore.buffer0 && live.buffer1 == restore.buffer1 &&
+      live.write == restore.write && live.flags == restore.flags &&
+      live.published == restore.published;
+
+  state.selector_restore_pending = false;
+  if (!restored) {
+    state.selector_restore_failures++;
+    sys_semaphore.error(
+        "Eternal Sonata draw-stream selector restore failed: "
+        "generation=%llu restore_generation=%llu object=0x%x "
+        "masked_write=0x%x masked_flags=0x%x masked_published=0x%x "
+        "restore_write=0x%x restore_flags=0x%x restore_published=0x%x "
+        "live_write=0x%x live_flags=0x%x live_published=0x%x "
+        "exact_generation=%u masked_state=%u failures=%llu cia=0x%x lr=0x%x",
+        state.generation, state.selector_restore_generation, masked.object,
+        masked.write, masked.flags, masked.published, restore.write,
+        restore.flags, restore.published, live.write, live.flags,
+        live.published, exact_generation, masked_state,
+        state.selector_restore_failures, ppu.cia, static_cast<u32>(ppu.lr));
+    return false;
+  }
+
+  state.selector_restores++;
+  sys_semaphore.notice(
+      "Eternal Sonata draw-stream selector restored: generation=%llu "
+      "object=0x%x masked_write=0x%x masked_flags=0x%x "
+      "masked_published=0x%x restored_write=0x%x restored_flags=0x%x "
+      "restored_published=0x%x restores=%llu work_posts=%llu "
+      "completion_posts=%llu cia=0x%x lr=0x%x",
+      state.generation, masked.object, masked.write, masked.flags,
+      masked.published, live.write, live.flags, live.published,
+      state.selector_restores, state.producer_work_posts,
+      state.consumer_completion_posts + 1, ppu.cia,
+      static_cast<u32>(ppu.lr));
   return true;
 }
 
@@ -703,6 +776,7 @@ maybe_thor_es_draw_stream_probe_before_post(const ppu_thread &ppu, u32 sem_id,
 
   state.completion_semaphore_id = sem_id;
   if (lr == thor_es_draw_stream_consumer_completion_post_lr) {
+    restore_thor_es_draw_stream_selector(ppu, state);
     state.consumer_completion_posts++;
   } else {
     state.producer_completion_restores++;
@@ -778,6 +852,8 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
         "consumer_generation=%llu consumer_object=0x%x "
         "consumer_published=0x%x valid=%u checked=%u match=%u "
         "selector_repairs=%llu selector_repair_failures=%llu "
+        "selector_restores=%llu selector_restore_failures=%llu "
+        "selector_restore_pending=%u "
         "work_posts=%llu work_waits=%llu prior_completion_waits=%llu "
         "completion_posts=%llu completion_waits=%llu completion_restores=%llu "
         "sequence_anomalies=%llu cia=0x%x lr=0x%x",
@@ -786,6 +862,8 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
         state.consumer_layout.object, state.consumer_layout.published,
         state.valid, state.consumer_checked, state.consumer_match,
         state.selector_repairs, state.selector_repair_failures,
+        state.selector_restores, state.selector_restore_failures,
+        state.selector_restore_pending,
         state.producer_work_posts, state.consumer_work_waits,
         state.producer_prior_completion_waits, state.consumer_completion_posts,
         state.producer_completion_waits, state.producer_completion_restores,

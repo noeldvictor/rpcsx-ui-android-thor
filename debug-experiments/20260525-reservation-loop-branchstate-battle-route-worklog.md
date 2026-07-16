@@ -11919,3 +11919,72 @@ stop. A pass requires clean tutorial and active-battle visuals, zero unknown
 draw/native/VM faults, at least one logged selector repair if the race occurs,
 and no repair failure. Keep rollback as property `off` or restore the prior
 `BA0E...A870D7` core.
+
+## 2026-07-16 Thor Selector Repair Counterproof And Scoped Restore
+
+Bounded device result:
+
+- Existing candidate core
+  `4A3302EC6DAACFD73C6CD9684F9E372BF7540E9EBF8BE9550839B80E87B59160`
+  was deployed without building, launching, or streaming. Local and remote
+  hashes matched in
+  `debug-captures/20260716-005309-draw-stream-selector-repair-4a33-dev-core-push`.
+- Exactly one guarded direct-input route ran with only
+  `debug.rpcsx.thor.es_draw_stream_probe=repair` enabled:
+  `debug-captures/android-speed-sprint/20260716-005341-thor-input-eternal-sonata-battle-intro-route`.
+  It reached the correct field and first-battle tutorial prompt at `30.00 FPS`.
+- The first active-battle sample was fully black except for the FPS overlay:
+  `07-first-battle-active-candidate.png` classified as `dark_percent=100`,
+  `cyan_percent=0`. The wrapper failed closed. This is a failed stability
+  proof, not flicker tolerance or speed evidence.
+- The route began at `24.0 C` and ended at `25.0 C`, Android thermal status
+  `0`. Cleanup stopped the package and reset the repair property to `off`.
+  No second route, trace, recorder, profiler, or heat soak was used.
+
+Final guest-log classification:
+
+- The repair fired at generations `3819`, `3878`, and `4033`; repair failures
+  stayed `0`, previous-generation consumers stayed `0`, and sequence anomalies
+  stayed `0`.
+- The permanent rewrite did not solve the protocol. Generation `4063` emitted
+  unknown draw words `0x3e21bf94` and `0xbf7a924b`; generation `4144` emitted
+  `0x3f800000`. All three were current-published-buffer parser faults after the
+  last repair. There was no VM access violation, native crash, Vulkan device
+  loss, or process restart before the controlled stop.
+- The route's visual gate ran before its next guest-health token, so its normal
+  failure bundle stopped at generation `4005`. A read-only pull from the
+  already-stopped package recovered the final `RPCSX.log` as
+  `guest-health-final-after-black.log` and exposed generations `4033-4247`.
+
+Corrected protocol model and host-only fix:
+
+- The exact counter state at each rewrite had work post/wait at generation
+  `N` while the preceding completion edges remained at `N-1`. The producer can
+  already prepare the other alternating layout for `N+1` and then block on the
+  completion semaphore. Because the two slots alternate, that legitimate next
+  layout is byte-for-byte the same selector/write layout as `N-1`.
+- Permanently replacing the observed layout with `N` lets the current parser
+  select the right buffer but destroys the producer's prepared `N+1` state.
+  The later current-generation parser faults are the expected counterproof to
+  that permanent rewrite.
+- Repair mode now performs a scoped handoff mask. At the consumer work-wait
+  return it saves the observed other-slot layout, temporarily exposes the
+  current published layout, and marks a restore pending. At the consumer
+  completion post, before the semaphore mutation can wake the producer, it
+  verifies the masked generation and restores the saved layout. Restore counts,
+  pending state, and fail-closed repair/restore errors are logged.
+- `tools/thor_input_macro.ps1` now captures the current guest-log tail before
+  throwing any visual-gate failure, and treats selector repair or restore
+  failures as fatal. A black-frame bundle will therefore contain the parser
+  evidence that caused it instead of requiring a later manual pull.
+- PowerShell parsing and `git diff --check` passed. ARM64 RelWithDebInfo built
+  successfully with size `1,349,557,264` bytes and SHA256
+  `52622C41A876B52CD7A26B4A4D35587FDA55CBA0DE5A6084DEEB59334E0A2F58`.
+  The new core is host-only; it was not deployed or launched.
+
+Decision: classify the `4A33` route as `failed` and the new code as a
+`host-correctness-candidate`. Do not claim stable or faster. In a later
+separately cool round, deploy exact `5262...2F58`, run at most one guarded
+repair-mode battle route, and require matched mask/restore counts, zero pending
+restores/failures, zero unknown-draw/native/VM faults, and clean active-battle
+visuals before any longer or performance-oriented Thor test.
