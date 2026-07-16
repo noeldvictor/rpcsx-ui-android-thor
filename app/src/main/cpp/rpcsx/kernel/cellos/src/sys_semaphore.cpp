@@ -67,10 +67,14 @@ constexpr u32 thor_es_draw_stream_size = 0x18'0000;
 // ppu.cia still points at the SC instruction while the host syscall handler is
 // running. The following instruction addresses (0x31c1bc / 0x31c18c) are only
 // visible after the handler returns to the guest.
-constexpr u32 thor_es_draw_stream_producer_cia = 0x31c1b8;
-constexpr u32 thor_es_draw_stream_producer_lr = 0x2ac7f0;
-constexpr u32 thor_es_draw_stream_consumer_cia = 0x31c188;
-constexpr u32 thor_es_draw_stream_consumer_lr = 0x2afd08;
+constexpr u32 thor_es_draw_stream_post_cia = 0x31c1b8;
+constexpr u32 thor_es_draw_stream_wait_cia = 0x31c188;
+constexpr u32 thor_es_draw_stream_producer_prior_completion_wait_lr = 0x2ac7e4;
+constexpr u32 thor_es_draw_stream_producer_work_post_lr = 0x2ac7f0;
+constexpr u32 thor_es_draw_stream_producer_completion_wait_lr = 0x2ac830;
+constexpr u32 thor_es_draw_stream_producer_completion_restore_lr = 0x2ac83c;
+constexpr u32 thor_es_draw_stream_consumer_completion_post_lr = 0x2accb4;
+constexpr u32 thor_es_draw_stream_consumer_work_wait_lr = 0x2afd08;
 
 struct thor_es_draw_stream_layout {
   u32 object{};
@@ -81,19 +85,41 @@ struct thor_es_draw_stream_layout {
   u32 published{};
 };
 
+struct thor_es_draw_stream_snapshot {
+  std::vector<u8> bytes;
+  thor_es_draw_stream_layout layout{};
+  u64 generation{};
+  bool valid{};
+};
+
 struct thor_es_draw_stream_probe_state {
   std::mutex mutex;
-  std::vector<u8> snapshot;
+  std::array<thor_es_draw_stream_snapshot, 2> snapshots;
   thor_es_draw_stream_layout layout{};
+  thor_es_draw_stream_layout consumer_layout{};
   u64 generation{};
   u64 captures{};
   u64 comparisons{};
   u64 matches{};
   u64 mismatches{};
   u64 invalid_layouts{};
+  u64 previous_generation_consumers{};
+  u64 producer_work_posts{};
+  u64 consumer_work_waits{};
+  u64 producer_prior_completion_waits{};
+  u64 consumer_completion_posts{};
+  u64 producer_completion_waits{};
+  u64 producer_completion_restores{};
+  u64 sequence_anomalies{};
   u64 last_summary_us{};
   u32 semaphore_id{};
+  u32 completion_semaphore_id{};
+  u32 current_slot{umax};
+  u32 previous_slot{umax};
+  u32 consumer_slot{umax};
+  u64 consumer_generation{};
   u32 first_mismatch{umax};
+  bool consumer_from_previous{};
   bool consumer_checked{};
   bool consumer_match{};
   bool valid{};
@@ -118,8 +144,7 @@ static FORCE_INLINE bool thor_es_draw_stream_probe_enabled() {
     }
 #endif
 
-    if (const char *value =
-            std::getenv("RPCSX_THOR_ES_DRAW_STREAM_PROBE")) {
+    if (const char *value = std::getenv("RPCSX_THOR_ES_DRAW_STREAM_PROBE")) {
       return parse_thor_es_draw_stream_probe(value);
     }
 
@@ -139,8 +164,8 @@ static bool read_thor_es_draw_stream_u32(u32 address, u32 &value) {
   return true;
 }
 
-static bool get_thor_es_draw_stream_layout(
-    u32 object, thor_es_draw_stream_layout &layout) {
+static bool get_thor_es_draw_stream_layout(u32 object,
+                                           thor_es_draw_stream_layout &layout) {
   if (object > 0xffff'ffffu - 0x20) {
     return false;
   }
@@ -156,11 +181,9 @@ static bool get_thor_es_draw_stream_layout(
 
   // The producer toggles bit 0 after terminating the published buffer. The
   // parser deliberately selects the opposite slot.
-  layout.published =
-      layout.flags & 1 ? layout.buffer0 : layout.buffer1;
-  return layout.published &&
-         vm::check_addr(layout.published, vm::page_readable,
-                        thor_es_draw_stream_size);
+  layout.published = layout.flags & 1 ? layout.buffer0 : layout.buffer1;
+  return layout.published && vm::check_addr(layout.published, vm::page_readable,
+                                            thor_es_draw_stream_size);
 }
 
 static u32 get_thor_es_draw_stream_snapshot_word(const std::vector<u8> &bytes,
@@ -175,6 +198,43 @@ static u32 get_thor_es_draw_stream_snapshot_word(const std::vector<u8> &bytes,
          static_cast<u32>(bytes[offset + 3]);
 }
 
+static u32
+find_thor_es_draw_stream_snapshot(const thor_es_draw_stream_probe_state &state,
+                                  u32 object, u32 published) {
+  u32 result = umax;
+  for (u32 index = 0; index < state.snapshots.size(); index++) {
+    const auto &snapshot = state.snapshots[index];
+    if (!snapshot.valid || snapshot.layout.object != object ||
+        snapshot.layout.published != published) {
+      continue;
+    }
+
+    if (result == umax ||
+        snapshot.generation > state.snapshots[result].generation) {
+      result = index;
+    }
+  }
+
+  return result;
+}
+
+static u32 choose_thor_es_draw_stream_snapshot(
+    const thor_es_draw_stream_probe_state &state, u32 object, u32 published) {
+  if (const u32 matching =
+          find_thor_es_draw_stream_snapshot(state, object, published);
+      matching != umax) {
+    return matching;
+  }
+
+  for (u32 index = 0; index < state.snapshots.size(); index++) {
+    if (!state.snapshots[index].valid) {
+      return index;
+    }
+  }
+
+  return state.snapshots[0].generation <= state.snapshots[1].generation ? 0 : 1;
+}
+
 static bool parse_thor_es_draw_stream_fault_word(std::string_view message,
                                                  u32 &word) {
   constexpr std::string_view marker = "unknown draw command";
@@ -184,9 +244,9 @@ static bool parse_thor_es_draw_stream_fault_word(std::string_view message,
   }
 
   const usz open = message.find('(', marker_pos + marker.size());
-  const usz close =
-      open == std::string_view::npos ? std::string_view::npos
-                                     : message.find(')', open + 1);
+  const usz close = open == std::string_view::npos
+                        ? std::string_view::npos
+                        : message.find(')', open + 1);
   if (open == std::string_view::npos || close == std::string_view::npos ||
       close == open + 1) {
     return false;
@@ -210,8 +270,8 @@ struct thor_es_draw_stream_word_scan {
   u32 first_offset{umax};
 };
 
-static thor_es_draw_stream_word_scan scan_thor_es_draw_stream_word(
-    const u8 *bytes, usz size, u32 word) {
+static thor_es_draw_stream_word_scan
+scan_thor_es_draw_stream_word(const u8 *bytes, usz size, u32 word) {
   thor_es_draw_stream_word_scan result{};
   for (u32 offset = 0; offset + sizeof(u32) <= size; offset += sizeof(u32)) {
     const u32 current = static_cast<u32>(bytes[offset]) << 24 |
@@ -231,9 +291,10 @@ static thor_es_draw_stream_word_scan scan_thor_es_draw_stream_word(
   return result;
 }
 
-static void log_thor_es_draw_stream_summary(
-    const ppu_thread &ppu, const char *stage,
-    const thor_es_draw_stream_probe_state &state, bool force = false) {
+static void
+log_thor_es_draw_stream_summary(const ppu_thread &ppu, const char *stage,
+                                const thor_es_draw_stream_probe_state &state,
+                                bool force = false) {
   const u64 now = get_system_time();
   if (!force && state.last_summary_us &&
       now - state.last_summary_us < 2'000'000) {
@@ -245,18 +306,55 @@ static void log_thor_es_draw_stream_summary(
       "Eternal Sonata draw-stream probe: stage=%s generation=%llu "
       "object=0x%x published=0x%x flags=0x%x write=0x%x sem_id=0x%x "
       "captures=%llu comparisons=%llu matches=%llu mismatches=%llu "
-      "invalid_layouts=%llu cia=0x%x lr=0x%x",
+      "invalid_layouts=%llu previous_consumers=%llu work_posts=%llu "
+      "work_waits=%llu prior_completion_waits=%llu completion_posts=%llu "
+      "completion_waits=%llu completion_restores=%llu sequence_anomalies=%llu "
+      "cia=0x%x lr=0x%x",
       stage, state.generation, state.layout.object, state.layout.published,
       state.layout.flags, state.layout.write, state.semaphore_id,
       state.captures, state.comparisons, state.matches, state.mismatches,
-      state.invalid_layouts, ppu.cia, static_cast<u32>(ppu.lr));
+      state.invalid_layouts, state.previous_generation_consumers,
+      state.producer_work_posts, state.consumer_work_waits,
+      state.producer_prior_completion_waits, state.consumer_completion_posts,
+      state.producer_completion_waits, state.producer_completion_restores,
+      state.sequence_anomalies, ppu.cia, static_cast<u32>(ppu.lr));
 }
 
-static void thor_es_draw_stream_probe_before_post_enabled(
-    const ppu_thread &ppu, u32 sem_id, s32 count) {
+static void log_thor_es_draw_stream_layout_mismatch(
+    const ppu_thread &ppu, const thor_es_draw_stream_probe_state &state,
+    const thor_es_draw_stream_layout &consumer) {
+  const auto *previous = state.previous_slot < state.snapshots.size()
+                             ? &state.snapshots[state.previous_slot]
+                             : nullptr;
+  sys_semaphore.error(
+      "Eternal Sonata draw-stream layout mismatch: generation=%llu "
+      "producer_object=0x%x producer_buffer0=0x%x producer_buffer1=0x%x "
+      "producer_write=0x%x producer_flags=0x%x producer_published=0x%x "
+      "previous_generation=%llu previous_published=0x%x "
+      "consumer_object=0x%x consumer_buffer0=0x%x consumer_buffer1=0x%x "
+      "consumer_write=0x%x consumer_flags=0x%x consumer_published=0x%x "
+      "work_posts=%llu work_waits=%llu prior_completion_waits=%llu "
+      "completion_posts=%llu completion_waits=%llu completion_restores=%llu "
+      "sequence_anomalies=%llu cia=0x%x lr=0x%x",
+      state.generation, state.layout.object, state.layout.buffer0,
+      state.layout.buffer1, state.layout.write, state.layout.flags,
+      state.layout.published,
+      previous && previous->valid ? previous->generation : 0,
+      previous && previous->valid ? previous->layout.published : 0,
+      consumer.object, consumer.buffer0, consumer.buffer1, consumer.write,
+      consumer.flags, consumer.published, state.producer_work_posts,
+      state.consumer_work_waits, state.producer_prior_completion_waits,
+      state.consumer_completion_posts, state.producer_completion_waits,
+      state.producer_completion_restores, state.sequence_anomalies, ppu.cia,
+      static_cast<u32>(ppu.lr));
+}
+
+static void
+thor_es_draw_stream_probe_before_work_post_enabled(const ppu_thread &ppu,
+                                                   u32 sem_id, s32 count) {
   if (count != 1 || Emu.GetTitleID() != "BLUS30161" ||
-      ppu.cia != thor_es_draw_stream_producer_cia ||
-      static_cast<u32>(ppu.lr) != thor_es_draw_stream_producer_lr) {
+      ppu.cia != thor_es_draw_stream_post_cia ||
+      static_cast<u32>(ppu.lr) != thor_es_draw_stream_producer_work_post_lr) {
     return;
   }
 
@@ -274,8 +372,11 @@ static void thor_es_draw_stream_probe_before_post_enabled(
 
   std::lock_guard lock(g_thor_es_draw_stream_probe.mutex);
   auto &state = g_thor_es_draw_stream_probe;
-  state.snapshot.resize(thor_es_draw_stream_size);
-  if (!vm::try_access(layout.published, state.snapshot.data(),
+  const u32 snapshot_slot = choose_thor_es_draw_stream_snapshot(
+      state, layout.object, layout.published);
+  auto &snapshot = state.snapshots[snapshot_slot];
+  snapshot.bytes.resize(thor_es_draw_stream_size);
+  if (!vm::try_access(layout.published, snapshot.bytes.data(),
                       thor_es_draw_stream_size, false)) {
     state.valid = false;
     state.invalid_layouts++;
@@ -283,23 +384,40 @@ static void thor_es_draw_stream_probe_before_post_enabled(
     return;
   }
 
+  if (state.producer_work_posts &&
+      (state.consumer_work_waits != state.producer_work_posts ||
+       state.producer_prior_completion_waits != state.producer_work_posts ||
+       state.consumer_completion_posts != state.producer_work_posts ||
+       state.producer_completion_waits != state.producer_work_posts ||
+       state.producer_completion_restores != state.producer_work_posts)) {
+    state.sequence_anomalies++;
+    log_thor_es_draw_stream_summary(ppu, "producer-sequence-anomaly", state,
+                                    true);
+  }
+
+  state.previous_slot = state.current_slot != snapshot_slot
+                            ? state.current_slot
+                            : state.previous_slot;
+  state.current_slot = snapshot_slot;
   state.layout = layout;
   state.semaphore_id = sem_id;
   state.generation++;
+  snapshot.layout = layout;
+  snapshot.generation = state.generation;
+  snapshot.valid = true;
   state.captures++;
-  state.first_mismatch = umax;
-  state.consumer_checked = false;
-  state.consumer_match = false;
+  state.producer_work_posts++;
   state.valid = true;
   log_thor_es_draw_stream_summary(ppu, "producer-snapshot", state,
                                   state.generation == 1);
 }
 
 static void
-thor_es_draw_stream_probe_after_wait_enabled(const ppu_thread &ppu) {
+thor_es_draw_stream_probe_after_consumer_wait_enabled(const ppu_thread &ppu,
+                                                      u32 sem_id) {
   if (Emu.GetTitleID() != "BLUS30161" ||
-      ppu.cia != thor_es_draw_stream_consumer_cia ||
-      static_cast<u32>(ppu.lr) != thor_es_draw_stream_consumer_lr) {
+      ppu.cia != thor_es_draw_stream_wait_cia ||
+      static_cast<u32>(ppu.lr) != thor_es_draw_stream_consumer_work_wait_lr) {
     return;
   }
 
@@ -317,19 +435,53 @@ thor_es_draw_stream_probe_after_wait_enabled(const ppu_thread &ppu) {
   std::lock_guard lock(g_thor_es_draw_stream_probe.mutex);
   auto &state = g_thor_es_draw_stream_probe;
   if (!state.valid || state.layout.object != layout.object ||
-      state.layout.published != layout.published ||
-      state.layout.flags != layout.flags) {
+      state.semaphore_id != sem_id) {
+    state.invalid_layouts++;
+    state.consumer_layout = layout;
+    state.consumer_slot = umax;
+    state.consumer_generation = 0;
+    state.first_mismatch = umax;
+    state.consumer_from_previous = false;
+    state.consumer_checked = false;
+    state.consumer_match = false;
+    log_thor_es_draw_stream_summary(ppu, "consumer-layout-mismatch", state,
+                                    true);
+    log_thor_es_draw_stream_layout_mismatch(ppu, state, layout);
+    return;
+  }
+
+  state.consumer_work_waits++;
+  state.consumer_layout = layout;
+  state.consumer_slot =
+      find_thor_es_draw_stream_snapshot(state, layout.object, layout.published);
+  state.consumer_generation = 0;
+  state.first_mismatch = umax;
+  state.consumer_from_previous = false;
+  state.consumer_checked = false;
+  state.consumer_match = false;
+  if (state.consumer_slot == umax) {
     state.invalid_layouts++;
     log_thor_es_draw_stream_summary(ppu, "consumer-layout-mismatch", state,
                                     true);
+    log_thor_es_draw_stream_layout_mismatch(ppu, state, layout);
     return;
+  }
+
+  const auto &snapshot = state.snapshots[state.consumer_slot];
+  state.consumer_generation = snapshot.generation;
+  state.consumer_from_previous = state.consumer_slot != state.current_slot &&
+                                 snapshot.generation < state.generation;
+  if (state.consumer_from_previous) {
+    state.previous_generation_consumers++;
+    log_thor_es_draw_stream_summary(ppu, "consumer-previous-generation", state,
+                                    true);
   }
 
   const u8 *live = vm::get_super_ptr<u8>(layout.published);
   state.comparisons++;
   state.consumer_checked = true;
   state.consumer_match =
-      std::memcmp(state.snapshot.data(), live, thor_es_draw_stream_size) == 0;
+      std::memcmp(snapshot.bytes.data(), live, thor_es_draw_stream_size) == 0;
   if (state.consumer_match) {
     state.matches++;
     log_thor_es_draw_stream_summary(ppu, "consumer-match", state);
@@ -339,37 +491,108 @@ thor_es_draw_stream_probe_after_wait_enabled(const ppu_thread &ppu) {
   state.mismatches++;
   state.first_mismatch = 0;
   while (state.first_mismatch < thor_es_draw_stream_size &&
-         state.snapshot[state.first_mismatch] == live[state.first_mismatch]) {
+         snapshot.bytes[state.first_mismatch] == live[state.first_mismatch]) {
     state.first_mismatch++;
   }
 
   const u32 aligned_offset = state.first_mismatch & ~3u;
   const u32 producer_word =
-      get_thor_es_draw_stream_snapshot_word(state.snapshot, aligned_offset);
+      get_thor_es_draw_stream_snapshot_word(snapshot.bytes, aligned_offset);
   u32 live_word = 0;
   read_thor_es_draw_stream_u32(layout.published + aligned_offset, live_word);
   sys_semaphore.error(
       "Eternal Sonata draw-stream handoff mismatch: generation=%llu "
+      "consumer_generation=%llu consumer_from_previous=%u "
       "object=0x%x published=0x%x first_byte=0x%x word_offset=0x%x "
       "producer_word=0x%x consumer_word=0x%x comparisons=%llu "
-      "mismatches=%llu cia=0x%x lr=0x%x",
-      state.generation, layout.object, layout.published, state.first_mismatch,
-      aligned_offset, producer_word, live_word, state.comparisons,
-      state.mismatches, ppu.cia, static_cast<u32>(ppu.lr));
+      "mismatches=%llu work_posts=%llu work_waits=%llu "
+      "prior_completion_waits=%llu completion_posts=%llu "
+      "completion_waits=%llu completion_restores=%llu cia=0x%x lr=0x%x",
+      state.generation, state.consumer_generation, state.consumer_from_previous,
+      layout.object, layout.published, state.first_mismatch, aligned_offset,
+      producer_word, live_word, state.comparisons, state.mismatches,
+      state.producer_work_posts, state.consumer_work_waits,
+      state.producer_prior_completion_waits, state.consumer_completion_posts,
+      state.producer_completion_waits, state.producer_completion_restores,
+      ppu.cia, static_cast<u32>(ppu.lr));
 }
 
 static FORCE_INLINE void
 maybe_thor_es_draw_stream_probe_before_post(const ppu_thread &ppu, u32 sem_id,
                                             s32 count) {
-  if (thor_es_draw_stream_probe_enabled()) {
-    thor_es_draw_stream_probe_before_post_enabled(ppu, sem_id, count);
+  if (!thor_es_draw_stream_probe_enabled() || count != 1 ||
+      Emu.GetTitleID() != "BLUS30161" ||
+      ppu.cia != thor_es_draw_stream_post_cia) {
+    return;
+  }
+
+  const u32 lr = static_cast<u32>(ppu.lr);
+  if (lr == thor_es_draw_stream_producer_work_post_lr) {
+    thor_es_draw_stream_probe_before_work_post_enabled(ppu, sem_id, count);
+    return;
+  }
+
+  u32 object = 0;
+  if (lr == thor_es_draw_stream_consumer_completion_post_lr) {
+    object = static_cast<u32>(ppu.gpr[22]);
+  } else if (lr == thor_es_draw_stream_producer_completion_restore_lr) {
+    object = static_cast<u32>(ppu.gpr[28]);
+  } else {
+    return;
+  }
+
+  std::lock_guard lock(g_thor_es_draw_stream_probe.mutex);
+  auto &state = g_thor_es_draw_stream_probe;
+  if (!state.valid || !object || object != state.layout.object ||
+      (state.completion_semaphore_id &&
+       state.completion_semaphore_id != sem_id)) {
+    return;
+  }
+
+  state.completion_semaphore_id = sem_id;
+  if (lr == thor_es_draw_stream_consumer_completion_post_lr) {
+    state.consumer_completion_posts++;
+  } else {
+    state.producer_completion_restores++;
   }
 }
 
 static FORCE_INLINE void
-maybe_thor_es_draw_stream_probe_after_wait(const ppu_thread &ppu) {
-  if (thor_es_draw_stream_probe_enabled()) {
-    thor_es_draw_stream_probe_after_wait_enabled(ppu);
+maybe_thor_es_draw_stream_probe_after_wait(const ppu_thread &ppu, u32 sem_id) {
+  if (!thor_es_draw_stream_probe_enabled() || Emu.GetTitleID() != "BLUS30161" ||
+      ppu.cia != thor_es_draw_stream_wait_cia) {
+    return;
+  }
+
+  const u32 lr = static_cast<u32>(ppu.lr);
+  if (lr == thor_es_draw_stream_consumer_work_wait_lr) {
+    thor_es_draw_stream_probe_after_consumer_wait_enabled(ppu, sem_id);
+    return;
+  }
+
+  u32 object = 0;
+  if (lr == thor_es_draw_stream_producer_prior_completion_wait_lr) {
+    const u32 semaphore_wrapper = static_cast<u32>(ppu.gpr[29]);
+    object = semaphore_wrapper >= 0x38 ? semaphore_wrapper - 0x38 : 0;
+  } else if (lr == thor_es_draw_stream_producer_completion_wait_lr) {
+    object = static_cast<u32>(ppu.gpr[28]);
+  } else {
+    return;
+  }
+
+  std::lock_guard lock(g_thor_es_draw_stream_probe.mutex);
+  auto &state = g_thor_es_draw_stream_probe;
+  if (!state.valid || !object || object != state.layout.object ||
+      (state.completion_semaphore_id &&
+       state.completion_semaphore_id != sem_id)) {
+    return;
+  }
+
+  state.completion_semaphore_id = sem_id;
+  if (lr == thor_es_draw_stream_producer_prior_completion_wait_lr) {
+    state.producer_prior_completion_waits++;
+  } else {
+    state.producer_completion_waits++;
   }
 }
 
@@ -377,8 +600,7 @@ maybe_thor_es_draw_stream_probe_after_wait(const ppu_thread &ppu) {
 
 void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
                                    std::string_view message) {
-  if (!thor_es_draw_stream_probe_enabled() ||
-      Emu.GetTitleID() != "BLUS30161" ||
+  if (!thor_es_draw_stream_probe_enabled() || Emu.GetTitleID() != "BLUS30161" ||
       message.find("unknown draw command") == std::string_view::npos) {
     return;
   }
@@ -389,76 +611,106 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
 
   std::lock_guard lock(g_thor_es_draw_stream_probe.mutex);
   const auto &state = g_thor_es_draw_stream_probe;
-  if (!state.valid || state.snapshot.size() != thor_es_draw_stream_size ||
-      !vm::check_addr(state.layout.published, vm::page_readable,
+  const auto *snapshot = state.consumer_slot < state.snapshots.size()
+                             ? &state.snapshots[state.consumer_slot]
+                             : nullptr;
+  if (!state.valid || !state.consumer_checked || !snapshot ||
+      !snapshot->valid || snapshot->generation != state.consumer_generation ||
+      snapshot->bytes.size() != thor_es_draw_stream_size ||
+      !vm::check_addr(state.consumer_layout.published, vm::page_readable,
                       thor_es_draw_stream_size)) {
     sys_semaphore.error(
         "Eternal Sonata draw-stream parser fault outside snapshot: "
         "generation=%llu fault_word=0x%x fault_word_parsed=%u "
-        "snapshot_object=0x%x published=0x%x valid=%u checked=%u match=%u "
-        "cia=0x%x lr=0x%x",
+        "producer_object=0x%x producer_published=0x%x "
+        "consumer_generation=%llu consumer_object=0x%x "
+        "consumer_published=0x%x valid=%u checked=%u match=%u "
+        "work_posts=%llu work_waits=%llu prior_completion_waits=%llu "
+        "completion_posts=%llu completion_waits=%llu completion_restores=%llu "
+        "sequence_anomalies=%llu cia=0x%x lr=0x%x",
         state.generation, fault_word, fault_word_parsed, state.layout.object,
-        state.layout.published, state.valid, state.consumer_checked,
-        state.consumer_match, ppu.cia, static_cast<u32>(ppu.lr));
+        state.layout.published, state.consumer_generation,
+        state.consumer_layout.object, state.consumer_layout.published,
+        state.valid, state.consumer_checked, state.consumer_match,
+        state.producer_work_posts, state.consumer_work_waits,
+        state.producer_prior_completion_waits, state.consumer_completion_posts,
+        state.producer_completion_waits, state.producer_completion_restores,
+        state.sequence_anomalies, ppu.cia, static_cast<u32>(ppu.lr));
     return;
   }
 
-  const u8 *live = vm::get_super_ptr<u8>(state.layout.published);
+  const u8 *live = vm::get_super_ptr<u8>(state.consumer_layout.published);
   const bool fault_buffer_match =
-      std::memcmp(state.snapshot.data(), live, thor_es_draw_stream_size) == 0;
+      std::memcmp(snapshot->bytes.data(), live, thor_es_draw_stream_size) == 0;
   u32 fault_first_mismatch = umax;
   if (!fault_buffer_match) {
     fault_first_mismatch = 0;
     while (fault_first_mismatch < thor_es_draw_stream_size &&
-           state.snapshot[fault_first_mismatch] == live[fault_first_mismatch]) {
+           snapshot->bytes[fault_first_mismatch] ==
+               live[fault_first_mismatch]) {
       fault_first_mismatch++;
     }
   }
 
-  const u32 mismatch_word_offset = fault_first_mismatch == umax
-                                       ? umax
-                                       : fault_first_mismatch & ~3u;
-  const u32 producer_mismatch_word = fault_first_mismatch == umax
-                                         ? 0
-                                         : get_thor_es_draw_stream_snapshot_word(
-                                               state.snapshot,
-                                               mismatch_word_offset);
+  const u32 mismatch_word_offset =
+      fault_first_mismatch == umax ? umax : fault_first_mismatch & ~3u;
+  const u32 producer_mismatch_word =
+      fault_first_mismatch == umax ? 0
+                                   : get_thor_es_draw_stream_snapshot_word(
+                                         snapshot->bytes, mismatch_word_offset);
   u32 live_mismatch_word = 0;
   if (fault_first_mismatch != umax) {
-    read_thor_es_draw_stream_u32(
-        state.layout.published + mismatch_word_offset, live_mismatch_word);
+    read_thor_es_draw_stream_u32(state.consumer_layout.published +
+                                     mismatch_word_offset,
+                                 live_mismatch_word);
   }
 
   const thor_es_draw_stream_word_scan producer_fault =
       fault_word_parsed
-          ? scan_thor_es_draw_stream_word(state.snapshot.data(),
-                                          state.snapshot.size(), fault_word)
+          ? scan_thor_es_draw_stream_word(snapshot->bytes.data(),
+                                          snapshot->bytes.size(), fault_word)
           : thor_es_draw_stream_word_scan{};
   const thor_es_draw_stream_word_scan live_fault =
-      fault_word_parsed
-          ? scan_thor_es_draw_stream_word(live, thor_es_draw_stream_size,
-                                          fault_word)
-          : thor_es_draw_stream_word_scan{};
+      fault_word_parsed ? scan_thor_es_draw_stream_word(
+                              live, thor_es_draw_stream_size, fault_word)
+                        : thor_es_draw_stream_word_scan{};
 
   sys_semaphore.error(
       "Eternal Sonata draw-stream parser fault: generation=%llu "
-      "object=0x%x published=0x%x fault_word=0x%x fault_word_parsed=%u "
+      "consumer_generation=%llu consumer_from_previous=%u "
+      "producer_object=0x%x producer_buffer0=0x%x producer_buffer1=0x%x "
+      "producer_write=0x%x producer_flags=0x%x producer_published=0x%x "
+      "consumer_object=0x%x consumer_buffer0=0x%x consumer_buffer1=0x%x "
+      "consumer_write=0x%x consumer_flags=0x%x consumer_published=0x%x "
+      "fault_word=0x%x fault_word_parsed=%u "
       "fault_buffer_match=%u fault_first_mismatch=0x%x "
       "mismatch_word_offset=0x%x producer_mismatch_word=0x%x "
       "live_mismatch_word=0x%x producer_fault_count=%llu "
       "producer_fault_first=0x%x live_fault_count=%llu live_fault_first=0x%x "
       "handoff_checked=%u handoff_match=%u handoff_first_mismatch=0x%x "
+      "work_posts=%llu work_waits=%llu prior_completion_waits=%llu "
+      "completion_posts=%llu completion_waits=%llu completion_restores=%llu "
+      "sequence_anomalies=%llu "
       "cia=0x%x lr=0x%x",
-      state.generation, state.layout.object, state.layout.published, fault_word,
+      state.generation, state.consumer_generation, state.consumer_from_previous,
+      state.layout.object, state.layout.buffer0, state.layout.buffer1,
+      state.layout.write, state.layout.flags, state.layout.published,
+      state.consumer_layout.object, state.consumer_layout.buffer0,
+      state.consumer_layout.buffer1, state.consumer_layout.write,
+      state.consumer_layout.flags, state.consumer_layout.published, fault_word,
       fault_word_parsed, fault_buffer_match, fault_first_mismatch,
       mismatch_word_offset, producer_mismatch_word, live_mismatch_word,
       producer_fault.count, producer_fault.first_offset, live_fault.count,
       live_fault.first_offset, state.consumer_checked, state.consumer_match,
-      state.first_mismatch, ppu.cia, static_cast<u32>(ppu.lr));
+      state.first_mismatch, state.producer_work_posts,
+      state.consumer_work_waits, state.producer_prior_completion_waits,
+      state.consumer_completion_posts, state.producer_completion_waits,
+      state.producer_completion_restores, state.sequence_anomalies, ppu.cia,
+      static_cast<u32>(ppu.lr));
 }
 
-static thor_es_sema_superpath_mode parse_thor_es_sema_superpath_mode(
-    std::string_view value) {
+static thor_es_sema_superpath_mode
+parse_thor_es_sema_superpath_mode(std::string_view value) {
   if (value.empty() || value == "0" || value == "off" || value == "false" ||
       value == "disabled") {
     return thor_es_sema_superpath_mode::disabled;
@@ -923,7 +1175,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
         log_thor_es_sema_superpath(ppu, "sys_semaphore_wait",
                                    "fast-direct-wait", sem_id, timeout);
       }
-      maybe_thor_es_draw_stream_probe_after_wait(ppu);
+      maybe_thor_es_draw_stream_probe_after_wait(ppu, sem_id);
       return CELL_OK;
     } else if (const char *action =
                    get_thor_es_sema_fast_esrch_action(sem_id)) {
@@ -972,7 +1224,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
     thor_spurs_probe_log_ppu_wait("sem_wait_ready", ppu, sem_id, timeout,
                                   sem->key, static_cast<u64>(+sem->val),
                                   CELL_OK);
-    maybe_thor_es_draw_stream_probe_after_wait(ppu);
+    maybe_thor_es_draw_stream_probe_after_wait(ppu, sem_id);
     return CELL_OK;
   }
 
@@ -1039,7 +1291,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
                                 sem->key, static_cast<u64>(+sem->val),
                                 result);
   if (result == CELL_OK) {
-    maybe_thor_es_draw_stream_probe_after_wait(ppu);
+    maybe_thor_es_draw_stream_probe_after_wait(ppu, sem_id);
   }
   return not_an_error(result);
 }

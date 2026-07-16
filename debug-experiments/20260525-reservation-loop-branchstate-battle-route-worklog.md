@@ -11777,3 +11777,77 @@ Upstream audit and next action:
   corrected core, run exactly one guarded verifier battle route, then stop.
   The purpose is producer-versus-consumer fault classification. Do not run a
   speed promotion or heat soak until the flicker/draw-stream fault is resolved.
+
+## 2026-07-15 Corrected Thor Draw-Stream Classification
+
+Bounded device route:
+
+- Device `c3ca0370` started stopped at battery temperature `24.0 C`, Android
+  thermal status `0`, and verifier property off. The Thermal HAL remained
+  unavailable, so the route retained the battery-temperature `35 C`
+  fail-closed guard.
+- Existing ARM64 RelWithDebInfo core SHA256
+  `2715F3B42169A5496FE7A2B63DB6F02CB9249EA74A9D630A9C829728CF097F3F`
+  was deployed without building, launching, or streaming. Push evidence:
+  `debug-captures/20260715-235542-draw-stream-verifier-2715-dev-core-push`.
+- Exactly one direct-input diagnostic route ran with only
+  `debug.rpcsx.thor.es_draw_stream_probe=verify` enabled:
+  `debug-captures/android-speed-sprint/20260715-235626-thor-input-eternal-sonata-battle-intro-route`.
+  The wrapper failed closed at the first battle-approach health checkpoint;
+  no second route was used.
+- `05-battle-approach-1-candidate.png` is a clean real first-battle tutorial
+  prompt with the overlay at `29.97 FPS`. No visible corruption appears in
+  that sampled frame and no VM access violation occurred before controlled
+  stop. This is a diagnostic sample, not a stable Thor speed proof.
+- Route temperature stayed `24.0 C`. The failure cleanup pinned and stopped
+  PID `2517`, prevented restart, and reset the verifier property. A later
+  read-only state check reported battery temperature `25.0 C`, thermal status
+  `0`, package stopped, and property off.
+
+Producer/consumer result:
+
+- The corrected syscall-PC hooks worked at producer `CIA=0x31c1b8`,
+  `LR=0x2ac7f0` and consumer `CIA=0x31c188`, `LR=0x2afd08`.
+- Generations `1` through `3654` completed consecutive full `0x180000`-byte
+  producer-snapshot versus consumer-live comparisons with byte-for-byte
+  matches.
+- At emulated time `0:02:39.630792`, generation `3655` logged
+  `consumer-layout-mismatch` and immediately emitted unknown draw command
+  `0x00200000`. The fault word occurred `248` times in both the saved producer
+  buffer and live buffer, first at offset `0x5f0c`.
+- At `0:02:43.995836`, generation `3785` logged the same layout mismatch and
+  immediately emitted unknown draw command `0x3f800000`. That word occurred
+  `13,508` times in both copies, first at offset `0x170`.
+- Both parser faults were predicted exactly by a consumer layout/selector
+  mismatch. The bad words were common payload/float values already present in
+  equal counts in producer and live memory. This rejects simple post-handoff
+  buffer-byte mutation as the leading explanation; the remaining target is
+  the generation/buffer selector or completion ordering.
+
+Static protocol and host-only verifier:
+
+- Bounded Ghidra disassembly confirmed the producer waits on completion
+  `object+0x50` at return LRs `0x2ac7e4` and `0x2ac830`, posts work
+  `object+0x38` at `0x2ac7f0`, restores completion at `0x2ac83c`, while the
+  consumer waits for work at `0x2afd08` and posts completion at `0x2accb4`.
+  Evidence is in
+  `debug-captures/ghidra-eboot-20260714-parser/completion-semaphore-disassembly.txt`.
+- Official RPCSX core `e8ae1481` still differs from vendored base `e27926d`
+  only by the GCC 16 missing-include compatibility commit. Current RPCS3 uses
+  the same relevant semaphore algorithm; there is no upstream selector or
+  runtime semaphore fix to import for this failure.
+- `sys_semaphore.cpp` now preserves snapshots for both alternating published
+  buffers, binds a consumer to the matching snapshot generation instead of
+  assuming the latest producer generation, reports both full producer and
+  consumer layouts, and counts the six exact work/completion wait/post
+  callsites. The property remains diagnostic only: it does not rewrite guest
+  flags, repair a selector, or add a memory fence.
+- Host ARM64 RelWithDebInfo build completed successfully. New core size is
+  `1,349,537,088` bytes, SHA256
+  `BA0E53338FB098E9BDF1BCCCB21629748386CE7D6D966BC828443CAB62A870D7`.
+  It was not deployed or launched.
+- Classification: `failed` for Thor stability, `selector-sequence-evidence`
+  for the route, and `host-verifier` for the code. The next separate cool round
+  may deploy this core and run exactly one guarded diagnostic route. Do not
+  claim speed, enable behavior-changing fast paths, or heat-soak the Thor until
+  the selector/completion sequence is classified.

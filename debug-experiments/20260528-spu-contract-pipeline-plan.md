@@ -489,3 +489,37 @@ Promotion rule:
 - Official Android/core upstream audit found no applicable performance fix:
   the only newer Android changes are UI preference work and the only newer
   RPCSX-core change is missing-include compatibility.
+
+## 2026-07-15 Thor Selector/Completion Evidence
+
+Result:
+
+- Corrected core
+  `2715F3B42169A5496FE7A2B63DB6F02CB9249EA74A9D630A9C829728CF097F3F`
+  was deployed without launch, then used for one guarded diagnostic route:
+  `20260715-235626-thor-input-eternal-sonata-battle-intro-route`.
+- The consumer matched the full `0x180000`-byte producer snapshot for 3,654
+  consecutive generations. Generation `3655` changed layout immediately
+  before unknown draw `0x00200000`; generation `3785` repeated the pattern
+  immediately before unknown draw `0x3f800000`.
+- Saved-producer and live-buffer bad-word counts were identical at both
+  faults. The current failure is therefore classified as a selected-buffer or
+  generation-ordering problem, not a demonstrated buffer-byte mutation.
+- The sampled first-battle tutorial frame was visually clean at `29.97 FPS`,
+  with no VM fault before the fail-closed stop. Temperature stayed `24 C`; the
+  final read-only check was `25 C`, thermal status `0`, package stopped, and
+  verifier property off. No second route ran.
+
+Next diagnostic contract:
+
+- Ghidra fixes the completion/work sequence at producer LRs `0x2ac7e4`,
+  `0x2ac7f0`, `0x2ac830`, and `0x2ac83c`, plus consumer LRs `0x2accb4` and
+  `0x2afd08`.
+- The host verifier now keeps both alternating buffer snapshots, binds the
+  consumer to its actual selected generation, logs both layouts, and records
+  those six semaphore transitions. It does not alter guest behavior.
+- ARM64 RelWithDebInfo build passed. Host-only core SHA256 is
+  `BA0E53338FB098E9BDF1BCCCB21629748386CE7D6D966BC828443CAB62A870D7`.
+- In a later cool round, run at most one guarded diagnostic route. Do not use a
+  generic fence, selector rewrite, performance fast path, speed promotion, or
+  heat soak until the exact completion/selector ordering is proven.
