@@ -1,0 +1,50 @@
+﻿{
+    "id":  "20260716-065423-es-async-draw-v3-399f",
+    "created":  "2026-07-16T06:54:23.3486537-04:00",
+    "action":  "Start",
+    "label":  "es-async-draw-v3-399f",
+    "symptom":  "",
+    "package":  "net.rpcsx.easy",
+    "profile":  "default",
+    "profilePath":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-profiles\\default.json",
+    "mode":  "Normal",
+    "status":  "ok",
+    "failure":  "",
+    "settings":  {
+                     "logcatLines":  12000,
+                     "summaryTailLines":  80,
+                     "streamPollSeconds":  3,
+                     "postMode":  "Quiet",
+                     "postModeApplied":  ""
+                 },
+    "repo":  {
+                 "head":  "f2f848bb7",
+                 "branch":  "master",
+                 "status":  "?? \"debug-experiments/ps3-200-windows-speed-loop-refiner-$(Get-Date -Format \u0027yyyyMMdd-HHmmss\u0027).txt\"\n?? debug-experiments/ps3-200-windows-speed-loop-refiner-latest.log"
+             },
+    "apk":  {
+
+            },
+    "device":  {
+                   "serial":  "c3ca0370",
+                   "model":  "AYN Thor",
+                   "product":  "kalama",
+                   "board":  "kalama",
+                   "packagePath":  "package:/data/app/~~yxfKal-xlY67pJon3jUN7g==/net.rpcsx.easy-89NlKJsrdewwnTVzkufF0g==/base.apk",
+                   "propsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260716-065423-es-async-draw-v3-399f\\device-props.txt",
+                   "appPrefsFile":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-issues\\20260716-065423-es-async-draw-v3-399f\\app-prefs.txt"
+               },
+    "captures":  [
+                     "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\20260716-065426-20260716-065423-es-async-draw-v3-399f-stream"
+                 ],
+    "summaries":  [
+
+                  ],
+    "quickRead":  [
+
+                  ],
+    "ghidra":  [
+
+               ],
+    "nextAction":  "Reproduce on Thor. While it is running, use .\\tools\\thor_ooda.ps1 -Action Summarize -Label es-async-draw-v3-399f -Profile default -NoIssueCommit for quick reads; when the issue is visible, run .\\tools\\thor_ooda.ps1 -Action Stop -Label es-async-draw-v3-399f -Profile default."
+}
