@@ -119,3 +119,18 @@ Required keys:
 - Field, Options/menu, and first-battle visual gates are still required.
 
 Next action: Apply the log-only row in the Windows upstream checkout after isolating or stashing unrelated upstream changes; then run field/Options/first-battle verifier captures.
+
+## 2026-07-15 Implementation Status
+
+- Applied and build-validated the log-only row in the clean Windows checkout at
+  commit `7bddf372c566ef5958ec9093e935f3744d8aca5e`.
+- Corrected `reject_eah` so it is no longer inferred from `eal`; the existing
+  classifier already rejects non-zero EAH before recording a descriptor.
+- The row now reports fixed contract anchors (`pc=0x25cc`, `tag=31`,
+  `size=16384`, `eal=0x9e4000`) and target-family hashes/mismatch counts rather
+  than the last sample from any accepted 25cc address family.
+- The strict parser schema now verifies the exact title/image/PC/group/SPU/
+  transfer anchors, `contract_bytes == contract_hits * 16384`, reject-bucket
+  sum consistency, and blocked fast modes.
+- This remains verify-only instrumentation. No copy, body, codegen, or fast-path
+  behavior changed.

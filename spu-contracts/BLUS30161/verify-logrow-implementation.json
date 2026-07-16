@@ -38,6 +38,40 @@
     "target_log_row":  {
                            "prefix":  "Eternal Sonata SPU contract verifier",
                            "hle_mode":  "contract-25cc-9e4000",
+                           "expected_fields":  {
+                                                   "title":  "BLUS30161",
+                                                   "verify_mode":  "verify-25cc-shadow",
+                                                   "group_name":  "CellSpursKernelGroup",
+                                                   "spu_name":  "CellSpursKernel0",
+                                                   "image_sig":  "0x958dfe208b686622",
+                                                   "pc":  "0x25cc",
+                                                   "tag":  31,
+                                                   "size":  16384,
+                                                   "eal":  "0x9e4000"
+                                               },
+                           "blocked_fields":  {
+                                                  "body_mode":  [
+                                                                     "fast"
+                                                                 ]
+                                              },
+                           "bytes_per_hit":  16384,
+                           "reject_bucket_keys":  [
+                                                       "reject_title",
+                                                       "reject_image_sig",
+                                                       "reject_pc",
+                                                       "reject_group",
+                                                       "reject_spu_name",
+                                                       "reject_cmd",
+                                                       "reject_list",
+                                                       "reject_tag",
+                                                       "reject_size",
+                                                       "reject_eah",
+                                                       "reject_eal_family",
+                                                       "reject_lsa_range",
+                                                       "reject_mfc_shuffle",
+                                                       "reject_accurate_dma",
+                                                       "reject_fast_mode"
+                                                   ],
                            "format_keys":  [
                                                "hle_mode",
                                                "contract_id",

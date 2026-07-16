@@ -260,3 +260,52 @@ Next:
 - Implement the log-only upstream row only after isolating the dirty upstream
   checkout, then require this strict parser gate before any bodyfast/codegen or
   GPU fast-path promotion discussion.
+
+## 2026-07-15 Windows 25cc Contract-Row Hardening
+
+Update:
+
+- The deterministic harness refiner found no strong new route base: six of the
+  eight newest runs were cutscene/non-field, one was a black overlay, and the
+  newest run only reached loaded-field triage. No gameplay run was spent on
+  that weak route.
+- The Windows upstream checkout was clean, so the existing priority-1
+  `0x25cc / 0x9e4000` contract row was audited and fixed in local commit
+  `7bddf372c566ef5958ec9093e935f3744d8aca5e`.
+- `reject_eah` had incorrectly compared `desc.eal`; it now remains zero for
+  recorded descriptors because the runtime classifier rejects non-zero EAH
+  before descriptor creation.
+- Contract identity fields are fixed to `pc=0x25cc`, `tag=31`, `size=16384`,
+  and `eal=0x9e4000`. Output mismatch and last hashes now come only from the
+  matching family-1 descriptors, not the most recent unrelated 25cc family.
+- The parser/schema now reject wrong title/image/PC/group/SPU/transfer anchors,
+  incorrect byte-per-hit totals, inconsistent reject-bucket totals, body fast
+  mode, and non-zero `reject_fast_mode`.
+
+Offline validation:
+
+- Windows Release build command:
+  `cmake --build build-msvc --config Release --target rpcs3 --parallel 8`.
+- Result: success in `1688.7 s`; `sys_spu.cpp` compiled and LTCG linked
+  `build-msvc\bin\rpcs3.exe`.
+- Executable SHA256:
+  `BDCD118BB513178A72885B072840316048B5FD8DE1D144640CF5CB55ABAC47B5`.
+- Strict synthetic parser matrix: valid target row exited `0`; wrong EAL,
+  wrong bytes, wrong reject total, body fast, and fast reject bucket each
+  exited `2` with the intended rejection reason.
+- No RPCS3 gameplay launch, ADB action, deployment, Thor launch, sensor query,
+  or device profiler was used.
+
+Classification:
+
+- `analysis`.
+- `verify-only-contract-accounting`.
+- Build validated, runtime capture pending.
+- Not speed, not `gpu-migration-credit`, and not a 200% gate candidate.
+
+Next:
+
+- Use the rebuilt Windows binary for one bounded `verify-25cc-shadow` capture
+  only when the state-aware route reaches a valid field/menu/battle checkpoint.
+- Require the strict parser gate and clean visuals before considering any
+  body/codegen specialization; do not port this lane to Android yet.

@@ -11349,3 +11349,64 @@ Decision:
   word; a mismatched handoff identifies a post-publication memory mutation. If
   the snapshot word differs while the live handoff still matches, investigate
   parser/JIT cursor state rather than guest synchronization.
+
+## 2026-07-15 Windows SPU Contract Verifier Accounting Fix
+
+Question:
+
+- Can the priority `0x25cc / 0x9e4000` verifier row be trusted as a promotion
+  gate before any behavior-changing compiler work?
+
+Audit result:
+
+- Not as previously emitted. `reject_eah` compared the recorded low effective
+  address (`eal`) against zero, so every normal non-zero transfer falsely
+  inflated the EAH bucket. Existing captured rows showed the symptom directly:
+  for example `reject_eah=18` alongside valid `eal=0xa1c000` samples.
+- The contract row also printed PC/tag/size/EAL and hashes from the last shadow
+  sample across all accepted 25cc families. A valid 0x9e4000 hit could therefore
+  be labeled with a later 0xa1c000 anchor while still passing the parser.
+- The parser checked row shape, identity, GET/PUT split, mismatch, and overflow,
+  but did not validate the fixed contract anchors, byte arithmetic, reject sum,
+  or blocked fast-mode leakage.
+
+Fix:
+
+- In the clean Windows checkout, changed only
+  `rpcs3\Emu\Cell\lv2\sys_spu.cpp`. The row now emits fixed target anchors and
+  accumulates hashes/output mismatches only from family 1 at `eal=0x9e4000`.
+- Left `reject_eah=0` for recorded descriptors, with an explicit source comment:
+  the runtime classifier already rejects `cmd.eah != 0` before a descriptor can
+  be stored. No EAH value is fabricated from EAL.
+- Extended the repo-local schema/parser with exact anchor checks,
+  `contract_bytes == contract_hits * 16384`, reject-bucket sum validation, and
+  fast-mode rejection. Non-target accepted EAL families remain visible in
+  `reject_eal_family`; they are diagnostics and are not relabeled as target hits.
+- Windows source commit:
+  `7bddf372c566ef5958ec9093e935f3744d8aca5e`.
+
+Validation:
+
+- `cmake --build build-msvc --config Release --target rpcs3 --parallel 8`
+  completed successfully in `1688.7 s`, including `sys_spu.cpp` and final LTCG
+  link. The resulting executable SHA256 is
+  `BDCD118BB513178A72885B072840316048B5FD8DE1D144640CF5CB55ABAC47B5`.
+- Strict synthetic parser matrix passed: one valid two-hit row exited `0`;
+  wrong EAL, wrong byte count, wrong reject sum, `body_mode=fast`, and non-zero
+  `reject_fast_mode` each exited `2` with the expected failure.
+- No game was launched. No Android build, ADB query, deployment, capture, or
+  Thor sensor read occurred; the handheld was not heated or disturbed.
+
+Classification:
+
+- `windows-offline-verifier-fix`.
+- `verify-only-contract-accounting`.
+- Not a runtime correctness result, FPS result, or 200% gate candidate.
+
+Decision:
+
+- Keep the corrected verifier and parser. The next meaningful evidence is one
+  bounded Windows `verify-25cc-shadow` capture from a genuinely valid route,
+  followed by the strict parser and field/menu/first-battle visual checks.
+- Do not enable a 25cc body fast path or port this contract lane to Android from
+  compile-only evidence.

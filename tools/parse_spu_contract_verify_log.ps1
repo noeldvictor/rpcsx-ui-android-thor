@@ -55,6 +55,10 @@ $prefix = [string]$schema.target_log_row.prefix
 $expectedHleMode = [string]$schema.target_log_row.hle_mode
 $expectedContractId = [string]$schema.contract_id
 $requiredKeys = @($schema.target_log_row.format_keys)
+$expectedFields = $schema.target_log_row.expected_fields
+$blockedFields = $schema.target_log_row.blocked_fields
+$bytesPerHit = if ($schema.target_log_row.bytes_per_hit) { [Int64]$schema.target_log_row.bytes_per_hit } else { 0L }
+$rejectBucketKeys = @($schema.target_log_row.reject_bucket_keys)
 
 $promotionFullPath = Resolve-RepoPath $PromotionScorePath
 $promotionRow = $null
@@ -95,6 +99,7 @@ if ($lines.Count -eq 0) {
         rejected_rows = 0
         total_contract_hits = 0
         total_contract_bytes = 0
+        total_contract_rejects = 0
         total_output_mismatch = 0
         total_desc_overflow = 0
         missing_required_keys = @()
@@ -107,6 +112,7 @@ if ($lines.Count -eq 0) {
     $accepted = 0
     $totalHits = 0L
     $totalBytes = 0L
+    $totalRejects = 0L
     $totalMismatch = 0L
     $totalOverflow = 0L
     $missingGlobal = New-Object System.Collections.Generic.HashSet[string]
@@ -128,15 +134,61 @@ if ($lines.Count -eq 0) {
             $rowFailures.Add("wrong_contract_id:$($row.contract_id)") | Out-Null
         }
 
+        if ($expectedFields) {
+            foreach ($expected in $expectedFields.PSObject.Properties) {
+                $key = [string]$expected.Name
+                if ($row.PSObject.Properties.Name.Contains($key)) {
+                    $actual = [string]$row.$key
+                    $wanted = [string](Convert-Scalar ([string]$expected.Value))
+                    if ($actual -cne $wanted) {
+                        $rowFailures.Add("wrong_${key}:$actual") | Out-Null
+                    }
+                }
+            }
+        }
+
+        if ($blockedFields) {
+            foreach ($blocked in $blockedFields.PSObject.Properties) {
+                $key = [string]$blocked.Name
+                if ($row.PSObject.Properties.Name.Contains($key)) {
+                    $actual = [string]$row.$key
+                    if (@($blocked.Value) -contains $actual) {
+                        $rowFailures.Add("blocked_${key}:$actual") | Out-Null
+                    }
+                }
+            }
+        }
+
         $hits = if ($row.PSObject.Properties.Name.Contains("contract_hits")) { [Int64]$row.contract_hits } else { 0L }
         $bytes = if ($row.PSObject.Properties.Name.Contains("contract_bytes")) { [Int64]$row.contract_bytes } else { 0L }
         $getHits = if ($row.PSObject.Properties.Name.Contains("contract_get_hits")) { [Int64]$row.contract_get_hits } else { 0L }
         $putHits = if ($row.PSObject.Properties.Name.Contains("contract_put_hits")) { [Int64]$row.contract_put_hits } else { 0L }
+        $contractRejects = if ($row.PSObject.Properties.Name.Contains("contract_reject_total")) { [Int64]$row.contract_reject_total } else { 0L }
         $mismatch = if ($row.PSObject.Properties.Name.Contains("output_mismatch")) { [Int64]$row.output_mismatch } else { 0L }
         $overflow = if ($row.PSObject.Properties.Name.Contains("desc_overflow")) { [Int64]$row.desc_overflow } else { 0L }
 
         if (($row.PSObject.Properties.Name.Contains("contract_hits")) -and ($row.PSObject.Properties.Name.Contains("contract_get_hits")) -and ($row.PSObject.Properties.Name.Contains("contract_put_hits")) -and ($hits -ne ($getHits + $putHits))) {
             $rowFailures.Add("hit_split_mismatch") | Out-Null
+        }
+        if (($bytesPerHit -gt 0) -and ($row.PSObject.Properties.Name.Contains("contract_bytes")) -and ($bytes -ne ($hits * $bytesPerHit))) {
+            $rowFailures.Add("contract_bytes_mismatch") | Out-Null
+        }
+        if (($rejectBucketKeys.Count -gt 0) -and ($row.PSObject.Properties.Name.Contains("contract_reject_total"))) {
+            $rejectSum = 0L
+            $haveAllRejectBuckets = $true
+            foreach ($key in $rejectBucketKeys) {
+                if ($row.PSObject.Properties.Name.Contains($key)) {
+                    $rejectSum += [Int64]$row.$key
+                } else {
+                    $haveAllRejectBuckets = $false
+                }
+            }
+            if ($haveAllRejectBuckets -and ($contractRejects -ne $rejectSum)) {
+                $rowFailures.Add("reject_total_mismatch") | Out-Null
+            }
+        }
+        if (($row.PSObject.Properties.Name.Contains("reject_fast_mode")) -and ([Int64]$row.reject_fast_mode -ne 0)) {
+            $rowFailures.Add("fast_mode_rejected") | Out-Null
         }
         if ($mismatch -ne 0) {
             $rowFailures.Add("output_mismatch_nonzero") | Out-Null
@@ -156,6 +208,7 @@ if ($lines.Count -eq 0) {
 
         $totalHits += $hits
         $totalBytes += $bytes
+        $totalRejects += $contractRejects
         $totalMismatch += $mismatch
         $totalOverflow += $overflow
         $parsedRows.Add([pscustomobject]@{
@@ -178,6 +231,7 @@ if ($lines.Count -eq 0) {
         rejected_rows = $lines.Count - $accepted
         total_contract_hits = $totalHits
         total_contract_bytes = $totalBytes
+        total_contract_rejects = $totalRejects
         total_output_mismatch = $totalMismatch
         total_desc_overflow = $totalOverflow
         missing_required_keys = @($missingGlobal)
@@ -257,6 +311,7 @@ if (-not [string]::IsNullOrWhiteSpace($OutMarkdown)) {
     $md.Add("- Rejected rows: $bt$($result.rejected_rows)$bt") | Out-Null
     $md.Add("- Total hits: $bt$($result.total_contract_hits)$bt") | Out-Null
     $md.Add("- Total bytes: $bt$($result.total_contract_bytes)$bt") | Out-Null
+    $md.Add("- Total contract rejects: $bt$($result.total_contract_rejects)$bt") | Out-Null
     $md.Add("- Output mismatch: $bt$($result.total_output_mismatch)$bt") | Out-Null
     $md.Add("- Descriptor overflow: $bt$($result.total_desc_overflow)$bt") | Out-Null
     $md.Add("- Promotion score available: $bt$($result.promotion_score_available)$bt") | Out-Null
