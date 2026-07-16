@@ -12492,3 +12492,66 @@ later cool round, deploy exact `47BC...C007`, enable only the dispatch probe,
 run one guarded route, and stop. Use `command60_emitter`, `published_end`, and
 `publish_relation` to isolate the producer function or publication race before
 changing guest behavior; do not mask the bad word or broaden interpreter mode.
+
+## 2026-07-16 Producer Emitter Proof, Async Queue Mapping, And Cache-Key Repair
+
+One guarded device result:
+
+- Exact core `47BC2679B9DFE9DC1E1BDC099887CB297AF6E07A1586E2C9E87BCDFBA63BC007`
+  was pushed without build, launch, or log stream in
+  `debug-captures/20260716-050757-es-producer-end-probe-47bc-dev-core-push`.
+  Exactly one probe-only route ran in
+  `debug-captures/android-speed-sprint/20260716-050823-thor-input-eternal-sonata-battle-intro-route`.
+- The route reached the correct Path-to-Tenuto field and first-battle tutorial
+  prompt at `28.11/30.00 FPS`, then failed closed on unknown draw before
+  active-battle proof. No VM access, native signal, process restart, Vulkan
+  device loss, LLVM fatal, or RSX FP-CAL fatal preceded the controlled stop.
+  Every thermal sample was `23 C`, thermal status was `0`, the package ended
+  stopped, experiment properties reset, and no second route ran.
+- Fault one was stable `0x3f800000` at selected offset `0x2b190`, but had no
+  producer or publisher breadcrumb. Fault two was stable `0x3f800000` at
+  selected offset `0x2f0b0`, immediately after command `0x60`; it matched
+  emitter `0x002ee0c8` with event age three. Its publisher relation was still
+  absent. This is useful producer evidence, not stability or speed proof.
+
+PPU cache-key diagnosis and repair:
+
+- The missing publisher record was a stale-object instrumentation failure.
+  The earlier `662B...5BE3` run compiled PPU object
+  `v7-kusa-JxcXFik2c7V32hQub9w8MZ-000e18-cortex-a78.obj`; the expanded
+  `47BC...C007` run loaded that exact object while compiling formerly normal
+  emitter objects. The original single dispatch-probe bit therefore isolated
+  probe-on from probe-off, but did not invalidate already cached probe-on
+  objects when provenance sites were added.
+- A new high `thor_es_dispatch_provenance_v1` PPU setting bit is now applied
+  only to BLUS30161 probe-enabled objects containing the publisher or one of
+  the seven mapped emitters. Existing bit positions and normal/probe-off keys
+  remain unchanged; expanded provenance objects can no longer reuse the old
+  parser/publisher object.
+- `git diff --check` passes. Android ARM64 RelWithDebInfo built successfully in
+  `185s`. The exact host-only core is `1,349,692,016` bytes with SHA256
+  `55B01CB3CDF84D0F7B43F9AB2005FD3CA55E15FA5AA0B9DC663648ECA471B0DD`.
+  It was not deployed or launched.
+
+Saved-project async producer classification:
+
+- Emitter `0x002ee0c8` writes command `0x60` and its pointer argument, advances
+  the stream by eight bytes, reserves a following output region, and calls
+  builder `0x002b07c8`. That builder creates an `0x80`-byte asynchronous job/
+  DMA descriptor containing the reserved stream destination and size, advances
+  a ring producer index at `+0x111188`, publishes the descriptor, and wakes a
+  worker. It does not fill the reserved command stream inline.
+- Guest function `0x00309160` is a bounded queue-drain primitive: it enqueues a
+  sentinel, wakes the worker, waits, clears state, and copies producer index
+  `+0x111188` to consumer index `+0x111190`. This proves the job family has an
+  explicit completion boundary.
+- A stable float at the exact next-record boundary is therefore consistent
+  with asynchronous generated draw output being incomplete or wrong when the
+  selected list is consumed. That remains an inference until the repaired
+  publisher breadcrumb classifies the fault as `inside`, `at_end`, or
+  `past_end`; do not add a speculative queue drain or parser recovery yet.
+
+Decision: leave the Thor stopped. In one later cool round, deploy exact
+`55B0...B0DD`, enable only the dispatch probe, run one guarded route, and stop.
+Use the now-isolated emitter/publisher relation to decide whether the narrow
+behavioral target is job completion, publication ordering, or producer output.

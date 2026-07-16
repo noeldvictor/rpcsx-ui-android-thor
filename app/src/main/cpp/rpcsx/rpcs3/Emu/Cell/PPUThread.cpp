@@ -769,14 +769,8 @@ bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size)
 	const bool contains_dispatch_load =
 		(address <= thor_es_dispatch_load_first && thor_es_dispatch_load_first < end) ||
 		(address <= thor_es_dispatch_load_next && thor_es_dispatch_load_next < end);
-	const bool contains_publisher =
-		address <= thor_es_publish_terminator_store && thor_es_publish_terminator_store < end;
-	bool contains_emitter = false;
-	for (const u32 cia : thor_es_command60_stores)
-	{
-		contains_emitter |= address <= cia && cia < end;
-	}
-	const bool contains_probe_site = contains_dispatch_load || contains_publisher || contains_emitter;
+	const bool contains_probe_site = contains_dispatch_load ||
+		ppu_thor_es_dispatch_provenance_range(address, size);
 
 	if (contains_probe_site)
 	{
@@ -791,6 +785,30 @@ bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size)
 	}
 
 	return contains_probe_site;
+}
+
+bool ppu_thor_es_dispatch_provenance_range(u32 address, u32 size)
+{
+	if (!size || Emu.GetTitleID() != "BLUS30161" || !get_thor_es_dispatch_probe_enabled())
+	{
+		return false;
+	}
+
+	const u64 end = static_cast<u64>(address) + size;
+	if (address <= thor_es_publish_terminator_store && thor_es_publish_terminator_store < end)
+	{
+		return true;
+	}
+
+	for (const u32 cia : thor_es_command60_stores)
+	{
+		if (address <= cia && cia < end)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void ppu_thor_es_command60_probe(ppu_thread&, u64 stream_pointer, u32 cia)
@@ -5806,8 +5824,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_command_interp_parser,
 				contains_symbol_resolver,
 				thor_es_dispatch_probe,
+				thor_es_dispatch_provenance_v1,
 
-				bitset_last = thor_es_dispatch_probe,
+				bitset_last = thor_es_dispatch_provenance_v1,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -5838,6 +5857,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			bool has_thor_es_interp_publisher = false;
 			bool has_thor_es_interp_parser = false;
 			bool has_thor_es_dispatch_probe = false;
+			bool has_thor_es_dispatch_provenance = false;
 			for (const ppu_function& f : part.get_funcs())
 			{
 				u32 range_start = 0;
@@ -5850,6 +5870,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				}
 
 				has_thor_es_dispatch_probe |= ppu_thor_es_dispatch_probe_range(f.addr, f.size);
+				has_thor_es_dispatch_provenance |= ppu_thor_es_dispatch_provenance_range(f.addr, f.size);
 			}
 			if (has_thor_es_interp_publisher)
 				settings += ppu_settings::thor_es_command_interp_publisher;
@@ -5857,6 +5878,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::thor_es_command_interp_parser;
 			if (has_thor_es_dispatch_probe)
 				settings += ppu_settings::thor_es_dispatch_probe;
+			if (has_thor_es_dispatch_provenance)
+				settings += ppu_settings::thor_es_dispatch_provenance_v1;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 

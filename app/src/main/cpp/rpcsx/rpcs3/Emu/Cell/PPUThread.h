@@ -294,6 +294,7 @@ void ppu_thor_es_command_interp(ppu_thread& ppu, u32 range_start, u32 range_end)
 // producer, publisher, and consumer. The range query also participates in the
 // PPU object-cache key.
 bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size);
+bool ppu_thor_es_dispatch_provenance_range(u32 address, u32 size);
 void ppu_thor_es_command60_probe(ppu_thread& ppu, u64 stream_pointer, u32 cia);
 void ppu_thor_es_publish_probe(ppu_thread& ppu, u64 object, u64 end_pointer, u32 cia);
 void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command,

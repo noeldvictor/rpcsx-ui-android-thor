@@ -899,3 +899,40 @@ Next:
   and stop. Use producer/published-end provenance to select one narrow fix;
   do not mask invalid words, retry the rejected interpreter lane, or broaden
   reservation/notifier semantics.
+
+## 2026-07-16 Producer Match And Provenance Cache Repair
+
+Result:
+
+- Exact `47BC...C007` ran once in
+  `20260716-050823-thor-input-eternal-sonata-battle-intro-route`. It reached
+  correct field/tutorial frames at `28.11/30.00 FPS`, then failed closed before
+  active battle. The second stable `0x3f800000` boundary fault matched command
+  emitter `0x002ee0c8`; publisher data was absent. No VM/native/restart/Vulkan/
+  LLVM/FP-CAL fatal preceded stop. All thermal samples were `23 C`, status `0`,
+  the package ended stopped/properties off, and no second route ran.
+- Log comparison proved the expanded probe loaded the old probe-on
+  `JxcXFik2c7V32hQub9w8MZ-000e18` PPU object compiled by `662B...5BE3`, while
+  only previously uninstrumented emitter objects recompiled. Missing publisher
+  provenance is therefore a cache-isolation omission, not evidence against the
+  producer/publisher model.
+- A new `thor_es_dispatch_provenance_v1` high cache bit marks only title-gated,
+  probe-enabled PPU objects containing publisher/emitter sites. Existing bits
+  and normal/off cache keys are preserved. ARM64 RelWithDebInfo builds; exact
+  host-only core is `55B01CB3CDF84D0F7B43F9AB2005FD3CA55E15FA5AA0B9DC663648ECA471B0DD`,
+  size `1,349,692,016`. It has not been deployed or launched.
+
+Static classification:
+
+- Emitter `0x002ee0c8` reserves generated command space and calls async job
+  builder `0x002b07c8`; the builder publishes an `0x80`-byte descriptor through
+  ring indexes at `+0x111188/+0x111190` and wakes a worker rather than filling
+  the stream inline. Function `0x00309160` enqueues a sentinel, waits, then
+  synchronizes consumer to producer, proving an explicit drain boundary.
+
+Next:
+
+- Keep the Thor stopped. In one later cool round, deploy exact `55B0...B0DD`,
+  leave every other experiment off, run one guarded probe route, and stop. Use
+  `publish_relation` plus emitter CIA before considering a title-gated queue
+  drain or publication-order change; do not speculate from this failed route.
