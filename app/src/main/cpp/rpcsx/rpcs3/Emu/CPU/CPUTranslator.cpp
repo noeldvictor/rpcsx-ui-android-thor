@@ -197,16 +197,22 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 	}
 
 #ifdef ARCH_ARM64
-	if (utils::has_dotprod())
+	if (utils::use_spu_dotprod())
 	{
 		m_use_dotprod = true;
 		llvm_log.notice("AArch64 dot-product SPU fast paths enabled.");
 	}
 
-	if (utils::has_i8mm())
+	if (utils::use_spu_i8mm())
 	{
 		m_use_i8mm = true;
 		llvm_log.notice("AArch64 I8MM SPU fast paths enabled.");
+	}
+
+	if (utils::get_arm64_spu_feature_mode() != utils::arm64_spu_feature_mode::native)
+	{
+		llvm_log.notice("AArch64 SPU feature isolation mode: %s (dotprod=%s, i8mm=%s).",
+			utils::get_arm64_spu_feature_mode_name(), m_use_dotprod, m_use_i8mm);
 	}
 #endif
 }

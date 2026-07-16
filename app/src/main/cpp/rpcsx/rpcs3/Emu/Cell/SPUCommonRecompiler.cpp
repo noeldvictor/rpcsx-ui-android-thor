@@ -872,9 +872,17 @@ void spu_cache::initialize(bool build_existing_cache)
 	const bool use_thor_reduced_loop_cache = spu_reduced_loop_emit_enabled();
 	const u32 thor_reduced_loop_unroll = use_thor_reduced_loop_cache ? spu_reduced_loop_unroll_factor() : 0;
 	const bool use_thor_dynamic_mfc_cache = spu_dynamic_mfc_fast_enabled();
+#ifdef ARCH_ARM64
+	const auto thor_arm_feature_mode = utils::get_arm64_spu_feature_mode();
+	const std::string thor_arm_feature_cache = thor_arm_feature_mode == utils::arm64_spu_feature_mode::native
+		? ""
+		: fmt::format("-thor-arm-%s", utils::get_arm64_spu_feature_mode_name());
+#else
+	const std::string thor_arm_feature_cache;
+#endif
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
 		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u{}", thor_reduced_loop_unroll) : "") +
-		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + "-v1-tane.dat";
+		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + thor_arm_feature_cache + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{
@@ -884,6 +892,11 @@ void spu_cache::initialize(bool build_existing_cache)
 	if (use_thor_dynamic_mfc_cache)
 	{
 		spu_log.notice("Thor dynamic MFC fast SPU cache variant enabled: %s", loc);
+	}
+
+	if (!thor_arm_feature_cache.empty())
+	{
+		spu_log.notice("Thor ARM64 SPU feature-isolation cache variant enabled: %s", loc);
 	}
 
 	spu_cache cache(loc);

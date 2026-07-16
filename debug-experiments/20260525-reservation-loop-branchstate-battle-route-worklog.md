@@ -12047,3 +12047,63 @@ guarded repair route, and require clean field/tutorial/active-battle visuals,
 zero unknown/native/VM faults, matched nonzero mask/restore counts, zero
 pending/failures, and preserved write-pointer values before any longer or
 performance-oriented test.
+
+## 2026-07-16 Selector Lane Counterproof And ARM64 SPU Isolation
+
+Bounded device result:
+
+- Exact selector-bit-only core
+  `C6CE9D11852803F68795249E615F715C27EF42E7198D924734A7830E74B09B47`
+  was deployed without building, launching, or streaming. Local and remote
+  hashes matched in
+  `debug-captures/20260716-013946-selector-bit-only-c6ce-dev-core-push`.
+- Exactly one temperature-guarded direct-input route ran with only draw-stream
+  `repair` enabled:
+  `debug-captures/android-speed-sprint/20260716-014034-thor-input-eternal-sonata-battle-intro-route`.
+  It showed the correct loaded field at `28.08 FPS` and first-battle tutorial
+  prompt at `29.39 FPS`, then failed closed at `battle-approach-1` on unknown
+  draw command `0x3f800000`.
+- The route began, stayed, and ended at `24.0 C`; Android thermal status was
+  `0`. Cleanup force-stopped RPCSX and reset the property to `off`. No second
+  route, recorder, trace, profiler, or heat soak ran.
+
+Root-cause classification:
+
+- The parser fault occurred at generation `3827` before repair mode had ever
+  changed guest state: `selector_repairs=0`, work posts/waits were both `3827`,
+  the consumer selected the current published layout, and sequence anomalies
+  were zero. This directly disproves selector repair as the primary fix.
+- Later selector-only masks at generations `3961` and `3979` each had a
+  matching restore. Observed, masked, and restored write pointers all remained
+  `0x32c4db60`; final counters were repairs/restores `2/2`, with zero repair or
+  restore failures and no pending restore. The narrow mechanism behaved as
+  designed, but it activated after the independent corruption.
+- There was no guest VM fault, native signal, process restart, Vulkan device
+  loss, or thermal escalation before the controlled stop. This remains failure
+  classification, not stable gameplay or a speed result.
+
+Host-only isolation candidate:
+
+- Added default-native ARM64 SPU feature selection through Android property
+  `debug.rpcsx.thor.spu_arm_features` and host environment
+  `RPCSX_THOR_SPU_ARM_FEATURES`. Accepted diagnostic modes are `no-i8mm`,
+  `no-dotprod`, and `baseline`; `off`, unknown, or unset values retain the
+  native DOTPROD/I8MM behavior.
+- The selected mode controls both explicit SPU LLVM fast-path emission and the
+  corresponding LLVM target attributes. A dedicated JIT flag limits target
+  attribute suppression to SPU compilers, leaving PPU and other JITs native.
+- Every non-native mode receives a separate cache suffix such as
+  `spu-safe-thor-arm-baseline-v1-tane.dat`. This prevents an isolation run from
+  silently consuming the normal SPU cache and makes rollback property-only.
+- `git diff --check` passed. The optimized ARM64 RelWithDebInfo build completed
+  successfully in `123.1s`; the core is `1,349,570,480` bytes with SHA256
+  `7EFB0A13382B229F616948B08153D0C46898E7A63170D5D786BC5B94BFF72379`.
+  It was not deployed or launched.
+
+Decision: close the selector-repair lane as the primary explanation. Keep all
+experiments off by default. In one later, separately cool round, deploy exact
+`7EFB...2379`, set only SPU ARM features to `baseline`, run one guarded route,
+and stop. The log must prove baseline mode with DOTPROD/I8MM disabled and the
+baseline cache variant. A clean route would justify later one-mode isolation;
+another pre-battle parser fault would reject ARM64 DOTPROD/I8MM codegen as the
+current root cause. Neither outcome by itself earns speed promotion.

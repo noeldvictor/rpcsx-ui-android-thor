@@ -67,7 +67,7 @@ const extern spu_decoder<spu_iflag> g_spu_iflag;
 class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 {
 	// JIT Instance
-	jit_compiler m_jit{{}, jit_compiler::cpu(g_cfg.core.llvm_cpu)};
+	jit_compiler m_jit{{}, jit_compiler::cpu(g_cfg.core.llvm_cpu), jit_compiler::spu_codegen_flag};
 
 	// Interpreter table size power
 	const u8 m_interp_magn;

@@ -774,12 +774,16 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 	std::vector<std::string> attributes;
 
 #if defined(ARCH_ARM64)
+	const bool is_spu_codegen = (flags & jit_compiler::spu_codegen_flag) != 0;
+	const bool use_dotprod = !is_spu_codegen ? utils::has_dotprod() : utils::use_spu_dotprod();
+	const bool use_i8mm = !is_spu_codegen ? utils::has_i8mm() : utils::use_spu_i8mm();
+
 	if (utils::has_sha3())
 		attributes.push_back("+sha3");
 	else
 		attributes.push_back("-sha3");
 
-	if (utils::has_dotprod())
+	if (use_dotprod)
 		attributes.push_back("+dotprod");
 	else
 		attributes.push_back("-dotprod");
@@ -787,10 +791,16 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 	// The SPU recompilers emit UMMLA/SMMLA intrinsics when I8MM is present.
 	// Advertise the feature explicitly because the Android cortex-a78 fallback
 	// CPU does not imply it even though Snapdragon 8 Gen 2 supports it.
-	if (utils::has_i8mm())
+	if (use_i8mm)
 		attributes.push_back("+i8mm");
 	else
 		attributes.push_back("-i8mm");
+
+	if (is_spu_codegen && utils::get_arm64_spu_feature_mode() != utils::arm64_spu_feature_mode::native)
+	{
+		jit_log.notice("AArch64 SPU JIT feature isolation mode: %s (dotprod=%s, i8mm=%s).",
+			utils::get_arm64_spu_feature_mode_name(), use_dotprod, use_i8mm);
+	}
 
 	if (utils::has_sve())
 		attributes.push_back("+sve");

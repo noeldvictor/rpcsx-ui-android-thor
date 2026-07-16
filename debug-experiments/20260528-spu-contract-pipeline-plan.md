@@ -641,3 +641,39 @@ Next:
   equal nonzero mask/restore counts, no pending restore, zero failures, and
   logged repaired/restored write pointers equal to the preserved observed
   pointer before considering a longer stability or performance proof.
+
+## 2026-07-16 ARM64 SPU Feature Isolation Gate
+
+Selector result:
+
+- Exact `C6CE...B09B47` was deployed without a build or launch, then used for
+  one guarded route:
+  `20260716-014034-thor-input-eternal-sonata-battle-intro-route`.
+- Unknown draw `0x3f800000` occurred at generation `3827` before any selector
+  repair (`repairs=0`, current publication selected, work post/wait both
+  `3827`, zero sequence anomalies). Two later selector-only masks/restores
+  preserved write pointer `0x32c4db60` and ended `2/2` with zero failures or
+  pending state. Selector repair is therefore not the primary fix.
+- Field/tutorial visuals were clean at `28.08/29.39 FPS`. The route remained
+  at `24 C`, cleanup stopped the package and reset repair to `off`, thermal
+  status was `0`, and no second route ran.
+
+Replacement diagnostic contract:
+
+- Host-only core `7EFB0A13382B229F616948B08153D0C46898E7A63170D5D786BC5B94BFF72379`
+  adds property `debug.rpcsx.thor.spu_arm_features` with `native`, `no-i8mm`,
+  `no-dotprod`, and `baseline` modes. Default/unrecognized/`off` remains native.
+- Isolation controls explicit SPU intrinsics and the same LLVM target features
+  only on SPU JIT instances. Each non-native mode gets its own SPU cache file,
+  and startup logs report the effective feature state.
+- ARM64 RelWithDebInfo built successfully in `123.1s`; size is
+  `1,349,570,480` bytes. The core has not been deployed or launched.
+
+Next:
+
+- No more Thor work in this round. In one later cool round, deploy exact
+  `7EFB...2379`, leave selector repair and all other experiments off, enable
+  only `baseline`, run one guarded route, force-stop, and reset the property.
+  Require baseline/DOTPROD-off/I8MM-off and isolated-cache log proof. If stable,
+  split I8MM from DOTPROD in later one-run cool rounds; if the same parser fault
+  occurs before battle, reject this codegen hypothesis and pivot again.

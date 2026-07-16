@@ -8,6 +8,10 @@
 #include "Emu/CPU/Backends/AArch64/AArch64Common.h"
 #endif
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 #ifdef _WIN32
 #include "windows.h"
 #include "sysinfoapi.h"
@@ -28,6 +32,8 @@
 
 #include <thread>
 #include <fstream>
+#include <cstdlib>
+#include <string_view>
 
 #include "rx/asm.hpp"
 #include "util/fence.hpp"
@@ -481,6 +487,74 @@ bool utils::has_i8mm()
 	}();
 
 	return g_value;
+}
+
+utils::arm64_spu_feature_mode utils::get_arm64_spu_feature_mode() noexcept
+{
+	static const arm64_spu_feature_mode g_value = []() noexcept
+	{
+		std::string_view value;
+
+#ifdef ANDROID
+		char property_value[PROP_VALUE_MAX]{};
+		const int property_length = __system_property_get("debug.rpcsx.thor.spu_arm_features", property_value);
+
+		if (property_length > 0)
+		{
+			value = std::string_view{property_value, static_cast<usz>(property_length)};
+		}
+#endif
+
+		if (value.empty())
+		{
+			if (const char* env = std::getenv("RPCSX_THOR_SPU_ARM_FEATURES"))
+			{
+				value = env;
+			}
+		}
+
+		if (value == "no-i8mm" || value == "no_i8mm" || value == "noi8mm")
+		{
+			return arm64_spu_feature_mode::no_i8mm;
+		}
+
+		if (value == "no-dotprod" || value == "no_dotprod" || value == "nodotprod")
+		{
+			return arm64_spu_feature_mode::no_dotprod;
+		}
+
+		if (value == "baseline")
+		{
+			return arm64_spu_feature_mode::baseline;
+		}
+
+		return arm64_spu_feature_mode::native;
+	}();
+
+	return g_value;
+}
+
+const char* utils::get_arm64_spu_feature_mode_name() noexcept
+{
+	switch (get_arm64_spu_feature_mode())
+	{
+	case arm64_spu_feature_mode::no_i8mm: return "no-i8mm";
+	case arm64_spu_feature_mode::no_dotprod: return "no-dotprod";
+	case arm64_spu_feature_mode::baseline: return "baseline";
+	default: return "native";
+	}
+}
+
+bool utils::use_spu_dotprod() noexcept
+{
+	const arm64_spu_feature_mode mode = get_arm64_spu_feature_mode();
+	return has_dotprod() && mode != arm64_spu_feature_mode::no_dotprod && mode != arm64_spu_feature_mode::baseline;
+}
+
+bool utils::use_spu_i8mm() noexcept
+{
+	const arm64_spu_feature_mode mode = get_arm64_spu_feature_mode();
+	return has_i8mm() && mode != arm64_spu_feature_mode::no_i8mm && mode != arm64_spu_feature_mode::baseline;
 }
 
 bool utils::has_sve()

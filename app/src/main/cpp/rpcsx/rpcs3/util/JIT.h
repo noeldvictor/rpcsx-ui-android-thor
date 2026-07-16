@@ -521,6 +521,9 @@ class jit_compiler final
 	atomic_t<usz> m_disk_space = umax;
 
 public:
+	// Limit ARM64 feature isolation to SPU JIT instances.
+	static constexpr u32 spu_codegen_flag = 1u << 2;
+
 	jit_compiler(const std::unordered_map<std::string, u64>& _link, const std::string& _cpu, u32 flags = 0, std::function<u64(const std::string&)> symbols_cement = {}) noexcept;
 	jit_compiler& operator=(thread_state) noexcept;
 	~jit_compiler() noexcept;

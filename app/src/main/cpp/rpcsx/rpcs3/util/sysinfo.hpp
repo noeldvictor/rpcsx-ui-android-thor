@@ -57,6 +57,14 @@ namespace utils
 	bool has_um_wait();
 
 #ifdef ARCH_ARM64
+	enum class arm64_spu_feature_mode : u8
+	{
+		native,
+		no_i8mm,
+		no_dotprod,
+		baseline,
+	};
+
 	bool has_neon();
 
 	bool has_sha3();
@@ -64,6 +72,14 @@ namespace utils
 	bool has_dotprod();
 
 	bool has_i8mm();
+
+	arm64_spu_feature_mode get_arm64_spu_feature_mode() noexcept;
+
+	const char* get_arm64_spu_feature_mode_name() noexcept;
+
+	bool use_spu_dotprod() noexcept;
+
+	bool use_spu_i8mm() noexcept;
 
 	bool has_sve();
 
