@@ -12107,3 +12107,66 @@ and stop. The log must prove baseline mode with DOTPROD/I8MM disabled and the
 baseline cache variant. A clean route would justify later one-mode isolation;
 another pre-battle parser fault would reject ARM64 DOTPROD/I8MM codegen as the
 current root cause. Neither outcome by itself earns speed promotion.
+
+## 2026-07-16 Baseline SPU Counterproof And Atomic PUTLLC Candidate
+
+Bounded device result:
+
+- Exact feature-isolation core
+  `7EFB0A13382B229F616948B08153D0C46898E7A63170D5D786BC5B94BFF72379`
+  was deployed without a build, launch, or stream in
+  `debug-captures/20260716-020604-spu-arm-isolation-7efb-dev-core-push`.
+- Exactly one temperature-guarded route ran with draw repair off and only
+  `debug.rpcsx.thor.spu_arm_features=baseline` enabled:
+  `debug-captures/android-speed-sprint/20260716-020707-thor-input-eternal-sonata-battle-intro-route`.
+  The full stopped log proves both SPU JIT paths used `dotprod=false` and
+  `i8mm=false`, and the isolated cache file was
+  `spu-safe-thor-arm-baseline-v1-tane.dat`.
+- The route showed the correct loaded field at `27.88 FPS`, a correct approach
+  frame at `28.77 FPS`, and a clean tutorial prompt at `30.00 FPS`. It failed
+  closed after unknown draw word `0x3f800000` at emulated time
+  `0:02:53.926433`; later words included `0xbf26f13a`, `0xbfca2f4e`,
+  `0x3f955080`, `0x3f800001`, and `0x3fd20001`.
+- There was no guest VM access violation, native signal, process restart,
+  Vulkan device loss, or LLVM fatal before controlled stop. Temperature stayed
+  `24.0 C`, thermal status was `0`, cleanup stopped the package and reset both
+  properties to `off`, and no second route ran.
+
+Root-cause classification:
+
+- Disabling both ARM64 DOTPROD and I8MM in the SPU JIT with a fresh isolated
+  cache did not remove the parser corruption. Reject those feature-specific
+  code-generation paths as the primary root cause. The correct `30 FPS`
+  tutorial frame is reachability evidence only, not stable or speed proof.
+- Current-upstream Windows stability is not explained by the PPU reservation
+  priority alone: Android already contains that optional runtime half and its
+  prior guarded test failed. The unsafe CellSpurs JobChain `PUTLLC16` hash is
+  also inactive in Android whenever Accurate SPU Reservations is enabled.
+
+Host-only producer fix:
+
+- Compared Android's accurate `do_putllc` implementation directly with clean
+  current upstream `1269ebff`. Android lacked two self-contained publication
+  safeguards that do not depend on the newer reservation-notifier design.
+- Unchanged-data `PUTLLC` now reads and compares the 128-byte reservation data
+  twice around the reservation-time check, preventing a concurrent update from
+  passing as a stable snapshot.
+- A new `scan16_rdata` detects when exactly one 16-byte block changed. On the
+  non-RTM ARM64 path, that block is published with an atomic `u128`
+  compare-exchange after reservation validation rather than copying all 128
+  bytes. This both avoids a torn record for readers which do not take the RSX
+  reservation lock and reduces store traffic for the common one-block update.
+- Touching the translation unit exposed an older signed-zero template error at
+  `vm::_ptr<u8>(0)`; changing the literal to `0u` is compile-only and preserves
+  behavior. `git diff --check` passes. ARM64 RelWithDebInfo builds successfully.
+  The resulting core is `1,349,576,840` bytes with SHA256
+  `884FD8B36AB257CFDDDB910E683D185A6B2DFA02C4C5753DF7AA0FD64D9D3DF8`.
+  It has not been deployed or launched.
+
+Decision: keep the feature-isolation facility default-native for diagnostics,
+but close DOTPROD/I8MM as the primary hypothesis. Do not run the Thor again in
+this thermal round. In one later cool round, deploy exact `884F...D3DF8` with
+all experiment properties off/native, run one guarded route, force-stop, and
+require correct field/tutorial/active-battle visuals plus zero unknown draw,
+VM, native, restart, Vulkan-device-loss, or LLVM-fatal signatures before any
+longer stability or performance test.

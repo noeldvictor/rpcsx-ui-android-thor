@@ -982,6 +982,34 @@ __forceinline
 #endif
 }
 
+// Return the position of the only changed 16-byte block, or umax when the
+// reservation data differs in zero or multiple blocks. A single-block PUTLLC
+// can then be published atomically instead of exposing a torn 128-byte update
+// to readers which do not take the RSX reservation lock.
+static FORCE_INLINE usz scan16_rdata(const spu_rdata_t& _lhs, const spu_rdata_t& _rhs)
+{
+	const auto lhs = reinterpret_cast<const v128*>(_lhs);
+	const auto rhs = reinterpret_cast<const v128*>(_rhs);
+	u32 mask = 0;
+
+	for (usz i = 0; i < 8; i += 4)
+	{
+		const u32 a = lhs[i + 0] != rhs[i + 0];
+		const u32 b = lhs[i + 1] != rhs[i + 1];
+		const u32 c = lhs[i + 2] != rhs[i + 2];
+		const u32 d = lhs[i + 3] != rhs[i + 3];
+
+		mask |= ((a << 0) | (b << 1) | (c << 2) | (d << 3)) << i;
+	}
+
+	if (mask && !(mask & (mask - 1)))
+	{
+		return std::countr_zero(mask);
+	}
+
+	return umax;
+}
+
 #if defined(ARCH_X64)
 static FORCE_INLINE void mov_rdata_avx(__m256i* dst, const __m256i* src)
 {
@@ -3992,7 +4020,7 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 						record_thor_es_dma(this, transfer.cmd, arg_lsa + i * rx::alignUp<u32>(s_size, 16), items[i].ea, s_size, true);
 					}
 
-					u8* src = vm::_ptr<u8>(0);
+					u8* src = vm::_ptr<u8>(0u);
 					u8* dst = this->ls + arg_lsa;
 					for (u32 i = 0; i < fetch_size; i++)
 					{
@@ -4559,8 +4587,9 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 					return true;
 			}
 
-			// Writeback of unchanged data. Only check memory change
-			if (cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && res == rtime && res.compare_and_swap_test(rtime, rtime + 128))
+			// Writeback of unchanged data. Load the memory twice so a
+			// concurrent 128-byte update cannot pass as a stable snapshot.
+			if (cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && res == rtime && cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && res.compare_and_swap_test(rtime, rtime + 128))
 			{
 				raddr = 0; // Disable notification
 				return true;
@@ -4568,6 +4597,8 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 
 			return false;
 		}
+
+		const usz diff16_pos = scan16_rdata(to_write, rdata);
 
 		auto [_oldd, _ok] = res.fetch_op([&](u64& r)
 			{
@@ -4685,11 +4716,22 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 			const bool success = [&]()
 			{
 				// Full lock (heavyweight)
-			    // TODO: vm::check_addr
+				// TODO: vm::check_addr
 				vm::writer_lock lock(addr, range_lock);
 
 				if (cmp_rdata(rdata, super_data))
 				{
+					if (diff16_pos != umax)
+					{
+						auto& destination = reinterpret_cast<u128*>(super_data)[diff16_pos];
+						auto& expected = reinterpret_cast<u128*>(rdata)[diff16_pos];
+						const auto replacement = reinterpret_cast<const u128*>(to_write)[diff16_pos];
+
+						// Readers with RSX accurate reservations disabled can observe
+						// this block without taking writer_lock. Publish it atomically.
+						return atomic_storage<u128>::compare_exchange(destination, expected, replacement);
+					}
+
 					mov_rdata(super_data, to_write);
 					return true;
 				}

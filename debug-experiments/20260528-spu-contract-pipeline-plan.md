@@ -677,3 +677,44 @@ Next:
   Require baseline/DOTPROD-off/I8MM-off and isolated-cache log proof. If stable,
   split I8MM from DOTPROD in later one-run cool rounds; if the same parser fault
   occurs before battle, reject this codegen hypothesis and pivot again.
+
+## 2026-07-16 Baseline Isolation Result And Atomic Publication Gate
+
+Counterproof:
+
+- Exact core `7EFB...2379` was deployed without build/launch/stream and used
+  for one guarded route with only SPU ARM feature mode `baseline` enabled:
+  `20260716-020707-thor-input-eternal-sonata-battle-intro-route`.
+- The stopped full log proves JIT and LLVM used `dotprod=false`, `i8mm=false`
+  and isolated cache `spu-safe-thor-arm-baseline-v1-tane.dat`. Correct field,
+  approach, and tutorial frames rendered at `27.88`, `28.77`, and `30.00 FPS`.
+- Unknown draw `0x3f800000` still appeared at emulated `0:02:53.926433`, with
+  a later invalid-word burst. No VM/native/restart/Vulkan/LLVM fatal preceded
+  the controlled stop. The device stayed at `24 C`, thermal status `0`, ended
+  stopped with properties off, and received no second run.
+- Reject explicit ARM64 DOTPROD/I8MM SPU codegen as the primary root cause.
+  Preserve the reversible isolation modes, default native.
+
+Replacement contract:
+
+- Clean current upstream validates unchanged accurate-`PUTLLC` memory twice;
+  Android did only one 128-byte compare. The Android path now performs the
+  second compare around the reservation-time validation.
+- Clean current upstream also detects a reservation update that changes only
+  one 16-byte block and publishes that block with atomic `u128`
+  compare-exchange. Android previously copied the full 128 bytes under a lock
+  that an RSX reader can omit. The narrow atomic path is now backported without
+  importing the newer notifier subsystem that previously failed on Android.
+- This is both a correctness gate against torn SPU-produced parser records and
+  a small performance improvement for single-block updates. ARM64
+  RelWithDebInfo builds successfully; exact host-only core SHA256 is
+  `884FD8B36AB257CFDDDB910E683D185A6B2DFA02C4C5753DF7AA0FD64D9D3DF8`,
+  size `1,349,576,840` bytes.
+
+Next:
+
+- No more Thor work in this thermal round. In one later cool round, deploy
+  exact `884F...D3DF8`, keep all experiment properties off/native, run one
+  temperature-guarded battle route, force-stop, and classify first-fault plus
+  visuals. Require zero unknown draw, VM/native/restart/Vulkan/LLVM faults and
+  correct active battle before any longer or performance-oriented run.
