@@ -313,3 +313,19 @@ Bad candidates unless proven otherwise: tiny SPURS control loops, semaphore wait
 - Host-only ARM64 artifact:
   `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`,
   `1,349,755,776` bytes. Build passed; no Thor deploy or launch occurred.
+
+## 2026-07-16 Stable Payload Counterproof
+
+- Exact v6 later stabilized `112` generated targets / `253,648` bytes with
+  identical whole-batch hashes and zero changes/timeouts, but the guest still
+  reached valid command `0x61` with object argument `0x4` and faulted at
+  `arg0+0x3c`.
+- This rejects extra CPU-side waiting as the primary repair. It also remains a
+  CPU/SPU draw-record ownership problem, not a Vulkan-compute candidate: the
+  malformed value is a CPU-consumed guest object pointer required by the RSX
+  command builder.
+- Host-only v7 adds diagnostic breadcrumbs to the six proven command-`0x61`
+  emitters and reports the exact producer only for tiny/unreadable arg0 records.
+  It does not offload, mask, or mutate the command. Exact core:
+  `72EAFCDFC19E670AC0F98CDDDA6DC1AD00300E4F99D00C5928BD66456C1C5386`,
+  `1,349,779,768` bytes.

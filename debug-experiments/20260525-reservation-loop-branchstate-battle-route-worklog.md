@@ -12979,3 +12979,71 @@ Next:
   Promote only if active battle remains visually clean and fault-free; use
   `hash_changes`, `stable_intervals`, and fault hash relation to decide whether
   the producer is late or stably wrong.
+
+## 2026-07-16 V6 Counterproof And V7 Command-61 Provenance
+
+Guarded v6 route:
+
+- Exact core `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`
+  was deployed without rebuilding or launching, then used for exactly one
+  guarded route:
+  `debug-captures/android-speed-sprint/20260716-080248-thor-input-eternal-sonata-battle-intro-route`.
+- The field screenshot was visually clean at `27.86 FPS`. The first tutorial
+  candidate showed `29.70 FPS`, colored/noisy edge corruption, and the guest
+  crash notification. It is failure evidence, not a battle FPS sample.
+- The route failed closed at battle approach, force-stopped the app, and reset
+  all experiment properties. Every thermal sample was `23 C`; no retry or
+  additional device action followed.
+
+V6 classification:
+
+- The v6 callback reached hit `3072` with `112` readable/hashed targets and
+  `253,648` declared bytes. Batch fingerprints before and after were both
+  `0xb3df18de7e36e57e`; two stable snapshots completed after `550 us`, with zero
+  hash changes, invalid targets, timeout, or ring overflow.
+- There were no unknown-command or dispatch-probe fault rows. About 15 seconds
+  later, guest PPU `0x100000c` reached valid command handler `0x002aedd0` and
+  faulted reading `0x40`.
+- The fatal register state gives record args `0x4/0x48/0`. Ghidra proves jump
+  table index `0x61` resolves handler `0x002aedd0`, the command length is three
+  words, and the handler calls `0x002c4228(arg0,arg1,&arg2)`. That callee's first
+  object read is `arg0+0x3c`, exactly explaining `0x4+0x3c = 0x40`.
+- Therefore the record boundary and opcode are valid, but arg0 is a tiny invalid
+  object pointer. Whole-target waiting observed stable batches and did not
+  prevent it. Reject a longer grace, command-length patch, opcode mask, or
+  blind command skip as the next change.
+
+Static emitter proof:
+
+- Saved-project Ghidra found six draw-stream command-`0x61` stores at
+  `0x002caab0`, `0x002e13b8`, `0x002e80c8`, `0x002e8a78`, `0x002e8b28`, and
+  `0x002ee680`.
+- Each emitter writes a 16-byte record: opcode `0x61` followed by three words;
+  its first two payload words are loaded from source offsets `+0x0c/+0x10`.
+  This confirms the crash record is aligned and focuses the next test on which
+  producer supplied the bad payload.
+
+V7 diagnostic:
+
+- The default-off, BLUS30161 dispatch probe now records bounded atomic
+  address:CIA breadcrumbs after all six command-`0x61` stores. At handler
+  `0x002aedd0`, it reads the exact opcode plus three arguments before the guest
+  advances `r31`.
+- Normal records with arg0 at or above `0x10000` return immediately. Only an
+  unreadable or tiny-object record logs producer CIA/age, selected-buffer and
+  publication relation, async target/fingerprint relation, and a bounded word
+  window. It does not mutate guest state or recover/skip the command.
+- New PPU cache bit `thor_es_dispatch_provenance_v2` prevents objects compiled
+  before these handler/emitter hooks from being reused.
+- `git diff --check` and
+  `:app:buildCMakeRelWithDebInfo[arm64-v8a] --no-daemon` pass. Exact host-only
+  core is `72EAFCDFC19E670AC0F98CDDDA6DC1AD00300E4F99D00C5928BD66456C1C5386`,
+  size `1,349,779,768`. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped for the remainder of this thermal round. In a later
+  cool round, deploy exact v7 and run one guarded probe+repair route. Use the
+  matching command-`0x61` emitter and async/publication relation to repair the
+  producer or ownership boundary; do not skip a required RSX state/resource
+  command without that proof.

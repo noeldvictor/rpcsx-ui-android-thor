@@ -315,6 +315,16 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
 			const u32 guest_cia = ::narrow<u32>(m_addr + base);
 
+			if (use_thor_es_dispatch_probe && guest_cia == 0x002aedd0)
+			{
+				// Command 0x61 enters with r31 at its first argument. Record the
+				// opcode address before the handler advances r31 and calls a callee
+				// that immediately dereferences arg0 + 0x3c.
+				Call(GetType<void>(), "__thor_es_dispatch_probe", m_thread,
+					m_ir->CreateSub(GetGpr(31), m_ir->getInt64(4)),
+					m_ir->getInt64(0x61), GetGpr(22), GetGpr(26), m_ir->getInt32(guest_cia));
+			}
+
 			if (use_thor_es_async_draw_barrier && guest_cia == 0x002ac7b0)
 			{
 				// LLVM compiles the post-drain continuation at 0x2f7714, but guest
@@ -360,6 +370,16 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_publish_probe", m_thread,
 						GetGpr(3), GetGpr(9), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002caab0:
+				case 0x002e13b8:
+				case 0x002e80c8:
+				case 0x002e8a78:
+				case 0x002e8b28:
+				case 0x002ee680:
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_command61_probe", m_thread,
+						GetGpr(8), m_ir->getInt32(guest_cia));
 					break;
 				default:
 					break;

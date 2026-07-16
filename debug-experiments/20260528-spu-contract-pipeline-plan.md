@@ -1170,3 +1170,20 @@ Next:
   route, then stop. Clean active battle is required; `hash_changes` distinguishes
   a late writer from a stable producer error without conflating FIFO/sleep-timer
   configuration changes.
+
+## 2026-07-16 V6 Runtime Decision And V7 Probe
+
+- Exact v6 ran once at `23 C`. Its hit-3072 batch stabilized all `112` targets /
+  `253,648` bytes with equal before/after fingerprints, two stable snapshots,
+  zero hash changes, timeout, or overflow. It nevertheless reached valid
+  command `0x61` with args `0x4/0x48/0` and faulted at `0x002aedd0` reading
+  `0x40`. This rejects additional barrier waiting as the next repair.
+- Static analysis proves a correct 16-byte command-`0x61` record shape and six
+  producer stores. V7 adds default-off breadcrumbs at those stores plus a
+  tiny-object handler diagnostic; it does not alter SPU/PPU/RSX behavior.
+- Exact host-only v7 core is
+  `72EAFCDFC19E670AC0F98CDDDA6DC1AD00300E4F99D00C5928BD66456C1C5386`, size
+  `1,349,779,768`; ARM64 RelWithDebInfo and diff checks pass. Keep all HLE/body/
+  GPU promotion lanes off. One later cool route should identify the producer,
+  after which any fix must still pass clean field, Options, and first-battle
+  visual/fatal gates.

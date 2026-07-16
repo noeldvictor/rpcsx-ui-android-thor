@@ -137,3 +137,22 @@ cmake --build build-msvc --config Release --target rpcs3 --parallel 8
 - ARM64 RelWithDebInfo passed in `1m46s`; exact undeployed core is
   `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`,
   size `1,349,755,776`. No device work was done in this thermal round.
+
+## 2026-07-16 Command-61 Producer Follow-up
+
+- The guarded v6 route produced a stable whole-target batch but later faulted
+  in valid handler `0x002aedd0` with payload `0x4/0x48/0`. Ghidra confirms
+  command `0x61` has three arguments and calls `0x002c4228`, whose first object
+  access is at `arg0+0x3c`. This is a stably malformed producer payload, not an
+  unknown command or parser-length error.
+- Six draw-stream emitter stores were proven at `0x002caab0`, `0x002e13b8`,
+  `0x002e80c8`, `0x002e8a78`, `0x002e8b28`, and `0x002ee680`. All emit opcode
+  plus three words and copy object/layout payload fields from a source record.
+- V7 records those store addresses and samples handler arguments only under the
+  existing title/property probe. Tiny/unreadable arg0 logs exact emitter,
+  publication, and async-target provenance; normal records and probe-off runs
+  remain behaviorally unchanged. Cache provenance v2 prevents stale JIT reuse.
+- ARM64 RelWithDebInfo passes. Exact undeployed v7 core is
+  `72EAFCDFC19E670AC0F98CDDDA6DC1AD00300E4F99D00C5928BD66456C1C5386`, size
+  `1,349,779,768`. One later cool route may identify the bad producer before a
+  producer-side ownership fix; command skipping is not authorized.
