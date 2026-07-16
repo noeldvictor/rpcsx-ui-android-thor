@@ -311,7 +311,7 @@ if (-not $NoLaunch) {
     }
 }
 
-if (-not $NoStream) {
+if (-not $NoStream -and -not $NoLaunch) {
     Assert-DevCoreCommand "start OODA stream without APK reinstall" {
         $previousSerial = $env:ANDROID_SERIAL
         try {
@@ -321,6 +321,8 @@ if (-not $NoStream) {
             $env:ANDROID_SERIAL = $previousSerial
         }
     }
+} elseif ($NoLaunch -and -not $NoStream) {
+    Write-DevCoreLog "- OODA stream skipped because -NoLaunch was requested."
 }
 
 @(

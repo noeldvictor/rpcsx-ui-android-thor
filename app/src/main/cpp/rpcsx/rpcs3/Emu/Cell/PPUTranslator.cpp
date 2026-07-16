@@ -315,11 +315,12 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
 			const u32 guest_cia = ::narrow<u32>(m_addr + base);
 
-			if (use_thor_es_async_draw_barrier && guest_cia == 0x002f7720)
+			if (use_thor_es_async_draw_barrier && guest_cia == 0x002ac7b0)
 			{
-				// Every guest BL becomes a tail call and terminates its host block.
-				// Hook the consumer signal before translating it: the prior drain BL
-				// has returned, and the consumer has not yet been released.
+				// LLVM compiles the post-drain continuation at 0x2f7714, but guest
+				// return dispatch can bypass that continuation symbol. The consumer
+				// callee has a single caller at 0x2f7720, so its real function entry
+				// is the reliable point after drain and before consumer release.
 				Call(GetType<void>(), "__thor_es_async_draw_barrier", m_thread,
 					m_ir->getInt32(guest_cia));
 			}

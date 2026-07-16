@@ -12771,3 +12771,66 @@ Decision: use `399F...34E3A`, not historical `0363...BF87`, for one later
 cool-device v3 proof route. First require nonzero barrier hits, nonzero readable
 targets, and bounded wait/timeout evidence; clean active battle without unknown
 draw, fatal, or material FPS loss remains mandatory for promotion.
+
+## 2026-07-16 V3 Runtime Counterproof And V4 Consumer-Entry Hook
+
+### 2026-07-16 - es-async-draw-v3-399f
+
+- Status: `failed`
+- Scope: `PPU async draw completion / Thor first battle`
+- Hypothesis: a barrier in the translated post-drain continuation would execute
+  before consumer release and give incomplete async targets a bounded grace.
+- Changed settings: exact dev core
+  `399F7C2F33FEF5E5FA5CAD31BCCD1EDB42A4D5776D9079497DCE739B3C334E3A`,
+  dispatch probe `on`, async barrier `repair`, all other experiments off;
+  rollback is both properties `off`.
+- Deployment: `debug-captures/20260716-065407-es-async-draw-v3-399f-dev-core-push`.
+  The helper's separate OODA-stream gate ignored `-NoLaunch` and started PID
+  `24635`; it was immediately force-stopped, properties reset, and temperature
+  remained `23 C`. The empty `065608` macro artifact was then killed by its
+  one-second host timeout before boot and had no device PID.
+- Thor result: exactly one real guarded route ran in
+  `debug-captures/android-speed-sprint/20260716-065629-thor-input-eternal-sonata-battle-intro-route`
+  with a stricter `32 C` cutoff. Field and first-battle tutorial screenshots are
+  visually correct at `27.66/29.92 FPS`; no stable active-battle proof exists.
+- Five stable unknown words failed closed: two `0x00200000`, two
+  `0x30b12f20`, and one `0x3f800000`. All five were inside the current
+  publication with publisher age zero. Three matched exact async targets:
+  `0x32de29c0+0x530` and `0x32de3390+0x2c0` had captured initial/current first
+  word `0x00200000`; `0x32dfccd0+0x7a0` had captured initial/current first word
+  `0x3f800000`. The two `0x30b12f20` faults had no retained async target.
+- EBOOT compiled fresh key `00CzxA`, the v3 enable line appeared once, target
+  capture remained live, but `post-drain v3` callback count was exactly zero.
+  There were zero VM access, Vulkan device-loss, native-signal, LLVM-fatal, or
+  RSX FP-CAL hits. Temperature stayed `23-24 C`, thermal status `0`, and cleanup
+  left the package stopped with properties off. No second route ran.
+
+Host object proof and v4 correction:
+
+- Pulled the exact `00CzxA` PPU object to ignored host analysis
+  `debug-captures/host-analysis/20260716-v3-ppu-object`. `llvm-nm` defines
+  `__0x2f7714` at object offset `0x60ba0`; `llvm-objdump` shows the
+  `__thor_es_async_draw_barrier` relocation at `0x60bd4`, followed by the
+  consumer call. V3 therefore compiled correctly, but runtime return dispatch
+  bypassed the continuation symbol.
+- V4 hooks real consumer callee entry `0x002ac7b0`. Saved Ghidra lists only
+  caller `0x002f7720`, so this is still after `0x00309160` drain and before any
+  consumer flag/semaphore work, while being a normal callable function entry.
+- Added cache bit `thor_es_async_draw_barrier_v4`. Exact target capture, bounded
+  `20 us` grace / `20 ms` ceiling, non-mutating behavior, title gate, and
+  default-off rollback remain unchanged.
+- `build_push_thor_core.ps1 -NoLaunch` now also suppresses OODA streaming, so a
+  deploy-only request cannot launch the app indirectly. PowerShell parsing and
+  `git diff --check` pass.
+- Android ARM64 RelWithDebInfo built successfully in `79s`. Exact host-only v4
+  artifact is `1,349,734,584` bytes with SHA256
+  `C2B048BBCC7E2EBD4C082674E9E64D2EE752883B9601EA52C1ED438EDC012AF5`.
+  It was not deployed or launched.
+
+Decision: v3 is `failed` because the barrier remained dormant and unknown draw
+persisted; its exact target evidence is still useful. Keep the Thor stopped for
+the rest of this thermal round. In one later cool round, deploy exact
+`C2B0...12AF5`, run one guarded dispatch-probe plus repair route, and stop.
+First require nonzero v4 callbacks/readable targets; active-battle correctness
+without unknown draw/fatal/timeout or material FPS loss remains the promotion
+gate.

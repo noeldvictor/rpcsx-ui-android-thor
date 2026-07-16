@@ -1062,3 +1062,43 @@ Next:
   `399F...34E3A`, run one guarded dispatch-probe plus repair route, and stop.
   Require nonzero v3 hits/readable targets before interpreting timeout,
   stability, or performance; promotion still requires clean active battle.
+
+## 2026-07-16 V3 Counterproof And V4 Consumer Entry
+
+Counterproof:
+
+- Exact v3 `399F...34E3A` ran once in
+  `20260716-065629-thor-input-eternal-sonata-battle-intro-route`. Correct field
+  and tutorial visuals rendered at `27.66/29.92 FPS`, then five stable unknown
+  words failed closed. Three faults were exact async targets whose captured
+  initial first words were already invalid; two later faults were outside the
+  retained async ring.
+- Fresh EBOOT cache key `00CzxA` activated and target capture worked, but v3 had
+  zero barrier callbacks. The pulled object defines continuation
+  `__0x2f7714` at `0x60ba0` and contains the barrier relocation at `0x60bd4`,
+  proving compilation while runtime return dispatch bypassed that continuation.
+- There was no VM/native/Vulkan/LLVM/FP-CAL fatal. The one real route stayed at
+  `23-24 C`, thermal status `0`, and cleanup stopped the package/reset
+  properties. No second route ran.
+
+Replacement contract:
+
+- V4 hooks actual consumer callee entry `0x002ac7b0`; saved Ghidra lists only
+  the `0x002f7720` caller. This preserves the after-drain/before-release boundary
+  without relying on a return-continuation symbol.
+- New cache bit `thor_es_async_draw_barrier_v4` prevents v3 reuse. Existing
+  exact target capture, bounded `20 us` grace / `20 ms` ceiling, no mutation,
+  title gate, default-off rollback, and fail-closed parser remain unchanged.
+- Deploy-only safety now makes `build_push_thor_core.ps1 -NoLaunch` suppress its
+  OODA stream as well. This closes the accidental PID `24635` launch observed
+  during the v3 push.
+- ARM64 RelWithDebInfo builds in `79s`; exact host-only v4 core is
+  `C2B048BBCC7E2EBD4C082674E9E64D2EE752883B9601EA52C1ED438EDC012AF5`, size
+  `1,349,734,584`. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped for this thermal round. In one later cool round, deploy
+  exact `C2B0...12AF5`, run one guarded dispatch-probe plus repair route, and
+  stop. Require nonzero v4 callbacks/readable targets before judging timeout,
+  stability, or performance; only clean active battle can promote the change.
