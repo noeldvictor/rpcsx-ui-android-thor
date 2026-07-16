@@ -619,6 +619,9 @@ namespace
 	constexpr u32 thor_es_publisher_end = 0x002ac65c;
 	constexpr u32 thor_es_parser_start = 0x002acbc8;
 	constexpr u32 thor_es_parser_end = 0x002afce0;
+	constexpr u32 thor_es_dispatch_load_first = 0x002acc54;
+	constexpr u32 thor_es_dispatch_load_next = 0x002acc9c;
+	constexpr u32 thor_es_draw_stream_size = 0x18'0000;
 
 	thor_es_command_interp_mode get_thor_es_command_interp_mode()
 	{
@@ -659,6 +662,23 @@ namespace
 		case thor_es_command_interp_mode::both: return "both";
 		default: return "off";
 		}
+	}
+
+	bool get_thor_es_dispatch_probe_enabled()
+	{
+		static const bool enabled = []
+		{
+#ifdef ANDROID
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.es_ppu_dispatch_probe", value);
+			const std::string_view setting{value, length > 0 ? static_cast<usz>(length) : 0};
+			return setting == "1" || setting == "on" || setting == "true" || setting == "profile" || setting == "verify";
+#else
+			return false;
+#endif
+		}();
+
+		return enabled;
 	}
 }
 
@@ -714,6 +734,106 @@ void ppu_thor_es_command_interp(ppu_thread& ppu, u32 range_start, u32 range_end)
 			break;
 		}
 	}
+}
+
+bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size)
+{
+	if (!size || Emu.GetTitleID() != "BLUS30161" || !get_thor_es_dispatch_probe_enabled())
+	{
+		return false;
+	}
+
+	const u64 end = static_cast<u64>(address) + size;
+	const bool contains_dispatch_load =
+		(address <= thor_es_dispatch_load_first && thor_es_dispatch_load_first < end) ||
+		(address <= thor_es_dispatch_load_next && thor_es_dispatch_load_next < end);
+
+	if (contains_dispatch_load)
+	{
+		static atomic_t<bool> logged = false;
+		if (!logged.exchange(true))
+		{
+			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe enabled: loads=[0x%x,0x%x]",
+				thor_es_dispatch_load_first, thor_es_dispatch_load_next);
+		}
+	}
+
+	return contains_dispatch_load;
+}
+
+void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command,
+	u64 object, u64 parser_mode, u32 cia)
+{
+	// The LLVM caller already guards this helper with the exact guest branch
+	// condition: low-byte parser mode zero and command greater than 0x65.
+	// Keep a defensive check here because this is a diagnostic ABI entry point.
+	if (Emu.GetTitleID() != "BLUS30161" || !get_thor_es_dispatch_probe_enabled() ||
+		(parser_mode & 0xff) != 0 || command <= 0x65)
+	{
+		return;
+	}
+
+	static atomic_t<u32> fault_hits = 0;
+	const u32 hit = fault_hits.fetch_add(1) + 1;
+	if (hit > 8)
+	{
+		return;
+	}
+
+	const u32 address = static_cast<u32>(stream_pointer);
+	const u32 object_address = static_cast<u32>(object);
+	const u32 command_word = static_cast<u32>(command);
+	auto read_u32 = [](u32 address, u32& value)
+	{
+		be_t<u32> guest_value{};
+		if (!vm::try_access(address, &guest_value, sizeof(guest_value), false))
+		{
+			return false;
+		}
+
+		value = guest_value;
+		return true;
+	};
+
+	u32 buffer0 = 0;
+	u32 buffer1 = 0;
+	u32 write = 0;
+	u32 flags = 0;
+	const bool layout_valid = object_address <= 0xffff'ffffu - 0x20 &&
+		read_u32(object_address + 0x14, buffer0) &&
+		read_u32(object_address + 0x18, buffer1) &&
+		read_u32(object_address + 0x1c, write) &&
+		read_u32(object_address + 0x20, flags);
+	const u32 selected = layout_valid ? (flags & 1 ? buffer0 : buffer1) : 0;
+	const u32 stream_offset = selected && address >= selected &&
+		address - selected < thor_es_draw_stream_size ? address - selected : umax;
+	const u32 write_offset = selected && write >= selected &&
+		write - selected <= thor_es_draw_stream_size ? write - selected : umax;
+
+	u32 reread = 0;
+	const bool reread_valid = read_u32(address, reread);
+	std::array<be_t<u32>, 12> window{};
+	const u32 window_start = address >= 16 ? address - 16 : 0;
+	const bool window_valid = window_start &&
+		vm::try_access(window_start, window.data(), sizeof(window), false);
+
+	ppu_log.error(
+		"Thor Eternal Sonata PPU dispatch fault: hit=%u ppu=0x%x cia=0x%x "
+		"object=0x%x address=0x%x offset=0x%x command=0x%x reread=0x%x "
+		"reread_valid=%u command_stable=%u parser_mode=0x%x layout_valid=%u "
+		"buffer0=0x%x buffer1=0x%x selected=0x%x write=0x%x "
+		"write_offset=0x%x flags=0x%x window_valid=%u window_start=0x%x "
+		"window=[0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x]",
+		hit, ppu.id, cia, object_address, address, stream_offset, command_word,
+		reread, reread_valid, reread_valid && reread == command_word,
+		static_cast<u32>(parser_mode), layout_valid, buffer0, buffer1, selected,
+		write, write_offset, flags, window_valid, window_start,
+		static_cast<u32>(window[0]), static_cast<u32>(window[1]),
+		static_cast<u32>(window[2]), static_cast<u32>(window[3]),
+		static_cast<u32>(window[4]), static_cast<u32>(window[5]),
+		static_cast<u32>(window[6]), static_cast<u32>(window[7]),
+		static_cast<u32>(window[8]), static_cast<u32>(window[9]),
+		static_cast<u32>(window[10]), static_cast<u32>(window[11]));
 }
 
 static void ppu_fallback(ppu_thread& ppu, ppu_opcode_t op, be_t<u32>* this_op, ppu_intrp_func* next_fn)
@@ -4966,6 +5086,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			{"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
 			{"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
 			{"__thor_es_command_interp", reinterpret_cast<u64>(ppu_thor_es_command_interp)},
+			{"__thor_es_dispatch_probe", reinterpret_cast<u64>(ppu_thor_es_dispatch_probe)},
 			{"__escape", reinterpret_cast<u64>(+ppu_escape)},
 			{"__read_maybe_mmio32", reinterpret_cast<u64>(+ppu_read_mmio_aware_u32)},
 			{"__write_maybe_mmio32", reinterpret_cast<u64>(+ppu_write_mmio_aware_u32)},
@@ -5550,8 +5671,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_command_interp_publisher,
 				thor_es_command_interp_parser,
 				contains_symbol_resolver,
+				thor_es_dispatch_probe,
 
-				bitset_last = contains_symbol_resolver,
+				bitset_last = thor_es_dispatch_probe,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -5581,6 +5703,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::accurate_nj_mode, settings -= ppu_settings::fixup_nj_denormals, fmt::throw_exception("NJ Not implemented");
 			bool has_thor_es_interp_publisher = false;
 			bool has_thor_es_interp_parser = false;
+			bool has_thor_es_dispatch_probe = false;
 			for (const ppu_function& f : part.get_funcs())
 			{
 				u32 range_start = 0;
@@ -5591,11 +5714,15 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 					has_thor_es_interp_publisher |= range_start == thor_es_publisher_start;
 					has_thor_es_interp_parser |= range_start == thor_es_parser_start;
 				}
+
+				has_thor_es_dispatch_probe |= ppu_thor_es_dispatch_probe_range(f.addr, f.size);
 			}
 			if (has_thor_es_interp_publisher)
 				settings += ppu_settings::thor_es_command_interp_publisher;
 			if (has_thor_es_interp_parser)
 				settings += ppu_settings::thor_es_command_interp_parser;
+			if (has_thor_es_dispatch_probe)
+				settings += ppu_settings::thor_es_dispatch_probe;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 

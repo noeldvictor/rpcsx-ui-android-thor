@@ -12,6 +12,8 @@ param(
     [double]$MaxBatteryTemperatureC = 39.0,
     [ValidateSet("off", "publisher", "parser", "both")]
     [string]$EsPpuCommandInterp = "off",
+    [ValidateSet("off", "on")]
+    [string]$EsPpuDispatchProbe = "off",
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot,
@@ -633,6 +635,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Raw input device: $RawInputDevice",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
+    "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
     "- Unknown draw policy: $(if ($strictGuestDrawStream) { 'fail-closed' } else { 'record-only' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
@@ -650,6 +653,7 @@ Assert-ThorThermalBudget "pre-run"
 if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
 }
 
 $tokens = @()
@@ -659,6 +663,8 @@ try {
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp $EsPpuCommandInterp") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_command_interp") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe $EsPpuDispatchProbe") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_dispatch_probe") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "dismiss-keyguard.txt" @("shell", "wm dismiss-keyguard") -AllowFailure | Out-Null
     Start-Sleep -Milliseconds 500
@@ -891,6 +897,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
     if ($BootGame) {
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
     }
 
     throw $failure
@@ -898,6 +905,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
 }
 
 Assert-ThorThermalBudget "post-run"

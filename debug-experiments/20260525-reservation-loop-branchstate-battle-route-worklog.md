@@ -12348,3 +12348,73 @@ and do not spend another Thor run in this cool round. In one later cool round,
 use the repaired title gate for exactly one `both` route. Only accepted saved
 field/tutorial/live-battle evidence can decide whether to split publisher from
 parser or reject the PPU LLVM-isolation lane.
+
+## 2026-07-16 Accepted PPU-Both Counterproof And Exact Dispatch Probe
+
+Accepted bounded route:
+
+- Preflight found RPCSX stopped, exact installed core `D33A...BC21`, battery
+  temperature `23.0 C`, Android thermal status `0`, and all experiment
+  properties at their normal/off defaults.
+- Exactly one guarded launch used only `-EsPpuCommandInterp both`:
+  `debug-captures/android-speed-sprint/20260716-035422-thor-input-eternal-sonata-battle-intro-route`.
+  The repaired readiness gate rejected the black transition, required two
+  consecutive title-selector frames, and then routed through the correct
+  title, Path to Tenuto save, loaded field, and first-battle tutorial prompt.
+- Manual visual review found clean title/save/field/tutorial frames. Overlay
+  samples were `21.14 FPS` in the field and `28.83 FPS` at the tutorial prompt.
+  The field sample is about `22%` below the comparable atomic-control field
+  sample (`27.12 FPS`), so interpreter isolation is not promotable for speed.
+- The full retained log first reports unknown draw `0x30b12f20` at emulated
+  `0:02:51.327840` from PPU `0x100000c`, followed by the familiar later corrupt
+  words. The first word exactly matches the atomic-control route's first fault.
+  No VM access, native signal, process restart, Vulkan device loss, LLVM fatal,
+  or RSX FP-CAL fatal preceded the controlled stop.
+- All thermal samples were `23.0 C` until the final `24.0 C` sample; thermal
+  status stayed `0`. Cleanup stopped the package and reset the interpreter
+  property to `off`. No second launch ran.
+
+Classification and upstream audit:
+
+- This is an accepted saved-field/tutorial route and a failed
+  unknown-draw counterproof, not active-battle stability or a speed win.
+  Reproducing the exact first word while both Ghidra-mapped regions run through
+  the interpreter rejects PPU LLVM execution there as the primary cause. Do
+  not split publisher from parser.
+- Current local upstream checkout `c433cc7` contains no safer unported fix for
+  this boundary. PPU reservation priority is already present locally and
+  already counterproved; the current accurate one-block `PUTLLC` contract is
+  already aligned; the newer rtime-keyed notifier design is the same class of
+  broad semantic port that previously produced deterministic Android
+  `SIGBUS BUS_ADRALN`. It was not reintroduced.
+
+Host-only exact-boundary probe:
+
+- Saved Ghidra project inspection proves parser command words are loaded at
+  `0x002acc54` (first word) and `0x002acc9c` (next record after length-based
+  advancement). The invalid-command branch is low-byte parser mode zero with
+  a command greater than `0x65`.
+- Added default-off property `debug.rpcsx.thor.es_ppu_dispatch_probe`, hard
+  gated to `BLUS30161`. Instrumented LLVM objects add two integer comparisons
+  at those loads and call the host helper only for that exact invalid-command
+  condition. The helper captures the live command pointer, selected-buffer
+  offset, object buffers/flags/write pointer, immediate reread stability, and
+  four preceding plus seven following words. Logging is capped at eight
+  faults and never mutates guest state.
+- The instrumented PPU object-cache key has a dedicated high bit, leaving
+  normal/off cached-object values unchanged. `tools/thor_input_macro.ps1`
+  accepts `-EsPpuDispatchProbe on`, records the effective value, and resets it
+  on success and failure.
+- PowerShell parsing and `git diff --check` pass. Android ARM64 RelWithDebInfo
+  completed successfully in `10m 36s`; exact host-only core is
+  `1,349,657,576` bytes with SHA256
+  `662BDBB1CCC28102F2605B823BA4C5FDFDE89D4838930E88D9B254A8B7965BE3`.
+  It was not deployed or launched.
+
+Decision: leave the Thor stopped for the rest of this thermal round. In one
+later cool round, deploy exact `662B...5BE3`, keep interpreter, draw-stream,
+reservation, and SPU-feature experiments off, enable only the dispatch probe,
+run one guarded route, and force-stop. The first pointer/offset/window should
+identify the malformed record boundary without full-buffer copies or a broad
+reservation semantic change; do not implement a guest recovery rewrite before
+that evidence.

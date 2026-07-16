@@ -821,3 +821,43 @@ Next:
   battle route. Split publisher/parser only after accepted clean live battle;
   identical corruption under accepted `both` rejects PPU LLVM execution of
   both mapped regions as the primary cause.
+
+## 2026-07-16 Accepted Both Counterproof And Dispatch-Boundary Instrumentation
+
+Counterproof:
+
+- Exact installed `D33A...BC21` ran once with only PPU interpreter isolation
+  `both` in `20260716-035422-thor-input-eternal-sonata-battle-intro-route`.
+  The corrected title gate produced the intended title/save/field/tutorial
+  route. Field/tutorial samples were `21.14/28.83 FPS`.
+- Unknown draw `0x30b12f20` recurred first at emulated `0:02:51.327840`, the
+  exact first word from the atomic-control route. No VM/native/restart/Vulkan/
+  LLVM fatal preceded stop. Temperature stayed `23-24 C`, thermal status `0`,
+  cleanup stopped the package/reset the property, and no second launch ran.
+- Reject PPU LLVM execution of both mapped regions as the primary corruption
+  source. The roughly `22%` comparable field loss also rejects interpreter
+  isolation as a performance path. Do not spend runs splitting the two ranges.
+
+Replacement contract:
+
+- Ghidra proves exact parser command loads at `0x002acc54` and `0x002acc9c`.
+  Host-only core `662BDBB1CCC28102F2605B823BA4C5FDFDE89D4838930E88D9B254A8B7965BE3`
+  adds a default-off, BLUS30161-only LLVM probe at those two instructions.
+- When enabled, valid commands execute only two additional integer checks.
+  The host helper is called solely for the guest's own invalid-command
+  condition and captures pointer, stream offset, object layout/write pointer,
+  stable reread, and a 12-word neighborhood. It logs at most eight events and
+  does not alter guest memory or control flow.
+- Instrumented PPU objects use an independent cache-key bit. The route wrapper
+  sets/captures/resets `debug.rpcsx.thor.es_ppu_dispatch_probe` through
+  `-EsPpuDispatchProbe on`, including failure cleanup.
+- ARM64 RelWithDebInfo builds successfully; size is `1,349,657,576` bytes.
+  It has not been deployed or launched.
+
+Next:
+
+- No more device work in this thermal round. Later, deploy exact
+  `662B...5BE3`, enable only the dispatch probe, run one guarded route, and
+  stop. Use the first invalid pointer/offset/window to choose the next narrow
+  producer-record or length-decoder fix. Do not re-port rtime notifier
+  semantics or add a speculative parser recovery before this boundary proof.

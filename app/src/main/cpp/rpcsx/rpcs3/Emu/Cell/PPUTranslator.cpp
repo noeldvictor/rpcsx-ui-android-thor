@@ -183,6 +183,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 {
 	u32 interp_start = 0;
 	u32 interp_end = 0;
+	const bool use_thor_es_dispatch_probe = !m_reloc && ppu_thor_es_dispatch_probe_range(info.addr, info.size);
 
 	if (!m_reloc && ppu_thor_es_command_interp_range(info.addr, interp_start, interp_end))
 	{
@@ -306,6 +307,26 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
 
 			(this->*(s_ppu_decoder.decode(op)))({op});
+
+			const u32 guest_cia = ::narrow<u32>(m_addr + base);
+			if (use_thor_es_dispatch_probe &&
+				(guest_cia == 0x002acc54 || guest_cia == 0x002acc9c))
+			{
+				// Ghidra proves these are the two command-word LWZ instructions.
+				// Emit only two integer checks on the normal diagnostic path and
+				// call the host logger solely for the guest's unknown-command case.
+				auto* const invalid_command = m_ir->CreateAnd(
+					m_ir->CreateICmpUGT(GetGpr(4), m_ir->getInt64(0x65)),
+					m_ir->CreateIsNull(m_ir->CreateAnd(GetGpr(26), m_ir->getInt64(0xff))));
+				auto* const probe = BasicBlock::Create(m_context, "__thor_es_dispatch_probe", m_function);
+				auto* const resume = BasicBlock::Create(m_context, "__thor_es_dispatch_resume", m_function);
+				m_ir->CreateCondBr(invalid_command, probe, resume, m_md_unlikely);
+				m_ir->SetInsertPoint(probe);
+				Call(GetType<void>(), "__thor_es_dispatch_probe", m_thread,
+					GetGpr(9), GetGpr(4), GetGpr(22), GetGpr(26), m_ir->getInt32(guest_cia));
+				m_ir->CreateBr(resume);
+				m_ir->SetInsertPoint(resume);
+			}
 
 			if (m_rel)
 			{
