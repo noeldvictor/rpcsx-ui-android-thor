@@ -12236,3 +12236,60 @@ In one later cool round, deploy exact `D33A...BC21`, enable only
 effective mode/cache logs plus field/tutorial/battle visuals and first fault.
 A clean result would justify separate publisher/parser isolation; recurrence
 would reject PPU LLVM execution of both mapped ranges as the primary cause.
+
+## 2026-07-16 PPU Both Cold-Cache Gate And Harness Repair
+
+Bounded device attempt:
+
+- Refiner output explicitly selected one temperature-gated Thor validation as
+  the next action. Preflight found RPCSX stopped, battery `80%`, temperature
+  `23.0 C`, Android thermal status `0`, and experiment properties off/unset.
+- Exact core
+  `D33AC093C9516653687F8ED512931AB1B77D03B5E9B7B6A74BA9C271FDF1BC21`
+  (`1,349,614,432` bytes) was deployed without building, launching, or
+  streaming. Local and remote identity matched in
+  `debug-captures/20260716-031748-es-ppu-interp-both-d33a-dev-core-push`.
+- Exactly one guarded launch used only `-EsPpuCommandInterp both`:
+  `debug-captures/android-speed-sprint/20260716-031822-thor-input-eternal-sonata-battle-intro-route`.
+  The full stopped log proves `BLUS30161` and exact isolation mode/ranges at
+  emulated time `0:00:23.110418`.
+- At the fixed `75s` boot checkpoint, screenshot
+  `01-title-before-load.png` still showed `Compiling PPU Modules`, file `60`
+  of `78`, module `60` of `62`, and about `24s` remaining. The detector
+  measured `ppu_compilation_screen_present=True`, cyan `51.935%`, and progress
+  white `73.29%`. It failed closed before `dpad_down` or any other route input.
+- No unknown draw, VM access, native signal, process restart, Vulkan device
+  loss, or LLVM fatal was present before cleanup. Every guarded thermal sample
+  was `23.0 C`; final thermal status was `0`, the package was stopped, and the
+  property reset to `off`. No second route ran.
+
+Classification:
+
+- This is `route-tooling` / `failed-visual-gate`, not a PPU isolation
+  counterproof and not speed evidence. The candidate never reached title
+  input, field, tutorial, or battle. Its runtime correctness remains unknown.
+- The cold compilation was making forward progress and the mode gate itself
+  activated correctly. Do not change or rebuild the native core from this
+  attempt, and do not infer a crash from the controlled stop.
+
+Host-only harness repair:
+
+- The battle profile now waits `60s`, then uses
+  `gate:ppu-ready:90000`. The reusable gate polls a screenshot every `10s`,
+  accepts only after the existing compilation detector clears, checks the
+  pinned process and thermal budget throughout, and caps caller timeouts to
+  `10-180s`. The battle profile's total cold-boot allowance is therefore
+  bounded at roughly `150s`, not an unbounded heat soak.
+- Visual, unknown-draw, and fatal failure paths now automatically pull the
+  complete `RPCSX.log` before force-stop, avoiding manual post-stop recovery.
+  Static README strings were changed to literal strings so Markdown backticks
+  no longer become tab, vertical-tab, carriage-return, or bell characters.
+- PowerShell parsing reports zero errors and `git diff --check` passes. The
+  visual classifier was replayed host-only against this cold-cache screenshot
+  (`True`) and the prior ready title screenshot (`False`); both expectations
+  passed. No native rebuild, deployment, launch, or second route followed.
+
+Decision: preserve exact installed core `D33A...BC21` and keep isolation
+default-off. In one later cool round, audit its remote hash and use the repaired
+profile for one `both` route. Only gameplay evidence can decide the PPU LLVM
+hypothesis; this cold-cache attempt earns no stability or performance credit.

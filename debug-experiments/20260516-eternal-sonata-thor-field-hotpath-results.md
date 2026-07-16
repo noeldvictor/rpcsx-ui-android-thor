@@ -1779,3 +1779,20 @@ Status: `device-fail-closed`; next candidate is host-build-only and default off.
   `D33AC093C9516653687F8ED512931AB1B77D03B5E9B7B6A74BA9C271FDF1BC21`.
   It was not deployed or launched. One later cool guarded `both` route is the
   next isolation test; this build currently earns no performance credit.
+
+## 2026-07-16 PPU Both Cold-Cache Readiness Failure
+
+Status: `route-tooling`; runtime hypothesis remains untested.
+
+- Exact core `D33AC093C9516653687F8ED512931AB1B77D03B5E9B7B6A74BA9C271FDF1BC21`
+  was deployed without rebuilding and launched once with only PPU interpreter
+  mode `both`. The log confirmed both exact mapped ranges enabled.
+- The `75s` screenshot still showed PPU compilation at module `60/62` with
+  about `24s` remaining. The wrapper failed closed before route input, so no
+  field, battle, flicker, stability, or FPS conclusion can be drawn.
+- Temperature remained `23 C`, thermal status `0`, no fatal signature appeared,
+  cleanup stopped RPCSX and reset the property, and no second route ran.
+- The battle harness now polls actual compilation readiness for a bounded
+  interval with PID/thermal checks and automatically retains full guest logs on
+  failures. Host detection replay and PowerShell parsing pass. A later single
+  cool `both` route is still required; this attempt earns no speed credit.

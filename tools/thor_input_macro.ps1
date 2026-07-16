@@ -178,7 +178,7 @@ function Get-ThorMacroForProfile {
             # the sustained encoder load of screen recording. The later 10/20s
             # checkpoints still cover battle stability. Thread snapshots stay out
             # of this visual route so profiling overhead cannot perturb the proof.
-            return "wait:75000;shot:title-before-load;check:visual:not-ppu-compilation;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
+            return "wait:60000;gate:ppu-ready:90000;shot:title-before-load;check:visual:not-ppu-compilation;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -561,6 +561,14 @@ function Save-ThorGuestLogEvidence {
     }
 }
 
+function Save-ThorFullGuestLogEvidence {
+    param([string]$Label)
+
+    $safeLabel = New-ThorSafeLabel $Label
+    $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
+    Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteLog -LocalName "RPCSX-full-$safeLabel.log" | Out-Null
+}
+
 function Throw-ThorVisualFailure {
     param(
         [string]$Message,
@@ -568,6 +576,7 @@ function Throw-ThorVisualFailure {
     )
 
     Save-ThorGuestLogEvidence $Label | Out-Null
+    Save-ThorFullGuestLogEvidence $Label
     throw $Message
 }
 
@@ -593,6 +602,7 @@ function Assert-ThorGuestHealthy {
             Set-Content -LiteralPath (Join-Path $captureDir "guest-unknown-draw-$safeLabel.txt") -Encoding UTF8
 
         if ($strictGuestDrawStream) {
+            Save-ThorFullGuestLogEvidence "unknown-draw-$safeLabel"
             & $Adb shell am force-stop $Package | Out-Null
             throw "Unknown guest draw command detected at '$Label'. RPCSX was force-stopped; see guest-unknown-draw-$safeLabel.txt. Pass -AllowUnknownDraw only for an explicit diagnostic capture."
         }
@@ -600,6 +610,7 @@ function Assert-ThorGuestHealthy {
 
     if ($fatalMatches.Count -gt 0) {
         $fatalMatches.Line | Set-Content -LiteralPath (Join-Path $captureDir "guest-fatal-$safeLabel.txt") -Encoding UTF8
+        Save-ThorFullGuestLogEvidence "fatal-$safeLabel"
         & $Adb shell am force-stop $Package | Out-Null
         throw "Guest fatal detected at '$Label'. RPCSX was force-stopped; see guest-fatal-$safeLabel.txt."
     }
@@ -627,11 +638,11 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on black battle frames and unknown draw commands; use `-AllowUnknownDraw` only for an explicit diagnostic capture."
-    "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
-    "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
-    "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
-    "Booted runs pin the initial RPCSX PID and fail closed if Android restarts the process; complete and filtered logcat evidence is captured before force-stop."
+    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on black battle frames and unknown draw commands; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
+    'Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.',
+    'Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`.'
+    'State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected.'
+    'Booted runs pin the initial RPCSX PID and fail closed if Android restarts the process; complete and filtered logcat evidence is captured before force-stop.'
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
 Assert-ThorThermalBudget "pre-run"
@@ -671,6 +682,42 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
         if ($token -match '^wait:(\d+)$') {
             Wait-ThorThermallyBounded ([int]$Matches[1])
+        } elseif ($token -match '^gate:ppu-ready(?::(\d+))?$') {
+            $gateTimeoutMs = if ($Matches[1]) { [int]$Matches[1] } else { 120000 }
+            if ($gateTimeoutMs -lt 10000 -or $gateTimeoutMs -gt 180000) {
+                throw "PPU-ready gate timeout must be between 10000 and 180000 ms."
+            }
+
+            $gateTimer = [Diagnostics.Stopwatch]::StartNew()
+            $gateAttempt = 0
+            $ppuReady = $false
+            while ($gateTimer.ElapsedMilliseconds -le $gateTimeoutMs) {
+                $gateAttempt++
+                $gateLabel = "ppu-ready-poll-{0:D2}" -f $gateAttempt
+                Save-ThorScreenshot $gateLabel $index
+                $index++
+                Assert-ThorThermalBudget "screenshot-$gateLabel"
+
+                $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+                "$(Get-Date -Format o) attempt=$gateAttempt elapsed_ms=$($gateTimer.ElapsedMilliseconds) timeout_ms=$gateTimeoutMs ppu_compilation_screen_present=$($classification.ppu_compilation_screen_present) cyan_percent=$($classification.cyan_percent) progress_bar_white_percent=$($classification.progress_bar_white_percent) path=$($classification.path)" |
+                    Out-File -LiteralPath (Join-Path $captureDir "ppu-ready-gate.log") -Append -Encoding UTF8
+
+                if (-not $classification.ppu_compilation_screen_present) {
+                    $ppuReady = $true
+                    break
+                }
+
+                $remainingMs = $gateTimeoutMs - [int]$gateTimer.ElapsedMilliseconds
+                if ($remainingMs -le 0) {
+                    break
+                }
+                Wait-ThorThermallyBounded ([Math]::Min(10000, $remainingMs))
+            }
+            $gateTimer.Stop()
+
+            if (-not $ppuReady) {
+                Throw-ThorVisualFailure "PPU compilation remained visible for the bounded $gateTimeoutMs ms readiness gate; route inputs and gameplay claims are invalid." "visual-ppu-ready-timeout"
+            }
         } elseif ($token -match '^shot:(.+)$') {
             Save-ThorScreenshot $Matches[1] $index
             $index++

@@ -755,3 +755,33 @@ Next:
   property. Require effective-mode/cache evidence, correct visuals, and first-
   fault classification. Split publisher from parser only after a clean `both`
   result; reject this lane if the same corruption recurs.
+
+## 2026-07-16 PPU Both Cold-Cache Route Gate
+
+Attempt:
+
+- Exact `D33A...BC21` was deployed without build/launch/stream and launched
+  once with only PPU command interpreter mode `both` in
+  `20260716-031822-thor-input-eternal-sonata-battle-intro-route`.
+- The log proved the exact BLUS30161 publisher/parser isolation ranges enabled,
+  but the fixed `75s` checkpoint still showed cold PPU compilation at module
+  `60/62` with about `24s` remaining. The visual gate stopped before any route
+  input. No gameplay checkpoint, FPS sample, or hypothesis result exists.
+- No draw/VM/native/restart/Vulkan/LLVM fatal preceded cleanup. Temperature
+  stayed `23 C`, thermal status `0`, the package ended stopped, the property
+  reset to `off`, and no second route ran.
+
+Harness replacement:
+
+- The battle route now uses a bounded `gate:ppu-ready:90000` after its initial
+  `60s` wait. It polls the existing compilation detector every `10s` while
+  preserving PID and thermal checks; visual/log failures now retain full guest
+  logs automatically. Host replay passed for both compilation-present and
+  ready-title screenshots, and the PowerShell parser reports zero errors.
+
+Next:
+
+- Do not rebuild, redeploy, or rerun in this thermal round. Later, verify the
+  installed core remains exact `D33A...BC21`, then run one guarded
+  `-EsPpuCommandInterp both` battle route with the repaired readiness gate.
+  Classify this attempt as route-tooling only, not stability or speed evidence.
