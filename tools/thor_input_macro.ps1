@@ -176,7 +176,7 @@ function Get-ThorMacroForProfile {
             # the sustained encoder load of screen recording. The later 10/20s
             # checkpoints still cover battle stability. Thread snapshots stay out
             # of this visual route so profiling overhead cannot perturb the proof.
-            return "wait:75000;shot:title-before-load;check:visual:not-ppu-compilation;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;wait:750;shot:first-battle-temporal-02;wait:750;shot:first-battle-temporal-03;wait:750;shot:first-battle-temporal-04;wait:4000;shot:first-battle-live-10s-candidate;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
+            return "wait:75000;shot:title-before-load;check:visual:not-ppu-compilation;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -600,7 +600,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on unknown draw commands; use `-AllowUnknownDraw` only for an explicit diagnostic capture."
+    "Syntax: `wait:MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on black battle frames and unknown draw commands; use `-AllowUnknownDraw` only for an explicit diagnostic capture."
     "Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.",
     "Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`."
     "State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected."
@@ -659,6 +659,21 @@ try {
 
             if ($classification.ppu_compilation_screen_present) {
                 throw "PPU compilation is still visible after the boot wait; route inputs and gameplay claims are invalid."
+            }
+        } elseif ($token -eq 'check:visual:battle-frame') {
+            if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
+                throw "The battle-frame visual check requires a preceding screenshot."
+            }
+
+            $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+            "$(Get-Date -Format o) battle_ui_present=$($classification.battle_ui_present) black_frame_present=$($classification.black_frame_present) dark_percent=$($classification.dark_percent) cyan_percent=$($classification.cyan_percent) ppu_compilation_screen_present=$($classification.ppu_compilation_screen_present) path=$($classification.path)" |
+                Out-File -LiteralPath (Join-Path $captureDir "battle-frame-visual-gate.log") -Append -Encoding UTF8
+
+            if ($classification.black_frame_present) {
+                throw "Black battle frame detected; transient renderer flicker is assumed."
+            }
+            if (-not $classification.battle_ui_present) {
+                throw "Expected live Eternal Sonata battle HUD was not present."
             }
         } elseif ($token -match '^check:visual:changed:(.+)$') {
             if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {

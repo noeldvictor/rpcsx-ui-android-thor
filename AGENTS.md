@@ -31,8 +31,8 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## PS3 Sprint Gate
 
-- Active goal: prove a stable Windows-only Eternal Sonata `BLUS30161` 200% or better moving-gameplay result with correct field, title Options/menu, and first-battle visuals.
-- Until that Windows gate is met, do not run Android, ADB, Thor installs, or Thor captures for this lane.
+- Active goal: make Eternal Sonata `BLUS30161` stable and faster on AYN Thor while preserving correct field, title Options/menu, first-battle visuals, and bounded thermals.
+- The clean-current-upstream Windows 200% gate is cleared. Thor work is permitted only as one short, temperature-guarded validation per cool round; do not heat-soak or immediately repeat a route.
 - Keep RPCS3 gameplay on screen 1 with `-WindowsGameScreen 1`.
 - Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, `ps3-continual-harness-refiner`, and `ps3-spu-contract-compiler`.
 - Always start by checking for an active meaningful run/edit. Do not duplicate live work.
@@ -42,7 +42,7 @@ Put dated run details in `debug-experiments/`, not here.
 
 1. Read this file, the relevant `.agents/skills/*/SKILL.md`, and the narrowest `debug-experiments/` ledger.
 2. Run `.\tools\ps3_harness_refiner.ps1 -MaxRuns 8`.
-3. Take one concrete Windows-only step: route repair, boundary bisection, harness fix, contract extraction, analysis, or one gated experiment.
+3. Take one concrete step: route repair, boundary bisection, harness fix, contract extraction, analysis, or one thermally gated experiment.
 4. Verify screenshots, fatal logs, host grade, and counters.
 5. Classify honestly: `speed-win`, `windows-micro-win`, `stackable-cpu-pressure`, `gpu-migration-credit`, `valid-field-triage`, `valid-options-counterproof`, `route-tooling`, `failed`, `stack-regression`, `parked`, or `not-comparable`.
 6. Update the narrowest ledger before stopping.
@@ -170,8 +170,8 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Android And Thor
 
-- Android/Thor work is dormant for the PS3 200% Windows gate unless the user explicitly reopens it.
-- Active proof device when reopened: AYN Thor Max, Snapdragon 8 Gen 2 / Adreno 740, board `kalama`.
+- Android/Thor work is active because the Windows 200% gate is cleared and the user reopened it. Keep device work to one short guarded route per cool round, then stop the package and finish analysis/build work on the host.
+- Active proof device: AYN Thor, device `c3ca0370`, Snapdragon 8 Gen 2 / Adreno 740-class `QCS8550` platform.
 - Base/Pro/Max share the target CPU/GPU behavior; mark memory-heavy experiments `pro-max` or `max-only`.
 - Thor Lite is Snapdragon 865 / Adreno 650 and is not the PS3 performance target.
 - Heavy Thor affinity mask is CPUs `3-7`, mask `0xF8`.
@@ -233,5 +233,10 @@ Put dated run details in `debug-experiments/`, not here.
 - Current-upstream normal-scheduler speed proof is `20260715-230705-clean-upstream1269ebf-allcore-uncap240-frame-scaled20-first-battle-speed-windows`: exact Path-to-Tenuto field at `57s`, real tutorial prompt at `69s`, correct battle through the `150s` cutoff, zero actionable fatal hits, external-clean host evidence, and 30 gameplay samples averaging `120.002 FPS` (`119.85` to `120.38`). This is a stable 400% Windows gameplay proof.
 - Matching exact-build/config Options proof is `20260715-231132-clean-upstream1269ebf-allcore-uncap240-frame-scaled20-options-speed-windows`: correct full Options page through `70s`, zero actionable fatal hits, external-clean host evidence, and six Options samples averaging `240.072 FPS` (`239.88` to `240.40`). Together these runs clear the Windows 200% field/menu/first-battle gate.
 - High-vblank Windows routes must scale input pulses by emulated frames: the title needs `down:20` at 240 Hz; `down:80` and `down:300` repeat into Options. Use `gate_title_menu`, `gate_load_target`, `gate_load_complete`, `gate_field`, and `gate_first_battle_prompt` instead of fixed route delays. The load-target gate classifies only its latest screenshot to avoid rescanning the full run.
-- No Android build, ADB action, Thor launch, capture, or sensor query was used for the current-upstream Windows proof. Thor work is now permitted only as a short thermally gated baseline/port check; query temperature first and abort if the handheld is still hot.
+- First guarded Thor battle capture is `20260715-233619-thor-input-eternal-sonata-battle-intro-route`: it reached correct active battle at `30 FPS`, but temporal frame `03` was fully black and the route then logged unknown draw word `0x3f800000` followed by PPU VM access violation at `0x002ad588` reading `0x3f80000c`. This is flicker/crash evidence, not a stable speed proof.
+- That capture stayed at `23-24 C`, force-stopped PID `28190`, and left the package stopped with the verifier property off. Do not spend another device run in the same round.
+- The first draw-stream verifier did not classify the fault because its producer/consumer syscall CIA hooks used post-return PCs (`0x31c1bc`/`0x31c18c`). Host syscall handling observes the `sc` PCs (`0x31c1b8`/`0x31c188`). The corrected verifier snapshots the producer buffer and compares the full live buffer at the parser fault instead of relying on clobbered TTY GPRs.
+- Thor battle routes now fail closed when any sampled battle frame is at least `95%` near-black or lacks the expected HUD. The actual bad frame classifies `dark_percent=100`, while adjacent battle frames classify cleanly.
+- Corrected RelWithDebInfo core built successfully with SHA256 `2715F3B42169A5496FE7A2B63DB6F02CB9249EA74A9D630A9C829728CF097F3F`. It has not been deployed. The next separate cool round is exactly one corrected-verifier route for producer-versus-consumer classification, not a speed promotion run.
+- Official Android upstream since the local base contains only UI preference dependency/source changes, and current RPCSX core since the vendored base contains only a missing-include compatibility commit. Do not merge either into the performance lane as a presumed speed fix.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

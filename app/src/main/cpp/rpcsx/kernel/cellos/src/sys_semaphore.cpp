@@ -16,6 +16,7 @@
 
 #include <array>
 #include <atomic>
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -63,9 +64,12 @@ static std::array<thor_es_sema_fast_cache_entry, 64> g_thor_es_sema_fast_cache{}
 namespace {
 
 constexpr u32 thor_es_draw_stream_size = 0x18'0000;
-constexpr u32 thor_es_draw_stream_producer_cia = 0x31c1bc;
+// ppu.cia still points at the SC instruction while the host syscall handler is
+// running. The following instruction addresses (0x31c1bc / 0x31c18c) are only
+// visible after the handler returns to the guest.
+constexpr u32 thor_es_draw_stream_producer_cia = 0x31c1b8;
 constexpr u32 thor_es_draw_stream_producer_lr = 0x2ac7f0;
-constexpr u32 thor_es_draw_stream_consumer_cia = 0x31c18c;
+constexpr u32 thor_es_draw_stream_consumer_cia = 0x31c188;
 constexpr u32 thor_es_draw_stream_consumer_lr = 0x2afd08;
 
 struct thor_es_draw_stream_layout {
@@ -169,6 +173,62 @@ static u32 get_thor_es_draw_stream_snapshot_word(const std::vector<u8> &bytes,
          static_cast<u32>(bytes[offset + 1]) << 16 |
          static_cast<u32>(bytes[offset + 2]) << 8 |
          static_cast<u32>(bytes[offset + 3]);
+}
+
+static bool parse_thor_es_draw_stream_fault_word(std::string_view message,
+                                                 u32 &word) {
+  constexpr std::string_view marker = "unknown draw command";
+  const usz marker_pos = message.find(marker);
+  if (marker_pos == std::string_view::npos) {
+    return false;
+  }
+
+  const usz open = message.find('(', marker_pos + marker.size());
+  const usz close =
+      open == std::string_view::npos ? std::string_view::npos
+                                     : message.find(')', open + 1);
+  if (open == std::string_view::npos || close == std::string_view::npos ||
+      close == open + 1) {
+    return false;
+  }
+
+  std::string_view value = message.substr(open + 1, close - open - 1);
+  if (value.starts_with("0x") || value.starts_with("0X")) {
+    value.remove_prefix(2);
+  }
+  if (value.empty()) {
+    return false;
+  }
+
+  const auto result =
+      std::from_chars(value.data(), value.data() + value.size(), word, 16);
+  return result.ec == std::errc{} && result.ptr == value.data() + value.size();
+}
+
+struct thor_es_draw_stream_word_scan {
+  u64 count{};
+  u32 first_offset{umax};
+};
+
+static thor_es_draw_stream_word_scan scan_thor_es_draw_stream_word(
+    const u8 *bytes, usz size, u32 word) {
+  thor_es_draw_stream_word_scan result{};
+  for (u32 offset = 0; offset + sizeof(u32) <= size; offset += sizeof(u32)) {
+    const u32 current = static_cast<u32>(bytes[offset]) << 24 |
+                        static_cast<u32>(bytes[offset + 1]) << 16 |
+                        static_cast<u32>(bytes[offset + 2]) << 8 |
+                        static_cast<u32>(bytes[offset + 3]);
+    if (current != word) {
+      continue;
+    }
+
+    if (result.first_offset == umax) {
+      result.first_offset = offset;
+    }
+    result.count++;
+  }
+
+  return result;
 }
 
 static void log_thor_es_draw_stream_summary(
@@ -323,55 +383,78 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
     return;
   }
 
-  const u32 cursor = static_cast<u32>(ppu.gpr[31]);
-  const u32 parser_object = static_cast<u32>(ppu.gpr[22]);
+  u32 fault_word = 0;
+  const bool fault_word_parsed =
+      parse_thor_es_draw_stream_fault_word(message, fault_word);
 
   std::lock_guard lock(g_thor_es_draw_stream_probe.mutex);
   const auto &state = g_thor_es_draw_stream_probe;
-  if (!state.valid || cursor < state.layout.published + sizeof(u32) ||
-      cursor > state.layout.published + thor_es_draw_stream_size) {
+  if (!state.valid || state.snapshot.size() != thor_es_draw_stream_size ||
+      !vm::check_addr(state.layout.published, vm::page_readable,
+                      thor_es_draw_stream_size)) {
     sys_semaphore.error(
         "Eternal Sonata draw-stream parser fault outside snapshot: "
-        "generation=%llu cursor=0x%x parser_object=0x%x "
+        "generation=%llu fault_word=0x%x fault_word_parsed=%u "
         "snapshot_object=0x%x published=0x%x valid=%u checked=%u match=%u "
         "cia=0x%x lr=0x%x",
-        state.generation, cursor, parser_object, state.layout.object,
+        state.generation, fault_word, fault_word_parsed, state.layout.object,
         state.layout.published, state.valid, state.consumer_checked,
         state.consumer_match, ppu.cia, static_cast<u32>(ppu.lr));
     return;
   }
 
-  const u32 word_offset = cursor - sizeof(u32) - state.layout.published;
-  const u32 producer_word =
-      get_thor_es_draw_stream_snapshot_word(state.snapshot, word_offset);
-  u32 live_word = 0;
-  const bool live_read = read_thor_es_draw_stream_u32(
-      state.layout.published + word_offset, live_word);
-  const u32 context_offset = word_offset & ~3u;
-  const u32 context0 = get_thor_es_draw_stream_snapshot_word(
-      state.snapshot, context_offset >= 8 ? context_offset - 8 : 0);
-  const u32 context1 = get_thor_es_draw_stream_snapshot_word(
-      state.snapshot, context_offset >= 4 ? context_offset - 4 : 0);
-  const u32 context2 = get_thor_es_draw_stream_snapshot_word(
-      state.snapshot, context_offset);
-  const u32 context3 = get_thor_es_draw_stream_snapshot_word(
-      state.snapshot, context_offset + 4);
-  const u32 context4 = get_thor_es_draw_stream_snapshot_word(
-      state.snapshot, context_offset + 8);
+  const u8 *live = vm::get_super_ptr<u8>(state.layout.published);
+  const bool fault_buffer_match =
+      std::memcmp(state.snapshot.data(), live, thor_es_draw_stream_size) == 0;
+  u32 fault_first_mismatch = umax;
+  if (!fault_buffer_match) {
+    fault_first_mismatch = 0;
+    while (fault_first_mismatch < thor_es_draw_stream_size &&
+           state.snapshot[fault_first_mismatch] == live[fault_first_mismatch]) {
+      fault_first_mismatch++;
+    }
+  }
+
+  const u32 mismatch_word_offset = fault_first_mismatch == umax
+                                       ? umax
+                                       : fault_first_mismatch & ~3u;
+  const u32 producer_mismatch_word = fault_first_mismatch == umax
+                                         ? 0
+                                         : get_thor_es_draw_stream_snapshot_word(
+                                               state.snapshot,
+                                               mismatch_word_offset);
+  u32 live_mismatch_word = 0;
+  if (fault_first_mismatch != umax) {
+    read_thor_es_draw_stream_u32(
+        state.layout.published + mismatch_word_offset, live_mismatch_word);
+  }
+
+  const thor_es_draw_stream_word_scan producer_fault =
+      fault_word_parsed
+          ? scan_thor_es_draw_stream_word(state.snapshot.data(),
+                                          state.snapshot.size(), fault_word)
+          : thor_es_draw_stream_word_scan{};
+  const thor_es_draw_stream_word_scan live_fault =
+      fault_word_parsed
+          ? scan_thor_es_draw_stream_word(live, thor_es_draw_stream_size,
+                                          fault_word)
+          : thor_es_draw_stream_word_scan{};
 
   sys_semaphore.error(
       "Eternal Sonata draw-stream parser fault: generation=%llu "
-      "object=0x%x parser_object=0x%x published=0x%x cursor=0x%x "
-      "word_offset=0x%x producer_word=0x%x live_word=0x%x live_read=%u "
-      "producer_equals_live=%u handoff_checked=%u handoff_match=%u "
-      "first_mismatch=0x%x context=[%08x %08x %08x %08x %08x] "
+      "object=0x%x published=0x%x fault_word=0x%x fault_word_parsed=%u "
+      "fault_buffer_match=%u fault_first_mismatch=0x%x "
+      "mismatch_word_offset=0x%x producer_mismatch_word=0x%x "
+      "live_mismatch_word=0x%x producer_fault_count=%llu "
+      "producer_fault_first=0x%x live_fault_count=%llu live_fault_first=0x%x "
+      "handoff_checked=%u handoff_match=%u handoff_first_mismatch=0x%x "
       "cia=0x%x lr=0x%x",
-      state.generation, state.layout.object, parser_object,
-      state.layout.published, cursor, word_offset, producer_word, live_word,
-      live_read, live_read && producer_word == live_word,
-      state.consumer_checked, state.consumer_match, state.first_mismatch,
-      context0, context1, context2, context3, context4, ppu.cia,
-      static_cast<u32>(ppu.lr));
+      state.generation, state.layout.object, state.layout.published, fault_word,
+      fault_word_parsed, fault_buffer_match, fault_first_mismatch,
+      mismatch_word_offset, producer_mismatch_word, live_mismatch_word,
+      producer_fault.count, producer_fault.first_offset, live_fault.count,
+      live_fault.first_offset, state.consumer_checked, state.consumer_match,
+      state.first_mismatch, ppu.cia, static_cast<u32>(ppu.lr));
 }
 
 static thor_es_sema_superpath_mode parse_thor_es_sema_superpath_mode(

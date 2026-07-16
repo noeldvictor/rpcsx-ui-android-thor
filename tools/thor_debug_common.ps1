@@ -64,12 +64,16 @@ function Get-ThorBattleUiClassification {
         $yStart = [int]($bitmap.Height * 0.180)
         $yEnd = [int]($bitmap.Height * 0.960)
         $cyanSamples = 0
+        $darkSamples = 0
         $totalSamples = 0
 
         for ($y = $yStart; $y -lt $yEnd; $y += 3) {
             for ($x = $xStart; $x -lt $xEnd; $x += 3) {
                 $pixel = $bitmap.GetPixel($x, $y)
                 $totalSamples++
+                if ($pixel.R -le 12 -and $pixel.G -le 12 -and $pixel.B -le 12) {
+                    $darkSamples++
+                }
                 if (
                     $pixel.B -ge 120 -and
                     $pixel.G -ge 80 -and
@@ -83,6 +87,11 @@ function Get-ThorBattleUiClassification {
 
         $cyanPercent = if ($totalSamples -gt 0) {
             100.0 * $cyanSamples / $totalSamples
+        } else {
+            0.0
+        }
+        $darkPercent = if ($totalSamples -gt 0) {
+            100.0 * $darkSamples / $totalSamples
         } else {
             0.0
         }
@@ -132,14 +141,18 @@ function Get-ThorBattleUiClassification {
             width = $bitmap.Width
             height = $bitmap.Height
             cyan_samples = $cyanSamples
+            dark_samples = $darkSamples
             total_samples = $totalSamples
             cyan_percent = [Math]::Round($cyanPercent, 3)
+            dark_percent = [Math]::Round($darkPercent, 3)
+            black_frame_present = ($darkPercent -ge 95.0)
             progress_bar_white_samples = $progressBarWhiteSamples
             progress_bar_total_samples = $progressBarTotalSamples
             progress_bar_white_percent = [Math]::Round($progressBarWhitePercent, 3)
             ppu_compilation_screen_present = $ppuCompilationScreenPresent
             battle_ui_present = (
                 -not $ppuCompilationScreenPresent -and
+                $darkPercent -lt 95.0 -and
                 $cyanSamples -ge 100 -and
                 $cyanPercent -ge 1.5 -and
                 $cyanPercent -le 10.0

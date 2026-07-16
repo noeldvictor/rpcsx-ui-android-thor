@@ -454,3 +454,38 @@ Next:
 - Treat the `120 FPS` result as a Windows performance envelope, not predicted
   Thor FPS. Any Android claim still needs real Adreno frame-time and visual
   evidence.
+
+## 2026-07-15 Thor Stability Gate Reopened
+
+Evidence:
+
+- The Windows gate is cleared, but the first thermally guarded Thor route
+  `20260715-233619-thor-input-eternal-sonata-battle-intro-route` is not a
+  promotion result. It reached correct active battle at `30 FPS`, sampled one
+  fully black temporal frame between correct frames, then logged unknown draw
+  `0x3f800000` and froze at guest PPU `0x002ad588` reading `0x3f80000c`.
+- The deployed draw-stream verifier missed both handoff hooks because it used
+  the guest post-syscall return addresses. Correct host-handler CIAs are the
+  `sc` instructions at producer `0x31c1b8` and consumer `0x31c188`.
+- Fault-side TTY GPRs are clobbered, so the repaired verifier compares the full
+  saved producer buffer with the live published buffer and counts the reported
+  fault word in both copies.
+- The Thor route now rejects any sampled battle frame that is at least `95%`
+  near-black or lacks the battle HUD. This converts the observed transient
+  black flicker into an immediate fail-closed result.
+- Corrected ARM64 RelWithDebInfo core built successfully with SHA256
+  `2715F3B42169A5496FE7A2B63DB6F02CB9249EA74A9D630A9C829728CF097F3F`.
+  It is host-only and has not been deployed.
+- The one run stayed at `23-24 C`; the wrapper stopped the package and reset
+  the verifier property. No second device run was used.
+
+Promotion rule:
+
+- Do not enable bodyfast, HLE/GPU fast paths, or claim Thor speed while the
+  black-frame/draw-stream/VM-fault gate is open.
+- The next separate cool round is one corrected-verifier battle route only.
+  Use its producer/live comparison to decide whether to repair the producer or
+  investigate a post-handoff race; stop after that one classification run.
+- Official Android/core upstream audit found no applicable performance fix:
+  the only newer Android changes are UI preference work and the only newer
+  RPCSX-core change is missing-include compatibility.

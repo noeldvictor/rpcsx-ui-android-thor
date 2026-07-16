@@ -11701,3 +11701,79 @@ Classification and decision:
   device; abort rather than heat-soak the handheld.
 - No Android build, ADB operation, Thor launch, capture, or sensor query was
   used for these Windows proofs.
+
+## 2026-07-15 First Guarded Thor Battle And Draw-Stream Probe Repair
+
+Guarded device result:
+
+- Device `c3ca0370` was cool before launch: battery temperature `23.0 C`,
+  Android thermal status `0`, and package stopped. The Thermal HAL reported
+  itself unavailable, so the route used the battery sensor as its `35 C`
+  fail-closed guard.
+- Deployed existing RelWithDebInfo verifier core SHA256
+  `EB88FF43...C684785` without rebuilding or launching, enabled only
+  `debug.rpcsx.thor.es_draw_stream_probe=verify`, and ran exactly one direct
+  input route:
+  `debug-captures/android-speed-sprint/20260715-233619-thor-input-eternal-sonata-battle-intro-route`.
+- OS scheduling, PPU Reservation Priority off, Max SPURS Threads `6`, Accurate
+  SPU Reservations on, and frame limit `30` were preserved. No recorder,
+  Perfetto trace, or second route was used.
+- The route reached the correct title, save, field, tutorial prompt, and active
+  first battle. The overlay reported `30 FPS` in battle.
+- `10-first-battle-temporal-03.png` is a full black rendered frame except for
+  the FPS overlay. The immediately adjacent temporal `02` and `04` frames show
+  the correct live battle HUD. Offline classification measured the black frame
+  as `dark_percent=100`, `cyan_percent=0`, and the adjacent frames as
+  `dark_percent=0`, `cyan_percent=3.433`.
+- At the 10-second checkpoint the guest logged unknown draw command
+  `0x3f800000`, then froze on a PPU VM access violation at `0x002ad588` while
+  reading unmapped `0x3f80000c`. The wrapper failed closed and force-stopped
+  pinned PID `28190`; there was no Android process restart.
+- Temperature remained `23.0 C` through the temporal sequence and ended at
+  `24.0 C`. Manual post-run verification found the package stopped, thermal
+  status `0`, and the verifier property reset to `off`. No second run was made.
+
+Probe diagnosis and host-side fix:
+
+- The deployed verifier reported `generation=0`, so it did not provide a valid
+  producer-versus-consumer classification for this fault. Its CIA hooks used
+  the instructions after the syscalls, `0x31c1bc` and `0x31c18c`; while the
+  host handler runs, `ppu.cia` still points to the actual `sc` instructions at
+  `0x31c1b8` and `0x31c188`.
+- The fault-side parser also could not use saved `r31`/`r22`: by
+  `sys_tty_write` those registers were `0x20` and `0x2`, not the draw parser's
+  cursor/object.
+- `sys_semaphore.cpp` now hooks the actual syscall PCs. At an unknown-draw
+  fault it parses the reported word, compares the entire producer snapshot to
+  the live published buffer, reports the first mismatch and both mismatch
+  words, scans both buffers for the reported bad word, and preserves handoff
+  match metadata. This can distinguish producer-published bad data from a
+  post-handoff mutation without relying on TTY GPRs.
+- `Get-ThorBattleUiClassification` now reports dark percentage and rejects
+  frames at least `95%` near-black. The battle-intro macro places a fail-closed
+  `check:visual:battle-frame` after the active, temporal, 10-second, and
+  20-second screenshots, so the captured one-frame flicker cannot pass as a
+  stable route.
+- Both PowerShell files parse with zero errors. The actual black and adjacent
+  capture frames passed the expected offline regression classification.
+- ARM64 RelWithDebInfo build completed successfully. New local core:
+  `app/build/intermediates/cxx/RelWithDebInfo/724a6w64/obj/arm64-v8a/librpcsx-android.so`,
+  size `1,349,512,264`, SHA256
+  `2715F3B42169A5496FE7A2B63DB6F02CB9249EA74A9D630A9C829728CF097F3F`.
+  It was not deployed or launched.
+
+Upstream audit and next action:
+
+- Official `RPCSX/rpcsx-ui-android` at `9ea086c57` differs from the local base
+  only in UI preference dependency/source work; there is no emulator speed or
+  renderer stability patch to take for this lane.
+- Official RPCSX core at `e8ae1481` differs from the vendored base
+  `e27926d` only by a GCC 16 missing-include compatibility commit. The current
+  RPCS3 reservation-priority change is already handled on Android when
+  Accurate SPU Reservations is enabled and is not a remaining port candidate.
+- Classification: `failed` for Thor stability, `route-tooling` for the probe
+  and visual gate repairs, and not a Thor speed proof.
+- Next separate cool round: confirm a safe starting temperature, deploy the
+  corrected core, run exactly one guarded verifier battle route, then stop.
+  The purpose is producer-versus-consumer fault classification. Do not run a
+  speed promotion or heat soak until the flicker/draw-stream fault is resolved.
