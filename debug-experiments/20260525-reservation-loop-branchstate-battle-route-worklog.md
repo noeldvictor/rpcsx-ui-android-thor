@@ -12293,3 +12293,58 @@ Decision: preserve exact installed core `D33A...BC21` and keep isolation
 default-off. In one later cool round, audit its remote hash and use the repaired
 profile for one `both` route. Only gameplay evidence can decide the PPU LLVM
 hypothesis; this cold-cache attempt earns no stability or performance credit.
+
+## 2026-07-16 PPU Both Black-Transition Route Miss And Title Gate
+
+Bounded device attempt:
+
+- Preflight found RPCSX stopped, exact installed core `D33A...BC21`, battery
+  temperature `23.0 C`, Android thermal status `0`, and the isolation property
+  `off`. No build, deployment, recorder, trace, or profiler ran.
+- Exactly one route enabled only `-EsPpuCommandInterp both`:
+  `debug-captures/android-speed-sprint/20260716-033309-thor-input-eternal-sonata-battle-intro-route`.
+  The full stopped log proves BLUS30161 and exact publisher/parser isolation
+  ranges at emulated time `0:00:23.159335`.
+- Readiness poll 1 still showed `Building SPU Cache` at module `370/1154` with
+  about `8s` remaining. Poll 2 was a fully black `30.00 FPS` transition frame.
+  Because the first gate only required the compilation overlay to disappear,
+  it accepted that black frame and sent title input too early.
+- Manual review proves the supposed Load-list screenshot was still the title
+  menu with `Load` selected. The later supposed load-complete, field, and
+  battle-approach frames were the opening story/cutscene, not Path to Tenuto or
+  battle. Retained story frames reported `28.21-30.01 FPS`, but they are not
+  scene-comparable performance evidence.
+- The complete `RPCSX.log` contains zero unknown draw words, VM access faults,
+  native signals, process restarts, Vulkan device loss, LLVM fatal, or RSX FP
+  CAL fatal. RAM peaked at `10475 MB`. All guarded samples were `23-24 C`,
+  thermal status remained `0`, cleanup stopped the package and reset the
+  property to `off`, and no second route ran.
+
+Classification:
+
+- This is `route-miss` / `failed-visual-gate`, not a clean gameplay stability
+  result, not a PPU LLVM counterproof, and not speed evidence. The fatal-clean
+  story playback is only a limited runtime signal; it does not exercise the
+  requested saved field/tutorial/active-battle proof.
+
+Host-only harness repair:
+
+- `Get-ThorBattleUiClassification` now detects Eternal Sonata's normalized
+  center magenta title selector. `gate:ppu-ready:90000` requires that title
+  detector in two consecutive frames separated by `2.5s`; compilation, black,
+  and other non-title frames reset the count. The battle profile immediately
+  rechecks `check:visual:title-menu` before its first key.
+- Host replay recognizes both the New Game-selected and Load-selected title
+  frames, while rejecting the actual compilation screen, black transition,
+  Load list, story frame, and Path-to-Tenuto field. Both edited PowerShell files
+  parse with zero errors and `git diff --check` passes.
+- A bounded battle-approach visual miss now uses the visual-failure path, so it
+  retains the complete guest log before force-stop rather than requiring a
+  manual post-stop pull. No native rebuild, deployment, second launch, or heat
+  soak followed.
+
+Decision: preserve exact installed `D33A...BC21`, keep isolation default-off,
+and do not spend another Thor run in this cool round. In one later cool round,
+use the repaired title gate for exactly one `both` route. Only accepted saved
+field/tutorial/live-battle evidence can decide whether to split publisher from
+parser or reject the PPU LLVM-isolation lane.

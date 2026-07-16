@@ -136,6 +136,43 @@ function Get-ThorBattleUiClassification {
         }
         $ppuCompilationScreenPresent = $cyanPercent -ge 25.0 -and $progressBarWhitePercent -ge 30.0
 
+        # The settled Eternal Sonata title menu has a large magenta selector
+        # crystal in the normalized center. The compilation splash, black
+        # transition, Load list, story movie, field, and battle captures do
+        # not. This gives boot routing a title-specific gate without OCR.
+        $titleXStart = [int]($bitmap.Width * 0.400)
+        $titleXEnd = [int]($bitmap.Width * 0.600)
+        $titleYStart = [int]($bitmap.Height * 0.350)
+        $titleYEnd = [int]($bitmap.Height * 0.750)
+        $titleMagentaSamples = 0
+        $titleTotalSamples = 0
+
+        for ($y = $titleYStart; $y -lt $titleYEnd; $y += 4) {
+            for ($x = $titleXStart; $x -lt $titleXEnd; $x += 4) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $titleTotalSamples++
+                if (
+                    $pixel.R -ge 90 -and
+                    $pixel.B -ge 60 -and
+                    ($pixel.R - $pixel.G) -ge 25 -and
+                    ($pixel.B - $pixel.G) -ge 10
+                ) {
+                    $titleMagentaSamples++
+                }
+            }
+        }
+
+        $titleMagentaPercent = if ($titleTotalSamples -gt 0) {
+            100.0 * $titleMagentaSamples / $titleTotalSamples
+        } else {
+            0.0
+        }
+        $titleMenuPresent = (
+            -not $ppuCompilationScreenPresent -and
+            $darkPercent -lt 95.0 -and
+            $titleMagentaPercent -ge 5.0
+        )
+
         return [pscustomobject]@{
             path = $resolvedPath
             width = $bitmap.Width
@@ -150,6 +187,10 @@ function Get-ThorBattleUiClassification {
             progress_bar_total_samples = $progressBarTotalSamples
             progress_bar_white_percent = [Math]::Round($progressBarWhitePercent, 3)
             ppu_compilation_screen_present = $ppuCompilationScreenPresent
+            title_magenta_samples = $titleMagentaSamples
+            title_total_samples = $titleTotalSamples
+            title_magenta_percent = [Math]::Round($titleMagentaPercent, 3)
+            title_menu_present = $titleMenuPresent
             battle_ui_present = (
                 -not $ppuCompilationScreenPresent -and
                 $darkPercent -lt 95.0 -and

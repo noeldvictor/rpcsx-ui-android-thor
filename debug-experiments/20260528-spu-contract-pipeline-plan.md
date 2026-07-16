@@ -785,3 +785,39 @@ Next:
   installed core remains exact `D33A...BC21`, then run one guarded
   `-EsPpuCommandInterp both` battle route with the repaired readiness gate.
   Classify this attempt as route-tooling only, not stability or speed evidence.
+
+## 2026-07-16 PPU Both Title-Readiness Counterexample
+
+Attempt:
+
+- Exact installed `D33A...BC21` ran once with only `both` isolation in
+  `20260716-033309-thor-input-eternal-sonata-battle-intro-route`. The first
+  readiness poll still showed SPU cache construction; the next was fully black
+  at `30.00 FPS`, which the compilation-only gate accepted.
+- Inputs therefore arrived before the title menu settled. The supposed Load
+  screenshot was still the title with Load selected, and later field/battle
+  checkpoints were opening-story frames at `28.21-30.01 FPS`. This is a
+  `route-miss` / `failed-visual-gate`, not gameplay, stability, or speed proof.
+- Exact isolation mode/ranges activated and the full log was clean of unknown
+  draw, VM/native/restart/Vulkan/LLVM/FP-CAL faults. RAM peaked at `10475 MB`;
+  temperature stayed `23-24 C`, thermal status `0`, and cleanup left the app
+  stopped with the property `off`. No second route ran.
+
+Harness replacement:
+
+- The readiness gate now detects the title menu's center magenta selector and
+  requires it in two consecutive frames `2.5s` apart. The profile rechecks the
+  title menu immediately before route input; compilation, black, Load-list,
+  story, and field replay frames all reject, while both known title selector
+  positions accept.
+- Battle-approach visual misses now preserve full `RPCSX.log` automatically.
+  PowerShell parsing and `git diff --check` pass. No native build or device
+  action followed.
+
+Next:
+
+- Keep exact installed `D33A...BC21`; do not rebuild, redeploy, or rerun in
+  this thermal round. In one later cool round, run one title-gated `both`
+  battle route. Split publisher/parser only after accepted clean live battle;
+  identical corruption under accepted `both` rejects PPU LLVM execution of
+  both mapped regions as the primary cause.
