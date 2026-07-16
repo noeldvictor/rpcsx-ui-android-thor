@@ -290,9 +290,12 @@ static_assert(ppu_join_status::max <= ppu_join_status{ppu_thread::id_base});
 bool ppu_thor_es_command_interp_range(u32 address, u32& range_start, u32& range_end);
 void ppu_thor_es_command_interp(ppu_thread& ppu, u32 range_start, u32 range_end);
 
-// Default-off, title-gated LLVM probe for Eternal Sonata's two command-word
-// loads. The range query also participates in the PPU object-cache key.
+// Default-off, title-gated LLVM probe for Eternal Sonata's draw-command
+// producer, publisher, and consumer. The range query also participates in the
+// PPU object-cache key.
 bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size);
+void ppu_thor_es_command60_probe(ppu_thread& ppu, u64 stream_pointer, u32 cia);
+void ppu_thor_es_publish_probe(ppu_thread& ppu, u64 object, u64 end_pointer, u32 cia);
 void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command,
 	u64 object, u64 parser_mode, u32 cia);
 

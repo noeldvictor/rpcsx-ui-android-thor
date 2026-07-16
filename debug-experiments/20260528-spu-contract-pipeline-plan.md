@@ -861,3 +861,41 @@ Next:
   stop. Use the first invalid pointer/offset/window to choose the next narrow
   producer-record or length-decoder fix. Do not re-port rtime notifier
   semantics or add a speculative parser recovery before this boundary proof.
+
+## 2026-07-16 Dispatch Boundary Result And Producer Provenance Gate
+
+Counterproof:
+
+- Exact `662B...5BE3` was deployed without build/launch/stream and used for
+  one guarded probe-only route in
+  `20260716-043242-thor-input-eternal-sonata-battle-intro-route`.
+- The correct field/tutorial rendered at `28.95/30.00 FPS`, then the route
+  failed closed before active battle. The first two invalid words were stable
+  rereads from alternating selected buffers, both at common dispatch load
+  `0x002acc54`; the current write pointer was in the opposite buffer.
+- First fault `0x3f800000` was exactly after valid command `0x60` and its one
+  pointer argument. No VM/native/restart/Vulkan/LLVM fatal preceded stop.
+  Temperature stayed `23-24 C`, thermal status `0`, the package ended stopped,
+  properties reset, and no second route ran.
+
+Replacement contract:
+
+- Saved-project Ghidra mapping proves command `0x60` has length one and maps to
+  handler `0x002aedb8`; publisher `0x002ac620` writes the selected stream's
+  terminator before its slot flip. Seven producer command stores are now
+  statically identified.
+- Host-only core `47BC2679B9DFE9DC1E1BDC099887CB297AF6E07A1586E2C9E87BCDFBA63BC007`
+  extends the default-off title-gated probe with allocation-free atomic
+  breadcrumbs at those seven stores and the terminator store. Fault-only
+  logging reports the matching producer CIA and whether the bad word is
+  inside, at, or past the last published end. It never mutates guest state.
+- ARM64 RelWithDebInfo links successfully; size is `1,349,690,912` bytes. The
+  new core has not been deployed or launched.
+
+Next:
+
+- No more Thor work in this thermal round. In one later cool round, deploy
+  exact `47BC...C007`, enable only the dispatch probe, run one guarded route,
+  and stop. Use producer/published-end provenance to select one narrow fix;
+  do not mask invalid words, retry the rejected interpreter lane, or broaden
+  reservation/notifier semantics.

@@ -309,6 +309,40 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			(this->*(s_ppu_decoder.decode(op)))({op});
 
 			const u32 guest_cia = ::narrow<u32>(m_addr + base);
+			if (use_thor_es_dispatch_probe)
+			{
+				switch (guest_cia)
+				{
+				case 0x002caa38:
+					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
+						GetGpr(9), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002cb810:
+				case 0x002ee0c8:
+					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
+						GetGpr(11), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002e1340:
+					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
+						GetGpr(10), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002e8050:
+				case 0x002e8a04:
+				case 0x002e8ab0:
+					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
+						GetGpr(8), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002ac620:
+					// The terminator store has executed; r9 is its address and r3
+					// is the draw-stream object that will be flipped to the reader.
+					Call(GetType<void>(), "__thor_es_publish_probe", m_thread,
+						GetGpr(3), GetGpr(9), m_ir->getInt32(guest_cia));
+					break;
+				default:
+					break;
+				}
+			}
+
 			if (use_thor_es_dispatch_probe &&
 				(guest_cia == 0x002acc54 || guest_cia == 0x002acc9c))
 			{

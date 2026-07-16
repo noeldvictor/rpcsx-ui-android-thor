@@ -12418,3 +12418,77 @@ run one guarded route, and force-stop. The first pointer/offset/window should
 identify the malformed record boundary without full-buffer copies or a broad
 reservation semantic change; do not implement a guest recovery rewrite before
 that evidence.
+
+## 2026-07-16 Exact Dispatch Fault And Producer-End Probe
+
+One guarded device result:
+
+- Exact probe core `662BDBB1CCC28102F2605B823BA4C5FDFDE89D4838930E88D9B254A8B7965BE3`
+  was pushed without build, launch, or log stream in
+  `debug-captures/20260716-043157-es-ppu-dispatch-probe-662b-dev-core-push`.
+  The active-core manifest matched size `1,349,657,576`, source artifact, and
+  repo HEAD `bf34bd569` before launch.
+- Exactly one route enabled only `debug.rpcsx.thor.es_ppu_dispatch_probe`:
+  `debug-captures/android-speed-sprint/20260716-043242-thor-input-eternal-sonata-battle-intro-route`.
+  It reached the intended title, Path-to-Tenuto save, loaded field, and first-
+  battle tutorial prompt. Manual screenshot review found correct visuals at
+  `28.95 FPS` in the field and `30.00 FPS` at the tutorial prompt. The wrapper
+  then failed closed on the first unknown draw before active-battle proof, so
+  this is `valid-field-triage` plus `failed`, not speed or stability evidence.
+- Fault one was a stable immediate reread of `0x3f800000` at
+  `0x32c7cd50`, selected-buffer offset `0x2f1f0`, object `0x84c528`, flags
+  `0x5`. The selected buffer was `0x32c4db60`; the current write buffer was the
+  other slot at `0x32dcdb80`. Its preceding two words were command `0x60` and
+  argument `0x30aa9620`.
+- Fault two was a stable immediate reread of `0x30b12f20` at
+  `0x32dfbb50`, selected-buffer offset `0x2dfd0`, flags `0x4`; the selected and
+  current write buffers had alternated as expected. Both faults were reported
+  at common dispatch load `0x002acc54` on PPU `0x100000c`.
+- No VM access, native signal, process restart, Vulkan device loss, LLVM fatal,
+  or RSX FP-CAL fatal preceded the controlled stop. Temperature remained
+  `23 C` through field load and ended at `24 C`; thermal status was `0`. The
+  package ended stopped, probe/interpreter properties reset to `off`, and no
+  second route ran.
+
+Saved-project Ghidra classification:
+
+- The EBOOT TOC at `0x5315c8` resolves the draw jump table at `0x002acd2c`
+  and command-length table at `0x00469fa8`. Command `0x60` maps to handler
+  `0x002aedb8`, length one. The handler consumes one pointer argument, calls a
+  no-op `blr` stub at `0x00320368`, and returns to common dispatch.
+- The first window is therefore a valid `0x60` record followed by a stable bad
+  word at the exact next-record boundary. It is not a parser length-table
+  mistake. The guest unknown-command handler reports and skips the word; it
+  does not provide a safe native recovery contract.
+- Publisher `0x002ac618` writes a zero terminator at `0x002ac620` before
+  flipping the selected slot and resetting the other write pointer. The next
+  proof must determine whether the invalid word is inside the published list,
+  exactly at an overwritten terminator, or beyond the published end.
+- New reusable script `tools/ghidra_scripts/FindInstructionImmediate.java`
+  searches decoded instructions by mnemonic/scalar immediate. Searching
+  `li 0x60` found seven relevant command stores at `0x002caa38`,
+  `0x002cb810`, `0x002e1340`, `0x002e8050`, `0x002e8a04`, `0x002e8ab0`, and
+  `0x002ee0c8`. Each emits command `0x60`, one pointer argument, and advances
+  the writer by eight bytes.
+
+Host-only replacement probe:
+
+- The same default-off, `BLUS30161`-gated property now records one packed
+  atomic breadcrumb after each of the seven exact command stores and one after
+  publisher terminator store `0x002ac620`. On an actual invalid command only,
+  the existing capped logger matches `fault_address - 8` to its most recent
+  emitter and the selected buffer to its most recent published end, then logs
+  emitter CIA plus `inside`, `at_end`, or `past_end` relation.
+- The hot diagnostic path uses bounded atomic rings with no allocation, lock,
+  guest-memory write, parser recovery, or control-flow change. Normal/off
+  objects remain excluded by the existing probe cache-key bit.
+- `git diff --check` passes. Android ARM64 RelWithDebInfo compiled and linked
+  successfully; the new host artifact is `1,349,690,912` bytes with SHA256
+  `47BC2679B9DFE9DC1E1BDC099887CB297AF6E07A1586E2C9E87BCDFBA63BC007`.
+  It was not deployed or launched.
+
+Decision: keep the Thor stopped for the rest of this thermal round. In one
+later cool round, deploy exact `47BC...C007`, enable only the dispatch probe,
+run one guarded route, and stop. Use `command60_emitter`, `published_end`, and
+`publish_relation` to isolate the producer function or publication race before
+changing guest behavior; do not mask the bad word or broaden interpreter mode.

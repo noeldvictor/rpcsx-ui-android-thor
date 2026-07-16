@@ -621,7 +621,29 @@ namespace
 	constexpr u32 thor_es_parser_end = 0x002afce0;
 	constexpr u32 thor_es_dispatch_load_first = 0x002acc54;
 	constexpr u32 thor_es_dispatch_load_next = 0x002acc9c;
+	constexpr u32 thor_es_publish_terminator_store = 0x002ac620;
+	constexpr std::array<u32, 7> thor_es_command60_stores{
+		0x002caa38,
+		0x002cb810,
+		0x002e1340,
+		0x002e8050,
+		0x002e8a04,
+		0x002e8ab0,
+		0x002ee0c8,
+	};
 	constexpr u32 thor_es_draw_stream_size = 0x18'0000;
+	constexpr usz thor_es_command60_event_capacity = 4096;
+	constexpr usz thor_es_publish_event_capacity = 256;
+	static_assert((thor_es_command60_event_capacity & (thor_es_command60_event_capacity - 1)) == 0);
+	static_assert((thor_es_publish_event_capacity & (thor_es_publish_event_capacity - 1)) == 0);
+
+	// Each entry is a single atomic word so the fault-only reader can never see
+	// a torn producer/publisher breadcrumb. Command entries pack address:CIA;
+	// publish entries pack buffer-base:end-pointer.
+	std::array<atomic_t<u64>, thor_es_command60_event_capacity> thor_es_command60_events{};
+	std::array<atomic_t<u64>, thor_es_publish_event_capacity> thor_es_publish_events{};
+	atomic_t<u64> thor_es_command60_event_cursor = 0;
+	atomic_t<u64> thor_es_publish_event_cursor = 0;
 
 	thor_es_command_interp_mode get_thor_es_command_interp_mode()
 	{
@@ -747,18 +769,81 @@ bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size)
 	const bool contains_dispatch_load =
 		(address <= thor_es_dispatch_load_first && thor_es_dispatch_load_first < end) ||
 		(address <= thor_es_dispatch_load_next && thor_es_dispatch_load_next < end);
+	const bool contains_publisher =
+		address <= thor_es_publish_terminator_store && thor_es_publish_terminator_store < end;
+	bool contains_emitter = false;
+	for (const u32 cia : thor_es_command60_stores)
+	{
+		contains_emitter |= address <= cia && cia < end;
+	}
+	const bool contains_probe_site = contains_dispatch_load || contains_publisher || contains_emitter;
 
-	if (contains_dispatch_load)
+	if (contains_probe_site)
 	{
 		static atomic_t<bool> logged = false;
 		if (!logged.exchange(true))
 		{
-			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe enabled: loads=[0x%x,0x%x]",
-				thor_es_dispatch_load_first, thor_es_dispatch_load_next);
+			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe enabled: loads=[0x%x,0x%x] "
+				"publisher=0x%x command60_emitters=%u",
+				thor_es_dispatch_load_first, thor_es_dispatch_load_next,
+				thor_es_publish_terminator_store, static_cast<u32>(thor_es_command60_stores.size()));
 		}
 	}
 
-	return contains_dispatch_load;
+	return contains_probe_site;
+}
+
+void ppu_thor_es_command60_probe(ppu_thread&, u64 stream_pointer, u32 cia)
+{
+	const bool known_emitter = std::find(thor_es_command60_stores.begin(),
+		thor_es_command60_stores.end(), cia) != thor_es_command60_stores.end();
+	if (Emu.GetTitleID() != "BLUS30161" || !get_thor_es_dispatch_probe_enabled() || !known_emitter)
+	{
+		return;
+	}
+
+	const u32 address = static_cast<u32>(stream_pointer);
+	const u64 cursor = thor_es_command60_event_cursor.fetch_add(1);
+	thor_es_command60_events[cursor & (thor_es_command60_event_capacity - 1)]
+		.release(static_cast<u64>(address) << 32 | cia);
+}
+
+void ppu_thor_es_publish_probe(ppu_thread&, u64 object, u64 end_pointer, u32 cia)
+{
+	if (Emu.GetTitleID() != "BLUS30161" || !get_thor_es_dispatch_probe_enabled() ||
+		cia != thor_es_publish_terminator_store)
+	{
+		return;
+	}
+
+	const u32 object_address = static_cast<u32>(object);
+	const u32 end_address = static_cast<u32>(end_pointer);
+	if (object_address > 0xffff'ffffu - 0x18)
+	{
+		return;
+	}
+
+	be_t<u32> guest_buffers[2]{};
+	if (!vm::try_access(object_address + 0x14, guest_buffers, sizeof(guest_buffers), false))
+	{
+		return;
+	}
+
+	const u32 buffer0 = guest_buffers[0];
+	const u32 buffer1 = guest_buffers[1];
+	const u32 selected = end_address >= buffer0 && end_address - buffer0 <= thor_es_draw_stream_size
+		? buffer0
+		: end_address >= buffer1 && end_address - buffer1 <= thor_es_draw_stream_size
+			? buffer1
+			: 0;
+	if (!selected)
+	{
+		return;
+	}
+
+	const u64 cursor = thor_es_publish_event_cursor.fetch_add(1);
+	thor_es_publish_events[cursor & (thor_es_publish_event_capacity - 1)]
+		.release(static_cast<u64>(selected) << 32 | end_address);
 }
 
 void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command,
@@ -810,6 +895,49 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 	const u32 write_offset = selected && write >= selected &&
 		write - selected <= thor_es_draw_stream_size ? write - selected : umax;
 
+	u32 command60_emitter_cia = 0;
+	u32 command60_event_age = umax;
+	if (address >= 8)
+	{
+		const u32 command60_address = address - 8;
+		const u64 cursor = thor_es_command60_event_cursor.load();
+		const u64 event_count = std::min<u64>(cursor, thor_es_command60_event_capacity);
+		for (u64 age = 0; age < event_count; age++)
+		{
+			const u64 event = thor_es_command60_events[(cursor - age - 1) &
+				(thor_es_command60_event_capacity - 1)].load();
+			if (static_cast<u32>(event >> 32) == command60_address)
+			{
+				command60_emitter_cia = static_cast<u32>(event);
+				command60_event_age = static_cast<u32>(age);
+				break;
+			}
+		}
+	}
+
+	u32 published_end = 0;
+	u32 publish_event_age = umax;
+	if (selected)
+	{
+		const u64 cursor = thor_es_publish_event_cursor.load();
+		const u64 event_count = std::min<u64>(cursor, thor_es_publish_event_capacity);
+		for (u64 age = 0; age < event_count; age++)
+		{
+			const u64 event = thor_es_publish_events[(cursor - age - 1) &
+				(thor_es_publish_event_capacity - 1)].load();
+			if (static_cast<u32>(event >> 32) == selected)
+			{
+				published_end = static_cast<u32>(event);
+				publish_event_age = static_cast<u32>(age);
+				break;
+			}
+		}
+	}
+	const char* const publish_relation = !published_end ? "unknown" :
+		address < published_end ? "inside" : address == published_end ? "at_end" : "past_end";
+	const u32 published_end_offset = selected && published_end >= selected &&
+		published_end - selected <= thor_es_draw_stream_size ? published_end - selected : umax;
+
 	u32 reread = 0;
 	const bool reread_valid = read_u32(address, reread);
 	std::array<be_t<u32>, 12> window{};
@@ -822,12 +950,16 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 		"object=0x%x address=0x%x offset=0x%x command=0x%x reread=0x%x "
 		"reread_valid=%u command_stable=%u parser_mode=0x%x layout_valid=%u "
 		"buffer0=0x%x buffer1=0x%x selected=0x%x write=0x%x "
-		"write_offset=0x%x flags=0x%x window_valid=%u window_start=0x%x "
+		"write_offset=0x%x flags=0x%x command60_emitter=0x%x "
+		"command60_event_age=%u published_end=0x%x published_end_offset=0x%x "
+		"publish_event_age=%u publish_relation=%s window_valid=%u window_start=0x%x "
 		"window=[0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x]",
 		hit, ppu.id, cia, object_address, address, stream_offset, command_word,
 		reread, reread_valid, reread_valid && reread == command_word,
 		static_cast<u32>(parser_mode), layout_valid, buffer0, buffer1, selected,
-		write, write_offset, flags, window_valid, window_start,
+		write, write_offset, flags, command60_emitter_cia, command60_event_age,
+		published_end, published_end_offset, publish_event_age, publish_relation,
+		window_valid, window_start,
 		static_cast<u32>(window[0]), static_cast<u32>(window[1]),
 		static_cast<u32>(window[2]), static_cast<u32>(window[3]),
 		static_cast<u32>(window[4]), static_cast<u32>(window[5]),
@@ -5086,6 +5218,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			{"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
 			{"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
 			{"__thor_es_command_interp", reinterpret_cast<u64>(ppu_thor_es_command_interp)},
+			{"__thor_es_command60_probe", reinterpret_cast<u64>(ppu_thor_es_command60_probe)},
+			{"__thor_es_publish_probe", reinterpret_cast<u64>(ppu_thor_es_publish_probe)},
 			{"__thor_es_dispatch_probe", reinterpret_cast<u64>(ppu_thor_es_dispatch_probe)},
 			{"__escape", reinterpret_cast<u64>(+ppu_escape)},
 			{"__read_maybe_mmio32", reinterpret_cast<u64>(+ppu_read_mmio_aware_u32)},
