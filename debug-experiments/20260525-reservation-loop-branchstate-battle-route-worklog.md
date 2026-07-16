@@ -11642,3 +11642,62 @@ Decision:
   first battle.
 - No Android build, ADB query, deployment, Thor launch, capture, profiler, or
   sensor read occurred in this round.
+
+## 2026-07-15 Current-Upstream 400% Windows Promotion Proof
+
+Route repair:
+
+- The first uncapped all-core attempt entered a story cutscene and held about
+  `120 FPS`, so it was rejected rather than mislabeled as gameplay. Its old
+  load-complete heuristic had matched dark cutscene geometry.
+- `tools/windows_rpcs3_lab.ps1` now gates the real title menu, exact
+  Path-to-Tenuto save row, load-complete banner, green playable field, and real
+  first-battle tutorial prompt. The completion classifier additionally requires
+  warm dialog fill plus bright text, eliminating the cutscene false positive.
+- At title `240 FPS`, `down:300` and `down:80` repeated twice into Options.
+  Frame-scaled `down:20` selected Load exactly. Field/battle movement was scaled
+  from the capped route by guest frame count.
+- `classify_eternal_sonata_load_target.ps1` now tolerates absent optional
+  damaged/debug exemplars, has a current known-good fallback, and can classify
+  one candidate screenshot. The live gate uses that single-image path instead
+  of rescanning every prior PNG; the local validation completed in about
+  `485 ms`.
+
+Field and first battle:
+
+- Run:
+  `20260715-230705-clean-upstream1269ebf-allcore-uncap240-frame-scaled20-first-battle-speed-windows`.
+- Exact current-upstream `1269ebff` binary/config, normal all-core scheduling,
+  frame/vblank `240/240`, Accurate SPU Reservations on, Accurate SPU DMA off,
+  and every custom probe/fast path off.
+- Title gate passed at `47s`; Load selection was correct at `48s`; the exact
+  Path-to-Tenuto row passed at `52s`; real load completion passed at `56s`; the
+  correct playable field passed at `57s`; the real tutorial prompt passed at
+  `69s`; active battle appeared at `72s` and stayed visually correct through
+  the `150s` cutoff.
+- Thirty field/battle samples from `59s` through `150s` averaged `120.002 FPS`,
+  minimum `119.85`, maximum `120.38`. Actionable fatal hits were `0`; host
+  snapshots were external-clean. Manual early and late frames showed no black
+  output, missing UI, corruption, or visible flicker.
+
+Options/menu:
+
+- Matching run:
+  `20260715-231132-clean-upstream1269ebf-allcore-uncap240-frame-scaled20-options-speed-windows`.
+- The frame-scaled two-step title route selected Options exactly, opened the
+  complete Options page at `53s`, and held correct visuals through `70s`.
+- Six Options samples averaged `240.072 FPS`, minimum `239.88`, maximum
+  `240.40`; actionable fatal hits were `0` and all host snapshots were clean.
+
+Classification and decision:
+
+- `speed-win` for the clean-current-upstream Windows performance envelope.
+- `windows-400-percent-promotion-proof`.
+- `valid-field-triage`, `valid-options-counterproof`, and valid first-battle
+  proof on the same exact binary/config family.
+- The standing Windows 200% field/menu/first-battle gate is satisfied. This does
+  not by itself prove Thor FPS or thermals. The next Android/Thor action may be
+  one short baseline/port check only after a temperature query reports a safe
+  device; abort rather than heat-soak the handheld.
+- No Android build, ADB operation, Thor launch, capture, or sensor query was
+  used for these Windows proofs.

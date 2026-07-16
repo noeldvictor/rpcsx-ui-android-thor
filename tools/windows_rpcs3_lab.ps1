@@ -972,6 +972,137 @@ Player 7 Input:
     Write-LabLine $RunLog "- Agent input profile: active map $activeStatus ($activePath)"
 }
 
+function Test-LabTitleMenuScreenshot {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    if ((Get-Item -LiteralPath $Path).Length -lt 500000) {
+        return $false
+    }
+
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+    } catch {
+        return $false
+    }
+
+    try {
+        if ($bitmap.Width -lt 900 -or $bitmap.Height -lt 600) {
+            return $false
+        }
+
+        # The three title choices occupy separate, stable horizontal bands.
+        # Requiring all three keeps subtitle-only cutscenes from satisfying the
+        # gate, while the blue-field check rejects the tan Options/Load pages.
+        $brightRatios = foreach ($band in @(@(520, 585), @(580, 635), @(630, 690))) {
+            $bright = 0
+            $samples = 0
+            $startY = [int][Math]::Floor($band[0] * $bitmap.Height / 759.0)
+            $endY = [int][Math]::Floor($band[1] * $bitmap.Height / 759.0)
+            $startX = [int][Math]::Floor(480 * $bitmap.Width / 1296.0)
+            $endX = [int][Math]::Floor(820 * $bitmap.Width / 1296.0)
+            for ($y = $startY; $y -lt $endY; $y += 2) {
+                for ($x = $startX; $x -lt $endX; $x += 2) {
+                    $pixel = $bitmap.GetPixel($x, $y)
+                    if ($pixel.R -ge 180 -and $pixel.G -ge 180 -and $pixel.B -ge 180) {
+                        $bright++
+                    }
+                    $samples++
+                }
+            }
+            if ($samples -eq 0) { 0.0 } else { $bright / [double]$samples }
+        }
+
+        $blue = 0
+        $blueSamples = 0
+        for ($y = [int][Math]::Floor(80 * $bitmap.Height / 759.0); $y -lt [int][Math]::Floor(500 * $bitmap.Height / 759.0); $y += 8) {
+            for ($x = [int][Math]::Floor(250 * $bitmap.Width / 1296.0); $x -lt [int][Math]::Floor(1050 * $bitmap.Width / 1296.0); $x += 8) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.B -ge ($pixel.R + 20) -and $pixel.B -ge ($pixel.G + 15)) {
+                    $blue++
+                }
+                $blueSamples++
+            }
+        }
+
+        $blueRatio = if ($blueSamples -eq 0) { 0.0 } else { $blue / [double]$blueSamples }
+        return (
+            $brightRatios.Count -eq 3 -and
+            $brightRatios[0] -ge 0.020 -and
+            $brightRatios[1] -ge 0.020 -and
+            $brightRatios[2] -ge 0.020 -and
+            $blueRatio -ge 0.35
+        )
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
+function Invoke-LabTitleMenuGate {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$ScreenshotDir,
+        [string]$RunLog,
+        [datetime]$LaunchTime = (Get-Date),
+        [int]$TimeoutMilliseconds = 90000,
+        [int]$PollMilliseconds = 1000
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ScreenshotDir)) {
+        Write-LabLine $RunLog "Title-menu gate failed: no screenshot directory was provided."
+        return $false
+    }
+    if ($TimeoutMilliseconds -le 0) { $TimeoutMilliseconds = 90000 }
+    if ($PollMilliseconds -le 0) { $PollMilliseconds = 1000 }
+
+    $runDir = Split-Path -Parent $ScreenshotDir
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
+    $attempt = 1
+    Write-LabLine $RunLog "Title-menu gate polling for NEW GAME / LOAD / OPTIONS for up to ${TimeoutMilliseconds}ms."
+
+    while ($true) {
+        if ($Process) {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+                $marker = Join-Path $runDir "title-menu-gate-failed.txt"
+                "Title-menu gate failed at ${elapsedSeconds}s: RPCS3 exited before the menu appeared." | Set-Content -LiteralPath $marker -Encoding UTF8
+                Write-LabLine $RunLog "Title-menu gate failed: RPCS3 exited before the menu appeared."
+                return $false
+            }
+        }
+
+        $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+        $tag = if ($attempt -eq 1) { "title-menu-gate" } else { "title-menu-gate-$attempt" }
+        $screenshotPath = Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
+        if (Test-LabTitleMenuScreenshot -Path $screenshotPath) {
+            Write-LabLine $RunLog "Title-menu gate passed after attempt ${attempt} at ${elapsedSeconds}s."
+            return $true
+        }
+        if (Test-LabActionableFatalScreenshot -Path $screenshotPath) {
+            $marker = Join-Path $runDir "title-menu-gate-failed.txt"
+            "Title-menu gate stopped at ${elapsedSeconds}s on a probable crash/device-loss overlay." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Title-menu gate failed: probable crash/device-loss overlay."
+            return $false
+        }
+
+        if ((Get-Date) -ge $deadline) {
+            $marker = Join-Path $runDir "title-menu-gate-failed.txt"
+            "Title-menu gate timed out at ${elapsedSeconds}s after ${attempt} screenshot(s)." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Title-menu gate failed: timed out after ${TimeoutMilliseconds}ms."
+            Write-LabLine $RunLog "Title-menu gate marker: $marker"
+            return $false
+        }
+
+        $remainingMs = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+        Start-Sleep -Milliseconds ([Math]::Min($PollMilliseconds, $remainingMs))
+        $attempt++
+    }
+}
+
 function Test-LabLoadCompleteScreenshot {
     param([string]$Path)
 
@@ -1012,7 +1143,35 @@ function Test-LabLoadCompleteScreenshot {
             if (($bottom.R + $bottom.G + $bottom.B) -lt 190) { $bottomDark++ }
         }
 
-        return $topDark -ge 10 -and $bottomDark -ge 8
+        # A cutscene can also have dark pixels at both border rows. Require the
+        # warm dialog body and bright banner text in the center region so blue
+        # story frames cannot masquerade as a completed save load.
+        $warm = 0
+        $brightText = 0
+        $regionSamples = 0
+        $startX = [int][Math]::Floor(500 * $bitmap.Width / 1296.0)
+        $endX = [int][Math]::Floor(800 * $bitmap.Width / 1296.0)
+        for ($y = $topY; $y -le $bottomY; $y += 2) {
+            for ($x = $startX; $x -le $endX; $x += 2) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.R -ge 110 -and $pixel.R -ge ($pixel.B + 35) -and $pixel.G -ge ($pixel.B + 15)) {
+                    $warm++
+                }
+                if ($pixel.R -ge 190 -and $pixel.G -ge 170 -and $pixel.B -ge 120) {
+                    $brightText++
+                }
+                $regionSamples++
+            }
+        }
+
+        $warmRatio = if ($regionSamples -eq 0) { 0.0 } else { $warm / [double]$regionSamples }
+        $brightTextRatio = if ($regionSamples -eq 0) { 0.0 } else { $brightText / [double]$regionSamples }
+        return (
+            $topDark -ge 10 -and
+            $bottomDark -ge 8 -and
+            $warmRatio -ge 0.25 -and
+            $brightTextRatio -ge 0.015
+        )
     } finally {
         $bitmap.Dispose()
     }
@@ -1059,12 +1218,252 @@ function Invoke-LabLoadCompleteGate {
             Write-LabLine $RunLog "Load-complete gate passed after attempt ${attempt} at ${elapsedSeconds}s."
             return $true
         }
+        if (Test-LabActionableFatalScreenshot -Path $screenshotPath) {
+            $marker = Join-Path $runDir "load-complete-gate-failed.txt"
+            "Load-complete gate stopped at ${elapsedSeconds}s on a probable crash/device-loss overlay." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Load-complete gate failed: probable crash/device-loss overlay."
+            return $false
+        }
 
         if ((Get-Date) -ge $deadline) {
             $marker = Join-Path $runDir "load-complete-gate-failed.txt"
             "Load-complete gate timed out at ${elapsedSeconds}s after ${attempt} screenshot(s)." | Set-Content -LiteralPath $marker -Encoding UTF8
             Write-LabLine $RunLog "Load-complete gate failed: timed out after ${TimeoutMilliseconds}ms."
             Write-LabLine $RunLog "Load-complete gate marker: $marker"
+            return $false
+        }
+
+        $remainingMs = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+        Start-Sleep -Milliseconds ([Math]::Min($PollMilliseconds, $remainingMs))
+        $attempt++
+    }
+}
+
+function Test-LabPathToTenutoFieldScreenshot {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    if ((Get-Item -LiteralPath $Path).Length -lt 1000000) {
+        return $false
+    }
+
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+    } catch {
+        return $false
+    }
+
+    try {
+        if ($bitmap.Width -lt 900 -or $bitmap.Height -lt 600) {
+            return $false
+        }
+
+        $green = 0
+        $blue = 0
+        $dark = 0
+        $samples = 0
+        for ($y = [int][Math]::Floor(40 * $bitmap.Height / 759.0); $y -lt [int][Math]::Floor(730 * $bitmap.Height / 759.0); $y += 8) {
+            for ($x = [int][Math]::Floor(180 * $bitmap.Width / 1296.0); $x -lt [int][Math]::Floor(1260 * $bitmap.Width / 1296.0); $x += 8) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.G -ge ($pixel.R + 15) -and $pixel.G -ge ($pixel.B + 15)) { $green++ }
+                if ($pixel.B -ge ($pixel.R + 20) -and $pixel.B -ge ($pixel.G + 15)) { $blue++ }
+                if (($pixel.R + $pixel.G + $pixel.B) -lt 90) { $dark++ }
+                $samples++
+            }
+        }
+
+        if ($samples -eq 0) {
+            return $false
+        }
+        return (
+            ($green / [double]$samples) -ge 0.55 -and
+            ($blue / [double]$samples) -lt 0.15 -and
+            ($dark / [double]$samples) -lt 0.40
+        )
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
+function Invoke-LabPathToTenutoFieldGate {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$ScreenshotDir,
+        [string]$RunLog,
+        [datetime]$LaunchTime = (Get-Date),
+        [int]$TimeoutMilliseconds = 30000,
+        [int]$PollMilliseconds = 1000
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ScreenshotDir)) {
+        Write-LabLine $RunLog "Path-to-Tenuto field gate failed: no screenshot directory was provided."
+        return $false
+    }
+    if ($TimeoutMilliseconds -le 0) { $TimeoutMilliseconds = 30000 }
+    if ($PollMilliseconds -le 0) { $PollMilliseconds = 1000 }
+
+    $runDir = Split-Path -Parent $ScreenshotDir
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
+    $attempt = 1
+    Write-LabLine $RunLog "Path-to-Tenuto field gate polling for the green playable field for up to ${TimeoutMilliseconds}ms."
+
+    while ($true) {
+        if ($Process) {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+                $marker = Join-Path $runDir "path-to-tenuto-field-gate-failed.txt"
+                "Path-to-Tenuto field gate failed at ${elapsedSeconds}s: RPCS3 exited before the field appeared." | Set-Content -LiteralPath $marker -Encoding UTF8
+                Write-LabLine $RunLog "Path-to-Tenuto field gate failed: RPCS3 exited before the field appeared."
+                return $false
+            }
+        }
+
+        $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+        $tag = if ($attempt -eq 1) { "path-to-tenuto-field-gate" } else { "path-to-tenuto-field-gate-$attempt" }
+        $screenshotPath = Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
+        if (Test-LabPathToTenutoFieldScreenshot -Path $screenshotPath) {
+            Write-LabLine $RunLog "Path-to-Tenuto field gate passed after attempt ${attempt} at ${elapsedSeconds}s."
+            return $true
+        }
+        if (Test-LabActionableFatalScreenshot -Path $screenshotPath) {
+            $marker = Join-Path $runDir "path-to-tenuto-field-gate-failed.txt"
+            "Path-to-Tenuto field gate stopped at ${elapsedSeconds}s on a probable crash/device-loss overlay." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Path-to-Tenuto field gate failed: probable crash/device-loss overlay."
+            return $false
+        }
+
+        if ((Get-Date) -ge $deadline) {
+            $marker = Join-Path $runDir "path-to-tenuto-field-gate-failed.txt"
+            "Path-to-Tenuto field gate timed out at ${elapsedSeconds}s after ${attempt} screenshot(s)." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "Path-to-Tenuto field gate failed: timed out after ${TimeoutMilliseconds}ms."
+            Write-LabLine $RunLog "Path-to-Tenuto field gate marker: $marker"
+            return $false
+        }
+
+        $remainingMs = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+        Start-Sleep -Milliseconds ([Math]::Min($PollMilliseconds, $remainingMs))
+        $attempt++
+    }
+}
+
+function Test-LabFirstBattlePromptScreenshot {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    if ((Get-Item -LiteralPath $Path).Length -lt 1000000) {
+        return $false
+    }
+
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+    } catch {
+        return $false
+    }
+
+    try {
+        if ($bitmap.Width -lt 900 -or $bitmap.Height -lt 600) {
+            return $false
+        }
+
+        $warm = 0
+        $bright = 0
+        $dark = 0
+        $samples = 0
+        for ($y = [int][Math]::Floor(485 * $bitmap.Height / 759.0); $y -le [int][Math]::Floor(645 * $bitmap.Height / 759.0); $y += 2) {
+            for ($x = [int][Math]::Floor(395 * $bitmap.Width / 1296.0); $x -le [int][Math]::Floor(900 * $bitmap.Width / 1296.0); $x += 2) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.R -ge 90 -and $pixel.R -ge ($pixel.B + 25) -and $pixel.G -ge ($pixel.B + 10)) { $warm++ }
+                if ($pixel.R -ge 190 -and $pixel.G -ge 180 -and $pixel.B -ge 160) { $bright++ }
+                if (($pixel.R + $pixel.G + $pixel.B) -lt 120) { $dark++ }
+                $samples++
+            }
+        }
+
+        $borderDark = 0
+        $borderSamples = 0
+        foreach ($referenceY in 480, 645) {
+            $y = [int][Math]::Floor($referenceY * $bitmap.Height / 759.0)
+            for ($x = [int][Math]::Floor(390 * $bitmap.Width / 1296.0); $x -le [int][Math]::Floor(910 * $bitmap.Width / 1296.0); $x += 3) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if (($pixel.R + $pixel.G + $pixel.B) -lt 160) { $borderDark++ }
+                $borderSamples++
+            }
+        }
+
+        if ($samples -eq 0 -or $borderSamples -eq 0) {
+            return $false
+        }
+        return (
+            ($warm / [double]$samples) -ge 0.50 -and
+            ($bright / [double]$samples) -ge 0.020 -and
+            ($dark / [double]$samples) -lt 0.40 -and
+            ($borderDark / [double]$borderSamples) -ge 0.40
+        )
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
+function Invoke-LabFirstBattlePromptGate {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$ScreenshotDir,
+        [string]$RunLog,
+        [datetime]$LaunchTime = (Get-Date),
+        [int]$TimeoutMilliseconds = 20000,
+        [int]$PollMilliseconds = 750
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ScreenshotDir)) {
+        Write-LabLine $RunLog "First-battle prompt gate failed: no screenshot directory was provided."
+        return $false
+    }
+    if ($TimeoutMilliseconds -le 0) { $TimeoutMilliseconds = 20000 }
+    if ($PollMilliseconds -le 0) { $PollMilliseconds = 750 }
+
+    $runDir = Split-Path -Parent $ScreenshotDir
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
+    $attempt = 1
+    Write-LabLine $RunLog "First-battle prompt gate polling for the View the tutorial dialog for up to ${TimeoutMilliseconds}ms."
+
+    while ($true) {
+        if ($Process) {
+            $Process.Refresh()
+            if ($Process.HasExited) {
+                $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+                $marker = Join-Path $runDir "first-battle-prompt-gate-failed.txt"
+                "First-battle prompt gate failed at ${elapsedSeconds}s: RPCS3 exited before the prompt appeared." | Set-Content -LiteralPath $marker -Encoding UTF8
+                Write-LabLine $RunLog "First-battle prompt gate failed: RPCS3 exited before the prompt appeared."
+                return $false
+            }
+        }
+
+        $elapsedSeconds = [int][Math]::Floor(((Get-Date) - $LaunchTime).TotalSeconds)
+        $tag = if ($attempt -eq 1) { "first-battle-prompt-gate" } else { "first-battle-prompt-gate-$attempt" }
+        $screenshotPath = Save-LabScreenshot -Process $Process -ScreenshotDir $ScreenshotDir -ElapsedSeconds $elapsedSeconds -RunLog $RunLog -Tag $tag
+        if (Test-LabFirstBattlePromptScreenshot -Path $screenshotPath) {
+            Write-LabLine $RunLog "First-battle prompt gate passed after attempt ${attempt} at ${elapsedSeconds}s."
+            return $true
+        }
+        if (Test-LabActionableFatalScreenshot -Path $screenshotPath) {
+            $marker = Join-Path $runDir "first-battle-prompt-gate-failed.txt"
+            "First-battle prompt gate stopped at ${elapsedSeconds}s on a probable crash/device-loss overlay." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "First-battle prompt gate failed: probable crash/device-loss overlay."
+            return $false
+        }
+
+        if ((Get-Date) -ge $deadline) {
+            $marker = Join-Path $runDir "first-battle-prompt-gate-failed.txt"
+            "First-battle prompt gate timed out at ${elapsedSeconds}s after ${attempt} screenshot(s)." | Set-Content -LiteralPath $marker -Encoding UTF8
+            Write-LabLine $RunLog "First-battle prompt gate failed: timed out after ${TimeoutMilliseconds}ms."
+            Write-LabLine $RunLog "First-battle prompt gate marker: $marker"
             return $false
         }
 
@@ -1356,7 +1755,7 @@ function Invoke-LabLoadTargetGate {
 
         $output = @()
         try {
-            $output = @(& $classifier -RunDir $runDir -RequirePathToTenuto 2>&1)
+            $output = @(& $classifier -RunDir $runDir -CandidateScreenshotPaths $screenshotPath -RequirePathToTenuto -NoWriteSummary 2>&1)
             foreach ($line in @($output)) {
                 Write-LabLine $RunLog "Load target gate: $line"
             }
@@ -1561,6 +1960,21 @@ function Invoke-LabInputMacro {
             continue
         }
 
+        if ($nameLower -eq "gate_title_menu" -or $nameLower -eq "wait_title_menu" -or $nameLower -eq "assert_title_menu") {
+            $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 90000 }
+            Write-LabLine $RunLog "Input title-menu gate (timeout ${gateTimeoutMilliseconds}ms)"
+            $gatePassed = Invoke-LabTitleMenuGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
+            if (-not $gatePassed) {
+                Write-LabLine $RunLog "Input macro aborted before title-menu navigation because the gate failed."
+                if (-not $Process.HasExited) {
+                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds 500
+                }
+                return
+            }
+            continue
+        }
+
         if ($nameLower -eq "gate_load_target" -or $nameLower -eq "assert_load_target" -or $nameLower -eq "load_target_gate") {
             $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 15000 }
             Write-LabLine $RunLog "Input load target gate (timeout ${gateTimeoutMilliseconds}ms)"
@@ -1582,6 +1996,36 @@ function Invoke-LabInputMacro {
             $gatePassed = Invoke-LabLoadCompleteGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
             if (-not $gatePassed) {
                 Write-LabLine $RunLog "Input macro aborted before dismissing the load-complete banner because the gate failed."
+                if (-not $Process.HasExited) {
+                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds 500
+                }
+                return
+            }
+            continue
+        }
+
+        if ($nameLower -eq "gate_path_to_tenuto_field" -or $nameLower -eq "gate_field" -or $nameLower -eq "assert_field") {
+            $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 30000 }
+            Write-LabLine $RunLog "Input Path-to-Tenuto field gate (timeout ${gateTimeoutMilliseconds}ms)"
+            $gatePassed = Invoke-LabPathToTenutoFieldGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
+            if (-not $gatePassed) {
+                Write-LabLine $RunLog "Input macro aborted before field movement because the gate failed."
+                if (-not $Process.HasExited) {
+                    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds 500
+                }
+                return
+            }
+            continue
+        }
+
+        if ($nameLower -eq "gate_first_battle_prompt" -or $nameLower -eq "wait_first_battle_prompt" -or $nameLower -eq "assert_first_battle_prompt") {
+            $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 20000 }
+            Write-LabLine $RunLog "Input first-battle prompt gate (timeout ${gateTimeoutMilliseconds}ms)"
+            $gatePassed = Invoke-LabFirstBattlePromptGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
+            if (-not $gatePassed) {
+                Write-LabLine $RunLog "Input macro aborted before first-battle prompt input because the gate failed."
                 if (-not $Process.HasExited) {
                     Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
                     Start-Sleep -Milliseconds 500

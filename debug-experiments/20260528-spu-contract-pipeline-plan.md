@@ -418,3 +418,39 @@ Next:
   with all custom paths off and the same adaptive/fatal/visual gates.
 - Do not use the monolithic custom fork for promotion and do not spend Thor
   heat until the Windows route demonstrates stable 200% moving gameplay.
+
+## 2026-07-15 Windows 200% Gate Cleared
+
+Result:
+
+- Clean current upstream `1269ebff`, normal all-core scheduling, `240/240`
+  frame/vblank, Accurate SPU Reservations on, Accurate SPU DMA off, and all
+  custom probes/fast modes off reached the correct Path-to-Tenuto field and
+  first battle in
+  `20260715-230705-clean-upstream1269ebf-allcore-uncap240-frame-scaled20-first-battle-speed-windows`.
+- Thirty field/battle samples averaged `120.002 FPS` (`119.85` to `120.38`),
+  with correct battle visuals through `150s`, zero actionable fatal hits, and
+  external-clean host evidence.
+- Exact matching Options run
+  `20260715-231132-clean-upstream1269ebf-allcore-uncap240-frame-scaled20-options-speed-windows`
+  held the complete page through `70s` and averaged `240.072 FPS` across six
+  samples, with zero actionable fatal hits and clean host evidence.
+- The full Windows field/menu/first-battle 200% requirement is therefore met.
+
+Harness contract:
+
+- Use `gate_title_menu`, `gate_load_target`, `gate_load_complete`, `gate_field`,
+  and `gate_first_battle_prompt` for uncapped routes.
+- At title `240 FPS`, use a `20 ms` directional pulse; longer `80/300 ms`
+  pulses repeat past Load into Options. Scale movement by guest frame count.
+- The load-target classifier now accepts one candidate path, avoiding repeated
+  full-run screenshot scans.
+
+Next:
+
+- Thor is no longer blocked by the Windows proof gate, but device work must be
+  thermally bounded: read temperature first, do not launch if hot, and use one
+  short baseline/port validation rather than a heat-soak.
+- Treat the `120 FPS` result as a Windows performance envelope, not predicted
+  Thor FPS. Any Android claim still needs real Adreno frame-time and visual
+  evidence.

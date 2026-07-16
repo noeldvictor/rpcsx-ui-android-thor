@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RunDir,
 
+    [string[]]$CandidateScreenshotPaths = @(),
+
     [string]$GoodExemplar = "",
 
     [string]$BadExemplar = "",
@@ -409,6 +411,7 @@ if ($DamagedExemplarRows.Count -eq 0) {
 $resolvedRunDir = Resolve-RepoPath -Root $repoRoot -Path $RunDir
 $resolvedGoodExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths @(
     $GoodExemplar,
+    "debug-captures\windows-lab\20260715-222122-clean-upstream1269ebf-allcore-adaptive-first-battle-windows\screenshots\screenshot-0081s-load-save-list.png",
     "debug-captures\windows-lab\20260602-165106-cpu4-titleload-blackcontrol-resloop-diagnostic-windows-windows\screenshots\screenshot-0192s-load-target-gate-33.png",
     "debug-captures\windows-lab\20260601-212031-cpu4-stateaware-loadtarget-savecheck-diagnostic-windows-windows\screenshots\screenshot-0069s.png"
 )
@@ -424,11 +427,14 @@ $resolvedDamagedExemplar = Resolve-FirstExistingRepoPath -Root $repoRoot -Paths 
 if (-not (Test-Path -LiteralPath $resolvedRunDir -PathType Container)) {
     throw "Run directory not found: $resolvedRunDir"
 }
-if (-not (Test-Path -LiteralPath $resolvedGoodExemplar -PathType Leaf)) {
+if ([string]::IsNullOrWhiteSpace($resolvedGoodExemplar) -or -not (Test-Path -LiteralPath $resolvedGoodExemplar -PathType Leaf)) {
     throw "Path-to-Tenuto exemplar not found: $resolvedGoodExemplar"
 }
 $badGuardEnabled = (-not [string]::IsNullOrWhiteSpace($resolvedBadExemplar)) -and (Test-Path -LiteralPath $resolvedBadExemplar -PathType Leaf)
-$damagedGuardEnabled = Test-Path -LiteralPath $resolvedDamagedExemplar -PathType Leaf
+$damagedGuardEnabled = (
+    -not [string]::IsNullOrWhiteSpace($resolvedDamagedExemplar) -and
+    (Test-Path -LiteralPath $resolvedDamagedExemplar -PathType Leaf)
+)
 
 Add-Type -AssemblyName System.Drawing -ErrorAction Stop
 
@@ -447,8 +453,18 @@ if (-not (Test-Path -LiteralPath $screenshotDir -PathType Container)) {
     }
 }
 
-$screenshots = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -File |
-    Sort-Object @{ Expression = { Get-ScreenshotSecond $_.Name } }, Name)
+$screenshots = if ($CandidateScreenshotPaths.Count -gt 0) {
+    @($CandidateScreenshotPaths | ForEach-Object {
+        $candidatePath = Resolve-RepoPath -Root $repoRoot -Path $_
+        if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+            throw "Candidate screenshot not found: $candidatePath"
+        }
+        Get-Item -LiteralPath $candidatePath
+    } | Sort-Object @{ Expression = { Get-ScreenshotSecond $_.Name } }, Name)
+} else {
+    @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -File |
+        Sort-Object @{ Expression = { Get-ScreenshotSecond $_.Name } }, Name)
+}
 if ($screenshots.Count -eq 0) {
     throw "No PNG screenshots found in $screenshotDir"
 }

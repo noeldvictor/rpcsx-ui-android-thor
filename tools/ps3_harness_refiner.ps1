@@ -966,6 +966,79 @@ function Test-HarnessLaunchMacroTruncated {
     return $false
 }
 
+function Test-CurrentUpstreamAllCoreOptionsProof {
+    param([AllowNull()][object]$RunEvidence)
+
+    if (-not $RunEvidence -or ($RunEvidence.Fatal -and $RunEvidence.Fatal.HasFatal)) {
+        return $false
+    }
+
+    $label = if ($RunEvidence.Lab -and $RunEvidence.Lab.Label) { $RunEvidence.Lab.Label } else { "" }
+    $text = "$($RunEvidence.Name) $label"
+    $macro = if ($RunEvidence.Lab -and $RunEvidence.Lab.InputMacro) { $RunEvidence.Lab.InputMacro } else { "" }
+    if ($text -notlike "*clean-upstream*" -or
+        $text -notlike "*allcore*" -or
+        $text -notlike "*options-speed*" -or
+        $text -like "*battle*" -or
+        $RunEvidence.Lab.FrameLimit -ne "240" -or
+        $RunEvidence.Lab.VblankRate -ne "240" -or
+        $macro -notlike "*gate_title_menu:*" -or
+        $macro -notlike "*shot:options-page*" -or
+        $macro -notlike "*shot:options-hold*") {
+        return $false
+    }
+
+    if (-not $RunEvidence.Visual -or
+        $RunEvidence.Visual.ScreenshotCount -eq 0 -or
+        $RunEvidence.Visual.Status -ne "NO_FIELD_LIKE_SCREENSHOT") {
+        return $false
+    }
+
+    $counts = $RunEvidence.Visual.ClassCounts
+    $black = if ($counts.ContainsKey("black-overlay-small-png")) { [int]$counts["black-overlay-small-png"] } else { 0 }
+    $loading = if ($counts.ContainsKey("loading-like-small-png")) { [int]$counts["loading-like-small-png"] } else { 0 }
+    $otherSmall = if ($counts.ContainsKey("wrong-window-or-other-small-png")) { [int]$counts["wrong-window-or-other-small-png"] } else { 0 }
+    $nonFieldSmall = if ($counts.ContainsKey("cutscene-or-nonfield-small-png")) { [int]$counts["cutscene-or-nonfield-small-png"] } else { 0 }
+
+    # The title and full Options pages are intentionally small non-field PNGs.
+    # The explicit title/Options gate macro distinguishes this proof from a
+    # mislabeled cutscene or an arbitrary wrong-window capture.
+    return ($black -eq 0 -and $loading -eq 0 -and ($otherSmall + $nonFieldSmall) -ge 2)
+}
+
+function Test-CurrentUpstreamAllCoreFirstBattleProof {
+    param([AllowNull()][object]$RunEvidence)
+
+    if (-not $RunEvidence -or
+        ($RunEvidence.Fatal -and $RunEvidence.Fatal.HasFatal) -or
+        ($RunEvidence.LoadTarget -and $RunEvidence.LoadTarget.GateFailed)) {
+        return $false
+    }
+
+    $label = if ($RunEvidence.Lab -and $RunEvidence.Lab.Label) { $RunEvidence.Lab.Label } else { "" }
+    $text = "$($RunEvidence.Name) $label"
+    $macro = if ($RunEvidence.Lab -and $RunEvidence.Lab.InputMacro) { $RunEvidence.Lab.InputMacro } else { "" }
+    if ($text -notlike "*clean-upstream*" -or
+        $text -notlike "*allcore*" -or
+        $text -notlike "*first-battle-speed*" -or
+        $RunEvidence.Lab.FrameLimit -ne "240" -or
+        $RunEvidence.Lab.VblankRate -ne "240" -or
+        $macro -notlike "*gate_title_menu:*" -or
+        $macro -notlike "*gate_load_target:*" -or
+        $macro -notlike "*gate_field:*" -or
+        $macro -notlike "*gate_first_battle_prompt:*" -or
+        $macro -notlike "*shot:first-battle-active*" -or
+        $macro -notlike "*shot:first-battle-hold*") {
+        return $false
+    }
+
+    return ($RunEvidence.LoadTarget -and
+        $RunEvidence.LoadTarget.Status -eq "PATH_TO_TENUTO_PRESENT" -and
+        $RunEvidence.Visual -and
+        $RunEvidence.Visual.Status -eq "FIELD_LIKE_PRESENT" -and
+        $RunEvidence.Visual.InvalidAfterFirstField -eq 0)
+}
+
 function Get-RunDecision {
     param([object]$RunEvidence)
 
@@ -990,6 +1063,9 @@ function Get-RunDecision {
     $visual = $RunEvidence.Visual
     if ($visual.ScreenshotCount -eq 0) {
         return "not-comparable-no-screenshots"
+    }
+    if (Test-CurrentUpstreamAllCoreOptionsProof -RunEvidence $RunEvidence) {
+        return "valid-options-triage"
     }
     if (Test-Hle451cSize16BodyOptionsProof -RunEvidence $RunEvidence) {
         return "valid-options-triage"
@@ -1322,15 +1398,19 @@ $blackRuns = @($runEvidence | Where-Object { $_.Visual.PrimarySmallClass -eq "bl
 $loadingRuns = @($runEvidence | Where-Object { $_.Visual.PrimarySmallClass -eq "loading-like-small-png" -and $_.Visual.Status -ne "FIELD_LIKE_PRESENT" })
 $cutsceneRuns = @($runEvidence | Where-Object { (Test-HarnessCutsceneOrNonFieldClass -Class $_.Visual.PrimarySmallClass) -and $_.Visual.Status -ne "FIELD_LIKE_PRESENT" })
 $optionsProofRuns = @($runEvidence | Where-Object {
+    (Test-CurrentUpstreamAllCoreOptionsProof -RunEvidence $_) -or
     (Test-Hle451cSize16BodyOptionsProof -RunEvidence $_) -or
     (Test-Hle451cPreserveBodyOptionsProof -RunEvidence $_) -or
+    (Test-Hle25ccShadowDescOptionsProof -RunEvidence $_) -or
     (Test-Hle25ccBodyOptionsProof -RunEvidence $_) -or
     (Test-ReservationLoopOptionsProof -RunEvidence $_)
 })
 $wrongWindowRuns = @($runEvidence | Where-Object {
     $_.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
-    -not ((Test-Hle451cSize16BodyOptionsProof -RunEvidence $_) -or
+    -not ((Test-CurrentUpstreamAllCoreOptionsProof -RunEvidence $_) -or
+        (Test-Hle451cSize16BodyOptionsProof -RunEvidence $_) -or
         (Test-Hle451cPreserveBodyOptionsProof -RunEvidence $_) -or
+        (Test-Hle25ccShadowDescOptionsProof -RunEvidence $_) -or
         (Test-Hle25ccBodyOptionsProof -RunEvidence $_) -or
         (Test-ReservationLoopOptionsProof -RunEvidence $_) -or
         (Test-Hle25ccBodyBattleOptionsRouteMiss -RunEvidence $_))
@@ -1353,6 +1433,25 @@ $recentDiag200Rejected = @($cutsceneRuns | Where-Object {
     $_.Name -like "*loader-control-left200x2-diag200*" -or $label -like "*loader-control-left200x2-diag200*"
 }).Count -ge 1
 $latestRun = $runEvidence | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$latestCurrentUpstreamOptionsPass = Test-CurrentUpstreamAllCoreOptionsProof -RunEvidence $latestRun
+$latestCurrentUpstreamBuildToken = ""
+if ($latestCurrentUpstreamOptionsPass) {
+    $latestCurrentUpstreamText = "$($latestRun.Name) $($latestRun.Lab.Label)"
+    if ($latestCurrentUpstreamText -match '(?i)(clean-upstream[a-f0-9]+)') {
+        $latestCurrentUpstreamBuildToken = $matches[1]
+    }
+}
+$recentCurrentUpstreamFirstBattlePass = $false
+if (-not [string]::IsNullOrWhiteSpace($latestCurrentUpstreamBuildToken)) {
+    $recentCurrentUpstreamFirstBattlePass = @($runEvidence | Where-Object {
+        $runLabel = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
+        $runText = "$($_.Name) $runLabel"
+        (Test-CurrentUpstreamAllCoreFirstBattleProof -RunEvidence $_) -and
+            $runText -like "*$latestCurrentUpstreamBuildToken*"
+    }).Count -gt 0
+}
+$currentUpstreamWindowsPromotionGateCleared =
+    $latestCurrentUpstreamOptionsPass -and $recentCurrentUpstreamFirstBattlePass
 $verifierPlanPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-9e4000-verifier-plan.md"
 $hashTargetsPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-pattern-hash-targets.md"
 $shadowContractPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-shadow-native-contract.md"
@@ -3016,7 +3115,9 @@ if ($latestHle451cPreserveBodyOffBattleTopslotLeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-451c-preserve-body-off-battle-topslot-leftonly-exit" -Severity "blocker" -Evidence ("Newest preserve-body-off top-slot left-only diagnostic reached accepted field at {0}s, then RPCS3 exited after the left-only movement branch." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not fall back to the old non-top-slot no-post diagnostic. Top-slot no-post already stayed alive; shrink or repair the left-only movement branch before diagonal or preserve-body-on battle work."
 }
 
-$nextAction = if ($latestStateAwarePromptStuck) {
+$nextAction = if ($currentUpstreamWindowsPromotionGateCleared) {
+    "Current upstream all-core 240/240 has clean Path-to-Tenuto field/first-battle plus matching Options evidence at 400% gameplay speed. Do not rerun Windows CPU4 routes; next is one thermally gated Thor baseline after a safe temperature query."
+} elseif ($latestStateAwarePromptStuck) {
     "Latest state-aware one-step repair reached the load-confirm prompt and never accepted field. Do not rerun the default field macro; use the damaged-save-confirm variant with an extra Cross after the prompt and delayed screenshots."
 } elseif ($latestStateAwareSavePromptField) {
     "Latest damaged-save-confirm route repaired the load-confirm failure and reached field-like output, but it is parked on the save prompt. Dismiss the save prompt and re-test the same one-left-pulse field route before any broader battle or speed proof."
@@ -3354,7 +3455,9 @@ $nextAction = if ($latestStateAwarePromptStuck) {
     "Run a no-movement Windows loader/control with CleanAfterField to regain a valid field baseline."
 }
 
-$suggestedCommand = if ($latestStateAwarePromptStuck) {
+$suggestedCommand = if ($currentUpstreamWindowsPromotionGateCleared) {
+    "# Windows 200% promotion gate is complete. Do not auto-rerun CPU4. Query Thor temperature first, and only if safe run one short bounded Android baseline/port validation."
+} elseif ($latestStateAwarePromptStuck) {
     New-StateAwareDamagedSaveConfirmCommand
 } elseif ($latestStateAwareSavePromptField) {
     New-StateAwareDamagedSaveDismissMovementCommand
