@@ -12555,3 +12555,66 @@ Decision: leave the Thor stopped. In one later cool round, deploy exact
 `55B0...B0DD`, enable only the dispatch probe, run one guarded route, and stop.
 Use the now-isolated emitter/publisher relation to decide whether the narrow
 behavioral target is job completion, publication ordering, or producer output.
+
+## 2026-07-16 Published-Inside Proof And Post-Drain Guard
+
+One corrected-provenance route:
+
+- Exact core `55B01CB3CDF84D0F7B43F9AB2005FD3CA55E15FA5AA0B9DC663648ECA471B0DD`
+  was pushed without build, launch, or stream in
+  `debug-captures/20260716-052932-es-provenance-cache-v1-55b0-dev-core-push`.
+  Exactly one probe-only route ran in
+  `debug-captures/android-speed-sprint/20260716-052959-thor-input-eternal-sonata-battle-intro-route`.
+- The route produced correct Path-to-Tenuto field and first-battle tutorial
+  visuals at `27.25/30.01 FPS`, then failed closed on one unknown draw before
+  a stable active-battle interval. No VM access, native signal, process restart,
+  Vulkan device loss, LLVM fatal, or RSX FP-CAL fatal preceded the controlled
+  stop. Temperature stayed `24 C`, thermal status was `0`, the package ended
+  stopped, the probe reset to `off`, and no second route ran.
+- The repaired cache key worked dynamically: publisher/parser object
+  `JxcXFik2c7V32hQub9w8MZ` compiled as new probe key `001u0i` rather than
+  loading the stale `000e18` object.
+- The single fault was stable `0x3f800000` at `0x32dfd630`, selected-buffer
+  offset `0x2fab0`, immediately after command `0x60` and its pointer argument.
+  It matched emitter `0x002ee0c8` at event age three. The corrected publisher
+  breadcrumb was `0x32e019f8`, offset `0x33e78`, event age zero, relation
+  `inside`. The malformed record was therefore live data inside the published
+  command list, not its terminator or an out-of-range parser read.
+
+Static completion order:
+
+- Frame function `0x002f76f8` first calls builder/publisher `0x002f7540`, which
+  flips the draw buffer through `0x002ac618`. It then calls asynchronous queue
+  drain `0x00309160` at `0x002f7710`, returns at `0x002f7714`, and only afterward
+  signals the consumer through `0x002ac7b0` at `0x002f7720`.
+- The game already has the correct high-level publish/drain/signal sequence.
+  Combined with the `inside` fault, the narrow hypothesis is that the drain can
+  return while a `0x002ee0c8` generated-command header is still invalid on
+  Thor. A blanket per-job drain would discard intended overlap and was not used.
+
+Host-only post-drain candidate:
+
+- Added default-off property `debug.rpcsx.thor.es_async_draw_barrier` with
+  `off`, `verify`, and `repair` modes, hard gated to `BLUS30161`. The emitter
+  hook records the 16-byte-aligned generated-command start for the exact
+  `0x002ee0c8` family. At exact post-drain CIA `0x002f7714`, before the consumer
+  signal, the guard checks only pending recorded headers.
+- `verify` records invalid headers without behavior change. `repair` waits in
+  20-microsecond sleeps only when a header is greater than command maximum
+  `0x65`, for at most `20 ms`; it never changes guest memory. A timeout proceeds
+  into the existing fail-closed dispatch path. The bounded atomic ring reports
+  targets, before/after invalid counts, wait duration, timeouts, and overflow.
+- A dedicated `thor_es_async_draw_barrier_v1` PPU cache bit marks only the two
+  instrumented objects; normal/off keys remain unchanged. The route wrapper
+  accepts `-EsAsyncDrawBarrier off|verify|repair` and captures/resets the
+  property on success and failure.
+- PowerShell parsing and `git diff --check` pass. Android ARM64 RelWithDebInfo
+  builds successfully. Exact host-only core is `1,349,723,184` bytes with
+  SHA256 `A83E3DE0EC068D6698271A93303EFF3382F13B2E7FE4E3E40A2E0D3ABCFFF53B`.
+  It was not deployed or launched.
+
+Decision: keep the Thor stopped. In one later cool round, deploy exact
+`A83E...F53B`, enable dispatch probe plus `-EsAsyncDrawBarrier repair`, run one
+guarded route, and stop. Require a logged invalid-before/valid-after wait plus
+clean battle visuals, or a clear timeout/counterproof, before widening the wait
+or changing semaphore/SPU behavior.

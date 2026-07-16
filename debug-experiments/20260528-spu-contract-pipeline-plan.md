@@ -936,3 +936,42 @@ Next:
   leave every other experiment off, run one guarded probe route, and stop. Use
   `publish_relation` plus emitter CIA before considering a title-gated queue
   drain or publication-order change; do not speculate from this failed route.
+
+## 2026-07-16 Inside-Published Async Draw Result
+
+Result:
+
+- Exact `55B0...B0DD` ran once in
+  `20260716-052959-thor-input-eternal-sonata-battle-intro-route`. Correct field
+  and first-battle tutorial visuals rendered at `27.25/30.01 FPS`, then the
+  route failed closed on stable `0x3f800000`. No VM/native/restart/Vulkan/LLVM/
+  FP-CAL fatal preceded stop. Temperature stayed `24 C`, thermal status `0`,
+  the package ended stopped/probe off, and no second route ran.
+- New cache key `001u0i` compiled the formerly stale `Jxc...` publisher object,
+  proving the provenance cache repair activated. The fault matched emitter
+  `0x002ee0c8` and was `inside` the latest selected-buffer publication:
+  fault offset `0x2fab0`, published-end offset `0x33e78`, publisher event age
+  zero. Reject terminator overwrite and past-end parser recovery as fixes.
+- Static frame order is publisher `0x002ac618`, async drain `0x00309160` at
+  `0x002f7710`, then consumer signal `0x002ac7b0` at `0x002f7720`. The narrow
+  target is a generated header still invalid when the existing drain returns,
+  not an absent game-level drain.
+
+Replacement contract:
+
+- Default-off `debug.rpcsx.thor.es_async_draw_barrier=verify|repair` records the
+  exact `0x002ee0c8` aligned output header and checks it at post-drain CIA
+  `0x002f7714`, before consumer signal. Repair mode sleeps only while a pending
+  header exceeds `0x65`, bounded to `20 ms`, never mutates guest memory, and
+  leaves timeouts to the existing fail-closed parser probe.
+- The feature has its own PPU object-cache bit and route-wrapper set/effective/
+  reset evidence. Normal/off keys are unchanged. ARM64 RelWithDebInfo builds;
+  host-only core `A83E3DE0EC068D6698271A93303EFF3382F13B2E7FE4E3E40A2E0D3ABCFFF53B`
+  is `1,349,723,184` bytes and has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped. In one later cool round, deploy exact `A83E...F53B`,
+  enable only dispatch probe plus async barrier `repair`, run one guarded route,
+  and stop. Promotion requires logged wait resolution and clean field/battle;
+  a timeout or unknown draw is a counterproof, not permission for a broad wait.

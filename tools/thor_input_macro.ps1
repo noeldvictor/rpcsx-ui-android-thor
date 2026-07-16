@@ -14,6 +14,8 @@ param(
     [string]$EsPpuCommandInterp = "off",
     [ValidateSet("off", "on")]
     [string]$EsPpuDispatchProbe = "off",
+    [ValidateSet("off", "verify", "repair")]
+    [string]$EsAsyncDrawBarrier = "off",
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot,
@@ -636,6 +638,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
+    "- Eternal Sonata async draw barrier: $EsAsyncDrawBarrier",
     "- Unknown draw policy: $(if ($strictGuestDrawStream) { 'fail-closed' } else { 'record-only' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
@@ -654,6 +657,7 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
 }
 
 $tokens = @()
@@ -665,6 +669,8 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_command_interp") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe $EsPpuDispatchProbe") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_dispatch_probe") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-set.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier $EsAsyncDrawBarrier") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_async_draw_barrier") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "dismiss-keyguard.txt" @("shell", "wm dismiss-keyguard") -AllowFailure | Out-Null
     Start-Sleep -Milliseconds 500
@@ -898,6 +904,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     if ($BootGame) {
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
     }
 
     throw $failure
@@ -906,6 +913,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
 }
 
 Assert-ThorThermalBudget "post-run"

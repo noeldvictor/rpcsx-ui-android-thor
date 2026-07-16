@@ -184,6 +184,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 	u32 interp_start = 0;
 	u32 interp_end = 0;
 	const bool use_thor_es_dispatch_probe = !m_reloc && ppu_thor_es_dispatch_probe_range(info.addr, info.size);
+	const bool use_thor_es_async_draw_barrier = !m_reloc && ppu_thor_es_async_draw_barrier_range(info.addr, info.size);
 
 	if (!m_reloc && ppu_thor_es_command_interp_range(info.addr, interp_start, interp_end))
 	{
@@ -337,6 +338,28 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 					// is the draw-stream object that will be flipped to the reader.
 					Call(GetType<void>(), "__thor_es_publish_probe", m_thread,
 						GetGpr(3), GetGpr(9), m_ir->getInt32(guest_cia));
+					break;
+				default:
+					break;
+				}
+			}
+
+			if (use_thor_es_async_draw_barrier)
+			{
+				switch (guest_cia)
+				{
+				case 0x002ee0c8:
+					// The command is complete here; r11 is its address and the
+					// generated stream starts at the next 16-byte boundary at or
+					// after the command's one pointer argument.
+					Call(GetType<void>(), "__thor_es_async_draw_target", m_thread,
+						GetGpr(11), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002f7714:
+					// The game's asynchronous queue drain has just returned and
+					// the draw consumer has not yet been signalled.
+					Call(GetType<void>(), "__thor_es_async_draw_barrier", m_thread,
+						m_ir->getInt32(guest_cia));
 					break;
 				default:
 					break;
