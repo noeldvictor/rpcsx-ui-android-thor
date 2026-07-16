@@ -11851,3 +11851,71 @@ Static protocol and host-only verifier:
   may deploy this core and run exactly one guarded diagnostic route. Do not
   claim speed, enable behavior-changing fast paths, or heat-soak the Thor until
   the selector/completion sequence is classified.
+
+## 2026-07-16 Thor Selector Regression and Repair Candidate
+
+Bounded device result:
+
+- The dual-buffer/sequence verifier core
+  `BA0E53338FB098E9BDF1BCCCB21629748386CE7D6D966BC828443CAB62A870D7`
+  was deployed with matching local/remote hashes and no launch in
+  `debug-captures/20260716-002642-draw-stream-selector-sequence-ba0e-dev-core-push`.
+- Exactly one guarded direct-input route ran with verifier mode enabled:
+  `debug-captures/android-speed-sprint/20260716-002723-thor-input-eternal-sonata-battle-intro-route`.
+  It reached the real first-battle tutorial prompt; the sampled frame was clean
+  at `30.00 FPS`. The wrapper failed closed on the first unknown draw command.
+- The route began and ended at battery temperature `24.0 C`, Android thermal
+  status `0`. Cleanup stopped pinned PID `12569`, prevented restart, and reset
+  `debug.rpcsx.thor.es_draw_stream_probe`. No second route, recording, trace,
+  or sustained profiler was used.
+
+Sequence and parser evidence:
+
+- The route recorded eight exact previous-generation consumer selections at
+  generations `3677`, `3725`, `3727`, `3771`, `3841`, `3884`, `3995`, and
+  `4012`. Every event had `work_posts == work_waits == N`; all four preceding
+  completion counters were exactly `N-1`, and `sequence_anomalies` remained
+  zero. This rejects a missing/extra semaphore token or producer-advance
+  ordering error.
+- Every previous-generation selection had already been modified after its
+  saved publication. The first differences were at byte `0x1452` or `0x1453`,
+  consistent with the producer reusing that old buffer while the consumer
+  parsed it.
+- Seventeen unknown draw commands split between previous-generation damaged
+  handoffs and later current-generation handoffs that were byte-perfect when
+  accepted. At fault time the latter differed only in the already-consumed
+  header (`0x0000005d` to zero), so they can be downstream parser
+  desynchronization caused by the earlier stale selections rather than an
+  independent publication-byte fault.
+- The previously backported `PPU Reservation Priority Over SPUs` option is not
+  a new candidate: guarded route
+  `20260715-160625-thor-input-eternal-sonata-battle-intro-route` reproduced the
+  same native/guest failure with it enabled, and the setting was rolled back.
+  Current RPCS3's disabled CellSpurs JobChain hash is absent from this older
+  vendored analyzer; the unsafe allow-list entry is not enabled here.
+
+Host-only repair candidate:
+
+- `debug.rpcsx.thor.es_draw_stream_probe=repair` is now a distinct,
+  default-off, BLUS30161-only mode. At the exact consumer work-wait return it
+  repairs only an object that matches the immediately previous generation,
+  differs from the current publication by one selector toggle, and has the
+  exact observed six-edge semaphore sequence. It restores the current write
+  pointer and flags before the guest parser resumes and logs every repair or
+  failure.
+- Repair mode preserves the two alternating layouts but deliberately skips the
+  verifier's `0x180000`-byte snapshot copy and comparison on every frame. The
+  production/default path remains off, and `verify` mode remains diagnostic
+  and behavior-preserving.
+- ARM64 RelWithDebInfo build completed successfully. Host-only candidate size
+  is `1,349,547,656` bytes and SHA256 is
+  `4A3302EC6DAACFD73C6CD9684F9E372BF7540E9EBF8BE9550839B80E87B59160`.
+  It was not deployed or launched.
+
+Decision: this is a correctness repair candidate, not a stability or speed
+promotion. In the next separately cool round, deploy the exact `4A33...9160`
+core, enable only `repair`, run one PID/temperature-guarded battle route, then
+stop. A pass requires clean tutorial and active-battle visuals, zero unknown
+draw/native/VM faults, at least one logged selector repair if the race occurs,
+and no repair failure. Keep rollback as property `off` or restore the prior
+`BA0E...A870D7` core.

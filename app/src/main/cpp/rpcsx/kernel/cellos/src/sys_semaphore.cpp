@@ -104,6 +104,8 @@ struct thor_es_draw_stream_probe_state {
   u64 mismatches{};
   u64 invalid_layouts{};
   u64 previous_generation_consumers{};
+  u64 selector_repairs{};
+  u64 selector_repair_failures{};
   u64 producer_work_posts{};
   u64 consumer_work_waits{};
   u64 producer_prior_completion_waits{};
@@ -127,31 +129,67 @@ struct thor_es_draw_stream_probe_state {
 
 static thor_es_draw_stream_probe_state g_thor_es_draw_stream_probe;
 
-static bool parse_thor_es_draw_stream_probe(std::string_view value) {
-  return value == "1" || value == "on" || value == "true" ||
-         value == "profile" || value == "verify";
+enum class thor_es_draw_stream_probe_mode : u32 {
+  disabled,
+  verify,
+  repair,
+};
+
+static thor_es_draw_stream_probe_mode
+parse_thor_es_draw_stream_probe_mode(std::string_view value) {
+  if (value == "repair" || value == "fix") {
+    return thor_es_draw_stream_probe_mode::repair;
+  }
+
+  if (value == "1" || value == "on" || value == "true" ||
+      value == "profile" || value == "verify") {
+    return thor_es_draw_stream_probe_mode::verify;
+  }
+
+  return thor_es_draw_stream_probe_mode::disabled;
 }
 
-static FORCE_INLINE bool thor_es_draw_stream_probe_enabled() {
-  static const bool enabled = [] {
+static thor_es_draw_stream_probe_mode get_thor_es_draw_stream_probe_mode() {
+  static const thor_es_draw_stream_probe_mode mode = [] {
 #ifdef ANDROID
     char property_value[PROP_VALUE_MAX]{};
     const int property_length = __system_property_get(
         "debug.rpcsx.thor.es_draw_stream_probe", property_value);
     if (property_length > 0) {
-      return parse_thor_es_draw_stream_probe(
+      return parse_thor_es_draw_stream_probe_mode(
           std::string_view{property_value, static_cast<usz>(property_length)});
     }
 #endif
 
     if (const char *value = std::getenv("RPCSX_THOR_ES_DRAW_STREAM_PROBE")) {
-      return parse_thor_es_draw_stream_probe(value);
+      return parse_thor_es_draw_stream_probe_mode(value);
     }
 
-    return false;
+    return thor_es_draw_stream_probe_mode::disabled;
   }();
 
-  return enabled;
+  return mode;
+}
+
+static FORCE_INLINE bool thor_es_draw_stream_probe_enabled() {
+  return get_thor_es_draw_stream_probe_mode() !=
+         thor_es_draw_stream_probe_mode::disabled;
+}
+
+static FORCE_INLINE bool thor_es_draw_stream_repair_enabled() {
+  return get_thor_es_draw_stream_probe_mode() ==
+         thor_es_draw_stream_probe_mode::repair;
+}
+
+static const char *get_thor_es_draw_stream_probe_mode_name() {
+  switch (get_thor_es_draw_stream_probe_mode()) {
+  case thor_es_draw_stream_probe_mode::verify:
+    return "verify";
+  case thor_es_draw_stream_probe_mode::repair:
+    return "repair";
+  default:
+    return "disabled";
+  }
 }
 
 static bool read_thor_es_draw_stream_u32(u32 address, u32 &value) {
@@ -162,6 +200,18 @@ static bool read_thor_es_draw_stream_u32(u32 address, u32 &value) {
 
   value = guest_value;
   return true;
+}
+
+static bool write_thor_es_draw_stream_state(
+    u32 object, const thor_es_draw_stream_layout &layout) {
+  if (object > 0xffff'ffffu - 0x20) {
+    return false;
+  }
+
+  be_t<u32> write = layout.write;
+  be_t<u32> flags = layout.flags;
+  return vm::try_access(object + 0x1c, &write, sizeof(write), true) &&
+         vm::try_access(object + 0x20, &flags, sizeof(flags), true);
 }
 
 static bool get_thor_es_draw_stream_layout(u32 object,
@@ -303,17 +353,20 @@ log_thor_es_draw_stream_summary(const ppu_thread &ppu, const char *stage,
 
   g_thor_es_draw_stream_probe.last_summary_us = now;
   sys_semaphore.notice(
-      "Eternal Sonata draw-stream probe: stage=%s generation=%llu "
+      "Eternal Sonata draw-stream probe: mode=%s stage=%s generation=%llu "
       "object=0x%x published=0x%x flags=0x%x write=0x%x sem_id=0x%x "
       "captures=%llu comparisons=%llu matches=%llu mismatches=%llu "
-      "invalid_layouts=%llu previous_consumers=%llu work_posts=%llu "
+      "invalid_layouts=%llu previous_consumers=%llu selector_repairs=%llu "
+      "selector_repair_failures=%llu work_posts=%llu "
       "work_waits=%llu prior_completion_waits=%llu completion_posts=%llu "
       "completion_waits=%llu completion_restores=%llu sequence_anomalies=%llu "
       "cia=0x%x lr=0x%x",
-      stage, state.generation, state.layout.object, state.layout.published,
-      state.layout.flags, state.layout.write, state.semaphore_id,
+      get_thor_es_draw_stream_probe_mode_name(), stage, state.generation,
+      state.layout.object, state.layout.published, state.layout.flags,
+      state.layout.write, state.semaphore_id,
       state.captures, state.comparisons, state.matches, state.mismatches,
       state.invalid_layouts, state.previous_generation_consumers,
+      state.selector_repairs, state.selector_repair_failures,
       state.producer_work_posts, state.consumer_work_waits,
       state.producer_prior_completion_waits, state.consumer_completion_posts,
       state.producer_completion_waits, state.producer_completion_restores,
@@ -375,13 +428,21 @@ thor_es_draw_stream_probe_before_work_post_enabled(const ppu_thread &ppu,
   const u32 snapshot_slot = choose_thor_es_draw_stream_snapshot(
       state, layout.object, layout.published);
   auto &snapshot = state.snapshots[snapshot_slot];
-  snapshot.bytes.resize(thor_es_draw_stream_size);
-  if (!vm::try_access(layout.published, snapshot.bytes.data(),
-                      thor_es_draw_stream_size, false)) {
-    state.valid = false;
-    state.invalid_layouts++;
-    log_thor_es_draw_stream_summary(ppu, "producer-copy-failed", state, true);
-    return;
+  if (get_thor_es_draw_stream_probe_mode() ==
+      thor_es_draw_stream_probe_mode::verify) {
+    snapshot.bytes.resize(thor_es_draw_stream_size);
+    if (!vm::try_access(layout.published, snapshot.bytes.data(),
+                        thor_es_draw_stream_size, false)) {
+      state.valid = false;
+      state.invalid_layouts++;
+      log_thor_es_draw_stream_summary(ppu, "producer-copy-failed", state,
+                                      true);
+      return;
+    }
+  } else {
+    // Repair mode tracks only the two alternating layouts. Avoid copying and
+    // comparing 1.5 MiB every frame on the handheld.
+    snapshot.bytes.clear();
   }
 
   if (state.producer_work_posts &&
@@ -410,6 +471,90 @@ thor_es_draw_stream_probe_before_work_post_enabled(const ppu_thread &ppu,
   state.valid = true;
   log_thor_es_draw_stream_summary(ppu, "producer-snapshot", state,
                                   state.generation == 1);
+}
+
+static bool can_repair_thor_es_draw_stream_selector(
+    const thor_es_draw_stream_probe_state &state,
+    const thor_es_draw_stream_layout &consumer) {
+  if (!thor_es_draw_stream_repair_enabled() || !state.producer_work_posts ||
+      state.current_slot >= state.snapshots.size() ||
+      state.previous_slot >= state.snapshots.size()) {
+    return false;
+  }
+
+  const auto &current = state.snapshots[state.current_slot];
+  const auto &previous = state.snapshots[state.previous_slot];
+  if (!current.valid || !previous.valid ||
+      current.generation != state.generation ||
+      previous.generation + 1 != current.generation) {
+    return false;
+  }
+
+  // Repair only the exact race observed on Thor: one work token is pending,
+  // all completion edges are from the immediately preceding generation, and
+  // the shared object has regressed wholesale to that preceding layout.
+  const bool exact_sequence =
+      state.consumer_work_waits + 1 == state.producer_work_posts &&
+      state.producer_prior_completion_waits + 1 ==
+          state.producer_work_posts &&
+      state.consumer_completion_posts + 1 == state.producer_work_posts &&
+      state.producer_completion_waits + 1 == state.producer_work_posts &&
+      state.producer_completion_restores + 1 == state.producer_work_posts;
+  const bool stable_buffers =
+      consumer.object == current.layout.object &&
+      consumer.buffer0 == current.layout.buffer0 &&
+      consumer.buffer1 == current.layout.buffer1;
+  const bool exact_previous_layout =
+      consumer.write == previous.layout.write &&
+      consumer.flags == previous.layout.flags &&
+      consumer.published == previous.layout.published;
+  const bool one_selector_toggle =
+      (consumer.flags ^ current.layout.flags) == 1 &&
+      consumer.published != current.layout.published;
+
+  return exact_sequence && stable_buffers && exact_previous_layout &&
+         one_selector_toggle;
+}
+
+static bool repair_thor_es_draw_stream_selector(
+    const ppu_thread &ppu, thor_es_draw_stream_probe_state &state,
+    thor_es_draw_stream_layout &consumer) {
+  if (!can_repair_thor_es_draw_stream_selector(state, consumer)) {
+    return false;
+  }
+
+  const thor_es_draw_stream_layout observed = consumer;
+  const thor_es_draw_stream_layout expected = state.layout;
+  if (!write_thor_es_draw_stream_state(expected.object, expected) ||
+      !get_thor_es_draw_stream_layout(expected.object, consumer) ||
+      consumer.buffer0 != expected.buffer0 ||
+      consumer.buffer1 != expected.buffer1 ||
+      consumer.write != expected.write || consumer.flags != expected.flags ||
+      consumer.published != expected.published) {
+    state.selector_repair_failures++;
+    sys_semaphore.error(
+        "Eternal Sonata draw-stream selector repair failed: generation=%llu "
+        "object=0x%x observed_write=0x%x observed_flags=0x%x "
+        "observed_published=0x%x expected_write=0x%x expected_flags=0x%x "
+        "expected_published=0x%x failures=%llu cia=0x%x lr=0x%x",
+        state.generation, expected.object, observed.write, observed.flags,
+        observed.published, expected.write, expected.flags, expected.published,
+        state.selector_repair_failures, ppu.cia, static_cast<u32>(ppu.lr));
+    return false;
+  }
+
+  state.selector_repairs++;
+  sys_semaphore.notice(
+      "Eternal Sonata draw-stream selector repaired: generation=%llu "
+      "object=0x%x observed_write=0x%x observed_flags=0x%x "
+      "observed_published=0x%x repaired_write=0x%x repaired_flags=0x%x "
+      "repaired_published=0x%x repairs=%llu work_posts=%llu work_waits=%llu "
+      "cia=0x%x lr=0x%x",
+      state.generation, expected.object, observed.write, observed.flags,
+      observed.published, consumer.write, consumer.flags, consumer.published,
+      state.selector_repairs, state.producer_work_posts,
+      state.consumer_work_waits + 1, ppu.cia, static_cast<u32>(ppu.lr));
+  return true;
 }
 
 static void
@@ -450,6 +595,7 @@ thor_es_draw_stream_probe_after_consumer_wait_enabled(const ppu_thread &ppu,
     return;
   }
 
+  repair_thor_es_draw_stream_selector(ppu, state, layout);
   state.consumer_work_waits++;
   state.consumer_layout = layout;
   state.consumer_slot =
@@ -475,6 +621,12 @@ thor_es_draw_stream_probe_after_consumer_wait_enabled(const ppu_thread &ppu,
     state.previous_generation_consumers++;
     log_thor_es_draw_stream_summary(ppu, "consumer-previous-generation", state,
                                     true);
+  }
+
+  if (get_thor_es_draw_stream_probe_mode() ==
+      thor_es_draw_stream_probe_mode::repair) {
+    log_thor_es_draw_stream_summary(ppu, "consumer-repair-mode", state);
+    return;
   }
 
   const u8 *live = vm::get_super_ptr<u8>(layout.published);
@@ -625,6 +777,7 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
         "producer_object=0x%x producer_published=0x%x "
         "consumer_generation=%llu consumer_object=0x%x "
         "consumer_published=0x%x valid=%u checked=%u match=%u "
+        "selector_repairs=%llu selector_repair_failures=%llu "
         "work_posts=%llu work_waits=%llu prior_completion_waits=%llu "
         "completion_posts=%llu completion_waits=%llu completion_restores=%llu "
         "sequence_anomalies=%llu cia=0x%x lr=0x%x",
@@ -632,6 +785,7 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
         state.layout.published, state.consumer_generation,
         state.consumer_layout.object, state.consumer_layout.published,
         state.valid, state.consumer_checked, state.consumer_match,
+        state.selector_repairs, state.selector_repair_failures,
         state.producer_work_posts, state.consumer_work_waits,
         state.producer_prior_completion_waits, state.consumer_completion_posts,
         state.producer_completion_waits, state.producer_completion_restores,

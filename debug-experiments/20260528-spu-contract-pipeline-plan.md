@@ -523,3 +523,45 @@ Next diagnostic contract:
 - In a later cool round, run at most one guarded diagnostic route. Do not use a
   generic fence, selector rewrite, performance fast path, speed promotion, or
   heat soak until the exact completion/selector ordering is proven.
+
+## 2026-07-16 Thor Selector Repair Candidate
+
+Result:
+
+- The `BA0E...A870D7` verifier was deployed without launch, then exercised by
+  one guarded route:
+  `20260716-002723-thor-input-eternal-sonata-battle-intro-route`.
+- Eight consumers selected the immediately previous generation. At every event
+  work post/wait counters were equal and the prior completion wait/post/wait/
+  restore counters were exactly one behind; there were zero sequence anomalies.
+  The selected old buffer had already changed at byte `0x1452` or `0x1453`.
+- Seventeen parser faults occurred. Some followed the damaged old-buffer
+  handoff; later faults followed byte-perfect current handoffs after the first
+  stale selection. Treat those later faults as potentially cascading parser
+  desynchronization, not proof of a separate buffer-publication defect.
+- The route showed a clean tutorial prompt at `30.00 FPS`, remained at `24 C`,
+  and ended stopped with the verifier property off. It is failure
+  classification, not a speed result.
+
+Candidate contract:
+
+- New property value `repair` is default-off and BLUS30161-only. It restores
+  the current write pointer/flags only when the shared object exactly matches
+  the immediately previous layout and all six semaphore edges prove one current
+  work token with the previous completion fully retired.
+- Repair mode is deliberately lightweight: it keeps two layouts and counters
+  but does not copy/compare `1.5 MiB` buffers every frame. Existing `verify`
+  mode remains diagnostic-only.
+- ARM64 RelWithDebInfo build passed. Host-only core SHA256:
+  `4A3302EC6DAACFD73C6CD9684F9E372BF7540E9EBF8BE9550839B80E87B59160`;
+  size `1,349,547,656` bytes. It was not deployed or launched.
+- Reservation priority stays off: the earlier enabled route reproduced the
+  same failure. No generic memory fence or global selector rewrite was added.
+
+Next:
+
+- In one later cool-device round, deploy the exact `4A33...9160` core, set the
+  draw-stream property to `repair`, run one guarded battle route, and stop.
+  Require clean visuals and zero unknown-draw/native/VM faults; a selector race
+  must be logged as repaired with zero repair failures. Do not run a heat soak
+  or claim stability/speed from the host build alone.
