@@ -13099,3 +13099,35 @@ Next:
   boundary; `stable_since_emit` means the six-site register map or a different
   producer must be challenged. Do not mask or restore arg0 until that evidence
   exists.
+
+## 2026-07-16 V8 Deploy And Host-timeout Tooling Attempt
+
+- Exact v8 `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`
+  was deployed without launch or stream in
+  `debug-captures/20260716-083114-es-command61-v8-55ff-dev-core-push`.
+- Preflight found one device, package stopped, battery `23 C`, and thermal
+  status `0`.
+- The attempted route directory is
+  `debug-captures/android-speed-sprint/20260716-083140-thor-input-eternal-sonata-battle-intro-route`.
+  The outer host command timed out at 60 seconds while the macro was still in
+  its first `wait:60000`. `macro.log` contains only that token; there is no
+  title gate, screenshot, input, field, or battle evidence.
+- Because external process termination bypassed the macro's normal `finally`,
+  PID `21078` and probe properties briefly remained live. Manual cleanup
+  immediately force-stopped the package and reset command interpreter,
+  dispatch probe, and async barrier to `off`. Final battery temperature was
+  still `23 C`; no retry ran.
+- This is route-tooling only and does not consume the one v8 gameplay proof.
+
+Thermal route improvement:
+
+- `eternal-sonata-battle-intro-route` no longer performs an unconditional
+  60-second pre-wait. It starts `gate:ppu-ready:150000` immediately.
+- The existing gate rejects PPU compilation and black transition frames,
+  requires the title selector in two consecutive screenshots, waits `2.5s`
+  between positive candidates, and otherwise polls at `10s`. The total cold
+  readiness allowance remains 150 seconds, while warm-cache routes can save
+  nearly a minute of device-on time.
+- Future long macros must run as a detached hidden host process and be monitored
+  through local artifacts, so the command runner's one-minute window cannot
+  terminate cleanup. Do not rerun v8 until a later cool round.
