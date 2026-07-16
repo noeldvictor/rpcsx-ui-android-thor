@@ -246,6 +246,7 @@ function Invoke-SpeedWindowsVisualGate {
             $gateParams.RequireFieldLike = $true
             $gateParams.RequireFieldAtOrBeforeSeconds = $WindowsVisualGateFieldSeconds
             $gateParams.RequireNoInvalidAfterFirstField = $true
+            $gateParams.RequireNoFatalLog = $true
         }
         "BattleRoute" {
             $gateParams.RequireFieldLike = $true
@@ -254,6 +255,7 @@ function Invoke-SpeedWindowsVisualGate {
             $gateParams.RequireMinFieldLikeCount = 2
             $gateParams.RequireBattleLikeAtOrAfterSeconds = 200
             $gateParams.RequireNoInvalidAfterFirstField = $true
+            $gateParams.RequireNoFatalLog = $true
             if ($gateParams.MinFieldPngBytes -lt 1500000) {
                 $gateParams.MinFieldPngBytes = 1500000
             }
@@ -464,6 +466,9 @@ switch ($Action) {
         $effectiveMaxSeconds = $MaxSeconds
         if ($Scene -eq "battle" -and [string]::IsNullOrWhiteSpace($InputMacro) -and $effectiveMaxSeconds -lt 330) {
             $effectiveMaxSeconds = 330
+        }
+        if ($WindowsVisualGate -eq "BattleRoute" -and $effectiveMaxSeconds -lt 220) {
+            throw "WindowsVisualGate BattleRoute requires MaxSeconds >= 220 because its late-field proof starts at 220s."
         }
 
         $runParams = @{

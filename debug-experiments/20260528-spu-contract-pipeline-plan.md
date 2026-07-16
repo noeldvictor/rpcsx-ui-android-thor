@@ -309,3 +309,48 @@ Next:
   only when the state-aware route reaches a valid field/menu/battle checkpoint.
 - Require the strict parser gate and clean visuals before considering any
   body/codegen specialization; do not port this lane to Android yet.
+
+## 2026-07-15 Source-Aligned Runtime Contract Proof
+
+Update:
+
+- The first bounded corrected-contract replay on the older instrumented source
+  failed after field load with unknown draw commands, a PPU VM access violation
+  at `0x002aedd0`, and corrupt crash-overlay visuals. Its `473` accepted
+  contract rows and zero mismatch/overflow proved parser consistency only.
+- Source alignment found the checkout missing upstream RPCS3 commit `e379fba`,
+  which implements PPU reservation priority over SPUs and disables the unsafe
+  CellSpurs JobChain acquire pattern. It was applied locally as
+  `e12beb222fea26fa5e5f86fa507ad91536fa4d60`.
+- Rebuilt identity is `0.0.41-597-e12beb22`; executable SHA256 is
+  `C31622E54441A6946A9AFC6986E8F7C9193F55541E158B2959BEE95B07AA3CC9`.
+- The identical bounded route then stayed visually correct on a moving field
+  through `185s`, with all five host snapshots external-clean and zero targeted
+  fatal/draw/access/Vulkan/device-lost/assertion signatures.
+- Strict parser result: `732` rows, `732` accepted, `0` rejected, `1878` hits,
+  `30769152` bytes, output mismatch `0`, descriptor overflow `0`.
+- The route did not enter battle despite checkpoint filenames. This is a valid
+  field runtime counterproof, not first-battle or speed proof.
+
+Harness hardening:
+
+- Clean/battle visual gates now require a fatal-clean `RPCS3.log`.
+- BattleRoute rejects durations below its fixed `220s` late-proof deadline.
+- Dominant verifier record types use direct dispatch, and synchronous generic
+  probe summaries are deferred for logs above `32 MiB` so a completed run does
+  not appear hung.
+
+Classification:
+
+- `analysis`.
+- `verify-only-contract-runtime-proof`.
+- `valid-moving-field-counterproof`.
+- Not speed, not `gpu-migration-credit`, not first battle, and not a 200% gate
+  candidate.
+
+Next:
+
+- Re-prove Options/menu and enter a real first battle on the exact rebuilt
+  binary before any 25cc body/codegen specialization or Android port.
+- Keep verifier/body-fast separation: shadow verify on, body off, fixed config,
+  strict parser, manual visuals, and fatal-clean log for every promotion proof.

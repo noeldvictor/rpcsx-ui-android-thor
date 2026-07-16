@@ -97,6 +97,7 @@ param(
     [switch]$RefreshConfigDb,
     [switch]$SkipConfigDbRefresh,
     [switch]$SkipAgentInputProfile,
+    [long]$GpuProbeSummaryMaxLogBytes = 33554432,
     [switch]$Visible,
     [switch]$NoTimestampDir
 )
@@ -2572,13 +2573,19 @@ if (Test-Path -LiteralPath $sourceLog) {
     if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataSpuHleVerify -ne "Off" -or $EternalSonataSpuHle25ccBody -ne "Off" -or $EternalSonataSpuHle451cPreserveBody -ne "Off" -or $EternalSonataKernelCapsule -ne "Off" -or $EternalSonataReservationLoop -ne "Off" -or $EternalSonataPutllc16Pair -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
         $gpuProbeSummary = Join-Path $PSScriptRoot "summarize_eternal_sonata_gpu_probe.ps1"
         if (Test-Path -LiteralPath $gpuProbeSummary -PathType Leaf) {
-            try {
-                $summaryOutput = & $gpuProbeSummary -RunDir $runDir -LogPath $destLog -Top 25 2>&1
-                foreach ($line in @($summaryOutput)) {
-                    Write-LabLine $runLog "$line"
+            $destLogBytes = (Get-Item -LiteralPath $destLog).Length
+            if ($GpuProbeSummaryMaxLogBytes -gt 0 -and $destLogBytes -gt $GpuProbeSummaryMaxLogBytes) {
+                Write-LabLine $runLog "GPU probe summary deferred: log_bytes=$destLogBytes exceeds synchronous limit=$GpuProbeSummaryMaxLogBytes."
+                Write-LabLine $runLog "Deferred summary command: .\tools\summarize_eternal_sonata_gpu_probe.ps1 -RunDir `"$runDir`" -LogPath `"$destLog`" -Top 25"
+            } else {
+                try {
+                    $summaryOutput = & $gpuProbeSummary -RunDir $runDir -LogPath $destLog -Top 25 2>&1
+                    foreach ($line in @($summaryOutput)) {
+                        Write-LabLine $runLog "$line"
+                    }
+                } catch {
+                    Write-LabLine $runLog "GPU probe summary failed: $($_.Exception.Message)"
                 }
-            } catch {
-                Write-LabLine $runLog "GPU probe summary failed: $($_.Exception.Message)"
             }
         }
     }

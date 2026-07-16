@@ -11410,3 +11410,84 @@ Decision:
   followed by the strict parser and field/menu/first-battle visual checks.
 - Do not enable a 25cc body fast path or port this contract lane to Android from
   compile-only evidence.
+
+## 2026-07-15 Windows Reservation-Priority Repair and Runtime Counterproof
+
+Question:
+
+- Does the corrected priority-1 `0x25cc / 0x9e4000` verifier remain clean on a
+  genuinely moving field route, and is the prior draw-stream/VM failure caused
+  by missing upstream SPU reservation safety rather than the verifier contract?
+
+Source repair:
+
+- The instrumented Windows checkout was based near RPCS3 `0.0.41` and did not
+  contain upstream commit `e379fba` (`SPU/PPU: Implement PPU reservation
+  priority over SPUs`). That upstream change also disables the unsafe
+  CellSpurs JobChain acquire pattern hash
+  `620oYSe8uQqq9eTkhWfMqoEXX0us`, matching the standing draw-stream failure
+  diagnosis.
+- Cherry-picked the exact upstream commit into the local Windows checkout as
+  `e12beb222fea26fa5e5f86fa507ad91536fa4d60`. The tree configured as
+  `0.0.41-597-e12beb22`; Release/LTCG build and link succeeded.
+- Exact rebuilt `rpcs3.exe` SHA256:
+  `C31622E54441A6946A9AFC6986E8F7C9193F55541E158B2959BEE95B07AA3CC9`.
+- Rotated only the title-local `spu-safe-v1-tane.dat` cache before the replay;
+  PPU and shader caches remained warm.
+
+Matched Windows replay:
+
+- Pre-fix run
+  `debug-captures/windows-lab/20260715-214109-cpu4-verify25cc-corrected-contract-extendedkey-first-battle-windows`
+  reached a clean field, then produced repeated `unknown draw command` lines,
+  a PPU VM access violation at `0x002aedd0` reading `0x40`, and a corrupt frozen
+  field/crash overlay. Its corrected contract rows were internally clean
+  (`473/473` accepted, `1023` hits, mismatch/overflow `0`), so it remained a
+  failed fatal/visual result.
+- Post-fix run
+  `debug-captures/windows-lab/20260715-220332-cpu4-verify25cc-e379fba-extendedkey-first-battle-windows`
+  used the same keyboard macro, CPU affinity `0x0f`, 30 FPS frame cap, 60 Hz
+  vblank, Accurate SPU Reservations on, Accurate SPU DMA off, verifier on, and
+  25cc body off.
+- Manual frame review confirmed the correct Path-to-Tenuto field at `139s` and
+  live enemy/field animation through the `185s` cutoff. Despite their scripted
+  filenames, the `155s`, `161s`, and `171s` frames did not enter battle; they
+  remained moving-field evidence.
+- Fatal scan: unknown draw `0`, access violation `0`, unknown STOP `0`,
+  `VK_ERROR` `0`, device-lost `0`, assertion `0`, crash-overlay signature `0`,
+  fatal-channel rows `0`. All five host snapshots were external-clean.
+- Strict contract parse passed: `732/732` rows accepted, `0` rejected,
+  `1878` target hits, `30769152` target bytes, `26295` non-target contract
+  rejects, output mismatch `0`, descriptor overflow `0`. Promotion remains
+  false because field/menu/first-battle proof is external.
+
+Harness fixes:
+
+- Clean-field and BattleRoute visual gates now also fail on RPCS3 fatal/crash
+  log signatures, closing the false `FIELD_LIKE_PRESENT` result seen on the
+  corrupt pre-fix run.
+- BattleRoute now rejects `MaxSeconds < 220` before launch because the gate
+  requires late-field evidence at `220s`; scripted screenshot labels alone no
+  longer justify a battle claim.
+- High-frequency wait-PC and 25cc descriptor records receive direct parser
+  dispatch. Logs larger than `32 MiB` defer the generic probe summary instead
+  of holding the completed Windows run open for more than a minute.
+
+Classification:
+
+- `valid-moving-field-counterproof`.
+- `upstream-reservation-stability-fix`.
+- `verify-only-contract-runtime-proof`.
+- Not first-battle proof, not an FPS result, not GPU migration, and not a 200%
+  gate candidate.
+
+Decision:
+
+- Keep upstream reservation-priority commit `e379fba` in the Windows source
+  line and keep the corrected verifier. The prior fatal/corrupt result is no
+  longer the newest source-aligned evidence.
+- Do not promote bodyfast or port this lane to Android yet. The exact rebuilt
+  binary still needs Options/menu and a real first-battle capture under the
+  same proof discipline before any behavior-changing specialization.
+- No Android build, ADB query, deployment, launch, capture, or Thor sensor read
+  occurred in this round; the handheld remained untouched.

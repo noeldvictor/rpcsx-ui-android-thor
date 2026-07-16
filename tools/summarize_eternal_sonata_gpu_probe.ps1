@@ -2685,6 +2685,25 @@ $logLineNumber = 0
 foreach ($line in [System.IO.File]::ReadLines($LogPath)) {
     $logLineNumber++
 
+    # These two high-frequency record types dominate verifier logs. Dispatch them
+    # before the generic parser chain so each line does not pay for every unrelated
+    # regex reader below.
+    if ($line.IndexOf('Eternal Sonata MFC wait pc probe:', [System.StringComparison]::Ordinal) -ge 0) {
+        $mfcWaitPcRecord = Read-MfcWaitPcRecord $line
+        if ($null -ne $mfcWaitPcRecord) {
+            $mfcWaitPcRecords.Add($mfcWaitPcRecord) | Out-Null
+        }
+        continue
+    }
+
+    if ($line.IndexOf('Eternal Sonata SPU HLE 25cc shadow descriptor:', [System.StringComparison]::Ordinal) -ge 0) {
+        $spuHle25ccShadowDescRecord = Read-SpuHle25ccShadowDescRecord $line
+        if ($null -ne $spuHle25ccShadowDescRecord) {
+            $spuHle25ccShadowDescRecords.Add($spuHle25ccShadowDescRecord) | Out-Null
+        }
+        continue
+    }
+
     if ($line -match 'SPU:\s+\[(?<pc>0x[0-9a-fA-F]+)\]\s+MFC_Cmd:\s+\$(?<reg>[0-9]+)\s+is\s+not\s+a\s+constant') {
         $spuHleNonConstantWarnings.Add([pscustomobject]@{
             pc          = Format-ProbeHex $Matches['pc']

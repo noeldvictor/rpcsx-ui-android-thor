@@ -29,6 +29,8 @@ param(
 
     [switch]$RequireNoInvalidAfterFirstField,
 
+    [switch]$RequireNoFatalLog,
+
     [switch]$DisableColorHeuristic,
 
     [switch]$NoWriteSummary
@@ -188,6 +190,24 @@ if ($screenshots.Count -eq 0) {
     throw "No PNG screenshots found in $screenshotDir"
 }
 
+$fatalLogPath = Join-Path $resolvedRunDir "RPCS3.log"
+$fatalLogCount = 0
+$fatalLogSamples = New-Object System.Collections.Generic.List[string]
+if ($RequireNoFatalLog -and (Test-Path -LiteralPath $fatalLogPath -PathType Leaf)) {
+    $fatalPattern = [regex]::new(
+        '(?i)(unknown draw command|access violation|unknown STOP|VK_ERROR|device.?lost|application has likely crashed|assert(?:ion)?(?: failed|:)|(?:^|\s)F\s*\{)',
+        [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
+    )
+    foreach ($line in [System.IO.File]::ReadLines($fatalLogPath)) {
+        if ($fatalPattern.IsMatch($line)) {
+            $fatalLogCount++
+            if ($fatalLogSamples.Count -lt 5) {
+                $fatalLogSamples.Add($line.Trim()) | Out-Null
+            }
+        }
+    }
+}
+
 $rows = foreach ($shot in $screenshots) {
     $second = Get-ScreenshotSecond $shot.Name
     $colorStats = Get-ScreenshotColorStats -Path $shot.FullName
@@ -262,6 +282,13 @@ if ($RequireMinFieldLikeCount -gt 0 -and $fieldRows.Count -lt $RequireMinFieldLi
 if ($RequireBattleLikeAtOrAfterSeconds -ge 0 -and $battleLikeAfterDeadline.Count -eq 0) {
     $gateFailures.Add("No battle-like screenshot was found at or after ${RequireBattleLikeAtOrAfterSeconds}s using red-ratio >= $MinBattleLikeRedRatio and green-ratio <= $MaxBattleLikeGreenRatio.")
 }
+if ($RequireNoFatalLog) {
+    if (-not (Test-Path -LiteralPath $fatalLogPath -PathType Leaf)) {
+        $gateFailures.Add("RPCS3.log is missing; fatal-log cleanliness could not be verified.")
+    } elseif ($fatalLogCount -gt 0) {
+        $gateFailures.Add("RPCS3.log contains $fatalLogCount fatal/crash signature line(s).")
+    }
+}
 
 $summaryPath = Join-Path $resolvedRunDir "eternal-sonata-windows-visual-gate-summary.md"
 $summary = New-Object System.Collections.Generic.List[string]
@@ -279,6 +306,13 @@ $summary.Add(("- Minimum field-like PNG bytes: ``{0}``" -f $MinFieldPngBytes))
 $summary.Add(("- Black-overlay PNG byte window: ``{0}`` to ``{1}``." -f $MinBlackOverlayPngBytes, $MaxBlackOverlayPngBytes))
 $summary.Add(("- Loading-like PNG byte window: ``{0}`` to ``{1}``." -f $MinLoadingPngBytes, $MaxLoadingPngBytes))
 $summary.Add(("- Status: ``{0}``" -f $status))
+$summary.Add(("- Fatal-log gate requested: ``{0}``." -f [bool]$RequireNoFatalLog))
+if ($RequireNoFatalLog) {
+    $summary.Add(("- Fatal/crash signature lines: ``{0}``." -f $fatalLogCount))
+    foreach ($sample in $fatalLogSamples) {
+        $summary.Add(("  - ``{0}``" -f ($sample -replace '`', "'")))
+    }
+}
 if ($firstField) {
     $summary.Add(("- First field-like screenshot: ``{0}`` at ``{1}s`` (``{2}``)." -f $firstField.Screenshot, $firstField.Seconds, $firstField.HumanBytes))
 } else {
