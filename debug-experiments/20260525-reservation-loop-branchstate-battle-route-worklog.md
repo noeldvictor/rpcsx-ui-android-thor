@@ -11491,3 +11491,52 @@ Decision:
   same proof discipline before any behavior-changing specialization.
 - No Android build, ADB query, deployment, launch, capture, or Thor sensor read
   occurred in this round; the handheld remained untouched.
+
+## 2026-07-15 Exact-Binary Options Counterproof
+
+Question:
+
+- Does the source-aligned `e12beb22` Windows binary preserve the full title
+  Options page under the corrected priority-1 contract verifier?
+
+Run:
+
+- `debug-captures/windows-lab/20260715-223137-cpu4-verify25cc-e379fba-options-fastselect-windows`.
+- Exact binary SHA256:
+  `C31622E54441A6946A9AFC6986E8F7C9193F55541E158B2959BEE95B07AA3CC9`.
+- Keyboard macro:
+  `wait:65000;shot:title-preinput;down:160;wait:600;shot:title-after-down1;down:160;wait:600;shot:title-after-down2-fast;cross:180;wait:6000;shot:options-candidate;wait:10000;shot:options-late`.
+- Config matched the repaired field proof: CPU affinity `0x0f`, frame cap `30`,
+  vblank `60`, Accurate SPU Reservations on, Accurate SPU DMA off,
+  `Verify25ccShadow` on, and 25cc body off.
+
+Evidence:
+
+- Manual review proved the title selection sequence (`NEW GAME` -> `LOAD` ->
+  `OPTIONS`) and the complete Options page at `78s`, `88s`, and `130s`.
+  Battle Camera, Attack Button, Vibration, all volume controls, subtitles,
+  voice, and language rendered correctly with no flicker or missing UI.
+- All six host snapshots were clean/external-clean. Targeted log scan found
+  unknown draw `0`, access violation `0`, unknown STOP `0`, `VK_ERROR` `0`,
+  device lost `0`, assertion `0`, crash-overlay signature `0`, and fatal-channel
+  rows `0`.
+- Strict contract parse passed: `461/461` rows accepted, `0` rejected, `957`
+  target hits, `15679488` target bytes, output mismatch `0`, descriptor overflow
+  `0`.
+- The new `32 MiB` synchronous-summary ceiling worked: the `45119486`-byte log
+  deferred generic analysis and the wrapper completed normally in `137.7s`
+  instead of hanging after RPCS3 stopped.
+
+Classification:
+
+- `valid-options-counterproof`.
+- `verify-only-contract-runtime-proof`.
+- Not speed, not first battle, not GPU migration, and not a 200% result.
+
+Decision:
+
+- Bank exact-binary field and title Options correctness. Do not rerun either
+  capped proof. The remaining correctness gate is a genuine first battle on the
+  same binary/config/proof discipline; only after that should uncapped speed A/B
+  or behavior-changing 25cc specialization be considered.
+- No Android, ADB, deployment, Thor launch, capture, or sensor action occurred.

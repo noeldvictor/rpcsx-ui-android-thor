@@ -354,3 +354,31 @@ Next:
   binary before any 25cc body/codegen specialization or Android port.
 - Keep verifier/body-fast separation: shadow verify on, body off, fixed config,
   strict parser, manual visuals, and fatal-clean log for every promotion proof.
+
+## 2026-07-15 Exact-Binary Options Proof
+
+Update:
+
+- Run `20260715-223137-cpu4-verify25cc-e379fba-options-fastselect-windows`
+  used the same repaired `e12beb22` binary and capped verifier configuration as
+  the clean moving-field proof.
+- Manual screenshots confirmed correct title selection and the full Options page
+  at `78s`, `88s`, and `130s`, with no missing UI, flicker, or corruption.
+- Six host snapshots were external-clean; targeted fatal/draw/access/Vulkan/
+  device-lost/assertion counts were all zero.
+- Strict contract gate passed `461/461` rows with `957` hits, `15679488` bytes,
+  zero rejected rows, output mismatches, or descriptor overflow.
+- The large-log post-run ceiling deferred the `45.1 MB` generic summary and let
+  the wrapper finish normally.
+
+Classification:
+
+- `valid-options-counterproof`.
+- `verify-only-contract-runtime-proof`.
+- Not speed, not first battle, and not a promotion result.
+
+Next:
+
+- Enter and hold a genuine first battle on the exact repaired binary. Do not
+  rerun capped field or Options, enable bodyfast, or port the contract to Android
+  before that proof.
