@@ -65,6 +65,12 @@ function Resolve-ThorInputDeviceSerial {
 
 $DeviceSerial = Resolve-ThorInputDeviceSerial
 $env:ANDROID_SERIAL = $DeviceSerial
+$requestedEsAsyncDrawBarrier = $EsAsyncDrawBarrier
+if ($EsAsyncDrawBarrier -eq "repair") {
+    # Runtime write-back proved unsafe on Thor. Preserve old invocations but
+    # force them onto the read-only verifier before any property is written.
+    $EsAsyncDrawBarrier = "verify"
+}
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $safeProfile = New-ThorSafeLabel $Profile
 $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-thor-input-$safeProfile"
@@ -650,7 +656,8 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
-    "- Eternal Sonata async draw barrier: $EsAsyncDrawBarrier",
+    "- Eternal Sonata async draw barrier requested: $requestedEsAsyncDrawBarrier",
+    "- Eternal Sonata async draw barrier effective: $EsAsyncDrawBarrier",
     "- Unknown draw policy: $(if ($strictGuestDrawStream) { 'fail-closed' } else { 'record-only' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",

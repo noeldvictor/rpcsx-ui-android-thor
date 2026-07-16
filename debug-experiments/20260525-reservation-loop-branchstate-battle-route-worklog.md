@@ -13341,3 +13341,67 @@ Next:
   reservation; a same-PPU overlap points to re-entrant pointer publication; a
   different object means the apparent template match must be challenged before
   any repair. Keep the route fail-closed and make no generic command skip.
+
+## 2026-07-16 V11 Thor Counterproof And V12 Read-only Repair Removal
+
+Guarded V11 route:
+
+- Preflight rejected non-daemon ADB clients, found one online Thor, package
+  stopped, all three experiment properties `off`, battery `23 C`, and Android
+  thermal status `0`. Exact V11
+  `47B27527E0826BDB56DE91C99A9D6DABCE1B294F85CF61466A990E60DDFCD43F`
+  was pushed without rebuilding, launching, or starting a stream in
+  `debug-captures/20260716-095819-es-dispatch-v11-47b27527-dev-core-push`.
+- One detached fail-closed route ran in
+  `debug-captures/android-speed-sprint/20260716-100003-thor-input-eternal-sonata-battle-intro-route`
+  with dispatch provenance on, async mode `repair`, and a tightened `28 C`
+  cutoff. The title gate accepted two real stable title frames and loaded the
+  intended save. Every thermal sample remained `23 C`.
+- This is a hard repair counterproof. The first changed settled-target window
+  triggered a burst of parser-side rollback writes at emulated
+  `0:02:40.639589`. The log reached at least `1024` repaired 64-byte windows,
+  or `65536` guest bytes, by `0:02:41.712537`. At `0:02:42.120973` the guest
+  hit `VM: Access violation reading location 0x0` and froze.
+- `14-loaded-field.png` and `15-battle-approach-1-candidate.png` show severe
+  black/green geometry corruption; the first also contains RPCSX's likely-crash
+  overlay. Their `31.04/30.81 FPS` counters are invalid and receive no speed,
+  field, battle, stability, or flicker credit.
+- All first eight dispatch-provenance rows classify `template_event_missing`.
+  They are unrelated float-word faults inside current publications; several
+  retained async targets again changed after their barrier hash. The recurring
+  `0x30b12f20` template boundary did not occur before this earlier repair-caused
+  fatal, so V11's command-9/template ownership question remains open.
+- The route force-stopped itself on the fatal and reset interpreter, dispatch,
+  and async properties. One final safety check confirmed no PID, all properties
+  `off`, battery `23 C`, and thermal status `0`. No second launch ran.
+
+V12 safety/performance fix:
+
+- The speculative settled-target rollback is removed. Legacy Android property
+  values `repair`, `on`, `true`, and `1` now resolve to read-only `verify` in
+  native code, and the route tool also normalizes a requested `repair` to
+  effective `verify` before writing the property. Capture README files record
+  both requested and effective values.
+- LLVM no longer inserts `__thor_es_async_draw_consume` before the two hot
+  parser command loads. The compatibility resolver remains as a no-op for stale
+  objects, but no current object calls it. The 4 MiB rollback store, snapshot
+  reader/writer synchronization, 20 ms settling loop, and all guest-memory
+  write-back logic are deleted.
+- Verify mode retains only title-gated descriptor and post-drain observation.
+  Target publication no longer acquires rollback locks. New cache bit
+  `thor_es_async_draw_barrier_v8` prevents reuse of v7 objects containing the
+  per-command consume hook. Probe-off gameplay and V11 dispatch provenance
+  remain unchanged.
+- `git diff --check` and PowerShell AST parsing pass. The ARM64
+  RelWithDebInfo build passed in `87s`; warnings were existing upstream
+  deprecations only. Exact host-only V12 core is
+  `816D6D7917C8EDFBD0749ECFFB4126D8AB5072F6A9E9F74DD7AAE43FFD4BEBE7`, size
+  `1,349,863,856` bytes. It is not deployed or launched.
+
+Next:
+
+- Keep the Thor stopped for this thermal round. In a later cool round, use
+  exact V12 with dispatch provenance on and effective async mode `verify` for
+  one fail-closed route. Require clean field/battle visuals and no VM fatal;
+  if the recurring `0x30b12f20` row returns, use its V11 ownership relation for
+  the next narrow synchronization fix. Never restore settled target bytes.

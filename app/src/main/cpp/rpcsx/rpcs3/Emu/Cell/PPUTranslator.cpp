@@ -315,16 +315,6 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
 			const u32 guest_cia = ::narrow<u32>(m_addr + base);
 
-			if (use_thor_es_async_draw_barrier &&
-				(guest_cia == 0x002acc54 || guest_cia == 0x002acc9c))
-			{
-				// Repair only a changed settled-target window immediately before the
-				// parser reads its command word. This also covers the command's nearby
-				// arguments without touching stable or non-async stream regions.
-				Call(GetType<void>(), "__thor_es_async_draw_consume", m_thread,
-					GetGpr(9), m_ir->getInt32(guest_cia));
-			}
-
 			if (use_thor_es_dispatch_probe && guest_cia == 0x002aedd0)
 			{
 				// Command 0x61 enters with r31 at its first argument. Record the
