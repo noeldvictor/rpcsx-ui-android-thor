@@ -644,13 +644,13 @@ namespace
 		0x002e8ab0,
 		0x002ee0c8,
 	};
-	constexpr std::array<u32, 6> thor_es_command61_stores{
-		0x002caab0,
-		0x002e13b8,
-		0x002e80c8,
-		0x002e8a78,
-		0x002e8b28,
-		0x002ee680,
+	constexpr std::array<u32, 6> thor_es_command61_complete_stores{
+		0x002caac0,
+		0x002e13c8,
+		0x002e80d8,
+		0x002e8a88,
+		0x002e8b38,
+		0x002ee690,
 	};
 	constexpr u32 thor_es_draw_stream_size = 0x18'0000;
 	constexpr usz thor_es_command60_event_capacity = 4096;
@@ -669,6 +669,9 @@ namespace
 	// parallel rings. Zero is reserved for an unavailable hash.
 	std::array<atomic_t<u64>, thor_es_command60_event_capacity> thor_es_command60_events{};
 	std::array<atomic_t<u64>, thor_es_command61_event_capacity> thor_es_command61_events{};
+	std::array<atomic_t<u64>, thor_es_command61_event_capacity> thor_es_command61_sources{};
+	std::array<atomic_t<u64>, thor_es_command61_event_capacity> thor_es_command61_payloads{};
+	std::array<atomic_t<u64>, thor_es_command61_event_capacity> thor_es_command61_sequences{};
 	std::array<atomic_t<u64>, thor_es_publish_event_capacity> thor_es_publish_events{};
 	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_events{};
 	std::array<atomic_t<u64>, thor_es_async_draw_event_capacity> thor_es_async_draw_initial_words{};
@@ -886,12 +889,12 @@ bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size)
 		static atomic_t<bool> logged = false;
 		if (!logged.exchange(true))
 		{
-			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe v2 enabled: loads=[0x%x,0x%x] "
+			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe v3 enabled: loads=[0x%x,0x%x] "
 				"command61_handler=0x%x publisher=0x%x command60_emitters=%u command61_emitters=%u",
 				thor_es_dispatch_load_first, thor_es_dispatch_load_next,
 				thor_es_command61_handler, thor_es_publish_terminator_store,
 				static_cast<u32>(thor_es_command60_stores.size()),
-				static_cast<u32>(thor_es_command61_stores.size()));
+				static_cast<u32>(thor_es_command61_complete_stores.size()));
 		}
 	}
 
@@ -924,7 +927,7 @@ bool ppu_thor_es_dispatch_provenance_range(u32 address, u32 size)
 		}
 	}
 
-	for (const u32 cia : thor_es_command61_stores)
+	for (const u32 cia : thor_es_command61_complete_stores)
 	{
 		if (address <= cia && cia < end)
 		{
@@ -950,10 +953,11 @@ void ppu_thor_es_command60_probe(ppu_thread&, u64 stream_pointer, u32 cia)
 		.release(static_cast<u64>(address) << 32 | cia);
 }
 
-void ppu_thor_es_command61_probe(ppu_thread&, u64 stream_pointer, u32 cia)
+void ppu_thor_es_command61_probe(ppu_thread&, u64 stream_pointer, u64 source_pointer,
+	u64 arg0, u64 arg1, u64 arg2, u32 cia)
 {
-	const bool known_emitter = std::find(thor_es_command61_stores.begin(),
-		thor_es_command61_stores.end(), cia) != thor_es_command61_stores.end();
+	const bool known_emitter = std::find(thor_es_command61_complete_stores.begin(),
+		thor_es_command61_complete_stores.end(), cia) != thor_es_command61_complete_stores.end();
 	if (Emu.GetTitleID() != "BLUS30161" || !get_thor_es_dispatch_probe_enabled() || !known_emitter)
 	{
 		return;
@@ -961,8 +965,17 @@ void ppu_thor_es_command61_probe(ppu_thread&, u64 stream_pointer, u32 cia)
 
 	const u32 address = static_cast<u32>(stream_pointer);
 	const u64 cursor = thor_es_command61_event_cursor.fetch_add(1);
-	thor_es_command61_events[cursor & (thor_es_command61_event_capacity - 1)]
+	const usz index = cursor & (thor_es_command61_event_capacity - 1);
+	thor_es_command61_sequences[index].release(0);
+	thor_es_command61_sources[index].release(
+		static_cast<u64>(static_cast<u32>(arg0)) << 32 | static_cast<u32>(source_pointer));
+	thor_es_command61_payloads[index].release(
+		static_cast<u64>(static_cast<u32>(arg1)) << 32 | static_cast<u32>(arg2));
+	// Publish the sequence after the complete snapshot. Clearing it first and
+	// checking it twice lets a reader reject a slot being overwritten in place.
+	thor_es_command61_events[index]
 		.release(static_cast<u64>(address) << 32 | cia);
+	thor_es_command61_sequences[index].release(cursor + 1);
 }
 
 void ppu_thor_es_publish_probe(ppu_thread&, u64 object, u64 end_pointer, u32 cia)
@@ -1091,22 +1104,49 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 
 	u32 command61_emitter_cia = 0;
 	u32 command61_event_age = umax;
+	u32 command61_source_pointer = 0;
+	u32 command61_emitted_arg0 = 0;
+	u32 command61_emitted_arg1 = 0;
+	u32 command61_emitted_arg2 = 0;
 	if (command61_handler)
 	{
 		const u64 cursor = thor_es_command61_event_cursor.load();
 		const u64 event_count = std::min<u64>(cursor, thor_es_command61_event_capacity);
 		for (u64 age = 0; age < event_count; age++)
 		{
-			const u64 event = thor_es_command61_events[(cursor - age - 1) &
-				(thor_es_command61_event_capacity - 1)].load();
+			const u64 expected_sequence = cursor - age;
+			const usz index = (cursor - age - 1) & (thor_es_command61_event_capacity - 1);
+			if (thor_es_command61_sequences[index].load() != expected_sequence)
+			{
+				continue;
+			}
+
+			const u64 event = thor_es_command61_events[index].load();
 			if (static_cast<u32>(event >> 32) == address)
 			{
+				const u64 source = thor_es_command61_sources[index].load();
+				const u64 payload = thor_es_command61_payloads[index].load();
+				if (thor_es_command61_sequences[index].load() != expected_sequence)
+				{
+					continue;
+				}
 				command61_emitter_cia = static_cast<u32>(event);
 				command61_event_age = static_cast<u32>(age);
+				command61_source_pointer = static_cast<u32>(source);
+				command61_emitted_arg0 = static_cast<u32>(source >> 32);
+				command61_emitted_arg1 = static_cast<u32>(payload >> 32);
+				command61_emitted_arg2 = static_cast<u32>(payload);
 				break;
 			}
 		}
 	}
+	const char* const command61_payload_relation = !command61_emitter_cia || !command61_args_valid
+		? "unknown"
+		: command61_emitted_arg0 == command61_arg0 &&
+			command61_emitted_arg1 == command61_arg1 &&
+			command61_emitted_arg2 == command61_arg2
+			? "stable_since_emit"
+			: "changed_since_emit";
 
 	u32 published_end = 0;
 	u32 publish_event_age = umax;
@@ -1192,6 +1232,9 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 		"buffer0=0x%x buffer1=0x%x selected=0x%x write=0x%x "
 		"write_offset=0x%x flags=0x%x command60_emitter=0x%x "
 		"command60_event_age=%u command61_emitter=0x%x command61_event_age=%u "
+		"command61_source=0x%x command61_emitted_arg0=0x%x "
+		"command61_emitted_arg1=0x%x command61_emitted_arg2=0x%x "
+		"command61_payload_relation=%s "
 		"published_end=0x%x published_end_offset=0x%x "
 		"publish_event_age=%u publish_relation=%s async_target=0x%x async_size=0x%x "
 		"async_event_age=%u async_initial_first=0x%x async_initial_last=0x%x "
@@ -1206,6 +1249,8 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 		command61_arg1, command61_arg2, layout_valid, buffer0, buffer1, selected,
 		write, write_offset, flags, command60_emitter_cia, command60_event_age,
 		command61_emitter_cia, command61_event_age,
+		command61_source_pointer, command61_emitted_arg0, command61_emitted_arg1,
+		command61_emitted_arg2, command61_payload_relation,
 		published_end, published_end_offset, publish_event_age, publish_relation,
 		async_target, async_size, async_event_age, async_initial_first,
 		async_initial_last, async_initial_hash, async_before_hash, async_after_hash,
@@ -6350,8 +6395,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_async_draw_barrier_v5,
 				thor_es_async_draw_barrier_v6,
 				thor_es_dispatch_provenance_v2,
+				thor_es_dispatch_provenance_v3,
 
-				bitset_last = thor_es_dispatch_provenance_v2,
+				bitset_last = thor_es_dispatch_provenance_v3,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -6406,7 +6452,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (has_thor_es_dispatch_probe)
 				settings += ppu_settings::thor_es_dispatch_probe;
 			if (has_thor_es_dispatch_provenance)
-				settings += ppu_settings::thor_es_dispatch_provenance_v2;
+				settings += ppu_settings::thor_es_dispatch_provenance_v3;
 			if (has_thor_es_async_draw_barrier)
 				settings += ppu_settings::thor_es_async_draw_barrier_v6;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)

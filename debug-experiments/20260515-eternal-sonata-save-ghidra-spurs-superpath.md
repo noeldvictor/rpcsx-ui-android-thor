@@ -156,3 +156,19 @@ cmake --build build-msvc --config Release --target rpcs3 --parallel 8
   `72EAFCDFC19E670AC0F98CDDDA6DC1AD00300E4F99D00C5928BD66456C1C5386`, size
   `1,349,779,768`. One later cool route may identify the bad producer before a
   producer-side ownership fix; command skipping is not authorized.
+
+## 2026-07-16 Completed-record Provenance Refinement
+
+- Full emitter decompilation proves arg0 is the live object pointer already
+  dereferenced for its source list at `+0x30`; arg1/arg2 come from each source
+  record's `+0x10/+0x0c`. A legitimate emitter cannot reach its stores with
+  arg0 `0x4`, strengthening the post-emission overwrite hypothesis.
+- V7 is superseded without deployment because its callback occurred after the
+  opcode but before payload completion. V8 moves to the six final payload
+  stores and snapshots source plus original args from proven registers.
+- Sequence-validating each multiword ring slot makes the later anomaly reader
+  reject an in-place wrap/overwrite. The log directly classifies
+  `stable_since_emit` versus `changed_since_emit`; guest behavior is unchanged.
+- ARM64 RelWithDebInfo passes. Exact undeployed v8 core is
+  `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`, size
+  `1,349,802,568`. No device action occurred.

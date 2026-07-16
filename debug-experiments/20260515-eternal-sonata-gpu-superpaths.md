@@ -329,3 +329,16 @@ Bad candidates unless proven otherwise: tiny SPURS control loops, semaphore wait
   It does not offload, mask, or mutate the command. Exact core:
   `72EAFCDFC19E670AC0F98CDDDA6DC1AD00300E4F99D00C5928BD66456C1C5386`,
   `1,349,779,768` bytes.
+
+### Completed-record refinement
+
+- All six emitters dereference arg0 before copying it into the command stream;
+  arg0 `0x4` therefore indicates a post-emission overwrite or an untracked
+  producer, not a valid producer-side object value.
+- V7 is superseded undeployed because its callback sat between opcode and
+  payload stores. V8 hooks only after the completed 16-byte record and snapshots
+  source plus emitted payload with sequence-validated atomic metadata.
+- Exact host-only v8 core is
+  `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`,
+  `1,349,802,568` bytes. This remains CPU/SPU ownership diagnosis, with zero
+  promoted Vulkan/GPU-compute credit.

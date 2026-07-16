@@ -371,15 +371,31 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 					Call(GetType<void>(), "__thor_es_publish_probe", m_thread,
 						GetGpr(3), GetGpr(9), m_ir->getInt32(guest_cia));
 					break;
-				case 0x002caab0:
-				case 0x002e13b8:
-				case 0x002e80c8:
-				case 0x002e8a78:
-				case 0x002e8b28:
-				case 0x002ee680:
+				case 0x002caac0:
 					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_command61_probe", m_thread,
-						GetGpr(8), m_ir->getInt32(guest_cia));
+						GetGpr(8), GetGpr(7), GetGpr(3), GetGpr(6), GetGpr(5),
+						m_ir->getInt32(guest_cia));
+					break;
+				case 0x002e13c8:
+				case 0x002e80d8:
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_command61_probe", m_thread,
+						GetGpr(8), GetGpr(7), GetGpr(12), GetGpr(6), GetGpr(5),
+						m_ir->getInt32(guest_cia));
+					break;
+				case 0x002e8a88:
+				case 0x002e8b38:
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_command61_probe", m_thread,
+						GetGpr(8), GetGpr(7), GetGpr(31), GetGpr(6), GetGpr(5),
+						m_ir->getInt32(guest_cia));
+					break;
+				case 0x002ee690:
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_command61_probe", m_thread,
+						GetGpr(8), GetGpr(7), GetGpr(29), GetGpr(6), GetGpr(5),
+						m_ir->getInt32(guest_cia));
 					break;
 				default:
 					break;

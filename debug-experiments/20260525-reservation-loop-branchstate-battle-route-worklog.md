@@ -13047,3 +13047,55 @@ Next:
   matching command-`0x61` emitter and async/publication relation to repair the
   producer or ownership boundary; do not skip a required RSX state/resource
   command without that proof.
+
+## 2026-07-16 Host-only V8 Completed-Record Snapshots
+
+Deeper saved-project proof:
+
+- Decompilation of all six command-`0x61` emitters shows one uniform record:
+  opcode, live object pointer, source `+0x10`, source `+0x0c`. The source list
+  starts at object `+0x30` and advances by `0x20` per record.
+- The emitter dereferences the same object pointer at `+0x0/+0x30` before
+  writing it as arg0. Therefore it cannot normally emit arg0 `0x4`; that would
+  have faulted in the emitter before the record store. The runtime `0x4` was
+  introduced after a valid emitter dereference, or the record came from a
+  writer not yet in the six-site map.
+
+V7 audit and v8 replacement:
+
+- V7's six hooks were placed after each opcode store, but before the following
+  arg0/arg1/arg2 stores. Although default-off, a probe-on host callback at that
+  point can widen a partial-record window and perturb the race being measured.
+  V7 was never deployed or launched and is superseded.
+- V8 moves each hook after the final payload store at `0x002caac0`,
+  `0x002e13c8`, `0x002e80d8`, `0x002e8a88`, `0x002e8b38`, or `0x002ee690`.
+  The record is complete before any host callback.
+- Each breadcrumb now snapshots the source-record pointer plus emitted
+  arg0/arg1/arg2 from the Ghidra-proven live registers. A per-slot sequence is
+  cleared before overwrite, published after all atomic words, and checked
+  before/after reads, preventing ring-wrap metadata mixing.
+- An anomalous handler row reports `stable_since_emit` or
+  `changed_since_emit`, exact source/emitted/current payload, emitter CIA,
+  publication relation, and async-target hash relation. There is still no
+  guest mutation, command skip, recovery, allocation, or probe-off overhead.
+- New cache bit `thor_es_dispatch_provenance_v3` prevents v7 probe objects from
+  bypassing the completed-record sites.
+
+Verification:
+
+- `git diff --check` passes.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a] --no-daemon` passes; the confirming
+  no-op build completed in `10s`.
+- Exact undeployed v8 core is
+  `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`, size
+  `1,349,802,568` bytes.
+- No ADB query, deploy, launch, screenshot, or device poll occurred during this
+  refinement. The Thor remains stopped.
+
+Next:
+
+- In one later cool round, deploy exact v8 and run one guarded repair+probe
+  route. `changed_since_emit` authorizes tracing the overwriter/ownership
+  boundary; `stable_since_emit` means the six-site register map or a different
+  producer must be challenged. Do not mask or restore arg0 until that evidence
+  exists.

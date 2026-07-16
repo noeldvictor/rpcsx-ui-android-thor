@@ -1187,3 +1187,16 @@ Next:
   GPU promotion lanes off. One later cool route should identify the producer,
   after which any fix must still pass clean field, Options, and first-battle
   visual/fatal gates.
+
+### V8 completed-record correction
+
+- Static proof shows arg0 was dereferenceable at emission, so runtime arg0
+  `0x4` is post-emission corruption or an untracked writer. V7 is not a valid
+  deployment candidate because its callback interrupted the record between
+  opcode and payload stores.
+- V8 places all hooks after payload completion and captures original source and
+  args in sequence-validated atomic slots. Exact host-only artifact:
+  `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`,
+  `1,349,802,568` bytes; ARM64 build and diff checks pass.
+- Keep contract fast/body/GPU lanes off. One later cool v8 route must classify
+  `changed_since_emit` versus `stable_since_emit` before any guest-data repair.
