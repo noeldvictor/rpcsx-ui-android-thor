@@ -13323,6 +13323,14 @@ Verification:
 - Exact host-only v11 core is
   `47B27527E0826BDB56DE91C99A9D6DABCE1B294F85CF61466A990E60DDFCD43F`, size
   `1,349,912,424` bytes.
+- New offline `summarize_thor_es_dispatch_provenance.ps1` extracts the V11
+  ownership fields into raw text, JSON, and a one-line decision. The guarded
+  macro invokes it on already-captured tail and full guest logs, adding zero
+  ADB calls; healthy logs without provenance create no summary clutter.
+- PowerShell AST parsing reports zero errors for the macro and summarizer. The
+  checked-in synthetic V11 fixture classifies
+  `cross_ppu_overlap_before_template_complete`; the prior V8 route's eight rows
+  safely classify `template_event_missing` rather than inventing ownership.
 - No ADB query, deploy, launch, screenshot, temperature poll, or Thor workload
   occurred. V10 was superseded before deployment.
 

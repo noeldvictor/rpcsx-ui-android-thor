@@ -559,7 +559,10 @@ function Save-ThorGuestLogEvidence {
     $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
     $logTail = @(& $Adb shell tail -n 800 $remoteLog 2>&1)
     $logExitCode = $LASTEXITCODE
-    $logTail | Set-Content -LiteralPath (Join-Path $captureDir "guest-health-$safeLabel.log") -Encoding UTF8
+    $localLog = Join-Path $captureDir "guest-health-$safeLabel.log"
+    $logTail | Set-Content -LiteralPath $localLog -Encoding UTF8
+    & (Join-Path $PSScriptRoot "summarize_thor_es_dispatch_provenance.ps1") `
+        -InputPath $localLog -OutputDirectory $captureDir -Label $safeLabel | Out-Null
 
     return [PSCustomObject]@{
         SafeLabel = $safeLabel
@@ -573,7 +576,13 @@ function Save-ThorFullGuestLogEvidence {
 
     $safeLabel = New-ThorSafeLabel $Label
     $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
-    Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteLog -LocalName "RPCSX-full-$safeLabel.log" | Out-Null
+    $localName = "RPCSX-full-$safeLabel.log"
+    Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteLog -LocalName $localName | Out-Null
+    $localLog = Join-Path $captureDir $localName
+    if (Test-Path -LiteralPath $localLog) {
+        & (Join-Path $PSScriptRoot "summarize_thor_es_dispatch_provenance.ps1") `
+            -InputPath $localLog -OutputDirectory $captureDir -Label "full-$safeLabel" | Out-Null
+    }
 }
 
 function Throw-ThorVisualFailure {
