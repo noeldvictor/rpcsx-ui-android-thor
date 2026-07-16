@@ -718,3 +718,40 @@ Next:
   temperature-guarded battle route, force-stop, and classify first-fault plus
   visuals. Require zero unknown draw, VM/native/restart/Vulkan/LLVM faults and
   correct active battle before any longer or performance-oriented run.
+
+## 2026-07-16 Atomic Counterproof And PPU LLVM Isolation Gate
+
+Counterproof:
+
+- Exact atomic-`PUTLLC` core `884F...D3DF8` ran once in
+  `20260716-022914-thor-input-eternal-sonata-battle-intro-route` with all
+  experiments off/native. Correct field/tutorial frames rendered at
+  `27.12/28.88 FPS`, with no captured black frame.
+- Unknown draw `0x30b12f20` appeared at emulated `0:02:40.030250`, followed
+  later by the familiar corrupt five-word burst. No VM/native/restart/Vulkan/
+  LLVM fatal preceded controlled stop. The device stayed at `24 C`, thermal
+  status `0`, ended stopped, and received no second route.
+- Keep the upstream-aligned atomic publication patch for correctness and lower
+  one-block write traffic, but reject it as the complete stability fix.
+
+Replacement diagnostic contract:
+
+- Host-only core `D33AC093C9516653687F8ED512931AB1B77D03B5E9B7B6A74BA9C271FDF1BC21`
+  can interpret only the Ghidra-proven BLUS30161 PPU publisher
+  `[0x002ac618,0x002ac65c)`, parser `[0x002acbc8,0x002afce0)`, or both. The
+  default remains normal LLVM execution.
+- The gateway stub preserves the exact CIA, interprets only while inside the
+  selected range, and hands calls/returns outside the range back to the normal
+  dispatcher. Publisher and parser modes have separate PPU object-cache bits,
+  preventing cross-mode cache reuse even though both occupy one EBOOT part.
+- ARM64 RelWithDebInfo linked successfully; size is `1,349,614,432` bytes.
+  The core has not been deployed or launched.
+
+Next:
+
+- No more Thor work in this round. In one later cool round, deploy exact
+  `D33A...BC21`, keep every other experiment off/native, use
+  `-EsPpuCommandInterp both`, run one guarded route, force-stop, and reset the
+  property. Require effective-mode/cache evidence, correct visuals, and first-
+  fault classification. Split publisher from parser only after a clean `both`
+  result; reject this lane if the same corruption recurs.

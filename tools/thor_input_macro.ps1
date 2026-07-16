@@ -10,6 +10,8 @@ param(
     [string]$InputMode = "Virtual",
     [string]$RawInputDevice = "/dev/input/event9",
     [double]$MaxBatteryTemperatureC = 39.0,
+    [ValidateSet("off", "publisher", "parser", "both")]
+    [string]$EsPpuCommandInterp = "off",
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot,
@@ -619,6 +621,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Input mode: $InputMode",
     "- Raw input device: $RawInputDevice",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
+    "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Unknown draw policy: $(if ($strictGuestDrawStream) { 'fail-closed' } else { 'record-only' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
@@ -635,9 +638,16 @@ Assert-ThorThermalBudget "pre-run"
 
 if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
 }
 
+$tokens = @()
+$index = 1
+$script:LastThorScreenshotPath = $null
+try {
 if ($BootGame) {
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp $EsPpuCommandInterp") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_command_interp") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "dismiss-keyguard.txt" @("shell", "wm dismiss-keyguard") -AllowFailure | Out-Null
     Start-Sleep -Milliseconds 500
@@ -647,14 +657,10 @@ if ($BootGame) {
     Initialize-ThorProcessIdentity
 }
 
-$tokens = @()
 if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     $tokens = $resolvedMacro.Split(';') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 }
 
-$index = 1
-$script:LastThorScreenshotPath = $null
-try {
     foreach ($token in $tokens) {
         $line = "$(Get-Date -Format o) $token"
         $line | Out-File -LiteralPath (Join-Path $captureDir "macro.log") -Append -Encoding UTF8
@@ -808,7 +814,15 @@ try {
         }
     }
 
+    if ($BootGame) {
+        Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
+    }
+
     throw $failure
+}
+
+if ($BootGame) {
+    Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
 }
 
 Assert-ThorThermalBudget "post-run"

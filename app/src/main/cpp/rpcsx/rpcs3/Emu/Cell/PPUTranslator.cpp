@@ -181,6 +181,14 @@ bool ppu_test_address_may_be_mmio(std::span<const be_t<u32>> insts);
 
 Function* PPUTranslator::Translate(const ppu_function& info)
 {
+	u32 interp_start = 0;
+	u32 interp_end = 0;
+
+	if (!m_reloc && ppu_thor_es_command_interp_range(info.addr, interp_start, interp_end))
+	{
+		return TranslateInterpreterStub(info, interp_start, interp_end);
+	}
+
 	// Instruction address is (m_addr + base)
 	const u64 base = m_reloc ? m_reloc->addr : 0;
 	m_addr = info.addr - base;
@@ -314,6 +322,32 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			CallFunction(m_addr);
 		}
 	}
+
+	run_transforms(*m_function);
+	return m_function;
+}
+
+Function* PPUTranslator::TranslateInterpreterStub(const ppu_function& info, u32 range_start, u32 range_end)
+{
+	ensure(!m_reloc);
+	ensure(info.addr >= range_start && info.addr < range_end);
+
+	m_addr = info.addr;
+	m_function = m_module->getFunction(fmt::format("__0x%x", m_addr));
+
+	IRBuilder<> irb(BasicBlock::Create(m_context, "__entry", m_function));
+	m_ir = &irb;
+	m_thread = m_function->getArg(1);
+
+	// Direct GHC calls do not guarantee that the guest CIA was materialized.
+	// Seed it with this exact block entry before handing execution to the
+	// conventional interpreter helper.
+	auto cia_ptr = dyn_cast<GetElementPtrInst>(m_ir->CreateStructGEP(m_thread_type, m_thread, 166));
+	assert(cia_ptr->getResultElementType() == GetType<u32>());
+	m_ir->CreateStore(m_ir->getInt32(info.addr), cia_ptr);
+
+	Call(GetType<void>(), "__thor_es_command_interp", m_thread, m_ir->getInt32(range_start), m_ir->getInt32(range_end));
+	m_ir->CreateRetVoid();
 
 	run_transforms(*m_function);
 	return m_function;

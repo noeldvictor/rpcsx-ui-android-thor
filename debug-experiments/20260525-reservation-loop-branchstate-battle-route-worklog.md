@@ -12170,3 +12170,69 @@ all experiment properties off/native, run one guarded route, force-stop, and
 require correct field/tutorial/active-battle visuals plus zero unknown draw,
 VM, native, restart, Vulkan-device-loss, or LLVM-fatal signatures before any
 longer stability or performance test.
+
+## 2026-07-16 Atomic PUTLLC Counterproof And PPU Command Interpreter Isolation
+
+Bounded device result:
+
+- Exact atomic-publication core
+  `884FD8B36AB257CFDDDB910E683D185A6B2DFA02C4C5753DF7AA0FD64D9D3DF8`
+  was deployed without rebuilding, launching, or streaming. Local and remote
+  hashes matched in
+  `debug-captures/20260716-022830-atomic-putllc-884f-dev-core-push`.
+- Exactly one guarded direct-input route ran with every experiment property
+  off/native:
+  `debug-captures/android-speed-sprint/20260716-022914-thor-input-eternal-sonata-battle-intro-route`.
+  It rendered the correct loaded field at `27.12 FPS` and the first-battle
+  tutorial prompt at `28.88 FPS`; no retained frame was black or corrupt.
+- The first unknown draw word was `0x30b12f20` at emulated time
+  `0:02:40.030250`. Later output repeated `0xbf26f13a`, `0xbfca2f4e`,
+  `0x3f955080`, `0x3f800001`, and `0x3fd20001`. The fail-closed wrapper
+  stopped at `battle-approach-1`.
+- No guest VM access violation, native signal, process restart, Vulkan device
+  loss, or LLVM fatal preceded the controlled stop. RAM peaked at `9432 MB`
+  near `2:36` and fell to `7228 MB` by `2:46`. Every thermal sample was
+  `24.0 C`, Android thermal status was `0`, the package ended stopped, and no
+  second route, recorder, trace, profiler, or heat soak ran.
+
+Classification:
+
+- The current-upstream double unchanged-data check plus atomic one-`u128`
+  accurate-`PUTLLC` publication did not remove the parser corruption. Retain
+  that patch because it matches upstream's correctness contract and avoids
+  unnecessary full-line store traffic, but award no stability or FPS credit.
+- Full-buffer, selector, reservation-priority, ARM64 SPU DOTPROD/I8MM, and now
+  atomic publication have all produced counterproofs. The remaining narrow
+  question is whether Android's PPU LLVM execution of the exact command
+  publisher/parser differs from interpreter execution.
+
+Host-only isolation candidate:
+
+- Ghidra mapped the publisher to `[0x002ac618,0x002ac65c)` and the parser plus
+  its switch handlers to `[0x002acbc8,0x002afce0)`. The reusable script
+  `tools/ghidra_scripts/InspectFunctionRange.java` records overlapping
+  functions and instructions for future exact-range audits.
+- Added property `debug.rpcsx.thor.es_ppu_command_interp`, default `off` and
+  hard-gated to `BLUS30161`. Modes `publisher`, `parser`, and `both` replace
+  only PPU LLVM entries inside the selected exact range with a gateway-safe
+  stub that materializes the guest CIA and runs the existing PPU interpreter
+  until execution leaves that range. Normal execution and every other title
+  remain unchanged.
+- Publisher and parser selections use independent PPU object-cache key bits.
+  This is required because both ranges occupy the same EBOOT object part and
+  prevents `publisher`, `parser`, `both`, and `off` from reusing incompatible
+  compiled objects. `tools/thor_input_macro.ps1` sets, captures, and resets the
+  property; `tools/set_thor_logging.ps1` also resets and reports it.
+- `git diff --check` passed; both PowerShell tools parsed with zero errors.
+  ARM64 RelWithDebInfo linked successfully and contains both isolation
+  symbols. The resulting host-only core is `1,349,614,432` bytes with SHA256
+  `D33AC093C9516653687F8ED512931AB1B77D03B5E9B7B6A74BA9C271FDF1BC21`.
+  It was not deployed or launched.
+
+Decision: keep the new isolation default-off and give it no speed or stability
+credit before device proof. Do not run the Thor again in this thermal round.
+In one later cool round, deploy exact `D33A...BC21`, enable only
+`-EsPpuCommandInterp both`, run one guarded route, force-stop, and inspect the
+effective mode/cache logs plus field/tutorial/battle visuals and first fault.
+A clean result would justify separate publisher/parser isolation; recurrence
+would reject PPU LLVM execution of both mapped ranges as the primary cause.

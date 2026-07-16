@@ -1755,3 +1755,27 @@ handoff matches and the TTY fault word also matches the producer snapshot, the
 bad word was already published; if the handoff differs, the first changed byte
 identifies an intervening memory mutation. This instrumentation earns no FPS
 credit and must not be enabled for normal benchmarks.
+
+## 2026-07-16 Atomic Publication Counterproof And PPU Isolation Build
+
+Status: `device-fail-closed`; next candidate is host-build-only and default off.
+
+- Exact core `884FD8B36AB257CFDDDB910E683D185A6B2DFA02C4C5753DF7AA0FD64D9D3DF8`
+  ran once in `20260716-022914-thor-input-eternal-sonata-battle-intro-route`.
+  Correct field/tutorial visuals measured `27.12/28.88 FPS` and no retained
+  frame was black, but unknown draw `0x30b12f20` appeared at emulated
+  `0:02:40.030250`; the familiar later corrupt-word burst returned.
+- No VM/native/restart/Vulkan/LLVM fatal preceded the controlled stop. The
+  route stayed at `24 C`, thermal status `0`, ended stopped, and received no
+  second device run. The upstream-aligned atomic `PUTLLC` patch remains a
+  correctness improvement, not a demonstrated stability or speed improvement.
+- Ghidra mapped the exact PPU command publisher/parser ranges to
+  `[0x002ac618,0x002ac65c)` and `[0x002acbc8,0x002afce0)`. A new BLUS30161-only
+  property can interpret `publisher`, `parser`, or `both` while leaving normal
+  PPU LLVM execution as the default. Independent cache bits prevent mode
+  collisions within their shared EBOOT object part.
+- The ARM64 RelWithDebInfo core built and linked successfully at
+  `1,349,614,432` bytes, SHA256
+  `D33AC093C9516653687F8ED512931AB1B77D03B5E9B7B6A74BA9C271FDF1BC21`.
+  It was not deployed or launched. One later cool guarded `both` route is the
+  next isolation test; this build currently earns no performance credit.

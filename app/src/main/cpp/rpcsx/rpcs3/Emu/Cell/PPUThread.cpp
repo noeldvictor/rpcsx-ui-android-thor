@@ -62,6 +62,10 @@
 #include <optional>
 #include <charconv>
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 #include "rx/asm.hpp"
 #include "rx/align.hpp"
 #include "util/vm.hpp"
@@ -600,6 +604,117 @@ static ppu_intrp_func ppu_ret = {[](ppu_thread& ppu, ppu_opcode_t, be_t<u32>* th
 		ppu.cia = vm::get_addr(this_op);
 		return;
 	}};
+
+namespace
+{
+	enum class thor_es_command_interp_mode : u8
+	{
+		disabled,
+		publisher,
+		parser,
+		both,
+	};
+
+	constexpr u32 thor_es_publisher_start = 0x002ac618;
+	constexpr u32 thor_es_publisher_end = 0x002ac65c;
+	constexpr u32 thor_es_parser_start = 0x002acbc8;
+	constexpr u32 thor_es_parser_end = 0x002afce0;
+
+	thor_es_command_interp_mode get_thor_es_command_interp_mode()
+	{
+		static const thor_es_command_interp_mode mode = []
+		{
+#ifdef ANDROID
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.es_ppu_command_interp", value);
+			const std::string_view setting{value, length > 0 ? static_cast<usz>(length) : 0};
+
+			if (setting == "publisher" || setting == "producer")
+			{
+				return thor_es_command_interp_mode::publisher;
+			}
+
+			if (setting == "parser" || setting == "consumer")
+			{
+				return thor_es_command_interp_mode::parser;
+			}
+
+			if (setting == "both")
+			{
+				return thor_es_command_interp_mode::both;
+			}
+#endif
+			return thor_es_command_interp_mode::disabled;
+		}();
+
+		return mode;
+	}
+
+	const char* get_thor_es_command_interp_mode_name(thor_es_command_interp_mode mode)
+	{
+		switch (mode)
+		{
+		case thor_es_command_interp_mode::publisher: return "publisher";
+		case thor_es_command_interp_mode::parser: return "parser";
+		case thor_es_command_interp_mode::both: return "both";
+		default: return "off";
+		}
+	}
+}
+
+bool ppu_thor_es_command_interp_range(u32 address, u32& range_start, u32& range_end)
+{
+	if (Emu.GetTitleID() != "BLUS30161")
+	{
+		return false;
+	}
+
+	const auto mode = get_thor_es_command_interp_mode();
+	const bool use_publisher = mode == thor_es_command_interp_mode::publisher || mode == thor_es_command_interp_mode::both;
+	const bool use_parser = mode == thor_es_command_interp_mode::parser || mode == thor_es_command_interp_mode::both;
+
+	if (use_publisher && address >= thor_es_publisher_start && address < thor_es_publisher_end)
+	{
+		range_start = thor_es_publisher_start;
+		range_end = thor_es_publisher_end;
+	}
+	else if (use_parser && address >= thor_es_parser_start && address < thor_es_parser_end)
+	{
+		range_start = thor_es_parser_start;
+		range_end = thor_es_parser_end;
+	}
+	else
+	{
+		return false;
+	}
+
+	static atomic_t<bool> logged = false;
+	if (!logged.exchange(true))
+	{
+		ppu_log.notice("Thor Eternal Sonata command interpreter isolation enabled: mode=%s publisher=[0x%x,0x%x) parser=[0x%x,0x%x)",
+			get_thor_es_command_interp_mode_name(mode), thor_es_publisher_start, thor_es_publisher_end,
+			thor_es_parser_start, thor_es_parser_end);
+	}
+
+	return true;
+}
+
+void ppu_thor_es_command_interp(ppu_thread& ppu, u32 range_start, u32 range_end)
+{
+	perf_meter<"PPUESINT"_u64> perf0;
+	const auto& table = g_fxo->get<ppu_interpreter_rt>();
+
+	while (ppu.cia >= range_start && ppu.cia < range_end)
+	{
+		const u32 op = vm::read32(ppu.cia);
+		table.decode(op)(ppu, {op}, vm::_ptr<u32>(ppu.cia), &ppu_ret);
+
+		if (ppu.test_stopped())
+		{
+			break;
+		}
+	}
+}
 
 static void ppu_fallback(ppu_thread& ppu, ppu_opcode_t op, be_t<u32>* this_op, ppu_intrp_func* next_fn)
 {
@@ -4850,6 +4965,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 						   })},
 			{"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
 			{"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
+			{"__thor_es_command_interp", reinterpret_cast<u64>(ppu_thor_es_command_interp)},
 			{"__escape", reinterpret_cast<u64>(+ppu_escape)},
 			{"__read_maybe_mmio32", reinterpret_cast<u64>(+ppu_read_mmio_aware_u32)},
 			{"__write_maybe_mmio32", reinterpret_cast<u64>(+ppu_write_mmio_aware_u32)},
@@ -5431,6 +5547,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				accurate_fpcc,
 				accurate_vnan,
 				accurate_nj_mode,
+				thor_es_command_interp_publisher,
+				thor_es_command_interp_parser,
 				contains_symbol_resolver,
 
 				bitset_last = contains_symbol_resolver,
@@ -5461,6 +5579,23 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::accurate_vnan, settings -= ppu_settings::fixup_vnan, fmt::throw_exception("VNAN Not implemented");
 			if (g_cfg.core.ppu_use_nj_bit)
 				settings += ppu_settings::accurate_nj_mode, settings -= ppu_settings::fixup_nj_denormals, fmt::throw_exception("NJ Not implemented");
+			bool has_thor_es_interp_publisher = false;
+			bool has_thor_es_interp_parser = false;
+			for (const ppu_function& f : part.get_funcs())
+			{
+				u32 range_start = 0;
+				u32 range_end = 0;
+
+				if (f.size && ppu_thor_es_command_interp_range(f.addr, range_start, range_end))
+				{
+					has_thor_es_interp_publisher |= range_start == thor_es_publisher_start;
+					has_thor_es_interp_parser |= range_start == thor_es_parser_start;
+				}
+			}
+			if (has_thor_es_interp_publisher)
+				settings += ppu_settings::thor_es_command_interp_publisher;
+			if (has_thor_es_interp_parser)
+				settings += ppu_settings::thor_es_command_interp_parser;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 

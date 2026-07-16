@@ -560,6 +560,7 @@ if ($Mode -ne "Status" -and $Mode -notlike "Getllar*") {
 
 if ($Mode -ne "Status") {
     Set-DeviceProp "debug.rpcsx.thor.rsx_blit_source_resolve" "off"
+    Set-DeviceProp "debug.rpcsx.thor.es_ppu_command_interp" "off"
 }
 
 if ($Mode -ne "Status") {
@@ -584,6 +585,7 @@ Get-DeviceProp "debug.rpcsx.thor.rsx_blit_source_resolve"
 Get-DeviceProp "debug.rpcsx.thor.fast_busy_wait"
 Get-DeviceProp "debug.rpcsx.thor.wait_profiler"
 Get-DeviceProp "debug.rpcsx.thor.es_getllar"
+Get-DeviceProp "debug.rpcsx.thor.es_ppu_command_interp"
 Get-DeviceProp "debug.rpcsx.thor.dump_prx"
 Get-DeviceProp "log.tag.RPCS3"
 Get-DeviceProp "log.tag.RPCSX-UI"

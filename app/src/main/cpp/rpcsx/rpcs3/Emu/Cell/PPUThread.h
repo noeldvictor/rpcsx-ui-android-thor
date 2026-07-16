@@ -284,6 +284,12 @@ public:
 
 static_assert(ppu_join_status::max <= ppu_join_status{ppu_thread::id_base});
 
+// Android-only Eternal Sonata PPU interpreter isolation. The range query is
+// also used while forming the LLVM object-cache key, so a selected range can
+// never reuse an object compiled for the normal PPU LLVM path.
+bool ppu_thor_es_command_interp_range(u32 address, u32& range_start, u32& range_end);
+void ppu_thor_es_command_interp(ppu_thread& ppu, u32 range_start, u32 range_end);
+
 template <typename T>
 struct ppu_gpr_cast_impl
 {
