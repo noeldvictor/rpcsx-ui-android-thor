@@ -633,6 +633,7 @@ namespace
 	constexpr u32 thor_es_async_draw_consumer_signal_entry = 0x002ac7b0;
 	constexpr u32 thor_es_async_draw_target_max_size = 0x4000;
 	constexpr u64 thor_es_async_draw_wait_limit_us = 20'000;
+	constexpr u32 thor_es_async_draw_stable_intervals = 2;
 	constexpr std::array<u32, 7> thor_es_command60_stores{
 		0x002caa38,
 		0x002cb810,
@@ -676,7 +677,7 @@ namespace
 		}
 
 		constexpr u32 chunk_size = 1024;
-		std::array<u8, chunk_size> chunk{};
+		std::array<u64, chunk_size / sizeof(u64)> chunk{};
 		u64 result = rpcs3::hash64(rpcs3::fnv_seed, size);
 		for (u32 offset = 0; offset < size; offset += chunk_size)
 		{
@@ -686,9 +687,16 @@ namespace
 				return false;
 			}
 
-			for (u32 index = 0; index < count; index++)
+			const u32 word_count = count / sizeof(u64);
+			for (u32 index = 0; index < word_count; index++)
 			{
 				result = rpcs3::hash64(result, chunk[index]);
+			}
+
+			const auto* const tail = reinterpret_cast<const u8*>(chunk.data()) + word_count * sizeof(u64);
+			for (u32 index = word_count * sizeof(u64); index < count; index++)
+			{
+				result = rpcs3::hash64(result, tail[index - word_count * sizeof(u64)]);
 			}
 		}
 
@@ -1144,11 +1152,11 @@ bool ppu_thor_es_async_draw_barrier_range(u32 address, u32 size)
 		static atomic_t<bool> logged = false;
 		if (!logged.exchange(true))
 		{
-			ppu_log.notice("Thor Eternal Sonata async draw post-drain guard v5 enabled: mode=%s descriptor=0x%x consumer_entry=0x%x max_target_size=0x%x wait_limit_us=%llu fingerprint=fnv1a64",
+			ppu_log.notice("Thor Eternal Sonata async draw post-drain guard v6 enabled: mode=%s descriptor=0x%x consumer_entry=0x%x max_target_size=0x%x wait_limit_us=%llu stable_intervals=%u fingerprint=fnv-fold64",
 				get_thor_es_async_draw_barrier_mode_name(get_thor_es_async_draw_barrier_mode()),
 				thor_es_async_draw_descriptor_ready, thor_es_async_draw_consumer_signal_entry,
 				thor_es_async_draw_target_max_size,
-				thor_es_async_draw_wait_limit_us);
+				thor_es_async_draw_wait_limit_us, thor_es_async_draw_stable_intervals);
 		}
 	}
 
@@ -1204,6 +1212,7 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	static atomic_t<u64> barrier_hits = 0;
 	static atomic_t<u64> repair_waits = 0;
 	static atomic_t<u64> repair_timeouts = 0;
+	static atomic_t<u64> repair_hash_changes = 0;
 	static atomic_t<u64> event_overflows = 0;
 
 	const u64 hit = barrier_hits.fetch_add(1) + 1;
@@ -1231,7 +1240,7 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	u32 hashed_targets = 0;
 	u64 hashed_target_bytes = 0;
 	u64 batch_hash = 0;
-	auto count_invalid = [&](bool after_grace)
+	auto snapshot_targets = [&](bool after_grace)
 	{
 		u32 invalid = 0;
 		first_target_address = 0;
@@ -1322,7 +1331,7 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	};
 
 	const u32 targets = static_cast<u32>(event_end - event_begin);
-	const u32 invalid_before = count_invalid(false);
+	const u32 invalid_before = snapshot_targets(false);
 	const u32 readable_before = readable_targets;
 	const u64 readable_bytes_before = readable_target_bytes;
 	const u32 hashed_before = hashed_targets;
@@ -1340,26 +1349,50 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 	u32 invalid_after = invalid_before;
 	u64 waited_us = 0;
 	u64 grace_us = 0;
+	u32 stable_intervals = 0;
+	u32 hash_changes = 0;
+	u32 post_grace_snapshots = 0;
 	bool timed_out = false;
 	if (mode == thor_es_async_draw_barrier_mode::repair && targets)
 	{
 		repair_waits.fetch_add(1);
 		const u64 wait_start = get_system_time();
-		std::atomic_thread_fence(std::memory_order_seq_cst);
-		thread_ctrl::wait_for(20, false);
-		std::atomic_thread_fence(std::memory_order_seq_cst);
-		grace_us = get_system_time() - wait_start;
-		invalid_after = count_invalid(true);
-		waited_us = grace_us;
-		while (invalid_after && waited_us < thor_es_async_draw_wait_limit_us && !Emu.IsStopped())
+		u64 previous_batch_hash = batch_hash_before;
+		const bool require_hash_stability = hashed_before != 0;
+		do
 		{
+			std::atomic_thread_fence(std::memory_order_seq_cst);
 			thread_ctrl::wait_for(20, false);
 			std::atomic_thread_fence(std::memory_order_seq_cst);
-			invalid_after = count_invalid(true);
+			invalid_after = snapshot_targets(true);
+			post_grace_snapshots++;
 			waited_us = get_system_time() - wait_start;
-		}
+			if (post_grace_snapshots == 1)
+			{
+				grace_us = waited_us;
+			}
 
-		timed_out = invalid_after != 0;
+			if (require_hash_stability && previous_batch_hash && batch_hash)
+			{
+				if (previous_batch_hash == batch_hash)
+				{
+					stable_intervals++;
+				}
+				else
+				{
+					stable_intervals = 0;
+					hash_changes++;
+					repair_hash_changes.fetch_add(1);
+				}
+			}
+
+			previous_batch_hash = batch_hash;
+		}
+		while ((invalid_after || (require_hash_stability && stable_intervals < thor_es_async_draw_stable_intervals)) &&
+			waited_us < thor_es_async_draw_wait_limit_us && !Emu.IsStopped());
+
+		timed_out = invalid_after != 0 ||
+			(require_hash_stability && stable_intervals < thor_es_async_draw_stable_intervals);
 		if (timed_out)
 		{
 			repair_timeouts.fetch_add(1);
@@ -1368,18 +1401,19 @@ void ppu_thor_es_async_draw_barrier(ppu_thread&, u32 cia)
 
 	if (hit == 1 || invalid_before || overflow || hit % 1024 == 0)
 	{
-		ppu_log.notice("Thor Eternal Sonata async draw post-drain v5: hit=%llu mode=%s targets=%u readable_before=%u readable_bytes_before=%llu readable_after=%u readable_bytes_after=%llu hashed_before=%u hashed_bytes_before=%llu batch_hash_before=0x%llx hashed_after=%u hashed_bytes_after=%llu batch_hash_after=0x%llx invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_initial_hash=0x%llx first_before_first=0x%x first_before_last=0x%x first_before_hash=0x%llx first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_hash=0x%llx first_after_invalid=0x%x graces=%llu timeouts=%llu overflows=%llu",
+		ppu_log.notice("Thor Eternal Sonata async draw post-drain v6: hit=%llu mode=%s targets=%u readable_before=%u readable_bytes_before=%llu readable_after=%u readable_bytes_after=%llu hashed_before=%u hashed_bytes_before=%llu batch_hash_before=0x%llx hashed_after=%u hashed_bytes_after=%llu batch_hash_after=0x%llx invalid_before=%u invalid_after=%u grace_us=%llu waited_us=%llu stable_intervals=%u hash_changes=%u snapshots=%u timeout=%u overflow=%u first_target=0x%x first_size=0x%x first_initial_first=0x%x first_initial_last=0x%x first_initial_hash=0x%llx first_before_first=0x%x first_before_last=0x%x first_before_hash=0x%llx first_before_invalid=0x%x first_after_target=0x%x first_after_first=0x%x first_after_last=0x%x first_after_hash=0x%llx first_after_invalid=0x%x graces=%llu timeouts=%llu total_hash_changes=%llu overflows=%llu",
 			hit, get_thor_es_async_draw_barrier_mode_name(mode), targets, readable_before,
 			readable_bytes_before, readable_targets, readable_target_bytes, hashed_before,
 			hashed_bytes_before, batch_hash_before, hashed_targets, hashed_target_bytes,
-			batch_hash, invalid_before, invalid_after, grace_us, waited_us, timed_out,
-			overflow, first_before_target,
+			batch_hash, invalid_before, invalid_after, grace_us, waited_us,
+			stable_intervals, hash_changes, post_grace_snapshots, timed_out, overflow,
+			first_before_target,
 			first_before_size, first_before_initial_first, first_before_initial_last,
 			first_before_initial_hash, first_before_first, first_before_last,
 			first_before_hash, first_before_invalid, first_target_address,
 			first_current_first, first_current_last, first_current_hash,
 			first_invalid_address, repair_waits.load(),
-			repair_timeouts.load(), event_overflows.load());
+			repair_timeouts.load(), repair_hash_changes.load(), event_overflows.load());
 	}
 }
 
@@ -6228,8 +6262,10 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_async_draw_barrier_v2,
 				thor_es_async_draw_barrier_v3,
 				thor_es_async_draw_barrier_v4,
+				thor_es_async_draw_barrier_v5,
+				thor_es_async_draw_barrier_v6,
 
-				bitset_last = thor_es_async_draw_barrier_v4,
+				bitset_last = thor_es_async_draw_barrier_v6,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -6286,7 +6322,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (has_thor_es_dispatch_provenance)
 				settings += ppu_settings::thor_es_dispatch_provenance_v1;
 			if (has_thor_es_async_draw_barrier)
-				settings += ppu_settings::thor_es_async_draw_barrier_v4;
+				settings += ppu_settings::thor_es_async_draw_barrier_v6;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 

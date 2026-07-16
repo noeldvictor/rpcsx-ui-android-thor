@@ -1147,3 +1147,26 @@ Next:
   target fingerprint rejects further wait/barrier work; a changed post-barrier
   fingerprint authorizes investigation of the writer/overwrite path. Clean
   active battle remains mandatory for any stability or speed claim.
+
+## 2026-07-16 V6 Whole-Batch Stability Gate
+
+- Host-only Ghidra follow-up resolves target-leading command `0x1a` to normal
+  length two/handler `0x002ad3d4`. The target is produced through the SPURS
+  descriptor ring; `0x00309160` waits and acknowledges before parser wakeup.
+  Reject parser-length patches and another broad drain.
+- V6 repair mode requires two consecutive equal whole-batch fingerprints.
+  Interior mutations now reset the stability count even when both endpoint
+  commands look valid. The existing 20 ms cap remains fail-closed.
+- Target fingerprints fold aligned 64-bit blocks plus a byte tail from the
+  fixed 1 KiB buffer, reducing hash operations by about eight versus v5 while
+  preserving bounded allocation-free diagnostics.
+- ARM64 RelWithDebInfo passed in `1m46s`. Exact undeployed artifact is
+  `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`,
+  size `1,349,755,776`. No ADB/device action occurred.
+
+Next:
+
+- Defer deployment until a later cool round. Run exactly one guarded repair
+  route, then stop. Clean active battle is required; `hash_changes` distinguishes
+  a late writer from a stable producer error without conflating FIFO/sleep-timer
+  configuration changes.

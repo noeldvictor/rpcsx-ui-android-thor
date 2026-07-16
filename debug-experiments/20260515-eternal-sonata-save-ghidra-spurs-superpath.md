@@ -120,3 +120,20 @@ cmake --build build-msvc --config Release --target rpcs3 --parallel 8
 - Must not reintroduce the previous rtime reservation `SIGBUS` failure path.
 - First pass target: at least 20% sustained Thor FPS/frame-time improvement.
 - Big win target: clear evidence that the SPURS superpath can move Eternal Sonata toward playable/full speed on Thor.
+
+## 2026-07-16 Draw-Job Completion Follow-up
+
+- Saved EBOOT analysis resolves command `0x1a` to length two and handler
+  `0x002ad3d4`; it is a normal state call, not an indirect parser redirect.
+- The generated target is owned by the SPURS descriptor path rooted at
+  `0x002b07c8`. The PPU drain at `0x00309160` pushes a sentinel, waits, and only
+  then advances consumer `+0x111190` to producer `+0x111188` before parser
+  wakeup. The likely fault lane is late/incomplete SPU output visibility or an
+  SPU producer error, not an extra semaphore wrapper opportunity.
+- V6 repair mode therefore stabilizes the bounded target batch by fingerprint:
+  two consecutive equal samples are required, changes reset the interval
+  count, and the existing 20 ms ceiling still fails closed. Fingerprinting now
+  folds aligned 64-bit words to minimize diagnostic overhead.
+- ARM64 RelWithDebInfo passed in `1m46s`; exact undeployed core is
+  `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`,
+  size `1,349,755,776`. No device work was done in this thermal round.

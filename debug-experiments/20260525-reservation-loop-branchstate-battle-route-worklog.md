@@ -12928,3 +12928,54 @@ exact `7335...DC1B`, run one guarded dispatch-probe plus repair route, and
 stop. Use the four fingerprint stages before considering any behavioral fix;
 promotion still requires clean active battle without unknown draw, fatal,
 timeout, or material FPS regression.
+
+## 2026-07-16 Host-only V6 Stable-Batch Repair
+
+Static classification:
+
+- The deterministic refiner reports the Windows 200% proof complete and names
+  one thermally gated Thor route as next. That route was deliberately deferred;
+  no ADB polling, deploy, launch, or device configuration occurred.
+- Current clean upstream `1269ebff` differs in two tempting defaults: FIFO
+  fetch `Atomic` versus Android `Fast`, and sleep timers `Usleep Only` versus
+  Android `As Host`. Neither was changed because the failing words are inside
+  an SPU-generated target and a two-variable config change would destroy the
+  v5/v6 classification.
+- Ghidra resolves target-leading command `0x1a` to length two and handler
+  `0x002ad3d4`. It calls state function `0x00408588` with two normal arguments;
+  it does not redirect the parser. Searches found no direct command-`0x3a`
+  emitter. The descriptor queue is submitted through SPURS, and drain
+  `0x00309160` waits/acknowledges before consumer signal `0x002ac7b0`.
+
+V6 implementation:
+
+- Repair mode no longer judges readiness only from the target's first word.
+  It samples the whole readable target batch until two consecutive batch hashes
+  match; any interior mutation resets the stable interval count. The existing
+  `20 ms` ceiling and fail-closed timeout remain.
+- Logs add per-batch stable intervals, hash changes, snapshot count, and total
+  hash changes. Fault-stage hashes remain available for stable/late-overwrite
+  classification.
+- Whole-target fingerprinting now reads into an aligned `1 KiB` fixed buffer
+  and folds `u64` words plus a byte tail. This cuts the hot hash loop from one
+  operation per byte to one per eight bytes without allocation or guest writes.
+- The path remains BLUS30161-only, Android-property-gated, and default-off. The
+  normal disabled path does not wait or hash.
+
+Verification:
+
+- `git diff --check` passed.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a] --no-daemon` passed in `1m46s` with
+  only the existing deprecation warnings.
+- Exact host-only core is
+  `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`,
+  size `1,349,755,776`; binary strings contain the v6 guard and stable-batch
+  log schema. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped for the rest of this thermal round. In a later cool
+  round, deploy this exact core and run exactly one guarded repair/probe route.
+  Promote only if active battle remains visually clean and fault-free; use
+  `hash_changes`, `stable_intervals`, and fault hash relation to decide whether
+  the producer is late or stably wrong.

@@ -295,3 +295,21 @@ not yet reliable, so it must stay Windows-only and off Android/Thor.
 Good candidates: bulk math/transform/decode/render-prep jobs whose outputs are consumed by RSX or large buffers.
 
 Bad candidates unless proven otherwise: tiny SPURS control loops, semaphore wait/post wrappers, immediate PPU synchronization, and any job requiring small frequent GPU readbacks.
+
+## 2026-07-16 Async Draw Producer Classification
+
+- Saved-project Ghidra resolves the failing target's first command `0x1a` to a
+  normal fixed-length state handler at `0x002ad3d4`; command `0x3a` is also a
+  valid two-argument record before the bad float boundary.
+- The `0x002b07c8` descriptor path submits an `0x80`-byte SPURS job. Guest
+  `0x00309160` waits for the queue sentinel and acknowledges the consumer index
+  before the PPU wakes the draw parser, so this is SPU-produced CPU memory, not
+  an RSX/Vulkan command-generation opportunity.
+- V6 keeps the fix in the CPU/SPU synchronization lane: repair mode now waits
+  for two consecutive whole-target batch fingerprints. The fingerprint loop
+  folds aligned 64-bit blocks, cutting hash operations by about eight versus
+  v5's byte loop. The title/property gate is default-off and normal rendering
+  remains untouched.
+- Host-only ARM64 artifact:
+  `03B12C56644E3B3AF5F6D1BEA0E63726EA95D73560345B2573D8FD0CCCA6B799`,
+  `1,349,755,776` bytes. Build passed; no Thor deploy or launch occurred.
