@@ -172,3 +172,21 @@ cmake --build build-msvc --config Release --target rpcs3 --parallel 8
 - ARM64 RelWithDebInfo passes. Exact undeployed v8 core is
   `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`, size
   `1,349,802,568`. No device action occurred.
+
+## 2026-07-16 Settled-target Consume Repair
+
+- Exact v8 later proved a post-barrier writer: target
+  `0x32dfd310+0x7a0` had equal pre/post-drain hash
+  `0x72a9d25557c63309`, then fault-time hash `0x4857aa3e2e052902`.
+  Five invalid command words came from the changed region. More completion
+  waiting cannot protect data overwritten after the consumer is released.
+- V9 retains the normal SPURS job/drain contract. Repair mode snapshots only a
+  successfully settled target batch, then restores a changed 64-byte window
+  immediately before the parser loads it. It does not skip SPU work, spoof
+  completion, alter command lengths, or touch non-async regions.
+- The snapshot store is lazy and bounded to 4 MiB. Ordered event publication,
+  per-slot writer exclusion, and reader draining prevent ring-wrap mixing and
+  concurrent snapshot-byte access; a cached target keeps parser checks fast.
+- ARM64 RelWithDebInfo and incremental confirmation pass. Exact host-only v9
+  core is `BE8CD29E62C9DCA35EE11B7F7FA322CA1838E16A8AE86405161F629619A80016`,
+  size `1,349,846,040`. It has not been deployed or launched.

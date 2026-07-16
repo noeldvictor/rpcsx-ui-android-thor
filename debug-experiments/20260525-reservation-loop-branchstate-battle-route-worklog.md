@@ -13131,3 +13131,76 @@ Thermal route improvement:
 - Future long macros must run as a detached hidden host process and be monitored
   through local artifacts, so the command runner's one-minute window cannot
   terminate cleanup. Do not rerun v8 until a later cool round.
+
+## 2026-07-16 V8 Runtime Proof And Host-only V9 Consume Repair
+
+Guarded v8 route:
+
+- A detached wrapper used exact deployed v8
+  `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`
+  for the single guarded route
+  `debug-captures/android-speed-sprint/20260716-083705-thor-input-eternal-sonata-battle-intro-route`.
+- The immediate `ppu-ready` gate rejected cold compilation frames and accepted
+  the real title after two stable title-selector samples. The route reached the
+  correct save, a visually clean field at `27.53 FPS`, and the real first-battle
+  tutorial prompt at `30.00 FPS`.
+- It failed closed on eight stable unknown draw words. The pulled log contains
+  zero VM/native/Vulkan/LLVM/device-loss fatal hits before controlled stop.
+  Every thermal sample was `24 C`; the wrapper force-stopped the package and
+  reset interpreter, dispatch-probe, and async-barrier properties. One final
+  safety check confirmed no PID, properties off, `24 C`, and thermal status
+  `0`; no retry or additional device workload ran in this thermal round.
+
+Runtime classification:
+
+- Barrier hit `3072` covered `109` readable/hashed targets and `249,568` bytes.
+  Equal before/after batch hash `0xd0d1065d0b0990e5` settled in two intervals
+  after `242 us`, with zero hash changes, timeout, or overflow.
+- The first recurring boundary word `0x30b12f20` at selected-buffer offset
+  `0x2dfd0` was inside the current publication but outside every retained async
+  target. Keep it as a separate parser/producer-boundary problem.
+- Five later invalid float words at `0x32dfd530..0x32dfd540` were inside exact
+  async target `0x32dfd310+0x7a0`, event age `187`. Its pre/post-barrier hash
+  was stable at `0x72a9d25557c63309`, while the fault-time hash was
+  `0x4857aa3e2e052902`. All five rows classify
+  `async_hash_relation=after_barrier_changed`, proving a post-barrier overwrite
+  rather than insufficient completion waiting.
+- No malformed command-`0x61` row occurred before the unknown-word gate. V8's
+  completed-record probes remain valid, but this route's decisive evidence is
+  the exact settled-target hash transition.
+
+V9 repair contract:
+
+- In repair mode only, a successful non-timeout barrier copies each settled
+  bounded target into a sequence-published snapshot slot. The 256-slot store is
+  allocated lazily and commits at most 4 MiB; verify/off modes do not allocate
+  or snapshot it.
+- Immediately before command-word loads at `0x002acc54` and `0x002acc9c`, the
+  helper finds an exact retained target and compares only the next 64 bytes.
+  It writes the settled bytes back only if the window changed. Stable and
+  non-async stream regions are never written.
+- Reserved target events publish in order only after their atomic metadata is
+  complete. Per-slot repair-only writer exclusion invalidates a snapshot and
+  drains active readers before reuse, eliminating byte-copy and ring-publication
+  races. A cached sequence makes the usual sequential-parser lookup constant
+  time; the bounded 256-slot scan is only a target-transition fallback.
+- New PPU cache bit `thor_es_async_draw_barrier_v7` prevents reuse of objects
+  compiled before the dispatch-load hook. Logs expose settled target/byte counts
+  and bounded repair/check/failure counters.
+
+Verification:
+
+- `git diff --check` passes.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a] --no-daemon` passes; the race-safe
+  relink completed in about one minute and the confirming no-op build in `10s`.
+- Exact host-only v9 core is
+  `BE8CD29E62C9DCA35EE11B7F7FA322CA1838E16A8AE86405161F629619A80016`, size
+  `1,349,846,040` bytes. It has not been deployed or launched.
+
+Next:
+
+- Keep the Thor stopped for this thermal round. In one later cool round, deploy
+  exact v9 and run one guarded repair+probe route. Require nonzero settled
+  snapshot coverage and repair counters, clean battle visuals, no fatal, and
+  no unknown draw before assigning stability credit. The out-of-target
+  `0x30b12f20` boundary still needs independent classification if it remains.

@@ -342,3 +342,19 @@ Bad candidates unless proven otherwise: tiny SPURS control loops, semaphore wait
   `55FF239146AEFF870F8A5407CB12C3D798C3CEE1ED3910A1CB8DA79880FC45D2`,
   `1,349,802,568` bytes. This remains CPU/SPU ownership diagnosis, with zero
   promoted Vulkan/GPU-compute credit.
+
+## 2026-07-16 Post-barrier Overwrite And Consume Repair
+
+- Exact v8 rendered a clean field/tutorial at `27.53/30.00 FPS`, but five
+  invalid float words came from async target `0x32dfd310+0x7a0` after its
+  whole-target hash changed from the equal pre/post-barrier value. This is
+  direct CPU/SPU guest-memory ownership evidence, not an RSX/Vulkan shader or
+  GPU-compute bottleneck.
+- Host-only v9 snapshots settled targets and restores only a changed 64-byte
+  parser window immediately before its command load. It is default-off,
+  BLUS30161/repair gated, lazy (4 MiB maximum), sequence validated, and cached
+  on the common lookup path.
+- Exact v9 ARM64 core is
+  `BE8CD29E62C9DCA35EE11B7F7FA322CA1838E16A8AE86405161F629619A80016`,
+  `1,349,846,040` bytes. It has not run on Thor and receives zero stability,
+  FPS, or promoted GPU-migration credit.

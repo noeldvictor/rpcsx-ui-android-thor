@@ -308,6 +308,7 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 bool ppu_thor_es_async_draw_barrier_range(u32 address, u32 size);
 void ppu_thor_es_async_draw_target(ppu_thread& ppu, u64 target_address, u64 target_size, u32 cia);
 void ppu_thor_es_async_draw_barrier(ppu_thread& ppu, u32 cia);
+void ppu_thor_es_async_draw_consume(ppu_thread& ppu, u64 stream_pointer, u32 cia);
 
 template <typename T>
 struct ppu_gpr_cast_impl

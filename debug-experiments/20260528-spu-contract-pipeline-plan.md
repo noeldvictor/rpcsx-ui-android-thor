@@ -1200,3 +1200,28 @@ Next:
   `1,349,802,568` bytes; ARM64 build and diff checks pass.
 - Keep contract fast/body/GPU lanes off. One later cool v8 route must classify
   `changed_since_emit` versus `stable_since_emit` before any guest-data repair.
+
+## 2026-07-16 V8 Runtime Decision And V9 Consume Snapshot
+
+- Exact v8 ran once in the guarded battle route. Correct field/tutorial frames
+  rendered at `27.53/30.00 FPS`; eight unknown words failed closed with zero
+  targeted fatal hits. The device stayed at `24 C`, was force-stopped, and all
+  experiment properties were reset. No second route ran.
+- Hit `3072` stabilized `109` targets / `249,568` bytes with equal batch hashes,
+  two intervals, `242 us` wait, and zero changes/timeouts. Five later fault rows
+  matched target `0x32dfd310+0x7a0` whose current hash differed from its equal
+  pre/post-barrier hash. This authorizes a narrow changed-window restoration,
+  not more waiting or broad stream rollback.
+- V9 snapshots successfully settled repair-mode targets and compares/restores
+  only 64 bytes immediately before parser loads `0x002acc54/0x002acc9c`.
+  Snapshot publication is ordered and sequence checked; repair-only slot writers
+  drain readers before reuse; storage is lazy/bounded to 4 MiB; stable/non-async
+  regions are not written; a cached target avoids the 256-slot scan on
+  sequential parser accesses.
+- Exact host-only ARM64 core is
+  `BE8CD29E62C9DCA35EE11B7F7FA322CA1838E16A8AE86405161F629619A80016`, size
+  `1,349,846,040`; the build and 10-second no-op confirmation pass. It has not
+  been deployed. One later cool route must prove snapshot/repair counters,
+  clean active battle, and fatal-free execution before promotion.
+- The recurring `0x30b12f20` at offset `0x2dfd0` was outside retained async
+  targets and remains an independent boundary lane. Do not claim v9 covers it.
