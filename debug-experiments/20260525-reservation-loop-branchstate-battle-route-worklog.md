@@ -11988,3 +11988,62 @@ separately cool round, deploy exact `5262...2F58`, run at most one guarded
 repair-mode battle route, and require matched mask/restore counts, zero pending
 restores/failures, zero unknown-draw/native/VM faults, and clean active-battle
 visuals before any longer or performance-oriented Thor test.
+
+## 2026-07-16 Scoped-Restore Counterproof And Selector-Only Repair
+
+Bounded device result:
+
+- The scoped-restore candidate
+  `52622C41A876B52CD7A26B4A4D35587FDA55CBA0DE5A6084DEEB59334E0A2F58`
+  was deployed without a rebuild, launch, or stream. The exact local and remote
+  size/hash were verified in
+  `debug-captures/20260716-011854-scoped-selector-restore-5262-dev-core-push`.
+- Exactly one direct-input route ran with only
+  `debug.rpcsx.thor.es_draw_stream_probe=repair` enabled:
+  `debug-captures/android-speed-sprint/20260716-011921-thor-input-eternal-sonata-battle-intro-route`.
+  It rendered the correct field at `27.99 FPS`, clean tutorial prompt at
+  `30.16 FPS`, and clean active battle at `30.01 FPS` before the crash toast.
+  The active-battle classifier reported `dark_percent=0`,
+  `cyan_percent=3.433`, and the log contained zero unknown draw commands.
+- The route began at `24.0 C`, stayed at `24.0 C` under the 35 C guard, and the
+  final read was `25.0 C` with Android thermal status `0`. Cleanup force-stopped
+  RPCSX and reset the repair property to `off`. No second route, recorder,
+  trace, profiler, or heat soak was used.
+
+Failure classification:
+
+- Unique masks occurred at generations `3746`, `3754`, `3804`, `3856`, and
+  `4091`. Every mask had a matching verified restore; repair failures, restore
+  failures, and pending restore state were zero after completion.
+- At `0:02:55.503213`, about 1.27 seconds after the final restore, consumer PPU
+  `0x100000c` faulted at CIA `0x002ad588` reading unmapped `0x3f80000c` and
+  froze emulation. There was no Android process replacement, native signal,
+  Vulkan device loss, black frame, or unknown-draw log before the guest fault.
+- The scoped full-layout rewrite therefore repaired visible buffer selection
+  but did not preserve the next producer stream. It is a correctness
+  counterproof, not stable gameplay or a speed promotion.
+
+Host-only fix:
+
+- Ghidra decompilation of parser `0x002acbc8` proves the consumer selects
+  buffer `+0x14` or `+0x18` solely from flag bit 0 at object `+0x20`; it does
+  not need the producer-owned write pointer at `+0x1c` changed.
+- The repair now writes only the selector flags. It leaves the observed/live
+  write pointer untouched during the mask, restores only the saved selector,
+  verifies the write pointer was preserved, and immediately rolls the selector
+  back if mask verification fails. This removes the remaining destructive
+  producer-state write and reduces each mask/restore from two guest-memory
+  field writes to one.
+- `git diff --check` passed. ARM64 RelWithDebInfo built successfully after one
+  compile-only const-correctness correction. The resulting host-only core is
+  `1,349,556,944` bytes with SHA256
+  `C6CE9D11852803F68795249E615F715C27EF42E7198D924734A7830E74B09B47`.
+  It has not been deployed or launched.
+
+Decision: keep the `5262` run classified as failed and the selector-bit-only
+core as a host correctness/performance candidate. Do not spend another device
+run this round. In one later cool round, deploy exact `C6CE...B09B47`, run one
+guarded repair route, and require clean field/tutorial/active-battle visuals,
+zero unknown/native/VM faults, matched nonzero mask/restore counts, zero
+pending/failures, and preserved write-pointer values before any longer or
+performance-oriented test.

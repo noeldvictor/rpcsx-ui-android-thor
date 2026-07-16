@@ -599,3 +599,45 @@ Next:
   `5262...2F58` once with the same guards. Require clean active-battle visuals,
   zero parser/native/VM faults, equal nonzero mask/restore counts, no pending
   restore, and no repair/restore failure. Only then resume performance work.
+
+## 2026-07-16 Selector-Bit-Only Mask Candidate
+
+Counterproof:
+
+- Exact scoped-restore core `5262...2F58` was deployed without building or
+  launching, then used for one guarded repair-mode route:
+  `20260716-011921-thor-input-eternal-sonata-battle-intro-route`.
+- The route rendered a clean field at `27.99 FPS`, tutorial prompt at
+  `30.16 FPS`, and active battle at `30.01 FPS`. The active frame was not black
+  (`dark_percent=0`, `cyan_percent=3.433`) and no unknown draw command was
+  logged.
+- Five unique masks at generations `3746`, `3754`, `3804`, `3856`, and `4091`
+  each had one restore. Repair/restore failures stayed zero and no restore was
+  left pending. The final restore was followed by a PPU VM access violation at
+  `0x002ad588` reading `0x3f80000c`, so this remains a failed stability result.
+- Temperature stayed `24 C` through the route and ended at `25 C`, thermal
+  status `0`. Cleanup stopped the package, reset the property to `off`, and no
+  second route ran.
+
+Replacement contract:
+
+- Ghidra shows the parser chooses the buffer solely from flag bit 0 at object
+  `+0x20` (read as the low byte at `+0x23`). The producer-owned write pointer
+  at `+0x1c` is not required to select the consumer buffer.
+- Repair mode now writes only the 32-bit flags field for the temporary mask and
+  restore. It preserves the observed/live write pointer, verifies that restore
+  did not change it, and rolls the selector back if mask verification fails.
+  This removes the remaining producer-state mutation and halves guest-memory
+  writes per mask/restore from two fields to one.
+- ARM64 RelWithDebInfo build passed. Host-only core SHA256 is
+  `C6CE9D11852803F68795249E615F715C27EF42E7198D924734A7830E74B09B47`;
+  size is `1,349,556,944` bytes. It has not been deployed or launched.
+
+Next:
+
+- Do not run the Thor again in this thermal round. In a later cool round,
+  deploy exact `C6CE...B09B47`, enable only `repair`, run one guarded route,
+  and stop. Require clean active-battle visuals, zero unknown/native/VM faults,
+  equal nonzero mask/restore counts, no pending restore, zero failures, and
+  logged repaired/restored write pointers equal to the preserved observed
+  pointer before considering a longer stability or performance proof.

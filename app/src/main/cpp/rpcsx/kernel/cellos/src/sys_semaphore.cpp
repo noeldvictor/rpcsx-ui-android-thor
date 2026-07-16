@@ -207,16 +207,13 @@ static bool read_thor_es_draw_stream_u32(u32 address, u32 &value) {
   return true;
 }
 
-static bool write_thor_es_draw_stream_state(
-    u32 object, const thor_es_draw_stream_layout &layout) {
+static bool write_thor_es_draw_stream_selector(u32 object, u32 flags) {
   if (object > 0xffff'ffffu - 0x20) {
     return false;
   }
 
-  be_t<u32> write = layout.write;
-  be_t<u32> flags = layout.flags;
-  return vm::try_access(object + 0x1c, &write, sizeof(write), true) &&
-         vm::try_access(object + 0x20, &flags, sizeof(flags), true);
+  be_t<u32> guest_flags = flags;
+  return vm::try_access(object + 0x20, &guest_flags, sizeof(guest_flags), true);
 }
 
 static bool get_thor_es_draw_stream_layout(u32 object,
@@ -503,8 +500,9 @@ static bool can_repair_thor_es_draw_stream_selector(
   // Mask only the exact race observed on Thor: one work token is pending, all
   // completion edges are from the immediately preceding generation, and the
   // shared object already describes the other alternating slot. The producer
-  // can prepare that next slot before blocking on completion, so the observed
-  // layout must be restored before the consumer wakes it.
+  // can prepare that next slot before blocking on completion, so only the
+  // consumer selector bit may be changed. The producer-owned write pointer
+  // must remain untouched and the selector must be restored before wakeup.
   const bool exact_sequence =
       state.consumer_work_waits + 1 == state.producer_work_posts &&
       state.producer_prior_completion_waits + 1 ==
@@ -537,12 +535,15 @@ static bool repair_thor_es_draw_stream_selector(
 
   const thor_es_draw_stream_layout observed = consumer;
   const thor_es_draw_stream_layout expected = state.layout;
-  if (!write_thor_es_draw_stream_state(expected.object, expected) ||
+  if (!write_thor_es_draw_stream_selector(expected.object, expected.flags) ||
       !get_thor_es_draw_stream_layout(expected.object, consumer) ||
-      consumer.buffer0 != expected.buffer0 ||
-      consumer.buffer1 != expected.buffer1 ||
-      consumer.write != expected.write || consumer.flags != expected.flags ||
+      consumer.buffer0 != observed.buffer0 ||
+      consumer.buffer1 != observed.buffer1 ||
+      consumer.write != observed.write || consumer.flags != expected.flags ||
       consumer.published != expected.published) {
+    // A failed verification must not leave the selector masked. The write
+    // pointer is never part of this rollback because repair does not own it.
+    write_thor_es_draw_stream_selector(expected.object, observed.flags);
     state.selector_repair_failures++;
     sys_semaphore.error(
         "Eternal Sonata draw-stream selector repair failed: generation=%llu "
@@ -578,24 +579,30 @@ static bool restore_thor_es_draw_stream_selector(
     return true;
   }
 
-  const thor_es_draw_stream_layout masked = state.layout;
   const thor_es_draw_stream_layout restore = state.selector_restore_layout;
-  thor_es_draw_stream_layout live{};
+  thor_es_draw_stream_layout masked = restore;
+  masked.flags = state.layout.flags;
+  masked.published = state.layout.published;
+  thor_es_draw_stream_layout masked_live{};
+  thor_es_draw_stream_layout restored_live{};
   const bool exact_generation =
       state.selector_restore_generation == state.generation &&
       state.consumer_generation == state.generation;
   const bool masked_state =
-      get_thor_es_draw_stream_layout(masked.object, live) &&
-      live.buffer0 == masked.buffer0 && live.buffer1 == masked.buffer1 &&
-      live.write == masked.write && live.flags == masked.flags &&
-      live.published == masked.published;
+      get_thor_es_draw_stream_layout(masked.object, masked_live) &&
+      masked_live.buffer0 == restore.buffer0 &&
+      masked_live.buffer1 == restore.buffer1 &&
+      masked_live.flags == masked.flags &&
+      masked_live.published == masked.published;
   const bool restored =
       exact_generation && masked_state &&
-      write_thor_es_draw_stream_state(restore.object, restore) &&
-      get_thor_es_draw_stream_layout(restore.object, live) &&
-      live.buffer0 == restore.buffer0 && live.buffer1 == restore.buffer1 &&
-      live.write == restore.write && live.flags == restore.flags &&
-      live.published == restore.published;
+      write_thor_es_draw_stream_selector(restore.object, restore.flags) &&
+      get_thor_es_draw_stream_layout(restore.object, restored_live) &&
+      restored_live.buffer0 == restore.buffer0 &&
+      restored_live.buffer1 == restore.buffer1 &&
+      restored_live.write == masked_live.write &&
+      restored_live.flags == restore.flags &&
+      restored_live.published == restore.published;
 
   state.selector_restore_pending = false;
   if (!restored) {
@@ -609,8 +616,9 @@ static bool restore_thor_es_draw_stream_selector(
         "exact_generation=%u masked_state=%u failures=%llu cia=0x%x lr=0x%x",
         state.generation, state.selector_restore_generation, masked.object,
         masked.write, masked.flags, masked.published, restore.write,
-        restore.flags, restore.published, live.write, live.flags,
-        live.published, exact_generation, masked_state,
+        restore.flags, restore.published, restored_live.write,
+        restored_live.flags, restored_live.published, exact_generation,
+        masked_state,
         state.selector_restore_failures, ppu.cia, static_cast<u32>(ppu.lr));
     return false;
   }
@@ -623,7 +631,8 @@ static bool restore_thor_es_draw_stream_selector(
       "restored_published=0x%x restores=%llu work_posts=%llu "
       "completion_posts=%llu cia=0x%x lr=0x%x",
       state.generation, masked.object, masked.write, masked.flags,
-      masked.published, live.write, live.flags, live.published,
+      masked.published, restored_live.write, restored_live.flags,
+      restored_live.published,
       state.selector_restores, state.producer_work_posts,
       state.consumer_completion_posts + 1, ppu.cia,
       static_cast<u32>(ppu.lr));
