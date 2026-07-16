@@ -351,6 +351,16 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 			{
 				switch (guest_cia)
 				{
+				case 0x002eda84:
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_command9_probe", m_thread,
+						GetGpr(10), GetGpr(31), GetGpr(9), m_ir->getInt32(guest_cia));
+					break;
+				case 0x002ee6e8:
+					require_post_instruction_hook_point();
+					Call(GetType<void>(), "__thor_es_command9_probe", m_thread,
+						GetGpr(11), GetGpr(31), GetGpr(9), m_ir->getInt32(guest_cia));
+					break;
 				case 0x002caa38:
 					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_command60_probe", m_thread,
@@ -416,6 +426,7 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 					require_post_instruction_hook_point();
 					Call(GetType<void>(), "__thor_es_template_probe", m_thread,
 						m_ir->CreateSub(GetGpr(4), m_ir->getInt64(0x1c)),
+						GetGpr(12),
 						m_ir->getInt32(guest_cia));
 					break;
 				default:

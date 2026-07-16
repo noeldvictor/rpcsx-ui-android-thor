@@ -13272,3 +13272,64 @@ Next:
   later `changed_since_emit` points to post-completion reuse/ownership. Use that
   single classification to choose the narrow synchronization or restore point;
   do not add a generic unknown-command skip.
+
+## 2026-07-16 Host-only V11 Command-9 Ownership Correlation
+
+Additional static ownership map:
+
+- `FUN_002ac890` reads the current thread identity and returns true when command
+  object flag bit `2` is set and its owner at `+0x2c` is a different PPU.
+  Both seven-word template builders test that predicate: the owner-compatible
+  path performs the render work directly, while the foreign-owner path appends
+  the deferred `[0x1c,0,object,0x1e,...]` record.
+- Builder `0x00313258` has one static caller at parser-side `0x002aee50`;
+  `FUN_00318fa8` has callers at `0x0003e848` and `0x0004116c`. This ties the
+  template to the game's explicit foreign-owner deferral path rather than an
+  arbitrary parser word.
+- The two statically visible `0x404` command-9 writes are separate branches of
+  the large render function beginning at `0x002ed870`. Their exact argument
+  stores are `0x002eda84` and `0x002ee6e8`; both append through the object held
+  in `r31`, loaded from TOC slot `r2+0x1a4`.
+- The template builders load their command object from TOC slot `r2+0x910`.
+  The saved XEX project has no retained `r2` context at these instructions, so
+  static analysis alone cannot prove whether those slots alias at runtime.
+  New read-only `InspectRegisterContext.java` records that absence cleanly and
+  remains reusable for imported binaries whose loader does preserve context.
+
+V11 correlation contract:
+
+- Under the same default-off BLUS30161 probe, LLVM now records the completed
+  command-9 pair immediately after each exact argument store. Each 4096-entry
+  atomic event includes stream start, emitter CIA, PPU, command object,
+  argument, and a shared provenance order.
+- Template completion now also records its command object and an order from the
+  same monotonic counter. At the recurring fault, lookup targets the exact
+  command-9 start `fault-12`, which corresponds to the stable `[9,0x404]`
+  immediately preceding the damaged template.
+- The one fault row can therefore report whether command 9 and the template
+  used the same object, same PPU, and whether command 9 completed before or
+  after template completion. It also compares both objects to the parser's
+  `0x84c528` object and confirms that the command-9 pair stayed unchanged.
+- New PPU cache bit `thor_es_dispatch_provenance_v5` prevents reuse of objects
+  compiled without the two command-9 hooks. Probe-off gameplay and V9's narrow
+  async repair remain unchanged.
+
+Verification:
+
+- `git diff --check` passes.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passes; the header-wide relink took
+  `202s`, followed by a successful `10.1s` no-op build. Diagnostics remain
+  existing upstream deprecation warnings only.
+- Exact host-only v11 core is
+  `47B27527E0826BDB56DE91C99A9D6DABCE1B294F85CF61466A990E60DDFCD43F`, size
+  `1,349,912,424` bytes.
+- No ADB query, deploy, launch, screenshot, temperature poll, or Thor workload
+  occurred. V10 was superseded before deployment.
+
+Next:
+
+- Use exact v11 for the one later cool guarded route. A same-object,
+  different-PPU overlap authorizes serializing the precise foreign-owner append
+  reservation; a same-PPU overlap points to re-entrant pointer publication; a
+  different object means the apparent template match must be challenged before
+  any repair. Keep the route fail-closed and make no generic command skip.
