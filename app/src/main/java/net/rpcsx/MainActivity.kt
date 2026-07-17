@@ -126,13 +126,10 @@ class MainActivity : ComponentActivity() {
             val rpcsxPrevLibrary = GeneralSettings["rpcsx_prev_library"] as? String
 
             val bundledCore = File(nativeLibraryDir, "librpcsx-android.so")
-            val hasValidBundledCore =
-                bundledCore.exists() && RPCSX.instance.getLibraryVersion(bundledCore.path) != null
+            val hasBundledCore = bundledCore.isFile && bundledCore.canRead()
             val devCore = findThorDevCoreOverride()
-            val hasValidDevCore =
-                devCore != null && RPCSX.instance.getLibraryVersion(devCore.path) != null
 
-            if (hasValidDevCore) {
+            if (devCore != null) {
                 val activeDevCore = checkNotNull(devCore)
                 rpcsxLibrary = activeDevCore.path
                 GeneralSettings["rpcsx_library"] = activeDevCore.path
@@ -145,7 +142,7 @@ class MainActivity : ComponentActivity() {
                 Log.w("RPCSX-UI", "Using Thor dev core override: ${activeDevCore.path}")
             }
 
-            if (!hasValidDevCore && (BuildConfig.FORK_BUILD || rpcsxLibrary == null) && hasValidBundledCore) {
+            if (devCore == null && (BuildConfig.FORK_BUILD || rpcsxLibrary == null) && hasBundledCore) {
                 rpcsxLibrary = bundledCore.path
                 GeneralSettings["rpcsx_library"] = bundledCore.path
                 GeneralSettings["rpcsx_installed_arch"] = "bundled"
@@ -178,7 +175,7 @@ class MainActivity : ComponentActivity() {
                     GeneralSettings.sync()
                 }
 
-                if (!RPCSX.openLibrary(rpcsxLibrary) && hasValidBundledCore && rpcsxLibrary != bundledCore.path) {
+                if (!RPCSX.openLibrary(rpcsxLibrary) && hasBundledCore && rpcsxLibrary != bundledCore.path) {
                     rpcsxLibrary = bundledCore.path
                     GeneralSettings["rpcsx_library"] = bundledCore.path
                     GeneralSettings["rpcsx_installed_arch"] = "bundled"

@@ -178,7 +178,78 @@ New host artifact:
 - SHA-256:
   `70B1D39414A5A60F34311B3836FED2E8580D4934BE9E73DFBD81B5C8B1933601`.
 
-This candidate has not been deployed or launched. The device still has
-`744CB3F2...E839`, and no startup-time, temperature, FPS, flicker, menu, battle,
-or stability improvement may be claimed until one later separately cooled,
-state-gated run.
+## First warm-cache device proof
+
+### 2026-07-17 - warm-cache-scan-skip-field-proof
+
+- Status: failed
+- Scope: scene-route
+- Hypothesis: skipping the redundant disabled-feature PPU scans would reduce
+  warm-start CPU time enough to reach the title and field inside the Thor's
+  guarded thermal window.
+- Changed files/settings: exact ARM64 RelWithDebInfo core
+  `70B1D39414A5A60F34311B3836FED2E8580D4934BE9E73DFBD81B5C8B1933601`;
+  Direct input; state-gated field route; three-sample cool preflight; two-second
+  runtime polling; battery/skin/silicon ceilings `34/40/75 C`; explicit stop.
+- Rollback: redeploy the prior exact core `744CB3F2...E839`, or use
+  `tools/build_push_thor_core.ps1 -Serial c3ca0370 -ResetToBundled -NoLaunch`.
+- Windows result: host source-contract test and ARM64 RelWithDebInfo build passed
+  before deployment; this round did not rerun Windows gameplay.
+- Thor result: a stopped-device preflight recorded battery `25.0 C`, skin
+  `30.0 C`, and silicon `35.5/35.5/36.3 C`. The exact core was then pushed with
+  no build, launch, or stream. The route's own preflight recorded silicon
+  `35.9/36.3/35.5 C`. After launch, the first readiness sample was `73.1 C` and
+  the next two-second sample was `75.9 C`, so the guard force-stopped RPCSX.
+  The immediate post-stop sample fell to `52.2 C`, and `pidof` confirmed the
+  package was stopped.
+- Visual correctness: the only readiness frame was neither the title menu nor
+  a PPU compilation screen. No title, Load, field, Options, battle, or flicker
+  checkpoint was reached.
+- FPS/frame-time: none; no gameplay frame was reached.
+- Capture paths:
+  `debug-captures/20260717-035648-warm-cache-scan-skip-dev-core-push`,
+  `debug-captures/android-speed-sprint/20260717-035553-thor-input-custom`, and
+  `debug-captures/android-speed-sprint/20260717-035740-thor-input-warm-cache-scan-skip-field-proof`.
+- Decision: `failed-thermal-guard` / `not-comparable`. The patch remains
+  host-correct but receives no startup-time, temperature, FPS, flicker, menu,
+  battle, or stability credit.
+- Next: no second launch in this thermal round. Keep RPCSX stopped and inspect
+  the pre-title native startup path on the host before preparing a materially
+  different candidate for a later separately cooled proof.
+
+## Android single-open wrapper follow-up
+
+### 2026-07-17 - single-open-core-startup
+
+- Status: proposed
+- Scope: config-driver
+- Hypothesis: MainActivity was needlessly loading and relocating the bundled
+  core and development core for version validation, closing both handles, then
+  loading the selected core again. Removing the two validation opens should
+  materially reduce cold-start CPU work before RPCSX reaches its title gate.
+- Changed files/settings: MainActivity now uses file metadata for cheap
+  candidate selection and relies on the active `RPCSX.openLibrary` attempt;
+  the JNI loader verifies the version export on that already-open handle before
+  activation, preserving the bundled fallback without another `dlopen`.
+- Rollback: revert `MainActivity.kt` and `native-lib.cpp`; no device setting,
+  cache, core, or save data changed in this host-only round.
+- Windows result: `tools/test_thor_single_core_load.ps1` and its PowerShell AST
+  passed; `:app:compileDebugKotlin` passed in `53.8 s`; incremental ARM64
+  RelWithDebInfo native build passed in `13 s`; `git diff --check` passed.
+  The optimized core stayed byte-identical at `70B1...3601`.
+- Thor result: not deployed or launched. A full Debug APK packaging attempt was
+  stopped after the bounded `304 s` host timeout, and all orphaned Gradle,
+  Ninja, and Clang processes from that attempt were terminated. The installed
+  APK therefore does not contain this wrapper change yet.
+- Visual correctness: unmeasured; no device launch was allowed after the earlier
+  thermal abort.
+- FPS/frame-time: none.
+- Capture paths: prior thermal evidence remains
+  `debug-captures/android-speed-sprint/20260717-035740-thor-input-warm-cache-scan-skip-field-proof`;
+  this host-only follow-up created no new device capture.
+- Decision: build-proven, device-unmeasured. Preserve the single-open change,
+  but claim no startup, thermal, FPS, flicker, menu, battle, or stability win.
+- Next: finish a fresh Debug APK in a separate host build window. In a later
+  separately cooled round, install it without launch, confirm the package is
+  stopped, then allow at most one identical state-gated field proof under the
+  same two-second 75 C thermal guard.

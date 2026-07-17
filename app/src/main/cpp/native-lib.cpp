@@ -192,12 +192,21 @@ static bool is_numeric_name(const char *name) {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_net_rpcsx_RPCSX_openLibrary(JNIEnv *env, jobject, jstring path) {
-  if (auto library = RPCSXLibrary::Open(unwrap(env, path).c_str())) {
-    rpcsxLib = std::move(*library);
-    return true;
+  auto libraryPath = unwrap(env, path);
+  auto library = RPCSXLibrary::Open(libraryPath.c_str());
+  if (!library) {
+    return false;
   }
 
-  return false;
+  if (library->getVersion == nullptr) {
+    __android_log_print(ANDROID_LOG_ERROR, "RPCSX-UI",
+                        "RPCSX library at %s has no version export",
+                        libraryPath.c_str());
+    return false;
+  }
+
+  rpcsxLib = std::move(*library);
+  return true;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
