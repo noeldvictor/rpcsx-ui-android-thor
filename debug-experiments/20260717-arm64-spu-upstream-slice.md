@@ -118,9 +118,14 @@ The host successor now:
   `SPU Debug=false`; and
 - preserves the same outer string for later LLVM verification diagnostics.
 
-Validation: exact Android ARM64 syntax-only compilation passes, the extended
-`tools/test_thor_spu_cache_preload.ps1` contract passes, and
-`git diff --check` is clean. A full optimized build was not completed in this
-round, and no APK was assembled, installed, or launched. Classification:
-`syntax-proven`, `device-unmeasured`; grant no FPS, thermal, flicker, title,
-gameplay, or stability credit yet.
+Validation: exact Android ARM64 syntax-only compilation and the extended
+`tools/test_thor_spu_cache_preload.ps1` contract pass. The full host command
+`gradlew.bat :app:buildCMakeRelWithDebInfo[arm64-v8a] --offline --no-daemon
+--console=plain` completed successfully in `1m 27s`. The built native artifact
+is
+`app/build/intermediates/cxx/RelWithDebInfo/2t5h1l52/obj/arm64-v8a/librpcsx-android.so`,
+size `1,304,469,376` bytes, SHA-256
+`95B02FF463B0A4A36448F9422612FBD76C3DC1028CE060898A90AAA307796A0A`.
+`git diff --check` is clean. No APK was assembled, installed, or launched.
+Classification: `build-proven`, `device-unmeasured`; grant no FPS, thermal,
+flicker, title, gameplay, or stability credit yet.
