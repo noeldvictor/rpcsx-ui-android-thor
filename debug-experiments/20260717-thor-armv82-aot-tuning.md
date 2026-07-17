@@ -253,3 +253,57 @@ New host artifact:
   separately cooled round, install it without launch, confirm the package is
   stopped, then allow at most one identical state-gated field proof under the
   same two-second 75 C thermal guard.
+
+## Reproducible ARM64 APK packaging follow-up
+
+### 2026-07-17 - single-open-arm64-release-package
+
+- Status: passed
+- Scope: config-driver
+- Hypothesis: the already-validated RelWithDebInfo core and JNI wrapper can be
+  packaged without finishing the much larger Debug-native compile, while a
+  normal Gradle ABI property avoids Android Studio's injected-ABI intermediate
+  output and stale top-level APK redirect.
+- Changed files/settings: `app/build.gradle.kts` now accepts
+  `rpcsxAndroidAbis` / `RPCSX_ANDROID_ABIS`; the default remains
+  `arm64-v8a,x86_64`, while Thor packaging uses
+  `-PrpcsxAndroidAbis=arm64-v8a`. Added
+  `tools/test_thor_arm64_apk.ps1` to require the arm64 core/wrapper and reject
+  RPCSX core libraries for other ABIs.
+- Rollback: remove the ABI property and restore the literal two-ABI filter.
+  The generated APK is ignored build output; no device, save, cache, or config
+  state changed.
+- Windows result: standard `:app:assembleRelease
+  -PrpcsxAndroidAbis=arm64-v8a -PbuildBundledRpcsxCore=true` passed in `87.8 s`.
+  CMake reused the validated RelWithDebInfo output; no Clang, Ninja, or CMake
+  process remained afterward. `tools/test_thor_single_core_load.ps1`,
+  `tools/test_thor_arm64_apk.ps1`, PowerShell AST validation, and
+  `git diff --check` passed.
+- Artifact:
+  `app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk`;
+  `57,393,944` bytes (`54.74 MiB`); SHA-256
+  `FD754ED4896920F4F725404D9BEA2E589F247021ECD0649EDEC9CF496C366015`.
+  Android `apksigner` verifies the APK with v2 signing and the debug certificate.
+- Native contents: source core remains exact
+  `70B1D39414A5A60F34311B3836FED2E8580D4934BE9E73DFBD81B5C8B1933601`;
+  source JNI wrapper is
+  `F9BAC7C31B1C43F4B44A1A466AFE573283346C812D8DA289C82722D8E3A5B774`.
+  Their packaged stripped hashes are
+  `C9999340E869810D79022BC2D094CA28D41557132E5FF333E2ADF95BE91676A0`
+  and
+  `ABD527164E4A01EC1AFF82514F819479B54E17BBEACA7E68572E14BBA4245F1A`.
+- Packaging gotcha: `-Pandroid.injected.build.abi=arm64-v8a` created a valid
+  fresh APK under `app/build/intermediates/apk/release`, but left the old
+  `app/build/outputs/apk/release` file untouched. Use `rpcsxAndroidAbis` for
+  reproducible command-line Thor artifacts.
+- Thor result: not installed or launched. The old installed APK still lacks the
+  single-open wrapper, while its development core remains exact `70B1...3601`.
+- Visual correctness: unmeasured.
+- FPS/frame-time: none.
+- Capture paths: none; this was host-only packaging.
+- Decision: host-ready, device-unmeasured, and not comparable. The APK is ready
+  for a later cooled install/proof, but receives no startup, thermal, FPS,
+  flicker, field, menu, battle, or stability credit.
+- Next: only after a separately cool preflight, install this exact APK without
+  launching, keep the package stopped, then allow one state-gated field proof
+  with two-second silicon polling and the same 75 C stop guard.

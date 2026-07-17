@@ -21,6 +21,19 @@ val rpcsxAndroidArmTune =
         ?: System.getenv("RPCSX_ANDROID_ARM_TUNE")
         ?: "cortex-a715"
 
+val rpcsxAndroidAbis =
+    (providers.gradleProperty("rpcsxAndroidAbis").orNull
+        ?: System.getenv("RPCSX_ANDROID_ABIS")
+        ?: "arm64-v8a,x86_64")
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .distinct()
+
+require(rpcsxAndroidAbis.isNotEmpty()) {
+    "rpcsxAndroidAbis/RPCSX_ANDROID_ABIS must contain at least one Android ABI"
+}
+
 android {
     namespace = "net.rpcsx"
     compileSdk = 36
@@ -35,7 +48,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += rpcsxAndroidAbis
         }
 
         externalNativeBuild {
