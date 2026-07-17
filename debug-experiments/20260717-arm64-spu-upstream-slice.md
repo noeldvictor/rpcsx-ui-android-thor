@@ -293,11 +293,30 @@ Validation:
 - explicit worker overrides and configured runtime cache-miss fallback remain
   covered by the source contract.
 
-This exact APK is host-only and not installed. Classification:
-`thermal-stability-candidate`, `device-unmeasured`; grant no speed, thermal,
-title, FPS, flicker, gameplay, or stability credit. Use a later separately cool
-no-launch install round, then a different independently cool round for one
-guarded proof.
+The exact APK was installed without launching RPCSX after a separately cool,
+PID-absent preflight. Capture:
+
+`debug-captures/android-speed-sprint/20260717-170146-split-rsx-thortest-apk-install`
+
+The first host parse rejected the samples as unknown because direct Windows
+ADB invocation collapsed the thermal-zone separators. The original raw files
+were preserved; host-only normalization recovered 30 silicon sensors per
+sample without another device query. The strict samples were
+`33.9 -> 33.9 -> 33.3 C` (`-0.6 C` net rise), with battery/skin
+`24.0 / 30.0 C`. Power state remained performance mode `0`, fan mode `4`,
+quick performance/fan `1`, and battery saver `0`.
+
+`adb install -r` returned `Success`; the installed `base.apk` SHA-256 is
+`3C572601110144DB33B8B7F997F2D0AD2E5D078F90D7D9067A73F7A566CC1282`,
+exactly matching the `73,572,162`-byte host candidate. RPCSX was absent before
+and after the install. Post-install silicon was `35.1 C`, so device activity
+ended there. RSX worker/RSX limit/SPU limit are `0/0/0`, Vulkan cache is `on`,
+and the three Eternal Sonata experiment switches are `off`.
+
+Classification: `device-install-proven`, `device-runtime-unmeasured`; grant no
+speed, thermal-runtime, title, FPS, flicker, gameplay, or stability credit.
+This install-only round is closed. A different independently cool round may
+spend exactly one guarded bounded proof.
 
 ## Runtime thermal confirmation guard
 
@@ -325,4 +344,5 @@ prove the temperature an immediate live confirmation will observe. Grant no
 speed, title, FPS, flicker, gameplay, thermal-runtime, or stability credit.
 The split-worker APK remains unchanged at
 `3C572601110144DB33B8B7F997F2D0AD2E5D078F90D7D9067A73F7A566CC1282`
-and remains uninstalled; use the existing separately cool install/proof plan.
+and is now installed exactly after the no-launch round above. Use only a
+different independently cool round for its first guarded runtime proof.
