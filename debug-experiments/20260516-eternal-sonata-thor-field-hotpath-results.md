@@ -1952,3 +1952,57 @@ lane. On a later separately cool round, run exactly one strict Direct-input
 U2/no-reuse route. Require field/menu/first-battle visuals, fatal cleanliness,
 draw-stream health, and thermal cleanup before any speed comparison; test U2
 reuse only as a later one-change experiment if that control is clean.
+
+## 2026-07-17 Fresh-Cache U2 Counterproof And Android Emitter Retirement
+
+Status: `failed-fatal-log`; reduced-loop emission rejected as the common cause,
+host fail-safe built, and no valid speed or stability credit.
+
+- The refreshed deterministic refiner confirmed the clean current-upstream
+  Windows field/first-battle plus Options evidence already clears the 200% gate
+  and selected one temperature-gated Thor validation rather than another
+  Windows route.
+- Preflight found device `c3ca0370` at `25.0 C`, thermal status `0`, RPCSX
+  stopped, one host ADB server process, reduced-loop emit/reuse/dynamic-MFC
+  `0/0/0`, and every unrelated experiment off.
+- Exact corrected U2 candidate
+  `469919B97D73B9710CBEDD226DD88E3F3927F0E6A114E716CB3F259A25CF8455`
+  was pushed without build or launch in
+  `debug-captures/20260716-232139-reduced-loop-u2-v2-469919b9-dev-core-push`.
+  One and only one Direct-input, `28 C`-guarded route then ran with reduced-loop
+  emit U2, invariant-result reuse off, dynamic MFC off, and all interpreter,
+  dispatch-provenance, async-barrier, semaphore, and DMA experiments off:
+  `debug-captures/android-speed-sprint/20260716-232243-thor-input-eternal-sonata-battle-intro-route`.
+- Title, Load-list, Load-complete, and loaded-field gates all passed the intended
+  scene. The guest log proves a fresh isolated cache was active:
+  `spu-safe-thor-rl-u2-v2-v1-tane.dat`.
+- The early loaded-field guest-health gate then caught the same deterministic
+  fault as both U4 routes: at emulated `0:01:34.829866`,
+  `CellSpursKernel0`, SPU PC `0x330f0`, read unmapped `0x8d230480`.
+  The route force-stopped before movement or battle, so no FPS sample is valid.
+  This excludes unroll factor, invariant-result reuse, and stale cache as the
+  cause; the vendored reduced-loop emission path itself is unsafe.
+- The route remained at `25.0 C`, thermal status `0`, cleanup left the package
+  stopped, and Quiet reset emit/reuse/dynamic-MFC to `0/0/0`. No second route
+  or launch occurred.
+- Current upstream history contains a larger reduced-loop contract sequence,
+  including completability verification `a03a78d`, register-origin correction
+  `13de823`, and second-block update handling `02eb549`. The vendored custom
+  detector/emitter is structurally different; do not reactivate it through
+  another piecemeal Android backport.
+- Android `spu_reduced_loop_emit_enabled()` now returns false regardless of a
+  stale external property. Public Thor tools expose no reduced-loop emit or
+  reuse profile; detect-only `ReducedLoop` remains available for host-guided
+  analysis. Normal Quiet/default execution remains unchanged.
+- ARM64 RelWithDebInfo rebuilt successfully in `1m 8s` with the existing 78
+  deprecation warnings and no errors. Host-only fail-safe
+  `librpcsx-android.so` is `1,349,876,040` bytes with SHA256
+  `BE1CACE725B7868050CF03BEE78BCA6E0A1A80DDA261EC3EBD13ACC3D38A1C5D`.
+  PowerShell parsing, retired-profile binding rejection, native-clamp checks,
+  and `git diff --check` pass. This fail-safe core was not deployed or launched.
+
+Decision: permanently park the vendored reduced-loop emitter on Android. In a
+later separately cool round, deploy exact `BE1C...A1C5D` without launch and run
+exactly one strict Quiet/emitter-off Direct-input control. Use that result to
+separate the early SPU corruption from the older draw-stream/flicker lane before
+selecting the next safe codegen or synchronization optimization.

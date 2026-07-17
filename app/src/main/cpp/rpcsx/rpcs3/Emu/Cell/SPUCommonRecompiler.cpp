@@ -125,13 +125,8 @@ static bool spu_reduced_loop_detect_only_enabled() noexcept
 static bool spu_reduced_loop_emit_enabled() noexcept
 {
 #ifdef ANDROID
-	char value[PROP_VALUE_MAX]{};
-	const int length = __system_property_get("debug.rpcsx.thor.spu_reduced_loop_emit", value);
-
-	if (length <= 0)
-	{
-		return false;
-	}
+	// Fresh-cache U2 and U4 runs both corrupt BLUS30161 at the same SPU PC.
+	return false;
 #else
 	const char* value = std::getenv("RPCSX_SPU_REDUCED_LOOP_EMIT");
 
@@ -139,9 +134,9 @@ static bool spu_reduced_loop_emit_enabled() noexcept
 	{
 		return false;
 	}
-#endif
 
 	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+#endif
 }
 
 u32 spu_reduced_loop_unroll_factor() noexcept

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU2ReuseQuiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock", "Status")]
+    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock", "Status")]
     [string]$Mode = "Status"
 )
 
