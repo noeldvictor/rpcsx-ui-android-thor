@@ -864,3 +864,88 @@ New host artifact:
   one short guarded direct-input route with `RsxCachePreloadLimit=256`, normal
   two workers, Vulkan cache on, and the existing 75 C fail-stop. Require the
   activation log, title visual proof, and fatal/thermal evidence.
+
+## Bounded RSX preload guarded startup result
+
+### 2026-07-17 - bounded-preload-title-proof
+
+- Status: real startup-stage progress; failed thermal guard; no title/FPS proof
+- Scope: RSX preload / persistent Vulkan cache / SPU startup handoff
+- The exact installed APK remained
+  `26A843E2A5C6DFA4408C2D6ACC2FBA3F384AB4DBCC7589E3B8EBBB0D96B198EB`.
+  Its one separately cool route is
+  `debug-captures/android-speed-sprint/20260717-103430-thor-input-bounded-preload-title-proof`.
+- Strict preflight passed at battery/skin/silicon `25/30/33.7`,
+  `25/30/34.7`, and `25/30/35.1 C`; silicon rose `1.4 C`, below the `2 C`
+  trend limit and the independent `40 C` launch ceiling.
+- Exact activation was logged: Vulkan driver cache seed `4,899,180` bytes,
+  first warm checkpoint `256`, and `Android shader cache preload limit: 256
+  of 939 oldest pipelines; 683 will compile on demand`. The normal two RSX
+  workers remained active.
+- Matched startup stages moved materially earlier than the full-RSX-preload
+  warm route: PPU OPD `1.584417` versus `7.534762` (`5.950345 s` earlier),
+  SPU runtime built `2.450193` versus `8.410648` (`5.960455 s` earlier),
+  matching `mpy32` `3.497942` versus `9.491129` (`5.993187 s` earlier), and
+  matching MFC warning `5.917972` versus `11.894869` (`5.976897 s` earlier).
+- The route reached later SPU compilation work but hit the thermal guard at
+  `75.5 C` about `6.923 s` after process establishment. Immediate post-stop
+  silicon was `51.4 C`; PID was absent and route properties reset.
+- The single screenshot was a non-black, materially changed `80.456%`
+  pre-title frame. Targeted fatal and unknown-draw scans were zero, but title
+  was not reached. Award startup-stage progress only: no FPS, gameplay,
+  flicker, title, menu, battle, or stability credit.
+- Bottleneck conclusion: the RSX bound removed roughly six seconds of eager
+  pipeline work and exposed full SPU cache reconstruction as the concentrated
+  thermal lane. Historical completed evidence built `1,163` SPU programs,
+  taking about `32.5 s` after interpreter construction.
+
+## Bounded newest-first SPU cached-program preload candidate
+
+### 2026-07-17 - host-only-spu-preload-limit
+
+- Status: host-verified candidate; not installed; device proof pending
+- Scope: SPU LLVM startup / Android thermal load shaping
+- Cache audit: the SPU `.dat` file stores guest program bytes, not generated
+  ARM64 objects. Full startup reads and recompiles the complete file. Runtime
+  compilation appends a program only after successful LLVM JIT completion.
+- Change: `debug.rpcsx.thor.spu_cache_preload_limit` and environment fallback
+  `RPCSX_THOR_SPU_CACHE_PRELOAD_LIMIT` accept `0..4096`; zero/unset preserves
+  the full existing preload. A positive value registers all cached program
+  identities as already on disk, deduplicates by the existing runtime identity
+  rule, and eagerly compiles only the newest unique prefix. Omitted programs
+  keep the normal configured LLVM runtime miss path and cannot append duplicate
+  disk records solely because they were omitted from eager compilation.
+- Harness: `SpuCachePreloadLimit` and `AndroidSpuCachePreloadLimit` are bounded,
+  recorded, forwarded, set immediately before boot, and reset to zero before
+  launch and after both successful and failed routes. Default behavior is
+  unchanged.
+- New source contract `tools/test_thor_spu_cache_preload.ps1` checks property
+  and environment parsing, all-identity registration before limiting, newest
+  unique queue construction, normal LLVM fallback, and duplicate-write guard.
+  Thermal-route and PowerShell AST contracts also pass.
+- ARM64 RelWithDebInfo native build passed in `59 s`; optimized ThorTest
+  packaging passed in `47 s`. Exact artifacts:
+  - APK `41A289BBAAD42E1B5A9FAF630A6A0F57D5BB275F6F94538F38B96FB2C94483E6`,
+    `73,572,526` bytes;
+  - merged core
+    `6775972D06E8582E8F0BAB6F2618B68DE6A63AC1738706E6423BD403F3C5E223`,
+    `1,304,464,952` bytes;
+  - packaged stripped core
+    `FD5A6DDA5E7C10EEE7C65AF3AB15A7203077E6863B8F82999190C248FE856AD5`,
+    `62,843,320` bytes.
+- All host gates pass: ARM64 APK/core identity, optimized test hooks,
+  single-open loader, Vulkan cache, bounded RSX preload, bounded SPU preload,
+  thermal fail-stop, visual route, PowerShell AST, and diff checks. Export
+  surface is `34` defined dynamic symbols, `583` explicit relocations, `391`
+  jump slots, and `44,219` encoded relocation bytes.
+- Verifier correction: LLVM 18 expands packed `.relr.dyn` entries while LLVM
+  20 does not. The export test now excludes that section from explicit counts;
+  NDK 27 and NDK 29 both pass with identical metrics.
+- Decision: keep the SPU bound opt-in. Host evidence earns no runtime speed,
+  thermal, title, FPS, gameplay, flicker, or stability credit. Do not install
+  or launch in the just-spent hot round.
+- Next: after a separately cool stable sub-40 C preflight, install this exact
+  APK without launch. In a later separately cool route, use one conservative
+  SPU limit with `RsxCachePreloadLimit=256`, Vulkan cache on, and the existing
+  thermal fail-stop. Require activation counts, title visual proof, comparable
+  timing, and fatal cleanliness before promotion.

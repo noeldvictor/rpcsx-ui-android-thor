@@ -190,6 +190,19 @@ if ($rsxPreloadLimitResetCount -ne 3) {
 if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_preload_limit \$RsxCachePreloadLimit') {
     throw "The input route does not set the requested RSX cached-pipeline preload limit before launch."
 }
+if ($inputMacroSource -notmatch '\[ValidateRange\(0,\s*4096\)\]\s*\[int\]\$SpuCachePreloadLimit\s*=\s*0') {
+    throw "The input route does not expose a bounded, opt-in SPU cached-program preload limit."
+}
+$spuPreloadLimitResetCount = [regex]::Matches(
+    $inputMacroSource,
+    [regex]::Escape('setprop debug.rpcsx.thor.spu_cache_preload_limit 0')
+).Count
+if ($spuPreloadLimitResetCount -ne 3) {
+    throw "The input route must reset the SPU cached-program preload limit before launch and after success or failure; found $spuPreloadLimitResetCount resets."
+}
+if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.spu_cache_preload_limit \$SpuCachePreloadLimit') {
+    throw "The input route does not set the requested SPU cached-program preload limit before launch."
+}
 if ($inputMacroSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$VkPipelineCache\s*=\s*"on"') {
     throw "The input route does not expose a default-on Vulkan pipeline cache rollback."
 }
@@ -245,6 +258,10 @@ if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$Androi
 if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*4096\)\]\s*\[int\]\$AndroidRsxCachePreloadLimit\s*=\s*0' -or
     $speedSprintSource -notmatch 'RsxCachePreloadLimit\s*=\s*\$AndroidRsxCachePreloadLimit') {
     throw "The Android speed-sprint wrapper does not expose and forward the bounded RSX cached-pipeline preload limit."
+}
+if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*4096\)\]\s*\[int\]\$AndroidSpuCachePreloadLimit\s*=\s*0' -or
+    $speedSprintSource -notmatch 'SpuCachePreloadLimit\s*=\s*\$AndroidSpuCachePreloadLimit') {
+    throw "The Android speed-sprint wrapper does not expose and forward the bounded SPU cached-program preload limit."
 }
 if ($speedSprintSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$AndroidVkPipelineCache\s*=\s*"on"' -or
     $speedSprintSource -notmatch 'VkPipelineCache\s*=\s*\$AndroidVkPipelineCache') {

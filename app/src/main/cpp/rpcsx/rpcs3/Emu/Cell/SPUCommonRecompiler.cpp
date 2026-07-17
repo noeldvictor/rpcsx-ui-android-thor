@@ -21,14 +21,14 @@
 #include "SPUInterpreter.h"
 #include "SPUDisAsm.h"
 #include <algorithm>
+#include <charconv>
 #include <cstring>
+#include <cstdlib>
 #include <optional>
 #include <unordered_set>
 
 #ifdef ANDROID
 #include <sys/system_properties.h>
-#else
-#include <cstdlib>
 #endif
 
 #include "rx/align.hpp"
@@ -194,6 +194,44 @@ bool spu_dynamic_mfc_fast_enabled() noexcept
 #endif
 
 	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+}
+
+static u32 spu_cache_preload_limit() noexcept
+{
+	const char* value = nullptr;
+	usz length = 0;
+
+#ifdef ANDROID
+	char property_value[PROP_VALUE_MAX]{};
+	const int property_length = __system_property_get("debug.rpcsx.thor.spu_cache_preload_limit", property_value);
+
+	if (property_length > 0)
+	{
+		value = property_value;
+		length = static_cast<usz>(property_length);
+	}
+#endif
+
+	if (!value)
+	{
+		value = std::getenv("RPCSX_THOR_SPU_CACHE_PRELOAD_LIMIT");
+		length = value ? std::strlen(value) : 0;
+	}
+
+	if (!value || !length)
+	{
+		return 0;
+	}
+
+	u32 result = 0;
+	const auto parse = std::from_chars(value, value + length, result);
+
+	if (parse.ec != std::errc{} || parse.ptr != value + length || result > 4096)
+	{
+		return 0;
+	}
+
+	return result;
 }
 
 // Move 4 args for calling native function from a GHC calling convention function
@@ -909,6 +947,40 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	// Read cache
 	auto func_list = cache.get();
+	const u32 preload_limit = spu_cache_preload_limit();
+
+	if (preload_limit && !func_list.empty())
+	{
+		const usz record_count = func_list.size();
+		usz unique_count = 0;
+		std::deque<spu_program> preload_list;
+		auto& runtime = g_fxo->get<spu_runtime>();
+
+		// get() returns newest records first. Register every identity as already
+		// present on disk, but only copy the newest unique prefix into the eager
+		// compilation queue. Runtime misses still use the configured LLVM path.
+		for (auto& func : func_list)
+		{
+			spu_item* const item = runtime.add_empty(std::move(func));
+
+			if (!item || item->cached.exchange(1))
+			{
+				continue;
+			}
+
+			unique_count++;
+
+			if (preload_list.size() < preload_limit)
+			{
+				preload_list.emplace_back(item->data);
+			}
+		}
+
+		func_list = std::move(preload_list);
+		spu_log.notice("Thor SPU cache preload limit: %u of %u newest unique programs (%u records, %u will compile on demand).",
+			func_list.size(), unique_count, record_count, unique_count - func_list.size());
+	}
+
 	atomic_t<usz> fnext{};
 	atomic_t<u8> fail_flag{0};
 

@@ -30,6 +30,8 @@ param(
     [int]$RsxCacheWorkers = 0,
     [ValidateRange(0, 4096)]
     [int]$RsxCachePreloadLimit = 0,
+    [ValidateRange(0, 4096)]
+    [int]$SpuCachePreloadLimit = 0,
     [ValidateSet("on", "off")]
     [string]$VkPipelineCache = "on",
     [ValidateSet("off", "publisher", "parser", "both")]
@@ -744,6 +746,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max silicon temperature C: $MaxSiliconTemperatureC",
     "- RSX cache preload workers (0=auto): $RsxCacheWorkers",
     "- RSX cached pipeline preload limit (0=all): $RsxCachePreloadLimit",
+    "- SPU cached-program preload limit (0=all): $SpuCachePreloadLimit",
     "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
@@ -765,6 +768,7 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-preload-limit-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_preload_limit 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
@@ -782,6 +786,8 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-effective.txt" @("shell", "getprop debug.rpcsx.thor.rsx_cache_workers") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-preload-limit-set.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_preload_limit $RsxCachePreloadLimit") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-preload-limit-effective.txt" @("shell", "getprop debug.rpcsx.thor.rsx_cache_preload_limit") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit $SpuCachePreloadLimit") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_preload_limit") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-set.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache $VkPipelineCache") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-effective.txt" @("shell", "getprop debug.rpcsx.thor.vk_pipeline_cache") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp $EsPpuCommandInterp") | Out-Null
@@ -1117,6 +1123,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     if ($BootGame) {
         Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "rsx-cache-preload-limit-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_preload_limit 0") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
@@ -1129,6 +1136,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_preload_limit 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null

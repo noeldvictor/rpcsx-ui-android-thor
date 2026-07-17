@@ -103,6 +103,8 @@ param(
     [int]$AndroidRsxCacheWorkers = 0,
     [ValidateRange(0, 4096)]
     [int]$AndroidRsxCachePreloadLimit = 0,
+    [ValidateRange(0, 4096)]
+    [int]$AndroidSpuCachePreloadLimit = 0,
     [ValidateSet("on", "off")]
     [string]$AndroidVkPipelineCache = "on",
     [int]$ScreenshotEverySeconds = 15,
@@ -685,6 +687,7 @@ function Invoke-AndroidRouteScene {
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
         RsxCacheWorkers = $AndroidRsxCacheWorkers
         RsxCachePreloadLimit = $AndroidRsxCachePreloadLimit
+        SpuCachePreloadLimit = $AndroidSpuCachePreloadLimit
         VkPipelineCache = $AndroidVkPipelineCache
     }
 

@@ -197,14 +197,21 @@ if ($encodedRelocationBytes -gt $MaxEncodedRelocationBytes) {
 }
 
 $relocationLines = Invoke-ReadElf @("-r", "--wide", $CorePath)
-$relocationTypes = @(
-    $relocationLines |
-        ForEach-Object {
-            if ($_ -match "\s(R_AARCH64_[A-Z0-9_]+)\s") {
-                $matches[1]
-            }
-        }
-)
+$relocationTypes = @()
+$relocationSection = ""
+foreach ($line in $relocationLines) {
+    if ($line -match "^Relocation section '(?<section>[^']+)'") {
+        $relocationSection = $matches.section
+        continue
+    }
+
+    # LLVM 18 expands packed RELR entries while LLVM 20 leaves them encoded.
+    # They are not explicit dynamic relocations in either representation.
+    if ($relocationSection -ne ".relr.dyn" -and
+        $line -match "\s(R_AARCH64_[A-Z0-9_]+)\s") {
+        $relocationTypes += $matches[1]
+    }
+}
 
 if ($relocationTypes.Count -gt $MaxExplicitRelocations) {
     throw "Explicit relocation count $($relocationTypes.Count) exceeds " +
