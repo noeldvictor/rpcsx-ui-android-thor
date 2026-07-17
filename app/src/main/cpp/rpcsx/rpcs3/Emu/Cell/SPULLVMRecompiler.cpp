@@ -25,6 +25,15 @@ const extern spu_decoder<spu_itype> g_spu_itype;
 const extern spu_decoder<spu_iname> g_spu_iname;
 const extern spu_decoder<spu_iflag> g_spu_iflag;
 
+static bool spu_compile_diagnostics_enabled() noexcept
+{
+#ifdef __ANDROID__
+	return g_cfg.core.spu_debug.get();
+#else
+	return true;
+#endif
+}
+
 #ifdef LLVM_AVAILABLE
 
 #include "Emu/CPU/CPUTranslator.h"
@@ -1615,26 +1624,22 @@ public:
 		std::string function_log;
 		bool to_log_func = false;
 		const bool write_debug_log = g_cfg.core.spu_debug && !add_loc->logged.exchange(1);
+		const bool compile_diagnostics = spu_compile_diagnostics_enabled();
 
-		for (u32 data : func.data)
+		if (compile_diagnostics)
 		{
-			const spu_opcode_t op{std::bit_cast<be_t<u32>>(data)};
-
-			const auto itype = g_spu_itype.decode(op.opcode);
-
-			if (itype == spu_itype::RDCH && op.ra == SPU_RdDec)
+			for (u32 data : func.data)
 			{
-				to_log_func = true;
+				const spu_opcode_t op{std::bit_cast<be_t<u32>>(data)};
+
+				const auto itype = g_spu_itype.decode(op.opcode);
+
+				if (itype == spu_itype::RDCH && op.ra == SPU_RdDec)
+				{
+					to_log_func = true;
+				}
 			}
 		}
-
-#ifdef __ANDROID__
-		if (to_log_func && !g_cfg.core.spu_debug)
-		{
-			spu_log.notice("Function %s reads SPU_RdDec; full diagnostic dump suppressed on Android.", m_hash);
-			to_log_func = false;
-		}
-#endif
 
 		if (write_debug_log || to_log_func)
 		{
@@ -4714,7 +4719,10 @@ public:
 				}
 			}
 
-			spu_log.warning("[0x%x] MFC_EAH: $%u is not a zero constant", m_pos, +op.rt);
+			if (spu_compile_diagnostics_enabled())
+			{
+				spu_log.warning("[0x%x] MFC_EAH: $%u is not a zero constant", m_pos, +op.rt);
+			}
 			// m_ir->CreateStore(val.value, spu_ptr<u32>(OFFSET_OF(spu_thread, ch_mfc_cmd.eah)));
 			return;
 		}
@@ -5072,7 +5080,10 @@ public:
 			}
 
 			// Fallback to unoptimized WRCH implementation (TODO)
-			spu_log.warning("[0x%x] MFC_Cmd: $%u is not a constant", m_pos, +op.rt);
+			if (spu_compile_diagnostics_enabled())
+			{
+				spu_log.warning("[0x%x] MFC_Cmd: $%u is not a constant", m_pos, +op.rt);
+			}
 			if (spu_dynamic_mfc_fast_enabled() && !g_cfg.core.mfc_debug)
 			{
 				update_pc();
@@ -5401,7 +5412,10 @@ public:
 				if (auto [ok, a2, b2] = match_expr(b, mpyu(MP, MP)); ok && a2.eq(a0, a1) && b2.eq(b0, b1))
 				{
 					// 32-bit multiplication
-					spu_log.notice("mpy32 in %s at 0x%05x", m_hash, m_pos);
+					if (spu_compile_diagnostics_enabled())
+					{
+						spu_log.notice("mpy32 in %s at 0x%05x", m_hash, m_pos);
+					}
 					set_vr(op.rt, a0 * b0);
 					return;
 				}

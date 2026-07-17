@@ -590,3 +590,93 @@ independently cool round may spend one guarded bounded title proof. It must
 first prove `Shader cache preload workers: load=2, compile=2`, retain the
 RSX `256` and SPU `64` preload bounds, and show that the validated-warm Vulkan
 cache does not synchronously rewrite at 256 creates before any speed claim.
+
+## Parallel warm-checkpoint proof and SPU diagnostic-pruning successor
+
+Outer no-boot cool gate:
+
+`debug-captures/android-speed-sprint/20260717-185632-thor-input-parallel-rsx-warm-checkpoint-runtime-cool-gate`
+
+RPCSX remained absent while silicon sampled `32.7 -> 33.1 -> 33.5 C`.
+The `+0.8 C` trend passed the strict `1 C` limit, so this independently cool
+round was eligible for exactly one guarded route.
+
+Guarded route:
+
+`debug-captures/android-speed-sprint/20260717-185725-thor-input-parallel-rsx-warm-checkpoint-bounded-title-proof`
+
+The inner preflight passed at `33.1 -> 32.7 -> 32.9 C`. Prelaunch power state
+matched the preceding comparison: performance mode `0`, fan mode `4`, quick
+performance/fan `1`, low-power mode `0`, WALT CPU governors, and
+`msm-adreno-tz` GPU governor. The exact installed APK remained
+`24F3F26785681A96AFD152574FB82206FC5EBDDF508F194ADDF46DE575E3F87F`.
+
+The intended controls activated: the validated `4,899,180`-byte Vulkan seed
+logged first checkpoint `512`, RSX loaded `256/939`, shader workers were
+`load=2, compile=2`, and SPU loaded `64/1,165`. There was no synchronous
+`Saved Vulkan driver pipeline cache` row at the old 256-create boundary.
+Matched core timestamps were effectively neutral versus the earlier two-worker
+route: workers `1.040324` versus `1.035883`, PPU OPD `1.505481` versus
+`1.513522`, SPU limit `2.246577` versus `2.253982`, interpreter `2.389662`
+versus `2.394806`, and 64 SPU functions `2.820287` versus `2.794049`.
+
+PID `29808` was established at `18:57:38.2202918`. Silicon reached `61.0 C`
+at `18:57:40.9124255`; the immediate confirmation was `61.8 C` about
+`0.615 s` later. The next normal poll reached `68.2 C` at
+`18:57:44.3031403`, about `6.083 s` after PID, so the harness force-stopped
+at the early threshold below the `72 C` hard limit. The prior matched route
+stopped about `3.267 s` after PID, so removing the unchanged 256-create cache
+rewrite broadened this startup thermal window by about `2.82 s`. That is
+startup-window evidence only; thermal variance prevents treating it as an FPS
+or general speed result. The stop occurred during the initial 12-second wait,
+before Start, title polling, or screenshots. Failure-post-stop silicon was
+`51.4 C`, PID was absent, and the targeted fatal/access-violation/device-lost/
+unknown-draw scan had zero matches. The one `Channel Loop Pattern Detected`
+row is an SPU compiler diagnostic, not a native fatal.
+
+Classification: `failed-thermal-guard`, with the parallel-worker and warm
+checkpoint-deferral activation proven. Grant startup thermal-window credit
+only; grant no title, FPS, flicker, gameplay, or stability credit. Do not retry
+or query the device again in this round.
+
+The captured `failure-RPCSX.log` was still `145,215` bytes / `1,401` lines.
+The emulated 3-5 second interval alone contained `278` timed rows / `42,156`
+bytes. Repeated compiler-only diagnostics included 16 RdDec notices, 32
+`mpy32` rows, 78 nonzero-constant `MFC_EAH` rows, 23 GETLLAR rows, 17 PUTLLC
+break rows plus 17 formatted summaries, and the channel-pattern row. These
+messages do not change emitted code or compiler analysis.
+
+The host successor now avoids that work on Android when `SPU Debug=false`:
+it skips the full per-function RdDec diagnostic scan; suppresses the MFC_EAH,
+nonconstant MFC command, and `mpy32` messages; and avoids formatting/sorting
+PUTLLC/channel break diagnostics and channel-loop messages. Pattern analysis,
+statistics, IR generation, cache identity, and runtime behavior are unchanged.
+Desktop and Android `SPU Debug=true` retain full diagnostics. GETLLAR logging
+is deliberately unchanged.
+
+Recompiling the older fork also exposed a pre-existing signed/unsigned
+`narrow<s8>` failure in legacy x64 displacement emission. The companion
+compatibility fix converts the known-small offsets to signed 32-bit before the
+checked byte narrow, consistent with current upstream intent and without
+changing emitted offsets. Both affected ARM64 native objects compile, and the
+optimized native link plus ARM64-only ThorTest assembly pass.
+
+Host validation:
+
+- SPU, RSX, Vulkan-cache, optimized-variant, ARM64 APK, export-surface,
+  single-core-load, thermal, and visual-route contracts: pass;
+- PowerShell AST parsing and `git diff --check`: pass;
+- export surface: 34 defined dynamic symbols, 583 explicit relocations, 391
+  jump slots, and 44,219 encoded relocation bytes;
+- merged core: `1,305,550,384` bytes, SHA-256
+  `2C2691F02E11F2A0E98A3CAF5BEF6F37718510886C38E6CFC85F58AF647DC71E`;
+- stripped core: `62,842,632` bytes, SHA-256
+  `0834EF20267B6CF34F0CE064156D10B8B59503910BF9A0789A1A6C584FD3BDB7`;
+  and
+- ARM64-only ThorTest APK: `73,573,042` bytes, SHA-256
+  `D6204DA24E8BDE90270382C38283AD9A07E41111BCA8FF966D524C52AB372747`.
+
+The diagnostic-pruned APK is `host-verified`, `device-unmeasured`, and was
+not installed or launched. A later separately cool round may perform only its
+strict no-launch install; any guarded runtime proof belongs to a different
+independently cool round.

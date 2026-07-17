@@ -76,6 +76,15 @@ struct span_less
 template <typename T>
 inline constexpr span_less<T> s_span_less{};
 
+static bool spu_pattern_diagnostics_enabled() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.spu_debug.get();
+#else
+	return true;
+#endif
+}
+
 template <>
 void fmt_class_string<spu_recompiler_base::compare_direction>::format(std::string& out, u64 arg)
 {
@@ -368,7 +377,7 @@ DECLARE(spu_runtime::tr_all) = []
 	*raw++ = 0x41;
 	*raw++ = 0x8b;
 	*raw++ = 0x45;
-	*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, pc));
+	*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, pc)));
 
 	// Get LS address starting from PC: lea rcx, [rbp + rax]
 	*raw++ = 0x48;
@@ -398,7 +407,7 @@ DECLARE(spu_runtime::tr_all) = []
 	*raw++ = 0x49;
 	*raw++ = 0xc7;
 	*raw++ = 0x45;
-	*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, block_hash));
+	*raw++ = ::narrow<s8>(static_cast<s32>(::offset32(&spu_thread::block_hash)));
 	*raw++ = 0x00;
 	*raw++ = 0x00;
 	*raw++ = 0x00;
@@ -5921,7 +5930,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 				g_fxo->get<putllc16_statistics_t>().breaking_reason[cause]++;
 
-				if (!spu_log.notice)
+				if (!spu_pattern_diagnostics_enabled() || !spu_log.notice)
 				{
 					return;
 				}
@@ -5978,7 +5987,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 				g_fxo->get<rchcnt_statistics_t>().breaking_reason[cause]++;
 
-				if (!spu_log.notice)
+				if (!spu_pattern_diagnostics_enabled() || !spu_log.notice)
 				{
 					return;
 				}
@@ -8062,7 +8071,10 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 		if (pattern.active)
 		{
-			spu_log.error("Channel loop error! (get_pc=0x%x,  0x%x-%s)", read_pc, entry_point, func_hash);
+			if (spu_pattern_diagnostics_enabled())
+			{
+				spu_log.error("Channel loop error! (get_pc=0x%x,  0x%x-%s)", read_pc, entry_point, func_hash);
+			}
 			continue;
 		}
 
@@ -8070,7 +8082,10 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 		{
 			add_pattern(false, inst_attr::rchcnt_loop, read_pc - result.entry_point);
 
-			spu_log.error("Channel Loop Pattern Detected! Report to developers! (read_pc=0x%x, branch_pc=0x%x, branch_target=0x%x, 0x%x-%s)", read_pc, pattern.branch_pc, pattern.branch_target, entry_point, func_hash);
+			if (spu_pattern_diagnostics_enabled())
+			{
+				spu_log.error("Channel Loop Pattern Detected! Report to developers! (read_pc=0x%x, branch_pc=0x%x, branch_target=0x%x, 0x%x-%s)", read_pc, pattern.branch_pc, pattern.branch_target, entry_point, func_hash);
+			}
 		}
 	}
 
@@ -8101,7 +8116,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 		}
 	}
 
-	if (likely_putllc_loop && !had_putllc_evaluation)
+	if (likely_putllc_loop && !had_putllc_evaluation && spu_pattern_diagnostics_enabled())
 	{
 		spu_log.notice("Likely missed PUTLLC16 patterns. (entry=0x%x)", entry_point);
 	}
@@ -8630,13 +8645,13 @@ struct spu_fast : public spu_recompiler_base
 		*raw++ = 0x49;
 		*raw++ = 0x89;
 		*raw++ = 0x45;
-		*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, block_hash));
+		*raw++ = ::narrow<s8>(static_cast<s32>(::offset32(&spu_thread::block_hash)));
 
 		// Load PC: mov eax, [r13 + spu_thread::pc]
 		*raw++ = 0x41;
 		*raw++ = 0x8b;
 		*raw++ = 0x45;
-		*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, pc));
+		*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, pc)));
 
 		// Get LS address starting from PC: lea rcx, [rbp + rax]
 		*raw++ = 0x48;
@@ -8700,12 +8715,12 @@ struct spu_fast : public spu_recompiler_base
 		*raw++ = 0x48;
 		*raw++ = 0x8d;
 		*raw++ = 0x7d;
-		*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, gpr));
+		*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, gpr)));
 
 		// Save base pc: mov [rbp + spu_thread::base_pc], eax
 		*raw++ = 0x89;
 		*raw++ = 0x45;
-		*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, base_pc));
+		*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, base_pc)));
 
 		// inc block_counter
 		*raw++ = 0x48;
@@ -8734,7 +8749,7 @@ struct spu_fast : public spu_recompiler_base
 				*raw++ = 0x44;
 				*raw++ = 0x89;
 				*raw++ = 0x65;
-				*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, pc));
+				*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, pc)));
 
 				// Epilogue: add rsp,0x28
 				*raw++ = 0x48;
@@ -8833,7 +8848,7 @@ struct spu_fast : public spu_recompiler_base
 		// sub eax, [rbp + spu_thread::base_pc]
 		*raw++ = 0x2b;
 		*raw++ = 0x45;
-		*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, base_pc));
+		*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, base_pc)));
 
 		// cmp eax, (0 - size)
 		*raw++ = 0x3d;
@@ -8868,7 +8883,7 @@ struct spu_fast : public spu_recompiler_base
 		*raw++ = 0x44;
 		*raw++ = 0x89;
 		*raw++ = 0x65;
-		*raw++ = ::narrow<s8>(OFFSET_OF(spu_thread, pc));
+		*raw++ = ::narrow<s8>(static_cast<s32>(OFFSET_OF(spu_thread, pc)));
 
 		// Epilogue: add rsp,0x28 ; ret
 		*raw++ = 0x48;

@@ -47,10 +47,25 @@ if ($diagnosticGateIndex -lt 0 -or
     throw "SPU disassembly is no longer lazily materialized while preserving the LLVM verifier log buffer."
 }
 
-if (-not $llvmSource.Contains('#ifdef __ANDROID__') -or
-    -not $llvmSource.Contains('if (to_log_func && !g_cfg.core.spu_debug)') -or
-    -not $llvmSource.Contains('full diagnostic dump suppressed on Android.')) {
-    throw "Android non-debug SPU decrementer diagnostics no longer suppress the full function dump."
+$llvmDiagnosticsPattern = '(?s)static bool spu_compile_diagnostics_enabled\(\) noexcept\s*\{\s*#ifdef __ANDROID__\s*return g_cfg\.core\.spu_debug\.get\(\);\s*#else\s*return true;\s*#endif\s*\}'
+$commonDiagnosticsPattern = '(?s)static bool spu_pattern_diagnostics_enabled\(\) noexcept\s*\{\s*#ifdef ANDROID\s*return g_cfg\.core\.spu_debug\.get\(\);\s*#else\s*return true;\s*#endif\s*\}'
+$compileDiagnosticsIndex = $llvmSource.IndexOf('const bool compile_diagnostics = spu_compile_diagnostics_enabled();')
+$compileDiagnosticsGateIndex = $llvmSource.IndexOf('if (compile_diagnostics)', $compileDiagnosticsIndex)
+$decrementerScanIndex = $llvmSource.IndexOf('for (u32 data : func.data)', $compileDiagnosticsGateIndex)
+$compileDiagnosticsGateCount = [regex]::Matches($llvmSource, [regex]::Escape('if (spu_compile_diagnostics_enabled())')).Count
+$patternDiagnosticsGateCount = [regex]::Matches($commonSource, [regex]::Escape('if (spu_pattern_diagnostics_enabled())')).Count
+$patternBreakGateCount = [regex]::Matches($commonSource, [regex]::Escape('if (!spu_pattern_diagnostics_enabled() || !spu_log.notice)')).Count
+$likelyPutllcGateCount = [regex]::Matches($commonSource, [regex]::Escape('if (likely_putllc_loop && !had_putllc_evaluation && spu_pattern_diagnostics_enabled())')).Count
+if (-not [regex]::IsMatch($llvmSource, $llvmDiagnosticsPattern) -or
+    -not [regex]::IsMatch($commonSource, $commonDiagnosticsPattern) -or
+    $compileDiagnosticsIndex -lt 0 -or
+    $compileDiagnosticsGateIndex -le $compileDiagnosticsIndex -or
+    $decrementerScanIndex -le $compileDiagnosticsGateIndex -or
+    $compileDiagnosticsGateCount -ne 3 -or
+    $patternDiagnosticsGateCount -ne 2 -or
+    $patternBreakGateCount -ne 2 -or
+    $likelyPutllcGateCount -ne 1) {
+    throw "Android non-debug SPU compile diagnostics are no longer gated while desktop/debug diagnostics remain available."
 }
 
-Write-Output "Thor SPU cache preload contract passed: opt-in oldest-first unique bound, all cached identities retained, normal LLVM miss path preserved, duplicate disk appends suppressed."
+Write-Output "Thor SPU cache preload contract passed: opt-in oldest-first unique bound, all cached identities retained, normal LLVM miss path preserved, duplicate disk appends suppressed, Android non-debug compile diagnostics pruned."
