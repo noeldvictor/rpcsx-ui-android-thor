@@ -1857,8 +1857,9 @@ gate, host-safe successor built, and no second device route.
 - The route also logged an always-severity SPU VM access violation at emulated
   `0:01:35.288908`: `CellSpursKernel0`, PC `0x330f0`, read
   `0x8d230480` from unmapped memory. The handler sets SPU `dbg_pause`, and
-  the route's fatal pattern explicitly treats any VM access violation as a
-  failure. This exact SPU PC/address was absent from the immediate controls, so
+  the route's fatal gate was intended to treat any VM access violation as a
+  failure. Its matcher expected adjacent `VM: Access violation` text even though
+  the actual SPU line inserts thread context. This PC/address was absent from controls, so
   reuse cannot stay implicitly enabled even though the guest continued.
 - The route later failed closed at emulated `0:03:23.221` on recurring
   unknown draw words `0x3e21bf94/0xbf7a924b`. That pair predates this core,
@@ -1882,3 +1883,26 @@ Decision: park invariant-result reuse behind its dedicated default-off gate.
 The next separately cool proof must first validate true-cache u4 with reuse
 off. Only after a clean field/tutorial/active-battle/menu and fatal-free
 control should the isolated reuse profile receive a separate one-change run.
+
+## 2026-07-17 Earlier Guest-Fatal Gate
+
+Status: `route-tooling`; host-only fail-fast improvement, no device run and no
+new speed or stability credit.
+
+- The rejected reuse route logged `VM: [SPU...] Access violation`, while the
+  matcher required adjacent `VM: Access violation`. It therefore missed the
+  fault and let the already-invalid route continue into movement and draw work.
+- The matcher now permits thread context between the VM prefix and access
+  violation. The strict battle route also checks guest health after the loaded
+  field passes its visual gate and before movement, so a repeat skips the
+  battle route and force-stops RPCSX sooner.
+- Guest-fatal evidence now takes priority when a log tail contains both a fatal
+  signature and an unknown draw command. Both compact evidence files are
+  retained, but the fatal is reported first instead of being masked by the
+  draw-stream branch.
+- PowerShell parsing, exact rejected-log replay, branch-order assertions, and
+  `git diff --check` pass. The Thor was not queried, launched, or exercised.
+
+Decision: use this fail-fast route on the next separately cool true-cache u4
+proof with reduced-loop reuse off. This is a thermal-safety improvement only;
+the prior nominal FPS deltas remain unpromoted.

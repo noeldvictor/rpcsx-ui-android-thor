@@ -199,7 +199,7 @@ function Get-ThorMacroForProfile {
             # Start the visual readiness gate immediately. It rejects PPU
             # compilation and black transition frames, so a fixed 60-second
             # pre-wait only heats the device and delays warm-cache routes.
-            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;check:visual:load-menu;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;check:visual:load-menu;cross;wait:12000;shot:loaded-field;check:visual:field-frame;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;check:visual:load-menu;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;check:visual:load-menu;cross;wait:12000;shot:loaded-field;check:visual:field-frame;check:guest:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -623,26 +623,29 @@ function Assert-ThorGuestHealthy {
         throw "Could not read the guest log at '$Label'. RPCSX was force-stopped; see guest-health-$safeLabel.log."
     }
 
-    $fatalPattern = 'VM: Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally|Eternal Sonata draw-stream selector (repair|restore) failed'
+    $fatalPattern = 'VM:.*Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally|Eternal Sonata draw-stream selector (repair|restore) failed'
     $fatalMatches = @($logTail | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
     $unknownDrawMatches = @($logTail | Select-String -Pattern 'unknown draw command' -CaseSensitive:$false)
+
     if ($unknownDrawMatches.Count -gt 0) {
         $unknownDrawMatches.Line |
             Sort-Object -Unique |
             Set-Content -LiteralPath (Join-Path $captureDir "guest-unknown-draw-$safeLabel.txt") -Encoding UTF8
-
-        if ($strictGuestDrawStream) {
-            Save-ThorFullGuestLogEvidence "unknown-draw-$safeLabel"
-            & $Adb shell am force-stop $Package | Out-Null
-            throw "Unknown guest draw command detected at '$Label'. RPCSX was force-stopped; see guest-unknown-draw-$safeLabel.txt. Pass -AllowUnknownDraw only for an explicit diagnostic capture."
-        }
     }
 
     if ($fatalMatches.Count -gt 0) {
-        $fatalMatches.Line | Set-Content -LiteralPath (Join-Path $captureDir "guest-fatal-$safeLabel.txt") -Encoding UTF8
+        $fatalMatches.Line |
+            Sort-Object -Unique |
+            Set-Content -LiteralPath (Join-Path $captureDir "guest-fatal-$safeLabel.txt") -Encoding UTF8
         Save-ThorFullGuestLogEvidence "fatal-$safeLabel"
         & $Adb shell am force-stop $Package | Out-Null
         throw "Guest fatal detected at '$Label'. RPCSX was force-stopped; see guest-fatal-$safeLabel.txt."
+    }
+
+    if ($unknownDrawMatches.Count -gt 0 -and $strictGuestDrawStream) {
+        Save-ThorFullGuestLogEvidence "unknown-draw-$safeLabel"
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Unknown guest draw command detected at '$Label'. RPCSX was force-stopped; see guest-unknown-draw-$safeLabel.txt. Pass -AllowUnknownDraw only for an explicit diagnostic capture."
     }
 
     Assert-ThorProcessIdentity "guest-health-$safeLabel-post"
