@@ -128,7 +128,7 @@ size `1,304,469,376` bytes, SHA-256
 `95B02FF463B0A4A36448F9422612FBD76C3DC1028CE060898A90AAA307796A0A`.
 `git diff --check` is clean.
 
-## Host-only ThorTest package
+## ThorTest package and no-launch installation
 
 The exact build was packaged host-side with:
 
@@ -147,7 +147,25 @@ Result:
 - `tools/test_thor_arm64_apk.ps1` and
   `tools/test_thor_optimized_apk_contract.ps1` both pass.
 
-The APK was not installed or launched. Classification: `package-proven`,
-`device-unmeasured`; grant no FPS, thermal, flicker, title, gameplay, or
-stability credit. Any install belongs to a later separately cool no-launch
-round, followed by a different cool round for the single guarded route.
+The exact APK was installed without launch on the AYN Thor at
+`2026-07-17T15:44-04:00` after a separately cool, PID-absent preflight:
+
+- model/device: `AYN Thor` / `kalama`, Android 13;
+- strict silicon samples: `32.7 -> 32.3 -> 32.7 C`, with `0.0 C` net rise;
+- battery/skin: `24.0 / 30.0 C`;
+- power state: performance mode `0`, fan mode `4`, quick performance/fan `1`,
+  and battery saver `0`;
+- `adb install -r` result: `Success`;
+- installed `base.apk` SHA-256:
+  `853098D6BDD700A1008957C6977D6863B2E87F2FE95842F4D1F0AD3CF2FCFB22`,
+  exactly matching the host candidate; and
+- post-install state: RPCSX PID absent, silicon `33.1 C`, battery `24.0 C`.
+
+The experiment controls remained at their safe idle defaults: RSX preload
+`preload`, RSX worker/limit overrides `0/0`, SPU preload limit `0`, Vulkan
+pipeline cache `on`, and the title-specific HLE/repair/probe switches `off`.
+No emulator route ran in this install round. Classification:
+`installed-exact`, `device-runtime-unmeasured`; grant no FPS, thermal-runtime,
+flicker, title, gameplay, or stability credit. A different independently cool
+round may spend exactly one guarded bounded route with RSX limit `256`, SPU
+limit `64`, normal two-worker/auto scheduling, and Vulkan cache on.
