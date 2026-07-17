@@ -34,6 +34,7 @@ namespace vk
 		constexpr usz driver_pipeline_cache_max_size = 64 * 1024 * 1024;
 		std::string g_driver_pipeline_cache_path;
 		atomic_t<u32> g_driver_pipeline_create_count{};
+		u32 g_driver_pipeline_first_checkpoint = 32;
 		std::mutex g_driver_pipeline_checkpoint_mutex;
 
 		u32 read_pipeline_cache_u32(const u8* data)
@@ -171,6 +172,7 @@ namespace vk
 		void initialize_driver_pipeline_cache()
 		{
 			g_driver_pipeline_create_count.store(0);
+			g_driver_pipeline_first_checkpoint = 32;
 			g_driver_pipeline_cache_path.clear();
 
 			if (!driver_pipeline_cache_enabled() || g_cfg.video.disable_on_disk_shader_cache)
@@ -200,6 +202,7 @@ namespace vk
 			VkPipelineCacheCreateInfo create_info{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
 			create_info.initialDataSize = initial_data.size();
 			create_info.pInitialData = initial_data.empty() ? nullptr : initial_data.data();
+			usz accepted_seed_size = initial_data.size();
 
 			VkResult result = VK_GET_SYMBOL(vkCreatePipelineCache)(
 				*g_render_device, &create_info, nullptr, &g_driver_pipeline_cache);
@@ -209,6 +212,7 @@ namespace vk
 					static_cast<u32>(result));
 				create_info.initialDataSize = 0;
 				create_info.pInitialData = nullptr;
+				accepted_seed_size = 0;
 				result = VK_GET_SYMBOL(vkCreatePipelineCache)(
 					*g_render_device, &create_info, nullptr, &g_driver_pipeline_cache);
 			}
@@ -221,14 +225,21 @@ namespace vk
 				return;
 			}
 
+			// A validated warm seed already contains the early pipeline states. Avoid
+			// serializing and rewriting that same multi-megabyte blob at the 32/64/128
+			// session thresholds. Cold caches retain those crash-safe checkpoints;
+			// warm caches checkpoint new progress at 256 and every power of two after.
+			g_driver_pipeline_first_checkpoint = accepted_seed_size ? 256u : 32u;
 			rsx_log.notice("Created Vulkan driver pipeline cache (seed=%llu bytes).",
-				static_cast<u64>(initial_data.size()));
+				static_cast<u64>(accepted_seed_size));
+			rsx_log.notice("Vulkan driver pipeline cache first checkpoint: %u pipelines.",
+				g_driver_pipeline_first_checkpoint);
 		}
 
 		void note_driver_pipeline_create()
 		{
 			const u32 create_count = g_driver_pipeline_create_count.fetch_add(1) + 1;
-			if (create_count >= 32 && (create_count & (create_count - 1)) == 0)
+			if (create_count >= g_driver_pipeline_first_checkpoint && (create_count & (create_count - 1)) == 0)
 			{
 				save_driver_pipeline_cache(false);
 			}
@@ -244,6 +255,7 @@ namespace vk
 			save_driver_pipeline_cache(true);
 			VK_GET_SYMBOL(vkDestroyPipelineCache)(*g_render_device, g_driver_pipeline_cache, nullptr);
 			g_driver_pipeline_cache = VK_NULL_HANDLE;
+			g_driver_pipeline_first_checkpoint = 32;
 			g_driver_pipeline_cache_path.clear();
 		}
 #else

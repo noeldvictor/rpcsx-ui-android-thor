@@ -22,7 +22,10 @@ $requiredFragments = @(
     'vkGetPipelineCacheData',
     'vkDestroyPipelineCache',
     'g_driver_pipeline_create_count.fetch_add(1) + 1',
-    'create_count >= 32 && (create_count & (create_count - 1)) == 0',
+    'g_driver_pipeline_first_checkpoint = 32',
+    'accepted_seed_size = initial_data.size()',
+    'g_driver_pipeline_first_checkpoint = accepted_seed_size ? 256u : 32u',
+    'create_count >= g_driver_pipeline_first_checkpoint && (create_count & (create_count - 1)) == 0',
     'initialize_driver_pipeline_cache();',
     'destroy_driver_pipeline_cache();'
 )
@@ -40,6 +43,9 @@ if ($pipelineSource -notmatch 'vkCreateGraphicsPipelines\)\(\s*\*m_device,\s*g_d
 }
 if ($pipelineSource -notmatch 'result\s*!=\s*VK_SUCCESS\s*&&\s*!initial_data\.empty\(\)[\s\S]*?initialDataSize\s*=\s*0[\s\S]*?vkCreatePipelineCache') {
     throw "A driver-rejected seed does not fall back to an empty pipeline cache."
+}
+if ($pipelineSource -notmatch 'result\s*!=\s*VK_SUCCESS\s*&&\s*!initial_data\.empty\(\)[\s\S]*?accepted_seed_size\s*=\s*0[\s\S]*?vkCreatePipelineCache') {
+    throw "A driver-rejected seed is still treated as accepted for warm checkpoint scheduling."
 }
 if ($pipelineSource -notmatch 'g_pipe_compilers\.reset\(\);\s*destroy_driver_pipeline_cache\(\);') {
     throw "Pipeline workers are not stopped before the final pipeline cache checkpoint."

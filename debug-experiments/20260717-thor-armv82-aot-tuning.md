@@ -739,3 +739,60 @@ New host artifact:
   below `40.0 C`, rises no more than `2.0 C`, and reports no package PID,
   spend one short same-APK/config warm-cache-on route. Require
   `seed=2239716 bytes` before any speed claim.
+
+## Persistent Vulkan driver pipeline cache warm-start result
+
+### 2026-07-17 - vk-pipeline-cache-warm-proof
+
+- Status: startup-throughput progress; failed-thermal-guard; not-comparable for FPS
+- Scope: rsx-vulkan / Android thermal startup
+- The exact installed ThorTest APK remained
+  `A3E9F49A727B991F77F641B5800CC1927E497D2F3FFA84133682574DEB7D5355`.
+  Its one separately cooled warm route is
+  `debug-captures/android-speed-sprint/20260717-094931-thor-input-vk-pipeline-cache-warm-proof`.
+- Preflight was genuinely cool and stable: battery/skin were `25/30 C`, and
+  silicon was `33.1 -> 33.1 -> 32.9 C`. The route used direct input, automatic
+  two-worker preload, the same config/APK, cache on, two-second runtime polling,
+  and the `75 C` fail-stop limit.
+- Activation proof: the log accepted exactly
+  `Created Vulkan driver pipeline cache (seed=2239716 bytes)`. It serialized the
+  unchanged `2,239,716`-byte blob at early checkpoint logs with current-session
+  counters `70` and `128`, then grew it to `4,016,586` bytes at `256` and
+  `4,899,180` bytes at `512` pipelines.
+- Matched cold comparison: the cold route had reached only `128` pipeline
+  creates by emulated `6.277 s`; the warm route reached `512` by `7.089 s`.
+  Process establishment to thermal stop increased from `6.951 s` to `12.175 s`
+  (`+5.223 s`, `+75.1%` time before the guard). First-poll adjusted silicon
+  rise improved from `31.7 C` to `26.5 C` (`5.2 C` cooler).
+- Correctness limit: the only screenshot was still the same `80.293%`
+  pre-title progress frame. Its central comparison against the cold screenshot
+  had `0/63,360` changed samples. Title, field, menu, battle, flicker, and FPS
+  were not reached. Targeted fatal and unknown-draw scans were clean.
+- Thermal result: silicon samples after launch were `59.4, 72.7, 72.3, 73.1,
+  77.5 C`; the guard force-stopped RPCSX at `77.5 C`. Immediate post-stop was
+  `53.0 C`, `pidof` was empty, and cache/preload/worker properties reset to
+  `on/preload/0`. No second route is allowed in this cool round.
+- Decision: preserve the persistent cache as real startup-throughput progress,
+  but award no gameplay speed, FPS, visual, menu, battle, flicker, thermal, or
+  stability credit. The driver cache advanced substantially farther before the
+  thermal stop but still did not reach title.
+- Host follow-up: warm-seed initialization now defers its first crash-safe
+  checkpoint to `256` creates, removing the two observed redundant early
+  rewrites; cold caches retain `32/64/128/...`. A driver-rejected seed is
+  correctly treated as empty and keeps the cold schedule. Source-contract,
+  thermal, preload, AST, and diff checks pass. ARM64 RelWithDebInfo builds in
+  `56 s`; core SHA256 is
+  `FB5C9FFE05D43702063EA8FB0C2F359F4FD7ED0CD6016CACC371B1C96C26225E`,
+  size `1,304,279,064` bytes.
+- Exact packaged ThorTest APK is
+  `D3048BE18065C692500C35320740731CBFA22733E7EDC967E9089BE20B130DBA`,
+  `73,563,042` bytes, with stripped core
+  `18A55F04467EB5B3828564915E88CFA3F4D0DA06A04EF0EA07E412DBE66B7387`,
+  `62,827,928` bytes. ARM64 ABI/core identity, optimized test-hook, export and
+  relocation, single-open, Vulkan cache, RSX preload, thermal, and visual-route
+  contracts pass. It is not installed or device-proven.
+- Next: keep Thor stopped and do not install while it is still hot. After a
+  separately cool soak, install the exact APK without launch, then use one
+  short guarded route only. Require title visual proof before any FPS claim;
+  the existing one-worker preload control remains a later single-variable
+  thermal experiment.
