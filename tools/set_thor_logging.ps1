@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU4", "ReducedLoopEmitU4Quiet", "ReducedLoopEmitU4ReuseQuiet", "ReducedLoopEmitU4DynMfcQuiet", "ReducedLoopEmitU8", "ReducedLoopEmitU8Quiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock", "Status")]
+    [ValidateSet("Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU2ReuseQuiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock", "Status")]
     [string]$Mode = "Status"
 )
 
@@ -149,8 +149,7 @@ switch ($Mode) {
         Set-DeviceProp "log.tag.RPCSX-UI" "W"
         break
     }
-    "ReducedLoopEmitU4ReuseQuiet" {
-        $ReducedLoopUnroll = "4"
+    "ReducedLoopEmitU2ReuseQuiet" {
         $ReducedLoopReuse = "1"
         Set-DeviceProp "debug.rpcsx.thor.logcat" "0"
         Set-DeviceProp "debug.rpcsx.thor.syscall_stats" "0"

@@ -2474,7 +2474,7 @@ public:
 
 				const bool is_reduced_loop = m_inst_attrs[(baddr - start) / 4] == inst_attr::reduced_loop;
 				const auto reduced_loop_info = is_reduced_loop ? std::static_pointer_cast<reduced_loop_t>(ensure(m_patterns.at(baddr - start).info_ptr)) : nullptr;
-				const u32 reduced_loop_unroll = is_reduced_loop ? spu_reduced_loop_unroll_factor() : 2;
+				constexpr u32 reduced_loop_emit_iterations = 2;
 
 				BasicBlock* block_optimization_phi_parent = nullptr;
 				const auto block_optimization_inner = is_reduced_loop ? BasicBlock::Create(m_context, fmt::format("b-loop-it-0x%x", baddr), m_function) : nullptr;
@@ -2482,6 +2482,8 @@ public:
 
 				std::array<llvm::PHINode*, s_reg_max> reduced_loop_phi_nodes{};
 				std::array<llvm::Value*, s_reg_max> reduced_loop_init_regs{};
+				std::array<llvm::Value*, s_reg_max> reduced_loop_restore_regs{};
+				const u32 reduced_loop_reserve_iterations = is_reduced_loop && reduced_loop_info->loop_may_update.any() ? 3 : reduced_loop_emit_iterations;
 
 				auto make_reduced_loop_condition = [&](llvm::BasicBlock* optimization_block, bool is_second_time)
 				{
@@ -2589,7 +2591,7 @@ public:
 					llvm::Value* condition = nullptr;
 					llvm::Value* prev_it = loop_dictator_after_adjustment;
 
-					for (u32 i = 0; i < reduced_loop_unroll; i++)
+					for (u32 i = 0; i < reduced_loop_reserve_iterations; i++)
 					{
 						if (i)
 						{
@@ -2615,6 +2617,11 @@ public:
 				{
 					for (u32 i = 0; i < s_reg_max; i++)
 					{
+						if (reduced_loop_info->loop_may_update.test(i))
+						{
+							reduced_loop_restore_regs[i] = m_block->reg[i];
+						}
+
 						llvm::Type* type = g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate && bb.reg_maybe_xf[i] ? get_type<f64[4]>() : get_reg_type(i);
 
 						if (i < reduced_loop_info->loop_dicts.size() && (reduced_loop_info->loop_dicts.test(i) || reduced_loop_info->loop_writes.test(i)))
@@ -2695,7 +2702,7 @@ public:
 
 							iteration_emit++;
 
-							if (iteration_emit < reduced_loop_unroll)
+							if (iteration_emit < reduced_loop_emit_iterations)
 							{
 								opt_pos = baddr - 4;
 								continue;
@@ -2819,6 +2826,22 @@ public:
 					if (m_block->block_wide_reg_store_elimination)
 					{
 						fmt::throw_exception("LLVM: Reduced Loop Pattern: Failed to close optimized loop at 0x%x", baddr);
+					}
+
+					for (u32 i = 0; i < s_reg_max; i++)
+					{
+						if (!reduced_loop_info->loop_may_update.test(i))
+						{
+							continue;
+						}
+
+						m_block->reg[i] = reduced_loop_restore_regs[i];
+
+						if (m_block->reg[i])
+						{
+							m_block->reg[i] = m_ir->CreateAdd(bitcast(m_block->reg[i], get_type<u32[4]>()), splat<u32[4]>(1).eval(m_ir));
+							m_block->reg[i] = m_ir->CreateAdd(bitcast(m_block->reg[i], get_type<u32[4]>()), splat<u32[4]>(0 - 1).eval(m_ir));
+						}
 					}
 				}
 

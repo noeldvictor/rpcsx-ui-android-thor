@@ -146,38 +146,9 @@ static bool spu_reduced_loop_emit_enabled() noexcept
 
 u32 spu_reduced_loop_unroll_factor() noexcept
 {
-#ifdef ANDROID
-	char value[PROP_VALUE_MAX]{};
-	const int length = __system_property_get("debug.rpcsx.thor.spu_reduced_loop_unroll", value);
-
-	if (length <= 0)
-	{
-		return 2;
-	}
-#else
-	const char* value = std::getenv("RPCSX_SPU_REDUCED_LOOP_UNROLL");
-
-	if (!value || !*value)
-	{
-		return 2;
-	}
-#endif
-
-	if (value[0] == '1')
-	{
-		return 1;
-	}
-
-	if (value[0] == '4')
-	{
-		return 4;
-	}
-
-	if (value[0] == '8')
-	{
-		return 8;
-	}
-
+	// Upstream's reduced-loop emitter has a fixed two-iteration contract.
+	// Four iterations deterministically corrupt BLUS30161 SPU state on Thor,
+	// so ignore legacy property values until a generalized emitter is proven.
 	return 2;
 }
 
@@ -909,7 +880,7 @@ void spu_cache::initialize(bool build_existing_cache)
 	const std::string thor_arm_feature_cache;
 #endif
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
-		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u%u", thor_reduced_loop_unroll) : "") +
+		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u%u-v2", thor_reduced_loop_unroll) : "") +
 		(use_thor_reduced_loop_reuse ? "-reuse1" : "") +
 		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + thor_arm_feature_cache + "-v1-tane.dat";
 
@@ -5690,6 +5661,9 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			return {};
 		}
 
+		std::bitset<s_reg_max> reg_used_before_write;
+		std::bitset<s_reg_max> reg_modified;
+
 		for (u32 block_pc = candidate.loop_pc; block_pc <= candidate.loop_end;)
 		{
 			const auto found = m_bbs.find(block_pc);
@@ -5698,14 +5672,41 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 				return {};
 			}
 
-			pattern.loop_writes |= found->second.reg_mod;
-			pattern.loop_args |= found->second.reg_use;
+			reg_used_before_write |= found->second.reg_use & ~reg_modified;
+
+			// The second block can update a register only on the loop-exit path.
+			// Preserve those values around the optimized body, as upstream does.
+			if (block_pc == candidate.loop_end && block_pc != candidate.loop_pc)
+			{
+				pattern.loop_may_update |= found->second.reg_mod;
+			}
+
+			reg_modified |= found->second.reg_mod;
 			block_pc += found->second.size * 4;
 		}
 
 		pattern.loop_dicts.set(counter_reg);
+
+		for (u32 i = 0; i < s_reg_max; i++)
+		{
+			if (i == counter_reg)
+			{
+				continue;
+			}
+
+			if (reg_used_before_write.test(i) && reg_modified.test(i))
+			{
+				pattern.loop_writes.set(i);
+				pattern.loop_may_update.reset(i);
+			}
+			else if (reg_used_before_write.test(i))
+			{
+				pattern.loop_args.set(i);
+			}
+		}
+
 		pattern.loop_writes.set(counter_reg);
-		pattern.loop_args &= ~pattern.loop_writes;
+		pattern.loop_may_update.reset(counter_reg);
 
 		if (!pattern.cond_val_incr_is_immediate && pattern.cond_val_incr < s_reg_max)
 		{

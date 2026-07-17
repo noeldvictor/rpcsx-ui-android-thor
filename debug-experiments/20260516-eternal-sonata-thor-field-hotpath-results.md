@@ -1906,3 +1906,49 @@ new speed or stability credit.
 Decision: use this fail-fast route on the next separately cool true-cache u4
 proof with reduced-loop reuse off. This is a thermal-safety improvement only;
 the prior nominal FPS deltas remain unpromoted.
+
+## 2026-07-17 Deterministic U4 Rejection And Upstream Reduced-Loop Safety Backport
+
+Status: `failed-fatal-log`; unsafe speed lane retired, host safety build passes,
+and no valid FPS or stability credit.
+
+- Exact isolated no-reuse core
+  `E8D0A7F024FE8CF3F94281304033380774C2C1BA94556DC5FB463E8A58853272`
+  ran once with Direct input, reduced-loop emit U4, invariant-result reuse off,
+  dynamic MFC off, all other experiments off, strict guest-health gates, and a
+  `28 C` guard:
+  `debug-captures/android-speed-sprint/20260716-223803-thor-input-eternal-sonata-battle-intro-route`.
+- The route reached and visually classified the loaded field, then the new
+  early guest-health gate stopped it before movement. At emulated
+  `0:01:33.861331`, `CellSpursKernel0` at SPU PC `0x330f0` read unmapped
+  `0x8d230480`. This is the exact PC/address seen in the earlier U4+reuse
+  route, so U4 is the deterministic common cause and reuse is not required.
+- No FPS sample from either U4 route is promotable. In particular, the earlier
+  nominal `+7.85%` field / `+3.88%` tutorial deltas remain invalid because the
+  guest was already corrupted. The latest route was intentionally stopped
+  before paying the movement and battle heat cost.
+- Temperature stayed at `25.0 C`, thermal status was `0`, cleanup stopped the
+  package and reset experiment properties, and no second Thor route ran.
+- Current upstream commit `02eb5492` (`SPU LLVM: Fix register updates in
+  second block of Reduced Loop`) identifies the missing correctness contract.
+  The local analyzer now aggregates loop use/modification, records registers
+  the second/final block may update, and the LLVM emitter saves and restores
+  those values around the optimized loop. Condition reservation grows to
+  three iterations only when maybe-updated registers require it; emitted loop
+  bodies remain exactly two iterations.
+- Native `spu_reduced_loop_unroll_factor()` now clamps legacy property values
+  to two. Public PowerShell profiles no longer expose U4/U8; the isolated reuse
+  profile is now `ReducedLoopEmitU2ReuseQuiet`. Cache key version `u2-v2`
+  prevents corrected code from consuming prior reduced-loop objects.
+- ARM64 RelWithDebInfo compiled and linked the corrected SPU sources twice
+  without errors. Final host-only `librpcsx-android.so` is `1,349,950,568`
+  bytes with SHA256
+  `469919B97D73B9710CBEDD226DD88E3F3927F0E6A114E716CB3F259A25CF8455`.
+  PowerShell parsing, retired-U4 binding rejection, public-profile checks, and
+  `git diff --check` pass. The build was not packaged, deployed, or launched.
+
+Decision: permanently reject U4/U8 and preserve only the upstream-aligned U2
+lane. On a later separately cool round, run exactly one strict Direct-input
+U2/no-reuse route. Require field/menu/first-battle visuals, fatal cleanliness,
+draw-stream health, and thermal cleanup before any speed comparison; test U2
+reuse only as a later one-change experiment if that control is clean.

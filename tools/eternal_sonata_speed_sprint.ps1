@@ -96,7 +96,7 @@ param(
     [string]$WindowsRpcs3Bin = "",
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$AndroidInputMode = "Direct",
-    [ValidateSet("Keep", "Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU4", "ReducedLoopEmitU4Quiet", "ReducedLoopEmitU4ReuseQuiet", "ReducedLoopEmitU4DynMfcQuiet", "ReducedLoopEmitU8", "ReducedLoopEmitU8Quiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock")]
+    [ValidateSet("Keep", "Quiet", "Normal", "Verbose", "ReducedLoop", "ReducedLoopEmit", "ReducedLoopEmitQuiet", "ReducedLoopEmitU2ReuseQuiet", "SpursProbe", "SemaProfile", "SemaFast", "DmaProfile", "DmaVerify", "GpuSuperpathScout", "RsxAuditor", "RsxDmaHostFence", "RsxDepthFeedback", "RsxTextureBarrierSkipColor", "RsxTextureBarrierSkipDepth", "RsxTextureBarrierSkipAll", "FastBusyWaitLight", "FastBusyWait", "FastBusyWaitAggressive", "WaitProfiler", "WaitProfilerVerbose", "GetllarProbe", "GetllarShort", "GetllarTiny", "GetllarYield8", "GetllarNoRsxLock")]
     [string]$AndroidLogMode = "Keep",
     [ValidateSet("Keep", "DefaultF8", "AllThreadsFF", "RsxPrimeSpuNonPrimePpuA715")]
     [string]$AndroidRuntimeAffinityMode = "Keep",
