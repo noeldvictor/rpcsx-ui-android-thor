@@ -522,7 +522,7 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 
 			// Conditional rendering predicate slot; refactor to allow skipping this when not needed
 			{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3}};
-	m_descriptor_pool.create(*m_device, descriptor_type_sizes, max_draw_calls);
+	m_descriptor_pool.create(*m_device, descriptor_type_sizes, 256u, max_draw_calls);
 
 	VkSemaphoreCreateInfo semaphore_info = {};
 	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;

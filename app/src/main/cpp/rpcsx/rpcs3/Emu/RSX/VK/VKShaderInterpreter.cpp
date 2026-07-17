@@ -458,7 +458,7 @@ namespace vk
 	void shader_interpreter::create_descriptor_pools(const vk::render_device& dev)
 	{
 		const auto max_draw_calls = dev.get_descriptor_max_draw_calls();
-		m_descriptor_pool.create(dev, m_descriptor_pool_sizes, max_draw_calls);
+		m_descriptor_pool.create(dev, m_descriptor_pool_sizes, 256u, max_draw_calls);
 	}
 
 	void shader_interpreter::init(const vk::render_device& dev)

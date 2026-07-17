@@ -110,17 +110,38 @@ namespace vk
 		}
 	} // namespace descriptors
 
-	void descriptor_pool::create(const vk::render_device& dev, const rsx::simple_array<VkDescriptorPoolSize>& pool_sizes, u32 max_sets)
+	u32 descriptor_pool::autoscaling_config_t::get_pool_size()
 	{
-		ensure(max_sets > 16);
+		if (current_size < min_pool_size)
+		{
+			current_size = min_pool_size;
+			return min_pool_size;
+		}
+
+		if (current_size >= max_pool_size)
+		{
+			current_size = max_pool_size;
+			return max_pool_size;
+		}
+
+		if ((increment_steps++) < (increment_min_steps - 1u))
+		{
+			return current_size;
+		}
+
+		increment_steps = 0u;
+		current_size = std::min(current_size * 2u, max_pool_size);
+		return current_size;
+	}
+
+	void descriptor_pool::create(const vk::render_device& dev, const rsx::simple_array<VkDescriptorPoolSize>& pool_sizes, u32 min_sets, u32 max_sets)
+	{
+		m_autoscaling_config.min_pool_size = std::max(min_sets, 16u);
+		m_autoscaling_config.max_pool_size = std::max(min_sets, max_sets);
+
+		ensure(m_autoscaling_config.max_pool_size >= 16u);
 
 		m_create_info_pool_sizes = pool_sizes;
-
-		for (auto& size : m_create_info_pool_sizes)
-		{
-			ensure(size.descriptorCount < 128); // Sanity check. Remove before commit.
-			size.descriptorCount *= max_sets;
-		}
 
 		m_create_info.flags = dev.get_descriptor_update_after_bind_support() ? VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT : 0;
 		m_create_info.maxSets = max_sets;
@@ -187,7 +208,7 @@ namespace vk
 
 		if (use_cache)
 		{
-			const auto alloc_size = std::min<u32>(m_create_info.maxSets - m_current_subpool_offset, max_cache_size);
+			const auto alloc_size = std::min<u32>(max_sets() - m_current_subpool_offset, max_cache_size);
 			m_allocation_request_cache.resize(alloc_size);
 			for (auto& layout_ : m_allocation_request_cache)
 			{
@@ -244,8 +265,8 @@ namespace vk
 				}
 			}
 
-			VkDescriptorPool subpool = VK_NULL_HANDLE;
-			if (VkResult result = VK_GET_SYMBOL(vkCreateDescriptorPool)(*m_owner, &m_create_info, nullptr, &subpool))
+			const auto [result, subpool] = new_subpool();
+			if (result != VK_SUCCESS)
 			{
 				if (retries-- && (result == VK_ERROR_FRAGMENTATION_EXT))
 				{
@@ -263,6 +284,7 @@ namespace vk
 
 			m_device_subpools.push_back(
 				{.handle = subpool,
+					.size = m_autoscaling_config.current_size,
 					.busy = VK_FALSE});
 
 			m_current_subpool_index = m_device_subpools.size() - 1;
@@ -272,6 +294,36 @@ namespace vk
 	done:
 		m_device_subpools[m_current_subpool_index].busy = VK_TRUE;
 		m_current_pool_handle = m_device_subpools[m_current_subpool_index].handle;
+	}
+
+	std::pair<VkResult, VkDescriptorPool> descriptor_pool::new_subpool()
+	{
+		const auto previous_scaling_config = m_autoscaling_config;
+		const u32 set_count = m_autoscaling_config.get_pool_size();
+
+		auto descriptor_pool_sizes = m_create_info_pool_sizes.map([set_count](const VkDescriptorPoolSize& pool_size_info)
+		{
+			auto result = pool_size_info;
+			result.descriptorCount *= set_count;
+			return result;
+		});
+
+		m_create_info.maxSets = set_count;
+		m_create_info.poolSizeCount = descriptor_pool_sizes.size();
+		m_create_info.pPoolSizes = descriptor_pool_sizes.data();
+
+		VkDescriptorPool subpool = VK_NULL_HANDLE;
+		const VkResult result = VK_GET_SYMBOL(vkCreateDescriptorPool)(*m_owner, &m_create_info, nullptr, &subpool);
+
+		if (result != VK_SUCCESS)
+		{
+			m_autoscaling_config = previous_scaling_config;
+		}
+
+		m_create_info.pPoolSizes = nullptr;
+		m_create_info.poolSizeCount = 0;
+
+		return {result, subpool};
 	}
 
 	descriptor_set::descriptor_set(VkDescriptorSet set)
