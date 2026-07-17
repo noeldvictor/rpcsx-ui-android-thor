@@ -821,7 +821,9 @@ static auto ppu_load_exports(const ppu_module<lv2_obj>& _module, ppu_linkage_inf
 		const auto fnids = +lib.nids;
 		const auto faddrs = +lib.addrs;
 
+#ifndef __ANDROID__
 		u64 previous_rtoc = umax;
+#endif
 
 		// Get functions
 		for (u32 i = 0, end = lib.num_func; i < end; i++)
@@ -832,6 +834,7 @@ static auto ppu_load_exports(const ppu_module<lv2_obj>& _module, ppu_linkage_inf
 			if (ppu_func_opd_t* fptr = _module.get_ptr<ppu_func_opd_t>(faddr), fdata = fptr ? *fptr : ppu_func_opd_t{};
 				fdata.addr % 4 == 0u && _module.get_ptr<u32>(fdata.addr))
 			{
+#ifndef __ANDROID__
 				if (previous_rtoc == fdata.rtoc)
 				{
 					// Shortened printing, replacement string is 10 characters as 0x%08x
@@ -842,6 +845,7 @@ static auto ppu_load_exports(const ppu_module<lv2_obj>& _module, ppu_linkage_inf
 					previous_rtoc = fdata.rtoc;
 					ppu_loader.notice("**** %s export: (0x%08x) at 0x%07x [at:0x%07x, rtoc:0x%08x]:  %s", module_name, fnid, faddr, fdata.addr, fdata.rtoc, ppu_get_function_name(module_name, fnid));
 				}
+#endif
 			}
 			else if (fptr)
 			{
@@ -920,7 +924,9 @@ static auto ppu_load_exports(const ppu_module<lv2_obj>& _module, ppu_linkage_inf
 		{
 			const u32 vnid = _module.get_ref<u32>(vnids, i);
 			const u32 vaddr = _module.get_ref<u32>(vaddrs, i);
+#ifndef __ANDROID__
 			ppu_loader.notice("**** %s export: &[%s] at 0x%x", module_name, ppu_get_variable_name(module_name, vnid), vaddr);
+#endif
 
 			if (for_observing_callbacks)
 			{
@@ -993,7 +999,9 @@ static import_result_t ppu_load_imports(const ppu_module<lv2_obj>& _module, std:
 			const u32 fnid = _module.get_ref<u32>(fnids, i);
 			const u32 fstub = _module.get_ref<u32>(faddrs, i);
 			const u32 faddr = (faddrs + i).addr();
+#ifndef __ANDROID__
 			ppu_loader.notice("**** %s import: [%s] (0x%08x) -> 0x%x", module_name, ppu_get_function_name(module_name, fnid), fnid, fstub);
+#endif
 
 			// Function linkage info
 			auto& flink = mlink.functions[fnid];

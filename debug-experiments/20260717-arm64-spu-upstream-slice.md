@@ -169,3 +169,54 @@ No emulator route ran in this install round. Classification:
 flicker, title, gameplay, or stability credit. A different independently cool
 round may spend exactly one guarded bounded route with RSX limit `256`, SPU
 limit `64`, normal two-worker/auto scheduling, and Vulkan cache on.
+
+## Guarded proof preflight rejection
+
+Capture:
+
+`debug-captures/android-speed-sprint/20260717-155546-thor-input-lazy-spu-bounded-title-proof`
+
+- A read-only outer gate first verified the exact installed APK
+  `853098D6...FB22`, PID absence, the matched AYN power state, and silicon
+  `32.7 -> 32.3 -> 32.3 C`.
+- The route harness then ran its independent lossless telemetry preflight and
+  measured `32.5 -> 33.5 -> 33.9 C`. The `1.4 C` rise exceeded the strict
+  `1.0 C` limit.
+- The harness failed closed before `debug-boot.txt`, process establishment,
+  input, or any emulator workload, and issued the normal force-stop.
+
+Classification: `preflight-rejected`, `device-runtime-unmeasured`. No route
+ran and no speed, title, FPS, flicker, gameplay, thermal-runtime, or stability
+credit exists. Do not retry in this round.
+
+## Android PPU loader logging follow-up
+
+The previous `529,579`-byte RPCSX log contained `1,284` successful function
+export rows and `176` successful function import rows. Together those `1,460`
+rows occupied `267,555` bytes (`50.52%` of the log). Current upstream retains
+the same notice-level behavior.
+
+The Android build now compiles out successful per-symbol PPU function export,
+variable export, and function import logging. It also avoids the corresponding
+function/variable-name lookup and formatting. Module summaries, invalid
+function errors, illegal-descriptor warnings, duplicate-link diagnostics, and
+the full desktop log remain intact.
+
+Validation:
+
+- `tools/test_thor_ppu_loader_logging.ps1`: pass;
+- PowerShell AST parse and `git diff --check`: pass;
+- optimized ARM64 build: `BUILD SUCCESSFUL in 1m 3s`;
+- merged core: `1,304,460,552` bytes, SHA-256
+  `A2C16F88C7ED459C0C88294461ECD0B8401804A9BC348C6F8E02ED1C519554C7`;
+- ThorTest package: `BUILD SUCCESSFUL in 21s`, `73,573,150` bytes, SHA-256
+  `11648B07ACC8631DA83429CC857A7633BF5A6DA4D4D2330C89FDCCFE9DC9B98B`;
+- packaged stripped core: `62,842,760` bytes, SHA-256
+  `6D4F70BA833FA2DCB4E2C4A26CE698EB4D0953B188DA6BDEE7405365592CD048`; and
+- ARM64 APK, optimized ThorTest, SPU cache preload, and PPU loader logging
+  contracts: pass.
+
+The new APK is host-only and not installed. Classification: `package-proven`,
+`device-unmeasured`; grant no speed or stability credit. Install it only in a
+later separately cool no-launch round, then use a different cool round for one
+guarded bounded route.
