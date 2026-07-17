@@ -6957,53 +6957,64 @@ public:
 			return;
 		}
 
-		// Check whether shuffle mask doesn't contain fixed value selectors
-		bool perm_only = false;
-
-		if (auto k = get_known_bits(c); !!(k.Zero & 0x80))
-		{
-			perm_only = true;
-		}
+		// Check whether shuffle masks can only select regular source bytes,
+		// regular bytes or zero, or one of the two source vectors.
+		const auto known_idx = get_known_bits(c);
+		const bool perm_only = known_idx.Zero[7];
+		const bool perm_or_zero_only = known_idx.Zero[6];
+		const bool idx_selects_single = known_idx.extractBits(1, 4).isConstant();
 
 		const auto a = get_vr<u8[16]>(op.ra);
 		const auto b = get_vr<u8[16]>(op.rb);
 
 #ifdef ARCH_ARM64
-		// Use only the single-table portion of upstream's ARM64 SHUFB path.
-		// Two-source TBL2/TBX2 remains on the established fallback because some
-		// SPU programs require upstream's larger JIT retry mechanism for it.
-		if (op.ra == op.rb)
+		// Keep the Thor path on single-table TBL/TBX forms. Two-source
+		// TBL2/TBX2 still needs upstream's larger register-scavenger retry
+		// mechanism and remains on the established fallback below.
+		if (idx_selects_single || (op.ra == op.rb && !m_interp_magn))
 		{
-			if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
+			const bool select_b = idx_selects_single && known_idx.One[4];
+			const auto only_src = select_b ? b : a;
+			const auto [src_is_const, src_data] = get_const_vector(only_src.value, m_pos);
+			const bool only_src_is_splat = src_is_const && src_data == v128::from8p(src_data._u8[0]);
+
+			const auto emit_single_source = [&](value_t<u8[16]> src, value_t<u8[16]> control)
 			{
-				if (perm_only)
+				if (only_src_is_splat && perm_or_zero_only)
 				{
-					set_vr(op.rt4, tbl(as, eval(c & 0x0f)));
+					set_vr(op.rt4, select(noncast<s8[16]>(c) >= 0, src, splat<u8[16]>(0)));
 					return;
 				}
 
-				const auto x = tbl(build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80), (c >> 4));
-				set_vr(op.rt4, tbx(x, as, eval(c & 0x8f)));
-				return;
-			}
-
-			if (!m_interp_magn)
-			{
-				if (perm_only)
+				if (only_src_is_splat)
 				{
-					const auto cm = eval(c & 0x0f);
-					set_vr(op.rt4, tbl(a, eval(cm ^ 0x0f)));
+					const auto lut = build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0x80, 0x80);
+					set_vr(op.rt4, tbx(src, lut, (c >> 3) ^ 0x10));
 					return;
 				}
 
-				const auto x = tbl(build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80), (c >> 4));
-				const auto cm = eval(c & 0x8f);
-				set_vr(op.rt4, tbx(x, a, eval(cm ^ 0x0f)));
-				return;
+				if (perm_only)
+				{
+					set_vr(op.rt4, tbl(src, eval(control & 0x0f)));
+					return;
+				}
+
+				const auto special = tbl(build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80), (c >> 4));
+				const auto fallback = perm_or_zero_only ? eval(splat<u8[16]>(0)) : special;
+				set_vr(op.rt4, tbx(fallback, src, eval(control & 0x8f)));
+			};
+
+			if (auto [was_swapped, swapped_src] = match_expr(only_src, byteswap(match<u8[16]>())); was_swapped)
+			{
+				emit_single_source(eval(swapped_src), c);
 			}
+			else
+			{
+				emit_single_source(only_src, eval(c ^ 0x0f));
+			}
+			return;
 		}
 #endif
-
 		// Data with swapped endian from a load instruction
 		if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
 		{
