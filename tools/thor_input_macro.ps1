@@ -447,10 +447,27 @@ function Save-ThorThreadSnapshot {
 }
 
 function Get-ThorTemperatureSnapshot {
-    $batteryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", "dumpsys battery") -ScratchDir $captureDir -TimeoutSeconds 3)
-    $hardwareLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", "dumpsys hardware_properties") -ScratchDir $captureDir -TimeoutSeconds 3)
     $thermalZoneCommand = Get-ThorThermalZoneShellCommand
-    $thermalZoneLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $thermalZoneCommand) -ScratchDir $captureDir -TimeoutSeconds 3)
+    $telemetryCommand = 'printf "__THOR_BATTERY__\n"; dumpsys battery; printf "__THOR_HARDWARE__\n"; dumpsys hardware_properties; printf "__THOR_ZONES__\n"; ' + $thermalZoneCommand
+    $telemetryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $telemetryCommand) -ScratchDir $captureDir -TimeoutSeconds 3)
+    $batteryLines = @()
+    $hardwareLines = @()
+    $thermalZoneLines = @()
+    $section = ""
+
+    foreach ($line in $telemetryLines) {
+        switch ($line) {
+            "__THOR_BATTERY__" { $section = "battery"; continue }
+            "__THOR_HARDWARE__" { $section = "hardware"; continue }
+            "__THOR_ZONES__" { $section = "zones"; continue }
+        }
+
+        switch ($section) {
+            "battery" { $batteryLines += $line }
+            "hardware" { $hardwareLines += $line }
+            "zones" { $thermalZoneLines += $line }
+        }
+    }
 
     $snapshotParams = @{
         BatteryLines = $batteryLines

@@ -148,11 +148,24 @@ if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?p
 if ($inputMacroSource -notmatch 'Write-ThorLaunchPowerState\s+-Adb\s+\$Adb\s+-CaptureDir\s+\$captureDir[\s\S]*?Assert-ThorThermalPreflight\s+"pre-run"') {
     throw "The input route does not record power state before its launch thermal preflight."
 }
+$temperatureSnapshotMatch = [regex]::Match(
+    $inputMacroSource,
+    'function\s+Get-ThorTemperatureSnapshot\s*\{(?<body>[\s\S]*?)\r?\n\}')
+if (-not $temperatureSnapshotMatch.Success) {
+    throw "The input route temperature snapshot function could not be inspected."
+}
+$temperatureSnapshotBody = $temperatureSnapshotMatch.Groups['body'].Value
+if ([regex]::Matches($temperatureSnapshotBody, 'Invoke-ThorAdbLines').Count -ne 1 -or
+    $temperatureSnapshotBody -notmatch '__THOR_BATTERY__' -or
+    $temperatureSnapshotBody -notmatch '__THOR_HARDWARE__' -or
+    $temperatureSnapshotBody -notmatch '__THOR_ZONES__') {
+    throw "The input route does not collect its thermal snapshot through one bounded ADB round trip."
+}
 if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
     throw "The input route still invokes the quoted thermal-zone command through PowerShell native argument flattening."
 }
-if ($inputMacroSource -notmatch 'Invoke-ThorAdbLines.+\$thermalZoneCommand') {
-    throw "The input route does not use the lossless native argument capture path for thermal zones."
+if ($inputMacroSource -notmatch 'Invoke-ThorAdbLines.+\$telemetryCommand') {
+    throw "The input route does not use the lossless native argument capture path for combined thermal telemetry."
 }
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*3') {
     throw "The input route does not default to three thermal preflight samples."

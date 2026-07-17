@@ -1120,3 +1120,16 @@ New host artifact:
   this thermal round. A future separately cool route must match this state and
   should send the bounded Start input earlier than `12 s` if input readiness is
   independently justified.
+
+### 2026-07-17 - single-round-trip thermal snapshot
+
+- Host log comparison found no evidence that RSX and SPU preload overlap. The
+  RSX cache load/compile is synchronous, and both bounded-SPU routes reported
+  essentially identical early emulator CPU load (`13-21%`) and startup stage
+  timing. This further classifies the guard-time difference as device-state
+  variance rather than extra emulator work.
+- The route guard now reads battery, hardware skin, and all thermal zones in
+  one lossless marked ADB shell response rather than three serial round trips.
+  The two-second poll policy and all thermal ceilings are unchanged. Thermal
+  and visual route tests plus PowerShell AST parsing pass. This is host safety
+  latency only; no device launch or emulator speed/thermal credit was taken.
