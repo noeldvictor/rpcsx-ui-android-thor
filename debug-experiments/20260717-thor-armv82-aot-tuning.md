@@ -1048,3 +1048,37 @@ New host artifact:
   instruction volume. Their median is `13` words and maximum is `939` words.
   This is a workload proxy, not a timing result, but it is consistent with
   roughly `1-2 s` of eager work rather than the observed `32.5 s` full rebuild.
+
+### 2026-07-17 - oldest-first bounded-SPU guarded title route
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260717-113647-thor-input-oldest-spu-bounded-title-proof`.
+  A preceding wrapper invocation timed out during host-side preflight with PID
+  absent; it did not launch RPCSX and is not a charged device route.
+- The charged route passed its own strict preflight at battery/skin/silicon
+  `25/30/34.3`, `25/30/33.9`, and `25/30/34.7 C`. Exact controls activated:
+  Vulkan driver cache seed `4,899,180` bytes, first checkpoint `256`, RSX
+  oldest preload `256 of 939`, two RSX workers, and SPU oldest preload
+  `64 of 1,165` with `1,101` retained for on-demand LLVM compilation.
+- SPU interpreter construction completed at emulated `2.432128 s`; the two
+  workers completed all `64` eager programs at `2.816912 s`, a `0.385 s`
+  bounded rebuild. Runtime SPU execution followed immediately.
+- Process identity was established at `11:36:59.475583`; the `75.1 C` guard
+  fired at `11:38:12.925080`, `73.449 s` later. The prior full-SPU-cache
+  bounded-RSX route survived only `6.923 s`, so the useful guarded window
+  expanded by `66.526 s` or about `10.6x`. Immediate post-stop silicon was
+  `59.0 C`; PID was absent and all route properties were reset.
+- Visual evidence did not reach title. Poll 1 retained the `80.456%` pre-title
+  progress bar; polls 2-5 were `100%` dark; poll 6 was `99.31%` dark. The
+  route was only a few seconds short of the historical approximately `75.8 s`
+  title screenshot, but no title credit may be inferred.
+- Targeted scans found zero fatal signals, SIGSEGVs, access violations,
+  abnormal termination, aborts, and unknown draws. This proves startup-stage
+  and thermal-window progress only: no title, FPS, gameplay, flicker, field,
+  menu, battle, or stability credit.
+- The user requested one retry. A stricter cooldown check rejected launch at
+  silicon `47.0 -> 44.5 -> 41.3 C` despite the downward trend; PID remained
+  absent. Do not retry until three samples are below `35 C` with rise no more
+  than `1 C`. Then keep RSX `256`, SPU `64`, and the `75 C` fail-stop, but
+  issue one guarded Start press after `12 s` to skip the sustained black
+  startup sequence before resuming the title visual gate.
