@@ -10,6 +10,10 @@ param(
     [string]$InputMode = "Virtual",
     [string]$RawInputDevice = "/dev/input/event9",
     [double]$MaxBatteryTemperatureC = 39.0,
+    [ValidateRange(35, 60)]
+    [double]$MaxSkinTemperatureC = 45.0,
+    [ValidateRange(50, 110)]
+    [double]$MaxSiliconTemperatureC = 80.0,
     [ValidateSet("off", "publisher", "parser", "both")]
     [string]$EsPpuCommandInterp = "off",
     [ValidateSet("off", "on")]
@@ -422,13 +426,29 @@ function Save-ThorThreadSnapshot {
     & $snapshotScript -Package $Package -Label $safe -Samples 3 -IntervalMs 1000 -OutputRoot $captureDir
 }
 
-function Get-ThorBatteryTemperatureC {
+function Get-ThorTemperatureSnapshot {
     $batteryLines = @(& $Adb shell dumpsys battery 2>$null)
     if ($LASTEXITCODE -ne 0) {
-        return $null
+        $batteryLines = @()
     }
 
-    return ConvertFrom-ThorBatteryTemperatureC -Lines $batteryLines
+    $hardwareLines = @(& $Adb shell dumpsys hardware_properties 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        $hardwareLines = @()
+    }
+
+    $thermalZoneCommand = Get-ThorThermalZoneShellCommand
+    $thermalZoneLines = @(& $Adb shell $thermalZoneCommand 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        $thermalZoneLines = @()
+    }
+
+    $snapshotParams = @{
+        BatteryLines = $batteryLines
+        ThermalZoneLines = $thermalZoneLines
+        HardwareLines = $hardwareLines
+    }
+    return Get-ThorThermalGuardSnapshot @snapshotParams
 }
 
 $script:ExpectedThorPackageProcessId = $null
@@ -536,14 +556,23 @@ function Assert-ThorThermalBudget {
         return
     }
 
-    $temperatureC = Get-ThorBatteryTemperatureC
-    $temperatureText = if ($null -eq $temperatureC) { "unknown" } else { $temperatureC.ToString("F1", [Globalization.CultureInfo]::InvariantCulture) }
-    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$temperatureText limit_c=$MaxBatteryTemperatureC" |
+    $snapshot = Get-ThorTemperatureSnapshot
+    $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
+    $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
+    $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$MaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$MaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$MaxSiliconTemperatureC guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
 
-    if ($null -ne $temperatureC -and $temperatureC -ge $MaxBatteryTemperatureC) {
+    $violationParams = @{
+        Snapshot = $snapshot
+        MaxBatteryTemperatureC = $MaxBatteryTemperatureC
+        MaxSkinTemperatureC = $MaxSkinTemperatureC
+        MaxSiliconTemperatureC = $MaxSiliconTemperatureC
+    }
+    $violation = Get-ThorThermalGuardViolation @violationParams
+    if ($null -ne $violation) {
         & $Adb shell am force-stop $Package | Out-Null
-        throw "Thor battery temperature is $temperatureText C at '$Stage', at or above the $MaxBatteryTemperatureC C limit. RPCSX was force-stopped."
+        throw "$($violation.message) Stage '$Stage'. RPCSX was force-stopped."
     }
 }
 
@@ -660,6 +689,8 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Battle profile forced direct input: $profileForcesDirectInput",
     "- Raw input device: $RawInputDevice",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
+    "- Max skin temperature C: $MaxSkinTemperatureC",
+    "- Max silicon temperature C: $MaxSiliconTemperatureC",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
     "- Eternal Sonata async draw barrier requested: $requestedEsAsyncDrawBarrier",

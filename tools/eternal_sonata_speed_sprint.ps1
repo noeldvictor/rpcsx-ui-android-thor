@@ -84,6 +84,10 @@ param(
     [int]$AndroidThermalPollSeconds = 5,
     [ValidateRange(30, 50)]
     [double]$AndroidMaxBatteryTemperatureC = 39.0,
+    [ValidateRange(35, 60)]
+    [double]$AndroidMaxSkinTemperatureC = 45.0,
+    [ValidateRange(50, 110)]
+    [double]$AndroidMaxSiliconTemperatureC = 80.0,
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
     [int]$ScreenshotMaxCount = 6,
@@ -335,24 +339,32 @@ function Assert-SpeedAndroidSceneGuard {
 
     $safeStage = New-SpeedSafeLabel $Stage
     $batteryPath = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name "guard-$safeStage-battery.txt" -AdbArgs @("shell", "dumpsys battery") -AllowFailure -TimeoutSeconds 3
-    $batteryLines = @(Get-Content -LiteralPath $batteryPath)
-    $temperatureC = ConvertFrom-ThorBatteryTemperatureC -Lines $batteryLines
-    $temperatureText = if ($null -eq $temperatureC) {
-        "unknown"
-    } else {
-        $temperatureC.ToString("F1", [Globalization.CultureInfo]::InvariantCulture)
+    $hardwarePath = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name "guard-$safeStage-hardware-temperatures.txt" -AdbArgs @("shell", "dumpsys hardware_properties") -AllowFailure -TimeoutSeconds 3
+    $thermalZoneCommand = Get-ThorThermalZoneShellCommand
+    $thermalZonePath = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name "guard-$safeStage-thermal-zones.txt" -AdbArgs @("shell", $thermalZoneCommand) -AllowFailure -TimeoutSeconds 3
+    $snapshotParams = @{
+        BatteryLines = @(Get-Content -LiteralPath $batteryPath)
+        HardwareLines = @(Get-Content -LiteralPath $hardwarePath)
+        ThermalZoneLines = @(Get-Content -LiteralPath $thermalZonePath)
     }
+    $snapshot = Get-ThorThermalGuardSnapshot @snapshotParams
+    $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
+    $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
+    $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
 
-    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$temperatureText limit_c=$AndroidMaxBatteryTemperatureC" |
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$AndroidMaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$AndroidMaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$AndroidMaxSiliconTemperatureC guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $CaptureDir "thermal-guard.log") -Append -Encoding UTF8
 
-    if ($null -eq $temperatureC) {
-        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-unknown-temperature-stop.txt"
-        throw "Thor battery temperature could not be read at '$Stage'. RPCSX was force-stopped instead of continuing an unguarded capture."
+    $violationParams = @{
+        Snapshot = $snapshot
+        MaxBatteryTemperatureC = $AndroidMaxBatteryTemperatureC
+        MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
+        MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
     }
-    if ($temperatureC -ge $AndroidMaxBatteryTemperatureC) {
-        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-temperature-stop.txt"
-        throw "Thor battery temperature is $temperatureText C at '$Stage', at or above the $AndroidMaxBatteryTemperatureC C limit. RPCSX was force-stopped."
+    $violation = Get-ThorThermalGuardViolation @violationParams
+    if ($null -ne $violation) {
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-$($violation.code)-stop.txt"
+        throw "$($violation.message) Stage '$Stage'. RPCSX was force-stopped."
     }
 
     $currentProcessId = Get-SpeedAndroidProcessId -CaptureDir $CaptureDir -Name "guard-$safeStage-pid.txt"
@@ -503,6 +515,8 @@ function Invoke-AndroidSceneCapture {
         "- Duration seconds: $AndroidSceneSeconds",
         "- Thermal poll seconds: $AndroidThermalPollSeconds",
         "- Max battery temperature C: $AndroidMaxBatteryTemperatureC",
+        "- Max skin temperature C: $AndroidMaxSkinTemperatureC",
+        "- Max silicon temperature C: $AndroidMaxSiliconTemperatureC",
         "- Force-stop after capture: $(-not $KeepAndroidRunningAfterCapture)",
         "- Android log mode: $AndroidLogMode",
         "- Android runtime affinity mode: $AndroidRuntimeAffinityMode",
@@ -602,6 +616,8 @@ function Invoke-AndroidRouteScene {
         ForceStop = $true
         PostSnapshot = $true
         MaxBatteryTemperatureC = $AndroidMaxBatteryTemperatureC
+        MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
+        MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
     }
 
     if (-not [string]::IsNullOrWhiteSpace($InputMacro)) {

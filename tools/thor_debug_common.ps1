@@ -55,6 +55,202 @@ function ConvertFrom-ThorBatteryTemperatureC {
     return $null
 }
 
+function Get-ThorThermalZoneShellCommand {
+    return 'for z in /sys/class/thermal/thermal_zone*; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; t=$(cat "$z/type" 2>/dev/null); v=$(cat "$z/temp" 2>/dev/null); printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
+}
+
+function Get-ThorTemperatureDomain {
+    param([string]$Name)
+
+    if ($Name -match '(?i)(battery|batt)') {
+        return "battery"
+    }
+    if ($Name -match '(?i)(skin|case|shell|quiet)') {
+        return "skin"
+    }
+    if ($Name -match '(?i)(cpu|gpu|soc|apss|cluster|silver|gold|prime|cpuss|ddr|memory|modem|pmic|xo)') {
+        return "silicon"
+    }
+
+    return "other"
+}
+
+function ConvertFrom-ThorThermalZoneTemperatureReadings {
+    param([string[]]$Lines)
+
+    $readings = @()
+    foreach ($line in $Lines) {
+        if ($line -notmatch '^\s*zone=(\S+)\s+type=(.*?)\s+temp=(-?\d+)\s*$') {
+            continue
+        }
+
+        $zoneName = $Matches[1]
+        $typeName = $Matches[2].Trim()
+        [long]$rawTemperature = $Matches[3]
+        $absoluteRaw = [Math]::Abs([double]$rawTemperature)
+        $temperatureC = if ($absoluteRaw -ge 1000.0) {
+            [double]$rawTemperature / 1000.0
+        } elseif ($absoluteRaw -gt 150.0) {
+            [double]$rawTemperature / 10.0
+        } else {
+            [double]$rawTemperature
+        }
+
+        if ($temperatureC -lt 0.0 -or $temperatureC -gt 150.0) {
+            continue
+        }
+
+        $readings += [pscustomobject]@{
+            domain = Get-ThorTemperatureDomain -Name $typeName
+            source = "thermal-zone/$zoneName/$typeName"
+            temperature_c = [Math]::Round($temperatureC, 3)
+        }
+    }
+
+    return @($readings)
+}
+
+function ConvertFrom-ThorHardwareTemperatureReadings {
+    param([string[]]$Lines)
+
+    $readings = @()
+    foreach ($line in $Lines) {
+        if ($line -notmatch '^\s*(CPU|GPU|Battery|Skin)\s+temperatures:\s*\[([^\]]*)\]\s*$') {
+            continue
+        }
+
+        $kind = $Matches[1].ToLowerInvariant()
+        $domain = switch ($kind) {
+            "battery" { "battery" }
+            "skin" { "skin" }
+            default { "silicon" }
+        }
+        $index = 0
+        foreach ($token in ($Matches[2] -split ',')) {
+            [double]$temperatureC = 0.0
+            $parsed = [double]::TryParse(
+                $token.Trim(),
+                [Globalization.NumberStyles]::Float,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [ref]$temperatureC)
+            if (-not $parsed -or [double]::IsNaN($temperatureC) -or [double]::IsInfinity($temperatureC)) {
+                $index++
+                continue
+            }
+            if ($temperatureC -lt 0.0 -or $temperatureC -gt 150.0) {
+                $index++
+                continue
+            }
+
+            $readings += [pscustomobject]@{
+                domain = $domain
+                source = "hardware/$kind/$index"
+                temperature_c = [Math]::Round($temperatureC, 3)
+            }
+            $index++
+        }
+    }
+
+    return @($readings)
+}
+
+function Get-ThorThermalGuardSnapshot {
+    param(
+        [string[]]$BatteryLines,
+        [string[]]$ThermalZoneLines,
+        [string[]]$HardwareLines
+    )
+
+    $readings = @()
+    $batteryTemperatureC = ConvertFrom-ThorBatteryTemperatureC -Lines $BatteryLines
+    if ($null -ne $batteryTemperatureC) {
+        $readings += [pscustomobject]@{
+            domain = "battery"
+            source = "dumpsys/battery"
+            temperature_c = [Math]::Round($batteryTemperatureC, 3)
+        }
+    }
+
+    $zoneReadings = @(ConvertFrom-ThorThermalZoneTemperatureReadings -Lines $ThermalZoneLines)
+    $hardwareReadings = @(ConvertFrom-ThorHardwareTemperatureReadings -Lines $HardwareLines)
+    $readings += $zoneReadings
+    $readings += $hardwareReadings
+
+    $batteryReading = @($readings | Where-Object domain -eq "battery" | Sort-Object temperature_c -Descending | Select-Object -First 1)
+    $skinReading = @($readings | Where-Object domain -eq "skin" | Sort-Object temperature_c -Descending | Select-Object -First 1)
+    $siliconReading = @($readings | Where-Object domain -eq "silicon" | Sort-Object temperature_c -Descending | Select-Object -First 1)
+    $guardReadings = @($readings | Where-Object { $_.domain -eq "skin" -or $_.domain -eq "silicon" })
+    $sourceSummary = @($readings | Sort-Object domain, source | ForEach-Object {
+        "{0}:{1}={2}" -f $_.domain, $_.source, $_.temperature_c.ToString("F1", [Globalization.CultureInfo]::InvariantCulture)
+    }) -join ','
+
+    return [pscustomobject]@{
+        battery_temperature_c = if ($batteryReading.Count) { $batteryReading[0].temperature_c } else { $null }
+        battery_source = if ($batteryReading.Count) { $batteryReading[0].source } else { "none" }
+        skin_temperature_c = if ($skinReading.Count) { $skinReading[0].temperature_c } else { $null }
+        skin_source = if ($skinReading.Count) { $skinReading[0].source } else { "none" }
+        silicon_temperature_c = if ($siliconReading.Count) { $siliconReading[0].temperature_c } else { $null }
+        silicon_source = if ($siliconReading.Count) { $siliconReading[0].source } else { "none" }
+        guard_sensor_count = $guardReadings.Count
+        thermal_zone_count = $zoneReadings.Count
+        hardware_sensor_count = $hardwareReadings.Count
+        source_summary = $sourceSummary
+        readings = @($readings)
+    }
+}
+
+function Format-ThorTemperatureC {
+    param([AllowNull()][object]$TemperatureC)
+
+    if ($null -eq $TemperatureC) {
+        return "unknown"
+    }
+
+    return ([double]$TemperatureC).ToString("F1", [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-ThorThermalGuardViolation {
+    param(
+        [Parameter(Mandatory = $true)][object]$Snapshot,
+        [double]$MaxBatteryTemperatureC,
+        [double]$MaxSkinTemperatureC,
+        [double]$MaxSiliconTemperatureC
+    )
+
+    if ($null -eq $Snapshot.battery_temperature_c) {
+        return [pscustomobject]@{
+            code = "unknown-battery-temperature"
+            message = "Thor battery temperature could not be read."
+        }
+    }
+    if ($Snapshot.guard_sensor_count -lt 1) {
+        return [pscustomobject]@{
+            code = "unknown-workload-temperature"
+            message = "Thor CPU/GPU/skin temperature telemetry could not be read; battery-only telemetry is insufficient."
+        }
+    }
+    if ($Snapshot.battery_temperature_c -ge $MaxBatteryTemperatureC) {
+        return [pscustomobject]@{
+            code = "battery-temperature"
+            message = "Thor battery temperature is $(Format-ThorTemperatureC $Snapshot.battery_temperature_c) C, at or above the $MaxBatteryTemperatureC C limit."
+        }
+    }
+    if ($null -ne $Snapshot.skin_temperature_c -and $Snapshot.skin_temperature_c -ge $MaxSkinTemperatureC) {
+        return [pscustomobject]@{
+            code = "skin-temperature"
+            message = "Thor skin temperature is $(Format-ThorTemperatureC $Snapshot.skin_temperature_c) C, at or above the $MaxSkinTemperatureC C limit."
+        }
+    }
+    if ($null -ne $Snapshot.silicon_temperature_c -and $Snapshot.silicon_temperature_c -ge $MaxSiliconTemperatureC) {
+        return [pscustomobject]@{
+            code = "silicon-temperature"
+            message = "Thor CPU/GPU silicon temperature is $(Format-ThorTemperatureC $Snapshot.silicon_temperature_c) C, at or above the $MaxSiliconTemperatureC C limit."
+        }
+    }
+
+    return $null
+}
+
 function Get-ThorGuestFatalMatches {
     param([string[]]$Lines)
 
@@ -658,6 +854,9 @@ function Write-ThorStandardSnapshot {
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}window.txt" @("shell", "dumpsys window | grep -E 'mCurrentFocus|mFocusedApp|Window\\{.*$Package'") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}meminfo.txt" @("shell", "dumpsys meminfo $Package") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}thermal.txt" @("shell", "dumpsys thermalservice") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}hardware-temperatures.txt" @("shell", "dumpsys hardware_properties") -AllowFailure | Out-Null
+    $thermalZoneCommand = Get-ThorThermalZoneShellCommand
+    Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}thermal-zones.txt" @("shell", $thermalZoneCommand) -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}top-threads.txt" @("shell", "top -H -b -n 1 | grep -E '$Package|rpcsx|RPCS3|PPU|SPU|RSX|CPU'") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}cpu-freq.txt" @("shell", 'for c in /sys/devices/system/cpu/cpu[0-9]*; do b=${c##*/}; printf "%s cur=" "$b"; cat "$c/cpufreq/scaling_cur_freq" 2>/dev/null | tr -d "\n"; printf " max="; cat "$c/cpufreq/scaling_max_freq" 2>/dev/null | tr -d "\n"; printf " governor="; cat "$c/cpufreq/scaling_governor" 2>/dev/null; done') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}gpu-freq.txt" @("shell", 'for f in gpuclk max_gpuclk min_gpuclk devfreq/cur_freq devfreq/max_freq devfreq/min_freq devfreq/governor gpubusy; do printf "%s=" "$f"; cat "/sys/class/kgsl/kgsl-3d0/$f" 2>/dev/null || echo NA; done') -AllowFailure | Out-Null
