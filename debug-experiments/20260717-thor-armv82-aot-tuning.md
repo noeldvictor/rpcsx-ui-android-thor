@@ -1016,3 +1016,29 @@ New host artifact:
   single-open loader, Vulkan cache, bounded oldest-first RSX and SPU preload,
   thermal fail-stop, visual route, export surface, and diff checks. This exact
   APK is not yet installed and receives no device/runtime credit.
+
+### 2026-07-17 - oldest-first bounded-SPU guarded no-launch install
+
+- Status: exact corrected APK installed; no emulator launch; runtime proof
+  pending.
+- A strict read-only preflight found RPCSX absent and reported identical
+  battery/skin/silicon samples of `25/30/33.9 C` three times. Silicon rise was
+  `0.0 C`, satisfying the independent sub-`40 C` ceiling and maximum `2 C`
+  rise rule.
+- Exact APK
+  `C44E69DE6EFA9BF214B37B246F757D989F579DCE6B87CB0FA7CF70C4135885A0`,
+  `73,572,566` bytes, was installed with `adb install -r` and not launched.
+  On-device `/data/app/.../base.apk` independently matched the same SHA256.
+  Capture: `debug-captures/20260717-113150-oldest-spu-thortest-apk-install`.
+- The evidence script reached the installed hash check, then collided with
+  PowerShell's reserved `$PID` variable during the final audit. The continuation
+  did not reinstall or launch; it only completed the PID/property/temperature
+  reads using a non-reserved variable.
+- Final state: PID absent; battery/skin/silicon `25/30/34.3 C`;
+  `rsx_cache_workers=0`, `rsx_cache_preload_limit=0`,
+  `spu_cache_preload_limit=0`, and Vulkan driver cache `on`.
+- Decision: this proves exact deployment and safe cleanup only. Award no
+  startup, runtime thermal, title, FPS, gameplay, flicker, field, menu, battle,
+  or stability credit. Do not launch in this install round. After another
+  separately cool preflight, spend one guarded route with RSX `256`, SPU `64`,
+  Vulkan cache on, and the existing `75 C` fail-stop.
