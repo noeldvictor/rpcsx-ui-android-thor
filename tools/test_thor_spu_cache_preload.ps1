@@ -38,4 +38,19 @@ if (-not $llvmSource.Contains('const auto add_loc = m_spurt->add_empty(std::move
     throw "Omitted cached SPU programs no longer retain the normal LLVM miss path or duplicate-write guard."
 }
 
+$diagnosticGateIndex = $llvmSource.IndexOf('if (write_debug_log || to_log_func)')
+$diagnosticDumpIndex = $llvmSource.IndexOf('this->dump(func, function_log);')
+$llvmVerifierIndex = $llvmSource.IndexOf('std::string& llvm_log = function_log;')
+if ($diagnosticGateIndex -lt 0 -or
+    $diagnosticDumpIndex -le $diagnosticGateIndex -or
+    $llvmVerifierIndex -le $diagnosticDumpIndex) {
+    throw "SPU disassembly is no longer lazily materialized while preserving the LLVM verifier log buffer."
+}
+
+if (-not $llvmSource.Contains('#ifdef __ANDROID__') -or
+    -not $llvmSource.Contains('if (to_log_func && !g_cfg.core.spu_debug)') -or
+    -not $llvmSource.Contains('full diagnostic dump suppressed on Android.')) {
+    throw "Android non-debug SPU decrementer diagnostics no longer suppress the full function dump."
+}
+
 Write-Output "Thor SPU cache preload contract passed: opt-in oldest-first unique bound, all cached identities retained, normal LLVM miss path preserved, duplicate disk appends suppressed."

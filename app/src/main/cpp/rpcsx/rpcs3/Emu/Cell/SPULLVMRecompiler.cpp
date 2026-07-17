@@ -1613,18 +1613,8 @@ public:
 		m_pp_id = 0;
 
 		std::string function_log;
-
-		this->dump(func, function_log);
 		bool to_log_func = false;
-
-		if (g_cfg.core.spu_debug && !add_loc->logged.exchange(1))
-		{
-			if (!fs::write_file(m_spurt->get_cache_path() + "spu.log", fs::write + fs::append, function_log))
-			{
-				// Fallback: write to main log
-				to_log_func = true;
-			}
-		}
+		const bool write_debug_log = g_cfg.core.spu_debug && !add_loc->logged.exchange(1);
 
 		for (u32 data : func.data)
 		{
@@ -1638,9 +1628,31 @@ public:
 			}
 		}
 
-		if (to_log_func)
+#ifdef __ANDROID__
+		if (to_log_func && !g_cfg.core.spu_debug)
 		{
-			spu_log.notice("Function %s dump:\n%s", m_hash, function_log);
+			spu_log.notice("Function %s reads SPU_RdDec; full diagnostic dump suppressed on Android.", m_hash);
+			to_log_func = false;
+		}
+#endif
+
+		if (write_debug_log || to_log_func)
+		{
+			// Disassembly is diagnostic-only and can be expensive for the many
+			// functions compiled on demand. Materialize it only for an enabled
+			// SPU debug log or the existing decrementer-read diagnostic.
+			this->dump(func, function_log);
+
+			if (write_debug_log && !fs::write_file(m_spurt->get_cache_path() + "spu.log", fs::write + fs::append, function_log))
+			{
+				// Fallback: write to main log
+				to_log_func = true;
+			}
+
+			if (to_log_func)
+			{
+				spu_log.notice("Function %s dump:\n%s", m_hash, function_log);
+			}
 		}
 
 		using namespace llvm;

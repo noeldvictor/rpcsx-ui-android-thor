@@ -69,3 +69,58 @@ Classification: `build-proven`, `device-unmeasured`.
 This slice receives no Thor FPS, frame-pacing, flicker, or stability credit yet.
 A future cool-device round must use the established field, first-battle, and
 menu route and stop immediately on a fatal VM/SPU fault or visible corruption.
+
+## Later guarded bounded-cache follow-up
+
+Capture:
+
+`debug-captures/android-speed-sprint/20260717-145831-thor-input-oldest-spu-bounded-early-start-rsx1`
+
+- This was the only launch in a separately cool round. RPCSX was absent and the
+  strict three-sample preflight was `33.1 -> 34.3 -> 33.9 C` with
+  `performance_mode=0`, `fan_mode=4`, quick performance/fan enabled, and
+  battery saver off.
+- The route kept the installed oldest-first APK and exact RSX `256/939`, SPU
+  `64/1165`, and Vulkan seed `4,899,180` controls, but reduced RSX preload to
+  one worker and sent direct Start presses at about 4.7 and 8.0 seconds after
+  process establishment.
+- One-worker RSX preload took `0.911 s` from the limit notice to the saved-cache
+  line, versus `0.601 s` in the matched two-worker retry. Total startup reached
+  the SPU `Workers built 64 programs` line at emulated `3.038952 s`, `0.299 s`
+  later than the two-worker retry. Do not promote one RSX worker as a speed
+  setting.
+- Poll 3 showed a transient progress frame at `30.812 s`; the other four polls
+  were black. Neither early Start press produced a title-menu proof.
+- The `72 C` guard stopped the process at `72.3 C`, `82.291 s` after process
+  establishment. Immediate post-stop silicon was `59.4 C`; PID was absent.
+  Targeted fatal, access-violation, and unknown-draw counts were all zero.
+- This is a failed title/speed proof. The longer thermal window cannot be
+  credited to one worker because it came from a different cool round.
+
+## Android SPU diagnostic hot-path follow-up
+
+The guarded log identified avoidable work in `SPULLVMRecompiler.cpp`:
+
+- `SPU Debug` was false, but 16 decrementer-read functions emitted full SPU
+  disassemblies; the captured RPCSX log was `529,579` bytes.
+- More importantly, upstream and the local fork built a complete disassembly
+  string for every compiled SPU function before deciding whether any diagnostic
+  needed it. The bounded startup alone compiled 64 cached programs, followed by
+  runtime cache misses.
+
+The host successor now:
+
+- scans for the existing decrementer-read condition first;
+- materializes the disassembly only when SPU debug output or the retained
+  desktop diagnostic needs it;
+- preserves full dumps for explicit SPU debug mode and non-Android builds;
+- emits one concise Android notice instead of a full function dump when
+  `SPU Debug=false`; and
+- preserves the same outer string for later LLVM verification diagnostics.
+
+Validation: exact Android ARM64 syntax-only compilation passes, the extended
+`tools/test_thor_spu_cache_preload.ps1` contract passes, and
+`git diff --check` is clean. A full optimized build was not completed in this
+round, and no APK was assembled, installed, or launched. Classification:
+`syntax-proven`, `device-unmeasured`; grant no FPS, thermal, flicker, title,
+gameplay, or stability credit yet.
