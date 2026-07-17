@@ -13452,3 +13452,61 @@ Next:
   hashing cannot answer its ownership question and would only add diagnostic
   overhead. Require clean field/battle visuals and no fatal before assigning
   any stability or FPS credit.
+
+## 2026-07-17 V13 Route-tooling Counterexample And State-gated Direct Input
+
+Guarded route:
+
+- Preflight found battery `24 C`, thermal status `0`, clear experiment
+  properties, and only the persistent ADB server. The already-running RPCSX
+  package was force-stopped before deployment. Exact V13
+  `514702755F6241758257CB93F80807D50F3D8C927935325192A31DA66BD12D26`,
+  size `1,349,864,864`, was pushed without rebuilding or launching in
+  `debug-captures/20260717-005004-es-dispatch-v13-51470275-dev-core-push`.
+- Exactly one fail-closed route ran in
+  `debug-captures/android-speed-sprint/20260717-005041-thor-input-eternal-sonata-battle-intro-route`
+  with dispatch provenance on, command interpreter off, async barrier off,
+  and a `28 C` cutoff. The title readiness gate stabilized after about
+  `116s`; the route then failed after three bounded battle approaches.
+- This is route-tooling evidence only. The manual invocation omitted
+  `-InputMode Direct`, so the script defaulted to Android `Virtual` input.
+  `14-load-save-list.png` is still the title menu, proving the early Load
+  inputs were dropped. A later accepted Cross started New Game;
+  `16-loaded-field.png` and the three approach candidates show the opening
+  story/cutscene with the Eternal Sonata upper-right watermark, not a
+  controllable field or battle.
+- The guest remained fatal-clean and rendered visible frames, but the invalid
+  route produced no V13 dispatch-provenance record, no comparable gameplay
+  FPS sample, and no speed or stability credit. Battery ended at `25 C`,
+  thermal status remained `0`, the package was stopped, and all three
+  properties reset to `off`. No second launch ran.
+
+Host-only route fix:
+
+- The battle profile now promotes a non-`Direct` input request to the
+  app-owned direct pad injector and records requested/effective input mode in
+  its README. Generic/custom profiles retain their requested mode.
+- A new normalized parchment classifier requires at least `60%` warm-beige
+  samples for both the Load-list and Load-complete checkpoints. Replaying the
+  saved corpus found 33 correctly labelled Load frames at about `71-72%`;
+  the three mislabeled wrong-route frames were `1.15-6.31%`. All 37 field
+  frames, 37 title frames, and 70 first-battle frames remained below the
+  threshold; first-battle maximum was `46.10%`.
+- A normalized upper-right bright-neutral classifier identifies the story
+  watermark. The wrong-route field/approach samples were `4.13-8.05%`; known
+  good field and all 70 first-battle samples were `0%`. The loaded-field gate
+  now rejects compilation, black, title, Load, story, and battle states
+  before issuing movement.
+- `git diff --check`, PowerShell AST parsing, and a seven-case replay matrix
+  pass for known-good title/Load/Load-complete/field/battle plus the dropped-
+  input title and wrong-story frames. These are harness-only edits; no core
+  rebuild or additional device run was performed.
+
+Next:
+
+- Keep Thor stopped for the remainder of this round. In one later cool round,
+  use the exact already-installed V13 core with dispatch provenance on,
+  interpreter and async barrier off, and the `28 C` cutoff. The profile will
+  force direct input and fail at the first wrong-route visual state. Only a
+  clean field and real first battle can answer the reserved `0x30b12f20`
+  ownership question or receive FPS/stability credit.

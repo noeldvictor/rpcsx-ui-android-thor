@@ -65,6 +65,14 @@ function Resolve-ThorInputDeviceSerial {
 
 $DeviceSerial = Resolve-ThorInputDeviceSerial
 $env:ANDROID_SERIAL = $DeviceSerial
+$requestedInputMode = $InputMode
+$profileForcesDirectInput = $Profile -eq "eternal-sonata-battle-intro-route" -and $InputMode -ne "Direct"
+if ($profileForcesDirectInput) {
+    # Android virtual gamepad injection can be dropped while the title is
+    # visibly ready. Battle proof routes use the app-owned direct pad path so
+    # an ignored Load input cannot waste the short thermal window in New Game.
+    $InputMode = "Direct"
+}
 $requestedEsAsyncDrawBarrier = $EsAsyncDrawBarrier
 if ($EsAsyncDrawBarrier -eq "repair") {
     # Runtime write-back proved unsafe on Thor. Preserve old invocations but
@@ -191,7 +199,7 @@ function Get-ThorMacroForProfile {
             # Start the visual readiness gate immediately. It rejects PPU
             # compilation and black transition frames, so a fixed 60-second
             # pre-wait only heats the device and delays warm-cache routes.
-            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;cross;wait:12000;shot:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;check:visual:load-menu;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;check:visual:load-menu;cross;wait:12000;shot:loaded-field;check:visual:field-frame;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -651,7 +659,9 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Profile: $Profile",
     "- Game path: $GamePath",
     "- Display: $Display",
+    "- Input mode requested: $requestedInputMode",
     "- Input mode: $InputMode",
+    "- Battle profile forced direct input: $profileForcesDirectInput",
     "- Raw input device: $RawInputDevice",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
@@ -663,7 +673,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on black battle frames and unknown draw commands; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
+    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
     'Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.',
     'Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`.'
     'State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected.'
@@ -795,6 +805,30 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
             if (-not $classification.title_menu_present) {
                 Throw-ThorVisualFailure "The settled Eternal Sonata title menu is not visible; route inputs and gameplay claims are invalid." "visual-title-menu-failure"
+            }
+        } elseif ($token -eq 'check:visual:load-menu') {
+            if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
+                throw "The Load-menu visual check requires a preceding screenshot."
+            }
+
+            $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+            "$(Get-Date -Format o) load_menu_present=$($classification.load_menu_present) load_beige_samples=$($classification.load_beige_samples) load_total_samples=$($classification.load_total_samples) load_beige_percent=$($classification.load_beige_percent) title_menu_present=$($classification.title_menu_present) story_scene_present=$($classification.story_scene_present) black_frame_present=$($classification.black_frame_present) path=$($classification.path)" |
+                Out-File -LiteralPath (Join-Path $captureDir "load-menu-visual-gate.log") -Append -Encoding UTF8
+
+            if (-not $classification.load_menu_present) {
+                Throw-ThorVisualFailure "The Eternal Sonata Load menu is not visible; a title input was dropped or the route entered the wrong state." "visual-load-menu-failure"
+            }
+        } elseif ($token -eq 'check:visual:field-frame') {
+            if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
+                throw "The field-frame visual check requires a preceding screenshot."
+            }
+
+            $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+            "$(Get-Date -Format o) field_frame_present=$($classification.field_frame_present) story_scene_present=$($classification.story_scene_present) story_logo_bright_samples=$($classification.story_logo_bright_samples) story_logo_total_samples=$($classification.story_logo_total_samples) story_logo_bright_percent=$($classification.story_logo_bright_percent) load_menu_present=$($classification.load_menu_present) title_menu_present=$($classification.title_menu_present) battle_ui_present=$($classification.battle_ui_present) black_frame_present=$($classification.black_frame_present) path=$($classification.path)" |
+                Out-File -LiteralPath (Join-Path $captureDir "field-frame-visual-gate.log") -Append -Encoding UTF8
+
+            if (-not $classification.field_frame_present) {
+                Throw-ThorVisualFailure "A controllable Eternal Sonata field frame is not visible; movement and battle inputs are unsafe in the current route state." "visual-field-frame-failure"
             }
         } elseif ($token -eq 'check:visual:battle-frame') {
             if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {

@@ -173,6 +173,96 @@ function Get-ThorBattleUiClassification {
             $titleMagentaPercent -ge 5.0
         )
 
+        # The Load/save screen is dominated by a warm parchment panel. A
+        # broad normalized sample separates it cleanly from the blue title
+        # menu, green field, and tan battle arena. This gate caught the three
+        # historical captures that were labelled load-save-list even though
+        # Android virtual gamepad input had left the game on the title screen.
+        $loadXStart = [int]($bitmap.Width * 0.030)
+        $loadXEnd = [int]($bitmap.Width * 0.970)
+        $loadYStart = [int]($bitmap.Height * 0.030)
+        $loadYEnd = [int]($bitmap.Height * 0.820)
+        $loadBeigeSamples = 0
+        $loadTotalSamples = 0
+
+        for ($y = $loadYStart; $y -lt $loadYEnd; $y += 6) {
+            for ($x = $loadXStart; $x -lt $loadXEnd; $x += 6) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $loadTotalSamples++
+                if (
+                    $pixel.R -ge 70 -and
+                    $pixel.G -ge 40 -and
+                    $pixel.B -le 110 -and
+                    ($pixel.R - $pixel.G) -ge 10 -and
+                    ($pixel.G - $pixel.B) -ge 8
+                ) {
+                    $loadBeigeSamples++
+                }
+            }
+        }
+
+        $loadBeigePercent = if ($loadTotalSamples -gt 0) {
+            100.0 * $loadBeigeSamples / $loadTotalSamples
+        } else {
+            0.0
+        }
+        $loadMenuPresent = (
+            -not $ppuCompilationScreenPresent -and
+            $darkPercent -lt 95.0 -and
+            $loadBeigePercent -ge 60.0
+        )
+
+        # Post-load story scenes in this save carry the bright Eternal Sonata
+        # watermark in the upper-right. Known-good field and battle captures
+        # contain no matching samples, while the failed 2026-07-17 route was
+        # 4.1-8.1%. Rejecting that state prevents movement macros from being
+        # spent inside a cutscene and shortens fail-closed thermal runs.
+        $storyXStart = [int]($bitmap.Width * 0.720)
+        $storyXEnd = [int]($bitmap.Width * 0.960)
+        $storyYStart = [int]($bitmap.Height * 0.050)
+        $storyYEnd = [int]($bitmap.Height * 0.280)
+        $storyLogoBrightSamples = 0
+        $storyLogoTotalSamples = 0
+
+        for ($y = $storyYStart; $y -lt $storyYEnd; $y += 3) {
+            for ($x = $storyXStart; $x -lt $storyXEnd; $x += 3) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $storyLogoTotalSamples++
+                $maximumChannel = [Math]::Max($pixel.R, [Math]::Max($pixel.G, $pixel.B))
+                $minimumChannel = [Math]::Min($pixel.R, [Math]::Min($pixel.G, $pixel.B))
+                if (
+                    $pixel.R -ge 145 -and
+                    $pixel.G -ge 145 -and
+                    $pixel.B -ge 145 -and
+                    ($maximumChannel - $minimumChannel) -le 45
+                ) {
+                    $storyLogoBrightSamples++
+                }
+            }
+        }
+
+        $storyLogoBrightPercent = if ($storyLogoTotalSamples -gt 0) {
+            100.0 * $storyLogoBrightSamples / $storyLogoTotalSamples
+        } else {
+            0.0
+        }
+        $storyScenePresent = $storyLogoBrightPercent -ge 3.0
+        $battleUiPresent = (
+            -not $ppuCompilationScreenPresent -and
+            $darkPercent -lt 95.0 -and
+            $cyanSamples -ge 100 -and
+            $cyanPercent -ge 1.5 -and
+            $cyanPercent -le 10.0
+        )
+        $fieldFramePresent = (
+            -not $ppuCompilationScreenPresent -and
+            $darkPercent -lt 95.0 -and
+            -not $titleMenuPresent -and
+            -not $loadMenuPresent -and
+            -not $storyScenePresent -and
+            -not $battleUiPresent
+        )
+
         return [pscustomobject]@{
             path = $resolvedPath
             width = $bitmap.Width
@@ -191,13 +281,16 @@ function Get-ThorBattleUiClassification {
             title_total_samples = $titleTotalSamples
             title_magenta_percent = [Math]::Round($titleMagentaPercent, 3)
             title_menu_present = $titleMenuPresent
-            battle_ui_present = (
-                -not $ppuCompilationScreenPresent -and
-                $darkPercent -lt 95.0 -and
-                $cyanSamples -ge 100 -and
-                $cyanPercent -ge 1.5 -and
-                $cyanPercent -le 10.0
-            )
+            load_beige_samples = $loadBeigeSamples
+            load_total_samples = $loadTotalSamples
+            load_beige_percent = [Math]::Round($loadBeigePercent, 3)
+            load_menu_present = $loadMenuPresent
+            story_logo_bright_samples = $storyLogoBrightSamples
+            story_logo_total_samples = $storyLogoTotalSamples
+            story_logo_bright_percent = [Math]::Round($storyLogoBrightPercent, 3)
+            story_scene_present = $storyScenePresent
+            field_frame_present = $fieldFramePresent
+            battle_ui_present = $battleUiPresent
         }
     } finally {
         $bitmap.Dispose()
