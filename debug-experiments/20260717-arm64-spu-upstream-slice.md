@@ -216,7 +216,17 @@ Validation:
 - ARM64 APK, optimized ThorTest, SPU cache preload, and PPU loader logging
   contracts: pass.
 
-The new APK is host-only and not installed. Classification: `package-proven`,
-`device-unmeasured`; grant no speed or stability credit. Install it only in a
-later separately cool no-launch round, then use a different cool round for one
-guarded bounded route.
+The exact APK was installed without launching RPCSX in a later independently
+cool round. The lossless 27-zone silicon preflight was
+`31.9 -> 31.9 -> 31.7 C` (`-0.2 C` net rise), RPCSX was stopped, and the AYN
+power state matched performance mode `0`, fan mode `4`, quick performance/fan
+`1`, and battery saver `0`. `adb install -r` succeeded; the installed
+`base.apk` SHA-256 is exactly
+`11648B07ACC8631DA83429CC857A7633BF5A6DA4D4D2330C89FDCCFE9DC9B98B`.
+RPCSX remained stopped and post-install silicon was `33.1 C`.
+
+Classification: `installed-exact`, `device-runtime-unmeasured`; grant no
+speed, FPS, flicker, title, gameplay, thermal-runtime, or stability credit.
+This install round is closed. Only a different independently cool round may
+spend one guarded bounded route with RSX limit `256`, SPU limit `64`, normal
+two-worker/auto scheduling, and Vulkan cache on.
