@@ -24,6 +24,7 @@ $requiredFragments = @(
     'g_driver_pipeline_create_count.fetch_add(1) + 1',
     'g_driver_pipeline_first_checkpoint = 32',
     'accepted_seed_size = initial_data.size()',
+    'g_driver_pipeline_first_checkpoint = accepted_seed_size ? 512u : 32u',
     'g_driver_pipeline_first_checkpoint = accepted_seed_size ? 256u : 32u',
     'create_count >= g_driver_pipeline_first_checkpoint && (create_count & (create_count - 1)) == 0',
     'initialize_driver_pipeline_cache();',
@@ -47,6 +48,9 @@ if ($pipelineSource -notmatch 'result\s*!=\s*VK_SUCCESS\s*&&\s*!initial_data\.em
 if ($pipelineSource -notmatch 'result\s*!=\s*VK_SUCCESS\s*&&\s*!initial_data\.empty\(\)[\s\S]*?accepted_seed_size\s*=\s*0[\s\S]*?vkCreatePipelineCache') {
     throw "A driver-rejected seed is still treated as accepted for warm checkpoint scheduling."
 }
+if ($pipelineSource -notmatch '#ifdef __ANDROID__\s*g_driver_pipeline_first_checkpoint = accepted_seed_size \? 512u : 32u;\s*#else\s*g_driver_pipeline_first_checkpoint = accepted_seed_size \? 256u : 32u;') {
+    throw "Android warm pipeline caches no longer defer their first checkpoint beyond the bounded 256-pipeline startup path."
+}
 if ($pipelineSource -notmatch 'g_pipe_compilers\.reset\(\);\s*destroy_driver_pipeline_cache\(\);') {
     throw "Pipeline workers are not stopped before the final pipeline cache checkpoint."
 }
@@ -54,4 +58,4 @@ if ($deviceSource -notmatch 'const VkPhysicalDeviceProperties& get_properties\(\
     throw "The physical-device properties required for cache header validation are not exposed read-only."
 }
 
-Write-Output "Thor Vulkan pipeline cache source-contract tests passed."
+Write-Output "Thor Vulkan pipeline cache source-contract tests passed, including the Android warm-checkpoint deferral."

@@ -443,3 +443,81 @@ credit. Do not launch in this install round. One later independently cool
 round may spend one bounded guarded proof and must first prove the intended
 `Shader cache preload workers: load=2, compile=1` activation row under the
 same RSX `256`, SPU `64`, Vulkan-cache-on controls.
+
+## Corrected split-worker proof and parallel warm-cache successor
+
+Outer cool gate:
+
+`debug-captures/android-speed-sprint/20260717-180503-thor-input-corrected-split-rsx-runtime-cool-gate`
+
+RPCSX stayed absent while silicon sampled `32.7 -> 33.5 -> 33.5 C`; the
+`+0.8 C` rise passed the strict `1 C` limit. Battery/skin were
+`23.0 / 30.0 C`. The independently sampled route preflight then held
+`33.5 -> 33.5 -> 33.5 C`. Prelaunch power state matched the preceding route:
+performance mode `0`, fan mode `4`, quick performance/fan `1`, battery saver
+`0`, WALT CPU governors, and `msm-adreno-tz` GPU governor.
+
+Guarded route:
+
+`debug-captures/android-speed-sprint/20260717-180556-thor-input-corrected-split-rsx-workers-bounded-title-proof`
+
+The corrected parser and managed profile activated exactly as intended:
+`debug.rpcsx.thor.rsx_cache_workers=0` produced `load=2, compile=1`; RSX
+preload was `256/939`, SPU preload was `64/1,165`, and the Vulkan driver cache
+accepted the `4,899,180`-byte seed. PID `19045` was established at
+`18:06:08.9548702`; the first two-second runtime poll at
+`18:06:11.6752655` was already `68.2 C`. The guard therefore force-stopped
+immediately at the `68 C` early threshold, `2.720395 s` after establishment
+and below the `72 C` hard limit. Post-stop silicon was `46.2 C`, PID was
+absent, and the targeted fatal/access-violation/device-lost/unknown-draw scan
+had zero matches. The stop happened during `wait:12000`, before Start, title
+polling, or any screenshot.
+
+The split is not a speed or thermal win. Under the same power state, the prior
+two-compile-worker route first sampled `65.4 C` at `2.658222 s` after PID and
+stopped at `68.7 C` after `3.266820 s`. Corrected matched startup timestamps
+were also later: worker activation `1.158017` versus `1.035883`, Vulkan-cache
+save `1.674479` versus `1.502757`, PPU OPD `1.691140` versus `1.513522`, SPU
+limit `2.446624` versus `2.253982`, and SPU interpreter `2.588600` versus
+`2.394806`. The current log ended at `2.678867` while the SPU workers were
+still compiling, whereas the two-worker route finished all 64 functions at
+`2.794049`. Reject the automatic 2-load/1-compile split; it adds about
+`0.19 s` before the SPU lane without lowering the observed thermal spike.
+
+The same logs expose removable work without a correctness tradeoff. A warm
+Android cache scheduled its first periodic checkpoint at 256 creates, exactly
+the bounded preload size, then synchronously serialized and rewrote the same
+`4,899,180`-byte cache before PPU startup (`pipelines=256` in the corrected
+run, `257` in the prior run). The host successor now uses the same capped,
+dynamic worker count for load and compile, so auto mode returns to
+`load=2, compile=2`. It also moves only Android's validated-warm first
+checkpoint to 512 creates. Cold/rejected seeds retain 32/64/128/... crash-safe
+checkpoints, desktop warm caches retain 256, normal/final shutdown still
+persists all progress, and omitted RSX/SPU entries retain their normal runtime
+cache-miss paths.
+
+Host validation passed the RSX, Vulkan-cache, SPU, PPU-logging, optimized
+variant, single-core-load, thermal, and visual-route source contracts. The
+optimized ARM64 core built successfully in `77.3 s`. The first unscoped APK
+was rejected by the arm64 gate because it also contained x86_64; the required
+arm64-only package then passed in `19 s`:
+`:app:assembleThortest -PrpcsxAndroidAbis=arm64-v8a -PbuildBundledRpcsxCore=true`.
+
+Exact host-only candidate:
+
+- merged core: `1,305,549,504` bytes, SHA-256
+  `2B62F62ED746BB41A0E6B9CB188C963B2CFF827FDABA187B304C7CF14B03ADBA`;
+- stripped core: `62,842,792` bytes, SHA-256
+  `BD2BB6225FE91BBE10C23FB4DA866158839F17919104B49CD75C8ED7CF566C4E`;
+- arm64-only ThorTest APK: `73,572,618` bytes, SHA-256
+  `24F3F26785681A96AFD152574FB82206FC5EBDDF508F194ADDF46DE575E3F87F`;
+  and
+- export surface: 34 defined dynamic symbols, 583 explicit relocations, 391
+  jump slots, and 44,219 encoded relocation bytes.
+
+Classification: the device route is `failed-thermal-guard` and
+`split-worker-rejected`, with no title/FPS/flicker/gameplay/stability credit.
+The parallel/warm-checkpoint successor is `startup-performance-candidate`,
+`host-verified`, `device-unmeasured`. It was not installed or launched in this
+round. Only a separately cool no-launch round may install the exact APK; a
+different independently cool round is required for one bounded guarded proof.

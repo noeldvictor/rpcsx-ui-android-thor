@@ -226,10 +226,16 @@ namespace vk
 			}
 
 			// A validated warm seed already contains the early pipeline states. Avoid
-			// serializing and rewriting that same multi-megabyte blob at the 32/64/128
-			// session thresholds. Cold caches retain those crash-safe checkpoints;
-			// warm caches checkpoint new progress at 256 and every power of two after.
+			// serializing and rewriting that same multi-megabyte blob at the early
+			// session thresholds. The Android bounded startup path creates 256 pipelines,
+			// so its first warm checkpoint must stay beyond that hot path. Cold caches
+			// retain crash-safe 32/64/128/... checkpoints, and final shutdown still saves
+			// any warm progress below the first periodic checkpoint.
+#ifdef __ANDROID__
+			g_driver_pipeline_first_checkpoint = accepted_seed_size ? 512u : 32u;
+#else
 			g_driver_pipeline_first_checkpoint = accepted_seed_size ? 256u : 32u;
+#endif
 			rsx_log.notice("Created Vulkan driver pipeline cache (seed=%llu bytes).",
 				static_cast<u64>(accepted_seed_size));
 			rsx_log.notice("Vulkan driver pipeline cache first checkpoint: %u pipelines.",
