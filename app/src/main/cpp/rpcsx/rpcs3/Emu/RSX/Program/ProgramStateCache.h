@@ -393,7 +393,12 @@ public:
 			m_storage[key] = std::move(__null_pipeline_handle);
 		}
 
+#ifdef __ANDROID__
+		// Cached startup can create hundreds of programs; keep diagnostics without synchronous notice-level Android I/O.
+		rsx_log.trace("Add program (vp id = %d, fp id = %d)", vertex_program.id, fragment_program.id);
+#else
 		rsx_log.notice("Add program (vp id = %d, fp id = %d)", vertex_program.id, fragment_program.id);
+#endif
 
 		std::function<pipeline_type*(pipeline_storage_type&)> callback;
 

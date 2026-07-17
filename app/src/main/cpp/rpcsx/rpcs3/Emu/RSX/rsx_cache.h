@@ -210,25 +210,13 @@ namespace rsx
 		{
 			atomic_t<u32> processed(0);
 
-			std::function<void(u32, u32)> shader_load_worker = [&](u32 start_at, u32 stop_at)
+			std::function<void(u32)> shader_load_worker = [&](u32 stop_at)
 			{
-				u32 thread_processed = 0;
-				auto update_stats = [&]
+				u32 pos;
+				// Claim one entry at a time so workers share expensive pipelines instead of waiting on a fixed slow partition.
+				while (((pos = processed++) < stop_at) && !Emu.IsStopped())
 				{
-					if (thread_processed == 0)
-					{
-						return true;
-					}
-
-					processed += thread_processed;
-					thread_processed = 0;
-					return !Emu.IsStopped();
-				};
-
-				for (u32 pos = start_at; pos < stop_at; ++pos)
-				{
-					const fs::dir_entry& tmp = entries[pos];
-					thread_processed++;
+					fs::dir_entry tmp = entries[pos];
 
 					const auto filename = directory_path + "/" + tmp.name;
 					fs::file f(filename);
@@ -259,14 +247,9 @@ namespace rsx
 					m_storage.preload_programs(nullptr, entry.vp, entry.fp);
 
 					unpacked[unpacked.push_begin()] = std::move(entry);
-
-					if (thread_processed >= 10 && !update_stats())
-					{
-						return;
-					}
 				}
-
-				update_stats();
+				// Each worker claims one sentinel index after the final real entry.
+				processed--;
 			};
 
 			await_workers(nb_workers, 0, shader_load_worker, processed, entry_count, dlg);
@@ -277,40 +260,23 @@ namespace rsx
 		{
 			atomic_t<u32> processed(0);
 
-			std::function<void(u32, u32)> shader_comp_worker = [&](u32 start_at, u32 stop_at)
+			std::function<void(u32)> shader_comp_worker = [&](u32 stop_at)
 			{
-				u32 thread_processed = 0;
-				auto update_stats = [&]
-				{
-					if (thread_processed == 0)
-					{
-						return true;
-					}
-
-					processed += thread_processed;
-					thread_processed = 0;
-					return !Emu.IsStopped();
-				};
-
-				for (u32 pos = start_at; pos < stop_at; ++pos)
+				u32 pos;
+				// Pipeline compile cost varies; dynamic claims keep both workers busy through the tail.
+				while (((pos = processed++) < stop_at) && !Emu.IsStopped())
 				{
 					unpacked_shader& entry = unpacked[pos];
 					m_storage.add_pipeline_entry(entry.vp, entry.fp, entry.props, std::forward<Args>(args)...);
-					thread_processed++;
-
-					if (thread_processed >= 3 && !update_stats())
-					{
-						return;
-					}
 				}
-
-				update_stats();
+				// Each worker claims one sentinel index after the final real entry.
+				processed--;
 			};
 
 			await_workers(nb_workers, 1, shader_comp_worker, processed, entry_count, dlg);
 		}
 
-		void await_workers(uint nb_workers, u8 step, std::function<void(u32, u32)>& worker, atomic_t<u32>& processed, u32 entry_count, shader_loading_dialog* dlg)
+		void await_workers(uint nb_workers, u8 step, std::function<void(u32)>& worker, atomic_t<u32>& processed, u32 entry_count, shader_loading_dialog* dlg)
 		{
 			if (nb_workers > entry_count)
 			{
@@ -323,14 +289,11 @@ namespace rsx
 
 				// Call the worker function directly, stopping it prematurely to be able update the screen
 				u32 stop_at = 0;
-				u32 start_at = 0;
 				do
 				{
-					stop_at = std::min(start_at + 10, entry_count);
+					stop_at = std::min(stop_at + 10, entry_count);
 
-					worker(start_at, stop_at);
-
-					start_at = stop_at;
+					worker(stop_at);
 
 					// Only update the screen at about 60fps since updating it everytime slows down the process
 					steady_clock::time_point now = steady_clock::now();
@@ -344,18 +307,9 @@ namespace rsx
 			}
 			else
 			{
-				named_thread_group workers("RSX Worker ", nb_workers, [&](u32 thread_index)
+				named_thread_group workers("RSX Worker ", nb_workers, [&]()
 					{
-						if (nb_workers == entry_count)
-						{
-							worker(thread_index, thread_index + 1);
-							return;
-						}
-
-						auto per_thread_entries = entry_count / nb_workers;
-						auto start_at = per_thread_entries * thread_index;
-						auto stop_at = thread_index == nb_workers - 1 ? entry_count : start_at + per_thread_entries;
-						worker(start_at, stop_at);
+						worker(entry_count);
 					});
 
 				u32 current_progress = 0;

@@ -478,3 +478,65 @@ New host artifact:
   install exact final APK `60DE...0AE7` without launch and spend one route on
   `RsxCacheWorkers=1`, measuring time-to-title and thermals under the same
   two-second 75 C guard.
+
+## Upstream RSX cache work-sharing follow-up
+
+### 2026-07-17 - rsx-dynamic-scheduler-loader-field-proof
+
+- Status: failed
+- Scope: rsx-vulkan
+- Hypothesis: current upstream RPCS3's atomic per-entry shader-cache work
+  sharing would eliminate the slow fixed-partition tail, while trace-only
+  Android `Add program` logging would remove hundreds of synchronous startup
+  log writes and reach the title under the 75 C guard.
+- Changed files/settings: ported dynamic load/compile claims from current
+  upstream `rsx_cache.h` while retaining the Android two-worker auto cap and
+  bounded property override. On Android only, `Add program` moved from notice
+  to trace; desktop notice behavior is unchanged. Added
+  `tools/test_thor_rsx_cache_preload.ps1`. The device route used
+  `RsxCacheWorkers=0`, which resolved to the normal two workers.
+- Rollback: revert the two RSX source files and install exact prior APK
+  `60DE891C...0AE7`. No game, save, firmware, driver, or cache content was
+  changed.
+- Windows result: host-only ARM64 RelWithDebInfo rebuilt successfully in
+  `766.2 s`; `assembleThortest` then passed in `27 s`. The RSX preload,
+  thermal-route, optimized-variant, single-open, export-surface, exact ARM64
+  APK, PowerShell AST, APK v2 signature, and diff checks passed.
+- Artifacts: exact installed APK
+  `B76CE9F2B89AA452906D36D1D18A576BEA67F47A94D43133BB9BE9B20D532AEE`
+  is `73,561,482` bytes. Merged core
+  `6338257D6033E750B884BDD126BD939D95E0A024F5A1B623D73D70D0C24B5AE9`
+  is `1,305,298,808` bytes; stripped packaged core
+  `BBE67717700FA4AB9088531E87A1529DBBEBE7C86449BD8B89501285D06D1E03`
+  is `62,822,408` bytes.
+- Thor result: guarded no-launch install moved battery/skin/silicon from
+  `25/30/33.1 C` to `25/30/44.5 C`; after idle cooling it returned to
+  `25/30/33.9 C` with the package stopped. Route preflight was
+  `25/30/34.3,33.9,33.7 C`. Silicon reached `57.4 C` at the first screenshot,
+  then `72.7`, `73.9`, and `77.1 C`; the guard force-stopped RPCSX. Immediate
+  post-stop was `54.2 C`; a later read-only sample was `25/30/42.1 C`,
+  `pidof` was empty, and the worker property was reset to `0`.
+- Visual correctness: only the same pre-title progress class rendered:
+  title false, compilation false, black false, and progress white `80.456%`.
+  The animated-frame comparison against the prior route was `SSIM 0.946772`
+  and average `PSNR 21.99 dB`. No title, Load, field, Options, battle, or
+  flicker checkpoint was reached.
+- FPS/frame-time: none. Process-established-to-guard time fell from
+  `12.266 s` to `9.685 s`, so guard duration worsened by `2.581 s` (`21.0%`).
+  The first-poll adjusted rise improved from `29.5 C` to `23.7 C` (`5.8 C`),
+  but this is conflicting thermal evidence and not a speed win.
+- Logging result: the new pulled log contains `0` notice-level `Add program`
+  rows versus `289` before. It still contains `411` RSX worker decompiler
+  errors versus `410` before, so the dominant pipeline work remains.
+- Capture paths:
+  `debug-captures/20260717-072007-rsx-dynamic-scheduler-thortest-apk-install`
+  and
+  `debug-captures/android-speed-sprint/20260717-072156-thor-input-rsx-dynamic-scheduler-loader-field-proof`.
+- Decision: `failed-thermal-guard` / `not-comparable`. Keep the upstream
+  work-sharing implementation and quieter Android diagnostics as a
+  correctness-preserving code update, but give them no startup, FPS, flicker,
+  field, menu, battle, or stability credit.
+- Next: no second route in this thermal round. Exact candidate `B76CE9...32AEE`
+  is already installed and stopped. After a separately cool preflight, spend
+  one route on `RsxCacheWorkers=1`; require time-to-title and visual proof
+  under the same two-second 75 C guard before changing the default.
