@@ -1,33 +1,34 @@
 # SPU / Codegen Candidate Notes
 
-## Current Positive Signal
+## Retired Android Reduced-Loop Signal
 
-Reduced-loop emission is controlled by:
+Android reduced-loop emission is disabled at both the native gate and public
+tool profiles. Never manually set
+`debug.rpcsx.thor.spu_reduced_loop_emit=1`.
 
-```powershell
-.\tools\set_thor_logging.ps1 -Mode ReducedLoopEmit
-```
-
-Manual quiet+emit pattern for FPS sweeps:
+Detector-only logging remains available:
 
 ```powershell
-.\tools\set_thor_logging.ps1 -Mode Quiet
-adb shell setprop debug.rpcsx.thor.spu_reduced_loop_emit 1
+.\tools\set_thor_logging.ps1 -Mode ReducedLoop
 ```
 
-Cache files:
+Relevant cache identities:
 
 - normal: `spu-safe-v1-tane.dat`
-- reduced-loop: `spu-safe-thor-rl-v1-tane.dat`
+- failed corrected U2: `spu-safe-thor-rl-u2-v2-v1-tane.dat`
 
-Do not mix or rename these casually; cache pollution invalidates speed comparisons.
+Fresh-cache U2/no-reuse and U4 routes both faulted `CellSpursKernel0` at SPU
+PC `0x330f0` reading unmapped `0x8d230480`. This excludes unroll factor,
+reuse, and stale cache. The incomplete vendored analyzer/emitter contract is
+parked until a complete current-upstream port is built and verified on the host.
 
-## 2026-05-16 Results
+## Historical 2026-05-16 Results
 
 - Earlier reduced-loop field captures: about `19.6-19.9 FPS`, menu about `20.18 FPS`.
 - Retake after RSX work: reduced-loop + all-fence field about `19.10 FPS`, clean visuals.
 - Reduced-loop + host-fence field about `17.60 FPS`; do not combine by default.
-- Battle validation remains missing.
+- These readings receive no promotion credit after the 2026-07 fresh-cache
+  corruption counterproof.
 
 ## Hot SPU / DMA Map
 
@@ -62,8 +63,10 @@ speed win, not GPU migration, and not a Thor-port candidate.
 
 ## Candidate Priority
 
-1. Broaden reduced-loop correctness and coverage.
-2. Build reservation-loop/codegen/HLE verifier work around the hot AtomicStat/PUTLLC16 loops.
-3. Use Ghidra/disasm around hot PCs to find stable bulk loops.
-4. Keep SPU/MFC fast paths verify-first.
-5. Avoid broad GPU-offload of SPURS control loops; only batch large stable jobs.
+1. Keep Android reduced-loop emission off; scope the full upstream
+   analyzer/emitter in the host lab.
+2. Use one later cool default/Quiet control to establish the safe Thor baseline.
+3. Build reservation-loop/codegen/HLE verifier work around the hot AtomicStat/PUTLLC16 loops.
+4. Use Ghidra/disasm around hot PCs to find stable bulk loops.
+5. Keep SPU/MFC fast paths verify-first.
+6. Avoid broad GPU-offload of SPURS control loops; only batch large stable jobs.

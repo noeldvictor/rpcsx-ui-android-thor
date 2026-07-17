@@ -22,13 +22,17 @@ Use this repo-only skill for Cell-side speed work. Keep scene routing in `thor-s
 3. Choose one gate or probe, not a mixed pile:
    - `.\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -EternalSonataKernelCapsule Profile -WindowsInputBackend PadApi -WindowsGameScreen 1`
    - `.\tools\set_thor_logging.ps1 -Mode ReducedLoop`
-   - `.\tools\set_thor_logging.ps1 -Mode ReducedLoopEmit`
    - `.\tools\set_thor_logging.ps1 -Mode DmaProfile`
    - `.\tools\set_thor_logging.ps1 -Mode DmaVerify`
    - `.\tools\set_thor_logging.ps1 -Mode SpursProbe`
 4. Prefer verify/profile mode before fast mode.
 5. Keep experimental compiler/cache paths separate so normal SPU cache is not poisoned.
 6. Build/push native core through `tools/build_push_thor_core.ps1`.
+
+Android reduced-loop emission is retired after fresh-cache U2 and U4 routes
+reproduced the same guest fault. Do not manually set the emit property.
+`ReducedLoop` is detector-only; a complete current-upstream analyzer/emitter
+port and host verification are prerequisites before any new Android fast mode.
 
 For the current Windows 200% lane, contract JSON in
 `spu-contracts\BLUS30161` is the handoff into codegen/HLE. Fast paths stay
