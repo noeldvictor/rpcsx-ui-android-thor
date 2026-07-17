@@ -412,6 +412,21 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	// Initialize dependencies
 	g_fxo->need<rsx::dma_manager>();
 
+#ifdef __ANDROID__
+	if (rsx::android_defer_shader_cache_preload())
+	{
+		if (g_cfg.video.shadermode == shader_mode::async_recompiler)
+		{
+			g_cfg.video.shadermode.set(shader_mode::async_with_interpreter);
+			rsx_log.notice("Android shader cache preload defer enabled; using shader interpreter fallback for pipeline misses");
+		}
+		else if (g_cfg.video.shadermode != shader_mode::async_with_interpreter)
+		{
+			rsx_log.warning("Android shader cache preload defer ignored because the configured shader mode has no asynchronous interpreter fallback");
+		}
+	}
+#endif
+
 	if (!m_instance.create("RPCS3"))
 	{
 		rsx_log.fatal("Could not find a Vulkan compatible GPU driver. Your GPU(s) may not support Vulkan, or you need to install the Vulkan runtime and drivers");

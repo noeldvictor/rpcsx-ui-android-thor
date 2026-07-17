@@ -540,3 +540,43 @@ New host artifact:
   is already installed and stopped. After a separately cool preflight, spend
   one route on `RsxCacheWorkers=1`; require time-to-title and visual proof
   under the same two-second 75 C guard before changing the default.
+
+## Host-only deferred shader preload candidate
+
+- Candidate: `debug.rpcsx.thor.rsx_cache_preload=preload|defer`, exposed as
+  `RsxCachePreload` / `AndroidRsxCachePreload`. The default is `preload` and
+  the route resets it before launch and after success or failure.
+- Correctness design: a raw preload skip was rejected because the current
+  `Async Shader Recompiler` returns no Vulkan pipeline while an asynchronous
+  miss compiles, which would create missing draws/flicker. Under `defer`, the
+  Vulkan constructor changes only that mode to `Async with Shader Interpreter`
+  before allocating renderer resources. The disk-cache loader returns early
+  only when that interpreter fallback is active. Existing cache files remain
+  intact, and newly encountered pipelines continue through the normal store
+  path.
+- Host verification: ARM64 RelWithDebInfo passed in `86.0 s`; ThorTest assemble
+  passed in `21.2 s`. `test_thor_rsx_cache_preload.ps1`,
+  `test_thor_thermal_guard.ps1`, PowerShell AST parsing, `git diff --check`,
+  exact arm64 APK, optimized ThorTest hooks, single-open loader, core export
+  surface, and APK v2-signature checks all pass. Export proof remains `34`
+  defined dynamic symbols, `583` explicit relocations, `391` jump slots, and
+  `44,219` encoded relocation bytes.
+- Exact undeployed artifacts: ThorTest APK
+  `658F826DFC5494B50E23E3A0BC2AFF1EDF983C63FE053164CB485603AB69333C`,
+  `73,561,058` bytes; merged core
+  `9D9C70E087F994D14272E6C95A48115158A88CF58951E0D286815A9E69CA847F`,
+  `1,305,304,520` bytes; stripped core
+  `13672E01A50CA5310B0BCBF1AA81B14DA09E839F1DDC00560D7878E514DD84BD`,
+  `62,823,224` bytes.
+- Device result: none. No install, push, ADB query, or launch occurred in this
+  host-only follow-up. The prior package remains stopped; this candidate gets
+  zero startup, FPS, flicker, field, menu, battle, thermal, or stability credit.
+- Rollback: the property default/reset value `preload` preserves prior behavior.
+  No cache, game, save, firmware, or driver content is deleted or changed.
+- Next: after a separately cool no-launch install and a return to preflight
+  thresholds, spend one guarded route on `RsxCachePreload=defer` with
+  `RsxCacheWorkers=0`. Require both defer/fallback log notices, absence of the
+  concentrated full-cache preload phase, time-to-title, and flicker-free
+  title/Load visuals under the same two-second 75 C guard. Field, Options/menu,
+  and first-battle proof remain required before promotion. Keep one-worker
+  normal preload parked as the fallback comparison, not the default.

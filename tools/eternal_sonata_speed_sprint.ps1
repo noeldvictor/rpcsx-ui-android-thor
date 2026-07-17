@@ -97,6 +97,8 @@ param(
     [double]$AndroidMaxSiliconTemperatureC = 80.0,
     [ValidateRange(0, 16)]
     [int]$AndroidRsxCacheWorkers = 0,
+    [ValidateSet("preload", "defer")]
+    [string]$AndroidRsxCachePreload = "preload",
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
     [int]$ScreenshotMaxCount = 6,
@@ -672,6 +674,7 @@ function Invoke-AndroidRouteScene {
         MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
         RsxCacheWorkers = $AndroidRsxCacheWorkers
+        RsxCachePreload = $AndroidRsxCachePreload
     }
 
     if (-not [string]::IsNullOrWhiteSpace($AndroidSerial)) {

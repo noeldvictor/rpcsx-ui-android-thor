@@ -157,6 +157,20 @@ if ($rsxWorkerResetCount -ne 3) {
 if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_workers \$RsxCacheWorkers') {
     throw "The input route does not set the requested RSX cache worker override before launch."
 }
+
+if ($inputMacroSource -notmatch '\[ValidateSet\("preload",\s*"defer"\)\]\s*\[string\]\$RsxCachePreload\s*=\s*"preload"') {
+    throw "The input route does not default the deferred shader-cache experiment to stock preload."
+}
+$rsxPreloadResetCount = [regex]::Matches(
+    $inputMacroSource,
+    [regex]::Escape('setprop debug.rpcsx.thor.rsx_cache_preload preload')
+).Count
+if ($rsxPreloadResetCount -ne 3) {
+    throw "The input route must reset shader-cache preload before launch and after success or failure; found $rsxPreloadResetCount resets."
+}
+if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_preload \$RsxCachePreload') {
+    throw "The input route does not set the requested shader-cache preload mode before launch."
+}
 if ($inputMacroSource -notmatch '\$slice\s*=\s*\[Math\]::Min\(\$remaining,\s*\$ThermalPollIntervalSeconds\s*\*\s*1000\)') {
     throw "Long input-route waits do not use the bounded thermal polling interval."
 }
@@ -191,6 +205,11 @@ if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPollSeconds\s*=\s*2') {
 if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$AndroidRsxCacheWorkers\s*=\s*0' -or
     $speedSprintSource -notmatch 'RsxCacheWorkers\s*=\s*\$AndroidRsxCacheWorkers') {
     throw "The Android speed-sprint wrapper does not expose and forward the bounded RSX cache worker override."
+}
+
+if ($speedSprintSource -notmatch '\[ValidateSet\("preload",\s*"defer"\)\]\s*\[string\]\$AndroidRsxCachePreload\s*=\s*"preload"' -or
+    $speedSprintSource -notmatch 'RsxCachePreload\s*=\s*\$AndroidRsxCachePreload') {
+    throw "The Android speed-sprint wrapper does not expose and forward stock-default preload/defer control."
 }
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."
