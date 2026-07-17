@@ -419,3 +419,62 @@ New host artifact:
 - Next: do not spend another launch in this thermal round. After a separately
   cool preflight, install this exact APK without launch and allow only one
   state-gated proof with the existing two-second `75 C` stop guard.
+
+## Packaged-core isolated loader proof
+
+### 2026-07-17 - packaged-core-isolated-loader-field-proof
+
+- Status: failed
+- Scope: windows-android-ab
+- Hypothesis: limiting the Android core export/relocation surface and loading
+  only the packaged core would reduce cold-start work enough to reach the title
+  gate under the existing 75 C silicon guard.
+- Changed files/settings: installed exact ThorTest APK
+  `876480EED0BE5616F743F117B316D5122A7945B8A13F4CCFE5C605DB1CB891CE`
+  without launch. Its generated BuildConfig has `DEBUG=false`,
+  `THOR_DEBUG_TOOLS=true`, and `THOR_DEV_CORE_OVERRIDE=false`; MainActivity
+  therefore selects the bundled `EC682ADA...5CDB` core. The reset tool now
+  checks internal and staged marker removal separately so a non-debuggable
+  `run-as` denial cannot be masked by later successful cleanup. A follow-up
+  host APK additionally gates the debug provider itself.
+- Rollback: install the preceding APK or revert `THOR_DEV_CORE_OVERRIDE` and
+  the split reset assertions. The route changed no game, save, firmware,
+  driver, or cache data.
+- Windows result: the final provider-gated ThorTest build passed the optimized
+  variant, single-open, export-surface, ARM64 APK, PowerShell AST, signature,
+  and diff checks. Exact host-only APK
+  `60DE891CC0D6D88E9672B5A5D83E04453A5700B3570445BD4533AED6429B0AE7`
+  is `73,563,098` bytes and still packages merged core
+  `EC682ADAA3EB28CBA38CEF3AA80462BE0F5886D897517EAAB18A42A5BEA55CDB`
+  plus stripped core
+  `11A76D5B2EEDCF411020DAADD5F6C084799BA8B0DDDAC386895BB4FEE9D53F3D`.
+  It has not been installed.
+- Thor result: the exact installed APK started after three cool preflight
+  samples of `24/30/33.9,33.5,33.9 C`. Silicon was `63.4 C` at the first
+  readiness screenshot, then `73.9`, `74.3`, `73.5`, and `75.1 C`; the guard
+  force-stopped the package and the immediate post-stop sample was `53.8 C`.
+  A later read-only check was `24/30/42.5 C` with `pidof` empty.
+- Visual correctness: the sole visual class remained pre-title progress, with
+  title false, compilation false, black false, and progress white `80.456%`.
+  Against the preceding route the frame was essentially identical
+  (`SSIM 0.999533`, average `PSNR 45.28 dB`). No title, Load, field, Options,
+  battle, or flicker checkpoint was reached.
+- FPS/frame-time: none. Process-established-to-guard time increased from about
+  `6.807 s` to `12.266 s` (`+5.459 s`, about `+80.2%`), but the first-poll
+  preflight-adjusted rise worsened from `27.9 C` to `29.5 C`. This supports
+  only lower later thermal pressure, not faster startup or gameplay.
+- Capture paths:
+  `debug-captures/20260717-063455-packaged-core-isolated-thortest-apk-install`
+  and
+  `debug-captures/android-speed-sprint/20260717-063613-thor-input-packaged-core-isolated-loader-field-proof`.
+- Decision: `failed-thermal-guard` / `not-comparable`. Preserve the loader
+  metadata and packaged-core isolation work, but claim no speed, FPS, flicker,
+  field, menu, battle, or stability win. The pulled log identifies the next
+  dominant startup lane: `Shader cache preload workers: 2` followed by `289`
+  captured `Add program` rows before stop.
+- Next: no second launch in this thermal round. The guarded route now exposes
+  an opt-in `RsxCacheWorkers` override, resets it before and after every run,
+  and leaves the default at `0`/auto. After a separately cool preflight,
+  install exact final APK `60DE...0AE7` without launch and spend one route on
+  `RsxCacheWorkers=1`, measuring time-to-title and thermals under the same
+  two-second 75 C guard.

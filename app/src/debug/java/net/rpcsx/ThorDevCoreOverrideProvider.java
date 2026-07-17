@@ -25,6 +25,10 @@ public final class ThorDevCoreOverrideProvider extends ContentProvider {
 
     @Override
     public boolean onCreate() {
+        if (!BuildConfig.THOR_DEV_CORE_OVERRIDE) {
+            return true;
+        }
+
         Context context = getContext();
         if (context == null) {
             return true;

@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var unregisterUsbEventListener: () -> Unit
 
     private fun findThorDevCoreOverride(): File? {
-        if (!BuildConfig.THOR_DEBUG_TOOLS) {
+        if (!BuildConfig.THOR_DEV_CORE_OVERRIDE) {
             return null
         }
 

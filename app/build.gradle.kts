@@ -69,6 +69,7 @@ android {
         buildConfigField("String", "Version", "\"v${versionName}\"")
         buildConfigField("Boolean", "FORK_BUILD", "true")
         buildConfigField("Boolean", "THOR_DEBUG_TOOLS", "false")
+        buildConfigField("Boolean", "THOR_DEV_CORE_OVERRIDE", "false")
     }
 
     signingConfigs {
@@ -89,6 +90,7 @@ android {
     buildTypes {
         debug {
             buildConfigField("Boolean", "THOR_DEBUG_TOOLS", "true")
+            buildConfigField("Boolean", "THOR_DEV_CORE_OVERRIDE", "true")
         }
 
         release {

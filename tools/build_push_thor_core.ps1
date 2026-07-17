@@ -227,8 +227,10 @@ if ((Test-DevCoreDebugTask $GradleTask) -and -not $AllowDebugFallback) {
 
 if ($ResetToBundled) {
     Write-DevCoreLog "# Reset Thor dev core override"
-    Assert-DevCoreCommand "remove active dev-core markers" {
+    Assert-DevCoreCommand "remove internal active dev-core markers" {
         Invoke-DevCoreRunAs "rm -f $internalRelativeDir/active-core.path $internalRelativeDir/active-core.json $internalRelativeDir/$CoreName"
+    }
+    Assert-DevCoreCommand "remove staged active dev-core markers" {
         & $Adb @AdbTargetArgs shell "rm -f '$StagingDir/active-core.path' '$StagingDir/active-core.json'"
     }
     if (-not $NoLaunch) {

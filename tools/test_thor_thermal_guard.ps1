@@ -144,6 +144,19 @@ if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*5\.
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPollIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to two-second runtime thermal polling."
 }
+if ($inputMacroSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$RsxCacheWorkers\s*=\s*0') {
+    throw "The input route does not expose a bounded, opt-in RSX cache worker override."
+}
+$rsxWorkerResetCount = [regex]::Matches(
+    $inputMacroSource,
+    [regex]::Escape('setprop debug.rpcsx.thor.rsx_cache_workers 0')
+).Count
+if ($rsxWorkerResetCount -ne 3) {
+    throw "The input route must reset the RSX cache worker override before launch and after success or failure; found $rsxWorkerResetCount resets."
+}
+if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_workers \$RsxCacheWorkers') {
+    throw "The input route does not set the requested RSX cache worker override before launch."
+}
 if ($inputMacroSource -notmatch '\$slice\s*=\s*\[Math\]::Min\(\$remaining,\s*\$ThermalPollIntervalSeconds\s*\*\s*1000\)') {
     throw "Long input-route waits do not use the bounded thermal polling interval."
 }
@@ -174,6 +187,10 @@ if ($speedSprintSource -notmatch '\[ValidateRange\(1,\s*5\)\]\s*\[int\]\$Android
 }
 if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPollSeconds\s*=\s*2') {
     throw "The Android speed-sprint wrapper does not default to two-second runtime thermal polling."
+}
+if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$AndroidRsxCacheWorkers\s*=\s*0' -or
+    $speedSprintSource -notmatch 'RsxCacheWorkers\s*=\s*\$AndroidRsxCacheWorkers') {
+    throw "The Android speed-sprint wrapper does not expose and forward the bounded RSX cache worker override."
 }
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."
