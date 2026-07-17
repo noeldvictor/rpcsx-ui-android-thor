@@ -93,3 +93,39 @@ until a cooled device can run one no-repeat, thermally guarded matched scene.
 The first proof should compare the known generic core with this exact candidate
 under the same saved field route, then stop. A silicon temperature above the
 configured limit must prevent launch and force-stop an already-running guest.
+
+## First guarded device attempt
+
+The exact candidate was pushed without rebuilding or launching:
+
+- push evidence:
+  `debug-captures/20260717-031834-armv82-aot-744cb3f2-dev-core-push`;
+- active SHA-256:
+  `744CB3F2BE77F0DFCA255FE27EA5D7AF6E200E6BFC22D912F67CCCE6563CE839`;
+- package remained stopped after deployment.
+
+A stopped-device cool-soak at
+`debug-captures/android-speed-sprint/20260717-031655-thor-input-custom`
+recorded battery `25.0 C`, skin `30.0 C`, and hottest silicon
+`33.1/33.3/34.7 C`, so one guarded field attempt was allowed. A second ADB
+target initially exposed an unpinned-wrapper bug before launch; the actual
+attempt was then explicitly pinned to Thor serial `c3ca0370`.
+
+The route
+`debug-captures/android-speed-sprint/20260717-032039-thor-input-eternal-sonata-field-route`
+started at silicon `34.1/33.9/33.9 C`. The legacy field profile entered a blind
+`wait:90000`; the first five-second runtime poll found hottest silicon at
+`77.1 C`, above the tightened `75 C` ceiling. The guard force-stopped RPCSX
+before any route input, screenshot, or FPS sample. The post-stop snapshot one
+second later was `51.8 C`.
+
+Classification: `failed-thermal-guard` / `not-comparable`. This provides no FPS,
+flicker, field, menu, battle, or stability credit for the ARMv8.2 candidate.
+There was no second launch in this thermal round.
+
+Host-side follow-up removes the `90/100 s` blind waits from the field,
+field-direct, and menu profiles, reuses the stable title/Load/field visual
+gates, pins the selected Android serial across nested ADB helpers, and changes
+route runtime polling from a hard-coded five seconds to a two-second default.
+The next separately cooled round may run one state-gated field attempt; it must
+still abort rather than exceed the configured silicon ceiling.

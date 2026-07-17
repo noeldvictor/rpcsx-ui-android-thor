@@ -141,6 +141,12 @@ if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightIntervalSeconds\s*=\s*
 if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*5\.0') {
     throw "The input route does not reserve five degrees of launch headroom."
 }
+if ($inputMacroSource -notmatch '\[int\]\$ThermalPollIntervalSeconds\s*=\s*2') {
+    throw "The input route does not default to two-second runtime thermal polling."
+}
+if ($inputMacroSource -notmatch '\$slice\s*=\s*\[Math\]::Min\(\$remaining,\s*\$ThermalPollIntervalSeconds\s*\*\s*1000\)') {
+    throw "Long input-route waits do not use the bounded thermal polling interval."
+}
 if ($inputMacroSource -notmatch 'function\s+Assert-ThorThermalPreflight[\s\S]*?\$preflightSiliconLimitC\s*=\s*\[Math\]::Max\([^\r\n]+\$MaxSiliconTemperatureC\s*-\s*\$ThermalPreflightHeadroomC\)[\s\S]*?for\s*\(\$sample\s*=\s*1;[\s\S]*?Assert-ThorThermalBudget[\s\S]*?-SiliconLimitC\s+\$preflightSiliconLimitC[\s\S]*?Start-Sleep\s+-Seconds\s+\$ThermalPreflightIntervalSeconds') {
     throw "The input route thermal preflight does not require repeated headroom-bounded samples."
 }
@@ -159,8 +165,15 @@ if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPreflightSamples\s*=\s*
 }
 if ($speedSprintSource -notmatch 'ThermalPreflightSamples\s*=\s*\$AndroidThermalPreflightSamples' -or
     $speedSprintSource -notmatch 'ThermalPreflightIntervalSeconds\s*=\s*\$AndroidThermalPreflightIntervalSeconds' -or
-    $speedSprintSource -notmatch 'ThermalPreflightHeadroomC\s*=\s*\$AndroidThermalPreflightHeadroomC') {
+    $speedSprintSource -notmatch 'ThermalPreflightHeadroomC\s*=\s*\$AndroidThermalPreflightHeadroomC' -or
+    $speedSprintSource -notmatch 'ThermalPollIntervalSeconds\s*=\s*\$AndroidThermalPollSeconds') {
     throw "The Android speed-sprint wrapper does not forward the cool-soak contract."
+}
+if ($speedSprintSource -notmatch '\[ValidateRange\(1,\s*5\)\]\s*\[int\]\$AndroidThermalPollSeconds') {
+    throw "The Android speed-sprint wrapper allows an unsafe runtime thermal polling interval."
+}
+if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPollSeconds\s*=\s*2') {
+    throw "The Android speed-sprint wrapper does not default to two-second runtime thermal polling."
 }
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."

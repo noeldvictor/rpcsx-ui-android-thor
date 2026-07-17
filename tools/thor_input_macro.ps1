@@ -15,6 +15,8 @@ param(
     [int]$ThermalPreflightIntervalSeconds = 2,
     [ValidateRange(0, 20)]
     [double]$ThermalPreflightHeadroomC = 5.0,
+    [ValidateRange(1, 5)]
+    [int]$ThermalPollIntervalSeconds = 2,
     [double]$MaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
     [double]$MaxSkinTemperatureC = 45.0,
@@ -212,13 +214,13 @@ function Get-ThorMacroForProfile {
             return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
-            return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;shot:field;stick:left:left:1000;wait:1000;shot:field-move;check:guest:field-move;start;wait:1000;shot:pause-menu;check:guest:pause-menu"
         }
         "eternal-sonata-field-route" {
-            return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;threads:field-route"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;shot:field;stick:left:left:1000;wait:1000;shot:field-move;check:guest:field-move;threads:field-route"
         }
         "eternal-sonata-menu-route" {
-            return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;start;wait:1000;shot:pause-menu;threads:menu-route"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;shot:field;start;wait:1000;shot:pause-menu;check:guest:pause-menu;threads:menu-route"
         }
         "custom" {
             return $Macro
@@ -603,7 +605,7 @@ function Wait-ThorThermallyBounded {
 
     $remaining = $Milliseconds
     while ($remaining -gt 0) {
-        $slice = [Math]::Min($remaining, 5000)
+        $slice = [Math]::Min($remaining, $ThermalPollIntervalSeconds * 1000)
         Start-Sleep -Milliseconds $slice
         $remaining -= $slice
         Assert-ThorProcessIdentity "wait-$Milliseconds-ms"
@@ -713,6 +715,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Thermal preflight samples: $ThermalPreflightSamples",
     "- Thermal preflight interval seconds: $ThermalPreflightIntervalSeconds",
     "- Thermal preflight headroom C: $ThermalPreflightHeadroomC",
+    "- Thermal poll interval seconds: $ThermalPollIntervalSeconds",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Max skin temperature C: $MaxSkinTemperatureC",
     "- Max silicon temperature C: $MaxSiliconTemperatureC",

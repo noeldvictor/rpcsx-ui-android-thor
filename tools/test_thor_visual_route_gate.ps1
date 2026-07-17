@@ -107,6 +107,37 @@ if (-not [string]::IsNullOrWhiteSpace($CaptureRoot)) {
 }
 
 $inputMacroSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_input_macro.ps1") -Raw
+foreach ($profileName in @(
+    "eternal-sonata-load-field-route",
+    "eternal-sonata-battle-intro-route",
+    "eternal-sonata-field-direct",
+    "eternal-sonata-field-route",
+    "eternal-sonata-menu-route"
+)) {
+    $profilePattern = '"' + [regex]::Escape($profileName) + '"\s*\{[\s\S]*?return\s+"([^"]+)"'
+    $profileMatch = [regex]::Match($inputMacroSource, $profilePattern)
+    if (-not $profileMatch.Success) {
+        throw "The Eternal Sonata profile '$profileName' could not be isolated."
+    }
+
+    $profileMacro = $profileMatch.Groups[1].Value
+    foreach ($requiredGate in @(
+        "gate:ppu-ready:150000",
+        "gate:visual:load-menu:30000",
+        "gate:visual:load-complete:50000",
+        "gate:visual:field-frame:25000"
+    )) {
+        if (-not $profileMacro.Contains($requiredGate)) {
+            throw "Profile '$profileName' is missing state gate '$requiredGate'."
+        }
+    }
+    foreach ($obsoleteWait in @("wait:90000", "wait:100000")) {
+        if ($profileMacro.Contains($obsoleteWait)) {
+            throw "Profile '$profileName' still contains blind hot dwell '$obsoleteWait'."
+        }
+    }
+}
+
 $battleStart = $inputMacroSource.IndexOf('"eternal-sonata-battle-intro-route" {')
 $battleEnd = $inputMacroSource.IndexOf('"eternal-sonata-field-direct" {', $battleStart)
 if ($battleStart -lt 0 -or $battleEnd -le $battleStart) {
@@ -134,4 +165,21 @@ foreach ($obsoleteWait in @(
 if ($inputMacroSource -notmatch '\$visualStableCount\s+-ge\s+2') {
     throw "Visual-state gates do not require two consecutive matching frames."
 }
+
+$speedSprintSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1") -Raw
+if ($speedSprintSource -notmatch '\[string\]\$AndroidSerial\s*=\s*""') {
+    throw "The Android speed-sprint wrapper does not expose an explicit device serial."
+}
+if ($speedSprintSource -notmatch 'function\s+Resolve-SpeedAndroidSerial[\s\S]*?Multiple Android devices are online:[\s\S]*?Pass -AndroidSerial') {
+    throw "The Android speed-sprint wrapper does not fail clearly on ambiguous ADB targets."
+}
+if ($speedSprintSource -notmatch '\$macroParams\.Serial\s*=\s*\$AndroidSerial') {
+    throw "The Android speed-sprint wrapper does not explicitly forward the requested serial to the input route."
+}
+$targetInitIndex = $speedSprintSource.IndexOf('$AndroidSerial = Resolve-SpeedAndroidSerial -RequestedSerial $AndroidSerial')
+$actionSwitchIndex = $speedSprintSource.LastIndexOf('switch ($Action)')
+if ($targetInitIndex -lt 0 -or $actionSwitchIndex -le $targetInitIndex -or $speedSprintSource -notmatch '\$env:ANDROID_SERIAL\s*=\s*\$AndroidSerial') {
+    throw "The Android speed-sprint wrapper does not pin nested ADB helpers before action dispatch."
+}
+
 Write-Output "Thor visual route gate tests passed."

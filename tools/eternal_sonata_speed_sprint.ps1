@@ -4,6 +4,7 @@ param(
     [ValidateSet("field", "battle", "menu")]
     [string]$Scene = "field",
     [string]$Package = "net.rpcsx.easy",
+    [string]$AndroidSerial = "",
     [string]$Label = "",
     [string]$BootTarget = "",
     [string]$InputMacro = "",
@@ -80,8 +81,8 @@ param(
     [int]$MaxSeconds = 120,
     [ValidateRange(1, 30)]
     [int]$AndroidSceneSeconds = 20,
-    [ValidateRange(1, 10)]
-    [int]$AndroidThermalPollSeconds = 5,
+    [ValidateRange(1, 5)]
+    [int]$AndroidThermalPollSeconds = 2,
     [ValidateRange(1, 5)]
     [int]$AndroidThermalPreflightSamples = 3,
     [ValidateRange(1, 10)]
@@ -142,7 +143,45 @@ $Adb = "C:\Users\leanerdesigner\AppData\Local\Android\Sdk\platform-tools\adb.exe
 if ($env:ANDROID_HOME -and (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"))) {
     $Adb = Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"
 }
+
 . "$PSScriptRoot\thor_debug_common.ps1"
+
+function Resolve-SpeedAndroidSerial {
+    param([string]$RequestedSerial)
+
+    if ([string]::IsNullOrWhiteSpace($RequestedSerial)) {
+        $RequestedSerial = $env:ANDROID_SERIAL
+    }
+
+    $deviceRows = @(& $Adb devices 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb devices failed: $($deviceRows -join ' ')"
+    }
+
+    $onlineSerials = @(
+        $deviceRows |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object { $_ -match '^(\S+)\s+device$' } |
+            ForEach-Object { $Matches[1] }
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedSerial)) {
+        $RequestedSerial = $RequestedSerial.Trim()
+        if ($RequestedSerial -notin $onlineSerials) {
+            throw "Requested Android device '$RequestedSerial' is not online. Online devices: $($onlineSerials -join ', ')"
+        }
+        return $RequestedSerial
+    }
+
+    if ($onlineSerials.Count -eq 1) {
+        return $onlineSerials[0]
+    }
+    if ($onlineSerials.Count -eq 0) {
+        throw "No online Android device found."
+    }
+
+    throw "Multiple Android devices are online: $($onlineSerials -join ', '). Pass -AndroidSerial to select the AYN Thor explicitly."
+}
 
 function New-SpeedSafeLabel {
     param([string]$Value)
@@ -489,6 +528,7 @@ function Invoke-DeviceSnapshot {
         "- Scene: $Scene",
         "- Driver: $Driver",
         "- Core: $Core",
+        "- Device serial: $(if ([string]::IsNullOrWhiteSpace($AndroidSerial)) { 'ANDROID_SERIAL/default' } else { $AndroidSerial })",
         "- Capture dir: $captureDir",
         "",
         "Use this snapshot with the field/battle/menu baseline so GPU driver, memory, thermal, and device identity are not guessed."
@@ -518,6 +558,7 @@ function Invoke-AndroidSceneCapture {
         "- Driver: $Driver",
         "- Core: $Core",
         "- Package: $Package",
+        "- Device serial: $(if ([string]::IsNullOrWhiteSpace($AndroidSerial)) { 'ANDROID_SERIAL/default' } else { $AndroidSerial })",
         "- Duration seconds: $AndroidSceneSeconds",
         "- Thermal poll seconds: $AndroidThermalPollSeconds",
         "- Max battery temperature C: $AndroidMaxBatteryTemperatureC",
@@ -621,12 +662,17 @@ function Invoke-AndroidRouteScene {
         BootGame = $true
         ForceStop = $true
         PostSnapshot = $true
+        ThermalPollIntervalSeconds = $AndroidThermalPollSeconds
         ThermalPreflightSamples = $AndroidThermalPreflightSamples
         ThermalPreflightIntervalSeconds = $AndroidThermalPreflightIntervalSeconds
         ThermalPreflightHeadroomC = $AndroidThermalPreflightHeadroomC
         MaxBatteryTemperatureC = $AndroidMaxBatteryTemperatureC
         MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AndroidSerial)) {
+        $macroParams.Serial = $AndroidSerial
     }
 
     if (-not [string]::IsNullOrWhiteSpace($InputMacro)) {
@@ -644,6 +690,18 @@ function Invoke-AndroidRouteScene {
     }
 
     Invoke-AndroidSceneCapture
+}
+
+if ($Action -in @(
+    "DeviceSnapshot",
+    "AndroidStart",
+    "AndroidCapture",
+    "AndroidStop",
+    "AndroidScene",
+    "AndroidRouteScene"
+)) {
+    $AndroidSerial = Resolve-SpeedAndroidSerial -RequestedSerial $AndroidSerial
+    $env:ANDROID_SERIAL = $AndroidSerial
 }
 
 $safeLabel = Get-SpeedLabel
