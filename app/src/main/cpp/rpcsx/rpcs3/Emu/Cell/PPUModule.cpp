@@ -33,6 +33,15 @@
 
 LOG_CHANNEL(ppu_loader);
 
+static bool ppu_loader_verbose_success_enabled() noexcept
+{
+#ifdef __ANDROID__
+	return g_cfg.core.ppu_debug.get();
+#else
+	return true;
+#endif
+}
+
 extern std::string ppu_get_function_name(const std::string& _module, u32 fnid);
 extern std::string ppu_get_variable_name(const std::string& _module, u32 vnid);
 extern void ppu_register_range(u32 addr, u32 size);
@@ -759,13 +768,16 @@ static auto ppu_load_exports(const ppu_module<lv2_obj>& _module, ppu_linkage_inf
 					funcs->emplace_back(addr);
 				}
 
-				if (i < lib.num_func)
+				if (ppu_loader_verbose_success_enabled())
 				{
-					ppu_loader.notice("** Special: [%s] at 0x%x [0x%x, 0x%x]", ppu_get_function_name({}, nid), addr, _module.get_ref<u32>(addr), _module.get_ref<u32>(addr + 4));
-				}
-				else
-				{
-					ppu_loader.notice("** Special: &[%s] at 0x%x", ppu_get_variable_name({}, nid), addr);
+					if (i < lib.num_func)
+					{
+						ppu_loader.notice("** Special: [%s] at 0x%x [0x%x, 0x%x]", ppu_get_function_name({}, nid), addr, _module.get_ref<u32>(addr), _module.get_ref<u32>(addr + 4));
+					}
+					else
+					{
+						ppu_loader.notice("** Special: &[%s] at 0x%x", ppu_get_variable_name({}, nid), addr);
+					}
 				}
 
 				result.emplace(nid, addr);
@@ -1333,7 +1345,10 @@ static void ppu_check_patch_spu_images(const ppu_module<lv2_obj>& mod, const ppu
 						end = begin + std::min<u32>(end - begin, SPU_LS_SIZE - guessed_ls_addr);
 					}
 
-					ppu_log.success("Found valid roaming SPU code at 0x%x..0x%x (guessed_ls_addr=0x%x, GUID=0x%05x..0x%05x)", seg.addr + begin, seg.addr + end, guessed_ls_addr, guid_start, guid_end);
+					if (ppu_loader_verbose_success_enabled())
+					{
+						ppu_log.success("Found valid roaming SPU code at 0x%x..0x%x (guessed_ls_addr=0x%x, GUID=0x%05x..0x%05x)", seg.addr + begin, seg.addr + end, guessed_ls_addr, guid_start, guid_end);
+					}
 
 					if (!is_firmware && _main == &mod)
 					{
@@ -1594,7 +1609,10 @@ shared_ptr<lv2_prx> ppu_load_prx(const ppu_prx_object& elf, bool virtual_load, c
 
 	for (const auto& prog : elf.progs)
 	{
-		ppu_loader.notice("** Segment: p_type=0x%x, p_vaddr=0x%llx, p_filesz=0x%llx, p_memsz=0x%llx, flags=0x%x", prog.p_type, prog.p_vaddr, prog.p_filesz, prog.p_memsz, prog.p_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Segment: p_type=0x%x, p_vaddr=0x%llx, p_filesz=0x%llx, p_memsz=0x%llx, flags=0x%x", prog.p_type, prog.p_vaddr, prog.p_filesz, prog.p_memsz, prog.p_flags);
+		}
 
 		// Hash big-endian values
 		sha1_update(&sha, reinterpret_cast<const uchar*>(&prog.p_type), sizeof(prog.p_type));
@@ -1653,7 +1671,10 @@ shared_ptr<lv2_prx> ppu_load_prx(const ppu_prx_object& elf, bool virtual_load, c
 				// Copy segment data
 				if (!ar)
 					std::memcpy(ensure(prx->get_ptr<void>(addr)), prog.bin.data(), file_size);
-				ppu_loader.warning("**** Loaded to 0x%x...0x%x (size=0x%x)", addr, addr + mem_size - 1, mem_size);
+				if (ppu_loader_verbose_success_enabled())
+				{
+					ppu_loader.warning("**** Loaded to 0x%x...0x%x (size=0x%x)", addr, addr + mem_size - 1, mem_size);
+				}
 
 				// Hash segment
 				sha1_update(&sha, reinterpret_cast<const uchar*>(&prog.p_vaddr), sizeof(prog.p_vaddr));
@@ -1678,7 +1699,10 @@ shared_ptr<lv2_prx> ppu_load_prx(const ppu_prx_object& elf, bool virtual_load, c
 
 	for (const auto& s : elf.shdrs)
 	{
-		ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		}
 
 		if (s.sh_type != sec_type::sht_progbits)
 			continue;
@@ -2179,7 +2203,10 @@ bool ppu_load_exec(const ppu_exec_object& elf, bool virtual_load, const std::str
 	// Allocate memory at fixed positions
 	for (const auto& prog : elf.progs)
 	{
-		ppu_loader.notice("** Segment: p_type=0x%x, p_vaddr=0x%llx, p_filesz=0x%llx, p_memsz=0x%llx, flags=0x%x", prog.p_type, prog.p_vaddr, prog.p_filesz, prog.p_memsz, prog.p_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Segment: p_type=0x%x, p_vaddr=0x%llx, p_filesz=0x%llx, p_memsz=0x%llx, flags=0x%x", prog.p_type, prog.p_vaddr, prog.p_filesz, prog.p_memsz, prog.p_flags);
+		}
 
 		ppu_segment _seg;
 		const u32 addr = _seg.addr = vm::cast(prog.p_vaddr);
@@ -2276,7 +2303,10 @@ bool ppu_load_exec(const ppu_exec_object& elf, bool virtual_load, const std::str
 	// Load section list, used by the analyser
 	for (const auto& s : elf.shdrs)
 	{
-		ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		}
 
 		if (s.sh_type != sec_type::sht_progbits)
 			continue;
@@ -2915,7 +2945,10 @@ std::pair<shared_ptr<lv2_overlay>, CellError> ppu_load_overlay(const ppu_exec_ob
 	// Allocate memory at fixed positions
 	for (const auto& prog : elf.progs)
 	{
-		ppu_loader.notice("** Segment: p_type=0x%x, p_vaddr=0x%llx, p_filesz=0x%llx, p_memsz=0x%llx, flags=0x%x", prog.p_type, prog.p_vaddr, prog.p_filesz, prog.p_memsz, prog.p_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Segment: p_type=0x%x, p_vaddr=0x%llx, p_filesz=0x%llx, p_memsz=0x%llx, flags=0x%x", prog.p_type, prog.p_vaddr, prog.p_filesz, prog.p_memsz, prog.p_flags);
+		}
 
 		ppu_segment _seg;
 		const u32 addr = _seg.addr = vm::cast(prog.p_vaddr);
@@ -2992,7 +3025,10 @@ std::pair<shared_ptr<lv2_overlay>, CellError> ppu_load_overlay(const ppu_exec_ob
 	// Load section list, used by the analyser
 	for (const auto& s : elf.shdrs)
 	{
-		ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		}
 
 		if (s.sh_type != sec_type::sht_progbits)
 			continue;
@@ -3272,7 +3308,10 @@ bool ppu_load_rel_exec(const ppu_rel_object& elf)
 	{
 		const auto& s = *ptr;
 
-		ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		if (ppu_loader_verbose_success_enabled())
+		{
+			ppu_loader.notice("** Section: sh_type=0x%x, addr=0x%llx, size=0x%llx, flags=0x%x", std::bit_cast<u32>(s.sh_type), s.sh_addr, s.sh_size, s._sh_flags);
+		}
 
 		if (s.sh_type == sec_type::sht_progbits && s.sh_size && s.sh_flags().all_of(sh_flag::shf_alloc))
 		{

@@ -680,3 +680,63 @@ The diagnostic-pruned APK is `host-verified`, `device-unmeasured`, and was
 not installed or launched. A later separately cool round may perform only its
 strict no-launch install; any guarded runtime proof belongs to a different
 independently cool round.
+
+## Android PPU verbose-success logging successor
+
+The deterministic refiner was run with `-MaxRuns 8 -NoWrite` so the two
+unrelated untracked refiner files remained untouched. It confirmed the clean
+current-upstream Windows field/first-battle plus Options gate is complete and
+that no CPU4 rerun is warranted. Its next runtime action is a thermally gated
+Thor proof, which is deferred because this continuation is not a separately
+cool device round. No ADB query, install, launch, or device mutation ran.
+
+Saved evidence from
+`20260717-185725-thor-input-parallel-rsx-warm-checkpoint-bounded-title-proof`
+shows `PPU Debug: false`, yet normal successful loader/discovery diagnostics
+still produced 135 unique rows / 18,521 characters including CRLF:
+
+- 35 `Found valid roaming SPU code` rows;
+- 23 ELF segment rows;
+- 31 ELF section rows;
+- 10 normal PRX `Loaded to` rows; and
+- 36 special management-export rows.
+
+Those rows represent about 12.8% of the `145,215`-byte captured startup log.
+They also perform symbol-name lookup and message formatting inside active PPU
+load/SPU-discovery loops, but they do not affect guest memory, hashing,
+segment/section processing, export registration, SPU discovery, or emitted
+code.
+
+The host successor gates exactly those ten verbose-success log sites on
+Android behind `PPU Debug`. Android `PPU Debug=false` now skips their symbol
+lookup, formatting, and log I/O while all loader/discovery work still runs.
+Desktop and Android `PPU Debug=true` retain the full diagnostics. Exported and
+imported module summaries, executable/PRX/SPU hashes, invalid-function errors,
+illegal-descriptor warnings, allocation errors, and all other loader failures
+remain visible. The strengthened PPU loader contract requires all ten gates
+and each expected message family, preventing a partial regression.
+
+Host validation:
+
+- the changed `PPUModule.cpp` ARM64 object compiles successfully;
+- optimized ARM64 native link: `BUILD SUCCESSFUL in 42s`;
+- ARM64-only ThorTest assembly: `BUILD SUCCESSFUL in 12s`;
+- PPU-loader, SPU, RSX, Vulkan-cache, optimized-variant, ARM64 APK,
+  export-surface, single-core-load, thermal, and visual-route contracts: pass;
+- PowerShell AST parsing and `git diff --check`: pass;
+- export surface remains 34 defined dynamic symbols, 583 explicit
+  relocations, 391 jump slots, and 44,219 encoded relocation bytes;
+- merged core: `1,305,555,520` bytes, SHA-256
+  `47791529B906E96FCBEDE80F5075CD1B196F2D743CD7F456E861FA5C050D4BE6`;
+- stripped core: `62,843,048` bytes, SHA-256
+  `49A2AD0EF8882210CA38C7558AA4B2AB22873941A1957BD6281680D4EB0AD66E`;
+  and
+- ARM64-only ThorTest APK: `73,572,978` bytes, SHA-256
+  `3798B97506BF5C2DCD6B1EE5DFF137EF3BCE993C86D3756A409AFAB219315AA1`.
+
+This exact APK supersedes the host-only `D6204DA2...2747` candidate before
+either was installed. Classification is `host-verified logging-pressure
+candidate`, `device-unmeasured`, not a speed or stability result. A later
+separately cool round may perform only the strict no-launch install of
+`3798B975...5AA1`; one different independently cool round is required for a
+bounded guarded runtime proof.
