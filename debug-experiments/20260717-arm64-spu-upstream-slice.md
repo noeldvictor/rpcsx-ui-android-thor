@@ -126,6 +126,28 @@ is
 `app/build/intermediates/cxx/RelWithDebInfo/2t5h1l52/obj/arm64-v8a/librpcsx-android.so`,
 size `1,304,469,376` bytes, SHA-256
 `95B02FF463B0A4A36448F9422612FBD76C3DC1028CE060898A90AAA307796A0A`.
-`git diff --check` is clean. No APK was assembled, installed, or launched.
-Classification: `build-proven`, `device-unmeasured`; grant no FPS, thermal,
-flicker, title, gameplay, or stability credit yet.
+`git diff --check` is clean.
+
+## Host-only ThorTest package
+
+The exact build was packaged host-side with:
+
+`gradlew.bat :app:assembleThortest -PrpcsxAndroidAbis=arm64-v8a
+-PbuildBundledRpcsxCore=true --offline --no-daemon --console=plain`
+
+Result:
+
+- `BUILD SUCCESSFUL` in `53s`.
+- APK:
+  `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk`,
+  `73,573,554` bytes, SHA-256
+  `853098D6BDD700A1008957C6977D6863B2E87F2FE95842F4D1F0AD3CF2FCFB22`.
+- Merged core SHA-256: `95B02FF4...0A0A`.
+- Packaged stripped core SHA-256: `BE37AE118E7E87C2030A2D6EBB55A2A1EA7964360BA3CCDEF6851CE298B868E4`.
+- `tools/test_thor_arm64_apk.ps1` and
+  `tools/test_thor_optimized_apk_contract.ps1` both pass.
+
+The APK was not installed or launched. Classification: `package-proven`,
+`device-unmeasured`; grant no FPS, thermal, flicker, title, gameplay, or
+stability credit. Any install belongs to a later separately cool no-launch
+round, followed by a different cool round for the single guarded route.
