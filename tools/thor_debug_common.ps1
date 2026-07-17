@@ -993,3 +993,15 @@ function Write-ThorStandardSnapshot {
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}cache-summary.txt" @("shell", "du -k -d 3 $remoteRoot/cache 2>/dev/null | sort -n | tail -200") -AllowFailure | Out-Null
     Copy-ThorAdbFile -Adb $Adb -CaptureDir $CaptureDir -DeviceFilesDir $CaptureDir -Remote "$remoteRoot/cache/RPCSX.log" -LocalName "${namePrefix}RPCSX.log" | Out-Null
 }
+
+function Write-ThorLaunchPowerState {
+    param(
+        [string]$Adb,
+        [string]$CaptureDir,
+        [string]$Prefix = "prelaunch"
+    )
+
+    $safePrefix = New-ThorSafeLabel $Prefix
+    $powerStateCommand = 'printf "performance_mode="; settings get system performance_mode; printf "fan_mode="; settings get system fan_mode; printf "quick_performance_fan="; settings get system is_quick_set_performance_and_fan_enable; printf "low_power="; settings get global low_power; for p in /sys/devices/system/cpu/cpufreq/policy*; do n=${p##*/}; IFS= read -r g < "$p/scaling_governor" 2>/dev/null || g=unreadable; IFS= read -r hi < "$p/scaling_max_freq" 2>/dev/null || hi=unreadable; printf "%s governor=%s max=%s\n" "$n" "$g" "$hi"; done; printf "gpu_governor="; cat /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || echo unreadable; printf "gpu_max="; cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null || echo unreadable'
+    Invoke-ThorAdbText $Adb $CaptureDir "$safePrefix-power-state.txt" @("shell", $powerStateCommand) -AllowFailure | Out-Null
+}

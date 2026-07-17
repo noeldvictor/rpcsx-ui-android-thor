@@ -142,6 +142,12 @@ $debugCommonSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_deb
 if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?Copy-ThorAdbFile[\s\S]*?\$\{namePrefix\}RPCSX\.log') {
     throw "Standard Thor snapshots do not preserve the full guest RPCSX log."
 }
+if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?performance_mode[\s\S]*?fan_mode[\s\S]*?scaling_governor[\s\S]*?scaling_max_freq') {
+    throw "Thor launch evidence does not preserve the AYN performance/fan mode and CPU policy state."
+}
+if ($inputMacroSource -notmatch 'Write-ThorLaunchPowerState\s+-Adb\s+\$Adb\s+-CaptureDir\s+\$captureDir[\s\S]*?Assert-ThorThermalPreflight\s+"pre-run"') {
+    throw "The input route does not record power state before its launch thermal preflight."
+}
 if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
     throw "The input route still invokes the quoted thermal-zone command through PowerShell native argument flattening."
 }

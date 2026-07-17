@@ -1082,3 +1082,41 @@ New host artifact:
   than `1 C`. Then keep RSX `256`, SPU `64`, and the `75 C` fail-stop, but
   issue one guarded Start press after `12 s` to skip the sustained black
   startup sequence before resuming the title visual gate.
+
+### 2026-07-17 - bounded-SPU Start-skip retry thermal variance
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260717-140952-thor-input-oldest-spu-bounded-title-start-skip`.
+  A preceding wrapper attempt rejected its own `35.1 C` first preflight sample
+  and did not launch. The charged retry later passed battery/skin/silicon
+  `24/30/34.1`, `24/30/34.7`, and `24/30/34.7 C` with rise at or below `1 C`.
+- Exact controls reproduced the prior route: Vulkan driver cache seed
+  `4,899,180` bytes, first checkpoint `256`, RSX oldest preload `256 of 939`,
+  two automatic workers, and SPU oldest preload `64 of 1,165` with `1,101`
+  retained for normal on-demand LLVM compilation.
+- The startup log is timing-equivalent to the prior bounded route. SPU limit
+  activation was at emulated `2.177738 s`, interpreter construction at
+  `2.316938 s`, and the workers finished all `64` programs at `2.740202 s`, a
+  `0.423 s` bounded rebuild. Runtime SPU misses followed near `3.097 s`.
+- Process identity was established at `14:10:04.992602`; silicon was `65.8 C`
+  at `14:10:07.756397` and reached `76.3 C` at `14:10:10.730028`. The `75 C`
+  guard therefore force-stopped the process after only `5.737 s`, before the
+  macro's `12 s` wait completed or its Start press executed. Immediate
+  post-stop silicon was `51.8 C`; PID was absent and route controls reset.
+- Targeted scans found zero fatal signals, SIGSEGVs, access violations,
+  abnormal termination, aborts, and unknown draws. There is no screenshot,
+  title, FPS, gameplay, flicker, menu, battle, or stability result.
+- The same cache configuration previously survived `73.449 s` while this retry
+  survived `5.737 s`, despite near-identical early emulator timing. Treat the
+  difference as unmatched device power/cooling variance, not an SPU/RSX cache
+  regression. A later read-only stopped-device audit found AYN
+  `performance_mode=0`, `fan_mode=4`, battery saver off, normal Qualcomm
+  `walt` governors, no Android GameManager intervention for RPCSX, and silicon
+  still `48.2 C`; it cannot reconstruct the missing prelaunch state.
+- Host safety/tooling follow-up records one read-only
+  `prelaunch-power-state.txt` before the three-sample thermal preflight. It
+  captures AYN performance/fan settings plus CPU/GPU governor and maximum
+  frequencies without changing policy. No more device route is allowed in
+  this thermal round. A future separately cool route must match this state and
+  should send the bounded Start input earlier than `12 s` if input readiness is
+  independently justified.

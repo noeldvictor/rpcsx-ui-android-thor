@@ -775,6 +775,10 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
 }
 
+if ($BootGame) {
+    Write-ThorLaunchPowerState -Adb $Adb -CaptureDir $captureDir
+}
+
 Assert-ThorThermalPreflight "pre-run"
 
 $tokens = @()
