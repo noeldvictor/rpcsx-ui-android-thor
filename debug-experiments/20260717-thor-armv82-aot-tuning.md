@@ -796,3 +796,44 @@ New host artifact:
   short guarded route only. Require title visual proof before any FPS claim;
   the existing one-worker preload control remains a later single-variable
   thermal experiment.
+
+## Bounded oldest-first RSX pipeline preload candidate
+
+### 2026-07-17 - host-only-rsx-preload-limit
+
+- Status: host-verified candidate; not installed; device proof pending
+- Scope: rsx-vulkan / Android thermal startup
+- Evidence for the lane: the last genuinely cool warm-cache route reached the
+  same `80.293%` pre-title frame before the 75 C guard. The normal cache-miss
+  path in `ProgramStateCache.h` builds a missing pipeline when first requested,
+  so startup does not need to compile every disk descriptor before title.
+- Change: `debug.rpcsx.thor.rsx_cache_preload_limit` and environment fallback
+  `RPCSX_THOR_RSX_CACHE_PRELOAD_LIMIT` accept `0..4096`. `0`/unset preserves the
+  full preload. A positive value below the descriptor count sorts cache entries
+  by oldest mtime, then name, and preloads only the requested prefix. Omitted
+  files are neither deleted nor interpreted; runtime retains the configured
+  async/recompiler miss behavior. The failed deferred/interpreter lane remains
+  absent.
+- Harness: `RsxCachePreloadLimit` and `AndroidRsxCachePreloadLimit` are bounded,
+  recorded, forwarded, set only for the boot route, and reset to `0` before
+  launch and after both successful and failed routes. Default routes therefore
+  remain unchanged.
+- Host verification: `tools/test_thor_rsx_cache_preload.ps1`, thermal, Vulkan
+  cache, visual-route, single-open, optimized-variant, ARM64 APK/core identity,
+  export/relocation, PowerShell AST, and `git diff --check` gates pass. ARM64
+  RelWithDebInfo completed in `66 s`; exact merged core is
+  `588788A579E0A1EA9777EE6DFEC5177EFBC1C0BD7062696125DD008ED2BFA670`,
+  `1,304,401,872` bytes.
+- Exact packaged ThorTest APK is
+  `26A843E2A5C6DFA4408C2D6ACC2FBA3F384AB4DBCC7589E3B8EBBB0D96B198EB`,
+  `73,571,146` bytes. Its packaged stripped core is
+  `2758A909A3F5D7450EE9061CA5F754B945CD433C727137041C7477F872754B5B`,
+  `62,838,440` bytes. It is not installed; the device still has exact APK
+  `A3E9F49A727B991F77F641B5800CC1927E497D2F3FFA84133682574DEB7D5355`.
+- Decision: keep the control opt-in and award no startup, thermal, FPS, flicker,
+  title, field, menu, battle, or stability credit from host evidence.
+- Next: leave RPCSX stopped. After a later three-sample sub-40 C stable
+  preflight, install this exact APK without launch, then run one short guarded
+  direct-input route with normal two workers, Vulkan cache on, and
+  `RsxCachePreloadLimit=256`. Require the exact activation log, title visual
+  proof, targeted-fatal cleanliness, and thermal timing before promotion.

@@ -11,6 +11,7 @@
 #include "Emu/RSX/Program/RSXFragmentProgram.h"
 #include "Overlays/Shaders/shader_loading_dialog.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -179,6 +180,35 @@ namespace rsx
 			}
 
 			return parse_positive_int(std::getenv("RPCSX_THOR_RSX_CACHE_WORKERS"));
+		}
+
+		static int get_android_preload_limit()
+		{
+			auto parse_nonnegative_int = [](const char* value) -> int
+			{
+				if (!value || !*value)
+				{
+					return -1;
+				}
+
+				char* end = nullptr;
+				const long parsed = std::strtol(value, &end, 10);
+				if (end == value || *end || parsed < 0 || parsed > 4096)
+				{
+					return -1;
+				}
+
+				return static_cast<int>(parsed);
+			};
+
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.rsx_cache_preload_limit", value);
+			if (length > 0)
+			{
+				return parse_nonnegative_int(value);
+			}
+
+			return parse_nonnegative_int(std::getenv("RPCSX_THOR_RSX_CACHE_PRELOAD_LIMIT"));
 		}
 #endif
 
@@ -394,10 +424,25 @@ namespace rsx
 				}
 			}
 
-			u32 entry_count = ::size32(entries);
+			const u32 cached_entry_count = ::size32(entries);
+			u32 entry_count = cached_entry_count;
 
 			if (!entry_count)
 				return;
+
+#ifdef __ANDROID__
+			if (const int preload_limit = get_android_preload_limit(); preload_limit > 0 && static_cast<u32>(preload_limit) < entry_count)
+			{
+				// Pipeline files are created when first encountered. Oldest-first therefore favors boot/title work while
+				// omitted entries retain the configured cache-miss path and are never interpreted or discarded.
+				std::sort(entries.begin(), entries.end(), [](const fs::dir_entry& lhs, const fs::dir_entry& rhs)
+					{
+						return lhs.mtime != rhs.mtime ? lhs.mtime < rhs.mtime : lhs.name < rhs.name;
+					});
+				entry_count = static_cast<u32>(preload_limit);
+				rsx_log.notice("Android shader cache preload limit: %u of %u oldest pipelines; %u will compile on demand", entry_count, cached_entry_count, cached_entry_count - entry_count);
+			}
+#endif
 
 			root.rewind();
 

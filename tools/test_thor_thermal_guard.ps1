@@ -177,6 +177,19 @@ if ($rsxWorkerResetCount -ne 3) {
 if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_workers \$RsxCacheWorkers') {
     throw "The input route does not set the requested RSX cache worker override before launch."
 }
+if ($inputMacroSource -notmatch '\[ValidateRange\(0,\s*4096\)\]\s*\[int\]\$RsxCachePreloadLimit\s*=\s*0') {
+    throw "The input route does not expose a bounded, opt-in RSX cached-pipeline preload limit."
+}
+$rsxPreloadLimitResetCount = [regex]::Matches(
+    $inputMacroSource,
+    [regex]::Escape('setprop debug.rpcsx.thor.rsx_cache_preload_limit 0')
+).Count
+if ($rsxPreloadLimitResetCount -ne 3) {
+    throw "The input route must reset the RSX cached-pipeline preload limit before launch and after success or failure; found $rsxPreloadLimitResetCount resets."
+}
+if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_preload_limit \$RsxCachePreloadLimit') {
+    throw "The input route does not set the requested RSX cached-pipeline preload limit before launch."
+}
 if ($inputMacroSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$VkPipelineCache\s*=\s*"on"') {
     throw "The input route does not expose a default-on Vulkan pipeline cache rollback."
 }
@@ -228,6 +241,10 @@ if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPollSeconds\s*=\s*2') {
 if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$AndroidRsxCacheWorkers\s*=\s*0' -or
     $speedSprintSource -notmatch 'RsxCacheWorkers\s*=\s*\$AndroidRsxCacheWorkers') {
     throw "The Android speed-sprint wrapper does not expose and forward the bounded RSX cache worker override."
+}
+if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*4096\)\]\s*\[int\]\$AndroidRsxCachePreloadLimit\s*=\s*0' -or
+    $speedSprintSource -notmatch 'RsxCachePreloadLimit\s*=\s*\$AndroidRsxCachePreloadLimit') {
+    throw "The Android speed-sprint wrapper does not expose and forward the bounded RSX cached-pipeline preload limit."
 }
 if ($speedSprintSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$AndroidVkPipelineCache\s*=\s*"on"' -or
     $speedSprintSource -notmatch 'VkPipelineCache\s*=\s*\$AndroidVkPipelineCache') {
