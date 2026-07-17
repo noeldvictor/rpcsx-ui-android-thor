@@ -13405,3 +13405,50 @@ Next:
   one fail-closed route. Require clean field/battle visuals and no VM fatal;
   if the recurring `0x30b12f20` row returns, use its V11 ownership relation for
   the next narrow synchronization fix. Never restore settled target bytes.
+
+## 2026-07-16 V11 Fault Mapping And V13 Reserved-boundary Probe
+
+Fault mapping:
+
+- Saved-log register/disassembly review corrects the provisional null-global
+  interpretation. Guest CIA and LR `0x002ff84c` are the return NOP immediately
+  after `bl 0x00306330`, not the start of a standalone function. The following
+  renderer-state load has a valid saved `r2`, and saved `r7` is also nonzero.
+- Saved-project Ghidra resolves `0x00306330` as a bounded renderer helper. It
+  increments a maximum-32-entry queue at object `+0x2620/+0x23a0`, records the
+  requested slot, and copies one 16-byte vector into the queue. The caller
+  invokes it for slots `0x100`, `0x20`, `0x21`, `0x22`, and `0x23` before the
+  return site reported by RPCSX.
+- The log therefore proves a zero read in or around this renderer update after
+  the rollback storm, but does not prove a normally-null global pointer. The
+  saved register state is not congruent with the caller's immediate `r3/r4`
+  setup, which is consistent with the already-observed broad repair-caused
+  renderer corruption. It does not authorize a new pointer or opcode patch.
+
+V13 host-only refinement:
+
+- V11 spent its eight unknown-command rows on earlier rollback-created float
+  faults. Probe v6 retains that eight-row general cap but reserves up to two
+  rows for the exact recurring `0x30b12f20` boundary, even when its general hit
+  is later than eight. Recognition is a single command-word comparison; it
+  adds no guest-memory scan, lock, wait, mutation, or normal probe-off cost.
+- Reserved rows include `template_boundary_candidate` and
+  `template_boundary_hit`. The offline summarizer now carries those fields;
+  its checked-in late-hit fixture (`hit=9`) still classifies
+  `cross_ppu_overlap_before_template_complete`. New PPU cache bit
+  `thor_es_dispatch_provenance_v6` rejects earlier probe objects.
+- `git diff --check` and PowerShell AST parsing pass. ARM64 RelWithDebInfo
+  passed in `210s` after a broad native rebuild, followed by a successful `5s`
+  no-op build. Exact host-only V13 core is
+  `514702755F6241758257CB93F80807D50F3D8C927935325192A31DA66BD12D26`, size
+  `1,349,864,864` bytes. It has not been deployed or launched.
+
+Next:
+
+- Do not run the Thor again in this thermal round. In one later cool round,
+  deploy exact V13 and run one fail-closed route with dispatch provenance on,
+  command interpreter off, and async draw barrier off. The unresolved
+  `0x30b12f20` boundary is outside retained async targets, so verify-mode target
+  hashing cannot answer its ownership question and would only add diagnostic
+  overhead. Require clean field/battle visuals and no fatal before assigning
+  any stability or FPS credit.

@@ -632,6 +632,9 @@ namespace
 	constexpr u32 thor_es_async_draw_descriptor_ready = 0x002ee18c;
 	constexpr u32 thor_es_async_draw_consumer_signal_entry = 0x002ac7b0;
 	constexpr u32 thor_es_async_draw_target_max_size = 0x4000;
+	constexpr u32 thor_es_recurring_template_boundary_word = 0x30b12f20;
+	constexpr u32 thor_es_general_anomaly_log_limit = 8;
+	constexpr u32 thor_es_template_boundary_log_limit = 2;
 	constexpr std::array<u32, 7> thor_es_command60_stores{
 		0x002caa38,
 		0x002cb810,
@@ -915,7 +918,7 @@ bool ppu_thor_es_dispatch_probe_range(u32 address, u32 size)
 		static atomic_t<bool> logged = false;
 		if (!logged.exchange(true))
 		{
-			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe v5 enabled: loads=[0x%x,0x%x] "
+			ppu_log.notice("Thor Eternal Sonata PPU dispatch probe v6 enabled: loads=[0x%x,0x%x] "
 				"command61_handler=0x%x publisher=0x%x command9_emitters=%u command60_emitters=%u command61_emitters=%u template_emitters=%u",
 				thor_es_dispatch_load_first, thor_es_dispatch_load_next,
 				thor_es_command61_handler, thor_es_publish_terminator_store,
@@ -1177,10 +1180,17 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 
 	static atomic_t<u32> unknown_hits = 0;
 	static atomic_t<u32> command61_anomaly_hits = 0;
+	static atomic_t<u32> template_boundary_hits = 0;
 	const u32 hit = command61_handler
 		? command61_anomaly_hits.fetch_add(1) + 1
 		: unknown_hits.fetch_add(1) + 1;
-	if (hit > 8)
+	const bool template_boundary_candidate = !command61_handler &&
+		command_word == thor_es_recurring_template_boundary_word;
+	const u32 template_boundary_hit = template_boundary_candidate
+		? template_boundary_hits.fetch_add(1) + 1
+		: 0;
+	if (hit > thor_es_general_anomaly_log_limit &&
+		(!template_boundary_candidate || template_boundary_hit > thor_es_template_boundary_log_limit))
 	{
 		return;
 	}
@@ -1496,7 +1506,8 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 
 	ppu_log.error(
 		"Thor Eternal Sonata PPU dispatch provenance: kind=%s hit=%u ppu=0x%x cia=0x%x "
-		"object=0x%x address=0x%x offset=0x%x command=0x%x reread=0x%x "
+		"object=0x%x address=0x%x offset=0x%x command=0x%x "
+		"template_boundary_candidate=%u template_boundary_hit=%u reread=0x%x "
 		"reread_valid=%u command_stable=%u parser_mode=0x%x command61_args_valid=%u "
 		"command61_arg0=0x%x command61_arg1=0x%x command61_arg2=0x%x layout_valid=%u "
 		"buffer0=0x%x buffer1=0x%x selected=0x%x write=0x%x "
@@ -1526,7 +1537,8 @@ void ppu_thor_es_dispatch_probe(ppu_thread& ppu, u64 stream_pointer, u64 command
 		"window=[0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x,0x%x]",
 		command61_handler ? "command61_tiny_object" : "unknown_command",
 		hit, ppu.id, cia, object_address, address, stream_offset, command_word,
-		reread, reread_valid, reread_valid && reread == command_word,
+		template_boundary_candidate, template_boundary_hit, reread,
+		reread_valid, reread_valid && reread == command_word,
 		static_cast<u32>(parser_mode), command61_args_valid, command61_arg0,
 		command61_arg1, command61_arg2, layout_valid, buffer0, buffer1, selected,
 		write, write_offset, flags, command60_emitter_cia, command60_event_age,
@@ -6640,8 +6652,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_dispatch_provenance_v4,
 				thor_es_dispatch_provenance_v5,
 				thor_es_async_draw_barrier_v8,
+				thor_es_dispatch_provenance_v6,
 
-				bitset_last = thor_es_async_draw_barrier_v8,
+				bitset_last = thor_es_dispatch_provenance_v6,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -6696,7 +6709,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (has_thor_es_dispatch_probe)
 				settings += ppu_settings::thor_es_dispatch_probe;
 			if (has_thor_es_dispatch_provenance)
-				settings += ppu_settings::thor_es_dispatch_provenance_v5;
+				settings += ppu_settings::thor_es_dispatch_provenance_v6;
 			if (has_thor_es_async_draw_barrier)
 				settings += ppu_settings::thor_es_async_draw_barrier_v8;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)

@@ -190,3 +190,25 @@ cmake --build build-msvc --config Release --target rpcs3 --parallel 8
 - ARM64 RelWithDebInfo and incremental confirmation pass. Exact host-only v9
   core is `BE8CD29E62C9DCA35EE11B7F7FA322CA1838E16A8AE86405161F629619A80016`,
   size `1,349,846,040`. It has not been deployed or launched.
+
+## 2026-07-16 Rollback Counterproof And Renderer-fault Mapping
+
+- Exact V11 disproves settled-target restoration: at least 1,024 64-byte
+  restores caused black/green corruption, then a guest zero-read fatal about
+  1.5 seconds after the first write-back. Never restore settled target bytes.
+- The reported CIA/LR `0x002ff84c` is the return NOP after guest helper
+  `0x00306330`. Saved-project Ghidra shows that helper appends a selected
+  16-byte renderer vector to a maximum-32-entry queue at object
+  `+0x2620/+0x23a0`. Saved `r2` and `r7` are nonzero, so this does not prove a
+  normally-null global pointer; it is downstream evidence of the broad repair
+  corruption and does not authorize pointer masking.
+- V12 deletes rollback storage, locks/waits, hot consume hooks, and guest writes.
+  V13 then reserves two diagnostic rows for exact recurring boundary word
+  `0x30b12f20` beyond the general eight-row quota, with no guest scan or normal
+  probe-off cost. Cache provenance v6 prevents stale JIT reuse.
+- Exact host-only V13 core is
+  `514702755F6241758257CB93F80807D50F3D8C927935325192A31DA66BD12D26`, size
+  `1,349,864,864`. ARM64 RelWithDebInfo and no-op confirmation pass; no device
+  action occurred. The next cool route must use dispatch provenance on with
+  async draw verification off so one route isolates command-9/template
+  ownership without unrelated target hashing.

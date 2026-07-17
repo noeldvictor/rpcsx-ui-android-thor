@@ -106,6 +106,8 @@ foreach ($line in $provenanceLines) {
         parser_ppu = Get-ProvenanceField $line "ppu"
         address = Get-ProvenanceField $line "address"
         command = Get-ProvenanceField $line "command"
+        template_boundary_candidate = Get-ProvenanceField $line "template_boundary_candidate"
+        template_boundary_hit = Get-ProvenanceField $line "template_boundary_hit"
         command9_start = Get-ProvenanceField $line "command9_start"
         command9_emitter = Get-ProvenanceField $line "command9_emitter"
         command9_emitter_ppu = Get-ProvenanceField $line "command9_emitter_ppu"
@@ -138,6 +140,8 @@ ConvertTo-Json -InputObject $rows -Depth 4 | Set-Content -LiteralPath $jsonPath 
 @(
     $rows | ForEach-Object {
         "hit=$($_.hit) command=$($_.command) address=$($_.address) decision=$($_.decision) " +
+        "template_boundary_candidate=$($_.template_boundary_candidate) " +
+        "template_boundary_hit=$($_.template_boundary_hit) " +
         "command9_emitter=$($_.command9_emitter) template_emitter=$($_.template_emitter) " +
         "object_relation=$($_.command9_template_object_relation) " +
         "ppu_relation=$($_.command9_template_ppu_relation) " +

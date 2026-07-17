@@ -358,3 +358,21 @@ Bad candidates unless proven otherwise: tiny SPURS control loops, semaphore wait
   `BE8CD29E62C9DCA35EE11B7F7FA322CA1838E16A8AE86405161F629619A80016`,
   `1,349,846,040` bytes. It has not run on Thor and receives zero stability,
   FPS, or promoted GPU-migration credit.
+
+## 2026-07-16 Repair Counterproof And Read-only Successor
+
+- V9's write-back model is superseded. Exact V11 performed at least 1,024
+  changed-window restores / 65,536 guest bytes, produced severe black/green
+  corruption, and reached a zero-read guest fatal near renderer queue update
+  `0x00306330` about 1.5 seconds after the first restore. This is a hard
+  counterproof, not an FPS result.
+- V12 removes the 4 MiB rollback store, synchronization/wait path, hot parser
+  callbacks, and every guest-memory write. Legacy repair requests become
+  read-only verify. This reduces diagnostic CPU/memory work, but remains
+  host-only and has no measured Thor speed credit.
+- V13 reserves two bounded provenance rows for the recurring
+  `0x30b12f20` template boundary after the normal eight-row cap. Exact core
+  `514702755F6241758257CB93F80807D50F3D8C927935325192A31DA66BD12D26`,
+  `1,349,864,864` bytes, builds and has not been deployed or launched. The next
+  cool route should use dispatch provenance alone with the async verifier off;
+  this lane remains CPU/SPU ownership diagnosis, not a GPU-compute candidate.
