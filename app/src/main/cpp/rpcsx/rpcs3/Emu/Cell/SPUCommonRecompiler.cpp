@@ -181,6 +181,33 @@ u32 spu_reduced_loop_unroll_factor() noexcept
 	return 2;
 }
 
+bool spu_reduced_loop_reuse_enabled() noexcept
+{
+	static const bool enabled = []() noexcept
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.spu_reduced_loop_reuse", value);
+
+		if (length <= 0)
+		{
+			return false;
+		}
+#else
+		const char* value = std::getenv("RPCSX_SPU_REDUCED_LOOP_REUSE");
+
+		if (!value || !*value)
+		{
+			return false;
+		}
+#endif
+
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+	}();
+
+	return enabled;
+}
+
 bool spu_dynamic_mfc_fast_enabled() noexcept
 {
 #ifdef ANDROID
@@ -871,6 +898,7 @@ void spu_cache::initialize(bool build_existing_cache)
 	// SPU cache file (version + block size type)
 	const bool use_thor_reduced_loop_cache = spu_reduced_loop_emit_enabled();
 	const u32 thor_reduced_loop_unroll = use_thor_reduced_loop_cache ? spu_reduced_loop_unroll_factor() : 0;
+	const bool use_thor_reduced_loop_reuse = use_thor_reduced_loop_cache && spu_reduced_loop_reuse_enabled();
 	const bool use_thor_dynamic_mfc_cache = spu_dynamic_mfc_fast_enabled();
 #ifdef ARCH_ARM64
 	const auto thor_arm_feature_mode = utils::get_arm64_spu_feature_mode();
@@ -881,12 +909,18 @@ void spu_cache::initialize(bool build_existing_cache)
 	const std::string thor_arm_feature_cache;
 #endif
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
-		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u{}", thor_reduced_loop_unroll) : "") +
+		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u%u", thor_reduced_loop_unroll) : "") +
+		(use_thor_reduced_loop_reuse ? "-reuse1" : "") +
 		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + thor_arm_feature_cache + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{
 		spu_log.notice("Thor reduced-loop SPU cache variant enabled: %s", loc);
+	}
+
+	if (use_thor_reduced_loop_reuse)
+	{
+		spu_log.notice("Thor reduced-loop invariant-result reuse enabled: %s", loc);
 	}
 
 	if (use_thor_dynamic_mfc_cache)

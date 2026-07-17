@@ -1831,3 +1831,54 @@ Decision: retain the backport behind the existing reduced-loop gate. On a later
 separately cool round, run one strict Direct-input first-battle route with
 `ReducedLoopEmitU4Quiet`; field, menu, first-battle visuals, draw-stream health,
 fatal health, temperature, and comparable FPS must all pass before promotion.
+
+## 2026-07-17 Thor U4 Reuse Counterproof And Cache-Isolation Repair
+
+Status: `not-comparable`; promising FPS samples, failed correctness/provenance
+gate, host-safe successor built, and no second device route.
+
+- Exact reuse core
+  `16990D8CBE25A71E1AC17F8E3EB82B516367D1A6B4FF3F2A0CCC4E76FF4E4B33`
+  was deployed without launching, then exercised once with Direct input,
+  reduced-loop emit u4, quiet logging, interpreter/provenance/async-barrier
+  experiments off, a `28 C` guard, fail-closed guest health, force-stop, and
+  post-snapshot:
+  `debug-captures/android-speed-sprint/20260717-014733-thor-input-eternal-sonata-battle-intro-route`.
+- Retained correct-scene frames were visually clean: field `29.25 FPS`,
+  battle approach `29.66 FPS`, and the real tutorial prompt `30.00 FPS`.
+  The nearest visually matched atomic-publication control showed field
+  `27.12 FPS` and tutorial `28.88 FPS`, nominal deltas of `+7.85%` and
+  `+3.88%`. The tutorial candidate hit the 30 FPS cap.
+- These samples are not a speed win. The full log exposed the cache path
+  `spu-safe-thor-rl-u{}-v1-tane.dat`: this fork's formatter uses printf-style
+  substitutions, so the literal `{}` collapsed u2/u4/u8 into one namespace.
+  Cache state therefore was not isolated as the preceding host-only entry
+  assumed.
+- The route also logged an always-severity SPU VM access violation at emulated
+  `0:01:35.288908`: `CellSpursKernel0`, PC `0x330f0`, read
+  `0x8d230480` from unmapped memory. The handler sets SPU `dbg_pause`, and
+  the route's fatal pattern explicitly treats any VM access violation as a
+  failure. This exact SPU PC/address was absent from the immediate controls, so
+  reuse cannot stay implicitly enabled even though the guest continued.
+- The route later failed closed at emulated `0:03:23.221` on recurring
+  unknown draw words `0x3e21bf94/0xbf7a924b`. That pair predates this core,
+  but it still prevents stability, active-battle temporal-flicker, or menu
+  promotion. Temperature remained `25.0 C`, thermal status `0`, and cleanup
+  force-stopped RPCSX and restored the quiet/u2/off profile.
+- The host correction changes the cache key to printf `-thor-rl-u%u`, adds
+  separate opt-in property
+  `debug.rpcsx.thor.spu_reduced_loop_reuse=1` (host equivalent
+  `RPCSX_SPU_REDUCED_LOOP_REUSE=1`), and appends `-reuse1` only to reuse
+  caches. Existing logging modes reset reuse to off; the isolated test mode is
+  `ReducedLoopEmitU4ReuseQuiet`. Thus normal u4 reduced-loop emission no
+  longer inherits the unproven reuse behavior.
+- Final ARM64 RelWithDebInfo built successfully in `51s`. The host-only core
+  is `1,349,942,496` bytes with SHA256
+  `E8D0A7F024FE8CF3F94281304033380774C2C1BA94556DC5FB463E8A58853272`.
+  PowerShell parsing and `git diff --check` pass. It was not deployed or
+  launched, so the Thor received no second route or heat cycle.
+
+Decision: park invariant-result reuse behind its dedicated default-off gate.
+The next separately cool proof must first validate true-cache u4 with reuse
+off. Only after a clean field/tutorial/active-battle/menu and fatal-free
+control should the isolated reuse profile receive a separate one-change run.

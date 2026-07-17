@@ -1554,6 +1554,8 @@ public:
 			return compile_interpreter();
 		}
 
+		const bool reuse_reduced_loop_results = spu_reduced_loop_reuse_enabled();
+
 		const u32 start0 = _func.entry_point;
 		const usz func_size = _func.data.size();
 
@@ -2650,9 +2652,8 @@ public:
 
 					m_block->block_wide_reg_store_elimination = true;
 
-					// Reuse pure instruction results between unrolled iterations when none
-					// of their inputs changed. This keeps larger Thor unroll factors from
-					// duplicating invariant work and growing the ARM64 code cache needlessly.
+					// Keep invariant-result reuse isolated until it passes field, battle,
+					// and menu correctness.
 					std::map<u32, std::pair<llvm::Value*, std::array<u32, 3>>> reduced_loop_values;
 					std::array<u32, s_reg_max + 1> reduced_loop_reg_states{};
 					u32 reduced_loop_reg_state = 1;
@@ -2732,41 +2733,49 @@ public:
 							break;
 						}
 
-						const auto [reg_rt, reg_access, masked_op] = op_register_targets(m_pos, spu_opcode_t{op});
-						const auto input_states = std::array<u32, 3>
-						{
-							reduced_loop_reg_states[reg_access[0]],
-							reduced_loop_reg_states[reg_access[1]],
-							reduced_loop_reg_states[reg_access[2]],
-						};
-
+						u32 reg_rt = umax;
+						std::array<u32, 3> reg_access{128, 128, 128};
+						u32 masked_op = 0;
+						std::array<u32, 3> input_states{};
 						bool reused_result = false;
-						if (reg_rt < s_reg_max && m_inst_attrs[(m_pos - start) / 4] == inst_attr::none)
-						{
-							if (const auto found = reduced_loop_values.find(masked_op); found != reduced_loop_values.end() && found->second.first)
-							{
-								const auto& previous_states = found->second.second;
-								reused_result = true;
 
-								for (u32 input = 0; input < reg_access.size(); input++)
+						if (reuse_reduced_loop_results)
+						{
+							std::tie(reg_rt, reg_access, masked_op) = op_register_targets(m_pos, spu_opcode_t{op});
+							input_states =
+							{
+								reduced_loop_reg_states[reg_access[0]],
+								reduced_loop_reg_states[reg_access[1]],
+								reduced_loop_reg_states[reg_access[2]],
+							};
+
+							if (reg_rt < s_reg_max && m_inst_attrs[(m_pos - start) / 4] == inst_attr::none)
+							{
+								if (const auto found = reduced_loop_values.find(masked_op); found != reduced_loop_values.end() && found->second.first)
 								{
-									if (reg_access[input] < s_reg_max && previous_states[input] != input_states[input])
+									const auto& previous_states = found->second.second;
+									reused_result = true;
+
+									for (u32 input = 0; input < reg_access.size(); input++)
 									{
-										reused_result = false;
-										break;
+										if (reg_access[input] < s_reg_max && previous_states[input] != input_states[input])
+										{
+											reused_result = false;
+											break;
+										}
+									}
+
+									if (reused_result)
+									{
+										m_block->reg[reg_rt] = found->second.first;
 									}
 								}
-
-								if (reused_result)
-								{
-									m_block->reg[reg_rt] = found->second.first;
-								}
 							}
-						}
 
-						if (reg_rt < s_reg_max)
-						{
-							reduced_loop_reg_states[reg_rt] = reduced_loop_reg_state++;
+							if (reg_rt < s_reg_max)
+							{
+								reduced_loop_reg_states[reg_rt] = reduced_loop_reg_state++;
+							}
 						}
 
 						if (reused_result)
@@ -2775,7 +2784,10 @@ public:
 						}
 
 						m_next_op = 0;
-						reduced_loop_values[masked_op] = {};
+						if (reuse_reduced_loop_results)
+						{
+							reduced_loop_values[masked_op] = {};
+						}
 
 						switch (m_inst_attrs[(m_pos - start) / 4])
 						{
@@ -2798,7 +2810,7 @@ public:
 
 						(this->*decode(op))({op});
 
-						if (reg_rt < s_reg_max && itype & spu_itype::pure && reg_rt != reg_access[0] && reg_rt != reg_access[1] && reg_rt != reg_access[2])
+						if (reuse_reduced_loop_results && reg_rt < s_reg_max && itype & spu_itype::pure && reg_rt != reg_access[0] && reg_rt != reg_access[1] && reg_rt != reg_access[2])
 						{
 							reduced_loop_values[masked_op] = {ensure(m_block->reg[reg_rt]), input_states};
 						}
