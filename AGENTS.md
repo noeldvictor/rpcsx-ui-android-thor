@@ -332,4 +332,8 @@ Put dated run details in `debug-experiments/`, not here.
 - The package is stopped; later read-only silicon was `48.6 C`, `pidof` was empty, and route properties are restored to cache `on`, normal `preload`, worker override `0`. No second launch may be charged to this thermal round.
 - Standard Thor snapshots now pull the full `RPCSX.log`; keep this fail-stop evidence contract so a heat trip cannot discard guest cache/fatal details.
 - Next device work, only after a separately cool soak, is one same-APK/config warm-cache-on route. Require `seed=2239716 bytes`, title/field visual proof, matched wall time, and thermal evidence before claiming speed; any cache-off comparison belongs to another separately cool round.
+- Thor route preflight now has an independent `40.0 C` silicon launch ceiling and rejects a greater-than-`2.0 C` rise across the required three samples; this is stricter than the runtime cutoff-minus-headroom rule and is forwarded by the speed-sprint wrapper.
+- Latest corrected cooldown capture `20260717-093511-vk-pipeline-cache-strict-cooldown-query` reported `25/30/44.1 C` with no RPCSX PID, so the new gate rejected launch. No emulator route ran and the `2,239,716`-byte Vulkan cache remains intact.
+- The earlier `20260717-092745` ad hoc audit's `13908` PID column is host PowerShell `$PID` tooling noise; authoritative device-state and the corrected query both show RPCSX absent.
+- Do not attempt the warm-cache proof until three later samples stay below `40.0 C` with rise no greater than `2.0 C`; then use the same APK/config and require `seed=2239716 bytes`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

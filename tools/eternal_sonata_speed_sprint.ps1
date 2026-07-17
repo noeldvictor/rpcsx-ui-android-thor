@@ -89,6 +89,10 @@ param(
     [int]$AndroidThermalPreflightIntervalSeconds = 2,
     [ValidateRange(0, 20)]
     [double]$AndroidThermalPreflightHeadroomC = 5.0,
+    [ValidateRange(25, 60)]
+    [double]$AndroidMaxLaunchSiliconTemperatureC = 40.0,
+    [ValidateRange(0, 10)]
+    [double]$AndroidThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(30, 50)]
     [double]$AndroidMaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
@@ -565,6 +569,8 @@ function Invoke-AndroidSceneCapture {
         "- Device serial: $(if ([string]::IsNullOrWhiteSpace($AndroidSerial)) { 'ANDROID_SERIAL/default' } else { $AndroidSerial })",
         "- Duration seconds: $AndroidSceneSeconds",
         "- Thermal poll seconds: $AndroidThermalPollSeconds",
+        "- Max launch silicon temperature C: $AndroidMaxLaunchSiliconTemperatureC",
+        "- Thermal preflight max silicon rise C: $AndroidThermalPreflightMaxRiseC",
         "- Max battery temperature C: $AndroidMaxBatteryTemperatureC",
         "- Max skin temperature C: $AndroidMaxSkinTemperatureC",
         "- Max silicon temperature C: $AndroidMaxSiliconTemperatureC",
@@ -670,6 +676,8 @@ function Invoke-AndroidRouteScene {
         ThermalPreflightSamples = $AndroidThermalPreflightSamples
         ThermalPreflightIntervalSeconds = $AndroidThermalPreflightIntervalSeconds
         ThermalPreflightHeadroomC = $AndroidThermalPreflightHeadroomC
+        MaxLaunchSiliconTemperatureC = $AndroidMaxLaunchSiliconTemperatureC
+        ThermalPreflightMaxRiseC = $AndroidThermalPreflightMaxRiseC
         MaxBatteryTemperatureC = $AndroidMaxBatteryTemperatureC
         MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC

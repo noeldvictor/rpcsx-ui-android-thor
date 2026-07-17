@@ -104,6 +104,18 @@ Assert-ThorEqual "preflight headroom cool" (Get-ThorThermalGuardViolation -Snaps
 
 $hotPreflight = New-ThorTestSnapshot -Battery 33 -Skin 39 -Silicon 75 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
 Assert-ThorEqual "preflight headroom ceiling" (Get-ThorThermalGuardViolation -Snapshot $hotPreflight @preflightLimits).code "silicon-temperature"
+Assert-ThorEqual "launch ceiling wins" (Get-ThorPreflightSiliconLimitC -RuntimeLimitC 75 -HeadroomC 5 -MaxLaunchSiliconTemperatureC 40) 40
+Assert-ThorEqual "runtime headroom wins" (Get-ThorPreflightSiliconLimitC -RuntimeLimitC 35 -HeadroomC 5 -MaxLaunchSiliconTemperatureC 40) 30
+$stablePreflight = @(
+    (New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 34.0 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2),
+    (New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 35.9 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2)
+)
+Assert-ThorEqual "stable preflight trend" (Get-ThorThermalPreflightTrendViolation -Snapshots $stablePreflight -MaxRiseC 2.0) $null
+$risingPreflight = @(
+    (New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 34.0 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2),
+    (New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 36.1 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2)
+)
+Assert-ThorEqual "rising preflight trend" (Get-ThorThermalPreflightTrendViolation -Snapshots $risingPreflight -MaxRiseC 2.0).code "preflight-silicon-rise"
 
 $zoneCommand = Get-ThorThermalZoneShellCommand
 if ($zoneCommand -notmatch "thermal_zone\*" -or $zoneCommand -notmatch "zone=%s type=%s temp=%s") {
@@ -145,6 +157,10 @@ if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightIntervalSeconds\s*=\s*
 if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*5\.0') {
     throw "The input route does not reserve five degrees of launch headroom."
 }
+if ($inputMacroSource -notmatch '\[double\]\$MaxLaunchSiliconTemperatureC\s*=\s*40\.0' -or
+    $inputMacroSource -notmatch '\[double\]\$ThermalPreflightMaxRiseC\s*=\s*2\.0') {
+    throw "The input route does not enforce the cool-silicon launch ceiling and stable preflight trend."
+}
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPollIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to two-second runtime thermal polling."
 }
@@ -177,8 +193,8 @@ if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.vk_pipeline_cache \
 if ($inputMacroSource -notmatch '\$slice\s*=\s*\[Math\]::Min\(\$remaining,\s*\$ThermalPollIntervalSeconds\s*\*\s*1000\)') {
     throw "Long input-route waits do not use the bounded thermal polling interval."
 }
-if ($inputMacroSource -notmatch 'function\s+Assert-ThorThermalPreflight[\s\S]*?\$preflightSiliconLimitC\s*=\s*\[Math\]::Max\([^\r\n]+\$MaxSiliconTemperatureC\s*-\s*\$ThermalPreflightHeadroomC\)[\s\S]*?for\s*\(\$sample\s*=\s*1;[\s\S]*?Assert-ThorThermalBudget[\s\S]*?-SiliconLimitC\s+\$preflightSiliconLimitC[\s\S]*?Start-Sleep\s+-Seconds\s+\$ThermalPreflightIntervalSeconds') {
-    throw "The input route thermal preflight does not require repeated headroom-bounded samples."
+if ($inputMacroSource -notmatch 'function\s+Assert-ThorThermalPreflight[\s\S]*?Get-ThorPreflightSiliconLimitC[\s\S]*?-MaxLaunchSiliconTemperatureC\s+\$MaxLaunchSiliconTemperatureC[\s\S]*?for\s*\(\$sample\s*=\s*1;[\s\S]*?Assert-ThorThermalBudget[\s\S]*?-PassThru[\s\S]*?Get-ThorThermalPreflightTrendViolation[\s\S]*?-MaxRiseC\s+\$ThermalPreflightMaxRiseC') {
+    throw "The input route thermal preflight does not require the cool-silicon ceiling, repeated samples, and stable trend."
 }
 $preflightCallIndex = $inputMacroSource.LastIndexOf('Assert-ThorThermalPreflight "pre-run"')
 $quiesceIndex = $inputMacroSource.IndexOf('if ($ForceStop -or $BootGame)')
@@ -190,12 +206,16 @@ if ($quiesceIndex -lt 0 -or $preflightCallIndex -le $quiesceIndex -or $bootLaunc
 $speedSprintSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1") -Raw
 if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPreflightSamples\s*=\s*3' -or
     $speedSprintSource -notmatch '\[int\]\$AndroidThermalPreflightIntervalSeconds\s*=\s*2' -or
-    $speedSprintSource -notmatch '\[double\]\$AndroidThermalPreflightHeadroomC\s*=\s*5\.0') {
+    $speedSprintSource -notmatch '\[double\]\$AndroidThermalPreflightHeadroomC\s*=\s*5\.0' -or
+    $speedSprintSource -notmatch '\[double\]\$AndroidMaxLaunchSiliconTemperatureC\s*=\s*40\.0' -or
+    $speedSprintSource -notmatch '\[double\]\$AndroidThermalPreflightMaxRiseC\s*=\s*2\.0') {
     throw "The Android speed-sprint wrapper does not expose the cool-soak defaults."
 }
 if ($speedSprintSource -notmatch 'ThermalPreflightSamples\s*=\s*\$AndroidThermalPreflightSamples' -or
     $speedSprintSource -notmatch 'ThermalPreflightIntervalSeconds\s*=\s*\$AndroidThermalPreflightIntervalSeconds' -or
     $speedSprintSource -notmatch 'ThermalPreflightHeadroomC\s*=\s*\$AndroidThermalPreflightHeadroomC' -or
+    $speedSprintSource -notmatch 'MaxLaunchSiliconTemperatureC\s*=\s*\$AndroidMaxLaunchSiliconTemperatureC' -or
+    $speedSprintSource -notmatch 'ThermalPreflightMaxRiseC\s*=\s*\$AndroidThermalPreflightMaxRiseC' -or
     $speedSprintSource -notmatch 'ThermalPollIntervalSeconds\s*=\s*\$AndroidThermalPollSeconds') {
     throw "The Android speed-sprint wrapper does not forward the cool-soak contract."
 }

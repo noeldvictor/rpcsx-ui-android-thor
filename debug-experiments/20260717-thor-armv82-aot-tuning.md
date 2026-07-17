@@ -696,3 +696,46 @@ New host artifact:
   warm-on route separately from this cold seed; only then schedule a separately
   cooled cache-off route if needed. Require title/field visuals and matched
   thermal/wall-time evidence before claiming speed.
+
+
+## Cool-launch thermal preflight correction
+
+### 2026-07-17 - strict-warm-cache-cooldown-gate
+
+- Status: route-tooling; launch rejected; no speed comparison
+- Scope: Android harness / thermal safety
+- The first read-only cooldown audit after the cold cache seed was
+  `debug-captures/android-speed-sprint/20260717-092745-vk-pipeline-cache-warm-cooldown-query`.
+  Battery/skin stayed at `25/30 C`, but maximum silicon rose
+  `45.8 -> 49.0 -> 50.6 C`. RPCSX was stopped and the persistent cache
+  remained exactly `2,239,716` bytes / SHA256
+  `76318ED124ED3B3B9710347DAD72017E092194E7AD7A6EE7E7EC3614783B26A1`.
+- Tooling note: the first audit's per-row PID column accidentally contains the
+  host PowerShell `$PID` because that automatic variable is read-only. Its
+  separate native device-state query says `pid=`, and the corrected follow-up
+  also reports an empty package PID. Do not interpret `13908` as RPCSX.
+- Safety finding: the prior five-degree headroom rule reduced the 75 C runtime
+  cutoff only to a 70 C preflight limit. It therefore labeled a clearly warm,
+  rising 50.6 C device as launchable even though recent boot routes add roughly
+  24-32 C within their first runtime sample.
+- Harness correction: Android route launches now use the lower of runtime
+  cutoff-minus-headroom and an independent `40.0 C` maximum launch-silicon
+  ceiling. Three preflight samples must also rise no more than `2.0 C`.
+  Both values are bounded parameters, recorded in route metadata, and forwarded
+  by `eternal_sonata_speed_sprint.ps1`.
+- Corrected strict audit:
+  `debug-captures/android-speed-sprint/20260717-093511-vk-pipeline-cache-strict-cooldown-query`.
+  Its first sample was `25/30/44.1 C` with no RPCSX PID, so the new 40 C
+  ceiling rejected the route immediately. USB power was present; no emulator
+  launch, install, cache mutation, or gameplay heat occurred.
+- Host verification: PowerShell AST parsing passed for all four edited scripts,
+  `tools/test_thor_thermal_guard.ps1` passed new ceiling/trend unit and source
+  contracts, `tools/test_thor_vulkan_pipeline_cache.ps1` passed, and
+  `git diff --check` passed.
+- Decision: preserve the stricter fail-closed launch gate. The warm-cache route
+  remains unmeasured and receives no speed, FPS, thermal, flicker, field, menu,
+  battle, or stability credit.
+- Next: leave RPCSX stopped. Only after a later three-sample preflight remains
+  below `40.0 C`, rises no more than `2.0 C`, and reports no package PID,
+  spend one short same-APK/config warm-cache-on route. Require
+  `seed=2239716 bytes` before any speed claim.

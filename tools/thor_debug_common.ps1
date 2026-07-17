@@ -255,6 +255,45 @@ function Get-ThorThermalGuardViolation {
     return $null
 }
 
+function Get-ThorPreflightSiliconLimitC {
+    param(
+        [double]$RuntimeLimitC,
+        [double]$HeadroomC,
+        [double]$MaxLaunchSiliconTemperatureC
+    )
+
+    $headroomLimitC = [Math]::Max(0.1, $RuntimeLimitC - $HeadroomC)
+    return [Math]::Min($headroomLimitC, [Math]::Max(0.1, $MaxLaunchSiliconTemperatureC))
+}
+
+function Get-ThorThermalPreflightTrendViolation {
+    param(
+        [object[]]$Snapshots,
+        [double]$MaxRiseC
+    )
+
+    if ($Snapshots.Count -lt 2) {
+        return $null
+    }
+
+    $firstTemperatureC = $Snapshots[0].silicon_temperature_c
+    $lastTemperatureC = $Snapshots[-1].silicon_temperature_c
+    if ($null -eq $firstTemperatureC -or $null -eq $lastTemperatureC) {
+        return $null
+    }
+
+    $riseC = [Math]::Round(([double]$lastTemperatureC - [double]$firstTemperatureC), 3)
+    if ($riseC -gt $MaxRiseC) {
+        return [pscustomobject]@{
+            code = "preflight-silicon-rise"
+            rise_c = $riseC
+            message = "Thor CPU/GPU silicon temperature rose by $(Format-ThorTemperatureC $riseC) C during preflight, above the $MaxRiseC C limit."
+        }
+    }
+
+    return $null
+}
+
 function Get-ThorGuestFatalMatches {
     param([string[]]$Lines)
 

@@ -15,6 +15,10 @@ param(
     [int]$ThermalPreflightIntervalSeconds = 2,
     [ValidateRange(0, 20)]
     [double]$ThermalPreflightHeadroomC = 5.0,
+    [ValidateRange(25, 60)]
+    [double]$MaxLaunchSiliconTemperatureC = 40.0,
+    [ValidateRange(0, 10)]
+    [double]$ThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(1, 5)]
     [int]$ThermalPollIntervalSeconds = 2,
     [double]$MaxBatteryTemperatureC = 39.0,
@@ -555,7 +559,8 @@ function Assert-ThorThermalBudget {
         [string]$Stage,
         [double]$BatteryLimitC = $MaxBatteryTemperatureC,
         [double]$SkinLimitC = $MaxSkinTemperatureC,
-        [double]$SiliconLimitC = $MaxSiliconTemperatureC
+        [double]$SiliconLimitC = $MaxSiliconTemperatureC,
+        [switch]$PassThru
     )
 
     if ($BatteryLimitC -le 0) {
@@ -580,6 +585,10 @@ function Assert-ThorThermalBudget {
         & $Adb shell am force-stop $Package | Out-Null
         throw "$($violation.message) Stage '$Stage'. RPCSX was force-stopped."
     }
+
+    if ($PassThru) {
+        return $snapshot
+    }
 }
 
 function Assert-ThorThermalPreflight {
@@ -591,16 +600,22 @@ function Assert-ThorThermalPreflight {
 
     $preflightBatteryLimitC = [Math]::Max(0.1, $MaxBatteryTemperatureC - $ThermalPreflightHeadroomC)
     $preflightSkinLimitC = [Math]::Max(0.1, $MaxSkinTemperatureC - $ThermalPreflightHeadroomC)
-    $preflightSiliconLimitC = [Math]::Max(0.1, $MaxSiliconTemperatureC - $ThermalPreflightHeadroomC)
+    $preflightSiliconLimitC = Get-ThorPreflightSiliconLimitC -RuntimeLimitC $MaxSiliconTemperatureC -HeadroomC $ThermalPreflightHeadroomC -MaxLaunchSiliconTemperatureC $MaxLaunchSiliconTemperatureC
+    $snapshots = @()
 
     for ($sample = 1; $sample -le $ThermalPreflightSamples; $sample++) {
-        Assert-ThorThermalBudget "$Stage-$sample-of-$ThermalPreflightSamples" `
-            -BatteryLimitC $preflightBatteryLimitC `
-            -SkinLimitC $preflightSkinLimitC `
-            -SiliconLimitC $preflightSiliconLimitC
+        $snapshots += Assert-ThorThermalBudget "$Stage-$sample-of-$ThermalPreflightSamples" -BatteryLimitC $preflightBatteryLimitC -SkinLimitC $preflightSkinLimitC -SiliconLimitC $preflightSiliconLimitC -PassThru
         if ($sample -lt $ThermalPreflightSamples) {
             Start-Sleep -Seconds $ThermalPreflightIntervalSeconds
         }
+    }
+
+    $trendViolation = Get-ThorThermalPreflightTrendViolation -Snapshots $snapshots -MaxRiseC $ThermalPreflightMaxRiseC
+    if ($null -ne $trendViolation) {
+        "$(Get-Date -Format o) stage=$Stage status=failed code=$($trendViolation.code) rise_c=$($trendViolation.rise_c) max_rise_c=$ThermalPreflightMaxRiseC" |
+            Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "$($trendViolation.message) Stage '$Stage'. RPCSX was force-stopped."
     }
 }
 
@@ -719,6 +734,8 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Thermal preflight samples: $ThermalPreflightSamples",
     "- Thermal preflight interval seconds: $ThermalPreflightIntervalSeconds",
     "- Thermal preflight headroom C: $ThermalPreflightHeadroomC",
+    "- Max launch silicon temperature C: $MaxLaunchSiliconTemperatureC",
+    "- Thermal preflight max silicon rise C: $ThermalPreflightMaxRiseC",
     "- Thermal poll interval seconds: $ThermalPollIntervalSeconds",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Max skin temperature C: $MaxSkinTemperatureC",
