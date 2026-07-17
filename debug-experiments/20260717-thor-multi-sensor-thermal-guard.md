@@ -135,3 +135,37 @@ Host evidence:
 - `git diff --check` passed.
 
 Status: `route-tooling` / host-pass for the safety and route-shortening changes; `failed-thermal-guard` for the menu device proof. No emulator FPS gain is attributed to these host changes, but they reduce avoidable hot dwell and prevent skin-only telemetry from masking a hot SoC.
+
+## Cool-soak launch gate
+
+The single pre-run snapshot still allowed a launch immediately below a runtime
+ceiling, and it sampled before the normal force-stop block. An already-running
+guest could therefore continue heating during a repeated check. The launch
+contract is now:
+
+1. force-stop RPCSX and reset experimental properties;
+2. collect three complete battery/skin/silicon snapshots two seconds apart;
+3. require every snapshot to remain five degrees below the configured runtime ceilings;
+4. only then set the requested properties and boot the game.
+
+With the normal `39/45/80 C` runtime ceilings, launch requires readings below
+`34/40/75 C`. A tightened `35/42/75 C` proof route requires launch readings
+below `30/37/70 C`. Runtime polling keeps the configured ceilings rather than
+the launch margin, so the route still force-stops on the original limit while
+preserving five degrees of initial thermal headroom.
+
+The sample count, interval, and headroom are explicit bounded parameters in
+both `thor_input_macro.ps1` and `eternal_sonata_speed_sprint.ps1`. Any missing
+telemetry or threshold violation aborts on that sample and keeps RPCSX stopped.
+
+Host-only validation:
+
+- replay of the real `87.1 C` capture still selects a silicon-temperature violation;
+- the thermal test verifies the three-sample, two-second, five-degree defaults,
+  wrapper forwarding, and quiesce-before-soak-before-launch ordering;
+- PowerShell AST parsing passed for all three changed scripts;
+- `test_thor_thermal_guard.ps1` and `test_thor_visual_route_gate.ps1` passed;
+- `git diff --check` passed.
+
+Classification: `route-tooling` / host-pass. No ADB query, device launch, or
+Thor workload was used in this round.

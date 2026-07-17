@@ -94,6 +94,17 @@ Assert-ThorEqual "skin ceiling" (Get-ThorThermalGuardViolation -Snapshot $hotSki
 $hotSilicon = New-ThorTestSnapshot -Battery 30 -Skin 35 -Silicon 80 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
 Assert-ThorEqual "silicon ceiling" (Get-ThorThermalGuardViolation -Snapshot $hotSilicon @limits).code "silicon-temperature"
 
+$preflightLimits = @{
+    MaxBatteryTemperatureC = 34
+    MaxSkinTemperatureC = 40
+    MaxSiliconTemperatureC = 75
+}
+$coolPreflight = New-ThorTestSnapshot -Battery 33 -Skin 39 -Silicon 74.9 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "preflight headroom cool" (Get-ThorThermalGuardViolation -Snapshot $coolPreflight @preflightLimits) $null
+
+$hotPreflight = New-ThorTestSnapshot -Battery 33 -Skin 39 -Silicon 75 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "preflight headroom ceiling" (Get-ThorThermalGuardViolation -Snapshot $hotPreflight @preflightLimits).code "silicon-temperature"
+
 $zoneCommand = Get-ThorThermalZoneShellCommand
 if ($zoneCommand -notmatch "thermal_zone\*" -or $zoneCommand -notmatch "zone=%s type=%s temp=%s") {
     throw "Thermal-zone shell command is missing its bounded parse contract."
@@ -120,6 +131,36 @@ if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
 }
 if ($inputMacroSource -notmatch 'Invoke-ThorAdbLines.+\$thermalZoneCommand') {
     throw "The input route does not use the lossless native argument capture path for thermal zones."
+}
+if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*3') {
+    throw "The input route does not default to three thermal preflight samples."
+}
+if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightIntervalSeconds\s*=\s*2') {
+    throw "The input route does not default to a two-second thermal preflight interval."
+}
+if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*5\.0') {
+    throw "The input route does not reserve five degrees of launch headroom."
+}
+if ($inputMacroSource -notmatch 'function\s+Assert-ThorThermalPreflight[\s\S]*?\$preflightSiliconLimitC\s*=\s*\[Math\]::Max\([^\r\n]+\$MaxSiliconTemperatureC\s*-\s*\$ThermalPreflightHeadroomC\)[\s\S]*?for\s*\(\$sample\s*=\s*1;[\s\S]*?Assert-ThorThermalBudget[\s\S]*?-SiliconLimitC\s+\$preflightSiliconLimitC[\s\S]*?Start-Sleep\s+-Seconds\s+\$ThermalPreflightIntervalSeconds') {
+    throw "The input route thermal preflight does not require repeated headroom-bounded samples."
+}
+$preflightCallIndex = $inputMacroSource.LastIndexOf('Assert-ThorThermalPreflight "pre-run"')
+$quiesceIndex = $inputMacroSource.IndexOf('if ($ForceStop -or $BootGame)')
+$bootLaunchIndex = if ($preflightCallIndex -ge 0) { $inputMacroSource.IndexOf('if ($BootGame) {', $preflightCallIndex) } else { -1 }
+if ($quiesceIndex -lt 0 -or $preflightCallIndex -le $quiesceIndex -or $bootLaunchIndex -le $preflightCallIndex) {
+    throw "The repeated thermal preflight must run after quiescing RPCSX and before launch."
+}
+
+$speedSprintSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1") -Raw
+if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPreflightSamples\s*=\s*3' -or
+    $speedSprintSource -notmatch '\[int\]\$AndroidThermalPreflightIntervalSeconds\s*=\s*2' -or
+    $speedSprintSource -notmatch '\[double\]\$AndroidThermalPreflightHeadroomC\s*=\s*5\.0') {
+    throw "The Android speed-sprint wrapper does not expose the cool-soak defaults."
+}
+if ($speedSprintSource -notmatch 'ThermalPreflightSamples\s*=\s*\$AndroidThermalPreflightSamples' -or
+    $speedSprintSource -notmatch 'ThermalPreflightIntervalSeconds\s*=\s*\$AndroidThermalPreflightIntervalSeconds' -or
+    $speedSprintSource -notmatch 'ThermalPreflightHeadroomC\s*=\s*\$AndroidThermalPreflightHeadroomC') {
+    throw "The Android speed-sprint wrapper does not forward the cool-soak contract."
 }
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."

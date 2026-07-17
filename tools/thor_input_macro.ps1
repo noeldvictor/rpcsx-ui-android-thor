@@ -9,6 +9,12 @@ param(
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$InputMode = "Virtual",
     [string]$RawInputDevice = "/dev/input/event9",
+    [ValidateRange(1, 5)]
+    [int]$ThermalPreflightSamples = 3,
+    [ValidateRange(1, 10)]
+    [int]$ThermalPreflightIntervalSeconds = 2,
+    [ValidateRange(0, 20)]
+    [double]$ThermalPreflightHeadroomC = 5.0,
     [double]$MaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
     [double]$MaxSkinTemperatureC = 45.0,
@@ -539,9 +545,14 @@ function Assert-ThorProcessIdentity {
 }
 
 function Assert-ThorThermalBudget {
-    param([string]$Stage)
+    param(
+        [string]$Stage,
+        [double]$BatteryLimitC = $MaxBatteryTemperatureC,
+        [double]$SkinLimitC = $MaxSkinTemperatureC,
+        [double]$SiliconLimitC = $MaxSiliconTemperatureC
+    )
 
-    if ($MaxBatteryTemperatureC -le 0) {
+    if ($BatteryLimitC -le 0) {
         return
     }
 
@@ -549,19 +560,41 @@ function Assert-ThorThermalBudget {
     $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
     $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
     $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
-    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$MaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$MaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$MaxSiliconTemperatureC skin_sensor_count=$($snapshot.skin_sensor_count) silicon_sensor_count=$($snapshot.silicon_sensor_count) guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$BatteryLimitC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$SkinLimitC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$SiliconLimitC skin_sensor_count=$($snapshot.skin_sensor_count) silicon_sensor_count=$($snapshot.silicon_sensor_count) guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
 
     $violationParams = @{
         Snapshot = $snapshot
-        MaxBatteryTemperatureC = $MaxBatteryTemperatureC
-        MaxSkinTemperatureC = $MaxSkinTemperatureC
-        MaxSiliconTemperatureC = $MaxSiliconTemperatureC
+        MaxBatteryTemperatureC = $BatteryLimitC
+        MaxSkinTemperatureC = $SkinLimitC
+        MaxSiliconTemperatureC = $SiliconLimitC
     }
     $violation = Get-ThorThermalGuardViolation @violationParams
     if ($null -ne $violation) {
         & $Adb shell am force-stop $Package | Out-Null
         throw "$($violation.message) Stage '$Stage'. RPCSX was force-stopped."
+    }
+}
+
+function Assert-ThorThermalPreflight {
+    param([string]$Stage)
+
+    if ($MaxBatteryTemperatureC -le 0) {
+        return
+    }
+
+    $preflightBatteryLimitC = [Math]::Max(0.1, $MaxBatteryTemperatureC - $ThermalPreflightHeadroomC)
+    $preflightSkinLimitC = [Math]::Max(0.1, $MaxSkinTemperatureC - $ThermalPreflightHeadroomC)
+    $preflightSiliconLimitC = [Math]::Max(0.1, $MaxSiliconTemperatureC - $ThermalPreflightHeadroomC)
+
+    for ($sample = 1; $sample -le $ThermalPreflightSamples; $sample++) {
+        Assert-ThorThermalBudget "$Stage-$sample-of-$ThermalPreflightSamples" `
+            -BatteryLimitC $preflightBatteryLimitC `
+            -SkinLimitC $preflightSkinLimitC `
+            -SiliconLimitC $preflightSiliconLimitC
+        if ($sample -lt $ThermalPreflightSamples) {
+            Start-Sleep -Seconds $ThermalPreflightIntervalSeconds
+        }
     }
 }
 
@@ -677,6 +710,9 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Input mode: $InputMode",
     "- Battle profile forced direct input: $profileForcesDirectInput",
     "- Raw input device: $RawInputDevice",
+    "- Thermal preflight samples: $ThermalPreflightSamples",
+    "- Thermal preflight interval seconds: $ThermalPreflightIntervalSeconds",
+    "- Thermal preflight headroom C: $ThermalPreflightHeadroomC",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Max skin temperature C: $MaxSkinTemperatureC",
     "- Max silicon temperature C: $MaxSiliconTemperatureC",
@@ -696,14 +732,14 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     'Booted runs pin the initial RPCSX PID and fail closed if Android restarts the process; complete and filtered logcat evidence is captured before force-stop.'
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
-Assert-ThorThermalBudget "pre-run"
-
 if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
 }
+
+Assert-ThorThermalPreflight "pre-run"
 
 $tokens = @()
 $index = 1

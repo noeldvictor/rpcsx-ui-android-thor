@@ -82,6 +82,12 @@ param(
     [int]$AndroidSceneSeconds = 20,
     [ValidateRange(1, 10)]
     [int]$AndroidThermalPollSeconds = 5,
+    [ValidateRange(1, 5)]
+    [int]$AndroidThermalPreflightSamples = 3,
+    [ValidateRange(1, 10)]
+    [int]$AndroidThermalPreflightIntervalSeconds = 2,
+    [ValidateRange(0, 20)]
+    [double]$AndroidThermalPreflightHeadroomC = 5.0,
     [ValidateRange(30, 50)]
     [double]$AndroidMaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
@@ -615,6 +621,9 @@ function Invoke-AndroidRouteScene {
         BootGame = $true
         ForceStop = $true
         PostSnapshot = $true
+        ThermalPreflightSamples = $AndroidThermalPreflightSamples
+        ThermalPreflightIntervalSeconds = $AndroidThermalPreflightIntervalSeconds
+        ThermalPreflightHeadroomC = $AndroidThermalPreflightHeadroomC
         MaxBatteryTemperatureC = $AndroidMaxBatteryTemperatureC
         MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
