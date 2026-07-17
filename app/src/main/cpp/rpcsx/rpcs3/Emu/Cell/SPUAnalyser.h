@@ -33,6 +33,9 @@ struct spu_itype
 	static constexpr struct zregmod_tag
 	{
 	} zregmod{}; // Instructions not modifying any GPR
+	static constexpr struct pure_tag
+	{
+	} pure{}; // Instructions deterministic for equal register and immediate inputs
 
 	enum class type : unsigned char
 	{
@@ -320,6 +323,12 @@ struct spu_itype
 	friend constexpr bool operator&(type value, zregmod_tag)
 	{
 		return value >= HEQ && value <= STQR;
+	}
+
+	// Test for instructions that always produce the same value for equal inputs.
+	friend constexpr bool operator&(type value, pure_tag)
+	{
+		return value >= ILH && value <= CLGTI;
 	}
 };
 

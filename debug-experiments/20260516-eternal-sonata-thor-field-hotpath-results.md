@@ -1796,3 +1796,38 @@ Status: `route-tooling`; runtime hypothesis remains untested.
   interval with PID/thermal checks and automatically retains full guest logs on
   failures. Host detection replay and PowerShell parsing pass. A later single
   cool `both` route is still required; this attempt earns no speed credit.
+
+## 2026-07-17 Reduced-Loop Invariant-Result Reuse Backport
+
+Status: `host-build-pass`; guarded speed candidate, no device run and no new
+FPS or stability credit.
+
+- The durable Thor evidence still identifies reduced-loop emission as the only
+  SPU-codegen lane with a positive gameplay signal. In the original comparable
+  field sweep, unroll 4 reached `19.81 FPS` versus `18.65 FPS` for unroll 2;
+  later optimized builds and affinity work are separate generations and must
+  not be mixed into that delta.
+- Local upstream RPCS3 at `c433cc7` contains a newer reduced-loop emitter. Git
+  provenance maps its invariant pure-result reuse to upstream commit `2e4ee9c9`
+  (`SPU LLVM: Implement reduced loop`). Importing the complete current analyzer
+  would change thousands of lines, so this round backported only that bounded
+  emitter optimization plus its upstream instruction-purity classification.
+- The guarded emitter now tracks source-register generations while unrolling.
+  A deterministic, side-effect-free SPU instruction is emitted once and its
+  LLVM value is reused only when the same masked opcode recurs with unchanged
+  inputs. Destination/source aliasing, special pattern attributes, branches,
+  memory/channel operations, and changed inputs remain on the original path.
+- This work exists only when `debug.rpcsx.thor.spu_reduced_loop_emit=1`; the
+  default and normal quiet profiles remain unchanged. Cache isolation by
+  reduced-loop enable state and unroll factor is retained.
+- ARM64 RelWithDebInfo built and linked successfully with
+  `:app:buildCMakeRelWithDebInfo[arm64-v8a]` in `1m 7s`. Host artifact
+  `librpcsx-android.so` is `1,349,937,224` bytes with SHA256
+  `16990D8CBE25A71E1AC17F8E3EB82B516367D1A6B4FF3F2A0CCC4E76FF4E4B33`.
+- The core was not packaged, deployed, or launched. The Thor received no
+  second route or heat cycle in this round.
+
+Decision: retain the backport behind the existing reduced-loop gate. On a later
+separately cool round, run one strict Direct-input first-battle route with
+`ReducedLoopEmitU4Quiet`; field, menu, first-battle visuals, draw-stream health,
+fatal health, temperature, and comparable FPS must all pass before promotion.

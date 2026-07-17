@@ -2650,6 +2650,13 @@ public:
 
 					m_block->block_wide_reg_store_elimination = true;
 
+					// Reuse pure instruction results between unrolled iterations when none
+					// of their inputs changed. This keeps larger Thor unroll factors from
+					// duplicating invariant work and growing the ARM64 code cache needlessly.
+					std::map<u32, std::pair<llvm::Value*, std::array<u32, 3>>> reduced_loop_values;
+					std::array<u32, s_reg_max + 1> reduced_loop_reg_states{};
+					u32 reduced_loop_reg_state = 1;
+
 					for (u32 iteration_emit = 0, opt_pos = baddr; opt_pos >= start && opt_pos < end; opt_pos += 4)
 					{
 						m_pos = opt_pos;
@@ -2725,7 +2732,50 @@ public:
 							break;
 						}
 
+						const auto [reg_rt, reg_access, masked_op] = op_register_targets(m_pos, spu_opcode_t{op});
+						const auto input_states = std::array<u32, 3>
+						{
+							reduced_loop_reg_states[reg_access[0]],
+							reduced_loop_reg_states[reg_access[1]],
+							reduced_loop_reg_states[reg_access[2]],
+						};
+
+						bool reused_result = false;
+						if (reg_rt < s_reg_max && m_inst_attrs[(m_pos - start) / 4] == inst_attr::none)
+						{
+							if (const auto found = reduced_loop_values.find(masked_op); found != reduced_loop_values.end() && found->second.first)
+							{
+								const auto& previous_states = found->second.second;
+								reused_result = true;
+
+								for (u32 input = 0; input < reg_access.size(); input++)
+								{
+									if (reg_access[input] < s_reg_max && previous_states[input] != input_states[input])
+									{
+										reused_result = false;
+										break;
+									}
+								}
+
+								if (reused_result)
+								{
+									m_block->reg[reg_rt] = found->second.first;
+								}
+							}
+						}
+
+						if (reg_rt < s_reg_max)
+						{
+							reduced_loop_reg_states[reg_rt] = reduced_loop_reg_state++;
+						}
+
+						if (reused_result)
+						{
+							continue;
+						}
+
 						m_next_op = 0;
+						reduced_loop_values[masked_op] = {};
 
 						switch (m_inst_attrs[(m_pos - start) / 4])
 						{
@@ -2747,6 +2797,11 @@ public:
 						}
 
 						(this->*decode(op))({op});
+
+						if (reg_rt < s_reg_max && itype & spu_itype::pure && reg_rt != reg_access[0] && reg_rt != reg_access[1] && reg_rt != reg_access[2])
+						{
+							reduced_loop_values[masked_op] = {ensure(m_block->reg[reg_rt]), input_states};
+						}
 					}
 
 					if (m_block->block_wide_reg_store_elimination)
