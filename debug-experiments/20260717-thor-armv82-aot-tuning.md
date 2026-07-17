@@ -635,3 +635,64 @@ New host artifact:
   cache, then compare the same exact APK/config with the cache route on versus
   off on separately cool starts. Require title/field visual correctness,
   pipeline-create timing, wall time, and thermal evidence before promotion.
+
+
+## Persistent Vulkan driver pipeline cache device seed result
+
+### 2026-07-17 - vk-pipeline-cache-seed-proof
+
+- Status: cache-seed-success; failed-thermal-guard; not-comparable for speed
+- Scope: rsx-vulkan
+- Exact installed ThorTest APK:
+  `A3E9F49A727B991F77F641B5800CC1927E497D2F3FFA84133682574DEB7D5355`,
+  `73,564,998` bytes. It contains merged core
+  `916508B53029EE7BC3656E741199D16856C85903A838AA9E9C912F320A25481B`
+  and packaged stripped core
+  `43DEF9184ADD69A47548A0E894BBF73662E423D1710F422E40A5DAB365D5620F`.
+  The ARM64 APK, optimized-variant, single-core-load, export-surface,
+  pipeline-cache, thermal, zipalign, and v2 signature gates all passed.
+- Install capture:
+  `debug-captures/20260717-090323-vk-pipeline-cache-thortest-apk-install`.
+  Installation did not launch RPCSX and confirmed that no previous
+  `driver_pipeline_cache.bin` existed.
+- Guarded route:
+  `debug-captures/android-speed-sprint/20260717-090825-thor-input-vk-pipeline-cache-seed-proof`.
+  It used the exact APK, direct input, normal two-worker/auto preload,
+  `VkPipelineCache=on`, three cool-preflight samples, two-second runtime
+  polling, and `34/40/75 C` limits.
+- Activation proof: the guest log created the core Vulkan cache with
+  `seed=0 bytes`, then atomically saved `754,355` bytes at 32 pipelines,
+  `1,212,061` bytes at 64, and `2,239,716` bytes at 128. This proves the
+  new normal graphics/compute cache path and force-stop-safe checkpoints
+  executed on Adreno.
+- Persisted artifact:
+  `cache/BLUS30161/ppu-VFsK9TLbNhFcL78pncprig5JUstQ-EBOOT.BIN/shaders_cache/vulkan/driver_pipeline_cache.bin`,
+  SHA256
+  `76318ED124ED3B3B9710347DAD72017E092194E7AD7A6EE7E7EC3614783B26A1`,
+  size `2,239,716`. Its Vulkan header is 32 bytes, version 1, Qualcomm vendor
+  `0x5143`, device `0x43050A01`, UUID
+  `47139E06435100000000010A05430000`.
+- Thermal result: the last preflight silicon sample was `33.7 C`; the first
+  runtime frame was `65.4 C`, then `73.1 C`, and the guard force-stopped
+  at `75.9 C`. Process establishment to guard was about `6.951 s`; the
+  first-poll adjusted rise was `31.7 C`. Immediate post-stop silicon was
+  `52.6 C`, then a later read-only audit reported `48.6 C` with no PID.
+- Visual/log result: the only screenshot was a non-corrupt pre-title progress
+  frame with `80.293%` progress white. It was not the title and provides no
+  field/menu/battle/flicker proof. Targeted fatal hits and decompiler-error rows
+  were both zero.
+- Decision: preserve the implementation and saved cache, but award no speed,
+  FPS, thermal, flicker, field, menu, battle, or stability credit. This was a
+  cold seed, not a warm-cache comparison, and it stopped before title.
+- Device postcondition: package stopped; route properties restored to
+  `vk_pipeline_cache=on`, normal `preload`, and worker override `0`.
+  No second launch is allowed in this thermal round.
+- Harness follow-up: standard Thor snapshots now pull the full `RPCSX.log`
+  automatically, so future thermal failures retain guest cache/fatal evidence
+  without a manual ADB recovery.
+- Next: after a separately cool soak, run the same exact APK/config once with
+  the cache on and require the log to report
+  `Created Vulkan driver pipeline cache (seed=2239716 bytes)`. Compare that
+  warm-on route separately from this cold seed; only then schedule a separately
+  cooled cache-off route if needed. Require title/field visuals and matched
+  thermal/wall-time evidence before claiming speed.

@@ -126,6 +126,10 @@ if (-not [string]::IsNullOrWhiteSpace($CaptureRoot)) {
     Write-Output "Validated captured Thor 87.1 C silicon trip."
 }
 $inputMacroSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_input_macro.ps1") -Raw
+$debugCommonSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_debug_common.ps1") -Raw
+if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?Copy-ThorAdbFile[\s\S]*?\$\{namePrefix\}RPCSX\.log') {
+    throw "Standard Thor snapshots do not preserve the full guest RPCSX log."
+}
 if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
     throw "The input route still invokes the quoted thermal-zone command through PowerShell native argument flattening."
 }

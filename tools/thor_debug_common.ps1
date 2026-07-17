@@ -952,4 +952,5 @@ function Write-ThorStandardSnapshot {
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}thread-affinity.txt" @("shell", "pid=`$(pidof $Package); if [ -z `"`$pid`" ]; then echo no-pid; exit 0; fi; echo pid=`$pid; grep -E 'Cpus_allowed|Mems_allowed' /proc/`$pid/status; for t in /proc/`$pid/task/*; do n=`$(cat `"`$t/comm`" 2>/dev/null); case `"`$n`" in rsx*|RSX*|SPU*|spu*|PPU*|ppu*) echo --- `"`$n`" `"`${t##*/}`"; grep -E 'Cpus_allowed_list|voluntary_ctxt_switches|nonvoluntary_ctxt_switches' `"`$t/status`"; esac; done") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}game-install-summary.txt" @("shell", "find $remoteRoot/config/dev_hdd0/game -maxdepth 3 -type d 2>/dev/null | sort") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $CaptureDir "${namePrefix}cache-summary.txt" @("shell", "du -k -d 3 $remoteRoot/cache 2>/dev/null | sort -n | tail -200") -AllowFailure | Out-Null
+    Copy-ThorAdbFile -Adb $Adb -CaptureDir $CaptureDir -DeviceFilesDir $CaptureDir -Remote "$remoteRoot/cache/RPCSX.log" -LocalName "${namePrefix}RPCSX.log" | Out-Null
 }
