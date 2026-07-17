@@ -127,6 +127,10 @@ namespace vk
 		const VkQueueFamilyProperties& get_queue_properties(u32 queue);
 		const VkPhysicalDeviceMemoryProperties& get_memory_properties() const;
 		const VkPhysicalDeviceLimits& get_limits() const;
+		const VkPhysicalDeviceProperties& get_properties() const
+		{
+			return props;
+		}
 
 		operator VkPhysicalDevice() const;
 		operator VkInstance() const;

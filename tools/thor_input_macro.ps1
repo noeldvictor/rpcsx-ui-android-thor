@@ -24,6 +24,8 @@ param(
     [double]$MaxSiliconTemperatureC = 80.0,
     [ValidateRange(0, 16)]
     [int]$RsxCacheWorkers = 0,
+    [ValidateSet("on", "off")]
+    [string]$VkPipelineCache = "on",
     [ValidateSet("off", "publisher", "parser", "both")]
     [string]$EsPpuCommandInterp = "off",
     [ValidateSet("off", "on")]
@@ -722,6 +724,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max skin temperature C: $MaxSkinTemperatureC",
     "- Max silicon temperature C: $MaxSiliconTemperatureC",
     "- RSX cache preload workers (0=auto): $RsxCacheWorkers",
+    "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
     "- Eternal Sonata async draw barrier requested: $requestedEsAsyncDrawBarrier",
@@ -741,6 +744,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
 if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "force-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
@@ -755,6 +759,8 @@ try {
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-set.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers $RsxCacheWorkers") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-effective.txt" @("shell", "getprop debug.rpcsx.thor.rsx_cache_workers") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-set.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache $VkPipelineCache") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-effective.txt" @("shell", "getprop debug.rpcsx.thor.vk_pipeline_cache") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp $EsPpuCommandInterp") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_command_interp") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe $EsPpuDispatchProbe") | Out-Null
@@ -1087,6 +1093,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
     if ($BootGame) {
         Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
@@ -1097,6 +1104,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null

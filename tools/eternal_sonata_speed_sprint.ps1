@@ -97,6 +97,8 @@ param(
     [double]$AndroidMaxSiliconTemperatureC = 80.0,
     [ValidateRange(0, 16)]
     [int]$AndroidRsxCacheWorkers = 0,
+    [ValidateSet("on", "off")]
+    [string]$AndroidVkPipelineCache = "on",
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
     [int]$ScreenshotMaxCount = 6,
@@ -672,6 +674,7 @@ function Invoke-AndroidRouteScene {
         MaxSkinTemperatureC = $AndroidMaxSkinTemperatureC
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
         RsxCacheWorkers = $AndroidRsxCacheWorkers
+        VkPipelineCache = $AndroidVkPipelineCache
     }
 
     if (-not [string]::IsNullOrWhiteSpace($AndroidSerial)) {

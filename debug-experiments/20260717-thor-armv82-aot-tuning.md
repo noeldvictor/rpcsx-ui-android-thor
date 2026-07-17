@@ -589,3 +589,49 @@ New host artifact:
   cache reuse and pipeline-construction cost on the host. Keep a one-worker
   normal-preload route parked for a later separately cool comparison, but do
   not promote it without title/field correctness and acceptable wall time.
+
+## Persistent Vulkan driver pipeline cache host candidate
+
+### 2026-07-17 - android-core-pipeline-cache
+
+- Status: host candidate; device-unmeasured
+- Scope: rsx-vulkan
+- Hypothesis: seeding normal Vulkan graphics and compute pipeline creation from
+  a title-local core VkPipelineCache can reduce repeated Adreno pipeline
+  construction during later warm starts without changing shader semantics.
+- Upstream review: official RPCS3 origin/master at 4309847 has no
+  Emu/RSX/VK changes after the local 1269ebf base. Its normal graphics and
+  compute pipeline compiler still passes a null cache; only the separate
+  shader-interpreter path owns an in-memory pipeline cache. There is therefore
+  no newer normal-pipeline patch to cherry-pick.
+- Changed files/settings: Android now creates one shared core pipeline cache,
+  validates persisted header size/version/vendor/device/UUID against the
+  current physical device, rejects files outside 32 B..64 MiB, retries empty
+  if a driver rejects saved seed data, and uses the cache for both graphics
+  and compute creation. It stores atomically under the per-title
+  shaders_cache/vulkan/driver_pipeline_cache.bin, checkpoints after pipeline
+  counts 32,64,128,..., and saves once more after compiler workers stop.
+  Non-Android execution retains the null-cache path.
+- Rollback: set debug.rpcsx.thor.vk_pipeline_cache=off; the route and wrapper
+  expose default-on VkPipelineCache / AndroidVkPipelineCache controls and
+  restore the property to on before launch and after success or failure.
+  Disabling the on-disk shader cache also disables this cache.
+- Host correctness: PowerShell AST parsing passed for all edited harness/test
+  scripts. tools/test_thor_vulkan_pipeline_cache.ps1,
+  tools/test_thor_thermal_guard.ps1, and
+  tools/test_thor_rsx_cache_preload.ps1 passed. The edited
+  VKPipelineCompiler.cpp produced a fresh ARM64 object, and
+  :app:buildCMakeRelWithDebInfo[arm64-v8a] completed successfully in the
+  confirming incremental pass.
+- Device result: none. No APK was assembled, installed, or launched, and the
+  stopped Thor was not queried or heated during this experiment.
+- FPS/frame-time: none. Core pipeline-cache support is only a plausible warm
+  startup/stutter candidate; it has no speed, thermal, flicker, field, menu,
+  battle, or stability credit.
+- Decision: preserve as a reversible host-built candidate. Do not claim a
+  speedup and do not combine it with the retired deferred-preload lane.
+- Next: after a separately cool soak, build/install one exact ThorTest APK
+  without launch. Use short guarded rounds to establish a compatible saved
+  cache, then compare the same exact APK/config with the cache route on versus
+  off on separately cool starts. Require title/field visual correctness,
+  pipeline-create timing, wall time, and thermal evidence before promotion.

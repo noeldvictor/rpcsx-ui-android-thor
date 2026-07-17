@@ -157,6 +157,19 @@ if ($rsxWorkerResetCount -ne 3) {
 if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.rsx_cache_workers \$RsxCacheWorkers') {
     throw "The input route does not set the requested RSX cache worker override before launch."
 }
+if ($inputMacroSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$VkPipelineCache\s*=\s*"on"') {
+    throw "The input route does not expose a default-on Vulkan pipeline cache rollback."
+}
+$vkPipelineCacheResetCount = [regex]::Matches(
+    $inputMacroSource,
+    [regex]::Escape('setprop debug.rpcsx.thor.vk_pipeline_cache on')
+).Count
+if ($vkPipelineCacheResetCount -ne 3) {
+    throw "The input route must reset the Vulkan pipeline cache route before launch and after success or failure; found $vkPipelineCacheResetCount resets."
+}
+if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.vk_pipeline_cache \$VkPipelineCache') {
+    throw "The input route does not set the requested Vulkan pipeline cache route before launch."
+}
 if ($inputMacroSource -notmatch '\$slice\s*=\s*\[Math\]::Min\(\$remaining,\s*\$ThermalPollIntervalSeconds\s*\*\s*1000\)') {
     throw "Long input-route waits do not use the bounded thermal polling interval."
 }
@@ -191,6 +204,10 @@ if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPollSeconds\s*=\s*2') {
 if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$AndroidRsxCacheWorkers\s*=\s*0' -or
     $speedSprintSource -notmatch 'RsxCacheWorkers\s*=\s*\$AndroidRsxCacheWorkers') {
     throw "The Android speed-sprint wrapper does not expose and forward the bounded RSX cache worker override."
+}
+if ($speedSprintSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$AndroidVkPipelineCache\s*=\s*"on"' -or
+    $speedSprintSource -notmatch 'VkPipelineCache\s*=\s*\$AndroidVkPipelineCache') {
+    throw "The Android speed-sprint wrapper does not expose and forward the default-on Vulkan pipeline cache route."
 }
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."
