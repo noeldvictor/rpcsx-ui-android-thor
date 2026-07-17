@@ -352,7 +352,7 @@ function Assert-SpeedAndroidSceneGuard {
     $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
     $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
 
-    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$AndroidMaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$AndroidMaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$AndroidMaxSiliconTemperatureC guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$AndroidMaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$AndroidMaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$AndroidMaxSiliconTemperatureC skin_sensor_count=$($snapshot.skin_sensor_count) silicon_sensor_count=$($snapshot.silicon_sensor_count) guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $CaptureDir "thermal-guard.log") -Append -Encoding UTF8
 
     $violationParams = @{

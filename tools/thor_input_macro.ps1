@@ -192,7 +192,7 @@ function Get-ThorMacroForProfile {
             return "wait:120000;shot:title;dpad_down;wait:800;cross;wait:30000;shot:load-30s;wait:90000;shot:load-120s"
         }
         "eternal-sonata-load-field-route" {
-            return "wait:90000;shot:title-before-load;dpad_down;wait:800;shot:title-load-selected;cross;wait:55000;shot:load-save-list;cross;wait:1000;dpad_up;wait:500;cross;wait:65000;shot:load-complete;cross;wait:30000;shot:loaded-field;threads:load-field-route"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;threads:load-field-route"
         }
         "eternal-sonata-battle-intro-route" {
             # Screenshot labels remain candidates until visual review confirms the battle UI.
@@ -203,7 +203,7 @@ function Get-ThorMacroForProfile {
             # Start the visual readiness gate immediately. It rejects PPU
             # compilation and black transition frames, so a fixed 60-second
             # pre-wait only heats the device and delays warm-cache routes.
-            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;wait:20000;shot:load-save-list;check:visual:load-menu;cross;wait:1000;dpad_up;wait:500;cross;wait:35000;shot:load-complete;check:visual:load-menu;cross;wait:12000;shot:loaded-field;check:visual:field-frame;check:guest:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
+            return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;stick:left:down_left:700;wait:1000;approach:battle:left:left:900:3:11000;shot:first-battle-prompt-candidate;dpad_down;wait:300;cross;wait:4000;shot:first-battle-active-candidate;check:visual:battle-frame;check:guest:battle-active;wait:750;shot:first-battle-temporal-01;check:visual:battle-frame;wait:750;shot:first-battle-temporal-02;check:visual:battle-frame;wait:750;shot:first-battle-temporal-03;check:visual:battle-frame;wait:750;shot:first-battle-temporal-04;check:visual:battle-frame;wait:4000;shot:first-battle-live-10s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-temporal-04;check:guest:battle-live-10s;wait:10000;shot:first-battle-live-20s-candidate;check:visual:battle-frame;check:visual:changed:first-battle-live-10s-candidate;check:guest:battle-live-20s;stop"
         }
         "eternal-sonata-field-direct" {
             return "wait:90000;cross;wait:20000;start;wait:3000;cross;wait:1000;cross;wait:100000;shot:field;stick:left:left:1000;wait:1000;shot:field-move;start;wait:1000;shot:pause-menu"
@@ -427,21 +427,10 @@ function Save-ThorThreadSnapshot {
 }
 
 function Get-ThorTemperatureSnapshot {
-    $batteryLines = @(& $Adb shell dumpsys battery 2>$null)
-    if ($LASTEXITCODE -ne 0) {
-        $batteryLines = @()
-    }
-
-    $hardwareLines = @(& $Adb shell dumpsys hardware_properties 2>$null)
-    if ($LASTEXITCODE -ne 0) {
-        $hardwareLines = @()
-    }
-
+    $batteryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", "dumpsys battery") -ScratchDir $captureDir -TimeoutSeconds 3)
+    $hardwareLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", "dumpsys hardware_properties") -ScratchDir $captureDir -TimeoutSeconds 3)
     $thermalZoneCommand = Get-ThorThermalZoneShellCommand
-    $thermalZoneLines = @(& $Adb shell $thermalZoneCommand 2>$null)
-    if ($LASTEXITCODE -ne 0) {
-        $thermalZoneLines = @()
-    }
+    $thermalZoneLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $thermalZoneCommand) -ScratchDir $captureDir -TimeoutSeconds 3)
 
     $snapshotParams = @{
         BatteryLines = $batteryLines
@@ -560,7 +549,7 @@ function Assert-ThorThermalBudget {
     $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
     $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
     $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
-    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$MaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$MaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$MaxSiliconTemperatureC guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$MaxBatteryTemperatureC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$MaxSkinTemperatureC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$MaxSiliconTemperatureC skin_sensor_count=$($snapshot.skin_sensor_count) silicon_sensor_count=$($snapshot.silicon_sensor_count) guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
 
     $violationParams = @{
@@ -700,7 +689,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
     "",
-    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
+    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
     'Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.',
     'Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`.'
     'State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected.'
@@ -799,6 +788,64 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
             if (-not $ppuReady) {
                 Throw-ThorVisualFailure "The Eternal Sonata title menu did not stabilize after PPU compilation within the bounded $gateTimeoutMs ms readiness gate; route inputs and gameplay claims are invalid." "visual-ppu-ready-timeout"
             }
+        } elseif ($token -match '^gate:visual:(load-menu|load-complete|field-frame)(?::(\d+))?$') {
+            $visualState = $Matches[1]
+            $visualTimeoutMs = if ($Matches[2]) {
+                [int]$Matches[2]
+            } else {
+                switch ($visualState) {
+                    "load-menu" { 30000 }
+                    "load-complete" { 50000 }
+                    "field-frame" { 25000 }
+                }
+            }
+            if ($visualTimeoutMs -lt 5000 -or $visualTimeoutMs -gt 60000) {
+                throw "Visual-state gate timeout must be between 5000 and 60000 ms."
+            }
+
+            $visualTimer = [Diagnostics.Stopwatch]::StartNew()
+            $visualAttempt = 0
+            $visualStableCount = 0
+            $visualReady = $false
+            while ($visualTimer.ElapsedMilliseconds -le $visualTimeoutMs) {
+                $visualAttempt++
+                $visualLabel = "$visualState-gate-{0:D2}" -f $visualAttempt
+                Save-ThorScreenshot $visualLabel $index
+                $index++
+                Assert-ThorProcessIdentity "visual-$visualState-$visualAttempt"
+                Assert-ThorThermalBudget "screenshot-$visualLabel"
+
+                $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+                $visualCandidate = switch ($visualState) {
+                    "load-menu" { $classification.load_menu_present }
+                    "load-complete" { $classification.load_complete_present }
+                    "field-frame" { $classification.field_frame_present }
+                }
+                if ($visualCandidate) {
+                    $visualStableCount++
+                } else {
+                    $visualStableCount = 0
+                }
+
+                "$(Get-Date -Format o) state=$visualState attempt=$visualAttempt elapsed_ms=$($visualTimer.ElapsedMilliseconds) timeout_ms=$visualTimeoutMs candidate=$visualCandidate stable_count=$visualStableCount load_menu_present=$($classification.load_menu_present) load_complete_present=$($classification.load_complete_present) load_dialog_dark_percent=$($classification.load_dialog_dark_percent) load_dialog_edge_percent=$($classification.load_dialog_edge_percent) field_frame_present=$($classification.field_frame_present) title_menu_present=$($classification.title_menu_present) story_scene_present=$($classification.story_scene_present) battle_ui_present=$($classification.battle_ui_present) ppu_compilation_screen_present=$($classification.ppu_compilation_screen_present) black_frame_present=$($classification.black_frame_present) path=$($classification.path)" |
+                    Out-File -LiteralPath (Join-Path $captureDir "visual-$visualState-gate.log") -Append -Encoding UTF8
+
+                if ($visualStableCount -ge 2) {
+                    $visualReady = $true
+                    break
+                }
+
+                $remainingMs = $visualTimeoutMs - [int]$visualTimer.ElapsedMilliseconds
+                if ($remainingMs -le 0) {
+                    break
+                }
+                Start-Sleep -Milliseconds ([Math]::Min(1500, $remainingMs))
+            }
+            $visualTimer.Stop()
+
+            if (-not $visualReady) {
+                Throw-ThorVisualFailure "Eternal Sonata visual state '$visualState' did not stabilize within $visualTimeoutMs ms; subsequent inputs are unsafe." "visual-$visualState-timeout"
+            }
         } elseif ($token -match '^shot:(.+)$') {
             Save-ThorScreenshot $Matches[1] $index
             $index++
@@ -844,6 +891,18 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
             if (-not $classification.load_menu_present) {
                 Throw-ThorVisualFailure "The Eternal Sonata Load menu is not visible; a title input was dropped or the route entered the wrong state." "visual-load-menu-failure"
+            }
+        } elseif ($token -eq 'check:visual:load-complete') {
+            if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {
+                throw "The Load-complete visual check requires a preceding screenshot."
+            }
+
+            $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
+            "$(Get-Date -Format o) load_complete_present=$($classification.load_complete_present) load_menu_present=$($classification.load_menu_present) load_dialog_dark_percent=$($classification.load_dialog_dark_percent) load_dialog_edge_percent=$($classification.load_dialog_edge_percent) black_frame_present=$($classification.black_frame_present) path=$($classification.path)" |
+                Out-File -LiteralPath (Join-Path $captureDir "load-complete-visual-gate.log") -Append -Encoding UTF8
+
+            if (-not $classification.load_complete_present) {
+                Throw-ThorVisualFailure "The Eternal Sonata Load-complete popup is not visible; dismissing the load state is unsafe." "visual-load-complete-failure"
             }
         } elseif ($token -eq 'check:visual:field-frame') {
             if ([string]::IsNullOrWhiteSpace($script:LastThorScreenshotPath)) {

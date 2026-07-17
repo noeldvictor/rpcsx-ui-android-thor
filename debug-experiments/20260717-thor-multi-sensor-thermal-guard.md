@@ -14,6 +14,7 @@ Changed files:
 - `tools/thor_input_macro.ps1`
 - `tools/eternal_sonata_speed_sprint.ps1`
 - `tools/test_thor_thermal_guard.ps1`
+- `tools/test_thor_visual_route_gate.ps1`
 
 The shared parser now combines:
 
@@ -29,7 +30,7 @@ Separate default ceilings avoid applying a battery-safe limit to normal silicon 
 - skin: `45 C`;
 - CPU/GPU silicon: `80 C`.
 
-Both the route macro and bounded scene capture now fail closed when battery temperature is unavailable or when no CPU/GPU/skin sensor is readable. A threshold breach or telemetry failure force-stops RPCSX. The route log records every source and hottest category value; the scene capture also saves raw battery, hardware-properties, and thermal-zone output for each guard stage.
+Both the route macro and bounded scene capture now fail closed when battery temperature is unavailable or when no CPU/GPU silicon sensor is readable. Skin-only telemetry is not sufficient because the real Thor evidence below showed a `30.0 C` skin reading while a CPU zone was at `87.1 C`. A threshold breach or telemetry failure force-stops RPCSX. The route log records every source and hottest category value; the scene capture also saves raw battery, hardware-properties, and thermal-zone output for each guard stage.
 
 ## Host verification
 
@@ -72,4 +73,65 @@ Revert the thermal-guard commit. Do not disable the guard for performance measur
 
 Status: `route-tooling` / host-pass. This does not change emulator FPS. It makes the next cool-device menu or battle proof safer and gives a trustworthy thermal reason when a run is stopped.
 
-Next action: after cooldown, allow only the pre-run telemetry query. Launch one bounded route only if battery plus at least one CPU/GPU/skin source are readable and below their separate limits.
+Next action: do not repeat the long route. Only after cooldown, permit a pre-run telemetry query and require battery plus real CPU/GPU silicon sources below their separate limits. Any later route must use the shortened visual-state gates described below.
+
+## Real Thor preflight and thermal abort
+
+A stopped-device preflight validated the parser against the actual AYN Thor sensor layout without launching RPCSX:
+
+- report: `debug-captures/adb-reports/20260717-020014-thor-thermal-preflight`;
+- battery: `25.0 C`;
+- skin: `30.0 C` from `hardware/skin/0`;
+- hottest silicon: `48.6 C` from `thermal_zone44/cpu-1-9`;
+- parsed sources: 65 thermal-zone values, one hardware value, and 30 guarded CPU/GPU/skin values;
+- result: below the tightened menu limits, so one bounded menu attempt was allowed.
+
+The single menu attempt used direct input, quiet logging, stock Qualcomm Vulkan, all experimental speed properties off, no screen recording, automatic stop, and tightened `35 C` battery / `42 C` skin / `75 C` silicon ceilings.
+
+Evidence:
+
+- route: `debug-captures/android-speed-sprint/20260717-020116-thor-input-custom`;
+- aborted scene: `debug-captures/android-speed-sprint/20260717-020519-eternal-sonata-menu-stock-qualcomm-scene`;
+- route duration: about `247.8 s` before the scene preflight;
+- `13-pause-menu.png` is visually correct and reads `29.09 FPS`;
+- both `guest-health-loaded-field.log` and `guest-health-pause-menu.log` contain zero fatal, device-loss, unknown-draw, `VK_ERROR`, `SIGSEGV`, `SIGABRT`, or assertion matches;
+- scene preflight: battery `26.0 C`, skin `30.0 C`, hottest silicon `87.1 C` at `thermal_zone44/cpu-1-9`;
+- `guard-pre-capture-silicon-temperature-stop.txt` records the forced package stop.
+
+Classification: the pause frame is a useful `29.09 FPS` candidate, but the menu proof is `failed-thermal-guard`. The capture window never started, so this is not accepted as a menu stability pass and no repeat run is allowed in the same thermal round. The previously banked clean field result remains `28.00-28.96 FPS`.
+
+## Post-abort safety fix
+
+The route's own thermal log exposed a host bug: every poll had `thermal_zone_count=0`, yet the old guard accepted the lone `30.0 C` skin source. Direct PowerShell native invocation had flattened the quoted remote shell command; the later scene capture used the lossless process wrapper and therefore saw all silicon zones.
+
+Host-only corrections:
+
+- route polling now uses `Invoke-ThorAdbLines`, the same lossless native-argument path as scene capture;
+- a guard snapshot records separate skin and silicon sensor counts;
+- missing CPU/GPU silicon telemetry fails closed even when battery and skin are readable;
+- thermal-zone polling uses shell `read` built-ins rather than spawning two `cat` processes per zone;
+- the standard log includes the skin and silicon sensor counts.
+
+No ADB command, app launch, or device workload was used to validate these corrections.
+
+## Shorter state-aware route
+
+The three large fixed waits in the Eternal Sonata load route were replaced with bounded visual gates:
+
+- Load menu: `gate:visual:load-menu:30000`;
+- Load-complete popup: `gate:visual:load-complete:50000`;
+- playable field: `gate:visual:field-frame:25000`.
+
+Each gate requires two consecutive matching frames, pins the RPCSX process, checks the multi-sensor thermal budget, logs the classification, and fails closed on timeout. The Load-complete detector uses the popup's language-independent dark/edge signature over the parchment panel. It is gated by the existing Load-menu classifier, so title, field, and wrong-route captures cannot authorize the dismiss input.
+
+Host evidence:
+
+- the new synthetic visual-route test passed;
+- the real 2026-07-17 Load list, Load-complete popup, and field frames classified correctly;
+- an offline sweep accepted 76 historical frames as valid Load-menu fixtures and produced zero Load-list versus Load-complete mismatches;
+- battle and load-field profile contracts contain all three new gates and none of the old `wait:20000`, `wait:35000`, or `wait:12000` transition sequences;
+- thermal parser/violation tests passed;
+- all changed PowerShell files passed AST parsing;
+- `git diff --check` passed.
+
+Status: `route-tooling` / host-pass for the safety and route-shortening changes; `failed-thermal-guard` for the menu device proof. No emulator FPS gain is attributed to these host changes, but they reduce avoidable hot dwell and prevent skin-only telemetry from masking a hot SoC.

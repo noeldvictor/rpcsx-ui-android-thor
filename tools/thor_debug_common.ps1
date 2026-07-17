@@ -56,7 +56,7 @@ function ConvertFrom-ThorBatteryTemperatureC {
 }
 
 function Get-ThorThermalZoneShellCommand {
-    return 'for z in /sys/class/thermal/thermal_zone*; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; t=$(cat "$z/type" 2>/dev/null); v=$(cat "$z/temp" 2>/dev/null); printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
+    return 'for z in /sys/class/thermal/thermal_zone*; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; IFS= read -r t < "$z/type" 2>/dev/null || t=; IFS= read -r v < "$z/temp" 2>/dev/null || v=; printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
 }
 
 function Get-ThorTemperatureDomain {
@@ -179,6 +179,8 @@ function Get-ThorThermalGuardSnapshot {
     $batteryReading = @($readings | Where-Object domain -eq "battery" | Sort-Object temperature_c -Descending | Select-Object -First 1)
     $skinReading = @($readings | Where-Object domain -eq "skin" | Sort-Object temperature_c -Descending | Select-Object -First 1)
     $siliconReading = @($readings | Where-Object domain -eq "silicon" | Sort-Object temperature_c -Descending | Select-Object -First 1)
+    $skinReadings = @($readings | Where-Object domain -eq "skin")
+    $siliconReadings = @($readings | Where-Object domain -eq "silicon")
     $guardReadings = @($readings | Where-Object { $_.domain -eq "skin" -or $_.domain -eq "silicon" })
     $sourceSummary = @($readings | Sort-Object domain, source | ForEach-Object {
         "{0}:{1}={2}" -f $_.domain, $_.source, $_.temperature_c.ToString("F1", [Globalization.CultureInfo]::InvariantCulture)
@@ -191,6 +193,8 @@ function Get-ThorThermalGuardSnapshot {
         skin_source = if ($skinReading.Count) { $skinReading[0].source } else { "none" }
         silicon_temperature_c = if ($siliconReading.Count) { $siliconReading[0].temperature_c } else { $null }
         silicon_source = if ($siliconReading.Count) { $siliconReading[0].source } else { "none" }
+        skin_sensor_count = $skinReadings.Count
+        silicon_sensor_count = $siliconReadings.Count
         guard_sensor_count = $guardReadings.Count
         thermal_zone_count = $zoneReadings.Count
         hardware_sensor_count = $hardwareReadings.Count
@@ -223,10 +227,10 @@ function Get-ThorThermalGuardViolation {
             message = "Thor battery temperature could not be read."
         }
     }
-    if ($Snapshot.guard_sensor_count -lt 1) {
+    if ($Snapshot.silicon_sensor_count -lt 1) {
         return [pscustomobject]@{
-            code = "unknown-workload-temperature"
-            message = "Thor CPU/GPU/skin temperature telemetry could not be read; battery-only telemetry is insufficient."
+            code = "unknown-silicon-temperature"
+            message = "Thor CPU/GPU silicon temperature telemetry could not be read; battery/skin telemetry is insufficient."
         }
     }
     if ($Snapshot.battery_temperature_c -ge $MaxBatteryTemperatureC) {
@@ -433,6 +437,49 @@ function Get-ThorBattleUiClassification {
             $loadBeigePercent -ge 60.0
         )
 
+        # The successful load popup adds a dark, high-contrast dialog over the
+        # otherwise flat parchment region. This state-specific gate replaces a
+        # fixed post-confirm wait without relying on OCR or language-specific text.
+        $loadDialogXStart = [int]($bitmap.Width * 0.460)
+        $loadDialogXEnd = [int]($bitmap.Width * 0.820)
+        $loadDialogYStart = [int]($bitmap.Height * 0.430)
+        $loadDialogYEnd = [int]($bitmap.Height * 0.620)
+        $loadDialogDarkSamples = 0
+        $loadDialogEdgeSamples = 0
+        $loadDialogTotalSamples = 0
+
+        for ($y = $loadDialogYStart; $y -lt $loadDialogYEnd; $y += 6) {
+            $previousLuminance = $null
+            for ($x = $loadDialogXStart; $x -lt $loadDialogXEnd; $x += 6) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                $luminance = ([int]$pixel.R + [int]$pixel.G + [int]$pixel.B) / 3.0
+                $loadDialogTotalSamples++
+                if ($pixel.R -lt 100 -and $pixel.G -lt 80 -and $pixel.B -lt 60) {
+                    $loadDialogDarkSamples++
+                }
+                if ($null -ne $previousLuminance -and [Math]::Abs($luminance - $previousLuminance) -ge 45.0) {
+                    $loadDialogEdgeSamples++
+                }
+                $previousLuminance = $luminance
+            }
+        }
+
+        $loadDialogDarkPercent = if ($loadDialogTotalSamples -gt 0) {
+            100.0 * $loadDialogDarkSamples / $loadDialogTotalSamples
+        } else {
+            0.0
+        }
+        $loadDialogEdgePercent = if ($loadDialogTotalSamples -gt 0) {
+            100.0 * $loadDialogEdgeSamples / $loadDialogTotalSamples
+        } else {
+            0.0
+        }
+        $loadCompletePresent = (
+            $loadMenuPresent -and
+            $loadDialogDarkPercent -ge 12.0 -and
+            $loadDialogEdgePercent -ge 2.0
+        )
+
         # Post-load story scenes in this save carry the bright Eternal Sonata
         # watermark in the upper-right. Known-good field and battle captures
         # contain no matching samples, while the failed 2026-07-17 route was
@@ -506,6 +553,12 @@ function Get-ThorBattleUiClassification {
             load_total_samples = $loadTotalSamples
             load_beige_percent = [Math]::Round($loadBeigePercent, 3)
             load_menu_present = $loadMenuPresent
+            load_dialog_dark_samples = $loadDialogDarkSamples
+            load_dialog_edge_samples = $loadDialogEdgeSamples
+            load_dialog_total_samples = $loadDialogTotalSamples
+            load_dialog_dark_percent = [Math]::Round($loadDialogDarkPercent, 3)
+            load_dialog_edge_percent = [Math]::Round($loadDialogEdgePercent, 3)
+            load_complete_present = $loadCompletePresent
             story_logo_bright_samples = $storyLogoBrightSamples
             story_logo_total_samples = $storyLogoTotalSamples
             story_logo_bright_percent = [Math]::Round($storyLogoBrightPercent, 3)
@@ -641,6 +694,42 @@ function Invoke-ThorAdbCapture {
     [System.IO.File]::WriteAllText($StderrPath, $stderrTask.Result, $encoding)
 
     return $process.ExitCode
+}
+
+function Invoke-ThorAdbLines {
+    param(
+        [string]$Adb,
+        [string[]]$AdbArgs,
+        [string]$ScratchDir,
+        [int]$TimeoutSeconds = 0
+    )
+
+    New-Item -ItemType Directory -Force -Path $ScratchDir | Out-Null
+    $captureId = [Guid]::NewGuid().ToString("N")
+    $stdoutPath = Join-Path $ScratchDir ".thor-adb-$captureId.stdout.tmp"
+    $stderrPath = Join-Path $ScratchDir ".thor-adb-$captureId.stderr.tmp"
+
+    try {
+        $exitCode = Invoke-ThorAdbCapture `
+            -Adb $Adb `
+            -AdbArgs $AdbArgs `
+            -StdoutPath $stdoutPath `
+            -StderrPath $stderrPath `
+            -TimeoutSeconds $TimeoutSeconds
+
+        if ($exitCode -ne 0 -or -not (Test-Path -LiteralPath $stdoutPath)) {
+            return @()
+        }
+
+        return @(Get-Content -LiteralPath $stdoutPath)
+    } finally {
+        if (Test-Path -LiteralPath $stdoutPath) {
+            Remove-Item -LiteralPath $stdoutPath -Force
+        }
+        if (Test-Path -LiteralPath $stderrPath) {
+            Remove-Item -LiteralPath $stderrPath -Force
+        }
+    }
 }
 
 function Invoke-ThorAdbText {
