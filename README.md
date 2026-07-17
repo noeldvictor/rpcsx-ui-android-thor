@@ -98,6 +98,7 @@ Summary: upstream is the general Android app; this fork is the Thor handheld bui
 - Per-game compiled-cache status reads `cache/cache/TITLEID` and counts PPU, SPU, and RSX shader cache entries.
 - RSX shader cache lives below the PPU cache tree (`.../ppu-*/shaders_cache/`), so selected compiled-cache storage covers CPU and shader cache together.
 - Thor defaults cap LLVM compile workers, disable full first-boot PPU precompile, enable SPU and on-disk shader cache, and use a Thor-safe `cortex-a78` LLVM target.
+- ARM64 native code uses the Thor-wide ARMv8.2-A baseline for inline LSE atomics and an A715 scheduling model; these tune ahead-of-time host code without changing runtime JIT feature gates.
 - The old Android `cortex-a34` startup override is removed because it silently downgrades Thor JIT codegen.
 - Fast Forward 2x uses RPCSX/RPCS3 `Clocks scale`, not raw uncapped rendering.
 - System Info includes `Thor Feature Doctor` output for LLVM CPU, detected AArch64 cores, and Android feature flags.
@@ -196,6 +197,8 @@ For native/core speed iteration on Thor, use the optimized dev-core hot-swap pat
 ```
 
 That script defaults to `:app:buildCMakeRelWithDebInfo[arm64-v8a]` so FPS tests use `-O2 -DNDEBUG -flto=thin`. Debug native fallback is intentionally opt-in with `-AllowDebugFallback`; Debug native cores are useful for diagnosis, not FPS claims.
+
+ARM64 builds also default to `-march=armv8.2-a -mtune=cortex-a715`. Override either setting for a diagnostic build with `-PrpcsxAndroidArmArch=...` or `-PrpcsxAndroidArmTune=...`; pass an empty value to disable that flag. The architecture baseline is valid across Thor's Snapdragon 865 and Snapdragon 8 Gen 2 variants, while `-mtune` changes scheduling decisions only.
 
 ## Thor Debug Capture
 

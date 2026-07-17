@@ -12,6 +12,15 @@ val buildBundledRpcsxCore =
         else -> true
     }
 
+val rpcsxAndroidArmArch =
+    providers.gradleProperty("rpcsxAndroidArmArch").orNull
+        ?: System.getenv("RPCSX_ANDROID_ARM_ARCH")
+        ?: "armv8.2-a"
+val rpcsxAndroidArmTune =
+    providers.gradleProperty("rpcsxAndroidArmTune").orNull
+        ?: System.getenv("RPCSX_ANDROID_ARM_TUNE")
+        ?: "cortex-a715"
+
 android {
     namespace = "net.rpcsx"
     compileSdk = 36
@@ -31,7 +40,11 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments += "-DRPCSX_BUILD_BUNDLED_CORE=${if (buildBundledRpcsxCore) "ON" else "OFF"}"
+                arguments += listOf(
+                    "-DRPCSX_BUILD_BUNDLED_CORE=${if (buildBundledRpcsxCore) "ON" else "OFF"}",
+                    "-DRPCSX_ANDROID_ARM_ARCH=$rpcsxAndroidArmArch",
+                    "-DRPCSX_ANDROID_ARM_TUNE=$rpcsxAndroidArmTune",
+                )
             }
         }
 
