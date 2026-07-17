@@ -555,3 +555,38 @@ Classification: `rejected-preflight`, `candidate-not-installed`,
 `device-runtime-unmeasured`, plus host-only `thermal-evidence-tooling`. The
 next device step remains one later strict cool install-only gate; runtime proof
 belongs to a different independently cool round.
+
+## Parallel candidate installed after later cool gate
+
+Later no-boot gate:
+
+`debug-captures/android-speed-sprint/20260717-184845-thor-input-parallel-rsx-warm-checkpoint-install-cool-gate-retry`
+
+RPCSX was force-stopped and its PID remained absent. Battery/skin held
+`23.0 / 30.0 C`; all three silicon samples were `33.1 C`, below the strict
+`35 C` ceiling with zero rise. The gate completed without booting or driving
+input, so the exact candidate was eligible for install in this later round.
+
+Install capture:
+
+`debug-captures/android-speed-sprint/20260717-185027-parallel-rsx-warm-checkpoint-apk-install`
+
+The streamed install completed in `8.543 s`. The host APK remained exactly
+`73,572,618` bytes with SHA-256
+`24F3F26785681A96AFD152574FB82206FC5EBDDF508F194ADDF46DE575E3F87F`,
+and the installed package's `base.apk` produced the same SHA-256. PID was
+absent before and after install. Idle properties were reset to RSX workers,
+RSX preload, and SPU preload `0/0/0`; Vulkan pipeline cache was `on`; PPU
+interpreter, dispatch probe, and async draw barrier were all `off`.
+
+The one post-install sample recorded battery/skin/silicon at
+`23.0 / 30.0 / 35.1 C`. No app launch, game boot, input, or runtime route ran.
+Classification is `device-install-proven`, `device-runtime-unmeasured`.
+Grant no startup, thermal-runtime, title, FPS, flicker, gameplay, or stability
+credit in this round.
+
+The exact APK is now installed and the package is stopped. One different,
+independently cool round may spend one guarded bounded title proof. It must
+first prove `Shader cache preload workers: load=2, compile=2`, retain the
+RSX `256` and SPU `64` preload bounds, and show that the validated-warm Vulkan
+cache does not synchronously rewrite at 256 creates before any speed claim.
