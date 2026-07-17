@@ -414,3 +414,32 @@ This corrected APK is host-only and not installed. Classification:
 `thermal-stability-candidate`, `device-unmeasured`. A later separately cool
 round may install it without launch; only a different independently cool round
 may spend its guarded runtime proof.
+
+## Corrected auto-worker no-launch install
+
+Cool gate:
+
+`debug-captures/android-speed-sprint/20260717-175708-thor-input-corrected-rsx-auto-worker-install-cool-gate`
+
+The input harness was invoked with `ForceStop` and no boot path. Battery/skin
+were `23.0 / 30.0 C`, silicon was `33.5 -> 32.7 -> 33.5 C` (`0.0 C` rise),
+and RPCSX remained absent. No emulator activity or route input was allowed.
+
+Install capture:
+
+`debug-captures/android-speed-sprint/20260717-175947-corrected-rsx-auto-worker-thortest-apk-install`
+
+The exact `73,572,242`-byte APK SHA-256
+`D463FED6A9535E55575B0FABC0CA87454CA391F7F340664186DAAA7AE4A424F8`
+installed successfully through streamed `adb install -r`. The installed
+`base.apk` hash matches exactly. RPCSX PID was absent before and after install.
+Idle properties are RSX workers/RSX limit/SPU limit `0/0/0`, Vulkan cache
+`on`, and PPU interpreter/dispatch probe/async draw barrier all `off`.
+Post-install battery/skin/silicon were `23.0 / 30.0 / 34.7 C`.
+
+Classification: `device-install-proven`, `device-runtime-unmeasured`. Grant
+no startup, thermal-runtime, title, FPS, flicker, gameplay, or stability
+credit. Do not launch in this install round. One later independently cool
+round may spend one bounded guarded proof and must first prove the intended
+`Shader cache preload workers: load=2, compile=1` activation row under the
+same RSX `256`, SPU `64`, Vulkan-cache-on controls.
