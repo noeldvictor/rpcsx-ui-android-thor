@@ -129,3 +129,56 @@ gates, pins the selected Android serial across nested ADB helpers, and changes
 route runtime polling from a hard-coded five seconds to a two-second default.
 The next separately cooled round may run one state-gated field attempt; it must
 still abort rather than exceed the configured silicon ceiling.
+
+## Warm-cache startup follow-up
+
+The thermal abort happened during startup, so the next round stayed host-only:
+no ADB query, deployment, launch, or device temperature read was performed.
+Captured cache summaries from the failed route and two prior successful routes
+show the same `BLUS30161` cache size (`26,210 KiB`) and the same EBOOT cache
+directory (`26,207 KiB`). Prior guest logs report `LLVM: Loaded module` rather
+than compiling a replacement object. This rules out a missing or wholesale
+invalidated PPU cache as the main warm-start problem.
+
+The source trace found two redundant scans in the normal Thor configuration:
+
+1. `ppu_initialize()` performed a complete check-only hash/cache pass over the
+   main PPU executable. Its result is used only to enqueue related directories
+   when `LLVM Precompilation` is enabled, but the Thor profile explicitly sets
+   that option to `false`. The real initialization then repeated the executable
+   partitioning, hashing, and cache checks immediately afterward.
+2. Each PPU initialization decoded every instruction looking for `MFVSCR`, even
+   when `PPU Set Saturation Bit` was disabled. The result affects code generation
+   and the cache key only when that option is enabled. Eternal Sonata Android
+   captures and the default configuration both record it as `false`.
+
+The warm-start candidate now:
+
+- runs the check-only main-module pass only when LLVM precompilation is enabled;
+- runs the MFVSCR instruction scan only when accurate SAT handling is enabled.
+
+Behavior remains unchanged for both enabled modes. PPU code generation, cache
+keys, the real load pass, and the existing cache objects are unchanged for the
+Thor configuration.
+
+Host validation:
+
+- `tools/test_ppu_warm_cache_startup.ps1`: passed;
+- PowerShell parser validation: passed;
+- `git diff --check`: passed;
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]`: `BUILD SUCCESSFUL` in `67.4 s`;
+- PPU compile flags remain
+  `-march=armv8.2-a -mtune=cortex-a715`.
+
+New host artifact:
+
+- path:
+  `app/build/intermediates/cxx/RelWithDebInfo/2t5h1l52/obj/arm64-v8a/librpcsx-android.so`;
+- size: `1,347,345,712` bytes;
+- SHA-256:
+  `70B1D39414A5A60F34311B3836FED2E8580D4934BE9E73DFBD81B5C8B1933601`.
+
+This candidate has not been deployed or launched. The device still has
+`744CB3F2...E839`, and no startup-time, temperature, FPS, flicker, menu, battle,
+or stability improvement may be claimed until one later separately cooled,
+state-gated run.

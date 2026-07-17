@@ -5862,8 +5862,11 @@ extern void ppu_initialize()
 
 	bool compile_main = false;
 
-	// Check main module cache
-	if (!_main.segs.empty())
+	// The check-only pass is used solely to decide whether related game
+	// directories need precompilation below. When precompilation is disabled,
+	// doing it would hash and scan the entire main executable once here and then
+	// repeat the same work during the real initialization pass.
+	if (!_main.segs.empty() && g_cfg.core.llvm_precompilation)
 	{
 		compile_main = ppu_initialize(_main, true);
 	}
@@ -6130,28 +6133,39 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 	const cpu_thread* cpu = cpu_thread::get_current();
 
-	for (auto& func : info.get_funcs())
+	// MFVSCR only affects code generation and the cache key when accurate SAT
+	// handling is enabled. Avoid decoding every instruction in every PPU module
+	// during normal warm-cache startup when the option is disabled.
+	if (g_cfg.core.ppu_set_sat_bit)
 	{
-		if (func.size == 0)
+		for (auto& func : info.get_funcs())
 		{
-			continue;
-		}
-
-		for (const auto [addr, size] : func)
-		{
-			if (size == 0)
+			if (func.size == 0)
 			{
 				continue;
 			}
 
-			auto i_ptr = ensure(info.get_ptr<u32>(addr));
-
-			for (u32 i = addr; i < addr + size; i += 4, i_ptr++)
+			for (const auto [addr, size] : func)
 			{
-				if (g_ppu_itype.decode(*i_ptr) == ppu_itype::MFVSCR)
+				if (size == 0)
 				{
-					ppu_log.warning("MFVSCR found");
-					has_mfvscr = true;
+					continue;
+				}
+
+				auto i_ptr = ensure(info.get_ptr<u32>(addr));
+
+				for (u32 i = addr; i < addr + size; i += 4, i_ptr++)
+				{
+					if (g_ppu_itype.decode(*i_ptr) == ppu_itype::MFVSCR)
+					{
+						ppu_log.warning("MFVSCR found");
+						has_mfvscr = true;
+						break;
+					}
+				}
+
+				if (has_mfvscr)
+				{
 					break;
 				}
 			}
@@ -6160,11 +6174,6 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			{
 				break;
 			}
-		}
-
-		if (has_mfvscr)
-		{
-			break;
 		}
 	}
 
