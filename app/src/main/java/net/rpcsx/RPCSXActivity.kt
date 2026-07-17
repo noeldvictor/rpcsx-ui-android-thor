@@ -50,7 +50,7 @@ class RPCSXActivity : Activity() {
             rightStickY: Int,
             durationMs: Long
         ): Boolean {
-            if (!BuildConfig.DEBUG) {
+            if (!BuildConfig.THOR_DEBUG_TOOLS) {
                 return false
             }
 

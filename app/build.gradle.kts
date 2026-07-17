@@ -53,6 +53,11 @@ android {
 
         externalNativeBuild {
             cmake {
+                targets += if (buildBundledRpcsxCore) {
+                    listOf("rpcsx-ui-jni", "rpcsx-android")
+                } else {
+                    listOf("rpcsx-ui-jni")
+                }
                 arguments += listOf(
                     "-DRPCSX_BUILD_BUNDLED_CORE=${if (buildBundledRpcsxCore) "ON" else "OFF"}",
                     "-DRPCSX_ANDROID_ARM_ARCH=$rpcsxAndroidArmArch",
@@ -63,6 +68,7 @@ android {
 
         buildConfigField("String", "Version", "\"v${versionName}\"")
         buildConfigField("Boolean", "FORK_BUILD", "true")
+        buildConfigField("Boolean", "THOR_DEBUG_TOOLS", "false")
     }
 
     signingConfigs {
@@ -81,6 +87,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("Boolean", "THOR_DEBUG_TOOLS", "true")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -89,6 +99,23 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.findByName("custom-key") ?: signingConfigs.getByName("debug")
+        }
+
+        create("thortest") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            buildConfigField("Boolean", "THOR_DEBUG_TOOLS", "true")
+        }
+    }
+
+    sourceSets {
+        getByName("thortest") {
+            manifest.srcFile("src/debug/AndroidManifest.xml")
+            java.srcDir("src/debug/java")
         }
     }
 

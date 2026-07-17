@@ -307,3 +307,115 @@ New host artifact:
 - Next: only after a separately cool preflight, install this exact APK without
   launching, keep the package stopped, then allow one state-gated field proof
   with two-second silicon polling and the same 75 C stop guard.
+
+## Optimized Thor test-package proof
+
+### 2026-07-17 - single-open-thortest-field-proof
+
+- Status: failed
+- Scope: windows-android-ab
+- Hypothesis: packaging the single-open wrapper and exact optimized
+  RelWithDebInfo core in an installable APK would remove the redundant native
+  loader work seen before the title gate and materially reduce startup heat.
+- Changed files/settings: added the non-debuggable `thortest` build type, based
+  only on `release`, with `THOR_DEBUG_TOOLS=true` and the debug-only boot/pad/
+  dev-core source set. MainActivity and RPCSXActivity now gate those local test
+  hooks on `THOR_DEBUG_TOOLS` instead of `BuildConfig.DEBUG`. The APK verifier
+  can also require the exact merged native-core hash.
+- Rollback: install the preceding APK or revert the `thortest` build type and
+  `THOR_DEBUG_TOOLS` gates. No game, save, cache, firmware, or driver data was
+  changed.
+- Windows result: a first custom variant named `reldebug` was rejected before
+  deployment because its name selected the CMake `Debug` native output. Its
+  APK SHA-256 was `3AB793F997D3FFDCF5025AFBAC58A9736423A9A57BC595B4F0349E2FDA212264`
+  and its wrong Debug core SHA-256 was
+  `4677177E6B4484079D1874963EC94E5460DAAED750B8B5B414BE90053A2F03F9`.
+  Renaming the variant to `thortest` and allowing only the release fallback
+  produced a `BUILD SUCCESSFUL` result in `2m23s` with RelWithDebInfo native
+  tasks. Exact APK
+  `9F3379180FDCA4116A8B7F74657AC31C548398C0C2C944F6FE52F98ADD732D3E`
+  packages merged core
+  `70B1D39414A5A60F34311B3836FED2E8580D4934BE9E73DFBD81B5C8B1933601`.
+  Generated BuildConfig has `DEBUG=false`, `BUILD_TYPE=thortest`, and
+  `THOR_DEBUG_TOOLS=true`; the merged manifest contains the guarded boot, pad,
+  and dev-core components. APK v2 signature verification passed.
+- Thor result: the exact APK installed successfully without launch in
+  `debug-captures/20260717-051304-single-open-thortest-apk-install`. The package
+  was stopped before and after installation; battery/skin/silicon moved from
+  `25.0/30.0/33.1 C` to `25.0/30.0/44.9 C` with no install guard violation.
+  The one allowed route started from `25.0/30.0/33.5,32.9,33.9 C`. At the first
+  readiness screenshot (`1348 ms`) silicon was `61.8 C`, then `71.9 C`, then
+  `76.3 C`; the 75 C guard force-stopped the package. Post-stop silicon was
+  `49.4 C`, and `pidof` was empty.
+- Visual correctness: the only captured frame was the same pre-title progress
+  class as the earlier route: title false, compilation false, black false, and
+  progress-bar white `80.456%`. No title, Load, field, Options, battle, or
+  flicker checkpoint was reached.
+- FPS/frame-time: none. The first readiness poll was `11.3 C` cooler than the
+  preceding single-open-missing APK route (`61.8` versus `73.1 C`) at nearly
+  the same elapsed time (`1348` versus `1284 ms`). Relative to the last
+  preflight sample, the rise improved by `9.7 C` (`27.9` versus `37.6 C`).
+  This is reduced startup thermal pressure only, not FPS or stability credit.
+- Capture paths:
+  `debug-captures/20260717-051304-single-open-thortest-apk-install` and
+  `debug-captures/android-speed-sprint/20260717-051446-thor-input-single-open-thortest-field-proof`.
+- Decision: `failed-thermal-guard` / `not-comparable`. Keep the single-open
+  wrapper and optimized packaging because the normalized startup temperature
+  rise improved, but do not claim a game-speed win. The unchanged first frame
+  and later thermal trip show substantial pre-title native/core work remains.
+- Next: no second launch in this thermal round. Keep the package stopped and
+  profile the packaged ELF dynamic table, relocation count, symbol visibility,
+  and loader flags on the host. Prepare another device candidate only if a
+  host-verifiable change materially reduces one-time native load work.
+
+## Localized Android core export/relocation follow-up
+
+### 2026-07-17 - localized-core-loader-metadata
+
+- Status: passed
+- Scope: windows-android-ab
+- Hypothesis: the bundled core eager `BIND_NOW` load was spending avoidable
+  cold-start CPU time scanning a huge public symbol table and applying dynamic
+  relocations that are not part of the stable Android `_rpcsx_*` API.
+- Changed files/settings: the Android core now defaults
+  `RPCSX_ANDROID_LIMIT_DYNAMIC_EXPORTS=ON`, uses a version script plus
+  `--exclude-libs,ALL`, and packs relocations with `android+relr` using the
+  Android RELR tags required by the API-29 app minimum. The Gradle native
+  target list is also limited to `rpcsx-ui-jni` and, when bundled,
+  `rpcsx-android`, instead of building unrelated dependency examples.
+- Rollback: configure `-DRPCSX_ANDROID_LIMIT_DYNAMIC_EXPORTS=OFF` or revert the
+  Android CMake version-script/link options. Revert the Gradle `targets` list
+  only if an additional native deliverable must be packaged.
+- Windows result: baseline packaged core had `81,659` dynamic-table entries,
+  `81,168` defined entries, `5,967,088` bytes of `.dynstr`, `200,205` explicit
+  relocations, `26,846` JUMP_SLOT relocations, and `4,804,920` encoded
+  relocation bytes. The new core has `456` dynamic-table entries, exactly `34`
+  defined `_rpcsx_*` exports, `5,668` bytes of `.dynstr`, `583` explicit
+  relocations, `391` JUMP_SLOT relocations, and `44,219` encoded relocation
+  bytes. Explicit relocation rows fell `99.71%` and encoded relocation data
+  fell `99.08%`; `BIND_NOW` remains enabled.
+- Build result: targeted RelWithDebInfo native builds passed in `69 s` and
+  `62 s`; final `:app:assembleThortest` passed in `53 s`. The export-surface,
+  single-open, optimized-variant, ARM64 APK, PowerShell AST, APK v2 signature,
+  and `git diff --check` validations passed.
+- Artifacts: exact APK
+  `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk` is
+  `73,563,026` bytes with SHA-256
+  `70988DDF4133D6EF5781BE323ED4BF7925DB1D9BCFDBEBE7B33C69B72F436252`.
+  Its merged core is `1,304,252,368` bytes with SHA-256
+  `EC682ADAA3EB28CBA38CEF3AA80462BE0F5886D897517EAAB18A42A5BEA55CDB`;
+  its stripped packaged core is `62,823,496` bytes with SHA-256
+  `11A76D5B2EEDCF411020DAADD5F6C084799BA8B0DDDAC386895BB4FEE9D53F3D`.
+  The preceding stripped core was `96,438,728` bytes, so packaged native size
+  fell by `33,615,232` bytes (`34.86%`).
+- Thor result: not installed or launched. The device remains stopped on exact
+  installed APK `9F3379...D3E` and merged core `70B1...3601`.
+- Visual correctness: unmeasured; no Thor frame was rendered.
+- FPS/frame-time: none. Loader metadata reduction is host evidence only.
+- Capture paths: none; this follow-up was intentionally host-only.
+- Decision: strong host candidate, device-unmeasured. Preserve the linker and
+  target-selection changes, but claim no startup-time, temperature, FPS,
+  flicker, field, menu, battle, or stability win yet.
+- Next: do not spend another launch in this thermal round. After a separately
+  cool preflight, install this exact APK without launch and allow only one
+  state-gated proof with the existing two-second `75 C` stop guard.

@@ -1,5 +1,7 @@
 param(
-    [string]$ApkPath
+    [string]$ApkPath,
+    [string]$MergedCorePath,
+    [string]$ExpectedMergedCoreSha256
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,6 +15,21 @@ if ([string]::IsNullOrWhiteSpace($ApkPath)) {
 
 if (-not (Test-Path -LiteralPath $ApkPath -PathType Leaf)) {
     throw "Thor APK does not exist: $ApkPath"
+}
+
+if ([string]::IsNullOrWhiteSpace($MergedCorePath) -xor [string]::IsNullOrWhiteSpace($ExpectedMergedCoreSha256)) {
+    throw "MergedCorePath and ExpectedMergedCoreSha256 must be provided together."
+}
+
+if (-not [string]::IsNullOrWhiteSpace($MergedCorePath)) {
+    if (-not (Test-Path -LiteralPath $MergedCorePath -PathType Leaf)) {
+        throw "Merged Thor core does not exist: $MergedCorePath"
+    }
+
+    $mergedCoreHash = (Get-FileHash -LiteralPath $MergedCorePath -Algorithm SHA256).Hash
+    if ($mergedCoreHash -ne $ExpectedMergedCoreSha256.ToUpperInvariant()) {
+        throw "Merged Thor core hash mismatch: expected $ExpectedMergedCoreSha256, got $mergedCoreHash"
+    }
 }
 
 $gradleSource = Get-Content -LiteralPath $gradlePath -Raw

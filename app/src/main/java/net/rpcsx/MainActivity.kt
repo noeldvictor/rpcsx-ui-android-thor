@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var unregisterUsbEventListener: () -> Unit
 
     private fun findThorDevCoreOverride(): File? {
-        if (!BuildConfig.DEBUG) {
+        if (!BuildConfig.THOR_DEBUG_TOOLS) {
             return null
         }
 
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun maybeStartThorDebugBoot(sourceIntent: Intent?) {
-        if (!BuildConfig.DEBUG || sourceIntent == null) {
+        if (!BuildConfig.THOR_DEBUG_TOOLS || sourceIntent == null) {
             return
         }
 

@@ -1,0 +1,6 @@
+{
+    global:
+        _rpcsx_*;
+    local:
+        *;
+};

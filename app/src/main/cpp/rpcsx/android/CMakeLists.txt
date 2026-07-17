@@ -122,3 +122,23 @@ target_link_libraries(${RPCSX_ANDROID_LIBRARY_NAME}
     android
     log
 )
+
+option(
+    RPCSX_ANDROID_LIMIT_DYNAMIC_EXPORTS
+    "Export only the stable RPCSX Android C API from the bundled core"
+    ON
+)
+
+if(ANDROID AND RPCSX_ANDROID_LIMIT_DYNAMIC_EXPORTS)
+    set(RPCSX_ANDROID_VERSION_SCRIPT
+        "${CMAKE_CURRENT_LIST_DIR}/rpcsx-android.map"
+    )
+    target_link_options(${RPCSX_ANDROID_LIBRARY_NAME} PRIVATE
+        "-Wl,--version-script=${RPCSX_ANDROID_VERSION_SCRIPT}"
+        "-Wl,--exclude-libs,ALL"
+        "-Wl,--pack-dyn-relocs=android+relr"
+        "-Wl,--use-android-relr-tags"
+    )
+    set_property(TARGET ${RPCSX_ANDROID_LIBRARY_NAME} APPEND PROPERTY
+        LINK_DEPENDS "${RPCSX_ANDROID_VERSION_SCRIPT}")
+endif()
