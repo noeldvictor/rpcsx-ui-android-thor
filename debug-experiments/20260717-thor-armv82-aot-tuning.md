@@ -837,3 +837,30 @@ New host artifact:
   direct-input route with normal two workers, Vulkan cache on, and
   `RsxCachePreloadLimit=256`. Require the exact activation log, title visual
   proof, targeted-fatal cleanliness, and thermal timing before promotion.
+
+### 2026-07-17 - bounded-preload guarded no-launch install
+
+- Status: exact APK installed; no emulator launch; runtime proof still pending
+- The corrected install preflight capture is
+  `debug-captures/android-speed-sprint/20260717-102911-bounded-preload-install-preflight`.
+  RPCSX PID was absent and the three samples were `25/30/35.9`,
+  `25/30/33.7`, and `25/30/34.7 C` for battery/skin/silicon. Silicon fell
+  `1.2 C` across the sample window, so the independent sub-40 C ceiling and
+  maximum `2 C` rise gate passed.
+- Exact APK
+  `26A843E2A5C6DFA4408C2D6ACC2FBA3F384AB4DBCC7589E3B8EBBB0D96B198EB`,
+  `73,571,146` bytes, was installed with `adb install -r` and not launched.
+  The installed `/data/app/.../base.apk` independently hashed to the same
+  SHA256. Capture:
+  `debug-captures/20260717-103010-bounded-preload-thortest-apk-install`.
+- Post-install state: PID absent; battery/skin/silicon `25/30/37.7 C`;
+  `rsx_cache_workers=0`, `rsx_cache_preload_limit=0`, legacy preload mode
+  `preload`, and Vulkan driver cache `on`. The install did not spend an
+  emulator route.
+- Decision: the candidate is deployment-proven only. It still receives no
+  startup, thermal-runtime, FPS, title, flicker, field, menu, battle, or
+  stability credit. Do not launch in this install round.
+- Next: after another later three-sample stable sub-40 C preflight, run exactly
+  one short guarded direct-input route with `RsxCachePreloadLimit=256`, normal
+  two workers, Vulkan cache on, and the existing 75 C fail-stop. Require the
+  activation log, title visual proof, and fatal/thermal evidence.
