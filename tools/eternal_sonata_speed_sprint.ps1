@@ -78,7 +78,12 @@ param(
     [string]$WindowsSpuAccurateDma = "Keep",
     [int]$WindowsGameScreen = 1,
     [int]$MaxSeconds = 120,
+    [ValidateRange(1, 30)]
     [int]$AndroidSceneSeconds = 20,
+    [ValidateRange(1, 10)]
+    [int]$AndroidThermalPollSeconds = 5,
+    [ValidateRange(30, 50)]
+    [double]$AndroidMaxBatteryTemperatureC = 39.0,
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
     [int]$ScreenshotMaxCount = 6,
@@ -101,6 +106,7 @@ param(
     [ValidateSet("Keep", "DefaultF8", "AllThreadsFF", "RsxPrimeSpuNonPrimePpuA715")]
     [string]$AndroidRuntimeAffinityMode = "Keep",
     [string]$AndroidInputProfile = "",
+    [ValidateRange(0, 10)]
     [int]$AndroidRoutePostWaitSeconds = 5,
     [string]$Driver = "stock-qualcomm",
     [string]$Core = "unknown",
@@ -112,7 +118,8 @@ param(
     [switch]$NoLaunch,
     [switch]$SkipHostSystemCheck,
     [switch]$NoPerfetto,
-    [switch]$NoScreenRecord
+    [switch]$NoScreenRecord,
+    [switch]$KeepAndroidRunningAfterCapture
 )
 
 $ErrorActionPreference = "Stop"
@@ -270,12 +277,135 @@ function Invoke-SpeedAdbText {
         [string]$CaptureDir,
         [string]$Name,
         [string[]]$AdbArgs,
+        [switch]$AllowFailure,
+        [int]$TimeoutSeconds = 0
+    )
+
+    return Invoke-ThorAdbText -Adb $Adb -CaptureDir $CaptureDir -Name $Name -AdbArgs $AdbArgs -AllowFailure:$AllowFailure -TimeoutSeconds $TimeoutSeconds
+}
+
+function Stop-SpeedAndroidPackage {
+    param(
+        [string]$CaptureDir,
+        [string]$Name,
         [switch]$AllowFailure
     )
 
-    return Invoke-ThorAdbText -Adb $Adb -CaptureDir $CaptureDir -Name $Name -AdbArgs $AdbArgs -AllowFailure:$AllowFailure
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        $attemptName = if ($attempt -eq 1) { $Name } else { "$Name-retry" }
+        $path = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name $attemptName -AdbArgs @("shell", "am force-stop $Package") -AllowFailure -TimeoutSeconds 3
+        $failed = @(Select-String -LiteralPath $path -Pattern '^exit=\d+$').Count -gt 0
+        if (-not $failed) {
+            return
+        }
+        if ($attempt -lt 2) {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
+    if ($AllowFailure) {
+        return
+    }
+
+    throw "Unable to force-stop RPCSX after two bounded attempts. See $Name and $Name-retry in $CaptureDir."
 }
 
+function Get-SpeedAndroidProcessId {
+    param(
+        [string]$CaptureDir,
+        [string]$Name
+    )
+
+    $path = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name $Name -AdbArgs @("shell", "pidof $Package") -AllowFailure -TimeoutSeconds 3
+    foreach ($line in (Get-Content -LiteralPath $path)) {
+        if ($line -match '^\s*(\d+)(?:\s+\d+)*\s*$') {
+            return $Matches[1]
+        }
+    }
+
+    return $null
+}
+
+function Assert-SpeedAndroidSceneGuard {
+    param(
+        [string]$CaptureDir,
+        [string]$Stage,
+        [string]$ExpectedProcessId
+    )
+
+    $safeStage = New-SpeedSafeLabel $Stage
+    $batteryPath = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name "guard-$safeStage-battery.txt" -AdbArgs @("shell", "dumpsys battery") -AllowFailure -TimeoutSeconds 3
+    $batteryLines = @(Get-Content -LiteralPath $batteryPath)
+    $temperatureC = ConvertFrom-ThorBatteryTemperatureC -Lines $batteryLines
+    $temperatureText = if ($null -eq $temperatureC) {
+        "unknown"
+    } else {
+        $temperatureC.ToString("F1", [Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$temperatureText limit_c=$AndroidMaxBatteryTemperatureC" |
+        Out-File -LiteralPath (Join-Path $CaptureDir "thermal-guard.log") -Append -Encoding UTF8
+
+    if ($null -eq $temperatureC) {
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-unknown-temperature-stop.txt"
+        throw "Thor battery temperature could not be read at '$Stage'. RPCSX was force-stopped instead of continuing an unguarded capture."
+    }
+    if ($temperatureC -ge $AndroidMaxBatteryTemperatureC) {
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-temperature-stop.txt"
+        throw "Thor battery temperature is $temperatureText C at '$Stage', at or above the $AndroidMaxBatteryTemperatureC C limit. RPCSX was force-stopped."
+    }
+
+    $currentProcessId = Get-SpeedAndroidProcessId -CaptureDir $CaptureDir -Name "guard-$safeStage-pid.txt"
+    $currentText = if ([string]::IsNullOrWhiteSpace($currentProcessId)) { "absent" } else { $currentProcessId }
+    "$(Get-Date -Format o) stage=$Stage expected_pid=$ExpectedProcessId current_pid=$currentText" |
+        Out-File -LiteralPath (Join-Path $CaptureDir "process-guard.log") -Append -Encoding UTF8
+    if ($currentText -ne $ExpectedProcessId) {
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-process-stop.txt"
+        throw "RPCSX process changed at '$Stage' (expected PID $ExpectedProcessId, current PID $currentText). RPCSX was force-stopped."
+    }
+
+    $remoteLog = "/storage/emulated/0/Android/data/$Package/files/cache/RPCSX.log"
+    $guestPath = Invoke-SpeedAdbText -CaptureDir $CaptureDir -Name "guard-$safeStage-guest-tail.txt" -AdbArgs @("shell", "tail -n 300 '$remoteLog'") -AllowFailure -TimeoutSeconds 3
+    $guestLines = @(Get-Content -LiteralPath $guestPath)
+    if ($guestLines -match '^exit=\d+$') {
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-guest-read-stop.txt"
+        throw "RPCSX guest log could not be read at '$Stage'. RPCSX was force-stopped instead of continuing an unverified capture."
+    }
+
+    $fatalMatches = @(Get-ThorGuestFatalMatches -Lines $guestLines)
+    if ($fatalMatches.Count -gt 0) {
+        $fatalMatches.Line |
+            Sort-Object -Unique |
+            Set-Content -LiteralPath (Join-Path $CaptureDir "guard-$safeStage-guest-fatal.txt") -Encoding UTF8
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-guest-fatal-stop.txt"
+        throw "RPCSX guest fatal detected at '$Stage'. RPCSX was force-stopped."
+    }
+
+    $unknownDrawMatches = @(Get-ThorGuestUnknownDrawMatches -Lines $guestLines)
+    if ($unknownDrawMatches.Count -gt 0) {
+        $unknownDrawMatches.Line |
+            Sort-Object -Unique |
+            Set-Content -LiteralPath (Join-Path $CaptureDir "guard-$safeStage-guest-unknown-draw.txt") -Encoding UTF8
+        Stop-SpeedAndroidPackage -CaptureDir $CaptureDir -Name "guard-$safeStage-guest-unknown-draw-stop.txt"
+        throw "RPCSX unknown draw command detected at '$Stage'. RPCSX was force-stopped."
+    }
+}
+
+function Stop-SpeedAndroidAdbStream {
+    param(
+        [object]$Stream,
+        [int]$TimeoutMilliseconds = 3000
+    )
+
+    if ($null -eq $Stream) {
+        return
+    }
+
+    $process = Get-Process -Id $Stream.pid -ErrorAction SilentlyContinue
+    if ($process -and -not $process.WaitForExit($TimeoutMilliseconds)) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
+}
 function Set-AndroidSpeedProperties {
     $semaMode = switch ($EternalSonataSemaphoreSuperPath) {
         "Profile" { "profile" }
@@ -371,53 +501,90 @@ function Invoke-AndroidSceneCapture {
         "- Core: $Core",
         "- Package: $Package",
         "- Duration seconds: $AndroidSceneSeconds",
+        "- Thermal poll seconds: $AndroidThermalPollSeconds",
+        "- Max battery temperature C: $AndroidMaxBatteryTemperatureC",
+        "- Force-stop after capture: $(-not $KeepAndroidRunningAfterCapture)",
         "- Android log mode: $AndroidLogMode",
         "- Android runtime affinity mode: $AndroidRuntimeAffinityMode",
         "- Perfetto: $(-not $NoPerfetto)",
         "- Screenrecord: $(-not $NoScreenRecord)",
         "- Capture dir: $captureDir",
         "",
-        "Use this for fast warm-cache truth checks at the same field/battle/menu checkpoint. It captures visual proof plus low-overhead Android timing data without rebuilding or reinstalling."
+        "The live interval is bounded to 30 seconds. Temperature, process identity, and guest fatal markers are polled during capture; any failed guard force-stops RPCSX. RPCSX is also force-stopped after successful evidence capture unless -KeepAndroidRunningAfterCapture is explicitly supplied."
     ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
-    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "mkdir-public-capture-dir.txt" -AdbArgs @("shell", "mkdir -p '$remotePublicDir'") -AllowFailure | Out-Null
-    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "pre-pid.txt" -AdbArgs @("shell", "pidof $Package") -AllowFailure | Out-Null
-    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "pre-top-threads.txt" -AdbArgs @("shell", "top -H -b -n 1 | grep -E '$Package|rpcsx|RPCS3|PPU|SPU|RSX|CPU'") -AllowFailure | Out-Null
-    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "pre-gfxinfo.txt" -AdbArgs @("shell", "dumpsys gfxinfo $Package") -AllowFailure | Out-Null
-    Set-AndroidRuntimeAffinity
+    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "mkdir-public-capture-dir.txt" -AdbArgs @("shell", "mkdir -p '$remotePublicDir'") -AllowFailure -TimeoutSeconds 5 | Out-Null
+    $expectedProcessId = Get-SpeedAndroidProcessId -CaptureDir $captureDir -Name "pre-pid.txt"
+    if ([string]::IsNullOrWhiteSpace($expectedProcessId)) {
+        Stop-SpeedAndroidPackage -CaptureDir $captureDir -Name "pre-missing-process-stop.txt"
+        throw "RPCSX is not running at the start of the Android scene capture."
+    }
+
+    Assert-SpeedAndroidSceneGuard -CaptureDir $captureDir -Stage "pre-capture" -ExpectedProcessId $expectedProcessId
+    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "pre-top-threads.txt" -AdbArgs @("shell", "top -H -b -n 1 | grep -E '$Package|rpcsx|RPCS3|PPU|SPU|RSX|CPU'") -AllowFailure -TimeoutSeconds 5 | Out-Null
+    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "pre-gfxinfo.txt" -AdbArgs @("shell", "dumpsys gfxinfo $Package") -AllowFailure -TimeoutSeconds 5 | Out-Null
 
     $screenProcess = $null
-    if (-not $NoScreenRecord) {
-        $screenProcess = Start-ThorAdbStream -Adb $Adb -CaptureDir $captureDir -Name "screenrecord" -AdbArgs @("shell", "screenrecord --time-limit $AndroidSceneSeconds '$remoteVideo'")
-        Start-Sleep -Seconds 1
-    }
+    $perfettoProcess = $null
+    $captureSucceeded = $false
+    $packageStopped = $false
+    try {
+        Set-AndroidRuntimeAffinity
+        if (-not $NoScreenRecord) {
+            $screenProcess = Start-ThorAdbStream -Adb $Adb -CaptureDir $captureDir -Name "screenrecord" -AdbArgs @("shell", "screenrecord --time-limit $AndroidSceneSeconds '$remoteVideo'")
+        }
+        if (-not $NoPerfetto) {
+            $perfettoProcess = Start-ThorAdbStream -Adb $Adb -CaptureDir $captureDir -Name "perfetto" -AdbArgs @("shell", "perfetto -t $($AndroidSceneSeconds)s -b 64mb -o '$remoteTrace' $perfettoCats")
+        }
 
-    if (-not $NoPerfetto) {
-        Invoke-SpeedAdbText -CaptureDir $captureDir -Name "perfetto-run.txt" -AdbArgs @("shell", "perfetto -t ${AndroidSceneSeconds}s -b 64mb -o '$remoteTrace' $perfettoCats") -AllowFailure | Out-Null
-    } else {
-        Start-Sleep -Seconds $AndroidSceneSeconds
-    }
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $pollIndex = 0
+        while ($timer.Elapsed.TotalSeconds -lt $AndroidSceneSeconds) {
+            $remainingMs = [Math]::Max(1, [int](($AndroidSceneSeconds - $timer.Elapsed.TotalSeconds) * 1000))
+            $sleepMs = [Math]::Min($AndroidThermalPollSeconds * 1000, $remainingMs)
+            Start-Sleep -Milliseconds $sleepMs
+            $pollIndex++
+            Assert-SpeedAndroidSceneGuard -CaptureDir $captureDir -Stage ("capture-{0:D2}" -f $pollIndex) -ExpectedProcessId $expectedProcessId
+        }
+        $timer.Stop()
 
-    if ($screenProcess) {
-        $remainingMs = [Math]::Max(1000, ($AndroidSceneSeconds + 15) * 1000)
-        $process = Get-Process -Id $screenProcess.pid -ErrorAction SilentlyContinue
-        if ($process -and -not $process.WaitForExit($remainingMs)) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        Stop-SpeedAndroidAdbStream -Stream $screenProcess
+        $screenProcess = $null
+        Stop-SpeedAndroidAdbStream -Stream $perfettoProcess
+        $perfettoProcess = $null
+
+        Assert-SpeedAndroidSceneGuard -CaptureDir $captureDir -Stage "pre-proof" -ExpectedProcessId $expectedProcessId
+        Invoke-SpeedAdbText -CaptureDir $captureDir -Name "screencap.txt" -AdbArgs @("shell", "screencap -p '$remoteScreenshot'") -TimeoutSeconds 5 | Out-Null
+        Invoke-SpeedAdbText -CaptureDir $captureDir -Name "post-top-threads.txt" -AdbArgs @("shell", "top -H -b -n 1 | grep -E '$Package|rpcsx|RPCS3|PPU|SPU|RSX|CPU'") -AllowFailure -TimeoutSeconds 5 | Out-Null
+        Invoke-SpeedAdbText -CaptureDir $captureDir -Name "post-gfxinfo.txt" -AdbArgs @("shell", "dumpsys gfxinfo $Package") -AllowFailure -TimeoutSeconds 5 | Out-Null
+        Assert-SpeedAndroidSceneGuard -CaptureDir $captureDir -Stage "post-proof" -ExpectedProcessId $expectedProcessId
+        $captureSucceeded = $true
+
+        if (-not $KeepAndroidRunningAfterCapture) {
+            Stop-SpeedAndroidPackage -CaptureDir $captureDir -Name "post-capture-stop.txt"
+            $packageStopped = $true
+        }
+
+        if (-not $NoScreenRecord) {
+            Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteVideo -LocalName "scene.mp4" | Out-Null
+        }
+        Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteScreenshot -LocalName "scene.png" | Out-Null
+        if (-not $NoPerfetto) {
+            Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteTrace -LocalName "scene.perfetto-trace" | Out-Null
+        }
+
+        Invoke-SpeedAdbText -CaptureDir $captureDir -Name "cleanup-remote.txt" -AdbArgs @("shell", "rm -f '$remoteScreenshot' '$remoteVideo' '$remoteTrace'") -AllowFailure -TimeoutSeconds 5 | Out-Null
+        Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "post-stop"
+    } catch {
+        $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "capture-failure.txt") -Encoding UTF8
+        throw
+    } finally {
+        Stop-SpeedAndroidAdbStream -Stream $screenProcess
+        Stop-SpeedAndroidAdbStream -Stream $perfettoProcess
+        if (-not $packageStopped -and (-not $KeepAndroidRunningAfterCapture -or -not $captureSucceeded)) {
+            Stop-SpeedAndroidPackage -CaptureDir $captureDir -Name "capture-finally-stop.txt" -AllowFailure
         }
     }
-
-    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "screencap.txt" -AdbArgs @("shell", "screencap -p '$remoteScreenshot'") -AllowFailure | Out-Null
-    Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "post"
-
-    if (-not $NoScreenRecord) {
-        Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteVideo -LocalName "scene.mp4" | Out-Null
-    }
-    Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteScreenshot -LocalName "scene.png" | Out-Null
-    if (-not $NoPerfetto) {
-        Copy-ThorAdbFile -Adb $Adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteTrace -LocalName "scene.perfetto-trace" | Out-Null
-    }
-
-    Invoke-SpeedAdbText -CaptureDir $captureDir -Name "cleanup-remote.txt" -AdbArgs @("shell", "rm -f '$remoteScreenshot' '$remoteVideo' '$remoteTrace'") -AllowFailure | Out-Null
 
     Write-Host "Android scene capture: $captureDir"
 }
@@ -434,6 +601,7 @@ function Invoke-AndroidRouteScene {
         BootGame = $true
         ForceStop = $true
         PostSnapshot = $true
+        MaxBatteryTemperatureC = $AndroidMaxBatteryTemperatureC
     }
 
     if (-not [string]::IsNullOrWhiteSpace($InputMacro)) {

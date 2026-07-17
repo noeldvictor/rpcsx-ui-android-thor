@@ -43,6 +43,31 @@ function New-ThorSafeLabel {
     return $safe
 }
 
+function ConvertFrom-ThorBatteryTemperatureC {
+    param([string[]]$Lines)
+
+    foreach ($line in $Lines) {
+        if ($line -match '^\s*temperature:\s*(-?\d+)\s*$') {
+            return ([double]$Matches[1] / 10.0)
+        }
+    }
+
+    return $null
+}
+
+function Get-ThorGuestFatalMatches {
+    param([string[]]$Lines)
+
+    $fatalPattern = 'VM:.*Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally|Eternal Sonata draw-stream selector (repair|restore) failed|FATAL EXCEPTION|Fatal signal|SIGSEGV|SIGBUS|SIGABRT|Abort message|Assertion Failed|application has likely crashed|Unhandled exception|(?:^|\s)F\s*\{'
+    return @($Lines | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
+}
+
+function Get-ThorGuestUnknownDrawMatches {
+    param([string[]]$Lines)
+
+    return @($Lines | Select-String -Pattern 'unknown draw command' -CaseSensitive:$false)
+}
+
 function Get-ThorBattleUiClassification {
     param([Parameter(Mandatory = $true)][string]$Path)
 

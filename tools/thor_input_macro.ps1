@@ -428,13 +428,7 @@ function Get-ThorBatteryTemperatureC {
         return $null
     }
 
-    foreach ($line in $batteryLines) {
-        if ($line -match '^\s*temperature:\s*(-?\d+)\s*$') {
-            return ([double]$Matches[1] / 10.0)
-        }
-    }
-
-    return $null
+    return ConvertFrom-ThorBatteryTemperatureC -Lines $batteryLines
 }
 
 $script:ExpectedThorPackageProcessId = $null
@@ -623,9 +617,8 @@ function Assert-ThorGuestHealthy {
         throw "Could not read the guest log at '$Label'. RPCSX was force-stopped; see guest-health-$safeLabel.log."
     }
 
-    $fatalPattern = 'VM:.*Access violation|Emulation has been frozen|Unknown STOP code|VK_ERROR_DEVICE_LOST|Verification failed|LLVM ERROR|Segfault reading location|Thread terminated due to fatal error|terminated abnormally|Eternal Sonata draw-stream selector (repair|restore) failed'
-    $fatalMatches = @($logTail | Select-String -Pattern $fatalPattern -CaseSensitive:$false)
-    $unknownDrawMatches = @($logTail | Select-String -Pattern 'unknown draw command' -CaseSensitive:$false)
+    $fatalMatches = @(Get-ThorGuestFatalMatches -Lines $logTail)
+    $unknownDrawMatches = @(Get-ThorGuestUnknownDrawMatches -Lines $logTail)
 
     if ($unknownDrawMatches.Count -gt 0) {
         $unknownDrawMatches.Line |
