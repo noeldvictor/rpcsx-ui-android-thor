@@ -949,3 +949,32 @@ New host artifact:
   SPU limit with `RsxCachePreloadLimit=256`, Vulkan cache on, and the existing
   thermal fail-stop. Require activation counts, title visual proof, comparable
   timing, and fatal cleanliness before promotion.
+
+### 2026-07-17 - bounded-SPU guarded no-launch install
+
+- Status: exact APK installed; no emulator launch; runtime proof pending
+- A read-only strict preflight reported PID absent and battery/skin/silicon
+  `25/30/34.9`, `25/30/35.5`, and `25/30/34.7 C`. Silicon ended `0.2 C`
+  below the first sample, satisfying the independent sub-40 C ceiling and
+  maximum `2 C` rise rule. The first ad hoc query failed closed because its
+  shell quoting did not produce parseable silicon telemetry; it performed no
+  install or launch. The corrected timeout-safe query produced all three
+  valid samples before deployment.
+- Exact APK
+  `41A289BBAAD42E1B5A9FAF630A6A0F57D5BB275F6F94538F38B96FB2C94483E6`,
+  `73,572,526` bytes, was installed with `adb install -r` and not launched.
+  On-device `/data/app/.../base.apk` independently matched the same SHA256.
+  Capture: `debug-captures/20260717-110738-bounded-spu-thortest-apk-install`.
+- Post-install state: PID absent; battery/skin/silicon `25/30/38.9 C`;
+  `rsx_cache_workers=0`, `rsx_cache_preload_limit=0`,
+  `spu_cache_preload_limit=0`, legacy RSX preload mode `preload`, and Vulkan
+  driver cache `on`.
+- Decision: this proves only exact deployment and safe cleanup. Award no
+  startup, runtime thermal, title, FPS, gameplay, flicker, field, menu, battle,
+  or stability credit. Do not launch in this install round.
+- Next: after another separately cool stable preflight, spend one short route
+  with `RsxCachePreloadLimit=256`, `SpuCachePreloadLimit=64`, normal two RSX
+  workers, Vulkan cache on, and the existing 75 C fail-stop. Require the SPU
+  activation count, title visual proof, matched stage timing, and fatal
+  cleanliness; stop on the first thermal or visual failure and do not retry in
+  that round.
