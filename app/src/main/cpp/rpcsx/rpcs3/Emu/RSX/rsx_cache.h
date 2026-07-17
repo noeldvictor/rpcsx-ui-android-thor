@@ -155,7 +155,7 @@ namespace rsx
 #ifdef __ANDROID__
 		static int get_android_worker_override()
 		{
-			auto parse_positive_int = [](const char* value) -> int
+			auto parse_worker_override = [](const char* value) -> int
 			{
 				if (!value || !*value)
 				{
@@ -164,7 +164,7 @@ namespace rsx
 
 				char* end = nullptr;
 				const long parsed = std::strtol(value, &end, 10);
-				if (end == value || parsed < 1 || parsed > 16)
+				if (end == value || *end || parsed < 0 || parsed > 16)
 				{
 					return -1;
 				}
@@ -176,10 +176,10 @@ namespace rsx
 			const int length = __system_property_get("debug.rpcsx.thor.rsx_cache_workers", value);
 			if (length > 0)
 			{
-				return parse_positive_int(value);
+				return parse_worker_override(value);
 			}
 
-			return parse_positive_int(std::getenv("RPCSX_THOR_RSX_CACHE_WORKERS"));
+			return parse_worker_override(std::getenv("RPCSX_THOR_RSX_CACHE_WORKERS"));
 		}
 
 		static int get_android_preload_limit()
@@ -226,7 +226,8 @@ namespace rsx
 			{
 				nb_workers = static_cast<uint>(worker_override);
 			}
-			else if (g_cfg.video.renderer == video_renderer::vulkan && g_cfg.video.shader_compiler_threads_count == 0)
+			else if (g_cfg.video.renderer == video_renderer::vulkan &&
+				(worker_override == 0 || g_cfg.video.shader_compiler_threads_count == 0))
 			{
 				nb_workers = std::min<uint>(nb_workers, 2);
 			}
@@ -238,13 +239,14 @@ namespace rsx
 		static uint get_preload_compile_worker_count(uint load_workers)
 		{
 #ifdef __ANDROID__
+			const int worker_override = get_android_worker_override();
 			// Two Vulkan compiler workers repeatedly produced a delayed CPU thermal spike on Thor,
 			// while one worker kept the guarded startup window stable. Keep parallel disk decoding,
-			// but serialize the expensive driver pipeline builds in auto mode. User/config overrides
-			// remain authoritative for explicit A/B testing and rollback.
+			// but serialize the expensive driver pipeline builds in auto mode. A positive property
+			// override or an explicit config with no property remains authoritative for A/B testing.
 			if (g_cfg.video.renderer == video_renderer::vulkan &&
-				g_cfg.video.shader_compiler_threads_count == 0 &&
-				get_android_worker_override() <= 0)
+				(worker_override == 0 ||
+					(worker_override < 0 && g_cfg.video.shader_compiler_threads_count == 0)))
 			{
 				return 1;
 			}

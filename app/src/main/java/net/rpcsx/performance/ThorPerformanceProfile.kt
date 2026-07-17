@@ -8,7 +8,7 @@ import net.rpcsx.utils.GeneralSettings
 
 object ThorPerformanceProfile {
     private const val TAG = "ThorPerformanceProfile"
-    private const val PROFILE_VERSION = 13
+    private const val PROFILE_VERSION = 14
     private const val PROFILE_PREF = "thor_compile_profile_version"
     // Keep the full SoC available to Android and the OS scheduler. Restricting
     // the entire process to CPUs 3-7 also pins Java, audio, compiler, and
@@ -73,7 +73,7 @@ object ThorPerformanceProfile {
         setSetting("Video@@Relaxed ZCULL Sync", "false", "Relaxed ZCULL Sync", changed, failed)
         setSetting("Video@@Multithreaded RSX", "false", "Multithreaded RSX", changed, failed)
         setSetting("Video@@Disable On-Disk Shader Cache", "false", "On-Disk Shader Cache", changed, failed)
-        setSetting("Video@@Shader Compiler Threads", "2", "Shader Compiler Threads", changed, failed)
+        setSetting("Video@@Shader Compiler Threads", "0", "Shader Compiler Threads", changed, failed)
         setSetting("Video@@Vulkan@@VRAM allocation limit (MB)", "3072", "Vulkan VRAM Allocation Limit", changed, failed)
         setSetting("Video@@Performance Overlay@@Enabled", "true", "Performance Overlay", changed, failed)
         if (affinityApplied) {

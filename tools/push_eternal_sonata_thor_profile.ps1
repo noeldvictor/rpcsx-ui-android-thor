@@ -5,7 +5,7 @@ param(
     [ValidateRange(512, 8192)]
     [int]$VramMb = 3072,
     [ValidateRange(0, 8)]
-    [int]$ShaderCompilerThreads = 2,
+    [int]$ShaderCompilerThreads = 0,
     [switch]$PpuReservationPriority,
     [switch]$StopApp,
     [switch]$LaunchApp

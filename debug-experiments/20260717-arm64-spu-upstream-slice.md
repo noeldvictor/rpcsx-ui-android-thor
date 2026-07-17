@@ -346,3 +346,71 @@ The split-worker APK remains unchanged at
 `3C572601110144DB33B8B7F997F2D0AD2E5D078F90D7D9067A73F7A566CC1282`
 and is now installed exactly after the no-launch round above. Use only a
 different independently cool round for its first guarded runtime proof.
+
+## Split-worker guarded proof and auto-mode correction
+
+Outer cool gate:
+
+`debug-captures/android-speed-sprint/20260717-171210-split-rsx-workers-runtime-cool-gate`
+
+The exact installed APK and absent RPCSX PID were re-proved before launch.
+Battery/skin were `23.0 / 30.0 C`; silicon was
+`33.5 -> 32.7 -> 33.5 C` (`0.0 C` net rise). The independently sampled route
+preflight was `33.9 -> 33.1 -> 33.9 C`, also with `0.0 C` net rise and the
+same AYN power state.
+
+Guarded route:
+
+`debug-captures/android-speed-sprint/20260717-171312-thor-input-split-rsx-workers-bounded-title-proof`
+
+The route exposed a configuration bug before it could evaluate the intended
+split: the activation row was `Shader cache preload workers: load=2,
+compile=2`, not `load=2, compile=1`. `debug.rpcsx.thor.rsx_cache_workers=0`
+was documented and set as auto mode, but the native parser accepted only
+positive values and treated zero as absent. Eternal Sonata's managed profile
+then supplied its explicit two-thread value.
+
+All other matched startup controls activated: RSX preload `256/939`, SPU
+preload `64/1,165`, and the `4,899,180`-byte Vulkan cache. Against the preceding
+two-worker capture, matched core timestamps differed by only about `4.5-7.2
+ms`; this is the same behavior, not a speed result. The live safety successor
+did work: the first runtime sample was `65.4 C`, it requested an immediate
+confirmation, and the confirmation measured `68.7 C` only `0.609 s` later.
+RPCSX was force-stopped at the `68 C` early threshold below the `72 C` hard
+limit, before Start input, title polling, or screenshots. Failure-post-stop
+silicon was `46.2 C`, the standard snapshot was `44.1 C`, and PID was absent.
+Targeted guest/native/Vulkan/unknown-draw matches were zero.
+
+Classification: `failed-thermal-guard`, `split-worker-not-activated`; grant no
+speed, title, FPS, flicker, gameplay, or stability credit. The live
+confirmation/early-stop guard is proven, but the intended scheduling change is
+not.
+
+The host successor makes zero a real Android auto override while preserving
+positive property overrides and explicit config behavior when the property is
+absent. Thor startup defaults and the managed Eternal Sonata profile now use
+shader compiler threads `0`; profile version `14` migrates existing global
+settings. The manual profile tool also defaults to auto, and the RSX contract
+now rejects zero-parser or managed-profile regressions.
+
+Validation:
+
+- RSX preload, Vulkan cache, SPU preload, PPU logging, thermal guard, visual
+  route, single-core load, optimized variant, ARM64 APK, and export-surface
+  contracts: pass;
+- PowerShell AST parsing and `git diff --check`: pass;
+- optimized ARM64 native build: `BUILD SUCCESSFUL in 13s` after the initial
+  clean object build completed;
+- merged core: `1,305,550,152` bytes, SHA-256
+  `B1920245781695F51DF4698355A0830C02B30ABBEE780DE52FFBABE921649F1A`;
+- ThorTest package: `BUILD SUCCESSFUL in 2m 10s`;
+- APK: `73,572,242` bytes, SHA-256
+  `D463FED6A9535E55575B0FABC0CA87454CA391F7F340664186DAAA7AE4A424F8`;
+  and
+- packaged stripped core: `62,842,968` bytes, SHA-256
+  `992921FC2ECFE1C6C67CFFFF04F2137676F4E4D6F3C51F8B274750B54C23CEB9`.
+
+This corrected APK is host-only and not installed. Classification:
+`thermal-stability-candidate`, `device-unmeasured`. A later separately cool
+round may install it without launch; only a different independently cool round
+may spend its guarded runtime proof.

@@ -53,7 +53,7 @@ object GameSettingsDatabase {
               Accurate ZCULL stats: false
               Relaxed ZCULL Sync: false
               Multithreaded RSX: false
-              Shader Compiler Threads: 2
+              Shader Compiler Threads: 0
               Vulkan:
                 VRAM allocation limit (MB): 3072
               Performance Overlay:
