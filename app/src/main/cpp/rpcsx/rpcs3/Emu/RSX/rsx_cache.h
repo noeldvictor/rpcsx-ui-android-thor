@@ -235,6 +235,24 @@ namespace rsx
 			return std::max<uint>(nb_workers, 1);
 		}
 
+		static uint get_preload_compile_worker_count(uint load_workers)
+		{
+#ifdef __ANDROID__
+			// Two Vulkan compiler workers repeatedly produced a delayed CPU thermal spike on Thor,
+			// while one worker kept the guarded startup window stable. Keep parallel disk decoding,
+			// but serialize the expensive driver pipeline builds in auto mode. User/config overrides
+			// remain authoritative for explicit A/B testing and rollback.
+			if (g_cfg.video.renderer == video_renderer::vulkan &&
+				g_cfg.video.shader_compiler_threads_count == 0 &&
+				get_android_worker_override() <= 0)
+			{
+				return 1;
+			}
+#endif
+
+			return load_workers;
+		}
+
 		void load_shaders(uint nb_workers, unpacked_type& unpacked, std::string& directory_path, std::vector<fs::dir_entry>& entries, u32 entry_count,
 			shader_loading_dialog* dlg)
 		{
@@ -462,15 +480,16 @@ namespace rsx
 
 			// Preload everything needed to compile the shaders
 			unpacked_type unpacked;
-			uint nb_workers = get_preload_worker_count();
-			rsx_log.notice("Shader cache preload workers: %u", nb_workers);
+			const uint load_workers = get_preload_worker_count();
+			const uint compile_workers = get_preload_compile_worker_count(load_workers);
+			rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", load_workers, compile_workers);
 
-			load_shaders(nb_workers, unpacked, directory_path, entries, entry_count, dlg);
+			load_shaders(load_workers, unpacked, directory_path, entries, entry_count, dlg);
 
 			// Account for any invalid entries
 			entry_count = unpacked.size();
 
-			compile_shaders(nb_workers, unpacked, entry_count, dlg, std::forward<Args>(args)...);
+			compile_shaders(compile_workers, unpacked, entry_count, dlg, std::forward<Args>(args)...);
 
 			dlg->refresh();
 			dlg->close();

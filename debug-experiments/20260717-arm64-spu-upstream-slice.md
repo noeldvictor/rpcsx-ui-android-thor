@@ -230,3 +230,71 @@ speed, FPS, flicker, title, gameplay, thermal-runtime, or stability credit.
 This install round is closed. Only a different independently cool round may
 spend one guarded bounded route with RSX limit `256`, SPU limit `64`, normal
 two-worker/auto scheduling, and Vulkan cache on.
+
+## Guarded PPU-log-pruned proof
+
+Capture:
+
+`debug-captures/android-speed-sprint/20260717-162053-thor-input-ppu-log-pruned-bounded-title-proof`
+
+The exact installed APK passed an outer `32.5 -> 31.5 -> 31.5 C` query and the
+harness's independent `33.1 -> 33.9 -> 33.1 C` preflight with matched AYN
+power state. RSX preload `256/939`, automatic two-worker scheduling, SPU
+preload `64/1,165`, and the `4,899,180`-byte Vulkan driver cache all activated.
+
+Silicon reached `64.2 C` at the first runtime poll and `77.1 C` only `5.681 s`
+after process establishment. The `72 C` guard force-stopped RPCSX during the
+initial 12-second wait, before Start input, title polling, or screenshots.
+Failure-post-stop silicon was `50.6 C`, a later read-only sample was `45.3 C`,
+and the PID remained absent.
+
+The Android logging change is dynamically proven: compared with the preceding
+`529,579`-byte / `6,482`-line log, this capture produced `145,305` bytes /
+`1,402` lines. Successful per-symbol PPU linkage rows fell from `1,462` to
+zero, all `44` module summaries remained, and the `16` SPU decrementer notices
+used the concise Android form. Targeted guest/native/Vulkan/unknown-draw fatal
+matches were zero. The process-to-guard window remained effectively unchanged
+from the earlier matched two-worker route (`5.737 s`).
+
+Classification: `failed-thermal-guard`, `device-runtime-unmeasured`. The log
+I/O reduction is proven but thermally neutral; grant no title, FPS, flicker,
+gameplay, or stability credit. Do not retry in this round. Host follow-up is a
+split RSX preload scheduler: preserve two cheap load workers but use one hot
+pipeline compile worker in Android auto mode, while retaining explicit worker
+overrides for rollback and comparison.
+
+## Split RSX preload-worker candidate
+
+The two matched auto/two-worker routes reached their thermal guards after
+`5.737 s` and `5.681 s`. The intervening explicit one-worker route stayed
+within its `72 C` ceiling for `82.291 s`, although it reached neither title nor
+a comparable speed checkpoint and started the PPU path `0.299 s` later.
+
+Android auto mode now retains two workers for parallel cached-pipeline file
+loading/unpacking but uses one worker for the expensive Vulkan pipeline compile
+phase. A positive `debug.rpcsx.thor.rsx_cache_workers` override or explicit
+shader compiler thread count remains authoritative, and desktop behavior is
+unchanged.
+
+Validation:
+
+- RSX preload, Vulkan cache, thermal guard, optimized-variant, SPU preload, PPU
+  loader logging, and ARM64 APK contracts: pass;
+- PowerShell AST parsing and `git diff --check`: pass;
+- optimized ARM64 build: `BUILD SUCCESSFUL in 1m 35s`;
+- merged core: `1,304,462,264` bytes, SHA-256
+  `B955729BAFE4EE6610637F467222632AB315EC65AF01CE4D899371E6F1113CAC`;
+- ThorTest package: `BUILD SUCCESSFUL in 26s`;
+- APK: `73,572,162` bytes, SHA-256
+  `3C572601110144DB33B8B7F997F2D0AD2E5D078F90D7D9067A73F7A566CC1282`;
+- packaged stripped core: `62,842,936` bytes, SHA-256
+  `BFAE054B9FA86A44B0EF7733055F33A49F9490DC2B9AF49F7D4F6AB84A934EB4`;
+  and
+- explicit worker overrides and configured runtime cache-miss fallback remain
+  covered by the source contract.
+
+This exact APK is host-only and not installed. Classification:
+`thermal-stability-candidate`, `device-unmeasured`; grant no speed, thermal,
+title, FPS, flicker, gameplay, or stability credit. Use a later separately cool
+no-launch install round, then a different independently cool round for one
+guarded proof.
