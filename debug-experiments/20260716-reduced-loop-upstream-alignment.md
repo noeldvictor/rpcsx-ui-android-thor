@@ -97,6 +97,36 @@ Use `-FailOnIncomplete` in a host gate. Current expected classification is
 `full-port-required`. The audit also verifies the Android native clamp and
 that public tooling cannot select the retired emitter.
 
+## Compatibility dry run
+
+- Vendored RPCSX base: `e27926d6296e2ce4bd5b0775cb4e4423d9e7cdb6`.
+- Embedded RPCS3 history boundary:
+  `63669000ab7ff31c49be86acdc56c0f724007d05` from May 2022.
+- The full upstream `a863e94^..02eb549` patch was path-rewritten and checked
+  against each required vendored file. Clean applications: `0/7`.
+
+Current vendored-to-upstream source deltas:
+
+| File | Added | Removed |
+| --- | ---: | ---: |
+| `CPUTranslator.h` | 638 | 219 |
+| `SPUAnalyser.h` | 45 | 67 |
+| `SPUCommonRecompiler.cpp` | 2,510 | 1,618 |
+| `SPULLVMRecompiler.cpp` | 2,179 | 1,515 |
+| `SPUOpcodes.h` | 229 | 229 |
+| `SPURecompiler.h` | 402 | 39 |
+| `SPUThread.cpp` | 1,084 | 2,272 |
+| **Total** | **7,087** | **5,959** |
+
+The first conflicts are shared-core API drift in LLVM placeholder utilities,
+analyzer tags, opcode layout, and SPU thread globals. They occur before
+Android properties or cache gates. Replacing whole current-upstream files would
+also erase RPCSX and Thor-specific integration, so it is not a safe shortcut.
+
+Precise blocker: the shared SPU base must be lifted across the 2022-to-2026
+API boundary before the reduced-loop series can be merged as a unit. This is a
+large core-alignment project, not the next low-risk Thor experiment.
+
 ## Port prerequisites
 
 1. Baseline-align the seven analyzer/emitter files through the full upstream
@@ -110,6 +140,7 @@ that public tooling cannot select the retired emitter.
 5. Spend at most one short, temperature-gated Thor route in a separately cool
    round, then force-stop and analyze on the host.
 
-Next code action: prepare a full SPU-island compatibility diff against the
-vendored base and resolve analyzer APIs as a unit. Do not re-enable emission
-while that port is incomplete.
+Next code action: leave reduced-loop emission retired and audit smaller
+AArch64/SPU upstream slices that can apply to the 2022 vendor base without
+lifting the entire analyzer. Keep the full SPU-island alignment as a separate
+host project.

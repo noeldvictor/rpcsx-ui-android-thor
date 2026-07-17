@@ -28,6 +28,17 @@ function Invoke-GitText {
 
 $AndroidHead = Invoke-GitText -Repo $RepoRoot -Arguments @("rev-parse", "HEAD")
 $UpstreamHead = Invoke-GitText -Repo $UpstreamRepo -Arguments @("rev-parse", "HEAD")
+$VendorMetadata = Get-Content -Raw (Join-Path $RepoRoot "app/src/main/cpp/rpcsx/UPSTREAM.md")
+$VendorCoreMatch = [regex]::Match($VendorMetadata, 'Initial vendored commit:\s*`?([0-9a-f]{40})`?')
+if (-not $VendorCoreMatch.Success -or $VendorCoreMatch.Groups[1].Value -notmatch "^[0-9a-f]{40}$") {
+    throw "Could not read the vendored RPCSX commit from app/src/main/cpp/rpcsx/UPSTREAM.md"
+}
+$VendorCoreCommit = $VendorCoreMatch.Groups[1].Value
+$EmbeddedRpcs3Record = Get-Content (Join-Path $RepoRoot "app/src/main/cpp/rpcsx/rpcs3/bin/git/commits.lst") -Tail 1 | ConvertFrom-Json
+$EmbeddedRpcs3Commit = $EmbeddedRpcs3Record.sha
+if ($EmbeddedRpcs3Commit -notmatch "^[0-9a-f]{40}$") {
+    throw "Could not read the embedded RPCS3 history boundary"
+}
 
 $RequiredCommits = @(
     [pscustomobject]@{ Commit = "a863e94"; Purpose = "integrated analyzer/dataflow detection" }
@@ -125,6 +136,8 @@ Write-Output "# SPU Reduced-Loop Alignment Audit"
 Write-Output ""
 Write-Output ('- Android head: `{0}`' -f $AndroidHead)
 Write-Output ('- Upstream head: `{0}`' -f $UpstreamHead)
+Write-Output ('- Vendored RPCSX base: `{0}`' -f $VendorCoreCommit)
+Write-Output ('- Embedded RPCS3 history boundary: `{0}`' -f $EmbeddedRpcs3Commit)
 Write-Output ('- Classification: `{0}`' -f $Classification)
 Write-Output ('- Path-touching commits in upstream range: `{0}`' -f $PathCommitLines.Count)
 Write-Output ""
