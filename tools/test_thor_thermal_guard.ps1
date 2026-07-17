@@ -262,9 +262,17 @@ if ($inputMacroSource -notmatch 'function\s+Assert-ThorThermalPreflight[\s\S]*?G
 }
 $preflightCallIndex = $inputMacroSource.LastIndexOf('Assert-ThorThermalPreflight "pre-run"')
 $quiesceIndex = $inputMacroSource.IndexOf('if ($ForceStop -or $BootGame)')
+$tokenInitIndex = $inputMacroSource.LastIndexOf('$tokens = @()', $preflightCallIndex)
+$evidenceTryIndex = $inputMacroSource.LastIndexOf('try {', $preflightCallIndex)
+$evidenceCatchIndex = $inputMacroSource.IndexOf('} catch {', $preflightCallIndex)
 $bootLaunchIndex = if ($preflightCallIndex -ge 0) { $inputMacroSource.IndexOf('if ($BootGame) {', $preflightCallIndex) } else { -1 }
 if ($quiesceIndex -lt 0 -or $preflightCallIndex -le $quiesceIndex -or $bootLaunchIndex -le $preflightCallIndex) {
     throw "The repeated thermal preflight must run after quiescing RPCSX and before launch."
+}
+if ($tokenInitIndex -lt 0 -or $evidenceTryIndex -le $tokenInitIndex -or
+    $preflightCallIndex -le $evidenceTryIndex -or $evidenceCatchIndex -le $preflightCallIndex -or
+    -not $inputMacroSource.Contains('if ($ForceStop -or $BootGame -or $tokens -contains ''stop'')')) {
+    throw "Thermal preflight rejection does not use the standard force-stop, failure-log, thermal, and optional snapshot evidence path."
 }
 
 $speedSprintSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1") -Raw

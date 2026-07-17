@@ -838,12 +838,12 @@ if ($BootGame) {
     Write-ThorLaunchPowerState -Adb $Adb -CaptureDir $captureDir
 }
 
-Assert-ThorThermalPreflight "pre-run"
-
 $tokens = @()
 $index = 1
 $script:LastThorScreenshotPath = $null
 try {
+Assert-ThorThermalPreflight "pre-run"
+
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-set.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers $RsxCacheWorkers") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-effective.txt" @("shell", "getprop debug.rpcsx.thor.rsx_cache_workers") | Out-Null
@@ -1163,7 +1163,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     }
 } catch {
     $failure = $_
-    if ($BootGame -or $tokens -contains 'stop') {
+    if ($ForceStop -or $BootGame -or $tokens -contains 'stop') {
         Invoke-ThorAdbText $Adb $captureDir "macro-failure-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     }
 

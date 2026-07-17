@@ -521,3 +521,37 @@ The parallel/warm-checkpoint successor is `startup-performance-candidate`,
 `host-verified`, `device-unmeasured`. It was not installed or launched in this
 round. Only a separately cool no-launch round may install the exact APK; a
 different independently cool round is required for one bounded guarded proof.
+
+## Parallel candidate install gate rejected
+
+Capture:
+
+`debug-captures/android-speed-sprint/20260717-184037-thor-input-parallel-rsx-warm-checkpoint-install-cool-gate`
+
+This was deliberately a no-boot, force-stop-only gate before installing exact
+candidate APK SHA-256
+`24F3F26785681A96AFD152574FB82206FC5EBDDF508F194ADDF46DE575E3F87F`.
+The route first force-stopped RPCSX and reset RSX workers/RSX limit/SPU limit
+to `0/0/0`, Vulkan cache to `on`, and all three Eternal Sonata experiment
+switches to `off`. `BootGame=False`; no input macro or install command ran.
+
+Battery/skin stayed `23.0 / 30.0 C`. Silicon sampled
+`33.9 -> 33.9 -> 35.1 C`. Sample three was at or above the strict `35 C`
+absolute ceiling, and its `+1.2 C` rise would also exceed the `1 C` trend
+limit. The guard failed closed and force-stopped RPCSX. Do not retry, install,
+or query again in this round.
+
+This rejection exposed an evidence gap: the preflight call was outside the
+macro's standard `try/catch`, so the capture retained its force-stop and full
+thermal log but not the usual failure PID/snapshot files. Do not infer a
+post-failure PID from those missing files. The host successor moves preflight
+inside the standard failure path and includes `ForceStop` in catch cleanup;
+future rejections preserve the failure text, a post-stop thermal sample, PID
+and standard snapshots when requested, while still running before any boot.
+Thermal/visual source contracts and PowerShell AST parsing pass. The emulator
+APK and native core are unchanged.
+
+Classification: `rejected-preflight`, `candidate-not-installed`,
+`device-runtime-unmeasured`, plus host-only `thermal-evidence-tooling`. The
+next device step remains one later strict cool install-only gate; runtime proof
+belongs to a different independently cool round.
