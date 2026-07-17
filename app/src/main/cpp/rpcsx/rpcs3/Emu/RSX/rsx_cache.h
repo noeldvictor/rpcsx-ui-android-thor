@@ -16,7 +16,6 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <mutex>
-#include <string_view>
 #include <thread>
 
 #ifdef __ANDROID__
@@ -28,25 +27,6 @@
 
 namespace rsx
 {
-#ifdef __ANDROID__
-	inline bool android_defer_shader_cache_preload()
-	{
-		char value[PROP_VALUE_MAX]{};
-		const int length = __system_property_get("debug.rpcsx.thor.rsx_cache_preload", value);
-		if (length > 0)
-		{
-			return std::string_view(value, static_cast<usz>(length)) == "defer";
-		}
-
-		if (const char* env = std::getenv("RPCSX_THOR_RSX_CACHE_PRELOAD"))
-		{
-			return std::string_view(env) == "defer";
-		}
-
-		return false;
-	}
-#endif
-
 	template <typename pipeline_storage_type, typename backend_storage>
 	class shaders_cache
 	{
@@ -389,14 +369,6 @@ namespace rsx
 			{
 				return;
 			}
-
-#ifdef __ANDROID__
-			if (android_defer_shader_cache_preload() && g_cfg.video.shadermode == shader_mode::async_with_interpreter)
-			{
-				rsx_log.notice("Shader cache preload deferred on Android; shader interpreter fallback will cover asynchronous pipeline misses");
-				return;
-			}
-#endif
 
 			std::string directory_path = root_path + "/pipelines/" + pipeline_class_name + "/" + version_prefix;
 

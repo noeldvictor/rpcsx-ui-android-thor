@@ -541,42 +541,51 @@ New host artifact:
   one route on `RsxCacheWorkers=1`; require time-to-title and visual proof
   under the same two-second 75 C guard before changing the default.
 
-## Host-only deferred shader preload candidate
+## Deferred shader preload device result and retirement
 
-- Candidate: `debug.rpcsx.thor.rsx_cache_preload=preload|defer`, exposed as
-  `RsxCachePreload` / `AndroidRsxCachePreload`. The default is `preload` and
-  the route resets it before launch and after success or failure.
-- Correctness design: a raw preload skip was rejected because the current
-  `Async Shader Recompiler` returns no Vulkan pipeline while an asynchronous
-  miss compiles, which would create missing draws/flicker. Under `defer`, the
-  Vulkan constructor changes only that mode to `Async with Shader Interpreter`
-  before allocating renderer resources. The disk-cache loader returns early
-  only when that interpreter fallback is active. Existing cache files remain
-  intact, and newly encountered pipelines continue through the normal store
-  path.
-- Host verification: ARM64 RelWithDebInfo passed in `86.0 s`; ThorTest assemble
-  passed in `21.2 s`. `test_thor_rsx_cache_preload.ps1`,
-  `test_thor_thermal_guard.ps1`, PowerShell AST parsing, `git diff --check`,
-  exact arm64 APK, optimized ThorTest hooks, single-open loader, core export
-  surface, and APK v2-signature checks all pass. Export proof remains `34`
-  defined dynamic symbols, `583` explicit relocations, `391` jump slots, and
-  `44,219` encoded relocation bytes.
-- Exact undeployed artifacts: ThorTest APK
+### 2026-07-17 - deferred-preload-loader-field-proof
+
+- Status: failed and retired
+- Scope: rsx-vulkan
+- Hypothesis: skip the concentrated full disk-cache preload while switching
+  Vulkan from `Async Shader Recompiler` to `Async with Shader Interpreter`, so
+  asynchronous pipeline misses retain visible fallback draws without flicker.
+- Exact installed ThorTest APK:
   `658F826DFC5494B50E23E3A0BC2AFF1EDF983C63FE053164CB485603AB69333C`,
-  `73,561,058` bytes; merged core
-  `9D9C70E087F994D14272E6C95A48115158A88CF58951E0D286815A9E69CA847F`,
-  `1,305,304,520` bytes; stripped core
-  `13672E01A50CA5310B0BCBF1AA81B14DA09E839F1DDC00560D7878E514DD84BD`,
-  `62,823,224` bytes.
-- Device result: none. No install, push, ADB query, or launch occurred in this
-  host-only follow-up. The prior package remains stopped; this candidate gets
-  zero startup, FPS, flicker, field, menu, battle, thermal, or stability credit.
-- Rollback: the property default/reset value `preload` preserves prior behavior.
-  No cache, game, save, firmware, or driver content is deleted or changed.
-- Next: after a separately cool no-launch install and a return to preflight
-  thresholds, spend one guarded route on `RsxCachePreload=defer` with
-  `RsxCacheWorkers=0`. Require both defer/fallback log notices, absence of the
-  concentrated full-cache preload phase, time-to-title, and flicker-free
-  title/Load visuals under the same two-second 75 C guard. Field, Options/menu,
-  and first-battle proof remain required before promotion. Keep one-worker
-  normal preload parked as the fallback comparison, not the default.
+  `73,561,058` bytes. It packages merged core
+  `9D9C70E087F994D14272E6C95A48115158A88CF58951E0D286815A9E69CA847F`
+  and stripped core
+  `13672E01A50CA5310B0BCBF1AA81B14DA09E839F1DDC00560D7878E514DD84BD`.
+- Guarded install did not launch RPCSX. The separately cooled route used
+  `RsxCachePreload=defer`, `RsxCacheWorkers=0`, direct input, three preflight
+  samples, two-second runtime polling, and limits `34/40/75 C`.
+- Configuration proof: the effective property capture says `defer`; the pulled
+  RPCSX log contains both `Android shader cache preload defer enabled` and
+  `Shader cache preload deferred on Android`. No full preload worker notice
+  appears, so the experiment activated correctly.
+- Thermal result: preflight silicon was `33.5, 33.5, 33.9 C`. It rose to
+  `59.0 C` at the first screenshot, then `73.5 C`, then `77.1 C`, where the
+  guard force-stopped RPCSX. First-poll adjusted rise was `25.1 C`, `1.4 C`
+  worse than the prior dynamic-scheduler route. Process establishment at
+  `08:00:02.195` to guard sample at `08:00:09.112` was `6.917 s`, `2.768 s`
+  shorter than the prior `9.685 s`.
+- Visual result: the only frame was neither title nor a valid preload frame.
+  It showed a black upper region, a flat gray lower region, and a horizontal
+  static/noise band at their boundary. Classifier evidence was title false,
+  PPU compilation false, black false, dark `79.915%`, and progress white `0`.
+  No title, Load, field, movement, Options, battle, or FPS checkpoint was
+  reached.
+- Device postcondition: the guard force-stopped the package; later `pidof`
+  remained empty. The route failure reset restored
+  `debug.rpcsx.thor.rsx_cache_preload=preload`, and the worker property remains
+  `0`. Cache files were preserved.
+- Capture:
+  `debug-captures/android-speed-sprint/20260717-075950-thor-input-deferred-preload-loader-field-proof`.
+- Decision: `failed-visual-gate` and `failed-thermal-guard`. This is not a speed
+  or stability improvement. Retire the defer/interpreter implementation and
+  route controls; preserve the earlier upstream atomic RSX work-sharing and
+  trace-only Android diagnostics.
+- Next: no second launch in this thermal round. Investigate Vulkan pipeline
+  cache reuse and pipeline-construction cost on the host. Keep a one-worker
+  normal-preload route parked for a later separately cool comparison, but do
+  not promote it without title/field correctness and acceptable wall time.
