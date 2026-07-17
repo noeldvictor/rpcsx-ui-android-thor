@@ -83,6 +83,10 @@ param(
     [int]$AndroidSceneSeconds = 20,
     [ValidateRange(1, 5)]
     [int]$AndroidThermalPollSeconds = 2,
+    [ValidateRange(0, 20)]
+    [double]$AndroidThermalRuntimeStopHeadroomC = 4.0,
+    [ValidateRange(0, 30)]
+    [double]$AndroidThermalRuntimeProbeWindowC = 12.0,
     [ValidateRange(1, 5)]
     [int]$AndroidThermalPreflightSamples = 3,
     [ValidateRange(1, 10)]
@@ -98,7 +102,7 @@ param(
     [ValidateRange(35, 60)]
     [double]$AndroidMaxSkinTemperatureC = 45.0,
     [ValidateRange(50, 110)]
-    [double]$AndroidMaxSiliconTemperatureC = 80.0,
+    [double]$AndroidMaxSiliconTemperatureC = 72.0,
     [ValidateRange(0, 16)]
     [int]$AndroidRsxCacheWorkers = 0,
     [ValidateRange(0, 4096)]
@@ -677,6 +681,8 @@ function Invoke-AndroidRouteScene {
         ForceStop = $true
         PostSnapshot = $true
         ThermalPollIntervalSeconds = $AndroidThermalPollSeconds
+        ThermalRuntimeStopHeadroomC = $AndroidThermalRuntimeStopHeadroomC
+        ThermalRuntimeProbeWindowC = $AndroidThermalRuntimeProbeWindowC
         ThermalPreflightSamples = $AndroidThermalPreflightSamples
         ThermalPreflightIntervalSeconds = $AndroidThermalPreflightIntervalSeconds
         ThermalPreflightHeadroomC = $AndroidThermalPreflightHeadroomC

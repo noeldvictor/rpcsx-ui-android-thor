@@ -255,6 +255,45 @@ function Get-ThorThermalGuardViolation {
     return $null
 }
 
+function Get-ThorThermalRuntimeGuardDecision {
+    param(
+        [Parameter(Mandatory = $true)][object]$Snapshot,
+        [double]$MaxSiliconTemperatureC,
+        [double]$StopHeadroomC = 4.0,
+        [double]$ProbeWindowC = 12.0
+    )
+
+    if ($Snapshot.silicon_sensor_count -lt 1 -or $null -eq $Snapshot.silicon_temperature_c) {
+        return $null
+    }
+
+    $stopTemperatureC = [Math]::Max(0.1, $MaxSiliconTemperatureC - $StopHeadroomC)
+    $probeTemperatureC = [Math]::Max(0.1, $MaxSiliconTemperatureC - $ProbeWindowC)
+    $siliconTemperatureC = [double]$Snapshot.silicon_temperature_c
+
+    if ($siliconTemperatureC -ge $stopTemperatureC) {
+        return [pscustomobject]@{
+            action = "stop"
+            code = "silicon-temperature-headroom"
+            stop_temperature_c = $stopTemperatureC
+            probe_temperature_c = $probeTemperatureC
+            message = "Thor CPU/GPU silicon temperature is $(Format-ThorTemperatureC $siliconTemperatureC) C, at or above the $(Format-ThorTemperatureC $stopTemperatureC) C early-stop threshold below the $MaxSiliconTemperatureC C hard limit."
+        }
+    }
+
+    if ($siliconTemperatureC -ge $probeTemperatureC) {
+        return [pscustomobject]@{
+            action = "confirm"
+            code = "silicon-temperature-near-limit"
+            stop_temperature_c = $stopTemperatureC
+            probe_temperature_c = $probeTemperatureC
+            message = "Thor CPU/GPU silicon temperature is near the runtime limit and requires an immediate confirmation sample."
+        }
+    }
+
+    return $null
+}
+
 function Get-ThorPreflightSiliconLimitC {
     param(
         [double]$RuntimeLimitC,

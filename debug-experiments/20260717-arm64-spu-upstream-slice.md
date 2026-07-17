@@ -298,3 +298,31 @@ This exact APK is host-only and not installed. Classification:
 title, FPS, flicker, gameplay, or stability credit. Use a later separately cool
 no-launch install round, then a different independently cool round for one
 guarded proof.
+
+## Runtime thermal confirmation guard
+
+The latest two-worker route sampled `64.2 C` and then `77.1 C` only `2.986 s`
+later. The requested `72 C` ceiling therefore overshot by `5.1 C` before the
+normal two-second sleep plus telemetry round trip could react.
+
+The Thor input route now defaults to a `72 C` hard silicon limit. Normal cool
+polling remains two seconds, but a sample at or above `60 C` (the default
+12-degree confirmation window) immediately requests a second lossless thermal
+snapshot without another sleep. An initial or confirmed sample at or above
+`68 C` (four degrees of early-stop headroom) force-stops RPCSX. The existing
+battery, skin, unknown-sensor, and absolute silicon checks remain fail-closed;
+the three-sample cool preflight is unchanged. Both thresholds are bounded
+parameters and the speed-sprint wrapper forwards them.
+
+Host verification passed the thermal, visual-route, optimized-variant,
+single-core-load, and split-RSX-worker contracts plus PowerShell AST parsing
+and `git diff --check`. Replaying the captured values classifies `64.2 C` as
+`confirm` with probe/stop thresholds `60/68 C`, and `77.1 C` as `stop`.
+
+Classification: `route-tooling`, `thermal-safety-candidate`,
+`device-unmeasured`. No Thor install or launch occurred, and the replay cannot
+prove the temperature an immediate live confirmation will observe. Grant no
+speed, title, FPS, flicker, gameplay, thermal-runtime, or stability credit.
+The split-worker APK remains unchanged at
+`3C572601110144DB33B8B7F997F2D0AD2E5D078F90D7D9067A73F7A566CC1282`
+and remains uninstalled; use the existing separately cool install/proof plan.

@@ -117,6 +117,16 @@ $risingPreflight = @(
 )
 Assert-ThorEqual "rising preflight trend" (Get-ThorThermalPreflightTrendViolation -Snapshots $risingPreflight -MaxRiseC 2.0).code "preflight-silicon-rise"
 
+$runtimeCool = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 59.9 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "runtime cool decision" (Get-ThorThermalRuntimeGuardDecision -Snapshot $runtimeCool -MaxSiliconTemperatureC 72) $null
+$runtimeNear = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 64.2 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+$runtimeNearDecision = Get-ThorThermalRuntimeGuardDecision -Snapshot $runtimeNear -MaxSiliconTemperatureC 72
+Assert-ThorEqual "runtime near-limit action" $runtimeNearDecision.action "confirm"
+Assert-ThorEqual "runtime near-limit probe" $runtimeNearDecision.probe_temperature_c 60
+Assert-ThorEqual "runtime near-limit stop" $runtimeNearDecision.stop_temperature_c 68
+$runtimeStop = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 68.0 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "runtime early-stop action" (Get-ThorThermalRuntimeGuardDecision -Snapshot $runtimeStop -MaxSiliconTemperatureC 72).action "stop"
+
 $zoneCommand = Get-ThorThermalZoneShellCommand
 if ($zoneCommand -notmatch "thermal_zone\*" -or $zoneCommand -notmatch "zone=%s type=%s temp=%s") {
     throw "Thermal-zone shell command is missing its bounded parse contract."
@@ -182,6 +192,15 @@ if ($inputMacroSource -notmatch '\[double\]\$MaxLaunchSiliconTemperatureC\s*=\s*
 }
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPollIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to two-second runtime thermal polling."
+}
+if ($inputMacroSource -notmatch '\[double\]\$ThermalRuntimeStopHeadroomC\s*=\s*4\.0' -or
+    $inputMacroSource -notmatch '\[double\]\$ThermalRuntimeProbeWindowC\s*=\s*12\.0' -or
+    $inputMacroSource -notmatch '\[double\]\$MaxSiliconTemperatureC\s*=\s*72\.0') {
+    throw "The input route does not default to the 72 C hard limit with near-limit confirmation and early-stop headroom."
+}
+if ($inputMacroSource -notmatch 'function\s+Assert-ThorRuntimeThermalBudget[\s\S]*?Get-ThorThermalRuntimeGuardDecision[\s\S]*?status=confirm-requested[\s\S]*?near-limit-confirm[\s\S]*?status=failed[\s\S]*?am force-stop' -or
+    $inputMacroSource -notmatch 'Assert-ThorRuntimeThermalBudget\s+"wait-\$Milliseconds-ms"') {
+    throw "The input route does not immediately confirm near-limit heat and force-stop at the early threshold."
 }
 if ($inputMacroSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$RsxCacheWorkers\s*=\s*0') {
     throw "The input route does not expose a bounded, opt-in RSX cache worker override."
@@ -261,7 +280,9 @@ if ($speedSprintSource -notmatch 'ThermalPreflightSamples\s*=\s*\$AndroidThermal
     $speedSprintSource -notmatch 'ThermalPreflightHeadroomC\s*=\s*\$AndroidThermalPreflightHeadroomC' -or
     $speedSprintSource -notmatch 'MaxLaunchSiliconTemperatureC\s*=\s*\$AndroidMaxLaunchSiliconTemperatureC' -or
     $speedSprintSource -notmatch 'ThermalPreflightMaxRiseC\s*=\s*\$AndroidThermalPreflightMaxRiseC' -or
-    $speedSprintSource -notmatch 'ThermalPollIntervalSeconds\s*=\s*\$AndroidThermalPollSeconds') {
+    $speedSprintSource -notmatch 'ThermalPollIntervalSeconds\s*=\s*\$AndroidThermalPollSeconds' -or
+    $speedSprintSource -notmatch 'ThermalRuntimeStopHeadroomC\s*=\s*\$AndroidThermalRuntimeStopHeadroomC' -or
+    $speedSprintSource -notmatch 'ThermalRuntimeProbeWindowC\s*=\s*\$AndroidThermalRuntimeProbeWindowC') {
     throw "The Android speed-sprint wrapper does not forward the cool-soak contract."
 }
 if ($speedSprintSource -notmatch '\[ValidateRange\(1,\s*5\)\]\s*\[int\]\$AndroidThermalPollSeconds') {
@@ -269,6 +290,11 @@ if ($speedSprintSource -notmatch '\[ValidateRange\(1,\s*5\)\]\s*\[int\]\$Android
 }
 if ($speedSprintSource -notmatch '\[int\]\$AndroidThermalPollSeconds\s*=\s*2') {
     throw "The Android speed-sprint wrapper does not default to two-second runtime thermal polling."
+}
+if ($speedSprintSource -notmatch '\[double\]\$AndroidThermalRuntimeStopHeadroomC\s*=\s*4\.0' -or
+    $speedSprintSource -notmatch '\[double\]\$AndroidThermalRuntimeProbeWindowC\s*=\s*12\.0' -or
+    $speedSprintSource -notmatch '\[double\]\$AndroidMaxSiliconTemperatureC\s*=\s*72\.0') {
+    throw "The Android speed-sprint wrapper does not expose the safer runtime thermal defaults."
 }
 if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*16\)\]\s*\[int\]\$AndroidRsxCacheWorkers\s*=\s*0' -or
     $speedSprintSource -notmatch 'RsxCacheWorkers\s*=\s*\$AndroidRsxCacheWorkers') {
@@ -293,4 +319,4 @@ $joinedZoneCommand = Join-ThorNativeArguments @("shell", $zoneCommand)
 if ($joinedZoneCommand -notmatch '^shell "' -or $joinedZoneCommand -notmatch '\\"zone=%s') {
     throw "Thermal-zone native argument quoting does not preserve the remote printf contract."
 }
-Write-Output "Thor multi-sensor thermal guard tests passed."
+Write-Output "Thor multi-sensor thermal guard tests passed, including near-limit confirmation and 68 C early-stop headroom below the 72 C hard limit."

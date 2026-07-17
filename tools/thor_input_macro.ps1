@@ -21,11 +21,15 @@ param(
     [double]$ThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(1, 5)]
     [int]$ThermalPollIntervalSeconds = 2,
+    [ValidateRange(0, 20)]
+    [double]$ThermalRuntimeStopHeadroomC = 4.0,
+    [ValidateRange(0, 30)]
+    [double]$ThermalRuntimeProbeWindowC = 12.0,
     [double]$MaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
     [double]$MaxSkinTemperatureC = 45.0,
     [ValidateRange(50, 110)]
-    [double]$MaxSiliconTemperatureC = 80.0,
+    [double]$MaxSiliconTemperatureC = 72.0,
     [ValidateRange(0, 16)]
     [int]$RsxCacheWorkers = 0,
     [ValidateRange(0, 4096)]
@@ -48,6 +52,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
+
+if ($ThermalRuntimeProbeWindowC -lt $ThermalRuntimeStopHeadroomC) {
+    throw "ThermalRuntimeProbeWindowC must be greater than or equal to ThermalRuntimeStopHeadroomC."
+}
 
 $RepoRoot = Get-ThorRepoRoot
 $Adb = Resolve-ThorAdb
@@ -612,6 +620,38 @@ function Assert-ThorThermalBudget {
     }
 }
 
+function Assert-ThorRuntimeThermalBudget {
+    param([string]$Stage)
+
+    if ($MaxBatteryTemperatureC -le 0) {
+        return
+    }
+
+    $snapshot = Assert-ThorThermalBudget $Stage -PassThru
+    $decisionParams = @{
+        Snapshot = $snapshot
+        MaxSiliconTemperatureC = $MaxSiliconTemperatureC
+        StopHeadroomC = $ThermalRuntimeStopHeadroomC
+        ProbeWindowC = $ThermalRuntimeProbeWindowC
+    }
+    $decision = Get-ThorThermalRuntimeGuardDecision @decisionParams
+
+    if ($null -ne $decision -and $decision.action -eq "confirm") {
+        "$(Get-Date -Format o) stage=$Stage status=confirm-requested code=$($decision.code) probe_temperature_c=$($decision.probe_temperature_c) stop_temperature_c=$($decision.stop_temperature_c) hard_limit_c=$MaxSiliconTemperatureC" |
+            Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+        $snapshot = Assert-ThorThermalBudget "$Stage-near-limit-confirm" -PassThru
+        $decisionParams.Snapshot = $snapshot
+        $decision = Get-ThorThermalRuntimeGuardDecision @decisionParams
+    }
+
+    if ($null -ne $decision -and $decision.action -eq "stop") {
+        "$(Get-Date -Format o) stage=$Stage status=failed code=$($decision.code) stop_temperature_c=$($decision.stop_temperature_c) hard_limit_c=$MaxSiliconTemperatureC" |
+            Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "$($decision.message) Stage '$Stage'. RPCSX was force-stopped."
+    }
+}
+
 function Assert-ThorThermalPreflight {
     param([string]$Stage)
 
@@ -649,7 +689,7 @@ function Wait-ThorThermallyBounded {
         Start-Sleep -Milliseconds $slice
         $remaining -= $slice
         Assert-ThorProcessIdentity "wait-$Milliseconds-ms"
-        Assert-ThorThermalBudget "wait-$Milliseconds-ms"
+        Assert-ThorRuntimeThermalBudget "wait-$Milliseconds-ms"
     }
 }
 
@@ -758,6 +798,8 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max launch silicon temperature C: $MaxLaunchSiliconTemperatureC",
     "- Thermal preflight max silicon rise C: $ThermalPreflightMaxRiseC",
     "- Thermal poll interval seconds: $ThermalPollIntervalSeconds",
+    "- Runtime thermal early-stop headroom C: $ThermalRuntimeStopHeadroomC",
+    "- Runtime thermal confirmation window C: $ThermalRuntimeProbeWindowC",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Max skin temperature C: $MaxSkinTemperatureC",
     "- Max silicon temperature C: $MaxSiliconTemperatureC",
@@ -855,7 +897,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
                 $gateLabel = "ppu-ready-poll-{0:D2}" -f $gateAttempt
                 Save-ThorScreenshot $gateLabel $index
                 $index++
-                Assert-ThorThermalBudget "screenshot-$gateLabel"
+                Assert-ThorRuntimeThermalBudget "screenshot-$gateLabel"
 
                 $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
                 $readyCandidate = $classification.title_menu_present
@@ -914,7 +956,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
                 Save-ThorScreenshot $visualLabel $index
                 $index++
                 Assert-ThorProcessIdentity "visual-$visualState-$visualAttempt"
-                Assert-ThorThermalBudget "screenshot-$visualLabel"
+                Assert-ThorRuntimeThermalBudget "screenshot-$visualLabel"
 
                 $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
                 $visualCandidate = switch ($visualState) {
@@ -950,7 +992,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         } elseif ($token -match '^shot:(.+)$') {
             Save-ThorScreenshot $Matches[1] $index
             $index++
-            Assert-ThorThermalBudget "screenshot-$($Matches[1])"
+            Assert-ThorRuntimeThermalBudget "screenshot-$($Matches[1])"
         } elseif ($token -match '^check:guest(?::(.+))?$') {
             $healthLabel = if ($Matches[1]) { $Matches[1] } else { "guest" }
             Assert-ThorGuestHealthy $healthLabel
@@ -1065,14 +1107,14 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
             }
 
             for ($attempt = 1; $attempt -le $approachAttempts; $attempt++) {
-                Assert-ThorThermalBudget "battle-approach-$attempt-pre"
+                Assert-ThorRuntimeThermalBudget "battle-approach-$attempt-pre"
                 Invoke-ThorDirectStick -Stick $approachStick -Direction $approachDirection -DurationMs $approachDurationMs
                 Wait-ThorThermallyBounded ($approachDurationMs + $approachSettleMs)
 
                 $label = "battle-approach-$attempt-candidate"
                 Save-ThorScreenshot $label $index
                 $index++
-                Assert-ThorThermalBudget "screenshot-$label"
+                Assert-ThorRuntimeThermalBudget "screenshot-$label"
                 Assert-ThorGuestHealthy "battle-approach-$attempt"
 
                 $classification = Get-ThorBattleUiClassification -Path $script:LastThorScreenshotPath
@@ -1164,7 +1206,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off") -AllowFailure | Out-Null
 }
 
-Assert-ThorThermalBudget "post-run"
+Assert-ThorRuntimeThermalBudget "post-run"
 
 if ($PostSnapshot) {
     Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "post"
