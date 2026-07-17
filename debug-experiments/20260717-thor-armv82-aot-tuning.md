@@ -1042,3 +1042,9 @@ New host artifact:
   or stability credit. Do not launch in this install round. After another
   separately cool preflight, spend one guarded route with RSX `256`, SPU `64`,
   Vulkan cache on, and the existing `75 C` fail-stop.
+- Host-only sizing of the pulled cache supports that conservative bound. All
+  `1,165` records contain `95,483` SPU words (`381,932` program bytes); the
+  oldest `64` contain `3,310` words (`13,240` bytes), only `3.467%` of the
+  instruction volume. Their median is `13` words and maximum is `939` words.
+  This is a workload proxy, not a timing result, but it is consistent with
+  roughly `1-2 s` of eager work rather than the observed `32.5 s` full rebuild.
