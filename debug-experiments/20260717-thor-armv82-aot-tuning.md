@@ -899,7 +899,7 @@ New host artifact:
   thermal lane. Historical completed evidence built `1,163` SPU programs,
   taking about `32.5 s` after interpreter construction.
 
-## Bounded newest-first SPU cached-program preload candidate
+## Bounded oldest-first SPU cached-program preload candidate
 
 ### 2026-07-17 - host-only-spu-preload-limit
 
@@ -912,15 +912,15 @@ New host artifact:
   `RPCSX_THOR_SPU_CACHE_PRELOAD_LIMIT` accept `0..4096`; zero/unset preserves
   the full existing preload. A positive value registers all cached program
   identities as already on disk, deduplicates by the existing runtime identity
-  rule, and eagerly compiles only the newest unique prefix. Omitted programs
-  keep the normal configured LLVM runtime miss path and cannot append duplicate
-  disk records solely because they were omitted from eager compilation.
+  rule, and eagerly compiles only the oldest-discovered unique prefix. Omitted
+  programs keep the normal configured LLVM runtime miss path and cannot append
+  duplicate disk records solely because they were omitted from eager compilation.
 - Harness: `SpuCachePreloadLimit` and `AndroidSpuCachePreloadLimit` are bounded,
   recorded, forwarded, set immediately before boot, and reset to zero before
   launch and after both successful and failed routes. Default behavior is
   unchanged.
 - New source contract `tools/test_thor_spu_cache_preload.ps1` checks property
-  and environment parsing, all-identity registration before limiting, newest
+  and environment parsing, all-identity registration before limiting, oldest
   unique queue construction, normal LLVM fallback, and duplicate-write guard.
   Thermal-route and PowerShell AST contracts also pass.
 - ARM64 RelWithDebInfo native build passed in `59 s`; optimized ThorTest
@@ -978,3 +978,41 @@ New host artifact:
   activation count, title visual proof, matched stage timing, and fatal
   cleanliness; stop on the first thermal or visual failure and do not retry in
   that round.
+
+### 2026-07-17 - SPU cache order audit and boot-prefix correction
+
+- The active Thor cache was inspected read-only while RPCSX remained stopped.
+  `spu-safe-v1-tane.dat` is `391,252` bytes and parses completely as `1,165`
+  records with `1,165` unique SHA1 identities; there are no duplicate records.
+- Historical Android capture `20260714-233735` is the authoritative cold-cache
+  ordering witness: it reports `SPU Runtime: Workers built 0 programs`, reaches
+  the title through normal runtime LLVM misses, and then continues to field and
+  battle. Since successful runtime JITs append to the file, disk order is first
+  discovery order.
+- Matching logged identities confirm the relationship. Programs observed near
+  emulated `62-77 s` occupy oldest indices `759-773`; later observations around
+  `78-144 s` extend through oldest index `1,027`. Reversing this order would
+  spend a small preload budget on later discoveries rather than boot work.
+- Corrective host change: bounded preload now walks `spu_cache::get()` in
+  reverse, selecting the oldest unique prefix while still registering every
+  cached identity and preserving the LLVM miss path. The default zero/unset
+  full-preload behavior remains unchanged.
+- This audit does not prove that `64` entries cover title; evidence instead
+  shows the title working set is much larger. The purpose of `64` is to remove
+  a small amount of early JIT stutter without recreating the thermally costly
+  `1,165`-program startup rebuild. Runtime and thermal credit remain pending.
+- ARM64 RelWithDebInfo rebuilt successfully in `88.5 s`; optimized ThorTest
+  packaging then passed in `91.4 s`. Exact corrected artifacts:
+  - APK
+    `C44E69DE6EFA9BF214B37B246F757D989F579DCE6B87CB0FA7CF70C4135885A0`,
+    `73,572,566` bytes;
+  - merged core
+    `D3478CFA53B308664BDEF4C9C6DE8DD749E0DBF3550BB8AAEA600DCAD99C593A`,
+    `1,304,468,360` bytes;
+  - packaged stripped core
+    `A6DF1856624D7E595A824ABEA306E4BFA2200EA662CE9E186243C76F472E45BA`,
+    `62,843,320` bytes.
+- All host gates pass: ARM64 APK/core identity, optimized test hooks,
+  single-open loader, Vulkan cache, bounded oldest-first RSX and SPU preload,
+  thermal fail-stop, visual route, export surface, and diff checks. This exact
+  APK is not yet installed and receives no device/runtime credit.

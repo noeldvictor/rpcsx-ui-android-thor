@@ -956,12 +956,14 @@ void spu_cache::initialize(bool build_existing_cache)
 		std::deque<spu_program> preload_list;
 		auto& runtime = g_fxo->get<spu_runtime>();
 
-		// get() returns newest records first. Register every identity as already
-		// present on disk, but only copy the newest unique prefix into the eager
-		// compilation queue. Runtime misses still use the configured LLVM path.
-		for (auto& func : func_list)
+		// get() returns newest records first, but the on-disk append order tracks
+		// first runtime discovery. Walk it backwards so a bounded queue spends its
+		// budget on boot programs instead of later field/battle discoveries. Every
+		// identity is still registered as present on disk, and runtime misses keep
+		// using the configured LLVM path.
+		for (auto it = func_list.rbegin(); it != func_list.rend(); ++it)
 		{
-			spu_item* const item = runtime.add_empty(std::move(func));
+			spu_item* const item = runtime.add_empty(std::move(*it));
 
 			if (!item || item->cached.exchange(1))
 			{
@@ -977,7 +979,7 @@ void spu_cache::initialize(bool build_existing_cache)
 		}
 
 		func_list = std::move(preload_list);
-		spu_log.notice("Thor SPU cache preload limit: %u of %u newest unique programs (%u records, %u will compile on demand).",
+		spu_log.notice("Thor SPU cache preload limit: %u of %u oldest unique programs (%u records, %u will compile on demand).",
 			func_list.size(), unique_count, record_count, unique_count - func_list.size());
 	}
 
