@@ -6,6 +6,7 @@
 #include "Common/bitfield.hpp"
 #include "Common/unordered_map.hpp"
 #include "Emu/System.h"
+#include "Emu/cache_phase_pacing.h"
 #include "Emu/cache_utils.hpp"
 #include "Emu/RSX/Program/RSXVertexProgram.h"
 #include "Emu/RSX/Program/RSXFragmentProgram.h"
@@ -15,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstring>
 #include <cstdlib>
 #include <mutex>
 #include <thread>
@@ -209,6 +211,53 @@ namespace rsx
 			}
 
 			return parse_nonnegative_int(std::getenv("RPCSX_THOR_RSX_CACHE_PRELOAD_LIMIT"));
+		}
+
+		static bool get_android_cache_phase_pacing()
+		{
+			auto is_enabled = [](const char* value) -> bool
+			{
+				return value && (!std::strcmp(value, "1") || !std::strcmp(value, "on") || !std::strcmp(value, "true"));
+			};
+
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.cache_phase_pacing", value);
+			if (length > 0)
+			{
+				return is_enabled(value);
+			}
+
+			return is_enabled(std::getenv("RPCSX_THOR_CACHE_PHASE_PACING"));
+		}
+
+		static void wait_for_android_spu_preload_phase()
+		{
+			if (!get_android_cache_phase_pacing() || g_cfg.video.renderer != video_renderer::vulkan)
+			{
+				return;
+			}
+
+			const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+			const auto start = steady_clock::now();
+			const auto deadline = start + 5s;
+
+			while (!Emu.IsStopped() &&
+				rpcsx::startup_cache_phase::spu_preload_complete.load() != emulation_id &&
+				steady_clock::now() < deadline)
+			{
+				thread_ctrl::wait_for(5'000);
+			}
+
+			const auto waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(steady_clock::now() - start).count();
+			if (rpcsx::startup_cache_phase::spu_preload_complete.load() == emulation_id)
+			{
+				rsx_log.notice("Android startup cache phase pacing: SPU preload complete after %u ms; starting RSX pipeline compilation.", static_cast<u64>(waited_ms));
+			}
+			else if (!Emu.IsStopped())
+			{
+				rsx_log.warning("Android startup cache phase pacing timed out after %u ms (SPU started generation=%u, expected=%u); continuing RSX pipeline compilation.",
+					static_cast<u64>(waited_ms), rpcsx::startup_cache_phase::spu_preload_started.load(), emulation_id);
+			}
 		}
 #endif
 
@@ -470,6 +519,12 @@ namespace rsx
 
 			// Account for any invalid entries
 			entry_count = unpacked.size();
+
+#ifdef __ANDROID__
+			// Avoid stacking Vulkan pipeline compilation on top of PPU object loading
+			// and bounded SPU cache compilation during the hottest Android boot phase.
+			wait_for_android_spu_preload_phase();
+#endif
 
 			compile_shaders(preload_workers, unpacked, entry_count, dlg, std::forward<Args>(args)...);
 

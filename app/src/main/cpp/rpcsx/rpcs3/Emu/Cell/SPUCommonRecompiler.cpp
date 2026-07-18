@@ -6,6 +6,7 @@
 #include "Emu/system_progress.hpp"
 #include "Emu/system_utils.hpp"
 #include "Emu/cache_utils.hpp"
+#include "Emu/cache_phase_pacing.h"
 #include "Emu/IdManager.h"
 #include "Emu/localized_string.h"
 #include "Crypto/sha1.h"
@@ -891,6 +892,18 @@ void spu_cache::add(const spu_program& func)
 
 void spu_cache::initialize(bool build_existing_cache)
 {
+	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+	rpcsx::startup_cache_phase::spu_preload_started.release(emulation_id);
+	struct preload_phase_completion_guard
+	{
+		u64 emulation_id;
+
+		~preload_phase_completion_guard()
+		{
+			rpcsx::startup_cache_phase::spu_preload_complete.release(emulation_id);
+		}
+	} phase_completion_guard{emulation_id};
+
 	spu_runtime::g_interpreter = spu_runtime::g_gateway;
 
 	if (g_cfg.core.spu_decoder == spu_decoder_type::_static || g_cfg.core.spu_decoder == spu_decoder_type::dynamic)
