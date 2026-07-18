@@ -99,6 +99,8 @@ namespace vk
 			bool unrestricted_depth_range = false;
 			bool extended_device_fault = false;
 			bool texture_compression_bc = false;
+			bool pipeline_creation_cache_control = false;
+			bool pipeline_creation_cache_control_extension = false;
 		} optional_features_support;
 
 		friend class render_device;
@@ -269,6 +271,10 @@ namespace vk
 		bool get_texture_compression_bc_support() const
 		{
 			return pgpu->optional_features_support.texture_compression_bc;
+		}
+		bool get_pipeline_creation_cache_control_support() const
+		{
+			return pgpu->optional_features_support.pipeline_creation_cache_control;
 		}
 
 		u64 get_descriptor_update_after_bind_support() const

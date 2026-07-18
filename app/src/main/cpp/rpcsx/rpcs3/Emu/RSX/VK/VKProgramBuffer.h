@@ -57,6 +57,11 @@ namespace vk
 
 			return callback(result);
 		}
+
+		static bool consume_pipeline_preload_compile_required()
+		{
+			return vk::consume_pipeline_preload_compile_required();
+		}
 	};
 
 	struct program_cache : public program_state_cache<VKTraits>
@@ -84,6 +89,7 @@ namespace vk
 		template <typename... Args>
 		void add_pipeline_entry(RSXVertexProgram& vp, RSXFragmentProgram& fp, vk::pipeline_props& props, Args&&... args)
 		{
+			vk::pipeline_preload_cache_hit_scope preload_scope;
 			get_graphics_pipeline(nullptr, vp, fp, props, false, false, std::forward<Args>(args)...);
 		}
 

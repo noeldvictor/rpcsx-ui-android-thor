@@ -36,6 +36,11 @@ namespace vk
 		atomic_t<u32> g_driver_pipeline_create_count{};
 		u32 g_driver_pipeline_first_checkpoint = 32;
 		std::mutex g_driver_pipeline_checkpoint_mutex;
+		bool g_pipeline_preload_cache_hits_only_enabled = false;
+		atomic_t<u32> g_pipeline_preload_cache_hit_count{};
+		atomic_t<u32> g_pipeline_preload_compile_required_count{};
+		thread_local bool g_pipeline_preload_cache_hit_scope_active = false;
+		thread_local bool g_pipeline_preload_compile_required = false;
 
 		u32 read_pipeline_cache_u32(const u8* data)
 		{
@@ -56,6 +61,19 @@ namespace vk
 
 			const std::string_view setting{value, static_cast<usz>(length)};
 			return setting != "off" && setting != "0" && setting != "false";
+		}
+
+		bool pipeline_preload_cache_hits_only_requested()
+		{
+			char value[PROP_VALUE_MAX] = {};
+			const int length = __system_property_get("debug.rpcsx.thor.vk_preload_cache_hits_only", value);
+			if (length <= 0)
+			{
+				return false;
+			}
+
+			const std::string_view setting{value, static_cast<usz>(length)};
+			return setting == "on" || setting == "1" || setting == "true";
 		}
 
 		bool validate_driver_pipeline_cache(const void* cache_data, usz cache_size, const VkPhysicalDeviceProperties& properties)
@@ -174,10 +192,18 @@ namespace vk
 			g_driver_pipeline_create_count.store(0);
 			g_driver_pipeline_first_checkpoint = 32;
 			g_driver_pipeline_cache_path.clear();
+			g_pipeline_preload_cache_hits_only_enabled = false;
+			g_pipeline_preload_cache_hit_count.store(0);
+			g_pipeline_preload_compile_required_count.store(0);
+			const bool cache_hits_only_requested = pipeline_preload_cache_hits_only_requested();
 
 			if (!driver_pipeline_cache_enabled() || g_cfg.video.disable_on_disk_shader_cache)
 			{
 				rsx_log.notice("Vulkan driver pipeline cache is disabled.");
+				if (cache_hits_only_requested)
+				{
+					rsx_log.warning("Vulkan preload cache-hits-only was requested without an enabled driver cache; using normal preload.");
+				}
 				return;
 			}
 
@@ -240,6 +266,24 @@ namespace vk
 				static_cast<u64>(accepted_seed_size));
 			rsx_log.notice("Vulkan driver pipeline cache first checkpoint: %u pipelines.",
 				g_driver_pipeline_first_checkpoint);
+
+			if (cache_hits_only_requested)
+			{
+				if (!g_render_device->get_pipeline_creation_cache_control_support())
+				{
+					rsx_log.warning("Vulkan preload cache-hits-only was requested but pipelineCreationCacheControl is unsupported; using normal preload.");
+				}
+				else if (!accepted_seed_size)
+				{
+					rsx_log.warning("Vulkan preload cache-hits-only was requested without a validated warm seed; using normal preload.");
+				}
+				else
+				{
+					g_pipeline_preload_cache_hits_only_enabled = true;
+					rsx_log.notice("Vulkan preload cache-hits-only enabled for validated warm seed (%llu bytes).",
+						static_cast<u64>(accepted_seed_size));
+				}
+			}
 		}
 
 		void note_driver_pipeline_create()
@@ -253,6 +297,14 @@ namespace vk
 
 		void destroy_driver_pipeline_cache()
 		{
+			if (g_pipeline_preload_cache_hits_only_enabled ||
+				g_pipeline_preload_cache_hit_count.load() || g_pipeline_preload_compile_required_count.load())
+			{
+				rsx_log.notice("Vulkan preload cache-hits-only summary: hits=%u, deferred_misses=%u.",
+					g_pipeline_preload_cache_hit_count.load(), g_pipeline_preload_compile_required_count.load());
+			}
+			g_pipeline_preload_cache_hits_only_enabled = false;
+
 			if (g_driver_pipeline_cache == VK_NULL_HANDLE)
 			{
 				return;
@@ -277,6 +329,35 @@ namespace vk
 		{
 		}
 #endif
+	}
+
+	pipeline_preload_cache_hit_scope::pipeline_preload_cache_hit_scope()
+	{
+#ifdef __ANDROID__
+		ensure(!g_pipeline_preload_cache_hit_scope_active);
+		g_pipeline_preload_compile_required = false;
+		g_pipeline_preload_cache_hit_scope_active = g_pipeline_preload_cache_hits_only_enabled;
+#endif
+	}
+
+	pipeline_preload_cache_hit_scope::~pipeline_preload_cache_hit_scope()
+	{
+#ifdef __ANDROID__
+		g_pipeline_preload_cache_hit_scope_active = false;
+		g_pipeline_preload_compile_required = false;
+#endif
+	}
+
+	bool consume_pipeline_preload_compile_required()
+	{
+#ifdef __ANDROID__
+		if (g_pipeline_preload_compile_required)
+		{
+			g_pipeline_preload_compile_required = false;
+			return true;
+		}
+#endif
+		return false;
 	}
 
 	pipe_compiler::pipe_compiler()
@@ -318,7 +399,7 @@ namespace vk
 
 	std::unique_ptr<glsl::program> pipe_compiler::int_compile_compute_pipe(const VkComputePipelineCreateInfo& create_info, VkPipelineLayout pipe_layout)
 	{
-		VkPipeline pipeline;
+		VkPipeline pipeline = VK_NULL_HANDLE;
 		const auto start = std::chrono::steady_clock::now();
 		const VkResult compile_result = VK_GET_SYMBOL(vkCreateComputePipelines)(
 			*g_render_device, g_driver_pipeline_cache, 1, &create_info, nullptr, &pipeline);
@@ -332,13 +413,38 @@ namespace vk
 	std::unique_ptr<glsl::program> pipe_compiler::int_compile_graphics_pipe(const VkGraphicsPipelineCreateInfo& create_info, VkPipelineLayout pipe_layout,
 		const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs)
 	{
-		VkPipeline pipeline;
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkGraphicsPipelineCreateInfo effective_create_info = create_info;
+#ifdef __ANDROID__
+		if (g_pipeline_preload_cache_hit_scope_active)
+		{
+			effective_create_info.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+		}
+#endif
 		const auto start = std::chrono::steady_clock::now();
 		const VkResult compile_result = VK_GET_SYMBOL(vkCreateGraphicsPipelines)(
-			*m_device, g_driver_pipeline_cache, 1, &create_info, nullptr, &pipeline);
+			*m_device, g_driver_pipeline_cache, 1, &effective_create_info, nullptr, &pipeline);
 		const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
 		vk::thor::rsx_auditor::record_pipeline_create(true, static_cast<u64>(elapsed_us));
+#ifdef __ANDROID__
+		if (compile_result == VK_PIPELINE_COMPILE_REQUIRED && g_pipeline_preload_cache_hit_scope_active)
+		{
+			if (pipeline != VK_NULL_HANDLE)
+			{
+				VK_GET_SYMBOL(vkDestroyPipeline)(*m_device, pipeline, nullptr);
+			}
+			g_pipeline_preload_compile_required = true;
+			g_pipeline_preload_compile_required_count.fetch_add(1);
+			return {};
+		}
+#endif
 		CHECK_RESULT(compile_result);
+#ifdef __ANDROID__
+		if (g_pipeline_preload_cache_hit_scope_active)
+		{
+			g_pipeline_preload_cache_hit_count.fetch_add(1);
+		}
+#endif
 		note_driver_pipeline_create();
 		auto result = std::make_unique<vk::glsl::program>(*m_device, pipeline, pipe_layout, vs_inputs, fs_inputs);
 		result->link();

@@ -257,6 +257,19 @@ if ($vkPipelineCacheResetCount -ne 3) {
 if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.vk_pipeline_cache \$VkPipelineCache') {
     throw "The input route does not set the requested Vulkan pipeline cache route before launch."
 }
+if ($inputMacroSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$VkPreloadCacheHitsOnly\s*=\s*"off"') {
+    throw "The input route does not keep Vulkan preload cache-hits-only opt-in."
+}
+$vkPreloadCacheHitsOnlyResetCount = [regex]::Matches(
+    $inputMacroSource,
+    [regex]::Escape('setprop debug.rpcsx.thor.vk_preload_cache_hits_only off')
+).Count
+if ($vkPreloadCacheHitsOnlyResetCount -ne 3) {
+    throw "The input route must reset Vulkan preload cache-hits-only before launch and after success or failure; found $vkPreloadCacheHitsOnlyResetCount resets."
+}
+if ($inputMacroSource -notmatch 'setprop debug\.rpcsx\.thor\.vk_preload_cache_hits_only \$VkPreloadCacheHitsOnly') {
+    throw "The input route does not set the requested Vulkan preload cache-hits-only route before launch."
+}
 if ($inputMacroSource -notmatch '\$slice\s*=\s*\[Math\]::Min\(\$remaining,\s*\$ThermalPollIntervalSeconds\s*\*\s*1000\)') {
     throw "Long input-route waits do not use the bounded thermal polling interval."
 }
@@ -322,6 +335,10 @@ if ($speedSprintSource -notmatch '\[ValidateRange\(0,\s*4096\)\]\s*\[int\]\$Andr
 if ($speedSprintSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$AndroidVkPipelineCache\s*=\s*"on"' -or
     $speedSprintSource -notmatch 'VkPipelineCache\s*=\s*\$AndroidVkPipelineCache') {
     throw "The Android speed-sprint wrapper does not expose and forward the default-on Vulkan pipeline cache route."
+}
+if ($speedSprintSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$AndroidVkPreloadCacheHitsOnly\s*=\s*"off"' -or
+    $speedSprintSource -notmatch 'VkPreloadCacheHitsOnly\s*=\s*\$AndroidVkPreloadCacheHitsOnly') {
+    throw "The Android speed-sprint wrapper does not expose and forward the opt-in Vulkan preload cache-hits-only route."
 }
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."

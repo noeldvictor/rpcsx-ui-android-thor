@@ -112,6 +112,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$AndroidVkPipelineCache = "on",
     [ValidateSet("on", "off")]
+    [string]$AndroidVkPreloadCacheHitsOnly = "off",
+    [ValidateSet("on", "off")]
     [string]$AndroidCachePhasePacing = "off",
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
@@ -697,6 +699,7 @@ function Invoke-AndroidRouteScene {
         RsxCachePreloadLimit = $AndroidRsxCachePreloadLimit
         SpuCachePreloadLimit = $AndroidSpuCachePreloadLimit
         VkPipelineCache = $AndroidVkPipelineCache
+        VkPreloadCacheHitsOnly = $AndroidVkPreloadCacheHitsOnly
         CachePhasePacing = $AndroidCachePhasePacing
     }
 

@@ -189,7 +189,7 @@ try {
     }
 
     Invoke-ThorAdbText $adb $captureDir "package-version.txt" @("shell", "dumpsys package $Package | grep -E 'versionName|versionCode|firstInstallTime|lastUpdateTime|installerPackageName'") -AllowFailure | Out-Null
-    Invoke-ThorAdbText $adb $captureDir "experiment-controls.txt" @("shell", 'printf "rsx_workers="; getprop debug.rpcsx.thor.rsx_cache_workers; printf "rsx_limit="; getprop debug.rpcsx.thor.rsx_cache_preload_limit; printf "spu_limit="; getprop debug.rpcsx.thor.spu_cache_preload_limit; printf "vk_cache="; getprop debug.rpcsx.thor.vk_pipeline_cache; printf "ppu_interp="; getprop debug.rpcsx.thor.es_ppu_command_interp; printf "dispatch_probe="; getprop debug.rpcsx.thor.es_ppu_dispatch_probe; printf "async_draw="; getprop debug.rpcsx.thor.es_async_draw_barrier') -AllowFailure | Out-Null
+    Invoke-ThorAdbText $adb $captureDir "experiment-controls.txt" @("shell", 'printf "rsx_workers="; getprop debug.rpcsx.thor.rsx_cache_workers; printf "rsx_limit="; getprop debug.rpcsx.thor.rsx_cache_preload_limit; printf "spu_limit="; getprop debug.rpcsx.thor.spu_cache_preload_limit; printf "vk_cache="; getprop debug.rpcsx.thor.vk_pipeline_cache; printf "vk_hits_only="; getprop debug.rpcsx.thor.vk_preload_cache_hits_only; printf "ppu_interp="; getprop debug.rpcsx.thor.es_ppu_command_interp; printf "dispatch_probe="; getprop debug.rpcsx.thor.es_ppu_dispatch_probe; printf "async_draw="; getprop debug.rpcsx.thor.es_async_draw_barrier') -AllowFailure | Out-Null
 } catch {
     $installFailure = $_
 } finally {

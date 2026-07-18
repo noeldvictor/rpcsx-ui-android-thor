@@ -36,6 +36,12 @@ namespace vk
 			VkPhysicalDeviceCustomBorderColorFeaturesEXT custom_border_color_info{};
 			VkPhysicalDeviceBorderColorSwizzleFeaturesEXT border_color_swizzle_info{};
 			VkPhysicalDeviceFaultFeaturesEXT device_fault_info{};
+			VkPhysicalDevicePipelineCreationCacheControlFeatures pipeline_cache_control_info{};
+
+			VkPhysicalDeviceProperties base_properties{};
+			VK_GET_SYMBOL(vkGetPhysicalDeviceProperties)(dev, &base_properties);
+			const bool pipeline_cache_control_extension = device_extensions.is_supported(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME);
+			const bool pipeline_cache_control_available = base_properties.apiVersion >= VK_API_VERSION_1_3 || pipeline_cache_control_extension;
 
 			if (device_extensions.is_supported(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME))
 			{
@@ -86,6 +92,13 @@ namespace vk
 				features2.pNext = &device_fault_info;
 			}
 
+			if (pipeline_cache_control_available)
+			{
+				pipeline_cache_control_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES;
+				pipeline_cache_control_info.pNext = features2.pNext;
+				features2.pNext = &pipeline_cache_control_info;
+			}
+
 			auto _vkGetPhysicalDeviceFeatures2KHR = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2KHR>(VK_GET_SYMBOL(vkGetInstanceProcAddr)(parent, "vkGetPhysicalDeviceFeatures2KHR"));
 			ensure(_vkGetPhysicalDeviceFeatures2KHR); // "vkGetInstanceProcAddress failed to find entry point!"
 			_vkGetPhysicalDeviceFeatures2KHR(dev, &features2);
@@ -101,6 +114,10 @@ namespace vk
 			optional_features_support.barycentric_coords = !!shader_barycentric_info.fragmentShaderBarycentric;
 			optional_features_support.framebuffer_loops = !!fbo_loops_info.attachmentFeedbackLoopLayout;
 			optional_features_support.extended_device_fault = !!device_fault_info.deviceFault;
+			optional_features_support.pipeline_creation_cache_control = !!pipeline_cache_control_info.pipelineCreationCacheControl;
+			optional_features_support.pipeline_creation_cache_control_extension =
+				optional_features_support.pipeline_creation_cache_control &&
+				base_properties.apiVersion < VK_API_VERSION_1_3 && pipeline_cache_control_extension;
 
 			features = features2.features;
 
@@ -252,6 +269,7 @@ namespace vk
 				"VK_QCOM_elapsed_timer_query",
 				"VK_QCOM_queue_perf_hint",
 				"VK_KHR_pipeline_binary",
+				"VK_EXT_pipeline_creation_cache_control",
 				"VK_KHR_dynamic_rendering_local_read",
 				"VK_KHR_unified_image_layouts",
 				"VK_EXT_shader_tile_image",
@@ -270,6 +288,9 @@ namespace vk
 				rsx_log.notice("Thor Vulkan Feature Doctor extension: [%s] %s",
 					device_extensions.is_supported(ext) ? "supported" : "missing", ext);
 			}
+
+			rsx_log.notice("Thor Vulkan Feature Doctor feature: [%s] pipelineCreationCacheControl",
+				optional_features_support.pipeline_creation_cache_control ? "supported" : "missing");
 		}
 
 		if (get_driver_vendor() == driver_vendor::RADV && get_name().find("LLVM 8.0.0") != umax)
@@ -633,6 +654,11 @@ namespace vk
 			requested_extensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
 		}
 
+		if (pgpu->optional_features_support.pipeline_creation_cache_control_extension)
+		{
+			requested_extensions.push_back(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME);
+		}
+
 		enabled_features.robustBufferAccess = ensure(pgpu->features.robustBufferAccess, "robustBufferAccess is unsupported");
 		enabled_features.fullDrawIndexUint32 = VK_TRUE;
 		enabled_features.independentBlend = ensure(pgpu->features.independentBlend, "independentBlend is unsupported");
@@ -857,6 +883,15 @@ namespace vk
 			shader_barycentric_info.pNext = const_cast<void*>(device.pNext);
 			shader_barycentric_info.fragmentShaderBarycentric = VK_TRUE;
 			device.pNext = &shader_barycentric_info;
+		}
+
+		VkPhysicalDevicePipelineCreationCacheControlFeatures pipeline_cache_control_info{};
+		if (pgpu->optional_features_support.pipeline_creation_cache_control)
+		{
+			pipeline_cache_control_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES;
+			pipeline_cache_control_info.pNext = const_cast<void*>(device.pNext);
+			pipeline_cache_control_info.pipelineCreationCacheControl = VK_TRUE;
+			device.pNext = &pipeline_cache_control_info;
 		}
 
 		if (auto error = VK_GET_SYMBOL(vkCreateDevice)(*pgpu, &device, nullptr, &dev))

@@ -217,6 +217,21 @@ protected:
 	fragment_program_type __null_fragment_program;
 	pipeline_storage_type __null_pipeline_handle;
 
+	void discard_failed_preload_placeholder(const pipeline_key& key)
+	{
+		if constexpr (requires { backend_traits::consume_pipeline_preload_compile_required(); })
+		{
+			if (backend_traits::consume_pipeline_preload_compile_required())
+			{
+				std::lock_guard lock(m_pipeline_mutex);
+				if (const auto found = m_storage.find(key); found != m_storage.end() && !found->second)
+				{
+					m_storage.erase(found);
+				}
+			}
+		}
+	}
+
 	/// bool here to inform that the program was preexisting.
 	std::tuple<const vertex_program_type&, bool> search_vertex_program(
 		rsx::program_cache_hint_t* cache_hint,
@@ -408,6 +423,7 @@ public:
 			{
 				if (!pipeline)
 				{
+					discard_failed_preload_placeholder(key);
 					return nullptr;
 				}
 
@@ -426,6 +442,7 @@ public:
 			{
 				if (!pipeline)
 				{
+					discard_failed_preload_placeholder(key);
 					return nullptr;
 				}
 

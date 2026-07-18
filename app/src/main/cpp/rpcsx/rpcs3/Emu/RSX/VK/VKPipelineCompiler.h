@@ -8,6 +8,18 @@ namespace vk
 {
 	class render_device;
 
+	class pipeline_preload_cache_hit_scope
+	{
+	public:
+		pipeline_preload_cache_hit_scope();
+		~pipeline_preload_cache_hit_scope();
+
+		pipeline_preload_cache_hit_scope(const pipeline_preload_cache_hit_scope&) = delete;
+		pipeline_preload_cache_hit_scope& operator=(const pipeline_preload_cache_hit_scope&) = delete;
+	};
+
+	bool consume_pipeline_preload_compile_required();
+
 	struct pipeline_props
 	{
 		graphics_pipeline_state state;
