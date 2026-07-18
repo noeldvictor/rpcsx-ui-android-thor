@@ -432,12 +432,17 @@ namespace rsx
 		void await_workers(uint nb_workers, u8 step, std::function<void(u32)>& worker, atomic_t<u32>& processed, u32 entry_count,
 			shader_loading_dialog* dlg, atomic_t<bool>* stop_early = nullptr)
 		{
+			u64 worker_affinity_mask = 0;
+#ifdef __ANDROID__
+			worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());
+#endif
+
 			if (nb_workers > entry_count)
 			{
 				nb_workers = entry_count;
 			}
 
-			if (nb_workers == 1)
+			if (nb_workers == 1 && !worker_affinity_mask)
 			{
 				steady_clock::time_point last_update;
 
@@ -463,8 +468,31 @@ namespace rsx
 			}
 			else
 			{
+#ifdef __ANDROID__
+				atomic_t<bool> affinity_logged = false;
+#endif
 				named_thread_group workers("RSX Worker ", nb_workers, [&]()
 					{
+#ifdef __ANDROID__
+						if (worker_affinity_mask)
+						{
+							thread_ctrl::set_thread_affinity_mask(worker_affinity_mask);
+							const u64 effective_mask = thread_ctrl::get_thread_affinity_mask();
+							if (!affinity_logged.exchange(true))
+							{
+								if (effective_mask == worker_affinity_mask)
+								{
+									rsx_log.notice("Thor RSX cache-worker affinity enabled for %s: requested=0x%x, effective=0x%x.",
+										step ? "compile" : "load", worker_affinity_mask, effective_mask);
+								}
+								else
+								{
+									rsx_log.warning("Thor RSX cache-worker affinity was not applied exactly for %s: requested=0x%x, effective=0x%x.",
+										step ? "compile" : "load", worker_affinity_mask, effective_mask);
+								}
+							}
+						}
+#endif
 						worker(entry_count);
 					});
 

@@ -1142,6 +1142,11 @@ void spu_cache::initialize(bool build_existing_cache)
 		spu_log.notice("Thor SPU cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
 	}
 
+#ifdef __ANDROID__
+	const u64 cache_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());
+	atomic_t<bool> cache_worker_affinity_logged = false;
+#endif
+
 	named_thread_group workers("SPU Worker ", worker_count, [&]() -> uint
 		{
 #ifdef __APPLE__
@@ -1149,6 +1154,27 @@ void spu_cache::initialize(bool build_existing_cache)
 #endif
 			// Set low priority
 			thread_ctrl::scoped_priority low_prio(-1);
+
+#ifdef __ANDROID__
+			if (cache_worker_affinity_mask)
+			{
+				thread_ctrl::set_thread_affinity_mask(cache_worker_affinity_mask);
+				const u64 effective_mask = thread_ctrl::get_thread_affinity_mask();
+				if (!cache_worker_affinity_logged.exchange(true))
+				{
+					if (effective_mask == cache_worker_affinity_mask)
+					{
+						spu_log.notice("Thor SPU cache-worker affinity enabled: requested=0x%x, effective=0x%x.",
+							cache_worker_affinity_mask, effective_mask);
+					}
+					else
+					{
+						spu_log.warning("Thor SPU cache-worker affinity was not applied exactly: requested=0x%x, effective=0x%x.",
+							cache_worker_affinity_mask, effective_mask);
+					}
+				}
+			}
+#endif
 
 			// Initialize compiler instances for parallel compilation
 			std::unique_ptr<spu_recompiler_base> compiler;

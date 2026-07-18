@@ -113,6 +113,8 @@ param(
     [int]$AndroidSpuCachePreloadLimit = 0,
     [ValidateRange(0, 5000)]
     [int]$AndroidSpuCacheCompileBudgetMs = 0,
+    [ValidateRange(0, 255)]
+    [int]$AndroidCacheWorkerAffinityMask = 0,
     [ValidateSet("on", "off")]
     [string]$AndroidVkPipelineCache = "on",
     [ValidateSet("on", "off")]
@@ -706,6 +708,7 @@ function Invoke-AndroidRouteScene {
         RsxCacheCompileBudgetMs = $AndroidRsxCacheCompileBudgetMs
         SpuCachePreloadLimit = $AndroidSpuCachePreloadLimit
         SpuCacheCompileBudgetMs = $AndroidSpuCacheCompileBudgetMs
+        CacheWorkerAffinityMask = $AndroidCacheWorkerAffinityMask
         VkPipelineCache = $AndroidVkPipelineCache
         VkPreloadCacheHitsOnly = $AndroidVkPreloadCacheHitsOnly
         AdpfRsx = $AndroidAdpfRsx
