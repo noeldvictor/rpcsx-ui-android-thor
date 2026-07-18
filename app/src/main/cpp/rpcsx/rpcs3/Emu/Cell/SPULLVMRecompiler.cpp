@@ -8691,12 +8691,6 @@ public:
 					make_store_ls(addr, get_vr<u8[16]>(op.rt));
 					return;
 				}
-				else
-				{
-					value_t<u64> addr = eval(splat<u64>(data._u32[3] - remainder) + zext<u64>((extract(pair.second, 3) + remainder) & 0x3fff0));
-					make_store_ls(addr, get_vr<u8[16]>(op.rt));
-					return;
-				}
 			}
 		}
 
@@ -8718,12 +8712,6 @@ public:
 				if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
 				{
 					value_t<u64> addr = eval(splat<u64>(data._u32[3]) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
-					set_vr(op.rt, make_load_ls(addr));
-					return;
-				}
-				else
-				{
-					value_t<u64> addr = eval(splat<u64>(data._u32[3] - remainder) + zext<u64>((extract(pair.second, 3) + remainder) & 0x3fff0));
 					set_vr(op.rt, make_load_ls(addr));
 					return;
 				}

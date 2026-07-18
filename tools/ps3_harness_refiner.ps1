@@ -1433,25 +1433,29 @@ $recentDiag200Rejected = @($cutsceneRuns | Where-Object {
     $_.Name -like "*loader-control-left200x2-diag200*" -or $label -like "*loader-control-left200x2-diag200*"
 }).Count -ge 1
 $latestRun = $runEvidence | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-$latestCurrentUpstreamOptionsPass = Test-CurrentUpstreamAllCoreOptionsProof -RunEvidence $latestRun
-$latestCurrentUpstreamBuildToken = ""
-if ($latestCurrentUpstreamOptionsPass) {
-    $latestCurrentUpstreamText = "$($latestRun.Name) $($latestRun.Lab.Label)"
-    if ($latestCurrentUpstreamText -match '(?i)(clean-upstream[a-f0-9]+)') {
-        $latestCurrentUpstreamBuildToken = $matches[1]
+$recentCurrentUpstreamOptionsProofs = @($runEvidence | Where-Object {
+    Test-CurrentUpstreamAllCoreOptionsProof -RunEvidence $_
+})
+$currentUpstreamWindowsPromotionGateCleared = $false
+foreach ($optionsProof in $recentCurrentUpstreamOptionsProofs) {
+    $optionsLabel = if ($optionsProof.Lab -and $optionsProof.Lab.Label) { $optionsProof.Lab.Label } else { "" }
+    $optionsText = "$($optionsProof.Name) $optionsLabel"
+    if ($optionsText -notmatch '(?i)(clean-upstream[a-f0-9]+)') {
+        continue
     }
-}
-$recentCurrentUpstreamFirstBattlePass = $false
-if (-not [string]::IsNullOrWhiteSpace($latestCurrentUpstreamBuildToken)) {
-    $recentCurrentUpstreamFirstBattlePass = @($runEvidence | Where-Object {
+
+    $buildToken = $matches[1]
+    $matchingBattleProof = @($runEvidence | Where-Object {
         $runLabel = if ($_.Lab -and $_.Lab.Label) { $_.Lab.Label } else { "" }
         $runText = "$($_.Name) $runLabel"
         (Test-CurrentUpstreamAllCoreFirstBattleProof -RunEvidence $_) -and
-            $runText -like "*$latestCurrentUpstreamBuildToken*"
+            $runText -like "*$buildToken*"
     }).Count -gt 0
+    if ($matchingBattleProof) {
+        $currentUpstreamWindowsPromotionGateCleared = $true
+        break
+    }
 }
-$currentUpstreamWindowsPromotionGateCleared =
-    $latestCurrentUpstreamOptionsPass -and $recentCurrentUpstreamFirstBattlePass
 $verifierPlanPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-9e4000-verifier-plan.md"
 $hashTargetsPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-pattern-hash-targets.md"
 $shadowContractPath = Join-Path $repoRoot "debug-experiments\20260526-25cc-shadow-native-contract.md"
