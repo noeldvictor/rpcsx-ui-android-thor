@@ -768,3 +768,75 @@ ran after the failure. The previously installed exact APK
 Classification: `install-deferred-thermal-trend`, with no speed, title, FPS,
 flicker, gameplay, or stability credit. Only a later independently cool round
 may repeat this strict install-only gate.
+
+## Latest lower-temperature research and SPU KnownFPClass successor
+
+A primary-source review was completed host-side without another Thor query,
+install, launch, or retry. The useful direction is to reduce work per emulated
+frame and specialize only proven phases, rather than force a blanket CPU mask:
+
+- Phase Matters (June 2026) reports up to a `10.47 C` steady-state reduction
+  and `2.52x` lower energy from phase-specific heterogeneous placement on a
+  Snapdragon 8 Elite mobile vision-language workload
+  (<https://arxiv.org/abs/2606.27906>). This is supporting evidence for
+  phase-aware policy only, not an emulator temperature forecast.
+- System-Level Dynamic Binary Translation Using Automatically-Learned
+  Translation Rules reports a `1.36x` SPEC CINT2006 mean over QEMU 6.1 and
+  `1.15x` on real applications by removing coordination overhead and improving
+  generated-code scheduling (<https://arxiv.org/abs/2402.09688>).
+- Partial Cross-Compilation and Mixed Execution reports up to `13x` over DBT
+  by selectively replacing functions with native execution
+  (<https://arxiv.org/abs/2512.00487>). For RPCSX this supports a long-term,
+  correctness-gated title/HLE superpath lane; it does not justify a broad
+  shortcut or claim that those gains transfer to PS3 emulation.
+- Android's Performance Hint API is available on Android 12+, but its
+  power-efficiency preference is API 35; Thor's Android 13 cannot request that
+  mode. A basic session whose actual work duration exceeds its target can ask
+  the system for more performance and therefore is not yet a safe cooling
+  control without measured per-cycle deadlines. Android also recommends
+  thermal headroom polling no more frequently than every ten seconds
+  (<https://source.android.com/docs/core/perf/performance-hint-api>,
+  <https://developer.android.com/games/optimize/adpf/thermal>,
+  <https://developer.android.com/reference/android/os/PerformanceHintManager.Session.html>).
+
+Existing Thor evidence remains decisive for scheduling: the unrestricted
+`0xFF` process mask beat `0xF8` by about `19%` in the matched static field,
+OldNeutral/AltNeutral collapsed near `2.2 FPS`, and prime-only RSX isolation
+regressed. Keep OS scheduling as the baseline; do not infer a thermal fix from
+fewer runnable cores.
+
+Fresh official RPCS3 `origin/master` was audited at `1d657c4`. The relevant
+upstream SPU LLVM cluster is `aec0917a86044449cae6b5c5e08fa0fbb83bd2f2`,
+`d0fdd9bb6d096eca0c88eb98583d2fc728c67979`, and
+`fa418f0dbb76ce60a9bf4eef741405564836f010`. Their LLVM
+`KnownFPClass` analysis was adapted to this older fork: clamp, FM, FCEQ,
+FCMEQ, FMA, FNMS, and FMS paths can now prove that NaN, infinity, zero, or
+subnormal handling is unnecessary and avoid emitting redundant masks,
+comparisons, clamps, or multiply/add work. A dedicated contract requires the
+helper, all analysis families, KnownFPClass propagation through FMA variants,
+and removal of the legacy constant-only zero classifier.
+
+The ARM64 native build completed incrementally, and the ARM64-only ThorTest
+assembly completed in `56 s`. All eleven host contracts pass: PPU loader, SPU
+cache, SPU KnownFPClass, RSX cache, Vulkan cache, optimized variant, ARM64 APK,
+export surface, single-core load, thermal, and visual route. PowerShell AST
+parsing and `git diff --check` also pass. Export surface remains 34 defined
+dynamic symbols, 583 explicit relocations, 391 jump slots, and 44,219 encoded
+relocation bytes.
+
+Exact host artifacts:
+
+- merged core: `1,305,591,152` bytes, SHA-256
+  `287CF4832EA4ABBE15611B477080A31399B0EB7B1055C889D70556BE3A8FDC85`;
+- stripped core: `62,843,448` bytes, SHA-256
+  `59960428AAB41201C388444CE5A1E80944A6738FA98C87C9FF89D2F561E8E891`;
+  and
+- ARM64-only ThorTest APK: `73,573,278` bytes, SHA-256
+  `8DAFBB2F05D9FB249A06645B5E6774A7E266B7142F59D8F811644E0B81B9A1DF`.
+
+The exact `8DAFBB2F...A1DF` APK supersedes uninstalled host candidate
+`3798B975...5AA1`, but is still `host-verified`, `device-unmeasured`, and
+uninstalled. The device remains on exact APK `24F3F267...F87F`. Grant no FPS,
+temperature, flicker, gameplay, or stability credit. Only a later independently
+cool round may spend the strict install-only gate; a guarded runtime proof must
+remain a different independently cool round.
