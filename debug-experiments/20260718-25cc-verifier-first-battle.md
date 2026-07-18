@@ -50,14 +50,24 @@ The one matched control does not prove deterministic causality, because stock ro
 - Correct title/load/field/tutorial/active battle, including a clean battle frame at the 150-second cutoff. The formal visual/fatal gate passed, and unknown draw, VM access violation, Vulkan device loss, assertion, frozen-emulation, and terminated-thread counts were all zero.
 - The contract stream reported zero output mismatch and zero descriptor overflow. The strict parser intentionally rejected all 809 rows because `body_mode=fast` is blocked from promotion; this is the expected fail-closed result.
 - The final body verifier state recorded 15 handled GETs / 245,760 bytes and 15 rejected PUTs that fell back to the normal path. This is narrow coverage, not a complete 25cc replacement.
-- Matched late RPCS3 CPU samples averaged 21.9% versus 25.5% body-off, a directional 14.1% reduction at the same 30 FPS cap. Two one-second samples are too noisy for speed credit, but the direction agrees with the earlier banked 12.91% host CPU result.
+- Matched late RPCS3 CPU samples averaged 21.9% versus 25.5% body-off, but this comparison was confounded: body-off verification hashed 16 KiB payloads while fast mode bypassed shadow hashing. The later verifier-off isolation supersedes this apparent reduction.
 - Log size was 2,660,465 bytes. Compact mode now retains the body-verifier aggregate while suppressing unrelated deep traces.
+
+### Verifier-off body-fast isolation
+
+- The verifier was disabled on both sides so neither route performed payload hashing. The existing clean control was `20260718-164415-allcore-padapi4-verifier-off-f677-first-battle`.
+- Initial body-fast run `20260718-172640-allcore-padapi7-bodyfast-compact-verifieroff-first-battle` emitted 1,368 body rows at the inherited 10 Hz cadence. It remained visually/fatal clean, but late RPCS3 CPU averaged 19.45% versus 17.0% control and its log grew to 2,248,945 bytes.
+- The body-only compact profiler was reduced to 1 Hz and rebuilt as SHA-256 `482C641CBA5BA8D144445B6C59F595C6E65E5027494D124704BF162F158C8150`.
+- Final isolation `20260718-173347-allcore-padapi8-bodyfast-compact1hz-verifieroff-first-battle` again reached correct active battle through 150s with zero unknown draw/fatal rows. It emitted 145 body rows, and the log fell to 1,455,245 bytes, only 94,339 bytes above control.
+- Final body coverage was still just 15 GETs / 245,760 bytes, with 15 PUTs rejected to the normal synchronized path.
+- Late RPCS3 CPU averaged 16.85% versus 17.0% control, a `-0.9%` difference that is well inside two-sample noise. The actual shortcut has no demonstrated speed or temperature value and is parked.
 
 ## Code changes
 
 - `tools/windows_rpcs3_lab.ps1` now requires three consecutive fatal-looking Path-to-Tenuto frames before aborting, so a transient black loading frame cannot end a valid route.
 - The same live Windows route now treats `unknown draw command` as actionable and fails closed, matching the post-run promotion gate.
 - `rpcs3-upstream/rpcs3/Emu/Cell/lv2/sys_spu.cpp` now makes `verify-25cc-shadow` compact by default: it emits the strict aggregate contract row but suppresses generic GPU/MFC/shadow/descriptor traces. `RPCS3_ES_SPU_HLE_VERIFY_VERBOSE=1` restores the deep trace. Body-fast runs retain their focused body-verifier aggregate without restoring unrelated trace volume.
+- Standalone body-fast profiling now uses the same compact path and a 1 Hz aggregate cadence, preventing experimental logging from masquerading as emulation cost.
 
 ## Current research direction
 
@@ -70,7 +80,7 @@ The one matched control does not prove deterministic causality, because stock ro
 ## Decision and next proof
 
 1. Keep the compact verifier and strict unknown-draw gate.
-2. Keep body-fast host-only and experimental. The visual/fatal checks are clean and its CPU direction is promising, but strict promotion remains blocked and only 15 GETs used the body while 15 PUTs fell back.
-3. Extend or replace the narrow body only after profiling proves a materially hotter contract family; require verify/body-verify mode with zero mismatch/overflow before any Android promotion.
+2. Park the current 25cc body: verifier-off isolation showed no meaningful CPU reduction, only 15 GET hits, and 15 PUT fallbacks.
+3. Profile a materially hotter execution family before building another title-gated body; require verify/body-verify mode with zero mismatch/overflow before any Android promotion.
 4. Audit ADPF at the actual native frame and worker-thread boundaries. A Java-only session around the wrapper threads would not measure the PPU/SPU/RSX work cycles accurately.
 5. Only after a separately cool preflight may one bounded Thor route test an already host-proven candidate. The device remains stopped.
