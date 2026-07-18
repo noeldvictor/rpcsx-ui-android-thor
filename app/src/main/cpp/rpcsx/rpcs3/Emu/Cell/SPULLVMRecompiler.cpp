@@ -4012,6 +4012,15 @@ public:
 			// Testing only
 			m_jit.add(std::move(_module), m_spurt->get_cache_path() + "llvm/");
 		}
+		else if (m_use_native_object_cache && !m_spurt->get_native_object_cache_path().empty())
+		{
+			// The interpreter is rebuilt before any cached SPU program can run. Reuse
+			// only an object whose final transformed IR and backend identity match this
+			// launch; otherwise MCJIT emits and atomically persists the normal object.
+			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v1");
+			_module->setModuleIdentifier(fmt::format("spu-interpreter-%s.obj", key));
+			m_jit.add(std::move(_module), m_spurt->get_native_object_cache_path());
+		}
 		else
 		{
 			m_jit.add(std::move(_module));

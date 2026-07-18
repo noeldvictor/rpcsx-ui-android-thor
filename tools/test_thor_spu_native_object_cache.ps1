@@ -33,9 +33,11 @@ Assert-Contains $spuCommon 'Emu.GetTitleID() != "BLUS30161"' "SPU native cache i
 Assert-Contains $spuCommon '__system_property_get("debug.rpcsx.thor.spu_native_object_cache", property_value)' "SPU native-cache property is missing."
 Assert-Contains $spuCommon 'RPCSX_THOR_SPU_NATIVE_OBJECT_CACHE' "SPU native-cache environment fallback is missing."
 Assert-Contains $spuCommon 'normalized == "1" || normalized == "on" || normalized == "true" || normalized == "yes"' "SPU native-cache parser does not fail closed to its explicit allow-list."
-Assert-Contains $spuCommon 'g_cfg.core.spu_decoder == spu_decoder_type::llvm' "SPU native cache is not restricted to LLVM startup preload."
+Assert-Contains $spuCommon 'g_cfg.core.spu_decoder == spu_decoder_type::llvm' "SPU native cache is not restricted to LLVM startup paths."
+Assert-Contains $spuCommon 'spu_native_object_cache_enabled() && g_cfg.core.spu_decoder == spu_decoder_type::llvm' "An empty guest-program cache cannot seed or reuse the startup interpreter object."
 Assert-Contains $spuCommon 'runtime.enable_native_object_cache()' "SPU native-cache directory creation is not fail-closed."
-Assert-Contains $spuCommon 'runtime misses remain uncached.' "Runtime-miss isolation is not documented in the activation row."
+Assert-Contains $spuCommon 'startup interpreter and preload: exact final-IR/backend keys; runtime misses remain uncached.' "Interpreter/preload activation and runtime-miss isolation are not documented."
+Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache)' "The startup LLVM interpreter does not receive the native-cache capability."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache)' "Startup workers do not receive the native-cache capability."
 Assert-Contains $spuCommon 'compiler = spu_recompiler_base::make_llvm_recompiler();' "The runtime optimization worker no longer retains the default uncached compiler."
 Assert-Contains $spuCommon 'm_cache_path + "spu-native-v1/"' "SPU native objects are not isolated from debug and guest-program caches."
@@ -46,6 +48,15 @@ Assert-Contains $spuLlvm 'const bool m_use_native_object_cache;' "SPU LLVM compi
 Assert-Contains $spuLlvm 'else if (m_use_native_object_cache && !m_spurt->get_native_object_cache_path().empty())' "Production SPU native-cache branch is missing."
 Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-native-v1")' "SPU native objects do not use the exact final-IR key."
 Assert-Contains $spuLlvm '_module->setModuleIdentifier(fmt::format("%s-%s.obj", m_hash, key));' "SPU native cache does not replace the guest-only module identifier."
+Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v1")' "SPU interpreter object does not use a separate exact final-IR schema."
+Assert-Contains $spuLlvm '_module->setModuleIdentifier(fmt::format("spu-interpreter-%s.obj", key));' "SPU interpreter object does not use an isolated module name."
+
+$interpreterIr = $spuLlvm.IndexOf('LLVM IR (interpreter):')
+$interpreterVerify = $spuLlvm.IndexOf('if (verifyModule(*_module, &out))', $interpreterIr)
+$interpreterKey = $spuLlvm.IndexOf('"thor-spu-interpreter-native-v1"', $interpreterVerify)
+if ($interpreterIr -lt 0 -or $interpreterVerify -le $interpreterIr -or $interpreterKey -le $interpreterVerify) {
+    throw "SPU interpreter native-cache key is not computed after transformed-IR verification."
+}
 
 $debugBranch = $spuLlvm.IndexOf('if (g_cfg.core.spu_debug)')
 $nativeBranch = $spuLlvm.IndexOf('else if (m_use_native_object_cache', $debugBranch)

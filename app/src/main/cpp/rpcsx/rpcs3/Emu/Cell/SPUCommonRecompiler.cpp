@@ -1094,13 +1094,13 @@ void spu_cache::initialize(bool build_existing_cache)
 		}
 	}
 
-	bool use_native_object_cache = spu_native_object_cache_enabled() && !func_list.empty() && g_cfg.core.spu_decoder == spu_decoder_type::llvm;
+	bool use_native_object_cache = spu_native_object_cache_enabled() && g_cfg.core.spu_decoder == spu_decoder_type::llvm;
 	if (use_native_object_cache)
 	{
 		use_native_object_cache = runtime.enable_native_object_cache();
 		if (use_native_object_cache)
 		{
-			spu_log.notice("Thor SPU native-object cache enabled for startup preload: exact final-IR/backend keys; runtime misses remain uncached.");
+			spu_log.notice("Thor SPU native-object cache enabled for startup interpreter and preload: exact final-IR/backend keys; runtime misses remain uncached.");
 		}
 	}
 
@@ -1138,7 +1138,7 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	if (g_cfg.core.spu_decoder == spu_decoder_type::dynamic || g_cfg.core.spu_decoder == spu_decoder_type::llvm)
 	{
-		if (auto compiler = spu_recompiler_base::make_llvm_recompiler(11))
+		if (auto compiler = spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache))
 		{
 			compiler->init();
 

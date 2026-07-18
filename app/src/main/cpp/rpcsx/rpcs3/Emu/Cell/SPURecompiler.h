@@ -105,7 +105,8 @@ class spu_runtime
 	// Debug module output location
 	std::string m_cache_path;
 
-	// Exact final-IR native objects used only by opted-in startup preload.
+	// Exact final-IR native objects used only by the opted-in startup
+	// interpreter and cached-program preload paths.
 	std::string m_native_object_cache_path;
 
 public:
