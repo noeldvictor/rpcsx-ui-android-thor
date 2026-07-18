@@ -42,11 +42,22 @@ The one matched control does not prove deterministic causality, because stock ro
 - Log size: 2,134,596 bytes, a 96.765% reduction from the verbose verifier and only 56.851% above the verifier-off control.
 - Host external-contention gate stayed clean. A nonsensical one-sample aggregate GPU percentage made the overall host grade high, so this capped run must not be used for speed comparison.
 
+### Compact body-fast trial
+
+- Run: `debug-captures/windows-lab/20260718-171415-allcore-padapi6-verify25cc-compact-bodyfast-first-battle`
+- Binary SHA-256: `93C165977F5921068B37466441AF820C6D789FF148C2B36D168F8C24121DD3D7`
+- Same deterministic route and capped all-core configuration, with `Verify25ccShadow` plus the 25cc body set to `Fast`.
+- Correct title/load/field/tutorial/active battle, including a clean battle frame at the 150-second cutoff. The formal visual/fatal gate passed, and unknown draw, VM access violation, Vulkan device loss, assertion, frozen-emulation, and terminated-thread counts were all zero.
+- The contract stream reported zero output mismatch and zero descriptor overflow. The strict parser intentionally rejected all 809 rows because `body_mode=fast` is blocked from promotion; this is the expected fail-closed result.
+- The final body verifier state recorded 15 handled GETs / 245,760 bytes and 15 rejected PUTs that fell back to the normal path. This is narrow coverage, not a complete 25cc replacement.
+- Matched late RPCS3 CPU samples averaged 21.9% versus 25.5% body-off, a directional 14.1% reduction at the same 30 FPS cap. Two one-second samples are too noisy for speed credit, but the direction agrees with the earlier banked 12.91% host CPU result.
+- Log size was 2,660,465 bytes. Compact mode now retains the body-verifier aggregate while suppressing unrelated deep traces.
+
 ## Code changes
 
 - `tools/windows_rpcs3_lab.ps1` now requires three consecutive fatal-looking Path-to-Tenuto frames before aborting, so a transient black loading frame cannot end a valid route.
 - The same live Windows route now treats `unknown draw command` as actionable and fails closed, matching the post-run promotion gate.
-- `rpcs3-upstream/rpcs3/Emu/Cell/lv2/sys_spu.cpp` now makes `verify-25cc-shadow` compact by default: it emits the strict aggregate contract row but suppresses generic GPU/MFC/shadow/descriptor traces. `RPCS3_ES_SPU_HLE_VERIFY_VERBOSE=1` restores the deep trace. Enabling the 25cc body also retains full body diagnostics.
+- `rpcs3-upstream/rpcs3/Emu/Cell/lv2/sys_spu.cpp` now makes `verify-25cc-shadow` compact by default: it emits the strict aggregate contract row but suppresses generic GPU/MFC/shadow/descriptor traces. `RPCS3_ES_SPU_HLE_VERIFY_VERBOSE=1` restores the deep trace. Body-fast runs retain their focused body-verifier aggregate without restoring unrelated trace volume.
 
 ## Current research direction
 
@@ -59,7 +70,7 @@ The one matched control does not prove deterministic causality, because stock ro
 ## Decision and next proof
 
 1. Keep the compact verifier and strict unknown-draw gate.
-2. Run a matched, host-only 25cc body-off/body-fast first-battle A/B with compact logging. Require zero unknown draw/fatal rows, correct field/tutorial/active battle, and strict contract success before accepting CPU-time evidence.
-3. Do not port the fast body to Android until that host gate is clean.
+2. Keep body-fast host-only and experimental. The visual/fatal checks are clean and its CPU direction is promising, but strict promotion remains blocked and only 15 GETs used the body while 15 PUTs fell back.
+3. Extend or replace the narrow body only after profiling proves a materially hotter contract family; require verify/body-verify mode with zero mismatch/overflow before any Android promotion.
 4. Audit ADPF at the actual native frame and worker-thread boundaries. A Java-only session around the wrapper threads would not measure the PPU/SPU/RSX work cycles accurately.
 5. Only after a separately cool preflight may one bounded Thor route test an already host-proven candidate. The device remains stopped.
