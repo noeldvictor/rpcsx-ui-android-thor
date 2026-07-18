@@ -50,6 +50,15 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
+- Host successor removes the second disk read/gzip inflate for fully warm PPU
+  object sets by handing validated buffers into linking; any miss releases all
+  retained buffers before compilation. One activation notice reports reused
+  object count. Exact host-only APK `5750F2C1...ED10C6` packages merged core
+  `065C901B...5347E8` / stripped core `10D94CD9...C60671`; ARM64 native/APK,
+  ABI, export, zero-copy, handoff, and strengthened thermal contracts pass. It
+  is uninstalled/device-unmeasured. No device action ran after the 78.3 C
+  failure. Detailed ledger:
+  `debug-experiments/20260718-thor-jit-object-cache-warm-handoff.md`.
 - Exact zero-copy APK `E69D671D2...6C509` later ran once after outer
   `31.7 -> 31.7 -> 31.5 C` and inner `31.3 -> 31.1 -> 32.3 C` gates.
   Cached-module timing improved modestly (first-to-final `-53.286 ms`), but

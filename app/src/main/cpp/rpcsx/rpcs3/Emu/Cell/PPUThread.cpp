@@ -6122,8 +6122,23 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	// Info sent to threads
 	std::vector<std::pair<std::string, ppu_module<lv2_obj>>> workload;
 
-	// Info to load to main JIT instance (true - compiled)
-	std::vector<std::pair<std::string, bool>> link_workload;
+	struct ppu_link_work
+	{
+		std::string object_name;
+		bool is_compiled = false;
+		jit_object_buffer validated_cache;
+
+		explicit ppu_link_work(std::string name)
+			: object_name(std::move(name))
+		{
+		}
+	};
+
+	// Info to load to main JIT instance. Fully warm sets retain their validated
+	// buffers so linking does not inflate every object a second time.
+	std::vector<ppu_link_work> link_workload;
+	bool retain_validated_cache = true;
+	u32 retained_validated_count = 0;
 
 	bool compiled_new = false;
 
@@ -6740,16 +6755,21 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		if (!check_only)
 		{
-			link_workload.emplace_back(obj_name, false);
+			link_workload.emplace_back(obj_name);
 		}
 
 		// Check object file
-		if (jit_compiler::check(cache_path + obj_name))
+		if (auto validated_cache = jit_compiler::check(cache_path + obj_name))
 		{
 			if (!is_being_used_in_emulation && !check_only)
 			{
 				ppu_log.success("LLVM: Module exists: %s", obj_name);
 				link_workload.pop_back();
+			}
+			else if (!check_only && retain_validated_cache)
+			{
+				link_workload.back().validated_cache = std::move(validated_cache);
+				retained_validated_count++;
 			}
 
 			continue;
@@ -6763,8 +6783,20 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		// Remember, used in ppu_initialize(void)
 		compiled_new = true;
 
+		// Do not retain warm buffers across cold/partial compilation. This keeps
+		// the existing peak-memory behavior whenever any module misses.
+		if (retain_validated_cache)
+		{
+			retain_validated_cache = false;
+			retained_validated_count = 0;
+			for (auto& link : link_workload)
+			{
+				link.validated_cache.reset();
+			}
+		}
+
 		// Adjust information (is_compiled)
-		link_workload.back().second = true;
+		link_workload.back().is_compiled = true;
 
 		// Fill workload list for compilation
 		workload.emplace_back(std::move(obj_name), std::move(part));
@@ -6947,6 +6979,11 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_LINKING_PPU_MODULES);
 
+		if (retained_validated_count)
+		{
+			ppu_log.notice("LLVM: Reusing %u validated warm-cache object buffers.", retained_validated_count);
+		}
+
 		// Because linking is faster than compiling, consider each module linkages as a single module compilation in time
 		const bool divide_by_twenty = !workload.empty();
 		const usz increment_link_count_at = (divide_by_twenty ? 20 : 1);
@@ -6955,8 +6992,10 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		usz mod_index = umax;
 
-		for (const auto& [obj_name, is_compiled] : link_workload)
+		for (auto& link : link_workload)
 		{
+			const std::string& obj_name = link.object_name;
+			const bool is_compiled = link.is_compiled;
 			mod_index++;
 
 			if (cpu ? cpu->state.all_of(cpu_flag::exit) : Emu.IsStopped())
@@ -6964,7 +7003,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				break;
 			}
 
-			if (!failed_to_load && !jits[mod_index / c_moudles_per_jit]->add(cache_path + obj_name))
+			if (!failed_to_load && !jits[mod_index / c_moudles_per_jit]->add(cache_path + obj_name, std::move(link.validated_cache)))
 			{
 				ppu_log.error("LLVM: Failed to load module %s", obj_name);
 				failed_to_load = true;
@@ -6978,6 +7017,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 			if (failed_to_load)
 			{
+				link.validated_cache.reset();
 				continue;
 			}
 

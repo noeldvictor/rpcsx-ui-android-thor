@@ -499,11 +499,19 @@ namespace llvm
 {
 	class LLVMContext;
 	class ExecutionEngine;
+	class MemoryBuffer;
 	class Module;
 	class StringRef;
 } // namespace llvm
 
 enum class thread_state : u32;
+
+struct jit_memory_buffer_deleter final
+{
+	void operator()(llvm::MemoryBuffer* buffer) const noexcept;
+};
+
+using jit_object_buffer = std::unique_ptr<llvm::MemoryBuffer, jit_memory_buffer_deleter>;
 
 // Temporary compiler interface
 class jit_compiler final
@@ -546,13 +554,13 @@ public:
 	void add(std::unique_ptr<llvm::Module> _module);
 
 	// Add object (path to obj file)
-	bool add(const std::string& path);
+	bool add(const std::string& path, jit_object_buffer cache = {});
 
 	// Update global mapping for a single value
 	void update_global_mapping(const std::string& name, u64 addr);
 
 	// Check object file
-	static bool check(const std::string& path);
+	static jit_object_buffer check(const std::string& path);
 
 	// Finalize
 	void fin();

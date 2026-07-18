@@ -52,6 +52,11 @@ LOG_CHANNEL(jit_log, "JIT");
 #include "Emu/CPU/Backends/AArch64/AArch64Common.h"
 #endif
 
+void jit_memory_buffer_deleter::operator()(llvm::MemoryBuffer* buffer) const noexcept
+{
+	delete buffer;
+}
+
 #if defined(ARCH_ARM64) && defined(ANDROID)
 static bool android_arm64_cpu_enables_sve_by_default(const std::string& cpu)
 {
@@ -932,19 +937,28 @@ void jit_compiler::add(std::unique_ptr<llvm::Module> _module)
 	}
 }
 
-bool jit_compiler::add(const std::string& path)
+bool jit_compiler::add(const std::string& path, jit_object_buffer cache)
 {
-	auto cache = ObjectCache::load(path);
+	std::unique_ptr<llvm::MemoryBuffer> owned_cache;
 
-	if (!cache)
+	if (cache)
+	{
+		owned_cache.reset(cache.release());
+	}
+	else
+	{
+		owned_cache = ObjectCache::load(path);
+	}
+
+	if (!owned_cache)
 	{
 		jit_log.error("ObjectCache: Failed to read file. (path='%s', error=%s)", path, fs::g_tls_error);
 		return false;
 	}
 
-	if (auto object_file = llvm::object::ObjectFile::createObjectFile(*cache))
+	if (auto object_file = llvm::object::ObjectFile::createObjectFile(*owned_cache))
 	{
-		m_engine->addObjectFile(llvm::object::OwningBinary<llvm::object::ObjectFile>(std::move(*object_file), std::move(cache)));
+		m_engine->addObjectFile(llvm::object::OwningBinary<llvm::object::ObjectFile>(std::move(*object_file), std::move(owned_cache)));
 		jit_log.trace("ObjectCache: Successfully added %s", path);
 		return true;
 	}
@@ -955,13 +969,13 @@ bool jit_compiler::add(const std::string& path)
 	}
 }
 
-bool jit_compiler::check(const std::string& path)
+jit_object_buffer jit_compiler::check(const std::string& path)
 {
 	if (auto cache = ObjectCache::load(path))
 	{
 		if (auto object_file = llvm::object::ObjectFile::createObjectFile(*cache))
 		{
-			return true;
+			return jit_object_buffer{cache.release()};
 		}
 
 		if (fs::remove_file(path))
@@ -970,7 +984,7 @@ bool jit_compiler::check(const std::string& path)
 		}
 	}
 
-	return false;
+	return {};
 }
 
 void jit_compiler::update_global_mapping(const std::string& name, u64 addr)
