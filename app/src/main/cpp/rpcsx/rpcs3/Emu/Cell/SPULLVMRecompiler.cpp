@@ -7063,6 +7063,27 @@ public:
 			}
 			return;
 		}
+
+		const auto [a_is_const, a_data] = get_const_vector(a.value, m_pos);
+		const auto [b_is_const, b_data] = get_const_vector(b.value, m_pos);
+		const bool a_is_splat = a_is_const && a_data == v128::from8p(a_data._u8[0]);
+		const bool b_is_splat = b_is_const && b_data == v128::from8p(b_data._u8[0]);
+
+		// Official RPCS3 a7fc31f: when both sources are constant splats, the
+		// low selector bits are irrelevant. Avoid the generic two-source
+		// shuffle while keeping TBL2/TBX2 out of Thor's constrained JIT path.
+		if (a_is_splat && b_is_splat)
+		{
+			if (perm_only)
+			{
+				set_vr(op.rt4, select_by_bit4(c, a, b));
+				return;
+			}
+
+			const auto splat_lut = build<u8[16]>(a_data._u8[0], b_data._u8[0], a_data._u8[0], b_data._u8[0], a_data._u8[0], b_data._u8[0], a_data._u8[0], b_data._u8[0], 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80);
+			set_vr(op.rt4, tbl(splat_lut, (c >> 4)));
+			return;
+		}
 #endif
 		// Data with swapped endian from a load instruction
 		if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
