@@ -23,6 +23,7 @@
 #include "SPUDisAsm.h"
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <optional>
@@ -237,6 +238,49 @@ static u32 spu_cache_preload_limit() noexcept
 	const auto parse = std::from_chars(value, value + length, result);
 
 	if (parse.ec != std::errc{} || parse.ptr != value + length || result > 4096)
+	{
+		return 0;
+	}
+
+	return result;
+}
+
+static u32 spu_cache_compile_budget_ms() noexcept
+{
+	if (Emu.GetTitleID() != "BLUS30161")
+	{
+		return 0;
+	}
+
+	const char* value = nullptr;
+	usz length = 0;
+
+#ifdef ANDROID
+	char property_value[PROP_VALUE_MAX]{};
+	const int property_length = __system_property_get("debug.rpcsx.thor.spu_cache_compile_budget_ms", property_value);
+
+	if (property_length > 0)
+	{
+		value = property_value;
+		length = static_cast<usz>(property_length);
+	}
+#endif
+
+	if (!value)
+	{
+		value = std::getenv("RPCSX_THOR_SPU_CACHE_COMPILE_BUDGET_MS");
+		length = value ? std::strlen(value) : 0;
+	}
+
+	if (!value || !length)
+	{
+		return 0;
+	}
+
+	u32 result = 0;
+	const auto parse = std::from_chars(value, value + length, result);
+
+	if (parse.ec != std::errc{} || parse.ptr != value + length || result > 5000)
 	{
 		return 0;
 	}
@@ -970,8 +1014,9 @@ void spu_cache::initialize(bool build_existing_cache)
 	// Read cache
 	auto func_list = cache.get();
 	const u32 preload_limit = spu_cache_preload_limit();
+	const u32 compile_budget_ms = spu_cache_compile_budget_ms();
 
-	if (preload_limit && !func_list.empty())
+	if ((preload_limit || compile_budget_ms) && !func_list.empty())
 	{
 		const usz record_count = func_list.size();
 		usz unique_count = 0;
@@ -994,15 +1039,18 @@ void spu_cache::initialize(bool build_existing_cache)
 
 			unique_count++;
 
-			if (preload_list.size() < preload_limit)
+			if (!preload_limit || preload_list.size() < preload_limit)
 			{
 				preload_list.emplace_back(item->data);
 			}
 		}
 
 		func_list = std::move(preload_list);
-		spu_log.notice("Thor SPU cache preload limit: %u of %u oldest unique programs (%u records, %u will compile on demand).",
-			func_list.size(), unique_count, record_count, unique_count - func_list.size());
+		if (preload_limit)
+		{
+			spu_log.notice("Thor SPU cache preload limit: %u of %u oldest unique programs (%u records, %u will compile on demand).",
+				func_list.size(), unique_count, record_count, unique_count - func_list.size());
+		}
 	}
 
 	atomic_t<usz> fnext{};
@@ -1079,12 +1127,19 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	atomic_t<u32> pending_progress = 0;
 	atomic_t<bool> showing_progress = false;
+	atomic_t<bool> compile_budget_expired = false;
 
 	if (!g_progr_ptotal)
 	{
 		g_progr_ptotal += total_funcs;
 		showing_progress.release(true);
 		progress_dialog.emplace(get_localized_string(localized_string_id::PROGRESS_DIALOG_BUILDING_SPU_CACHE));
+	}
+
+	const auto compile_deadline = compile_budget_ms ? std::chrono::steady_clock::now() + std::chrono::milliseconds(compile_budget_ms) : std::chrono::steady_clock::time_point::max();
+	if (compile_budget_ms && !func_list.empty())
+	{
+		spu_log.notice("Thor SPU cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
 	}
 
 	named_thread_group workers("SPU Worker ", worker_count, [&]() -> uint
@@ -1149,6 +1204,14 @@ void spu_cache::initialize(bool build_existing_cache)
 
 				if (Emu.IsStopped() || fail_flag)
 				{
+					continue;
+				}
+
+				// Bound only eager cached-program compilation. Remaining identities stay registered
+				// and use the unchanged LLVM runtime-miss path when the guest executes them.
+				if (compile_budget_ms && (compile_budget_expired || std::chrono::steady_clock::now() >= compile_deadline))
+				{
+					compile_budget_expired = true;
 					continue;
 				}
 
@@ -1425,6 +1488,13 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	spu_log.notice("SPU Runtime: Workers built %u programs.", built_total);
 
+	if (compile_budget_expired && !Emu.IsStopped())
+	{
+		const u32 cached_built = std::min<u32>(built_total, ::size32(func_list));
+		spu_log.notice("Thor SPU cache compile budget: built %u of %u cached programs with a %u ms budget; %u will compile on demand.",
+			cached_built, func_list.size(), compile_budget_ms, func_list.size() - cached_built);
+	}
+
 	if (Emu.IsStopped())
 	{
 		spu_log.error("SPU Runtime: Cache building aborted.");
@@ -1439,7 +1509,8 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	if ((g_cfg.core.spu_decoder == spu_decoder_type::asmjit || g_cfg.core.spu_decoder == spu_decoder_type::llvm) && !func_list.empty())
 	{
-		spu_log.success("SPU Runtime: Built %u functions.", func_list.size());
+		const u32 cached_built = compile_budget_expired ? std::min<u32>(built_total, ::size32(func_list)) : ::size32(func_list);
+		spu_log.success("SPU Runtime: Built %u functions.", cached_built);
 
 		if (g_cfg.core.spu_debug)
 		{

@@ -27,7 +27,7 @@ foreach ($fragment in $requiredCommonFragments) {
 
 $reverseIndex = $commonSource.IndexOf('for (auto it = func_list.rbegin(); it != func_list.rend(); ++it)')
 $registerIndex = $commonSource.IndexOf('spu_item* const item = runtime.add_empty(std::move(*it));')
-$limitIndex = $commonSource.IndexOf('if (preload_list.size() < preload_limit)')
+$limitIndex = $commonSource.IndexOf('if (!preload_limit || preload_list.size() < preload_limit)')
 $replaceIndex = $commonSource.IndexOf('func_list = std::move(preload_list);')
 if ($reverseIndex -lt 0 -or $registerIndex -le $reverseIndex -or $limitIndex -le $registerIndex -or $replaceIndex -le $limitIndex) {
     throw "Oldest-first cached identities are no longer registered before the bounded eager-compile queue is installed."

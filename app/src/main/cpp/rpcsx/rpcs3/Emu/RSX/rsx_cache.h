@@ -213,6 +213,40 @@ namespace rsx
 			return parse_nonnegative_int(std::getenv("RPCSX_THOR_RSX_CACHE_PRELOAD_LIMIT"));
 		}
 
+		static u32 get_android_compile_budget_ms()
+		{
+			if (Emu.GetTitleID() != "BLUS30161")
+			{
+				return 0;
+			}
+
+			auto parse_budget = [](const char* value) -> u32
+			{
+				if (!value || !*value)
+				{
+					return 0;
+				}
+
+				char* end = nullptr;
+				const unsigned long parsed = std::strtoul(value, &end, 10);
+				if (end == value || *end || parsed > 5000)
+				{
+					return 0;
+				}
+
+				return static_cast<u32>(parsed);
+			};
+
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.rsx_cache_compile_budget_ms", value);
+			if (length > 0)
+			{
+				return parse_budget(value);
+			}
+
+			return parse_budget(std::getenv("RPCSX_THOR_RSX_CACHE_COMPILE_BUDGET_MS"));
+		}
+
 		static bool get_android_cache_phase_pacing()
 		{
 			auto is_enabled = [](const char* value) -> bool
@@ -336,27 +370,67 @@ namespace rsx
 		}
 
 		template <typename... Args>
-		void compile_shaders(uint nb_workers, unpacked_type& unpacked, u32 entry_count, shader_loading_dialog* dlg, Args&&... args)
+		void compile_shaders(uint nb_workers, unpacked_type& unpacked, u32 entry_count, shader_loading_dialog* dlg, u32 compile_budget_ms, Args&&... args)
 		{
+			if (!compile_budget_ms)
+			{
+				atomic_t<u32> processed(0);
+
+				std::function<void(u32)> shader_comp_worker = [&](u32 stop_at)
+				{
+					u32 pos;
+					// Preserve the original one-atomic fast path when the experiment is disabled.
+					while (((pos = processed++) < stop_at) && !Emu.IsStopped())
+					{
+						unpacked_shader& entry = unpacked[pos];
+						m_storage.add_pipeline_entry(entry.vp, entry.fp, entry.props, std::forward<Args>(args)...);
+					}
+					processed--;
+				};
+
+				await_workers(nb_workers, 1, shader_comp_worker, processed, entry_count, dlg);
+				return;
+			}
+
+			atomic_t<u32> next(0);
 			atomic_t<u32> processed(0);
+			atomic_t<bool> budget_expired(false);
+			const auto deadline = steady_clock::now() + std::chrono::milliseconds(compile_budget_ms);
 
 			std::function<void(u32)> shader_comp_worker = [&](u32 stop_at)
 			{
 				u32 pos;
 				// Pipeline compile cost varies; dynamic claims keep both workers busy through the tail.
-				while (((pos = processed++) < stop_at) && !Emu.IsStopped())
+				while (((pos = next++) < stop_at) && !Emu.IsStopped())
 				{
+					// The budget is checked between driver submissions. Already-running calls finish normally,
+					// while untouched entries retain the ordinary runtime compilation path.
+					if (budget_expired || steady_clock::now() >= deadline)
+					{
+						budget_expired = true;
+						break;
+					}
+
 					unpacked_shader& entry = unpacked[pos];
 					m_storage.add_pipeline_entry(entry.vp, entry.fp, entry.props, std::forward<Args>(args)...);
+					processed++;
 				}
 				// Each worker claims one sentinel index after the final real entry.
-				processed--;
+				next--;
 			};
 
-			await_workers(nb_workers, 1, shader_comp_worker, processed, entry_count, dlg);
+			await_workers(nb_workers, 1, shader_comp_worker, processed, entry_count, dlg, &budget_expired);
+
+			if (budget_expired && !Emu.IsStopped())
+			{
+				const u32 attempted = std::min(processed.load(), entry_count);
+				rsx_log.notice("Android shader cache compile budget: attempted %u of %u pipelines with a %u ms budget; %u will compile on demand.",
+					attempted, entry_count, compile_budget_ms, entry_count - attempted);
+			}
 		}
 
-		void await_workers(uint nb_workers, u8 step, std::function<void(u32)>& worker, atomic_t<u32>& processed, u32 entry_count, shader_loading_dialog* dlg)
+		void await_workers(uint nb_workers, u8 step, std::function<void(u32)>& worker, atomic_t<u32>& processed, u32 entry_count,
+			shader_loading_dialog* dlg, atomic_t<bool>* stop_early = nullptr)
 		{
 			if (nb_workers > entry_count)
 			{
@@ -374,16 +448,18 @@ namespace rsx
 					stop_at = std::min(stop_at + 10, entry_count);
 
 					worker(stop_at);
+					const u32 current_progress = stop_early ? std::min(processed.load(), entry_count) : stop_at;
 
 					// Only update the screen at about 60fps since updating it everytime slows down the process
 					steady_clock::time_point now = steady_clock::now();
-					if ((std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update) > 16ms) || (stop_at == entry_count))
+					if ((std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update) > 16ms) ||
+						(stop_at == entry_count) || (stop_early && stop_early->load()))
 					{
-						dlg->update_msg(step, get_message(step, stop_at, entry_count));
-						dlg->set_value(step, stop_at);
+						dlg->update_msg(step, get_message(step, current_progress, entry_count));
+						dlg->set_value(step, current_progress);
 						last_update = now;
 					}
-				} while (stop_at < entry_count && !Emu.IsStopped());
+				} while (stop_at < entry_count && !Emu.IsStopped() && !(stop_early && stop_early->load()));
 			}
 			else
 			{
@@ -394,7 +470,7 @@ namespace rsx
 
 				u32 current_progress = 0;
 				u32 last_update_progress = 0;
-				while ((current_progress < entry_count) && !Emu.IsStopped())
+				while ((current_progress < entry_count) && !Emu.IsStopped() && !(stop_early && stop_early->load()))
 				{
 					thread_ctrl::wait_for(16'000); // Around 60fps should be good enough
 
@@ -412,7 +488,7 @@ namespace rsx
 				}
 			}
 
-			if (!Emu.IsStopped())
+			if (!Emu.IsStopped() && !(stop_early && stop_early->load()))
 			{
 				ensure(processed == entry_count);
 			}
@@ -526,7 +602,15 @@ namespace rsx
 			wait_for_android_spu_preload_phase();
 #endif
 
-			compile_shaders(preload_workers, unpacked, entry_count, dlg, std::forward<Args>(args)...);
+			u32 compile_budget_ms = 0;
+#ifdef __ANDROID__
+			compile_budget_ms = get_android_compile_budget_ms();
+			if (compile_budget_ms)
+			{
+				rsx_log.notice("Android shader cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
+			}
+#endif
+			compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);
 
 			dlg->refresh();
 			dlg->close();

@@ -17,17 +17,29 @@ $profileToolSource = Get-Content -LiteralPath $profileToolPath -Raw
 $claim = 'while (((pos = processed++) < stop_at) && !Emu.IsStopped())'
 $claimCount = [regex]::Matches($cacheSource, [regex]::Escape($claim)).Count
 if ($claimCount -ne 2) {
-    throw "Expected dynamic atomic claims in load and compile workers, found $claimCount."
+    throw "Expected the load worker and default compile worker to preserve one-atomic dynamic claims, found $claimCount."
 }
 
 $sentinelCount = [regex]::Matches($cacheSource, '(?m)^\s*processed--;\s*$').Count
 if ($sentinelCount -ne 2) {
-    throw "Expected one sentinel rollback in each dynamic worker, found $sentinelCount."
+    throw "Expected one sentinel rollback in the load and default compile workers, found $sentinelCount."
+}
+
+$compileClaim = 'while (((pos = next++) < stop_at) && !Emu.IsStopped())'
+$compileClaimCount = [regex]::Matches($cacheSource, [regex]::Escape($compileClaim)).Count
+$compileSentinelCount = [regex]::Matches($cacheSource, '(?m)^\s*next--;\s*$').Count
+if ($compileClaimCount -ne 1 -or $compileSentinelCount -ne 1) {
+    throw "Expected dynamic compile claims with a separate completion counter and one sentinel rollback."
+}
+
+if (-not $cacheSource.Contains('if (!compile_budget_ms)') -or
+    -not $cacheSource.Contains('Preserve the original one-atomic fast path when the experiment is disabled.')) {
+    throw "Default-off RSX compilation no longer preserves the original one-atomic fast path."
 }
 
 $workerTypeCount = [regex]::Matches($cacheSource, [regex]::Escape('std::function<void(u32)>')).Count
-if ($workerTypeCount -ne 3) {
-    throw "Expected two dynamic callbacks plus the single-bound await contract, found $workerTypeCount."
+if ($workerTypeCount -ne 4) {
+    throw "Expected load, default compile, budgeted compile, and single-bound await callbacks, found $workerTypeCount."
 }
 
 $requiredCacheFragments = @(
@@ -39,7 +51,7 @@ $requiredCacheFragments = @(
     'nb_workers = std::min<uint>(nb_workers, 2);',
     'rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);',
     'load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, dlg);',
-    'compile_shaders(preload_workers, unpacked, entry_count, dlg, std::forward<Args>(args)...);',
+    'compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);',
     'lhs.mtime != rhs.mtime ? lhs.mtime < rhs.mtime : lhs.name < rhs.name',
     'entry_count = static_cast<u32>(preload_limit);',
     'will compile on demand'
