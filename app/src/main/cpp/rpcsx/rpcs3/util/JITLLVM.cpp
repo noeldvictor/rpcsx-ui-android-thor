@@ -475,6 +475,25 @@ struct MemoryManager2 : llvm::RTDyldMemoryManager
 	}
 };
 
+class vector_memory_buffer final : public llvm::MemoryBuffer
+{
+	std::vector<u8> m_data;
+
+public:
+	explicit vector_memory_buffer(std::vector<u8> data)
+		: m_data(std::move(data))
+	{
+		m_data.push_back(0);
+		const auto* begin = reinterpret_cast<const char*>(m_data.data());
+		init(begin, begin + m_data.size() - 1, true);
+	}
+
+	BufferKind getBufferKind() const override
+	{
+		return MemoryBuffer_Malloc;
+	}
+};
+
 // Helper class
 class ObjectCache final : public llvm::ObjectCache
 {
@@ -546,7 +565,7 @@ public:
 				return nullptr;
 			}
 
-			const std::vector<u8> out = unzip(cached_data);
+			auto out = unzip(cached_data);
 
 			if (out.empty())
 			{
@@ -554,9 +573,7 @@ public:
 				return nullptr;
 			}
 
-			auto buf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(out.size());
-			std::memcpy(buf->getBufferStart(), out.data(), out.size());
-			return buf;
+			return std::make_unique<vector_memory_buffer>(std::move(out));
 		}
 
 		if (fs::file cached{path, fs::read})
