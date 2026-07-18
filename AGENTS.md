@@ -50,14 +50,21 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- Host successor makes every fully warm PPU object read/inflate/parse once by
-  handing the parsed object plus owning buffer directly into linking; any miss
-  releases all retained objects before compilation. One activation notice
-  reports reused object count. Exact host-only APK `39EE3277...D0D81` packages
-  merged core `5099BD53...E908D` / stripped core `C8B55B9C...934AC`; ARM64 native/APK,
-  ABI, export, zero-copy, handoff, and strengthened thermal contracts pass. It
-  is uninstalled/device-unmeasured. No device action ran after the 78.3 C
-  failure. Detailed ledger:
+- Fresh official RPCS3 commit `9b3a916af` is adapted so approximate-xfloat
+  SPU FMA computes normal FMA independently and selects it or the addend,
+  shortening the old compare/mask/FMA dependency chain. Saved first-battle
+  SPU windows contain 10 FMA rows / 8 unique addresses. Exact host-only APK
+  `A38B8B6F...8AA0B` packages merged core `45363D0F...D267A` / stripped core
+  `7E1886A9...5A17B`; ARM64 native/APK and all focused contracts pass. It is
+  uninstalled/device-unmeasured, and no device action ran. Detailed ledger:
+  `debug-experiments/20260718-arm64-spu-fma-select-upstream-slice.md`.
+- The same candidate includes the host successor that makes every fully warm
+  PPU object read/inflate/parse once by handing the parsed object plus owning
+  buffer directly into linking. Any miss releases retained objects before
+  compilation. The earlier exact host-only APK `39EE3277...D0D81` is
+  superseded uninstalled by `A38B8B6F...8AA0B`; ABI, export, zero-copy,
+  handoff, and strengthened thermal contracts pass. No device action ran
+  after the 78.3 C failure. Detailed ledger:
   `debug-experiments/20260718-thor-jit-object-cache-warm-handoff.md`.
 - Exact zero-copy APK `E69D671D2...6C509` later ran once after outer
   `31.7 -> 31.7 -> 31.5 C` and inner `31.3 -> 31.1 -> 32.3 C` gates.

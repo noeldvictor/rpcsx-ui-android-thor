@@ -8035,23 +8035,20 @@ public:
 
 					if (a_notnan)
 					{
-						const auto ma = sext<s32[4]>(fcmp_uno(a != fsplat<f32[4]>(0.)));
-						const auto cb = bitcast<f32[4]>(bitcast<s32[4]>(b) & ma);
-						return fma32x4(a, eval(cb), c, a_known, b_known);
+						const auto normal_fma = fma32x4(a, b, c, a_known, b_known);
+						return eval(select(fcmp_uno(a != fsplat<f32[4]>(0.)), normal_fma, c));
 					}
 
 					if (b_notnan)
 					{
-						const auto mb = sext<s32[4]>(fcmp_uno(b != fsplat<f32[4]>(0.)));
-						const auto ca = bitcast<f32[4]>(bitcast<s32[4]>(a) & mb);
-						return fma32x4(eval(ca), b, c, a_known, b_known);
+						const auto normal_fma = fma32x4(a, b, c, a_known, b_known);
+						return eval(select(fcmp_uno(b != fsplat<f32[4]>(0.)), normal_fma, c));
 					}
 
-					const auto ma = sext<s32[4]>(fcmp_uno(a != fsplat<f32[4]>(0.)));
-					const auto mb = sext<s32[4]>(fcmp_uno(b != fsplat<f32[4]>(0.)));
-					const auto ca = bitcast<f32[4]>(bitcast<s32[4]>(a) & mb);
-					const auto cb = bitcast<f32[4]>(bitcast<s32[4]>(b) & ma);
-					return fma32x4(eval(ca), eval(cb), c, a_known, b_known);
+					const auto normal_fma = fma32x4(a, b, c, a_known, b_known);
+					const auto a_cmp = fcmp_uno(a != fsplat<f32[4]>(0.));
+					const auto b_cmp = fcmp_uno(b != fsplat<f32[4]>(0.));
+					return eval(select(a_cmp & b_cmp, normal_fma, c));
 				}
 				else
 				{
