@@ -50,12 +50,13 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- 2026-07-18 host-only candidate removes the redundant second allocation and
-  full memcpy from compressed LLVM object-cache loads. ARM64 native and
-  ARM64-only ThorTest builds plus APK/export/cache/thermal contracts pass. Exact
-  APK SHA-256 is
-  `E69D671D2B6F74BAC6DEAF2A3A08D7DC98877B0F8654E7C89AC2A0BA68B6C509`;
-  it is uninstalled and device-unmeasured. Keep Thor stopped this round.
+- 2026-07-18 candidate removes the redundant second allocation and full memcpy
+  from compressed LLVM object-cache loads. Exact APK
+  `E69D671D2...6C509` is installed after the strict no-launch gate
+  `20260718-123118-thor-input-jit-object-cache-zero-copy-install-cool-gate`
+  passed `31.5 -> 31.9 -> 31.3 C`; on-device `base.apk` matched, PID stayed
+  absent, and post-install silicon was `34.1 C`. This is install-only proof:
+  no runtime/speed/FPS/flicker/stability credit. Keep Thor stopped this round.
 - Current route base: Down160 title route, `PATH_TO_TENUTO_PRESENT` gate, strong post-load dismiss, Path-to-Tenuto field.
 - Current movement bracket: `left1317` is clean single-axis movement, `left1318` is fatal/corrupt, and `left1317-down120` is failed.
 - Latest refreshed lower proof: `20260527-221838-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows` re-proved the route and left movement clean after the no-movement load-stability control.

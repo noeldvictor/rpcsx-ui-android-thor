@@ -8,9 +8,10 @@
   instead of allocating a second exact-size buffer and copying every byte.
 - ARM64 native compilation, ARM64-only optimized ThorTest packaging, and all
   relevant source/APK/export contracts pass.
-- Classify this as a `host-only-candidate` and `not-comparable`.
-- No APK was installed or launched. No speed, FPS, flicker, stability, or
-  temperature credit is claimed.
+- Classify this as `installed-exact-no-launch` and `not-comparable`.
+- The exact APK is now installed after a separately cool no-launch gate. It was
+  not launched. No speed, FPS, flicker, stability, or runtime-temperature
+  credit is claimed.
 
 ## Why this path was selected
 
@@ -94,7 +95,7 @@ but it was not mixed into this single-variable startup optimization.
   relocations, 391 `JUMP_SLOT` relocations, 44,219 encoded relocation bytes).
 - `git diff --check`: pass before ledger update.
 
-Exact uninstalled ARM64 ThorTest artifact:
+Exact ARM64 ThorTest artifact:
 
 - APK:
   `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk`
@@ -108,11 +109,41 @@ Exact uninstalled ARM64 ThorTest artifact:
 - Packaged stripped core SHA-256:
   `C08490978D7BE045A995578CEC7A812AF9BBC43F2BEF942ACECD380DD0E06BA6`
 
+## Device install-only evidence
+
+Strict no-launch gate:
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260718-123118-thor-input-jit-object-cache-zero-copy-install-cool-gate`
+- Device serial: `c3ca0370`.
+- `BootGame: False`; `ForceStop: True`.
+- Silicon samples: `31.5 -> 31.9 -> 31.3 C`.
+- Maximum silicon: `31.9 C`; net trend: `-0.2 C`.
+
+Exact no-launch install:
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260718-123159-jit-object-cache-zero-copy-thortest-apk-install`
+- Status: `installed-exact-no-launch`.
+- Cool-gate age at validation: `0.5 minutes`.
+- Host and on-device `base.apk` SHA-256 both equal
+  `E69D671D2B6F74BAC6DEAF2A3A08D7DC98877B0F8654E7C89AC2A0BA68B6C509`.
+- RPCSX PID was absent before and after installation.
+- Controls remained RSX workers/limit and SPU limit `0/0/0`, Vulkan cache
+  `on`, and PPU interpreter/dispatch/async-draw experiments `off`.
+- Post-install temperatures: battery `22.0 C`, skin `30.0 C`, silicon
+  `34.1 C`.
+- Emulator launch: no.
+
+This is install identity and thermal-safety evidence only. Classify it as
+`installed-exact-no-launch` and `not-comparable`.
+
 ## Next guarded step
 
-Keep the Thor stopped for this round. On a later independently cool round,
-install this exact APK without launch. Only a different cool round may run one
-bounded title proof with the existing thermal guard. Compare process-to-title,
-guard arrival, temperature slope, and visual correctness against the matched
-control. Reject it if the change only shifts timing or if the title/menu
-flicker persists.
+Keep the Thor stopped for the completed install round. Only a later
+independently cool round may run one bounded title proof with the existing
+thermal guard. Keep cache-phase pacing off so the decompressed-buffer ownership
+change remains the only active startup variable. Compare the PPU object-load
+window, process-to-title or guard arrival, temperature slope, and visual
+correctness against the matched control. Reject it if the change only shifts
+timing or if the title/menu flicker persists.
