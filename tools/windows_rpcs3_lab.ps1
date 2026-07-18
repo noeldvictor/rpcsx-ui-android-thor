@@ -1310,6 +1310,8 @@ function Invoke-LabPathToTenutoFieldGate {
     $runDir = Split-Path -Parent $ScreenshotDir
     $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
     $attempt = 1
+    $consecutiveFatalScreenshots = 0
+    $fatalScreenshotThreshold = 3
     Write-LabLine $RunLog "Path-to-Tenuto field gate polling for the green playable field for up to ${TimeoutMilliseconds}ms."
 
     while ($true) {
@@ -1332,10 +1334,16 @@ function Invoke-LabPathToTenutoFieldGate {
             return $true
         }
         if (Test-LabActionableFatalScreenshot -Path $screenshotPath) {
-            $marker = Join-Path $runDir "path-to-tenuto-field-gate-failed.txt"
-            "Path-to-Tenuto field gate stopped at ${elapsedSeconds}s on a probable crash/device-loss overlay." | Set-Content -LiteralPath $marker -Encoding UTF8
-            Write-LabLine $RunLog "Path-to-Tenuto field gate failed: probable crash/device-loss overlay."
-            return $false
+            $consecutiveFatalScreenshots++
+            Write-LabLine $RunLog "Path-to-Tenuto field gate observed probable crash/device-loss overlay ${consecutiveFatalScreenshots}/${fatalScreenshotThreshold}; waiting for confirmation."
+            if ($consecutiveFatalScreenshots -ge $fatalScreenshotThreshold) {
+                $marker = Join-Path $runDir "path-to-tenuto-field-gate-failed.txt"
+                "Path-to-Tenuto field gate stopped at ${elapsedSeconds}s after ${consecutiveFatalScreenshots} consecutive probable crash/device-loss overlays." | Set-Content -LiteralPath $marker -Encoding UTF8
+                Write-LabLine $RunLog "Path-to-Tenuto field gate failed: ${consecutiveFatalScreenshots} consecutive probable crash/device-loss overlays."
+                return $false
+            }
+        } else {
+            $consecutiveFatalScreenshots = 0
         }
 
         if ((Get-Date) -ge $deadline) {
@@ -1498,7 +1506,7 @@ function Test-LabActionableFatalLog {
         [void]$stream.Seek(-$tailBytes, [System.IO.SeekOrigin]::End)
         $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $true, 4096, $true)
         $tail = $reader.ReadToEnd()
-        return $tail -match '(?im)(Thread terminated due to fatal error|VM:\s+Access violation|VK_ERROR_DEVICE_LOST|Assertion Failed!|Emulation has been frozen!)'
+        return $tail -match '(?im)(unknown draw command|Thread terminated due to fatal error|VM:\s+Access violation|VK_ERROR_DEVICE_LOST|Assertion Failed!|Emulation has been frozen!)'
     } catch {
         return $false
     } finally {

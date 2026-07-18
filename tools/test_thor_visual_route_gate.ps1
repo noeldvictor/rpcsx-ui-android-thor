@@ -166,6 +166,18 @@ if ($inputMacroSource -notmatch '\$visualStableCount\s+-ge\s+2') {
     throw "Visual-state gates do not require two consecutive matching frames."
 }
 
+$windowsLabSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "windows_rpcs3_lab.ps1") -Raw
+if ($windowsLabSource -notmatch '\$fatalScreenshotThreshold\s*=\s*3') {
+    throw "The Windows field gate does not require three consecutive fatal-looking frames."
+}
+if ($windowsLabSource -notmatch '\$consecutiveFatalScreenshots\+\+[\s\S]*?waiting for confirmation') {
+    throw "The Windows field gate does not debounce transient black load-transition frames."
+}
+
+if ($windowsLabSource -notmatch "return \`$tail -match '[^']*unknown draw command") {
+    throw "The Windows live fatal gate does not fail closed on unknown guest draw commands."
+}
+
 $speedSprintSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1") -Raw
 if ($speedSprintSource -notmatch '\[string\]\$AndroidSerial\s*=\s*""') {
     throw "The Android speed-sprint wrapper does not expose an explicit device serial."
