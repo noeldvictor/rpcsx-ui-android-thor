@@ -22,6 +22,7 @@
 #include "SPUInterpreter.h"
 #include "SPUDisAsm.h"
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cstring>
@@ -205,6 +206,47 @@ bool spu_dynamic_mfc_fast_enabled() noexcept
 #endif
 
 	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+}
+
+bool spu_native_object_cache_enabled() noexcept
+{
+	if (Emu.GetTitleID() != "BLUS30161")
+	{
+		return false;
+	}
+
+	const char* value = nullptr;
+	usz length = 0;
+
+#ifdef ANDROID
+	char property_value[PROP_VALUE_MAX]{};
+	const int property_length = __system_property_get("debug.rpcsx.thor.spu_native_object_cache", property_value);
+
+	if (property_length > 0)
+	{
+		value = property_value;
+		length = static_cast<usz>(property_length);
+	}
+#endif
+
+	if (!value)
+	{
+		value = std::getenv("RPCSX_THOR_SPU_NATIVE_OBJECT_CACHE");
+		length = value ? std::strlen(value) : 0;
+	}
+
+	if (!value || !length)
+	{
+		return false;
+	}
+
+	std::string normalized(value, length);
+	std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](uchar ch)
+	{
+		return static_cast<char>(std::tolower(ch));
+	});
+
+	return normalized == "1" || normalized == "on" || normalized == "true" || normalized == "yes";
 }
 
 static u32 spu_cache_preload_limit() noexcept
@@ -1015,14 +1057,13 @@ void spu_cache::initialize(bool build_existing_cache)
 	auto func_list = cache.get();
 	const u32 preload_limit = spu_cache_preload_limit();
 	const u32 compile_budget_ms = spu_cache_compile_budget_ms();
+	auto& runtime = g_fxo->get<spu_runtime>();
 
 	if ((preload_limit || compile_budget_ms) && !func_list.empty())
 	{
 		const usz record_count = func_list.size();
 		usz unique_count = 0;
 		std::deque<spu_program> preload_list;
-		auto& runtime = g_fxo->get<spu_runtime>();
-
 		// get() returns newest records first, but the on-disk append order tracks
 		// first runtime discovery. Walk it backwards so a bounded queue spends its
 		// budget on boot programs instead of later field/battle discoveries. Every
@@ -1050,6 +1091,16 @@ void spu_cache::initialize(bool build_existing_cache)
 		{
 			spu_log.notice("Thor SPU cache preload limit: %u of %u oldest unique programs (%u records, %u will compile on demand).",
 				func_list.size(), unique_count, record_count, unique_count - func_list.size());
+		}
+	}
+
+	bool use_native_object_cache = spu_native_object_cache_enabled() && !func_list.empty() && g_cfg.core.spu_decoder == spu_decoder_type::llvm;
+	if (use_native_object_cache)
+	{
+		use_native_object_cache = runtime.enable_native_object_cache();
+		if (use_native_object_cache)
+		{
+			spu_log.notice("Thor SPU native-object cache enabled for startup preload: exact final-IR/backend keys; runtime misses remain uncached.");
 		}
 	}
 
@@ -1186,17 +1237,17 @@ void spu_cache::initialize(bool build_existing_cache)
 			}
 			else if (g_cfg.core.spu_decoder == spu_decoder_type::llvm)
 			{
-				compiler = spu_recompiler_base::make_llvm_recompiler();
+				compiler = spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache);
 			}
 #elif defined(ARCH_ARM64)
 			if (g_cfg.core.spu_decoder == spu_decoder_type::asmjit)
 			{
 				spu_log.warning("SPU ASMJIT is x64-only; using LLVM recompiler on ARM64.");
-				compiler = spu_recompiler_base::make_llvm_recompiler();
+				compiler = spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache);
 			}
 			else if (g_cfg.core.spu_decoder == spu_decoder_type::llvm)
 			{
-				compiler = spu_recompiler_base::make_llvm_recompiler();
+				compiler = spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache);
 			}
 #else
 #error "Unimplemented"
@@ -1705,6 +1756,29 @@ spu_runtime::spu_runtime()
 		fs::file(m_cache_path + "spu.log", fs::rewrite);
 		fs::file(m_cache_path + "spu-ir.log", fs::rewrite);
 	}
+}
+
+bool spu_runtime::enable_native_object_cache()
+{
+	if (!m_native_object_cache_path.empty())
+	{
+		return true;
+	}
+
+	if (m_cache_path.empty())
+	{
+		return false;
+	}
+
+	const std::string path = m_cache_path + "spu-native-v1/";
+	if (!fs::is_dir(path) && !fs::create_dir(path))
+	{
+		spu_log.warning("Failed to create SPU native-object cache directory: %s (%s)", path, fs::g_tls_error);
+		return false;
+	}
+
+	m_native_object_cache_path = path;
+	return true;
 }
 
 spu_item* spu_runtime::add_empty(spu_program&& data)

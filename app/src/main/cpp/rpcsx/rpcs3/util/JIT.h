@@ -537,6 +537,9 @@ class jit_compiler final
 	// Disk Space left
 	atomic_t<usz> m_disk_space = umax;
 
+	// Target/backend identity used by exact native-object cache keys.
+	std::string m_object_cache_identity;
+
 public:
 	// Limit ARM64 feature isolation to SPU JIT instances.
 	static constexpr u32 spu_codegen_flag = 1u << 2;
@@ -564,6 +567,11 @@ public:
 
 	// Add object (path to obj file)
 	bool add(const std::string& path, jit_object_cache cache = {});
+
+	// Hash the final LLVM IR together with the active target/backend identity.
+	// Any translator/config/ASLR-sensitive IR difference therefore becomes a
+	// cache miss instead of reusing an incompatible native object.
+	std::string make_object_cache_key(const llvm::Module& module, std::string_view schema) const;
 
 	// Update global mapping for a single value
 	void update_global_mapping(const std::string& name, u64 addr);

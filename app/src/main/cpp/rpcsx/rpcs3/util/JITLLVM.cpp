@@ -9,6 +9,7 @@
 #include "util/vm.hpp"
 #include "rx/asm.hpp"
 #include "rx/align.hpp"
+#include "Crypto/sha1.h"
 #include "Crypto/unzip.h"
 
 #include <atomic>
@@ -35,6 +36,7 @@ LOG_CHANNEL(jit_log, "JIT");
 #pragma GCC diagnostic ignored "-Wmissing-noreturn"
 #endif
 #include <llvm/Support/CodeGen.h>
+#include <llvm/Config/llvm-config.h>
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -525,6 +527,30 @@ public:
 	}
 };
 
+class sha1_raw_ostream final : public llvm::raw_ostream
+{
+	sha1_context& m_context;
+	u64 m_position = 0;
+
+	void write_impl(const char* data, std::size_t size) override
+	{
+		sha1_update(&m_context, reinterpret_cast<const u8*>(data), size);
+		m_position += size;
+	}
+
+	u64 current_pos() const override
+	{
+		return m_position;
+	}
+
+public:
+	explicit sha1_raw_ostream(sha1_context& context)
+		: m_context(context)
+	{
+		SetUnbuffered();
+	}
+};
+
 #ifdef __ANDROID__
 static std::atomic_bool g_materialize_raw_object_cache{false};
 static std::atomic<usz> g_raw_object_cache_budget{0};
@@ -753,8 +779,20 @@ public:
 
 		if (auto buf = load(path))
 		{
-			jit_log.notice("LLVM: Loaded module: %s", _module->getName().data());
-			return buf;
+			// A damaged warm object must fall back to normal code generation rather
+			// than entering MCJIT's fatal object-loading path.
+			if (llvm::object::ObjectFile::createObjectFile(*buf))
+			{
+				jit_log.notice("LLVM: Loaded module: %s", _module->getName().data());
+				return buf;
+			}
+
+			const bool removed_raw = fs::remove_file(path);
+			const bool removed_compressed = fs::remove_file(path + ".gz");
+			if (removed_raw || removed_compressed)
+			{
+				jit_log.error("ObjectCache: Removed damaged compile object: %s", path);
+			}
 		}
 
 		return nullptr;
@@ -1029,6 +1067,21 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 		fmt::throw_exception("LLVM: Failed to create ExecutionEngine: %s", result);
 	}
 
+	std::string attribute_identity;
+	for (const std::string& attribute : attributes)
+	{
+		if (!attribute_identity.empty())
+		{
+			attribute_identity += ',';
+		}
+
+		attribute_identity += attribute;
+	}
+
+	m_object_cache_identity = fmt::format("llvm=%s|cpu=%s|triple=%s|attrs=%s|flags=0x%x|layout=%s",
+		LLVM_VERSION_STRING, m_cpu, target_triple, attribute_identity,
+		flags, m_engine->getTargetMachine()->createDataLayout().getStringRepresentation());
+
 #if defined(ARCH_ARM64)
 	report_aarch64_jit_target_once(m_cpu, target_triple, attributes, flags, !_link.empty());
 #endif
@@ -1115,6 +1168,27 @@ bool jit_compiler::add(const std::string& path, jit_object_cache cache)
 		jit_log.error("ObjectCache: Adding failed: %s", path);
 		return false;
 	}
+}
+
+std::string jit_compiler::make_object_cache_key(const llvm::Module& module, std::string_view schema) const
+{
+	sha1_context context;
+	u8 output[20];
+	sha1_starts(&context);
+	sha1_update(&context, reinterpret_cast<const u8*>(schema.data()), schema.size());
+	const u8 separator = 0;
+	sha1_update(&context, &separator, 1);
+	sha1_update(&context, reinterpret_cast<const u8*>(m_object_cache_identity.data()), m_object_cache_identity.size());
+	sha1_update(&context, &separator, 1);
+
+	// Printing after the SPU transform/optimization pipeline captures every IR
+	// decision, including launch-specific absolute constants. Those constants
+	// intentionally prevent cross-ASLR reuse for affected functions.
+	sha1_raw_ostream stream(context);
+	module.print(stream, nullptr);
+	stream.flush();
+	sha1_finish(&context, output);
+	return fmt::format("%s", fmt::base57(output));
 }
 
 jit_object_cache jit_compiler::check(const std::string& path)

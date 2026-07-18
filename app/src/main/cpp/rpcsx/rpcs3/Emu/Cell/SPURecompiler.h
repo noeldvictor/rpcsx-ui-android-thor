@@ -69,6 +69,7 @@ struct spu_program
 u32 spu_reduced_loop_unroll_factor() noexcept;
 bool spu_reduced_loop_reuse_enabled() noexcept;
 bool spu_dynamic_mfc_fast_enabled() noexcept;
+bool spu_native_object_cache_enabled() noexcept;
 
 class spu_item
 {
@@ -104,6 +105,9 @@ class spu_runtime
 	// Debug module output location
 	std::string m_cache_path;
 
+	// Exact final-IR native objects used only by opted-in startup preload.
+	std::string m_native_object_cache_path;
+
 public:
 	// Trampoline to spu_recompiler_base::dispatch
 	static const spu_function_t tr_dispatch;
@@ -128,6 +132,13 @@ public:
 	{
 		return m_cache_path;
 	}
+
+	const std::string& get_native_object_cache_path() const
+	{
+		return m_native_object_cache_path;
+	}
+
+	bool enable_native_object_cache();
 
 	// Rebuild ubertrampoline for given identifier (first instruction)
 	spu_function_t rebuild_ubertrampoline(u32 id_inst);
@@ -532,7 +543,7 @@ public:
 	static std::unique_ptr<spu_recompiler_base> make_asmjit_recompiler();
 
 	// Create recompiler instance (LLVM)
-	static std::unique_ptr<spu_recompiler_base> make_llvm_recompiler(u8 magn = 0);
+	static std::unique_ptr<spu_recompiler_base> make_llvm_recompiler(u8 magn = 0, bool use_native_object_cache = false);
 
 	// Create recompiler instance (interpreter-based LLVM)
 	static std::unique_ptr<spu_recompiler_base> make_fast_llvm_recompiler();

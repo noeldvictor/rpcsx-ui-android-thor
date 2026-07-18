@@ -40,6 +40,8 @@ param(
     [int]$SpuCachePreloadLimit = 0,
     [ValidateRange(0, 5000)]
     [int]$SpuCacheCompileBudgetMs = 0,
+    [ValidateSet("on", "off")]
+    [string]$SpuNativeObjectCache = "off",
     [ValidateRange(0, 255)]
     [int]$CacheWorkerAffinityMask = 0,
     [ValidateSet("on", "off")]
@@ -821,6 +823,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- RSX cached pipeline compile budget ms (0=unbounded): $RsxCacheCompileBudgetMs",
     "- SPU cached-program preload limit (0=all): $SpuCachePreloadLimit",
     "- SPU cached-program compile budget ms (0=unbounded): $SpuCacheCompileBudgetMs",
+    "- SPU startup native-object cache: $SpuNativeObjectCache",
     "- Startup cache-worker affinity mask (0=default scheduler): $CacheWorkerAffinityMask",
     "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Vulkan preload cache hits only: $VkPreloadCacheHitsOnly",
@@ -849,6 +852,7 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-compile-budget-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_compile_budget_ms 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.cache_worker_affinity_mask 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -880,6 +884,8 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_preload_limit") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $SpuCacheCompileBudgetMs") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_compile_budget_ms") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache $SpuNativeObjectCache") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_native_object_cache") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-set.txt" @("shell", "setprop debug.rpcsx.thor.cache_worker_affinity_mask $CacheWorkerAffinityMask") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-effective.txt" @("shell", "getprop debug.rpcsx.thor.cache_worker_affinity_mask") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-set.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache $VkPipelineCache") | Out-Null
@@ -1226,6 +1232,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "rsx-cache-compile-budget-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_compile_budget_ms 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.cache_worker_affinity_mask 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1245,6 +1252,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-compile-budget-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_compile_budget_ms 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-reset.txt" @("shell", "setprop debug.rpcsx.thor.cache_worker_affinity_mask 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null

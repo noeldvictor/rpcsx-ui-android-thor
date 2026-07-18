@@ -78,6 +78,10 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// JIT Instance
 	jit_compiler m_jit{{}, jit_compiler::cpu(g_cfg.core.llvm_cpu), jit_compiler::spu_codegen_flag};
 
+	// Startup-only exact native-object cache. Runtime compilation keeps the
+	// original uncached path so gameplay misses never add disk I/O.
+	const bool m_use_native_object_cache;
+
 	// Interpreter table size power
 	const u8 m_interp_magn;
 
@@ -1489,8 +1493,8 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	}
 
 public:
-	spu_llvm_recompiler(u8 interp_magn = 0)
-		: spu_recompiler_base(), cpu_translator(nullptr, false), m_interp_magn(interp_magn)
+	spu_llvm_recompiler(u8 interp_magn = 0, bool use_native_object_cache = false)
+		: spu_recompiler_base(), cpu_translator(nullptr, false), m_use_native_object_cache(use_native_object_cache), m_interp_magn(interp_magn)
 	{
 	}
 
@@ -3542,6 +3546,15 @@ public:
 		{
 			// Testing only
 			m_jit.add(std::move(_module), m_spurt->get_cache_path() + "llvm/");
+		}
+		else if (m_use_native_object_cache && !m_spurt->get_native_object_cache_path().empty())
+		{
+			// The object key includes the transformed/optimized IR plus LLVM target,
+			// CPU, feature and data-layout identity. IR construction is retained to
+			// rebuild launch-specific helper mappings before MCJIT links a warm hit.
+			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-native-v1");
+			_module->setModuleIdentifier(fmt::format("%s-%s.obj", m_hash, key));
+			m_jit.add(std::move(_module), m_spurt->get_native_object_cache_path());
 		}
 		else
 		{
@@ -9727,9 +9740,9 @@ public:
 	static decltype(&spu_llvm_recompiler::UNK) decode(u32 op);
 };
 
-std::unique_ptr<spu_recompiler_base> spu_recompiler_base::make_llvm_recompiler(u8 magn)
+std::unique_ptr<spu_recompiler_base> spu_recompiler_base::make_llvm_recompiler(u8 magn, bool use_native_object_cache)
 {
-	return std::make_unique<spu_llvm_recompiler>(magn);
+	return std::make_unique<spu_llvm_recompiler>(magn, use_native_object_cache);
 }
 
 const spu_decoder<spu_llvm_recompiler> s_spu_llvm_decoder;
@@ -9741,7 +9754,7 @@ decltype(&spu_llvm_recompiler::UNK) spu_llvm_recompiler::decode(u32 op)
 
 #else
 
-std::unique_ptr<spu_recompiler_base> spu_recompiler_base::make_llvm_recompiler(u8 magn)
+std::unique_ptr<spu_recompiler_base> spu_recompiler_base::make_llvm_recompiler(u8 magn, bool)
 {
 	if (magn)
 	{
