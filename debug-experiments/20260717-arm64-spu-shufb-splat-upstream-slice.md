@@ -8,8 +8,9 @@ splats, a permutation-only control now emits `select_by_bit4`; controls that
 may request SPU encoded constants use one 16-byte lookup table and `TBL`.
 This bypasses the generic two-source shuffle construction.
 
-The change is host-verified and packaged, but uninstalled and device-unmeasured.
-Grant no FPS, temperature, flicker, gameplay, or stability credit.
+The change is host-verified, packaged, and installed exactly without launch.
+Runtime remains device-unmeasured. Grant no FPS, runtime-temperature, flicker,
+gameplay, or stability credit.
 
 ## Official upstream basis
 
@@ -76,6 +77,11 @@ instead of sustained maximum clocks:
   `TBL2/TBX2`.
 - `tools/test_thor_spu_shufb_splat_lowering.ps1` requires the guarded
   `SELECT/TBL` paths and fails if the parked two-table helpers appear.
+- `tools/install_thor_apk_no_launch.ps1` provides a fail-closed promotion
+  path that requires a fresh three-sample cool gate, exact host and on-device
+  APK hashes, and PID absence before and after installation without containing
+  an activity-launch path.
+- `tools/test_thor_no_launch_apk_install.ps1` locks that installer contract.
 
 ## Host validation
 
@@ -106,13 +112,30 @@ Passed without contacting the Thor:
 - stripped ARM64 core SHA-256:
   `16D8E877C091CF324B97DA1686E95D88D0B5A4026E4087CC2810E8D8D4513066`.
 
+## Install-only Thor promotion
+
+The no-launch gate capture
+`20260718-001225-thor-input-arm64-spu-shufb-splat-thortest-install-cool-gate`
+passed at `31.7 -> 32.3 -> 32.3 C`: every silicon sample was below 35 C,
+net rise was `+0.6 C`, battery was 23.0 C, skin was 30.0 C, and RPCSX
+remained stopped.
+
+Capture
+`20260718-002325-arm64-spu-shufb-splat-thortest-apk-install` then proves:
+
+- streamed install success for exact APK
+  `89F374D9CAA273B44DCDCD0876CD34DECCB3ECDC2A7DDC5BA49C3A7D5EB54FE9`;
+- the installed `base.apk` SHA-256 matches the host artifact exactly;
+- RPCSX PID was absent before and after installation;
+- RSX worker/RSX limit/SPU limit controls were `0/0/0`, Vulkan cache was
+  `on`, and all Eternal Sonata experiment switches were `off`;
+- post-install battery/skin/silicon were `23.0/30.0/34.1 C`; and
+- no emulator activity was launched.
+
 ## Device and thermal boundary
 
-No ADB query, install, launch, temperature read, or gameplay route ran for this
-slice. The Thor remains stopped on exact installed APK
-`8BF896E8E2F99547523E53F803111DFE6BA330DA3C00644AE7B4C0BA790C28C7`.
-Only a later independently cool round may consider installing the new APK,
-using three silicon samples below 35 C, no more than 1 C net rise, and PID
-absence. Runtime proof must be a separate cool round with the established
-68 C early stop, immediate confirmation above 60 C, two-second polling, and
-72 C hard ceiling.
+The Thor is stopped on the exact SHUFB APK. This is install proof only.
+Runtime proof must be a separate independently cool round with three silicon
+samples below 35 C, no more than 1 C net rise, PID absence, 68 C early stop,
+immediate confirmation at or above 60 C, two-second polling, and a 72 C hard
+ceiling.
