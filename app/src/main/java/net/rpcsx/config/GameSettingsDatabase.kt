@@ -40,6 +40,7 @@ object GameSettingsDatabase {
             # Do not cap SPURS here; SPURS 4 caused a black-screen-alive load hang on Thor.
             # 2026-05-16 Thor A/B: RPCS3 Scheduler + SPU busy-wait dropped the opening field route to low single digits.
             Core:
+              Set DAZ and FTZ: true
               Thread Scheduler Mode: Operating System
               SPU Reservation Busy Waiting Percentage: 0
               SPU Reservation Busy Waiting Enabled: false

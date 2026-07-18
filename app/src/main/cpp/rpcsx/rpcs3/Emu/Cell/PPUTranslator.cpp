@@ -640,10 +640,10 @@ Value* PPUTranslator::VecHandleDenormal(Value* val)
 	return bitcast(result, type);
 }
 
-Value* PPUTranslator::VecHandleResult(Value* val)
+Value* PPUTranslator::VecHandleResult(Value* val, bool flush_denormals_manually)
 {
 	val = g_cfg.core.ppu_fix_vnan ? VecHandleNan(val) : val;
-	val = g_cfg.core.ppu_llvm_nj_fixup ? VecHandleDenormal(val) : val;
+	val = g_cfg.core.ppu_llvm_nj_fixup && (flush_denormals_manually || !g_cfg.core.set_daz_and_ftz) ? VecHandleDenormal(val) : val;
 	return val;
 }
 
@@ -1439,13 +1439,13 @@ void PPUTranslator::VCTUXS(ppu_opcode_t op)
 void PPUTranslator::VEXPTEFP(ppu_opcode_t op)
 {
 	const auto b = get_vr<f32[4]>(op.vb);
-	set_vr(op.vd, vec_handle_result(llvm_calli<f32[4], decltype(b)>{"llvm.exp2.v4f32", {b}}));
+	set_vr(op.vd, vec_handle_result(llvm_calli<f32[4], decltype(b)>{"llvm.exp2.v4f32", {b}}, true));
 }
 
 void PPUTranslator::VLOGEFP(ppu_opcode_t op)
 {
 	const auto b = get_vr<f32[4]>(op.vb);
-	set_vr(op.vd, vec_handle_result(llvm_calli<f32[4], decltype(b)>{"llvm.log2.v4f32", {b}}));
+	set_vr(op.vd, vec_handle_result(llvm_calli<f32[4], decltype(b)>{"llvm.log2.v4f32", {b}}, true));
 }
 
 void PPUTranslator::VMADDFP(ppu_opcode_t op)
@@ -1488,7 +1488,7 @@ void PPUTranslator::VMADDFP(ppu_opcode_t op)
 void PPUTranslator::VMAXFP(ppu_opcode_t op)
 {
 	const auto [a, b] = get_vrs<f32[4]>(op.va, op.vb);
-	set_vr(op.vd, vec_handle_result(bitcast<f32[4]>(bitcast<u32[4]>(fmax(a, b)) & bitcast<u32[4]>(fmax(b, a)))));
+	set_vr(op.vd, vec_handle_result(bitcast<f32[4]>(bitcast<u32[4]>(fmax(a, b)) & bitcast<u32[4]>(fmax(b, a))), true));
 }
 
 void PPUTranslator::VMAXSB(ppu_opcode_t op)
@@ -1550,7 +1550,7 @@ void PPUTranslator::VMHRADDSHS(ppu_opcode_t op)
 void PPUTranslator::VMINFP(ppu_opcode_t op)
 {
 	const auto [a, b] = get_vrs<f32[4]>(op.va, op.vb);
-	set_vr(op.vd, vec_handle_result(bitcast<f32[4]>(bitcast<u32[4]>(fmin(a, b)) | bitcast<u32[4]>(fmin(b, a)))));
+	set_vr(op.vd, vec_handle_result(bitcast<f32[4]>(bitcast<u32[4]>(fmin(a, b)) | bitcast<u32[4]>(fmin(b, a))), true));
 }
 
 void PPUTranslator::VMINSB(ppu_opcode_t op)

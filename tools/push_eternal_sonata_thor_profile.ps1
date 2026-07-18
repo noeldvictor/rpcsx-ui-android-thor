@@ -114,6 +114,7 @@ if ($Mode -in @("RocknixFast", "RocknixCorrect", "Rocknix720Fast", "Rocknix720Co
 # $wcbNote
 # Android-safe mirror: keeps VRAM capped instead of Rocknix's effectively uncapped Linux value.
 Core:
+  Set DAZ and FTZ: true
   Thread Scheduler Mode: Operating System
   LLVM Precompilation: false
   PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
@@ -155,6 +156,7 @@ Video:
 # Title ID: BLUS30161
 # This keeps official DB-critical WCB and avoids SPURS/scheduler overrides.
 Core:
+  Set DAZ and FTZ: true
   PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
 Video:
   Frame limit: 30
@@ -183,6 +185,7 @@ Video:
 # $rsxThreadedNote
 # $affinityNote
 Core:
+  Set DAZ and FTZ: true
   Thread Scheduler Mode: $schedulerMode
   PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
   SPU Reservation Busy Waiting Percentage: 0
@@ -213,6 +216,7 @@ ${rsxThreadedLine}  Accurate ZCULL stats: false
 # This intentionally does not use RPCSX_THOR_AUTO_SETTINGS, so the app will not rewrite it.
 # Official DB requires Write Color Buffers. Vulkan VRAM is capped for shared-memory Adreno.
 Core:
+  Set DAZ and FTZ: true
   Thread Scheduler Mode: RPCS3 Scheduler
   PPU Reservation Priority Over SPUs: $ppuReservationPriorityValue
   SPU Reservation Busy Waiting Percentage: 100

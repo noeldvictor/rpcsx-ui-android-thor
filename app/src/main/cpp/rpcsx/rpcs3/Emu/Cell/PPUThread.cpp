@@ -6662,8 +6662,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_dispatch_provenance_v5,
 				thor_es_async_draw_barrier_v8,
 				thor_es_dispatch_provenance_v6,
+				uses_hardware_ftz,
 
-				bitset_last = thor_es_dispatch_provenance_v6,
+				bitset_last = uses_hardware_ftz,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -6677,6 +6678,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::fixup_vnan;
 			if (g_cfg.core.ppu_llvm_nj_fixup)
 				settings += ppu_settings::fixup_nj_denormals;
+			if (g_cfg.core.set_daz_and_ftz)
+				settings += ppu_settings::uses_hardware_ftz;
 			if (has_dcbz == 2)
 				settings += ppu_settings::accurate_cache_line_stores;
 			if (g_cfg.core.ppu_128_reservations_loop_max_length)

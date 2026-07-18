@@ -80,6 +80,8 @@ param(
     [string]$SpuAccurateReservations = "Keep",
     [ValidateSet("Keep", "On", "Off")]
     [string]$SpuAccurateDma = "Keep",
+    [ValidateSet("Keep", "On", "Off")]
+    [string]$PpuDazAndFtz = "Keep",
     [int]$GameScreen = 1,
     [int]$ScreenshotEverySeconds = 0,
     [int]$ScreenshotStartSeconds = 20,
@@ -2446,10 +2448,11 @@ function New-LabRunConfig {
         [int]$VblankRate,
         [string]$SpuAccurateReservations,
         [string]$SpuAccurateDma,
+        [string]$PpuDazAndFtz,
         [string]$RunLog
     )
 
-    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep" -and $SpuAccurateDma -eq "Keep") {
+    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep" -and $SpuAccurateDma -eq "Keep" -and $PpuDazAndFtz -eq "Keep") {
         return $null
     }
     if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
@@ -2480,6 +2483,11 @@ function New-LabRunConfig {
         "Off" { "false" }
         default { "" }
     }
+    $dazAndFtzValue = switch ($PpuDazAndFtz) {
+        "On" { "true" }
+        "Off" { "false" }
+        default { "" }
+    }
 
     $inCore = $false
     $inVideo = $false
@@ -2496,7 +2504,9 @@ function New-LabRunConfig {
             $inVideo = $false
         }
 
-        if ($inCore -and $accurateReservationsValue -and $line -match '^  Accurate SPU Reservations: ') {
+        if ($inCore -and $dazAndFtzValue -and $line -match '^  Set DAZ and FTZ: ') {
+            $newLine = "  Set DAZ and FTZ: $dazAndFtzValue"
+        } elseif ($inCore -and $accurateReservationsValue -and $line -match '^  Accurate SPU Reservations: ') {
             $newLine = "  Accurate SPU Reservations: $accurateReservationsValue"
         } elseif ($inCore -and $accurateDmaValue -and $line -match '^  Accurate SPU DMA: ') {
             $newLine = "  Accurate SPU DMA: $accurateDmaValue"
@@ -2522,6 +2532,7 @@ function New-LabRunConfig {
         vblank_rate               = $(if ($VblankRate -gt 0) { $VblankRate } else { "default" })
         spu_accurate_reservations = $(if ($accurateReservationsValue) { $accurateReservationsValue } else { "default" })
         spu_accurate_dma          = $(if ($accurateDmaValue) { $accurateDmaValue } else { "default" })
+        ppu_daz_and_ftz           = $(if ($dazAndFtzValue) { $dazAndFtzValue } else { "default" })
     }
 }
 
@@ -2641,7 +2652,7 @@ if ($null -eq $forceHwMsaaResolveOverride) {
 } else {
     Write-LabLine $runLog "- Force Hardware MSAA Resolve override: key missing"
 }
-$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -SpuAccurateDma $SpuAccurateDma -RunLog $runLog
+$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -SpuAccurateDma $SpuAccurateDma -PpuDazAndFtz $PpuDazAndFtz -RunLog $runLog
 if ($null -eq $runConfigOverride) {
     Write-LabLine $runLog "- Run config override: keep"
 } else {
@@ -2650,6 +2661,7 @@ if ($null -eq $runConfigOverride) {
     Write-LabLine $runLog "- Run config vblank rate: $($runConfigOverride.vblank_rate)"
     Write-LabLine $runLog "- Run config Accurate SPU Reservations: $($runConfigOverride.spu_accurate_reservations)"
     Write-LabLine $runLog "- Run config Accurate SPU DMA: $($runConfigOverride.spu_accurate_dma)"
+    Write-LabLine $runLog "- Run config Set DAZ and FTZ: $($runConfigOverride.ppu_daz_and_ftz)"
     Write-LabLine $runLog "- Run config Write Color Buffers: forced true"
 }
 Update-LabConfigDatabase -ConfigDbPath $rpcs3ConfigDb -TitleId $TitleId -Force ([bool]$RefreshConfigDb) -Skip ([bool]$SkipConfigDbRefresh) -RunLog $runLog
