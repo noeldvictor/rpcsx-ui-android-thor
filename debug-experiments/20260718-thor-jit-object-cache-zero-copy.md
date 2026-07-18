@@ -8,9 +8,10 @@
   instead of allocating a second exact-size buffer and copying every byte.
 - ARM64 native compilation, ARM64-only optimized ThorTest packaging, and all
   relevant source/APK/export contracts pass.
-- Classify this as `installed-exact-no-launch` and `not-comparable`.
-- The exact APK is now installed after a separately cool no-launch gate. It was
-  not launched. No speed, FPS, flicker, stability, or runtime-temperature
+- The exact APK was installed after a separately cool no-launch gate, then one
+  later independently cool runtime was attempted.
+- Classify the runtime as `failed-thermal-guard` and `not-comparable`.
+- No speed, FPS, flicker, stability, title, gameplay, or temperature-improvement
   credit is claimed.
 
 ## Why this path was selected
@@ -138,12 +139,80 @@ Exact no-launch install:
 This is install identity and thermal-safety evidence only. Classify it as
 `installed-exact-no-launch` and `not-comparable`.
 
+## Guarded runtime evidence
+
+Outer no-launch gate:
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260718-123644-thor-input-jit-object-cache-zero-copy-runtime-cool-gate`
+- Silicon samples: `31.7 -> 31.7 -> 31.5 C`.
+- RPCSX remained stopped.
+
+Only runtime:
+
+- Capture:
+  `debug-captures/android-speed-sprint/20260718-123726-thor-input-jit-object-cache-zero-copy-bounded-title-proof`
+- Inner preflight: `31.3 -> 31.1 -> 32.3 C`; the `+1.0 C` rise was at the
+  strict allowed limit.
+- Exact effective controls: cache-phase pacing `off`, RSX auto workers
+  `0` (runtime `load=2, compile=2`), RSX preload `256/939`, SPU preload
+  `64/1,165`, Vulkan cache `on`.
+- PID `23426` established at `12:37:39.1706413`.
+- First runtime sample was `59.4 C` at `+2.668 s`.
+- The next sample was `78.3 C` at `+5.658 s`; the 72 C hard guard
+  force-stopped RPCSX.
+- Failure-post-stop silicon was `49.4 C`; captured PID was absent.
+- The route failed during the initial 12-second wait, before Start/title, so no
+  screenshot, FPS, flicker, menu, gameplay, or stability evidence exists.
+- Targeted fatal/access/device-lost/unknown-draw hits: `0`.
+
+The matched full-log control is:
+
+`debug-captures/android-speed-sprint/20260717-185725-thor-input-parallel-rsx-warm-checkpoint-bounded-title-proof`
+
+Cached PPU object-load comparison:
+
+- EBOOT load span: `441.866 -> 436.319 ms` (`-5.547 ms`, about `-1.3%`).
+- Runtime/PRX load span: `121.495 -> 114.969 ms` (`-6.526 ms`, about
+  `-5.4%`).
+- First-to-final cached module: `1,147.522 -> 1,094.236 ms`
+  (`-53.286 ms`, about `-4.6%`).
+- Final cached module timestamp: `2.949298 -> 2.892478 s` (`-56.820 ms`).
+- RSX worker start shifted `1.040324 -> 1.036731 s`; bounded SPU preload
+  shifted `2.246577 -> 2.237521 s`.
+
+This is a one-run startup micro-timing signal only. It is too small and too
+thermally confounded to promote, and the candidate did not reach any visual
+correctness gate.
+
+## Thermal-guard repair
+
+The failed runtime exposed an unsafe sampling gap. A `59.4 C` reading sat
+just below the old `60 C` probe, then the next bounded poll observed
+`78.3 C`. Host tooling now:
+
+- widens the default probe window from `12 C` to `16 C`, moving the probe
+  threshold from `60 C` to `56 C` under the 72 C hard limit;
+- takes the immediate confirmation sample as before;
+- force-stops if that confirmation remains at or above the probe threshold,
+  instead of waiting another poll for the 68 C early threshold;
+- preserves the 68 C early stop and 72 C hard ceiling;
+- forwards the same safer default through the Eternal Sonata wrapper.
+
+`tools/test_thor_thermal_guard.ps1` includes the observed `59.4 C` case and
+requires `silicon-temperature-confirmed-near-limit` to stop. Thermal tests and
+PowerShell AST parsing pass. This repair is host-verified only; no second device
+launch ran.
+
 ## Next guarded step
 
-Keep the Thor stopped for the completed install round. Only a later
-independently cool round may run one bounded title proof with the existing
-thermal guard. Keep cache-phase pacing off so the decompressed-buffer ownership
-change remains the only active startup variable. Compare the PPU object-load
-window, process-to-title or guard arrival, temperature slope, and visual
-correctness against the matched control. Reject it if the change only shifts
-timing or if the title/menu flicker persists.
+Keep the Thor stopped after the failed runtime. The zero-copy change may remain
+as a small correctness-neutral startup improvement, but reject it as a thermal
+fix by itself. Do not spend another device round until host work removes a
+larger class of startup work. The strongest next audit is the PPU cache path's
+apparent validate-then-load double decompression; preserve corrupted-cache
+detection while eliminating redundant inflation if the source flow confirms it.
+
+A later independently cool proof must use the repaired 56 C confirmed-probe
+guard. It receives no credit unless it stays below the hard ceiling and reaches
+the required visual gates.

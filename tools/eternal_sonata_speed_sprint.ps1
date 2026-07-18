@@ -86,7 +86,7 @@ param(
     [ValidateRange(0, 20)]
     [double]$AndroidThermalRuntimeStopHeadroomC = 4.0,
     [ValidateRange(0, 30)]
-    [double]$AndroidThermalRuntimeProbeWindowC = 12.0,
+    [double]$AndroidThermalRuntimeProbeWindowC = 16.0,
     [ValidateRange(1, 5)]
     [int]$AndroidThermalPreflightSamples = 3,
     [ValidateRange(1, 10)]

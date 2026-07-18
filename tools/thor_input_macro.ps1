@@ -24,7 +24,7 @@ param(
     [ValidateRange(0, 20)]
     [double]$ThermalRuntimeStopHeadroomC = 4.0,
     [ValidateRange(0, 30)]
-    [double]$ThermalRuntimeProbeWindowC = 12.0,
+    [double]$ThermalRuntimeProbeWindowC = 16.0,
     [double]$MaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
     [double]$MaxSkinTemperatureC = 45.0,
@@ -643,6 +643,7 @@ function Assert-ThorRuntimeThermalBudget {
             Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
         $snapshot = Assert-ThorThermalBudget "$Stage-near-limit-confirm" -PassThru
         $decisionParams.Snapshot = $snapshot
+        $decisionParams.Confirmed = $true
         $decision = Get-ThorThermalRuntimeGuardDecision @decisionParams
     }
 

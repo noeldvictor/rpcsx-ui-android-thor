@@ -260,7 +260,8 @@ function Get-ThorThermalRuntimeGuardDecision {
         [Parameter(Mandatory = $true)][object]$Snapshot,
         [double]$MaxSiliconTemperatureC,
         [double]$StopHeadroomC = 4.0,
-        [double]$ProbeWindowC = 12.0
+        [double]$ProbeWindowC = 16.0,
+        [switch]$Confirmed
     )
 
     if ($Snapshot.silicon_sensor_count -lt 1 -or $null -eq $Snapshot.silicon_temperature_c) {
@@ -282,12 +283,20 @@ function Get-ThorThermalRuntimeGuardDecision {
     }
 
     if ($siliconTemperatureC -ge $probeTemperatureC) {
+        $action = if ($Confirmed) { "stop" } else { "confirm" }
+        $code = if ($Confirmed) { "silicon-temperature-confirmed-near-limit" } else { "silicon-temperature-near-limit" }
+        $message = if ($Confirmed) {
+            "Thor CPU/GPU silicon temperature remained $(Format-ThorTemperatureC $siliconTemperatureC) C at or above the $(Format-ThorTemperatureC $probeTemperatureC) C near-limit probe on immediate confirmation. RPCSX must stop before the $MaxSiliconTemperatureC C hard limit."
+        } else {
+            "Thor CPU/GPU silicon temperature is near the runtime limit and requires an immediate confirmation sample."
+        }
+
         return [pscustomobject]@{
-            action = "confirm"
-            code = "silicon-temperature-near-limit"
+            action = $action
+            code = $code
             stop_temperature_c = $stopTemperatureC
             probe_temperature_c = $probeTemperatureC
-            message = "Thor CPU/GPU silicon temperature is near the runtime limit and requires an immediate confirmation sample."
+            message = $message
         }
     }
 

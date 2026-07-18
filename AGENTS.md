@@ -50,13 +50,15 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- 2026-07-18 candidate removes the redundant second allocation and full memcpy
-  from compressed LLVM object-cache loads. Exact APK
-  `E69D671D2...6C509` is installed after the strict no-launch gate
-  `20260718-123118-thor-input-jit-object-cache-zero-copy-install-cool-gate`
-  passed `31.5 -> 31.9 -> 31.3 C`; on-device `base.apk` matched, PID stayed
-  absent, and post-install silicon was `34.1 C`. This is install-only proof:
-  no runtime/speed/FPS/flicker/stability credit. Keep Thor stopped this round.
+- Exact zero-copy APK `E69D671D2...6C509` later ran once after outer
+  `31.7 -> 31.7 -> 31.5 C` and inner `31.3 -> 31.1 -> 32.3 C` gates.
+  Cached-module timing improved modestly (first-to-final `-53.286 ms`), but
+  silicon went `59.4 C` at PID+`2.668 s` to `78.3 C` at +`5.658 s`;
+  the hard guard stopped it before Start/title. Classify
+  `20260718-123726-thor-input-jit-object-cache-zero-copy-bounded-title-proof`
+  as `failed-thermal-guard` / `not-comparable`, with no speed/FPS/flicker/
+  gameplay/stability credit. Host guard now probes at 56 C and stops when the
+  immediate confirmation remains near-limit; no second device launch ran.
 - Current route base: Down160 title route, `PATH_TO_TENUTO_PRESENT` gate, strong post-load dismiss, Path-to-Tenuto field.
 - Current movement bracket: `left1317` is clean single-axis movement, `left1318` is fatal/corrupt, and `left1317-down120` is failed.
 - Latest refreshed lower proof: `20260527-221838-cpu4-hle-25cc-shadow-desc-battle-stock-down160-strongdismiss600-left1275-longgate-diagnostic-windows` re-proved the route and left movement clean after the no-movement load-stability control.
