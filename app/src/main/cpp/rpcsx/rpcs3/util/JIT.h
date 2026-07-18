@@ -499,19 +499,28 @@ namespace llvm
 {
 	class LLVMContext;
 	class ExecutionEngine;
-	class MemoryBuffer;
 	class Module;
 	class StringRef;
 } // namespace llvm
 
 enum class thread_state : u32;
 
-struct jit_memory_buffer_deleter final
+class jit_object_cache final
 {
-	void operator()(llvm::MemoryBuffer* buffer) const noexcept;
-};
+	struct impl;
+	std::unique_ptr<impl> m_impl;
 
-using jit_object_buffer = std::unique_ptr<llvm::MemoryBuffer, jit_memory_buffer_deleter>;
+	explicit jit_object_cache(std::unique_ptr<impl> cache) noexcept;
+	friend class jit_compiler;
+
+public:
+	jit_object_cache() noexcept;
+	~jit_object_cache();
+	jit_object_cache(jit_object_cache&&) noexcept;
+	jit_object_cache& operator=(jit_object_cache&&) noexcept;
+	explicit operator bool() const noexcept;
+	void reset() noexcept;
+};
 
 // Temporary compiler interface
 class jit_compiler final
@@ -554,13 +563,13 @@ public:
 	void add(std::unique_ptr<llvm::Module> _module);
 
 	// Add object (path to obj file)
-	bool add(const std::string& path, jit_object_buffer cache = {});
+	bool add(const std::string& path, jit_object_cache cache = {});
 
 	// Update global mapping for a single value
 	void update_global_mapping(const std::string& name, u64 addr);
 
 	// Check object file
-	static jit_object_buffer check(const std::string& path);
+	static jit_object_cache check(const std::string& path);
 
 	// Finalize
 	void fin();

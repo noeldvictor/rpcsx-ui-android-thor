@@ -10,22 +10,26 @@ $contracts = @(
         Name = "JIT interface"
         Source = $jitHeader
         Required = @(
-            'struct jit_memory_buffer_deleter final',
-            'using jit_object_buffer = std::unique_ptr<llvm::MemoryBuffer, jit_memory_buffer_deleter>;',
-            'bool add(const std::string& path, jit_object_buffer cache = {});',
-            'static jit_object_buffer check(const std::string& path);'
+            'class jit_object_cache final',
+            'struct impl;',
+            'std::unique_ptr<impl> m_impl;',
+            'explicit operator bool() const noexcept;',
+            'void reset() noexcept;',
+            'bool add(const std::string& path, jit_object_cache cache = {});',
+            'static jit_object_cache check(const std::string& path);'
         )
     },
     @{
         Name = "JIT implementation"
         Source = $jitSource
         Required = @(
-            'void jit_memory_buffer_deleter::operator()(llvm::MemoryBuffer* buffer) const noexcept',
-            'bool jit_compiler::add(const std::string& path, jit_object_buffer cache)',
-            'owned_cache.reset(cache.release());',
-            'owned_cache = ObjectCache::load(path);',
-            'jit_object_buffer jit_compiler::check(const std::string& path)',
-            'return jit_object_buffer{cache.release()};'
+            'struct jit_object_cache::impl',
+            'llvm::object::OwningBinary<llvm::object::ObjectFile> binary;',
+            'bool jit_compiler::add(const std::string& path, jit_object_cache cache)',
+            'm_engine->addObjectFile(std::move(cache.m_impl->binary));',
+            'auto owned_cache = ObjectCache::load(path);',
+            'jit_object_cache jit_compiler::check(const std::string& path)',
+            'std::make_unique<jit_object_cache::impl>(std::move(*object_file), std::move(cache))'
         )
     },
     @{
@@ -33,7 +37,7 @@ $contracts = @(
         Source = $ppuSource
         Required = @(
             'struct ppu_link_work',
-            'jit_object_buffer validated_cache;',
+            'jit_object_cache validated_cache;',
             'bool retain_validated_cache = true;',
             'u32 retained_validated_count = 0;',
             'if (auto validated_cache = jit_compiler::check(cache_path + obj_name))',
@@ -43,7 +47,7 @@ $contracts = @(
             'retained_validated_count = 0;',
             'link.validated_cache.reset();',
             'std::move(link.validated_cache)',
-            'LLVM: Reusing %u validated warm-cache object buffers.'
+            'LLVM: Reusing %u validated warm-cache objects.'
         )
     }
 )
@@ -72,4 +76,4 @@ if ($linkIndex -lt 0 -or $moveIndex -le $linkIndex) {
     throw "Validated PPU objects are no longer moved into the linking JIT."
 }
 
-Write-Output "Thor JIT object-cache handoff contract passed: all-hit warm sets reuse validated buffers, while any miss releases retained buffers before compilation."
+Write-Output "Thor JIT object-cache handoff contract passed: all-hit warm sets reuse parsed objects and backing buffers, while any miss releases retained objects before compilation."

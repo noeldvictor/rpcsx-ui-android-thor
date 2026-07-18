@@ -50,11 +50,11 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- Host successor removes the second disk read/gzip inflate for fully warm PPU
-  object sets by handing validated buffers into linking; any miss releases all
-  retained buffers before compilation. One activation notice reports reused
-  object count. Exact host-only APK `5750F2C1...ED10C6` packages merged core
-  `065C901B...5347E8` / stripped core `10D94CD9...C60671`; ARM64 native/APK,
+- Host successor makes every fully warm PPU object read/inflate/parse once by
+  handing the parsed object plus owning buffer directly into linking; any miss
+  releases all retained objects before compilation. One activation notice
+  reports reused object count. Exact host-only APK `39EE3277...D0D81` packages
+  merged core `5099BD53...E908D` / stripped core `C8B55B9C...934AC`; ARM64 native/APK,
   ABI, export, zero-copy, handoff, and strengthened thermal contracts pass. It
   is uninstalled/device-unmeasured. No device action ran after the 78.3 C
   failure. Detailed ledger:

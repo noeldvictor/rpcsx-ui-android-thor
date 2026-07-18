@@ -52,9 +52,34 @@ LOG_CHANNEL(jit_log, "JIT");
 #include "Emu/CPU/Backends/AArch64/AArch64Common.h"
 #endif
 
-void jit_memory_buffer_deleter::operator()(llvm::MemoryBuffer* buffer) const noexcept
+struct jit_object_cache::impl
 {
-	delete buffer;
+	llvm::object::OwningBinary<llvm::object::ObjectFile> binary;
+
+	impl(std::unique_ptr<llvm::object::ObjectFile> object_file, std::unique_ptr<llvm::MemoryBuffer> buffer)
+		: binary(std::move(object_file), std::move(buffer))
+	{
+	}
+};
+
+jit_object_cache::jit_object_cache() noexcept = default;
+jit_object_cache::~jit_object_cache() = default;
+jit_object_cache::jit_object_cache(jit_object_cache&&) noexcept = default;
+jit_object_cache& jit_object_cache::operator=(jit_object_cache&&) noexcept = default;
+
+jit_object_cache::jit_object_cache(std::unique_ptr<impl> cache) noexcept
+	: m_impl(std::move(cache))
+{
+}
+
+jit_object_cache::operator bool() const noexcept
+{
+	return !!m_impl;
+}
+
+void jit_object_cache::reset() noexcept
+{
+	m_impl.reset();
 }
 
 #if defined(ARCH_ARM64) && defined(ANDROID)
@@ -937,18 +962,16 @@ void jit_compiler::add(std::unique_ptr<llvm::Module> _module)
 	}
 }
 
-bool jit_compiler::add(const std::string& path, jit_object_buffer cache)
+bool jit_compiler::add(const std::string& path, jit_object_cache cache)
 {
-	std::unique_ptr<llvm::MemoryBuffer> owned_cache;
-
 	if (cache)
 	{
-		owned_cache.reset(cache.release());
+		m_engine->addObjectFile(std::move(cache.m_impl->binary));
+		jit_log.trace("ObjectCache: Successfully added validated %s", path);
+		return true;
 	}
-	else
-	{
-		owned_cache = ObjectCache::load(path);
-	}
+
+	auto owned_cache = ObjectCache::load(path);
 
 	if (!owned_cache)
 	{
@@ -969,13 +992,13 @@ bool jit_compiler::add(const std::string& path, jit_object_buffer cache)
 	}
 }
 
-jit_object_buffer jit_compiler::check(const std::string& path)
+jit_object_cache jit_compiler::check(const std::string& path)
 {
 	if (auto cache = ObjectCache::load(path))
 	{
 		if (auto object_file = llvm::object::ObjectFile::createObjectFile(*cache))
 		{
-			return jit_object_buffer{cache.release()};
+			return jit_object_cache{std::make_unique<jit_object_cache::impl>(std::move(*object_file), std::move(cache))};
 		}
 
 		if (fs::remove_file(path))

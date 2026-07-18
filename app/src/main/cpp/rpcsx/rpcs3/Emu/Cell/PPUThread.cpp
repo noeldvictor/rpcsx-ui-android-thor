@@ -6126,7 +6126,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	{
 		std::string object_name;
 		bool is_compiled = false;
-		jit_object_buffer validated_cache;
+		jit_object_cache validated_cache;
 
 		explicit ppu_link_work(std::string name)
 			: object_name(std::move(name))
@@ -6981,7 +6981,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		if (retained_validated_count)
 		{
-			ppu_log.notice("LLVM: Reusing %u validated warm-cache object buffers.", retained_validated_count);
+			ppu_log.notice("LLVM: Reusing %u validated warm-cache objects.", retained_validated_count);
 		}
 
 		// Because linking is faster than compiling, consider each module linkages as a single module compilation in time
