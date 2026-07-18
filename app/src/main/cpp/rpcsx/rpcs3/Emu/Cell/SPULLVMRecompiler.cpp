@@ -8702,6 +8702,11 @@ public:
 		return byteswap(data);
 	}
 
+	static constexpr u64 make_negative_LS_offset(u32 original)
+	{
+		return original | ~u64{SPU_LS_SIZE - 1};
+	}
+
 	void STQX(spu_opcode_t op)
 	{
 		const auto a = get_vr(op.ra);
@@ -8711,11 +8716,13 @@ public:
 		{
 			if (auto [ok, data] = get_const_vector(pair.first.value, m_pos); ok)
 			{
-				data._u32[3] %= SPU_LS_SIZE;
+				// Sign-extend out-of-range constants so LLVM sees one canonical LS mirror.
+				// This avoids aliasing the same storage through unrelated positive offsets.
+				const u64 addend = (data._u32[3] >= SPU_LS_SIZE) ? make_negative_LS_offset(data._u32[3]) : data._u32[3];
 
 				if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
 				{
-					value_t<u64> addr = eval(splat<u64>(data._u32[3]) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
+					value_t<u64> addr = eval(splat<u64>(addend) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
 					make_store_ls(addr, get_vr<u8[16]>(op.rt));
 					return;
 				}
@@ -8735,11 +8742,13 @@ public:
 		{
 			if (auto [ok, data] = get_const_vector(pair.first.value, m_pos); ok)
 			{
-				data._u32[3] %= SPU_LS_SIZE;
+				// Sign-extend out-of-range constants so LLVM sees one canonical LS mirror.
+				// This avoids aliasing the same storage through unrelated positive offsets.
+				const u64 addend = (data._u32[3] >= SPU_LS_SIZE) ? make_negative_LS_offset(data._u32[3]) : data._u32[3];
 
 				if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
 				{
-					value_t<u64> addr = eval(splat<u64>(data._u32[3]) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
+					value_t<u64> addr = eval(splat<u64>(addend) + zext<u64>(extract(pair.second, 3) & 0x3fff0));
 					set_vr(op.rt, make_load_ls(addr));
 					return;
 				}
