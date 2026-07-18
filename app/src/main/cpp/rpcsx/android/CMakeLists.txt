@@ -120,6 +120,7 @@ target_link_libraries(${RPCSX_ANDROID_LIBRARY_NAME}
     rpcsx::fw::ps3
     rx
     android
+    dl
     log
 )
 

@@ -2,6 +2,9 @@
 #include "VKGSRender.h"
 #include "vkutils/buffer_object.h"
 #include "vkutils/thor_rsx_auditor.h"
+#ifdef ANDROID
+#include "vkutils/thor_adpf_rsx_hint.h"
+#endif
 #include "Emu/RSX/Overlays/overlay_manager.h"
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "rpcsx/fw/ps3/cellVideoOut.h"
@@ -450,6 +453,13 @@ vk::viewable_image* VKGSRender::get_present_source(/* inout */ vk::present_surfa
 
 void VKGSRender::flip(const rsx::display_flip_info_t& info)
 {
+#ifdef ANDROID
+	if (vk::thor::adpf_rsx_hint::requested())
+	{
+		vk::thor::adpf_rsx_hint::finish(Emu.GetTitleID() == "BLUS30161");
+	}
+#endif
+
 	// Check swapchain condition/status
 	if (!m_swapchain->supports_automatic_wm_reports())
 	{

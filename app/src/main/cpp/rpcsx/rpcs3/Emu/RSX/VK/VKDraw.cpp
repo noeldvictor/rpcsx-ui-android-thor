@@ -6,6 +6,9 @@
 #include "VKGSRender.h"
 #include "vkutils/buffer_object.h"
 #include "vkutils/chip_class.h"
+#ifdef ANDROID
+#include "vkutils/thor_adpf_rsx_hint.h"
+#endif
 
 namespace vk
 {
@@ -986,6 +989,13 @@ void VKGSRender::begin()
 	{
 		return;
 	}
+
+#ifdef ANDROID
+	if (vk::thor::adpf_rsx_hint::requested())
+	{
+		vk::thor::adpf_rsx_hint::begin(Emu.GetTitleID() == "BLUS30161");
+	}
+#endif
 
 	init_buffers(rsx::framebuffer_creation_context::context_draw);
 
