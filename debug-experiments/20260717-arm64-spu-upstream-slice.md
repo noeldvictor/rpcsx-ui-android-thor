@@ -740,3 +740,31 @@ candidate`, `device-unmeasured`, not a speed or stability result. A later
 separately cool round may perform only the strict no-launch install of
 `3798B975...5AA1`; one different independently cool round is required for a
 bounded guarded runtime proof.
+
+## PPU/SPU log-pruned install-only gate rejected on thermal trend
+
+The deterministic refiner was rerun with `-MaxRuns 8 -NoWrite`; it again
+reported that the clean current-upstream Windows field/first-battle plus
+Options gate is complete and that no CPU4 rerun is warranted. Repository
+`HEAD` matched `origin/master`, and the exact ThorTest candidate remained
+`73,572,978` bytes with SHA-256
+`3798B97506BF5C2DCD6B1EE5DFF137EF3BCE993C86D3756A409AFAB219315AA1`.
+
+The separate install-only cool gate is captured at
+`debug-captures/android-speed-sprint/20260717-200043-thor-input-ppu-spu-log-pruned-thortest-install-cool-gate`.
+It used `BootGame=False`, `ForceStop=True`, three samples at two-second
+intervals, a strict sub-`35 C` silicon ceiling, and a maximum `+1 C` rise.
+Battery and skin held at `23.0 / 30.0 C`; silicon measured
+`31.9 -> 32.5 -> 33.1 C`. Although every sample stayed below the absolute
+ceiling, the net `+1.2 C` rise exceeded the trend limit, so the harness failed
+closed before the `stop` macro and force-stopped RPCSX. Failure-post-stop
+silicon was `33.1 C`, and `failure-pid.txt` records `pidof net.rpcsx.easy`
+exit `1` (PID absent).
+
+No APK install, emulator launch, gameplay route, follow-up ADB query, or retry
+ran after the failure. The previously installed exact APK
+`24F3F267...F87F` therefore remains unchanged; candidate
+`3798B975...5AA1` remains `host-verified`, `device-unmeasured`, and uninstalled.
+Classification: `install-deferred-thermal-trend`, with no speed, title, FPS,
+flicker, gameplay, or stability credit. Only a later independently cool round
+may repeat this strict install-only gate.
