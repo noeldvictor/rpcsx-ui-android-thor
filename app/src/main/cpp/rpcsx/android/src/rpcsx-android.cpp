@@ -1659,6 +1659,13 @@ private:
 
     MessageDialog::pushPendingProgressId(workload.progressId);
 
+    // Cache preparation is already an explicit stopped-emulator operation.
+    // Use it to migrate only validated live PPU objects out of legacy gzip so
+    // ordinary Android boot never pays a directory-wide conversion cost.
+    jit_compiler::set_raw_cache_materialization(true);
+    AtExit rawCacheMaterializationGuard{
+        [] { jit_compiler::set_raw_cache_materialization(false); }};
+
     g_fxo->init<named_thread<progress_dialog_server>>();
     g_fxo->init<main_ppu_module<lv2_obj>>();
     g_fxo->init(false, nullptr);

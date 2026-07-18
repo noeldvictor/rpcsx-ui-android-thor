@@ -11,6 +11,7 @@
 #include "rx/align.hpp"
 #include "Crypto/unzip.h"
 
+#include <atomic>
 #include <charconv>
 
 LOG_CHANNEL(jit_log, "JIT");
@@ -524,6 +525,11 @@ public:
 	}
 };
 
+#ifdef __ANDROID__
+static std::atomic_bool g_materialize_raw_object_cache{false};
+static std::atomic<usz> g_raw_object_cache_budget{0};
+#endif
+
 // Helper class
 class ObjectCache final : public llvm::ObjectCache
 {
@@ -543,8 +549,11 @@ public:
 		std::string name = m_path;
 
 		name.append(_module->getName());
-		// fs::file(name, fs::rewrite).write(obj.getBufferStart(), obj.getBufferSize());
+		// Raw objects trade modest storage for lower boot CPU pressure on Android.
+		// Desktop retains RPCS3's compressed cache format.
+#ifndef __ANDROID__
 		name.append(".gz");
+#endif
 
 		if (!obj.getBufferSize())
 		{
@@ -562,8 +571,13 @@ public:
 			return;
 		}
 
-		// Bold assumption about upper limit of space consumption
+		// Bold assumption about upper limit of space consumption for compression.
+		// Android raw objects reserve exactly their final payload size.
+#ifdef __ANDROID__
+		const usz max_size = obj.getBufferSize();
+#else
 		const usz max_size = obj.getBufferSize() * 4;
+#endif
 
 		if (!m_compiler->add_sub_disk_space(0 - max_size))
 		{
@@ -571,20 +585,39 @@ public:
 			return;
 		}
 
+#ifdef __ANDROID__
+		if (module_file.file.write(obj.getBufferStart(), obj.getBufferSize()) != obj.getBufferSize())
+		{
+			jit_log.error("LLVM: Failed to write raw module: %s", std::string(_module->getName()));
+			return;
+		}
+#else
 		if (!zip(obj.getBufferStart(), obj.getBufferSize(), module_file.file))
 		{
 			jit_log.error("LLVM: Failed to compress module: %s", std::string(_module->getName()));
 			return;
 		}
+#endif
 
 		jit_log.trace("LLVM: Created module: %s", std::string(_module->getName()));
 
 		// Restore space that was overestimated
 		ensure(m_compiler->add_sub_disk_space(max_size - module_file.file.size()));
-		module_file.commit();
+
+		if (!module_file.commit())
+		{
+			jit_log.error("LLVM: Failed to commit module file: %s (%s)", name, fs::g_tls_error);
+			return;
+		}
+
+#ifdef __ANDROID__
+		// A committed raw object is authoritative. Removing the legacy sidecar
+		// prevents duplicate storage and guarantees the raw-first load path.
+		fs::remove_file(name + ".gz");
+#endif
 	}
 
-	static std::unique_ptr<llvm::MemoryBuffer> load(const std::string& path)
+	static std::unique_ptr<llvm::MemoryBuffer> load_compressed(const std::string& path)
 	{
 		if (fs::file cached{path + ".gz", fs::read})
 		{
@@ -606,6 +639,11 @@ public:
 			return std::make_unique<vector_memory_buffer>(std::move(out));
 		}
 
+		return nullptr;
+	}
+
+	static std::unique_ptr<llvm::MemoryBuffer> load_raw(const std::string& path)
+	{
 		if (fs::file cached{path, fs::read})
 		{
 			if (cached.size() == 0) [[unlikely]]
@@ -620,6 +658,93 @@ public:
 
 		return nullptr;
 	}
+
+	static std::unique_ptr<llvm::MemoryBuffer> load(const std::string& path, bool* loaded_compressed = nullptr)
+	{
+		if (loaded_compressed)
+		{
+			*loaded_compressed = false;
+		}
+
+#ifdef __ANDROID__
+		if (auto raw = load_raw(path))
+		{
+			return raw;
+		}
+
+		if (auto compressed = load_compressed(path))
+		{
+			if (loaded_compressed)
+			{
+				*loaded_compressed = true;
+			}
+			return compressed;
+		}
+#else
+		if (auto compressed = load_compressed(path))
+		{
+			if (loaded_compressed)
+			{
+				*loaded_compressed = true;
+			}
+			return compressed;
+		}
+
+		if (auto raw = load_raw(path))
+		{
+			return raw;
+		}
+#endif
+
+		return nullptr;
+	}
+
+#ifdef __ANDROID__
+	static bool materialize_raw(const std::string& path, const llvm::MemoryBuffer& buffer)
+	{
+		const usz size = buffer.getBufferSize();
+		usz remaining = g_raw_object_cache_budget.load(std::memory_order_relaxed);
+		bool reserved = false;
+
+		while (size && remaining >= size)
+		{
+			if (g_raw_object_cache_budget.compare_exchange_weak(remaining, remaining - size, std::memory_order_relaxed))
+			{
+				reserved = true;
+				break;
+			}
+		}
+
+		if (!reserved)
+		{
+			jit_log.warning("ObjectCache: Keeping compressed module (raw-cache budget exhausted): %s", path);
+			return false;
+		}
+
+		fs::pending_file raw_file;
+		if (!raw_file.open(path))
+		{
+			jit_log.warning("ObjectCache: Failed to create raw module: %s (%s)", path, fs::g_tls_error);
+			g_raw_object_cache_budget.fetch_add(size, std::memory_order_relaxed);
+			return false;
+		}
+
+		if (raw_file.file.write(buffer.getBufferStart(), size) != size || !raw_file.commit())
+		{
+			jit_log.warning("ObjectCache: Failed to materialize raw module: %s (%s)", path, fs::g_tls_error);
+			g_raw_object_cache_budget.fetch_add(size, std::memory_order_relaxed);
+			return false;
+		}
+
+		if (!fs::remove_file(path + ".gz"))
+		{
+			jit_log.warning("ObjectCache: Raw module committed but legacy sidecar remains: %s", path);
+		}
+
+		jit_log.notice("ObjectCache: Materialized validated raw Android module: %s", path);
+		return true;
+	}
+#endif
 
 	std::unique_ptr<llvm::MemoryBuffer> getObject(const llvm::Module* _module) override
 	{
@@ -994,20 +1119,49 @@ bool jit_compiler::add(const std::string& path, jit_object_cache cache)
 
 jit_object_cache jit_compiler::check(const std::string& path)
 {
-	if (auto cache = ObjectCache::load(path))
+	bool loaded_compressed = false;
+	if (auto cache = ObjectCache::load(path, &loaded_compressed))
 	{
 		if (auto object_file = llvm::object::ObjectFile::createObjectFile(*cache))
 		{
+#ifdef __ANDROID__
+			if (loaded_compressed && g_materialize_raw_object_cache.load(std::memory_order_acquire))
+			{
+				ObjectCache::materialize_raw(path, *cache);
+			}
+#endif
 			return jit_object_cache{std::make_unique<jit_object_cache::impl>(std::move(*object_file), std::move(cache))};
 		}
 
-		if (fs::remove_file(path))
+		const bool removed_raw = fs::remove_file(path);
+		const bool removed_compressed = fs::remove_file(path + ".gz");
+		if (removed_raw || removed_compressed)
 		{
-			jit_log.error("ObjectCache: Removed damaged file: %s", path);
+			jit_log.error("ObjectCache: Removed damaged cache entry: %s", path);
 		}
 	}
 
 	return {};
+}
+
+void jit_compiler::set_raw_cache_materialization(bool enabled) noexcept
+{
+#ifdef __ANDROID__
+	if (enabled)
+	{
+		fs::device_stat stats{};
+		const usz budget = fs::statfs(fs::get_cache_dir(), stats) ? stats.avail_free / 4 : 0;
+		g_raw_object_cache_budget.store(budget, std::memory_order_relaxed);
+		g_materialize_raw_object_cache.store(true, std::memory_order_release);
+	}
+	else
+	{
+		g_materialize_raw_object_cache.store(false, std::memory_order_release);
+		g_raw_object_cache_budget.store(0, std::memory_order_relaxed);
+	}
+#else
+	static_cast<void>(enabled);
+#endif
 }
 
 void jit_compiler::update_global_mapping(const std::string& name, u64 addr)

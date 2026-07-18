@@ -571,6 +571,10 @@ public:
 	// Check object file
 	static jit_object_cache check(const std::string& path);
 
+	// Convert validated compressed objects to Android's raw warm-cache format
+	// while an explicit cache-preparation job is running.
+	static void set_raw_cache_materialization(bool enabled) noexcept;
+
 	// Finalize
 	void fin();
 

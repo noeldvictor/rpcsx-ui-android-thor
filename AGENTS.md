@@ -50,6 +50,18 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
+- Android PPU JIT cache writes now keep raw LLVM objects instead of spending
+  CPU on gzip, while desktop writes stay compressed and Android reads retain
+  legacy `.gz` fallback. The explicit stopped-emulator Prepare Cache action
+  materializes only exact live objects after LLVM validation; normal launch
+  never performs directory-wide migration. Corrupt validation removes both
+  raw and compressed forms. The saved BLUS30161 Windows cache measured 84
+  objects / 18,465,084 compressed bytes versus 82,230,196 raw bytes (4.45x,
+  +60.81 MiB). Exact host-only APK `4BCB8D9C...B08816` packages merged core
+  `B1B989D2...C07164` / stripped core `900720F0...EC5680`; ARM64 native/APK,
+  export, raw-cache, handoff, zero-copy, thermal, and 22 broader contracts
+  pass. It is uninstalled/device-unmeasured and no device action ran. Detailed
+  ledger: `debug-experiments/20260718-thor-android-raw-ppu-object-cache.md`.
 - Fresh official RPCS3 commit `9b3a916af` is adapted so approximate-xfloat
   SPU FMA computes normal FMA independently and selects it or the addend,
   shortening the old compare/mask/FMA dependency chain. Saved first-battle
