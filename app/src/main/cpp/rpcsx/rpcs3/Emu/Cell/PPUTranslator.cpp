@@ -1488,7 +1488,11 @@ void PPUTranslator::VMADDFP(ppu_opcode_t op)
 void PPUTranslator::VMAXFP(ppu_opcode_t op)
 {
 	const auto [a, b] = get_vrs<f32[4]>(op.va, op.vb);
+#ifdef ARCH_ARM64
+	set_vr(op.vd, vec_handle_result(fmax(a, b), true));
+#else
 	set_vr(op.vd, vec_handle_result(bitcast<f32[4]>(bitcast<u32[4]>(fmax(a, b)) & bitcast<u32[4]>(fmax(b, a))), true));
+#endif
 }
 
 void PPUTranslator::VMAXSB(ppu_opcode_t op)
@@ -1550,7 +1554,11 @@ void PPUTranslator::VMHRADDSHS(ppu_opcode_t op)
 void PPUTranslator::VMINFP(ppu_opcode_t op)
 {
 	const auto [a, b] = get_vrs<f32[4]>(op.va, op.vb);
+#ifdef ARCH_ARM64
+	set_vr(op.vd, vec_handle_result(fmin(a, b), true));
+#else
 	set_vr(op.vd, vec_handle_result(bitcast<f32[4]>(bitcast<u32[4]>(fmin(a, b)) | bitcast<u32[4]>(fmin(b, a))), true));
+#endif
 }
 
 void PPUTranslator::VMINSB(ppu_opcode_t op)

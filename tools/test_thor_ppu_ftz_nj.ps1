@@ -43,6 +43,17 @@ foreach ($fragment in $manualFlushFragments) {
     }
 }
 
+$arm64ExtremaPatterns = @(
+    'void PPUTranslator::VMAXFP\(ppu_opcode_t op\)[\s\S]*?#ifdef ARCH_ARM64\s+set_vr\(op\.vd, vec_handle_result\(fmax\(a, b\), true\)\);\s+#else[\s\S]*?#endif',
+    'void PPUTranslator::VMINFP\(ppu_opcode_t op\)[\s\S]*?#ifdef ARCH_ARM64\s+set_vr\(op\.vd, vec_handle_result\(fmin\(a, b\), true\)\);\s+#else[\s\S]*?#endif'
+)
+
+foreach ($pattern in $arm64ExtremaPatterns) {
+    if ($translatorSource -notmatch $pattern) {
+        throw "Missing direct ARM64 PPU extrema lowering: $pattern"
+    }
+}
+
 if ($threadSource -notmatch 'uses_hardware_ftz,[\s\S]*bitset_last = uses_hardware_ftz') {
     throw "PPU cache identity does not include the hardware-FTZ code-generation bit."
 }
@@ -52,4 +63,4 @@ if ($pushProfileCount -ne 4) {
     throw "Expected all four Eternal Sonata profile templates to enable hardware FTZ; found $pushProfileCount."
 }
 
-Write-Output "Thor PPU FTZ/NJ contract passed: hardware FTZ is BLUS30161-only, four sensitive ops retain manual flushing, and PPU cache identity is distinct."
+Write-Output "Thor PPU FTZ/NJ contract passed: hardware FTZ is BLUS30161-only, ARM64 extrema use direct hardware lowering, four sensitive ops retain manual flushing, and PPU cache identity is distinct."
