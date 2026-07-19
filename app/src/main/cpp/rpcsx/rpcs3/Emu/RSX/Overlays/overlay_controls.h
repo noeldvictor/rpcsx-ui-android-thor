@@ -50,7 +50,7 @@ namespace rsx
 		public:
 			using image_info_base::image_info_base;
 			image_info(image_info&) = delete;
-			image_info(const std::string& filename, bool grayscaled = false);
+			image_info(const std::string& filename, bool grayscaled = false, bool log_failure = true);
 			image_info(const std::vector<u8>& bytes, bool grayscaled = false);
 			virtual ~image_info();
 

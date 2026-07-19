@@ -53,13 +53,17 @@ namespace rsx
 			return result;
 		}
 
-		image_info::image_info(const std::string& filename, bool grayscaled)
+		image_info::image_info(const std::string& filename, bool grayscaled, bool log_failure)
 		{
 			fs::file f(filename, fs::read + fs::isfile);
 
 			if (!f)
 			{
-				rsx_log.error("Image resource file `%s' could not be opened (%s)", filename, fs::g_tls_error);
+				if (log_failure)
+				{
+					rsx_log.error("Image resource file `%s' could not be opened (%s)", filename, fs::g_tls_error);
+				}
+
 				return;
 			}
 
@@ -126,10 +130,23 @@ namespace rsx
 				"save.png",
 				"new.png",
 				"spinner-24.png"};
+#ifdef __ANDROID__
+			u32 missing_android_resources = 0;
+#endif
 			for (const std::string& res : texture_resource_files)
 			{
 				// First check the global config dir
 				const std::string image_path = fs::get_config_dir() + "Icons/ui/" + res;
+#ifdef __ANDROID__
+				// Android has no desktop data/share or executable-relative resource tree.
+				// Keep the supported config override while avoiding three guaranteed
+				// misses, an executable-path read, and four error logs per absent icon.
+				auto info = std::make_unique<image_info>(image_path, false, false);
+				if (!info->get_data())
+				{
+					missing_android_resources++;
+				}
+#else
 				auto info = std::make_unique<image_info>(image_path);
 
 #if !defined(_WIN32) && !defined(__APPLE__) && defined(DATADIR)
@@ -204,8 +221,16 @@ namespace rsx
 					}
 				}
 
+#endif
 				texture_raw_data.push_back(std::move(info));
 			}
+#ifdef __ANDROID__
+			if (missing_android_resources)
+			{
+				rsx_log.warning("Android overlay UI resources: %u of %u unavailable in the config directory; skipped desktop fallback paths.",
+					missing_android_resources, texture_resource_files.size());
+			}
+#endif
 		}
 
 		void resource_config::free_resources()

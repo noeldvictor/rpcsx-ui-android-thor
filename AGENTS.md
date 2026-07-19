@@ -727,4 +727,15 @@ Put dated run details in `debug-experiments/`, not here.
   `68/72 C` guard. No device speed or temperature improvement is claimed.
   Detailed ledger:
   `debug-experiments/20260719-thor-combined-title-thermal-stop.md`.
+- Android native overlay startup no longer runs the desktop/Linux relative,
+  executable-share, or executable-local icon fallbacks. Capture
+  `20260719-163325-thor-input-custom` showed 60 failed opens/error broadcasts
+  for 15 absent icons, including 45 impossible desktop-path opens and 15
+  `/proc/self/exe` reads. Android now preserves one config-directory probe per
+  icon and emits one aggregate warning; desktop lookup and ordinary image
+  errors are unchanged. All 56 Thor contracts and ARM64 RelWithDebInfo pass;
+  the debug-bearing core shrinks `1,304,702,360 -> 1,304,683,120` bytes
+  (`-19,240`). This is host-verified startup-I/O reduction only and should ride
+  the next planned APK, not trigger an extra device run. Detailed ledger:
+  `debug-experiments/20260719-thor-android-overlay-resource-lookup.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
