@@ -161,3 +161,36 @@ self-stopping `ThorCoolTitle` proof. It must confirm the `500 ms` RSX load
 budget/deferred count and `Set DAZ and FTZ: true`, then compare title reach,
 time-to-title or time-to-guard, thermal slope, visual state, and fatal
 cleanliness before receiving any speed or temperature credit.
+
+## Install-only gate refusal
+
+At `19:26`, about 22 minutes after the preceding runtime stop, one strict
+install-only gate was attempted for exact successor `54CC0C37...D82892`:
+
+- capture:
+  `debug-captures/android-speed-sprint/20260719-192621-thor-input-strict-cool-gate`;
+- preflight sample 1 silicon: `48.2 C` against the `35 C` ceiling;
+- battery: `23.0 C`;
+- skin: `30.0 C`; and
+- failure-post-stop silicon: `48.6 C`.
+
+The gate force-stopped RPCSX before any install or activity launch. No retry,
+temperature recheck, or other device query ran. The installed APK therefore
+remains `5C3911D0...682CC6`; successor `54CC0C37...D82892` remains host-only
+and uninstalled. This refusal carries no speed, thermal-win, FPS, flicker,
+gameplay, or stability credit.
+
+The saved refusal exposed a tooling gap: `ForceStop`-only/no-boot failures
+stored both force-stop command records but did not save the post-stop PID
+probe, and the strict wrapper's terminating error did not expose the already
+created capture directory. Host-only tooling now:
+
+- saves `failure-pid.txt` after force-stop for no-boot/no-snapshot failures;
+- attaches the exact capture directory to the propagated exception; and
+- reports `capture_dir=...` in strict-wrapper failure text.
+
+This avoids a manual device follow-up query after future hot refusals. The
+successful gate's one-path output, no-boot contract, force-stop behavior, and
+`35 C`/three-sample/`1 C`-rise thresholds are unchanged. The strict-gate and
+multi-sensor thermal contracts pass host-only. Do not attempt installation
+again until a later independently cool round.

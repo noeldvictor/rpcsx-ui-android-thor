@@ -20,7 +20,9 @@ foreach ($fragment in @(
     '"strict-cool-gate" {',
     'if ($Profile -eq "strict-cool-gate")',
     'if ($PassThruCaptureDirectory)',
-    'Write-Output $captureDir'
+    'Write-Output $captureDir',
+    '"failure-pid.txt" @("shell", "pidof $Package")',
+    '$failure.Exception.Data["ThorCaptureDirectory"] = $captureDir'
 )) {
     if (-not $macroSource.Contains($fragment)) {
         throw "Thor input macro is missing strict cool-gate contract: $fragment"
@@ -47,7 +49,9 @@ $requiredWrapperFragments = @(
     'MaxSkinTemperatureC = 40',
     'MaxSiliconTemperatureC = 72',
     '-PassThruCaptureDirectory',
-    '"README.md", "thermal-guard.log"'
+    '"README.md", "thermal-guard.log"',
+    '$_.Exception.Data["ThorCaptureDirectory"]',
+    'Strict cool gate failed (capture_dir='
 )
 foreach ($fragment in $requiredWrapperFragments) {
     if (-not $wrapperSource.Contains($fragment)) {
@@ -102,4 +106,4 @@ foreach ($line in @(
     }
 }
 
-Write-Output "Thor strict cool-gate contract passed: host-only status is exact, Run is no-boot/force-stop, and capture output is machine-readable."
+Write-Output "Thor strict cool-gate contract passed: host-only status is exact, Run is no-boot/force-stop, and success/failure capture output is machine-readable with post-stop PID evidence."

@@ -897,4 +897,17 @@ Put dated run details in `debug-experiments/`, not here.
   only in a future cool no-launch round, then wait for another independently
   cool round before one self-stopping runtime proof. Detailed ledger:
   `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
+- The first install-only attempt for successor `54CC0C37...D82892` was
+  refused by strict gate `20260719-192621-thor-input-strict-cool-gate` at
+  preflight sample 1: silicon was `48.2 C` against the `35 C` ceiling, then
+  `48.6 C` after force-stop; battery/skin were `23.0/30.0 C`. No install or
+  activity launch occurred, the installed APK remains `5C3911D0...682CC6`,
+  and no retry or follow-up device query may run in this round. The refusal
+  exposed that no-boot failures lacked saved PID evidence and their wrapper
+  errors omitted the capture directory. Future failures save post-stop
+  `failure-pid.txt`, propagate `ThorCaptureDirectory`, and report
+  `capture_dir=...`; successful gate output and all safety thresholds remain
+  unchanged. Exact successor `54CC0C37...D82892` remains uninstalled and must
+  wait for a later independently cool install-only round. Detailed ledger:
+  `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

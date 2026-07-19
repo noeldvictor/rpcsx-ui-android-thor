@@ -1288,6 +1288,11 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "macro-failure-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     }
 
+    if ($ForceStop -and -not $BootGame -and -not $PostSnapshot) {
+        Invoke-ThorAdbText $Adb $captureDir "failure-pid.txt" @("shell", "pidof $Package") -AllowFailure | Out-Null
+    }
+
+    $failure.Exception.Data["ThorCaptureDirectory"] = $captureDir
     $failure.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "macro-failure.txt") -Encoding UTF8
 
     try {

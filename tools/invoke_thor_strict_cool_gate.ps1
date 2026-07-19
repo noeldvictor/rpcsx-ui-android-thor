@@ -42,7 +42,17 @@ if ($Action -eq "Status") {
     return
 }
 
-$captureOutput = @(& $inputMacroPath @gateParameters -PassThruCaptureDirectory)
+try {
+    $captureOutput = @(& $inputMacroPath @gateParameters -PassThruCaptureDirectory)
+} catch {
+    $failureCaptureDir = [string]$_.Exception.Data["ThorCaptureDirectory"]
+    if (-not [string]::IsNullOrWhiteSpace($failureCaptureDir)) {
+        $resolvedFailureCaptureDir = [IO.Path]::GetFullPath($failureCaptureDir)
+        throw "Strict cool gate failed (capture_dir=$resolvedFailureCaptureDir): $($_.Exception.Message)"
+    }
+
+    throw
+}
 $captureCandidates = @(
     $captureOutput |
         ForEach-Object { $_.ToString().Trim() } |
