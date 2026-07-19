@@ -8868,13 +8868,55 @@ public:
 			}
 		}
 
-		value_t<u64> addr = eval(zext<u64>(extract(get_vr(op.ra), 3) & 0x3fff0) + (get_imm<u64>(op.si10) << 4));
+		const auto a = get_vr(op.ra);
+
+		if (auto [ok, x, y] = match_expr(a, match<u32[4]>() + match<u32[4]>()); ok)
+		{
+			for (auto pair : std::initializer_list<std::pair<llvm_match_t<u32[4]>, llvm_match_t<u32[4]>>>{{x, y}, {y, x}})
+			{
+				if (auto [ok, data] = get_const_vector(pair.first.value, m_pos); ok)
+				{
+					// Sign-extend out-of-range constants so LLVM sees one canonical LS mirror.
+					const u64 addend = (data._u32[3] >= SPU_LS_SIZE) ? make_negative_LS_offset(data._u32[3]) : data._u32[3];
+
+					if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
+					{
+						value_t<u64> addr = eval(zext<u64>(extract(pair.second, 3) & 0x3fff0) + ((get_imm<u64>(op.si10) << 4) + splat<u64>(addend)));
+						make_store_ls(addr, get_vr<u8[16]>(op.rt));
+						return;
+					}
+				}
+			}
+		}
+
+		value_t<u64> addr = eval(zext<u64>(extract(a, 3) & 0x3fff0) + (get_imm<u64>(op.si10) << 4));
 		make_store_ls(addr, get_vr<u8[16]>(op.rt));
 	}
 
 	void LQD(spu_opcode_t op)
 	{
-		value_t<u64> addr = eval(zext<u64>(extract(get_vr(op.ra), 3) & 0x3fff0) + (get_imm<u64>(op.si10) << 4));
+		const auto a = get_vr(op.ra);
+
+		if (auto [ok, x, y] = match_expr(a, match<u32[4]>() + match<u32[4]>()); ok)
+		{
+			for (auto pair : std::initializer_list<std::pair<llvm_match_t<u32[4]>, llvm_match_t<u32[4]>>>{{x, y}, {y, x}})
+			{
+				if (auto [ok, data] = get_const_vector(pair.first.value, m_pos); ok)
+				{
+					// Sign-extend out-of-range constants so LLVM sees one canonical LS mirror.
+					const u64 addend = (data._u32[3] >= SPU_LS_SIZE) ? make_negative_LS_offset(data._u32[3]) : data._u32[3];
+
+					if (const u32 remainder = data._u32[3] % 0x10; remainder == 0)
+					{
+						value_t<u64> addr = eval(zext<u64>(extract(pair.second, 3) & 0x3fff0) + ((get_imm<u64>(op.si10) << 4) + splat<u64>(addend)));
+						set_vr(op.rt, make_load_ls(addr));
+						return;
+					}
+				}
+			}
+		}
+
+		value_t<u64> addr = eval(zext<u64>(extract(a, 3) & 0x3fff0) + (get_imm<u64>(op.si10) << 4));
 		set_vr(op.rt, make_load_ls(addr));
 	}
 

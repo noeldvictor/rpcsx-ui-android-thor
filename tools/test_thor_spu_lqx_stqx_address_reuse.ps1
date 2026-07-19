@@ -4,6 +4,13 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $sourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp"
 $source = Get-Content -LiteralPath $sourcePath -Raw
 
+$stqxStart = $source.IndexOf("`tvoid STQX(spu_opcode_t op)")
+$stqaStart = $source.IndexOf("`tvoid STQA(spu_opcode_t op)")
+if ($stqxStart -lt 0 -or $stqaStart -le $stqxStart) {
+    throw 'Unable to isolate the STQX/LQX source region.'
+}
+$addressReuseSource = $source.Substring($stqxStart, $stqaStart - $stqxStart)
+
 # Official RPCS3 9bf67f031288b3197ed07d2305da273a6ebe65bc canonicalizes
 # out-of-range LS constants to one negative mirror. Current tip 0fcb15ab1810926
 # retains this for aligned operands while reverting non-aligned address reuse.
@@ -17,29 +24,29 @@ if (-not $source.Contains($negativeOffset)) {
     throw 'SPU local-store negative mirror helper is missing.'
 }
 
-$alignedGuardCount = ([regex]::Matches($source, [regex]::Escape($alignedGuard))).Count
+$alignedGuardCount = ([regex]::Matches($addressReuseSource, [regex]::Escape($alignedGuard))).Count
 if ($alignedGuardCount -ne 2) {
     throw "Expected aligned-only STQX/LQX guards twice; found $alignedGuardCount."
 }
 
-$alignedAddressCount = ([regex]::Matches($source, [regex]::Escape($alignedAddress))).Count
+$alignedAddressCount = ([regex]::Matches($addressReuseSource, [regex]::Escape($alignedAddress))).Count
 if ($alignedAddressCount -ne 2) {
     throw "Expected aligned STQX/LQX address reuse twice; found $alignedAddressCount."
 }
 
-$genericAddressCount = ([regex]::Matches($source, [regex]::Escape($genericAddress))).Count
+$genericAddressCount = ([regex]::Matches($addressReuseSource, [regex]::Escape($genericAddress))).Count
 if ($genericAddressCount -ne 2) {
     throw "Expected generic masked STQX/LQX fallback twice; found $genericAddressCount."
 }
 
-$canonicalAddendCount = ([regex]::Matches($source, [regex]::Escape($canonicalAddend))).Count
+$canonicalAddendCount = ([regex]::Matches($addressReuseSource, [regex]::Escape($canonicalAddend))).Count
 if ($canonicalAddendCount -ne 2) {
     throw "Expected canonical STQX/LQX constant addends twice; found $canonicalAddendCount."
 }
 
-if ($source.Contains('data._u32[3] - remainder') -or
-    $source.Contains('(extract(pair.second, 3) + remainder) & 0x3fff0') -or
-    $source.Contains('data._u32[3] %= SPU_LS_SIZE')) {
+if ($addressReuseSource.Contains('data._u32[3] - remainder') -or
+    $addressReuseSource.Contains('(extract(pair.second, 3) + remainder) & 0x3fff0') -or
+    $addressReuseSource.Contains('data._u32[3] %= SPU_LS_SIZE')) {
     throw 'Unsafe/noncanonical LQX/STQX constant address reuse is present.'
 }
 
