@@ -246,6 +246,7 @@ thor_spurs_wait_probe_log(spu_thread&, thor_spurs_wait_event, u32, u32, u64,
 }
 #endif
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 enum class thor_es_dma_superpath_mode : u32
 {
 	disabled,
@@ -447,6 +448,27 @@ static void record_thor_es_dma(spu_thread* spu, MFC cmd, u32 lsa, u32 eal, u32 s
 	mix_thor_es_dma_signature(probe.pattern_signature, spu->pc);
 	mix_thor_es_dma_signature(probe.pattern_signature, spu->block_hash);
 }
+
+static bool thor_es_dma_list_active(const spu_thread* spu)
+{
+	return spu && spu->es_gpu_probe.list_depth != 0;
+}
+
+struct thor_es_dma_list_scope
+{
+	spu_thread& spu;
+
+	explicit thor_es_dma_list_scope(spu_thread& spu)
+		: spu(spu)
+	{
+		spu.es_gpu_probe.list_depth++;
+	}
+
+	~thor_es_dma_list_scope()
+	{
+		spu.es_gpu_probe.list_depth--;
+	}
+};
 
 enum class thor_es_getllar_mode : u32
 {
@@ -814,6 +836,49 @@ static u32 thor_es_getllar_retry_cycles()
 
 	return 300;
 }
+#else
+static FORCE_INLINE constexpr void record_thor_es_dma(
+	spu_thread*, MFC, u32, u32, u32, bool) noexcept
+{
+}
+
+static FORCE_INLINE constexpr void record_thor_es_dma_payload(
+	spu_thread*, MFC, const void*, u32) noexcept
+{
+}
+
+static FORCE_INLINE constexpr bool thor_es_dma_list_active(
+	const spu_thread*) noexcept
+{
+	return false;
+}
+
+struct thor_es_dma_list_scope
+{
+	explicit constexpr thor_es_dma_list_scope(spu_thread&) noexcept {}
+};
+
+static FORCE_INLINE constexpr void record_thor_es_getllar(
+	spu_thread&, u32, u32, u64, bool) noexcept
+{
+}
+
+static FORCE_INLINE constexpr u32 thor_es_getllar_retry_spin_limit() noexcept
+{
+	return 24;
+}
+
+static FORCE_INLINE constexpr bool thor_es_getllar_skip_rsx_lock(
+	const spu_thread&, u32, u32) noexcept
+{
+	return false;
+}
+
+static FORCE_INLINE constexpr u32 thor_es_getllar_retry_cycles() noexcept
+{
+	return 300;
+}
+#endif
 
 template <>
 void fmt_class_string<mfc_atomic_status>::format(std::string& out, u64 arg)
@@ -3181,7 +3246,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 	perf_meter<"DMA"_u32> perf_;
 
 	const bool is_get = (args.cmd & ~(MFC_BARRIER_MASK | MFC_FENCE_MASK | MFC_START_MASK)) == MFC_GET_CMD;
-	record_thor_es_dma(_this, args.cmd, args.lsa, args.eal, args.size, _this && _this->es_gpu_probe.list_depth != 0);
+	record_thor_es_dma(_this, args.cmd, args.lsa, args.eal, args.size, thor_es_dma_list_active(_this));
 
 	u32 eal = args.eal;
 	u32 lsa = args.lsa & 0x3ffff;
@@ -3973,21 +4038,7 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 {
 	perf_meter<"MFC_LIST"_u64> perf0;
 
-	struct thor_es_dma_list_scope
-	{
-		spu_thread& spu;
-
-		thor_es_dma_list_scope(spu_thread& spu)
-			: spu(spu)
-		{
-			spu.es_gpu_probe.list_depth++;
-		}
-
-		~thor_es_dma_list_scope()
-		{
-			spu.es_gpu_probe.list_depth--;
-		}
-	} thor_es_dma_scope{*this};
+	thor_es_dma_list_scope thor_es_dma_scope{*this};
 
 	// Amount of elements to fetch in one go
 	constexpr u32 fetch_size = 6;

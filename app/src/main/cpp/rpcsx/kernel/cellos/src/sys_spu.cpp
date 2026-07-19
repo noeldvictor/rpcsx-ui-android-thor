@@ -291,6 +291,7 @@ thor_spurs_probe_log(const char *, ppu_thread &, const lv2_spu_group &, u32,
                      u32 = umax, u32 = umax) noexcept {}
 #endif
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 enum class thor_es_dma_superpath_mode : u32 {
   disabled,
   profile,
@@ -532,6 +533,7 @@ static void log_thor_es_dma_probe(ppu_thread &ppu,
       probe.max_dma_size, probe.max_dma_pc, probe.max_dma_ea,
       thread.block_hash, probe.max_dma_block_hash, cause, status);
 }
+#endif
 
 template <>
 void fmt_class_string<spu_group_status>::format(std::string &out, u64 arg) {
@@ -1565,11 +1567,13 @@ error_code sys_spu_thread_group_start(ppu_thread &ppu, u32 id) {
       const std::span<const sys_spu_segment> segments(img.second.data(),
                                                        img.second.size());
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
       if (Emu.GetTitleID() == "BLUS30161") {
         reset_thor_es_dma_probe(*thread,
                                 get_thor_es_spu_segments_signature(segments),
                                 img.first);
       }
+#endif
 
       if (group->patchless_image_deploy[thread_index]) {
         sys_spu_image::deploy_segments(thread->ls, segments);
@@ -1588,10 +1592,12 @@ error_code sys_spu_thread_group_start(ppu_thread &ppu, u32 id) {
 
       thread->status_npc = {SPU_STATUS_RUNNING, img.first};
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
       if (thor_es_dma_verify_enabled()) {
         thread->es_gpu_probe.ls_start_hash =
             hash_thor_es_dma_bytes(thread->ls, SPU_LS_SIZE);
       }
+#endif
     }
   }
 
@@ -1985,6 +1991,7 @@ error_code sys_spu_thread_group_join(ppu_thread &ppu, u32 id,
   *status = static_cast<s32>(status_value);
   thor_spurs_probe_log("join", ppu, *group, id, cause_value, status_value);
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
   if (thor_es_dma_probe_enabled()) {
     for (const auto &thread : group->threads) {
       if (thread) {
@@ -1993,6 +2000,7 @@ error_code sys_spu_thread_group_join(ppu_thread &ppu, u32 id,
       }
     }
   }
+#endif
 
   return CELL_OK;
 }

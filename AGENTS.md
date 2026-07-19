@@ -477,4 +477,23 @@ Put dated run details in `debug-experiments/`, not here.
   ADB/device action ran and no Thor speed or temperature credit exists.
   Detailed ledger:
   `debug-experiments/20260719-thor-disabled-semaphore-superpath-overhead.md`.
+- Normal Android builds now compile the coupled default-off Eternal Sonata DMA
+  probe and GETLLAR profiling/speed experiments to no-op/constant SPU helpers;
+  kernel start/join collection and reporting are wholly excluded. Diagnostics
+  can opt both families back in with
+  `-PrpcsxThorEsSpuExperiments=true` or
+  `RPCSX_THOR_ES_SPU_EXPERIMENTS_BUILD=true`; desktop behavior is unchanged.
+  Normal GETLLAR semantics remain exactly 24 retry spins, 300 busy-wait cycles,
+  normal RSX reservation locking, and no profiling. Preserve the existing
+  `spu_thread::es_gpu_probe` storage/layout so persisted JIT object offsets are
+  not invalidated. Prior Thor evidence rejects these as play defaults: DMA
+  profile/verify fell to about 15.33/11.13 FPS with zero exact repeats, while
+  the clean GETLLAR-off field result was 19.60 FPS versus 18.45 `yield8` and
+  18.84 `norsx`. Host ARM64 proof removed 26 selected symbols, 9 strings,
+  5,260 bytes of selected global state, and all 85 named experiment references
+  in the affected disassemblies; five major functions total
+  29,440 -> 23,488 bytes. All 45 Thor contracts and the native build pass.
+  This is host-verified `stackable-cpu-pressure` only: no ADB/device action ran
+  and no Thor speed or temperature credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-es-spu-experiments-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
