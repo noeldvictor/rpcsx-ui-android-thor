@@ -85,6 +85,11 @@ void set_rsx_yield_flag() noexcept;
 using spu_rdata_t = decltype(spu_thread::rdata);
 extern u32 compute_rdata_hash32(const spu_rdata_t &_src);
 
+#if defined(__ANDROID__) && !defined(RPCSX_THOR_SYSCALL_STATS)
+static FORCE_INLINE constexpr bool ppu_syscall_stats_enabled() noexcept {
+  return false;
+}
+#else
 static bool ppu_syscall_stats_enabled() noexcept {
 #ifdef __ANDROID__
   static std::atomic<u64> next_check = 0;
@@ -110,6 +115,7 @@ static bool ppu_syscall_stats_enabled() noexcept {
   return true;
 #endif
 }
+#endif
 
 template <>
 void fmt_class_string<ppu_syscall_code>::format(std::string &out, u64 arg) {
@@ -1501,6 +1507,7 @@ stx::reset_lock acquire_reset_lock(stx::init_mutex &mtx, ppu_thread *ppu) {
       ppu);
 }
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SYSCALL_STATS)
 class ppu_syscall_usage {
   // Internal buffer
   std::string m_stats;
@@ -1558,15 +1565,23 @@ public:
   static constexpr auto thread_name = "PPU Syscall Usage Thread"sv;
 };
 
+static FORCE_INLINE void record_ppu_syscall(u64 code) {
+  if (ppu_syscall_stats_enabled()) {
+    g_fxo->get<named_thread<ppu_syscall_usage>>().stat[code]++;
+  }
+}
+#else
+static FORCE_INLINE constexpr void record_ppu_syscall(u64) noexcept {
+}
+#endif
+
 extern void ppu_execute_syscall(ppu_thread &ppu, u64 code) {
   if (g_cfg.core.ppu_decoder == ppu_decoder_type::llvm_legacy) {
     code = ppu.gpr[11];
   }
 
   if (code < g_ppu_syscall_table.size()) {
-    if (ppu_syscall_stats_enabled()) {
-      g_fxo->get<named_thread<ppu_syscall_usage>>().stat[code]++;
-    }
+    record_ppu_syscall(code);
 
     if (const auto func = g_ppu_syscall_table[code].first) {
 #ifdef __APPLE__
