@@ -189,3 +189,18 @@ A future proof, only after independent cooldown, requires separate steps:
 
 Rollback is immediate: leave or set
 `debug.rpcsx.thor.spu_native_object_cache=off`.
+
+## ARM64 Supersession
+
+The later host-only ARM64 interpreter audit supersedes the interpreter portion
+of the future proof above. Current ARM64 LLVM threads always own the regular
+LLVM recompiler, and their instruction fallbacks call the existing C++
+handlers directly. The generated all-opcode interpreter and its exported table
+have no ARM64 LLVM consumer, so current code no longer builds that module in
+ARM64 LLVM mode. Dynamic mode still builds and directly executes it; non-ARM64
+LLVM still builds it for the x86-only `spu_fast` tier.
+
+Consequently, an ARM64 native-object-cache proof now concerns bounded cached
+program preload only. Do not require or expect a warm
+`spu-interpreter-*.obj` load row on Thor. See
+`debug-experiments/20260718-thor-arm64-unused-spu-interpreter.md`.

@@ -1100,7 +1100,7 @@ void spu_cache::initialize(bool build_existing_cache)
 		use_native_object_cache = runtime.enable_native_object_cache();
 		if (use_native_object_cache)
 		{
-			spu_log.notice("Thor SPU native-object cache enabled for startup interpreter and preload: exact final-IR/backend keys; runtime misses remain uncached.");
+			spu_log.notice("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
 		}
 	}
 
@@ -1136,7 +1136,18 @@ void spu_cache::initialize(bool build_existing_cache)
 
 	atomic_t<usz> data_indexer = 0;
 
-	if (g_cfg.core.spu_decoder == spu_decoder_type::dynamic || g_cfg.core.spu_decoder == spu_decoder_type::llvm)
+	// Dynamic mode executes this generated interpreter directly. LLVM mode also
+	// needs its exported instruction table for the x86-only spu_fast tier. ARM64
+	// LLVM threads instead own the regular recompiler, whose instruction
+	// fallbacks call the C++ handlers directly, so building the all-opcode module
+	// there only burns startup time and memory.
+	const bool build_llvm_interpreter = g_cfg.core.spu_decoder == spu_decoder_type::dynamic
+#if !defined(ARCH_ARM64)
+		|| g_cfg.core.spu_decoder == spu_decoder_type::llvm
+#endif
+		;
+
+	if (build_llvm_interpreter)
 	{
 		if (auto compiler = spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache))
 		{
@@ -1157,6 +1168,12 @@ void spu_cache::initialize(bool build_existing_cache)
 			}
 		}
 	}
+#if defined(ARCH_ARM64)
+	else if (g_cfg.core.spu_decoder == spu_decoder_type::llvm)
+	{
+		spu_log.notice("SPU Runtime: Skipped unused all-opcode LLVM interpreter on ARM64.");
+	}
+#endif
 
 	u32 worker_count = 0;
 
