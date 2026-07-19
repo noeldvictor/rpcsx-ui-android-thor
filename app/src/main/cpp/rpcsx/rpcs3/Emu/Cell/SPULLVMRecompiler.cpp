@@ -2653,6 +2653,11 @@ public:
 						const auto cond_verify = m_ir->CreateICmpEQ(m_ir->CreateAnd(loop_dictator_after_adjustment, no_change_bits), m_ir->CreateAnd(loop_argument, no_change_bits));
 						condition = m_ir->CreateAnd(cond_verify, condition);
 					}
+					else
+					{
+						// Check spu_thread::state before continuing the optimized loop.
+						condition = m_ir->CreateAnd(m_ir->CreateICmpEQ(spu_context_attr(m_ir->CreateLoad(get_type<u32>(), spu_ptr<u32>(OFFSET_OF(spu_thread, state)), true)), m_ir->getInt32(0)), condition);
+					}
 
 					m_ir->CreateCondBr(condition, optimization_block, block_optimization_next);
 				};

@@ -352,7 +352,11 @@ public:
 
 		bool is_gpr_not_NaN_hint(u32 i) const noexcept
 		{
+#ifdef ARCH_X64
 			return i < gpr_not_nans.size() && gpr_not_nans.test(i);
+#else
+			return false;
+#endif
 		}
 
 		reduced_loop_t discard()
