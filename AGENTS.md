@@ -450,4 +450,16 @@ Put dated run details in `debug-experiments/`, not here.
   `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed or
   temperature credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-disabled-spurs-probe-overhead.md`.
+- Normal Android builds now wholly exclude the default-off Eternal Sonata
+  draw-stream snapshot/selector-repair/fault diagnostic and compile its three
+  semaphore plus TTY entry surfaces to empty inline hooks. Diagnostics can
+  opt it back in with `-PrpcsxThorDrawStreamProbe=true` or
+  `RPCSX_THOR_DRAW_STREAM_PROBE_BUILD=true`; desktop behavior is unchanged.
+  Host ARM64 proof removed all 17 selected symbols, all 11 property/report
+  strings, and 13 hot semaphore/TTY references; `sys_semaphore_wait`,
+  `sys_semaphore_post`, and `sys_tty_write` total 10,088 -> 7,276 bytes.
+  All 43 Thor contracts and the native build pass. This is host-verified
+  `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed or
+  temperature credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-draw-stream-probe-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

@@ -61,6 +61,7 @@ struct thor_es_sema_fast_cache_entry {
 static thor_es_sema_superpath_stats g_thor_es_sema_superpath_stats;
 static std::array<thor_es_sema_fast_cache_entry, 64> g_thor_es_sema_fast_cache{};
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_DRAW_STREAM_PROBE)
 namespace {
 
 constexpr u32 thor_es_draw_stream_size = 0x18'0000;
@@ -949,6 +950,15 @@ void thor_es_draw_stream_probe_tty(const ppu_thread &ppu,
       state.producer_completion_restores, state.sequence_anomalies, ppu.cia,
       static_cast<u32>(ppu.lr));
 }
+#else
+static FORCE_INLINE constexpr void
+maybe_thor_es_draw_stream_probe_before_post(const ppu_thread &, u32,
+                                             s32) noexcept {}
+
+static FORCE_INLINE constexpr void
+maybe_thor_es_draw_stream_probe_after_wait(const ppu_thread &, u32) noexcept {
+}
+#endif
 
 static thor_es_sema_superpath_mode
 parse_thor_es_sema_superpath_mode(std::string_view value) {

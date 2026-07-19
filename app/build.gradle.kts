@@ -45,6 +45,12 @@ val rpcsxThorSpursProbe =
         else -> false
     }
 
+val rpcsxThorDrawStreamProbe =
+    when (providers.gradleProperty("rpcsxThorDrawStreamProbe").orNull ?: System.getenv("RPCSX_THOR_DRAW_STREAM_PROBE_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
@@ -90,6 +96,7 @@ android {
                     "-DRPCSX_THOR_RSX_AUDITOR=${if (rpcsxThorRsxAuditor) "ON" else "OFF"}",
                     "-DRPCSX_THOR_SYSCALL_STATS=${if (rpcsxThorSyscallStats) "ON" else "OFF"}",
                     "-DRPCSX_THOR_SPURS_PROBE=${if (rpcsxThorSpursProbe) "ON" else "OFF"}",
+                    "-DRPCSX_THOR_DRAW_STREAM_PROBE=${if (rpcsxThorDrawStreamProbe) "ON" else "OFF"}",
                 )
             }
         }

@@ -8,6 +8,7 @@ option(RPCSX_THOR_WAIT_PROFILER "Instrument Android busy-wait sites for Thor dia
 option(RPCSX_THOR_RSX_AUDITOR "Instrument Android Vulkan work for Thor diagnostics" OFF)
 option(RPCSX_THOR_SYSCALL_STATS "Instrument Android PPU syscalls for Thor diagnostics" OFF)
 option(RPCSX_THOR_SPURS_PROBE "Instrument Android SPURS waits for Thor diagnostics" OFF)
+option(RPCSX_THOR_DRAW_STREAM_PROBE "Instrument Eternal Sonata draw-stream handoff diagnostics" OFF)
 set(RPCSX_ANDROID_ARM_ARCH "armv8.2-a" CACHE STRING "AArch64 ISA baseline for Android native code")
 set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model for Android native code")
 
@@ -25,6 +26,10 @@ endif()
 
 if (RPCSX_THOR_SPURS_PROBE)
 	add_compile_definitions(RPCSX_THOR_SPURS_PROBE=1)
+endif()
+
+if (RPCSX_THOR_DRAW_STREAM_PROBE)
+	add_compile_definitions(RPCSX_THOR_DRAW_STREAM_PROBE=1)
 endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
