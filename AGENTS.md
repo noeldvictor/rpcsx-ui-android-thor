@@ -623,4 +623,16 @@ Put dated run details in `debug-experiments/`, not here.
   `stackable-cpu-pressure` only: no APK, ADB, device, FPS, temperature,
   flicker, gameplay, or stability credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-logcat-property-serial-filter.md`.
+- Normal Android runtime logging now keeps the complete 32 MiB-buffered plain
+  `RPCSX.log` but omits the continuously compressed level-9 `.gz` duplicate;
+  desktop dual-output behavior is unchanged. Host ARM64 proof removes every
+  selected `deflateInit2`/`deflate`/`deflateEnd`/`fchmod` call from logger
+  construction, flush, shutdown, and premature close while preserving the
+  plain-file write path. Five selected functions total 2,716 -> 1,544 bytes,
+  the linked core shrinks by 11,872 bytes, all 13 active frame-poll symbols
+  remain, all 51 Thor contracts pass, and ARM64 RelWithDebInfo passes. This is
+  host-verified `stackable-cpu-pressure` only: no APK, ADB, device, FPS,
+  temperature, flicker, gameplay, or stability credit exists. Detailed
+  ledger:
+  `debug-experiments/20260719-thor-android-plain-log-writer.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

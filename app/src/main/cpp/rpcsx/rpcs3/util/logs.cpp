@@ -25,7 +25,9 @@ using namespace std::literals::chrono_literals;
 #include <sys/stat.h>
 #endif
 
+#ifndef ANDROID
 #include <zlib.h>
+#endif
 
 static std::string default_string()
 {
@@ -82,11 +84,15 @@ namespace logs
 	{
 		std::thread m_writer{};
 		fs::file m_fout{};
+#ifndef ANDROID
 		fs::file m_fout2{};
+#endif
 		u64 m_max_size{};
 
 		std::unique_ptr<uchar[]> m_fptr{};
+#ifndef ANDROID
 		z_stream m_zs{};
+#endif
 		shared_mutex m_m{};
 
 		atomic_t<u64, 64> m_buf{0}; // MSB (39 bits): push begin, LSB (25 bis): push size
@@ -465,6 +471,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
 		fprintf(stderr, "Log file open failed: %s (error %d)\n", name.c_str(), errno);
 	}
 
+#ifndef ANDROID
 	// Compressed log, make it inaccessible (foolproof)
 	if (m_fout2.open(name + ".gz", fs::rewrite + fs::unread))
 	{
@@ -491,6 +498,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
 	FILE_DISPOSITION_INFO disp{};
 	disp.DeleteFileW = true;
 	SetFileInformationByHandle(m_fout2.get_handle(), FileDispositionInfo, &disp, sizeof(disp));
+#endif
 #endif
 
 	m_writer = std::thread([this]()
@@ -536,6 +544,7 @@ logs::file_writer::~file_writer()
 	m_out = -1;
 	m_writer.join();
 
+#ifndef ANDROID
 	if (m_fout2)
 	{
 		m_zs.avail_in = 0;
@@ -564,6 +573,7 @@ logs::file_writer::~file_writer()
 	// Restore compressed log file permissions
 	::fchmod(m_fout2.get_handle(), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 #endif
+#endif
 }
 
 bool logs::file_writer::flush(u64 bufv)
@@ -586,6 +596,7 @@ bool logs::file_writer::flush(u64 bufv)
 			m_fout.close();
 		}
 
+#ifndef ANDROID
 		// Write compressed
 		if (m_fout2)
 		{
@@ -605,6 +616,7 @@ bool logs::file_writer::flush(u64 bufv)
 				}
 			} while (m_zs.avail_out == 0);
 		}
+#endif
 
 		m_out += size;
 		return true;
@@ -640,7 +652,11 @@ void logs::file_writer::log(const char* text, usz size)
 
 		if (!pos) [[unlikely]]
 		{
+#ifdef ANDROID
+			if (m_out >= m_max_size || !m_fout)
+#else
 			if (m_out >= m_max_size || (!m_fout && !m_fout2))
+#endif
 			{
 				// Logging is inactive
 				return;
@@ -705,10 +721,12 @@ void logs::file_writer::sync()
 		m_fout.sync();
 	}
 
+#ifndef ANDROID
 	if (m_fout2)
 	{
 		m_fout2.sync();
 	}
+#endif
 }
 
 void logs::file_writer::close_prematurely()
@@ -723,6 +741,7 @@ void logs::file_writer::close_prematurely()
 
 	std::lock_guard lock(m_m);
 
+#ifndef ANDROID
 	if (m_fout2)
 	{
 		m_zs.avail_in = 0;
@@ -753,6 +772,7 @@ void logs::file_writer::close_prematurely()
 
 		m_fout2.close();
 	}
+#endif
 
 	if (m_fout)
 	{

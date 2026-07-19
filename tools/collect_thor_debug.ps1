@@ -66,7 +66,6 @@ $remoteRoot = "/storage/emulated/0/Android/data/$Package/files"
 $pullTargets = @(
     @{ Remote = "$remoteRoot/cache/RPCSX.log"; Local = "cache/RPCSX.log" },
     @{ Remote = "$remoteRoot/cache/RPCSX.old.log"; Local = "cache/RPCSX.old.log" },
-    @{ Remote = "$remoteRoot/cache/RPCSX.log.gz"; Local = "cache/RPCSX.log.gz" },
     @{ Remote = "$remoteRoot/cache/TTY.log"; Local = "cache/TTY.log" },
     @{ Remote = "$remoteRoot/config/config.yml"; Local = "config/config.yml" },
     @{ Remote = "$remoteRoot/config/games.yml"; Local = "config/games.yml" },
