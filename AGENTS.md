@@ -592,4 +592,21 @@ Put dated run details in `debug-experiments/`, not here.
   temperature, FPS, flicker, gameplay, or stability credit exists. Detailed
   ledger:
   `debug-experiments/20260719-thor-disabled-spu-compiler-experiments-overhead.md`.
+- Normal Android builds now compile the forensic PRX-dump hook to constant
+  false under the existing Eternal Sonata PPU-diagnostics gate. The Android
+  property lookup, target parser, output-path formatter, and success/failure
+  reports are absent, while normal `PPU Debug` executable dumping and desktop
+  behavior remain unchanged. Explicit diagnostics retain the hook through
+  `-PrpcsxThorEsPpuExperiments=true` or
+  `RPCSX_THOR_ES_PPU_EXPERIMENTS_BUILD=true`. Host ARM64 proof reduced
+  `prx_load_module` 5,624 -> 3,956 bytes, removed the 1,584-byte dump-path
+  helper, changed its selected property/path calls `1/1 -> 0/0`, removed all
+  three selected property/report strings, and preserved the one
+  `dump_executable` call. The linked core shrank by 58,208 bytes, all 13 active
+  frame-poll symbols remain, all 49 Thor contracts pass, the explicit
+  diagnostic branch passes an ARM64 syntax compile, and ARM64 RelWithDebInfo
+  passes. This is host-verified `stackable-cpu-pressure` only: no APK, ADB,
+  device, FPS, temperature, flicker, gameplay, or stability credit exists.
+  Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-prx-dump-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

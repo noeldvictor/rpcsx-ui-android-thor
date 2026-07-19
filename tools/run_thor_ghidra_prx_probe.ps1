@@ -72,7 +72,12 @@ if (-not $remoteDump) {
 No decrypted PRX dump for '$SafeModule' was found under:
 $remoteCache
 
-If this APK has the Thor PRX dump hook, leave:
+The Thor PRX dump hook is present only in an explicit Android PPU-diagnostics
+build. Build it with either:
+  -PrpcsxThorEsPpuExperiments=true
+  RPCSX_THOR_ES_PPU_EXPERIMENTS_BUILD=true
+
+With that diagnostic APK installed, leave:
   debug.rpcsx.thor.dump_prx=$SafeModule
 
 Then restart/boot the title until the module loads. Re-run this script after

@@ -19,7 +19,7 @@
 #include <cstdlib>
 #include <span>
 
-#ifdef ANDROID
+#if defined(ANDROID) && defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 #include <sys/system_properties.h>
 #endif
 
@@ -42,6 +42,7 @@ ppu_manual_load_imports_exports(u32 imports_start, u32 imports_size,
 
 LOG_CHANNEL(sys_prx);
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 static std::string thor_prx_dump_target() {
 #ifdef ANDROID
   char value[PROP_VALUE_MAX]{};
@@ -90,6 +91,7 @@ static std::string thor_prx_dump_path(const ppu_module<lv2_obj> &module,
          (lower.ends_with(".prx") || lower.ends_with(".sprx") ? "prog.prx"
                                                               : "exec.elf");
 }
+#endif
 
 // <string: firmware sprx, int: should hle if 1>
 extern const std::map<std::string_view, int> g_prx_list{
@@ -326,7 +328,11 @@ prx_load_module(const std::string &vpath, u64 flags,
     return {CELL_PRX_ERROR_UNSUPPORTED_PRX_TYPE, +"Failed to decrypt file"};
   }
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
   const bool thor_dump_prx = thor_prx_dump_requested(name, vpath0);
+#else
+  constexpr bool thor_dump_prx = false;
+#endif
   const auto src_data =
       g_cfg.core.ppu_debug || thor_dump_prx ? src.to_vector<u8>()
                                             : std::vector<u8>{};
@@ -344,15 +350,21 @@ prx_load_module(const std::string &vpath, u64 flags,
     dump_executable({src_data.data(), src_data.size()}, prx.get(),
                     Emu.GetTitleID());
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
     if (thor_dump_prx) {
       sys_prx.notice("Thor PRX dump: module=\"%s\" vpath=\"%s\" output=\"%s\"",
                      name, vpath0, thor_prx_dump_path(*prx, Emu.GetTitleID()));
     }
-  } else if (thor_dump_prx) {
+#endif
+  }
+
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
+  if (!prx && thor_dump_prx) {
     sys_prx.error("Thor PRX dump failed before module load: module=\"%s\" "
                   "vpath=\"%s\"",
                   name, vpath0);
   }
+#endif
 
   obj.clear();
 
