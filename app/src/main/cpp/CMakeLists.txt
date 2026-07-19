@@ -15,6 +15,7 @@ option(RPCSX_THOR_DRAW_STREAM_PROBE "Instrument Eternal Sonata draw-stream hando
 option(RPCSX_THOR_SEMA_SUPERPATH "Build the Eternal Sonata semaphore experiment on Android" OFF)
 option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata SPU experiments on Android" OFF)
 option(RPCSX_THOR_ES_PPU_EXPERIMENTS "Build Eternal Sonata PPU and PRX diagnostics on Android" OFF)
+option(RPCSX_THOR_ADPF_RSX_HINT "Build the experimental Android RSX performance-hint session" OFF)
 set(RPCSX_ANDROID_ARM_ARCH "armv8.2-a" CACHE STRING "AArch64 ISA baseline for Android native code")
 set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model for Android native code")
 
@@ -60,6 +61,10 @@ endif()
 
 if (RPCSX_THOR_ES_PPU_EXPERIMENTS)
 	add_compile_definitions(RPCSX_THOR_ES_PPU_EXPERIMENTS=1)
+endif()
+
+if (RPCSX_THOR_ADPF_RSX_HINT)
+	add_compile_definitions(RPCSX_THOR_ADPF_RSX_HINT=1)
 endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")

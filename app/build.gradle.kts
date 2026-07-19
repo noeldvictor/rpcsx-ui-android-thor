@@ -87,6 +87,12 @@ val rpcsxThorEsPpuExperiments =
         else -> false
     }
 
+val rpcsxThorAdpfRsxHint =
+    when (providers.gradleProperty("rpcsxThorAdpfRsxHint").orNull ?: System.getenv("RPCSX_THOR_ADPF_RSX_HINT_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
@@ -139,6 +145,7 @@ android {
                     "-DRPCSX_THOR_SEMA_SUPERPATH=${if (rpcsxThorSemaSuperpath) "ON" else "OFF"}",
                     "-DRPCSX_THOR_ES_SPU_EXPERIMENTS=${if (rpcsxThorEsSpuExperiments) "ON" else "OFF"}",
                     "-DRPCSX_THOR_ES_PPU_EXPERIMENTS=${if (rpcsxThorEsPpuExperiments) "ON" else "OFF"}",
+                    "-DRPCSX_THOR_ADPF_RSX_HINT=${if (rpcsxThorAdpfRsxHint) "ON" else "OFF"}",
                 )
             }
         }

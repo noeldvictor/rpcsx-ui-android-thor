@@ -7,6 +7,37 @@ $present = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx
 $cmake = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/CMakeLists.txt") -Raw
 $inputMacro = Get-Content -LiteralPath (Join-Path $repoRoot "tools/thor_input_macro.ps1") -Raw
 $sprint = Get-Content -LiteralPath (Join-Path $repoRoot "tools/eternal_sonata_speed_sprint.ps1") -Raw
+$gradle = Get-Content -LiteralPath (Join-Path $repoRoot "app/build.gradle.kts") -Raw
+$topCmake = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/CMakeLists.txt") -Raw
+
+$requiredGradleFragments = @(
+    'providers.gradleProperty("rpcsxThorAdpfRsxHint")',
+    'System.getenv("RPCSX_THOR_ADPF_RSX_HINT_BUILD")',
+    '"-DRPCSX_THOR_ADPF_RSX_HINT=${if (rpcsxThorAdpfRsxHint) "ON" else "OFF"}"'
+)
+foreach ($fragment in $requiredGradleFragments) {
+    if (-not $gradle.Contains($fragment)) {
+        throw "Thor ADPF RSX Gradle build gate is missing: $fragment"
+    }
+}
+
+foreach ($fragment in @(
+    'option(RPCSX_THOR_ADPF_RSX_HINT "Build the experimental Android RSX performance-hint session" OFF)',
+    'add_compile_definitions(RPCSX_THOR_ADPF_RSX_HINT=1)'
+)) {
+    if (-not $topCmake.Contains($fragment)) {
+        throw "Thor ADPF RSX CMake build gate is missing: $fragment"
+    }
+}
+
+$normalGatePattern = '(?s)#if defined\(ANDROID\) && !defined\(RPCSX_THOR_ADPF_RSX_HINT\).*?inline constexpr bool requested\(\) noexcept.*?return false;.*?inline constexpr void begin\(bool\) noexcept.*?inline constexpr void finish\(bool\) noexcept.*?#elif defined\(ANDROID\)'
+if ($hint -notmatch $normalGatePattern) {
+    throw "Normal Android does not compile the ADPF experiment to a constant-false, no-op gate."
+}
+if ($gradle -match 'rpcsxThorAdpfRsxHint[^\r\n]*\?:\s*true' -or
+    $topCmake -match 'option\(RPCSX_THOR_ADPF_RSX_HINT[^\r\n]*\sON\)') {
+    throw "The Android ADPF RSX experiment must remain disabled by default."
+}
 
 function Assert-OrderedFragments {
     param(
@@ -26,7 +57,7 @@ function Assert-OrderedFragments {
 }
 
 $requiredHintFragments = @(
-    '#ifdef ANDROID',
+    '#elif defined(ANDROID)',
     'debug.rpcsx.thor.adpf_rsx',
     'if (length <= 0)',
     'return false;',

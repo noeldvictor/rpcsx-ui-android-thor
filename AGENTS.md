@@ -697,4 +697,16 @@ Put dated run details in `debug-experiments/`, not here.
   No launch occurred; grant no runtime speed, temperature, flicker, gameplay,
   or stability credit. Detailed ledger:
   `debug-experiments/20260719-thor-android-compile-log-pruning.md`.
+- Normal Android now compiles the unproven ADPF RSX performance-hint
+  experiment to a constant-false/no-op gate; explicit diagnostics can restore
+  it with `-PrpcsxThorAdpfRsxHint=true` or
+  `RPCSX_THOR_ADPF_RSX_HINT_BUILD=true`. This removes the selection path from
+  every Vulkan draw and present: `VKGSRender::begin` shrinks `1,000 -> 164`
+  bytes and `flip` `10,224 -> 9,416`, while the core shrinks 17,304 bytes and
+  all selected ADPF symbols/strings disappear. Both explicit-diagnostic and
+  final normal ARM64 builds pass, along with all 54 Thor contracts and the 13
+  active frame-poll symbols. This is host-verified `stackable-cpu-pressure`
+  only: the installed `7CDD38E4...E5F9` APK remains force-stopped and no ADB,
+  APK, FPS, temperature, flicker, gameplay, or runtime credit exists. Detailed
+  ledger: `debug-experiments/20260719-thor-adpf-normal-build-gate.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

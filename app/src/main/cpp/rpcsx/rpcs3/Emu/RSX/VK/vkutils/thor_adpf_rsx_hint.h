@@ -1,6 +1,26 @@
 #pragma once
 
-#ifdef ANDROID
+#if defined(ANDROID) && !defined(RPCSX_THOR_ADPF_RSX_HINT)
+
+namespace vk::thor::adpf_rsx_hint
+{
+	// The hint experiment is default-off. Make normal Android draws and
+	// presents compile exactly as if it did not exist.
+	inline constexpr bool requested() noexcept
+	{
+		return false;
+	}
+
+	inline constexpr void begin(bool) noexcept
+	{
+	}
+
+	inline constexpr void finish(bool) noexcept
+	{
+	}
+} // namespace vk::thor::adpf_rsx_hint
+
+#elif defined(ANDROID)
 
 #include "util/logs.hpp"
 
@@ -196,4 +216,4 @@ namespace vk::thor::adpf_rsx_hint
 	}
 } // namespace vk::thor::adpf_rsx_hint
 
-#endif // ANDROID
+#endif // defined(ANDROID)
