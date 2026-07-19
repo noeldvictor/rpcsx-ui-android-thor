@@ -787,4 +787,20 @@ Put dated run details in `debug-experiments/`, not here.
   or runtime speed/temperature/flicker/stability credit exists. Detailed
   ledger:
   `debug-experiments/20260719-thor-spu-affinity-worker-cap.md`.
+- Exact refreshed ARM64-only ThorTest candidate APK
+  `5C3911D0...682CC6` (`72,840,516` bytes) supersedes the uninstalled
+  `504C614B...5588` artifact by stacking the three-worker SPU affinity cap.
+  It packages merged core `EC3B31C5...5728E` (`1,304,685,608` bytes) as
+  stripped core `75A11633...86DC9` (`63,014,824` bytes), and the APK ZIP
+  entry matches the stripped length/hash exactly. Relative to the prior
+  host candidate, merged/stripped cores are `+2,488/+352` bytes while the
+  compressed APK is 64 bytes smaller; these are supporting build deltas, not
+  speed evidence. The 98.1-second optimized build, ARM64 ABI, ThorTest variant,
+  single-open loader, 34-export surface, eight activation gates, packaged-core
+  identity, and all 58 Thor contracts pass. It is uninstalled, the last-known
+  installed APK remains `7CDD38E4...E5F9`, no device query ran, and RPCSX
+  remains stopped. A future independently cool round may only install this
+  exact APK through the strict no-launch gate; do not launch in that round.
+  Detailed ledger:
+  `debug-experiments/20260719-thor-spu-cap-host-candidate-apk.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

@@ -90,6 +90,7 @@ Passed host-only:
 - all `58/58` `tools/test_thor_*.ps1` contracts; and
 - `git diff --check`.
 
-No native/APK rebuild is needed: these changes affect host route tooling only.
-The exact combined APK `504C614B...5588` remains uninstalled and still requires
-a separate strict cool no-launch install round before any later title proof.
+The proof-tooling changes alone needed no native rebuild. A later SPU worker-pool
+cap refreshed the exact combined APK to `5C3911D0...682CC6`; that current
+candidate remains uninstalled and still requires a separate strict cool
+no-launch install round before any later title proof.
