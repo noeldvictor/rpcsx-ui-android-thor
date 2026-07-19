@@ -201,7 +201,7 @@ function Set-AndroidStartupProfile {
     }
 
     $settings = [ordered]@{
-        InputMacro = "gate:ppu-ready:90000;shot:title-proof"
+        InputMacro = "gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
         AndroidInputMode = "Direct"
         AndroidSceneSeconds = 1
         AndroidThermalPollSeconds = 1
@@ -867,8 +867,27 @@ function Invoke-AndroidRouteScene {
         $macroParams.Profile = $profile
     }
 
+    $macroStartedAt = Get-Date
     Write-Host "Routing Android scene with thor_input_macro.ps1 profile=$($macroParams.Profile) input=$AndroidInputMode scene=$Scene"
     & (Join-Path $PSScriptRoot "thor_input_macro.ps1") @macroParams
+
+    if ($AndroidStartupProfile -eq "ThorCoolTitle") {
+        $captureRoot = Join-Path $RepoRoot "debug-captures\android-speed-sprint"
+        $inputCapture = Get-ChildItem -LiteralPath $captureRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -like "*-thor-input-$($macroParams.Profile)" -and
+                $_.LastWriteTime -ge $macroStartedAt.AddMinutes(-1)
+            } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if (-not $inputCapture) {
+            throw "Thor cool-title route completed but its input capture directory could not be resolved."
+        }
+
+        & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") -CaptureDir $inputCapture.FullName -RequireReady
+        Write-Host "Thor cool-title profile stopped after its title proof; redundant live scene capture skipped."
+        return
+    }
 
     if ($AndroidRoutePostWaitSeconds -gt 0) {
         Start-Sleep -Seconds $AndroidRoutePostWaitSeconds

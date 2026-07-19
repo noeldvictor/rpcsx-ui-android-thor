@@ -906,6 +906,36 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_ppu_dispatch_probe") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-set.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier $EsAsyncDrawBarrier") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-effective.txt" @("shell", "getprop debug.rpcsx.thor.es_async_draw_barrier") | Out-Null
+    $startupProfilePropertyNames = @(
+        "debug.rpcsx.thor.rsx_cache_workers",
+        "debug.rpcsx.thor.rsx_cache_preload_limit",
+        "debug.rpcsx.thor.rsx_cache_compile_budget_ms",
+        "debug.rpcsx.thor.spu_cache_preload_limit",
+        "debug.rpcsx.thor.spu_cache_compile_budget_ms",
+        "debug.rpcsx.thor.spu_native_object_cache",
+        "debug.rpcsx.thor.cache_worker_affinity_mask",
+        "debug.rpcsx.thor.vk_pipeline_cache",
+        "debug.rpcsx.thor.vk_preload_cache_hits_only",
+        "debug.rpcsx.thor.adpf_rsx",
+        "debug.rpcsx.thor.cache_phase_pacing",
+        "debug.rpcsx.thor.logcat",
+        "debug.rpcsx.thor.syscall_stats",
+        "debug.rpcsx.thor.spu_reduced_loop_detect",
+        "debug.rpcsx.thor.spu_reduced_loop_emit",
+        "debug.rpcsx.thor.spurs_probe",
+        "debug.rpcsx.thor.es_sema_superpath",
+        "debug.rpcsx.thor.es_dma_superpath",
+        "debug.rpcsx.thor.rsx_blit_source_resolve",
+        "debug.rpcsx.thor.rsx_auditor",
+        "debug.rpcsx.thor.dump_prx",
+        "debug.rpcsx.thor.es_frame_wait",
+        "debug.rpcsx.thor.es_frame_wait_grace_us",
+        "debug.rpcsx.thor.es_frame_wait_continuous_rearm",
+        "log.tag.RPCS3",
+        "log.tag.RPCSX-UI"
+    )
+    $startupProfilePropertyCommand = 'for p in ' + ($startupProfilePropertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
+    Invoke-ThorAdbText $Adb $captureDir "startup-profile-effective.txt" @("shell", $startupProfilePropertyCommand) | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "dismiss-keyguard.txt" @("shell", "wm dismiss-keyguard") -AllowFailure | Out-Null
     Start-Sleep -Milliseconds 500

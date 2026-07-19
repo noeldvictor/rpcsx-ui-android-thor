@@ -26,9 +26,10 @@ wrapper defaults or emulator behavior.
 
 Host-only `AndroidProfileStatus` resolves:
 
-- macro: `gate:ppu-ready:90000;shot:title-proof`;
+- macro: `gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop`;
 - direct input;
-- one-second post-route capture;
+- no redundant post-route live scene capture; the title screenshot, title-state
+  check, guest-health check, and force-stop all occur inside the bounded macro;
 - one-second thermal polling;
 - runtime early-stop headroom: `4 C` below the `72 C` hard limit;
 - near-limit probe window: `16 C`;
@@ -76,7 +77,7 @@ Passed:
 - exact host-only resolved-profile output;
 - conflict, wrong-action, and keep-running rejection checks;
 - ordering: profile application before device resolution and action dispatch;
-- all `57/57` `tools/test_thor_*.ps1` contracts;
+- all `58/58` `tools/test_thor_*.ps1` contracts after the proof analyzer was added;
 - `git diff --check`;
 - no build, emulator, or device process left active.
 

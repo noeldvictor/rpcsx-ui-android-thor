@@ -760,4 +760,18 @@ Put dated run details in `debug-experiments/`, not here.
   `504C614B...5588` APK still requires a separate cool no-launch install round
   before this profile may launch in another cooling round. Detailed ledger:
   `debug-experiments/20260719-thor-cool-title-profile.md`.
+- The `ThorCoolTitle` route now validates its saved title screenshot and guest
+  log, executes `stop` inside the macro, and returns without the old redundant
+  one-second `Invoke-AndroidSceneCapture` interval. One combined pre-boot ADB
+  shell snapshot records all 26 exact cache, affinity, quiet-log, disabled
+  experiment, and frame-wait properties without adding 26 round trips.
+  `tools/analyze_thor_cool_title_capture.ps1` fails closed unless those values,
+  seven runtime activation rows, two-frame title stabilization, the final title
+  image, fatal cleanliness, thermal cleanliness, and force-stop evidence all
+  agree. The rejected `20260719-163325-thor-input-custom` capture classifies as
+  `thermal-stop-before-title` at `68.7 C`, with the old zero-valued controls
+  reported and no speed credit. All 58 Thor contracts pass. This is host-only
+  route-duration and evidence-hardening work: no ADB/device action or runtime
+  speed/temperature/flicker/stability credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-cool-title-proof-gate.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

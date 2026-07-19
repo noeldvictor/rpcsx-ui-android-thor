@@ -42,7 +42,7 @@ if ($deviceResolutionBlock.Contains('AndroidProfileStatus')) {
 $summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | ForEach-Object { $_.ToString() })
 $requiredSummary = @(
     'profile=ThorCoolTitle',
-    'input_macro=gate:ppu-ready:90000;shot:title-proof',
+    'input_macro=gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop',
     'input_mode=Direct',
     'scene_seconds=1',
     'thermal_poll_seconds=1',
@@ -78,6 +78,26 @@ foreach ($line in $requiredSummary) {
         throw "Thor cool-title dry-run is missing: $line"
     }
 }
+$routeFunctionStart = $source.IndexOf('function Invoke-AndroidRouteScene')
+$profileApplyStart = $source.IndexOf('Set-AndroidStartupProfile', $routeFunctionStart)
+if ($routeFunctionStart -lt 0 -or $profileApplyStart -le $routeFunctionStart) {
+    throw 'Could not isolate the Android route function for cool-title stop/proof contracts.'
+}
+$routeFunction = $source.Substring($routeFunctionStart, $profileApplyStart - $routeFunctionStart)
+$routeContracts = @(
+    '$macroStartedAt = Get-Date',
+    '$AndroidStartupProfile -eq "ThorCoolTitle"',
+    'analyze_thor_cool_title_capture.ps1',
+    '-RequireReady',
+    'redundant live scene capture skipped',
+    'return'
+)
+foreach ($fragment in $routeContracts) {
+    if (-not $routeFunction.Contains($fragment)) {
+        throw "Thor cool-title route is missing stop/proof contract: $fragment"
+    }
+}
+
 
 $conflictRejected = $false
 try {
