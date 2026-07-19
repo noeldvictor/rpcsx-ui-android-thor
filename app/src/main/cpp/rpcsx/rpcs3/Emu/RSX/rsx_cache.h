@@ -213,6 +213,40 @@ namespace rsx
 			return parse_nonnegative_int(std::getenv("RPCSX_THOR_RSX_CACHE_PRELOAD_LIMIT"));
 		}
 
+		static u32 get_android_load_budget_ms()
+		{
+			if (Emu.GetTitleID() != "BLUS30161")
+			{
+				return 0;
+			}
+
+			auto parse_budget = [](const char* value) -> u32
+			{
+				if (!value || !*value)
+				{
+					return 0;
+				}
+
+				char* end = nullptr;
+				const unsigned long parsed = std::strtoul(value, &end, 10);
+				if (end == value || *end || parsed > 5000)
+				{
+					return 0;
+				}
+
+				return static_cast<u32>(parsed);
+			};
+
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.rsx_cache_load_budget_ms", value);
+			if (length > 0)
+			{
+				return parse_budget(value);
+			}
+
+			return parse_budget(std::getenv("RPCSX_THOR_RSX_CACHE_LOAD_BUDGET_MS"));
+		}
+
 		static u32 get_android_compile_budget_ms()
 		{
 			if (Emu.GetTitleID() != "BLUS30161")
@@ -329,15 +363,53 @@ namespace rsx
 		}
 
 		void load_shaders(uint nb_workers, unpacked_type& unpacked, std::string& directory_path, std::vector<fs::dir_entry>& entries, u32 entry_count,
-			shader_loading_dialog* dlg)
+			u32 load_budget_ms, shader_loading_dialog* dlg)
 		{
 			atomic_t<u32> processed(0);
+			atomic_t<u32> next(0);
+			atomic_t<bool> budget_expired(false);
+			const auto deadline = steady_clock::now() + std::chrono::milliseconds(load_budget_ms);
 #ifdef __ANDROID__
 			atomic_t<u32> suppressed_preload_diagnostics(0);
 			const bool summarize_preload_diagnostics = g_cfg.video.renderer == video_renderer::vulkan &&
 				Emu.GetTitleID() == "BLUS30161" &&
 				(nb_workers > 1 || rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID()));
 #endif
+
+			auto load_one = [&](u32 pos)
+			{
+				fs::dir_entry tmp = entries[pos];
+
+				const auto filename = directory_path + "/" + tmp.name;
+				fs::file f(filename);
+
+				if (!f)
+				{
+					fs::remove_file(filename);
+					return;
+				}
+
+				if (f.size() != sizeof(pipeline_data))
+				{
+					rsx_log.error("Removing cached pipeline object %s since it's not binary compatible with the current shader cache", tmp.name.c_str());
+					fs::remove_file(filename);
+					return;
+				}
+
+				pipeline_data pdata{};
+				f.read(&pdata, f.size());
+
+				auto entry = unpack(pdata);
+
+				if (entry.vp.data.empty() || !entry.fp.ucode_length)
+				{
+					return;
+				}
+
+				m_storage.preload_programs(nullptr, entry.vp, entry.fp);
+
+				unpacked[unpacked.push_begin()] = std::move(entry);
+			};
 
 			std::function<void(u32)> shader_load_worker = [&](u32 stop_at)
 			{
@@ -348,43 +420,30 @@ namespace rsx
 				}
 #endif
 				u32 pos;
-				// Claim one entry at a time so workers share expensive pipelines instead of waiting on a fixed slow partition.
-				while (((pos = processed++) < stop_at) && !Emu.IsStopped())
+				if (!load_budget_ms)
 				{
-					fs::dir_entry tmp = entries[pos];
-
-					const auto filename = directory_path + "/" + tmp.name;
-					fs::file f(filename);
-
-					if (!f)
+					// Preserve the original one-atomic fast path when the experiment is disabled.
+					while (((pos = processed++) < stop_at) && !Emu.IsStopped())
 					{
-						fs::remove_file(filename);
-						continue;
+						load_one(pos);
 					}
-
-					if (f.size() != sizeof(pipeline_data))
-					{
-						rsx_log.error("Removing cached pipeline object %s since it's not binary compatible with the current shader cache", tmp.name.c_str());
-						fs::remove_file(filename);
-						continue;
-					}
-
-					pipeline_data pdata{};
-					f.read(&pdata, f.size());
-
-					auto entry = unpack(pdata);
-
-					if (entry.vp.data.empty() || !entry.fp.ucode_length)
-					{
-						continue;
-					}
-
-					m_storage.preload_programs(nullptr, entry.vp, entry.fp);
-
-					unpacked[unpacked.push_begin()] = std::move(entry);
+					processed--;
 				}
-				// Each worker claims one sentinel index after the final real entry.
-				processed--;
+				else
+				{
+					// Bound disk reads, shader unpacking, and program decompilation during the first thermal burst.
+					while (((pos = next++) < stop_at) && !Emu.IsStopped())
+					{
+						if (budget_expired || steady_clock::now() >= deadline)
+						{
+							budget_expired = true;
+							break;
+						}
+						load_one(pos);
+						processed++;
+					}
+					next--;
+				}
 #ifdef __ANDROID__
 				if (summarize_preload_diagnostics)
 				{
@@ -393,7 +452,13 @@ namespace rsx
 #endif
 			};
 
-			await_workers(nb_workers, 0, shader_load_worker, processed, entry_count, dlg);
+			await_workers(nb_workers, 0, shader_load_worker, processed, entry_count, dlg, load_budget_ms ? &budget_expired : nullptr);
+			if (budget_expired && !Emu.IsStopped())
+			{
+				const u32 attempted = std::min(processed.load(), entry_count);
+				rsx_log.notice("Android shader cache load budget: attempted %u of %u cached pipelines with a %u ms budget; %u will load and compile on demand.",
+					attempted, entry_count, load_budget_ms, entry_count - attempted);
+			}
 #ifdef __ANDROID__
 			if (const u32 suppressed = suppressed_preload_diagnostics.load(); suppressed && !Emu.IsStopped())
 			{
@@ -652,10 +717,23 @@ namespace rsx
 			const uint preload_workers = get_preload_worker_count();
 			rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);
 
-			load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, dlg);
+			u32 load_budget_ms = 0;
+#ifdef __ANDROID__
+			load_budget_ms = get_android_load_budget_ms();
+			if (load_budget_ms)
+			{
+				rsx_log.notice("Android shader cache load budget enabled for BLUS30161: %u ms.", load_budget_ms);
+			}
+#endif
+			load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, load_budget_ms, dlg);
 
 			// Account for any invalid entries
 			entry_count = unpacked.size();
+			if (!entry_count)
+			{
+				dlg->close();
+				return;
+			}
 
 #ifdef __ANDROID__
 			// Avoid stacking Vulkan pipeline compilation on top of PPU object loading

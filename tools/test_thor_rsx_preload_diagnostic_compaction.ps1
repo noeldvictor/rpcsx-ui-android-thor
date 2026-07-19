@@ -67,10 +67,11 @@ foreach ($fragment in $rsxContracts) {
 }
 
 $beginIndex = $rsx.IndexOf('begin_rsx_preload_diagnostic_summary();')
-$preloadIndex = $rsx.IndexOf('m_storage.preload_programs(', $beginIndex)
+$preloadBodyIndex = $rsx.IndexOf('m_storage.preload_programs(')
+$preloadIndex = $rsx.IndexOf('load_one(pos);', $beginIndex)
 $endIndex = $rsx.IndexOf('end_rsx_preload_diagnostic_summary();', $preloadIndex)
 $summaryIndex = $rsx.IndexOf('Android RSX shader-cache preload retained', $endIndex)
-if ($beginIndex -lt 0 -or $preloadIndex -le $beginIndex -or $endIndex -le $preloadIndex -or $summaryIndex -le $endIndex) {
+if ($preloadBodyIndex -lt 0 -or $beginIndex -lt 0 -or $preloadIndex -le $beginIndex -or $endIndex -le $preloadIndex -or $summaryIndex -le $endIndex) {
     throw 'RSX preload diagnostic scope or summary ordering changed.'
 }
 

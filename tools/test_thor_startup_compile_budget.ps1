@@ -25,6 +25,20 @@ function Assert-Contains {
     }
 }
 
+Assert-Contains $rsxSource 'static u32 get_android_load_budget_ms()' "RSX load-budget parser is missing."
+Assert-Contains $rsxSource 'Emu.GetTitleID() != "BLUS30161"' "RSX load budget is not title-gated."
+Assert-Contains $rsxSource '__system_property_get("debug.rpcsx.thor.rsx_cache_load_budget_ms", value)' "RSX load-budget property is missing."
+Assert-Contains $rsxSource 'RPCSX_THOR_RSX_CACHE_LOAD_BUDGET_MS' "RSX load-budget environment fallback is missing."
+Assert-Contains $rsxSource 'parsed > 5000' "RSX load budget does not fail closed above 5000 ms."
+Assert-Contains $rsxSource 'if (!load_budget_ms)' "RSX default-off load path still pays per-entry budget bookkeeping."
+Assert-Contains $rsxSource 'Android shader cache load budget: attempted %u of %u cached pipelines' "RSX deferred-load fallback is not documented in the activation log."
+
+$rsxLoadDeadline = $rsxSource.IndexOf('steady_clock::now() >= deadline', $rsxSource.IndexOf('void load_shaders'))
+$rsxLoadOpen = $rsxSource.IndexOf('load_one(pos)', $rsxLoadDeadline)
+if ($rsxLoadDeadline -lt 0 -or $rsxLoadOpen -lt 0 -or $rsxLoadDeadline -ge $rsxLoadOpen) {
+    throw "RSX load budget is not checked before opening and unpacking the next cache entry."
+}
+
 Assert-Contains $rsxSource 'Emu.GetTitleID() != "BLUS30161"' "RSX compile budget is not title-gated."
 Assert-Contains $rsxSource '__system_property_get("debug.rpcsx.thor.rsx_cache_compile_budget_ms", value)' "RSX compile-budget property is missing."
 Assert-Contains $rsxSource 'RPCSX_THOR_RSX_CACHE_COMPILE_BUDGET_MS' "RSX compile-budget environment fallback is missing."
@@ -56,13 +70,14 @@ if ($spuBudgetCheck -lt 0 -or $spuAnalyse -lt 0 -or $spuBudgetCheck -ge $spuAnal
     throw "SPU compile budget is not checked before eager analysis/compilation."
 }
 
-foreach ($name in @("RsxCacheCompileBudgetMs", "SpuCacheCompileBudgetMs")) {
+foreach ($name in @("RsxCacheLoadBudgetMs", "RsxCacheCompileBudgetMs", "SpuCacheCompileBudgetMs")) {
     if ($macroSource -notmatch ("(?s)\[ValidateRange\(0,\s*5000\)\]\s*\[int\]\$" + $name + "\s*=\s*0")) {
         throw "Thor route parameter $name is missing or not default-off."
     }
 }
 
 $routeContracts = @(
+    'setprop debug.rpcsx.thor.rsx_cache_load_budget_ms $RsxCacheLoadBudgetMs',
     'setprop debug.rpcsx.thor.rsx_cache_compile_budget_ms $RsxCacheCompileBudgetMs',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $SpuCacheCompileBudgetMs'
 )
@@ -71,6 +86,7 @@ foreach ($contract in $routeContracts) {
 }
 
 foreach ($reset in @(
+    'setprop debug.rpcsx.thor.rsx_cache_load_budget_ms 0',
     'setprop debug.rpcsx.thor.rsx_cache_compile_budget_ms 0',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0'
 )) {
@@ -80,12 +96,13 @@ foreach ($reset in @(
     }
 }
 
-foreach ($name in @("AndroidRsxCacheCompileBudgetMs", "AndroidSpuCacheCompileBudgetMs")) {
+foreach ($name in @("AndroidRsxCacheLoadBudgetMs", "AndroidRsxCacheCompileBudgetMs", "AndroidSpuCacheCompileBudgetMs")) {
     if ($sprintSource -notmatch ("(?s)\[ValidateRange\(0,\s*5000\)\]\s*\[int\]\$" + $name + "\s*=\s*0")) {
         throw "Speed-sprint parameter $name is missing or not default-off."
     }
 }
 
+Assert-Contains $sprintSource 'RsxCacheLoadBudgetMs = $AndroidRsxCacheLoadBudgetMs' "Speed sprint does not forward the RSX load budget."
 Assert-Contains $sprintSource 'RsxCacheCompileBudgetMs = $AndroidRsxCacheCompileBudgetMs' "Speed sprint does not forward the RSX budget."
 Assert-Contains $sprintSource 'SpuCacheCompileBudgetMs = $AndroidSpuCacheCompileBudgetMs' "Speed sprint does not forward the SPU budget."
 
@@ -98,4 +115,4 @@ foreach ($path in @($macroPath, $sprintPath, $PSCommandPath)) {
     }
 }
 
-Write-Host "Thor startup compile-budget contract: PASS"
+Write-Host "Thor startup work-budget contract: PASS"

@@ -122,6 +122,8 @@ param(
     [ValidateRange(0, 4096)]
     [int]$AndroidRsxCachePreloadLimit = 0,
     [ValidateRange(0, 5000)]
+    [int]$AndroidRsxCacheLoadBudgetMs = 0,
+    [ValidateRange(0, 5000)]
     [int]$AndroidRsxCacheCompileBudgetMs = 0,
     [ValidateRange(0, 4096)]
     [int]$AndroidSpuCachePreloadLimit = 0,
@@ -217,6 +219,7 @@ function Set-AndroidStartupProfile {
         AndroidMaxSiliconTemperatureC = 72.0
         AndroidRsxCacheWorkers = 2
         AndroidRsxCachePreloadLimit = 256
+        AndroidRsxCacheLoadBudgetMs = 500
         AndroidRsxCacheCompileBudgetMs = 0
         AndroidSpuCachePreloadLimit = 64
         AndroidSpuCacheCompileBudgetMs = 100
@@ -278,6 +281,7 @@ function Write-AndroidStartupProfileSummary {
         "max_silicon_c=$AndroidMaxSiliconTemperatureC",
         "rsx_workers=$AndroidRsxCacheWorkers",
         "rsx_preload_limit=$AndroidRsxCachePreloadLimit",
+        "rsx_load_budget_ms=$AndroidRsxCacheLoadBudgetMs",
         "rsx_compile_budget_ms=$AndroidRsxCacheCompileBudgetMs",
         "spu_preload_limit=$AndroidSpuCachePreloadLimit",
         "spu_compile_budget_ms=$AndroidSpuCacheCompileBudgetMs",
@@ -847,6 +851,7 @@ function Invoke-AndroidRouteScene {
         MaxSiliconTemperatureC = $AndroidMaxSiliconTemperatureC
         RsxCacheWorkers = $AndroidRsxCacheWorkers
         RsxCachePreloadLimit = $AndroidRsxCachePreloadLimit
+        RsxCacheLoadBudgetMs = $AndroidRsxCacheLoadBudgetMs
         RsxCacheCompileBudgetMs = $AndroidRsxCacheCompileBudgetMs
         SpuCachePreloadLimit = $AndroidSpuCachePreloadLimit
         SpuCacheCompileBudgetMs = $AndroidSpuCacheCompileBudgetMs

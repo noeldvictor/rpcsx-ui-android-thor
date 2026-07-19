@@ -70,6 +70,7 @@ function Write-ReadyFixture {
     $effectiveProperties = [ordered]@{
         "rsx-cache-workers-effective.txt" = "2"
         "rsx-cache-preload-limit-effective.txt" = "256"
+        "rsx-cache-load-budget-effective.txt" = "500"
         "rsx-cache-compile-budget-effective.txt" = "0"
         "spu-cache-preload-limit-effective.txt" = "64"
         "spu-cache-compile-budget-effective.txt" = "100"
@@ -87,6 +88,7 @@ function Write-ReadyFixture {
     @(
         "debug.rpcsx.thor.rsx_cache_workers=2",
         "debug.rpcsx.thor.rsx_cache_preload_limit=256",
+        "debug.rpcsx.thor.rsx_cache_load_budget_ms=500",
         "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
         "debug.rpcsx.thor.spu_cache_preload_limit=64",
         "debug.rpcsx.thor.spu_cache_compile_budget_ms=100",
@@ -128,6 +130,7 @@ function Write-ReadyFixture {
         "- Max silicon temperature C: 72",
         "- RSX cache preload workers (0=auto): 2",
         "- RSX cached pipeline preload limit (0=all): 256",
+        "- RSX cached pipeline load budget ms (0=unbounded): 500",
         "- RSX cached pipeline compile budget ms (0=unbounded): 0",
         "- SPU cached-program preload limit (0=all): 64",
         "- SPU cached-program compile budget ms (0=unbounded): 100",
@@ -158,6 +161,8 @@ function Write-ReadyFixture {
     ) | Set-Content -LiteralPath (Join-Path $Directory "thermal-guard.log") -Encoding UTF8
     @(
         "Android shader cache preload limit: 256 of 939 oldest pipelines; 683 will compile on demand",
+        "Android shader cache load budget enabled for BLUS30161: 500 ms.",
+        "Android shader cache load budget: attempted 84 of 256 cached pipelines with a 500 ms budget; 172 will load and compile on demand.",
         "Thor SPU cache preload limit: 64 of 300 oldest unique programs (300 records, 236 will compile on demand).",
         "Shader cache preload workers: load=2, compile=2",
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
@@ -200,9 +205,10 @@ try {
     "Thor CPU/GPU silicon temperature is 72.7 C, at or above the 72 C limit." | Set-Content -LiteralPath (Join-Path $thermalDir "macro-failure.txt") -Encoding UTF8
     "stage=screenshot-ppu-ready-near-limit-confirm silicon_temperature_c=72.7 silicon_limit_c=72" |
         Add-Content -LiteralPath (Join-Path $thermalDir "thermal-guard.log") -Encoding UTF8
+    Write-AdbEvidence -Directory $thermalDir -Name "failure-pid.txt" -Value "exit=1"
     $thermal = & $analyzerPath -CaptureDir $thermalDir
     if ($thermal.status -ne "thermal-stop-before-title" -or $thermal.ready_for_comparison) {
-        throw "Synthetic thermal stop did not retain its primary failure classification."
+        throw "Synthetic launched thermal stop with normal preflight rows did not retain its primary failure classification."
     }
 
     $preflightDir = Join-Path $tempRoot "preflight-refused-hot"

@@ -41,6 +41,7 @@ function Read-OptionalLines {
 $effectiveProperties = [ordered]@{
     "rsx-cache-workers-effective.txt" = "2"
     "rsx-cache-preload-limit-effective.txt" = "256"
+    "rsx-cache-load-budget-effective.txt" = "500"
     "rsx-cache-compile-budget-effective.txt" = "0"
     "spu-cache-preload-limit-effective.txt" = "64"
     "spu-cache-compile-budget-effective.txt" = "100"
@@ -64,6 +65,7 @@ foreach ($entry in $effectiveProperties.GetEnumerator()) {
 $startupExpected = [ordered]@{
     "debug.rpcsx.thor.rsx_cache_workers" = "2"
     "debug.rpcsx.thor.rsx_cache_preload_limit" = "256"
+    "debug.rpcsx.thor.rsx_cache_load_budget_ms" = "500"
     "debug.rpcsx.thor.rsx_cache_compile_budget_ms" = "0"
     "debug.rpcsx.thor.spu_cache_preload_limit" = "64"
     "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "100"
@@ -119,6 +121,7 @@ $requiredReadmeLines = @(
     "- Max silicon temperature C: 72",
     "- RSX cache preload workers (0=auto): 2",
     "- RSX cached pipeline preload limit (0=all): 256",
+    "- RSX cached pipeline load budget ms (0=unbounded): 500",
     "- RSX cached pipeline compile budget ms (0=unbounded): 0",
     "- SPU cached-program preload limit (0=all): 64",
     "- SPU cached-program compile budget ms (0=unbounded): 100",
@@ -165,6 +168,8 @@ foreach ($file in $logFiles) {
 $guestLogText = $guestLogLines -join "`n"
 $activationRequirements = [ordered]@{
     "bounded RSX preload" = 'Android shader cache preload limit:\s*256 of'
+    "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*500 ms'
+    "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 500 ms budget; \d+ will load and compile on demand\.'
     "bounded SPU preload" = 'Thor SPU cache preload limit:\s*64 of'
     "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
@@ -203,7 +208,10 @@ $thermalFailureLines = @(
 )
 $preflightRefusalLines = @(
     $thermalLines |
-        Where-Object { $_ -match 'stage=pre-run-\d+-of-\d+' } |
+        Where-Object {
+            $_ -match 'stage=pre-run-\d+-of-\d+' -and
+            $_ -match 'status=failed'
+        } |
         ForEach-Object { $_.Trim() }
     $macroFailureLines |
         Where-Object { $_ -match "(?i)Stage 'pre-run-\d+-of-\d+'" } |

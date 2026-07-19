@@ -28,8 +28,8 @@ if ($sentinelCount -ne 2) {
 $compileClaim = 'while (((pos = next++) < stop_at) && !Emu.IsStopped())'
 $compileClaimCount = [regex]::Matches($cacheSource, [regex]::Escape($compileClaim)).Count
 $compileSentinelCount = [regex]::Matches($cacheSource, '(?m)^\s*next--;\s*$').Count
-if ($compileClaimCount -ne 1 -or $compileSentinelCount -ne 1) {
-    throw "Expected dynamic compile claims with a separate completion counter and one sentinel rollback."
+if ($compileClaimCount -ne 2 -or $compileSentinelCount -ne 2) {
+    throw "Expected budgeted load and compile claims with separate completion counters and sentinel rollbacks."
 }
 
 if (-not $cacheSource.Contains('if (!compile_budget_ms)') -or
@@ -50,7 +50,7 @@ $requiredCacheFragments = @(
     'worker_override == 0 || g_cfg.video.shader_compiler_threads_count == 0',
     'nb_workers = std::min<uint>(nb_workers, 2);',
     'rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);',
-    'load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, dlg);',
+    'load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, load_budget_ms, dlg);',
     'compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);',
     'lhs.mtime != rhs.mtime ? lhs.mtime < rhs.mtime : lhs.name < rhs.name',
     'entry_count = static_cast<u32>(preload_limit);',
@@ -105,4 +105,4 @@ if ($androidIndex -lt 0 -or $traceIndex -le $androidIndex -or $elseIndex -le $tr
     throw "Android Add-program logging is not trace-only with desktop notice behavior preserved."
 }
 
-Write-Output "Thor RSX cache preload contract passed: zero-valued auto override, managed auto profile migration, dynamic work sharing, two-load/two-compile Android auto mode, positive worker overrides, opt-in oldest-first pipeline limit, configured cache-miss fallback, trace-only Android program logging."
+Write-Output "Thor RSX cache preload contract passed: zero-valued auto override, managed auto profile migration, dynamic work sharing, default and budgeted load/compile paths, positive worker overrides, opt-in oldest-first pipeline and load-time limits, configured cache-miss fallback, trace-only Android program logging."

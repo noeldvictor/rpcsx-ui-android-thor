@@ -867,4 +867,34 @@ Put dated run details in `debug-experiments/`, not here.
   managed-profile/native successor later under separate no-launch and runtime
   rounds. Detailed ledger:
   `debug-experiments/20260719-thor-debug-managed-profile-gate.md`.
+- The one same-APK SPU-budget route
+  `20260719-190316-thor-input-custom` passed its strict preflight at
+  `34.3 -> 33.5 -> 33.9 C`, launched PID `30771` once, and force-stopped at
+  `71.1 C`, `7.186 s` after PID, before the title. The 100 ms SPU budget did
+  activate: `5/64` programs were built in about `0.183 s` and `59` retained
+  the normal on-demand path, versus `64/64` in about `1.679 s` previously.
+  The first sysmodule load advanced from about `10.555` to `3.968` emulator
+  seconds (`~6.59 s`), but this is startup-progress evidence only. The run
+  began up to `2.4 C` hotter, reached the same `61.8 C` first readiness sample,
+  and hit the guard sooner, so grant no title/FPS/flicker/gameplay/stability,
+  thermal-win, or end-to-end speed credit. Do not retry this device round.
+- The remaining measured early burst was RSX cache read/unpack/decompile:
+  about `1.892 s` from load start to compile start. A new Android-only,
+  BLUS30161-only, default-off `rsx_cache_load_budget_ms` stops claiming new
+  cache entries after `500 ms`; already-started entries finish and untouched
+  pipelines retain the unchanged on-demand load/compile path. The
+  `ThorCoolTitle` profile now requires `500 ms`, records exact property and
+  runtime activation evidence, and resets it on every exit. The analyzer also
+  correctly distinguishes normal preflight rows in a launched capture from a
+  real preflight refusal when the post-stop PID probe fails.
+- Exact uninstalled ARM64-only ThorTest successor
+  `54CC0C37...D82892` (`72,838,248` bytes) packages merged core
+  `406166AC...2F737E` (`1,304,689,712` bytes) as stripped core
+  `5F11CFD2...7CC10` (`63,015,752` bytes); the APK entry matches the stripped
+  hash and length. It also includes the managed-profile debug gate and native
+  phase-wait bypass absent from installed APK `5C3911D0...682CC6`. All `61/61`
+  host contracts and both ARM64 builds pass; no build worker remains. Install
+  only in a future cool no-launch round, then wait for another independently
+  cool round before one self-stopping runtime proof. Detailed ledger:
+  `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
