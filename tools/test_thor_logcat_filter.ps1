@@ -20,10 +20,11 @@ $requiredFilterFragments = @(
     'constexpr u32 priority_mask = 0xff;',
     'static std::atomic<u32> observed_property_serial{~u32{0}};',
     'static std::atomic<u32> packed_config{',
+    'enabled_bit | static_cast<u32>(ANDROID_LOG_WARN)};',
     'const u32 area_serial = __system_property_area_serial();',
     'observed_property_serial.load(std::memory_order_acquire) != area_serial',
     'android_property_enabled("debug.rpcsx.thor.logcat", true)',
-    'android_property_log_priority("log.tag.RPCS3", ANDROID_LOG_VERBOSE)',
+    'android_property_log_priority("log.tag.RPCS3", ANDROID_LOG_WARN)',
     'packed_config.store(next_config, std::memory_order_relaxed);',
     'observed_property_serial.store(area_serial, std::memory_order_release);',
     'const u32 config = packed_config.load(std::memory_order_relaxed);',
@@ -58,6 +59,10 @@ if ($source -notmatch 'if \(!android_logcat_allows\(prio\)\) \{\s+return;\s+\}\s
     throw "Android logs no longer pass through the filter immediately before logcat output."
 }
 
+if ($source -notmatch '__android_log_write\(ANDROID_LOG_FATAL, "RPCS3", buf\.c_str\(\)\);') {
+    throw "Crash handling no longer bypasses the regular logcat filter with a fatal report."
+}
+
 $requiredProfiles = @(
     '(?s)"Quiet"\s*\{.*?debug\.rpcsx\.thor\.logcat" "0".*?log\.tag\.RPCS3" "S".*?break',
     '(?s)"Normal"\s*\{.*?debug\.rpcsx\.thor\.logcat" "1".*?log\.tag\.RPCS3" "I".*?break',
@@ -83,4 +88,4 @@ foreach ($path in @($loggingToolPath, $PSCommandPath)) {
     }
 }
 
-Write-Output "Thor logcat filter contract passed: live controls use property-serial change detection, packed publication, and no per-message clock polling."
+Write-Output "Thor logcat filter contract passed: warning-safe default, direct fatal crash reports, live controls, packed publication, and no per-message clock polling."

@@ -356,7 +356,7 @@ static bool android_logcat_allows(int prio) noexcept {
   constexpr u32 priority_mask = 0xff;
   static std::atomic<u32> observed_property_serial{~u32{0}};
   static std::atomic<u32> packed_config{
-      enabled_bit | static_cast<u32>(ANDROID_LOG_VERBOSE)};
+      enabled_bit | static_cast<u32>(ANDROID_LOG_WARN)};
 
   // The property-area serial is a cheap change detector. Refreshing from it
   // preserves live logging controls without reading the clock on every log.
@@ -365,7 +365,7 @@ static bool android_logcat_allows(int prio) noexcept {
     const bool enabled =
         android_property_enabled("debug.rpcsx.thor.logcat", true);
     const int min_priority =
-        android_property_log_priority("log.tag.RPCS3", ANDROID_LOG_VERBOSE);
+        android_property_log_priority("log.tag.RPCS3", ANDROID_LOG_WARN);
     const u32 next_config = (enabled ? enabled_bit : 0u) |
                             (static_cast<u32>(min_priority) & priority_mask);
 

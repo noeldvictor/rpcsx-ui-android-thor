@@ -662,4 +662,22 @@ Put dated run details in `debug-experiments/`, not here.
   `stackable-cpu-pressure` credit only: no APK, ADB, device, FPS, temperature,
   flicker, gameplay, or runtime-stability credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-android-log-buffer.md`.
+- Android's native logcat listener now defaults to warning rather than
+  verbose when `debug.rpcsx.thor.logcat` and `log.tag.RPCS3` are unset. The
+  complete plain `RPCSX.log` still retains all levels; warning, TODO, error,
+  and fatal system-log output remains, and the direct fatal crash report still
+  bypasses the regular filter. Quiet, Normal, and Verbose profiles retain
+  explicit live overrides. Across 24 retained Thor logs, 87,813 level-marked
+  listener messages were observed; WARN preserves 16,732 and suppresses an
+  expected 71,081 (80.946%) system-log calls on the same mix. Host ARM64 proof
+  changes the packed initial state `0x80000002 -> 0x80000005`, changes the
+  unset-priority fallback `2 -> 5`, shrinks `LogListener::log`
+  `460 -> 452` bytes, and shrinks the core
+  `1,304,706,256 -> 1,304,706,248` bytes (`-8`). The property-area check,
+  dynamic property reads, one regular logcat callsite, 34 exports, and all 13
+  active frame-poll symbols remain; all 53 Thor contracts and ARM64
+  RelWithDebInfo pass. This is host-verified `stackable-cpu-pressure` only:
+  no APK, ADB, device, FPS, temperature, flicker, gameplay, or runtime credit
+  exists. Detailed ledger:
+  `debug-experiments/20260719-thor-android-logcat-warn-default.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
