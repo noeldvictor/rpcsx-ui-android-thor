@@ -89,6 +89,14 @@ threshold-2 field/battle route, recognizing partial counter progress reduced
 the call rate by 23.0% and fallback-sleep rate by 33.3% versus the first
 bounded-wait candidate.
 
+A matched 2 ms title experiment was rejected. It retained 60 FPS, but reached
+120,998 calls and 106,243 fallback sleeps by 52.741 s, versus 82,877 calls and
+52,801 fallback sleeps by 52.246 s with the 1 ms bound. Its 49 s host CPU
+sample also rose from 18.2% to 23.0%. The longer timeout reduced useful
+counter-progress observations from 588 to 249 and pushed more iterations back
+through the original 100 us fallback. Because 2 ms was already worse, the
+planned 4 ms test was not run and the 1 ms ceiling was retained.
+
 The refined first-battle host CPU samples were 22.6% at 120 s and 21.6% at
 150 s. The prior stock synchronization-profile route measured 25.8% and
 25.7% at the same checkpoints, a 14.2% reduction in the two-sample mean.
