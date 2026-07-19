@@ -352,28 +352,33 @@ static int android_property_log_priority(const char* name, int fallback) noexcep
 }
 
 static bool android_logcat_allows(int prio) noexcept {
-  static std::atomic<u64> next_check = 0;
-  static std::atomic<bool> enabled = true;
-  static std::atomic<int> min_priority = ANDROID_LOG_VERBOSE;
+  constexpr u32 enabled_bit = 1u << 31;
+  constexpr u32 priority_mask = 0xff;
+  static std::atomic<u32> observed_property_serial{~u32{0}};
+  static std::atomic<u32> packed_config{
+      enabled_bit | static_cast<u32>(ANDROID_LOG_VERBOSE)};
 
-  const u64 now = get_system_time();
-  u64 expected = next_check.load(std::memory_order_relaxed);
+  // The property-area serial is a cheap change detector. Refreshing from it
+  // preserves live logging controls without reading the clock on every log.
+  const u32 area_serial = __system_property_area_serial();
+  if (observed_property_serial.load(std::memory_order_acquire) != area_serial) {
+    const bool enabled =
+        android_property_enabled("debug.rpcsx.thor.logcat", true);
+    const int min_priority =
+        android_property_log_priority("log.tag.RPCS3", ANDROID_LOG_VERBOSE);
+    const u32 next_config = (enabled ? enabled_bit : 0u) |
+                            (static_cast<u32>(min_priority) & priority_mask);
 
-  if (now >= expected &&
-      next_check.compare_exchange_strong(expected, now + 1'000'000,
-                                         std::memory_order_relaxed)) {
-    enabled.store(android_property_enabled("debug.rpcsx.thor.logcat", true),
-                  std::memory_order_relaxed);
-    min_priority.store(
-        android_property_log_priority("log.tag.RPCS3", ANDROID_LOG_VERBOSE),
-        std::memory_order_relaxed);
+    packed_config.store(next_config, std::memory_order_relaxed);
+    observed_property_serial.store(area_serial, std::memory_order_release);
   }
 
-  if (!enabled.load(std::memory_order_relaxed)) {
+  const u32 config = packed_config.load(std::memory_order_relaxed);
+  if (!(config & enabled_bit)) {
     return false;
   }
 
-  const int threshold = min_priority.load(std::memory_order_relaxed);
+  const int threshold = static_cast<int>(config & priority_mask);
   return threshold < ANDROID_LOG_SILENT && prio >= threshold;
 }
 

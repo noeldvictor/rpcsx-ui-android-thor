@@ -609,4 +609,18 @@ Put dated run details in `debug-experiments/`, not here.
   device, FPS, temperature, flicker, gameplay, or stability credit exists.
   Detailed ledger:
   `debug-experiments/20260719-thor-disabled-prx-dump-overhead.md`.
+- Android's native logcat listener now uses the system-property area serial to
+  refresh live logging controls only when properties change, rather than
+  calling `get_system_time()` for every native log message and polling once
+  per second. Enable and minimum priority publish in one packed atomic;
+  default behavior, `debug.rpcsx.thor.logcat`, `log.tag.RPCS3`, level mapping,
+  actual logcat writes, and Quiet/Normal/Verbose switching remain unchanged.
+  Host ARM64 proof removes the selected clock call `1 -> 0`, adds one cheap
+  property-area-serial check, keeps both property-get callsites behind the
+  change branch, keeps `__android_log_write` `1 -> 1`, shrinks
+  `LogListener::log` 464 -> 460 bytes, and reduces filter state 13 -> 8 bytes.
+  All 50 Thor contracts and ARM64 RelWithDebInfo pass. This is host-verified
+  `stackable-cpu-pressure` only: no APK, ADB, device, FPS, temperature,
+  flicker, gameplay, or stability credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-logcat-property-serial-filter.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
