@@ -194,3 +194,72 @@ successful gate's one-path output, no-boot contract, force-stop behavior, and
 `35 C`/three-sample/`1 C`-rise thresholds are unchanged. The strict-gate and
 multi-sensor thermal contracts pass host-only. Do not attempt installation
 again until a later independently cool round.
+
+## Host-only managed-profile startup compaction
+
+No ADB command, device query, install, activity launch, or guest execution ran
+in this continuation. The preceding `48.2 C` install refusal therefore remains
+the last Thor contact and this work receives no device speed, temperature,
+flicker, title, gameplay, or stability credit.
+
+Source audit found two avoidable cold-start repeats in the future fail-closed
+managed-profile route:
+
+1. `ensureDatabaseExported` fully parsed the `292,581`-byte bundled settings
+   database and the local copy. It did not retain either parsed result when the
+   local copy was current, so `applyRecommendedConfigForTitleId` immediately
+   read and parsed the local database a second time. A normal cold managed boot
+   therefore performed up to three full JSON/profile-map parses.
+2. After reading the BLUS30161 managed YAML and building its exact expected
+   body, `applyRecommendedConfig` called `statusForTitleId`, which reread the
+   same file and rebuilt the same body before native boot.
+
+The host successor now:
+
+- reads only the trusted bundled header for its timestamp with a line-anchored
+  scan, while a missing/unrecognized timestamp safely falls back to the full
+  bundled parser, so the common path does not read the full bundled asset;
+- fully reads/parses only the selected current local database in the common
+  case and caches that exact validated `Database` snapshot for the debug gate;
+- promotes a newly exported bundled snapshot to the same local-cache identity
+  only after its write succeeds;
+- passes the already-read YAML snapshot and already-built expected body into
+  status evaluation after a successful no-op or write; and
+- retains disk re-evaluation on all error paths.
+
+Behavioral gates are unchanged: an existing user custom config is never
+overwritten, disabled/missing profiles remain not ready, exact timestamp and
+content staleness still set `applied=false`, and the Thor debug route still
+fails closed before `RPCSXActivity` unless `enabled=true` and `applied=true`.
+The managed BLUS30161 body still explicitly contains
+`Set DAZ and FTZ: true`.
+
+Host verification passed:
+
+- focused PPU FTZ/managed-profile, display-pacing, and cool-title contracts;
+- all `59/59` `tools/test_thor_*.ps1` contracts;
+- `:app:compileThortestKotlin` in `24.5 s`;
+- optimized ARM64-only `:app:assembleThortest` after final cleanup in `63 s`;
+- ARM64 ABI and optimized test-hook contracts;
+- exact merged-core and packaged-entry identity; and
+- no remaining Gradle, Java, Ninja, Clang, CMake, or emulator build process.
+
+Exact superseding uninstalled ThorTest APK:
+
+- path:
+  `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk`;
+- size: `72,839,316` bytes; and
+- SHA-256:
+  `24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2`.
+
+Its merged core is unchanged at `1,304,689,712` bytes and
+`406166AC0E027651E5284E293DC3ED00AC0144412CAD2DC3351930DEC72F737E`.
+The stripped core and exact APK entry are unchanged at `63,015,752` bytes and
+`5F11CFD2D10C8B7825F6D99FFC5214F61D2F68F0702CFB7A1FF6D1294E07CC10`.
+Only Kotlin/UI packaging changed.
+
+This exact APK supersedes uninstalled `54CC0C37...D82892`; do not install the
+older artifact. After a later independently cool interval, spend one round on
+the strict no-launch installer for `24FCC44E...736FE2`, proving matching
+on-device hash and absent PID, then stop. Reserve the single self-stopping
+`ThorCoolTitle` runtime proof for a different independently cool round.

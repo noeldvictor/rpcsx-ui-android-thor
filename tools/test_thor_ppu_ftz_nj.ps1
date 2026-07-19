@@ -25,6 +25,9 @@ $requiredFragments = @(
     @($managedProfilesSource, '"BLUS30161" to """'),
     @($managedProfilesSource, 'Set DAZ and FTZ: true'),
     @($managedProfilesSource, 'fun applyRecommendedConfigForTitleId(context: Context, titleId: String): Status'),
+    @($managedProfilesSource, 'val bundledTimestamp = readBundledDatabaseTimestamp(context)'),
+    @($managedProfilesSource, 'synchronized(lock) { cachedDatabase = ready }'),
+    @($managedProfilesSource, 'statusForConfigSnapshot('),
     @($mainActivitySource, 'GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)'),
     @($mainActivitySource, 'val managedProfileReady = settingsStatus?.let { it.enabled && it.applied } == true'),
     @($mainActivitySource, 'if (requireManagedProfile && !managedProfileReady)'),
@@ -71,4 +74,4 @@ if ($pushProfileCount -ne 4) {
     throw "Expected all four Eternal Sonata profile templates to enable hardware FTZ; found $pushProfileCount."
 }
 
-Write-Output "Thor PPU FTZ/NJ contract passed: hardware FTZ is BLUS30161-only, debug boots fail closed unless its managed profile is applied, ARM64 extrema use direct hardware lowering, four sensitive ops retain manual flushing, and PPU cache identity is distinct."
+Write-Output "Thor PPU FTZ/NJ contract passed: hardware FTZ is BLUS30161-only, debug boots reuse one validated managed-profile snapshot and fail closed unless it is applied, ARM64 extrema use direct hardware lowering, four sensitive ops retain manual flushing, and PPU cache identity is distinct."

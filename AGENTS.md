@@ -910,4 +910,23 @@ Put dated run details in `debug-experiments/`, not here.
   unchanged. Exact successor `54CC0C37...D82892` remains uninstalled and must
   wait for a later independently cool install-only round. Detailed ledger:
   `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
+- Supersede uninstalled ThorTest `54CC0C37...D82892` before installation.
+  Cold managed-profile boot had parsed the `292,581`-byte settings database
+  up to three full times: bundled and local during export, then local again
+  at the fail-closed debug gate. It now reads only the trusted bundled header
+  for its timestamp, falls back to a full bundled parse if that fast path
+  cannot validate, caches the selected local snapshot, and reuses it. The
+  managed YAML is also read and its expected body built once rather than
+  reread/rebuilt after a successful no-op or write. Existing custom configs
+  remain untouched, exact content/timestamp staleness still fails closed, and
+  write failures still recheck disk state. All `59/59` `test_thor_*.ps1`
+  contracts, ThorTest Kotlin compile, optimized ARM64-only packaging, ABI,
+  variant, merged-core, and APK-entry identity checks pass. Exact host-only
+  successor `24FCC44E...736FE2` is `72,839,316` bytes and retains merged core
+  `406166AC...2F737E` / stripped entry `5F11CFD2...7CC10` byte-for-byte. It is
+  uninstalled/device-unmeasured; installed APK remains `5C3911D0...682CC6`,
+  no ADB/device action ran, and no speed or thermal credit exists. Only a
+  later independently cool no-launch round may install `24FCC44E...736FE2`;
+  runtime proof remains reserved for another cool round. Detailed ledger:
+  `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

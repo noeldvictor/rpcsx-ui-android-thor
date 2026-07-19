@@ -21,6 +21,7 @@ object GameSettingsDatabase {
     private const val TIMESTAMP_HEADER = "# Database timestamp: "
     private const val SOURCE_URL = "https://api.rpcs3.net/config/?api=v1"
     private val thorUnsafeSpuAsmjit = Regex("""^(\s*SPU Decoder:\s*)Recompiler \(ASMJIT\)\s*$""")
+    private val databaseTimestampPattern = Regex("""^\s*"timestamp"\s*:\s*(\d+)\s*,?\s*$""")
 
     private val lock = Any()
     private var cachedDatabase: Database? = null
@@ -99,21 +100,31 @@ object GameSettingsDatabase {
 
     fun ensureDatabaseExported(context: Context): Boolean {
         return runCatching {
-            val bundledText = readBundledDatabaseText(context)
-            val bundled = parseDatabase(
-                json = bundledText,
-                source = DatabaseSource.BundledSnapshot,
-                cachePath = null
-            )
+            val bundledTimestamp = readBundledDatabaseTimestamp(context)
             val local = readLocalDatabase(context)
+            var selected = local
 
-            if (local == null || local.timestamp < bundled.timestamp) {
-                val target = localDatabaseFile(context)
-                target.parentFile?.mkdirs()
-                target.writeText(bundledText)
-                synchronized(lock) { cachedDatabase = null }
+            if (local == null || bundledTimestamp == null || local.timestamp < bundledTimestamp) {
+                val bundledText = readBundledDatabaseText(context)
+                val bundled = parseDatabase(
+                    json = bundledText,
+                    source = DatabaseSource.BundledSnapshot,
+                    cachePath = null
+                )
+
+                if (local == null || local.timestamp < bundled.timestamp) {
+                    val target = localDatabaseFile(context)
+                    target.parentFile?.mkdirs()
+                    target.writeText(bundledText)
+                    selected = bundled.copy(
+                        source = DatabaseSource.LocalCache,
+                        cachePath = target.absolutePath
+                    )
+                }
             }
 
+            val ready = checkNotNull(selected) { "No usable config database was selected" }
+            synchronized(lock) { cachedDatabase = ready }
             true
         }.getOrElse {
             Log.w(TAG, "Could not prepare local config database cache", it)
@@ -203,17 +214,39 @@ object GameSettingsDatabase {
         }
 
         val profileConfig = database?.profiles?.get(titleId)
-        val hasProfile = profileConfig != null
         val target = customConfigFile(titleId)
-        val disabled = isDisabled(context, titleId)
         val configText = target?.takeIf { it.exists() }?.readText()
-        val managed = configText?.startsWith(MANAGED_HEADER) == true
-        val managedTimestamp = managedConfigTimestamp(configText)
-        val expectedManagedConfig = if (database?.timestamp != null && profileConfig != null) {
+        val expectedManagedConfig = if (
+            configText?.startsWith(MANAGED_HEADER) == true &&
+            database?.timestamp != null &&
+            profileConfig != null
+        ) {
             buildManagedConfig(titleId, database.timestamp, profileConfig)
         } else {
             null
         }
+        return statusForConfigSnapshot(
+            context,
+            titleId,
+            database,
+            target,
+            configText,
+            expectedManagedConfig
+        )
+    }
+
+    private fun statusForConfigSnapshot(
+        context: Context,
+        titleId: String,
+        database: Database?,
+        target: File?,
+        configText: String?,
+        expectedManagedConfig: String?
+    ): Status {
+        val hasProfile = database?.profiles?.containsKey(titleId) == true
+        val disabled = isDisabled(context, titleId)
+        val managed = configText?.startsWith(MANAGED_HEADER) == true
+        val managedTimestamp = managedConfigTimestamp(configText)
         val timestampStale = database?.timestamp != null &&
             managedTimestamp != null &&
             managedTimestamp != database.timestamp
@@ -298,7 +331,7 @@ object GameSettingsDatabase {
             val existing = target.takeIf { it.exists() }?.readText()
             if (existing != null && !existing.startsWith(MANAGED_HEADER)) {
                 if (!replaceCustomConfig) {
-                    statusForTitleId(context, titleId)
+                    statusForConfigSnapshot(context, titleId, database, target, existing, null)
                 } else {
                     backupCustomConfig(target)
                     val body = buildManagedConfig(titleId, database.timestamp, config)
@@ -307,7 +340,7 @@ object GameSettingsDatabase {
                         .edit()
                         .putBoolean(DISABLED_PREFIX + titleId, false)
                         .apply()
-                    statusForTitleId(context, titleId)
+                    statusForConfigSnapshot(context, titleId, database, target, body, body)
                 }
             } else {
                 val body = buildManagedConfig(titleId, database.timestamp, config)
@@ -316,7 +349,7 @@ object GameSettingsDatabase {
                     target.writeText(body)
                 }
 
-                statusForTitleId(context, titleId)
+                statusForConfigSnapshot(context, titleId, database, target, body, body)
             }
         }.getOrElse {
             Log.w(TAG, "Could not apply recommended settings for $titleId", it)
@@ -394,6 +427,21 @@ object GameSettingsDatabase {
 
     private fun readBundledDatabaseText(context: Context): String =
         context.assets.open(ASSET_PATH).bufferedReader().use { it.readText() }
+
+    private fun readBundledDatabaseTimestamp(context: Context): Long? {
+        context.assets.open(ASSET_PATH).bufferedReader().use { reader ->
+            repeat(16) {
+                val line = reader.readLine() ?: return null
+                val timestamp = databaseTimestampPattern
+                    .matchEntire(line)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.toLongOrNull()
+                if (timestamp != null) return timestamp
+            }
+        }
+        return null
+    }
 
     private fun parseDatabase(
         json: String,
