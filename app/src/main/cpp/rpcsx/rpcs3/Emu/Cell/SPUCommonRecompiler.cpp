@@ -1216,6 +1216,14 @@ void spu_cache::initialize(bool build_existing_cache)
 
 #ifdef __ANDROID__
 	const u64 cache_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());
+	if (cache_worker_affinity_mask && worker_count)
+	{
+		const u32 requested_worker_count = worker_count;
+		const u32 affinity_worker_count = static_cast<u32>(std::popcount(cache_worker_affinity_mask));
+		worker_count = std::min(worker_count, affinity_worker_count);
+		spu_log.notice("Thor SPU cache-worker pool matched to affinity: requested=%u, workers=%u, mask=0x%x.",
+			requested_worker_count, worker_count, cache_worker_affinity_mask);
+	}
 	atomic_t<bool> cache_worker_affinity_logged = false;
 #endif
 

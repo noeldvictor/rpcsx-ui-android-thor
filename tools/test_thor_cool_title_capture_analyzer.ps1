@@ -160,6 +160,7 @@ function Write-ReadyFixture {
         "Shader cache preload workers: load=2, compile=2",
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
+        "Thor SPU cache-worker pool matched to affinity: requested=8, workers=3, mask=0x7.",
         "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes).",
         "Android startup cache phase pacing: SPU preload complete after 401 ms; starting RSX pipeline compilation."
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8

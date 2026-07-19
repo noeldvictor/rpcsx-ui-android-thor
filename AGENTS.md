@@ -766,7 +766,7 @@ Put dated run details in `debug-experiments/`, not here.
   shell snapshot records all 26 exact cache, affinity, quiet-log, disabled
   experiment, and frame-wait properties without adding 26 round trips.
   `tools/analyze_thor_cool_title_capture.ps1` fails closed unless those values,
-  seven runtime activation rows, two-frame title stabilization, the final title
+  eight runtime activation rows, two-frame title stabilization, the final title
   image, fatal cleanliness, thermal cleanliness, and force-stop evidence all
   agree. The rejected `20260719-163325-thor-input-custom` capture classifies as
   `thermal-stop-before-title` at `68.7 C`, with the old zero-valued controls
@@ -774,4 +774,17 @@ Put dated run details in `debug-experiments/`, not here.
   route-duration and evidence-hardening work: no ADB/device action or runtime
   speed/temperature/flicker/stability credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-cool-title-proof-gate.md`.
+- BLUS30161 Android startup SPU preload now matches its worker pool to the
+  opt-in cache-affinity mask before constructing LLVM workers. With the
+  `ThorCoolTitle` `0x07` mask on the eight-thread Thor, the bounded 64-program
+  preload requests up to eight workers but creates three for the three A510
+  cores, avoiding five oversubscribed compiler threads/contexts. Mask-off
+  Android, other titles, desktop, SPU semantics, cache identity, and runtime
+  misses are unchanged. The route analyzer now requires the `workers=3,
+  mask=0x7` activation row. All 58 Thor contracts and incremental ARM64
+  RelWithDebInfo pass; the build took 66.6 seconds. This is host-verified
+  startup contention/memory-pressure reduction only: no APK/ADB/device action
+  or runtime speed/temperature/flicker/stability credit exists. Detailed
+  ledger:
+  `debug-experiments/20260719-thor-spu-affinity-worker-cap.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

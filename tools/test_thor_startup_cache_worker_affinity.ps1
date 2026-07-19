@@ -54,6 +54,9 @@ if ($rsxSet -lt 0 -or $rsxWork -le $rsxSet) {
 
 foreach ($fragment in @(
     'cache_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());',
+    'std::popcount(cache_worker_affinity_mask)',
+    'worker_count = std::min(worker_count, affinity_worker_count);',
+    'Thor SPU cache-worker pool matched to affinity',
     'named_thread_group workers("SPU Worker ", worker_count',
     'thread_ctrl::set_thread_affinity_mask(cache_worker_affinity_mask);',
     'Thor SPU cache-worker affinity enabled',
@@ -64,6 +67,12 @@ foreach ($fragment in @(
 }
 
 $spuSet = $spu.IndexOf('thread_ctrl::set_thread_affinity_mask(cache_worker_affinity_mask);')
+$spuPoolCap = $spu.IndexOf('worker_count = std::min(worker_count, affinity_worker_count);')
+$spuWorkerGroup = $spu.IndexOf('named_thread_group workers("SPU Worker ", worker_count')
+if ($spuPoolCap -lt 0 -or $spuWorkerGroup -le $spuPoolCap) {
+    throw "SPU cache-worker pool is not capped to the requested affinity before workers are created."
+}
+
 $spuCompiler = $spu.IndexOf('compiler->init();', $spuSet)
 if ($spuSet -lt 0 -or $spuCompiler -le $spuSet) {
     throw "SPU cache worker does not apply affinity before LLVM initialization/compilation."

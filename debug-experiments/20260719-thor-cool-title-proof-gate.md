@@ -60,8 +60,8 @@ silently qualify.
 - two consecutive title-ready classifications from the PPU-ready gate;
 - a final `*-title-proof.png` that independently classifies as the title menu;
 - no macro failure, thermal `status=failed`, guest fatal, or activation fallback;
-- runtime rows proving RSX/SPU bounds `256/64`, two RSX workers, exact `0x07`
-  RSX/SPU affinity, warm Vulkan hit-only preload, and SPU-before-RSX pacing.
+- runtime rows proving RSX/SPU bounds `256/64`, two RSX workers, three SPU
+  workers, exact `0x07` affinity, warm Vulkan hit-only preload, and phase pacing.
 
 Its statuses distinguish thermal stop, fatal, missing/invalid title evidence,
 incomplete activation, and a valid title proof. Even the valid state sets

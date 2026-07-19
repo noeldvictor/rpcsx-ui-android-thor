@@ -167,6 +167,7 @@ $activationRequirements = [ordered]@{
     "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
     "SPU efficiency-core affinity" = 'Thor SPU cache-worker affinity enabled:\s*requested=0x7, effective=0x7'
+    "three SPU preload workers" = 'Thor SPU cache-worker pool matched to affinity:\s*requested=\d+, workers=3, mask=0x7'
     "warm Vulkan hit-only preload" = 'Vulkan preload cache-hits-only enabled for validated warm seed'
     "SPU-before-RSX phase pacing" = 'Android startup cache phase pacing: SPU preload complete after \d+ ms; starting RSX pipeline compilation'
 }
