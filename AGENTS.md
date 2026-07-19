@@ -803,4 +803,18 @@ Put dated run details in `debug-experiments/`, not here.
   exact APK through the strict no-launch gate; do not launch in that round.
   Detailed ledger:
   `debug-experiments/20260719-thor-spu-cap-host-candidate-apk.md`.
+- Exact APK `5C3911D0...682CC6` is now installed on Thor under the strict
+  no-launch boundary. Fresh gate
+  `20260719-181421-thor-input-custom` passed `31.7 -> 31.5 -> 31.1 C`
+  silicon (maximum `31.7 C`, rise `-0.6 C`), battery `22.0 C`, skin `30.0 C`,
+  with `BootGame=False` and `ForceStop=True`. Install capture
+  `20260719-181508-spu-cap-thortest-apk-install` proves host/on-device hashes
+  match, PID was absent before/after, controls are reset, no activity launch
+  occurred, and post-install temperature was `34.5 C` silicon / `22.0 C`
+  battery / `30.0 C` skin. Stop this device round here: do not query or launch
+  again. After a separate cooling interval, the only allowed runtime step is
+  one self-stopping `ThorCoolTitle` proof under the `35 C` launch and
+  `68/72 C` early/hard thermal gates. Installation grants no speed, FPS,
+  temperature, flicker, gameplay, or stability credit. Detailed ledger:
+  `debug-experiments/20260719-thor-spu-cap-no-launch-install.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
