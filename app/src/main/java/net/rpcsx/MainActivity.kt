@@ -16,6 +16,7 @@ import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.performance.CacheStorageManager
 import net.rpcsx.performance.ThorPerformanceProfile
 import net.rpcsx.ui.navigation.AppNavHost
+import net.rpcsx.utils.GameIdentity
 import net.rpcsx.utils.GeneralSettings
 import net.rpcsx.utils.GitHub
 import net.rpcsx.utils.RpcsxUpdater
@@ -59,7 +60,9 @@ class MainActivity : ComponentActivity() {
         }
 
         val gamePath = sourceIntent.getStringExtra("path")
+        val displayPacingEnabled = sourceIntent.getBooleanExtra("thorDisplayPacing", true)
         sourceIntent.removeExtra("path")
+        sourceIntent.removeExtra("thorDisplayPacing")
         if (gamePath.isNullOrBlank()) {
             Log.e("RPCSX-UI", "Thor debug boot requested without path")
             return
@@ -71,10 +74,13 @@ class MainActivity : ComponentActivity() {
         }
 
         Log.i("RPCSX-UI", "Thor debug boot through MainActivity: $gamePath")
-        startActivity(
-            Intent(this, RPCSXActivity::class.java)
-                .putExtra("path", gamePath)
-        )
+        val emulatorWindow = Intent(this, RPCSXActivity::class.java)
+            .putExtra("path", gamePath)
+            .putExtra("thorDisplayPacing", displayPacingEnabled)
+        GameRepository.find(gamePath)?.let(GameIdentity::primaryTitleId)?.let {
+            emulatorWindow.putExtra("titleId", it)
+        }
+        startActivity(emulatorWindow)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

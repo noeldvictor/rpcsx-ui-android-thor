@@ -19,9 +19,10 @@ import net.rpcsx.databinding.ActivityRpcs3Binding
 import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.input.SixaxisMotionController
 import net.rpcsx.overlay.State
-import net.rpcsx.utils.InputBindingPrefs
+import net.rpcsx.performance.ThorDisplayPacing
 import net.rpcsx.performance.ThorPerformanceProfile
 import net.rpcsx.utils.ControllerOverlayPrefs
+import net.rpcsx.utils.InputBindingPrefs
 import java.lang.ref.WeakReference
 import kotlin.concurrent.thread
 import kotlin.math.abs
@@ -107,6 +108,13 @@ class RPCSXActivity : Activity() {
         }
 
         val gamePath = intent.getStringExtra("path")!!
+        val preferredFrameRate = ThorDisplayPacing.targetFrameRate(
+            isThorTarget = ThorPerformanceProfile.isThorTarget(),
+            titleId = intent.getStringExtra("titleId"),
+            gamePath = gamePath,
+            enabled = intent.getBooleanExtra("thorDisplayPacing", true)
+        )
+        binding.surfaceView.setPreferredFrameRate(preferredFrameRate)
         RPCSX.lastPlayedGame = gamePath
 
         bootThread = thread {

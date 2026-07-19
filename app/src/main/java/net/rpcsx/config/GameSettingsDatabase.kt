@@ -56,6 +56,7 @@ object GameSettingsDatabase {
               Multithreaded RSX: false
               Shader Compiler Threads: 0
               Vulkan:
+                Force FIFO present mode: true
                 VRAM allocation limit (MB): 3072
               Performance Overlay:
                 Enabled: true

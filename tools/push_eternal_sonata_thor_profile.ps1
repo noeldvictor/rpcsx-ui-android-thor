@@ -6,6 +6,8 @@ param(
     [int]$VramMb = 3072,
     [ValidateRange(0, 8)]
     [int]$ShaderCompilerThreads = 0,
+    [ValidateSet("On", "Off")]
+    [string]$ForceFifoPresent = "Off",
     [switch]$PpuReservationPriority,
     [switch]$StopApp,
     [switch]$LaunchApp
@@ -56,6 +58,7 @@ $remoteConfig = "$remoteDir/config_BLUS30161.yml"
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $remoteBackup = "$remoteDir/config_BLUS30161.pre-thor-speed-$timestamp.yml"
 $ppuReservationPriorityValue = if ($PpuReservationPriority) { "true" } else { "false" }
+$forceFifoPresentValue = if ($ForceFifoPresent -eq "On") { "true" } else { "false" }
 
 $schedulerMode = "Operating System"
 $affinityNote = "OS scheduler/process affinity only."
@@ -142,6 +145,7 @@ Video:
   Shader Compiler Threads: $ShaderCompilerThreads
   Driver Wake-Up Delay: 1
   Vulkan:
+    Force FIFO present mode: $forceFifoPresentValue
     Asynchronous Texture Streaming 2: false
     Asynchronous Queue Scheduler: Safe
     VRAM allocation limit (MB): $VramMb
@@ -164,6 +168,7 @@ Video:
   Disable On-Disk Shader Cache: false
   Shader Compiler Threads: $ShaderCompilerThreads
   Vulkan:
+    Force FIFO present mode: $forceFifoPresentValue
     VRAM allocation limit (MB): $VramMb
   Performance Overlay:
     Enabled: true
@@ -203,6 +208,7 @@ ${rsxThreadedLine}  Accurate ZCULL stats: false
   Disable On-Disk Shader Cache: false
   Shader Compiler Threads: $ShaderCompilerThreads
   Vulkan:
+    Force FIFO present mode: $forceFifoPresentValue
     VRAM allocation limit (MB): $VramMb
   Performance Overlay:
     Enabled: true
@@ -234,6 +240,7 @@ Video:
   Disable On-Disk Shader Cache: false
   Shader Compiler Threads: $ShaderCompilerThreads
   Vulkan:
+    Force FIFO present mode: $forceFifoPresentValue
     VRAM allocation limit (MB): $VramMb
   Performance Overlay:
     Enabled: true

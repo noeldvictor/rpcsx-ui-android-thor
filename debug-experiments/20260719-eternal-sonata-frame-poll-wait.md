@@ -219,3 +219,68 @@ thermal guard:
 
 Until that measurement passes, keep the feature opt-in and do not claim a
 Thor temperature reduction.
+
+## Android presentation and panel-power follow-up
+
+Saved Thor logs make the display path a concrete follow-up rather than a
+rendering guess:
+
+- repeated captures report `Swapchain: present mode 1 in use` while the
+  effective config reports `Force FIFO present mode: false`;
+- Vulkan defines mode 1 as MAILBOX and mode 2 as FIFO;
+- the May 16 live observation reported panel flicker, while screenshots and
+  10 FPS extraction did not expose a black or missing-texture frame;
+- later still screenshots were clean but cannot prove temporal absence.
+
+Current upstream RPCS3 was audited again at `origin/master` `a7d90852d`. The
+March 2026 tri-state VSync commit `e690e7e45` replaces the old force-FIFO
+setting but does not add Android frame-rate requests. Full VSync still maps to
+FIFO. No newer official ARM64/RSX change was found that supersedes the fork's
+already-adapted wait, checksum, worker-recycling, or Vulkan fixes.
+
+Android's February 2026 power guidance says a display rate above the game's
+target has no gameplay benefit and increases panel power. Its refresh-rate
+guide recommends `setFrameRate()` at game-window initialization and warns that
+requesting a rate above attainable FPS wastes power and raises temperature.
+The Surface API accepts a 30 FPS request even when the display only exposes a
+60 Hz mode, allowing Android to select a compatible multiple.
+
+Implemented candidate, scoped to `BLUS30161` on a detected AYN/Thor target:
+
+- request 30 FPS on the gameplay `Surface` before boot;
+- allow only seamless display-mode changes on API 31+;
+- use fixed-source compatibility through Android 15 and game/default
+  compatibility on Android 16+;
+- set the managed Eternal Sonata Vulkan profile to FIFO;
+- retain system defaults for every other title and non-Thor device;
+- expose `-ThorDisplayPacing on|off` and `-ForceFifoPresent On|Off` so a
+  single installed APK can run a short combined A/B without reinstall churn.
+
+Host verification:
+
+- `ThorDisplayPacingTest`: passed title, path-normalization, non-Thor,
+  other-title, and explicit-off gates;
+- `tools/test_thor_display_pacing.ps1`: passed API, title gate, FIFO, A/B
+  plumbing, and PowerShell parser contracts;
+- Thor-test APK packaged successfully without install, launch, or ADB access;
+- artifact:
+  `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk`;
+- size: 73,710,702 bytes (ARM64-only);
+- SHA-256:
+  `52549D7C26CA3A70DF99EA8765AE91317764472BE36052FC8E97C180C5E75D13`;
+- APK contents verified for the manifest, DEX, ARM64 core, and JNI library.
+- ARM64-only APK, optimized test-hook, multi-sensor thermal-guard, and v2
+  signing contracts passed.
+
+Research:
+
+- https://developer.android.com/games/optimize/power
+- https://developer.android.com/games/optimize/display-refresh-rate-change
+- https://developer.android.com/reference/android/view/Surface
+- https://registry.khronos.org/vulkan/specs/latest/html/vkspec.html
+
+This is not yet a measured Thor speed, flicker, power, or temperature win.
+When the device is explicitly cool, use one bounded historical-baseline versus
+combined-candidate comparison, with the existing preflight and runtime thermal
+stops. Do not run a four-cell decomposition unless the combined candidate
+regresses or the result is ambiguous.

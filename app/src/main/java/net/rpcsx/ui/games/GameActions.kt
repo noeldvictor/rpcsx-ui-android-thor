@@ -20,6 +20,7 @@ import net.rpcsx.RPCSXActivity
 import net.rpcsx.config.GameSettingsDatabase
 import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.performance.ThorPerformanceProfile
+import net.rpcsx.utils.GameIdentity
 import kotlin.concurrent.thread
 
 @Composable
@@ -123,5 +124,6 @@ private fun launchGame(
     GameRepository.onBoot(game)
     val emulatorWindow = Intent(context, RPCSXActivity::class.java)
     emulatorWindow.putExtra("path", game.info.path)
+    GameIdentity.primaryTitleId(game)?.let { emulatorWindow.putExtra("titleId", it) }
     context.startActivity(emulatorWindow)
 }

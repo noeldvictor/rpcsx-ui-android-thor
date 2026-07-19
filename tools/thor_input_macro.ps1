@@ -58,6 +58,8 @@ param(
     [string]$EsPpuDispatchProbe = "off",
     [ValidateSet("off", "verify", "repair")]
     [string]$EsAsyncDrawBarrier = "off",
+    [ValidateSet("on", "off")]
+    [string]$ThorDisplayPacing = "on",
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot,
@@ -130,6 +132,7 @@ $safeProfile = New-ThorSafeLabel $Profile
 $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-thor-input-$safeProfile"
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
 $strictGuestDrawStream = $Profile -eq "eternal-sonata-battle-intro-route" -and -not $AllowUnknownDraw
+$thorDisplayPacingValue = if ($ThorDisplayPacing -eq "on") { "true" } else { "false" }
 
 $keyAliases = @{
     "a" = "KEYCODE_BUTTON_A"
@@ -803,6 +806,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Profile: $Profile",
     "- Game path: $GamePath",
     "- Display: $Display",
+    "- Thor display pacing: $ThorDisplayPacing",
     "- Input mode requested: $requestedInputMode",
     "- Input mode: $InputMode",
     "- Battle profile forced direct input: $profileForcesDirectInput",
@@ -907,7 +911,7 @@ if ($BootGame) {
     Start-Sleep -Milliseconds 500
 
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
-    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
     Initialize-ThorProcessIdentity
 }
 
