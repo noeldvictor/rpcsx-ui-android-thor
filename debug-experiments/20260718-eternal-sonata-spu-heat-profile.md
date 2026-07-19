@@ -240,3 +240,63 @@ cross-domain stalls rather than a single long PPU, SPU, or RSX body.
 
 This follow-up improves attribution and route reliability. It still earns no
 FPS, temperature, flicker, or device-runtime credit.
+
+## Follow-up: Clean First-Battle PPU/RSX Profile
+
+The repaired Windows launcher completed one bounded 155-second state-aware run
+with the already selected one-millisecond Eternal Sonata frame-poll wait:
+
+- capture: `20260719-032927-es-ppu-rsx-framewait-clean-first-battle-profile`;
+- title menu gate: 48 seconds at approximately 60 FPS;
+- Path to Tenuto load target: 61 seconds;
+- load complete: 72 seconds;
+- clean field: 75 seconds at approximately 30 FPS;
+- first-battle prompt: 89 seconds;
+- battle active: 95 seconds;
+- battle live: 106 seconds; and
+- later battle screenshots through 140 seconds: approximately 30 FPS.
+
+The host and external-contention gates passed. The fatal scan found no unknown
+draw command, access violation, Vulkan device loss, assertion, or verification
+failure. The only text containing `fatal` was the configured
+`Show fatal error hints: false` setting.
+
+Battle snapshots 10 through 16 kept the PPU conclusion unchanged. Their
+largest aggregate rows were:
+
+| CIA | Samples | Entries | Samples per entry |
+|---:|---:|---:|---:|
+| `0x002a8304` | 1,957 | 1,944 | 1.007 |
+| `0x002a8300` | 1,167 | 1,164 | 1.003 |
+| `0x003d4ae0` | 494 | 493 | 1.002 |
+| `0x002d74e0` | 478 | 478 | 1.000 |
+| `0x00cd90a0` | 460 | 431 | 1.067 |
+
+The leading two addresses are the already optimized frame-poll loop. A prior
+matched comparison selected a one-millisecond wait and rejected two
+milliseconds. The remaining guest blocks are too fragmented to justify a new
+native PPU superpath.
+
+The same battle windows reported 300 or 301 frames per ten seconds and roughly
+565 draw calls per frame. Average RSX stage times were:
+
+- setup: 539 to 578 microseconds;
+- vertex upload: 384 to 399 microseconds;
+- texture upload: 455 to 487 microseconds;
+- draw: 50 to 55 microseconds; and
+- flip: 624 to 638 microseconds.
+
+This is approximately 2.1 milliseconds of accounted RSX work in a 33.3
+millisecond frame. It is not evidence for an RSX-side 30 FPS limiter. Do not
+promote an upload-cache, draw, or present superpath from this trace.
+
+### Final attribution decision
+
+The clean battle trace rejects the remaining single-body PPU, SPU, and RSX
+leads. Keep the proven one-millisecond frame-poll wait as the current
+low-wakeup candidate. Any next performance change must target a measured
+cross-domain scheduling or synchronization cost and preserve field, battle,
+and menu correctness.
+
+This is host-only attribution. It adds no Thor FPS or temperature claim, and
+no ADB, install, launch, or device telemetry operation occurred.
