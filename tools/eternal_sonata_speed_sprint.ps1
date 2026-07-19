@@ -266,10 +266,10 @@ function Get-SpeedWindowsSceneMacro {
         }
         "menu" {
             # Full title Options page, not the weaker field Pause overlay.
-            # First settle/skip to the title menu, then wait for the Options
-            # selection to stabilize before opening it. Shorter timing can miss
-            # the full Options page and fall into intro playback.
-            return "wait:65000;cross:180;wait:9000;shot:100;down:220;wait:1000;shot:100;down:220;wait:16000;shot:100;cross:180;wait:8000;shot:100;wait:6000;shot:100"
+            # Gate on the visible title menu, then clamp the cursor to the
+            # bottom with three 120 ms pulses. The old cutscene-timed route and
+            # 20 ms uncapped-FPS pulses were not reliable at the 60 FPS cap.
+            return "wait:45000;gate_title_menu:60000;shot:title-preinput;down:120;wait:250;down:120;wait:250;down:120;wait:800;shot:title-options-selected;cross:180;wait:2000;shot:options-page;wait:10000;shot:options-hold"
         }
         "battle" {
             if ($BattleLoadRoute -eq "StateAware") {

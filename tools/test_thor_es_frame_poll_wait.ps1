@@ -163,6 +163,10 @@ foreach ($fragment in @(
     'EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs',
     'debug.rpcsx.thor.es_frame_wait',
     'debug.rpcsx.thor.es_frame_wait_grace_us',
+    'down:120;wait:250;down:120;wait:250;down:120;wait:800',
+    'shot:title-options-selected',
+    'shot:options-page',
+    'shot:options-hold',
     '$framePollWaitMode'
 )) {
     if (-not $sprintSource.Contains($fragment)) {

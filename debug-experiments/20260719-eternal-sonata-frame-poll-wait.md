@@ -136,6 +136,7 @@ an outlier.
 Correctness gates passed:
 
 - title menu at 60 FPS;
+- full title Options page at 60 FPS plus a clean ten-second hold;
 - Path to Tenuto save target and load completion;
 - playable Path to Tenuto field;
 - first-battle prompt, active battle, live battle, and hold;
@@ -150,6 +151,14 @@ Evidence:
 - `debug-captures/windows-lab/20260719-042237-es-frame-poll-handler-grace0-title`
 - `debug-captures/windows-lab/20260719-042357-es-frame-poll-handler-grace500-title`
 - `debug-captures/windows-lab/20260719-042613-es-frame-poll-handler-grace500-first-battle`
+- `debug-captures/windows-lab/20260719-044904-es-frame-poll-handler-grace500-options-proof-clamped`
+
+The speed wrapper's older menu macro was repaired after it exposed two route
+assumptions rather than emulator failures: cutscene-timed input could fire
+before the title menu appeared, and 20 ms pulses from an old 240 FPS capture
+could be lost at the current 60 FPS cap. The retained macro first gates on the
+visible title menu, then uses three 120 ms Down pulses to clamp the cursor to
+Options before capturing both the page and hold frames.
 
 ## Build and regression verification
 
