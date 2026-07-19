@@ -51,10 +51,15 @@ RelWithDebInfo target and `1w3q4u6x` output path.
 | --- | ---: | ---: | ---: |
 | `file_writer::file_writer` | 904 | 412 | -492 |
 | `file_writer::~file_writer` | 428 | 216 | -212 |
-| `file_writer::flush` | 448 | 228 | -220 |
+| `file_writer::flush` | 448 | 276 | -172 |
 | `file_writer::log` | 468 | 460 | -8 |
 | `file_writer::close_prematurely` | 468 | 228 | -240 |
-| **Selected total** | **2,716** | **1,544** | **-1,172** |
+| **Selected total** | **2,716** | **1,592** | **-1,124** |
+
+Measurement correction: the first draft converted hexadecimal size `0x114`
+as 228 rather than the correct 276 bytes. This table now records the correct
+decimal value; the binary, compression-call inventory, tests, and decision
+are unchanged.
 
 Direct ARM64 call inventories changed as expected:
 

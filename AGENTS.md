@@ -628,11 +628,24 @@ Put dated run details in `debug-experiments/`, not here.
   desktop dual-output behavior is unchanged. Host ARM64 proof removes every
   selected `deflateInit2`/`deflate`/`deflateEnd`/`fchmod` call from logger
   construction, flush, shutdown, and premature close while preserving the
-  plain-file write path. Five selected functions total 2,716 -> 1,544 bytes,
+  plain-file write path. Five selected functions total 2,716 -> 1,592 bytes,
   the linked core shrinks by 11,872 bytes, all 13 active frame-poll symbols
   remain, all 51 Thor contracts pass, and ARM64 RelWithDebInfo passes. This is
   host-verified `stackable-cpu-pressure` only: no APK, ADB, device, FPS,
   temperature, flicker, gameplay, or stability credit exists. Detailed
   ledger:
   `debug-experiments/20260719-thor-android-plain-log-writer.md`.
+- Android's plain Log Writer now blocks on an armed 32-bit atomic when empty
+  instead of scheduling a 10 ms poll for the entire emulator lifetime.
+  Producers notify only after committing ring-buffer bytes and only when the
+  writer is armed; shutdown uses the same wake before joining, and desktop
+  keeps its original timer policy. Host ARM64 proof changes the writer proxy
+  from `sleep_for 1 -> 0` to `atomic_wait_engine::wait 0 -> 1`; the normal
+  producer path adds one load/branch, the rare armed path performs the
+  exchange/notify, and the linked core shrinks by 392 supporting bytes. All
+  13 active frame-poll symbols remain, all 52 Thor contracts pass, and ARM64
+  RelWithDebInfo passes. This is host-verified `stackable-cpu-pressure` only:
+  no APK, ADB, device, FPS, temperature, flicker, gameplay, or stability
+  credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-android-event-log-writer.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

@@ -97,11 +97,24 @@ namespace logs
 
 		atomic_t<u64, 64> m_buf{0}; // MSB (39 bits): push begin, LSB (25 bis): push size
 		atomic_t<u64, 64> m_out{0}; // Amount of bytes written to file
+#ifdef ANDROID
+		atomic_t<u32> m_writer_waiting{0};
+#endif
 
 		uchar m_zout[65536]{};
 
 		// Write buffered logs immediately
 		bool flush(u64 bufv);
+
+#ifdef ANDROID
+		void wake_writer()
+		{
+			if (m_writer_waiting.load() && m_writer_waiting.exchange(0))
+			{
+				m_writer_waiting.notify_one();
+			}
+		}
+#endif
 
 	public:
 		file_writer(const std::string& name, u64 max_size);
@@ -525,7 +538,21 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
 						break;
 					}
 
+#ifdef ANDROID
+					// Arm before rechecking so a producer or shutdown cannot
+					// publish between the empty check and the atomic wait.
+					m_writer_waiting = 1;
+					if (m_buf != bufv || m_out == umax)
+					{
+						m_writer_waiting = 0;
+						continue;
+					}
+
+					m_writer_waiting.wait(1);
+					m_writer_waiting = 0;
+#else
 					std::this_thread::sleep_for(10ms);
+#endif
 				}
 			}
 		});
@@ -542,6 +569,9 @@ logs::file_writer::~file_writer()
 	file_writer::sync();
 
 	m_out = -1;
+#ifdef ANDROID
+	wake_writer();
+#endif
 	m_writer.join();
 
 #ifndef ANDROID
@@ -693,6 +723,9 @@ void logs::file_writer::log(const char* text, usz size)
 		}
 
 		m_buf += (size * s_log_size) - size;
+#ifdef ANDROID
+		wake_writer();
+#endif
 		break;
 	}
 }
