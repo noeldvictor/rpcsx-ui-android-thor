@@ -4,7 +4,8 @@
 - Classification: `host-only stackable-cpu-pressure candidate`
 - Device state: not queried, installed, launched, or otherwise contacted
 - Result: optimized ARM64 build, exact APK packaging, and all host contracts
-  pass; the successor also covers the always-built LLVM SPU interpreter;
+  pass; the successor also covers the always-built LLVM SPU interpreter and
+  hashes exact final IR through versioned binary bitcode serialization;
   runtime benefit remains unmeasured
 
 ## Problem
@@ -63,6 +64,13 @@ The safe immediate slice is therefore exact object reuse for the existing LLVM
 tiers, including the interpreter that current official upstream still emits
 uncached.
 
+A more aggressive follow-up that would load the interpreter object before IR
+construction was rejected. Helper mappings are registered lazily while
+lowering calls, so skipping the frontend would also skip the current-process
+addresses required to link that object safely. Recovering them would require a
+complete versioned helper manifest plus exact runtime build/base identity; the
+current code has neither, so the existing frontend/mapping boundary remains.
+
 ## Implementation
 
 The new control is default-off and active only for `BLUS30161` LLVM startup
@@ -76,11 +84,13 @@ Behavior:
 1. Startup workers still analyse the exact guest program, construct LLVM IR,
    register every current-launch helper/patchpoint mapping, run the existing
    translator transforms, and run the existing optimization passes.
-2. After those passes, cached programs use schema `thor-spu-native-v1` and
-   the interpreter uses separate schema `thor-spu-interpreter-native-v1`.
+2. After those passes, cached programs use schema `thor-spu-native-v2` and
+   the interpreter uses separate schema `thor-spu-interpreter-native-v2`.
    Both keys hash LLVM version, CPU, target triple, target
-   attributes/features, compiler flags, data layout, and a streaming print of
-   the final module IR.
+   attributes/features, compiler flags, data layout, and a streaming LLVM
+   bitcode serialization of the final module IR. Use-list order is preserved,
+   keeping the key structurally exact without paying textual IR formatting and
+   escaping cost.
 3. Static audit found the interpreter's direct launch-address dependency in
    the two decrementer-read lowerings: both embedded `&g_timebase_offs`.
    When the cache is opted in, those sites now load named external
@@ -101,7 +111,9 @@ Behavior:
    background optimization worker retain their original uncached behavior, so
    runtime misses add no new disk I/O.
 8. `SPU Debug` retains precedence and its existing `llvm/` output. Production
-   objects use isolated `spu-native-v1/` storage.
+   objects use isolated `spu-native-v2/` storage. The directory and both
+   schemas were bumped together, so no v1 object can be interpreted under the
+   new serialization contract.
 
 The route wrapper captures requested/effective state and resets the property
 before launch, after failure, and after success. The Eternal Sonata sprint
@@ -115,9 +127,10 @@ because they are the correctness boundary. An exact hit removes the LLVM
 backend object-emission step only. The interpreter extension covers one
 otherwise-unconditional backend emission before cached programs run. Removing
 its known ASLR-dependent timebase constant makes an exact cross-launch object
-hit realistic instead of merely safe. It may reduce warm-start CPU energy and
-peak thermal pressure, but it can still be too small relative to RSX pipeline
-creation and the retained frontend work.
+hit realistic instead of merely safe. The v2 writer also removes textual
+formatting from every opted-in program/interpreter key computation. These may
+reduce warm-start CPU energy and peak thermal pressure, but can still be too
+small relative to RSX pipeline creation and the retained frontend work.
 
 No startup-time, FPS, temperature, flicker, field, menu, battle, or stability
 claim follows from host compilation.
@@ -128,31 +141,33 @@ No ADB or device action ran.
 
 - `tools/test_thor_spu_native_object_cache.ps1`: pass.
 - All 27 `tools/test_thor_*.ps1` contracts: pass.
-- Optimized ARM64 native target after the ASLR follow-up: pass in 58.4 seconds.
-- ARM64-only optimized ThorTest assembly: `BUILD SUCCESSFUL` in 11 seconds.
+- Optimized ARM64 native target with LLVM bitcode writer linkage: pass in 65.1
+  seconds.
+- ARM64-only optimized ThorTest assembly: `BUILD SUCCESSFUL` in 12 seconds.
 - Exact ThorTest ABI/package contract: pass.
 - Optimized variant contract: pass.
 - Embedded APK core exactly matches the stripped ARM64 core.
-- Packaged core contains the property, environment fallback, both program and
-  interpreter schemas, interpreter module name, relocatable timebase symbol,
-  activation row, and damaged-object cleanup row.
+- Packaged core contains the property, environment fallback, both v2 program
+  and interpreter schemas, v2 directory, interpreter module name, relocatable
+  timebase symbol, activation row, and damaged-object cleanup row; all three v1
+  strings are absent.
 - Export surface: 34 defined dynamic symbols, 587 explicit relocations, 391
-  jump slots, and 44,245 encoded relocation bytes.
+  jump slots, and 44,253 encoded relocation bytes.
 - `git diff --check`: pass.
 
 Exact host-only artifacts:
 
 - APK:
   `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk`
-- APK size: `73,585,590` bytes
+- APK size: `73,696,098` bytes
 - APK SHA-256:
-  `25B09B3CD4B225036E903A4A727C5D115E08E71473E44C9BBB08C54448BAB42F`
-- merged ARM64 core size: `1,305,955,000` bytes
+  `0ABDD8A3ECD847DD4B0692D0954C66697D90ABB21CAABE6E8B1E419ADCDA5FAB`
+- merged ARM64 core size: `1,306,276,256` bytes
 - merged ARM64 core SHA-256:
-  `2505C3E31E8751045D144E1A6D6D22CAD524587008979F1223A60504FDA380F4`
-- stripped/packaged core size: `62,869,512` bytes
+  `6548B7BADE97817C290524718AC444DCB591768200294D4A5FDC79F844D4C150`
+- stripped/packaged core size: `63,136,648` bytes
 - stripped/packaged core SHA-256:
-  `8BE447C778790C7A0CF354F4A951FA9A8A1A82CECBB4292A1514BE135EE28C51`
+  `38167894CC913845996CD13807C73191BAC34F0CC23913B36683F964FD5C2AAA`
 
 ## Device Boundary
 

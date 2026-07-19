@@ -40,15 +40,15 @@ Assert-Contains $spuCommon 'startup interpreter and preload: exact final-IR/back
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache)' "The startup LLVM interpreter does not receive the native-cache capability."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache)' "Startup workers do not receive the native-cache capability."
 Assert-Contains $spuCommon 'compiler = spu_recompiler_base::make_llvm_recompiler();' "The runtime optimization worker no longer retains the default uncached compiler."
-Assert-Contains $spuCommon 'm_cache_path + "spu-native-v1/"' "SPU native objects are not isolated from debug and guest-program caches."
+Assert-Contains $spuCommon 'm_cache_path + "spu-native-v2/"' "SPU native objects are not isolated from debug and guest-program caches."
 
 Assert-Contains $spuHeader 'std::string m_native_object_cache_path;' "SPU runtime does not own a separate native-cache path."
 Assert-Contains $spuHeader 'bool use_native_object_cache = false' "LLVM compiler factory is not default-off."
 Assert-Contains $spuLlvm 'const bool m_use_native_object_cache;' "SPU LLVM compiler does not carry an immutable startup-cache decision."
 Assert-Contains $spuLlvm 'else if (m_use_native_object_cache && !m_spurt->get_native_object_cache_path().empty())' "Production SPU native-cache branch is missing."
-Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-native-v1")' "SPU native objects do not use the exact final-IR key."
+Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-native-v2")' "SPU native objects do not use the exact final-IR key."
 Assert-Contains $spuLlvm '_module->setModuleIdentifier(fmt::format("%s-%s.obj", m_hash, key));' "SPU native cache does not replace the guest-only module identifier."
-Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v1")' "SPU interpreter object does not use a separate exact final-IR schema."
+Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v2")' "SPU interpreter object does not use a separate exact final-IR schema."
 Assert-Contains $spuLlvm '_module->setModuleIdentifier(fmt::format("spu-interpreter-%s.obj", key));' "SPU interpreter object does not use an isolated module name."
 Assert-Contains $spuLlvm 'if (!m_use_native_object_cache)' "Default-off SPU timebase lowering is not preserved."
 Assert-Contains $spuLlvm 'llvm::GlobalValue::ExternalLinkage, nullptr, "spu_timebase_offs"' "Opted-in SPU objects do not use a relocatable timebase symbol."
@@ -62,7 +62,7 @@ if (([regex]::Matches($spuLlvm, [regex]::Escape('CreateIntToPtr(m_ir->getInt64(r
 
 $interpreterIr = $spuLlvm.IndexOf('LLVM IR (interpreter):')
 $interpreterVerify = $spuLlvm.IndexOf('if (verifyModule(*_module, &out))', $interpreterIr)
-$interpreterKey = $spuLlvm.IndexOf('"thor-spu-interpreter-native-v1"', $interpreterVerify)
+$interpreterKey = $spuLlvm.IndexOf('"thor-spu-interpreter-native-v2"', $interpreterVerify)
 if ($interpreterIr -lt 0 -or $interpreterVerify -le $interpreterIr -or $interpreterKey -le $interpreterVerify) {
     throw "SPU interpreter native-cache key is not computed after transformed-IR verification."
 }
@@ -84,12 +84,16 @@ Assert-Contains $jitHeader 'make_object_cache_key(const llvm::Module& module, st
 foreach ($fragment in @(
     'LLVM_VERSION_STRING, m_cpu, target_triple, attribute_identity',
     'm_engine->getTargetMachine()->createDataLayout().getStringRepresentation()',
-    'module.print(stream, nullptr);',
+    '#include <llvm/Bitcode/BitcodeWriter.h>',
+    'llvm::WriteBitcodeToFile(module, stream, true);',
     'sha1_finish(&context, output);',
     'llvm::object::ObjectFile::createObjectFile(*buf)',
     'ObjectCache: Removed damaged compile object:'
 )) {
     Assert-Contains $jitSource $fragment "Missing exact/corruption-safe JIT object-cache contract: $fragment"
+}
+if ($jitSource.Contains('module.print(stream, nullptr);')) {
+    throw "Exact native-object keys must not pay textual LLVM IR formatting cost."
 }
 
 if ($macroSource -notmatch '(?s)\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$SpuNativeObjectCache\s*=\s*"off"') {

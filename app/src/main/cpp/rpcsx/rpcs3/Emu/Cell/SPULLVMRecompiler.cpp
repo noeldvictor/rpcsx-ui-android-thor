@@ -3575,7 +3575,7 @@ public:
 			// The object key includes the transformed/optimized IR plus LLVM target,
 			// CPU, feature and data-layout identity. IR construction is retained to
 			// rebuild launch-specific helper mappings before MCJIT links a warm hit.
-			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-native-v1");
+			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-native-v2");
 			_module->setModuleIdentifier(fmt::format("%s-%s.obj", m_hash, key));
 			m_jit.add(std::move(_module), m_spurt->get_native_object_cache_path());
 		}
@@ -4040,7 +4040,7 @@ public:
 			// The interpreter is rebuilt before any cached SPU program can run. Reuse
 			// only an object whose final transformed IR and backend identity match this
 			// launch; otherwise MCJIT emits and atomically persists the normal object.
-			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v1");
+			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v2");
 			_module->setModuleIdentifier(fmt::format("spu-interpreter-%s.obj", key));
 			m_jit.add(std::move(_module), m_spurt->get_native_object_cache_path());
 		}

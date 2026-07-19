@@ -1770,7 +1770,7 @@ bool spu_runtime::enable_native_object_cache()
 		return false;
 	}
 
-	const std::string path = m_cache_path + "spu-native-v1/";
+	const std::string path = m_cache_path + "spu-native-v2/";
 	if (!fs::is_dir(path) && !fs::create_dir(path))
 	{
 		spu_log.warning("Failed to create SPU native-object cache directory: %s (%s)", path, fs::g_tls_error);

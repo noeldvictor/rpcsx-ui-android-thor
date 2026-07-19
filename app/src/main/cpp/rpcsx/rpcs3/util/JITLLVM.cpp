@@ -37,6 +37,7 @@ LOG_CHANNEL(jit_log, "JIT");
 #endif
 #include <llvm/Support/CodeGen.h>
 #include <llvm/Config/llvm-config.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -1181,11 +1182,12 @@ std::string jit_compiler::make_object_cache_key(const llvm::Module& module, std:
 	sha1_update(&context, reinterpret_cast<const u8*>(m_object_cache_identity.data()), m_object_cache_identity.size());
 	sha1_update(&context, &separator, 1);
 
-	// Printing after the SPU transform/optimization pipeline captures every IR
-	// decision, including launch-specific absolute constants. Those constants
-	// intentionally prevent cross-ASLR reuse for affected functions.
+	// Serialize after the SPU transform/optimization pipeline so the key captures
+	// every IR decision, including launch-specific absolute constants. Bitcode
+	// avoids the formatting and escaping cost of textual IR, while preserving
+	// use-list order keeps the key an exact structural identity.
 	sha1_raw_ostream stream(context);
-	module.print(stream, nullptr);
+	llvm::WriteBitcodeToFile(module, stream, true);
 	stream.flush();
 	sha1_finish(&context, output);
 	return fmt::format("%s", fmt::base57(output));
