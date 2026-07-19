@@ -552,4 +552,24 @@ Put dated run details in `debug-experiments/`, not here.
   temperature, FPS, flicker, gameplay, or stability credit exists. Detailed
   ledger:
   `debug-experiments/20260719-thor-disabled-busy-wait-experiment-overhead.md`.
+- Normal Android builds now compile out the retired SPU reduced-loop
+  detect-only scanner, including its property lookup, candidate/pattern maps,
+  scan lambdas, logging, and emitter registration. Explicit diagnostics retain
+  detector-only mode through `-PrpcsxThorSpuReducedLoopDiagnostics=true` or
+  `RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS_BUILD=true`; desktop is unchanged,
+  and unsafe Android emission remains unconditionally disabled. This removes
+  default-off work from `spu_recompiler_base::analyse`, which matters during
+  the historical 1,163-program / 32.5-second full SPU cache reconstruction.
+  Host ARM64 proof reduced that function 49,760 -> 48,840 bytes, removed its
+  Android property call and empty candidate-map destructor call, and removed
+  the detect property/log strings. The whole core shrank by 200,096 bytes and
+  the LTO input object by 287,692 bytes; those whole-artifact deltas include
+  debug-information removal and are supporting evidence only. Reduced-loop
+  reuse and dynamic-MFC experiment strings deliberately remain, all 13 active
+  frame-poll wait symbols remain, all 49 Thor contracts pass, and the final
+  incremental ARM64 RelWithDebInfo build passes. This is host-verified
+  `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed,
+  temperature, FPS, flicker, gameplay, or stability credit exists. Detailed
+  ledger:
+  `debug-experiments/20260719-thor-disabled-spu-reduced-loop-diagnostics-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

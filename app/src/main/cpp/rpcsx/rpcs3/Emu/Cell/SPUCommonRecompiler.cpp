@@ -112,6 +112,7 @@ void fmt_class_string<spu_recompiler_base::compare_direction>::format(std::strin
 	});
 }
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS)
 static bool spu_reduced_loop_detect_only_enabled() noexcept
 {
 #ifdef ANDROID
@@ -133,6 +134,7 @@ static bool spu_reduced_loop_detect_only_enabled() noexcept
 
 	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
 }
+#endif
 
 static bool spu_reduced_loop_emit_enabled() noexcept
 {
@@ -5471,6 +5473,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 	u32 iterator_id_alloc = 0;
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS)
 	struct reduced_loop_candidate_t
 	{
 		u32 loop_pc = SPU_LS_SIZE;
@@ -6041,6 +6044,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			}
 		}
 	}
+#endif
 
 	for (u32 wf = 0, wi = 0, wa = entry_point, bpc = wa; wf <= 1;)
 	{
@@ -8145,6 +8149,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 		fmt::append(func_hash, "%s", fmt::base57(output));
 	}
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS)
 	if (log_reduced_loop_candidates && !reduced_loop_candidates.empty())
 	{
 		for (const auto& [loop_pc, candidate] : reduced_loop_candidates)
@@ -8160,6 +8165,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 				func_hash);
 		}
 	}
+#endif
 
 	for (const auto& [pc_commited, pattern] : atomic16_all)
 	{
@@ -8290,6 +8296,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 		}
 	}
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS)
 	if (emit_reduced_loops)
 	{
 		for (const auto& [loop_pc, pattern] : reduced_loop_patterns)
@@ -8316,6 +8323,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			}
 		}
 	}
+#endif
 
 	if (likely_putllc_loop && !had_putllc_evaluation && spu_pattern_diagnostics_enabled())
 	{
