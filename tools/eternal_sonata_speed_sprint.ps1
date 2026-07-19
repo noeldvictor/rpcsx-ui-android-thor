@@ -28,6 +28,8 @@ param(
     [string]$EternalSonataSpuHeatProfile = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataPpuRsxProfile = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataSyncProfile = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -798,6 +800,7 @@ switch ($Action) {
             EternalSonataMfcLadder = $EternalSonataMfcLadder
             EternalSonataSpuHeatProfile = $EternalSonataSpuHeatProfile
             EternalSonataPpuRsxProfile = $EternalSonataPpuRsxProfile
+            EternalSonataSyncProfile = $EternalSonataSyncProfile
             EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
             EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
             EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body

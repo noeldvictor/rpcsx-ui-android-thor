@@ -25,6 +25,8 @@ param(
     [string]$EternalSonataSpuHeatProfile = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataPpuRsxProfile = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataSyncProfile = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -2809,6 +2811,7 @@ Write-LabLine $runLog "- Eternal Sonata MFC shape probe: $EternalSonataMfcShapeP
 Write-LabLine $runLog "- Eternal Sonata MFC ladder: $EternalSonataMfcLadder"
 Write-LabLine $runLog "- Eternal Sonata SPU heat profile: $EternalSonataSpuHeatProfile"
 Write-LabLine $runLog "- Eternal Sonata PPU/RSX profile: $EternalSonataPpuRsxProfile"
+Write-LabLine $runLog "- Eternal Sonata synchronization profile: $EternalSonataSyncProfile"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE verifier: $EternalSonataSpuHleVerify"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x25cc body: $EternalSonataSpuHle25ccBody"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE size16 body: $EternalSonataSpuHleSize16Body"
@@ -2922,6 +2925,7 @@ $previousEsMfcShapeProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_S
 $previousEsMfcLadder = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_LADDER", "Process")
 $previousEsSpuHeatProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HEAT_PROFILE", "Process")
 $previousEsPpuRsxProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_PPU_RSX_PROFILE", "Process")
+$previousEsSyncProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_SYNC_PROFILE", "Process")
 $previousEsSpuHleVerify = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", "Process")
 $previousEsSpuHle25ccBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", "Process")
 $previousEsSpuHleSize16Body = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", "Process")
@@ -2980,6 +2984,10 @@ $esSpuHeatProfileEnv = switch ($EternalSonataSpuHeatProfile) {
     default { "off" }
 }
 $esPpuRsxProfileEnv = switch ($EternalSonataPpuRsxProfile) {
+    "Profile" { "compact" }
+    default { "off" }
+}
+$esSyncProfileEnv = switch ($EternalSonataSyncProfile) {
     "Profile" { "compact" }
     default { "off" }
 }
@@ -3115,6 +3123,7 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $esMfcLadderEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HEAT_PROFILE", $esSpuHeatProfileEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_PPU_RSX_PROFILE", $esPpuRsxProfileEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SYNC_PROFILE", $esSyncProfileEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $esSpuHleVerifyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $esSpuHle25ccBodyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $esSpuHleSize16BodyEnv, "Process")
@@ -3152,6 +3161,7 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $previousEsMfcLadder, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HEAT_PROFILE", $previousEsSpuHeatProfile, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_PPU_RSX_PROFILE", $previousEsPpuRsxProfile, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SYNC_PROFILE", $previousEsSyncProfile, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $previousEsSpuHleVerify, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $previousEsSpuHle25ccBody, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $previousEsSpuHleSize16Body, "Process")
@@ -3239,7 +3249,7 @@ while ($true) {
 
 if (-not $exited) {
     Write-LabLine $runLog "Process exceeded ${MaxSeconds}s total wall time; stopping PID $($process.Id)."
-    if ($EternalSonataSpuHeatProfile -eq "Profile" -or $EternalSonataPpuRsxProfile -eq "Profile") {
+    if ($EternalSonataSpuHeatProfile -eq "Profile" -or $EternalSonataPpuRsxProfile -eq "Profile" -or $EternalSonataSyncProfile -eq "Profile") {
         $closeRequested = $process.CloseMainWindow()
         Write-LabLine $runLog "Profiler graceful stop requested: $closeRequested"
         if ($closeRequested) {
@@ -3355,6 +3365,23 @@ if (Test-Path -LiteralPath $sourceLog) {
             Write-LabLine $runLog "PPU/RSX profile summary: $ppuRsxSummaryPath ($($ppuRsxLines.Count) lines)"
         } else {
             Write-LabLine $runLog "PPU/RSX profile summary missing: no sampler lines found in $destLog"
+        }
+    }
+
+    if ($EternalSonataSyncProfile -eq "Profile") {
+        $syncSummaryPath = Join-Path $runDir "sync-profile.txt"
+        $syncLines = New-Object System.Collections.Generic.List[string]
+        foreach ($line in [System.IO.File]::ReadLines($destLog)) {
+            if ($line.Contains("Eternal Sonata sync profile:") -or $line.Contains("Eternal Sonata sync long wait:")) {
+                $syncLines.Add($line) | Out-Null
+            }
+        }
+
+        if ($syncLines.Count -gt 0) {
+            [System.IO.File]::WriteAllLines($syncSummaryPath, $syncLines, [System.Text.UTF8Encoding]::new($false))
+            Write-LabLine $runLog "Synchronization profile summary: $syncSummaryPath ($($syncLines.Count) lines)"
+        } else {
+            Write-LabLine $runLog "Synchronization profile summary missing: no profiler lines found in $destLog"
         }
     }
 
