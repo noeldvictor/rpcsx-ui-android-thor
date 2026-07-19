@@ -54,11 +54,32 @@ new on-device measurement.
   from the Android binary. The PPU success string remains for PPU Debug, and
   the combined ARM feature summary remains.
 
-No APK was installed and no ADB, launch, screenshot, temperature query, or
-device workload was performed. No FPS, temperature, flicker, gameplay, or
-runtime credit is claimed until a cool-device validation is explicitly allowed.
+During host verification, no APK was installed and no ADB, launch, screenshot,
+temperature query, or device workload was performed. No FPS, temperature,
+flicker, gameplay, or runtime credit was claimed.
 
 ## Decision
 
 Keep the change. It removes redundant Android startup work while preserving
 failures, opt-in debug detail, trace identity, and desktop behavior.
+
+## Cool no-launch install proof
+
+After the host-only change was committed, a fresh optimized ARM64-only
+`thortest` APK was built in 79 seconds and passed the optimized variant and
+ARM64 packaging contracts.
+
+- APK: 72,842,472 bytes, SHA-256
+  `7CDD38E415CCFDF7BCCE4B4EC20D9B914E65B62F571E868014927BCAAD8FE5F9`.
+- Merged core SHA-256:
+  `D7DC9156293B0993E59B3B9B6DDFA2D18FCDFA731D5EA7791BB80F7CF457BF7C`.
+- Stripped core SHA-256:
+  `7B7FB4F62CF365DBF91981A84D46C7B8F5B7CFD28061A666D016B3CA278B3F86`.
+- Strict no-boot gate `20260719-154756-thor-input-compile-log-batch-install-cool-gate`
+  passed at 31.9, 32.3, and 31.7 C silicon, 22.0 C battery, and 30.0 C skin.
+- No-launch install `20260719-154833-compile-log-batch-thortest-apk-install`
+  matched the on-device APK hash, left the RPCSX PID absent, and ended at
+  37.7 C silicon with controls reset. No emulator launch occurred.
+
+This proves only exact installation. Runtime speed, temperature, flicker,
+gameplay, and stability remain unmeasured.

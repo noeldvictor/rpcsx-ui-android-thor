@@ -688,8 +688,13 @@ Put dated run details in `debug-experiments/`, not here.
   failure, RSX trace identity, pipeline notification, opt-in PPU detail, and
   desktop behavior. All 54 Thor contracts and Android ARM64 RelWithDebInfo pass;
   the selected CPU text shrinks 4 bytes, `ppu_initialize` grows 32 bytes, and
-  the full debug-bearing core grows 2,440 bytes. This is host-verified
-  `stackable-cpu-pressure` only: no APK, ADB, device, FPS, temperature, flicker,
-  gameplay, or runtime credit exists. Detailed ledger:
+  the full debug-bearing core grows 2,440 bytes. Exact 72,842,472-byte ThorTest
+  APK `7CDD38E4...E5F9` is installed after strict no-boot gate
+  `20260719-154756-thor-input-compile-log-batch-install-cool-gate` passed
+  31.9 -> 32.3 -> 31.7 C. Capture
+  `20260719-154833-compile-log-batch-thortest-apk-install` proves matching
+  on-device hash, PID absent, controls reset, and 37.7 C post-install silicon.
+  No launch occurred; grant no runtime speed, temperature, flicker, gameplay,
+  or stability credit. Detailed ledger:
   `debug-experiments/20260719-thor-android-compile-log-pruning.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
