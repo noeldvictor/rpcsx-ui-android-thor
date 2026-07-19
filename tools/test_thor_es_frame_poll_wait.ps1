@@ -77,10 +77,17 @@ foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
     'debug.rpcsx.thor.es_frame_wait',
     'debug.rpcsx.thor.es_frame_wait_grace_us',
+    'debug.rpcsx.thor.es_frame_wait_continuous_rearm',
     'RPCSX_THOR_ES_FRAME_POLL_WAIT',
     'RPCSX_THOR_ES_FRAME_POLL_HANDLER_GRACE_US',
+    'RPCSX_THOR_ES_FRAME_POLL_CONTINUOUS_REARM',
     'RPCS3_ES_FRAME_POLL_WAIT',
     'RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US',
+    'RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM',
+    'is_thor_es_frame_poll_continuous_rearm_enabled()',
+    'state.continuous_rearms++',
+    'state.continuous_rearm_timeouts++',
+    'state.continuous_rearm_progress++',
     'return false;'
 )) {
     if (-not $mainTimer.Contains($mainContract)) {
@@ -92,6 +99,11 @@ foreach ($upstreamContract in @(
     'RPCS3_ES_FRAME_POLL_WAIT',
     'RPCS3_ES_FRAME_POLL_WAIT_MAX_US',
     'RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US',
+    'RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM',
+    'is_es_frame_poll_continuous_rearm_enabled()',
+    'state.continuous_rearms++',
+    'state.continuous_rearm_timeouts++',
+    'state.continuous_rearm_progress++',
     'std::clamp<u64>(parsed, 100, 1000)',
     'std::clamp<u64>(parsed, 0, 500)',
     'return 1000ull'
@@ -146,9 +158,12 @@ foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
 foreach ($fragment in @(
     '[string]$EternalSonataFramePollWait = "Off"',
     '[int]$EternalSonataFramePollHandlerGraceUs = 500',
+    '[string]$EternalSonataFramePollContinuousRearm = "Off"',
     '"Wait" { "wait" }',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $esFramePollWaitEnv, "Process")',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "$EternalSonataFramePollHandlerGraceUs", "Process")',
+    '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM", $esFramePollContinuousRearmEnv, "Process")',
+    '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM", $previousEsFramePollContinuousRearm, "Process")',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $previousEsFramePollWait, "Process")'
 )) {
     if (-not $labSource.Contains($fragment)) {
@@ -159,10 +174,13 @@ foreach ($fragment in @(
 foreach ($fragment in @(
     '[string]$EternalSonataFramePollWait = "Off"',
     '[int]$EternalSonataFramePollHandlerGraceUs = 500',
+    '[string]$EternalSonataFramePollContinuousRearm = "Off"',
     'EternalSonataFramePollWait = $EternalSonataFramePollWait',
     'EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs',
+    'EternalSonataFramePollContinuousRearm = $EternalSonataFramePollContinuousRearm',
     'debug.rpcsx.thor.es_frame_wait',
     'debug.rpcsx.thor.es_frame_wait_grace_us',
+    'debug.rpcsx.thor.es_frame_wait_continuous_rearm',
     'down:120;wait:250;down:120;wait:250;down:120;wait:800',
     'shot:title-options-selected',
     'shot:options-page',
@@ -184,4 +202,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, completion notification, counter-progress rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, completion notification, counter-progress rearm, Android/Windows continuous rearm, and fallback plumbing are intact."

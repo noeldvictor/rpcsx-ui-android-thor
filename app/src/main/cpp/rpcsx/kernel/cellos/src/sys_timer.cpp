@@ -46,6 +46,9 @@ struct thor_es_frame_poll_wait_state {
   u64 timeouts = 0;
   u64 fallback_sleeps = 0;
   u64 fallback_rearms = 0;
+  u64 continuous_rearms = 0;
+  u64 continuous_rearm_timeouts = 0;
+  u64 continuous_rearm_progress = 0;
   u64 counter_progress_after_event = 0;
   u64 last_log_us = 0;
   bool armed = false;
@@ -77,6 +80,40 @@ bool is_thor_es_frame_poll_wait_enabled() {
 
     if (const char *value = std::getenv("RPCS3_ES_FRAME_POLL_WAIT")) {
       return parse_thor_es_frame_poll_wait(value);
+    }
+
+    return false;
+  }();
+
+  return enabled;
+}
+
+bool parse_thor_es_frame_poll_continuous_rearm(std::string_view value) {
+  return value == "1" || value == "on" || value == "true" ||
+         value == "continuous";
+}
+
+bool is_thor_es_frame_poll_continuous_rearm_enabled() {
+  static const bool enabled = [] {
+#ifdef ANDROID
+    char property_value[PROP_VALUE_MAX]{};
+    const int property_length = __system_property_get(
+        "debug.rpcsx.thor.es_frame_wait_continuous_rearm", property_value);
+    if (property_length > 0) {
+      return parse_thor_es_frame_poll_continuous_rearm(
+          std::string_view{property_value,
+                           static_cast<usz>(property_length)});
+    }
+#endif
+
+    if (const char *value =
+            std::getenv("RPCSX_THOR_ES_FRAME_POLL_CONTINUOUS_REARM")) {
+      return parse_thor_es_frame_poll_continuous_rearm(value);
+    }
+
+    if (const char *value =
+            std::getenv("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM")) {
+      return parse_thor_es_frame_poll_continuous_rearm(value);
     }
 
     return false;
@@ -137,18 +174,23 @@ void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
   sys_timer.notice(
       "Thor Eternal Sonata frame poll wait: ppu=0x%x object=0x%x "
       "counter=%u threshold=%u vblank=%llu armed=%u max_wait_us=%llu "
-      "handler_grace_us=%llu "
+      "handler_grace_us=%llu continuous_rearm=%u "
       "calls=%llu event_waits=%llu handler_wakes=%llu "
       "handler_grace_waits=%llu counter_progress_after_grace=%llu "
       "vblank_wakes=%llu timeouts=%llu "
       "fallback_sleeps=%llu fallback_rearms=%llu "
+      "continuous_rearms=%llu continuous_rearm_timeouts=%llu "
+      "continuous_rearm_progress=%llu "
       "counter_progress_after_event=%llu",
       ppu.id, state.object_addr, counter, threshold, vblank, state.armed,
       thor_es_frame_poll_wait_max_us,
-      get_thor_es_frame_poll_handler_grace_us(), state.calls,
+      get_thor_es_frame_poll_handler_grace_us(),
+      is_thor_es_frame_poll_continuous_rearm_enabled(), state.calls,
       state.event_waits, state.handler_wakes, state.handler_grace_waits,
       state.counter_progress_after_grace, state.vblank_wakes, state.timeouts,
       state.fallback_sleeps, state.fallback_rearms,
+      state.continuous_rearms, state.continuous_rearm_timeouts,
+      state.continuous_rearm_progress,
       state.counter_progress_after_event);
 }
 
@@ -191,11 +233,28 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
 
   state.calls++;
   const auto vblank = +renderer->vblank_count;
-  if (!state.armed || vblank != state.completed_vblank) {
+  if (!state.armed) {
     state.normal_pre_counter = counter;
     state.fallback_sleeps++;
     log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
     return false;
+  }
+
+  bool continuous_rearmed = false;
+  if (vblank != state.completed_vblank) {
+    if (!is_thor_es_frame_poll_continuous_rearm_enabled()) {
+      state.normal_pre_counter = counter;
+      state.fallback_sleeps++;
+      log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+      return false;
+    }
+
+    // A completed normal sleep has already proven this exact
+    // title/object/counter relation. Keep using the bounded VBlank-handler
+    // completion wait instead of returning to repeated 100 us guest sleeps.
+    state.completed_vblank = vblank;
+    state.continuous_rearms++;
+    continuous_rearmed = true;
   }
 
   state.event_waits++;
@@ -230,6 +289,9 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
     }
   } else {
     state.timeouts++;
+    if (continuous_rearmed) {
+      state.continuous_rearm_timeouts++;
+    }
   }
 
   const auto after_vblank = +renderer->vblank_count;
@@ -239,6 +301,9 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
 
   if (after_counter != counter) {
     state.counter_progress_after_event++;
+    if (continuous_rearmed) {
+      state.continuous_rearm_progress++;
+    }
     state.completed_vblank = after_vblank;
   }
 

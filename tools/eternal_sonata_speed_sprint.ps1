@@ -34,6 +34,8 @@ param(
     [string]$EternalSonataFramePollWait = "Off",
     [ValidateRange(0, 500)]
     [int]$EternalSonataFramePollHandlerGraceUs = 500,
+    [ValidateSet("Off", "On")]
+    [string]$EternalSonataFramePollContinuousRearm = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -537,13 +539,18 @@ function Set-AndroidSpeedProperties {
         "Wait" { "wait" }
         default { "off" }
     }
+    $framePollContinuousRearmMode = switch ($EternalSonataFramePollContinuousRearm) {
+        "On" { "on" }
+        default { "off" }
+    }
 
     & $Adb shell setprop debug.rpcsx.thor.es_sema_superpath $semaMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.es_dma_superpath $dmaMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.rsx_blit_source_resolve $rsxBlitSourceMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.es_frame_wait $framePollWaitMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.es_frame_wait_grace_us $EternalSonataFramePollHandlerGraceUs | Out-Null
-    Write-Host "Android speed properties: debug.rpcsx.thor.es_sema_superpath=$semaMode debug.rpcsx.thor.es_dma_superpath=$dmaMode debug.rpcsx.thor.rsx_blit_source_resolve=$rsxBlitSourceMode debug.rpcsx.thor.es_frame_wait=$framePollWaitMode debug.rpcsx.thor.es_frame_wait_grace_us=$EternalSonataFramePollHandlerGraceUs"
+    & $Adb shell setprop debug.rpcsx.thor.es_frame_wait_continuous_rearm $framePollContinuousRearmMode | Out-Null
+    Write-Host "Android speed properties: debug.rpcsx.thor.es_sema_superpath=$semaMode debug.rpcsx.thor.es_dma_superpath=$dmaMode debug.rpcsx.thor.rsx_blit_source_resolve=$rsxBlitSourceMode debug.rpcsx.thor.es_frame_wait=$framePollWaitMode debug.rpcsx.thor.es_frame_wait_grace_us=$EternalSonataFramePollHandlerGraceUs debug.rpcsx.thor.es_frame_wait_continuous_rearm=$framePollContinuousRearmMode"
 }
 
 function Set-AndroidLogMode {
@@ -813,6 +820,7 @@ switch ($Action) {
             EternalSonataSyncProfile = $EternalSonataSyncProfile
             EternalSonataFramePollWait = $EternalSonataFramePollWait
             EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs
+            EternalSonataFramePollContinuousRearm = $EternalSonataFramePollContinuousRearm
             EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
             EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
             EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body

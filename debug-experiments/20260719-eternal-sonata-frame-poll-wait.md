@@ -284,3 +284,79 @@ When the device is explicitly cool, use one bounded historical-baseline versus
 combined-candidate comparison, with the existing preflight and runtime thermal
 stops. Do not run a four-cell decomposition unless the combined candidate
 regresses or the result is ambiguous.
+
+## Continuous handler rearm refinement
+
+A second opt-in refinement keeps the already-proven frame-poll relation on the
+bounded VBlank-handler completion wait across a new VBlank. It only activates
+after a normal 100 us sleep has observed counter progress and armed the exact
+title/PPU/callsite/object relation. The original fallback remains the default.
+
+Windows toggle:
+
+- `RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM=on`
+
+Android/Thor toggle:
+
+- `debug.rpcsx.thor.es_frame_wait_continuous_rearm=on`
+- environment fallbacks:
+  `RPCSX_THOR_ES_FRAME_POLL_CONTINUOUS_REARM=on` or
+  `RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM=on`
+
+Safety remains bounded by the existing 1 ms atomic wait, 0-500 us handler
+grace, `BLUS30161`, main-PPU `0x01000000`, CIA `0x002a8300`, 100 us request,
+object/frame-config relation, mapped-memory, 30/60 divisor, and counter gates.
+The new toggle defaults off on Windows and Android.
+
+### Matched Windows evidence
+
+Title, control versus continuous candidate:
+
+- calls: 79,798 -> 34,612 (-56.6%);
+- fallback sleeps: 49,961 -> 70 (-99.86%);
+- event waits: 29,837 -> 34,542 (+15.8%);
+- title gate passed at 60.00/59.96 FPS with clean external contention.
+
+First-battle route, prior grace-500 control versus continuous candidate:
+
+- calls: 228,187 -> 105,181 (-53.9%);
+- fallback sleeps: 147,658 -> 36 (-99.98%);
+- event waits: 80,529 -> 105,145 (+30.6%);
+- title, exact save target, load complete, playable field, tutorial prompt,
+  active battle, and held battle gates all passed;
+- field and battle held 29.97-30.03 FPS.
+
+Options route, control versus continuous candidate:
+
+- calls: 80,012 -> 33,485 (-58.2%);
+- fallback sleeps: 49,945 -> 1 (-99.998%);
+- event waits: 30,067 -> 33,484 (+11.4%);
+- Options selection, page, and 10-second hold passed at 59.89-60.06 FPS.
+
+Host CPU samples were mixed rather than consistently lower: the title sample
+was slightly lower, battle samples were essentially flat/noisy, and the single
+Options sample was higher. This is a proven guest-polling/work reduction and a
+correctness-clean candidate, not yet a proven host-power or Thor-temperature
+reduction.
+
+Evidence:
+
+- `debug-captures/windows-lab/20260719-054443-es-frame-poll-continuous-control-title-clean`
+- `debug-captures/windows-lab/20260719-054558-es-frame-poll-continuous-candidate-title`
+- `debug-captures/windows-lab/20260719-054736-es-frame-poll-continuous-candidate-first-battle`
+- `debug-captures/windows-lab/20260719-055049-es-frame-poll-continuous-candidate-options`
+
+### Port and verification
+
+- Android mirror and system-property plumbing added, opt-in and default off.
+- Windows RPCS3 Release compiled and linked; Qt deployment completed.
+- Android ARM64 RelWithDebInfo native target passed in 64 seconds.
+- Frame-poll, optimized test-hook, and multi-sensor thermal-guard contracts
+  passed.
+- `git diff --check` passed in both repositories.
+- No ADB query, APK install, launch, or Thor access occurred.
+
+The next device action is one short, fully cooled baseline-versus-continuous
+A/B with the existing thermal guard. Do not test it while the Thor is hot, and
+do not claim a temperature improvement until that bounded device result exists.
+
