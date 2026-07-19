@@ -24,6 +24,8 @@ param(
     [string]$EternalSonataMfcShapeProbe = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
     [string]$EternalSonataMfcLadder = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataSpuHeatProfile = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -130,8 +132,8 @@ param(
     [int]$ScreenshotMaxCount = 6,
     [ValidateSet("Off", "FieldLike", "FieldByDeadline", "CleanAfterField", "BattleRoute")]
     [string]$WindowsVisualGate = "Off",
-    [ValidateSet("Legacy", "TopSlot")]
-    [string]$WindowsBattleLoadRoute = "Legacy",
+    [ValidateSet("StateAware", "Legacy", "TopSlot")]
+    [string]$WindowsBattleLoadRoute = "StateAware",
     [int]$WindowsVisualGateFieldSeconds = 160,
     [long]$WindowsVisualGateMinFieldPngBytes = 1000000,
     [int]$HostSampleSeconds = 1,
@@ -232,7 +234,7 @@ function Get-SpeedLabel {
 function Get-SpeedWindowsSceneMacro {
     param(
         [string]$Scene,
-        [string]$BattleLoadRoute = "Legacy"
+        [string]$BattleLoadRoute = "StateAware"
     )
 
     # Short title pulses are required; longer down/left-stick presses can skip from NEW GAME to title OPTIONS.
@@ -244,6 +246,7 @@ function Get-SpeedWindowsSceneMacro {
     # field and fake a battle-route baseline while never reaching first battle.
     $loadBattleLegacy = "wait:45000;ls_down:120;wait:800;cross:180;wait:30000;cross:180;wait:1500;ls_up:120;wait:500;cross:180;wait:12000;start:180;wait:1500;cross:180;wait:35000"
     $loadBattleTopSlot = $loadField
+    $loadBattleStateAware = "wait:45000;gate_title_menu:60000;down:120;wait:800;shot:title-load-selected;cross:180;gate_load_target:45000;shot:load-save-list;cross:180;wait:1000;up:120;wait:500;cross:180;wait:500;cross:180;gate_load_complete:90000;shot:load-complete-detected;cross:180;gate_field:30000;shot:loaded-field;combo:ls_left+ls_down:700;wait:1000;ls_left:900;gate_first_battle_prompt:25000;shot:first-battle-prompt;down:120;wait:300;cross:180;wait:4000;shot:first-battle-active;wait:10000;shot:first-battle-live;wait:10000;shot:first-battle-hold"
 
     switch ($Scene) {
         "field" {
@@ -257,6 +260,9 @@ function Get-SpeedWindowsSceneMacro {
             return "wait:65000;cross:180;wait:9000;shot:100;down:220;wait:1000;shot:100;down:220;wait:16000;shot:100;cross:180;wait:8000;shot:100;wait:6000;shot:100"
         }
         "battle" {
+            if ($BattleLoadRoute -eq "StateAware") {
+                return $loadBattleStateAware
+            }
             $loadBattle = if ($BattleLoadRoute -eq "TopSlot") { $loadBattleTopSlot } else { $loadBattleLegacy }
             return "$loadBattle;shot:100;ls_left:2600;wait:1000;combo:ls_left+ls_down:2200;wait:45000;shot:100;dpad_down:120;wait:500;cross:180;wait:60000;shot:100;wait:60000;shot:100"
         }
@@ -762,8 +768,11 @@ switch ($Action) {
     }
     "WindowsScene" {
         $effectiveMaxSeconds = $MaxSeconds
-        if ($Scene -eq "battle" -and [string]::IsNullOrWhiteSpace($InputMacro) -and $effectiveMaxSeconds -lt 330) {
-            $effectiveMaxSeconds = 330
+        if ($Scene -eq "battle" -and [string]::IsNullOrWhiteSpace($InputMacro)) {
+            $minimumBattleSeconds = if ($WindowsBattleLoadRoute -eq "StateAware") { 155 } else { 330 }
+            if ($effectiveMaxSeconds -lt $minimumBattleSeconds) {
+                $effectiveMaxSeconds = $minimumBattleSeconds
+            }
         }
         if ($WindowsVisualGate -eq "BattleRoute" -and $effectiveMaxSeconds -lt 220) {
             throw "WindowsVisualGate BattleRoute requires MaxSeconds >= 220 because its late-field proof starts at 220s."
@@ -781,6 +790,7 @@ switch ($Action) {
             EternalSonataGpuProbe = $EternalSonataGpuProbe
             EternalSonataMfcShapeProbe = $EternalSonataMfcShapeProbe
             EternalSonataMfcLadder = $EternalSonataMfcLadder
+            EternalSonataSpuHeatProfile = $EternalSonataSpuHeatProfile
             EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
             EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
             EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body

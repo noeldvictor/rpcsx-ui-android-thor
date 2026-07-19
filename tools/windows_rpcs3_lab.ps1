@@ -21,6 +21,8 @@ param(
     [string]$EternalSonataMfcShapeProbe = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
     [string]$EternalSonataMfcLadder = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataSpuHeatProfile = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -2456,11 +2458,12 @@ function New-LabRunConfig {
         [int]$VblankRate,
         [string]$SpuAccurateReservations,
         [string]$SpuAccurateDma,
+        [string]$EternalSonataSpuHeatProfile,
         [string]$PpuDazAndFtz,
         [string]$RunLog
     )
 
-    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep" -and $SpuAccurateDma -eq "Keep" -and $PpuDazAndFtz -eq "Keep") {
+    if ($FrameLimit -eq "Keep" -and $VblankRate -le 0 -and $SpuAccurateReservations -eq "Keep" -and $SpuAccurateDma -eq "Keep" -and $EternalSonataSpuHeatProfile -eq "Off" -and $PpuDazAndFtz -eq "Keep") {
         return $null
     }
     if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
@@ -2491,6 +2494,10 @@ function New-LabRunConfig {
         "Off" { "false" }
         default { "" }
     }
+    $spuProfilerValue = switch ($EternalSonataSpuHeatProfile) {
+        "Profile" { "true" }
+        default { "" }
+    }
     $dazAndFtzValue = switch ($PpuDazAndFtz) {
         "On" { "true" }
         "Off" { "false" }
@@ -2518,6 +2525,8 @@ function New-LabRunConfig {
             $newLine = "  Accurate SPU Reservations: $accurateReservationsValue"
         } elseif ($inCore -and $accurateDmaValue -and $line -match '^  Accurate SPU DMA: ') {
             $newLine = "  Accurate SPU DMA: $accurateDmaValue"
+        } elseif ($inCore -and $spuProfilerValue -and $line -match '^  SPU Profiler: ') {
+            $newLine = "  SPU Profiler: $spuProfilerValue"
         }
 
         if ($inVideo) {
@@ -2540,6 +2549,7 @@ function New-LabRunConfig {
         vblank_rate               = $(if ($VblankRate -gt 0) { $VblankRate } else { "default" })
         spu_accurate_reservations = $(if ($accurateReservationsValue) { $accurateReservationsValue } else { "default" })
         spu_accurate_dma          = $(if ($accurateDmaValue) { $accurateDmaValue } else { "default" })
+        spu_profiler              = $(if ($spuProfilerValue) { $spuProfilerValue } else { "default" })
         ppu_daz_and_ftz           = $(if ($dazAndFtzValue) { $dazAndFtzValue } else { "default" })
     }
 }
@@ -2660,7 +2670,7 @@ if ($null -eq $forceHwMsaaResolveOverride) {
 } else {
     Write-LabLine $runLog "- Force Hardware MSAA Resolve override: key missing"
 }
-$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -SpuAccurateDma $SpuAccurateDma -PpuDazAndFtz $PpuDazAndFtz -RunLog $runLog
+$runConfigOverride = New-LabRunConfig -SourcePath $rpcs3Config -RunDir $runDir -FrameLimit $FrameLimit -VblankRate $VblankRate -SpuAccurateReservations $SpuAccurateReservations -SpuAccurateDma $SpuAccurateDma -EternalSonataSpuHeatProfile $EternalSonataSpuHeatProfile -PpuDazAndFtz $PpuDazAndFtz -RunLog $runLog
 if ($null -eq $runConfigOverride) {
     Write-LabLine $runLog "- Run config override: keep"
 } else {
@@ -2669,6 +2679,7 @@ if ($null -eq $runConfigOverride) {
     Write-LabLine $runLog "- Run config vblank rate: $($runConfigOverride.vblank_rate)"
     Write-LabLine $runLog "- Run config Accurate SPU Reservations: $($runConfigOverride.spu_accurate_reservations)"
     Write-LabLine $runLog "- Run config Accurate SPU DMA: $($runConfigOverride.spu_accurate_dma)"
+    Write-LabLine $runLog "- Run config SPU Profiler: $($runConfigOverride.spu_profiler)"
     Write-LabLine $runLog "- Run config Set DAZ and FTZ: $($runConfigOverride.ppu_daz_and_ftz)"
     Write-LabLine $runLog "- Run config Write Color Buffers: forced true"
 }
@@ -2785,6 +2796,7 @@ Write-LabLine $runLog "- Eternal Sonata semaphore ESRCH superpath: $EternalSonat
 Write-LabLine $runLog "- Eternal Sonata GPU candidate probe: $EternalSonataGpuProbe"
 Write-LabLine $runLog "- Eternal Sonata MFC shape probe: $EternalSonataMfcShapeProbe"
 Write-LabLine $runLog "- Eternal Sonata MFC ladder: $EternalSonataMfcLadder"
+Write-LabLine $runLog "- Eternal Sonata SPU heat profile: $EternalSonataSpuHeatProfile"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE verifier: $EternalSonataSpuHleVerify"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x25cc body: $EternalSonataSpuHle25ccBody"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE size16 body: $EternalSonataSpuHleSize16Body"
@@ -2896,6 +2908,7 @@ $previousEsGpuProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_GPU_PROBE"
 $previousEsGpuProbeDumpDir = [Environment]::GetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", "Process")
 $previousEsMfcShapeProbe = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", "Process")
 $previousEsMfcLadder = [Environment]::GetEnvironmentVariable("RPCS3_ES_MFC_LADDER", "Process")
+$previousEsSpuHeatProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HEAT_PROFILE", "Process")
 $previousEsSpuHleVerify = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", "Process")
 $previousEsSpuHle25ccBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", "Process")
 $previousEsSpuHleSize16Body = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", "Process")
@@ -2947,6 +2960,10 @@ $esMfcShapeProbeEnv = switch ($EternalSonataMfcShapeProbe) {
 $esMfcLadderEnv = switch ($EternalSonataMfcLadder) {
     "Verify" { "verify" }
     "Fast" { "fast" }
+    default { "off" }
+}
+$esSpuHeatProfileEnv = switch ($EternalSonataSpuHeatProfile) {
+    "Profile" { "compact" }
     default { "off" }
 }
 $esSpuHleVerifyEnv = switch ($EternalSonataSpuHleVerify) {
@@ -3079,6 +3096,7 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", $esGpuProbeDumpDir, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", $esMfcShapeProbeEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $esMfcLadderEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HEAT_PROFILE", $esSpuHeatProfileEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $esSpuHleVerifyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $esSpuHle25ccBodyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $esSpuHleSize16BodyEnv, "Process")
@@ -3114,6 +3132,7 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_GPU_PROBE_DUMP_DIR", $previousEsGpuProbeDumpDir, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_SHAPE_PROBE", $previousEsMfcShapeProbe, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_MFC_LADDER", $previousEsMfcLadder, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HEAT_PROFILE", $previousEsSpuHeatProfile, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $previousEsSpuHleVerify, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $previousEsSpuHle25ccBody, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $previousEsSpuHleSize16Body, "Process")
@@ -3201,10 +3220,21 @@ while ($true) {
 
 if (-not $exited) {
     Write-LabLine $runLog "Process exceeded ${MaxSeconds}s total wall time; stopping PID $($process.Id)."
-    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 500
-    $process.Refresh()
-    $exited = $process.HasExited
+    if ($EternalSonataSpuHeatProfile -eq "Profile") {
+        $closeRequested = $process.CloseMainWindow()
+        Write-LabLine $runLog "SPU heat profile graceful stop requested: $closeRequested"
+        if ($closeRequested) {
+            $exited = $process.WaitForExit(10000)
+            Write-LabLine $runLog "SPU heat profile graceful stop completed: $exited"
+        }
+    }
+
+    if (-not $exited) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+        $process.Refresh()
+        $exited = $process.HasExited
+    }
 }
 
 $process.Refresh()
@@ -3263,6 +3293,34 @@ if (Test-Path -LiteralPath $sourceLog) {
     $destLog = Join-Path $runDir "RPCS3.log"
     Copy-Item -LiteralPath $sourceLog -Destination $destLog -Force
     Write-LabLine $runLog "RPCS3 log: $destLog"
+
+    if ($EternalSonataSpuHeatProfile -eq "Profile") {
+        $heatSummaryPath = Join-Path $runDir "spu-heat-summary.txt"
+        $heatLines = New-Object System.Collections.Generic.List[string]
+        foreach ($line in [System.IO.File]::ReadLines($destLog)) {
+            if ($line.Contains("ES SPU heat ")) {
+                $heatLines.Add($line) | Out-Null
+            }
+        }
+
+        if ($heatLines.Count -gt 0) {
+            [System.IO.File]::WriteAllLines($heatSummaryPath, $heatLines, [System.Text.UTF8Encoding]::new($false))
+            Write-LabLine $runLog "SPU heat summary: $heatSummaryPath ($($heatLines.Count) lines)"
+            $heatAnalyzer = Join-Path $PSScriptRoot "summarize_eternal_sonata_spu_heat.ps1"
+            if (Test-Path -LiteralPath $heatAnalyzer -PathType Leaf) {
+                try {
+                    $heatAnalysis = & $heatAnalyzer -RunDir $runDir -SummaryPath $heatSummaryPath -Top 20 2>&1
+                    foreach ($line in @($heatAnalysis)) {
+                        Write-LabLine $runLog "$line"
+                    }
+                } catch {
+                    Write-LabLine $runLog "SPU heat analysis failed: $($_.Exception.Message)"
+                }
+            }
+        } else {
+            Write-LabLine $runLog "SPU heat summary missing: no sampler lines found in $destLog"
+        }
+    }
 
     if ($EternalSonataGpuProbe -ne "Off" -or $EternalSonataMfcShapeProbe -ne "Off" -or $EternalSonataMfcLadder -ne "Off" -or $EternalSonataSpuHleVerify -ne "Off" -or $EternalSonataSpuHle25ccBody -ne "Off" -or $EternalSonataSpuHle451cPreserveBody -ne "Off" -or $EternalSonataKernelCapsule -ne "Off" -or $EternalSonataReservationLoop -ne "Off" -or $EternalSonataPutllc16Pair -ne "Off" -or $EternalSonataDmaSuperPath -ne "Off") {
         $gpuProbeSummary = Join-Path $PSScriptRoot "summarize_eternal_sonata_gpu_probe.ps1"
