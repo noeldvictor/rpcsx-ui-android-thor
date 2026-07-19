@@ -63,6 +63,7 @@ param(
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot,
+    [switch]$PassThruCaptureDirectory,
     [switch]$AllowUnknownDraw
 )
 
@@ -71,6 +72,34 @@ $ErrorActionPreference = "Stop"
 
 if ($ThermalRuntimeProbeWindowC -lt $ThermalRuntimeStopHeadroomC) {
     throw "ThermalRuntimeProbeWindowC must be greater than or equal to ThermalRuntimeStopHeadroomC."
+}
+
+if ($Profile -eq "strict-cool-gate") {
+    if ($BootGame) {
+        throw "The strict-cool-gate profile forbids -BootGame."
+    }
+    if (-not $ForceStop) {
+        throw "The strict-cool-gate profile requires -ForceStop."
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Macro)) {
+        throw "The strict-cool-gate profile forbids a custom macro."
+    }
+
+    $strictCoolGateParameters = [ordered]@{
+        ThermalPreflightSamples = @($ThermalPreflightSamples, 3)
+        ThermalPreflightIntervalSeconds = @($ThermalPreflightIntervalSeconds, 2)
+        ThermalPreflightHeadroomC = @($ThermalPreflightHeadroomC, 0)
+        MaxLaunchSiliconTemperatureC = @($MaxLaunchSiliconTemperatureC, 35)
+        ThermalPreflightMaxRiseC = @($ThermalPreflightMaxRiseC, 1)
+        MaxBatteryTemperatureC = @($MaxBatteryTemperatureC, 34)
+        MaxSkinTemperatureC = @($MaxSkinTemperatureC, 40)
+        MaxSiliconTemperatureC = @($MaxSiliconTemperatureC, 72)
+    }
+    foreach ($entry in $strictCoolGateParameters.GetEnumerator()) {
+        if ($entry.Value[0] -ne $entry.Value[1]) {
+            throw "The strict-cool-gate profile requires -$($entry.Key) '$($entry.Value[1])', got '$($entry.Value[0])'."
+        }
+    }
 }
 
 $RepoRoot = Get-ThorRepoRoot
@@ -259,6 +288,11 @@ function Get-ThorMacroForProfile {
         "eternal-sonata-menu-route" {
             return "gate:ppu-ready:150000;shot:title-before-load;check:visual:title-menu;dpad_down;wait:800;cross;gate:visual:load-menu:30000;cross;wait:1000;dpad_up;wait:500;cross;gate:visual:load-complete:50000;cross;gate:visual:field-frame:25000;check:guest:loaded-field;shot:field;start;wait:1000;shot:pause-menu;check:guest:pause-menu;threads:menu-route"
         }
+        "strict-cool-gate" {
+            # A no-input profile for install-only thermal qualification. The
+            # dedicated wrapper supplies the fail-closed temperature limits.
+            return ""
+        }
         "custom" {
             return $Macro
         }
@@ -266,7 +300,7 @@ function Get-ThorMacroForProfile {
             if (-not [string]::IsNullOrWhiteSpace($Macro)) {
                 return $Macro
             }
-            throw "Unknown Thor input profile '$Name'. Supply -Macro or use fast-forward-toggle, title-new-game, title-load-save, eternal-sonata-new-game-probe, eternal-sonata-load-probe, eternal-sonata-load-field-route, eternal-sonata-battle-intro-route, eternal-sonata-field-direct, eternal-sonata-field-route, eternal-sonata-menu-route."
+            throw "Unknown Thor input profile '$Name'. Supply -Macro or use strict-cool-gate, fast-forward-toggle, title-new-game, title-load-save, eternal-sonata-new-game-probe, eternal-sonata-load-probe, eternal-sonata-load-field-route, eternal-sonata-battle-intro-route, eternal-sonata-field-direct, eternal-sonata-field-route, eternal-sonata-menu-route."
         }
     }
 }
@@ -1304,3 +1338,6 @@ if ($PostSnapshot) {
 }
 
 Write-Host "Thor input macro capture: $captureDir"
+if ($PassThruCaptureDirectory) {
+    Write-Output $captureDir
+}

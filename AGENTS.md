@@ -817,4 +817,14 @@ Put dated run details in `debug-experiments/`, not here.
   `68/72 C` early/hard thermal gates. Installation grants no speed, FPS,
   temperature, flicker, gameplay, or stability credit. Detailed ledger:
   `debug-experiments/20260719-thor-spu-cap-no-launch-install.md`.
+- The install-only thermal gate now has an explicit empty
+  `strict-cool-gate` input profile plus
+  `tools/invoke_thor_strict_cool_gate.ps1`. Its default `Status` action is
+  host-only; explicit `Run` supplies the exact no-boot/force-stop thermal
+  contract and returns one machine-readable validated capture directory.
+  The profile rejects boot or mismatched limits before ADB resolution. This
+  removes unsupported-profile and host-stream path scraping from future
+  installs without weakening the gate. All 59 Thor contracts pass; no ADB or
+  device action ran, so this is route-tooling only. Detailed ledger:
+  `debug-experiments/20260719-thor-strict-cool-gate-wrapper.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
