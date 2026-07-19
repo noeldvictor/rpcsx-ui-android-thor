@@ -323,9 +323,21 @@ namespace rsx
 			shader_loading_dialog* dlg)
 		{
 			atomic_t<u32> processed(0);
+#ifdef __ANDROID__
+			atomic_t<u32> suppressed_preload_diagnostics(0);
+			const bool summarize_preload_diagnostics = g_cfg.video.renderer == video_renderer::vulkan &&
+				Emu.GetTitleID() == "BLUS30161" &&
+				(nb_workers > 1 || rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID()));
+#endif
 
 			std::function<void(u32)> shader_load_worker = [&](u32 stop_at)
 			{
+#ifdef __ANDROID__
+				if (summarize_preload_diagnostics)
+				{
+					rpcsx::startup_cache_phase::begin_rsx_preload_diagnostic_summary();
+				}
+#endif
 				u32 pos;
 				// Claim one entry at a time so workers share expensive pipelines instead of waiting on a fixed slow partition.
 				while (((pos = processed++) < stop_at) && !Emu.IsStopped())
@@ -364,9 +376,21 @@ namespace rsx
 				}
 				// Each worker claims one sentinel index after the final real entry.
 				processed--;
+#ifdef __ANDROID__
+				if (summarize_preload_diagnostics)
+				{
+					suppressed_preload_diagnostics += rpcsx::startup_cache_phase::end_rsx_preload_diagnostic_summary();
+				}
+#endif
 			};
 
 			await_workers(nb_workers, 0, shader_load_worker, processed, entry_count, dlg);
+#ifdef __ANDROID__
+			if (const u32 suppressed = suppressed_preload_diagnostics.load(); suppressed && !Emu.IsStopped())
+			{
+				rsx_log.notice("Android RSX shader-cache preload retained one decompiler diagnostic per kind and worker; suppressed %u duplicates.", suppressed);
+			}
+#endif
 		}
 
 		template <typename... Args>

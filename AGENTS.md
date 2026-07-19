@@ -709,4 +709,22 @@ Put dated run details in `debug-experiments/`, not here.
   only: the installed `7CDD38E4...E5F9` APK remains force-stopped and no ADB,
   APK, FPS, temperature, flicker, gameplay, or runtime credit exists. Detailed
   ledger: `debug-experiments/20260719-thor-adpf-normal-build-gate.md`.
+- The 2026-07-19 combined title attempt passed a strict no-boot gate at
+  `31.5 -> 32.3 -> 31.9 C` but was force-stopped at the early thermal guard:
+  the first visual snapshot was `59.0 C`, immediate confirmation was `68.7 C`,
+  and the title was not reached. The log stopped during RSX shader-cache load,
+  before cache-phase pacing or Vulkan pipeline compilation, so neither path
+  gets runtime credit. Do not retry until an independently cool round. The
+  loader emitted 412 duplicate-heavy fragment-decompiler errors in roughly
+  296 ms; Android Vulkan BLUS30161 preload workers now retain one diagnostic
+  per kind and worker and emit one aggregate count after load. Saved-log replay
+  predicts 13 representative writes and 399 suppressed duplicates (96.8%).
+  Runtime diagnostics, shader semantics, and non-Android behavior are
+  unchanged. All 55 Thor contracts and ARM64 RelWithDebInfo pass. The next
+  cool proof should package/install without launch in its own gate, then use
+  efficiency-core cache-worker affinity `0x07`, RSX/SPU preload limits
+  `256/64`, cache-phase pacing, and Vulkan cache-hit-only under the same
+  `68/72 C` guard. No device speed or temperature improvement is claimed.
+  Detailed ledger:
+  `debug-experiments/20260719-thor-combined-title-thermal-stop.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

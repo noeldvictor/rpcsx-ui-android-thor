@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "FragmentProgramDecompiler.h"
+#include "Emu/cache_phase_pacing.h"
 
 #include <algorithm>
 
@@ -71,7 +72,8 @@ void FragmentProgramDecompiler::SetDst(std::string code, u32 flags)
 			break;
 
 		default:
-			rsx_log.error("Bad scale: %d", u32{src1.scale});
+			if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::bad_scale))
+				rsx_log.error("Bad scale: %d", u32{src1.scale});
 			break;
 		}
 
@@ -334,7 +336,8 @@ std::string FragmentProgramDecompiler::ClampValue(const std::string& code, u32 p
 		// Doesn't seem to do anything to the input from hw tests, same as 0
 		break;
 	default:
-		rsx_log.error("Unexpected precision modifier (%d)\n", precision);
+		if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::unexpected_precision))
+			rsx_log.error("Unexpected precision modifier (%d)\n", precision);
 		break;
 	}
 
@@ -726,13 +729,15 @@ std::string FragmentProgramDecompiler::GetSRC(T src)
 			if (m_loop_count > 1)
 			{
 				// Afaik there is only one address/loop register on NV40
-				rsx_log.error("Nested loop with indexed load was detected. Report this to developers!");
+				if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::nested_indexed_loop))
+					rsx_log.error("Nested loop with indexed load was detected. Report this to developers!");
 			}
 
 			if (m_prog.texcoord_control_mask)
 			{
 				// This would require more work if it exists. It cannot be determined at compile time and has to be part of _indexed_load() subroutine.
-				rsx_log.error("Indexed load with control override mask detected. Report this to developers!");
+				if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::indexed_control_override))
+					rsx_log.error("Indexed load with control override mask detected. Report this to developers!");
 			}
 
 			const auto load_cmd = fmt::format("_indexed_load(i%u + %u)", m_loop_count - 1, src2.addr_reg);
@@ -755,7 +760,8 @@ std::string FragmentProgramDecompiler::GetSRC(T src)
 			// UNK
 			if (reg_var == "unk")
 			{
-				rsx_log.error("Bad src reg num: %d", u32{register_id});
+				if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::bad_source_register))
+					rsx_log.error("Bad src reg num: %d", u32{register_id});
 			}
 
 			ret += reg_var;
@@ -778,8 +784,9 @@ std::string FragmentProgramDecompiler::GetSRC(T src)
 		break;
 
 	case RSX_FP_REGISTER_TYPE_UNKNOWN: // ??? Used by a few games, what is it?
-		rsx_log.error("Src type 3 used, opcode=0x%X, dst=0x%X s0=0x%X s1=0x%X s2=0x%X",
-			dst.opcode, dst.HEX, src0.HEX, src1.HEX, src2.HEX);
+		if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::unknown_source_type))
+			rsx_log.error("Src type 3 used, opcode=0x%X, dst=0x%X s0=0x%X s1=0x%X s2=0x%X",
+				dst.opcode, dst.HEX, src0.HEX, src1.HEX, src2.HEX);
 
 		// This is not some special type, it is a bug indicating memory corruption
 		// Shaders that are even slightly off do not execute on realhw to any meaningful degree
@@ -1406,10 +1413,12 @@ std::string FragmentProgramDecompiler::Decompile()
 				if (m_loop_count)
 					AddFlowOp("break");
 				else
-					rsx_log.error("BRK opcode found outside of a loop");
+					if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::break_outside_loop))
+						rsx_log.error("BRK opcode found outside of a loop");
 				break;
 			case RSX_FP_OPCODE_CAL:
-				rsx_log.error("Unimplemented SIP instruction: CAL");
+				if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::unimplemented_call))
+					rsx_log.error("Unimplemented SIP instruction: CAL");
 				break;
 			case RSX_FP_OPCODE_FENCT:
 				AddCode("//FENCT");
@@ -1494,7 +1503,8 @@ std::string FragmentProgramDecompiler::Decompile()
 				break;
 			forced_unit = FORCE_NONE;
 
-			rsx_log.error("Unknown/illegal instruction: 0x%x (forced unit %d)", opcode, prev_force_unit);
+			if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::unknown_instruction))
+				rsx_log.error("Unknown/illegal instruction: 0x%x (forced unit %d)", opcode, prev_force_unit);
 			break;
 		}
 
@@ -1509,7 +1519,8 @@ std::string FragmentProgramDecompiler::Decompile()
 
 	while (m_code_level > 1)
 	{
-		rsx_log.error("Hanging block found at end of shader. Malformed shader?");
+		if (rpcsx::startup_cache_phase::should_emit_rsx_preload_diagnostic(rpcsx::startup_cache_phase::rsx_preload_diagnostic::hanging_block))
+			rsx_log.error("Hanging block found at end of shader. Malformed shader?");
 
 		m_code_level--;
 		AddCode("}");
