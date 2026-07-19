@@ -572,4 +572,24 @@ Put dated run details in `debug-experiments/`, not here.
   temperature, FPS, flicker, gameplay, or stability credit exists. Detailed
   ledger:
   `debug-experiments/20260719-thor-disabled-spu-reduced-loop-diagnostics-overhead.md`.
+- Normal Android builds now compile reduced-loop result reuse and dynamic-MFC
+  lowering to constant false under the existing default-off Eternal Sonata SPU
+  experiment gate. Explicit diagnostics retain both property-controlled paths
+  through `-PrpcsxThorEsSpuExperiments=true` or
+  `RPCSX_THOR_ES_SPU_EXPERIMENTS_BUILD=true`; desktop is unchanged. This is
+  baseline behavior: reuse cannot be reached while unsafe Android reduced-loop
+  emission is clamped off, and dynamic-MFC lowering had no promoted speed or
+  correctness result. Host ARM64 proof removed both property strings, 336
+  bytes of parser text, 9 bytes of reuse guard/state, all selected helper/state
+  symbols, and the dynamic-MFC IR stub name. `spu_llvm_recompiler::compile`
+  shrank 47,776 -> 46,520 bytes, `WRCH` 10,768 -> 10,740 bytes, and
+  `spu_cache::initialize` 14,268 -> 14,152 bytes. Their selected default-path
+  experiment references fell `2 -> 0`, `2 -> 0`, and `4 -> 3`; the remaining
+  cache property calls are active independent controls. The core shrank by
+  33,760 bytes, all 13 active frame-poll wait symbols remain, all 49 Thor
+  contracts pass, and ARM64 RelWithDebInfo passes. This is host-verified
+  `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed,
+  temperature, FPS, flicker, gameplay, or stability credit exists. Detailed
+  ledger:
+  `debug-experiments/20260719-thor-disabled-spu-compiler-experiments-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

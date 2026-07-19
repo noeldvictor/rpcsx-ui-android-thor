@@ -6,6 +6,10 @@ $cmakeSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/C
 $kernelSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_spu.cpp") -Raw
 $spuSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp") -Raw
 $spuHeader = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.h") -Raw
+$recompilerSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp") -Raw
+$recompilerHeader = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPURecompiler.h") -Raw
+$llvmSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp") -Raw
+$loggingSource = Get-Content -LiteralPath (Join-Path $repoRoot "tools/set_thor_logging.ps1") -Raw
 
 $requiredGradleFragments = @(
     'providers.gradleProperty("rpcsxThorEsSpuExperiments")',
@@ -20,7 +24,7 @@ foreach ($fragment in $requiredGradleFragments) {
 }
 
 $requiredCmakeFragments = @(
-    'option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata DMA and GETLLAR experiments on Android" OFF)',
+    'option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata SPU experiments on Android" OFF)',
     'add_compile_definitions(RPCSX_THOR_ES_SPU_EXPERIMENTS=1)'
 )
 
@@ -93,6 +97,66 @@ foreach ($entry in $expectedHookCounts.GetEnumerator()) {
     }
 }
 
+$compilerGate = '#if !defined\(ANDROID\) \|\| defined\(RPCSX_THOR_ES_SPU_EXPERIMENTS\)'
+if ([regex]::Matches($recompilerSource, $compilerGate).Count -ne 1) {
+    throw "SPU compiler reuse and dynamic-MFC experiments must share one explicit Android build gate."
+}
+
+if ($recompilerSource -notmatch ($compilerGate + '\s+bool spu_reduced_loop_reuse_enabled\(\) noexcept[\s\S]*?debug\.rpcsx\.thor\.spu_reduced_loop_reuse[\s\S]*?bool spu_dynamic_mfc_fast_enabled\(\) noexcept[\s\S]*?debug\.rpcsx\.thor\.spu_dynamic_mfc_fast[\s\S]*?#endif')) {
+    throw "SPU compiler experiment property parsing is not wholly excluded from normal Android builds."
+}
+
+$normalCompilerGate = @'
+#if defined(ANDROID) && !defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
+inline constexpr bool spu_reduced_loop_reuse_enabled() noexcept
+{
+	return false;
+}
+
+inline constexpr bool spu_dynamic_mfc_fast_enabled() noexcept
+{
+	return false;
+}
+#else
+'@
+
+if (-not $recompilerHeader.Contains($normalCompilerGate)) {
+    throw "Normal Android must compile SPU reuse and dynamic-MFC experiment selection to constant false."
+}
+
+$requiredCompilerCallsites = @(
+    'const bool reuse_reduced_loop_results = spu_reduced_loop_reuse_enabled();',
+    'if (spu_dynamic_mfc_fast_enabled() && !g_cfg.core.mfc_debug)'
+)
+
+foreach ($fragment in $requiredCompilerCallsites) {
+    if (-not $llvmSource.Contains($fragment)) {
+        throw "Explicit SPU compiler experiment lost its restorable callsite: $fragment"
+    }
+}
+
+$requiredCompilerControls = @(
+    'debug.rpcsx.thor.spu_reduced_loop_reuse',
+    'debug.rpcsx.thor.spu_dynamic_mfc_fast',
+    'RPCSX_SPU_REDUCED_LOOP_REUSE',
+    'RPCSX_SPU_DYNAMIC_MFC_FAST'
+)
+
+foreach ($fragment in $requiredCompilerControls) {
+    if (-not $recompilerSource.Contains($fragment)) {
+        throw "Explicit SPU compiler experiment lost its runtime control: $fragment"
+    }
+}
+
+foreach ($fragment in @(
+    'Set-DeviceProp "debug.rpcsx.thor.spu_reduced_loop_reuse" $ReducedLoopReuse',
+    'Set-DeviceProp "debug.rpcsx.thor.spu_dynamic_mfc_fast" $DynamicMfcFast'
+)) {
+    if (-not $loggingSource.Contains($fragment)) {
+        throw "Thor logging tool lost SPU compiler experiment property control: $fragment"
+    }
+}
+
 $requiredRuntimeFragments = @(
     'RPCSX_THOR_ES_DMA_SUPERPATH',
     'RPCS3_ES_DMA_SUPERPATH',
@@ -117,4 +181,4 @@ if ($gradleSource -match 'rpcsxThorEsSpuExperiments[^\r\n]*\?:\s*true') {
     throw "The Android Eternal Sonata SPU experiments must remain disabled by default."
 }
 
-Write-Output "Thor Eternal Sonata SPU-experiment build gate passed: normal Android retains baseline DMA/GETLLAR semantics without probe work, while diagnostics and thread layout remain restorable."
+Write-Output "Thor Eternal Sonata SPU-experiment build gate passed: normal Android retains baseline compiler, DMA, and GETLLAR semantics without experiment work, while diagnostics and thread layout remain restorable."

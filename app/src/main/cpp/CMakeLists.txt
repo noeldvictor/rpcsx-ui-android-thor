@@ -13,7 +13,7 @@ option(RPCSX_THOR_SYSCALL_STATS "Instrument Android PPU syscalls for Thor diagno
 option(RPCSX_THOR_SPURS_PROBE "Instrument Android SPURS waits for Thor diagnostics" OFF)
 option(RPCSX_THOR_DRAW_STREAM_PROBE "Instrument Eternal Sonata draw-stream handoff diagnostics" OFF)
 option(RPCSX_THOR_SEMA_SUPERPATH "Build the Eternal Sonata semaphore experiment on Android" OFF)
-option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata DMA and GETLLAR experiments on Android" OFF)
+option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata SPU experiments on Android" OFF)
 option(RPCSX_THOR_ES_PPU_EXPERIMENTS "Build Eternal Sonata PPU isolation and provenance experiments on Android" OFF)
 set(RPCSX_ANDROID_ARM_ARCH "armv8.2-a" CACHE STRING "AArch64 ISA baseline for Android native code")
 set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model for Android native code")

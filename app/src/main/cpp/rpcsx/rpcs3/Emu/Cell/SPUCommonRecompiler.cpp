@@ -161,6 +161,7 @@ u32 spu_reduced_loop_unroll_factor() noexcept
 	return 2;
 }
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 bool spu_reduced_loop_reuse_enabled() noexcept
 {
 	static const bool enabled = []() noexcept
@@ -209,6 +210,7 @@ bool spu_dynamic_mfc_fast_enabled() noexcept
 
 	return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
 }
+#endif
 
 bool spu_native_object_cache_enabled() noexcept
 {

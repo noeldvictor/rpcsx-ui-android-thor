@@ -67,8 +67,20 @@ struct spu_program
 };
 
 u32 spu_reduced_loop_unroll_factor() noexcept;
+#if defined(ANDROID) && !defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
+inline constexpr bool spu_reduced_loop_reuse_enabled() noexcept
+{
+	return false;
+}
+
+inline constexpr bool spu_dynamic_mfc_fast_enabled() noexcept
+{
+	return false;
+}
+#else
 bool spu_reduced_loop_reuse_enabled() noexcept;
 bool spu_dynamic_mfc_fast_enabled() noexcept;
+#endif
 bool spu_native_object_cache_enabled() noexcept;
 
 class spu_item
