@@ -427,7 +427,10 @@ public:
 					return nullptr;
 				}
 
+#ifndef __ANDROID__
+				// Android already records the program IDs before compilation and retains every failure.
 				rsx_log.success("Program compiled successfully");
+#endif
 				notify_pipeline_compiled(key.properties, vertex_shader, fragment_shader_);
 
 				std::lock_guard lock(m_pipeline_mutex);

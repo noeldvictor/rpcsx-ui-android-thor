@@ -7042,7 +7042,11 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				continue;
 			}
 
+#ifdef __ANDROID__
+			if (!is_compiled && g_cfg.core.ppu_debug)
+#else
 			if (!is_compiled)
+#endif
 			{
 				ppu_log.success("LLVM: Loaded module %s", obj_name);
 			}

@@ -680,4 +680,16 @@ Put dated run details in `debug-experiments/`, not here.
   no APK, ADB, device, FPS, temperature, flicker, gameplay, or runtime credit
   exists. Detailed ledger:
   `debug-experiments/20260719-thor-android-logcat-warn-default.md`.
+- On 2026-07-19, routine Android compile-log pruning made cached PPU module
+  successes PPU-Debug-only, compiled generic successful RSX pipeline rows out
+  of Android, and collapsed two per-translator ARM64 feature notices into one
+  process-level summary. Across 24 saved captures this targets 2,170 of 2,194
+  calls (98.906%) and 219.866 KiB of historical records while retaining every
+  failure, RSX trace identity, pipeline notification, opt-in PPU detail, and
+  desktop behavior. All 54 Thor contracts and Android ARM64 RelWithDebInfo pass;
+  the selected CPU text shrinks 4 bytes, `ppu_initialize` grows 32 bytes, and
+  the full debug-bearing core grows 2,440 bytes. This is host-verified
+  `stackable-cpu-pressure` only: no APK, ADB, device, FPS, temperature, flicker,
+  gameplay, or runtime credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-android-compile-log-pruning.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

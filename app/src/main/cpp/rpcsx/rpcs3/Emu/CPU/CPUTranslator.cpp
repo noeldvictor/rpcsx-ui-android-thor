@@ -197,15 +197,25 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 	}
 
 #ifdef ARCH_ARM64
-	if (utils::use_spu_dotprod())
+	m_use_dotprod = utils::use_spu_dotprod();
+	m_use_i8mm = utils::use_spu_i8mm();
+
+#ifdef __ANDROID__
+	// Feature selection is process-stable. Report it once instead of once per translator.
+	[[maybe_unused]] static const bool s_logged_spu_features = []()
 	{
-		m_use_dotprod = true;
+		llvm_log.notice("AArch64 SPU fast paths: mode=%s, dotprod=%s, i8mm=%s.",
+			utils::get_arm64_spu_feature_mode_name(), utils::use_spu_dotprod(), utils::use_spu_i8mm());
+		return true;
+	}();
+#else
+	if (m_use_dotprod)
+	{
 		llvm_log.notice("AArch64 dot-product SPU fast paths enabled.");
 	}
 
-	if (utils::use_spu_i8mm())
+	if (m_use_i8mm)
 	{
-		m_use_i8mm = true;
 		llvm_log.notice("AArch64 I8MM SPU fast paths enabled.");
 	}
 
@@ -214,6 +224,7 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 		llvm_log.notice("AArch64 SPU feature isolation mode: %s (dotprod=%s, i8mm=%s).",
 			utils::get_arm64_spu_feature_mode_name(), m_use_dotprod, m_use_i8mm);
 	}
+#endif
 #endif
 }
 
