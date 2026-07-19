@@ -849,4 +849,22 @@ Put dated run details in `debug-experiments/`, not here.
   controls. Only after another separate cooling interval may one self-stopping
   `ThorCoolTitle` proof run. Detailed ledger:
   `debug-experiments/20260719-thor-cool-title-thermal-counterproof.md`.
+- The next cool-title attempt `20260719-184713-thor-input-custom` found Thor at
+  `44.9 C` on preflight sample 1 against the `35 C` launch ceiling and refused
+  boot. Failure evidence had no PID; the post-stop snapshot was `45.8 C`, and
+  no retry/device query ran. The analyzer classifies it separately as
+  `preflight-refused-hot`, not a launched thermal stop, with no speed credit.
+- Source tracing then found Thor debug boot bypassed
+  `GameSettingsDatabase.applyRecommendedConfig` and could race the async game
+  list, explaining why the prior launched log still had `Set DAZ and FTZ:
+  false` despite the BLUS30161 managed profile requiring true. Future packaged
+  debug boots pass explicit `BLUS30161`, apply by title ID, and fail closed
+  before native boot unless the managed profile is current/applied; user custom
+  configs are never overwritten. All 59 Thor contracts and ThorTest Kotlin
+  compile pass. Installed APK `5C3911D0...682CC6` is unchanged and does not
+  contain this Kotlin gate. After an independently cool interval, first run
+  only its same-APK 100 ms SPU-budget proof for isolation; package/install the
+  managed-profile/native successor later under separate no-launch and runtime
+  rounds. Detailed ledger:
+  `debug-experiments/20260719-thor-debug-managed-profile-gate.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

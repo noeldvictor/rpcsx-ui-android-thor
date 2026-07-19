@@ -8,6 +8,8 @@ $translatorHeader = Get-Content -LiteralPath (Join-Path $cellRoot "PPUTranslator
 $threadSource = Get-Content -LiteralPath (Join-Path $cellRoot "PPUThread.cpp") -Raw
 $labSource = Get-Content -LiteralPath (Join-Path $repoRoot "tools/windows_rpcs3_lab.ps1") -Raw
 $managedProfilesSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/java/net/rpcsx/config/GameSettingsDatabase.kt") -Raw
+$mainActivitySource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/java/net/rpcsx/MainActivity.kt") -Raw
+$inputMacroSource = Get-Content -LiteralPath (Join-Path $repoRoot "tools/thor_input_macro.ps1") -Raw
 $pushProfileSource = Get-Content -LiteralPath (Join-Path $repoRoot "tools/push_eternal_sonata_thor_profile.ps1") -Raw
 
 $requiredFragments = @(
@@ -21,7 +23,13 @@ $requiredFragments = @(
     @($labSource, 'Set DAZ and FTZ: $dazAndFtzValue'),
     @($labSource, '-PpuDazAndFtz $PpuDazAndFtz'),
     @($managedProfilesSource, '"BLUS30161" to """'),
-    @($managedProfilesSource, 'Set DAZ and FTZ: true')
+    @($managedProfilesSource, 'Set DAZ and FTZ: true'),
+    @($managedProfilesSource, 'fun applyRecommendedConfigForTitleId(context: Context, titleId: String): Status'),
+    @($mainActivitySource, 'GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)'),
+    @($mainActivitySource, 'val managedProfileReady = settingsStatus?.let { it.enabled && it.applied } == true'),
+    @($mainActivitySource, 'if (requireManagedProfile && !managedProfileReady)'),
+    @($inputMacroSource, '--es titleId $TitleId'),
+    @($inputMacroSource, '--ez thorRequireManagedProfile true')
 )
 
 foreach ($entry in $requiredFragments) {
@@ -63,4 +71,4 @@ if ($pushProfileCount -ne 4) {
     throw "Expected all four Eternal Sonata profile templates to enable hardware FTZ; found $pushProfileCount."
 }
 
-Write-Output "Thor PPU FTZ/NJ contract passed: hardware FTZ is BLUS30161-only, ARM64 extrema use direct hardware lowering, four sensitive ops retain manual flushing, and PPU cache identity is distinct."
+Write-Output "Thor PPU FTZ/NJ contract passed: hardware FTZ is BLUS30161-only, debug boots fail closed unless its managed profile is applied, ARM64 extrema use direct hardware lowering, four sensitive ops retain manual flushing, and PPU cache identity is distinct."

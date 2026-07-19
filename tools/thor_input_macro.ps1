@@ -4,6 +4,8 @@ param(
     [string]$Profile = "custom",
     [string]$Macro = "",
     [string]$GamePath = "/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso",
+    [ValidatePattern("^[A-Z]{4}[0-9]{5}$")]
+    [string]$TitleId = "BLUS30161",
     [int]$Display = 0,
     [int]$DefaultWaitMs = 500,
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
@@ -839,6 +841,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Device serial: $DeviceSerial",
     "- Profile: $Profile",
     "- Game path: $GamePath",
+    "- Title ID: $TitleId",
     "- Display: $Display",
     "- Thor display pacing: $ThorDisplayPacing",
     "- Input mode requested: $requestedInputMode",
@@ -975,7 +978,7 @@ if ($BootGame) {
     Start-Sleep -Milliseconds 500
 
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
-    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --ez thorRequireManagedProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
     Initialize-ThorProcessIdentity
 }
 

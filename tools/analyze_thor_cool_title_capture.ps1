@@ -201,6 +201,21 @@ $thermalFailureLines = @(
         Where-Object { $_ -match '(?i)thermal|temperature' } |
         ForEach-Object { "macro-failure: $($_.Trim())" }
 )
+$preflightRefusalLines = @(
+    $thermalLines |
+        Where-Object { $_ -match 'stage=pre-run-\d+-of-\d+' } |
+        ForEach-Object { $_.Trim() }
+    $macroFailureLines |
+        Where-Object { $_ -match "(?i)Stage 'pre-run-\d+-of-\d+'" } |
+        ForEach-Object { $_.Trim() }
+)
+$failurePidLines = Read-OptionalLines "failure-pid.txt"
+$failurePidValues = @(
+    $failurePidLines |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -match '^\d+(?:\s+\d+)*$' }
+)
+$processAbsentAtFailure = $failurePidLines.Count -gt 0 -and $failurePidValues.Count -eq 0
 $siliconTemperatures = New-Object System.Collections.Generic.List[double]
 foreach ($line in $thermalLines) {
     if ($line -match 'silicon_temperature_c=([0-9]+(?:\.[0-9]+)?)') {
@@ -262,7 +277,9 @@ $readyForComparison = (
     $stoppedAfterProof
 )
 
-$status = if ($thermalFailureLines.Count -gt 0 -and -not $titleMenuPresent) {
+$status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -and -not $titleMenuPresent) {
+    "preflight-refused-hot"
+} elseif ($thermalFailureLines.Count -gt 0 -and -not $titleMenuPresent) {
     "thermal-stop-before-title"
 } elseif ($fatalHits.Count -gt 0 -and -not $titleMenuPresent) {
     "fatal-before-title"
@@ -298,6 +315,8 @@ $result = [pscustomobject]@{
     post_proof_pid_value = $postPidValue
     max_silicon_temperature_c = $maxSiliconTemperatureC
     thermal_failure_lines = @($thermalFailureLines)
+    preflight_refusal_lines = @($preflightRefusalLines)
+    process_absent_at_failure = $processAbsentAtFailure
     fatal_hits = @($fatalHits)
     property_mismatches = @($profilePropertyMismatches)
     activation_missing = @($activationMissing)

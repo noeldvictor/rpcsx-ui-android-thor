@@ -182,9 +182,11 @@ object GameSettingsDatabase {
         }
     }
 
-    fun statusForGame(context: Context, game: Game): Status {
+    fun statusForGame(context: Context, game: Game): Status =
+        statusForTitleId(context, GameIdentity.primaryTitleId(game))
+
+    private fun statusForTitleId(context: Context, titleId: String?): Status {
         val database = loadDatabase(context)
-        val titleId = GameIdentity.primaryTitleId(game)
         if (titleId == null) {
             return Status(
                 titleId = null,
@@ -252,30 +254,43 @@ object GameSettingsDatabase {
         return statusForGame(context, game)
     }
 
-    fun applyRecommendedConfig(context: Context, game: Game): Status {
-        return applyRecommendedConfig(context, game, replaceCustomConfig = false)
-    }
+    fun applyRecommendedConfig(context: Context, game: Game): Status =
+        applyRecommendedConfig(
+            context,
+            GameIdentity.primaryTitleId(game),
+            replaceCustomConfig = false
+        )
 
-    fun replaceCustomWithRecommendedConfig(context: Context, game: Game): Status {
-        return applyRecommendedConfig(context, game, replaceCustomConfig = true)
-    }
+    fun applyRecommendedConfigForTitleId(context: Context, titleId: String): Status =
+        applyRecommendedConfig(
+            context,
+            GameIdentity.titleIdsFromText(titleId).firstOrNull(),
+            replaceCustomConfig = false
+        )
+
+    fun replaceCustomWithRecommendedConfig(context: Context, game: Game): Status =
+        applyRecommendedConfig(
+            context,
+            GameIdentity.primaryTitleId(game),
+            replaceCustomConfig = true
+        )
 
     private fun applyRecommendedConfig(
         context: Context,
-        game: Game,
+        titleId: String?,
         replaceCustomConfig: Boolean
     ): Status {
-        val titleId = GameIdentity.primaryTitleId(game) ?: return statusForGame(context, game)
-        val database = loadDatabase(context) ?: return statusForGame(context, game).copy(
+        if (titleId == null) return statusForTitleId(context, null)
+        val database = loadDatabase(context) ?: return statusForTitleId(context, titleId).copy(
             error = "Settings cache could not be loaded"
         )
-        val config = database.profiles[titleId] ?: return statusForGame(context, game)
+        val config = database.profiles[titleId] ?: return statusForTitleId(context, titleId)
 
         if (isDisabled(context, titleId)) {
-            return statusForGame(context, game)
+            return statusForTitleId(context, titleId)
         }
 
-        val target = customConfigFile(titleId) ?: return statusForGame(context, game).copy(
+        val target = customConfigFile(titleId) ?: return statusForTitleId(context, titleId).copy(
             error = "RPCSX root directory is not ready"
         )
 
@@ -283,7 +298,7 @@ object GameSettingsDatabase {
             val existing = target.takeIf { it.exists() }?.readText()
             if (existing != null && !existing.startsWith(MANAGED_HEADER)) {
                 if (!replaceCustomConfig) {
-                    statusForGame(context, game)
+                    statusForTitleId(context, titleId)
                 } else {
                     backupCustomConfig(target)
                     val body = buildManagedConfig(titleId, database.timestamp, config)
@@ -292,7 +307,7 @@ object GameSettingsDatabase {
                         .edit()
                         .putBoolean(DISABLED_PREFIX + titleId, false)
                         .apply()
-                    statusForGame(context, game)
+                    statusForTitleId(context, titleId)
                 }
             } else {
                 val body = buildManagedConfig(titleId, database.timestamp, config)
@@ -301,11 +316,11 @@ object GameSettingsDatabase {
                     target.writeText(body)
                 }
 
-                statusForGame(context, game)
+                statusForTitleId(context, titleId)
             }
         }.getOrElse {
             Log.w(TAG, "Could not apply recommended settings for $titleId", it)
-            statusForGame(context, game).copy(error = it.message)
+            statusForTitleId(context, titleId).copy(error = it.message)
         }
     }
 

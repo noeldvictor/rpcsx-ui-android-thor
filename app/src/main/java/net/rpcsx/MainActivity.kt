@@ -60,8 +60,12 @@ class MainActivity : ComponentActivity() {
         }
 
         val gamePath = sourceIntent.getStringExtra("path")
+        val requestedTitleId = sourceIntent.getStringExtra("titleId")
+        val requireManagedProfile = sourceIntent.getBooleanExtra("thorRequireManagedProfile", false)
         val displayPacingEnabled = sourceIntent.getBooleanExtra("thorDisplayPacing", true)
         sourceIntent.removeExtra("path")
+        sourceIntent.removeExtra("titleId")
+        sourceIntent.removeExtra("thorRequireManagedProfile")
         sourceIntent.removeExtra("thorDisplayPacing")
         if (gamePath.isNullOrBlank()) {
             Log.e("RPCSX-UI", "Thor debug boot requested without path")
@@ -73,11 +77,31 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val game = GameRepository.find(gamePath)
+        val titleId = GameIdentity.titleIdsFromText(requestedTitleId).firstOrNull()
+            ?: game?.let(GameIdentity::primaryTitleId)
+        val settingsStatus = if (requireManagedProfile && titleId != null) {
+            GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)
+        } else {
+            null
+        }
+        val managedProfileReady = settingsStatus?.let { it.enabled && it.applied } == true
+        if (requireManagedProfile && !managedProfileReady) {
+            Log.e(
+                "RPCSX-UI",
+                "Thor debug boot requires an applied managed profile: " +
+                    "titleId=$titleId custom=${settingsStatus?.customConfigPresent} " +
+                    "enabled=${settingsStatus?.enabled} applied=${settingsStatus?.applied} " +
+                    "stale=${settingsStatus?.managedConfigStale} error=${settingsStatus?.error}"
+            )
+            return
+        }
+
         Log.i("RPCSX-UI", "Thor debug boot through MainActivity: $gamePath")
         val emulatorWindow = Intent(this, RPCSXActivity::class.java)
             .putExtra("path", gamePath)
             .putExtra("thorDisplayPacing", displayPacingEnabled)
-        GameRepository.find(gamePath)?.let(GameIdentity::primaryTitleId)?.let {
+        titleId?.let {
             emulatorWindow.putExtra("titleId", it)
         }
         startActivity(emulatorWindow)

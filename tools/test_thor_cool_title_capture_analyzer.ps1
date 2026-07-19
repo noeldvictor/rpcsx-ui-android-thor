@@ -205,6 +205,24 @@ try {
         throw "Synthetic thermal stop did not retain its primary failure classification."
     }
 
+    $preflightDir = Join-Path $tempRoot "preflight-refused-hot"
+    New-Item -ItemType Directory -Force -Path $preflightDir | Out-Null
+    @(
+        "stage=pre-run-1-of-3 silicon_temperature_c=44.9 silicon_limit_c=35",
+        "stage=failure-post-stop silicon_temperature_c=45.8 silicon_limit_c=72"
+    ) | Set-Content -LiteralPath (Join-Path $preflightDir "thermal-guard.log") -Encoding UTF8
+    "Thor CPU/GPU silicon temperature is 44.9 C, at or above the 35 C limit. Stage 'pre-run-1-of-3'. RPCSX was force-stopped." |
+        Set-Content -LiteralPath (Join-Path $preflightDir "macro-failure.txt") -Encoding UTF8
+    @(
+        "# adb shell pidof net.rpcsx.easy",
+        "",
+        "exit=1"
+    ) | Set-Content -LiteralPath (Join-Path $preflightDir "failure-pid.txt") -Encoding UTF8
+    $preflight = & $analyzerPath -CaptureDir $preflightDir
+    if ($preflight.status -ne "preflight-refused-hot" -or $preflight.ready_for_comparison -or $preflight.speed_credit -or -not $preflight.process_absent_at_failure) {
+        throw "Synthetic hot preflight refusal was not distinguished from a launched thermal stop."
+    }
+
     $fatalDir = Join-Path $tempRoot "fatal"
     Copy-Item -LiteralPath $readyDir -Destination $fatalDir -Recurse
     "VM: Access violation reading location 0x40" | Add-Content -LiteralPath (Join-Path $fatalDir "post-RPCSX.log") -Encoding UTF8
@@ -218,4 +236,4 @@ try {
     }
 }
 
-Write-Output "Thor cool-title capture analyzer contract passed: exact property/runtime activation, title image, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
+Write-Output "Thor cool-title capture analyzer contract passed: exact property/runtime activation, title image, preflight refusal, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
