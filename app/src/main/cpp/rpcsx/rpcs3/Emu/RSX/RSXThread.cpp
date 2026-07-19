@@ -118,6 +118,17 @@ bool serialize<rsx::rsx_iomap_table>(utils::serial& ar, rsx::rsx_iomap_table& o)
 
 namespace rsx
 {
+	bool is_es_ppu_rsx_profile_enabled() noexcept
+	{
+		static const bool requested = []()
+		{
+			const char* const value = ::getenv("RPCS3_ES_PPU_RSX_PROFILE");
+			return value && std::string_view{value} == "compact";
+		}();
+
+		return requested && Emu.GetTitleID() == "BLUS30161";
+	}
+
 	std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler;
 
 	// TODO: Proper context manager
@@ -3164,7 +3175,7 @@ namespace rsx
 
 		// Reset current stats
 		m_frame_stats = {};
-		m_profiler.enabled = !!g_cfg.video.debug_overlay;
+		m_profiler.enabled = !!g_cfg.video.debug_overlay || is_es_ppu_rsx_profile_enabled();
 	}
 
 	f64 thread::get_cached_display_refresh_rate()

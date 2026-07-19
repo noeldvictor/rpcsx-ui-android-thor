@@ -10,6 +10,7 @@
 #include "Emu/IdManager.h"
 #include "Emu/GDB.h"
 #include "cellos/sys_spu.h"
+#include "Emu/Cell/PPUFunction.h"
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/RSX/RSXThread.h"
@@ -172,6 +173,15 @@ struct cpu_prof
 		// Block occurences: name -> sample_count
 		std::unordered_map<u64, u64, value_hash<u64>> freq;
 
+		// Bounded interval data for the opt-in Eternal Sonata PPU/RSX profiler.
+		std::unordered_map<u64, u64, value_hash<u64>> compact_freq;
+		std::unordered_map<u64, u64, value_hash<u64>> compact_entries;
+		u64 compact_samples = 0;
+		u64 compact_hle = 0;
+		u64 compact_idle = 0;
+		u64 compact_last_name = 0;
+		bool compact_has_last_name = false;
+
 		// Total number of samples
 		u64 samples = 0, idle = 0;
 
@@ -187,10 +197,22 @@ struct cpu_prof
 		void reset()
 		{
 			freq.clear();
+			reset_compact();
 			samples = 0;
 			idle = 0;
 			new_samples = 0;
 			reservation_samples = 0;
+		}
+
+		void reset_compact()
+		{
+			compact_freq.clear();
+			compact_entries.clear();
+			compact_samples = 0;
+			compact_hle = 0;
+			compact_idle = 0;
+			compact_last_name = 0;
+			compact_has_last_name = false;
 		}
 
 		static std::string format(const std::multimap<u64, u64, std::greater<u64>>& chart, u64 samples, u64 idle, bool extended_print = false)
@@ -320,9 +342,82 @@ struct cpu_prof
 
 	sample_info all_threads_info{};
 
+	static bool compact_profile_requested() noexcept
+	{
+		static const bool requested = []()
+		{
+			const char* const value = ::getenv("RPCS3_ES_PPU_RSX_PROFILE");
+			return value && std::string_view{value} == "compact";
+		}();
+
+		return requested;
+	}
+
+	static void print_compact_ppu(std::unordered_map<shared_ptr<cpu_thread>, sample_info>& threads, u32 snapshot, bool final)
+	{
+		std::unordered_map<u64, u64, value_hash<u64>> frequency;
+		std::unordered_map<u64, u64, value_hash<u64>> entries;
+		u64 active_samples = 0;
+		u64 hle_samples = 0;
+		u64 idle_samples = 0;
+
+		for (auto& [ptr, info] : threads)
+		{
+			if (ptr->id >> 24 != 1)
+			{
+				continue;
+			}
+
+			active_samples += info.compact_samples;
+			hle_samples += info.compact_hle;
+			idle_samples += info.compact_idle;
+
+			for (const auto& [name, count] : info.compact_freq)
+			{
+				frequency[name] += count;
+			}
+
+			for (const auto& [name, count] : info.compact_entries)
+			{
+				entries[name] += count;
+			}
+		}
+
+		std::vector<std::pair<u64, u64>> sorted(frequency.begin(), frequency.end());
+		std::sort(sorted.begin(), sorted.end(), [](const auto& lhs, const auto& rhs)
+		{
+			return lhs.second > rhs.second;
+		});
+
+		profiler.notice("ES PPU/RSX PPU summary: snapshot=%u, final=%u, guest_active_samples=%u, hle_samples=%u, idle_samples=%u, unique_blocks=%u",
+			snapshot, final, active_samples, hle_samples, idle_samples, sorted.size());
+
+		for (usz i = 0, end = std::min<usz>(16, sorted.size()); i < end; i++)
+		{
+			const auto [cia, count] = sorted[i];
+			const u64 entry_count = entries[cia];
+			const u64 mean_samples_x100 = entry_count ? count * 100 / entry_count : 0;
+			profiler.notice("ES PPU/RSX PPU block: snapshot=%u, rank=%u, cia=0x%08x, samples=%u, entries=%u, mean_samples_x100=%u",
+				snapshot, i + 1, cia, count, entry_count, mean_samples_x100);
+		}
+
+		for (auto& [ptr, info] : threads)
+		{
+			if (ptr->id >> 24 == 1)
+			{
+				info.reset_compact();
+			}
+		}
+	}
+
 	void operator()()
 	{
 		std::unordered_map<shared_ptr<cpu_thread>, sample_info> threads;
+		const bool compact_requested = compact_profile_requested();
+		bool compact_active = false;
+		u64 next_title_check = 0;
+		u64 next_snapshot_time = 0;
+		u32 compact_snapshot = 0;
 
 		while (thread_ctrl::state() != thread_state::aborting)
 		{
@@ -374,13 +469,33 @@ struct cpu_prof
 				continue;
 			}
 
+			if (compact_requested && !compact_active)
+			{
+				const u64 now = get_system_time();
+				if (now >= next_title_check)
+				{
+					if (Emu.GetTitleID() == "BLUS30161")
+					{
+						compact_active = true;
+						next_snapshot_time = now + 10'000'000;
+						profiler.notice("ES PPU/RSX PPU profiler armed: interval_us=10000000, top=16");
+					}
+					else
+					{
+						next_title_check = now + 1'000'000;
+					}
+				}
+			}
+
 			// Sample active threads
 			for (auto& [ptr, info] : threads)
 			{
 				if (auto state = +ptr->state; cpu_flag::exit - state)
 				{
+					const auto ppu = ptr->try_get<ppu_thread>();
+
 					// Get short function hash
-					const u64 name = atomic_storage<u64>::load(ptr->block_hash);
+					const u64 name = ppu ? atomic_storage<u32>::load(ppu->cia) : atomic_storage<u64>::load(ptr->block_hash);
 
 					// Append occurrence
 					info.samples++;
@@ -389,6 +504,28 @@ struct cpu_prof
 					{
 						info.freq[name]++;
 						info.new_samples++;
+
+						if (compact_active && ppu)
+						{
+							const auto hle_funcs = g_fxo->try_get<ppu_function_manager>();
+
+							if (hle_funcs && hle_funcs->is_func(static_cast<u32>(name)))
+							{
+								info.compact_hle++;
+								info.compact_has_last_name = false;
+							}
+							else
+							{
+								info.compact_samples++;
+								info.compact_freq[name]++;
+								if (!info.compact_has_last_name || info.compact_last_name != name)
+								{
+									info.compact_entries[name]++;
+									info.compact_last_name = name;
+									info.compact_has_last_name = true;
+								}
+							}
+						}
 
 						if (auto spu = ptr->try_get<spu_thread>())
 						{
@@ -411,6 +548,11 @@ struct cpu_prof
 						}
 
 						info.idle++;
+						if (compact_active && ppu)
+						{
+							info.compact_idle++;
+							info.compact_has_last_name = false;
+						}
 					}
 				}
 				else
@@ -425,6 +567,12 @@ struct cpu_prof
 
 				all_threads_info = {};
 				sample_info::print_all(threads, all_threads_info);
+			}
+
+			if (compact_active && get_system_time() >= next_snapshot_time)
+			{
+				print_compact_ppu(threads, ++compact_snapshot, false);
+				next_snapshot_time = get_system_time() + 10'000'000;
 			}
 
 			if (Emu.IsPaused())
@@ -445,6 +593,10 @@ struct cpu_prof
 		}
 
 		// Print all remaining results
+		if (compact_active)
+		{
+			print_compact_ppu(threads, ++compact_snapshot, true);
+		}
 		sample_info::print_all(threads, all_threads_info);
 	}
 
@@ -656,7 +808,10 @@ void cpu_thread::operator()()
 	{
 	case thread_class::ppu:
 	{
-		// g_fxo->get<cpu_profiler>().registered.push(id);
+		if (g_cfg.core.ppu_prof)
+		{
+			g_fxo->get<cpu_profiler>().registered.push(id);
+		}
 		break;
 	}
 	case thread_class::spu:
@@ -1549,7 +1704,7 @@ void cpu_thread::flush_profilers() noexcept
 		return;
 	}
 
-	if (g_cfg.core.spu_prof)
+	if (g_cfg.core.spu_prof || g_cfg.core.ppu_prof)
 	{
 		g_fxo->get<cpu_profiler>().registered.push(0);
 	}

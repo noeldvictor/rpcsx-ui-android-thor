@@ -38,6 +38,8 @@ extern rsx::frame_capture_data frame_capture;
 
 namespace rsx
 {
+	bool is_es_ppu_rsx_profile_enabled() noexcept;
+
 	class RSXDMAWriter;
 
 	struct context;

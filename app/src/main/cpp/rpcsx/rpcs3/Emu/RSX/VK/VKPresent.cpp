@@ -21,6 +21,85 @@ extern atomic_t<recording_mode> g_recording_mode;
 
 namespace
 {
+	struct es_ppu_rsx_frame_profile
+	{
+		u64 window_start = 0;
+		u64 frames = 0;
+		u64 setup = 0;
+		u64 vertex_upload = 0;
+		u64 texture_upload = 0;
+		u64 draw = 0;
+		u64 flip = 0;
+		u64 draw_calls = 0;
+		u64 submits = 0;
+		u64 max_setup = 0;
+		u64 max_vertex_upload = 0;
+		u64 max_texture_upload = 0;
+		u64 max_draw = 0;
+		u64 max_flip = 0;
+		u32 snapshot = 0;
+
+		static u64 positive(s64 value)
+		{
+			return value > 0 ? static_cast<u64>(value) : 0;
+		}
+
+		void reset(u64 now)
+		{
+			window_start = now;
+			frames = setup = vertex_upload = texture_upload = draw = flip = 0;
+			draw_calls = submits = 0;
+			max_setup = max_vertex_upload = max_texture_upload = max_draw = max_flip = 0;
+		}
+
+		void record(const rsx::frame_statistics_t& stats)
+		{
+			const u64 now = get_system_time();
+			if (!window_start)
+			{
+				reset(now);
+			}
+
+			const u64 frame_setup = positive(stats.setup_time);
+			const u64 frame_vertex = positive(stats.vertex_upload_time);
+			const u64 frame_texture = positive(stats.textures_upload_time);
+			const u64 frame_draw = positive(stats.draw_exec_time);
+			const u64 frame_flip = positive(stats.flip_time);
+
+			frames++;
+			setup += frame_setup;
+			vertex_upload += frame_vertex;
+			texture_upload += frame_texture;
+			draw += frame_draw;
+			flip += frame_flip;
+			draw_calls += stats.draw_calls;
+			submits += stats.submit_count;
+			max_setup = std::max(max_setup, frame_setup);
+			max_vertex_upload = std::max(max_vertex_upload, frame_vertex);
+			max_texture_upload = std::max(max_texture_upload, frame_texture);
+			max_draw = std::max(max_draw, frame_draw);
+			max_flip = std::max(max_flip, frame_flip);
+
+			if (now - window_start < 10'000'000)
+			{
+				return;
+			}
+
+			const u64 divisor = std::max<u64>(frames, 1);
+			rsx_log.notice(
+				"ES PPU/RSX RSX summary: snapshot=%u, frames=%u, avg_setup_us=%u, avg_vertex_upload_us=%u, "
+				"avg_texture_upload_us=%u, avg_draw_us=%u, avg_flip_us=%u, avg_draw_calls_x100=%u, "
+				"avg_submits_x100=%u, max_setup_us=%u, max_vertex_upload_us=%u, max_texture_upload_us=%u, "
+				"max_draw_us=%u, max_flip_us=%u",
+				++snapshot, frames, setup / divisor, vertex_upload / divisor, texture_upload / divisor,
+				draw / divisor, flip / divisor, draw_calls * 100 / divisor, submits * 100 / divisor,
+				max_setup, max_vertex_upload, max_texture_upload, max_draw, max_flip);
+			reset(now);
+		}
+	};
+
+	es_ppu_rsx_frame_profile g_es_ppu_rsx_frame_profile;
+
 	VkFormat RSX_display_format_to_vk_format(u8 format)
 	{
 		switch (format)
@@ -518,6 +597,11 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 		m_frame->flip(m_context);
 		rsx::thread::flip(info);
 		return;
+	}
+
+	if (rsx::is_es_ppu_rsx_profile_enabled())
+	{
+		g_es_ppu_rsx_frame_profile.record(info.stats);
 	}
 
 	u32 buffer_width = display_buffers[info.buffer].width;

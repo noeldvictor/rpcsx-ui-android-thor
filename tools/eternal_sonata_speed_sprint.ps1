@@ -26,6 +26,8 @@ param(
     [string]$EternalSonataMfcLadder = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataSpuHeatProfile = "Off",
+    [ValidateSet("Off", "Profile")]
+    [string]$EternalSonataPpuRsxProfile = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -246,7 +248,11 @@ function Get-SpeedWindowsSceneMacro {
     # field and fake a battle-route baseline while never reaching first battle.
     $loadBattleLegacy = "wait:45000;ls_down:120;wait:800;cross:180;wait:30000;cross:180;wait:1500;ls_up:120;wait:500;cross:180;wait:12000;start:180;wait:1500;cross:180;wait:35000"
     $loadBattleTopSlot = $loadField
-    $loadBattleStateAware = "wait:45000;gate_title_menu:60000;down:120;wait:800;shot:title-load-selected;cross:180;gate_load_target:45000;shot:load-save-list;cross:180;wait:1000;up:120;wait:500;cross:180;wait:500;cross:180;gate_load_complete:90000;shot:load-complete-detected;cross:180;gate_field:30000;shot:loaded-field;combo:ls_left+ls_down:700;wait:1000;ls_left:900;gate_first_battle_prompt:25000;shot:first-battle-prompt;down:120;wait:300;cross:180;wait:4000;shot:first-battle-active;wait:10000;shot:first-battle-live;wait:10000;shot:first-battle-hold"
+    # Normalize the title cursor at OPTIONS, then step back to LOAD. A single Down
+    # pulse can be lost while the title menu is settling and accidentally starts
+    # NEW GAME. Keep the previously validated single movement path; broader
+    # repeats can enter a guest draw-command corruption path before battle.
+    $loadBattleStateAware = "wait:45000;gate_title_menu:60000;down:120;wait:250;down:120;wait:250;down:120;wait:500;up:120;wait:800;shot:title-load-selected;cross:180;gate_load_target:45000;shot:load-save-list;cross:180;wait:1000;up:120;wait:500;cross:180;wait:500;cross:180;gate_load_complete:90000;shot:load-complete-detected;cross:180;gate_field:30000;shot:loaded-field;combo:ls_left+ls_down:700;wait:1000;ls_left:900;gate_first_battle_prompt:25000;shot:first-battle-prompt;down:120;wait:300;cross:180;wait:4000;shot:first-battle-active;wait:10000;shot:first-battle-live;wait:10000;shot:first-battle-hold"
 
     switch ($Scene) {
         "field" {
@@ -791,6 +797,7 @@ switch ($Action) {
             EternalSonataMfcShapeProbe = $EternalSonataMfcShapeProbe
             EternalSonataMfcLadder = $EternalSonataMfcLadder
             EternalSonataSpuHeatProfile = $EternalSonataSpuHeatProfile
+            EternalSonataPpuRsxProfile = $EternalSonataPpuRsxProfile
             EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
             EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
             EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body

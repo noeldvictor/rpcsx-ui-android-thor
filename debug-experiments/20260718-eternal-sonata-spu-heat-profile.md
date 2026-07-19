@@ -171,3 +171,72 @@ blocks behind one low-frequency boundary.
 This round improves profiling correctness and selects the next optimization
 lane. It is not an FPS speedup, temperature reduction, flicker fix, or device
 runtime result. No Thor interaction occurred.
+
+## Follow-up: Bounded PPU/RSX Attribution
+
+The Android fork now restores the upstream `PPU Profiler` configuration,
+thread registration, direct-call CIA publication, and profiler flushing. A
+separate opt-in `RPCS3_ES_PPU_RSX_PROFILE=compact` mode is title-gated to
+`BLUS30161` and emits ten-second top-16 guest PPU summaries. The same gate
+enables existing Vulkan frame-stage counters and emits setup, vertex upload,
+texture upload, draw, flip, draw-call, and submit summaries. Normal gameplay
+keeps the mode disabled.
+
+The first compact trace exposed an instrumentation error: RPCS3 synthetic HLE
+addresses were ranked as guest PPU blocks, which made savedata and audio waits
+look hot. The compact sampler now uses `ppu_function_manager::is_func()` to
+separate exact HLE samples from guest samples. It does not use a guessed address
+range. The filtered Windows mirror compiled and linked successfully.
+
+### Bounded Windows Evidence
+
+- `20260718-232325-es-ppu-rsx-stateaware-first-battle-profile-windows`
+  produced 149 summary lines but missed the first-battle prompt. It is field-only
+  evidence. The heaviest field interval accounted for approximately 2.30 ms of
+  RSX work per frame: setup 847 us, vertex upload 368 us, texture upload 618 us,
+  draw 102 us, and flip 362 us. The leading guest PPU addresses were highly
+  transition-heavy.
+- `20260718-233618-es-ppu-rsx-hlefiltered-repeatmove-first-battle-profile-windows`
+  verified exact HLE separation, then aborted at the load-target gate because a
+  lost title-menu Down pulse selected New Game and entered the black opening
+  sequence. This was not an emulator crash.
+- `20260718-234106-es-ppu-rsx-hlefiltered-hardened-first-battle-profile-windows`
+  used normalized title selection and reached the Path to Tenuto field. The
+  live fatal gate then correctly rejected repeated guest `unknown draw command`
+  output before battle. Its last accepted ten-second interval reported 733
+  guest-active PPU samples across 291 blocks, with the top three blocks at only
+  56/47, 44/42, and 40/38 samples/entries. Accounted RSX work was approximately
+  2.46 ms per frame: setup 759 us, vertex upload 318 us, texture upload 684 us,
+  draw 91 us, and flip 607 us.
+
+The state-aware route now normalizes the title cursor to OPTIONS and steps back
+to LOAD, preventing a lost single Down pulse from launching New Game. The
+unvalidated repeated field movement was removed after it entered the guest
+draw-command corruption path; the previously validated single movement path is
+retained.
+
+### PPU/RSX Decision
+
+Do not promote an RSX optimization from these traces. Even in the heaviest
+accepted interval, measured RSX stage work is below 2.5 ms per frame, far below
+the approximately 33.3 ms budget at the observed 30 FPS cap. Texture upload and
+setup are the largest RSX components, but neither explains the frame limit.
+
+Do not promote a guest PPU superpath from this trace. The hot guest blocks are
+short and transition-heavy, and the exact HLE filter removed the only apparent
+long-residency savedata/audio candidates. Together with the battle-only SPU
+ranking above, the evidence points toward synchronization, scheduling, or
+cross-domain stalls rather than a single long PPU, SPU, or RSX body.
+
+### Follow-up Verification
+
+- Windows artifact:
+  - SHA-256: `3C58487906EF6B46FE3B9696BD01821773367C286B9ED1EAF8121A82D3ABB35B`
+  - timestamp: `2026-07-18T23:33:52.3746944-04:00`
+- Both PowerShell tools parse successfully.
+- All 33 `tools/test_thor*.ps1` host contracts pass in fresh PowerShell
+  processes.
+- No ADB, APK deployment, device launch, or Thor telemetry query occurred.
+
+This follow-up improves attribution and route reliability. It still earns no
+FPS, temperature, flicker, or device-runtime credit.
