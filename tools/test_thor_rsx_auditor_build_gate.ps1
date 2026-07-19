@@ -50,4 +50,4 @@ if ($gradleSource -match 'rpcsxThorRsxAuditor[^\r\n]*\?:\s*true') {
     throw "The Android RSX auditor must remain disabled by default."
 }
 
-Write-Output "Thor RSX-auditor build gate passed: Android omits recorder polling by default while behavior experiments remain runtime-configurable."
+Write-Output "Thor RSX-auditor build gate passed: normal Android omits recorder polling while desktop and explicit experiment builds retain behavior controls."

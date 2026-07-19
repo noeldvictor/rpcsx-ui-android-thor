@@ -6,6 +6,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE on)
 option(RPCSX_BUILD_BUNDLED_CORE "Build the vendored RPCSX Android core into the APK" OFF)
 option(RPCSX_THOR_WAIT_PROFILER "Instrument Android busy-wait sites for Thor diagnostics" OFF)
 option(RPCSX_THOR_RSX_AUDITOR "Instrument Android Vulkan work for Thor diagnostics" OFF)
+option(RPCSX_THOR_RSX_EXPERIMENTS "Build experimental Android RSX fence, locality, and resolve behavior" OFF)
 option(RPCSX_THOR_SYSCALL_STATS "Instrument Android PPU syscalls for Thor diagnostics" OFF)
 option(RPCSX_THOR_SPURS_PROBE "Instrument Android SPURS waits for Thor diagnostics" OFF)
 option(RPCSX_THOR_DRAW_STREAM_PROBE "Instrument Eternal Sonata draw-stream handoff diagnostics" OFF)
@@ -21,6 +22,10 @@ endif()
 
 if (RPCSX_THOR_RSX_AUDITOR)
 	add_compile_definitions(RPCSX_THOR_RSX_AUDITOR=1)
+endif()
+
+if (RPCSX_THOR_RSX_EXPERIMENTS)
+	add_compile_definitions(RPCSX_THOR_RSX_EXPERIMENTS=1)
 endif()
 
 if (RPCSX_THOR_SYSCALL_STATS)

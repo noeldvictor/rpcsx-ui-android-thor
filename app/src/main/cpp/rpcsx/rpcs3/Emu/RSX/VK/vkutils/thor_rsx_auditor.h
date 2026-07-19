@@ -444,6 +444,7 @@ namespace vk::thor::rsx_auditor
 	}
 #endif
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 	inline bool use_host_read_dma_fence()
 	{
 		return detail::get_dma_fence_mode() == detail::dma_fence_mode::host_read;
@@ -461,6 +462,23 @@ namespace vk::thor::rsx_auditor
 			(is_depth && mode == detail::texture_barrier_mode::skip_depth) ||
 			(!is_depth && mode == detail::texture_barrier_mode::skip_color);
 	}
+
+#else
+	FORCE_INLINE constexpr bool use_host_read_dma_fence() noexcept
+	{
+		return false;
+	}
+
+	FORCE_INLINE constexpr bool persist_readonly_depth_feedback() noexcept
+	{
+		return false;
+	}
+
+	FORCE_INLINE constexpr bool skip_texture_barrier(bool) noexcept
+	{
+		return false;
+	}
+#endif
 
 	inline void record_queue_submit(u32 wait_semaphores, u32 signal_semaphores)
 	{
@@ -708,6 +726,7 @@ namespace vk::thor::rsx_auditor
 		detail::add_bytes(detail::g_simple_upload_bytes, bytes);
 	}
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 	inline bool fuse_blit_source_resolve()
 	{
 		return detail::get_blit_source_resolve_mode() == detail::blit_source_resolve_mode::fast;
@@ -722,6 +741,23 @@ namespace vk::thor::rsx_auditor
 	{
 		return detail::get_blit_source_resolve_mode() != detail::blit_source_resolve_mode::off;
 	}
+
+#else
+	FORCE_INLINE constexpr bool fuse_blit_source_resolve() noexcept
+	{
+		return false;
+	}
+
+	FORCE_INLINE constexpr bool verify_blit_source_resolve() noexcept
+	{
+		return false;
+	}
+
+	FORCE_INLINE constexpr bool test_blit_source_resolve() noexcept
+	{
+		return false;
+	}
+#endif
 
 	inline void record_blit_source_resolve_fast()
 	{

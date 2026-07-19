@@ -515,4 +515,23 @@ Put dated run details in `debug-experiments/`, not here.
   ADB/device action ran and no Thor speed or temperature credit exists.
   Detailed ledger:
   `debug-experiments/20260719-thor-disabled-es-ppu-experiments-overhead.md`.
+- Normal Android builds now compile out the four parked RSX behavior controls
+  for DMA-fence scope, depth-feedback persistence, texture-barrier skipping,
+  and blit-source resolve fusion. Stock play semantics are constant-folded:
+  all-command DMA fencing, normal depth feedback and texture barriers, and no
+  fused/verify resolve. Desktop behavior is unchanged, and explicit Android
+  diagnostics can opt back in with `-PrpcsxThorRsxExperiments=true` or
+  `RPCSX_THOR_RSX_EXPERIMENTS_BUILD=true`. The experiment-only compute-resolve
+  task, maps, implementation, and cleanup are also absent from normal Android.
+  Host ARM64 proof reduced the core by 321,480 bytes, removed all four selected
+  property strings, all ten selected mode symbols, 48 bytes of mode state, and
+  all 15 selected resolve-helper symbols (5,164 text bytes, 108 RTTI/vtable
+  bytes, and 80 bytes of container state). Five affected hot functions lost ten
+  combined atomic/property/poll references and total 20,868 -> 19,804 bytes;
+  candidate disassembly has no selected RSX-auditor or Android-property call.
+  All 47 Thor contracts and the ARM64 RelWithDebInfo build pass. This is
+  host-verified `stackable-cpu-pressure` only: no ADB/device action ran and no
+  Thor speed, temperature, FPS, flicker, gameplay, or stability credit exists.
+  Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-rsx-experiments-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

@@ -3,7 +3,6 @@
 #include "VKResolveHelper.h"
 #include "VKRenderPass.h"
 #include "VKRenderTargets.h"
-#include "vkutils/thor_rsx_auditor.h"
 
 namespace
 {
@@ -36,6 +35,7 @@ namespace
 
 namespace vk
 {
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 	struct cs_resolve_blit_task : compute_task
 	{
 		vk::viewable_image* multisampled = nullptr;
@@ -179,11 +179,14 @@ void main()
 			compute_task::run(cmd, invocations_x, invocations_y, 1);
 		}
 	};
+#endif
 
 	std::unordered_map<VkFormat, std::unique_ptr<vk::cs_resolve_task>> g_resolve_helpers;
 	std::unordered_map<VkFormat, std::unique_ptr<vk::cs_unresolve_task>> g_unresolve_helpers;
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 	std::unordered_map<VkFormat, std::unique_ptr<vk::cs_resolve_blit_task>> g_resolve_blit_helpers;
 	std::unordered_map<u64, std::unique_ptr<vk::viewable_image>> g_resolve_blit_scratch_images;
+#endif
 	std::unique_ptr<vk::depthonly_resolve> g_depth_resolver;
 	std::unique_ptr<vk::depthonly_unresolve> g_depth_unresolver;
 	std::unique_ptr<vk::stencilonly_resolve> g_stencil_resolver;
@@ -270,6 +273,7 @@ void main()
 		}
 	}
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 	bool resolve_blit_image(vk::command_buffer& cmd, vk::render_target* src, vk::image* dst, areai src_area, areai dst_area)
 	{
 		if (!src || !dst)
@@ -438,6 +442,7 @@ void main()
 
 		return scratch && scratch->value && resolve_blit_image(cmd, src, scratch.get(), src_area, dst_area);
 	}
+#endif
 
 	void unresolve_image(vk::command_buffer& cmd, vk::viewable_image* dst, vk::viewable_image* src)
 	{
@@ -520,15 +525,19 @@ void main()
 			task.second->destroy();
 		}
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 		for (auto& task : g_resolve_blit_helpers)
 		{
 			task.second->destroy();
 		}
+#endif
 
 		g_resolve_helpers.clear();
 		g_unresolve_helpers.clear();
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
 		g_resolve_blit_helpers.clear();
 		g_resolve_blit_scratch_images.clear();
+#endif
 
 		if (g_depth_resolver)
 		{
