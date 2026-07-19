@@ -44,6 +44,8 @@ namespace thor_wait
 		count
 	};
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_WAIT_PROFILER)
+
 	struct site_stats
 	{
 		std::atomic<u64> calls{0};
@@ -198,4 +200,10 @@ namespace thor_wait
 		record(id, cycles);
 		rx::busy_wait(cycles);
 	}
+#else
+	FORCE_INLINE void profiled_busy_wait(site, usz cycles = 3000) noexcept
+	{
+		rx::busy_wait(cycles);
+	}
+#endif
 }

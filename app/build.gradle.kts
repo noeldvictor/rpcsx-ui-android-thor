@@ -21,6 +21,12 @@ val rpcsxAndroidArmTune =
         ?: System.getenv("RPCSX_ANDROID_ARM_TUNE")
         ?: "cortex-a715"
 
+val rpcsxThorWaitProfiler =
+    when (providers.gradleProperty("rpcsxThorWaitProfiler").orNull ?: System.getenv("RPCSX_THOR_WAIT_PROFILER_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
@@ -62,6 +68,7 @@ android {
                     "-DRPCSX_BUILD_BUNDLED_CORE=${if (buildBundledRpcsxCore) "ON" else "OFF"}",
                     "-DRPCSX_ANDROID_ARM_ARCH=$rpcsxAndroidArmArch",
                     "-DRPCSX_ANDROID_ARM_TUNE=$rpcsxAndroidArmTune",
+                    "-DRPCSX_THOR_WAIT_PROFILER=${if (rpcsxThorWaitProfiler) "ON" else "OFF"}",
                 )
             }
         }

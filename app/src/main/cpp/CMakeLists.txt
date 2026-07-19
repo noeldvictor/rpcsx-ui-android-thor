@@ -4,8 +4,13 @@ project("rpcsx-ui-jni")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_POSITION_INDEPENDENT_CODE on)
 option(RPCSX_BUILD_BUNDLED_CORE "Build the vendored RPCSX Android core into the APK" OFF)
+option(RPCSX_THOR_WAIT_PROFILER "Instrument Android busy-wait sites for Thor diagnostics" OFF)
 set(RPCSX_ANDROID_ARM_ARCH "armv8.2-a" CACHE STRING "AArch64 ISA baseline for Android native code")
 set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model for Android native code")
+
+if (RPCSX_THOR_WAIT_PROFILER)
+	add_compile_definitions(RPCSX_THOR_WAIT_PROFILER=1)
+endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 	include(CheckCXXCompilerFlag)
