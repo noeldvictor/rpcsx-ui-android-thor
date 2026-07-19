@@ -29,6 +29,8 @@ param(
     [string]$EternalSonataSyncProfile = "Off",
     [ValidateSet("Off", "Wait")]
     [string]$EternalSonataFramePollWait = "Off",
+    [ValidateRange(0, 500)]
+    [int]$EternalSonataFramePollHandlerGraceUs = 500,
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -2834,6 +2836,7 @@ Write-LabLine $runLog "- Eternal Sonata SPU heat profile: $EternalSonataSpuHeatP
 Write-LabLine $runLog "- Eternal Sonata PPU/RSX profile: $EternalSonataPpuRsxProfile"
 Write-LabLine $runLog "- Eternal Sonata synchronization profile: $EternalSonataSyncProfile"
 Write-LabLine $runLog "- Eternal Sonata frame-poll wait: $EternalSonataFramePollWait"
+Write-LabLine $runLog "- Eternal Sonata frame-poll handler grace: ${EternalSonataFramePollHandlerGraceUs}us"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE verifier: $EternalSonataSpuHleVerify"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x25cc body: $EternalSonataSpuHle25ccBody"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE size16 body: $EternalSonataSpuHleSize16Body"
@@ -2954,6 +2957,7 @@ $previousEsSpuHeatProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_
 $previousEsPpuRsxProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_PPU_RSX_PROFILE", "Process")
 $previousEsSyncProfile = [Environment]::GetEnvironmentVariable("RPCS3_ES_SYNC_PROFILE", "Process")
 $previousEsFramePollWait = [Environment]::GetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", "Process")
+$previousEsFramePollHandlerGraceUs = [Environment]::GetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "Process")
 $previousEsSpuHleVerify = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", "Process")
 $previousEsSpuHle25ccBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", "Process")
 $previousEsSpuHleSize16Body = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", "Process")
@@ -3157,6 +3161,7 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_PPU_RSX_PROFILE", $esPpuRsxProfileEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SYNC_PROFILE", $esSyncProfileEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $esFramePollWaitEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "$EternalSonataFramePollHandlerGraceUs", "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $esSpuHleVerifyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $esSpuHle25ccBodyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $esSpuHleSize16BodyEnv, "Process")
@@ -3202,6 +3207,7 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_PPU_RSX_PROFILE", $previousEsPpuRsxProfile, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SYNC_PROFILE", $previousEsSyncProfile, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $previousEsFramePollWait, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", $previousEsFramePollHandlerGraceUs, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $previousEsSpuHleVerify, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $previousEsSpuHle25ccBody, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $previousEsSpuHleSize16Body, "Process")

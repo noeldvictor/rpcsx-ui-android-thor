@@ -7,9 +7,10 @@ Date: 2026-07-19
 The Eternal Sonata BLUS30161 main PPU loop at CIA `0x002a8300` spends a
 large amount of host time issuing 100 us timer sleeps while waiting for a
 VBlank-driven guest counter. An opt-in, title- and call-site-gated wait now
-blocks on a portable 32-bit VBlank generation for at most 1 ms, then falls
-back to the original timer behavior whenever the expected guest counter
-progress is not observed.
+blocks on a portable 32-bit guest VBlank-handler completion generation for at
+most 1 ms. After a real handler completion it allows a bounded 0-500 us grace
+for the guest counter update, then falls back to the original timer behavior
+whenever the expected progress is not observed.
 
 This is a host-verified reduction in wakeups and CPU work. It is not yet a
 Thor temperature result because the handheld was deliberately left idle
@@ -62,17 +63,21 @@ The optimized branch requires all of the following:
 
 The wait uses a dedicated 32-bit `vblank_wait_token`, not
 `futex_waitv`. The existing 64-bit `vblank_count` remains diagnostic.
-`vblank_waiters` prevents notifications when nobody is waiting. Each wait is
-bounded to 1,000 us. VBlank or counter mismatch re-enters the original 100 us
-timer path, and any counter progress rearms the next VBlank wait. The feature
-defaults off.
+`vblank_waiters` prevents callback-completion markers when nobody is waiting.
+Each main wait is bounded to 1,000 us. The optional post-handler grace is
+bounded to 500 us and defaults to the measured 500 us candidate. VBlank or
+counter mismatch re-enters the original 100 us timer path, and any counter
+progress rearms the next VBlank wait. The feature defaults off.
 
 Enable controls:
 
 - Windows host lab: `-EternalSonataFramePollWait Wait`
 - Android sprint property: `debug.rpcsx.thor.es_frame_wait=wait`
+- Android grace property: `debug.rpcsx.thor.es_frame_wait_grace_us=0..500`
 - Android/host environment: `RPCSX_THOR_ES_FRAME_POLL_WAIT=wait` or
   `RPCS3_ES_FRAME_POLL_WAIT=wait`
+- Grace environment: `RPCSX_THOR_ES_FRAME_POLL_HANDLER_GRACE_US=0..500` or
+  `RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US=0..500`
 
 ## Host measurements
 
@@ -81,8 +86,11 @@ Enable controls:
 | Title | Stock post profiler | threshold 1 | 433,029 at 54.933 s | 7,883 | n/a | 60 |
 | Title | First bounded-wait candidate | threshold 1 | 93,798 at 54.497 s | 1,721 | 63,225 | 60.02-60.06 |
 | Title | Counter-progress refinement | threshold 1 | 82,877 at 52.246 s | 1,586 | 52,801 | 59.98-60.00 |
+| Title | Handler completion, 0 us matched control | threshold 1 | 87,700 at 52.336 s | 1,676 | 58,032 | 59.98 |
+| Title | Handler completion + 500 us grace | threshold 1 | 83,655 at 52.529 s | 1,593 | 54,027 | 59.99-60.05 |
 | First battle | First bounded-wait candidate | threshold 2 | 360,433 at 154.735 s | 2,329 | 273,878 | about 30 |
 | First battle | Counter-progress refinement | threshold 2 | 272,633 at 152.079 s | 1,793 | 179,422 | 29.97-30.03 |
+| First battle | Handler completion + 500 us grace | threshold 2 | 228,187 at 154.268 s | 1,479 | 147,658 | 29.97-30.02 |
 
 The refined title path is about 79.9% below the stock call rate. In the
 threshold-2 field/battle route, recognizing partial counter progress reduced
@@ -103,6 +111,28 @@ The refined first-battle host CPU samples were 22.6% at 120 s and 21.6% at
 These samples support lower host work but are not direct Android power or
 temperature measurements.
 
+### Handler-completion grace result
+
+The raw VBlank wake was moved behind the queued guest VBlank handler, with no
+extra callback or notification on the stock path when there are no waiters.
+A same-binary title A/B then selected 500 us over 0 us:
+
+- call rate: 1,676/s to 1,593/s, down 5.0%;
+- fallback-sleep rate: 1,109/s to 1,029/s, down 7.2%;
+- futile fallback-rearm rate: 34.9/s to 13.9/s, down 60.3%;
+- observed counter-progress rate: 9.4/s to 29.9/s, up 218%;
+- matched title FPS remained 60 and both external-contention gates were clean;
+- the single title CPU snapshot was 27.0% versus 23.1%, supportive but too
+  noisy to treat as a standalone power result.
+
+The full first-battle route with handler completion plus 500 us grace also
+passed. Relative to the prior raw-VBlank counter-progress refinement, its
+time-normalized call rate fell 17.5%, fallback-sleep rate fell 18.9%, and
+futile rearm rate fell 66.2%. Its three late host CPU samples averaged 23.8%
+versus 26.6% for the prior capture. This CPU comparison is supportive rather
+than definitive because the samples are sparse and the first prior sample was
+an outlier.
+
 Correctness gates passed:
 
 - title menu at 60 FPS;
@@ -117,12 +147,16 @@ Evidence:
 
 - `debug-captures/windows-lab/20260719-020830-es-frame-poll-progress-rearm-title`
 - `debug-captures/windows-lab/20260719-021004-es-frame-poll-progress-rearm-first-battle`
+- `debug-captures/windows-lab/20260719-042237-es-frame-poll-handler-grace0-title`
+- `debug-captures/windows-lab/20260719-042357-es-frame-poll-handler-grace500-title`
+- `debug-captures/windows-lab/20260719-042613-es-frame-poll-handler-grace500-first-battle`
 
 ## Build and regression verification
 
 - Windows RPCS3 Release target: passed after the final main-PPU gate.
 - Android `arm64-v8a` RelWithDebInfo native target: passed after the final
-  main-PPU gate; no APK install or launch occurred.
+  main-PPU gate and again after the callback-completion/grace port (135.8 s);
+  no APK install or launch occurred.
 - `tools/test_thor_es_frame_poll_wait.ps1`: passed.
 - `tools/test_thor_es_sync_profile.ps1`: passed.
 - `git diff --check`: passed for the scoped source and tool files.
@@ -147,6 +181,17 @@ Evidence:
   performance resources, which may increase heat. For this objective, removing
   needless wakeups is preferable to requesting a higher sustained performance
   state.
+- Current Android Thermal API guidance says not to query thermal headroom more
+  than once every 10 seconds and warns that unsupported or over-polled devices
+  can return NaN. Thor's saved failure rose from about 32.3 C to 69.1 C by
+  3.275 s while PPU analysis, cached-module loading, and two SPU compilers
+  overlapped. Thermal headroom remains useful for slow sustained adaptation,
+  but it is too slow to prevent this measured startup spike. Startup work
+  budgeting and wakeup removal remain the primary path.
+- The 2025 direct-translation and partial-cross-compilation papers reinforce
+  two future lanes: reduce repeated guest/host coordination in already-hot
+  translated blocks, and only native-offload stable functions whose boundary
+  cost is amortized. Neither supports broad unsafe HLE substitution.
 
 ## Cool-device validation still required
 
@@ -156,7 +201,9 @@ thermal guard:
 1. Record preflight battery, skin, silicon, fan, and performance mode.
 2. Run the stock mode for a bounded first-battle window, then force-stop and
    cool fully.
-3. Run `-EternalSonataFramePollWait Wait` for the same route.
+3. With one APK, run `-EternalSonataFramePollWait Wait` with
+   `-EternalSonataFramePollHandlerGraceUs 0`, cool fully, then repeat with
+   `-EternalSonataFramePollHandlerGraceUs 500`.
 4. Compare steady FPS, frame-poll counters, CPU/GPU clocks, energy proxy, and
    temperature rise versus time.
 5. Stop immediately on the existing near-limit or hard thermal guard.

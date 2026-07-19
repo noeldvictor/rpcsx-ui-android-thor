@@ -32,6 +32,8 @@ param(
     [string]$EternalSonataSyncProfile = "Off",
     [ValidateSet("Off", "Wait")]
     [string]$EternalSonataFramePollWait = "Off",
+    [ValidateRange(0, 500)]
+    [int]$EternalSonataFramePollHandlerGraceUs = 500,
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
@@ -540,7 +542,8 @@ function Set-AndroidSpeedProperties {
     & $Adb shell setprop debug.rpcsx.thor.es_dma_superpath $dmaMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.rsx_blit_source_resolve $rsxBlitSourceMode | Out-Null
     & $Adb shell setprop debug.rpcsx.thor.es_frame_wait $framePollWaitMode | Out-Null
-    Write-Host "Android speed properties: debug.rpcsx.thor.es_sema_superpath=$semaMode debug.rpcsx.thor.es_dma_superpath=$dmaMode debug.rpcsx.thor.rsx_blit_source_resolve=$rsxBlitSourceMode debug.rpcsx.thor.es_frame_wait=$framePollWaitMode"
+    & $Adb shell setprop debug.rpcsx.thor.es_frame_wait_grace_us $EternalSonataFramePollHandlerGraceUs | Out-Null
+    Write-Host "Android speed properties: debug.rpcsx.thor.es_sema_superpath=$semaMode debug.rpcsx.thor.es_dma_superpath=$dmaMode debug.rpcsx.thor.rsx_blit_source_resolve=$rsxBlitSourceMode debug.rpcsx.thor.es_frame_wait=$framePollWaitMode debug.rpcsx.thor.es_frame_wait_grace_us=$EternalSonataFramePollHandlerGraceUs"
 }
 
 function Set-AndroidLogMode {
@@ -809,6 +812,7 @@ switch ($Action) {
             EternalSonataPpuRsxProfile = $EternalSonataPpuRsxProfile
             EternalSonataSyncProfile = $EternalSonataSyncProfile
             EternalSonataFramePollWait = $EternalSonataFramePollWait
+            EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs
             EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
             EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
             EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body

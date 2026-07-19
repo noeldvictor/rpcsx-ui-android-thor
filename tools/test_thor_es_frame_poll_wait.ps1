@@ -55,6 +55,11 @@ foreach ($timerContract in @(
     'renderer->vblank_waiters.fetch_add(1)',
     'thread_ctrl::wait_on(renderer->vblank_wait_token',
     'renderer->vblank_waiters.fetch_sub(1)',
+    'const u32 after_wait_token = renderer->vblank_wait_token',
+    'state.handler_wakes++',
+    'state.handler_grace_waits++',
+    'state.counter_progress_after_grace++',
+    'thread_ctrl::wait_for(100)',
     'if (after_counter != counter)',
     'state.completed_vblank = after_vblank',
     'state.fallback_rearms++'
@@ -69,9 +74,13 @@ foreach ($timerContract in @(
 
 foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_wait_max_us = 1000',
+    'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
     'debug.rpcsx.thor.es_frame_wait',
+    'debug.rpcsx.thor.es_frame_wait_grace_us',
     'RPCSX_THOR_ES_FRAME_POLL_WAIT',
+    'RPCSX_THOR_ES_FRAME_POLL_HANDLER_GRACE_US',
     'RPCS3_ES_FRAME_POLL_WAIT',
+    'RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US',
     'return false;'
 )) {
     if (-not $mainTimer.Contains($mainContract)) {
@@ -82,7 +91,9 @@ foreach ($mainContract in @(
 foreach ($upstreamContract in @(
     'RPCS3_ES_FRAME_POLL_WAIT',
     'RPCS3_ES_FRAME_POLL_WAIT_MAX_US',
+    'RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US',
     'std::clamp<u64>(parsed, 100, 1000)',
+    'std::clamp<u64>(parsed, 0, 500)',
     'return 1000ull'
 )) {
     if (-not $upstreamTimer.Contains($upstreamContract)) {
@@ -109,6 +120,8 @@ foreach ($rsxHeader in @($mainRsxHeader, $upstreamRsxHeader)) {
 
 foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
     foreach ($fragment in @(
+        'ppu_cmd::ptr_call',
+        'renderer->vblank_wait_token++',
         'vblank_wait_token++',
         'if (vblank_waiters)',
         'vblank_wait_token.notify_all()'
@@ -117,12 +130,25 @@ foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
             throw "RSX VBlank notification is missing: $fragment"
         }
     }
+
+    if ($rsxSource -match 'vblank_count\+\+;\s*vblank_wait_token\+\+;') {
+        throw "The frame-poll wait must wake after the guest VBlank handler, not at the raw VBlank edge."
+    }
+
+    $handlerQueue = [regex]::Match(
+        $rsxSource,
+        '(?s)ppu_cmd::lle_call.*?ppu_cmd::ptr_call.*?vblank_wait_token\+\+.*?vblank_wait_token\.notify_all\(\).*?ppu_cmd::sleep')
+    if (-not $handlerQueue.Success) {
+        throw "The guest VBlank completion marker is not ordered after the handler and before interrupt-thread sleep."
+    }
 }
 
 foreach ($fragment in @(
     '[string]$EternalSonataFramePollWait = "Off"',
+    '[int]$EternalSonataFramePollHandlerGraceUs = 500',
     '"Wait" { "wait" }',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $esFramePollWaitEnv, "Process")',
+    '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "$EternalSonataFramePollHandlerGraceUs", "Process")',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $previousEsFramePollWait, "Process")'
 )) {
     if (-not $labSource.Contains($fragment)) {
@@ -132,8 +158,11 @@ foreach ($fragment in @(
 
 foreach ($fragment in @(
     '[string]$EternalSonataFramePollWait = "Off"',
+    '[int]$EternalSonataFramePollHandlerGraceUs = 500',
     'EternalSonataFramePollWait = $EternalSonataFramePollWait',
+    'EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs',
     'debug.rpcsx.thor.es_frame_wait',
+    'debug.rpcsx.thor.es_frame_wait_grace_us',
     '$framePollWaitMode'
 )) {
     if (-not $sprintSource.Contains($fragment)) {
@@ -151,4 +180,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, VBlank notification, counter-progress rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, completion notification, counter-progress rearm, and fallback plumbing are intact."

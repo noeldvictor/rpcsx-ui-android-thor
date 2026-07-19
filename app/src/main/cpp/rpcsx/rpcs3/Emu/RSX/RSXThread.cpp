@@ -885,25 +885,49 @@ namespace rsx
 	void thread::post_vblank_event(u64 post_event_time)
 	{
 		vblank_count++;
-		vblank_wait_token++;
-		if (vblank_waiters)
-		{
-			vblank_wait_token.notify_all();
-		}
 
 		if (isHLE)
 		{
 			if (auto ptr = vblank_handler)
 			{
-				intr_thread->cmd_list({{ppu_cmd::set_args, 1}, u64{1},
-					{ppu_cmd::lle_call, ptr},
-					{ppu_cmd::sleep, 0}});
+				if (vblank_waiters)
+				{
+					intr_thread->cmd_list({{ppu_cmd::set_args, 1}, u64{1},
+						{ppu_cmd::lle_call, ptr},
+						{ppu_cmd::ptr_call, 0}, +[](ppu_thread&) -> bool
+						{
+							if (const auto renderer = rsx::get_current_renderer())
+							{
+								renderer->vblank_wait_token++;
+								if (renderer->vblank_waiters)
+								{
+									renderer->vblank_wait_token.notify_all();
+								}
+							}
+							return true;
+						},
+						{ppu_cmd::sleep, 0}});
+				}
+				else
+				{
+					intr_thread->cmd_list({{ppu_cmd::set_args, 1}, u64{1},
+						{ppu_cmd::lle_call, ptr},
+						{ppu_cmd::sleep, 0}});
+				}
 
 				intr_thread->cmd_notify.store(1);
 				intr_thread->cmd_notify.notify_one();
+				return;
 			}
 		}
-		else
+
+		if (vblank_waiters)
+		{
+			vblank_wait_token++;
+			vblank_wait_token.notify_all();
+		}
+
+		if (!isHLE)
 		{
 			sys_rsx_context_attribute(0x55555555, 0xFED, 1, get_guest_system_time(post_event_time), 0, 0);
 		}

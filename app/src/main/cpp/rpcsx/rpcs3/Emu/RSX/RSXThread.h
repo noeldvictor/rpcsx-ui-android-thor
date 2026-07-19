@@ -303,7 +303,7 @@ namespace rsx
 		vm::ptr<void(u32)> vblank_handler = vm::null;
 		vm::ptr<void(u32)> queue_handler = vm::null;
 		atomic_t<u64> vblank_count{0};
-		// Portable 32-bit wait generation for optional VBlank-assisted guest waits.
+		// Portable 32-bit completion generation for optional VBlank-handler-assisted guest waits.
 		atomic_t<u32> vblank_wait_token{0};
 		atomic_t<u32> vblank_waiters{0};
 		bool capture_current_frame = false;

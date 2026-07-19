@@ -30,6 +30,7 @@ LOG_CHANNEL(sys_timer);
 namespace {
 
 constexpr u64 thor_es_frame_poll_wait_max_us = 1000;
+constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500;
 
 struct thor_es_frame_poll_wait_state {
   u32 ppu_id = 0;
@@ -38,6 +39,9 @@ struct thor_es_frame_poll_wait_state {
   u64 completed_vblank = 0;
   u64 calls = 0;
   u64 event_waits = 0;
+  u64 handler_wakes = 0;
+  u64 handler_grace_waits = 0;
+  u64 counter_progress_after_grace = 0;
   u64 vblank_wakes = 0;
   u64 timeouts = 0;
   u64 fallback_sleeps = 0;
@@ -81,6 +85,46 @@ bool is_thor_es_frame_poll_wait_enabled() {
   return enabled;
 }
 
+u64 parse_thor_es_frame_poll_handler_grace_us(const char *value) {
+  if (!value || !*value || *value == '-') {
+    return thor_es_frame_poll_handler_grace_us_default;
+  }
+
+  char *end = nullptr;
+  const u64 parsed = std::strtoull(value, &end, 10);
+  if (end == value || *end != '\0') {
+    return thor_es_frame_poll_handler_grace_us_default;
+  }
+
+  return std::clamp<u64>(parsed, 0, 500);
+}
+
+u64 get_thor_es_frame_poll_handler_grace_us() {
+  static const u64 grace_us = [] {
+#ifdef ANDROID
+    char property_value[PROP_VALUE_MAX]{};
+    if (__system_property_get("debug.rpcsx.thor.es_frame_wait_grace_us",
+                              property_value) > 0) {
+      return parse_thor_es_frame_poll_handler_grace_us(property_value);
+    }
+#endif
+
+    if (const char *value =
+            std::getenv("RPCSX_THOR_ES_FRAME_POLL_HANDLER_GRACE_US")) {
+      return parse_thor_es_frame_poll_handler_grace_us(value);
+    }
+
+    if (const char *value =
+            std::getenv("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US")) {
+      return parse_thor_es_frame_poll_handler_grace_us(value);
+    }
+
+    return thor_es_frame_poll_handler_grace_us_default;
+  }();
+
+  return grace_us;
+}
+
 void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
                                  u32 threshold, u64 vblank) {
   auto &state = g_thor_es_frame_poll_wait_state;
@@ -93,13 +137,19 @@ void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
   sys_timer.notice(
       "Thor Eternal Sonata frame poll wait: ppu=0x%x object=0x%x "
       "counter=%u threshold=%u vblank=%llu armed=%u max_wait_us=%llu "
-      "calls=%llu event_waits=%llu vblank_wakes=%llu timeouts=%llu "
+      "handler_grace_us=%llu "
+      "calls=%llu event_waits=%llu handler_wakes=%llu "
+      "handler_grace_waits=%llu counter_progress_after_grace=%llu "
+      "vblank_wakes=%llu timeouts=%llu "
       "fallback_sleeps=%llu fallback_rearms=%llu "
       "counter_progress_after_event=%llu",
       ppu.id, state.object_addr, counter, threshold, vblank, state.armed,
-      thor_es_frame_poll_wait_max_us, state.calls, state.event_waits,
-      state.vblank_wakes, state.timeouts, state.fallback_sleeps,
-      state.fallback_rearms, state.counter_progress_after_event);
+      thor_es_frame_poll_wait_max_us,
+      get_thor_es_frame_poll_handler_grace_us(), state.calls,
+      state.event_waits, state.handler_wakes, state.handler_grace_waits,
+      state.counter_progress_after_grace, state.vblank_wakes, state.timeouts,
+      state.fallback_sleeps, state.fallback_rearms,
+      state.counter_progress_after_event);
 }
 
 bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
@@ -149,8 +199,9 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   }
 
   state.event_waits++;
-  // atomic_wait uses a portable 32-bit key; retain vblank_count as the
-  // full-width diagnostic and use this generation only for notifications.
+  // Wait for the queued guest VBlank handler to finish, not merely for the
+  // raw VBlank edge. This keeps the counter load after the guest callback.
+  // The portable 32-bit generation avoids a newer 64-bit wait dependency.
   const u32 wait_token = renderer->vblank_wait_token;
   renderer->vblank_waiters.fetch_add(1);
   if (renderer->vblank_wait_token == wait_token) {
@@ -159,12 +210,31 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   }
   renderer->vblank_waiters.fetch_sub(1);
 
-  const auto after_vblank = +renderer->vblank_count;
-  const u32 after_counter = vm::read32(object_addr);
-  if (after_vblank != vblank) {
-    state.vblank_wakes++;
+  const u32 after_wait_token = renderer->vblank_wait_token;
+  u32 after_counter = vm::read32(object_addr);
+  if (after_wait_token != wait_token) {
+    state.handler_wakes++;
+    bool waited_for_grace = false;
+    for (u64 waited_us = 0;
+         after_counter == counter &&
+         waited_us < get_thor_es_frame_poll_handler_grace_us();
+         waited_us += 100) {
+      thread_ctrl::wait_for(100);
+      waited_for_grace = true;
+      state.handler_grace_waits++;
+      after_counter = vm::read32(object_addr);
+    }
+
+    if (waited_for_grace && after_counter != counter) {
+      state.counter_progress_after_grace++;
+    }
   } else {
     state.timeouts++;
+  }
+
+  const auto after_vblank = +renderer->vblank_count;
+  if (after_vblank != vblank) {
+    state.vblank_wakes++;
   }
 
   if (after_counter != counter) {
