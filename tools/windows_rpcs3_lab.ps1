@@ -2737,7 +2737,26 @@ $env:Qt6_ROOT = $qtRoot
 $env:QTDIR = $qtRoot
 $env:VULKAN_SDK = $vcpkgRoot
 $env:RPCS3_LAB_NO_FATAL_DIALOG = "1"
-$env:PATH = "$qtBin;$vcpkgBin;$env:PATH"
+# Some Windows hosts expose both Path and PATH. Canonicalize before creating
+# ProcessStartInfo because its case-insensitive environment map rejects both.
+$processEnvironment = [Environment]::GetEnvironmentVariables("Process")
+$pathVariables = @($processEnvironment.Keys | Where-Object { [string]$_ -ieq "Path" } | ForEach-Object {
+    [pscustomobject]@{
+        Name = [string]$_
+        Value = [string]$processEnvironment[$_]
+    }
+})
+$inheritedPath = [string]($pathVariables | Where-Object { $_.Name -ceq "PATH" } | Select-Object -First 1).Value
+if ([string]::IsNullOrWhiteSpace($inheritedPath)) {
+    $inheritedPath = [string]($pathVariables | Where-Object { $_.Name -ceq "Path" } | Select-Object -First 1).Value
+}
+if ([string]::IsNullOrWhiteSpace($inheritedPath)) {
+    throw "The process environment does not contain a usable Path value."
+}
+foreach ($pathVariable in $pathVariables) {
+    [Environment]::SetEnvironmentVariable($pathVariable.Name, $null, "Process")
+}
+[Environment]::SetEnvironmentVariable("Path", "$qtBin;$vcpkgBin;$inheritedPath", "Process")
 
 if ($Action -eq "InstallFirmware") {
     if ([string]::IsNullOrWhiteSpace($FirmwarePath)) {
@@ -2897,18 +2916,23 @@ if (-not $SkipHostSystemCheck) {
     Save-LabHostLoadSnapshot -RunDir $runDir -RunLog $runLog -Snapshot $prelaunchSnapshot | Out-Null
 }
 
-$startInfo = @{
-    FilePath = $rpcs3Exe
-    ArgumentList = $argumentLine
-    WorkingDirectory = $rpcs3Bin
-    RedirectStandardOutput = $stdoutPath
-    RedirectStandardError = $stderrPath
-    PassThru = $true
-}
+$processStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+$processStartInfo.FileName = $rpcs3Exe
+$processStartInfo.Arguments = $argumentLine
+$processStartInfo.WorkingDirectory = $rpcs3Bin
+$processStartInfo.UseShellExecute = $false
+$processStartInfo.RedirectStandardOutput = $true
+$processStartInfo.RedirectStandardError = $true
 $windowHidden = -not $Visible -and [string]::IsNullOrWhiteSpace($InputMacro) -and $ScreenshotEverySeconds -le 0 -and $Action -ne "InstallFirmware"
 if ($windowHidden) {
-    $startInfo.WindowStyle = "Hidden"
+	$processStartInfo.CreateNoWindow = $true
+    $processStartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
 }
+
+$stdoutReadTask = $null
+$stderrReadTask = $null
+[System.IO.File]::WriteAllText($stdoutPath, "", [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($stderrPath, "", [System.Text.UTF8Encoding]::new($false))
 
 $launchTime = Get-Date
 $padApiFile = ""
@@ -3157,7 +3181,13 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_RSX_VERTEX_VOLATILE_CACHE", $rsxVertexVolatileCacheEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_PAD_API_FILE", $padApiFile, "Process")
 try {
-    $process = Start-Process @startInfo
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processStartInfo
+    if (-not $process.Start()) {
+        throw "System.Diagnostics.Process failed to start RPCS3."
+    }
+    $stdoutReadTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrReadTask = $process.StandardError.ReadToEndAsync()
 } finally {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPURS_SUPERPATH", $previousEsSuperPath, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPURS_JOIN_SPIN", $previousEsJoinSpin, "Process")
@@ -3314,6 +3344,13 @@ if ($exited -and $process.HasExited) {
     } catch {
         Write-LabLine $runLog "Exit code query failed: $($_.Exception.Message)"
     }
+}
+
+if ($process.HasExited) {
+    $stdoutText = if ($null -ne $stdoutReadTask) { [string]$stdoutReadTask.Result } else { "" }
+    $stderrText = if ($null -ne $stderrReadTask) { [string]$stderrReadTask.Result } else { "" }
+    [System.IO.File]::WriteAllText($stdoutPath, $stdoutText, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($stderrPath, $stderrText, [System.Text.UTF8Encoding]::new($false))
 }
 
 $exitCode = if ($null -ne $numericExitCode) {
