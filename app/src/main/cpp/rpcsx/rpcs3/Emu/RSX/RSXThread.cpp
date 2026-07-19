@@ -885,6 +885,11 @@ namespace rsx
 	void thread::post_vblank_event(u64 post_event_time)
 	{
 		vblank_count++;
+		vblank_wait_token++;
+		if (vblank_waiters)
+		{
+			vblank_wait_token.notify_all();
+		}
 
 		if (isHLE)
 		{

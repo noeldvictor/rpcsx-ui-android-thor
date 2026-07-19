@@ -7,6 +7,8 @@
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/IdManager.h"
+#include "Emu/Memory/vm.h"
+#include "Emu/RSX/RSXThread.h"
 
 #include "Emu/System.h"
 #include "Emu/system_config.h"
@@ -14,10 +16,191 @@
 #include "sys_event.h"
 #include "sys_process.h"
 
+#include <cstdlib>
 #include <deque>
+#include <string_view>
 #include <thread>
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 LOG_CHANNEL(sys_timer);
+
+namespace {
+
+constexpr u64 thor_es_frame_poll_wait_max_us = 1000;
+
+struct thor_es_frame_poll_wait_state {
+  u32 ppu_id = 0;
+  u32 object_addr = 0;
+  u32 normal_pre_counter = 0;
+  u64 completed_vblank = 0;
+  u64 calls = 0;
+  u64 event_waits = 0;
+  u64 vblank_wakes = 0;
+  u64 timeouts = 0;
+  u64 fallback_sleeps = 0;
+  u64 fallback_rearms = 0;
+  u64 counter_progress_after_event = 0;
+  u64 last_log_us = 0;
+  bool armed = false;
+};
+
+thor_es_frame_poll_wait_state g_thor_es_frame_poll_wait_state;
+
+bool parse_thor_es_frame_poll_wait(std::string_view value) {
+  return value == "1" || value == "on" || value == "true" ||
+         value == "wait" || value == "fast";
+}
+
+bool is_thor_es_frame_poll_wait_enabled() {
+  static const bool enabled = [] {
+#ifdef ANDROID
+    char property_value[PROP_VALUE_MAX]{};
+    const int property_length = __system_property_get(
+        "debug.rpcsx.thor.es_frame_wait", property_value);
+    if (property_length > 0) {
+      return parse_thor_es_frame_poll_wait(
+          std::string_view{property_value,
+                           static_cast<usz>(property_length)});
+    }
+#endif
+
+    if (const char *value = std::getenv("RPCSX_THOR_ES_FRAME_POLL_WAIT")) {
+      return parse_thor_es_frame_poll_wait(value);
+    }
+
+    if (const char *value = std::getenv("RPCS3_ES_FRAME_POLL_WAIT")) {
+      return parse_thor_es_frame_poll_wait(value);
+    }
+
+    return false;
+  }();
+
+  return enabled;
+}
+
+void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
+                                 u32 threshold, u64 vblank) {
+  auto &state = g_thor_es_frame_poll_wait_state;
+  const u64 now = get_system_time();
+  if (state.last_log_us && now - state.last_log_us < 5'000'000) {
+    return;
+  }
+
+  state.last_log_us = now;
+  sys_timer.notice(
+      "Thor Eternal Sonata frame poll wait: ppu=0x%x object=0x%x "
+      "counter=%u threshold=%u vblank=%llu armed=%u max_wait_us=%llu "
+      "calls=%llu event_waits=%llu vblank_wakes=%llu timeouts=%llu "
+      "fallback_sleeps=%llu fallback_rearms=%llu "
+      "counter_progress_after_event=%llu",
+      ppu.id, state.object_addr, counter, threshold, vblank, state.armed,
+      thor_es_frame_poll_wait_max_us, state.calls, state.event_waits,
+      state.vblank_wakes, state.timeouts, state.fallback_sleeps,
+      state.fallback_rearms, state.counter_progress_after_event);
+}
+
+bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
+  if (!is_thor_es_frame_poll_wait_enabled() ||
+      Emu.GetTitleID() != "BLUS30161" || ppu.id != 0x01000000 ||
+      ppu.cia != 0x002a8300 || sleep_time != 100) {
+    return false;
+  }
+
+  const u32 object_addr = static_cast<u32>(ppu.gpr[28]);
+  const u32 frame_config_addr = static_cast<u32>(ppu.gpr[31]);
+  if (frame_config_addr != object_addr + 4 || !vm::check_addr(object_addr) ||
+      !vm::check_addr(frame_config_addr + 0x260)) {
+    return false;
+  }
+
+  const u8 divisor = vm::read8(frame_config_addr + 0x260);
+  if (divisor != 30 && divisor != 60) {
+    return false;
+  }
+
+  const u32 threshold = 60 / divisor;
+  const u32 counter = vm::read32(object_addr);
+  if (counter >= threshold) {
+    return false;
+  }
+
+  const auto renderer = rsx::get_current_renderer();
+  if (!renderer) {
+    return false;
+  }
+
+  auto &state = g_thor_es_frame_poll_wait_state;
+  if (state.ppu_id != ppu.id || state.object_addr != object_addr) {
+    state = {};
+    state.ppu_id = ppu.id;
+    state.object_addr = object_addr;
+  }
+
+  state.calls++;
+  const auto vblank = +renderer->vblank_count;
+  if (!state.armed || vblank != state.completed_vblank) {
+    state.normal_pre_counter = counter;
+    state.fallback_sleeps++;
+    log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+    return false;
+  }
+
+  state.event_waits++;
+  // atomic_wait uses a portable 32-bit key; retain vblank_count as the
+  // full-width diagnostic and use this generation only for notifications.
+  const u32 wait_token = renderer->vblank_wait_token;
+  renderer->vblank_waiters.fetch_add(1);
+  if (renderer->vblank_wait_token == wait_token) {
+    thread_ctrl::wait_on(renderer->vblank_wait_token, wait_token,
+                         thor_es_frame_poll_wait_max_us);
+  }
+  renderer->vblank_waiters.fetch_sub(1);
+
+  const auto after_vblank = +renderer->vblank_count;
+  const u32 after_counter = vm::read32(object_addr);
+  if (after_vblank != vblank) {
+    state.vblank_wakes++;
+  } else {
+    state.timeouts++;
+  }
+
+  if (after_counter != counter) {
+    state.counter_progress_after_event++;
+    state.completed_vblank = after_vblank;
+  }
+
+  log_thor_es_frame_poll_wait(ppu, after_counter, threshold, after_vblank);
+  return true;
+}
+
+void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
+                                         u64 sleep_time) {
+  if (!is_thor_es_frame_poll_wait_enabled() ||
+      Emu.GetTitleID() != "BLUS30161" || ppu.id != 0x01000000 ||
+      ppu.cia != 0x002a8300 || sleep_time != 100) {
+    return;
+  }
+
+  auto &state = g_thor_es_frame_poll_wait_state;
+  if (state.ppu_id != ppu.id || !state.object_addr ||
+      !vm::check_addr(state.object_addr)) {
+    return;
+  }
+
+  const u32 counter = vm::read32(state.object_addr);
+  if (counter != state.normal_pre_counter) {
+    if (const auto renderer = rsx::get_current_renderer()) {
+      state.completed_vblank = renderer->vblank_count;
+      state.armed = true;
+      state.fallback_rearms++;
+    }
+  }
+}
+
+} // namespace
 
 struct lv2_timer_thread {
   shared_mutex mutex;
@@ -437,6 +620,14 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
           std::max<u64>(1, rx::sub_saturate<u64>(sleep_time, -add_time));
     }
 
+    if (try_thor_es_frame_poll_wait(ppu, sleep_time)) {
+      thor_spurs_probe_log_ppu_wait(
+          "usleep-frame-poll", ppu, 0, requested_sleep_time,
+          thor_es_frame_poll_wait_max_us,
+          static_cast<u64>((+ppu.state).raw()), CELL_OK);
+      return CELL_OK;
+    }
+
     lv2_obj::sleep(ppu, g_cfg.core.sleep_timers_accuracy <
                                 sleep_timers_accuracy_level::_usleep
                             ? sleep_time
@@ -445,6 +636,8 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
     if (!lv2_obj::wait_timeout(sleep_time, &ppu, true, true)) {
       ppu.state += cpu_flag::again;
     }
+
+    observe_thor_es_frame_poll_fallback(ppu, sleep_time);
   } else {
     std::this_thread::yield();
   }
