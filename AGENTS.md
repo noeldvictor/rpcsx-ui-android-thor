@@ -534,4 +534,22 @@ Put dated run details in `debug-experiments/`, not here.
   Thor speed, temperature, FPS, flicker, gameplay, or stability credit exists.
   Detailed ledger:
   `debug-experiments/20260719-thor-disabled-rsx-experiments-overhead.md`.
+- Normal Android builds now compile out the failed global ARM64 busy-wait
+  batching experiment and execute the existing direct timer/yield polling loop.
+  Explicit diagnostics retain light/fast/aggressive modes through
+  `-PrpcsxThorBusyWaitExperiment=true` or
+  `RPCSX_THOR_BUSY_WAIT_EXPERIMENT_BUILD=true`. Prior matched Thor field A/B
+  rejected batching: `19.35 FPS` off versus `18.15` fast and `17.72` light,
+  with correct visuals but worse throughput. Host ARM64 proof removes the
+  property string, 12 bytes of mode/guard state, 260 bytes of parser/init text,
+  and the 340-byte out-of-line `rx::busy_wait` wrapper; LTO inlines the direct
+  loop instead. The core shrinks by 50,296 bytes. `semaphore_base::imp_wait`,
+  `rsx::thread::run_FIFO`, and `spu_thread::process_mfc_cmd` total
+  10,248 -> 9,752 bytes, with nine guard/mode calls plus one wrapper call gone.
+  All 13 active frame-poll wait symbols remain, all 48 Thor contracts and the
+  ARM64 RelWithDebInfo build pass. This is host-verified
+  `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed,
+  temperature, FPS, flicker, gameplay, or stability credit exists. Detailed
+  ledger:
+  `debug-experiments/20260719-thor-disabled-busy-wait-experiment-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

@@ -4,11 +4,12 @@
 #include "types.hpp"
 #include <atomic>
 #include <bit>
-#include <cstdlib>
 #include <thread>
 #include <type_traits>
 
-#if defined(ARCH_ARM64) && defined(ANDROID)
+#if defined(ARCH_ARM64) && defined(ANDROID) && \
+    defined(RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
+#include <cstdlib>
 #include <sys/system_properties.h>
 #endif
 
@@ -286,7 +287,8 @@ inline void pause() {
 
 inline void yield() { std::this_thread::yield(); }
 
-#if defined(ARCH_ARM64) && defined(ANDROID)
+#if defined(ARCH_ARM64) && defined(ANDROID) && \
+    defined(RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
 enum class thor_busy_wait_mode : u32 {
   disabled,
   light,
@@ -352,7 +354,8 @@ inline u32 thor_busy_wait_poll_batch(usz cycles) {
 
 // Synchronization helper (cache-friendly busy waiting)
 inline void busy_wait(usz cycles = 3000) {
-#if defined(ARCH_ARM64) && defined(ANDROID)
+#if defined(ARCH_ARM64) && defined(ANDROID) && \
+    defined(RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
   const u32 batch = thor_busy_wait_poll_batch(cycles);
   if (batch > 1) {
     const u64 stop = get_tsc() + cycles;

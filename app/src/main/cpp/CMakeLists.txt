@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_POSITION_INDEPENDENT_CODE on)
 option(RPCSX_BUILD_BUNDLED_CORE "Build the vendored RPCSX Android core into the APK" OFF)
 option(RPCSX_THOR_WAIT_PROFILER "Instrument Android busy-wait sites for Thor diagnostics" OFF)
+option(RPCSX_THOR_BUSY_WAIT_EXPERIMENT "Build the failed Android ARM64 busy-wait batching experiment" OFF)
 option(RPCSX_THOR_RSX_AUDITOR "Instrument Android Vulkan work for Thor diagnostics" OFF)
 option(RPCSX_THOR_RSX_EXPERIMENTS "Build experimental Android RSX fence, locality, and resolve behavior" OFF)
 option(RPCSX_THOR_SYSCALL_STATS "Instrument Android PPU syscalls for Thor diagnostics" OFF)
@@ -18,6 +19,10 @@ set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model 
 
 if (RPCSX_THOR_WAIT_PROFILER)
 	add_compile_definitions(RPCSX_THOR_WAIT_PROFILER=1)
+endif()
+
+if (RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
+	add_compile_definitions(RPCSX_THOR_BUSY_WAIT_EXPERIMENT=1)
 endif()
 
 if (RPCSX_THOR_RSX_AUDITOR)
