@@ -114,6 +114,7 @@ const u32 spu_frsqest_exponent_lut[256] =
 
 using spu_rdata_t = decltype(spu_thread::rdata);
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_SPURS_PROBE)
 static bool thor_spurs_probe_enabled() noexcept
 {
 #ifdef ANDROID
@@ -228,6 +229,22 @@ static void thor_spurs_wait_probe_log(spu_thread& spu, thor_spurs_wait_event eve
 		group->max_run, +group->spurs_running, raddr, spu.spurs_addr, rtime,
 		mask, wait_switch, max_run, prev_running, wait_time);
 }
+
+#else
+enum class thor_spurs_wait_event : u32
+{
+	lr_event,
+	notifier,
+	putllc_wait,
+	putllc_timeout,
+};
+
+static FORCE_INLINE constexpr void
+thor_spurs_wait_probe_log(spu_thread&, thor_spurs_wait_event, u32, u32, u64,
+	u32, u32 = 0, u32 = 0, u64 = 0) noexcept
+{
+}
+#endif
 
 enum class thor_es_dma_superpath_mode : u32
 {

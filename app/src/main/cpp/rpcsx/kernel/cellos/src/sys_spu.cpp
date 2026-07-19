@@ -40,6 +40,7 @@
 
 LOG_CHANNEL(sys_spu);
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SPURS_PROBE)
 static bool thor_spurs_probe_property_enabled() noexcept {
 #ifdef ANDROID
   char value[PROP_VALUE_MAX]{};
@@ -284,6 +285,11 @@ static void thor_spurs_probe_log(const char *op, ppu_thread &ppu,
 
   thor_spurs_probe_log_state(ppu, group, id, cause, status);
 }
+#else
+static FORCE_INLINE constexpr void
+thor_spurs_probe_log(const char *, ppu_thread &, const lv2_spu_group &, u32,
+                     u32 = umax, u32 = umax) noexcept {}
+#endif
 
 enum class thor_es_dma_superpath_mode : u32 {
   disabled,

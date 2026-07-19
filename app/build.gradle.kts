@@ -39,6 +39,12 @@ val rpcsxThorSyscallStats =
         else -> false
     }
 
+val rpcsxThorSpursProbe =
+    when (providers.gradleProperty("rpcsxThorSpursProbe").orNull ?: System.getenv("RPCSX_THOR_SPURS_PROBE_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
@@ -83,6 +89,7 @@ android {
                     "-DRPCSX_THOR_WAIT_PROFILER=${if (rpcsxThorWaitProfiler) "ON" else "OFF"}",
                     "-DRPCSX_THOR_RSX_AUDITOR=${if (rpcsxThorRsxAuditor) "ON" else "OFF"}",
                     "-DRPCSX_THOR_SYSCALL_STATS=${if (rpcsxThorSyscallStats) "ON" else "OFF"}",
+                    "-DRPCSX_THOR_SPURS_PROBE=${if (rpcsxThorSpursProbe) "ON" else "OFF"}",
                 )
             }
         }

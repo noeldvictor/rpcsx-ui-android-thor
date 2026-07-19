@@ -439,4 +439,15 @@ Put dated run details in `debug-experiments/`, not here.
 - Normal Android builds now compile the disabled Thor wait profiler down to a direct inlined `rx::busy_wait`; diagnostics can opt the full profiler back in with `-PrpcsxThorWaitProfiler=true` or `RPCSX_THOR_WAIT_PROFILER_BUILD=true`. Host ARM64 proof removed all ten profiler calls from `semaphore_base::imp_wait()`, all seven profiler symbols and its property string from the merged library, while focused wait/frame/thermal contracts and the native build pass. This is host-verified CPU-pressure/code-removal only: no ADB/device action ran and no Thor speed or temperature credit exists. Detailed ledger: `debug-experiments/20260719-thor-disabled-wait-profiler-overhead.md`.
 - Normal Android builds now compile the default-off RSX diagnostic recorder to an always-inline false gate; diagnostics can opt it back in with `-PrpcsxThorRsxAuditor=true` or `RPCSX_THOR_RSX_AUDITOR_BUILD=true`. The independent DMA-fence, depth-feedback, texture-barrier, and blit-resolve behavior properties remain runtime-configurable. Host ARM64 proof removed all retained recorder symbols, accounting state, hot barrier atomics/property reads, and only the auditor property string; focused contracts and the native build pass. This is host-verified CPU-pressure/code-removal only: no ADB/device action ran and no Thor speed or temperature credit exists. Detailed ledger: `debug-experiments/20260719-thor-disabled-rsx-auditor-overhead.md`.
 - Normal Android builds now compile the default-off PPU syscall-statistics hook to an empty inline call and exclude its named thread, counters, reports, and property state; diagnostics can opt it back in with `-PrpcsxThorSyscallStats=true` or `RPCSX_THOR_SYSCALL_STATS_BUILD=true`, while desktop accounting is unchanged. Host ARM64 proof reduced the dispatcher from 504 to 316 bytes, removed all timer/property/CAS/LDADD statistics work, cut selected symbols 15 -> 2, and passed all 41 Thor contracts plus the native build. This is host-verified CPU-pressure/code-removal only: no ADB/device action ran and no Thor speed or temperature credit exists. Detailed ledger: `debug-experiments/20260719-thor-disabled-syscall-stats-overhead.md`.
+- Normal Android builds now compile the default-off SPURS probe to empty inline
+  hooks across PPU event/semaphore/timer syscalls and SPU reservation/wait
+  paths; diagnostics can opt it back in with
+  `-PrpcsxThorSpursProbe=true` or `RPCSX_THOR_SPURS_PROBE_BUILD=true`, while
+  desktop probing is unchanged. Host ARM64 proof removed 7 PPU and 4 SPU
+  probe calls, all 8 selected symbols, and all 5 property/report strings;
+  the six affected hot functions shrink by 432 bytes and all 42 Thor
+  contracts plus the native build pass. This is host-verified
+  `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed or
+  temperature credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-spurs-probe-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

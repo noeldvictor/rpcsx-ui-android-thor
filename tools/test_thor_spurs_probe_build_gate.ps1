@@ -1,0 +1,65 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$gradleSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/build.gradle.kts") -Raw
+$cmakeSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/CMakeLists.txt") -Raw
+$headerSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/thor_spurs_probe.h") -Raw
+$kernelSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_spu.cpp") -Raw
+$spuThreadSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp") -Raw
+$eventSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_event.cpp") -Raw
+$semaphoreSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_semaphore.cpp") -Raw
+$timerSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_timer.cpp") -Raw
+
+$requiredGradleFragments = @(
+    'providers.gradleProperty("rpcsxThorSpursProbe")',
+    'System.getenv("RPCSX_THOR_SPURS_PROBE_BUILD")',
+    '"-DRPCSX_THOR_SPURS_PROBE=${if (rpcsxThorSpursProbe) "ON" else "OFF"}"'
+)
+
+foreach ($fragment in $requiredGradleFragments) {
+    if (-not $gradleSource.Contains($fragment)) {
+        throw "Missing SPURS-probe Gradle gate: $fragment"
+    }
+}
+
+$requiredCmakeFragments = @(
+    'option(RPCSX_THOR_SPURS_PROBE "Instrument Android SPURS waits for Thor diagnostics" OFF)',
+    'add_compile_definitions(RPCSX_THOR_SPURS_PROBE=1)'
+)
+
+foreach ($fragment in $requiredCmakeFragments) {
+    if (-not $cmakeSource.Contains($fragment)) {
+        throw "Missing SPURS-probe CMake gate: $fragment"
+    }
+}
+
+if ($headerSource -notmatch '#if defined\(__ANDROID__\) && !defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?static FORCE_INLINE constexpr bool thor_spurs_probe_enabled\(\) noexcept[\s\S]*?return false;[\s\S]*?static FORCE_INLINE constexpr void\s+thor_spurs_probe_log_ppu_wait[\s\S]*?#else[\s\S]*?bool thor_spurs_probe_enabled\(\) noexcept;[\s\S]*?#endif') {
+    throw "Normal Android PPU syscall call sites do not see compile-time SPURS-probe no-ops."
+}
+
+if ($kernelSource -notmatch '#if !defined\(__ANDROID__\) \|\| defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?__system_property_get\("debug\.rpcsx\.thor\.spurs_probe", value\)[\s\S]*?Thor SPURS PPU wait probe:[\s\S]*?Thor SPURS probe:[\s\S]*?#else\s+static FORCE_INLINE constexpr void\s+thor_spurs_probe_log[\s\S]*?#endif') {
+    throw "Kernel SPURS probe state/reporting is not wholly excluded from normal Android builds."
+}
+
+if ($spuThreadSource -notmatch '#if !defined\(ANDROID\) \|\| defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?__system_property_get\("debug\.rpcsx\.thor\.spurs_probe", value\)[\s\S]*?Thor SPURS wait probe:[\s\S]*?#else\s+enum class thor_spurs_wait_event[\s\S]*?static FORCE_INLINE constexpr void\s+thor_spurs_wait_probe_log[\s\S]*?#endif') {
+    throw "SPU reservation/wait diagnostics are not wholly excluded from normal Android builds."
+}
+
+$ppuHookCount =
+    [regex]::Matches($eventSource, 'thor_spurs_probe_log_ppu_wait\(').Count +
+    [regex]::Matches($semaphoreSource, 'thor_spurs_probe_log_ppu_wait\(').Count +
+    [regex]::Matches($timerSource, 'thor_spurs_probe_log_ppu_wait\(').Count
+if ($ppuHookCount -ne 9) {
+    throw "Expected all 9 restorable PPU SPURS-probe hooks, found $ppuHookCount."
+}
+
+$spuHookCount = [regex]::Matches($spuThreadSource, 'thor_spurs_wait_probe_log\(\*this,').Count
+if ($spuHookCount -ne 4) {
+    throw "Expected all 4 restorable SPU wait hooks, found $spuHookCount."
+}
+
+if ($gradleSource -match 'rpcsxThorSpursProbe[^\r\n]*\?:\s*true') {
+    throw "The Android SPURS probe must remain disabled by default."
+}
+
+Write-Output "Thor SPURS-probe build gate passed: normal Android omits PPU/SPU probe calls and state while explicit diagnostics and desktop behavior remain."
