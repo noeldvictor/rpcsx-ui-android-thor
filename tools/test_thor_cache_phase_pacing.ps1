@@ -26,6 +26,8 @@ $requiredSpuFragments = @(
 $requiredRsxFragments = @(
     '__system_property_get("debug.rpcsx.thor.cache_phase_pacing", value)',
     'std::getenv("RPCSX_THOR_CACHE_PHASE_PACING")',
+    'if (started_generation != emulation_id)',
+    'Android startup cache phase pacing unavailable before RSX compile',
     'const auto deadline = start + 5s;',
     'steady_clock::now() < deadline',
     "thread_ctrl::wait_for(5'000);",
@@ -50,6 +52,12 @@ $waitFunctionIndex = $rsxSource.IndexOf('static void wait_for_android_spu_preloa
 $guardEndIndex = $rsxSource.IndexOf('#endif', $waitFunctionIndex)
 if ($androidGuardIndex -lt 0 -or $waitFunctionIndex -le $androidGuardIndex -or $guardEndIndex -le $waitFunctionIndex) {
     throw "Cache phase pacing is no longer Android-only."
+}
+
+$notStartedGuardIndex = $rsxSource.IndexOf('if (started_generation != emulation_id)', $waitFunctionIndex)
+$waitStartIndex = $rsxSource.IndexOf('const auto start = steady_clock::now();', $notStartedGuardIndex)
+if ($notStartedGuardIndex -lt 0 -or $waitStartIndex -le $notStartedGuardIndex) {
+    throw "RSX phase pacing can still burn its timeout before the SPU phase has started."
 }
 
 $waitCallIndex = $rsxSource.IndexOf('wait_for_android_spu_preload_phase();')
@@ -77,4 +85,4 @@ if (-not $sprintSource.Contains('[string]$AndroidCachePhasePacing = "off"') -or
     throw "Eternal Sonata route wrapper no longer forwards default-off cache phase pacing."
 }
 
-Write-Output "Thor startup cache phase pacing contract passed: Android-only, opt-in/default-off, generation-safe, timeout-bounded, ordered before RSX compilation, route resets and boot-failure evidence preserved."
+Write-Output "Thor startup cache phase pacing contract passed: Android-only, opt-in/default-off, pre-start bypassed, generation-safe, timeout-bounded, ordered before RSX compilation, route resets and boot-failure evidence preserved."

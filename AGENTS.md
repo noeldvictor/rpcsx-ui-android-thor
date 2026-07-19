@@ -827,4 +827,26 @@ Put dated run details in `debug-experiments/`, not here.
   installs without weakening the gate. All 59 Thor contracts pass; no ADB or
   device action ran, so this is route-tooling only. Detailed ledger:
   `debug-experiments/20260719-thor-strict-cool-gate-wrapper.md`.
+- The one exact-APK cool-title route
+  `20260719-183040-thor-input-custom` passed `31.9 -> 31.7 -> 31.5 C`
+  preflight, then hard-stopped at `72.7 C` before title, `13.242 s` after PID;
+  post-stop was `49.4 C` and targeted fatal hits were zero. It receives no
+  speed/FPS/flicker/gameplay/stability/temperature-win credit and no second
+  launch ran.
+- Runtime disproved two host assumptions: cache phase pacing waited `5,003 ms`
+  before SPU generation `1` had started, and managed `Max LLVM Compile
+  Threads=2` produced `requested=2, workers=2, mask=0x7`, not `8 -> 3`. Those
+  two workers built all 64 bounded programs in about `1.679 s` immediately
+  before the hottest interval.
+- The next same-APK cool-title profile disables the impossible phase wait and
+  sets the existing SPU eager-compile budget to `100 ms`; RSX/SPU selections
+  remain `256/64`, Vulkan warm hit-only stays on, affinity stays `0x07`, and
+  all fail-stop/visual gates remain. Native phase pacing also bypasses its
+  timeout if the current SPU generation has not started. The analyzer expects
+  two SPU workers, budget activation, phase pacing off, and classifies thermal
+  macro failures even without a separate `status=failed` row. Do not install:
+  exact installed APK `5C3911D0...682CC6` already supports these property
+  controls. Only after another separate cooling interval may one self-stopping
+  `ThorCoolTitle` proof run. Detailed ledger:
+  `debug-experiments/20260719-thor-cool-title-thermal-counterproof.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

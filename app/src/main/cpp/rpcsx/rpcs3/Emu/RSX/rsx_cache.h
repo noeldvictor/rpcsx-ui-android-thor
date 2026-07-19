@@ -272,6 +272,15 @@ namespace rsx
 			}
 
 			const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+			const u64 started_generation = rpcsx::startup_cache_phase::spu_preload_started.load();
+			if (started_generation != emulation_id)
+			{
+				// The current boot sequence cannot advance SPU initialization while
+				// RSX cache loading is blocked here. Fail open instead of burning the
+				// whole timeout and then stacking both compile phases anyway.
+				rsx_log.warning("Android startup cache phase pacing unavailable before RSX compile (SPU started generation=%u, expected=%u); skipping wait.", started_generation, emulation_id);
+				return;
+			}
 			const auto start = steady_clock::now();
 			const auto deadline = start + 5s;
 

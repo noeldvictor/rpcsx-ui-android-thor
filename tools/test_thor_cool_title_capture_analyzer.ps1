@@ -72,13 +72,13 @@ function Write-ReadyFixture {
         "rsx-cache-preload-limit-effective.txt" = "256"
         "rsx-cache-compile-budget-effective.txt" = "0"
         "spu-cache-preload-limit-effective.txt" = "64"
-        "spu-cache-compile-budget-effective.txt" = "0"
+        "spu-cache-compile-budget-effective.txt" = "100"
         "spu-native-object-cache-effective.txt" = "off"
         "cache-worker-affinity-effective.txt" = "7"
         "vk-pipeline-cache-effective.txt" = "on"
         "vk-preload-cache-hits-only-effective.txt" = "on"
         "adpf-rsx-effective.txt" = "off"
-        "cache-phase-pacing-effective.txt" = "on"
+        "cache-phase-pacing-effective.txt" = "off"
     }
     foreach ($entry in $effectiveProperties.GetEnumerator()) {
         Write-AdbEvidence -Directory $Directory -Name $entry.Key -Value $entry.Value
@@ -89,13 +89,13 @@ function Write-ReadyFixture {
         "debug.rpcsx.thor.rsx_cache_preload_limit=256",
         "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
         "debug.rpcsx.thor.spu_cache_preload_limit=64",
-        "debug.rpcsx.thor.spu_cache_compile_budget_ms=0",
+        "debug.rpcsx.thor.spu_cache_compile_budget_ms=100",
         "debug.rpcsx.thor.spu_native_object_cache=off",
         "debug.rpcsx.thor.cache_worker_affinity_mask=7",
         "debug.rpcsx.thor.vk_pipeline_cache=on",
         "debug.rpcsx.thor.vk_preload_cache_hits_only=on",
         "debug.rpcsx.thor.adpf_rsx=off",
-        "debug.rpcsx.thor.cache_phase_pacing=on",
+        "debug.rpcsx.thor.cache_phase_pacing=off",
         "debug.rpcsx.thor.logcat=0",
         "debug.rpcsx.thor.syscall_stats=0",
         "debug.rpcsx.thor.spu_reduced_loop_detect=0",
@@ -128,12 +128,14 @@ function Write-ReadyFixture {
         "- Max silicon temperature C: 72",
         "- RSX cache preload workers (0=auto): 2",
         "- RSX cached pipeline preload limit (0=all): 256",
+        "- RSX cached pipeline compile budget ms (0=unbounded): 0",
         "- SPU cached-program preload limit (0=all): 64",
+        "- SPU cached-program compile budget ms (0=unbounded): 100",
         "- Startup cache-worker affinity mask (0=default scheduler): 7",
         "- Persistent Vulkan driver pipeline cache: on",
         "- Vulkan preload cache hits only: on",
         "- Android RSX performance hint: off",
-        "- Startup cache phase pacing: on",
+        "- Startup cache phase pacing: off",
         "- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
     ) | Set-Content -LiteralPath (Join-Path $Directory "README.md") -Encoding UTF8
 
@@ -160,9 +162,9 @@ function Write-ReadyFixture {
         "Shader cache preload workers: load=2, compile=2",
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
-        "Thor SPU cache-worker pool matched to affinity: requested=8, workers=3, mask=0x7.",
-        "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes).",
-        "Android startup cache phase pacing: SPU preload complete after 401 ms; starting RSX pipeline compilation."
+        "Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.",
+        "Thor SPU cache compile budget enabled for BLUS30161: 100 ms.",
+        "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes)."
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8
     Write-TitleProofPng -Path (Join-Path $Directory "03-title-proof.png")
 }
@@ -195,8 +197,8 @@ try {
     $thermalDir = Join-Path $tempRoot "thermal-stop"
     Copy-Item -LiteralPath $readyDir -Destination $thermalDir -Recurse
     Remove-Item -LiteralPath (Join-Path $thermalDir "03-title-proof.png") -Force
-    "thermal guard stopped route" | Set-Content -LiteralPath (Join-Path $thermalDir "macro-failure.txt") -Encoding UTF8
-    "stage=screenshot-ppu-ready status=failed code=silicon-temperature-headroom silicon_temperature_c=68.7" |
+    "Thor CPU/GPU silicon temperature is 72.7 C, at or above the 72 C limit." | Set-Content -LiteralPath (Join-Path $thermalDir "macro-failure.txt") -Encoding UTF8
+    "stage=screenshot-ppu-ready-near-limit-confirm silicon_temperature_c=72.7 silicon_limit_c=72" |
         Add-Content -LiteralPath (Join-Path $thermalDir "thermal-guard.log") -Encoding UTF8
     $thermal = & $analyzerPath -CaptureDir $thermalDir
     if ($thermal.status -ne "thermal-stop-before-title" -or $thermal.ready_for_comparison) {

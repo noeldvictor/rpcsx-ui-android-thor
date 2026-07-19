@@ -78,3 +78,17 @@ Passed host-only:
 No APK was assembled because the combined candidate already needs one later
 host rebuild before installation; this change should stack into that build
 without spending a separate device round.
+
+## Runtime correction
+
+The later exact-APK route
+`20260719-183040-thor-input-custom` supersedes the assumed `8 -> 3` activation
+for the managed Thor profile. `Core@@Max LLVM Compile Threads=2` limits
+`get_max_threads()` before the affinity cap, so native runtime logged:
+
+`Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.`
+
+The cap remains a safety bound for configurations requesting more workers, but
+it did not reduce this route's pool. The analyzer now requires the real
+two-worker row. No runtime speed or thermal-reduction credit belongs to the
+worker-cap change.

@@ -43,13 +43,13 @@ $effectiveProperties = [ordered]@{
     "rsx-cache-preload-limit-effective.txt" = "256"
     "rsx-cache-compile-budget-effective.txt" = "0"
     "spu-cache-preload-limit-effective.txt" = "64"
-    "spu-cache-compile-budget-effective.txt" = "0"
+    "spu-cache-compile-budget-effective.txt" = "100"
     "spu-native-object-cache-effective.txt" = "off"
     "cache-worker-affinity-effective.txt" = "7"
     "vk-pipeline-cache-effective.txt" = "on"
     "vk-preload-cache-hits-only-effective.txt" = "on"
     "adpf-rsx-effective.txt" = "off"
-    "cache-phase-pacing-effective.txt" = "on"
+    "cache-phase-pacing-effective.txt" = "off"
 }
 
 $profilePropertyMismatches = New-Object System.Collections.Generic.List[string]
@@ -66,13 +66,13 @@ $startupExpected = [ordered]@{
     "debug.rpcsx.thor.rsx_cache_preload_limit" = "256"
     "debug.rpcsx.thor.rsx_cache_compile_budget_ms" = "0"
     "debug.rpcsx.thor.spu_cache_preload_limit" = "64"
-    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "0"
+    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "100"
     "debug.rpcsx.thor.spu_native_object_cache" = "off"
     "debug.rpcsx.thor.cache_worker_affinity_mask" = "7"
     "debug.rpcsx.thor.vk_pipeline_cache" = "on"
     "debug.rpcsx.thor.vk_preload_cache_hits_only" = "on"
     "debug.rpcsx.thor.adpf_rsx" = "off"
-    "debug.rpcsx.thor.cache_phase_pacing" = "on"
+    "debug.rpcsx.thor.cache_phase_pacing" = "off"
     "debug.rpcsx.thor.logcat" = "0"
     "debug.rpcsx.thor.syscall_stats" = "0"
     "debug.rpcsx.thor.spu_reduced_loop_detect" = "0"
@@ -119,12 +119,14 @@ $requiredReadmeLines = @(
     "- Max silicon temperature C: 72",
     "- RSX cache preload workers (0=auto): 2",
     "- RSX cached pipeline preload limit (0=all): 256",
+    "- RSX cached pipeline compile budget ms (0=unbounded): 0",
     "- SPU cached-program preload limit (0=all): 64",
+    "- SPU cached-program compile budget ms (0=unbounded): 100",
     "- Startup cache-worker affinity mask (0=default scheduler): 7",
     "- Persistent Vulkan driver pipeline cache: on",
     "- Vulkan preload cache hits only: on",
     "- Android RSX performance hint: off",
-    "- Startup cache phase pacing: on",
+    "- Startup cache phase pacing: off",
     "- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
 )
 $readmeText = (Read-OptionalLines "README.md") -join "`n"
@@ -167,9 +169,9 @@ $activationRequirements = [ordered]@{
     "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
     "SPU efficiency-core affinity" = 'Thor SPU cache-worker affinity enabled:\s*requested=0x7, effective=0x7'
-    "three SPU preload workers" = 'Thor SPU cache-worker pool matched to affinity:\s*requested=\d+, workers=3, mask=0x7'
+    "two SPU preload workers" = 'Thor SPU cache-worker pool matched to affinity:\s*requested=2, workers=2, mask=0x7'
+    "bounded SPU compile time" = 'Thor SPU cache compile budget enabled for BLUS30161:\s*100 ms'
     "warm Vulkan hit-only preload" = 'Vulkan preload cache-hits-only enabled for validated warm seed'
-    "SPU-before-RSX phase pacing" = 'Android startup cache phase pacing: SPU preload complete after \d+ ms; starting RSX pipeline compilation'
 }
 $activationMissing = New-Object System.Collections.Generic.List[string]
 foreach ($entry in $activationRequirements.GetEnumerator()) {
@@ -192,7 +194,13 @@ $fatalHits = @(
 )
 
 $thermalLines = Read-OptionalLines "thermal-guard.log"
-$thermalFailureLines = @($thermalLines | Where-Object { $_ -match 'status=failed' })
+$macroFailureLines = Read-OptionalLines "macro-failure.txt"
+$thermalFailureLines = @(
+    $thermalLines | Where-Object { $_ -match 'status=failed' }
+    $macroFailureLines |
+        Where-Object { $_ -match '(?i)thermal|temperature' } |
+        ForEach-Object { "macro-failure: $($_.Trim())" }
+)
 $siliconTemperatures = New-Object System.Collections.Generic.List[double]
 foreach ($line in $thermalLines) {
     if ($line -match 'silicon_temperature_c=([0-9]+(?:\.[0-9]+)?)') {
@@ -232,7 +240,7 @@ if ($titleProof) {
     }
 }
 
-$macroFailure = Test-Path -LiteralPath (Join-Path $resolvedCaptureDir "macro-failure.txt") -PathType Leaf
+$macroFailure = $macroFailureLines.Count -gt 0
 $stopEvidence = Test-Path -LiteralPath (Join-Path $resolvedCaptureDir "macro-stop.txt") -PathType Leaf
 $postPidPath = Join-Path $resolvedCaptureDir "post-pid.txt"
 $postPidEvidence = Test-Path -LiteralPath $postPidPath -PathType Leaf

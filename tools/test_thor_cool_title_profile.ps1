@@ -58,11 +58,13 @@ $requiredSummary = @(
     'max_silicon_c=72',
     'rsx_workers=2',
     'rsx_preload_limit=256',
+    'rsx_compile_budget_ms=0',
     'spu_preload_limit=64',
+    'spu_compile_budget_ms=100',
     'cache_affinity_mask=7',
     'vk_pipeline_cache=on',
     'vk_hits_only=on',
-    'cache_phase_pacing=on',
+    'cache_phase_pacing=off',
     'adpf=off',
     'log_mode=Quiet',
     'frame_wait=Wait',
@@ -107,6 +109,16 @@ try {
 }
 if (-not $conflictRejected) {
     throw 'Thor cool-title profile did not reject an explicit unsafe RSX preload-limit conflict.'
+}
+
+$budgetConflictRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidSpuCacheCompileBudgetMs 0 2>&1 | Out-Null
+} catch {
+    $budgetConflictRejected = $_.Exception.Message -like "*requires -AndroidSpuCacheCompileBudgetMs '100'*"
+}
+if (-not $budgetConflictRejected) {
+    throw 'Thor cool-title profile did not reject an unbounded SPU compile-budget override.'
 }
 
 $actionRejected = $false

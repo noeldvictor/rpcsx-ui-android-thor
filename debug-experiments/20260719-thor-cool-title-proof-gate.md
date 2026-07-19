@@ -94,3 +94,15 @@ The proof-tooling changes alone needed no native rebuild. A later SPU worker-poo
 cap refreshed the exact combined APK to `5C3911D0...682CC6`; that current
 candidate remains uninstalled and still requires a separate strict cool
 no-launch install round before any later title proof.
+
+## Runtime correction
+
+Exact installed APK `5C3911D0...682CC6` later ran once in
+`20260719-183040-thor-input-custom`. It force-stopped at `72.7 C` before title.
+The native log proved phase pacing timed out for `5,003 ms` before the SPU
+generation had started and proved the managed profile used two SPU preload
+workers, not three. The analyzer now recognizes this capture's macro-failure
+temperature text as `thermal-stop-before-title` and uses the real runtime
+activation contract. The successor disables phase pacing and applies the
+existing 100 ms SPU compile budget. Detailed evidence:
+`debug-experiments/20260719-thor-cool-title-thermal-counterproof.md`.
