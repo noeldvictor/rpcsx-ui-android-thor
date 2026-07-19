@@ -76,9 +76,16 @@ namespace logs
 	static_assert((offsetof(channel, fatal) & 7) == 1);
 	static_assert((offsetof(channel, trace) & 7) == 7);
 
-	// Memory-mapped buffer size
+#ifdef ANDROID
+	// Bound mobile resident memory while retaining ample pending-record
+	// backpressure; complete output continues directly to the file.
+	constexpr u64 s_log_size = 4 * 1024 * 1024;
+#else
 	constexpr u64 s_log_size = 32 * 1024 * 1024;
+#endif
+	constexpr u64 s_log_write_chunk_size = 32 * 1024;
 	static_assert(s_log_size * s_log_size > s_log_size && (s_log_size & (s_log_size - 1)) == 0); // Assert on an overflowing value
+	static_assert(s_log_write_chunk_size < s_log_size);
 
 	class file_writer
 	{
@@ -95,13 +102,15 @@ namespace logs
 #endif
 		shared_mutex m_m{};
 
-		atomic_t<u64, 64> m_buf{0}; // MSB (39 bits): push begin, LSB (25 bis): push size
+		atomic_t<u64, 64> m_buf{0}; // Quotient: push begin, remainder: in-progress push size
 		atomic_t<u64, 64> m_out{0}; // Amount of bytes written to file
 #ifdef ANDROID
 		atomic_t<u32> m_writer_waiting{0};
 #endif
 
+#ifndef ANDROID
 		uchar m_zout[65536]{};
+#endif
 
 		// Write buffered logs immediately
 		bool flush(u64 bufv);
@@ -618,7 +627,7 @@ bool logs::file_writer::flush(u64 bufv)
 	if (end > read_pos)
 	{
 		// Avoid writing too big fragments
-		const u64 size = std::min<u64>(end - read_pos, sizeof(m_zout) / 2);
+		const u64 size = std::min<u64>(end - read_pos, s_log_write_chunk_size);
 
 		// Write uncompressed
 		if (m_fout && m_fout.write(m_fptr.get() + out_index, size) != size)

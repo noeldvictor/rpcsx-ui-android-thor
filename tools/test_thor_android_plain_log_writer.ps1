@@ -15,7 +15,7 @@ $snapshot = Get-Content -LiteralPath $snapshotPath -Raw
 # nested directives so platform sub-branches inside those blocks remain valid.
 $frames = [System.Collections.Generic.List[object]]::new()
 $lines = $source -split "\r?\n"
-$compressedPattern = 'm_fout2|m_zs|z_stream|deflate(?:Init2|End)?\b|Z_(?:DEFLATED|DEFAULT_STRATEGY|STREAM_ERROR|NO_FLUSH|FINISH)|<zlib\.h>|%s\.gz'
+$compressedPattern = 'm_fout2|m_zs|m_zout|z_stream|deflate(?:Init2|End)?\b|Z_(?:DEFLATED|DEFAULT_STRATEGY|STREAM_ERROR|NO_FLUSH|FINISH)|<zlib\.h>|%s\.gz'
 
 for ($index = 0; $index -lt $lines.Count; $index++) {
     $line = $lines[$index]
@@ -83,7 +83,7 @@ $requiredPlainFragments = @(
     'm_fout.write(m_fptr.get() + out_index, size)',
     'm_fout.sync();',
     'm_fout.close();',
-    'const u64 size = std::min<u64>(end - read_pos, sizeof(m_zout) / 2);'
+    'const u64 size = std::min<u64>(end - read_pos, s_log_write_chunk_size);'
 )
 
 foreach ($fragment in $requiredPlainFragments) {
@@ -101,7 +101,9 @@ $requiredDesktopFragments = @(
     'deflateInit2(&m_zs, 9, Z_DEFLATED, 16 + 15, 9, Z_DEFAULT_STRATEGY)',
     'deflate(&m_zs, Z_NO_FLUSH)',
     'deflate(&m_zs, Z_FINISH)',
-    'deflateEnd(&m_zs)'
+    'deflateEnd(&m_zs)',
+    'uchar m_zout[65536]{};',
+    'm_zs.next_out = m_zout;'
 )
 
 foreach ($fragment in $requiredDesktopFragments) {

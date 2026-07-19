@@ -648,4 +648,18 @@ Put dated run details in `debug-experiments/`, not here.
   no APK, ADB, device, FPS, temperature, flicker, gameplay, or stability
   credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-android-event-log-writer.md`.
+- Android's single plain-log listener now uses a 4 MiB pending ring instead
+  of the desktop 32 MiB ring and no longer carries the dead 64 KiB gzip
+  scratch array. Across 24 saved Thor logs, the largest complete route log is
+  1,606,357 bytes, so the pending ring remains 2.611x larger than the largest
+  entire capture while the on-disk maximum and 32 KiB write chunk are
+  unchanged. Host ARM64 proof changes the ring allocation/memset
+  33,554,432 -> 4,194,304 bytes, removes the 65,540-byte member memset, and
+  reduces aligned listener storage 65,792 -> 256 bytes. That avoids
+  29,425,664 bytes (28.0625 MiB / 7,184 pages) of allocation and startup
+  zeroing. All 13 active frame-poll symbols remain, all 53 Thor contracts and
+  ARM64 RelWithDebInfo pass. This is host-proven stability-memory and
+  `stackable-cpu-pressure` credit only: no APK, ADB, device, FPS, temperature,
+  flicker, gameplay, or runtime-stability credit exists. Detailed ledger:
+  `debug-experiments/20260719-thor-android-log-buffer.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
