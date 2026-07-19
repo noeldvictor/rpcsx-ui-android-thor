@@ -29,6 +29,7 @@
 
 LOG_CHANNEL(sys_semaphore);
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
 enum class thor_es_sema_superpath_mode : u32 {
   disabled,
   profile,
@@ -60,6 +61,7 @@ struct thor_es_sema_fast_cache_entry {
 
 static thor_es_sema_superpath_stats g_thor_es_sema_superpath_stats;
 static std::array<thor_es_sema_fast_cache_entry, 64> g_thor_es_sema_fast_cache{};
+#endif
 
 #if !defined(__ANDROID__) || defined(RPCSX_THOR_DRAW_STREAM_PROBE)
 namespace {
@@ -960,6 +962,7 @@ maybe_thor_es_draw_stream_probe_after_wait(const ppu_thread &, u32) noexcept {
 }
 #endif
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
 static thor_es_sema_superpath_mode
 parse_thor_es_sema_superpath_mode(std::string_view value) {
   if (value.empty() || value == "0" || value == "off" || value == "false" ||
@@ -1298,6 +1301,7 @@ static void log_thor_es_sema_superpath(const ppu_thread &ppu,
           std::memory_order_relaxed),
       max_created_index == umax ? umax : max_created_index);
 }
+#endif
 
 lv2_sema::lv2_sema(utils::serial &ar)
     : protocol(ar), key(ar), name(ar), max(ar) {
@@ -1363,7 +1367,9 @@ error_code sys_semaphore_create(ppu_thread &ppu, vm::ptr<u32> sem_id,
 
   const u32 created_id = idm::last_id();
   *sem_id = created_id;
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
   record_thor_es_sema_created_id(created_id);
+#endif
   return CELL_OK;
 }
 
@@ -1395,7 +1401,9 @@ error_code sys_semaphore_destroy(ppu_thread &ppu, u32 sem_id) {
     return sem.ret;
   }
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
   record_thor_es_sema_destroyed_id(sem_id);
+#endif
   return CELL_OK;
 }
 
@@ -1405,6 +1413,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
   sys_semaphore.trace("sys_semaphore_wait(sem_id=0x%x, timeout=0x%llx)", sem_id,
                       timeout);
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
   if (is_thor_es_sema_superpath_candidate(ppu, false)) {
     g_thor_es_sema_superpath_stats.wait_hits.fetch_add(
         1, std::memory_order_relaxed);
@@ -1437,6 +1446,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
       return CELL_ESRCH;
     }
   }
+#endif
 
   const auto sem = idm::get<lv2_obj, lv2_sema>(
       sem_id, [&, notify = lv2_obj::notify_all_t()](lv2_sema &sema) {
@@ -1462,14 +1472,18 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
       });
 
   if (!sem) {
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
     if (is_thor_es_sema_superpath_candidate(ppu, false)) {
       record_thor_es_sema_cached_esrch_id(sem_id);
     }
+#endif
 
     return CELL_ESRCH;
   }
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
   record_thor_es_sema_fast_object(sem_id, sem.ptr.get());
+#endif
 
   if (sem.ret) {
     thor_spurs_probe_log_ppu_wait("sem_wait_ready", ppu, sem_id, timeout,
@@ -1575,6 +1589,7 @@ error_code sys_semaphore_post(ppu_thread &ppu, u32 sem_id, s32 count) {
   // Snapshot before the semaphore mutation makes the consumer runnable.
   maybe_thor_es_draw_stream_probe_before_post(ppu, sem_id, count);
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
   if (is_thor_es_sema_superpath_candidate(ppu, true)) {
     g_thor_es_sema_superpath_stats.post_hits.fetch_add(
         1, std::memory_order_relaxed);
@@ -1607,6 +1622,7 @@ error_code sys_semaphore_post(ppu_thread &ppu, u32 sem_id, s32 count) {
       return CELL_ESRCH;
     }
   }
+#endif
 
   const auto sem = idm::get<lv2_obj, lv2_sema>(sem_id, [&](lv2_sema &sema) {
     const s32 val = sema.val;
@@ -1621,14 +1637,18 @@ error_code sys_semaphore_post(ppu_thread &ppu, u32 sem_id, s32 count) {
   });
 
   if (!sem) {
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
     if (is_thor_es_sema_superpath_candidate(ppu, true)) {
       record_thor_es_sema_cached_esrch_id(sem_id);
     }
+#endif
 
     return CELL_ESRCH;
   }
 
+#if !defined(__ANDROID__) || defined(RPCSX_THOR_SEMA_SUPERPATH)
   record_thor_es_sema_fast_object(sem_id, sem.ptr.get());
+#endif
 
   if (count <= 0) {
     return CELL_EINVAL;

@@ -462,4 +462,19 @@ Put dated run details in `debug-experiments/`, not here.
   `stackable-cpu-pressure` only: no ADB/device action ran and no Thor speed or
   temperature credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-disabled-draw-stream-probe-overhead.md`.
+- Normal Android builds now wholly exclude the default-off Eternal Sonata
+  semaphore-superpath experiment: its mode parser, title/CIA checks, fast
+  cache, ESRCH tracking, logging, and create/destroy/wait/post hooks are built
+  only for desktop or explicit diagnostics. Opt in with
+  `-PrpcsxThorSemaSuperpath=true` or
+  `RPCSX_THOR_SEMA_SUPERPATH_BUILD=true`. The earlier Thor fast-mode A/B was
+  slightly worse (`17.43 -> 17.03 FPS`) despite roughly 98k hits, so keep the
+  behavior experiment off. Host ARM64 proof removed 11 selected symbols, 10
+  property/report strings, 1,524 bytes of global state, and all 153 named
+  experiment references in the four affected syscall disassemblies; their
+  combined size fell 8,512 -> 6,976 bytes. All 44 Thor contracts and the
+  native build pass. This is host-verified `stackable-cpu-pressure` only: no
+  ADB/device action ran and no Thor speed or temperature credit exists.
+  Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-semaphore-superpath-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

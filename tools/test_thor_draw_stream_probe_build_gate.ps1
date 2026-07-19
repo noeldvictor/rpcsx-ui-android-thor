@@ -34,7 +34,7 @@ if ($headerSource -notmatch '#if defined\(__ANDROID__\) && !defined\(RPCSX_THOR_
     throw "Normal Android TTY call sites do not see the compile-time draw-stream no-op."
 }
 
-if ($semaphoreSource -notmatch '#if !defined\(__ANDROID__\) \|\| defined\(RPCSX_THOR_DRAW_STREAM_PROBE\)\s+namespace \{[\s\S]*?debug\.rpcsx\.thor\.es_draw_stream_probe[\s\S]*?void thor_es_draw_stream_probe_tty[\s\S]*?#else\s+static FORCE_INLINE constexpr void\s+maybe_thor_es_draw_stream_probe_before_post[\s\S]*?static FORCE_INLINE constexpr void\s+maybe_thor_es_draw_stream_probe_after_wait[\s\S]*?#endif\s+\s*static thor_es_sema_superpath_mode') {
+if ($semaphoreSource -notmatch '#if !defined\(__ANDROID__\) \|\| defined\(RPCSX_THOR_DRAW_STREAM_PROBE\)\s+namespace \{[\s\S]*?debug\.rpcsx\.thor\.es_draw_stream_probe[\s\S]*?void thor_es_draw_stream_probe_tty[\s\S]*?#else\s+static FORCE_INLINE constexpr void\s+maybe_thor_es_draw_stream_probe_before_post[\s\S]*?static FORCE_INLINE constexpr void\s+maybe_thor_es_draw_stream_probe_after_wait[\s\S]*?#endif\s+\s*#if !defined\(__ANDROID__\) \|\| defined\(RPCSX_THOR_SEMA_SUPERPATH\)\s+static thor_es_sema_superpath_mode') {
     throw "The draw-stream state, repair, reports, and semaphore hooks are not wholly excluded from normal Android builds."
 }
 
