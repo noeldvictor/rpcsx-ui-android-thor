@@ -50,6 +50,15 @@ Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-native
 Assert-Contains $spuLlvm '_module->setModuleIdentifier(fmt::format("%s-%s.obj", m_hash, key));' "SPU native cache does not replace the guest-only module identifier."
 Assert-Contains $spuLlvm 'm_jit.make_object_cache_key(*_module, "thor-spu-interpreter-native-v1")' "SPU interpreter object does not use a separate exact final-IR schema."
 Assert-Contains $spuLlvm '_module->setModuleIdentifier(fmt::format("spu-interpreter-%s.obj", key));' "SPU interpreter object does not use an isolated module name."
+Assert-Contains $spuLlvm 'if (!m_use_native_object_cache)' "Default-off SPU timebase lowering is not preserved."
+Assert-Contains $spuLlvm 'llvm::GlobalValue::ExternalLinkage, nullptr, "spu_timebase_offs"' "Opted-in SPU objects do not use a relocatable timebase symbol."
+Assert-Contains $spuLlvm 'm_engine->updateGlobalMapping("spu_timebase_offs", reinterpret_cast<u64>(&g_timebase_offs));' "The relocatable SPU timebase symbol is not rebound for the current launch."
+if (([regex]::Matches($spuLlvm, [regex]::Escape('const auto timebase_offs = load_timebase_offs();'))).Count -ne 2) {
+    throw "Both SPU decrementer lowering sites must use the ASLR-safe timebase helper."
+}
+if (([regex]::Matches($spuLlvm, [regex]::Escape('CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs))'))).Count -ne 1) {
+    throw "Only the preserved default-off helper may embed the SPU timebase address."
+}
 
 $interpreterIr = $spuLlvm.IndexOf('LLVM IR (interpreter):')
 $interpreterVerify = $spuLlvm.IndexOf('if (verifyModule(*_module, &out))', $interpreterIr)

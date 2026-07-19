@@ -136,6 +136,7 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Helpers (interpreter)
 	llvm::GlobalVariable* m_scale_float_to{};
 	llvm::GlobalVariable* m_scale_to_float{};
+	llvm::GlobalVariable* m_timebase_offs{};
 
 	// Function for check_state execution
 	llvm::Function* m_test_state{};
@@ -1554,10 +1555,32 @@ public:
 
 	void init_luts()
 	{
+		m_timebase_offs = nullptr;
+
 		// LUTs for some instructions
 		m_spu_frest_fraction_lut = new llvm::GlobalVariable(*m_module, llvm::ArrayType::get(GetType<u32>(), 32), true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantDataArray::get(m_context, spu_frest_fraction_lut));
 		m_spu_frsqest_fraction_lut = new llvm::GlobalVariable(*m_module, llvm::ArrayType::get(GetType<u32>(), 64), true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantDataArray::get(m_context, spu_frsqest_fraction_lut));
 		m_spu_frsqest_exponent_lut = new llvm::GlobalVariable(*m_module, llvm::ArrayType::get(GetType<u32>(), 256), true, llvm::GlobalValue::PrivateLinkage, llvm::ConstantDataArray::get(m_context, spu_frsqest_exponent_lut));
+	}
+
+	llvm::Value* load_timebase_offs()
+	{
+		if (!m_use_native_object_cache)
+		{
+			// Preserve the exact normal/default-off lowering.
+			return m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
+		}
+
+		if (!m_timebase_offs)
+		{
+			// A named external keeps opted-in native objects relocatable across
+			// Android ASLR. MCJIT resolves it to this launch's actual storage.
+			m_timebase_offs = new llvm::GlobalVariable(*m_module, get_type<u64>(), false,
+				llvm::GlobalValue::ExternalLinkage, nullptr, "spu_timebase_offs");
+			m_engine->updateGlobalMapping("spu_timebase_offs", reinterpret_cast<u64>(&g_timebase_offs));
+		}
+
+		return m_ir->CreateLoad(get_type<u64>(), m_timebase_offs);
 	}
 
 	virtual spu_function_t compile(spu_program&& _func) override
@@ -4293,7 +4316,7 @@ public:
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
-				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
+				const auto timebase_offs = load_timebase_offs();
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr<u64>(OFFSET_OF(spu_thread, ch_dec_start_timestamp)));
 				const auto dec_value = m_ir->CreateLoad(get_type<u32>(), spu_ptr<u32>(OFFSET_OF(spu_thread, ch_dec_value)));
 				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
@@ -5140,7 +5163,7 @@ public:
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
-				const auto timebase_offs = m_ir->CreateLoad(get_type<u64>(), m_ir->CreateIntToPtr(m_ir->getInt64(reinterpret_cast<u64>(&g_timebase_offs)), get_type<u64*>()));
+				const auto timebase_offs = load_timebase_offs();
 				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
 				const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
 				const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));

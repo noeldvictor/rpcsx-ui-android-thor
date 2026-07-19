@@ -81,9 +81,14 @@ Behavior:
    Both keys hash LLVM version, CPU, target triple, target
    attributes/features, compiler flags, data layout, and a streaming print of
    the final module IR.
-3. ASLR-sensitive absolute IR constants therefore change the key and fail to
-   hit. Translator/config IR changes, ARM feature modes, LLVM target changes,
-   and data-layout changes also produce a different key.
+3. Static audit found the interpreter's direct launch-address dependency in
+   the two decrementer-read lowerings: both embedded `&g_timebase_offs`.
+   When the cache is opted in, those sites now load named external
+   `spu_timebase_offs`, which MCJIT maps to the current launch. The
+   default/off path retains its exact original absolute lowering. Any other
+   ASLR-sensitive IR constant would still change the key and fail to hit.
+   Translator/config IR changes, ARM feature modes, LLVM target changes, and
+   data-layout changes also produce a different key.
 4. On an exact warm hit, MCJIT loads and links the relocatable object against
    the mappings rebuilt in step 1, skipping only backend machine-code emission.
 5. On a miss, the normal backend runs and Android atomically persists the raw
@@ -108,9 +113,11 @@ This is intentionally not guest-hash-only machine-code persistence. Analysis,
 IR construction, current-launch symbol rebinding, and optimization remain
 because they are the correctness boundary. An exact hit removes the LLVM
 backend object-emission step only. The interpreter extension covers one
-otherwise-unconditional backend emission before cached programs run. It may
-reduce warm-start CPU energy and peak thermal pressure, but it can still be too
-small relative to RSX pipeline creation and the retained frontend work.
+otherwise-unconditional backend emission before cached programs run. Removing
+its known ASLR-dependent timebase constant makes an exact cross-launch object
+hit realistic instead of merely safe. It may reduce warm-start CPU energy and
+peak thermal pressure, but it can still be too small relative to RSX pipeline
+creation and the retained frontend work.
 
 No startup-time, FPS, temperature, flicker, field, menu, battle, or stability
 claim follows from host compilation.
@@ -121,14 +128,14 @@ No ADB or device action ran.
 
 - `tools/test_thor_spu_native_object_cache.ps1`: pass.
 - All 27 `tools/test_thor_*.ps1` contracts: pass.
-- Optimized ARM64 native target: pass in 75.6 seconds.
-- ARM64-only optimized ThorTest assembly: `BUILD SUCCESSFUL` in 16 seconds.
+- Optimized ARM64 native target after the ASLR follow-up: pass in 58.4 seconds.
+- ARM64-only optimized ThorTest assembly: `BUILD SUCCESSFUL` in 11 seconds.
 - Exact ThorTest ABI/package contract: pass.
 - Optimized variant contract: pass.
 - Embedded APK core exactly matches the stripped ARM64 core.
 - Packaged core contains the property, environment fallback, both program and
-  interpreter schemas, interpreter module name, activation row, and
-  damaged-object cleanup row.
+  interpreter schemas, interpreter module name, relocatable timebase symbol,
+  activation row, and damaged-object cleanup row.
 - Export surface: 34 defined dynamic symbols, 587 explicit relocations, 391
   jump slots, and 44,245 encoded relocation bytes.
 - `git diff --check`: pass.
@@ -137,15 +144,15 @@ Exact host-only artifacts:
 
 - APK:
   `app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk`
-- APK size: `73,584,666` bytes
+- APK size: `73,585,590` bytes
 - APK SHA-256:
-  `370B78F4670D046E355F04F5A43479A2BE24F064B75AB3C42BC4BA4AAFCFE484`
-- merged ARM64 core size: `1,305,955,328` bytes
+  `25B09B3CD4B225036E903A4A727C5D115E08E71473E44C9BBB08C54448BAB42F`
+- merged ARM64 core size: `1,305,955,000` bytes
 - merged ARM64 core SHA-256:
-  `8AD2D904940F222D08B40891FC4CE84A67572238F5F044E828AF03C7376BA345`
-- stripped/packaged core size: `62,869,416` bytes
+  `2505C3E31E8751045D144E1A6D6D22CAD524587008979F1223A60504FDA380F4`
+- stripped/packaged core size: `62,869,512` bytes
 - stripped/packaged core SHA-256:
-  `23EFCAF83CA72467B64A995328A1B5390178D394462013E4AE11E617245CE189`
+  `8BE447C778790C7A0CF354F4A951FA9A8A1A82CECBB4292A1514BE135EE28C51`
 
 ## Device Boundary
 
