@@ -496,4 +496,23 @@ Put dated run details in `debug-experiments/`, not here.
   This is host-verified `stackable-cpu-pressure` only: no ADB/device action ran
   and no Thor speed or temperature credit exists. Detailed ledger:
   `debug-experiments/20260719-thor-disabled-es-spu-experiments-overhead.md`.
+- Normal Android builds now wholly exclude the default-off Eternal Sonata PPU
+  command-isolation, dispatch-provenance, and async-draw diagnostics, including
+  all ten resolver hooks and the four disabled range scans formerly run across
+  each PPU function during object-cache key creation. Diagnostics can opt the
+  suite back in with `-PrpcsxThorEsPpuExperiments=true` or
+  `RPCSX_THOR_ES_PPU_EXPERIMENTS_BUILD=true`; desktop behavior and diagnostic
+  cache-bit identity are unchanged. Three cross-translation-unit range helpers
+  become constant-false normal-Android stubs and are removed by LTO. Prior Thor
+  evidence rejects these as play defaults: command-interpreter modes were about
+  21.14 FPS versus a comparable 27.12 FPS route without fixing corruption, and
+  async settled-target write-back caused severe corruption plus a guest fault.
+  Host ARM64 proof removed all 70 selected diagnostic symbols, 637,126 bytes of
+  selected state, all 8 selected strings, and all 3 diagnostic calls from
+  `PPUTranslator::Translate`; that function shrank 10,112 -> 2,988 bytes while
+  all 13 active frame-poll wait symbols remain. All 46 Thor contracts and the
+  native build pass. This is host-verified `stackable-cpu-pressure` only: no
+  ADB/device action ran and no Thor speed or temperature credit exists.
+  Detailed ledger:
+  `debug-experiments/20260719-thor-disabled-es-ppu-experiments-overhead.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

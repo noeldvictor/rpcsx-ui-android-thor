@@ -605,6 +605,7 @@ static ppu_intrp_func ppu_ret = {[](ppu_thread& ppu, ppu_opcode_t, be_t<u32>* th
 		return;
 	}};
 
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 namespace
 {
 	enum class thor_es_command_interp_mode : u8
@@ -1794,6 +1795,22 @@ void ppu_thor_es_async_draw_consume(ppu_thread&, u64, u32)
 	// Kept as a no-op resolver for stale diagnostic objects. V8 codegen no
 	// longer emits this hook, and legacy repair requests resolve to verify-only.
 }
+#else
+bool ppu_thor_es_command_interp_range(u32, u32&, u32&)
+{
+	return false;
+}
+
+bool ppu_thor_es_dispatch_probe_range(u32, u32)
+{
+	return false;
+}
+
+bool ppu_thor_es_async_draw_barrier_range(u32, u32)
+{
+	return false;
+}
+#endif
 
 static void ppu_fallback(ppu_thread& ppu, ppu_opcode_t op, be_t<u32>* this_op, ppu_intrp_func* next_fn)
 {
@@ -6047,6 +6064,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 						   })},
 			{"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
 			{"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 			{"__thor_es_command_interp", reinterpret_cast<u64>(ppu_thor_es_command_interp)},
 			{"__thor_es_command9_probe", reinterpret_cast<u64>(ppu_thor_es_command9_probe)},
 			{"__thor_es_command60_probe", reinterpret_cast<u64>(ppu_thor_es_command60_probe)},
@@ -6057,6 +6075,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			{"__thor_es_async_draw_target", reinterpret_cast<u64>(ppu_thor_es_async_draw_target)},
 			{"__thor_es_async_draw_barrier", reinterpret_cast<u64>(ppu_thor_es_async_draw_barrier)},
 			{"__thor_es_async_draw_consume", reinterpret_cast<u64>(ppu_thor_es_async_draw_consume)},
+#endif
 			{"__escape", reinterpret_cast<u64>(+ppu_escape)},
 			{"__read_maybe_mmio32", reinterpret_cast<u64>(+ppu_read_mmio_aware_u32)},
 			{"__write_maybe_mmio32", reinterpret_cast<u64>(+ppu_write_mmio_aware_u32)},
@@ -6709,6 +6728,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::accurate_vnan, settings -= ppu_settings::fixup_vnan, fmt::throw_exception("VNAN Not implemented");
 			if (g_cfg.core.ppu_use_nj_bit)
 				settings += ppu_settings::accurate_nj_mode, settings -= ppu_settings::fixup_nj_denormals, fmt::throw_exception("NJ Not implemented");
+#if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 			bool has_thor_es_interp_publisher = false;
 			bool has_thor_es_interp_parser = false;
 			bool has_thor_es_dispatch_probe = false;
@@ -6739,6 +6759,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::thor_es_dispatch_provenance_v6;
 			if (has_thor_es_async_draw_barrier)
 				settings += ppu_settings::thor_es_async_draw_barrier_v8;
+#endif
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 
