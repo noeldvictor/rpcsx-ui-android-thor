@@ -738,4 +738,14 @@ Put dated run details in `debug-experiments/`, not here.
   (`-19,240`). This is host-verified startup-I/O reduction only and should ride
   the next planned APK, not trigger an extra device run. Detailed ledger:
   `debug-experiments/20260719-thor-android-overlay-resource-lookup.md`.
+- Exact combined host candidate APK `504C614B...5588` is ARM64-only and
+  uninstalled. It packages merged core `3AF46260...E7B` (`1,304,683,120`
+  bytes) as stripped core `ABB14ECC...D5B` (`63,014,472` bytes); the APK ZIP
+  entry matches the stripped hash exactly. ARM64 ABI, optimized ThorTest,
+  direct entry identity, and all 56 Thor contracts pass. The installed APK
+  remains `7CDD38E4...E5F9`, RPCSX remains stopped, and no device query ran.
+  A later genuinely cool round may only install `504C614B...5588` under the
+  strict no-boot gate and must not launch; one guarded title proof requires a
+  separate cooling round. Detailed ledger:
+  `debug-experiments/20260719-thor-combined-host-candidate-apk.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
