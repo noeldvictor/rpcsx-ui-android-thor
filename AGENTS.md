@@ -929,4 +929,22 @@ Put dated run details in `debug-experiments/`, not here.
   later independently cool no-launch round may install `24FCC44E...736FE2`;
   runtime proof remains reserved for another cool round. Detailed ledger:
   `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
+- Exact APK `24FCC44E...736FE2` is now installed on Thor after strict no-boot
+  gate `20260719-195049-thor-input-strict-cool-gate` passed silicon
+  `30.7 -> 30.5 -> 31.1 C` (maximum `31.1 C`, rise `+0.4 C`), with battery
+  `23.0 C` and skin `30.0 C`. Install capture
+  `20260719-195101-managed-profile-startup-thortest-apk-install` proves the
+  host and on-device `base.apk` hashes match exactly, `adb install -r`
+  succeeded, RPCSX PID was absent before and after, force-stop ran at both
+  boundaries, no activity launched, and post-install silicon was `33.1 C`.
+  The installed candidate includes the BLUS30161 managed-profile gate,
+  hardware FTZ profile, phase-wait bypass, `500 ms` RSX load budget support,
+  and settings-database/YAML startup compaction. Installation grants no
+  runtime speed, temperature, FPS, flicker, gameplay, or stability credit.
+  Stop this device round here: do not query or launch again. After a separate
+  independently cool interval, the only allowed device action is one
+  self-stopping `ThorCoolTitle` proof that confirms `Set DAZ and FTZ: true`,
+  the RSX load-budget activation/deferred count, title reach, thermal behavior,
+  visuals, and fatal cleanliness. Detailed ledger:
+  `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

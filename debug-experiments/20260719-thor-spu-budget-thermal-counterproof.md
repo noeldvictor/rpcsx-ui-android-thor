@@ -263,3 +263,53 @@ older artifact. After a later independently cool interval, spend one round on
 the strict no-launch installer for `24FCC44E...736FE2`, proving matching
 on-device hash and absent PID, then stop. Reserve the single self-stopping
 `ThorCoolTitle` runtime proof for a different independently cool round.
+
+## Exact no-launch installation
+
+At `19:50`, more than 23 minutes after the preceding hot refusal, the one
+allowed device route used the dedicated strict no-boot gate:
+
+- capture:
+  `debug-captures/android-speed-sprint/20260719-195049-thor-input-strict-cool-gate`;
+- silicon: `30.7 -> 30.5 -> 31.1 C`;
+- maximum silicon: `31.1 C` against the strict `<35 C` requirement;
+- rise: `+0.4 C` against the `<=1 C` requirement;
+- battery: `23.0 C` against the `34 C` limit;
+- skin: `30.0 C` against the `40 C` limit;
+- `BootGame=False`; and
+- `ForceStop=True`.
+
+All three ordered samples passed, so the same route immediately consumed the
+fresh gate with the fail-closed no-launch installer. Capture
+`debug-captures/android-speed-sprint/20260719-195101-managed-profile-startup-thortest-apk-install`
+proves:
+
+- `adb install -r` returned `Success`;
+- host APK SHA-256:
+  `24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2`;
+- installed `base.apk` SHA-256:
+  `24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2`;
+- RPCSX PID absent before installation;
+- RPCSX PID absent after installation;
+- force-stop recorded before and after installation;
+- no activity launch; and
+- post-install silicon/battery/skin: `33.1/23.0/30.0 C`.
+
+The saved experiment-control snapshot is at route defaults after install:
+RSX workers/limit/load-budget/compile-budget, SPU limit/compile-budget, and
+cache affinity are `0`; SPU native cache and Vulkan hit-only preload are off;
+PPU interpreter, dispatch probe, and async draw experiments are off; normal
+persistent Vulkan cache remains on. No guest code ran.
+
+Host-only follow-up re-passed the strict-gate and no-launch-installer source
+contracts. No later temperature query, PID probe, activity launch, or other
+ADB route ran. This is exact deployment evidence only and grants no runtime
+speed, temperature-win, FPS, flicker, title, gameplay, or stability credit.
+
+Installed APK is now exact `24FCC44E...736FE2`; the previous
+`5C3911D0...682CC6` installation is superseded. Stop this device round here.
+After a separate independently cool interval, run exactly one self-stopping
+`ThorCoolTitle` proof. It must confirm the managed profile logs
+`Set DAZ and FTZ: true`, the `500 ms` RSX load-budget activation and deferred
+count, title reach or guarded stop, thermal slope, visual state, and fatal
+cleanliness before any performance or stability claim.
