@@ -748,4 +748,16 @@ Put dated run details in `debug-experiments/`, not here.
   strict no-boot gate and must not launch; one guarded title proof requires a
   separate cooling round. Detailed ledger:
   `debug-experiments/20260719-thor-combined-host-candidate-apk.md`.
+- Use `-AndroidStartupProfile ThorCoolTitle` for the next guarded title proof,
+  not a hand-assembled control list. Host-only `-Action AndroidProfileStatus`
+  proves the exact resolution without ADB. The profile requires the PPU-ready
+  title macro, `35 C` launch ceiling, `68/72 C` early/hard stop, three-sample
+  preflight, RSX/SPU limits `256/64`, two RSX workers, cache-worker affinity
+  `0x07`, Vulkan cache plus hit-only preload, cache-phase pacing, quiet logs,
+  no Perfetto/video, and force-stop. Conflicting explicit arguments, wrong
+  actions, and keep-running requests fail before serial resolution. All 57
+  Thor contracts pass. Normal wrapper defaults are unchanged. The exact
+  `504C614B...5588` APK still requires a separate cool no-launch install round
+  before this profile may launch in another cooling round. Detailed ledger:
+  `debug-experiments/20260719-thor-cool-title-profile.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

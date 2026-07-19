@@ -1,0 +1,112 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$sprintPath = Join-Path $repoRoot "tools/eternal_sonata_speed_sprint.ps1"
+$source = Get-Content -LiteralPath $sprintPath -Raw
+
+$tokens = $null
+$parseErrors = $null
+[Management.Automation.Language.Parser]::ParseFile($sprintPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count) {
+    throw "Eternal Sonata sprint wrapper has PowerShell parse errors: $($parseErrors.Message -join '; ')"
+}
+
+$sourceContracts = @(
+    '[ValidateSet("Off", "ThorCoolTitle")]',
+    '[string]$AndroidStartupProfile = "Off"',
+    '$ScriptBoundParameters = @{} + $PSBoundParameters',
+    'if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus"))',
+    'Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value',
+    'Set-AndroidStartupProfile',
+    '"AndroidProfileStatus" {',
+    'Write-AndroidStartupProfileSummary'
+)
+foreach ($fragment in $sourceContracts) {
+    if (-not $source.Contains($fragment)) {
+        throw "Missing Thor cool-title profile source contract: $fragment"
+    }
+}
+
+$applyIndex = $source.LastIndexOf('Set-AndroidStartupProfile', $source.IndexOf('if ($Action -in @('))
+$deviceResolutionIndex = $source.IndexOf('if ($Action -in @(')
+$switchIndex = $source.IndexOf('switch ($Action)', $deviceResolutionIndex)
+if ($applyIndex -lt 0 -or $deviceResolutionIndex -le $applyIndex -or $switchIndex -le $deviceResolutionIndex) {
+    throw 'Thor startup profile is no longer applied before device resolution and action dispatch.'
+}
+
+$deviceResolutionBlock = $source.Substring($deviceResolutionIndex, $switchIndex - $deviceResolutionIndex)
+if ($deviceResolutionBlock.Contains('AndroidProfileStatus')) {
+    throw 'AndroidProfileStatus must remain host-only and must not resolve or query ADB.'
+}
+
+$summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | ForEach-Object { $_.ToString() })
+$requiredSummary = @(
+    'profile=ThorCoolTitle',
+    'input_macro=gate:ppu-ready:90000;shot:title-proof',
+    'input_mode=Direct',
+    'scene_seconds=1',
+    'thermal_poll_seconds=1',
+    'thermal_stop_headroom_c=4',
+    'thermal_probe_window_c=16',
+    'preflight_samples=3',
+    'preflight_interval_seconds=2',
+    'preflight_headroom_c=0',
+    'max_launch_silicon_c=35',
+    'max_preflight_rise_c=1',
+    'max_battery_c=34',
+    'max_skin_c=40',
+    'max_silicon_c=72',
+    'rsx_workers=2',
+    'rsx_preload_limit=256',
+    'spu_preload_limit=64',
+    'cache_affinity_mask=7',
+    'vk_pipeline_cache=on',
+    'vk_hits_only=on',
+    'cache_phase_pacing=on',
+    'adpf=off',
+    'log_mode=Quiet',
+    'frame_wait=Wait',
+    'frame_grace_us=500',
+    'frame_continuous_rearm=On',
+    'no_perfetto=True',
+    'no_screen_record=True',
+    'keep_running=False',
+    'route_post_wait_seconds=0'
+)
+foreach ($line in $requiredSummary) {
+    if ($summary -notcontains $line) {
+        throw "Thor cool-title dry-run is missing: $line"
+    }
+}
+
+$conflictRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidRsxCachePreloadLimit 0 2>&1 | Out-Null
+} catch {
+    $conflictRejected = $_.Exception.Message -like "*requires -AndroidRsxCachePreloadLimit '256'*"
+}
+if (-not $conflictRejected) {
+    throw 'Thor cool-title profile did not reject an explicit unsafe RSX preload-limit conflict.'
+}
+
+$actionRejected = $false
+try {
+    & $sprintPath -Action ToolStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | Out-Null
+} catch {
+    $actionRejected = $_.Exception.Message -like '*requires -Action AndroidRouteScene or AndroidProfileStatus*'
+}
+if (-not $actionRejected) {
+    throw 'Thor cool-title profile did not reject a non-route action.'
+}
+
+$keepRunningRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -KeepAndroidRunningAfterCapture 2>&1 | Out-Null
+} catch {
+    $keepRunningRejected = $_.Exception.Message -like "*requires -KeepAndroidRunningAfterCapture 'False'*"
+}
+if (-not $keepRunningRejected) {
+    throw 'Thor cool-title profile did not reject keeping the emulator alive after capture.'
+}
+
+Write-Output 'Thor cool-title startup profile contract passed: host-only dry-run exact, lower-power controls complete, unsafe overrides fail closed, device resolution absent.'

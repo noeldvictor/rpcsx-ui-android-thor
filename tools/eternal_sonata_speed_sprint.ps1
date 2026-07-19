@@ -1,8 +1,10 @@
 param(
-    [ValidateSet("ToolStatus", "DeviceSnapshot", "WindowsScene", "AndroidStart", "AndroidCapture", "AndroidStop", "AndroidScene", "AndroidRouteScene")]
+    [ValidateSet("ToolStatus", "DeviceSnapshot", "WindowsScene", "AndroidStart", "AndroidCapture", "AndroidStop", "AndroidScene", "AndroidRouteScene", "AndroidProfileStatus")]
     [string]$Action = "ToolStatus",
     [ValidateSet("field", "battle", "menu")]
     [string]$Scene = "field",
+    [ValidateSet("Off", "ThorCoolTitle")]
+    [string]$AndroidStartupProfile = "Off",
     [string]$Package = "net.rpcsx.easy",
     [string]$AndroidSerial = "",
     [string]$Label = "",
@@ -176,6 +178,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ScriptBoundParameters = @{} + $PSBoundParameters
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue) {
     $global:PSNativeCommandUseErrorActionPreference = $false
 }
@@ -187,6 +190,110 @@ if ($env:ANDROID_HOME -and (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME 
 }
 
 . "$PSScriptRoot\thor_debug_common.ps1"
+
+function Set-AndroidStartupProfile {
+    if ($AndroidStartupProfile -eq "Off") {
+        return
+    }
+
+    if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus")) {
+        throw "Android startup profile '$AndroidStartupProfile' requires -Action AndroidRouteScene or AndroidProfileStatus."
+    }
+
+    $settings = [ordered]@{
+        InputMacro = "gate:ppu-ready:90000;shot:title-proof"
+        AndroidInputMode = "Direct"
+        AndroidSceneSeconds = 1
+        AndroidThermalPollSeconds = 1
+        AndroidThermalRuntimeStopHeadroomC = 4.0
+        AndroidThermalRuntimeProbeWindowC = 16.0
+        AndroidThermalPreflightSamples = 3
+        AndroidThermalPreflightIntervalSeconds = 2
+        AndroidThermalPreflightHeadroomC = 0.0
+        AndroidMaxLaunchSiliconTemperatureC = 35.0
+        AndroidThermalPreflightMaxRiseC = 1.0
+        AndroidMaxBatteryTemperatureC = 34.0
+        AndroidMaxSkinTemperatureC = 40.0
+        AndroidMaxSiliconTemperatureC = 72.0
+        AndroidRsxCacheWorkers = 2
+        AndroidRsxCachePreloadLimit = 256
+        AndroidRsxCacheCompileBudgetMs = 0
+        AndroidSpuCachePreloadLimit = 64
+        AndroidSpuCacheCompileBudgetMs = 0
+        AndroidSpuNativeObjectCache = "off"
+        AndroidCacheWorkerAffinityMask = 7
+        AndroidVkPipelineCache = "on"
+        AndroidVkPreloadCacheHitsOnly = "on"
+        AndroidAdpfRsx = "off"
+        AndroidCachePhasePacing = "on"
+        AndroidLogMode = "Quiet"
+        AndroidRuntimeAffinityMode = "Keep"
+        AndroidRoutePostWaitSeconds = 0
+        EternalSonataSemaphoreSuperPath = "Off"
+        EternalSonataGpuProbe = "Off"
+        EternalSonataDmaSuperPath = "Off"
+        AndroidRsxBlitSourceResolve = "Off"
+        EternalSonataFramePollWait = "Wait"
+        EternalSonataFramePollHandlerGraceUs = 500
+        EternalSonataFramePollContinuousRearm = "On"
+        NoPerfetto = [Management.Automation.SwitchParameter]::new($true)
+        NoScreenRecord = [Management.Automation.SwitchParameter]::new($true)
+        KeepAndroidRunningAfterCapture = [Management.Automation.SwitchParameter]::new($false)
+    }
+
+    foreach ($setting in $settings.GetEnumerator()) {
+        if ($ScriptBoundParameters.ContainsKey($setting.Key)) {
+            $requested = $ScriptBoundParameters[$setting.Key]
+            if ([string]$requested -ine [string]$setting.Value) {
+                throw "Android startup profile '$AndroidStartupProfile' requires -$($setting.Key) '$($setting.Value)', but '$requested' was supplied."
+            }
+        }
+
+        Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value
+    }
+
+    Write-Host "Android startup profile applied: $AndroidStartupProfile (bounded title proof, no install, no trace/video)."
+}
+
+function Write-AndroidStartupProfileSummary {
+    if ($AndroidStartupProfile -eq "Off") {
+        throw "AndroidProfileStatus requires -AndroidStartupProfile ThorCoolTitle."
+    }
+
+    @(
+        "profile=$AndroidStartupProfile",
+        "input_macro=$InputMacro",
+        "input_mode=$AndroidInputMode",
+        "scene_seconds=$AndroidSceneSeconds",
+        "thermal_poll_seconds=$AndroidThermalPollSeconds",
+        "thermal_stop_headroom_c=$AndroidThermalRuntimeStopHeadroomC",
+        "thermal_probe_window_c=$AndroidThermalRuntimeProbeWindowC",
+        "preflight_samples=$AndroidThermalPreflightSamples",
+        "preflight_interval_seconds=$AndroidThermalPreflightIntervalSeconds",
+        "preflight_headroom_c=$AndroidThermalPreflightHeadroomC",
+        "max_launch_silicon_c=$AndroidMaxLaunchSiliconTemperatureC",
+        "max_preflight_rise_c=$AndroidThermalPreflightMaxRiseC",
+        "max_battery_c=$AndroidMaxBatteryTemperatureC",
+        "max_skin_c=$AndroidMaxSkinTemperatureC",
+        "max_silicon_c=$AndroidMaxSiliconTemperatureC",
+        "rsx_workers=$AndroidRsxCacheWorkers",
+        "rsx_preload_limit=$AndroidRsxCachePreloadLimit",
+        "spu_preload_limit=$AndroidSpuCachePreloadLimit",
+        "cache_affinity_mask=$AndroidCacheWorkerAffinityMask",
+        "vk_pipeline_cache=$AndroidVkPipelineCache",
+        "vk_hits_only=$AndroidVkPreloadCacheHitsOnly",
+        "cache_phase_pacing=$AndroidCachePhasePacing",
+        "adpf=$AndroidAdpfRsx",
+        "log_mode=$AndroidLogMode",
+        "frame_wait=$EternalSonataFramePollWait",
+        "frame_grace_us=$EternalSonataFramePollHandlerGraceUs",
+        "frame_continuous_rearm=$EternalSonataFramePollContinuousRearm",
+        "no_perfetto=$([bool]$NoPerfetto)",
+        "no_screen_record=$([bool]$NoScreenRecord)",
+        "keep_running=$([bool]$KeepAndroidRunningAfterCapture)",
+        "route_post_wait_seconds=$AndroidRoutePostWaitSeconds"
+    ) | Write-Output
+}
 
 function Resolve-SpeedAndroidSerial {
     param([string]$RequestedSerial)
@@ -770,6 +877,8 @@ function Invoke-AndroidRouteScene {
     Invoke-AndroidSceneCapture
 }
 
+Set-AndroidStartupProfile
+
 if ($Action -in @(
     "DeviceSnapshot",
     "AndroidStart",
@@ -787,6 +896,9 @@ $safeLabel = Get-SpeedLabel
 switch ($Action) {
     "ToolStatus" {
         & (Join-Path $PSScriptRoot "install_speed_sprint_tools.ps1") -VerifyOnly
+    }
+    "AndroidProfileStatus" {
+        Write-AndroidStartupProfileSummary
     }
     "DeviceSnapshot" {
         Invoke-DeviceSnapshot
