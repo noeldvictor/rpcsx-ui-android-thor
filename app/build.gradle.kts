@@ -27,6 +27,12 @@ val rpcsxThorWaitProfiler =
         else -> false
     }
 
+val rpcsxThorRsxAuditor =
+    when (providers.gradleProperty("rpcsxThorRsxAuditor").orNull ?: System.getenv("RPCSX_THOR_RSX_AUDITOR_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
@@ -69,6 +75,7 @@ android {
                     "-DRPCSX_ANDROID_ARM_ARCH=$rpcsxAndroidArmArch",
                     "-DRPCSX_ANDROID_ARM_TUNE=$rpcsxAndroidArmTune",
                     "-DRPCSX_THOR_WAIT_PROFILER=${if (rpcsxThorWaitProfiler) "ON" else "OFF"}",
+                    "-DRPCSX_THOR_RSX_AUDITOR=${if (rpcsxThorRsxAuditor) "ON" else "OFF"}",
                 )
             }
         }

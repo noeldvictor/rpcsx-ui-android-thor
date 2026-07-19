@@ -430,10 +430,19 @@ namespace vk::thor::rsx_auditor
 		}
 	}
 
-	inline bool enabled()
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_AUDITOR)
+	FORCE_INLINE bool enabled()
 	{
 		return detail::enabled();
 	}
+#else
+	// Keep behavior experiments below runtime-configurable, but remove the
+	// default-off recorder's atomic/property polling from Android hot paths.
+	FORCE_INLINE constexpr bool enabled() noexcept
+	{
+		return false;
+	}
+#endif
 
 	inline bool use_host_read_dma_fence()
 	{
