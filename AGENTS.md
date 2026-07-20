@@ -84,6 +84,20 @@ Put dated run details in `debug-experiments/`, not here.
   separate independently cool round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 
+- The default-off ADPF RSX diagnostic now follows the current Android feedback
+  contract: BLUS30161 uses its exact 30 FPS period (33,333,333 ns) and reports
+  every positive first-draw-to-flip cycle, including deadline misses, instead
+  of biasing feedback by dropping over-target frames. Its single activation
+  fact uses Android's durable Always path. Thor is Android 13, so API-35
+  power-efficiency/structured GPU duration controls remain unavailable; the
+  basic API-33 path is only a future matched thermal/frame-time experiment.
+  Both explicit-diagnostic and normal ARM64 VKDraw/VKPresent compiles pass;
+  LLVM IR proves the target/report contract, and normal objects retain no ADPF
+  symbols. The normal build gate remains compile-time off. No APK, ADB, device,
+  FPS, or temperature credit exists, and the installed candidate remains
+  frozen for its separate cool proof. Detailed ledger:
+  debug-experiments/20260718-android-adpf-rsx-power-hint.md.
+
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending
   CPU on gzip, while desktop writes stay compressed and Android reads retain
   legacy `.gz` fallback. The explicit stopped-emulator Prepare Cache action

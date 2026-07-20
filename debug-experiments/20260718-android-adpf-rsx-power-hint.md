@@ -130,3 +130,77 @@ requires title, field, and first-battle visual correctness, zero targeted
 fatal/unknown-draw rows, matched capped FPS/frame-time evidence, and lower
 temperature or reduced temperature rise. A neutral result parks the feature;
 any regression keeps it off and removes it from the device lane.
+
+## 2026-07-20 Feedback-contract correction
+
+Status: host-verified diagnostic correction; default-off; device-unmeasured
+
+### Question and primary-source result
+
+Could the API-33 path lower sustained heat without hiding missed frames from
+Android's controller?
+
+- Current AOSP guidance creates the session with the target frame period and
+  says to report actual work on every cycle / every frame:
+  [Performance Hint API](https://source.android.com/docs/core/perf/performance-hint-api).
+- The current stable NDK header likewise says the framework compares every
+  cycle with the target to reach a steady state below the deadline:
+  [AOSP performance_hint.h](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/main/include/android/performance_hint.h).
+- Android 15 adds structured CPU/GPU work durations and explicit
+  power-efficient scheduling, but the saved Thor identity is Android 13.
+  Those newer controls cannot justify this device experiment.
+- The April 2026 FLAME paper shows why asynchronous CPU/GPU coupling makes
+  simple static frequency assumptions unreliable and instead evaluates
+  deadline-aware feedback. Applying that mechanism here is an inference, not
+  emulator proof: complete per-cycle deadline feedback is a sound experiment;
+  a hand-authored frequency or boost policy is not:
+  [FLAME, arXiv:2604.15357](https://arxiv.org/abs/2604.15357).
+
+The previous implementation contradicted the first two sources by discarding
+all cycles longer than its 30 ms target. That removed exactly the deadline-miss
+samples the feedback controller needs and biased the stream toward easy
+frames. It also asked a 30 FPS title to meet an unnecessarily short target.
+
+### Change
+
+- Use the exact integer 30 FPS period, 33,333,333 ns, as the target.
+- Report every positive first-draw-to-flip cycle, including over-target cycles.
+- Keep invalid nonpositive samples filtered.
+- Emit the single session-activation fact through Android's durable
+  Always-level path so a quiet A/B can prove the experiment actually ran.
+- Preserve API-29-safe dynamic loading, BLUS30161 gating, failure shutdown,
+  route cleanup, and the default-off build gate.
+
+This remains an experiment. On Thor's Android 13, basic ADPF may lower CPU
+allocation when there is headroom or raise it after a miss; lower temperature
+is plausible but not assumed. Android 15's explicit power-efficiency and
+structured GPU-duration modes are deliberately not treated as available.
+
+### Host verification
+
+- tools/test_thor_adpf_rsx_hint.ps1 passes with an explicit rejection of the
+  former over-target drop.
+- All 62/62 host Thor contracts pass in isolated PowerShell processes.
+- PowerShell AST parsing and git diff --check pass.
+- The saved optimized ARM64 diagnostic compile database rebuilt
+  VKDraw.cpp and VKPresent.cpp successfully with
+  RPCSX_THOR_ADPF_RSX_HINT=1.
+- LLVM IR contains target 33333333, the durable every-cycle activation row,
+  the dynamically resolved report symbol, a single positive-duration check,
+  and the report call. There is no upper-target comparison in finish().
+- The same two translation units rebuild successfully with the normal
+  ThorTest flags; llvm-nm finds ADPF symbols in diagnostic objects and none
+  in normal objects.
+
+No APK was assembled, installed, or pinned. No ADB query or Thor workload ran.
+The exact installed candidate remains frozen for its separately cool title
+proof. This change receives no FPS, temperature, flicker, gameplay, stability,
+or speed-win credit.
+
+### Decision
+
+Keep the normal Android gate off. After the currently installed candidate
+finishes its independent proof, a future diagnostic APK may compare ADPF off
+and on with the same artifact, warm caches, scene, frame cap, visual gates, and
+thermal guard. Promote only a matched frame-time result with lower thermal
+rise; park neutral behavior and reject any throughput or visual regression.

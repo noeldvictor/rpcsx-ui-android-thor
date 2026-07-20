@@ -61,8 +61,9 @@ $requiredHintFragments = @(
     'debug.rpcsx.thor.adpf_rsx',
     'if (length <= 0)',
     'return false;',
-    "target_work_duration_ns = 30'000'000",
+    "target_work_duration_ns = 33'333'333",
     'dlopen("libandroid.so", RTLD_NOW | RTLD_LOCAL)',
+    'rsx_log.always()("Thor ADPF RSX hint enabled',
     'APerformanceHint_getManager',
     'APerformanceHint_createSession',
     'APerformanceHint_reportActualWorkDuration',
@@ -71,7 +72,7 @@ $requiredHintFragments = @(
     'static thread_local session_state state',
     'static_cast<std::int32_t>(gettid())',
     'std::chrono::steady_clock::now()',
-    'actual_duration_ns <= 0 || actual_duration_ns > target_work_duration_ns',
+    'actual_duration_ns <= 0',
     'state.close();',
     'state.failed = true;'
 )
@@ -96,11 +97,14 @@ Assert-OrderedFragments "Session-creation shutdown" $hint @(
     'state.failed = true;',
     'return;'
 )
-Assert-OrderedFragments "Under-budget-only reporting" $hint @(
-    'if (actual_duration_ns <= 0 || actual_duration_ns > target_work_duration_ns)',
+Assert-OrderedFragments "Every-positive-cycle reporting" $hint @(
+    'if (actual_duration_ns <= 0)',
     'return;',
     'report_actual(state.session, actual_duration_ns)'
 )
+if ($hint.Contains('actual_duration_ns > target_work_duration_ns')) {
+    throw "Thor ADPF RSX feedback must not discard over-target frame cycles."
+}
 Assert-OrderedFragments "First-draw work-window start" $draw @(
     'if (vk::thor::adpf_rsx_hint::requested())',
     'vk::thor::adpf_rsx_hint::begin(Emu.GetTitleID() == "BLUS30161");',
@@ -139,4 +143,4 @@ if (-not $sprint.Contains('[string]$AndroidAdpfRsx = "off"') -or
     throw "The speed-sprint wrapper does not safely expose and forward ADPF RSX."
 }
 
-Write-Output "Thor ADPF RSX source contracts passed: API-29-safe dynamic loading, title/default-off gating, under-budget-only reporting, failure shutdown, and route cleanup."
+Write-Output "Thor ADPF RSX source contracts passed: API-29-safe dynamic loading, title/default-off gating, exact 30 FPS deadline, every-positive-cycle reporting, failure shutdown, and route cleanup."

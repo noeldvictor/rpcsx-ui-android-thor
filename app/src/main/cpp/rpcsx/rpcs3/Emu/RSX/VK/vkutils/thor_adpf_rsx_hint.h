@@ -33,7 +33,10 @@ namespace vk::thor::adpf_rsx_hint
 
 namespace vk::thor::adpf_rsx_hint
 {
-	inline constexpr std::int64_t target_work_duration_ns = 30'000'000;
+	// Eternal Sonata is a 30 FPS workload. Give ADPF the real frame deadline
+	// instead of an arbitrary shorter target that can request unnecessary CPU
+	// performance and power.
+	inline constexpr std::int64_t target_work_duration_ns = 33'333'333;
 
 	namespace detail
 	{
@@ -173,7 +176,7 @@ namespace vk::thor::adpf_rsx_hint
 			}
 
 			const bool power_efficient = api.prefer_power_efficiency && api.prefer_power_efficiency(state.session, true) == 0;
-			rsx_log.notice("Thor ADPF RSX hint enabled (target=%lld ns, power-efficient=%s).",
+			rsx_log.always()("Thor ADPF RSX hint enabled (target=%lld ns, reports=every-cycle, power-efficient=%s).",
 				static_cast<long long>(target_work_duration_ns), power_efficient ? "yes" : "platform-default");
 		}
 
@@ -200,9 +203,10 @@ namespace vk::thor::adpf_rsx_hint
 		                                    .count();
 		state.work_active = false;
 
-		// This experiment may expose spare 30 FPS budget to Android, but must not
-		// ask the scheduler to boost an already-over-budget frame.
-		if (actual_duration_ns <= 0 || actual_duration_ns > target_work_duration_ns)
+		// ADPF needs the miss signal as well as the headroom signal. Reporting only
+		// under-target frames biases its feedback and prevents it from reacting to
+		// deadline misses. The API accepts every positive cycle duration.
+		if (actual_duration_ns <= 0)
 		{
 			return;
 		}
