@@ -226,3 +226,20 @@ This successor is host-only and uninstalled. It receives no device credit.
 The next separately cool round is installation only: prove exact on-device APK
 SHA-256 and absent PID without launching. Reserve a different later cool round
 for one self-stopping title/log proof.
+
+## Deterministic-sync install thermal refusal
+
+The next independently gated install-only round stopped safely before install.
+Strict-gate capture
+`debug-captures/android-speed-sprint/20260720-120535-thor-input-strict-cool-gate`
+measured `40.5 C` silicon at `pre-run-1-of-3`, above the `35 C` launch
+limit. Battery was `23.0 C` and skin was `30.0 C`. The harness force-stopped
+RPCSX, saved an absent PID, and refused the remaining two preflight samples and
+the install. Its post-stop evidence measured `41.3 C` silicon, `23.0 C`
+battery, and `30.0 C` skin.
+
+No APK was installed, no emulator was launched, and no retry or second device
+query ran. Exact candidate `691EE8A7...F5E2D3` remains host-only and receives
+no device, speed, FPS, thermal-win, flicker, gameplay, or stability credit.
+After a later independently cool interval, retry only the strict no-launch
+installation; reserve runtime proof for another separate cool round.
