@@ -563,3 +563,35 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   self-stopping `ThorCoolTitle` proof. Require all 11 durable activation rows,
   the exact sync checkpoint, clean critical/fatal evidence, stable title,
   thermal pass, and absent PID before any timing comparison or speed credit.
+
+### 2026-07-20 - bounded-evidence-title-device-selection-refusal
+
+- Status: failed
+- Scope: scene-route
+- Command: .\tools\eternal_sonata_speed_sprint.ps1 -Action
+  AndroidRouteScene -AndroidStartupProfile ThorCoolTitle -Label
+  bounded-evidence-successor-title-proof
+- Hypothesis: after the independent cooling interval, the exact installed
+  evidence successor could enter its single self-stopping ThorCoolTitle proof.
+- Changed files/settings: none on device. Host-only artifact/profile contracts
+  passed immediately before the attempt. The route resolver ran before logging
+  or emulator properties could be applied.
+- Rollback: none required.
+- Windows result: exact pinned APK 59D5658E...91BD02, packaged core
+  5F7938BB...6F6CA6, the ThorCoolTitle profile, capture analyzer, and durable
+  Android evidence-logging contracts all passed.
+- Thor result: the invocation failed closed at 2026-07-20T14:52-04:00 because
+  adb reported two online serials, 80167523365051 and c3ca0370. The wrapper
+  required explicit selection and exited before a thermal preflight or app
+  launch. No retry or follow-up ADB query ran.
+- Visual correctness: not exercised; no route capture exists.
+- FPS/frame-time: none.
+- Capture paths: none; refusal occurred before capture creation.
+- Decision: device-selection-refused / route-tooling. This grants no APK
+  identity, temperature, speed, FPS, flicker, gameplay, or stability credit.
+  Preserve the last proven installed identity from the prior no-launch capture
+  and do not infer current PID or temperature without a future gate.
+- Next: after another independent interval, invoke the same pinned
+  ThorCoolTitle route exactly once with AndroidSerial c3ca0370. Let its
+  identity and three-sample thermal gates decide whether launch is allowed;
+  do not probe or retry separately.

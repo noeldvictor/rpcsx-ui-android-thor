@@ -50,6 +50,16 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
+- The 2026-07-20 14:52 attempt to run the exact installed evidence successor
+  failed closed before thermal preflight because two Android devices were
+  online (80167523365051 and c3ca0370) and no serial was supplied. The
+  resolver exited before changing runtime properties, creating a capture, or
+  launching RPCSX; no retry or follow-up ADB query ran. This is
+  device-selection-refused / route-tooling with no identity, thermal, visual,
+  FPS, or speed credit. In a later independent round, pass
+  -AndroidSerial c3ca0370 to the same pinned ThorCoolTitle invocation and let
+  its identity plus three-sample thermal gates decide whether to launch.
+
 - Exact installed APK `71CFA42A...5BD12B` reached its first/stable Eternal
   Sonata title candidates in `18.620/24.361 s`; the deterministic visual gate
   accepted the stable title at `11.4%` selector magenta. Silicon peaked at
