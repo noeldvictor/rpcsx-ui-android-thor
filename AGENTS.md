@@ -75,10 +75,13 @@ Put dated run details in `debug-experiments/`, not here.
   `CB06FE9C...C5BBF2` is `1,304,043,704` bytes; stripped/package core
   `5F7938BB...6F6CA6` is `62,978,792` bytes. Optimized ARM64 native/APK builds,
   all `62/62` host contracts, 11/11 packaged activation strings, exact
-  artifact identity, and the 35-export surface pass. It is not installed or
-  device-measured; the Thor remains stopped on `71CFA42A...5BD12B`. Only a
-  later independently cool install-only round may install this successor.
-  Reserve runtime proof for another cool round. Detailed ledger:
+  artifact identity, and the 35-export surface pass. Exact APK
+  `59D5658E...91BD02` is now installed under no-launch gate `20260720-142534`:
+  silicon stayed `34.3 -> 34.3 -> 34.3 C`, the installed `base.apk` hash
+  matched, PID was absent before/after, and post-install battery/skin/silicon
+  were `25.0/30.0/35.9 C`. No activity launched, so this grants identity only,
+  not speed or thermal credit. Reserve one self-stopping title proof for a
+  separate independently cool round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending

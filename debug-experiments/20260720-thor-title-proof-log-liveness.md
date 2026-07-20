@@ -526,3 +526,40 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   cool round for a self-stopping title proof requiring all 11 activation rows,
   exact durable checkpoint, clean fatal scan, stable title, thermal pass, and
   absent PID before any comparison credit.
+
+### 2026-07-20 - bounded-evidence-successor-install-only
+
+- Status: android-pass
+- Scope: config-driver
+- Hypothesis: exact host-verified evidence successor `59D5658E...91BD02` can
+  replace the installed predecessor without booting RPCSX or exceeding the
+  strict cool boundary.
+- Changed files/settings: installed the exact pinned ThorTest APK with
+  streamed `adb install -r`. The installer force-stopped RPCSX before and
+  after, reset experimental controls to their safe defaults, and did not
+  launch an activity.
+- Rollback: reinstall a prior exact pinned APK through the same no-launch
+  workflow; no rollback is currently needed.
+- Windows result: the candidate artifact, no-launch installer, and strict-gate
+  contracts passed immediately before device work.
+- Thor result: strict no-boot gate
+  `debug-captures/android-speed-sprint/20260720-142534-thor-input-strict-cool-gate`
+  passed silicon samples `34.3 -> 34.3 -> 34.3 C`, maximum `34.3 C` and
+  rise `0.0 C`. Battery/skin were `25.0/30.0 C`; gate post-stop silicon was
+  `35.1 C`. Install capture
+  `debug-captures/android-speed-sprint/20260720-142605-bounded-android-evidence-thortest-apk-install`
+  reports `installed-exact-no-launch`. Expected, host, and installed
+  `base.apk` SHA-256 all match
+  `59D5658EC31130F2CD8FD8F4E02700DFF3BD1AF52B7E89F25CF167EF5C91BD02`.
+  PID was absent before and after; post-install battery/skin/silicon were
+  `25.0/30.0/35.9 C`.
+- Visual correctness: not exercised; the emulator and game did not boot.
+- FPS/frame-time: none.
+- Capture paths: the strict gate and install captures above.
+- Decision: `installed-exact-no-launch` / `route-tooling`. Installation banks
+  exact device identity only and grants no speed, FPS, thermal-win, flicker,
+  gameplay, or stability credit. No second device query, retry, or launch ran.
+- Next: after a separate independently cool interval, run exactly one
+  self-stopping `ThorCoolTitle` proof. Require all 11 durable activation rows,
+  the exact sync checkpoint, clean critical/fatal evidence, stable title,
+  thermal pass, and absent PID before any timing comparison or speed credit.
