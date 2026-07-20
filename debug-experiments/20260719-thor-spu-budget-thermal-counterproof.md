@@ -313,3 +313,45 @@ After a separate independently cool interval, run exactly one self-stopping
 `Set DAZ and FTZ: true`, the `500 ms` RSX load-budget activation and deferred
 count, title reach or guarded stop, thermal slope, visual state, and fatal
 cleanliness before any performance or stability claim.
+
+## Exact runtime artifact and managed-FTZ proof gate
+
+No ADB command, device query, install, activity launch, or guest execution ran
+in this continuation. The preceding install-only route already spent its cool
+device round, so installed APK `24FCC44E...736FE2` remains stopped and no new
+runtime performance or thermal credit exists.
+
+A host audit found that `ThorCoolTitle` verified properties, logs, process
+state, visuals, and thermals but did not bind a capture to the exact installed
+APK. A stale or substituted package could therefore produce plausible-looking
+evidence. The proof route is now pinned by
+`tools/thor_cool_title_candidate.psd1` to:
+
+- package `net.rpcsx.easy`;
+- APK SHA-256 `24FCC44E...736FE2` and size `72,839,316` bytes;
+- merged core `406166AC...2F737E`; and
+- packaged core `5F11CFD2...7CC10`, size `63,015,752` bytes.
+
+For a boot route with a required identity, `thor_input_macro.ps1` now resolves
+exactly one installed `/base.apk`, hashes it on-device, saves the package path,
+raw hash output, and normalized identity record, then refuses any mismatch
+before thermal preflight or boot. The error path still force-stops the package.
+The three ordered strict thermal samples run after hashing, so any small heat
+cost from the identity check is included in the cool-device decision.
+
+`ThorCoolTitle` hard-pins the candidate package and APK hash and rejects a
+conflicting override. The capture analyzer requires the exact package, path,
+expected/actual hash match, README identity, and runtime log
+`Set DAZ and FTZ: true`. Synthetic wrong-hash and missing-FTZ captures both
+fail as `activation-incomplete`, with no comparison or speed credit.
+
+All `59/59` host `tools/test_thor_*.ps1` contracts pass, including the focused
+profile and analyzer contracts, and `git diff --check` passes. These are
+host-only proof-tool changes: the installed APK and both core binaries are
+unchanged, no reinstall is required, and no device contact occurred.
+
+The next device action remains exactly one self-stopping `ThorCoolTitle` run
+after a separate independently cool interval. Until it reaches the title and
+passes identity, managed-FTZ, fatal, visual, self-stop, and thermal gates, the
+only measured improvement remains the earlier startup-progress result; do not
+claim sustained FPS, flicker, gameplay, stability, or temperature improvement.

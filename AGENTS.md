@@ -947,4 +947,21 @@ Put dated run details in `debug-experiments/`, not here.
   the RSX load-budget activation/deferred count, title reach, thermal behavior,
   visuals, and fatal cleanliness. Detailed ledger:
   `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
+- The next `ThorCoolTitle` proof is now pinned fail-closed to installed APK
+  `24FCC44E...736FE2` for package `net.rpcsx.easy`, with merged core
+  `406166AC...2F737E` and packaged core `5F11CFD2...7CC10` recorded in
+  `tools/thor_cool_title_candidate.psd1`. Before any thermal sample or boot,
+  the route resolves the single installed `base.apk`, hashes it on-device,
+  saves exact identity evidence, and refuses a mismatch. Because all three
+  strict thermal samples follow the hash, the gate includes that check's
+  small heat cost. The profile rejects conflicting APK overrides, and the
+  analyzer requires the exact identity plus managed-profile
+  `Set DAZ and FTZ: true` activation. Synthetic wrong-hash and missing-FTZ
+  captures fail `activation-incomplete`; all `59/59` host contracts pass.
+  This host-only hardening made no APK/core change, did not contact Thor, and
+  grants no runtime speed, temperature, FPS, flicker, gameplay, or stability
+  credit. Installed APK remains exact `24FCC44E...736FE2` with RPCSX stopped.
+  Wait for a separate independently cool interval before the one
+  self-stopping runtime proof. Detailed ledger:
+  `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.

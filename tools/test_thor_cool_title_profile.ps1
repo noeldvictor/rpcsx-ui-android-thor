@@ -15,6 +15,9 @@ $sourceContracts = @(
     '[ValidateSet("Off", "ThorCoolTitle")]',
     '[string]$AndroidStartupProfile = "Off"',
     '$ScriptBoundParameters = @{} + $PSBoundParameters',
+    'thor_cool_title_candidate.psd1',
+    'AndroidExpectedInstalledApkSha256 = [string]$thorCoolTitleCandidate.ApkSha256',
+    'ExpectedInstalledApkSha256 = $AndroidExpectedInstalledApkSha256',
     'if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus"))',
     'Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value',
     'Set-AndroidStartupProfile',
@@ -42,6 +45,9 @@ if ($deviceResolutionBlock.Contains('AndroidProfileStatus')) {
 $summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | ForEach-Object { $_.ToString() })
 $requiredSummary = @(
     'profile=ThorCoolTitle',
+    'package=net.rpcsx.easy',
+    'expected_installed_apk_sha256=24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2',
+    'expected_packaged_core_sha256=5F11CFD2D10C8B7825F6D99FFC5214F61D2F68F0702CFB7A1FF6D1294E07CC10',
     'input_macro=gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop',
     'input_mode=Direct',
     'scene_seconds=1',
@@ -132,6 +138,16 @@ if (-not $budgetConflictRejected) {
     throw 'Thor cool-title profile did not reject an unbounded SPU compile-budget override.'
 }
 
+$apkIdentityConflictRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidExpectedInstalledApkSha256 ('0' * 64) 2>&1 | Out-Null
+} catch {
+    $apkIdentityConflictRejected = $_.Exception.Message -like "*requires -AndroidExpectedInstalledApkSha256 '24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2'*"
+}
+if (-not $apkIdentityConflictRejected) {
+    throw 'Thor cool-title profile did not reject the wrong installed APK identity.'
+}
+
 $actionRejected = $false
 try {
     & $sprintPath -Action ToolStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | Out-Null
@@ -152,4 +168,4 @@ if (-not $keepRunningRejected) {
     throw 'Thor cool-title profile did not reject keeping the emulator alive after capture.'
 }
 
-Write-Output 'Thor cool-title startup profile contract passed: host-only dry-run exact, lower-power controls complete, unsafe overrides fail closed, device resolution absent.'
+Write-Output 'Thor cool-title startup profile contract passed: exact APK/core identity, host-only dry-run, lower-power controls, unsafe overrides, and device-resolution gates are fail closed.'

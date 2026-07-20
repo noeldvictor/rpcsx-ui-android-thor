@@ -5,6 +5,8 @@ param(
     [string]$Scene = "field",
     [ValidateSet("Off", "ThorCoolTitle")]
     [string]$AndroidStartupProfile = "Off",
+    [ValidatePattern('^$|^[0-9A-Fa-f]{64}$')]
+    [string]$AndroidExpectedInstalledApkSha256 = "",
     [string]$Package = "net.rpcsx.easy",
     [string]$AndroidSerial = "",
     [string]$Label = "",
@@ -186,6 +188,16 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -Er
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$thorCoolTitleCandidatePath = Join-Path $PSScriptRoot "thor_cool_title_candidate.psd1"
+$thorCoolTitleCandidate = Import-PowerShellDataFile -LiteralPath $thorCoolTitleCandidatePath
+if (
+    [string]::IsNullOrWhiteSpace([string]$thorCoolTitleCandidate.Package) -or
+    [string]$thorCoolTitleCandidate.ApkSha256 -notmatch '^[0-9A-Fa-f]{64}$' -or
+    [string]$thorCoolTitleCandidate.PackagedCoreSha256 -notmatch '^[0-9A-Fa-f]{64}$'
+) {
+    throw "Thor cool-title candidate identity is invalid: $thorCoolTitleCandidatePath"
+}
+$thorCoolTitleCandidate.ApkSha256 = $thorCoolTitleCandidate.ApkSha256.ToUpperInvariant()
 $Adb = "C:\Users\leanerdesigner\AppData\Local\Android\Sdk\platform-tools\adb.exe"
 if ($env:ANDROID_HOME -and (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"))) {
     $Adb = Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"
@@ -203,6 +215,8 @@ function Set-AndroidStartupProfile {
     }
 
     $settings = [ordered]@{
+        Package = [string]$thorCoolTitleCandidate.Package
+        AndroidExpectedInstalledApkSha256 = [string]$thorCoolTitleCandidate.ApkSha256
         InputMacro = "gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
         AndroidInputMode = "Direct"
         AndroidSceneSeconds = 1
@@ -265,6 +279,9 @@ function Write-AndroidStartupProfileSummary {
 
     @(
         "profile=$AndroidStartupProfile",
+        "package=$Package",
+        "expected_installed_apk_sha256=$AndroidExpectedInstalledApkSha256",
+        "expected_packaged_core_sha256=$($thorCoolTitleCandidate.PackagedCoreSha256)",
         "input_macro=$InputMacro",
         "input_mode=$AndroidInputMode",
         "scene_seconds=$AndroidSceneSeconds",
@@ -861,6 +878,7 @@ function Invoke-AndroidRouteScene {
         VkPreloadCacheHitsOnly = $AndroidVkPreloadCacheHitsOnly
         AdpfRsx = $AndroidAdpfRsx
         CachePhasePacing = $AndroidCachePhasePacing
+        ExpectedInstalledApkSha256 = $AndroidExpectedInstalledApkSha256
     }
 
     if (-not [string]::IsNullOrWhiteSpace($AndroidSerial)) {

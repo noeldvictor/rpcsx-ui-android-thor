@@ -20,11 +20,21 @@ foreach ($fragment in @(
     'debug.rpcsx.thor.es_frame_wait_grace_us',
     'debug.rpcsx.thor.es_frame_wait_continuous_rearm',
     'log.tag.RPCS3',
-    'log.tag.RPCSX-UI'
+    'log.tag.RPCSX-UI',
+    'ExpectedInstalledApkSha256',
+    'installed-apk-identity.txt',
+    'Assert-ThorInstalledApkIdentity'
 )) {
     if (-not $macroSource.Contains($fragment)) {
         throw "Thor input macro is missing combined cool-title property evidence: $fragment"
     }
+}
+
+$identityCallIndex = $macroSource.LastIndexOf("Assert-ThorInstalledApkIdentity")
+$thermalPreflightCallIndex = $macroSource.LastIndexOf('Assert-ThorThermalPreflight "pre-run"')
+$bootCallIndex = $macroSource.LastIndexOf('am start -a net.rpcsx.THOR_DEBUG_BOOT')
+if ($identityCallIndex -lt 0 -or $thermalPreflightCallIndex -le $identityCallIndex -or $bootCallIndex -le $thermalPreflightCallIndex) {
+    throw "Installed APK identity must be checked before thermal preflight and debug boot."
 }
 
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("rpcsx-thor-cool-title-analyzer-" + [guid]::NewGuid().ToString("N"))
@@ -116,6 +126,14 @@ function Write-ReadyFixture {
     ) | Set-Content -LiteralPath (Join-Path $Directory "startup-profile-effective.txt") -Encoding UTF8
 
     @(
+        "package=net.rpcsx.easy",
+        "remote_path=/data/app/example/net.rpcsx.easy/base.apk",
+        "expected_sha256=24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2",
+        "actual_sha256=24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2",
+        "match=True"
+    ) | Set-Content -LiteralPath (Join-Path $Directory "installed-apk-identity.txt") -Encoding UTF8
+
+    @(
         "- Input mode: Direct",
         "- Thermal preflight samples: 3",
         "- Thermal preflight interval seconds: 2",
@@ -139,6 +157,7 @@ function Write-ReadyFixture {
         "- Vulkan preload cache hits only: on",
         "- Android RSX performance hint: off",
         "- Startup cache phase pacing: off",
+        "- Expected installed APK SHA-256: 24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2",
         "- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
     ) | Set-Content -LiteralPath (Join-Path $Directory "README.md") -Encoding UTF8
 
@@ -169,7 +188,8 @@ function Write-ReadyFixture {
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.",
         "Thor SPU cache compile budget enabled for BLUS30161: 100 ms.",
-        "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes)."
+        "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes).",
+        "Set DAZ and FTZ: true"
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8
     Write-TitleProofPng -Path (Join-Path $Directory "03-title-proof.png")
 }
@@ -189,6 +209,27 @@ try {
     $mismatch = & $analyzerPath -CaptureDir $mismatchDir
     if ($mismatch.status -ne "activation-incomplete" -or $mismatch.ready_for_comparison -or $mismatch.property_mismatches.Count -eq 0) {
         throw "Synthetic activation mismatch did not fail closed."
+    }
+
+    $identityMismatchDir = Join-Path $tempRoot "apk-identity-mismatch"
+    Copy-Item -LiteralPath $readyDir -Destination $identityMismatchDir -Recurse
+    (Get-Content -LiteralPath (Join-Path $identityMismatchDir "installed-apk-identity.txt")) -replace '^actual_sha256=.*$', ('actual_sha256=' + ('0' * 64)) |
+        Set-Content -LiteralPath (Join-Path $identityMismatchDir "installed-apk-identity.txt") -Encoding UTF8
+    $identityMismatch = & $analyzerPath -CaptureDir $identityMismatchDir
+    if ($identityMismatch.status -ne "activation-incomplete" -or $identityMismatch.ready_for_comparison -or $identityMismatch.property_mismatches -notmatch 'installed APK actual_sha256') {
+        throw "Synthetic installed APK identity mismatch did not fail closed."
+    }
+
+    $ftzMissingDir = Join-Path $tempRoot "managed-ftz-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $ftzMissingDir -Recurse
+    $ftzLogPath = Join-Path $ftzMissingDir "post-RPCSX.log"
+    $ftzLogLines = @(Get-Content -LiteralPath $ftzLogPath)
+    $ftzLogLines |
+        Where-Object { $_ -notmatch 'Set DAZ and FTZ:\s*true' } |
+        Set-Content -LiteralPath $ftzLogPath -Encoding UTF8
+    $ftzMissing = & $analyzerPath -CaptureDir $ftzMissingDir
+    if ($ftzMissing.status -ne "activation-incomplete" -or $ftzMissing.ready_for_comparison -or $ftzMissing.activation_missing -notcontains "managed hardware FTZ") {
+        throw "Synthetic managed-profile FTZ omission did not fail closed."
     }
 
     $runningDir = Join-Path $tempRoot "still-running"
@@ -242,4 +283,4 @@ try {
     }
 }
 
-Write-Output "Thor cool-title capture analyzer contract passed: exact property/runtime activation, title image, preflight refusal, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
+Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, managed FTZ, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."

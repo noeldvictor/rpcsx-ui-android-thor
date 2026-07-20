@@ -8,6 +8,13 @@ param(
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
 
+$candidatePath = Join-Path $PSScriptRoot "thor_cool_title_candidate.psd1"
+$candidate = Import-PowerShellDataFile -LiteralPath $candidatePath
+if ([string]$candidate.ApkSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
+    throw "Thor cool-title candidate APK identity is invalid: $candidatePath"
+}
+$expectedInstalledApkSha256 = $candidate.ApkSha256.ToUpperInvariant()
+
 $resolvedCaptureDir = (Resolve-Path -LiteralPath $CaptureDir -ErrorAction Stop).Path
 if (-not (Test-Path -LiteralPath $resolvedCaptureDir -PathType Container)) {
     throw "Thor cool-title capture directory does not exist: $CaptureDir"
@@ -106,6 +113,35 @@ foreach ($entry in $startupExpected.GetEnumerator()) {
     }
 }
 
+$installedApkIdentity = @{}
+foreach ($line in (Read-OptionalLines "installed-apk-identity.txt")) {
+    if ($line -match '^([^#][^=]+)=(.*)$') {
+        $installedApkIdentity[$Matches[1].Trim()] = $Matches[2].Trim()
+    }
+}
+$installedApkExpected = [ordered]@{
+    "package" = [string]$candidate.Package
+    "expected_sha256" = $expectedInstalledApkSha256
+    "actual_sha256" = $expectedInstalledApkSha256
+    "match" = "True"
+}
+foreach ($entry in $installedApkExpected.GetEnumerator()) {
+    $actual = if ($installedApkIdentity.ContainsKey($entry.Key)) { $installedApkIdentity[$entry.Key] } else { $null }
+    if ($actual -cne $entry.Value) {
+        $actualText = if ($null -eq $actual) { "<missing>" } else { $actual }
+        $profilePropertyMismatches.Add("installed APK $($entry.Key): expected '$($entry.Value)', got '$actualText'") | Out-Null
+    }
+}
+$installedApkRemotePath = if ($installedApkIdentity.ContainsKey("remote_path")) {
+    $installedApkIdentity["remote_path"]
+} else {
+    $null
+}
+if ($installedApkRemotePath -notmatch '^/.+/base[.]apk$') {
+    $actualText = if ($null -eq $installedApkRemotePath) { "<missing>" } else { $installedApkRemotePath }
+    $profilePropertyMismatches.Add("installed APK remote_path is not an exact base.apk path: '$actualText'") | Out-Null
+}
+
 $requiredReadmeLines = @(
     "- Input mode: Direct",
     "- Thermal preflight samples: 3",
@@ -130,6 +166,7 @@ $requiredReadmeLines = @(
     "- Vulkan preload cache hits only: on",
     "- Android RSX performance hint: off",
     "- Startup cache phase pacing: off",
+    "- Expected installed APK SHA-256: $expectedInstalledApkSha256",
     "- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
 )
 $readmeText = (Read-OptionalLines "README.md") -join "`n"
@@ -177,6 +214,7 @@ $activationRequirements = [ordered]@{
     "two SPU preload workers" = 'Thor SPU cache-worker pool matched to affinity:\s*requested=2, workers=2, mask=0x7'
     "bounded SPU compile time" = 'Thor SPU cache compile budget enabled for BLUS30161:\s*100 ms'
     "warm Vulkan hit-only preload" = 'Vulkan preload cache-hits-only enabled for validated warm seed'
+    "managed hardware FTZ" = 'Set DAZ and FTZ:\s*true'
 }
 $activationMissing = New-Object System.Collections.Generic.List[string]
 foreach ($entry in $activationRequirements.GetEnumerator()) {
@@ -314,6 +352,9 @@ $result = [pscustomobject]@{
     ready_for_comparison = $readyForComparison
     speed_credit = $false
     capture_dir = $resolvedCaptureDir
+    expected_installed_apk_sha256 = $expectedInstalledApkSha256
+    actual_installed_apk_sha256 = $installedApkIdentity["actual_sha256"]
+    packaged_core_sha256 = [string]$candidate.PackagedCoreSha256
     title_proof = if ($titleProof) { $titleProof.FullName } else { $null }
     title_menu_present = $titleMenuPresent
     title_magenta_percent = $titleMagentaPercent

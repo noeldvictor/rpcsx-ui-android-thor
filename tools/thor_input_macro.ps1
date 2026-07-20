@@ -64,6 +64,8 @@ param(
     [string]$EsAsyncDrawBarrier = "off",
     [ValidateSet("on", "off")]
     [string]$ThorDisplayPacing = "on",
+    [ValidatePattern('^$|^[0-9A-Fa-f]{64}$')]
+    [string]$ExpectedInstalledApkSha256 = "",
     [switch]$BootGame,
     [switch]$ForceStop,
     [switch]$PostSnapshot,
@@ -166,6 +168,7 @@ $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-th
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
 $strictGuestDrawStream = $Profile -eq "eternal-sonata-battle-intro-route" -and -not $AllowUnknownDraw
 $thorDisplayPacingValue = if ($ThorDisplayPacing -eq "on") { "true" } else { "false" }
+$normalizedExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
 
 $keyAliases = @{
     "a" = "KEYCODE_BUTTON_A"
@@ -833,6 +836,58 @@ function Assert-ThorGuestHealthy {
     Assert-ThorProcessIdentity "guest-health-$safeLabel-post"
 }
 
+function Get-ThorEvidenceBody {
+    param([string]$Path)
+
+    return @(
+        Get-Content -LiteralPath $Path |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object {
+                $_ -and
+                -not $_.StartsWith("#") -and
+                $_ -notmatch '^exit='
+            }
+    )
+}
+
+function Assert-ThorInstalledApkIdentity {
+    if (-not $BootGame -or [string]::IsNullOrWhiteSpace($normalizedExpectedInstalledApkSha256)) {
+        return
+    }
+
+    $packagePathEvidence = Invoke-ThorAdbText $Adb $captureDir "installed-apk-package-path.txt" @("shell", "pm path $Package")
+    $packageRows = @(
+        Get-ThorEvidenceBody $packagePathEvidence |
+            Where-Object { $_ -match '^package:/.+/base[.]apk$' }
+    )
+    if ($packageRows.Count -ne 1) {
+        throw "Expected exactly one installed base.apk for $Package; found $($packageRows.Count)."
+    }
+
+    $remoteApk = $packageRows[0].Substring("package:".Length)
+    $quotedRemoteApk = ConvertTo-ShellSingleQuoted $remoteApk
+    $hashEvidence = Invoke-ThorAdbText $Adb $captureDir "installed-apk-sha256.txt" @("shell", "sha256sum $quotedRemoteApk")
+    $hashBody = (Get-ThorEvidenceBody $hashEvidence) -join "`n"
+    $hashMatch = [regex]::Match($hashBody, '(?i)\b([0-9a-f]{64})\b')
+    if (-not $hashMatch.Success) {
+        throw "Could not parse the installed base.apk SHA-256 for $Package."
+    }
+
+    $actualSha256 = $hashMatch.Groups[1].Value.ToUpperInvariant()
+    $identityMatches = $actualSha256 -ceq $normalizedExpectedInstalledApkSha256
+    @(
+        "package=$Package",
+        "remote_path=$remoteApk",
+        "expected_sha256=$normalizedExpectedInstalledApkSha256",
+        "actual_sha256=$actualSha256",
+        "match=$identityMatches"
+    ) | Set-Content -LiteralPath (Join-Path $captureDir "installed-apk-identity.txt") -Encoding UTF8
+
+    if (-not $identityMatches) {
+        throw "Installed APK identity mismatch for ${Package}: expected $normalizedExpectedInstalledApkSha256, got $actualSha256."
+    }
+}
+
 $resolvedMacro = Get-ThorMacroForProfile $Profile
 
 @(
@@ -878,6 +933,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Eternal Sonata async draw barrier requested: $requestedEsAsyncDrawBarrier",
     "- Eternal Sonata async draw barrier effective: $EsAsyncDrawBarrier",
     "- Unknown draw policy: $(if ($strictGuestDrawStream) { 'fail-closed' } else { 'record-only' })",
+    "- Expected installed APK SHA-256: $(if ($normalizedExpectedInstalledApkSha256) { $normalizedExpectedInstalledApkSha256 } else { 'not-required' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
     "- Macro: $resolvedMacro",
@@ -916,6 +972,7 @@ $tokens = @()
 $index = 1
 $script:LastThorScreenshotPath = $null
 try {
+Assert-ThorInstalledApkIdentity
 Assert-ThorThermalPreflight "pre-run"
 
 if ($BootGame) {
