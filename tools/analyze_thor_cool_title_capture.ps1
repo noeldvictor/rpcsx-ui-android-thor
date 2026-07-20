@@ -203,6 +203,19 @@ foreach ($file in $logFiles) {
     }
 }
 $guestLogText = $guestLogLines -join "`n"
+$guestLogLatestEmulatorSeconds = $null
+foreach ($line in $guestLogLines) {
+    if ($line -match '(?<!\d)(?<hours>\d+):(?<minutes>\d{2}):(?<seconds>\d{2})[.](?<fraction>\d{6})(?!\d)') {
+        $timestampSeconds =
+            ([double]$Matches.hours * 3600) +
+            ([double]$Matches.minutes * 60) +
+            [double]$Matches.seconds +
+            ([double]$Matches.fraction / 1000000)
+        if ($null -eq $guestLogLatestEmulatorSeconds -or $timestampSeconds -gt $guestLogLatestEmulatorSeconds) {
+            $guestLogLatestEmulatorSeconds = $timestampSeconds
+        }
+    }
+}
 $activationRequirements = [ordered]@{
     "bounded RSX preload" = 'Android shader cache preload limit:\s*256 of'
     "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*500 ms'
@@ -300,6 +313,13 @@ if ($titleProof) {
         $titleClassificationError = $_.Exception.Message
     }
 }
+$guestLogEvidenceIncomplete = (
+    $titleMenuPresent -and
+    $gateStable -and
+    $activationMissing.Count -gt 0 -and
+    $null -ne $guestLogLatestEmulatorSeconds -and
+    $guestLogLatestEmulatorSeconds -lt 1.0
+)
 
 $macroFailure = $macroFailureLines.Count -gt 0
 $stopEvidence = Test-Path -LiteralPath (Join-Path $resolvedCaptureDir "macro-stop.txt") -PathType Leaf
@@ -339,6 +359,8 @@ $status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -a
     "thermal-stop-at-title"
 } elseif ($fatalHits.Count -gt 0) {
     "fatal-at-title"
+} elseif ($guestLogEvidenceIncomplete) {
+    "title-proof-log-incomplete"
 } elseif (-not $profileActivationReady) {
     "activation-incomplete"
 } elseif (-not $gateStable -or -not $stoppedAfterProof -or $macroFailure) {
@@ -361,6 +383,8 @@ $result = [pscustomobject]@{
     title_classification_error = $titleClassificationError
     ppu_ready_gate_stable = $gateStable
     stopped_after_proof = $stoppedAfterProof
+    guest_log_latest_emulator_seconds = $guestLogLatestEmulatorSeconds
+    guest_log_evidence_incomplete = $guestLogEvidenceIncomplete
     post_proof_pid_value = $postPidValue
     max_silicon_temperature_c = $maxSiliconTemperatureC
     thermal_failure_lines = @($thermalFailureLines)

@@ -5,13 +5,14 @@ $sourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/logs.cpp"
 $source = Get-Content -LiteralPath $sourcePath -Raw
 
 $requiredFragments = @(
+    "constexpr atomic_wait_timeout s_android_log_writer_liveness_timeout{1'000'000'000};",
     'atomic_t<u32> m_writer_waiting{0};',
     'void wake_writer()',
     'm_writer_waiting.load() && m_writer_waiting.exchange(0)',
     'm_writer_waiting.notify_one();',
     'm_writer_waiting = 1;',
     'if (m_buf != bufv || m_out == umax)',
-    'm_writer_waiting.wait(1);',
+    'm_writer_waiting.wait(1, s_android_log_writer_liveness_timeout);',
     'std::this_thread::sleep_for(10ms);'
 )
 
@@ -31,8 +32,8 @@ if ([string]::IsNullOrWhiteSpace($wake) -or
     throw "Writer wake must avoid notification unless the Android writer is armed."
 }
 
-if ($source -notmatch 'm_writer_waiting = 1;\s*if \(m_buf != bufv \|\| m_out == umax\)\s*\{\s*m_writer_waiting = 0;\s*continue;\s*\}\s*m_writer_waiting\.wait\(1\);\s*m_writer_waiting = 0;') {
-    throw "Writer wait no longer arms before rechecking work/shutdown or clears after waking."
+if ($source -notmatch 'm_writer_waiting = 1;\s*if \(m_buf != bufv \|\| m_out == umax\)\s*\{\s*m_writer_waiting = 0;\s*continue;\s*\}\s*m_writer_waiting\.wait\(1, s_android_log_writer_liveness_timeout\);\s*m_writer_waiting = 0;') {
+    throw "Writer wait no longer arms before rechecking work/shutdown, uses its one-second liveness bound, or clears after waking."
 }
 
 $commitIndex = $source.IndexOf('m_buf += (size * s_log_size) - size;')
@@ -123,7 +124,7 @@ for ($index = 0; $index -lt $lines.Count; $index++) {
         $isDesktopOnly = $isDesktopOnly -or $frame.DesktopOnly
     }
 
-    if ($line -match 'm_writer_waiting|wake_writer\(' -and -not $isAndroidOnly) {
+    if ($line -match 'm_writer_waiting|wake_writer\(|s_android_log_writer_liveness_timeout' -and -not $isAndroidOnly) {
         throw "Android event-wake state leaked into desktop at logs.cpp:$($index + 1): $trimmed"
     }
 
@@ -147,4 +148,4 @@ if ($errors.Count -ne 0) {
     throw "PowerShell contract parse failed: $($errors[0].Message)"
 }
 
-Write-Output "Thor Android event-driven log writer contract passed: idle polling is desktop-only, work commits wake immediately, and shutdown cannot strand the writer."
+Write-Output "Thor Android event-driven log writer contract passed: work commits wake immediately, a one-second liveness fallback preserves small final batches, desktop keeps its original poll, and shutdown cannot strand the writer."

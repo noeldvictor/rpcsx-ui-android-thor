@@ -189,7 +189,7 @@ function Write-ReadyFixture {
         "Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.",
         "Thor SPU cache compile budget enabled for BLUS30161: 100 ms.",
         "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes).",
-        "Set DAZ and FTZ: true"
+        "·! 0:00:03.000000 SYS: Set DAZ and FTZ: true"
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8
     Write-TitleProofPng -Path (Join-Path $Directory "03-title-proof.png")
 }
@@ -230,6 +230,17 @@ try {
     $ftzMissing = & $analyzerPath -CaptureDir $ftzMissingDir
     if ($ftzMissing.status -ne "activation-incomplete" -or $ftzMissing.ready_for_comparison -or $ftzMissing.activation_missing -notcontains "managed hardware FTZ") {
         throw "Synthetic managed-profile FTZ omission did not fail closed."
+    }
+
+    $logIncompleteDir = Join-Path $tempRoot "title-proof-log-incomplete"
+    Copy-Item -LiteralPath $readyDir -Destination $logIncompleteDir -Recurse
+    "·! 0:00:00.010546 Input: startup log writer stopped before activation evidence" |
+        Set-Content -LiteralPath (Join-Path $logIncompleteDir "post-RPCSX.log") -Encoding UTF8
+    $logIncomplete = & $analyzerPath -CaptureDir $logIncompleteDir
+    if ($logIncomplete.status -ne "title-proof-log-incomplete" -or $logIncomplete.ready_for_comparison -or
+        -not $logIncomplete.guest_log_evidence_incomplete -or $logIncomplete.guest_log_latest_emulator_seconds -ge 1.0 -or
+        $logIncomplete.activation_missing.Count -ne 11) {
+        throw "Synthetic stable title with a stalled runtime log was not classified precisely and fail closed."
     }
 
     $runningDir = Join-Path $tempRoot "still-running"
@@ -283,4 +294,4 @@ try {
     }
 }
 
-Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, managed FTZ, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
+Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, managed FTZ, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."

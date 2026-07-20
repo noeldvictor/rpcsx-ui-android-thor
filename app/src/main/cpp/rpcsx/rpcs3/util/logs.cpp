@@ -84,6 +84,11 @@ namespace logs
 	constexpr u64 s_log_size = 32 * 1024 * 1024;
 #endif
 	constexpr u64 s_log_write_chunk_size = 32 * 1024;
+#ifdef ANDROID
+	// Notification is the fast path. This bounded fallback prevents a small
+	// final batch from remaining memory-only until Android force-stops the app.
+	constexpr atomic_wait_timeout s_android_log_writer_liveness_timeout{1'000'000'000};
+#endif
 	static_assert(s_log_size * s_log_size > s_log_size && (s_log_size & (s_log_size - 1)) == 0); // Assert on an overflowing value
 	static_assert(s_log_write_chunk_size < s_log_size);
 
@@ -557,7 +562,7 @@ logs::file_writer::file_writer(const std::string& name, u64 max_size)
 						continue;
 					}
 
-					m_writer_waiting.wait(1);
+					m_writer_waiting.wait(1, s_android_log_writer_liveness_timeout);
 					m_writer_waiting = 0;
 #else
 					std::this_thread::sleep_for(10ms);

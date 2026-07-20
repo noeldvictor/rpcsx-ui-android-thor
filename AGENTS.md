@@ -964,4 +964,33 @@ Put dated run details in `debug-experiments/`, not here.
   Wait for a separate independently cool interval before the one
   self-stopping runtime proof. Detailed ledger:
   `debug-experiments/20260719-thor-spu-budget-thermal-counterproof.md`.
+- Exact installed APK `24FCC44E...736FE2` completed the single 2026-07-20
+  `ThorCoolTitle` route. Capture `20260720-104152-thor-input-custom` passed
+  exact on-device APK identity and preflight at `32.3 -> 31.9 -> 31.9 C`,
+  established PID `13727`, first detected the title at `19.295 s`, held it
+  for the required second sample at `24.710 s`, saved exact title image
+  `F0D03AC6...5B73`, and self-stopped. Silicon peaked at `48.2 C`, title
+  proof was `45.8 C`, post-stop was `40.9 C`, and no thermal guard fired.
+  This is a large title/thermal-progress signal versus the two preceding
+  `71.1/72.7 C` stops before title, but not a comparison-ready speed or
+  temperature win: the saved `RPCSX.log` was only `2,671` bytes and stopped
+  at emulator time `0.010546 s`, so all 11 native activation rows and full
+  fatal cleanliness are unproven. Classify it
+  `title-proof-log-incomplete` / `not-comparable`; grant no FPS, field,
+  battle, menu, flicker, gameplay, or stability credit. No second device
+  route ran.
+- The Android event-driven Log Writer now retains notification as its fast
+  path but wakes at most once per second as a liveness fallback, preventing a
+  small final batch from remaining memory-only until Android force-stop. This
+  is still about `100/s -> <=1/s` idle wakeups versus the original desktop
+  10 ms polling policy. The analyzer now diagnoses a stable title with a
+  sub-one-second runtime log as `title-proof-log-incomplete`. All `59/59`
+  host contracts, optimized ARM64 native build, export/optimized-variant
+  checks, and ARM64-only APK identity pass. Exact uninstalled successor APK
+  `E69ABCB0...8073` (`72,839,336` bytes) packages merged core
+  `857B0A5A...877E` (`1,304,689,776` bytes) as stripped entry
+  `CC2FF22E...A3CA` (`63,015,752` bytes). Installed APK remains
+  `24FCC44E...736FE2`; use a later independently cool install-only round,
+  then reserve another cool round for one self-stopping proof. Detailed
+  ledger: `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
