@@ -50,6 +50,18 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
+- Exact installed APK `E69ABCB0...8073` reached a stable Eternal Sonata title
+  in `24.044 s` at a `48.2 C` silicon maximum and self-stopped, but its log
+  again ended at `0.009551 s`; classify the route `title-proof-log-incomplete`
+  / `not-comparable` with no speed or thermal-win credit. The one-second writer
+  timeout is disproven as sufficient. Host-only successor `691EE8A7...F5E2D3`
+  adds a debug-only ordered log-sync broadcast: JNI calls core `sync_all()`,
+  Android wakes the event-driven writer before waiting, and guest-health pulls
+  fail closed unless synchronization succeeds. ARM64 ThorTest, focused
+  contracts, and the 35-export surface pass. Do not launch this uninstalled
+  successor. In one later cool round install it without launch; reserve a
+  separate cool round for one self-stopping title proof. Detailed ledger:
+  `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending
   CPU on gzip, while desktop writes stay compressed and Android reads retain
   legacy `.gz` fallback. The explicit stopped-emulator Prepare Cache action

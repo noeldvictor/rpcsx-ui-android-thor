@@ -18,6 +18,14 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name="net.rpcsx.ThorDebugLogReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.rpcsx.THOR_DEBUG_SYNC_LOG" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="net.rpcsx.ThorDevCoreOverrideProvider"
             android:authorities="${applicationId}.thor-dev-core-override"

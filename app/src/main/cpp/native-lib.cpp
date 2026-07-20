@@ -30,6 +30,7 @@ struct RPCSXApi {
   bool (*initialize)(std::string_view rootDir, std::string_view user);
   bool (*processCompilationQueue)(JNIEnv *env);
   bool (*startMainThreadProcessor)(JNIEnv *env);
+  bool (*syncLogs)();
   bool (*collectGameInfo)(JNIEnv *env, std::string_view rootDir,
                           long progressId);
   void (*shutdown)();
@@ -105,6 +106,7 @@ struct RPCSXLibrary : RPCSXApi {
     result.initialize = reinterpret_cast<decltype(initialize)>(dlsym(handle, "_rpcsx_initialize"));
     result.processCompilationQueue = reinterpret_cast<decltype(processCompilationQueue)>(dlsym(handle, "_rpcsx_processCompilationQueue"));
     result.startMainThreadProcessor = reinterpret_cast<decltype(startMainThreadProcessor)>(dlsym(handle, "_rpcsx_startMainThreadProcessor"));
+    result.syncLogs = reinterpret_cast<decltype(syncLogs)>(dlsym(handle, "_rpcsx_syncLogs"));
     result.collectGameInfo = reinterpret_cast<decltype(collectGameInfo)>(dlsym(handle, "_rpcsx_collectGameInfo"));
     result.shutdown = reinterpret_cast<decltype(shutdown)>(dlsym(handle, "_rpcsx_shutdown"));
     result.boot = reinterpret_cast<decltype(boot)>(dlsym(handle, "_rpcsx_boot"));
@@ -258,6 +260,15 @@ Java_net_rpcsx_RPCSX_processCompilationQueue(JNIEnv *env, jobject) {
 extern "C" JNIEXPORT jboolean JNICALL
 Java_net_rpcsx_RPCSX_startMainThreadProcessor(JNIEnv *env, jobject) {
   return rpcsxLib.startMainThreadProcessor(env);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_syncLogs(JNIEnv *, jobject) {
+  if (rpcsxLib.syncLogs == nullptr) {
+    return false;
+  }
+
+  return rpcsxLib.syncLogs();
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_collectGameInfo(

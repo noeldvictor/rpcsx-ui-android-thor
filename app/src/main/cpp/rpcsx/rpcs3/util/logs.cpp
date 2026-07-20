@@ -751,6 +751,12 @@ void logs::file_writer::sync()
 		return;
 	}
 
+#ifdef ANDROID
+	// Evidence pulls explicitly synchronize the listener. Wake the event-driven
+	// writer before waiting so a scheduler-delayed batch cannot remain queued.
+	wake_writer();
+#endif
+
 	// Wait for the writer thread
 	while ((m_out % s_log_size) * s_log_size != m_buf % (s_log_size * s_log_size))
 	{

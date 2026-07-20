@@ -2169,6 +2169,11 @@ extern "C" bool _rpcsx_startMainThreadProcessor(JNIEnv *env) {
   return true;
 }
 
+extern "C" bool _rpcsx_syncLogs() {
+  logs::listener::sync_all();
+  return true;
+}
+
 extern "C" bool _rpcsx_collectGameInfo(JNIEnv *env, std::string_view rootDir,
                                        long progressId) {
 

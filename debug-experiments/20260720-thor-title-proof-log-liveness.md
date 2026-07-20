@@ -163,3 +163,66 @@ gameplay, stability, or temperature-win credit. The device round stopped after
 installation. In a separate independently cool round, the next permitted
 device action is one self-stopping `ThorCoolTitle` proof of this exact installed
 candidate, with durable activation/fatal-log evidence required for comparison.
+
+## Exact successor runtime counterproof
+
+A separate cool round ran the one permitted self-stopping title route against
+exact installed APK `E69ABCB0...8073`. Capture
+`debug-captures/android-speed-sprint/20260720-114321-thor-input-custom` proved:
+
+- installed and expected APK SHA-256 matched exactly;
+- preflight silicon was `32.7 -> 33.1 -> 33.1 C`, with a `33.1 C` maximum
+  and `+0.4 C` rise;
+- the first title candidate appeared at `18.517 s` and the stable candidate at
+  `24.044 s`;
+- final title proof SHA-256 was
+  `2BF2FDAA155E1ABF207ED4334A469EC4654E6FEBDC5FA74574A27E4ABCFAAEFD`;
+- maximum silicon was `48.2 C`, final proof silicon was `46.6 C`, and the
+  post-stop sample was `40.1 C`;
+- the exact macro reached `stop`, and the saved post-proof PID was absent; and
+- there were no property mismatches, thermal failures, or targeted fatal hits
+  in the available log prefix.
+
+The result remains `title-proof-log-incomplete` / `not-comparable`. The full
+post-stop log was again only `2,671` bytes, now ending at emulator timestamp
+`0.009551 s`; all 11 required activation rows were absent. This directly
+disproves the one-second background-wait timeout as a sufficient durability
+repair. The evidence is consistent with the low-priority writer failing to
+run during the startup compilation burst, but the capture proves only that
+notification plus timeout was insufficient, not the scheduler mechanism by
+itself. Grant no speed, FPS, thermal-win, flicker, gameplay, or stability
+credit from this route. No second device action ran.
+
+## Deterministic pre-pull log synchronization
+
+The next host-only repair no longer asks the evidence path to infer writer
+liveness from elapsed time:
+
+- a Thor debug-only broadcast invokes a new optional JNI/core `syncLogs` API;
+- the core calls `logs::listener::sync_all()`;
+- Android explicit sync wakes the event-driven file writer before waiting for
+  the ring buffer to drain, then performs the existing file sync;
+- `Assert-ThorGuestHealthy` performs this synchronous request before reading
+  `RPCSX.log`; and
+- the route force-stops and fails closed unless the ordered broadcast reports
+  native synchronization success.
+
+Normal gameplay adds no polling, timer, elevated writer priority, or producer
+flush. The hook exists only in the Thor debug harness and runs at an explicit
+evidence boundary.
+
+Host verification passed:
+
+- focused event-writer, debug-sync, cool-title, plain-log, single-open, export,
+  optimized-test-hook, and ARM64 APK contracts;
+- optimized ARM64-only ThorTest assembly in `124 s`;
+- `35` exact `_rpcsx_*` exports, `587` explicit relocations, `390` jump slots,
+  and `44,134` encoded relocation bytes; and
+- exact successor APK `691EE8A7...F5E2D3`, `72,841,008` bytes, merged core
+  `1DA06245...947409`, `1,304,691,520` bytes, and packaged core
+  `B42CB1EA...9C78B6`, `63,015,960` bytes.
+
+This successor is host-only and uninstalled. It receives no device credit.
+The next separately cool round is installation only: prove exact on-device APK
+SHA-256 and absent PID without launching. Reserve a different later cool round
+for one self-stopping title/log proof.

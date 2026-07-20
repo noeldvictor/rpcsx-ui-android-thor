@@ -3,6 +3,12 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $analyzerPath = Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1"
 $macroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
+$candidatePath = Join-Path $PSScriptRoot "thor_cool_title_candidate.psd1"
+$candidate = Import-PowerShellDataFile -LiteralPath $candidatePath
+if ([string]$candidate.ApkSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
+    throw "Thor cool-title candidate APK identity is invalid: $candidatePath"
+}
+$candidateApkSha256 = ([string]$candidate.ApkSha256).ToUpperInvariant()
 
 foreach ($path in @($analyzerPath, $macroPath)) {
     $tokens = $null
@@ -128,8 +134,8 @@ function Write-ReadyFixture {
     @(
         "package=net.rpcsx.easy",
         "remote_path=/data/app/example/net.rpcsx.easy/base.apk",
-        "expected_sha256=24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2",
-        "actual_sha256=24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2",
+        "expected_sha256=$candidateApkSha256",
+        "actual_sha256=$candidateApkSha256",
         "match=True"
     ) | Set-Content -LiteralPath (Join-Path $Directory "installed-apk-identity.txt") -Encoding UTF8
 
@@ -157,7 +163,7 @@ function Write-ReadyFixture {
         "- Vulkan preload cache hits only: on",
         "- Android RSX performance hint: off",
         "- Startup cache phase pacing: off",
-        "- Expected installed APK SHA-256: 24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2",
+        "- Expected installed APK SHA-256: $candidateApkSha256",
         "- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
     ) | Set-Content -LiteralPath (Join-Path $Directory "README.md") -Encoding UTF8
 

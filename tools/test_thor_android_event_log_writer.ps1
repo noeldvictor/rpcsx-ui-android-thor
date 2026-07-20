@@ -52,6 +52,14 @@ if ($shutdownIndex -lt 0 -or $shutdownWakeIndex -le $shutdownIndex -or
     throw "Logger shutdown must wake the idle writer before joining it."
 }
 
+$syncIndex = $source.IndexOf('void logs::file_writer::sync()')
+$syncWakeIndex = $source.IndexOf('wake_writer();', $syncIndex)
+$syncWaitIndex = $source.IndexOf('while ((m_out % s_log_size)', $syncIndex)
+if ($syncIndex -lt 0 -or $syncWakeIndex -le $syncIndex -or
+    $syncWaitIndex -le $syncWakeIndex) {
+    throw "Explicit Android log synchronization must wake the event-driven writer before waiting."
+}
+
 # Prove event-only lines compile only for Android while the original timed poll
 # remains in the desktop branch.
 $frames = [System.Collections.Generic.List[object]]::new()
@@ -148,4 +156,4 @@ if ($errors.Count -ne 0) {
     throw "PowerShell contract parse failed: $($errors[0].Message)"
 }
 
-Write-Output "Thor Android event-driven log writer contract passed: work commits wake immediately, a one-second liveness fallback preserves small final batches, desktop keeps its original poll, and shutdown cannot strand the writer."
+Write-Output "Thor Android event-driven log writer contract passed: work commits wake immediately, explicit sync wakes before waiting, desktop keeps its original poll, and shutdown cannot strand the writer."

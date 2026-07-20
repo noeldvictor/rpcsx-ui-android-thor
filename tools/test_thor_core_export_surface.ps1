@@ -154,6 +154,7 @@ $requiredExports = @(
     "_rpcsx_settingsSet",
     "_rpcsx_shutdown",
     "_rpcsx_startMainThreadProcessor",
+    "_rpcsx_syncLogs",
     "_rpcsx_surfaceEvent",
     "_rpcsx_systemInfo",
     "_rpcsx_toggleFastForward",

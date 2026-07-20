@@ -771,6 +771,24 @@ function Save-ThorGuestLogEvidence {
     }
 }
 
+function Sync-ThorGuestLogEvidence {
+    param([string]$Label)
+
+    $safeLabel = New-ThorSafeLabel $Label
+    $syncOutput = @(
+        & $Adb shell "am broadcast --receiver-foreground -a net.rpcsx.THOR_DEBUG_SYNC_LOG -n $Package/net.rpcsx.ThorDebugLogReceiver" 2>&1
+    )
+    $syncExitCode = $LASTEXITCODE
+    $syncPath = Join-Path $captureDir "guest-log-sync-$safeLabel.txt"
+    $syncOutput | Set-Content -LiteralPath $syncPath -Encoding UTF8
+    $syncText = $syncOutput -join "`n"
+
+    if ($syncExitCode -ne 0 -or $syncText -notmatch 'Broadcast completed:\s*result=-1(?:,|\s).*data="synced"') {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Guest log synchronization failed at '$Label'. RPCSX was force-stopped; see guest-log-sync-$safeLabel.txt."
+    }
+}
+
 function Save-ThorFullGuestLogEvidence {
     param([string]$Label)
 
@@ -801,6 +819,7 @@ function Assert-ThorGuestHealthy {
 
     $safeLabel = New-ThorSafeLabel $Label
     Assert-ThorProcessIdentity "guest-health-$safeLabel-pre"
+    Sync-ThorGuestLogEvidence $Label
     $evidence = Save-ThorGuestLogEvidence $Label
     $logTail = @($evidence.LogTail)
 
