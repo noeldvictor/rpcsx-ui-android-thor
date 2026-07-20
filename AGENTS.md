@@ -68,10 +68,25 @@ Put dated run details in `debug-experiments/`, not here.
   matched exactly, PID was absent before and after, and post-install
   battery/skin/silicon were `23.0/30.0/35.1 C`. No emulator launch ran and
   this banks identity only, with no speed, FPS, thermal-win, flicker, gameplay,
-  or stability credit. In a separately cool later round, run only one
+  or stability credit. The first later proof attempt refused before boot at
+  `32.7 -> 32.7 -> 33.9 C`: the `+1.2 C` preflight rise exceeded the strict
+  `+1.0 C` limit. RPCSX was force-stopped, PID was absent, and no retry or
+  second query ran. After a separately cool interval, retry only the same
   self-stopping title proof of exact installed `691EE8A7...F5E2D3`, requiring
   synchronized activation/fatal-log evidence. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
+- A host-only source successor makes the active frame-poll diagnostic logger
+  check its call counter before reading the monotonic clock. Saved matched
+  title evidence has `93,786` calls in `47.022 s` (`1,994.5/s`); one initial
+  probe plus one per `1,024` calls reduces representative outlined-logger and
+  clock probes to `92` (`>99.9%`) while preserving the first activation row
+  and existing five-second wall-time throttle. Direct ARM64 compilation and
+  disassembly
+  prove the `#0x3ff` call-site branch bypasses the outlined logger and
+  `get_system_time()`; all `61/61` Thor contracts pass. No APK was assembled,
+  installed, or launched, and the
+  exact installed candidate remains pinned for its next cool proof. Detailed
+  ledger: `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending
   CPU on gzip, while desktop writes stay compressed and Android reads retain
   legacy `.gz` fallback. The explicit stopped-emulator Prepare Cache action

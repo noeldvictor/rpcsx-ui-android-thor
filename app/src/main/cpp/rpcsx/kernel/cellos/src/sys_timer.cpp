@@ -31,6 +31,7 @@ namespace {
 
 constexpr u64 thor_es_frame_poll_wait_max_us = 1000;
 constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500;
+constexpr u64 thor_es_frame_poll_log_probe_mask = 1023;
 
 struct thor_es_frame_poll_wait_state {
   u32 ppu_id = 0;
@@ -162,6 +163,13 @@ u64 get_thor_es_frame_poll_handler_grace_us() {
   return grace_us;
 }
 
+bool should_probe_thor_es_frame_poll_log() noexcept {
+  // Keep the first activation row, then enter the outlined logger only once
+  // per 1024 calls before its existing wall-time throttle.
+  const u64 calls = g_thor_es_frame_poll_wait_state.calls;
+  return calls == 1 || (calls & thor_es_frame_poll_log_probe_mask) == 0;
+}
+
 void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
                                  u32 threshold, u64 vblank) {
   auto &state = g_thor_es_frame_poll_wait_state;
@@ -236,7 +244,9 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   if (!state.armed) {
     state.normal_pre_counter = counter;
     state.fallback_sleeps++;
-    log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+    if (should_probe_thor_es_frame_poll_log()) {
+      log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+    }
     return false;
   }
 
@@ -245,7 +255,9 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
     if (!is_thor_es_frame_poll_continuous_rearm_enabled()) {
       state.normal_pre_counter = counter;
       state.fallback_sleeps++;
-      log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+      if (should_probe_thor_es_frame_poll_log()) {
+        log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+      }
       return false;
     }
 
@@ -307,7 +319,9 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
     state.completed_vblank = after_vblank;
   }
 
-  log_thor_es_frame_poll_wait(ppu, after_counter, threshold, after_vblank);
+  if (should_probe_thor_es_frame_poll_log()) {
+    log_thor_es_frame_poll_wait(ppu, after_counter, threshold, after_vblank);
+  }
   return true;
 }
 

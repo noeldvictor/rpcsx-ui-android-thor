@@ -75,6 +75,11 @@ foreach ($timerContract in @(
 foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_wait_max_us = 1000',
     'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
+    'constexpr u64 thor_es_frame_poll_log_probe_mask = 1023',
+    'bool should_probe_thor_es_frame_poll_log() noexcept',
+    'const u64 calls = g_thor_es_frame_poll_wait_state.calls',
+    'calls == 1 ||',
+    '(calls & thor_es_frame_poll_log_probe_mask) == 0',
     'debug.rpcsx.thor.es_frame_wait',
     'debug.rpcsx.thor.es_frame_wait_grace_us',
     'debug.rpcsx.thor.es_frame_wait_continuous_rearm',
@@ -93,6 +98,37 @@ foreach ($mainContract in @(
     if (-not $mainTimer.Contains($mainContract)) {
         throw "Android frame-poll wait is missing its opt-in or bounded-wait contract: $mainContract"
     }
+}
+
+$waitFunctionStart = $mainTimer.IndexOf('bool try_thor_es_frame_poll_wait')
+$fallbackFunctionStart = $mainTimer.IndexOf(
+    'void observe_thor_es_frame_poll_fallback',
+    $waitFunctionStart)
+if ($waitFunctionStart -lt 0 -or $fallbackFunctionStart -le $waitFunctionStart) {
+    throw 'Could not isolate the Android frame-poll wait function.'
+}
+
+$waitFunction = $mainTimer.Substring(
+    $waitFunctionStart,
+    $fallbackFunctionStart - $waitFunctionStart)
+$logCalls = [regex]::Matches(
+    $waitFunction,
+    '(?m)^\s*log_thor_es_frame_poll_wait\(')
+$guardedLogCalls = [regex]::Matches(
+    $waitFunction,
+    '(?s)if \(should_probe_thor_es_frame_poll_log\(\)\) \{\s*log_thor_es_frame_poll_wait\([^;]+;\s*\}')
+if ($logCalls.Count -ne 3 -or $guardedLogCalls.Count -ne $logCalls.Count) {
+    throw 'Every Android frame-poll diagnostic logger call must be guarded by the cheap call-count probe.'
+}
+
+# The saved 20260719 title proof reached this many exact frame-poll calls.
+# One initial probe plus one probe per 1024 calls replaces a clock read on
+# every call without delaying the required first activation row.
+$representativeCallCount = 93787
+$representativeProbeCount = 1 + [math]::Floor($representativeCallCount / 1024)
+$representativeReduction = 1.0 - ($representativeProbeCount / $representativeCallCount)
+if ($representativeProbeCount -ne 92 -or $representativeReduction -lt 0.999) {
+    throw 'The Android frame-poll diagnostic clock throttle lost its representative >99.9% probe reduction.'
 }
 
 foreach ($upstreamContract in @(
@@ -202,4 +238,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, completion notification, counter-progress rearm, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, completion notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

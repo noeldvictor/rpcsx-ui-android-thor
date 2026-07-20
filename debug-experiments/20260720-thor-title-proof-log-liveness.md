@@ -291,3 +291,64 @@ flicker, gameplay, or stability credit. No retry or second device query ran.
 The next permitted device action, after a separately cool interval, is one
 self-stopping `ThorCoolTitle` proof of exact installed `691EE8A7...F5E2D3`,
 requiring synchronized success plus complete activation/fatal-log evidence.
+
+### 2026-07-20 - deterministic-sync-title-preflight-refusal
+
+- Status: failed
+- Scope: scene-route
+- Hypothesis: exact installed `691EE8A7...F5E2D3` was cool and stable enough
+  for one self-stopping title/log proof.
+- Changed files/settings: none; the hard-pinned `ThorCoolTitle` profile was
+  used unchanged.
+- Rollback: not applicable; RPCSX was force-stopped before boot.
+- Windows result: not applicable.
+- Thor result: the exact installed APK hash matched, but the three preflight
+  silicon samples were `32.7`, `32.7`, and `33.9 C`. The `+1.2 C` rise
+  exceeded the strict `+1.0 C` limit even though the `33.9 C` maximum remained
+  below the `35 C` launch ceiling. Battery and skin stayed at `23.0` and
+  `30.0 C`; the saved post-stop PID was absent.
+- Visual correctness: not reached; the emulator and game did not boot.
+- FPS/frame-time: none.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260720-122921-thor-input-custom`.
+- Decision: `preflight-refused-rise` / `not-comparable`. Grant no speed, FPS,
+  thermal-win, title, flicker, gameplay, or stability credit. No retry or
+  second device query ran.
+- Next: after a separately cool interval, retry only one exact installed
+  `ThorCoolTitle` proof with the same safety limits.
+
+### 2026-07-20 - frame-poll-log-clock-throttle
+
+- Status: proposed
+- Scope: windows-android-ab
+- Hypothesis: retain the active frame-poll optimization and its required first
+  activation row while removing routine monotonic-clock reads from its
+  diagnostic throttle on Android.
+- Changed files/settings:
+  `app/src/main/cpp/rpcsx/kernel/cellos/src/sys_timer.cpp` now admits the first
+  log probe and one probe per `1,024` calls before applying the unchanged
+  five-second wall-time throttle;
+  `tools/test_thor_es_frame_poll_wait.ps1` locks the ordering and reduction.
+- Rollback: remove `thor_es_frame_poll_log_probe_mask` and the early call-count
+  predicate; wait semantics and configuration are otherwise untouched.
+- Windows result: saved matched title log
+  `debug-captures/windows-lab/20260719-014837-es-frame-poll-wait1ms-title/RPCS3.log`
+  contains a `93,786`-call delta over `47.022 s`, or `1,994.5 calls/s`. The
+  representative outlined-logger and clock-probe counts both fall from
+  `93,786` to `92`, over `99.9%`.
+- Thor result: none; this source successor is not in the installed APK.
+- Visual correctness: unchanged by construction; the edit touches diagnostics
+  after the exact title/thread/CIA/object gate, not guest wait behavior.
+- FPS/frame-time: no device or FPS claim.
+- Capture paths: the saved Windows log above; ARM64 temporary object
+  `rpcsx-thor-frame-log-throttle-sys_timer.o` is ignored build evidence only.
+- Decision: host-verified `stackable-cpu-pressure`, not a measured speed win.
+  Direct optimized ARM64 compilation passed with only existing deprecation
+  warnings. Object size is `1,698,616` bytes, SHA-256
+  `2752E4CDA79D73CD455EE034C7BE1E5AE8ED5C66E788123BA69E5969F39EF10A`.
+  ARM64 disassembly places the `#0x3ff` call-site branch before the outlined
+  logger and therefore before `get_system_time()`. All `61/61` Thor host
+  contracts pass.
+- Next: keep exact installed `691EE8A7...F5E2D3` frozen for its separately
+  cool deterministic-log proof. Only after that result should this successor
+  be assembled, pinned, and considered for a later install/proof round.
