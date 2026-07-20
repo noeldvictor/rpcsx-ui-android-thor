@@ -398,10 +398,44 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   `576C5108E8BA9B9DE2F31AE7F4A69910433FE79477ADC5AC477E9A4282F3D5F1`
   / `63,015,912` bytes. Artifact identity, ARM64 ABI, optimized variant,
   checkpoint durability, event writer, the 35-export surface, and all `61/61`
-  Thor host contracts pass. No
-  ADB query, install, launch, or Thor contact ran in this host repair/build.
+  Thor host contracts pass. No ADB query, install, launch, or Thor contact ran
+  in this host repair/build.
 - Next: after a separately cool interval, perform only a strict no-launch
   installation of exact APK `71CFA42A...5BD12B`, proving installed hash and
   absent PID. Reserve one later cool round for the self-stopping title/log
   proof; credit FPS or temperature only if the exact checkpoint and all
   activation/correctness evidence are durable.
+
+### 2026-07-20 - durable-checkpoint-install-only
+
+- Status: android-pass
+- Scope: config-driver
+- Hypothesis: exact successor `71CFA42A...5BD12B` can replace the predecessor
+  without launching RPCSX and while staying inside the strict cool boundary.
+- Changed files/settings: installed the exact pinned ThorTest APK with
+  `adb install -r`; no emulator setting or runtime property was changed.
+- Rollback: reinstall a previously pinned exact APK through the same strict
+  no-launch workflow; no rollback is currently needed.
+- Windows result: host artifact contract already proved APK, merged core,
+  stripped core, and APK-entry identity.
+- Thor result: strict no-boot gate `20260720-134017-thor-input-strict-cool-gate`
+  passed silicon samples `33.5`, `33.9`, and `33.9 C`, maximum `33.9 C`, rise
+  `+0.4 C`; battery/skin stayed `24.0/30.0 C`. Install capture
+  `20260720-134030-durable-log-checkpoint-thortest-apk-install` reports
+  `installed-exact-no-launch`; expected, host, and installed SHA-256 are all
+  `71CFA42A0F88AC378B8AB98F8198D067814B45D7F0DC974426D16049425BD12B`.
+  PID was absent before and after; post-install battery/skin/silicon were
+  `24.0/30.0/35.7 C`.
+- Visual correctness: not exercised; no activity or game launched.
+- FPS/frame-time: none.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260720-134017-thor-input-strict-cool-gate`;
+  `debug-captures/android-speed-sprint/20260720-134030-durable-log-checkpoint-thortest-apk-install`.
+- Decision: `installed-exact-no-launch` / `route-tooling`. Installation banks
+  device identity only and grants no speed, FPS, thermal-win, flicker,
+  gameplay, or stability credit. Stop this device round; do not query, retry,
+  or launch.
+- Next: after a separate independently cool interval, run exactly one
+  self-stopping `ThorCoolTitle` proof. Require the exact durable sync
+  checkpoint plus activation, fatal-log, stable-title, PID-stop, visual, and
+  thermal evidence before any comparison or performance credit.

@@ -67,13 +67,16 @@ Put dated run details in `debug-experiments/`, not here.
   reduces representative outlined-logger and clock probes to `92` (`>99.9%`)
   while preserving the first activation row and five-second throttle. ARM64
   disassembly proves the call-site branch bypasses both the outlined logger
-  and `get_system_time()`. Combined host-only successor APK
+  and `get_system_time()`. Exact successor APK
   `71CFA42A...5BD12B` is `72,841,908` bytes; merged core
   `9F58A316...D2E43D` is `1,304,693,416` bytes; stripped/package core
-  `576C5108...F3D5F1` is `63,015,912` bytes. It is uninstalled and has no
-  measured FPS or thermal credit. After a separately cool interval, install
-  only this exact APK without launch; reserve runtime proof for another cool
-  round. Detailed ledger:
+  `576C5108...F3D5F1` is `63,015,912` bytes. It is now installed under strict
+  no-launch gate `20260720-134017`: silicon was `33.5 -> 33.9 -> 33.9 C`
+  (maximum `33.9 C`, rise `+0.4 C`). Host, expected, and installed hashes
+  match; PID was absent before/after, no activity launched, and post-install
+  battery/skin/silicon were `24.0/30.0/35.7 C`. Installation grants no
+  measured FPS or thermal credit. Reserve one self-stopping title/log proof
+  for a separate independently cool round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending
