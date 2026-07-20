@@ -139,3 +139,27 @@ interval, spend one round only on strict no-launch installation of exact APK
 different cool round for one self-stopping `ThorCoolTitle` proof. Until that
 proof captures all activation/fatal evidence, grant no sustained FPS,
 temperature-win, flicker, field, battle, menu, gameplay, or stability credit.
+
+## Exact no-launch successor installation
+
+A later independently cool install-only round used strict gate capture
+`debug-captures/android-speed-sprint/20260720-113643-thor-input-strict-cool-gate`.
+Its three silicon samples were `32.7`, `32.3`, and `32.7 C`, for a `32.7 C`
+maximum and `0.0 C` rise. The gate did not boot the emulator.
+
+Install capture
+`debug-captures/android-speed-sprint/20260720-113655-log-liveness-thortest-apk-install`
+then proved:
+
+- status `installed-exact-no-launch`;
+- host and installed `base.apk` SHA-256 both
+  `E69ABCB05E2028C32197D4358E94F0EA8AF2E42366F75D8335AE40BB7A208073`;
+- PID absent before and after installation;
+- no emulator launch and no install failure; and
+- post-install battery `23.0 C`, skin `30.0 C`, and silicon `34.7 C`.
+
+This banks exact identity only. It grants no runtime, title, FPS, flicker,
+gameplay, stability, or temperature-win credit. The device round stopped after
+installation. In a separate independently cool round, the next permitted
+device action is one self-stopping `ThorCoolTitle` proof of this exact installed
+candidate, with durable activation/fatal-log evidence required for comparison.
