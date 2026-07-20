@@ -265,3 +265,29 @@ the only new change after the prior audit is macOS/MoltenVK-specific. No new
 Android/ARM64 performance slice is available to stack before this candidate is
 measured. No build, APK install, emulator launch, ADB query, or Thor access ran
 in this host round. Exact candidate `691EE8A7...F5E2D3` remains uninstalled.
+
+## Exact deterministic-sync installation
+
+A later independently cool install-only round passed strict gate capture
+`debug-captures/android-speed-sprint/20260720-122048-thor-input-strict-cool-gate`.
+Its silicon samples were `33.5`, `34.3`, and `33.9 C`, for a `34.3 C` maximum
+and `+0.4 C` rise. Battery and skin stayed at `23.0` and `30.0 C`.
+`BootGame` was false and RPCSX was force-stopped.
+
+Install capture
+`debug-captures/android-speed-sprint/20260720-122101-deterministic-log-sync-thortest-apk-install`
+proved:
+
+- status `installed-exact-no-launch`;
+- expected, host, and installed `base.apk` SHA-256 all exactly
+  `691EE8A725A0B545BF98BDEA03998CD4CDA7D34ABB48A6FF650D0F01F4F5E2D3`;
+- APK size `72,841,008` bytes;
+- PID absent before and after installation;
+- no emulator launch and no installation failure; and
+- post-install battery `23.0 C`, skin `30.0 C`, and silicon `35.1 C`.
+
+This banks exact identity only. It grants no runtime, speed, FPS, thermal-win,
+flicker, gameplay, or stability credit. No retry or second device query ran.
+The next permitted device action, after a separately cool interval, is one
+self-stopping `ThorCoolTitle` proof of exact installed `691EE8A7...F5E2D3`,
+requiring synchronized success plus complete activation/fatal-log evidence.

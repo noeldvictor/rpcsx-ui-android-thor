@@ -54,18 +54,23 @@ Put dated run details in `debug-experiments/`, not here.
   in `24.044 s` at a `48.2 C` silicon maximum and self-stopped, but its log
   again ended at `0.009551 s`; classify the route `title-proof-log-incomplete`
   / `not-comparable` with no speed or thermal-win credit. The one-second writer
-  timeout is disproven as sufficient. Host-only successor `691EE8A7...F5E2D3`
-  adds a debug-only ordered log-sync broadcast: JNI calls core `sync_all()`,
-  Android wakes the event-driven writer before waiting, and guest-health pulls
-  fail closed unless synchronization succeeds. ARM64 ThorTest, focused
-  contracts, and the 35-export surface pass. A host artifact contract now
-  proves the pinned APK, merged core, stripped core, and packaged APK entry
-  length/hash as one identity gate; all `61/61` Thor contracts pass. Fresh
-  official RPCS3 `origin/master` audit through `ee37ef277` found only a
-  macOS/MoltenVK update beyond the already-audited state, so there is no new
-  Android/ARM64 performance slice to stack. Do not launch this uninstalled
-  successor. In one later cool round install it without launch; reserve a
-  separate cool round for one self-stopping title proof. Detailed ledger:
+  timeout is disproven as sufficient. Successor `691EE8A7...F5E2D3` adds a
+  debug-only ordered log-sync broadcast: JNI calls core `sync_all()`, Android
+  wakes the event-driven writer before waiting, and guest-health pulls fail
+  closed unless synchronization succeeds. ARM64 ThorTest, focused contracts,
+  and the 35-export surface pass. A host artifact contract proves the pinned
+  APK, merged core, stripped core, and packaged APK entry length/hash as one
+  identity gate; all `61/61` Thor contracts pass. Fresh official RPCS3
+  `origin/master` audit through `ee37ef277` found only a macOS/MoltenVK update
+  beyond the already-audited state, so there is no new Android/ARM64
+  performance slice to stack. A later strict no-launch install passed gate
+  samples `33.5 -> 34.3 -> 33.9 C`; host, expected, and installed APK hashes
+  matched exactly, PID was absent before and after, and post-install
+  battery/skin/silicon were `23.0/30.0/35.1 C`. No emulator launch ran and
+  this banks identity only, with no speed, FPS, thermal-win, flicker, gameplay,
+  or stability credit. In a separately cool later round, run only one
+  self-stopping title proof of exact installed `691EE8A7...F5E2D3`, requiring
+  synchronized activation/fatal-log evidence. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending
   CPU on gzip, while desktop writes stay compressed and Android reads retain
