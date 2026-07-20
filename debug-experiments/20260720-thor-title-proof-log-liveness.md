@@ -243,3 +243,25 @@ query ran. Exact candidate `691EE8A7...F5E2D3` remains host-only and receives
 no device, speed, FPS, thermal-win, flicker, gameplay, or stability credit.
 After a later independently cool interval, retry only the strict no-launch
 installation; reserve runtime proof for another separate cool round.
+
+## Host artifact identity and upstream audit
+
+Host-only follow-up added
+`tools/test_thor_cool_title_candidate_artifact.ps1`. It validates the pinned
+candidate data file and fails closed unless all four identities agree:
+
+- APK `691EE8A7...F5E2D3`, `72,841,008` bytes;
+- merged core `1DA06245...947409`, `1,304,691,520` bytes;
+- stripped core `B42CB1EA...9C78B6`, `63,015,960` bytes; and
+- the APK's single ARM64 core entry with the same stripped length/hash.
+
+All `61/61` `test_thor_*.ps1` contracts pass, including the exact artifact,
+cool-title profile, deterministic sync, no-launch installer, thermal, visual,
+ABI, export, and optimized-variant gates. The candidate APK/core bytes and
+pinned SHA-256 values are unchanged.
+
+A fresh official RPCS3 fetch advanced `origin/master` through `ee37ef277`;
+the only new change after the prior audit is macOS/MoltenVK-specific. No new
+Android/ARM64 performance slice is available to stack before this candidate is
+measured. No build, APK install, emulator launch, ADB query, or Thor access ran
+in this host round. Exact candidate `691EE8A7...F5E2D3` remains uninstalled.

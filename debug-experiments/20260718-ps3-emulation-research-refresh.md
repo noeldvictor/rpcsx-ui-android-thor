@@ -95,3 +95,26 @@ Reference Windows proof command:
 ```
 
 No Windows or Thor gameplay run was needed for this research/host-source round.
+
+## 2026-07-20 Official upstream refresh
+
+A network refresh advanced official RPCS3 `origin/master` from `357b7d446` to
+`ee37ef277`. The only new commit was a macOS-only MoltenVK 1.4.2 package and
+Game Mode change. It has no Android, ARM64, SPU, PPU, RSX, Vulkan-runtime, or
+scheduler source delta applicable to AYN Thor.
+
+The preceding official ARM64/SPU performance families were checked against the
+current fork's semantic anchors, including ROTQBY/TBL, I8MM GBH/GBB, ARM64
+checksum reduction, hardware wait helpers, LQX/LQD/STQX/STQD canonicalization,
+SELB, SHUFB splats, KnownFPClass, FMA dependency selection, thread identity,
+and local-store mirrors. They are already represented in the current source or
+have a recorded title-specific adaptation. Do not duplicate them under a new
+name.
+
+The primary-research conclusion remains unchanged: selective native handling
+and coordination reduction are useful only at measured hot, low-transition
+boundaries. The current candidate already carries the correctness-clean
+VBlank-assisted frame-poll wait and other proven host reductions. Preserve the
+one-change proof boundary until its deterministic log-sync successor produces
+comparison-complete Thor evidence; broad GPU offload, global scheduler changes,
+and speculative worker reductions remain parked.

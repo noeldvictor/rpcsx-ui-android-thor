@@ -58,7 +58,12 @@ Put dated run details in `debug-experiments/`, not here.
   adds a debug-only ordered log-sync broadcast: JNI calls core `sync_all()`,
   Android wakes the event-driven writer before waiting, and guest-health pulls
   fail closed unless synchronization succeeds. ARM64 ThorTest, focused
-  contracts, and the 35-export surface pass. Do not launch this uninstalled
+  contracts, and the 35-export surface pass. A host artifact contract now
+  proves the pinned APK, merged core, stripped core, and packaged APK entry
+  length/hash as one identity gate; all `61/61` Thor contracts pass. Fresh
+  official RPCS3 `origin/master` audit through `ee37ef277` found only a
+  macOS/MoltenVK update beyond the already-audited state, so there is no new
+  Android/ARM64 performance slice to stack. Do not launch this uninstalled
   successor. In one later cool round install it without launch; reserve a
   separate cool round for one self-stopping title proof. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
