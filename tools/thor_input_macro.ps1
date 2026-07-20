@@ -782,10 +782,16 @@ function Sync-ThorGuestLogEvidence {
     $syncPath = Join-Path $captureDir "guest-log-sync-$safeLabel.txt"
     $syncOutput | Set-Content -LiteralPath $syncPath -Encoding UTF8
     $syncText = $syncOutput -join "`n"
+    $syncMatch = [regex]::Match($syncText, 'Broadcast completed:\s*result=-1(?:,|\s).*data="checkpoint:(\d+)"')
 
-    if ($syncExitCode -ne 0 -or $syncText -notmatch 'Broadcast completed:\s*result=-1(?:,|\s).*data="synced"') {
+    if ($syncExitCode -ne 0 -or -not $syncMatch.Success) {
         & $Adb shell am force-stop $Package | Out-Null
         throw "Guest log synchronization failed at '$Label'. RPCSX was force-stopped; see guest-log-sync-$safeLabel.txt."
+    }
+
+    return [PSCustomObject]@{
+        Sequence = [UInt64]$syncMatch.Groups[1].Value
+        Path = $syncPath
     }
 }
 
@@ -819,13 +825,19 @@ function Assert-ThorGuestHealthy {
 
     $safeLabel = New-ThorSafeLabel $Label
     Assert-ThorProcessIdentity "guest-health-$safeLabel-pre"
-    Sync-ThorGuestLogEvidence $Label
+    $syncEvidence = Sync-ThorGuestLogEvidence $Label
     $evidence = Save-ThorGuestLogEvidence $Label
     $logTail = @($evidence.LogTail)
 
     if (-not $evidence.Success) {
         & $Adb shell am force-stop $Package | Out-Null
         throw "Could not read the guest log at '$Label'. RPCSX was force-stopped; see guest-health-$safeLabel.log."
+    }
+
+    $checkpoint = "Thor debug log sync checkpoint: $($syncEvidence.Sequence)."
+    if (-not (($logTail -join "`n").Contains($checkpoint))) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Guest log checkpoint was not durable at '$Label'. RPCSX was force-stopped; see $($syncEvidence.Path) and guest-health-$safeLabel.log."
     }
 
     $fatalMatches = @(Get-ThorGuestFatalMatches -Lines $logTail)

@@ -2169,9 +2169,12 @@ extern "C" bool _rpcsx_startMainThreadProcessor(JNIEnv *env) {
   return true;
 }
 
-extern "C" bool _rpcsx_syncLogs() {
+extern "C" u64 _rpcsx_syncLogs() {
+  static std::atomic<u64> sequence{0};
+  const u64 checkpoint = sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+  rpcsx_android.always()("Thor debug log sync checkpoint: %u.", checkpoint);
   logs::listener::sync_all();
-  return true;
+  return checkpoint;
 }
 
 extern "C" bool _rpcsx_collectGameInfo(JNIEnv *env, std::string_view rootDir,

@@ -765,6 +765,19 @@ void logs::file_writer::sync()
 			break;
 		}
 
+#ifdef ANDROID
+		// Explicit evidence synchronization must not depend on the background
+		// writer winning CPU time during a compilation burst. Drain a committed
+		// batch on the caller; flush() serializes with the writer through m_m.
+		const u64 bufv = m_buf;
+		if (!(bufv % s_log_size) && flush(bufv))
+		{
+			continue;
+		}
+
+		wake_writer();
+#endif
+
 		std::this_thread::yield();
 	}
 

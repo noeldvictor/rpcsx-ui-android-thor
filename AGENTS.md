@@ -50,43 +50,32 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- Exact installed APK `E69ABCB0...8073` reached a stable Eternal Sonata title
-  in `24.044 s` at a `48.2 C` silicon maximum and self-stopped, but its log
-  again ended at `0.009551 s`; classify the route `title-proof-log-incomplete`
-  / `not-comparable` with no speed or thermal-win credit. The one-second writer
-  timeout is disproven as sufficient. Successor `691EE8A7...F5E2D3` adds a
-  debug-only ordered log-sync broadcast: JNI calls core `sync_all()`, Android
-  wakes the event-driven writer before waiting, and guest-health pulls fail
-  closed unless synchronization succeeds. ARM64 ThorTest, focused contracts,
-  and the 35-export surface pass. A host artifact contract proves the pinned
-  APK, merged core, stripped core, and packaged APK entry length/hash as one
-  identity gate; all `61/61` Thor contracts pass. Fresh official RPCS3
-  `origin/master` audit through `ee37ef277` found only a macOS/MoltenVK update
-  beyond the already-audited state, so there is no new Android/ARM64
-  performance slice to stack. A later strict no-launch install passed gate
-  samples `33.5 -> 34.3 -> 33.9 C`; host, expected, and installed APK hashes
-  matched exactly, PID was absent before and after, and post-install
-  battery/skin/silicon were `23.0/30.0/35.1 C`. No emulator launch ran and
-  this banks identity only, with no speed, FPS, thermal-win, flicker, gameplay,
-  or stability credit. The first later proof attempt refused before boot at
-  `32.7 -> 32.7 -> 33.9 C`: the `+1.2 C` preflight rise exceeded the strict
-  `+1.0 C` limit. RPCSX was force-stopped, PID was absent, and no retry or
-  second query ran. After a separately cool interval, retry only the same
-  self-stopping title proof of exact installed `691EE8A7...F5E2D3`, requiring
-  synchronized activation/fatal-log evidence. Detailed ledger:
+- Exact installed APK `691EE8A7...F5E2D3` reached its first/stable Eternal
+  Sonata title candidates
+  in `19.745/25.482 s`, peaked at `49.0 C`, and self-stopped with PID absent.
+  The ordered broadcast returned `synced`, but the pulled guest log was still
+  only `2,671` bytes and ended at `0.009870 s`. Classify this
+  `title-proof-log-incomplete` / `not-comparable`: it proves no speed, FPS,
+  thermal, flicker, gameplay, or stability win. The host repair now assigns
+  every sync request a native checkpoint, drains a committed log batch on the
+  calling thread under the existing writer mutex, and accepts a pull only
+  when that exact checkpoint is durable. Direct ARM64 compilation, focused
+  contracts, the 35-export surface, and all `61/61` Thor host contracts pass.
+- The active frame-poll diagnostic logger checks its call counter before
+  reading the monotonic clock. Saved matched title evidence has `93,786` calls
+  in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls
+  reduces representative outlined-logger and clock probes to `92` (`>99.9%`)
+  while preserving the first activation row and five-second throttle. ARM64
+  disassembly proves the call-site branch bypasses both the outlined logger
+  and `get_system_time()`. Combined host-only successor APK
+  `71CFA42A...5BD12B` is `72,841,908` bytes; merged core
+  `9F58A316...D2E43D` is `1,304,693,416` bytes; stripped/package core
+  `576C5108...F3D5F1` is `63,015,912` bytes. It is uninstalled and has no
+  measured FPS or thermal credit. After a separately cool interval, install
+  only this exact APK without launch; reserve runtime proof for another cool
+  round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
-- A host-only source successor makes the active frame-poll diagnostic logger
-  check its call counter before reading the monotonic clock. Saved matched
-  title evidence has `93,786` calls in `47.022 s` (`1,994.5/s`); one initial
-  probe plus one per `1,024` calls reduces representative outlined-logger and
-  clock probes to `92` (`>99.9%`) while preserving the first activation row
-  and existing five-second wall-time throttle. Direct ARM64 compilation and
-  disassembly
-  prove the `#0x3ff` call-site branch bypasses the outlined logger and
-  `get_system_time()`; all `61/61` Thor contracts pass. No APK was assembled,
-  installed, or launched, and the
-  exact installed candidate remains pinned for its next cool proof. Detailed
-  ledger: `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
+
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending
   CPU on gzip, while desktop writes stay compressed and Android reads retain
   legacy `.gz` fallback. The explicit stopped-emulator Prepare Cache action

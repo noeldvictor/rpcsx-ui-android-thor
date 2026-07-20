@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <cerrno>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <dirent.h>
 #include <dlfcn.h>
@@ -30,7 +31,7 @@ struct RPCSXApi {
   bool (*initialize)(std::string_view rootDir, std::string_view user);
   bool (*processCompilationQueue)(JNIEnv *env);
   bool (*startMainThreadProcessor)(JNIEnv *env);
-  bool (*syncLogs)();
+  uint64_t (*syncLogs)();
   bool (*collectGameInfo)(JNIEnv *env, std::string_view rootDir,
                           long progressId);
   void (*shutdown)();
@@ -262,13 +263,13 @@ Java_net_rpcsx_RPCSX_startMainThreadProcessor(JNIEnv *env, jobject) {
   return rpcsxLib.startMainThreadProcessor(env);
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" JNIEXPORT jlong JNICALL
 Java_net_rpcsx_RPCSX_syncLogs(JNIEnv *, jobject) {
   if (rpcsxLib.syncLogs == nullptr) {
-    return false;
+    return 0;
   }
 
-  return rpcsxLib.syncLogs();
+  return static_cast<jlong>(rpcsxLib.syncLogs());
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_collectGameInfo(

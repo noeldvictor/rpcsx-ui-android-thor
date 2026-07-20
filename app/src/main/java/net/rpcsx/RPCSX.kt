@@ -81,7 +81,7 @@ class RPCSX {
     external fun usbDeviceEvent(fd: Int, vendorId: Int, productId: Int, event: Int): Boolean
     external fun processCompilationQueue(): Boolean
     external fun startMainThreadProcessor(): Boolean
-    external fun syncLogs(): Boolean
+    external fun syncLogs(): Long
     external fun overlayPadData(digital1: Int, digital2: Int, leftStickX: Int, leftStickY: Int, rightStickX: Int, rightStickY: Int): Boolean
     external fun supportsPadMotionData(): Boolean
     external fun overlayPadMotionData(accelX: Float, accelY: Float, accelZ: Float, gyroX: Float, gyroY: Float, gyroZ: Float): Boolean

@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sprintPath = Join-Path $repoRoot "tools/eternal_sonata_speed_sprint.ps1"
+$candidatePath = Join-Path $repoRoot "tools/thor_cool_title_candidate.psd1"
+$candidate = Import-PowerShellDataFile -LiteralPath $candidatePath
 $source = Get-Content -LiteralPath $sprintPath -Raw
 
 $tokens = $null
@@ -46,8 +48,8 @@ $summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile T
 $requiredSummary = @(
     'profile=ThorCoolTitle',
     'package=net.rpcsx.easy',
-    'expected_installed_apk_sha256=691EE8A725A0B545BF98BDEA03998CD4CDA7D34ABB48A6FF650D0F01F4F5E2D3',
-    'expected_packaged_core_sha256=B42CB1EA6C78FA70849DDD0CC388B8878BC41922031852F673F48F95FF9C78B6',
+    "expected_installed_apk_sha256=$($candidate.ApkSha256)",
+    "expected_packaged_core_sha256=$($candidate.PackagedCoreSha256)",
     'input_macro=gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop',
     'input_mode=Direct',
     'scene_seconds=1',
@@ -142,7 +144,7 @@ $apkIdentityConflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidExpectedInstalledApkSha256 ('0' * 64) 2>&1 | Out-Null
 } catch {
-    $apkIdentityConflictRejected = $_.Exception.Message -like "*requires -AndroidExpectedInstalledApkSha256 '691EE8A725A0B545BF98BDEA03998CD4CDA7D34ABB48A6FF650D0F01F4F5E2D3'*"
+    $apkIdentityConflictRejected = $_.Exception.Message -like "*requires -AndroidExpectedInstalledApkSha256 '$($candidate.ApkSha256)'*"
 }
 if (-not $apkIdentityConflictRejected) {
     throw 'Thor cool-title profile did not reject the wrong installed APK identity.'

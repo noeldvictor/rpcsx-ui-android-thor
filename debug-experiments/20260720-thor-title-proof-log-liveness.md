@@ -352,3 +352,56 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Next: keep exact installed `691EE8A7...F5E2D3` frozen for its separately
   cool deterministic-log proof. Only after that result should this successor
   be assembled, pinned, and considered for a later install/proof round.
+
+### 2026-07-20 - durable-log-checkpoint-successor
+
+- Status: windows-pass
+- Scope: scene-route
+- Hypothesis: an explicit evidence sync must return a unique native checkpoint,
+  drain committed log data without relying on background-writer scheduling,
+  and prove that exact checkpoint exists after the pull.
+- Changed files/settings: Android `file_writer::sync()` may drain committed
+  batches on its caller under the existing writer mutex; `_rpcsx_syncLogs`
+  emits and returns a monotonic checkpoint; JNI/Kotlin/broadcast plumbing
+  carries that sequence; the Thor macro requires the exact pulled marker;
+  focused contracts lock the path. The frame-poll clock-throttle successor is
+  included in the assembled candidate.
+- Rollback: revert the checkpoint return plumbing and Android caller-side
+  drain; restore the previous Boolean broadcast result. Normal producer and
+  background-writer behavior is otherwise unchanged.
+- Windows result: direct ARM64 compilation passed for `native-lib.cpp`,
+  `rpcsx-android.cpp`, and `logs.cpp`. The latter two object identities were
+  `852373AB...B79FB` / `15,268,448` bytes and
+  `162C9E9D...ECFCD` / `2,394,960` bytes; the JNI wrapper was
+  `5A51346D...001B` / `377,136` bytes. The optimized ARM64-only ThorTest build
+  passed in `622.4 s`.
+- Thor result: predecessor capture
+  `debug-captures/android-speed-sprint/20260720-125534-thor-input-custom`
+  reached first/stable title candidates in `19.745/25.482 s`, peaked at
+  `49.0 C`, self-stopped, and saved an absent PID. Its broadcast returned
+  `result=-1, data="synced"`, but the pulled log remained `2,671` bytes and
+  ended at `0.009870 s`. That is the direct counterproof this successor fixes.
+  The successor is not installed or device-measured.
+- Visual correctness: predecessor stable-title screenshot passed; successor
+  is unmeasured on device.
+- FPS/frame-time: none; no verified in-game speed claim.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260720-125534-thor-input-custom`;
+  built artifacts remain ignored under `app/build/`.
+- Decision: predecessor is `title-proof-log-incomplete` / `not-comparable`.
+  Successor is host-verified `route-tooling` plus the existing
+  `stackable-cpu-pressure` clock-probe reduction. Exact pinned artifacts are:
+  APK `71CFA42A0F88AC378B8AB98F8198D067814B45D7F0DC974426D16049425BD12B`
+  / `72,841,908` bytes; merged core
+  `9F58A31660FBDC8F05BE9F98714562F1CBF305EB4E791943741F5B3292D2E43D`
+  / `1,304,693,416` bytes; stripped core and APK entry
+  `576C5108E8BA9B9DE2F31AE7F4A69910433FE79477ADC5AC477E9A4282F3D5F1`
+  / `63,015,912` bytes. Artifact identity, ARM64 ABI, optimized variant,
+  checkpoint durability, event writer, the 35-export surface, and all `61/61`
+  Thor host contracts pass. No
+  ADB query, install, launch, or Thor contact ran in this host repair/build.
+- Next: after a separately cool interval, perform only a strict no-launch
+  installation of exact APK `71CFA42A...5BD12B`, proving installed hash and
+  absent PID. Reserve one later cool round for the self-stopping title/log
+  proof; credit FPS or temperature only if the exact checkpoint and all
+  activation/correctness evidence are durable.
