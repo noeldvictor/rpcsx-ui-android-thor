@@ -202,7 +202,7 @@ namespace vk
 				rsx_log.notice("Vulkan driver pipeline cache is disabled.");
 				if (cache_hits_only_requested)
 				{
-					rsx_log.warning("Vulkan preload cache-hits-only was requested without an enabled driver cache; using normal preload.");
+					rsx_log.always()("Vulkan preload cache-hits-only was requested without an enabled driver cache; using normal preload.");
 				}
 				return;
 			}
@@ -271,16 +271,16 @@ namespace vk
 			{
 				if (!g_render_device->get_pipeline_creation_cache_control_support())
 				{
-					rsx_log.warning("Vulkan preload cache-hits-only was requested but pipelineCreationCacheControl is unsupported; using normal preload.");
+					rsx_log.always()("Vulkan preload cache-hits-only was requested but pipelineCreationCacheControl is unsupported; using normal preload.");
 				}
 				else if (!accepted_seed_size)
 				{
-					rsx_log.warning("Vulkan preload cache-hits-only was requested without a validated warm seed; using normal preload.");
+					rsx_log.always()("Vulkan preload cache-hits-only was requested without a validated warm seed; using normal preload.");
 				}
 				else
 				{
 					g_pipeline_preload_cache_hits_only_enabled = true;
-					rsx_log.notice("Vulkan preload cache-hits-only enabled for validated warm seed (%llu bytes).",
+					rsx_log.always()("Vulkan preload cache-hits-only enabled for validated warm seed (%llu bytes).",
 						static_cast<u64>(accepted_seed_size));
 				}
 			}

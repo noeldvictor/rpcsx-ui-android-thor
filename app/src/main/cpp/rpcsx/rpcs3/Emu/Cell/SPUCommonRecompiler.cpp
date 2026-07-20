@@ -1093,7 +1093,11 @@ void spu_cache::initialize(bool build_existing_cache)
 		func_list = std::move(preload_list);
 		if (preload_limit)
 		{
+#ifdef __ANDROID__
+			spu_log.always()("Thor SPU cache preload limit: %u of %u oldest unique programs (%u records, %u will compile on demand).",
+#else
 			spu_log.notice("Thor SPU cache preload limit: %u of %u oldest unique programs (%u records, %u will compile on demand).",
+#endif
 				func_list.size(), unique_count, record_count, unique_count - func_list.size());
 		}
 	}
@@ -1211,7 +1215,11 @@ void spu_cache::initialize(bool build_existing_cache)
 	const auto compile_deadline = compile_budget_ms ? std::chrono::steady_clock::now() + std::chrono::milliseconds(compile_budget_ms) : std::chrono::steady_clock::time_point::max();
 	if (compile_budget_ms && !func_list.empty())
 	{
+#ifdef __ANDROID__
+		spu_log.always()("Thor SPU cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
+#else
 		spu_log.notice("Thor SPU cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
+#endif
 	}
 
 #ifdef __ANDROID__
@@ -1221,7 +1229,7 @@ void spu_cache::initialize(bool build_existing_cache)
 		const u32 requested_worker_count = worker_count;
 		const u32 affinity_worker_count = static_cast<u32>(std::popcount(cache_worker_affinity_mask));
 		worker_count = std::min(worker_count, affinity_worker_count);
-		spu_log.notice("Thor SPU cache-worker pool matched to affinity: requested=%u, workers=%u, mask=0x%x.",
+		spu_log.always()("Thor SPU cache-worker pool matched to affinity: requested=%u, workers=%u, mask=0x%x.",
 			requested_worker_count, worker_count, cache_worker_affinity_mask);
 	}
 	atomic_t<bool> cache_worker_affinity_logged = false;
@@ -1244,12 +1252,12 @@ void spu_cache::initialize(bool build_existing_cache)
 				{
 					if (effective_mask == cache_worker_affinity_mask)
 					{
-						spu_log.notice("Thor SPU cache-worker affinity enabled: requested=0x%x, effective=0x%x.",
+						spu_log.always()("Thor SPU cache-worker affinity enabled: requested=0x%x, effective=0x%x.",
 							cache_worker_affinity_mask, effective_mask);
 					}
 					else
 					{
-						spu_log.warning("Thor SPU cache-worker affinity was not applied exactly: requested=0x%x, effective=0x%x.",
+						spu_log.always()("Thor SPU cache-worker affinity was not applied exactly: requested=0x%x, effective=0x%x.",
 							cache_worker_affinity_mask, effective_mask);
 					}
 				}

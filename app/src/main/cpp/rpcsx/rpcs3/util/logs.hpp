@@ -136,6 +136,16 @@ namespace logs
 
 	inline logs::message::operator bool() const
 	{
+#ifdef __ANDROID__
+		// Keep safety evidence in the durable file log even when an Android
+		// performance profile silences ordinary channels. Logcat still applies
+		// its independent property-driven filter in the Android listener.
+		if (static_cast<level>(*this) <= level::error) [[unlikely]]
+		{
+			return true;
+		}
+#endif
+
 		// Test if enabled
 		return *this <= (*this)->enabled.observe();
 	}

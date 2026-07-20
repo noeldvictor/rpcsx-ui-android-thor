@@ -439,3 +439,90 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   self-stopping `ThorCoolTitle` proof. Require the exact durable sync
   checkpoint plus activation, fatal-log, stable-title, PID-stop, visual, and
   thermal evidence before any comparison or performance credit.
+
+### 2026-07-20 - durable-checkpoint-title-activation-gap
+
+- Status: failed
+- Scope: scene-route
+- Hypothesis: exact installed checkpoint successor `71CFA42A...5BD12B`
+  would produce a comparison-ready, self-stopping `ThorCoolTitle` proof.
+- Changed files/settings: none on device; the hard-pinned title profile set
+  RSX workers/preload/load budget to `2/256/500 ms`, SPU preload/compile
+  budget to `64/100 ms`, cache-worker affinity to `0x7`, Vulkan driver cache
+  and hit-only preload on, ADPF and phase pacing off, and Quiet logging.
+- Rollback: the route reset all experiment properties, force-stopped RPCSX,
+  and saved an absent post-run PID.
+- Windows result: not applicable.
+- Thor result: strict preflight passed `33.9 -> 34.7 -> 34.3 C`, maximum
+  `34.7 C` and net rise `+0.4 C`. First/stable title candidates appeared at
+  `18.620/24.361 s`. Silicon peaked at `48.6 C` and post-run was `40.9 C`;
+  battery/skin stayed `24.0/30.0 C`. PID was absent after the controlled stop.
+- Visual correctness: the deterministic title gate accepted two consecutive
+  title frames and the final screenshot with `title_menu_present=True`,
+  `title_magenta_percent=11.4`, `dark_percent=0.104`, and no compilation or
+  black frame. `04-title-proof.png` is `1,201,546` bytes with SHA-256
+  `B8ED43E4CFC4E1001DE25D923E1F3F31C9304ECAE7E6698ECB7BF1579E5D672F`.
+- Log correctness: the ordered broadcast returned `checkpoint:1` and the
+  pulled log contains exact native row `Thor debug log sync checkpoint: 1` at
+  emulated `26.076926 s`. This dynamically proves the caller-side batch drain
+  and checkpoint durability repair. The file contained no targeted fatal hit,
+  but all 11 required optimization-activation rows were absent because the
+  Quiet/configured channel levels filtered their Notice severity.
+- FPS/frame-time: none; title timing is not comparison-valid without complete
+  activation and safety evidence.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260720-134641-thor-input-custom`.
+- Decision: `activation-incomplete` / `not-comparable`. Grant no speed, FPS,
+  thermal-win, flicker, gameplay, or stability credit. Do not retry or perform
+  another device action in this thermal round.
+- Next: make only the bounded Android activation/fallback facts survive Quiet
+  logging and preserve fatal/error file evidence, then build and pin a
+  host-verified successor for a later cool install-only round.
+
+### 2026-07-20 - bounded-android-evidence-successor
+
+- Status: windows-pass
+- Scope: scene-route
+- Hypothesis: preserve Quiet logging performance while making the next title
+  proof self-describing and fail-closed.
+- Changed files/settings:
+  Android emits the 11 required RSX/SPU/Vulkan/managed-FTZ activation rows at
+  Always, plus the affinity, Vulkan, and phase-pacing fallback facts. Desktop
+  keeps Notice behavior for shared rows. Android fatal/error messages bypass
+  configured channel silence, while the independent property-driven logcat
+  filter remains unchanged. `tools/test_thor_android_evidence_logging.ps1`
+  locks these constraints, and the exact candidate pin now names the rebuilt
+  artifact.
+- Rollback: restore the affected activation/fallback calls to Notice/Warning,
+  remove the Android critical-severity bypass and managed FTZ fact, and repin
+  the predecessor. Emulation, cache, scheduling, rendering, and property
+  behavior are otherwise unchanged.
+- Windows result: focused contracts passed `11/11`; the complete Thor host
+  suite passed `62/62`. Optimized ARM64 native build passed in `407.9 s` and
+  the ARM64-only ThorTest APK passed in `78.2 s`. Artifact identity, packaged
+  core identity, optimized variant, ABI, and export checks pass. The merged
+  core has `35` defined dynamic symbols, `587` explicit relocations,
+  `390` `JUMP_SLOT` entries, and `44,134` encoded relocation bytes. The
+  stripped/package core contains all `11/11` required activation strings.
+- Thor result: none. No ADB query, installation, launch, or device read ran
+  after the failed title proof. Exact predecessor `71CFA42A...5BD12B` remains
+  installed and stopped; the successor is device-unmeasured.
+- Visual correctness: unchanged by construction; this edit changes only
+  bounded diagnostic visibility.
+- FPS/frame-time: none. The included frame-poll clock-probe reduction remains
+  host-proven stackable CPU-pressure work, not measured Thor speed.
+- Exact pinned artifacts:
+  APK `59D5658EC31130F2CD8FD8F4E02700DFF3BD1AF52B7E89F25CF167EF5C91BD02` /
+  `72,828,856` bytes; merged core
+  `CB06FE9C5DDAA1F009217C3886295C4283810A95F4262BC4AA5B369363C5BBF2` /
+  `1,304,043,704` bytes; stripped/package core
+  `5F7938BB5A0A29DB67FA95A0008B3EFF82B2CCBBFE527E631A25A6B6C16F6CA6` /
+  `62,978,792` bytes.
+- Decision: host-verified `route-tooling` plus the existing
+  `stackable-cpu-pressure` change. No speed, FPS, temperature, flicker,
+  gameplay, or stability credit exists until device comparison passes.
+- Next: only after a separate independently cool interval, run one strict
+  no-launch installation of exact APK `59D5658E...91BD02`. Reserve one later
+  cool round for a self-stopping title proof requiring all 11 activation rows,
+  exact durable checkpoint, clean fatal scan, stable title, thermal pass, and
+  absent PID before any comparison credit.

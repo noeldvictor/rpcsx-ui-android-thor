@@ -1623,6 +1623,17 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 #endif
 			sys_log.notice("Used configuration:\n%s\n", g_cfg.to_string());
 
+#ifdef __ANDROID__
+			// This bounded row is required to prove that the managed Eternal Sonata
+			// performance profile survived config fixup even when ordinary logs are
+			// silenced. It has no per-frame or non-title cost.
+			if (m_title_id == "BLUS30161")
+			{
+				sys_log.always()("Thor managed configuration: Set DAZ and FTZ: %s.",
+					g_cfg.core.set_daz_and_ftz ? "true" : "false");
+			}
+#endif
+
 			if (g_use_rtm && (!utils::has_mpx() || utils::has_tsx_force_abort()))
 			{
 				sys_log.warning("TSX forced by User");

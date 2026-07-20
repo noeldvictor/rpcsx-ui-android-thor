@@ -50,33 +50,35 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- Exact installed APK `691EE8A7...F5E2D3` reached its first/stable Eternal
-  Sonata title candidates
-  in `19.745/25.482 s`, peaked at `49.0 C`, and self-stopped with PID absent.
-  The ordered broadcast returned `synced`, but the pulled guest log was still
-  only `2,671` bytes and ended at `0.009870 s`. Classify this
-  `title-proof-log-incomplete` / `not-comparable`: it proves no speed, FPS,
-  thermal, flicker, gameplay, or stability win. The host repair now assigns
-  every sync request a native checkpoint, drains a committed log batch on the
-  calling thread under the existing writer mutex, and accepts a pull only
-  when that exact checkpoint is durable. Direct ARM64 compilation, focused
-  contracts, the 35-export surface, and all `61/61` Thor host contracts pass.
+- Exact installed APK `71CFA42A...5BD12B` reached its first/stable Eternal
+  Sonata title candidates in `18.620/24.361 s`; the deterministic visual gate
+  accepted the stable title at `11.4%` selector magenta. Silicon peaked at
+  `48.6 C`, post-stop was `40.9 C`, and PID was absent. The ordered sync
+  returned checkpoint `1`, and the pulled log contains that exact marker at
+  emulated `26.076926 s`, proving the caller-side drain and durable checkpoint
+  repair on Thor. All 11 required optimization-activation rows were absent,
+  however, because the managed Quiet configuration filtered Notice rows.
+  Classify capture `20260720-134641-thor-input-custom` as
+  `activation-incomplete` / `not-comparable`: it grants no speed, FPS,
+  thermal-win, flicker, gameplay, or stability credit.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls
   reduces representative outlined-logger and clock probes to `92` (`>99.9%`)
   while preserving the first activation row and five-second throttle. ARM64
   disassembly proves the call-site branch bypasses both the outlined logger
-  and `get_system_time()`. Exact successor APK
-  `71CFA42A...5BD12B` is `72,841,908` bytes; merged core
-  `9F58A316...D2E43D` is `1,304,693,416` bytes; stripped/package core
-  `576C5108...F3D5F1` is `63,015,912` bytes. It is now installed under strict
-  no-launch gate `20260720-134017`: silicon was `33.5 -> 33.9 -> 33.9 C`
-  (maximum `33.9 C`, rise `+0.4 C`). Host, expected, and installed hashes
-  match; PID was absent before/after, no activity launched, and post-install
-  battery/skin/silicon were `24.0/30.0/35.7 C`. Installation grants no
-  measured FPS or thermal credit. Reserve one self-stopping title/log proof
-  for a separate independently cool round. Detailed ledger:
+  and `get_system_time()`. The host successor now emits only the 11 bounded
+  activation/failure facts at Always on Android, preserves desktop Notice
+  behavior, and keeps Android fatal/error rows durable even when channels are
+  silenced; the independent property-driven logcat filter remains intact.
+  Exact host-only APK `59D5658E...91BD02` is `72,828,856` bytes; merged core
+  `CB06FE9C...C5BBF2` is `1,304,043,704` bytes; stripped/package core
+  `5F7938BB...6F6CA6` is `62,978,792` bytes. Optimized ARM64 native/APK builds,
+  all `62/62` host contracts, 11/11 packaged activation strings, exact
+  artifact identity, and the 35-export surface pass. It is not installed or
+  device-measured; the Thor remains stopped on `71CFA42A...5BD12B`. Only a
+  later independently cool install-only round may install this successor.
+  Reserve runtime proof for another cool round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 
 - Android PPU JIT cache writes now keep raw LLVM objects instead of spending

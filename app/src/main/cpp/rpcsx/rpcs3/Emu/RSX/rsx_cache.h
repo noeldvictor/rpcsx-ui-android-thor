@@ -332,7 +332,7 @@ namespace rsx
 			}
 			else if (!Emu.IsStopped())
 			{
-				rsx_log.warning("Android startup cache phase pacing timed out after %u ms (SPU started generation=%u, expected=%u); continuing RSX pipeline compilation.",
+				rsx_log.always()("Android startup cache phase pacing timed out after %u ms (SPU started generation=%u, expected=%u); continuing RSX pipeline compilation.",
 					static_cast<u64>(waited_ms), rpcsx::startup_cache_phase::spu_preload_started.load(), emulation_id);
 			}
 		}
@@ -456,7 +456,7 @@ namespace rsx
 			if (budget_expired && !Emu.IsStopped())
 			{
 				const u32 attempted = std::min(processed.load(), entry_count);
-				rsx_log.notice("Android shader cache load budget: attempted %u of %u cached pipelines with a %u ms budget; %u will load and compile on demand.",
+				rsx_log.always()("Android shader cache load budget: attempted %u of %u cached pipelines with a %u ms budget; %u will load and compile on demand.",
 					attempted, entry_count, load_budget_ms, entry_count - attempted);
 			}
 #ifdef __ANDROID__
@@ -580,12 +580,12 @@ namespace rsx
 							{
 								if (effective_mask == worker_affinity_mask)
 								{
-									rsx_log.notice("Thor RSX cache-worker affinity enabled for %s: requested=0x%x, effective=0x%x.",
+									rsx_log.always()("Thor RSX cache-worker affinity enabled for %s: requested=0x%x, effective=0x%x.",
 										step ? "compile" : "load", worker_affinity_mask, effective_mask);
 								}
 								else
 								{
-									rsx_log.warning("Thor RSX cache-worker affinity was not applied exactly for %s: requested=0x%x, effective=0x%x.",
+									rsx_log.always()("Thor RSX cache-worker affinity was not applied exactly for %s: requested=0x%x, effective=0x%x.",
 										step ? "compile" : "load", worker_affinity_mask, effective_mask);
 								}
 							}
@@ -692,7 +692,7 @@ namespace rsx
 						return lhs.mtime != rhs.mtime ? lhs.mtime < rhs.mtime : lhs.name < rhs.name;
 					});
 				entry_count = static_cast<u32>(preload_limit);
-				rsx_log.notice("Android shader cache preload limit: %u of %u oldest pipelines; %u will compile on demand", entry_count, cached_entry_count, cached_entry_count - entry_count);
+				rsx_log.always()("Android shader cache preload limit: %u of %u oldest pipelines; %u will compile on demand", entry_count, cached_entry_count, cached_entry_count - entry_count);
 			}
 #endif
 
@@ -715,14 +715,18 @@ namespace rsx
 			// Preload everything needed to compile the shaders
 			unpacked_type unpacked;
 			const uint preload_workers = get_preload_worker_count();
+#ifdef __ANDROID__
+			rsx_log.always()("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);
+#else
 			rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);
+#endif
 
 			u32 load_budget_ms = 0;
 #ifdef __ANDROID__
 			load_budget_ms = get_android_load_budget_ms();
 			if (load_budget_ms)
 			{
-				rsx_log.notice("Android shader cache load budget enabled for BLUS30161: %u ms.", load_budget_ms);
+				rsx_log.always()("Android shader cache load budget enabled for BLUS30161: %u ms.", load_budget_ms);
 			}
 #endif
 			load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, load_budget_ms, dlg);
@@ -746,7 +750,7 @@ namespace rsx
 			compile_budget_ms = get_android_compile_budget_ms();
 			if (compile_budget_ms)
 			{
-				rsx_log.notice("Android shader cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
+				rsx_log.always()("Android shader cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
 			}
 #endif
 			compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);
