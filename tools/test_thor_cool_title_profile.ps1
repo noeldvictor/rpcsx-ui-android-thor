@@ -46,8 +46,8 @@ $summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile T
 $requiredSummary = @(
     'profile=ThorCoolTitle',
     'package=net.rpcsx.easy',
-    'expected_installed_apk_sha256=24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2',
-    'expected_packaged_core_sha256=5F11CFD2D10C8B7825F6D99FFC5214F61D2F68F0702CFB7A1FF6D1294E07CC10',
+    'expected_installed_apk_sha256=E69ABCB05E2028C32197D4358E94F0EA8AF2E42366F75D8335AE40BB7A208073',
+    'expected_packaged_core_sha256=CC2FF22E6D190B97E58E1466E139FB4DAC711F988A91FFF2C01D13B1CB5EA3CA',
     'input_macro=gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop',
     'input_mode=Direct',
     'scene_seconds=1',
@@ -142,7 +142,7 @@ $apkIdentityConflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidExpectedInstalledApkSha256 ('0' * 64) 2>&1 | Out-Null
 } catch {
-    $apkIdentityConflictRejected = $_.Exception.Message -like "*requires -AndroidExpectedInstalledApkSha256 '24FCC44EAF76C956EFFB8AA1F7B768D3181F917DAC632CBB5A7E3D707C736FE2'*"
+    $apkIdentityConflictRejected = $_.Exception.Message -like "*requires -AndroidExpectedInstalledApkSha256 'E69ABCB05E2028C32197D4358E94F0EA8AF2E42366F75D8335AE40BB7A208073'*"
 }
 if (-not $apkIdentityConflictRejected) {
     throw 'Thor cool-title profile did not reject the wrong installed APK identity.'
