@@ -678,3 +678,40 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Next: use separate independently cool rounds for exact no-launch install and
   one self-stopping proof. Do not route installed old APK
   `59D5658E...91BD02` with the new mandatory handshake tool.
+
+### 2026-07-20 - fail-closed-candidate-no-launch-install
+
+- Status: android-pass
+- Scope: scene-route
+- Hypothesis: exact repaired ARM64 candidate 85DB41BB...E5C52 can replace the
+  stale installed APK under a strict cool gate without launching RPCSX or
+  leaving its process alive.
+- Changed files/settings: device package net.rpcsx.easy was updated with
+  adb install -r; no activity, game, firmware, cache, or emulator setting was
+  opened or changed. No source changed during the device action.
+- Rollback: reinstall the prior pinned APK 59D5658E...91BD02; no rollback is
+  currently indicated because exact identity and stopped-state checks passed.
+- Windows result: host APK was 72,829,500 bytes with exact SHA-256
+  85DB41BB7A62AB81009889C1CB5DC021C8D27847DACFA0997E8E5FBA080E5C52;
+  the ARM64-only candidate and no-launch installer contracts passed before
+  device contact.
+- Thor result: pinned serial c3ca0370 passed the three-sample cool gate at
+  31.3 -> 30.9 -> 31.5 C; maximum was 31.5 C and end-to-start rise was
+  +0.2 C. adb install -r reported success, installed base.apk matched
+  the exact host SHA-256, PID was absent before and after, and post-install
+  battery/skin/silicon were 22.0/30.0/34.3 C.
+- Visual correctness: not exercised; no RPCSX activity or game launched.
+- FPS/frame-time: none; installation identity is not a speed, frame-time,
+  flicker, gameplay, stability, or thermal-win measurement.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260720-201536-thor-input-strict-cool-gate
+  and
+  debug-captures/android-speed-sprint/20260720-201549-fail-closed-debug-boot-no-launch-install.
+- Decision: installed-exact-no-launch / android-pass for installed identity
+  only. Device work ended immediately after verification; no retry or
+  follow-up ADB action ran.
+- Next: after a separate independently cool interval, run exactly one
+  self-stopping ThorCoolTitle proof with pinned serial c3ca0370. Require the
+  nonce-bound accepted boot handshake, exact sync checkpoint, stable real
+  Eternal Sonata title, clean fatal evidence, thermal pass, and absent final
+  PID before granting any timing or speed credit.

@@ -77,10 +77,14 @@ Put dated run details in `debug-experiments/`, not here.
   Exact host candidate APK `85DB41BB...E5C52` is `72,829,500` bytes and its DEX
   contains both nonce/accepted-handshake strings. Merged core
   `CB06FE9C...C5BBF2` / `1,304,043,704` bytes and packaged core
-  `5F7938BB...6F6CA6` / `62,978,792` bytes are unchanged. Installed APK
-  `59D5658E...91BD02` remains stopped and lacks this repair. Install the fresh
-  candidate only in a later no-launch cool round and reserve runtime for
-  another round.
+  5F7938BB...6F6CA6 / 62,978,792 bytes are unchanged. Exact candidate
+  85DB41BB...E5C52 is now installed on pinned Thor c3ca0370 under no-launch
+  capture 20260720-201549-fail-closed-debug-boot-no-launch-install. Its
+  device-side base.apk hash matched, PID was absent before/after, and no
+  activity launched. The strict preflight was 31.3 -> 30.9 -> 31.5 C
+  (+0.2 C end-to-start); post-install battery/skin/silicon were
+  22.0/30.0/34.3 C. This grants exact installed identity only; reserve one
+  self-stopping runtime proof for a separate independently cool round.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls
@@ -95,13 +99,14 @@ Put dated run details in `debug-experiments/`, not here.
   `CB06FE9C...C5BBF2` is `1,304,043,704` bytes; stripped/package core
   `5F7938BB...6F6CA6` is `62,978,792` bytes. Optimized ARM64 native/APK builds,
   all `62/62` host contracts, 11/11 packaged activation strings, exact
-  artifact identity, and the 35-export surface pass. Exact APK
-  `59D5658E...91BD02` is now installed under no-launch gate `20260720-142534`:
+  artifact identity, and the 35-export surface pass. Prior APK
+  59D5658E...91BD02 was installed under no-launch gate 20260720-142534:
   silicon stayed `34.3 -> 34.3 -> 34.3 C`, the installed `base.apk` hash
   matched, PID was absent before/after, and post-install battery/skin/silicon
   were `25.0/30.0/35.9 C`. No activity launched, so this grants identity only,
-  not speed or thermal credit. Reserve one self-stopping title proof for a
-  separate independently cool round. Detailed ledger:
+  not speed or thermal credit; it is superseded by installed candidate
+  85DB41BB...E5C52. Reserve one self-stopping title proof for a separate
+  independently cool round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 
 - The default-off ADPF RSX diagnostic now follows the current Android feedback
