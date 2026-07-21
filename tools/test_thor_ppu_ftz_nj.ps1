@@ -25,10 +25,13 @@ $requiredFragments = @(
     @($managedProfilesSource, '"BLUS30161" to """'),
     @($managedProfilesSource, 'Set DAZ and FTZ: true'),
     @($managedProfilesSource, 'fun applyRecommendedConfigForTitleId(context: Context, titleId: String): Status'),
+    @($managedProfilesSource, 'fun replaceCustomWithRecommendedConfigForTitleId(context: Context, titleId: String): Status'),
+    @($managedProfilesSource, 'if (isDisabled(context, titleId) && !replaceCustomConfig)'),
     @($managedProfilesSource, 'val bundledTimestamp = readBundledDatabaseTimestamp(context)'),
     @($managedProfilesSource, 'synchronized(lock) { cachedDatabase = ready }'),
     @($managedProfilesSource, 'statusForConfigSnapshot('),
     @($mainActivitySource, 'GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)'),
+    @($mainActivitySource, 'GameSettingsDatabase.replaceCustomWithRecommendedConfigForTitleId(this, titleId)'),
     @($mainActivitySource, 'val managedProfileReady = settingsStatus?.let { it.enabled && it.applied } == true'),
     @($mainActivitySource, 'if (requireManagedProfile && !managedProfileReady)'),
     @($mainActivitySource, 'Thor debug boot rejected: request=$requestId'),
@@ -37,7 +40,8 @@ $requiredFragments = @(
     @($inputMacroSource, '--es titleId $TitleId'),
     @($inputMacroSource, '--es thorDebugBootRequestId $debugBootRequestId'),
     @($inputMacroSource, 'Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId'),
-    @($inputMacroSource, '--ez thorRequireManagedProfile true')
+    @($inputMacroSource, '--ez thorRequireManagedProfile true'),
+    @($inputMacroSource, '--ez thorReplaceCustomProfile true')
 )
 
 foreach ($entry in $requiredFragments) {
@@ -51,6 +55,12 @@ $setContentIndex = $mainActivitySource.IndexOf('setContent {', $debugBootCompose
 $debugBootCallCount = ([regex]::Matches($mainActivitySource, 'maybeStartThorDebugBoot\(intent\)')).Count
 if ($debugBootComposeIndex -lt 0 -or $setContentIndex -le $debugBootComposeIndex -or $debugBootCallCount -ne 2) {
     throw "Thor debug boot must bypass Compose on cold start and remain available from onNewIntent; order=$debugBootComposeIndex/$setContentIndex calls=$debugBootCallCount."
+}
+
+$backupIndex = $managedProfilesSource.IndexOf('backupCustomConfig(target)')
+$managedWriteIndex = $managedProfilesSource.IndexOf('target.writeText(body)', $backupIndex)
+if ($backupIndex -lt 0 -or $managedWriteIndex -le $backupIndex) {
+    throw "Thor debug profile replacement must back up the custom config before writing the managed profile."
 }
 
 $manualFlushFragments = @(

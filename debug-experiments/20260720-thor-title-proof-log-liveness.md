@@ -715,3 +715,82 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   nonce-bound accepted boot handshake, exact sync checkpoint, stable real
   Eternal Sonata title, clean fatal evidence, thermal pass, and absent final
   PID before granting any timing or speed credit.
+
+### 2026-07-20 - managed-profile-custom-config-refusal
+
+- Status: failed
+- Scope: scene-route
+- Hypothesis: installed launcher-aware candidate 85DB41BB...E5C52 would
+  accept its nonce-bound debug boot and reach one self-stopping real-title
+  proof under the ThorCoolTitle profile.
+- Changed files/settings: no source changed before the run. The route set
+  its pinned lower-power startup properties, then reset them on failure.
+  It did not replace or edit the existing BLUS30161 custom YAML.
+- Rollback: none required; the route force-stopped RPCSX and reset its
+  experiment properties.
+- Windows result: exact candidate/profile/analyzer/visual/log-sync host
+  contracts passed immediately before device contact.
+- Thor result: exact installed base.apk matched 85DB41BB...E5C52 on pinned
+  serial c3ca0370. Strict preflight was 31.3 -> 31.5 -> 31.7 C. The
+  request-specific handshake rejected after 712 ms with
+  reason=managed-profile-not-applied, custom=true, enabled=false,
+  applied=false, stale=false, error=null. The app was force-stopped before
+  the PPU-ready/title poll; final PID was absent. The failure-post-stop
+  battery/skin/silicon snapshot was 22.0/30.0/38.1 C.
+- Visual correctness: not exercised; no title screenshot was taken and the
+  RPCSX launcher was not accepted as game evidence.
+- FPS/frame-time: none; no game boot or comparable timing occurred.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260720-202356-thor-input-custom.
+- Decision: managed-profile-custom-config-refusal / failed /
+  not-comparable. The repaired handshake saved the device from a blind
+  90-second poll, but grants no speed, gameplay, flicker, stability, or
+  thermal-win credit. No retry or follow-up ADB action ran.
+- Next: make the benchmark route invoke the app-supported, backup-first
+  custom-to-managed transition explicitly; build a new APK host-side.
+
+### 2026-07-20 - backup-first-managed-profile-repair
+
+- Status: windows-pass
+- Scope: scene-route
+- Hypothesis: a debug-only explicit replacement request can make the
+  deterministic Thor profile apply even when BLUS30161 has a user custom
+  YAML, while preserving that YAML through the existing backup path.
+- Changed files/settings: MainActivity consumes and removes the
+  thorReplaceCustomProfile extra, then calls a new title-ID form of the
+  existing replace-custom-with-recommended API only when both managed and
+  replacement flags are requested. thor_input_macro.ps1 supplies that flag.
+  Candidate verification now requires the request and replacement-method
+  strings in packaged DEX. No native-core code changed.
+- Rollback: remove the replacement extra/call and restore candidate
+  85DB41BB...E5C52. On the future device transition, the pre-existing
+  backupCustomConfig(target) call copies the user YAML before
+  target.writeText(body), providing a file-level rollback.
+- Windows result: PowerShell parsing and diff checks pass; the focused
+  PPU/profile, title analyzer, visual, log-sync, candidate, ARM64, and
+  optimized-package contracts pass. The complete Thor suite is 62/62.
+  :app:compileThortestKotlin passed in 9 s and explicit ARM64-only
+  :app:assembleThortest passed in 14 s.
+- Thor result: none after the refusal; no additional ADB query, install,
+  launch, or temperature read ran during the repair.
+- Visual correctness: host replay only; the known real title remains
+  accepted and both saved launcher captures remain rejected.
+- FPS/frame-time: none; this is route integrity and reversible profile
+  setup, not a measured speed or thermal win.
+- Artifact result: exact ARM64 APK
+  089655E248BBFC323C04363244F5EE97953766041EFE3FD96CCCBF3A396F00EF
+  is 72,829,872 bytes. Its DEX contains thorDebugBootRequestId, the accepted
+  handshake marker, thorReplaceCustomProfile, and
+  replaceCustomWithRecommendedConfigForTitleId. Merged core remains
+  CB06FE9C5DDAA1F009217C3886295C4283810A95F4262BC4AA5B369363C5BBF2
+  / 1,304,043,704 bytes; packaged core remains
+  5F7938BB5A0A29DB67FA95A0008B3EFF82B2CCBBFE527E631A25A6B6C16F6CA6
+  / 62,978,792 bytes.
+- Capture paths: existing refusal capture above; no new raw capture.
+- Decision: route-tooling / windows-pass. The successor is pinned but
+  uninstalled and device-unmeasured, so it receives no speed, FPS,
+  flicker, gameplay, stability, or temperature credit.
+- Next: use one later independently cool round for exact no-launch install
+  of 089655E2...6F00EF, then another cool round for one self-stopping
+  ThorCoolTitle proof. Require accepted handshake, real title, sync/fatal
+  completeness, thermal pass, and absent final PID before timing credit.

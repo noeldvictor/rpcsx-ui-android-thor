@@ -308,6 +308,13 @@ object GameSettingsDatabase {
             replaceCustomConfig = true
         )
 
+    fun replaceCustomWithRecommendedConfigForTitleId(context: Context, titleId: String): Status =
+        applyRecommendedConfig(
+            context,
+            GameIdentity.titleIdsFromText(titleId).firstOrNull(),
+            replaceCustomConfig = true
+        )
+
     private fun applyRecommendedConfig(
         context: Context,
         titleId: String?,
@@ -319,7 +326,7 @@ object GameSettingsDatabase {
         )
         val config = database.profiles[titleId] ?: return statusForTitleId(context, titleId)
 
-        if (isDisabled(context, titleId)) {
+        if (isDisabled(context, titleId) && !replaceCustomConfig) {
             return statusForTitleId(context, titleId)
         }
 
@@ -347,6 +354,12 @@ object GameSettingsDatabase {
                 if (existing != body) {
                     target.parentFile?.mkdirs()
                     target.writeText(body)
+                }
+                if (replaceCustomConfig) {
+                    prefs(context)
+                        .edit()
+                        .putBoolean(DISABLED_PREFIX + titleId, false)
+                        .apply()
                 }
 
                 statusForConfigSnapshot(context, titleId, database, target, body, body)

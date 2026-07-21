@@ -65,11 +65,13 @@ class MainActivity : ComponentActivity() {
             ?.takeIf { it.matches(Regex("^[A-Za-z0-9._-]{1,80}$")) }
             ?: "unknown"
         val requireManagedProfile = sourceIntent.getBooleanExtra("thorRequireManagedProfile", false)
+        val replaceCustomProfile = sourceIntent.getBooleanExtra("thorReplaceCustomProfile", false)
         val displayPacingEnabled = sourceIntent.getBooleanExtra("thorDisplayPacing", true)
         sourceIntent.removeExtra("path")
         sourceIntent.removeExtra("titleId")
         sourceIntent.removeExtra("thorDebugBootRequestId")
         sourceIntent.removeExtra("thorRequireManagedProfile")
+        sourceIntent.removeExtra("thorReplaceCustomProfile")
         sourceIntent.removeExtra("thorDisplayPacing")
         if (gamePath.isNullOrBlank()) {
             Log.e("RPCSX-UI", "Thor debug boot rejected: request=$requestId reason=missing-path")
@@ -84,10 +86,12 @@ class MainActivity : ComponentActivity() {
         val game = GameRepository.find(gamePath)
         val titleId = GameIdentity.titleIdsFromText(requestedTitleId).firstOrNull()
             ?: game?.let(GameIdentity::primaryTitleId)
-        val settingsStatus = if (requireManagedProfile && titleId != null) {
-            GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)
-        } else {
-            null
+        val settingsStatus = when {
+            requireManagedProfile && titleId != null && replaceCustomProfile ->
+                GameSettingsDatabase.replaceCustomWithRecommendedConfigForTitleId(this, titleId)
+            requireManagedProfile && titleId != null ->
+                GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)
+            else -> null
         }
         val managedProfileReady = settingsStatus?.let { it.enabled && it.applied } == true
         if (requireManagedProfile && !managedProfileReady) {

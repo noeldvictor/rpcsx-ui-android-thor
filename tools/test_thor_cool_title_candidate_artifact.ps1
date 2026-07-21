@@ -119,6 +119,34 @@ try {
     if ($entryHash -ne ([string]$candidate.PackagedCoreSha256).ToUpperInvariant()) {
         throw "Packaged core entry SHA-256 mismatch: expected $($candidate.PackagedCoreSha256), got $entryHash."
     }
+
+    $dexEntries = @($archive.Entries | Where-Object { $_.FullName -match '^classes(?:[0-9]+)?[.]dex$' })
+    if ($dexEntries.Count -eq 0) {
+        throw "Pinned Thor APK contains no DEX entries."
+    }
+
+    $dexText = foreach ($dexEntry in $dexEntries) {
+        $dexStream = $dexEntry.Open()
+        $dexBytes = [IO.MemoryStream]::new()
+        try {
+            $dexStream.CopyTo($dexBytes)
+            [Text.Encoding]::ASCII.GetString($dexBytes.ToArray())
+        } finally {
+            $dexBytes.Dispose()
+            $dexStream.Dispose()
+        }
+    }
+    $joinedDexText = $dexText -join [Environment]::NewLine
+    foreach ($requiredDexMarker in @(
+        "thorDebugBootRequestId",
+        "Thor debug boot accepted:",
+        "thorReplaceCustomProfile",
+        "replaceCustomWithRecommendedConfigForTitleId"
+    )) {
+        if (-not $joinedDexText.Contains($requiredDexMarker)) {
+            throw "Pinned Thor APK DEX is missing debug-boot marker: $requiredDexMarker"
+        }
+    }
 } finally {
     $archive.Dispose()
 }

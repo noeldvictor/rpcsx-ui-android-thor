@@ -64,27 +64,31 @@ Put dated run details in `debug-experiments/`, not here.
   `launcher-ui-instead-of-title` / `failed-visual-gate` / `not-comparable`,
   with no speed, FPS, thermal-win, flicker, gameplay, or stability credit.
 
-- The host successor rejects the launcher before any game-scene input, replays
-  saved readiness frames instead of trusting stale classifier text, and
-  requires a nonce-bound debug-boot handshake. MainActivity logs durable
-  accepted/rejected reasons at Warning, skips Compose game-library rendering
-  on accepted debug boots, and the route force-stops before its visual loop on
-  rejection or a 30-second handshake timeout. A known real Eternal Sonata
-  title remains accepted (`1.792%` white row), both false captures reject at
-  `58.306%`, all `62/62` host contracts pass, and
-  `:app:compileThortestKotlin` passes. A default-ABI package was rejected for
-  including x86-64; the explicit ARM64-only build then passed in `124.5 s`.
-  Exact host candidate APK `85DB41BB...E5C52` is `72,829,500` bytes and its DEX
-  contains both nonce/accepted-handshake strings. Merged core
-  `CB06FE9C...C5BBF2` / `1,304,043,704` bytes and packaged core
-  5F7938BB...6F6CA6 / 62,978,792 bytes are unchanged. Exact candidate
-  85DB41BB...E5C52 is now installed on pinned Thor c3ca0370 under no-launch
-  capture 20260720-201549-fail-closed-debug-boot-no-launch-install. Its
-  device-side base.apk hash matched, PID was absent before/after, and no
-  activity launched. The strict preflight was 31.3 -> 30.9 -> 31.5 C
-  (+0.2 C end-to-start); post-install battery/skin/silicon were
-  22.0/30.0/34.3 C. This grants exact installed identity only; reserve one
-  self-stopping runtime proof for a separate independently cool round.
+- The launcher-aware successor still accepts a known real Eternal Sonata
+  title at 1.792% white row and rejects both saved RPCSX launcher captures
+  at 58.306%. Exact installed APK 85DB41BB...E5C52 then ran once under
+  pinned serial c3ca0370 and the strict cool gate in
+  20260720-202356-thor-input-custom. Its device-side hash matched and
+  preflight stayed 31.3 -> 31.5 -> 31.7 C, but the nonce-bound handshake
+  rejected in 712 ms before game boot because the existing BLUS30161 YAML
+  was custom=true / enabled=false / applied=false. The route force-stopped
+  before the PPU/title poll or any screenshot; PID was absent and the
+  failure-post-stop silicon snapshot was 38.1 C. Classify this as
+  managed-profile-custom-config-refusal / failed / not-comparable, with no
+  speed, FPS, flicker, gameplay, stability, or thermal-win credit.
+
+- The host repair now requests the debug-only custom-to-managed transition
+  explicitly. It reuses the existing supported replacement path, which
+  backs up the user YAML before writing the managed Thor profile; normal
+  release launches and non-replacement callers are unchanged. All 62/62
+  Thor host contracts pass, :app:compileThortestKotlin completed in 9 s,
+  and the explicit ARM64-only :app:assembleThortest build completed in
+  14 s. New exact host APK 089655E2...6F00EF is 72,829,872 bytes; its
+  DEX contains the request extra and title-ID replacement method. Merged
+  core CB06FE9C...C5BBF2 / 1,304,043,704 bytes and packaged core
+  5F7938BB...6F6CA6 / 62,978,792 bytes are unchanged. This successor is
+  uninstalled and device-unmeasured. Install it only in a later no-launch
+  cool round, then reserve runtime for another independently cool round.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

@@ -1126,7 +1126,7 @@ if ($BootGame) {
     $debugBootRequestId = [Guid]::NewGuid().ToString("N")
     Invoke-ThorAdbText $Adb $captureDir "debug-boot-logcat-clear.txt" @("logcat", "-c") -AllowFailure | Out-Null
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
-    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
     Initialize-ThorProcessIdentity
     Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId
 }
