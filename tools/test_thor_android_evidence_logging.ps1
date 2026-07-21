@@ -6,6 +6,7 @@ $paths = @{
     System = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/System.cpp"
     Rsx = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/rsx_cache.h"
     Spu = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp"
+    Ppu = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
     Vulkan = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/VK/VKPipelineCompiler.cpp"
     Android = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp"
     Analyzer = Join-Path $repoRoot "tools/analyze_thor_cool_title_capture.ps1"
@@ -50,6 +51,7 @@ foreach ($contract in @(
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache compile budget enabled for BLUS30161:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache-worker pool matched to affinity:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache-worker affinity enabled:' },
+    @{ Key = 'Ppu'; Text = 'ppu_log.always()("Thor PPU LLVM compile-worker affinity enabled:' },
     @{ Key = 'Vulkan'; Text = 'rsx_log.always()("Vulkan preload cache-hits-only enabled for validated warm seed' },
     @{ Key = 'System'; Text = 'sys_log.always()("Thor managed configuration: Set DAZ and FTZ: %s."' }
 )) {
@@ -59,6 +61,7 @@ foreach ($contract in @(
 foreach ($contract in @(
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Thor RSX cache-worker affinity was not applied exactly' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache-worker affinity was not applied exactly' },
+    @{ Key = 'Ppu'; Text = 'ppu_log.always()("Thor PPU LLVM compile-worker affinity was not applied exactly' },
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Android startup cache phase pacing timed out' },
     @{ Key = 'Vulkan'; Text = 'rsx_log.always()("Vulkan preload cache-hits-only was requested without an enabled driver cache' },
     @{ Key = 'Vulkan'; Text = 'rsx_log.always()("Vulkan preload cache-hits-only was requested but pipelineCreationCacheControl is unsupported' },
@@ -94,8 +97,8 @@ if ([string]::IsNullOrWhiteSpace($activationBlock)) {
     throw "Could not isolate the Thor activation requirements."
 }
 $activationCount = ([regex]::Matches($activationBlock, '(?m)^\s*"[^"]+"\s*=')).Count
-if ($activationCount -ne 12) {
-    throw "Expected exactly 12 Thor activation requirements; found $activationCount."
+if ($activationCount -ne 13) {
+    throw "Expected exactly 13 Thor activation requirements; found $activationCount."
 }
 
 Assert-Contains 'Android' 'if (!android_logcat_allows(prio))'
@@ -114,4 +117,4 @@ foreach ($scriptPath in @($paths.Analyzer, $PSCommandPath)) {
     }
 }
 
-Write-Output "Thor Android evidence-logging contract passed: 12 bounded activation rows and failures survive Quiet logging, fatal/error rows remain durable, desktop Notice behavior is preserved, and logcat keeps its independent filter."
+Write-Output "Thor Android evidence-logging contract passed: 13 bounded activation rows and failures survive Quiet logging, fatal/error rows remain durable, desktop Notice behavior is preserved, and logcat keeps its independent filter."

@@ -213,6 +213,7 @@ function Write-ReadyFixture {
     ) | Set-Content -LiteralPath (Join-Path $Directory "thermal-guard.log") -Encoding UTF8
     @(
         "  Max LLVM Compile Threads: 1",
+        "Thor PPU LLVM compile-worker affinity enabled: requested=0x7, effective=0x7.",
         "Android shader cache preload limit: 256 of 939 oldest pipelines; 683 will compile on demand",
         "Android shader cache load budget enabled for BLUS30161: 500 ms.",
         "Android shader cache load budget: attempted 84 of 256 cached pipelines with a 500 ms budget; 172 will load and compile on demand.",
@@ -303,7 +304,7 @@ try {
     $logIncomplete = & $analyzerPath -CaptureDir $logIncompleteDir
     if ($logIncomplete.status -ne "title-proof-log-incomplete" -or $logIncomplete.ready_for_comparison -or
         -not $logIncomplete.guest_log_evidence_incomplete -or $logIncomplete.guest_log_latest_emulator_seconds -ge 1.0 -or
-        $logIncomplete.activation_missing.Count -ne 12) {
+        $logIncomplete.activation_missing.Count -ne 13) {
         throw "Synthetic stable title with a stalled runtime log was not classified precisely and fail closed."
     }
 
@@ -317,6 +318,18 @@ try {
     if ($ppuCapMissing.status -ne "activation-incomplete" -or $ppuCapMissing.ready_for_comparison -or
         $ppuCapMissing.activation_missing -notcontains "single PPU compile thread") {
         throw "Synthetic missing single-thread PPU compile cap did not fail closed."
+    }
+
+    $ppuAffinityMissingDir = Join-Path $tempRoot "ppu-compile-affinity-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $ppuAffinityMissingDir -Recurse
+    $ppuAffinityLogPath = Join-Path $ppuAffinityMissingDir "post-RPCSX.log"
+    @(Get-Content -LiteralPath $ppuAffinityLogPath) |
+        Where-Object { $_ -notmatch 'Thor PPU LLVM compile-worker affinity enabled:' } |
+        Set-Content -LiteralPath $ppuAffinityLogPath -Encoding UTF8
+    $ppuAffinityMissing = & $analyzerPath -CaptureDir $ppuAffinityMissingDir
+    if ($ppuAffinityMissing.status -ne "activation-incomplete" -or $ppuAffinityMissing.ready_for_comparison -or
+        $ppuAffinityMissing.activation_missing -notcontains "PPU efficiency-core compile affinity") {
+        throw "Synthetic missing PPU compile-worker affinity did not fail closed."
     }
 
     $runningDir = Join-Path $tempRoot "still-running"

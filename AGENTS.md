@@ -112,10 +112,9 @@ Put dated run details in `debug-experiments/`, not here.
   merged core `CB06FE9C...C5BBF2` / `1,304,043,704` bytes plus packaged core
   `5F7938BB...6F6CA6` / `62,978,792` bytes. All `64/64` Thor host contracts,
   the 12-row activation analyzer, packaged DEX marker, and exact artifact
-  identity pass. It is uninstalled and device-unmeasured; this is a bounded
-  cold-start thermal candidate, not a measured speed or temperature win.
-  Install it without launch only in a later independently cool round, then
-  reserve runtime proof for another cool round. Detailed ledger:
+  identity pass. It remained uninstalled and device-unmeasured, and is now
+  superseded by the efficiency-core-affinity successor below. It received no
+  measured speed or temperature credit. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - Install-only gate `20260720-214440-thor-input-strict-cool-gate` refused the
   exact `A3FC89F7...37DDDF` candidate at its first sample: silicon was
@@ -124,6 +123,23 @@ Put dated run details in `debug-experiments/`, not here.
   never ran; installed APK `089655E2...6F00EF` remains unchanged. No retry,
   launch, or follow-up device query ran. Wait for a later independently cool
   install-only round; grant no speed, FPS, stability, or thermal-win credit.
+- Exact host successor EDDC3DF...2A7039 keeps the BLUS30161 one-thread PPU
+  compile cap and now applies the existing startup cache-worker mask 0x07
+  only while cold PPU LLVM objects compile. It captures the current thread's
+  affinity first, refuses to change it if capture fails, restores it on scope
+  exit, and leaves runtime PPU/SPU/RSX/render threads plus desktop and other
+  titles unchanged. The analyzer requires exact requested=0x7,
+  effective=0x7 evidence and fails closed on omission or mismatch. ARM64
+  native compilation took 114.1 s, optimized packaging took 53 s, and all
+  64/64 Thor host contracts pass. The exact APK is 72,829,932 bytes;
+  merged core FF170281...EB5627 is 1,304,045,272 bytes and packaged core
+  60BA2474...90AC49 is 62,979,016 bytes. It supersedes uninstalled
+  A3FC89F7...37DDDF; installed APK remains 089655E2...6F00EF. No ADB or
+  device action ran, so this is a bounded cold-start thermal candidate with no
+  speed, temperature, FPS, flicker, gameplay, or stability credit. Only a
+  later independently cool no-launch round may install it; runtime proof must
+  use a different cool round. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

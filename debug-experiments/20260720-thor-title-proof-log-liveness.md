@@ -958,3 +958,51 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Next: wait for a genuinely independent cool interval and make one new
   install-only attempt. Runtime proof still belongs to a different later cool
   round.
+
+### 2026-07-20 - blus30161-ppu-compile-efficiency-core-affinity-successor
+
+- Status: windows-pass
+- Scope: config-driver
+- Hypothesis: the existing one-thread BLUS30161 PPU LLVM cap can avoid the
+  measured big-core heat burst more effectively if that temporary cold compile
+  work uses Thor's 0x07 efficiency-core mask, without leaking the mask into
+  runtime emulation.
+- Changed files/settings: PPU cold object compilation now reads the existing
+  Android-only, BLUS30161-only startup cache-worker mask. A scoped guard first
+  captures the caller or helper thread's current affinity, applies the mask
+  only when that capture succeeds, records exact requested/effective evidence,
+  and restores the prior mask on every normal or exceptional exit. Mask-off,
+  other-title, desktop, and runtime PPU/SPU/RSX/render scheduling are unchanged.
+  The capture analyzer now requires the PPU affinity row, treats mismatch as an
+  activation failure, and includes a synthetic missing-row counterproof. The
+  artifact contract scans the packaged native core for the durable marker.
+- Rollback: remove the scoped affinity guard and PPU activation requirement;
+  the independent title-specific Max LLVM Compile Threads: 1 cap remains a
+  separate reversible control.
+- Windows result: focused affinity, evidence-logging, analyzer, and PPU-cap
+  contracts pass. ARM64 RelWithDebInfo compilation completed in 114.1 s;
+  explicit ARM64-only optimized ThorTest packaging completed in 53 s. The full
+  suite passes 64/64 test_thor_*.ps1 contracts, including ABI, optimized
+  variant, native marker, exact core/APK identity, and analyzer counterproofs.
+- Artifact result: exact uninstalled APK
+  EDDC3DF146A6914CE73BA7AE6B562F2FF702089D8C1424315CE3DFBD4F2A7039
+  is 72,829,932 bytes. Merged core
+  FF170281B171E01D97131F750F425410E4863BD357D1A175580F2A0F53EB5627
+  is 1,304,045,272 bytes; packaged core
+  60BA247434D131111F0CE2DE426AF1C31A679F2424A9534149979D0FA990AC49
+  is 62,979,016 bytes and matches the APK entry exactly. It supersedes the
+  uninstalled one-worker APK A3FC89F7...37DDDF. Installed device identity
+  remains 089655E2...6F00EF.
+- Thor result: none. No ADB query, install, launch, retry, or temperature read
+  ran in this host-only round.
+- Visual correctness and FPS/frame-time: not exercised. This is a bounded
+  cold-start thermal candidate, not a measured speed, temperature, flicker,
+  gameplay, or stability win.
+- Decision: retain / windows-pass / device-unmeasured. The change directly
+  addresses the isolated PPU LLVM big-core heat source while restoring runtime
+  affinity, but earns no comparison credit until Thor proves it.
+- Next: after a genuinely independent cool interval, run one strict no-launch
+  install of exact APK EDDC3DF1...2A7039. Reserve one later independently cool
+  self-stopping ThorCoolTitle run for exact identity, one-thread and PPU
+  affinity activation, real-title stabilization, complete fatal/log evidence,
+  bounded thermals, and absent final PID. Do not combine install and runtime.

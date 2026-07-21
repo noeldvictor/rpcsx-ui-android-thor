@@ -93,6 +93,37 @@ $rows = @(
     Assert-PinnedFileIdentity -Label "Stripped core" -Path $StrippedCorePath -ExpectedSize ([long]$candidate.PackagedCoreSize) -ExpectedSha256 ([string]$candidate.PackagedCoreSha256)
 )
 
+function Test-BinaryAsciiMarker {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Marker
+    )
+
+    $reader = [IO.StreamReader]::new($Path, [Text.Encoding]::ASCII, $false, 1MB)
+    $buffer = New-Object char[] 1MB
+    $carry = ""
+    try {
+        while (($read = $reader.ReadBlock($buffer, 0, $buffer.Length)) -gt 0) {
+            $chunk = $carry + [string]::new($buffer, 0, $read)
+            if ($chunk.Contains($Marker)) {
+                return $true
+            }
+            $carryLength = [Math]::Min($Marker.Length - 1, $chunk.Length)
+            $carry = $chunk.Substring($chunk.Length - $carryLength)
+        }
+    } finally {
+        $reader.Dispose()
+    }
+    return $false
+}
+
+$nativeMarker = "Thor PPU LLVM compile-worker affinity enabled:"
+if (-not (Test-BinaryAsciiMarker -Path $StrippedCorePath -Marker $nativeMarker)) {
+    throw "Pinned Thor native core is missing PPU compile-worker affinity marker: $nativeMarker"
+}
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ApkPath))
 try {

@@ -8,6 +8,7 @@
 #include "Loader/ELF.h"
 #include "Loader/mself.hpp"
 #include "Emu/localized_string.h"
+#include "Emu/cache_phase_pacing.h"
 #include "Emu/perf_meter.hpp"
 #include "Emu/Memory/vm_reservation.h"
 #include "Emu/Memory/vm_locking.h"
@@ -6847,6 +6848,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_COMPILING_PPU_MODULES);
 
 		const u32 thread_count = std::max<u32>(std::min<u32>(::size32(workload), rpcs3::utils::get_max_threads()), 1) - 1;
+		const u64 ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());
+		atomic_t<bool> ppu_compile_worker_affinity_logged = false;
 
 		struct thread_index_allocator
 		{
@@ -6862,19 +6865,21 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			const ppu_module<lv2_obj>& main_module;
 			const std::string& cache_path;
 			const cpu_thread* cpu;
+			const u64 affinity_mask;
+			const std::add_pointer_t<atomic_t<bool>> affinity_logged;
 
 			std::unique_lock<decltype(jit_core_allocator::sem)> core_lock;
 
-			thread_op(concurent_memory_limit& memory_limit, atomic_t<u64>* work_cv, atomic_t<u64>* work_done, std::vector<std::pair<std::string, ppu_module<lv2_obj>>>& workload, const cpu_thread* cpu, const ppu_module<lv2_obj>& main_module, const std::string& cache_path, decltype(jit_core_allocator::sem)& sem) noexcept
+			thread_op(concurent_memory_limit& memory_limit, atomic_t<u64>* work_cv, atomic_t<u64>* work_done, std::vector<std::pair<std::string, ppu_module<lv2_obj>>>& workload, const cpu_thread* cpu, const ppu_module<lv2_obj>& main_module, const std::string& cache_path, u64 affinity_mask, atomic_t<bool>* affinity_logged, decltype(jit_core_allocator::sem)& sem) noexcept
 
-				: memory_limit(memory_limit), work_cv(work_cv), work_done(work_done), workload(workload), main_module(main_module), cache_path(cache_path), cpu(cpu)
+				: memory_limit(memory_limit), work_cv(work_cv), work_done(work_done), workload(workload), main_module(main_module), cache_path(cache_path), cpu(cpu), affinity_mask(affinity_mask), affinity_logged(affinity_logged)
 			{
 				// Save mutex
 				core_lock = std::unique_lock{sem, std::defer_lock};
 			}
 
 			thread_op(const thread_op& other) noexcept
-				: memory_limit(other.memory_limit), work_cv(other.work_cv), work_done(other.work_done), workload(other.workload), main_module(other.main_module), cache_path(other.cache_path), cpu(other.cpu)
+				: memory_limit(other.memory_limit), work_cv(other.work_cv), work_done(other.work_done), workload(other.workload), main_module(other.main_module), cache_path(other.cache_path), cpu(other.cpu), affinity_mask(other.affinity_mask), affinity_logged(other.affinity_logged)
 			{
 				if (auto mtx = other.core_lock.mutex())
 				{
@@ -6885,10 +6890,58 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 			thread_op(thread_op&& other) noexcept = default;
 
+#ifdef __ANDROID__
+			struct scoped_compile_affinity
+			{
+				u64 previous_mask = 0;
+
+				explicit scoped_compile_affinity(u64 requested_mask) noexcept
+				{
+					if (requested_mask)
+					{
+						previous_mask = thread_ctrl::get_thread_affinity_mask();
+						if (previous_mask)
+						{
+							thread_ctrl::set_thread_affinity_mask(requested_mask);
+						}
+					}
+				}
+
+				~scoped_compile_affinity() noexcept
+				{
+					if (previous_mask)
+					{
+						thread_ctrl::set_thread_affinity_mask(previous_mask);
+					}
+				}
+			};
+#endif
+
 			void operator()()
 			{
 				// Set low priority
 				thread_ctrl::scoped_priority low_prio(-1);
+
+#ifdef __ANDROID__
+				// This scope also covers the caller when no helper thread is created.
+				// Restore its ordinary affinity before returning to runtime work.
+				scoped_compile_affinity compile_affinity(affinity_mask);
+				if (affinity_mask)
+				{
+					const u64 effective_mask = thread_ctrl::get_thread_affinity_mask();
+					if (!affinity_logged->exchange(true))
+					{
+						if (effective_mask == affinity_mask)
+						{
+							ppu_log.always()("Thor PPU LLVM compile-worker affinity enabled: requested=0x%x, effective=0x%x.", affinity_mask, effective_mask);
+						}
+						else
+						{
+							ppu_log.always()("Thor PPU LLVM compile-worker affinity was not applied exactly: requested=0x%x, effective=0x%x.", affinity_mask, effective_mask);
+						}
+					}
+				}
+#endif
 
 #ifdef __APPLE__
 				pthread_jit_write_protect_np(false);
@@ -6956,13 +7009,13 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		};
 
 		named_thread_group threads(worker_group_name, thread_count,
-			thread_op(memory_limit, &work_cv, &work_done, workload, cpu, info, cache_path, g_fxo->get<jit_core_allocator>().sem),
+			thread_op(memory_limit, &work_cv, &work_done, workload, cpu, info, cache_path, ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged, g_fxo->get<jit_core_allocator>().sem),
 			try_lock_thread);
 
 		const auto old_name = thread_ctrl::get_name();
 		thread_ctrl::set_name(worker_group_name + std::to_string(thread_count + 1));
 
-		thread_op current_op(memory_limit, &work_cv, &work_done, workload, cpu, info, cache_path, g_fxo->get<jit_core_allocator>().sem);
+		thread_op current_op(memory_limit, &work_cv, &work_done, workload, cpu, info, cache_path, ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged, g_fxo->get<jit_core_allocator>().sem);
 
 		if (try_lock_thread(thread_count, current_op))
 		{

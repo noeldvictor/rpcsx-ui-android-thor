@@ -6,6 +6,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $controlPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/cache_phase_pacing.h"
 $rsxPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/rsx_cache.h"
 $spuPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp"
+$ppuPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
 $macroPath = Join-Path $repoRoot "tools/thor_input_macro.ps1"
 $sprintPath = Join-Path $repoRoot "tools/eternal_sonata_speed_sprint.ps1"
 $installerPath = Join-Path $repoRoot "tools/install_thor_apk_no_launch.ps1"
@@ -13,6 +14,7 @@ $installerPath = Join-Path $repoRoot "tools/install_thor_apk_no_launch.ps1"
 $control = Get-Content -LiteralPath $controlPath -Raw
 $rsx = Get-Content -LiteralPath $rsxPath -Raw
 $spu = Get-Content -LiteralPath $spuPath -Raw
+$ppu = Get-Content -LiteralPath $ppuPath -Raw
 $macro = Get-Content -LiteralPath $macroPath -Raw
 $sprint = Get-Content -LiteralPath $sprintPath -Raw
 $installer = Get-Content -LiteralPath $installerPath -Raw
@@ -78,6 +80,32 @@ if ($spuSet -lt 0 -or $spuCompiler -le $spuSet) {
     throw "SPU cache worker does not apply affinity before LLVM initialization/compilation."
 }
 
+foreach ($fragment in @(
+    '#include "Emu/cache_phase_pacing.h"',
+    'ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());',
+    'struct scoped_compile_affinity',
+    'previous_mask = thread_ctrl::get_thread_affinity_mask();',
+    'thread_ctrl::set_thread_affinity_mask(requested_mask);',
+    'thread_ctrl::set_thread_affinity_mask(previous_mask);',
+    'scoped_compile_affinity compile_affinity(affinity_mask);',
+    'Thor PPU LLVM compile-worker affinity enabled:',
+    'Thor PPU LLVM compile-worker affinity was not applied exactly:',
+    'ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged'
+)) {
+    Assert-Contains $ppu $fragment "Missing PPU compile-worker affinity contract: $fragment"
+}
+
+$ppuApply = $ppu.IndexOf('scoped_compile_affinity compile_affinity(affinity_mask);')
+$ppuCompile = $ppu.IndexOf('jit_compiler jit2', $ppuApply)
+if ($ppuApply -lt 0 -or $ppuCompile -le $ppuApply) {
+    throw "PPU LLVM compilation does not apply the temporary affinity first."
+}
+
+$ppuRestore = $ppu.IndexOf('thread_ctrl::set_thread_affinity_mask(previous_mask);')
+if ($ppuRestore -lt 0 -or $ppuRestore -ge $ppuApply) {
+    throw "PPU compile affinity is not guarded by a scoped restore."
+}
+
 if ($macro -notmatch '(?s)\[ValidateRange\(0,\s*255\)\]\s*\[int\]\$CacheWorkerAffinityMask\s*=\s*0') {
     throw "Thor route cache-worker affinity parameter is missing or not default-off/range-bounded."
 }
@@ -105,4 +133,4 @@ foreach ($scriptPath in @($macroPath, $sprintPath, $installerPath, $PSCommandPat
     }
 }
 
-Write-Host "Thor startup cache-worker affinity contract: PASS"
+Write-Host "Thor startup RSX/SPU/PPU cache-worker affinity contract: PASS"
