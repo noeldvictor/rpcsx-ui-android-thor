@@ -882,8 +882,8 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   Failure post-stop was 47.4 C with battery/skin 22.0/30.0 C, PID absent, and
   zero targeted fatal hits.
 - Runtime diagnosis: the managed log contained `Max LLVM Compile Threads: 2`
-  and the log showed `PPUW.1.1` through `PPUW.7.1` compilation activity. Process CPU was
-  about 25%, RSS was about 5,658 MB, big CPU cores were active while the GPU
+  and the log showed `PPUW.1.1` through `PPUW.7.1` compilation activity.
+  Process CPU was about 25%, RSS was about 5,658 MB, big CPU cores were active while the GPU
   stayed at 401 MHz, and silicon rose 47.0 -> 69.5 C in roughly 1.8 seconds.
   This isolates cold PPU LLVM compile concurrency as the immediate heat burst;
   it does not prove a gameplay bottleneck or speedup.
@@ -929,3 +929,32 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   self-stopping ThorCoolTitle proof. Require exact identity, the one-thread
   runtime activation row, stable real title, complete fatal/log evidence,
   bounded thermals, and absent final PID before any comparison credit.
+
+### 2026-07-20 - single-ppu-worker-install-hot-refusal
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: exact one-worker candidate A3FC89F7...37DDDF could be installed
+  without launching RPCSX after a fresh strict cool preflight.
+- Changed files/settings: none. The gate force-stopped RPCSX and reset all
+  experiment properties before sampling. The no-launch installer was not
+  invoked.
+- Rollback: none required; no APK, activity, game, firmware, cache, or custom
+  YAML changed.
+- Windows result: the one-worker source contract, exact candidate artifact,
+  strict cool gate, and no-launch installer contracts passed before contact.
+- Thor result: pinned serial c3ca0370 refused at pre-run sample 1 because
+  silicon was 47.4 C, above the strict below-35 C ceiling. Battery/skin were
+  23.0/30.0 C. Failure post-stop silicon was 45.3 C and `failure-pid.txt`
+  proves RPCSX absent. No second thermal sample, install, launch, retry, or
+  follow-up device query ran.
+- Visual correctness and FPS/frame-time: not exercised; no activity launched.
+- Capture path:
+  debug-captures/android-speed-sprint/20260720-214440-thor-input-strict-cool-gate.
+- Decision: preflight-refused-hot / failed. Exact candidate
+  A3FC89F7...37DDDF remains host-verified and uninstalled; installed APK
+  089655E2...6F00EF remains unchanged. Grant no speed, FPS, temperature,
+  flicker, gameplay, or stability credit.
+- Next: wait for a genuinely independent cool interval and make one new
+  install-only attempt. Runtime proof still belongs to a different later cool
+  round.

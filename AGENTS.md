@@ -102,8 +102,8 @@ Put dated run details in `debug-experiments/`, not here.
   `68 C` early guard force-stopped below the `72 C` hard limit. Post-stop was
   `47.4 C`, PID was absent, and targeted fatal hits were zero. The saved log
   proves the managed profile still used `Max LLVM Compile Threads: 2`, multiple
-  PPU compile rows were being processed, RSS was about `5,658 MB`, and the heat spike
-  was CPU-side while GPU frequency stayed low. Classify the run
+  PPU compile rows were being processed, RSS was about `5,658 MB`, and the
+  heat spike was CPU-side while GPU frequency stayed low. Classify the run
   `thermal-stop-before-title` / `failed` / `not-comparable`, with no speed,
   FPS, gameplay, stability, flicker, or thermal-win credit.
 - The host successor serializes only BLUS30161 cold PPU LLVM compilation with
@@ -117,6 +117,13 @@ Put dated run details in `debug-experiments/`, not here.
   Install it without launch only in a later independently cool round, then
   reserve runtime proof for another cool round. Detailed ledger:
   `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
+- Install-only gate `20260720-214440-thor-input-strict-cool-gate` refused the
+  exact `A3FC89F7...37DDDF` candidate at its first sample: silicon was
+  `47.4 C` against the strict below-`35 C` ceiling. Failure post-stop was
+  `45.3 C` with battery/skin `23.0/30.0 C`, and PID was absent. The installer
+  never ran; installed APK `089655E2...6F00EF` remains unchanged. No retry,
+  launch, or follow-up device query ran. Wait for a later independently cool
+  install-only round; grant no speed, FPS, stability, or thermal-win credit.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls
