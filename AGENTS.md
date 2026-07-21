@@ -87,8 +87,13 @@ Put dated run details in `debug-experiments/`, not here.
   DEX contains the request extra and title-ID replacement method. Merged
   core CB06FE9C...C5BBF2 / 1,304,043,704 bytes and packaged core
   5F7938BB...6F6CA6 / 62,978,792 bytes are unchanged. This successor is
-  uninstalled and device-unmeasured. Install it only in a later no-launch
-  cool round, then reserve runtime for another independently cool round.
+  uninstalled and device-unmeasured. Its first no-launch install attempt
+  failed closed at pre-run sample 1 in
+  20260720-204254-thor-input-strict-cool-gate: silicon was 45.8 C, above the
+  strict 35 C ceiling, and the failure-post-stop snapshot was 49.0 C. Battery
+  and skin were 22.0/30.0 C, PID was absent, the installer never ran, and no
+  retry followed. Wait for a genuinely independent cool interval before one
+  later no-launch install; reserve runtime for another cool round after that.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

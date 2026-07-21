@@ -794,3 +794,29 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   of 089655E2...6F00EF, then another cool round for one self-stopping
   ThorCoolTitle proof. Require accepted handshake, real title, sync/fatal
   completeness, thermal pass, and absent final PID before timing credit.
+
+### 2026-07-20 - backup-first-candidate-install-hot-refusal
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: exact backup-first candidate 089655E2...6F00EF could be installed
+  without launching RPCSX after a new strict cool preflight.
+- Changed files/settings: none. The gate force-stopped RPCSX and reset the
+  experiment properties before sampling. The installer was not invoked.
+- Rollback: none required; no APK, game, cache, firmware, or custom YAML was
+  changed.
+- Windows result: exact candidate, DEX markers, ARM64/native identity, strict
+  cool-gate, and no-launch installer contracts passed before device contact.
+- Thor result: pinned serial c3ca0370 refused at pre-run sample 1 because
+  silicon was 45.8 C, above the strict below-35 C launch ceiling. Battery/skin
+  were 22.0/30.0 C. The failure-post-stop silicon snapshot was 49.0 C and PID
+  was absent. No second sample, install, launch, query, or retry ran.
+- Visual correctness: not exercised; no activity or game launched.
+- FPS/frame-time: none; this grants no speed or thermal-win credit.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260720-204254-thor-input-strict-cool-gate.
+- Decision: preflight-refused-hot / failed. Candidate 089655E2...6F00EF remains
+  uninstalled; the last proven installed identity remains 85DB41BB...E5C52.
+- Next: wait for a genuinely independent cooling interval, then attempt the
+  exact no-launch install once. Do not combine that install with runtime; keep
+  the self-stopping ThorCoolTitle proof for another later cool round.
