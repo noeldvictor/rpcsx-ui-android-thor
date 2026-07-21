@@ -1006,3 +1006,40 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   self-stopping ThorCoolTitle run for exact identity, one-thread and PPU
   affinity activation, real-title stabilization, complete fatal/log evidence,
   bounded thermals, and absent final PID. Do not combine install and runtime.
+
+### 2026-07-20 - ppu-efficiency-core-candidate-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: config-driver
+- Hypothesis: exact efficiency-core-affinity candidate EDDC3DF1...2A7039 can
+  replace the two-worker installed APK under the strict cool gate without
+  launching or leaving RPCSX active.
+- Changed files/settings: installed only the frozen ARM64 ThorTest APK with
+  adb install -r. The route force-stopped RPCSX at both boundaries. It did not
+  open the emulator, game, firmware, cache, or managed/custom profile.
+- Rollback: reinstall a prior exact APK through the same cool no-launch route;
+  no rollback is indicated because identity and stopped-state checks passed.
+- Windows result: exact APK/core identity, native PPU-affinity marker,
+  ARM64-only package, strict gate, and no-launch installer contracts passed
+  immediately before device contact.
+- Thor result: pinned serial c3ca0370 passed the three-sample gate at
+  31.5 -> 31.7 -> 31.9 C (maximum 31.9 C, rise +0.4 C), with battery/skin
+  22.0/30.0 C. adb install -r returned Success. Expected, host, and installed
+  base.apk SHA-256 all equal
+  EDDC3DF146A6914CE73BA7AE6B562F2FF702089D8C1424315CE3DFBD4F2A7039.
+  PID was absent before and after; post-install battery/skin/silicon were
+  22.0/30.0/33.3 C. No activity launched and no follow-up ADB query or retry
+  ran.
+- Visual correctness and FPS/frame-time: not exercised. Installation identity
+  and bounded install temperature grant no speed, thermal, gameplay, flicker,
+  or stability credit.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260720-222048-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260720-222101-ppu-efficiency-core-thortest-apk-install.
+- Decision: installed-exact-no-launch / route-tooling. The candidate is now
+  frozen on-device and RPCSX is stopped.
+- Next: stop this device round. After a different independently cool interval,
+  run exactly one self-stopping ThorCoolTitle proof pinned to EDDC3DF1...2A7039.
+  Require exact identity, Max LLVM Compile Threads: 1, exact PPU 0x07 affinity
+  activation, stable real title, complete log/fatal evidence, bounded thermals,
+  and absent final PID before granting comparison credit.

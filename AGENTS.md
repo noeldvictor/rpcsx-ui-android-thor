@@ -134,11 +134,15 @@ Put dated run details in `debug-experiments/`, not here.
   64/64 Thor host contracts pass. The exact APK is 72,829,932 bytes;
   merged core FF170281...EB5627 is 1,304,045,272 bytes and packaged core
   60BA2474...90AC49 is 62,979,016 bytes. It supersedes uninstalled
-  A3FC89F7...37DDDF; installed APK remains 089655E2...6F00EF. No ADB or
-  device action ran, so this is a bounded cold-start thermal candidate with no
-  speed, temperature, FPS, flicker, gameplay, or stability credit. Only a
-  later independently cool no-launch round may install it; runtime proof must
-  use a different cool round. Detailed ledger:
+  A3FC89F7...37DDDF. It is now the exact installed APK after strict no-boot
+  gate 20260720-222048 passed silicon 31.5 -> 31.7 -> 31.9 C (maximum 31.9 C,
+  rise +0.4 C), with battery/skin 22.0/30.0 C. Install capture
+  20260720-222101 proves expected, host, and installed hashes all match, PID
+  was absent before and after, no activity launched, and post-install silicon
+  was 33.3 C. This grants installed identity only, with no speed, temperature,
+  FPS, flicker, gameplay, or stability credit. Stop this device round. After a
+  separate independently cool interval, run at most one self-stopping
+  ThorCoolTitle proof; do not query or launch again first. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
