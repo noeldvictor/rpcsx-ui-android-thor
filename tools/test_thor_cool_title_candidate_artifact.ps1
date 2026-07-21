@@ -141,7 +141,8 @@ try {
         "thorDebugBootRequestId",
         "Thor debug boot accepted:",
         "thorReplaceCustomProfile",
-        "replaceCustomWithRecommendedConfigForTitleId"
+        "replaceCustomWithRecommendedConfigForTitleId",
+        "Max LLVM Compile Threads: 1"
     )) {
         if (-not $joinedDexText.Contains($requiredDexMarker)) {
             throw "Pinned Thor APK DEX is missing debug-boot marker: $requiredDexMarker"

@@ -93,8 +93,30 @@ Put dated run details in `debug-experiments/`, not here.
   RPCSX PID was absent before and after, no activity launched, and post-install
   silicon was 33.7 C. Classify this as `installed-exact-no-launch` /
   `route-tooling`, with no speed, FPS, gameplay, stability, flicker, or thermal
-  credit. Reserve one self-stopping ThorCoolTitle proof for a separate later
-  cool round.
+  credit. Its later self-stopping proof is classified below.
+- Exact installed APK `089655E2...6F00EF` ran once in
+  `20260720-211548-thor-input-custom`. The pinned hash matched, strict
+  preflight was `31.7 -> 32.3 -> 31.7 C`, and the nonce-bound debug boot was
+  accepted in `689 ms`, but the first frame was still pre-title. Silicon rose
+  from `47.0 C` to `69.5 C` before the ten-second wait completed, so the
+  `68 C` early guard force-stopped below the `72 C` hard limit. Post-stop was
+  `47.4 C`, PID was absent, and targeted fatal hits were zero. The saved log
+  proves the managed profile still used `Max LLVM Compile Threads: 2`, multiple
+  PPU compile rows were being processed, RSS was about `5,658 MB`, and the heat spike
+  was CPU-side while GPU frequency stayed low. Classify the run
+  `thermal-stop-before-title` / `failed` / `not-comparable`, with no speed,
+  FPS, gameplay, stability, flicker, or thermal-win credit.
+- The host successor serializes only BLUS30161 cold PPU LLVM compilation with
+  `Max LLVM Compile Threads: 1`; the global Thor default remains two workers.
+  Exact ARM64-only APK `A3FC89F7...37DDDF` is `72,829,996` bytes and retains
+  merged core `CB06FE9C...C5BBF2` / `1,304,043,704` bytes plus packaged core
+  `5F7938BB...6F6CA6` / `62,978,792` bytes. All `64/64` Thor host contracts,
+  the 12-row activation analyzer, packaged DEX marker, and exact artifact
+  identity pass. It is uninstalled and device-unmeasured; this is a bounded
+  cold-start thermal candidate, not a measured speed or temperature win.
+  Install it without launch only in a later independently cool round, then
+  reserve runtime proof for another cool round. Detailed ledger:
+  `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

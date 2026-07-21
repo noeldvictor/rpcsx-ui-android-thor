@@ -857,3 +857,75 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   accepted custom-to-managed handshake, real title stabilization, complete
   sync/fatal evidence, bounded thermals, and absent final PID before any timing
   or stability credit.
+
+### 2026-07-20 - two-worker-ppu-startup-thermal-counterproof
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: exact installed backup-first candidate 089655E2...6F00EF could
+  complete the managed-profile transition and reach a stable real title under
+  the self-stopping ThorCoolTitle profile.
+- Changed files/settings before the run: none. The route used the pinned
+  installed APK, Direct input, RSX/SPU limits 256/64, 500/100 ms RSX/SPU
+  budgets, cache affinity 0x07, Vulkan hit-only preload, frame wait, and the
+  68/72 C early/hard thermal guard.
+- Rollback: the route force-stopped RPCSX and reset its properties. PID was
+  absent after failure; no retry or follow-up ADB action ran.
+- Windows result: exact candidate/profile/analyzer/artifact contracts passed
+  before device contact.
+- Thor result: pinned serial c3ca0370 matched installed SHA-256
+  089655E248BBFC323C04363244F5EE97953766041EFE3FD96CCCBF3A396F00EF.
+  Preflight was 31.7 -> 32.3 -> 31.7 C and the nonce-bound debug boot was
+  accepted in 689 ms. The first screenshot 1.245 s later was still pre-title.
+  Silicon was 47.0 C there, then reached 69.5 C before the ten-second wait
+  completed; the 68 C early guard force-stopped below the 72 C hard limit.
+  Failure post-stop was 47.4 C with battery/skin 22.0/30.0 C, PID absent, and
+  zero targeted fatal hits.
+- Runtime diagnosis: the managed log contained `Max LLVM Compile Threads: 2`
+  and the log showed `PPUW.1.1` through `PPUW.7.1` compilation activity. Process CPU was
+  about 25%, RSS was about 5,658 MB, big CPU cores were active while the GPU
+  stayed at 401 MHz, and silicon rose 47.0 -> 69.5 C in roughly 1.8 seconds.
+  This isolates cold PPU LLVM compile concurrency as the immediate heat burst;
+  it does not prove a gameplay bottleneck or speedup.
+- Visual correctness: title, field, menu, and battle were not reached. The one
+  frame was neither the RPCSX launcher nor a valid Eternal Sonata title.
+- FPS/frame-time: none; no comparison-ready scene or end-to-end title timing
+  exists.
+- Capture path:
+  debug-captures/android-speed-sprint/20260720-211548-thor-input-custom.
+- Decision: thermal-stop-before-title / failed / not-comparable. Grant no
+  speed, FPS, flicker, gameplay, stability, or thermal-win credit.
+
+### 2026-07-20 - blus30161-single-ppu-compile-worker-successor
+
+- Status: windows-pass
+- Scope: config-driver
+- Hypothesis: serializing only Eternal Sonata's cold PPU LLVM compile work can
+  lower the burst that stopped the two-worker route while preserving the
+  global two-worker Thor default for other titles.
+- Changed files/settings: the BLUS30161 managed profile now sets
+  `Max LLVM Compile Threads: 1`. The analyzer requires the runtime row, its
+  synthetic counterproof fails closed when missing, and the pinned artifact
+  contract requires the packaged DEX marker. No native-core code changed.
+- Rollback: remove the title-specific setting to restore the inherited global
+  `Max LLVM Compile Threads: 2` value.
+- Windows result: all 64/64 `test_thor_*.ps1` contracts pass. The explicit
+  ARM64-only optimized ThorTest build completed in 15 s, and the artifact,
+  activation, analyzer-counterproof, ABI, optimized-variant, and package/core
+  identity gates pass.
+- Artifact result: exact uninstalled APK
+  A3FC89F71C215DBF1F3DB12D6A6C4ACA2E62F9C6740F8DDC97736F3D2837DDDF
+  is 72,829,996 bytes. Merged core remains
+  CB06FE9C5DDAA1F009217C3886295C4283810A95F4262BC4AA5B369363C5BBF2
+  / 1,304,043,704 bytes; packaged core remains
+  5F7938BB5A0A29DB67FA95A0008B3EFF82B2CCBBFE527E631A25A6B6C16F6CA6
+  / 62,978,792 bytes.
+- Thor result: none for the successor. It is not installed and has no runtime
+  thermal, timing, FPS, visual, flicker, gameplay, or stability credit.
+- Decision: bounded cold-start thermal candidate / windows-pass. This is not a
+  measured speedup or temperature win.
+- Next: use one later independently cool round for exact no-launch install of
+  A3FC89F7...37DDDF, then a different independently cool round for one
+  self-stopping ThorCoolTitle proof. Require exact identity, the one-thread
+  runtime activation row, stable real title, complete fatal/log evidence,
+  bounded thermals, and absent final PID before any comparison credit.

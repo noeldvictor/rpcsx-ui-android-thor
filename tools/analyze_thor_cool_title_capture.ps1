@@ -217,6 +217,7 @@ foreach ($line in $guestLogLines) {
     }
 }
 $activationRequirements = [ordered]@{
+    "single PPU compile thread" = 'Max LLVM Compile Threads:\s*1'
     "bounded RSX preload" = 'Android shader cache preload limit:\s*256 of'
     "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*500 ms'
     "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 500 ms budget; \d+ will load and compile on demand\.'
