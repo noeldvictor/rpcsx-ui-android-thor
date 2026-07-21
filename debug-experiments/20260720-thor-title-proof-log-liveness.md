@@ -1043,3 +1043,56 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   Require exact identity, Max LLVM Compile Threads: 1, exact PPU 0x07 affinity
   activation, stable real title, complete log/fatal evidence, bounded thermals,
   and absent final PID before granting comparison credit.
+
+### 2026-07-20 - ppu-efficiency-core-cold-compile-runtime-counterproof
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: serializing BLUS30161 cold PPU LLVM compilation on Thor's `0x07`
+  efficiency-core mask can remove the measured big-core thermal burst while
+  still reaching a stable title within the bounded proof window.
+- Changed files/settings: no source or profile changed for the run. The exact
+  installed APK used Direct input, `Max LLVM Compile Threads: 1`, RSX/SPU
+  limits `256/64`, RSX/SPU budgets `500/100 ms`, cache affinity `0x07`, Vulkan
+  hit-only preload, frame wait, and the `68/72 C` early/hard thermal guard.
+  Normal cold compilation populated 12 PPU object-cache entries before stop.
+- Rollback: the route force-stopped RPCSX and reset experiment properties.
+  PID was absent after failure. No retry or follow-up ADB action ran.
+- Windows result: exact candidate, profile, analyzer, artifact, durable-log,
+  and thermal contracts passed before device contact.
+- Thor result: pinned serial `c3ca0370` matched installed SHA-256
+  `EDDC3DF146A6914CE73BA7AE6B562F2FF702089D8C1424315CE3DFBD4F2A7039`.
+  Preflight was `31.7 -> 32.3 -> 31.7 C` and the nonce-bound debug boot was
+  accepted in `136 ms`. The managed profile logged
+  `Max LLVM Compile Threads: 1`; all 13 started module compiles logged exact
+  `requested=0x7,effective=0x7` PPU affinity. Twelve completed between emulator
+  times `1.684` and `88.208 s`; `libresc.sprx` was still compiling at stop.
+- Thermal result: the first post-boot sample was the `53.0 C` run maximum. It
+  fell to `42.1 C` by the next poll and generally remained `38.9-45.8 C`
+  through the bounded run; the post-stop sample was `43.3 C`. This is a large
+  cold-compile heat reduction versus capture
+  `20260720-211548-thor-input-custom`, whose unpinned two-worker path reached
+  `69.5 C` and triggered the early guard before title. It is not an end-to-end
+  thermal win because neither route produced a comparison-ready scene.
+- Visual correctness: five bounded polls remained pre-title. Cyan coverage was
+  `51.935%` after the first frame while the progress-bar metric rose from `0`
+  to `10.749%`; title, launcher, black-frame, field, menu, and battle checks
+  never passed. The visual-classifier result remained fail-closed.
+- FPS/frame-time: none. The title did not stabilize within the 90-second gate,
+  so there is no startup-speed, FPS, frame-time, or gameplay comparison.
+- Fatal/stopped state: zero targeted fatal hits, thermal guard did not fire,
+  the self-stopping failure path completed, and final PID was absent.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260720-222640-thor-input-custom`.
+- Decision: `route-failed-before-title` / thermal-progress / failed /
+  not-comparable. The affinity control fixed the immediate heat burst but the
+  one-worker little-core cold path is slower than the bounded startup target;
+  grant no speed, FPS, flicker, gameplay, stability, or end-to-end thermal-win
+  credit.
+- Next: do not retry in this device round. After a genuinely independent cool
+  interval, allow at most one identical self-stopping warm-cache continuation.
+  It can test whether the 12 newly completed objects make title reach practical
+  while preserving the thermal improvement. If it still misses title, prepare
+  a host-only successor that keeps PPU compile affinity separate from runtime
+  workers and evaluates two compile workers on little cores; do not clear the
+  device cache merely to manufacture a cold benchmark.

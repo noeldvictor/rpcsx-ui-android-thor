@@ -144,6 +144,25 @@ Put dated run details in `debug-experiments/`, not here.
   separate independently cool interval, run at most one self-stopping
   ThorCoolTitle proof; do not query or launch again first. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Exact installed EDDC3DF...2A7039 then completed one bounded
+  `ThorCoolTitle` counterproof in capture
+  `20260720-222640-thor-input-custom`. The strict preflight passed at
+  `31.7 -> 32.3 -> 31.7 C`, the debug boot was accepted in `136 ms`, and
+  runtime evidence confirmed `Max LLVM Compile Threads: 1` plus exact PPU
+  compile affinity `requested=0x7,effective=0x7` for every started module.
+  Cold compile peaked at `53.0 C` and then stayed mostly `38.9-45.8 C`, a
+  substantial pre-title heat reduction from the prior unpinned two-worker
+  route's `69.5 C` early stop. The tradeoff is unacceptable cold-start speed:
+  12 modules completed serially, module 13 was still compiling when the
+  90-second title gate expired, and no title or gameplay scene was reached.
+  The route self-stopped with PID absent and zero targeted fatal hits. Classify
+  this `route-failed-before-title` / thermal-progress / not-comparable; grant
+  no startup-speed, FPS, gameplay, flicker, stability, or end-to-end thermal
+  win. Do not contact Thor again in this device round. A later independently
+  cool, single bounded warm-cache continuation may determine whether the newly
+  populated objects make title startup practical before changing worker count.
+  Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls
