@@ -118,3 +118,44 @@ VBlank-assisted frame-poll wait and other proven host reductions. Preserve the
 one-change proof boundary until its deterministic log-sync successor produces
 comparison-complete Thor evidence; broad GPU offload, global scheduler changes,
 and speculative worker reductions remain parked.
+
+## 2026-07-20 ARM64 wait and coordination audit
+
+The latest practical low-power upstream candidates are already represented in
+the vendored core rather than missing backports:
+
+- Vulkan flush-request producer/consumer waits use `rx::spin_wait`.
+- NV406E semaphore acquire uses `rx::spin_on_cacheline_once` after preserving
+  debugger/pause handling.
+- AArch64 implementations pair `LDAXR`/width variants with `WFE` and `CLREX`,
+  so a store to the monitored cache line can wake the waiter.
+- PPU reservation priority, pre-lock ID-index resolution, SPU FMA result
+  selection, ARM64 I8MM feature plumbing/lowering, and the relevant LS-address
+  corrections are also present. The reservation-priority behavior remains off
+  because its guarded BLUS30161 battle proof failed stability.
+
+[Arm's current delay/backoff guidance](https://developer.arm.com/community/arm-community-blogs/b/architectures-and-processors-blog/posts/multi-threaded-applications-arm)
+explains why this use must stay narrow. Load-exclusive plus WFE can reduce core
+activity while awaiting a cacheline change, but it does not remove cache
+coherence traffic; lone WFE, scheduler yield, and broadly substituted delays
+can degrade real workloads. That agrees with the saved Thor field evidence:
+global busy-wait batching changed `19.35 FPS` to `18.15/17.72`, and the targeted
+GETLLAR `yield8` mode changed the reduced-loop control from `19.60` to
+`18.45 FPS`.
+
+[The 2024 system-level DBT study](https://arxiv.org/abs/2402.09688) reports that
+reducing, eliminating, and scheduling guest-state coordination was necessary
+to turn its translation design from a slowdown into a speedup. The project
+translation is not a new global wait primitive: keep removing redundant
+cross-domain work only at measured boundaries. Existing clean battle profiles
+already reject single long-residency SPU, PPU, and RSX bodies; the currently
+measured candidates are short and transition-heavy.
+
+Decision: keep hardware WFE only on the existing cacheline-change RSX waits;
+do not extend it to the roughly 300-cycle GETLLAR delays or other global busy
+waits without a dedicated one-callsite correctness-locked A/B. Do not alter the
+pinned APK before its install/title proof. New host contract
+`tools/test_thor_arm64_hardware_wait.ps1` locks the narrow helper semantics and
+rejects regression to the old Vulkan polling loops. This is host-only
+`route-tooling` / upstream-alignment evidence, not a measured speed or thermal
+win; the Thor was not contacted.
