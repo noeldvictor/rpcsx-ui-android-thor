@@ -186,6 +186,25 @@ Put dated run details in `debug-experiments/`, not here.
   self-stopping ThorCoolTitle proof requiring two-thread plus exact PPU `0x07`
   activation; do not query or launch again first. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Exact installed B5B5DB6B...B4074522 completed one bounded ThorCoolTitle
+  counterproof in capture `20260721-105440-thor-input-custom`. Exact device
+  identity matched, strict preflight was `30.5 -> 30.1 -> 30.1 C`, and debug
+  boot was accepted in `698 ms`. Runtime evidence proved
+  `Max LLVM Compile Threads: 2`, managed `Set DAZ and FTZ: true`, both PPU
+  compile lanes active, and all 18 affinity rows at exact
+  `requested=0x7,effective=0x7`. The warmed cache produced 17 object hits;
+  21 variants started, 19 completed, and two remained active at emulator time
+  `91.946 s`. The prior one-worker run completed 12, but cache state and module
+  mix differ, so this is compilation-progress evidence only. Five saved frames
+  remained pre-title while the progress metric rose `2.932% -> 23.453%`.
+  Silicon peaked at `47.4 C`, no thermal guard fired, zero targeted fatal hits
+  were found, and the failure path left PID absent. Classify
+  `route-failed-before-title` / thermal-progress / not-comparable; grant no
+  startup-speed, FPS, thermal-win, flicker, gameplay, or stability credit. Do
+  not contact Thor again in this device round. Next work is host-only analysis
+  of the pre-title firmware-PRX compile breadth before another cool proof.
+  Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

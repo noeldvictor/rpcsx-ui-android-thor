@@ -1185,3 +1185,62 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   `requested=0x7,effective=0x7` activation, stable real title, complete
   log/fatal evidence, bounded thermals, and absent final PID before granting
   startup-speed, FPS, thermal, flicker, gameplay, or stability credit.
+
+### 2026-07-21 - two-little-core-ppu-runtime-counterproof
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: two BLUS30161 cold PPU LLVM workers confined to Thor's three
+  Cortex-A510 cores can restore enough startup throughput to reach a stable
+  title inside 90 seconds while preserving the one-worker thermal envelope.
+- Changed files/settings: no source or profile changed for the run. Exact
+  installed APK B5B5DB6B...B4074522 used the pinned `ThorCoolTitle` profile:
+  two PPU compile workers, cache affinity `0x07`, RSX/SPU limits `256/64`,
+  RSX/SPU budgets `500/100 ms`, Vulkan hit-only preload, and the `68/72 C`
+  early/hard thermal guard. Normal compilation extended the existing cache.
+- Rollback: the failure path force-stopped RPCSX and reset experiment
+  properties. PID was absent after failure. No retry or follow-up ADB action
+  ran.
+- Windows result: exact candidate artifact, ARM64 ABI, profile, and fail-closed
+  analyzer contracts passed immediately before device contact.
+- Thor result: pinned serial `c3ca0370` matched installed SHA-256
+  `B5B5DB6B0C9E076E82DAA9D9E183028D8B286CA667B5CF686A116A19B4074522`.
+  Preflight was `30.5 -> 30.1 -> 30.1 C`; the nonce-bound debug boot was
+  accepted in `698 ms`. The managed profile logged
+  `Max LLVM Compile Threads: 2` and `Set DAZ and FTZ: true`. PPU lanes 1 and 2
+  both compiled, and all 18 affinity activation rows were exact
+  `requested=0x7,effective=0x7`.
+- Compile progress: the warmed cache reported 17 `Module exists` hits.
+  Twenty-one LLVM object variants started, 19 completed, and two remained
+  active when the captured log ended at emulator time `91.945861 s`. The
+  prior one-worker route reported 5 hits, 13 starts, and 12 completions by
+  `88.208 s`; its 12 completed objects helped warm this run and the remaining
+  module mix differs, so the higher completion count is startup-progress
+  evidence, not a matched throughput or end-to-end speed result. Peak logged
+  RSS rose from 5,877 MiB to 6,052 MiB across those non-matched cache states.
+- Thermal result: silicon preflight was `30.5 -> 30.1 -> 30.1 C`, run maximum
+  was `47.4 C`, most later samples stayed `38.9-47.0 C`, and
+  failure-post-stop was `45.3 C`. No thermal guard fired. This remains
+  non-comparable to the one-worker run because initial temperature, cache
+  state, and work mix differ.
+- Visual correctness: five readiness frames remained pre-title. Frames 2-5
+  held `51.935%` cyan while the progress-bar metric rose
+  `2.932% -> 14.658% -> 19.544% -> 23.453%`; title, launcher, and black-frame
+  classifiers stayed false. Field, menu, battle, and flicker were not tested.
+- FPS/frame-time: none. The title did not stabilize inside the 90-second gate,
+  so the capture is not comparison-ready and receives no speed credit.
+- Fatal/stopped state: the complete failure log reached emulator time
+  `91.945861 s`, zero targeted fatal hits were found, the route force-stopped,
+  and saved failure PID evidence was absent. The analyzer classifies
+  `route-failed-before-title` with maximum silicon `47.4 C`.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260721-105440-thor-input-custom`.
+- Decision: `route-failed-before-title` / thermal-progress / failed /
+  not-comparable. Two little-core workers are thermally viable in this warmed
+  compile window but still do not meet the title-start target. Grant no
+  startup-speed, FPS, thermal-win, flicker, gameplay, or stability credit.
+- Next: do not contact Thor again in this device round. Analyze the pre-title
+  firmware-PRX load/compile breadth on the host and identify a correctness-safe
+  way to avoid or pre-materialize unnecessary startup objects. Any successor
+  must pass host contracts and a later independently cool, single self-stopping
+  proof; do not clear the device cache or retry merely to finish compilation.
