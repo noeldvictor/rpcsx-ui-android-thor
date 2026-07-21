@@ -163,7 +163,7 @@ Put dated run details in `debug-experiments/`, not here.
   populated objects make title startup practical before changing worker count.
   Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
-- Host successor B5B5DB6B...B4074522 restores two BLUS30161 cold PPU LLVM
+- Successor B5B5DB6B...B4074522 restores two BLUS30161 cold PPU LLVM
   workers for throughput while making `0x07` the title's normal Android PPU
   compile mask, even when the diagnostic startup-worker property is off. A
   nonzero property value can still override the compile mask for experiments;
@@ -174,12 +174,18 @@ Put dated run details in `debug-experiments/`, not here.
   compilation passed in 88 s, corrected ARM64-only packaging passed in 24 s,
   and all 64/64 Thor host contracts pass. Exact APK is 72,829,976 bytes;
   merged core 1F3671B9...333C00 is 1,304,047,216 bytes and packaged core
-  EA4451EA...81E615 is 62,979,016 bytes. This is a host-only bounded
-  cold-start throughput candidate, not a measured speed or temperature win.
-  Thor was not contacted and remains installed on EDDC3DF...2A7039. In one
-  later independently cool round, use only the strict no-launch installer for
-  B5B5DB6B...B4074522; reserve runtime proof for another cool round. Detailed
-  ledger: debug-experiments/20260720-thor-title-proof-log-liveness.md.
+  EA4451EA...81E615 is 62,979,016 bytes. It is now the exact installed APK
+  after strict no-boot gate 20260720-230635 passed silicon
+  `33.5 -> 34.1 -> 34.1 C` (maximum `34.1 C`, rise `+0.6 C`), with
+  battery/skin `23.0/30.0 C`. Install capture
+  20260720-230647 proves expected, host, and installed hashes all match, PID
+  was absent before and after, no activity launched, and post-install silicon
+  was `35.9 C`. This grants installed identity only, with no speed,
+  temperature, FPS, flicker, gameplay, or stability credit. Stop this device
+  round. After a separate independently cool interval, run at most one
+  self-stopping ThorCoolTitle proof requiring two-thread plus exact PPU `0x07`
+  activation; do not query or launch again first. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

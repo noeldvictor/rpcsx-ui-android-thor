@@ -1146,3 +1146,42 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   different later cool round; require the two-thread row, exact PPU `0x07`
   affinity, real title stabilization, complete fatal/log evidence, bounded
   thermals, and absent final PID before any startup-speed or thermal credit.
+
+### 2026-07-20 - two-little-core-ppu-candidate-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: config-driver
+- Hypothesis: exact two-worker little-core candidate B5B5DB6B...B4074522 can
+  replace the one-worker installed APK under the strict cool gate without
+  launching RPCSX or leaving its process active.
+- Changed files/settings: installed only the frozen ARM64 ThorTest APK with
+  `adb install -r`. The route force-stopped RPCSX at both boundaries. It did
+  not open the emulator, game, firmware, cache, or managed/custom profile.
+- Rollback: reinstall a prior exact APK through the same cool no-launch route;
+  no rollback is indicated because identity and stopped-state checks passed.
+- Windows result: immediately before device contact, the candidate manifest
+  matched the 72,829,976-byte APK and its merged/packaged cores; the APK
+  contained only ARM64 RPCSX libraries. Candidate-artifact, strict-gate, and
+  no-launch-installer contracts passed.
+- Thor result: pinned serial `c3ca0370` passed the three-sample gate at
+  `33.5 -> 34.1 -> 34.1 C` (maximum `34.1 C`, rise `+0.6 C`), with
+  battery/skin `23.0/30.0 C`. `adb install -r` returned `Success`. Expected,
+  host, and installed `base.apk` SHA-256 all equal
+  `B5B5DB6B0C9E076E82DAA9D9E183028D8B286CA667B5CF686A116A19B4074522`.
+  PID was absent before and after; post-install battery/skin/silicon were
+  `23.0/30.0/35.9 C`. No activity launched and no follow-up ADB query or retry
+  ran.
+- Visual correctness and FPS/frame-time: not exercised. Installation identity
+  and bounded install temperature grant no speed, thermal, gameplay, flicker,
+  or stability credit.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260720-230635-thor-input-strict-cool-gate`;
+  `debug-captures/android-speed-sprint/20260720-230647-two-little-core-ppu-thortest-apk-install`.
+- Decision: installed-exact-no-launch / route-tooling. The candidate is now
+  frozen on-device and RPCSX is stopped.
+- Next: stop this device round. After a different independently cool interval,
+  run exactly one self-stopping `ThorCoolTitle` proof pinned to
+  B5B5DB6B...B4074522. Require `Max LLVM Compile Threads: 2`, exact PPU
+  `requested=0x7,effective=0x7` activation, stable real title, complete
+  log/fatal evidence, bounded thermals, and absent final PID before granting
+  startup-speed, FPS, thermal, flicker, gameplay, or stability credit.
