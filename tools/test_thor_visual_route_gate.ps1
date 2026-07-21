@@ -21,7 +21,7 @@ function Assert-ThorVisualEqual {
 function New-ThorSyntheticRouteFrame {
     param(
         [string]$Path,
-        [ValidateSet("load-list", "load-complete", "field")]
+        [ValidateSet("load-list", "load-complete", "field", "launcher-library")]
         [string]$State
     )
 
@@ -32,6 +32,17 @@ function New-ThorSyntheticRouteFrame {
         try {
             if ($State -eq "field") {
                 $graphics.Clear([System.Drawing.Color]::FromArgb(35, 100, 35))
+            } elseif ($State -eq "launcher-library") {
+                $graphics.Clear([System.Drawing.Color]::FromArgb(235, 235, 235))
+                $coverBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(180, 20, 150))
+                $accentBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(20, 190, 210))
+                try {
+                    $graphics.FillRectangle($coverBrush, 260, 130, 120, 110)
+                    $graphics.FillRectangle($accentBrush, 500, 90, 45, 150)
+                } finally {
+                    $coverBrush.Dispose()
+                    $accentBrush.Dispose()
+                }
             } else {
                 $graphics.Clear([System.Drawing.Color]::FromArgb(150, 100, 50))
             }
@@ -65,13 +76,16 @@ try {
     $listPath = Join-Path $scratch "load-list.png"
     $completePath = Join-Path $scratch "load-complete.png"
     $fieldPath = Join-Path $scratch "field.png"
+    $launcherPath = Join-Path $scratch "launcher-library.png"
     New-ThorSyntheticRouteFrame -Path $listPath -State "load-list"
     New-ThorSyntheticRouteFrame -Path $completePath -State "load-complete"
     New-ThorSyntheticRouteFrame -Path $fieldPath -State "field"
+    New-ThorSyntheticRouteFrame -Path $launcherPath -State "launcher-library"
 
     $list = Get-ThorBattleUiClassification -Path $listPath
     $complete = Get-ThorBattleUiClassification -Path $completePath
     $field = Get-ThorBattleUiClassification -Path $fieldPath
+    $launcher = Get-ThorBattleUiClassification -Path $launcherPath
 
     Assert-ThorVisualEqual "synthetic load list" $list.load_menu_present $true
     Assert-ThorVisualEqual "synthetic load list is not complete" $list.load_complete_present $false
@@ -79,6 +93,9 @@ try {
     Assert-ThorVisualEqual "synthetic load complete dialog" $complete.load_complete_present $true
     Assert-ThorVisualEqual "synthetic field" $field.field_frame_present $true
     Assert-ThorVisualEqual "synthetic field is not load complete" $field.load_complete_present $false
+    Assert-ThorVisualEqual "synthetic launcher app shell" $launcher.launcher_ui_present $true
+    Assert-ThorVisualEqual "synthetic launcher is not title" $launcher.title_menu_present $false
+    Assert-ThorVisualEqual "synthetic launcher is not field" $launcher.field_frame_present $false
 } finally {
     Get-ChildItem -LiteralPath $scratch -File -ErrorAction SilentlyContinue | Remove-Item -Force
     Remove-Item -LiteralPath $scratch -Force -ErrorAction SilentlyContinue

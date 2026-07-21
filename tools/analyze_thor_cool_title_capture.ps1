@@ -291,23 +291,52 @@ if ($thermalLines.Count -eq 0) {
 }
 
 $gateLines = Read-OptionalLines "ppu-ready-gate.log"
-$gateStable = @(
-    $gateLines | Where-Object {
-        $_ -match 'ready_candidate_count=([2-9]|[1-9][0-9]+)' -and
-        $_ -match 'title_menu_present=True'
+$gateStable = $false
+$gateEvidenceSource = "log"
+$gateFrameCount = 0
+$gateFrameErrors = New-Object System.Collections.Generic.List[string]
+$gateFrames = @(Get-ChildItem -LiteralPath $resolvedCaptureDir -File -Filter "*-ppu-ready-poll-*.png" -ErrorAction SilentlyContinue | Sort-Object Name)
+if ($gateFrames.Count -gt 0) {
+    $gateEvidenceSource = "frame-replay"
+    $consecutiveTitleFrames = 0
+    foreach ($gateFrame in $gateFrames) {
+        $gateFrameCount++
+        try {
+            $gateClassification = Get-ThorBattleUiClassification -Path $gateFrame.FullName
+            if ($gateClassification.title_menu_present) {
+                $consecutiveTitleFrames++
+                if ($consecutiveTitleFrames -ge 2) {
+                    $gateStable = $true
+                }
+            } else {
+                $consecutiveTitleFrames = 0
+            }
+        } catch {
+            $consecutiveTitleFrames = 0
+            $gateFrameErrors.Add("$($gateFrame.Name): $($_.Exception.Message)") | Out-Null
+        }
     }
-).Count -gt 0
+} else {
+    $gateStable = @(
+        $gateLines | Where-Object {
+            $_ -match 'ready_candidate_count=([2-9]|[1-9][0-9]+)' -and
+            $_ -match 'title_menu_present=True'
+        }
+    ).Count -gt 0
+}
 
 $titleProof = Get-ChildItem -LiteralPath $resolvedCaptureDir -File -Filter "*-title-proof.png" -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1
 $titleMenuPresent = $false
+$launcherUiPresent = $false
 $titleMagentaPercent = $null
 $titleClassificationError = $null
 if ($titleProof) {
     try {
         $classification = Get-ThorBattleUiClassification -Path $titleProof.FullName
         $titleMenuPresent = [bool]$classification.title_menu_present
+        $launcherUiPresent = [bool]$classification.launcher_ui_present
         $titleMagentaPercent = $classification.title_magenta_percent
     } catch {
         $titleClassificationError = $_.Exception.Message
@@ -321,6 +350,10 @@ $guestLogEvidenceIncomplete = (
     $guestLogLatestEmulatorSeconds -lt 1.0
 )
 
+$debugBootHandshakeLines = Read-OptionalLines "debug-boot-handshake-status.log"
+$debugBootAccepted = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=accepted\b' }).Count -gt 0
+$debugBootRejected = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=rejected\b' }).Count -gt 0
+$debugBootTimedOut = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=timeout\b' }).Count -gt 0
 $macroFailure = $macroFailureLines.Count -gt 0
 $stopEvidence = Test-Path -LiteralPath (Join-Path $resolvedCaptureDir "macro-stop.txt") -PathType Leaf
 $postPidPath = Join-Path $resolvedCaptureDir "post-pid.txt"
@@ -335,6 +368,7 @@ $profileActivationReady = (
 )
 $readyForComparison = (
     $profileActivationReady -and
+    $debugBootAccepted -and
     -not $macroFailure -and
     $thermalFailureLines.Count -eq 0 -and
     $fatalHits.Count -eq 0 -and
@@ -349,6 +383,12 @@ $status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -a
     "thermal-stop-before-title"
 } elseif ($fatalHits.Count -gt 0 -and -not $titleMenuPresent) {
     "fatal-before-title"
+} elseif ($launcherUiPresent) {
+    "launcher-ui-instead-of-title"
+} elseif ($debugBootRejected) {
+    "debug-boot-rejected"
+} elseif ($debugBootTimedOut) {
+    "debug-boot-handshake-timeout"
 } elseif ($macroFailure -and -not $titleMenuPresent) {
     "route-failed-before-title"
 } elseif (-not $titleProof) {
@@ -359,6 +399,8 @@ $status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -a
     "thermal-stop-at-title"
 } elseif ($fatalHits.Count -gt 0) {
     "fatal-at-title"
+} elseif (-not $debugBootAccepted) {
+    "debug-boot-handshake-missing"
 } elseif ($guestLogEvidenceIncomplete) {
     "title-proof-log-incomplete"
 } elseif (-not $profileActivationReady) {
@@ -379,10 +421,17 @@ $result = [pscustomobject]@{
     packaged_core_sha256 = [string]$candidate.PackagedCoreSha256
     title_proof = if ($titleProof) { $titleProof.FullName } else { $null }
     title_menu_present = $titleMenuPresent
+    launcher_ui_present = $launcherUiPresent
     title_magenta_percent = $titleMagentaPercent
     title_classification_error = $titleClassificationError
     ppu_ready_gate_stable = $gateStable
+    ppu_ready_gate_evidence_source = $gateEvidenceSource
+    ppu_ready_gate_frame_count = $gateFrameCount
+    ppu_ready_gate_frame_errors = @($gateFrameErrors)
     stopped_after_proof = $stoppedAfterProof
+    debug_boot_accepted = $debugBootAccepted
+    debug_boot_rejected = $debugBootRejected
+    debug_boot_timed_out = $debugBootTimedOut
     guest_log_latest_emulator_seconds = $guestLogLatestEmulatorSeconds
     guest_log_evidence_incomplete = $guestLogEvidenceIncomplete
     post_proof_pid_value = $postPidValue

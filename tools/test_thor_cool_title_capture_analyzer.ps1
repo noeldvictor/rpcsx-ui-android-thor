@@ -29,7 +29,9 @@ foreach ($fragment in @(
     'log.tag.RPCSX-UI',
     'ExpectedInstalledApkSha256',
     'installed-apk-identity.txt',
-    'Assert-ThorInstalledApkIdentity'
+    'Assert-ThorInstalledApkIdentity',
+    'thorDebugBootRequestId',
+    'Assert-ThorDebugBootAccepted -RequestId'
 )) {
     if (-not $macroSource.Contains($fragment)) {
         throw "Thor input macro is missing combined cool-title property evidence: $fragment"
@@ -39,7 +41,8 @@ foreach ($fragment in @(
 $identityCallIndex = $macroSource.LastIndexOf("Assert-ThorInstalledApkIdentity")
 $thermalPreflightCallIndex = $macroSource.LastIndexOf('Assert-ThorThermalPreflight "pre-run"')
 $bootCallIndex = $macroSource.LastIndexOf('am start -a net.rpcsx.THOR_DEBUG_BOOT')
-if ($identityCallIndex -lt 0 -or $thermalPreflightCallIndex -le $identityCallIndex -or $bootCallIndex -le $thermalPreflightCallIndex) {
+$bootHandshakeIndex = $macroSource.LastIndexOf('Assert-ThorDebugBootAccepted -RequestId')
+if ($identityCallIndex -lt 0 -or $thermalPreflightCallIndex -le $identityCallIndex -or $bootCallIndex -le $thermalPreflightCallIndex -or $bootHandshakeIndex -le $bootCallIndex) {
     throw "Installed APK identity must be checked before thermal preflight and debug boot."
 }
 
@@ -74,6 +77,29 @@ function Write-TitleProofPng {
         $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png)
     } finally {
         if ($brush) { $brush.Dispose() }
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
+
+function Write-LauncherProofPng {
+    param([string]$Path)
+
+    Add-Type -AssemblyName System.Drawing
+    $bitmap = [Drawing.Bitmap]::new(640, 360)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $coverBrush = $null
+    $accentBrush = $null
+    try {
+        $graphics.Clear([Drawing.Color]::FromArgb(235, 235, 235))
+        $coverBrush = [Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(180, 20, 150))
+        $accentBrush = [Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(20, 190, 210))
+        $graphics.FillRectangle($coverBrush, 260, 130, 120, 110)
+        $graphics.FillRectangle($accentBrush, 500, 90, 45, 150)
+        $bitmap.Save($Path, [Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        if ($coverBrush) { $coverBrush.Dispose() }
+        if ($accentBrush) { $accentBrush.Dispose() }
         $graphics.Dispose()
         $bitmap.Dispose()
     }
@@ -175,6 +201,7 @@ function Write-ReadyFixture {
         "2026-07-19T12:00:04-04:00 stop"
     ) | Set-Content -LiteralPath (Join-Path $Directory "macro.log") -Encoding UTF8
     "synthetic force-stop evidence" | Set-Content -LiteralPath (Join-Path $Directory "macro-stop.txt") -Encoding UTF8
+    "2026-07-19T12:00:00-04:00 request_id=synthetic status=accepted elapsed_ms=100" | Set-Content -LiteralPath (Join-Path $Directory "debug-boot-handshake-status.log") -Encoding UTF8
     Write-AdbEvidence -Directory $Directory -Name "post-pid.txt" -Value "exit=1"
     "attempt=2 ready_candidate_count=2 title_menu_present=True" | Set-Content -LiteralPath (Join-Path $Directory "ppu-ready-gate.log") -Encoding UTF8
     @(
@@ -198,6 +225,8 @@ function Write-ReadyFixture {
         "·! 0:00:03.000000 SYS: Set DAZ and FTZ: true"
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8
     Write-TitleProofPng -Path (Join-Path $Directory "03-title-proof.png")
+    Copy-Item -LiteralPath (Join-Path $Directory "03-title-proof.png") -Destination (Join-Path $Directory "01-ppu-ready-poll-01.png")
+    Copy-Item -LiteralPath (Join-Path $Directory "03-title-proof.png") -Destination (Join-Path $Directory "02-ppu-ready-poll-02.png")
 }
 
 try {
@@ -208,6 +237,34 @@ try {
         throw "Synthetic ready capture was not classified as title-proof-ready without speed credit."
     }
     & $analyzerPath -CaptureDir $readyDir -RequireReady | Out-Null
+
+    $launcherDir = Join-Path $tempRoot "launcher-ui"
+    Copy-Item -LiteralPath $readyDir -Destination $launcherDir -Recurse
+    Write-LauncherProofPng -Path (Join-Path $launcherDir "03-title-proof.png")
+    Write-LauncherProofPng -Path (Join-Path $launcherDir "01-ppu-ready-poll-01.png")
+    Write-LauncherProofPng -Path (Join-Path $launcherDir "02-ppu-ready-poll-02.png")
+    $launcher = & $analyzerPath -CaptureDir $launcherDir
+    if ($launcher.status -ne "launcher-ui-instead-of-title" -or $launcher.ready_for_comparison -or
+        $launcher.title_menu_present -or -not $launcher.launcher_ui_present -or $launcher.ppu_ready_gate_stable -or
+        $launcher.ppu_ready_gate_evidence_source -ne "frame-replay") {
+        throw "Synthetic RPCSX launcher frame did not override stale title-gate evidence and fail closed."
+    }
+
+    $missingHandshakeDir = Join-Path $tempRoot "missing-debug-boot-handshake"
+    Copy-Item -LiteralPath $readyDir -Destination $missingHandshakeDir -Recurse
+    Remove-Item -LiteralPath (Join-Path $missingHandshakeDir "debug-boot-handshake-status.log") -Force
+    $missingHandshake = & $analyzerPath -CaptureDir $missingHandshakeDir
+    if ($missingHandshake.status -ne "debug-boot-handshake-missing" -or $missingHandshake.ready_for_comparison -or $missingHandshake.debug_boot_accepted) {
+        throw "Synthetic title proof without an accepted debug-boot handshake did not fail closed."
+    }
+
+    $rejectedHandshakeDir = Join-Path $tempRoot "rejected-debug-boot-handshake"
+    Copy-Item -LiteralPath $readyDir -Destination $rejectedHandshakeDir -Recurse
+    "2026-07-19T12:00:00-04:00 request_id=synthetic status=rejected elapsed_ms=100" | Set-Content -LiteralPath (Join-Path $rejectedHandshakeDir "debug-boot-handshake-status.log") -Encoding UTF8
+    $rejectedHandshake = & $analyzerPath -CaptureDir $rejectedHandshakeDir
+    if ($rejectedHandshake.status -ne "debug-boot-rejected" -or $rejectedHandshake.ready_for_comparison -or -not $rejectedHandshake.debug_boot_rejected) {
+        throw "Synthetic rejected debug-boot handshake was not classified precisely."
+    }
 
     $mismatchDir = Join-Path $tempRoot "activation-mismatch"
     Copy-Item -LiteralPath $readyDir -Destination $mismatchDir -Recurse

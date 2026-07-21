@@ -31,7 +31,12 @@ $requiredFragments = @(
     @($mainActivitySource, 'GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)'),
     @($mainActivitySource, 'val managedProfileReady = settingsStatus?.let { it.enabled && it.applied } == true'),
     @($mainActivitySource, 'if (requireManagedProfile && !managedProfileReady)'),
+    @($mainActivitySource, 'Thor debug boot rejected: request=$requestId'),
+    @($mainActivitySource, 'Thor debug boot accepted: request=$requestId'),
+    @($mainActivitySource, 'if (maybeStartThorDebugBoot(intent)) {'),
     @($inputMacroSource, '--es titleId $TitleId'),
+    @($inputMacroSource, '--es thorDebugBootRequestId $debugBootRequestId'),
+    @($inputMacroSource, 'Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId'),
     @($inputMacroSource, '--ez thorRequireManagedProfile true')
 )
 
@@ -39,6 +44,13 @@ foreach ($entry in $requiredFragments) {
     if (-not $entry[0].Contains($entry[1])) {
         throw "Missing PPU FTZ/NJ contract fragment: $($entry[1])"
     }
+}
+
+$debugBootComposeIndex = $mainActivitySource.IndexOf('if (maybeStartThorDebugBoot(intent)) {')
+$setContentIndex = $mainActivitySource.IndexOf('setContent {', $debugBootComposeIndex)
+$debugBootCallCount = ([regex]::Matches($mainActivitySource, 'maybeStartThorDebugBoot\(intent\)')).Count
+if ($debugBootComposeIndex -lt 0 -or $setContentIndex -le $debugBootComposeIndex -or $debugBootCallCount -ne 2) {
+    throw "Thor debug boot must bypass Compose on cold start and remain available from onNewIntent; order=$debugBootComposeIndex/$setContentIndex calls=$debugBootCallCount."
 }
 
 $manualFlushFragments = @(

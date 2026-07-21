@@ -50,27 +50,37 @@ Put dated run details in `debug-experiments/`, not here.
 
 ## Current PS3 State
 
-- The 2026-07-20 14:52 attempt to run the exact installed evidence successor
-  failed closed before thermal preflight because two Android devices were
-  online (80167523365051 and c3ca0370) and no serial was supplied. The
-  resolver exited before changing runtime properties, creating a capture, or
-  launching RPCSX; no retry or follow-up ADB query ran. This is
-  device-selection-refused / route-tooling with no identity, thermal, visual,
-  FPS, or speed credit. In a later independent round, pass
-  -AndroidSerial c3ca0370 to the same pinned ThorCoolTitle invocation and let
-  its identity plus three-sample thermal gates decide whether to launch.
+- Exact installed APK `59D5658E...91BD02` ran once under the pinned serial and
+  strict cool gate in `20260720-145444-thor-input-custom`. Preflight was
+  `33.9 -> 33.9 -> 33.9 C`, silicon peaked at `50.6 C`, post-stop was `40.5 C`,
+  the installed hash matched, checkpoint `1` was durable, and PID was absent
+  after the controlled stop. Visual replay proves frames 02-04 are the RPCSX
+  game library, not Eternal Sonata: current classification is
+  `launcher_ui_present=True`, `title_menu_present=False`, and the three-frame
+  readiness replay is not stable. The old `18.913/24.310 s` candidate timings
+  are invalid. Capture `20260720-134641-thor-input-custom` contains the same
+  launcher pixels (`11.4%` magenta, `58.306%` white row), so its former
+  `18.620/24.361 s` title claim is also superseded. Classify both as
+  `launcher-ui-instead-of-title` / `failed-visual-gate` / `not-comparable`,
+  with no speed, FPS, thermal-win, flicker, gameplay, or stability credit.
 
-- Exact installed APK `71CFA42A...5BD12B` reached its first/stable Eternal
-  Sonata title candidates in `18.620/24.361 s`; the deterministic visual gate
-  accepted the stable title at `11.4%` selector magenta. Silicon peaked at
-  `48.6 C`, post-stop was `40.9 C`, and PID was absent. The ordered sync
-  returned checkpoint `1`, and the pulled log contains that exact marker at
-  emulated `26.076926 s`, proving the caller-side drain and durable checkpoint
-  repair on Thor. All 11 required optimization-activation rows were absent,
-  however, because the managed Quiet configuration filtered Notice rows.
-  Classify capture `20260720-134641-thor-input-custom` as
-  `activation-incomplete` / `not-comparable`: it grants no speed, FPS,
-  thermal-win, flicker, gameplay, or stability credit.
+- The host successor rejects the launcher before any game-scene input, replays
+  saved readiness frames instead of trusting stale classifier text, and
+  requires a nonce-bound debug-boot handshake. MainActivity logs durable
+  accepted/rejected reasons at Warning, skips Compose game-library rendering
+  on accepted debug boots, and the route force-stops before its visual loop on
+  rejection or a 30-second handshake timeout. A known real Eternal Sonata
+  title remains accepted (`1.792%` white row), both false captures reject at
+  `58.306%`, all `62/62` host contracts pass, and
+  `:app:compileThortestKotlin` passes. A default-ABI package was rejected for
+  including x86-64; the explicit ARM64-only build then passed in `124.5 s`.
+  Exact host candidate APK `85DB41BB...E5C52` is `72,829,500` bytes and its DEX
+  contains both nonce/accepted-handshake strings. Merged core
+  `CB06FE9C...C5BBF2` / `1,304,043,704` bytes and packaged core
+  `5F7938BB...6F6CA6` / `62,978,792` bytes are unchanged. Installed APK
+  `59D5658E...91BD02` remains stopped and lacks this repair. Install the fresh
+  candidate only in a later no-launch cool round and reserve runtime for
+  another round.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

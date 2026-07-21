@@ -24,7 +24,7 @@ import java.io.File
 import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
-    private lateinit var unregisterUsbEventListener: () -> Unit
+    private var unregisterUsbEventListener: () -> Unit = {}
 
     private fun findThorDevCoreOverride(): File? {
         if (!BuildConfig.THOR_DEV_CORE_OVERRIDE) {
@@ -50,31 +50,35 @@ class MainActivity : ComponentActivity() {
         return core
     }
 
-    private fun maybeStartThorDebugBoot(sourceIntent: Intent?) {
+    private fun maybeStartThorDebugBoot(sourceIntent: Intent?): Boolean {
         if (!BuildConfig.THOR_DEBUG_TOOLS || sourceIntent == null) {
-            return
+            return false
         }
 
         if (sourceIntent.action != "net.rpcsx.THOR_DEBUG_BOOT") {
-            return
+            return false
         }
 
         val gamePath = sourceIntent.getStringExtra("path")
         val requestedTitleId = sourceIntent.getStringExtra("titleId")
+        val requestId = sourceIntent.getStringExtra("thorDebugBootRequestId")
+            ?.takeIf { it.matches(Regex("^[A-Za-z0-9._-]{1,80}$")) }
+            ?: "unknown"
         val requireManagedProfile = sourceIntent.getBooleanExtra("thorRequireManagedProfile", false)
         val displayPacingEnabled = sourceIntent.getBooleanExtra("thorDisplayPacing", true)
         sourceIntent.removeExtra("path")
         sourceIntent.removeExtra("titleId")
+        sourceIntent.removeExtra("thorDebugBootRequestId")
         sourceIntent.removeExtra("thorRequireManagedProfile")
         sourceIntent.removeExtra("thorDisplayPacing")
         if (gamePath.isNullOrBlank()) {
-            Log.e("RPCSX-UI", "Thor debug boot requested without path")
-            return
+            Log.e("RPCSX-UI", "Thor debug boot rejected: request=$requestId reason=missing-path")
+            return false
         }
 
         if (RPCSX.activeLibrary.value == null) {
-            Log.e("RPCSX-UI", "Thor debug boot requested before RPCSX library was active")
-            return
+            Log.e("RPCSX-UI", "Thor debug boot rejected: request=$requestId reason=library-inactive")
+            return false
         }
 
         val game = GameRepository.find(gamePath)
@@ -89,15 +93,14 @@ class MainActivity : ComponentActivity() {
         if (requireManagedProfile && !managedProfileReady) {
             Log.e(
                 "RPCSX-UI",
-                "Thor debug boot requires an applied managed profile: " +
+                "Thor debug boot rejected: request=$requestId reason=managed-profile-not-applied " +
                     "titleId=$titleId custom=${settingsStatus?.customConfigPresent} " +
                     "enabled=${settingsStatus?.enabled} applied=${settingsStatus?.applied} " +
                     "stale=${settingsStatus?.managedConfigStale} error=${settingsStatus?.error}"
             )
-            return
+            return false
         }
 
-        Log.i("RPCSX-UI", "Thor debug boot through MainActivity: $gamePath")
         val emulatorWindow = Intent(this, RPCSXActivity::class.java)
             .putExtra("path", gamePath)
             .putExtra("thorDisplayPacing", displayPacingEnabled)
@@ -105,6 +108,8 @@ class MainActivity : ComponentActivity() {
             emulatorWindow.putExtra("titleId", it)
         }
         startActivity(emulatorWindow)
+        Log.w("RPCSX-UI", "Thor debug boot accepted: request=$requestId titleId=$titleId path=$gamePath")
+        return true
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -260,6 +265,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // A benchmark/debug launch does not need to compose and draw the game
+        // library underneath the emulation surface. Skipping it also prevents
+        // launcher cover art from appearing as a transient route candidate.
+        if (maybeStartThorDebugBoot(intent)) {
+            return
+        }
+
         setContent {
             RPCSXTheme {
                 AppNavHost()
@@ -271,8 +283,6 @@ class MainActivity : ComponentActivity() {
         } else {
             unregisterUsbEventListener = {}
         }
-
-        maybeStartThorDebugBoot(intent)
     }
 
     override fun onNewIntent(intent: Intent) {

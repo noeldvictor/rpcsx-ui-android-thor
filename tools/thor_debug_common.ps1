@@ -448,6 +448,16 @@ function Get-ThorBattleUiClassification {
         }
         $ppuCompilationScreenPresent = $cyanPercent -ge 25.0 -and $progressBarWhitePercent -ge 30.0
 
+        # The RPCSX launcher/library uses a nearly white full-width content row.
+        # Known Eternal Sonata title frames stay below 5% in this row, while
+        # both saved launcher false positives are 58.306%. Rejecting the app
+        # shell prevents colorful cover art from satisfying game-scene gates.
+        $launcherUiPresent = (
+            -not $ppuCompilationScreenPresent -and
+            $darkPercent -lt 10.0 -and
+            $progressBarWhitePercent -ge 30.0
+        )
+
         # The settled Eternal Sonata title menu has a large magenta selector
         # crystal in the normalized center. The compilation splash, black
         # transition, Load list, story movie, field, and battle captures do
@@ -481,6 +491,7 @@ function Get-ThorBattleUiClassification {
         }
         $titleMenuPresent = (
             -not $ppuCompilationScreenPresent -and
+            -not $launcherUiPresent -and
             $darkPercent -lt 95.0 -and
             $titleMagentaPercent -ge 5.0
         )
@@ -632,6 +643,7 @@ function Get-ThorBattleUiClassification {
             progress_bar_total_samples = $progressBarTotalSamples
             progress_bar_white_percent = [Math]::Round($progressBarWhitePercent, 3)
             ppu_compilation_screen_present = $ppuCompilationScreenPresent
+            launcher_ui_present = $launcherUiPresent
             title_magenta_samples = $titleMagentaSamples
             title_total_samples = $titleTotalSamples
             title_magenta_percent = [Math]::Round($titleMagentaPercent, 3)

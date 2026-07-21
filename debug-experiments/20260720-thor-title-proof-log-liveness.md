@@ -595,3 +595,86 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   ThorCoolTitle route exactly once with AndroidSerial c3ca0370. Let its
   identity and three-sample thermal gates decide whether launch is allowed;
   do not probe or retry separately.
+
+### 2026-07-20 - bounded-evidence-launcher-counterproof
+
+- Status: failed
+- Scope: scene-route
+- Hypothesis: exact installed successor `59D5658E...91BD02` would complete one
+  comparison-ready, self-stopping `ThorCoolTitle` proof on pinned Thor
+  `c3ca0370`.
+- Changed files/settings: no device files changed. The exact pinned profile set
+  the already-recorded `2/256/500 ms` RSX cache controls, `64/100 ms` SPU
+  preload/compile budgets, cache-worker mask `0x7`, persistent/hit-only Vulkan
+  cache on, ADPF/phase pacing off, and Quiet logging.
+- Rollback: the route reset experiment properties, force-stopped RPCSX, and
+  recorded an absent post-run PID.
+- Windows result: not applicable.
+- Thor result: exact APK identity matched. Strict preflight stayed
+  `33.9 -> 33.9 -> 33.9 C`; silicon peaked at `50.6 C` and post-run was
+  `40.5 C`; battery/skin stayed within the guard. The ordered log sync returned
+  checkpoint `1`, no targeted fatal was present, and the process was stopped.
+- Visual correctness: failed. Frames 02-04 and `04-title-proof.png` show the
+  RPCSX game library, not Eternal Sonata. The old classifier accepted cover
+  art because center magenta was `11.4%`; the same frame also has a
+  `58.306%` near-white horizontal row. Current replay classifies all three poll
+  frames `launcher_ui_present=True`, `title_menu_present=False`, so readiness
+  is not stable. The prior capture `20260720-134641-thor-input-custom` is
+  pixel-equivalent for these metrics and is superseded by the same result.
+- FPS/frame-time: none. The `18.913/24.310 s` and earlier
+  `18.620/24.361 s` values are launcher timings, not title timings.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260720-145444-thor-input-custom` and
+  `debug-captures/android-speed-sprint/20260720-134641-thor-input-custom`.
+- Decision: `launcher-ui-instead-of-title` / `failed-visual-gate` /
+  `not-comparable`. Grant no speed, FPS, thermal-win, flicker, gameplay, or
+  stability credit. No additional ADB/device action ran in this round.
+- Next: repair debug-boot acceptance evidence and launcher rejection host-side
+  before producing another APK.
+
+### 2026-07-20 - fail-closed-debug-boot-launcher-repair
+
+- Status: windows-pass
+- Scope: scene-route
+- Hypothesis: a request-specific boot handshake plus launcher-aware visual
+  replay will prevent route misses from consuming a hot 90-second poll or
+  becoming false title/speed evidence.
+- Changed files/settings: `MainActivity` now emits nonce-bound accepted/rejected
+  debug-boot rows at Warning, enters `RPCSXActivity` before composing the game
+  library on accepted cold starts, and reports managed-profile/library/path
+  rejection reasons. `thor_input_macro.ps1` clears stale logcat, passes a fresh
+  request ID, requires its exact acknowledgement within 30 seconds, and
+  force-stops before visual routing on rejection/timeout. The visual classifier
+  rejects the bright RPCSX launcher row; the capture analyzer reclassifies the
+  actual poll PNGs and requires an accepted handshake. Focused synthetic tests
+  cover valid title, launcher, missing handshake, and rejected handshake.
+- Rollback: restore the old void debug-boot helper, remove the nonce handshake,
+  and remove `launcher_ui_present`; no emulator-core behavior changed.
+- Windows result: known real title replay remains accepted at `1.792%` white;
+  both false launcher captures reject at `58.306%`. Focused contracts pass,
+  all `62/62` `test_thor_*.ps1` contracts pass, PowerShell parsing and diff
+  checks pass, and `:app:compileThortestKotlin` succeeds in `29 s`.
+- Thor result: none after the failed capture; no ADB query, install, launch, or
+  device read ran during this repair.
+- Visual correctness: host replay only; correct title accepted, RPCSX launcher
+  rejected, readiness false for all three saved launcher poll frames.
+- FPS/frame-time: none; this is measurement integrity and avoided startup/UI
+  work, not a measured gameplay-speed claim.
+- Capture paths: existing two counterproof captures above; no new raw capture.
+- Artifact result: the first wrapper timed out after `304 s`, then its late
+  default-ABI output was correctly rejected because it contained x86-64 and was
+  `100,223,304` bytes. A clean explicit
+  `-PrpcsxAndroidAbis=arm64-v8a :app:assembleThortest` completed in `124.5 s`.
+  Exact ARM64 APK is `85DB41BB7A62AB81009889C1CB5DC021C8D27847DACFA0997E8E5FBA080E5C52`
+  / `72,829,500` bytes. Its three DEX files contain the nonce and accepted-boot
+  markers. Merged core remains
+  `CB06FE9C5DDAA1F009217C3886295C4283810A95F4262BC4AA5B369363C5BBF2`
+  / `1,304,043,704` bytes; packaged core remains
+  `5F7938BB5A0A29DB67FA95A0008B3EFF82B2CCBBFE527E631A25A6B6C16F6CA6`
+  / `62,978,792` bytes. ARM64-only ABI and candidate identity contracts pass.
+- Decision: retain as `route-tooling` and startup-overhead reduction. A fresh
+  exact host candidate is pinned, but it is uninstalled/device-unmeasured and
+  receives no speed, FPS, temperature, flicker, gameplay, or stability credit.
+- Next: use separate independently cool rounds for exact no-launch install and
+  one self-stopping proof. Do not route installed old APK
+  `59D5658E...91BD02` with the new mandatory handshake tool.

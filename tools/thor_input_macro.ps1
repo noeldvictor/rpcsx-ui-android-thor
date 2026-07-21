@@ -617,6 +617,57 @@ function Initialize-ThorProcessIdentity {
     throw "RPCSX did not start within 5 seconds of the debug boot request. See the process-failure-boot-no-process logcat files."
 }
 
+function Get-ThorDebugBootHandshakeLog {
+    param([Parameter(Mandatory = $true)][string]$RequestId)
+
+    $logcatLines = @(& $Adb logcat -d -v brief -s "RPCSX-UI:V" "*:S" 2>&1)
+    $logcatExitCode = $LASTEXITCODE
+    $requestPattern = [regex]::Escape("request=$RequestId")
+    $requestLines = @($logcatLines | Where-Object { $_ -match $requestPattern })
+    return [pscustomobject]@{
+        exit_code = $logcatExitCode
+        all_lines = $logcatLines
+        request_lines = $requestLines
+        accepted = @($requestLines | Where-Object { $_ -match 'Thor debug boot accepted:' }).Count -gt 0
+        rejected = @($requestLines | Where-Object { $_ -match 'Thor debug boot rejected:' }).Count -gt 0
+    }
+}
+
+function Assert-ThorDebugBootAccepted {
+    param(
+        [Parameter(Mandatory = $true)][string]$RequestId,
+        [int]$TimeoutMs = 30000
+    )
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $handshake = $null
+    do {
+        Assert-ThorProcessIdentity "debug-boot-handshake"
+        $handshake = Get-ThorDebugBootHandshakeLog -RequestId $RequestId
+        if ($handshake.rejected -or $handshake.accepted) {
+            @($handshake.all_lines) | Set-Content -LiteralPath (Join-Path $captureDir "debug-boot-handshake.log") -Encoding UTF8
+            $status = if ($handshake.accepted) { "accepted" } else { "rejected" }
+            "$(Get-Date -Format o) request_id=$RequestId status=$status elapsed_ms=$($timer.ElapsedMilliseconds)" |
+                Out-File -LiteralPath (Join-Path $captureDir "debug-boot-handshake-status.log") -Append -Encoding UTF8
+            if ($handshake.rejected) {
+                & $Adb shell am force-stop $Package | Out-Null
+                throw "RPCSX rejected Thor debug boot request '$RequestId': $($handshake.request_lines -join ' ')"
+            }
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ($timer.ElapsedMilliseconds -lt $TimeoutMs)
+
+    if ($null -ne $handshake) {
+        @($handshake.all_lines) | Set-Content -LiteralPath (Join-Path $captureDir "debug-boot-handshake.log") -Encoding UTF8
+    }
+    "$(Get-Date -Format o) request_id=$RequestId status=timeout elapsed_ms=$($timer.ElapsedMilliseconds)" |
+        Out-File -LiteralPath (Join-Path $captureDir "debug-boot-handshake-status.log") -Append -Encoding UTF8
+    Save-ThorProcessFailureEvidence "debug-boot-handshake-timeout" $script:ExpectedThorPackageProcessId
+    & $Adb shell am force-stop $Package | Out-Null
+    throw "RPCSX did not acknowledge Thor debug boot request '$RequestId' within $TimeoutMs ms; it was force-stopped before the visual route."
+}
+
 function Assert-ThorProcessIdentity {
     param([string]$Stage)
 
@@ -1072,9 +1123,12 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "dismiss-keyguard.txt" @("shell", "wm dismiss-keyguard") -AllowFailure | Out-Null
     Start-Sleep -Milliseconds 500
 
+    $debugBootRequestId = [Guid]::NewGuid().ToString("N")
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot-logcat-clear.txt" @("logcat", "-c") -AllowFailure | Out-Null
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
-    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --ez thorRequireManagedProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
     Initialize-ThorProcessIdentity
+    Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId
 }
 
 if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
