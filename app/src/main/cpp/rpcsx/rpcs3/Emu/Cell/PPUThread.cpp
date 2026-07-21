@@ -6848,7 +6848,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_COMPILING_PPU_MODULES);
 
 		const u32 thread_count = std::max<u32>(std::min<u32>(::size32(workload), rpcs3::utils::get_max_threads()), 1) - 1;
-		const u64 ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());
+		const u64 ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_ppu_compile_worker_affinity_mask(Emu.GetTitleID());
 		atomic_t<bool> ppu_compile_worker_affinity_logged = false;
 
 		struct thread_index_allocator

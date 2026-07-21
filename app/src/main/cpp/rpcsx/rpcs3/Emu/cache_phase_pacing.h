@@ -129,4 +129,29 @@ namespace rpcsx::startup_cache_phase
 		return 0;
 #endif
 	}
+
+	// Eternal Sonata's cold PPU LLVM jobs are both latency-sensitive and bursty.
+	// Keep their normal Android policy on the three Cortex-A510 cores even when
+	// the diagnostic startup-worker property is off; the property can still
+	// provide a non-zero experimental override. Desktop and other titles retain
+	// the ordinary scheduler policy.
+	inline u64 get_ppu_compile_worker_affinity_mask(std::string_view title_id) noexcept
+	{
+#ifdef __ANDROID__
+		if (title_id != "BLUS30161")
+		{
+			return 0;
+		}
+
+		if (const u64 requested_mask = get_cache_worker_affinity_mask(title_id))
+		{
+			return requested_mask;
+		}
+
+		return 0x07;
+#else
+		(void)title_id;
+		return 0;
+#endif
+	}
 }

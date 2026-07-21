@@ -163,6 +163,23 @@ Put dated run details in `debug-experiments/`, not here.
   populated objects make title startup practical before changing worker count.
   Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Host successor B5B5DB6B...B4074522 restores two BLUS30161 cold PPU LLVM
+  workers for throughput while making `0x07` the title's normal Android PPU
+  compile mask, even when the diagnostic startup-worker property is off. A
+  nonzero property value can still override the compile mask for experiments;
+  desktop, other titles, and runtime PPU/SPU/RSX/render scheduling remain
+  unchanged, and each compile thread restores its prior affinity on exit. The
+  analyzer and artifact gates now require `Max LLVM Compile Threads: 2` plus
+  exact `requested=0x7,effective=0x7` runtime evidence. Optimized ARM64 native
+  compilation passed in 88 s, corrected ARM64-only packaging passed in 24 s,
+  and all 64/64 Thor host contracts pass. Exact APK is 72,829,976 bytes;
+  merged core 1F3671B9...333C00 is 1,304,047,216 bytes and packaged core
+  EA4451EA...81E615 is 62,979,016 bytes. This is a host-only bounded
+  cold-start throughput candidate, not a measured speed or temperature win.
+  Thor was not contacted and remains installed on EDDC3DF...2A7039. In one
+  later independently cool round, use only the strict no-launch installer for
+  B5B5DB6B...B4074522; reserve runtime proof for another cool round. Detailed
+  ledger: debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

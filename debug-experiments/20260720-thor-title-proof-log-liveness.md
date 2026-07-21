@@ -1096,3 +1096,53 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   a host-only successor that keeps PPU compile affinity separate from runtime
   workers and evaluates two compile workers on little cores; do not clear the
   device cache merely to manufacture a cold benchmark.
+
+### 2026-07-20 - two-little-core-ppu-compile-successor
+
+- Status: windows-pass
+- Scope: config-driver
+- Hypothesis: two cold PPU LLVM workers confined to Thor's three Cortex-A510
+  cores can recover most of the serial candidate's startup throughput without
+  returning to the unpinned big-core heat burst.
+- Changed files/settings: the BLUS30161 managed profile now explicitly uses
+  `Max LLVM Compile Threads: 2`. A new PPU-only policy helper returns the
+  existing nonzero startup-worker override when present and otherwise defaults
+  this title's Android cold PPU compilation to mask `0x07`. PPU compilation
+  continues using the scoped affinity guard, so both helper and caller workers
+  restore their prior masks before runtime. Desktop, other titles, and runtime
+  PPU/SPU/RSX/audio/render scheduling are unchanged. The analyzer, synthetic
+  counterproof, artifact marker, and source contracts now fail closed unless
+  the two-thread row and exact `requested=0x7,effective=0x7` activation exist.
+- Rollback: set the managed title profile back to one compile thread and remove
+  `get_ppu_compile_worker_affinity_mask`, returning PPU compilation to the
+  explicit startup-worker property only. No device rollback is needed because
+  this candidate has not been installed.
+- Windows result: focused thermal-cap, affinity, durable-evidence, analyzer,
+  profile, artifact, and explicit ARM64-only ABI contracts pass. Optimized
+  ARM64 native compilation completed in 88 s. The first generic package was
+  correctly rejected from candidate use because it included x86-64; corrected
+  `-PrpcsxAndroidAbis=arm64-v8a :app:assembleThortest` completed in 24 s. The
+  complete host suite passes 64/64 `test_thor_*.ps1` contracts.
+- Artifact result: exact host-only APK
+  `B5B5DB6B0C9E076E82DAA9D9E183028D8B286CA667B5CF686A116A19B4074522`
+  is 72,829,976 bytes and contains only ARM64 RPCSX libraries. Merged core
+  `1F3671B9A3803FCE81BBE732327B209A6BDDFC27D04A94DF9BFB776100333C00`
+  is 1,304,047,216 bytes. Packaged core
+  `EA4451EA1D7050203F7C1FBF57F7108AA05E5470E95D90D7E7C32D2FBA81E615`
+  is 62,979,016 bytes and matches the APK entry exactly.
+- Thor result: none. No ADB query, install, launch, retry, temperature read, or
+  cache mutation occurred. Exact installed APK remains
+  `EDDC3DF146A6914CE73BA7AE6B562F2FF702089D8C1424315CE3DFBD4F2A7039`.
+- Visual correctness and FPS/frame-time: not exercised. This is an uninstalled
+  bounded cold-start throughput candidate, not a measured speed, temperature,
+  FPS, flicker, gameplay, or stability result.
+- Decision: retain / windows-pass / device-unmeasured. The change directly
+  addresses the measured one-worker timeout while preserving the proven
+  little-core thermal envelope in normal product launches, but earns no
+  comparison credit until Thor proves it.
+- Next: after a genuinely independent cool interval, run one strict no-launch
+  install of exact APK `B5B5DB6B...B4074522`. Stop after exact on-device hash
+  and absent-PID proof. Reserve one self-stopping `ThorCoolTitle` run for a
+  different later cool round; require the two-thread row, exact PPU `0x07`
+  affinity, real title stabilization, complete fatal/log evidence, bounded
+  thermals, and absent final PID before any startup-speed or thermal credit.

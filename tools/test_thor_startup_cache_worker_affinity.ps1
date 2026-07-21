@@ -28,9 +28,12 @@ function Assert-Contains {
 
 foreach ($fragment in @(
     'inline u64 get_cache_worker_affinity_mask(std::string_view title_id) noexcept',
+    'inline u64 get_ppu_compile_worker_affinity_mask(std::string_view title_id) noexcept',
     'title_id != "BLUS30161"',
     '__system_property_get("debug.rpcsx.thor.cache_worker_affinity_mask", value)',
     'RPCSX_THOR_CACHE_WORKER_AFFINITY_MASK',
+    'if (const u64 requested_mask = get_cache_worker_affinity_mask(title_id))',
+    'return 0x07;',
     'parsed > 0xff',
     '(void)title_id;'
 )) {
@@ -82,7 +85,7 @@ if ($spuSet -lt 0 -or $spuCompiler -le $spuSet) {
 
 foreach ($fragment in @(
     '#include "Emu/cache_phase_pacing.h"',
-    'ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());',
+    'ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_ppu_compile_worker_affinity_mask(Emu.GetTitleID());',
     'struct scoped_compile_affinity',
     'previous_mask = thread_ctrl::get_thread_affinity_mask();',
     'thread_ctrl::set_thread_affinity_mask(requested_mask);',

@@ -217,7 +217,7 @@ foreach ($line in $guestLogLines) {
     }
 }
 $activationRequirements = [ordered]@{
-    "single PPU compile thread" = 'Max LLVM Compile Threads:\s*1'
+    "two little-core PPU compile threads" = 'Max LLVM Compile Threads:\s*2'
     "PPU efficiency-core compile affinity" = 'Thor PPU LLVM compile-worker affinity enabled:\s*requested=0x7, effective=0x7'
     "bounded RSX preload" = 'Android shader cache preload limit:\s*256 of'
     "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*500 ms'
