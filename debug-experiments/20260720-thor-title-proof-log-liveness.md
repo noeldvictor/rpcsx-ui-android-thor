@@ -820,3 +820,40 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Next: wait for a genuinely independent cooling interval, then attempt the
   exact no-launch install once. Do not combine that install with runtime; keep
   the self-stopping ThorCoolTitle proof for another later cool round.
+
+### 2026-07-20 - backup-first-candidate-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: config-driver
+- Hypothesis: exact backup-first candidate 089655E2...6F00EF can replace the
+  prior installed APK without launching RPCSX after a fresh strict cool gate.
+- Changed files/settings: installed only the frozen ARM64 ThorTest APK. The
+  emulator was force-stopped at both boundaries; no game, firmware, cache, or
+  custom YAML was opened by an activity in this round.
+- Rollback: reinstall a prior exact APK through the same no-launch workflow.
+  The candidate's future debug-only managed-profile transition retains the
+  backup-first custom-YAML path, but that transition was not exercised here.
+- Windows result: exact host APK SHA-256
+  089655E248BBFC323C04363244F5EE97953766041EFE3FD96CCCBF3A396F00EF and
+  size 72,829,872 bytes revalidated. All 63/63 Thor host contracts pass; the
+  strict-gate and no-launch installer focused contracts passed immediately
+  before device contact.
+- Thor result: pinned serial c3ca0370 passed the three-sample gate at
+  32.1 -> 32.1 -> 31.9 C (maximum 32.1 C, rise -0.2 C), with battery/skin
+  22.0/30.0 C. `adb install -r` reported Success. Expected, host, and installed
+  base.apk SHA-256 all equal 089655E2...6F00EF. PID was absent before and after;
+  post-install battery/skin/silicon were 22.0/30.0/33.7 C. No activity launched
+  and no follow-up ADB query or retry ran.
+- Visual correctness: not exercised; no emulator or game activity launched.
+- FPS/frame-time: none. Installation identity and bounded temperature grant no
+  speed, gameplay, stability, flicker, or thermal-win credit.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260720-210930-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260720-210942-custom-profile-backup-thortest-apk-install.
+- Decision: installed-exact-no-launch / route-tooling. The frozen candidate is
+  now the proven installed identity and remains runtime-unmeasured.
+- Next: after a separate independently cool interval, run exactly one
+  self-stopping ThorCoolTitle proof pinned to 089655E2...6F00EF. Require the
+  accepted custom-to-managed handshake, real title stabilization, complete
+  sync/fatal evidence, bounded thermals, and absent final PID before any timing
+  or stability credit.
