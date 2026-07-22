@@ -6837,8 +6837,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	// Create worker threads for compilation
 	if (!workload.empty())
 	{
-		// Track claimed and completed modules independently so the current thread
-		// can join the worker pool without creating one extra active thread.
+		// Track claimed and completed modules independently so worker creation
+		// stops once the remaining workload is already covered.
 		atomic_t<u64> work_cv = 0;
 		atomic_t<u64> work_done = 0;
 
@@ -6847,7 +6847,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_COMPILING_PPU_MODULES);
 
-		const u32 thread_count = std::max<u32>(std::min<u32>(::size32(workload), rpcs3::utils::get_max_threads()), 1) - 1;
+		const u32 thread_count = std::min<u32>(::size32(workload), rpcs3::utils::get_max_threads());
 		const u64 ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_ppu_compile_worker_affinity_mask(Emu.GetTitleID());
 		atomic_t<bool> ppu_compile_worker_affinity_logged = false;
 
@@ -7012,18 +7012,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			thread_op(memory_limit, &work_cv, &work_done, workload, cpu, info, cache_path, ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged, g_fxo->get<jit_core_allocator>().sem),
 			try_lock_thread);
 
-		const auto old_name = thread_ctrl::get_name();
-		thread_ctrl::set_name(worker_group_name + std::to_string(thread_count + 1));
-
-		thread_op current_op(memory_limit, &work_cv, &work_done, workload, cpu, info, cache_path, ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged, g_fxo->get<jit_core_allocator>().sem);
-
-		if (try_lock_thread(thread_count, current_op))
-		{
-			current_op();
-		}
-
 		threads.join();
-		thread_ctrl::set_name(old_name);
 
 		g_watchdog_hold_ctr--;
 	}

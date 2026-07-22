@@ -5,11 +5,13 @@ $mainActivityPath = Join-Path $repoRoot "app/src/main/java/net/rpcsx/MainActivit
 $nativePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp"
 $harnessPath = Join-Path $repoRoot "tools/invoke_thor_cache_prepare.ps1"
 $commonPath = Join-Path $repoRoot "tools/thor_debug_common.ps1"
+$processHealthPath = Join-Path $repoRoot "tools/thor_cache_prepare_process_health.ps1"
 
 $mainActivity = Get-Content -LiteralPath $mainActivityPath -Raw
 $native = Get-Content -LiteralPath $nativePath -Raw
 $harness = Get-Content -LiteralPath $harnessPath -Raw
 . $commonPath
+. $processHealthPath
 
 function Assert-Contains {
     param([string]$Source, [string]$Needle, [string]$Message)
@@ -30,6 +32,16 @@ try {
 }
 if (-not $newlineRejected) {
     throw "Remote-shell literal quoting accepted a newline."
+}
+
+$fatalSignal = "07-22 16:41:10.000 F libc : Fatal signal 5 (SIGTRAP), code -6 in tid 12585 (RPCSX-PrepareCa), pid 12525 (net.rpcsx.easy)"
+$activityDeath = "07-22 16:41:10.100 I ActivityManager: Process net.rpcsx.easy (pid 12525) has died: fg TOP"
+if (-not (Test-ThorCachePrepareNativeProcessDeath -LogText $fatalSignal -Package "net.rpcsx.easy") -or
+    -not (Test-ThorCachePrepareNativeProcessDeath -LogText $activityDeath -Package "net.rpcsx.easy")) {
+    throw "Cache-preparation process health detector missed a target native death marker."
+}
+if (Test-ThorCachePrepareNativeProcessDeath -LogText $fatalSignal -Package "net.rpcsx.other") {
+    throw "Cache-preparation process health detector matched another package."
 }
 
 foreach ($fragment in @(
@@ -164,6 +176,8 @@ foreach ($fragment in @(
     'ConvertTo-ThorRemoteShellLiteral -Value $GamePath',
     '"--es", "path", $quotedGamePath',
     '$requestReachedApp = ($finalLogcat -join "`n").Contains($requestId)',
+    'Test-ThorCachePrepareNativeProcessDeath -LogText $logText -Package $package',
+    'Cache preparation native process died before completion; inspect logcat-full.txt.',
     '$nativeText = Get-Content -LiteralPath $nativeLogPath -Raw',
     '$activationIndex = $nativeText.IndexOf($activationMarker',
     '$completionIndex = $nativeText.IndexOf($completionMarker',

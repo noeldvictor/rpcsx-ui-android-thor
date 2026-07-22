@@ -1280,3 +1280,24 @@ Put dated run details in `debug-experiments/`, not here.
   separate independently cool interval, run one bounded cache preparation;
   reserve title/field/menu/battle proof for a later round. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+
+- The installed BBAD241D...550B89 cache-preparation route then resolved the
+  exact BLUS30161 ISO PS3_GAME root and analyzed the main PPU, but crashed at
+  emulator time about 1.294 s because caller-participating ppu_initialize
+  renamed a raw Kotlin/JNI thread with no thread_ctrl current object. Capture
+  20260722-164057-firmware-ppu-prewarm stayed cool at
+  33.9 -> 32.9 -> 33.1 C preflight, 34.7 C peak, and 33.5 C post-stop; no game
+  boot occurred and final PID was absent. The old harness then waited its full
+  bound despite the dead process. Host successor 95DF7F6C...ED6D36 follows
+  current upstream by keeping both configured PPU compile lanes in a full
+  named_thread_group and making the foreign JNI caller wait only. Logcat
+  target-process death now ends the harness within the next poll. Optimized
+  ARM64 native/APK builds, all 66/66 Thor contracts, ABI, exact artifact,
+  packaged-core, and 35-export gates pass. Exact APK is 72,834,216 bytes;
+  merged core 15353CF1...7E6996 is 1,304,250,032 bytes; packaged core
+  32B0BD6D...04A0E2 is 62,983,368 bytes. The successor is uninstalled and
+  device-unmeasured: classify failed / host-fixed / successor-uninstalled /
+  not-comparable with no speed, FPS, thermal-win, flicker, gameplay, or
+  stability credit. Install only after a separate strict cool no-launch round,
+  then reserve cache preparation for a different cool round. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.

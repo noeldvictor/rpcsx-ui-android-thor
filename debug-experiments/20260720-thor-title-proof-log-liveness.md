@@ -1600,3 +1600,66 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   ordered native completion plus callback-finished evidence, bounded thermals,
   no game boot, and absent final PID. Reserve title and gameplay proof for a
   still later cool round.
+
+### 2026-07-22 - bounded-iso-root-native-thread-crash-and-host-successor
+
+- Status: device-failed / host-fixed / successor-uninstalled
+- Scope: route-tooling and native stability
+- Hypothesis: exact installed bounded-ISO-root successor BBAD241D...550B89
+  can finish stopped-emulator BLUS30161 PPU/firmware cache preparation within
+  the 150-second and thermal bounds without entering the game-boot path.
+- Thor result: capture
+  debug-captures/android-speed-sprint/20260722-164057-firmware-ppu-prewarm
+  matched the exact installed APK and passed preflight at
+  33.9 -> 32.9 -> 33.1 C. The ISO resolver then proved the exact
+  PS3_GAME/PARAM.SFO/USRDIR/EBOOT.BIN root, and main PPU analysis completed
+  with 12,082 functions and 154,267 blocks. Native compilation crashed at
+  emulator time about 1.294 seconds in ppu_initialize before its first module
+  compile. Silicon peaked at only 34.7 C, post-stop was 33.5 C,
+  battery/skin stayed 23.0/30.0 C, no game boot occurred, and PID was absent
+  after the controlled stop. The old harness did not recognize the dead
+  process and therefore waited 152.49 host seconds before reporting timeout.
+- Root cause: exact merged core E1B05DC9...99C6 symbolization maps the original
+  0x20 read to thread_ctrl::set_name from PPUThread.cpp's caller-participation
+  block. Cache preparation enters synchronously from the raw Kotlin/JNI
+  RPCSX-PrepareCa thread, so thread_ctrl::get_current() is null and that
+  foreign thread cannot be renamed as an RPCSX named_thread.
+- Changed files/settings: PPU LLVM compilation now follows current upstream's
+  full named-worker-pool design. The configured two compile lanes remain two
+  active named workers; the foreign JNI caller only waits for the group and no
+  longer executes thread_op or calls thread_ctrl::set_name. The cache harness
+  also recognizes target-package libc fatal-signal and ActivityManager
+  process-death rows, fails within the next logcat poll, records the death in
+  README.md, force-stops, and retains final PID/thermal evidence. No device,
+  profile, firmware, cache, or game state changed during the host repair.
+- Rollback: restore current-thread participation and remove the process-health
+  helper. Do not roll back: the saved symbolized crash proves the caller
+  violates thread_ctrl::set_name's named-thread precondition, while current
+  upstream already keeps compilation entirely inside named_thread_group.
+- Host result: focused cache-route and firmware tests pass; the process-health
+  helper also matches both target-death rows in the saved failing logcat. All
+  66/66 test_thor_*.ps1 contracts pass. Optimized ARM64 native compilation
+  passed in
+  69.8 seconds; ARM64-only ThorTest packaging passed in 28 seconds. The ABI,
+  optimized variant, exact artifact, packaged-core identity, and 35-export
+  surface gates pass.
+- Artifact result: exact host-only APK
+  95DF7F6CAEDC70762AECAD7620ECBBB6CA515B286FBF05B88870A17CCEED6D36
+  is 72,834,216 bytes. Merged core
+  15353CF12FCA6BA99902646732236E807910639BC25244063F6BE9C29F7E6996
+  is 1,304,250,032 bytes. Packaged core
+  32B0BD6D8B75308B18BD940EFB31036FDAAD1F786EFA559E34C82310E804A0E2
+  is 62,983,368 bytes and matches the APK entry exactly.
+- Visual correctness and FPS/frame-time: not exercised. The crash invalidates
+  cache completion and the successor is host-only, so this grants no startup
+  speed, FPS, temperature-win, flicker, field, menu, battle, gameplay, or
+  stability credit.
+- Decision: failed / host-fixed / successor-uninstalled / not-comparable. The
+  ISO-root fix is proven, the raw-thread crash has a build-verified repair, and
+  the harness no longer burns the full runtime bound after a native death.
+- Next: keep Thor idle. In one later independently cool round, install exact
+  APK 95DF7F6C...ED6D36 through the strict no-launch gate and stop. In a
+  different later cool round, run one bounded cache preparation and require
+  source=iso, named PPU workers, native completion, callback-finished, bounded
+  thermals, no game boot, and absent final PID. Reserve title/field/menu/battle
+  correctness and speed proof for still later cool rounds.

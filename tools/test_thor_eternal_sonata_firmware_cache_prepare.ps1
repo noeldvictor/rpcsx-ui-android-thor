@@ -68,6 +68,17 @@ foreach ($fragment in @(
     Assert-Contains $ppu $fragment "Firmware PPU precompile filtering/recursion changed: $fragment"
 }
 
+foreach ($fragment in @(
+    'const u32 thread_count = std::min<u32>(::size32(workload), rpcs3::utils::get_max_threads());',
+    'named_thread_group threads(worker_group_name, thread_count,',
+    'threads.join();'
+)) {
+    Assert-Contains $ppu $fragment "PPU cache compilation no longer uses the full named-worker pool: $fragment"
+}
+if ($ppu.Contains('thread_ctrl::set_name(worker_group_name')) {
+    throw "PPU cache compilation can still rename and execute on a foreign JNI caller thread."
+}
+
 $prepareStart = $android.IndexOf('bool prepare(JNIEnv *env, std::string path, std::string titleId,')
 $compileStart = $android.IndexOf('bool compile(JNIEnv *env, CompilationWorkload workload)', $prepareStart)
 if ($prepareStart -lt 0 -or $compileStart -le $prepareStart) {

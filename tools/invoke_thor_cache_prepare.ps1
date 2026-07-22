@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
+. "$PSScriptRoot\thor_cache_prepare_process_health.ps1"
 
 $expectedSerial = "c3ca0370"
 $titleId = "BLUS30161"
@@ -176,6 +177,7 @@ $success = $false
 $accepted = $false
 $nativeActivated = $false
 $nativeCompleted = $false
+$nativeProcessDied = $false
 $callbackFinished = $false
 $nativeText = ""
 $deviceApkHash = ""
@@ -300,6 +302,10 @@ try {
         }
         $accepted = $logText.Contains("Thor debug cache preparation accepted: request=$requestId titleId=$titleId")
         $callbackFinished = $logText.Contains("Thor debug cache preparation finished: request=$requestId titleId=$titleId")
+        if (Test-ThorCachePrepareNativeProcessDeath -LogText $logText -Package $package) {
+            $nativeProcessDied = $true
+            throw "Cache preparation native process died before completion; inspect logcat-full.txt."
+        }
         if (-not $accepted -and $stopwatch.Elapsed.TotalSeconds -ge $acceptDeadlineSeconds) {
             throw "Cache preparation intent was not accepted within $acceptDeadlineSeconds seconds."
         }
@@ -402,6 +408,7 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     "- Accepted: $accepted",
     "- Native activated: $nativeActivated",
     "- Native completed: $nativeCompleted",
+    "- Native process died: $nativeProcessDied",
     "- Callback finished: $callbackFinished",
     "- PID before: $(if ($pidBefore.Count) { $pidBefore -join ' ' } else { 'absent' })",
     "- PID after: $(if ($pidAfter.Count) { $pidAfter -join ' ' } else { 'absent' })",
