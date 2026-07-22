@@ -99,6 +99,8 @@ $routeContracts = @(
     '$macroStartedAt = Get-Date',
     '$AndroidStartupProfile -eq "ThorCoolTitle"',
     'analyze_thor_cool_title_capture.ps1',
+    'cool-title-analysis.json',
+    '-OutputPath $analysisPath',
     '-RequireReady',
     'redundant live scene capture skipped',
     'return'

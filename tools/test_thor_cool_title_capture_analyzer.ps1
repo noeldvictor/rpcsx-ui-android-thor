@@ -243,7 +243,14 @@ try {
         $ready.title_stability_window_ms -ne 5300) {
         throw "Synthetic ready capture was not classified as title-proof-ready without speed credit and exact title timing."
     }
-    & $analyzerPath -CaptureDir $readyDir -RequireReady | Out-Null
+    $readyJsonPath = Join-Path $readyDir "cool-title-analysis.json"
+    & $analyzerPath -CaptureDir $readyDir -OutputPath $readyJsonPath -RequireReady | Out-Null
+    $readyJson = Get-Content -LiteralPath $readyJsonPath -Raw | ConvertFrom-Json
+    if ($readyJson.status -ne "title-proof-ready" -or -not $readyJson.ready_for_comparison -or
+        $readyJson.first_title_frame_elapsed_ms -ne 1200 -or $readyJson.stable_title_frame_elapsed_ms -ne 6500 -or
+        $readyJson.title_stability_window_ms -ne 5300) {
+        throw "Persisted title analysis JSON did not retain exact classification and timing evidence."
+    }
 
     $missingTimingDir = Join-Path $tempRoot "missing-title-timing"
     Copy-Item -LiteralPath $readyDir -Destination $missingTimingDir -Recurse

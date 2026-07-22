@@ -909,7 +909,8 @@ function Invoke-AndroidRouteScene {
             throw "Thor cool-title route completed but its input capture directory could not be resolved."
         }
 
-        & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") -CaptureDir $inputCapture.FullName -RequireReady
+        $analysisPath = Join-Path $inputCapture.FullName "cool-title-analysis.json"
+        & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") -CaptureDir $inputCapture.FullName -OutputPath $analysisPath -RequireReady
         Write-Host "Thor cool-title profile stopped after its title proof; redundant live scene capture skipped."
         return
     }
