@@ -43,7 +43,7 @@ if ($Action -eq "Status") {
 }
 
 try {
-    $captureOutput = @(& $inputMacroPath @gateParameters -PassThruCaptureDirectory)
+    $captureOutput = @(& $inputMacroPath @gateParameters -PassThruCaptureDirectory 6>$null)
 } catch {
     $failureCaptureDir = [string]$_.Exception.Data["ThorCaptureDirectory"]
     if (-not [string]::IsNullOrWhiteSpace($failureCaptureDir)) {

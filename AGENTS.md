@@ -1260,3 +1260,13 @@ Put dated run details in `debug-experiments/`, not here.
   cool round may run one bounded prewarm. Grant no speed, temperature, FPS,
   flicker, field, menu, battle, gameplay, or stability credit yet. Detailed
   ledger: debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Strict cool gate 20260722-160903 passed at 32.7 -> 33.1 -> 32.9 C
+  (post-run 33.9 C), but the outer host composition refused before installation
+  because a child PowerShell process surfaced both the nested Write-Host line
+  and machine-readable capture path. No adb install, launch, retry, or
+  follow-up query ran. invoke_thor_strict_cool_gate.ps1 now suppresses the
+  nested information stream with 6>$null; its contract passes. Exact successor
+  BBAD241D...550B89 remains uninstalled and installed APK logically remains
+  1DCDBBEB...6F4885. Wait for a separate cool install-only round. This is
+  route-tooling only and grants no performance or stability credit. Detailed
+  ledger: debug-experiments/20260720-thor-title-proof-log-liveness.md.

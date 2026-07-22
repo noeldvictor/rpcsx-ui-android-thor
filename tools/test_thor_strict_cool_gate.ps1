@@ -49,6 +49,7 @@ $requiredWrapperFragments = @(
     'MaxSkinTemperatureC = 40',
     'MaxSiliconTemperatureC = 72',
     '-PassThruCaptureDirectory',
+    '6>$null',
     '"README.md", "thermal-guard.log"',
     '$_.Exception.Data["ThorCaptureDirectory"]',
     'Strict cool gate failed (capture_dir='

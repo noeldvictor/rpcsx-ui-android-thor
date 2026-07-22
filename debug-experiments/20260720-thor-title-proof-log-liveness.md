@@ -1522,3 +1522,40 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   and require source=iso with a virtual PS3_GAME scan root, exact BLUS30161
   PARAM.SFO, native completion, callback-finished, bounded thermals, no game
   boot, and absent final PID. Reserve title/gameplay proof for a later round.
+
+### 2026-07-22 - strict-cool-gate-host-stream-refusal
+
+- Status: failed / route-tooling / no-install
+- Scope: route-tooling
+- Hypothesis: the exact ISO-root successor can be installed without launch
+  immediately after one strict three-sample cool gate.
+- Changed files/settings: the device gate changed no APK, profile, firmware,
+  runtime cache, or game state. The host wrapper now suppresses the nested
+  input macro's PowerShell information stream while requesting a
+  machine-readable capture path, so an external child process emits exactly
+  one success-stream path instead of a human Write-Host line plus the path.
+  The strict-gate contract requires this information-stream suppression.
+- Rollback: remove 6>$null from the nested input-macro call and its contract.
+  Do not roll back: the saved host refusal demonstrates the duplicate external
+  process output.
+- Host result: exact candidate BBAD241D...550B89 and the no-launch install,
+  strict-cool, candidate artifact, and host-only Status contracts passed before
+  device contact. The corrected focused strict-cool contract and host-only
+  Status pass afterward.
+- Thor result: strict gate capture
+  debug-captures/android-speed-sprint/20260722-160903-thor-input-strict-cool-gate
+  passed at 32.7 -> 33.1 -> 32.9 C, maximum 33.1 C, rise +0.2 C, with
+  battery/skin 23.0/30.0 C. Post-run silicon was 33.9 C. The outer host command
+  then saw two stdout lines and refused before install_thor_apk_no_launch.ps1
+  was invoked. No adb install or activity launch occurred, and no retry or
+  follow-up device query ran.
+- Visual correctness and FPS/frame-time: not exercised. This grants no cache,
+  speed, temperature, FPS, flicker, field, menu, battle, gameplay, or stability
+  credit.
+- Decision: failed / host-output-parser / thermally-safe / no-install. Exact
+  successor BBAD241D...550B89 remains uninstalled; installed APK logically
+  remains 1DCDBBEB...6F4885 because the install script was never called.
+- Next: stop this device round. After a separate independently cool interval,
+  invoke the corrected strict gate and exact no-launch installer once, then
+  stop. Reserve cache preparation and title/gameplay proof for two still later
+  independently cool rounds.
