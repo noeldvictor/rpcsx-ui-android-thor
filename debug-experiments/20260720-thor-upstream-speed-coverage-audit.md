@@ -109,3 +109,32 @@ field, battle, menu, gameplay, stability, or controlled temperature-win credit.
 - all `59/59` Thor host contracts passed before the manifest repin; and
 - the focused cool-title profile contract and `git diff --check` are rerun
   after the repin.
+
+
+## 2026-07-22 official-tip refresh
+
+The official `master` tip is now `8604f1c5d83fbd256e3e29fdccee4ead805c2689`;
+the read-only local comparison checkout remains at `ee37ef277`. Four July 21
+LLVM commits after that checkout form one relevant sequence:
+
+- `85c59207f`: look through bitcasts when extracting a constant `v128`;
+- `2aeb08f92`: reject `computeKnownBits` results whose value graph reaches a
+  PHI, because single-pass IR emission may not have added the back edge yet;
+- `d75543a5b`: recover safe OR/AND constant known bits when the full analysis
+  is rejected; and
+- `8b05c8cc1`: correct the fallback's per-lane all/any bit combination.
+
+The Android fork does not contain this sequence: `get_known_bits` still calls
+`llvm::computeKnownBits` directly, and `get_const_vector<v128>` does not look
+through bitcasts. The PHI safety fix is plausibly relevant to stability because
+the historical Thor failure includes corrupted PPU-produced command words,
+but no capture currently attributes that failure to known-bit analysis. Treat
+that relationship as a hypothesis, not proof or performance credit.
+
+Do not port/build the series before the exact installed A7216402...3D15C cache
+checkpoint. Rebuilding would overwrite the frozen host artifact, invalidate
+the installed-identity route, and obscure whether upstream d8710c431 fixed the
+two-lane worker contract. After that checkpoint, port the four commits as one
+ordered unit, run optimized ARM64 and all Thor contracts, and ensure the PPU
+object-cache compatibility decision is explicit before any install. No Thor
+contact occurred during this refresh.
