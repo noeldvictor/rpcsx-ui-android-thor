@@ -137,7 +137,16 @@ object GameCacheRepository {
 
         thread(name = "RPCSX-PrepareCache", isDaemon = true) {
             ThorPerformanceProfile.applyRuntimeAffinity()
-            GameSettingsDatabase.applyRecommendedConfig(context, game)
+            val settingsStatus = GameSettingsDatabase.applyRecommendedConfig(context, game)
+            if (titleId == "BLUS30161" && !(settingsStatus.enabled && settingsStatus.applied)) {
+                ProgressRepository.onProgressEvent(
+                    progressId,
+                    -1,
+                    0,
+                    "Apply the managed Eternal Sonata Thor profile before preparing cache. Custom settings were left untouched."
+                )
+                return@thread
+            }
 
             val ok = runCatching {
                 RPCSX.instance.preparePpuCache(game.info.path, titleId, progressId)

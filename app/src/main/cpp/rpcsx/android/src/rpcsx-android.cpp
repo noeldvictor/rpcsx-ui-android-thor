@@ -1542,6 +1542,7 @@ std::atomic<jlong> MessageDialog::s_pendingProgressId = -1;
 struct CompilationWorkload {
   jlong progressId;
   std::string path;
+  bool precompileFirmwareModules = false;
 };
 
 extern bool ppu_load_exec(const ppu_exec_object &, bool virtual_load,
@@ -1627,14 +1628,92 @@ public:
       return false;
     }
 
-    if (!titleId.empty()) {
-      Emu.SetTitleID(std::move(titleId));
+    const bool precompileFirmwareModules = titleId == "BLUS30161";
+    std::string previousConfig;
+    std::string previousConfigName;
+    bool restoreConfig = false;
+    AtExit configRestore{[&] {
+      if (!restoreConfig) {
+        return;
+      }
+
+      if (!g_cfg.from_string(previousConfig)) {
+        rpcsx_android.fatal("Failed to restore global configuration after PPU "
+                            "cache preparation");
+      }
+      g_cfg.name = previousConfigName;
+    }};
+
+    if (precompileFirmwareModules) {
+      const std::string titleConfigPath =
+          rpcs3::utils::get_custom_config_path(titleId);
+      fs::file titleConfig{titleConfigPath};
+      if (!titleConfig) {
+        progress.failure(
+            "Apply the managed Eternal Sonata Thor profile before preparing "
+            "cache.");
+        return false;
+      }
+
+      const std::string titleConfigText = titleConfig.to_string();
+      if (!titleConfigText.starts_with("# RPCSX_THOR_AUTO_SETTINGS") ||
+          titleConfigText.find("# Title ID: BLUS30161") == std::string::npos) {
+        progress.failure(
+            "Eternal Sonata cache preparation requires the managed Thor "
+            "profile; custom settings were left untouched.");
+        return false;
+      }
+
+      previousConfig = g_cfg.to_string();
+      previousConfigName = g_cfg.name;
+      restoreConfig = true;
+      if (!g_cfg.from_string(titleConfigText)) {
+        progress.failure(
+            "The managed Eternal Sonata Thor profile could not be loaded.");
+        return false;
+      }
+      g_cfg.name = titleConfigPath;
+
+      // Boot applies the same LLVM compatibility fixups before forming PPU
+      // cache identities. Mirror them here so prepared objects are reusable.
+      g_cfg.core.ppu_use_nj_bit.set(false);
+      g_cfg.core.ppu_set_vnan.set(false);
+      g_cfg.core.ppu_set_fpcc.set(false);
+
+      if (g_cfg.core.ppu_decoder != ppu_decoder_type::llvm_legacy ||
+          !g_cfg.core.set_daz_and_ftz || g_cfg.core.llvm_threads != 2) {
+        progress.failure(
+            "The Eternal Sonata Thor profile is not the expected LLVM/FTZ "
+            "cache variant.");
+        return false;
+      }
+
+      const std::string firmwareRoot =
+          g_cfg_vfs.get_dev_flash() + "sys/external/";
+      if (!fs::is_dir(firmwareRoot)) {
+        progress.failure(
+            "PS3 firmware modules are missing; install firmware before "
+            "preparing Eternal Sonata cache.");
+        return false;
+      }
+
+      rpcsx_android.always()(
+          "Thor PPU cache preparation activated: title=%s, "
+          "managed-config=%s, firmware-root=%s, llvm-threads=%u, ftz=true",
+          titleId, titleConfigPath, firmwareRoot,
+          static_cast<u32>(g_cfg.core.llvm_threads.get()));
     }
 
-    return compile(env, {
-                            .progressId = progressId,
-                            .path = std::move(ebootPath),
-                        });
+    if (!titleId.empty()) {
+      Emu.SetTitleID(titleId);
+    }
+
+    return compile(env,
+                   {
+                       .progressId = progressId,
+                       .path = std::move(ebootPath),
+                       .precompileFirmwareModules = precompileFirmwareModules,
+                   });
   }
 
 private:
@@ -1723,11 +1802,10 @@ private:
     std::vector<std::string> dir_queue;
     dir_queue.push_back(rootPath.string());
 
-    for (auto &entry :
-         std::filesystem::recursive_directory_iterator(rootPath)) {
-      if (entry.is_directory()) {
-        dir_queue.push_back(entry.path().string());
-      }
+    // ppu_precompile already discovers subdirectories recursively. Supplying
+    // each child here made the explicit preparation path scan them twice.
+    if (workload.precompileFirmwareModules) {
+      dir_queue.push_back(g_cfg_vfs.get_dev_flash() + "sys/external/");
     }
 
     std::vector<ppu_module<lv2_obj> *> mod_list;

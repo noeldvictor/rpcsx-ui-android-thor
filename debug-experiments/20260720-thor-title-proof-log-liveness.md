@@ -1244,3 +1244,47 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   way to avoid or pre-materialize unnecessary startup objects. Any successor
   must pass host contracts and a later independently cool, single self-stopping
   proof; do not clear the device cache or retry merely to finish compilation.
+### 2026-07-21 - stopped-emulator-firmware-ppu-prewarm-successor
+
+- Status: windows-pass
+- Scope: config-driver
+- Hypothesis: compiling Eternal Sonata's required LLE firmware PRXs through
+  the existing stopped-emulator Prepare Cache action can remove the measured
+  90-second pre-title cold work from normal launch without increasing launch
+  temperature or changing emulated behavior.
+- Changed files/settings: explicit BLUS30161 preparation now requires the
+  applied managed profile, loads it into the native configuration, mirrors the
+  three LLVM compatibility fixups used by boot, verifies LLVM plus two workers
+  plus hardware FTZ, and restores the previous global configuration on every
+  exit. The workload adds dev_flash/sys/external only for this title and leaves
+  RPCS3's existing HLE/LLE firmware filter authoritative. The caller fails
+  closed for disabled, stale, or custom settings. The redundant host-side
+  recursive enumeration was removed because ppu_precompile already recurses.
+- Rollback: remove the precompileFirmwareModules workload flag and managed
+  config scope, restore the former game-root-only queue, and remove the app-side
+  BLUS30161 gate. Existing cache objects remain versioned and safe to ignore.
+- Host result: the focused config/firmware contract, raw-object-cache contract,
+  FTZ/NJ cache-identity contract, worker-affinity contract, Kotlin compilation,
+  optimized ARM64 native build, ARM64-only APK build, ABI gate, optimized
+  variant gate, pinned artifact gate, and complete 65/65 Thor host suite pass.
+  Native compilation took 141.4 seconds and packaging took 88.1 seconds.
+- Artifact result: exact host-only APK
+  3B6ACA6D3E393197FFFB35D58FC6F7DAE947CEC35C6DA091DC20368478C76404 is
+  72,828,756 bytes. Merged core
+  4D1B95CE4FD70C41992DEECCFCB0DA3566B2F8694E86A353E8C186ECCB9AA849 is
+  1,304,106,936 bytes. Packaged core
+  00721AA0501871D0E872056BEF3D2BB5CB73FF4F75677597BFF92602502159F8 is
+  62,975,080 bytes and matches the APK entry.
+- Thor result: none. No ADB query, install, launch, cache preparation, retry,
+  or temperature read ran. Exact installed APK remains B5B5DB6B...B4074522.
+- Visual correctness and FPS/frame-time: not exercised. This successor earns
+  no startup-speed, FPS, temperature, flicker, field, menu, battle, gameplay,
+  or stability credit until a later independently cool proof.
+- Decision: retain / windows-pass / device-unmeasured. The code pre-materializes
+  the exact same firmware PPU objects normal boot requested; it does not skip
+  compilation, modules, guest work, or correctness checks.
+- Next: after a separate independently cool interval, install the exact APK
+  with the no-launch gate. In a later cool round, run Prepare Cache once while
+  stopped and capture its activation/completion evidence. Only a still later
+  cool round may run one self-stopping title proof; do not combine these into a
+  heat-soak sequence.

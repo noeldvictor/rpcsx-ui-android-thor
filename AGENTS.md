@@ -205,6 +205,19 @@ Put dated run details in `debug-experiments/`, not here.
   of the pre-title firmware-PRX compile breadth before another cool proof.
   Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Host successor 3B6ACA6D...C76404 moves the measured firmware-PRX cold work
+  into the stopped-emulator Prepare Cache action for BLUS30161. It loads only
+  the managed title YAML, mirrors boot's LLVM compatibility fixups, requires
+  the exact two-worker/hardware-FTZ cache identity, scans sys/external through
+  RPCS3's existing LLE/HLE filter, restores the prior global config, and
+  removes duplicate directory enumeration. Custom/stale profiles and missing
+  firmware fail closed. Optimized ARM64 native and ARM64-only APK builds plus
+  all 65/65 host contracts pass. Exact APK is 72,828,756 bytes; merged core
+  4D1B95CE...9AA849 is 1,304,106,936 bytes and packaged core
+  00721AA0...159F8 is 62,975,080 bytes. It is host-only and uninstalled; no
+  ADB/device/cache action ran, so it earns no startup, FPS, thermal, flicker,
+  gameplay, or stability credit. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

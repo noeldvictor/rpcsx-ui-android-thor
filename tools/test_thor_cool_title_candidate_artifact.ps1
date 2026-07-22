@@ -119,9 +119,13 @@ function Test-BinaryAsciiMarker {
     return $false
 }
 
-$nativeMarker = "Thor PPU LLVM compile-worker affinity enabled:"
-if (-not (Test-BinaryAsciiMarker -Path $StrippedCorePath -Marker $nativeMarker)) {
-    throw "Pinned Thor native core is missing PPU compile-worker affinity marker: $nativeMarker"
+foreach ($nativeMarker in @(
+    "Thor PPU LLVM compile-worker affinity enabled:",
+    "Thor PPU cache preparation activated:"
+)) {
+    if (-not (Test-BinaryAsciiMarker -Path $StrippedCorePath -Marker $nativeMarker)) {
+        throw "Pinned Thor native core is missing required marker: $nativeMarker"
+    }
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -173,7 +177,8 @@ try {
         "Thor debug boot accepted:",
         "thorReplaceCustomProfile",
         "replaceCustomWithRecommendedConfigForTitleId",
-        "Max LLVM Compile Threads: 2"
+        "Max LLVM Compile Threads: 2",
+        "Apply the managed Eternal Sonata Thor profile before preparing cache."
     )) {
         if (-not $joinedDexText.Contains($requiredDexMarker)) {
             throw "Pinned Thor APK DEX is missing debug-boot marker: $requiredDexMarker"
