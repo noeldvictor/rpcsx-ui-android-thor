@@ -751,6 +751,20 @@ function Join-ThorNativeArguments {
     return ($quoted -join " ")
 }
 
+function ConvertTo-ThorRemoteShellLiteral {
+    param([AllowEmptyString()][string]$Value)
+
+    if ($Value.Contains("`r") -or $Value.Contains("`n") -or $Value.IndexOf([char]0) -ge 0) {
+        throw "Remote shell values cannot contain NUL or newline characters."
+    }
+
+    # adb shell joins its remaining native arguments and asks the device shell
+    # to parse them again. Preserve one exact value through that second parse,
+    # including spaces, parentheses, apostrophes, and shell metacharacters.
+    $escaped = $Value.Replace("'", "'`"'`"'")
+    return "'$escaped'"
+}
+
 function Invoke-ThorAdbCapture {
     param(
         [string]$Adb,

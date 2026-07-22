@@ -248,6 +248,18 @@ Put dated run details in `debug-experiments/`, not here.
   credit. Stop this device round; prepare cache and prove title only in two
   additional separate independently cool rounds. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- First deterministic prewarm attempt
+  20260722-152936-firmware-ppu-prewarm passed exact installed identity and the
+  strict gate at 33.5 -> 32.7 -> 33.1 C, but `adb shell` reparsed the unquoted
+  ISO path and failed on `(` before MainActivity started. Runtime was zero
+  seconds, post-stop silicon was 33.9 C, PID was absent at both boundaries,
+  and no cache preparation or game boot occurred. The host harness now carries
+  the path through a tested POSIX single-quoted literal and does not attach a
+  stale remote RPCSX log when the current request never reaches app logcat;
+  66/66 Thor contracts pass. No APK/core change or retry occurred. Wait for another independently
+  cool round before one cache-preparation retry, then reserve title proof for a
+  still later round. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

@@ -4,16 +4,32 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $mainActivityPath = Join-Path $repoRoot "app/src/main/java/net/rpcsx/MainActivity.kt"
 $nativePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp"
 $harnessPath = Join-Path $repoRoot "tools/invoke_thor_cache_prepare.ps1"
+$commonPath = Join-Path $repoRoot "tools/thor_debug_common.ps1"
 
 $mainActivity = Get-Content -LiteralPath $mainActivityPath -Raw
 $native = Get-Content -LiteralPath $nativePath -Raw
 $harness = Get-Content -LiteralPath $harnessPath -Raw
+. $commonPath
 
 function Assert-Contains {
     param([string]$Source, [string]$Needle, [string]$Message)
     if (-not $Source.Contains($Needle)) {
         throw $Message
     }
+}
+
+$quotedPath = ConvertTo-ThorRemoteShellLiteral -Value "/storage/A B's (USA).iso"
+if ($quotedPath -ne "'/storage/A B'`"'`"'s (USA).iso'") {
+    throw "Remote-shell literal quoting did not preserve spaces, parentheses, and apostrophes."
+}
+$newlineRejected = $false
+try {
+    [void](ConvertTo-ThorRemoteShellLiteral -Value "bad`npath")
+} catch {
+    $newlineRejected = $true
+}
+if (-not $newlineRejected) {
+    throw "Remote-shell literal quoting accepted a newline."
 }
 
 foreach ($fragment in @(
@@ -107,6 +123,10 @@ foreach ($fragment in @(
     'pidof $package',
     'thorCachePrepareRequestId',
     'thorRequireManagedProfile',
+    'ConvertTo-ThorRemoteShellLiteral -Value $GamePath',
+    '"--es", "path", $quotedGamePath',
+    '$requestReachedApp = ($finalLogcat -join "`n").Contains($requestId)',
+    'RPCSX-log-not-collected.txt',
     'Get-ThorThermalRuntimeGuardDecision',
     'Thor debug cache preparation accepted: request=',
     'Thor PPU cache preparation activated: title=',

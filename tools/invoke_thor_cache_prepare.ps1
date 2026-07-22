@@ -235,11 +235,12 @@ try {
     }
 
     Invoke-ThorAdbText $adb $captureDir "logcat-clear.txt" @("logcat", "-c") | Out-Null
+    $quotedGamePath = ConvertTo-ThorRemoteShellLiteral -Value $GamePath
     $launchArgs = @(
         "shell", "am", "start", "-W",
         "-n", "$package/net.rpcsx.MainActivity",
         "-a", $intentAction,
-        "--es", "path", $GamePath,
+        "--es", "path", $quotedGamePath,
         "--es", "titleId", $titleId,
         "--es", "thorCachePrepareRequestId", $requestId,
         "--ez", "thorRequireManagedProfile", "true"
@@ -323,7 +324,13 @@ try {
     $pidAfter = @(Get-ThorCapturedBody $pidAfterPath)
     $finalLogcat = Read-FreshLogcat
     $finalLogcat | Set-Content -LiteralPath (Join-Path $captureDir "logcat-full.txt") -Encoding UTF8
-    [void](Copy-ThorAdbFile -Adb $adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteLog -LocalName "RPCSX.log")
+    $requestReachedApp = ($finalLogcat -join "`n").Contains($requestId)
+    if ($requestReachedApp) {
+        [void](Copy-ThorAdbFile -Adb $adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteLog -LocalName "RPCSX.log")
+    } else {
+        "RPCSX.log was not collected because the current request ID never reached app logcat; an existing remote log may be stale." |
+            Set-Content -LiteralPath (Join-Path $captureDir "RPCSX-log-not-collected.txt") -Encoding UTF8
+    }
     $postStopSnapshot = Get-CachePrepareThermalSnapshot
     Add-ThermalSnapshot -Stage "post-stop" -Snapshot $postStopSnapshot
 }

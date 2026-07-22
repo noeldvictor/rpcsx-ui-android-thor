@@ -1423,3 +1423,46 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   Require exact APK identity, accepted/activated/completed/finished ordering,
   complete logs, bounded thermals, no game boot, and absent final PID. Reserve
   title and gameplay proof for a still later cool round.
+
+### 2026-07-22 - deterministic-prewarm-route-shell-quote-failure
+
+- Status: failed
+- Scope: route-tooling
+- Hypothesis: the exact installed deterministic-prewarm successor can run one
+  stopped-emulator firmware/PPU cache preparation after the strict cool gate,
+  with ordered completion evidence and no game boot.
+- Changed files/settings: the device attempt changed no profile, APK, core, or
+  experiment control. After the failed command, the host harness was fixed to
+  pass the game path through a POSIX single-quoted remote-shell literal,
+  including apostrophe escaping. It now omits RPCSX.log when the current
+  request ID never reaches app logcat, so an older remote log cannot be
+  mistaken for current evidence.
+- Rollback: revert ConvertTo-ThorRemoteShellLiteral and pass the raw GamePath
+  argument again. Do not roll back: the capture directly proves that form is
+  split and reparsed by the device shell.
+- Host result: focused cache-route parsing/quoting/status checks pass, including
+  spaces, parentheses, apostrophes, and newline rejection. All 66/66
+  tools/test_thor_*.ps1 contracts pass. The correction is host tooling only;
+  installed APK 1DCDBBEB...6F4885 needs no rebuild or reinstall.
+- Thor result: capture 20260722-152936-firmware-ppu-prewarm matched installed
+  base.apk SHA-256
+  1DCDBBEB01FFF2A3F04A40A8D503D9ECC3F6CBDD1BEFB9FDE97C8252826F4885.
+  The strict gate passed silicon 33.5 -> 32.7 -> 33.1 C (maximum 33.5 C,
+  rise -0.4 C), battery/skin 23.0/30.0 C. The unquoted path then produced
+  `/system/bin/sh: syntax error: unexpected '('`; MainActivity never started,
+  runtime elapsed was zero seconds, accepted/activated/completed/finished were
+  all false, PID was absent before and after, and post-stop silicon was 33.9 C.
+  No retry or follow-up device action ran.
+- Visual correctness and FPS/frame-time: not exercised. The route did not enter
+  RPCSX, so this grants no cache, speed, thermal-win, gameplay, flicker, or
+  stability credit. The pulled RPCSX.log is pre-existing and is explicitly not
+  current-run evidence.
+- Capture path:
+  debug-captures/android-speed-sprint/20260722-152936-firmware-ppu-prewarm.
+- Decision: failed / route-not-entered / thermally-safe. Retain the quoting fix
+  and stale-log guard; exact successor remains installed with RPCSX stopped.
+- Next: stop this device round. After another independently cool interval, run
+  exactly one tools/invoke_thor_cache_prepare.ps1 -Action Run action. Require
+  the quoted path in intent-start.txt, exact APK identity, ordered accepted /
+  activated / completed / finished evidence, bounded thermals, no game boot,
+  and absent final PID. Reserve title/gameplay proof for a still later round.
