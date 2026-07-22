@@ -1884,3 +1884,27 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   independent cooldown, run one final 90-second checkpoint and require full
   native completion plus callback-finished before attempting the separately
   cooled title proof.
+
+### 2026-07-22 - title-timing-proof-hardening
+
+- Status: host-pass / device-unchanged
+- Scope: auditable title-startup baseline and launcher rejection
+- Changed files/settings: the cool-title analyzer now parses the first valid
+  title frame, the second consecutive stable title frame, and their elapsed
+  window from ppu-ready-gate.log. Comparison-ready status requires both exact
+  timings and current image-replay title validity. Invalid or unstable visuals
+  clear the timing fields so an old launcher-classifier row cannot become a
+  startup claim.
+- Host result: the synthetic ready fixture reports first=1200 ms, stable=6500
+  ms, and window=5300 ms. Removing elapsed timing produces
+  proof-sequence-incomplete, while replay of saved capture
+  20260720-104152-thor-input-custom remains launcher-ui-instead-of-title with
+  null timings. The focused analyzer/profile checks and all 66/66 Thor host
+  contracts pass.
+- Thor result: none. No ADB query, thermal read, launch, cache action, or other
+  device contact occurred. Exact installed APK A7216402...3D15C and its core
+  remain frozen.
+- Decision: retain. This improves startup measurement fidelity but grants no
+  speed, FPS, gameplay, flicker, stability, or thermal-win credit. After an
+  independent cooldown, finish the five remaining cache modules; reserve the
+  separately cooled title proof as the first valid startup baseline.

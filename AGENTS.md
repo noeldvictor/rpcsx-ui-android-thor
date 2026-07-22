@@ -1380,3 +1380,13 @@ Put dated run details in `debug-experiments/`, not here.
   round. After a separate cooldown, one final 90-second checkpoint should
   finish the five remaining modules; require native completion and the
   callback before title proof.
+
+- The cool-title analyzer now exposes first-title, stable-title, and stability
+  window milliseconds from the bounded PPU-ready gate. Comparison-ready proof
+  requires those timings in addition to current frame-replay title validity;
+  the saved launcher false positive returns null timings, and a synthetic real
+  title without elapsed timing fails proof-sequence-incomplete. All 66/66
+  Thor host contracts pass. This is host-only route hardening: exact installed
+  APK A7216402...3D15C and its core are unchanged, no device contact occurred,
+  and no startup-speed or FPS credit exists. Use the metrics only after the
+  final five cache modules complete in a separately cool round.

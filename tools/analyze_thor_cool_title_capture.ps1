@@ -297,6 +297,25 @@ $gateStable = $false
 $gateEvidenceSource = "log"
 $gateFrameCount = 0
 $gateFrameErrors = New-Object System.Collections.Generic.List[string]
+$firstTitleFrameElapsedMs = $null
+$stableTitleFrameElapsedMs = $null
+foreach ($gateLine in $gateLines) {
+    if ($gateLine -notmatch 'elapsed_ms=(\d+)') {
+        continue
+    }
+
+    $elapsedMs = [long]$Matches[1]
+    if ($gateLine -notmatch 'title_menu_present=True') {
+        continue
+    }
+    if ($null -eq $firstTitleFrameElapsedMs -or $elapsedMs -lt $firstTitleFrameElapsedMs) {
+        $firstTitleFrameElapsedMs = $elapsedMs
+    }
+    if ($gateLine -match 'ready_candidate_count=([2-9]|[1-9][0-9]+)' -and
+        ($null -eq $stableTitleFrameElapsedMs -or $elapsedMs -lt $stableTitleFrameElapsedMs)) {
+        $stableTitleFrameElapsedMs = $elapsedMs
+    }
+}
 $gateFrames = @(Get-ChildItem -LiteralPath $resolvedCaptureDir -File -Filter "*-ppu-ready-poll-*.png" -ErrorAction SilentlyContinue | Sort-Object Name)
 if ($gateFrames.Count -gt 0) {
     $gateEvidenceSource = "frame-replay"
@@ -344,6 +363,22 @@ if ($titleProof) {
         $titleClassificationError = $_.Exception.Message
     }
 }
+$gateTimingReady = (
+    $titleMenuPresent -and
+    $gateStable -and
+    $null -ne $firstTitleFrameElapsedMs -and
+    $null -ne $stableTitleFrameElapsedMs -and
+    $stableTitleFrameElapsedMs -ge $firstTitleFrameElapsedMs
+)
+$titleStabilityWindowMs = if ($gateTimingReady) {
+    $stableTitleFrameElapsedMs - $firstTitleFrameElapsedMs
+} else {
+    $null
+}
+if (-not $titleMenuPresent -or -not $gateStable) {
+    $firstTitleFrameElapsedMs = $null
+    $stableTitleFrameElapsedMs = $null
+}
 $guestLogEvidenceIncomplete = (
     $titleMenuPresent -and
     $gateStable -and
@@ -375,6 +410,7 @@ $readyForComparison = (
     $thermalFailureLines.Count -eq 0 -and
     $fatalHits.Count -eq 0 -and
     $gateStable -and
+    $gateTimingReady -and
     $titleMenuPresent -and
     $stoppedAfterProof
 )
@@ -407,7 +443,7 @@ $status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -a
     "title-proof-log-incomplete"
 } elseif (-not $profileActivationReady) {
     "activation-incomplete"
-} elseif (-not $gateStable -or -not $stoppedAfterProof -or $macroFailure) {
+} elseif (-not $gateStable -or -not $gateTimingReady -or -not $stoppedAfterProof -or $macroFailure) {
     "proof-sequence-incomplete"
 } else {
     "title-proof-ready"
@@ -430,6 +466,9 @@ $result = [pscustomobject]@{
     ppu_ready_gate_evidence_source = $gateEvidenceSource
     ppu_ready_gate_frame_count = $gateFrameCount
     ppu_ready_gate_frame_errors = @($gateFrameErrors)
+    first_title_frame_elapsed_ms = $firstTitleFrameElapsedMs
+    stable_title_frame_elapsed_ms = $stableTitleFrameElapsedMs
+    title_stability_window_ms = $titleStabilityWindowMs
     stopped_after_proof = $stoppedAfterProof
     debug_boot_accepted = $debugBootAccepted
     debug_boot_rejected = $debugBootRejected

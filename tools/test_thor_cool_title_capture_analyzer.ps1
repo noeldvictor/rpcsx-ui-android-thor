@@ -203,7 +203,10 @@ function Write-ReadyFixture {
     "synthetic force-stop evidence" | Set-Content -LiteralPath (Join-Path $Directory "macro-stop.txt") -Encoding UTF8
     "2026-07-19T12:00:00-04:00 request_id=synthetic status=accepted elapsed_ms=100" | Set-Content -LiteralPath (Join-Path $Directory "debug-boot-handshake-status.log") -Encoding UTF8
     Write-AdbEvidence -Directory $Directory -Name "post-pid.txt" -Value "exit=1"
-    "attempt=2 ready_candidate_count=2 title_menu_present=True" | Set-Content -LiteralPath (Join-Path $Directory "ppu-ready-gate.log") -Encoding UTF8
+    @(
+        "attempt=1 elapsed_ms=1200 ready_candidate_count=1 title_menu_present=True",
+        "attempt=2 elapsed_ms=6500 ready_candidate_count=2 title_menu_present=True"
+    ) | Set-Content -LiteralPath (Join-Path $Directory "ppu-ready-gate.log") -Encoding UTF8
     @(
         "stage=pre-run-1-of-3 silicon_temperature_c=31.5 silicon_limit_c=35",
         "stage=pre-run-2-of-3 silicon_temperature_c=31.8 silicon_limit_c=35",
@@ -235,10 +238,21 @@ try {
     $readyDir = Join-Path $tempRoot "ready"
     Write-ReadyFixture $readyDir
     $ready = & $analyzerPath -CaptureDir $readyDir
-    if ($ready.status -ne "title-proof-ready" -or -not $ready.ready_for_comparison -or $ready.speed_credit) {
-        throw "Synthetic ready capture was not classified as title-proof-ready without speed credit."
+    if ($ready.status -ne "title-proof-ready" -or -not $ready.ready_for_comparison -or $ready.speed_credit -or
+        $ready.first_title_frame_elapsed_ms -ne 1200 -or $ready.stable_title_frame_elapsed_ms -ne 6500 -or
+        $ready.title_stability_window_ms -ne 5300) {
+        throw "Synthetic ready capture was not classified as title-proof-ready without speed credit and exact title timing."
     }
     & $analyzerPath -CaptureDir $readyDir -RequireReady | Out-Null
+
+    $missingTimingDir = Join-Path $tempRoot "missing-title-timing"
+    Copy-Item -LiteralPath $readyDir -Destination $missingTimingDir -Recurse
+    "attempt=2 ready_candidate_count=2 title_menu_present=True" | Set-Content -LiteralPath (Join-Path $missingTimingDir "ppu-ready-gate.log") -Encoding UTF8
+    $missingTiming = & $analyzerPath -CaptureDir $missingTimingDir
+    if ($missingTiming.status -ne "proof-sequence-incomplete" -or $missingTiming.ready_for_comparison -or
+        $null -ne $missingTiming.first_title_frame_elapsed_ms -or $null -ne $missingTiming.stable_title_frame_elapsed_ms) {
+        throw "Synthetic title proof without elapsed timing evidence did not fail closed."
+    }
 
     $launcherDir = Join-Path $tempRoot "launcher-ui"
     Copy-Item -LiteralPath $readyDir -Destination $launcherDir -Recurse
