@@ -59,7 +59,8 @@ if (-not $progress.has_reuse -or -not $progress.has_progress -or
     $progress.compiled_modules -ne 1 -or
     $progress.loaded_modules -ne 0 -or $progress.existing_modules -ne 1 -or
     $progress.reused_modules -ne 1 -or $progress.latest_module -ne 2 -or
-    $progress.total_modules -ne 41 -or $progress.compile_worker_count -ne 2 -or
+    $progress.total_modules -ne 41 -or $progress.remaining_modules -ne 39 -or
+    $progress.compile_worker_count -ne 2 -or
     ($progress.compile_worker_names -join ',') -ne 'PPUW.1.1,PPUW.1.2') {
     throw "Cache-preparation progress parser rejected a clean resumable checkpoint."
 }

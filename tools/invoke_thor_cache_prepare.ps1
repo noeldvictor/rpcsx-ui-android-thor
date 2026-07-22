@@ -480,6 +480,7 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     "- Reused modules this round: $($cacheProgress.reused_modules)",
     "- Cache reuse observed: $($cacheProgress.has_reuse)",
     "- Latest module progress: $($cacheProgress.latest_module)/$($cacheProgress.total_modules)",
+    "- Remaining modules in this workload: $($cacheProgress.remaining_modules)",
     "- PID before: $(if ($pidBefore.Count) { $pidBefore -join ' ' } else { 'absent' })",
     "- PID after: $(if ($pidAfter.Count) { $pidAfter -join ' ' } else { 'absent' })",
     "- Game boot: no",

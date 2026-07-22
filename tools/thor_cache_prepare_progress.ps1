@@ -24,6 +24,12 @@ function Get-ThorCachePrepareProgress {
         $totalModules = [int]$latest.Groups[2].Value
     }
 
+    $remainingModules = if ($totalModules -ge $latestModule) {
+        $totalModules - $latestModule
+    } else {
+        0
+    }
+
     return [pscustomobject]@{
         compiled_modules = $compiledModules
         loaded_modules = $loadedModules
@@ -33,6 +39,7 @@ function Get-ThorCachePrepareProgress {
         compile_worker_count = $compileWorkerNames.Count
         latest_module = $latestModule
         total_modules = $totalModules
+        remaining_modules = $remainingModules
         has_reuse = $reusedModules -gt 0
         has_progress = $compiledModules -gt 0 -and $latestModule -gt 0 -and
             $totalModules -ge $latestModule
