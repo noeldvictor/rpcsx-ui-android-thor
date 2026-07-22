@@ -228,6 +228,22 @@ Put dated run details in `debug-experiments/`, not here.
   stopped-emulator Prepare Cache only after another independent cooldown.
   Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Host successor 1DCDBBEB...6F4885 adds a debug-only, nonce-bound BLUS30161
+  cache-preparation intent that consumes rejected requests, requires the
+  managed profile, never starts RPCSXActivity, and records accepted, native
+  activated/completed, and callback-finished evidence. Its host controller
+  pins serial/APK/path/title, requires three sub-35 C samples with at most
+  +1 C rise, stops on sustained 56 C or immediately at 68 C, caps runtime at
+  150 seconds, force-stops at both boundaries, and requires final PID absence.
+  Optimized ARM64 native/APK builds, Kotlin compilation, artifact identity,
+  and all 66/66 Thor contracts pass. Exact APK is 72,831,772 bytes; merged
+  core A1BB2700...9D728 is 1,304,111,840 bytes and packaged core
+  34D0401E...61A1F is 62,975,480 bytes. It is uninstalled/device-unmeasured;
+  installed APK remains 3B6ACA6D...C76404, no ADB/device action ran, and no
+  speed, temperature, FPS, flicker, gameplay, or stability credit exists.
+  Install only in a later independently cool no-launch round; prepare cache
+  and prove title in two additional separate cool rounds. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

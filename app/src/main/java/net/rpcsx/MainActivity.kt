@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import net.rpcsx.config.GameSettingsDatabase
 import net.rpcsx.dialogs.AlertDialogQueue
 import net.rpcsx.performance.CacheStorageManager
+import net.rpcsx.performance.GameCacheRepository
 import net.rpcsx.performance.ThorPerformanceProfile
 import net.rpcsx.ui.navigation.AppNavHost
 import net.rpcsx.utils.GameIdentity
@@ -25,6 +26,7 @@ import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     private var unregisterUsbEventListener: () -> Unit = {}
+    private var thorCachePreparationRequestId: String? = null
 
     private fun findThorDevCoreOverride(): File? {
         if (!BuildConfig.THOR_DEV_CORE_OVERRIDE) {
@@ -48,6 +50,84 @@ class MainActivity : ComponentActivity() {
         }
 
         return core
+    }
+
+    private fun maybeStartThorDebugCachePreparation(sourceIntent: Intent?): Boolean {
+        if (!BuildConfig.THOR_DEBUG_TOOLS || sourceIntent == null) {
+            return false
+        }
+
+        if (sourceIntent.action != "net.rpcsx.THOR_DEBUG_PREPARE_CACHE") {
+            return false
+        }
+
+        val rawRequestId = sourceIntent.getStringExtra("thorCachePrepareRequestId")
+        val requestId = rawRequestId
+            ?.takeIf { it.matches(Regex("^[A-Za-z0-9._-]{1,80}$")) }
+            ?: "invalid"
+        val gamePath = sourceIntent.getStringExtra("path")
+        val requestedTitleId = sourceIntent.getStringExtra("titleId")
+        val requireManagedProfile = sourceIntent.getBooleanExtra("thorRequireManagedProfile", false)
+        sourceIntent.removeExtra("path")
+        sourceIntent.removeExtra("titleId")
+        sourceIntent.removeExtra("thorCachePrepareRequestId")
+        sourceIntent.removeExtra("thorRequireManagedProfile")
+
+        fun reject(reason: String): Boolean {
+            Log.e("RPCSX-UI", "Thor debug cache preparation rejected: request=$requestId reason=$reason")
+            return true
+        }
+
+        if (requestId == "invalid") {
+            return reject("invalid-request-id")
+        }
+        if (gamePath.isNullOrBlank() || !File(gamePath).isAbsolute) {
+            return reject("missing-or-nonabsolute-path")
+        }
+
+        val titleId = GameIdentity.titleIdsFromText(requestedTitleId).firstOrNull()
+        if (titleId != "BLUS30161") {
+            return reject("unsupported-title titleId=$titleId")
+        }
+        if (!requireManagedProfile) {
+            return reject("managed-profile-required")
+        }
+        if (RPCSX.activeLibrary.value == null) {
+            return reject("library-inactive")
+        }
+        thorCachePreparationRequestId?.let { activeRequestId ->
+            return reject("busy activeRequest=$activeRequestId")
+        }
+
+        val settingsStatus = GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)
+        if (!(settingsStatus.enabled && settingsStatus.applied)) {
+            return reject(
+                "managed-profile-not-applied titleId=$titleId " +
+                    "custom=${settingsStatus.customConfigPresent} enabled=${settingsStatus.enabled} " +
+                    "applied=${settingsStatus.applied} stale=${settingsStatus.managedConfigStale} " +
+                    "error=${settingsStatus.error}"
+            )
+        }
+
+        val cacheGame = Game(GameInfoStore(gamePath))
+        cacheGame.info.titleId.value = titleId
+        thorCachePreparationRequestId = requestId
+        Log.w(
+            "RPCSX-UI",
+            "Thor debug cache preparation accepted: request=$requestId titleId=$titleId path=$gamePath"
+        )
+        GameCacheRepository.prepareGameCache(this, cacheGame) { status ->
+            if (thorCachePreparationRequestId == requestId) {
+                thorCachePreparationRequestId = null
+            }
+            Log.w(
+                "RPCSX-UI",
+                "Thor debug cache preparation finished: request=$requestId titleId=$titleId " +
+                    "warm=${status.isWarm} ppu=${status.ppuEntries} entries=${status.totalEntries} " +
+                    "bytes=${status.bytes}"
+            )
+        }
+        return true
     }
 
     private fun maybeStartThorDebugBoot(sourceIntent: Intent?): Boolean {
@@ -272,7 +352,7 @@ class MainActivity : ComponentActivity() {
         // A benchmark/debug launch does not need to compose and draw the game
         // library underneath the emulation surface. Skipping it also prevents
         // launcher cover art from appearing as a transient route candidate.
-        if (maybeStartThorDebugBoot(intent)) {
+        if (maybeStartThorDebugCachePreparation(intent) || maybeStartThorDebugBoot(intent)) {
             return
         }
 
@@ -292,6 +372,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (maybeStartThorDebugCachePreparation(intent)) {
+            return
+        }
         maybeStartThorDebugBoot(intent)
     }
 

@@ -36,7 +36,7 @@ $requiredFragments = @(
     @($mainActivitySource, 'if (requireManagedProfile && !managedProfileReady)'),
     @($mainActivitySource, 'Thor debug boot rejected: request=$requestId'),
     @($mainActivitySource, 'Thor debug boot accepted: request=$requestId'),
-    @($mainActivitySource, 'if (maybeStartThorDebugBoot(intent)) {'),
+    @($mainActivitySource, 'if (maybeStartThorDebugCachePreparation(intent) || maybeStartThorDebugBoot(intent)) {'),
     @($inputMacroSource, '--es titleId $TitleId'),
     @($inputMacroSource, '--es thorDebugBootRequestId $debugBootRequestId'),
     @($inputMacroSource, 'Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId'),
@@ -50,7 +50,7 @@ foreach ($entry in $requiredFragments) {
     }
 }
 
-$debugBootComposeIndex = $mainActivitySource.IndexOf('if (maybeStartThorDebugBoot(intent)) {')
+$debugBootComposeIndex = $mainActivitySource.IndexOf('if (maybeStartThorDebugCachePreparation(intent) || maybeStartThorDebugBoot(intent)) {')
 $setContentIndex = $mainActivitySource.IndexOf('setContent {', $debugBootComposeIndex)
 $debugBootCallCount = ([regex]::Matches($mainActivitySource, 'maybeStartThorDebugBoot\(intent\)')).Count
 if ($debugBootComposeIndex -lt 0 -or $setContentIndex -le $debugBootComposeIndex -or $debugBootCallCount -ne 2) {

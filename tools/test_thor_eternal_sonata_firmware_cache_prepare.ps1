@@ -34,6 +34,7 @@ foreach ($fragment in @(
     'g_cfg.core.llvm_threads != 2',
     'fs::is_dir(firmwareRoot)',
     'Thor PPU cache preparation activated: title=%s',
+    'Thor PPU cache preparation completed: title=%s',
     '.precompileFirmwareModules =',
     'if (workload.precompileFirmwareModules) {',
     'dir_queue.push_back(g_cfg_vfs.get_dev_flash() + "sys/external/");'
@@ -104,6 +105,13 @@ $firmwareAppend = $compileBlock.IndexOf('dir_queue.push_back(g_cfg_vfs.get_dev_f
 $firmwareScope = $compileBlock.LastIndexOf('if (workload.precompileFirmwareModules) {', $firmwareAppend)
 if ($firmwareAppend -lt 0 -or $firmwareScope -lt 0 -or $firmwareScope -gt $firmwareAppend) {
     throw "Firmware scanning is no longer strictly workload-gated."
+}
+
+$precompileCall = $compileBlock.IndexOf('ppu_precompile(dir_queue, mod_list.empty() ? nullptr : &mod_list);')
+$completionEvidence = $compileBlock.IndexOf('Thor PPU cache preparation completed: title=%s')
+$finalization = $compileBlock.IndexOf('rpcsx_android.error("Finalization")')
+if ($precompileCall -lt 0 -or $completionEvidence -le $precompileCall -or $finalization -le $completionEvidence) {
+    throw "Firmware cache completion evidence no longer proves ppu_precompile returned before finalization."
 }
 
 $tokens = $null

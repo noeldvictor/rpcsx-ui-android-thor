@@ -1,0 +1,147 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$mainActivityPath = Join-Path $repoRoot "app/src/main/java/net/rpcsx/MainActivity.kt"
+$nativePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp"
+$harnessPath = Join-Path $repoRoot "tools/invoke_thor_cache_prepare.ps1"
+
+$mainActivity = Get-Content -LiteralPath $mainActivityPath -Raw
+$native = Get-Content -LiteralPath $nativePath -Raw
+$harness = Get-Content -LiteralPath $harnessPath -Raw
+
+function Assert-Contains {
+    param([string]$Source, [string]$Needle, [string]$Message)
+    if (-not $Source.Contains($Needle)) {
+        throw $Message
+    }
+}
+
+foreach ($fragment in @(
+    'net.rpcsx.THOR_DEBUG_PREPARE_CACHE',
+    'thorCachePrepareRequestId',
+    'thorRequireManagedProfile',
+    'Thor debug cache preparation rejected: request=',
+    'reject("invalid-request-id")',
+    'reject("missing-or-nonabsolute-path")',
+    'reject("unsupported-title titleId=$titleId")',
+    'reject("managed-profile-required")',
+    'reject("library-inactive")',
+    'reject("busy activeRequest=$activeRequestId")',
+    'GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)',
+    'val cacheGame = Game(GameInfoStore(gamePath))',
+    'cacheGame.info.titleId.value = titleId',
+    'Thor debug cache preparation accepted: request=',
+    'GameCacheRepository.prepareGameCache(this, cacheGame)',
+    'Thor debug cache preparation finished: request=',
+    'maybeStartThorDebugCachePreparation(intent) || maybeStartThorDebugBoot(intent)'
+)) {
+    Assert-Contains $mainActivity $fragment "Missing debug cache-preparation route contract: $fragment"
+}
+
+$cacheHandlerStart = $mainActivity.IndexOf('private fun maybeStartThorDebugCachePreparation(sourceIntent: Intent?): Boolean')
+$debugBootStart = $mainActivity.IndexOf('private fun maybeStartThorDebugBoot(sourceIntent: Intent?): Boolean', $cacheHandlerStart)
+if ($cacheHandlerStart -lt 0 -or $debugBootStart -le $cacheHandlerStart) {
+    throw "Could not isolate the debug cache-preparation handler."
+}
+$cacheHandler = $mainActivity.Substring($cacheHandlerStart, $debugBootStart - $cacheHandlerStart)
+
+$actionGate = $cacheHandler.IndexOf('sourceIntent.action != "net.rpcsx.THOR_DEBUG_PREPARE_CACHE"')
+$requestGate = $cacheHandler.IndexOf('if (requestId == "invalid")')
+$titleGate = $cacheHandler.IndexOf('if (titleId != "BLUS30161")')
+$managedIntentGate = $cacheHandler.IndexOf('if (!requireManagedProfile)')
+$libraryGate = $cacheHandler.IndexOf('if (RPCSX.activeLibrary.value == null)')
+$profileGate = $cacheHandler.IndexOf('GameSettingsDatabase.applyRecommendedConfigForTitleId(this, titleId)')
+$acceptedLog = $cacheHandler.IndexOf('Thor debug cache preparation accepted: request=')
+$prepareCall = $cacheHandler.IndexOf('GameCacheRepository.prepareGameCache(this, cacheGame)')
+$finishedLog = $cacheHandler.IndexOf('Thor debug cache preparation finished: request=')
+if ($actionGate -lt 0 -or $requestGate -le $actionGate -or $titleGate -le $requestGate -or
+    $managedIntentGate -le $titleGate -or $libraryGate -le $managedIntentGate -or
+    $profileGate -le $libraryGate -or $acceptedLog -le $profileGate -or
+    $prepareCall -le $acceptedLog -or $finishedLog -le $prepareCall) {
+    throw "Debug cache preparation is not fail-closed or its durable evidence is out of order."
+}
+if ($cacheHandler.Contains('RPCSXActivity') -or $cacheHandler.Contains('startActivity(')) {
+    throw "Debug cache preparation can enter the game-boot activity path."
+}
+if (-not $cacheHandler.Contains('fun reject(reason: String): Boolean') -or
+    -not $cacheHandler.Contains('return true')) {
+    throw "Rejected cache intents are not consumed before launcher composition."
+}
+
+foreach ($fragment in @(
+    'std::string titleId;',
+    '.titleId = titleId,',
+    'Thor PPU cache preparation activated: title=%s',
+    'Thor PPU cache preparation completed: title=%s'
+)) {
+    Assert-Contains $native $fragment "Missing native cache-preparation evidence contract: $fragment"
+}
+$compileStart = $native.IndexOf('bool compile(JNIEnv *env, CompilationWorkload workload)')
+$compileEnd = $native.IndexOf('} static g_compilationQueue;', $compileStart)
+if ($compileStart -lt 0 -or $compileEnd -le $compileStart) {
+    throw "Could not isolate CompilationQueue::compile."
+}
+$compileBlock = $native.Substring($compileStart, $compileEnd - $compileStart)
+$precompileCall = $compileBlock.IndexOf('ppu_precompile(dir_queue, mod_list.empty() ? nullptr : &mod_list);')
+$completionEvidence = $compileBlock.IndexOf('Thor PPU cache preparation completed: title=%s')
+$finalization = $compileBlock.IndexOf('rpcsx_android.error("Finalization")')
+if ($precompileCall -lt 0 -or $completionEvidence -le $precompileCall -or $finalization -le $completionEvidence) {
+    throw "Native completion evidence does not prove ppu_precompile returned before finalization."
+}
+
+foreach ($fragment in @(
+    '[string]$Serial = "c3ca0370"',
+    '[int]$MaxSeconds = 150',
+    '/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso',
+    '$intentAction = "net.rpcsx.THOR_DEBUG_PREPARE_CACHE"',
+    '$maxLaunchSiliconTemperatureC = 35.0',
+    '$maxPreflightRiseC = 1.0',
+    '$maxSiliconTemperatureC = 72.0',
+    '$runtimeStopHeadroomC = 4.0',
+    '$runtimeProbeWindowC = 16.0',
+    '$preflightSamples = 3',
+    'device_contact=False',
+    'sha256sum',
+    'Installed APK mismatch:',
+    'am force-stop $package',
+    'pidof $package',
+    'thorCachePrepareRequestId',
+    'thorRequireManagedProfile',
+    'Get-ThorThermalRuntimeGuardDecision',
+    'Thor debug cache preparation accepted: request=',
+    'Thor PPU cache preparation activated: title=',
+    'Thor PPU cache preparation completed: title=',
+    'Thor debug cache preparation finished: request=',
+    'Cache preparation unexpectedly entered the game-boot activity path.',
+    'cache-prepared-exact-no-game-boot'
+)) {
+    Assert-Contains $harness $fragment "Missing thermally bounded cache-preparation harness contract: $fragment"
+}
+
+foreach ($forbidden in @(
+    'net.rpcsx.THOR_DEBUG_BOOT',
+    'thorReplaceCustomProfile',
+    'monkey',
+    '--ez BootGame',
+    'pm clear',
+    'uninstall'
+)) {
+    if ($harness.Contains($forbidden)) {
+        throw "Cache-preparation harness contains forbidden game-boot/destructive route: $forbidden"
+    }
+}
+
+$forceStopCount = ([regex]::Matches($harness, [regex]::Escape('am force-stop $package'))).Count
+$pidCount = ([regex]::Matches($harness, [regex]::Escape('pidof $package'))).Count
+if ($forceStopCount -lt 2 -or $pidCount -lt 2) {
+    throw "Harness must force-stop and prove PID absence at both boundaries."
+}
+
+$tokens = $null
+$errors = $null
+[void][System.Management.Automation.Language.Parser]::ParseFile($harnessPath, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) {
+    throw "Cache-preparation harness PowerShell AST parse failed: $($errors -join '; ')"
+}
+
+Write-Output "Thor cache-preparation route contract passed: debug-only BLUS30161 intent, native completion evidence, exact APK identity, bounded thermal stop, no game boot, and final PID absence are fail-closed."

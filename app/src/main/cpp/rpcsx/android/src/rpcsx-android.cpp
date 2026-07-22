@@ -1542,6 +1542,7 @@ std::atomic<jlong> MessageDialog::s_pendingProgressId = -1;
 struct CompilationWorkload {
   jlong progressId;
   std::string path;
+  std::string titleId;
   bool precompileFirmwareModules = false;
 };
 
@@ -1712,6 +1713,7 @@ public:
                    {
                        .progressId = progressId,
                        .path = std::move(ebootPath),
+                       .titleId = titleId,
                        .precompileFirmwareModules = precompileFirmwareModules,
                    });
   }
@@ -1824,6 +1826,11 @@ private:
     }
 
     ppu_precompile(dir_queue, mod_list.empty() ? nullptr : &mod_list);
+
+    if (workload.precompileFirmwareModules) {
+      rpcsx_android.always()("Thor PPU cache preparation completed: title=%s",
+                             workload.titleId);
+    }
 
     rpcsx_android.error("Finalization");
     g_fxo->reset();

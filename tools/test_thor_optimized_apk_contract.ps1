@@ -58,7 +58,7 @@ $runtimeSources = @(
     [pscustomobject]@{
         Name = "MainActivity"
         Source = $mainActivity
-        RequiredCount = 1
+        RequiredCount = 2
         DevCoreGateCount = 1
     },
     [pscustomobject]@{

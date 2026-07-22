@@ -121,7 +121,8 @@ function Test-BinaryAsciiMarker {
 
 foreach ($nativeMarker in @(
     "Thor PPU LLVM compile-worker affinity enabled:",
-    "Thor PPU cache preparation activated:"
+    "Thor PPU cache preparation activated:",
+    "Thor PPU cache preparation completed:"
 )) {
     if (-not (Test-BinaryAsciiMarker -Path $StrippedCorePath -Marker $nativeMarker)) {
         throw "Pinned Thor native core is missing required marker: $nativeMarker"
@@ -177,6 +178,11 @@ try {
         "Thor debug boot accepted:",
         "thorReplaceCustomProfile",
         "replaceCustomWithRecommendedConfigForTitleId",
+        "net.rpcsx.THOR_DEBUG_PREPARE_CACHE",
+        "thorCachePrepareRequestId",
+        "Thor debug cache preparation accepted:",
+        "Thor debug cache preparation rejected:",
+        "Thor debug cache preparation finished:",
         "Max LLVM Compile Threads: 2",
         "Apply the managed Eternal Sonata Thor profile before preparing cache."
     )) {

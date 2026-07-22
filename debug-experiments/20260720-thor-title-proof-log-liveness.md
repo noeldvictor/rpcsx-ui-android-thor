@@ -1324,3 +1324,61 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   the managed-profile/firmware activation row, successful completion, bounded
   thermals, and absent final PID. Reserve title launch for another later cool
   round; do not combine cache preparation and title proof.
+
+### 2026-07-22 - deterministic-firmware-prewarm-route-successor
+
+- Status: windows-pass
+- Scope: route-tooling
+- Hypothesis: a debug-only external cache-preparation action plus a
+  self-stopping host controller can execute the existing firmware PPU prewarm
+  deterministically without Compose navigation, game boot, or an unbounded hot
+  process, making the next Thor cache round both reproducible and thermally
+  fail-closed.
+- Changed files/settings: MainActivity now accepts only exact action
+  net.rpcsx.THOR_DEBUG_PREPARE_CACHE in Thor test builds. It requires a safe
+  request ID, absolute game path, exact BLUS30161 title, explicit managed-profile
+  requirement, active core, no concurrent preparation, and a successfully
+  applied managed profile. It constructs a synthetic game record, never starts
+  RPCSXActivity, consumes every matching rejection before Compose, and logs
+  rejected, accepted, and callback-finished evidence. The native workload now
+  carries title identity and logs completion only after ppu_precompile
+  returns. tools/invoke_thor_cache_prepare.ps1 pins the candidate APK, serial,
+  title, and legal local game path; hashes installed base.apk before preflight;
+  requires three sub-35 C samples with no more than +1 C rise; confirms then
+  stops on sustained 56 C, stops immediately at 68 C below the 72 C hard
+  limit, caps runtime at 150 seconds, and requires ordered accepted/activated/
+  completed/finished rows plus absent final PID. It contains no game-boot,
+  custom-profile replacement, uninstall, clear-data, or monkey route.
+- Rollback: remove maybeStartThorDebugCachePreparation, the workload title
+  field/completion row, and the dedicated harness/contracts. The installed
+  3B6ACA6D...C76404 APK is unchanged and does not include this successor.
+- Host result: :app:compileThortestKotlin passed in 18.8 seconds. Optimized
+  ARM64 RelWithDebInfo native compilation passed in 64.6 seconds, and explicit
+  ARM64-only ThorTest packaging passed in 21.3 seconds. The focused route and
+  firmware contracts, DEX/native artifact markers, optimized variant, ABI,
+  35-export surface, exact packaged-core identity, and complete 66/66
+  test_thor_*.ps1 suite pass. Host-only -Action Status reports no device
+  contact and the exact 35/56/68/72 C guard policy.
+- Artifact result: exact host-only APK
+  1DCDBBEB01FFF2A3F04A40A8D503D9ECC3F6CBDD1BEFB9FDE97C8252826F4885
+  is 72,831,772 bytes. Merged core
+  A1BB2700458A21DC91903D43F1291ABA75D08C55CBAEDA480023D74496A9D728
+  is 1,304,111,840 bytes. Packaged core
+  34D0401E36ACEC7FC5E4B3D18D96AC42F0BF3CAA3A2795657053DD0AA8561A1F
+  is 62,975,480 bytes and matches the APK entry exactly.
+- Thor result: none. No ADB query, install, launch, temperature read, cache
+  mutation, retry, or follow-up device action ran. Exact installed APK remains
+  3B6ACA6D...C76404 and the prior device round remains closed.
+- Visual correctness and FPS/frame-time: not exercised. This is route tooling,
+  not a speed, temperature, FPS, flicker, field, menu, battle, gameplay, or
+  stability result.
+- Decision: retain / windows-pass / device-unmeasured / route-tooling. The
+  successor makes the already-implemented prewarm safely invokable and proves
+  completion ordering, but grants no performance credit until later device
+  evidence exists.
+- Next: after a genuinely independent cooldown, install exact APK
+  1DCDBBEB...6F4885 through one strict no-launch round and stop. In a different
+  later cool round, run exactly one invoke_thor_cache_prepare.ps1 -Action Run
+  action and require exact identity, ordered completion evidence, bounded
+  thermals, complete logs, and absent PID. Reserve title/field/menu/battle proof
+  for still another cool round; never combine these steps into a heat soak.
