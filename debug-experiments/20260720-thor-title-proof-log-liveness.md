@@ -1908,3 +1908,46 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   speed, FPS, gameplay, flicker, stability, or thermal-win credit. After an
   independent cooldown, finish the five remaining cache modules; reserve the
   separately cooled title proof as the first valid startup baseline.
+
+### 2026-07-22 - third-cache-checkpoint-and-phase-aware-progress
+
+- Status: cache-progress-checkpoint / initial-eboot-complete /
+  firmware-scan-progress / thermal-progress / not-comparable
+- Scope: stopped-emulator title-cache completion, firmware scan continuation,
+  and truthful bounded-progress reporting
+- Thor result: exact installed APK A7216402...3D15C passed strict preflight at
+  30.7 -> 30.7 -> 30.7 C, exact ISO/root/title resolution, requested/effective
+  affinity 0x7, and six distinct named PPUW worker instances across successive
+  title and firmware work groups. All five modules in the initial EBOOT
+  workload compiled by emulator time 62.05 s. The route then scanned firmware
+  through file 70 of 142 and completed 8 of the 11 modules discovered so far;
+  three known modules remained, with two libhttp objects in flight at the
+  bounded stop. In total the run validated/reused 114 durable objects and
+  compiled eight new objects. Twenty-five runtime thermal samples averaged
+  37.416 C, ranged from 35.1 to 48.6 C, included one sample at or above 45 C
+  and zero at or above 50 C, and fell to 33.7 C post-stop. Logcat contains no
+  target fatal signal, FATAL EXCEPTION, ANR, crash, or VK_ERROR_DEVICE_LOST;
+  the controller's final force-stop left PID absent and no game boot occurred.
+  Capture:
+  debug-captures/android-speed-sprint/20260722-194141-firmware-ppu-prewarm.
+- Host diagnosis: the previous progress regex accepted only `Progress: module`
+  rows. On final EBOOT completion RPCSX immediately switches to
+  `Progress: file ..., module 5 of 5`, so the parser ignored the completion row
+  and reported stale 4/5 with one remaining. Later firmware rows were likewise
+  invisible, hiding that the module total grows as additional SPRX files are
+  scanned.
+- Host fix and replay: the parser now accepts both progress forms, separately
+  reports initial EBOOT completion, firmware file position, and the latest
+  discovered module count, and labels remaining modules as known rather than
+  final. The exact saved log replays as EBOOT 5/5 complete, firmware file
+  70/142, discovered modules 8/11, and three known remaining. A fixture locks
+  this phase transition, and the focused cache-preparation route contract
+  passes. This is host-only tooling; APK and core bytes remain frozen.
+- Decision: retain the completed cache objects and corrected proof tooling.
+  This checkpoint proves bounded cache progress and initial EBOOT completion,
+  not startup speed, FPS, gameplay correctness, flicker removal, sustained
+  stability, or a controlled thermal win. No retry or follow-up ADB action ran
+  in this round. After a separate independent cooldown, run at most one more
+  bounded checkpoint and stop; repeat across later cool rounds until native
+  completion plus callback-finished is captured, then reserve a different cool
+  round for the first auditable title baseline.

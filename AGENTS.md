@@ -1390,3 +1390,24 @@ Put dated run details in `debug-experiments/`, not here.
   APK A7216402...3D15C and its core are unchanged, no device contact occurred,
   and no startup-speed or FPS credit exists. Use the metrics only after the
   final five cache modules complete in a separately cool round.
+
+- The third independently cool cache checkpoint
+  `20260722-194141-firmware-ppu-prewarm` matched exact installed APK
+  A7216402...3D15C and completed the five-module initial EBOOT workload by
+  emulator time 62.05 s. It then entered the firmware SPRX scan, reached file
+  `70/142`, and completed `8/11` modules discovered so far; three known modules
+  remained and two `libhttp` objects were in flight at the bounded stop. The
+  run reused 114 validated objects and compiled eight new objects. Preflight
+  was `30.7 -> 30.7 -> 30.7 C`; 25 runtime samples averaged `37.42 C`, peaked
+  once at `48.6 C`, and had zero samples at or above `50 C`; post-stop was
+  `33.7 C`. No native fatal, unplanned process death, game boot, or residual
+  PID occurred. The old host parser skipped file-prefixed progress rows and
+  therefore misreported stale `4/5`; its phase-aware replay now reports EBOOT
+  `5/5`, file `70/142`, and discovered module `8/11`, and the focused route
+  contract passes. Classify `cache-progress-checkpoint` /
+  `initial-eboot-complete` / `firmware-scan-progress` / `thermal-progress` /
+  `not-comparable`; there is still no startup-speed, FPS, gameplay, flicker,
+  stability, or controlled thermal-win credit. Do not assume one final module
+  or one final round: later independently cool checkpoints must finish the
+  growing firmware scan and produce native plus callback completion before
+  the separately cooled title proof.

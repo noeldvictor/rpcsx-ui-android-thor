@@ -64,6 +64,26 @@ if (-not $progress.has_reuse -or -not $progress.has_progress -or
     ($progress.compile_worker_names -join ',') -ne 'PPUW.1.1,PPUW.1.2') {
     throw "Cache-preparation progress parser rejected a clean resumable checkpoint."
 }
+$firmwareProgressFixture = @"
+S 0:00:40.000000 {PPUW.1.1} PPU: LLVM: Compiled module title.obj
+W 0:00:40.100000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: module 4 of 5)
+W 0:01:02.000000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: file 0 of 142, module 5 of 5)
+S 0:01:07.000000 {PPUW.2.1} PPU: LLVM: Compiled module firmware.obj
+W 0:01:32.000000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: file 70 of 142, module 8 of 11)
+"@
+$firmwareProgress = Get-ThorCachePrepareProgress -NativeText $firmwareProgressFixture
+if (-not $firmwareProgress.has_progress -or
+    $firmwareProgress.latest_module -ne 8 -or
+    $firmwareProgress.total_modules -ne 11 -or
+    $firmwareProgress.remaining_modules -ne 3 -or
+    $firmwareProgress.latest_file -ne 70 -or
+    $firmwareProgress.total_files -ne 142 -or
+    $firmwareProgress.remaining_files -ne 72 -or
+    $firmwareProgress.initial_module -ne 5 -or
+    $firmwareProgress.initial_total_modules -ne 5 -or
+    -not $firmwareProgress.initial_workload_complete) {
+    throw "Cache-preparation progress parser conflated completed EBOOT work with the growing firmware scan."
+}
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {
     throw "Cache-preparation native-fatal classifier is not fail-closed."
@@ -228,6 +248,9 @@ foreach ($fragment in @(
     '$cacheProgress.has_reuse',
     '$cacheProgress.has_progress',
     '$cacheProgress.compile_worker_count -ge 2',
+    'Initial EBOOT workload complete:',
+    'Remaining firmware files to scan:',
+    'Known remaining modules in scanned workload:',
     '$progressCheckpoint = $true'
 )) {
     Assert-Contains $harness $fragment "Missing thermally bounded cache-preparation harness contract: $fragment"
