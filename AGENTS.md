@@ -1366,3 +1366,17 @@ Put dated run details in `debug-experiments/`, not here.
   startup-speed, gameplay, flicker, or controlled thermal-win credit. After a
   separate later cooldown, run at most one more checkpoint; require complete
   cache preparation before title/field/menu/battle proof.
+
+- The next independently cool checkpoint
+  `20260722-190850-firmware-ppu-prewarm` again matched exact installed APK
+  A7216402...3D15C, ISO/root/title, two distinct PPU workers, and affinity
+  requested/effective `0x7`. It validated all 26 durable prior objects,
+  compiled 10 more, and reached `10/15`, leaving only 5 modules. Preflight was
+  `31.5 -> 31.3 -> 31.1 C`; the 90-second runtime averaged `37.84 C`, peaked
+  at `39.0 C`, and post-stop was `35.5 C`. No fatal, process death, callback,
+  game boot, or residual PID occurred. Classify `cache-progress-checkpoint` /
+  `thermal-progress` / `not-comparable`, with no FPS, startup-speed, gameplay,
+  flicker, or controlled thermal-win credit. Do not contact Thor again in this
+  round. After a separate cooldown, one final 90-second checkpoint should
+  finish the five remaining modules; require native completion and the
+  callback before title proof.

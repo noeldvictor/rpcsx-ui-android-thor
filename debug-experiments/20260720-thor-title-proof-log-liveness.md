@@ -1863,3 +1863,24 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   or follow-up ADB action ran. After another independent cooldown, run at most one
   more 90-second checkpoint; require full native/callback completion before title,
   field, menu, and first-battle measurements.
+
+### 2026-07-22 - second-resumable-cache-checkpoint
+
+- Status: cache-progress-checkpoint / thermal-progress / not-comparable
+- Scope: stopped-emulator PPU cache reuse and bounded continuation
+- Thor result: exact installed APK A7216402...3D15C passed strict preflight at
+  31.5 -> 31.3 -> 31.1 C, exact ISO/root/title resolution, two distinct PPUW
+  workers, and exact requested/effective affinity 0x7. All 26 durable objects
+  from the preceding rounds validated as LLVM: Module exists; ten new objects
+  compiled and progress reached 10/15, leaving five modules. The 90-second
+  runtime averaged 37.84 C and peaked at 39.0 C; post-stop was 35.5 C. No
+  native fatal, process death, callback completion, game boot, or residual PID
+  occurred. Capture:
+  debug-captures/android-speed-sprint/20260722-190850-firmware-ppu-prewarm.
+- Decision: retain the exact installed successor and completed objects. This is
+  a second clean cache-progress checkpoint, not startup-speed, FPS, gameplay,
+  flicker, stability, or controlled thermal-win evidence. No retry or follow-up
+  ADB action ran. Do not contact Thor again in this round. After a separate
+  independent cooldown, run one final 90-second checkpoint and require full
+  native completion plus callback-finished before attempting the separately
+  cooled title proof.
