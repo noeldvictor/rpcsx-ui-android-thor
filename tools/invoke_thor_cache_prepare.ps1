@@ -84,6 +84,7 @@ if ($Action -eq "Status") {
         "runtime_stop_silicon_c=$($maxSiliconTemperatureC - $runtimeStopHeadroomC)",
         "max_silicon_c=$maxSiliconTemperatureC",
         "required_compile_workers=2",
+        "require_loaded_cache_reuse=True",
         "launch_game=False",
         "force_stop=True",
         "progress_checkpoint=True"
@@ -417,7 +418,8 @@ if ($timedOutCleanly -and $accepted -and $nativeActivated -and
     -not $nativeCompleted -and -not $callbackFinished -and
     -not $nativeProcessDied -and -not $nativeFatal -and -not $gameBootDetected -and
     $pidAfter.Count -eq 0 -and $sourceResolved -and $namedWorkerActivated -and
-    $cacheProgress.has_progress -and $cacheProgress.compile_worker_count -ge 2) {
+    $cacheProgress.has_reuse -and $cacheProgress.has_progress -and
+    $cacheProgress.compile_worker_count -ge 2) {
     $progressCheckpoint = $true
     $runFailure = $null
 }
@@ -474,6 +476,7 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     "- Progress checkpoint: $progressCheckpoint",
     "- Compiled modules this round: $($cacheProgress.compiled_modules)",
     "- Loaded modules this round: $($cacheProgress.loaded_modules)",
+    "- Cache reuse observed: $($cacheProgress.has_reuse)",
     "- Latest module progress: $($cacheProgress.latest_module)/$($cacheProgress.total_modules)",
     "- PID before: $(if ($pidBefore.Count) { $pidBefore -join ' ' } else { 'absent' })",
     "- PID after: $(if ($pidAfter.Count) { $pidAfter -join ' ' } else { 'absent' })",

@@ -29,6 +29,7 @@ function Get-ThorCachePrepareProgress {
         compile_worker_count = $compileWorkerNames.Count
         latest_module = $latestModule
         total_modules = $totalModules
+        has_reuse = $loadedModules -gt 0
         has_progress = $compiledModules -gt 0 -and $latestModule -gt 0 -and
             $totalModules -ge $latestModule
     }
