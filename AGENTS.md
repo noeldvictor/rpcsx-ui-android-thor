@@ -1340,3 +1340,11 @@ Put dated run details in `debug-experiments/`, not here.
   flicker, field, menu, battle, gameplay, or runtime-stability credit. Stop
   this device round. After a separate independent cooldown, run at most one
   90-second cache checkpoint; reserve title/gameplay proof for later rounds.
+
+- The post-install cache controller now accepts a bounded timeout only when
+  the current log proves both durable reuse (`Loaded module` > 0) and new
+  progress (`Compiled module` > 0), plus two distinct `PPUW` worker names.
+  The saved pre-fix 20260722-172750 capture correctly replays as reuse=false,
+  worker-count=1, so it cannot satisfy the successor checkpoint contract.
+  All 66/66 Thor host contracts pass. No device contact followed installation;
+  after an independent cooldown, run one 90-second checkpoint and stop.

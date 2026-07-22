@@ -1801,3 +1801,33 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   frozen on-device and RPCSX is stopped. After a separate independently cool
   interval, run one 90-second cache checkpoint. Reserve title/field/menu/
   battle correctness and matched speed/thermal proof for later cool rounds.
+
+### 2026-07-22 - resumable-cache-runtime-proof-tightening
+
+- Status: host-pass / installed-successor-unchanged
+- Scope: cache reuse, named-worker throughput, and fail-closed proof
+- Changed files/settings: the host parser now extracts distinct PPUW worker
+  names and whether the run loaded existing PPU objects. A timed-out checkpoint
+  is accepted only with at least two distinct compile workers, at least one
+  loaded object, at least one newly compiled object, exact source/affinity,
+  no fatal/process death/game boot, and absent final PID. Full native and
+  callback completion still bypass timeout classification normally.
+- Replay result: saved first-run capture 20260722-172750 reports 16 compiled,
+  zero loaded, and only worker name PPUW.1.1. It therefore remains the
+  pre-upstream-fix first population run and cannot be relabeled as a resumable
+  successor checkpoint. The next run must prove both PPUW.1.1/PPUW.1.2-style
+  distinct lanes and reuse of the 16 atomically committed objects.
+- Upstream audit: current local upstream's later ARM64 SPU LLVM recovery
+  commit a87d17529 is a large retry/recovery backport for rare TBL2 register
+  scavenger failures, not evidence for this measured PPU-cache bottleneck.
+  The small 2f9f79eea PPU correctness fixes are likewise unrelated to the
+  observed cache path. Neither is stacked before the installed successor's
+  proof, preserving attribution and avoiding another rebuild/install cycle.
+- Host result: focused cache-route/firmware contracts and all 66/66 Thor host
+  contracts pass; Status is device-free and exposes the two-worker and loaded
+  cache-reuse requirements. Exact installed APK A7216402...3D15C is unchanged.
+- Thor result: none. No ADB query, launch, cache action, or thermal read ran
+  after the no-launch installation round.
+- Decision: retain proof tightening / no speed credit. After a separate
+  independent cooldown, run one 90-second checkpoint and stop regardless of
+  result. Require full cache completion before title/gameplay measurements.
