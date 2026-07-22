@@ -5,6 +5,14 @@ function Get-ThorCachePrepareProgress {
 
     $compiledModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Compiled module ').Count
     $loadedModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Loaded module ').Count
+    $compileWorkerNames = @(
+        [regex]::Matches(
+            $NativeText,
+            '\{(PPUW[.][^}]+)\}\s+PPU: LLVM: (?:Compiling|Compiled|Loaded) module '
+        ) |
+            ForEach-Object { $_.Groups[1].Value } |
+            Sort-Object -Unique
+    )
     $progressMatches = [regex]::Matches($NativeText, 'Progress: module ([0-9]+) of ([0-9]+)')
     $latestModule = 0
     $totalModules = 0
@@ -17,6 +25,8 @@ function Get-ThorCachePrepareProgress {
     return [pscustomobject]@{
         compiled_modules = $compiledModules
         loaded_modules = $loadedModules
+        compile_worker_names = $compileWorkerNames
+        compile_worker_count = $compileWorkerNames.Count
         latest_module = $latestModule
         total_modules = $totalModules
         has_progress = $compiledModules -gt 0 -and $latestModule -gt 0 -and

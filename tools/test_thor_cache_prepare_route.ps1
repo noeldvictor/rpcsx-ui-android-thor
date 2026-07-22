@@ -56,7 +56,8 @@ W 0:00:11.100000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::Progre
 $progress = Get-ThorCachePrepareProgress -NativeText $progressFixture
 if (-not $progress.has_progress -or $progress.compiled_modules -ne 1 -or
     $progress.loaded_modules -ne 1 -or $progress.latest_module -ne 2 -or
-    $progress.total_modules -ne 41) {
+    $progress.total_modules -ne 41 -or $progress.compile_worker_count -ne 2 -or
+    ($progress.compile_worker_names -join ',') -ne 'PPUW.1.1,PPUW.1.2') {
     throw "Cache-preparation progress parser rejected a clean resumable checkpoint."
 }
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
@@ -218,7 +219,9 @@ foreach ($fragment in @(
     'cache-prepared-exact-no-game-boot',
     'cache-progress-checkpoint',
     'progress_checkpoint=True',
+    'required_compile_workers=2',
     '$cacheProgress.has_progress',
+    '$cacheProgress.compile_worker_count -ge 2',
     '$progressCheckpoint = $true'
 )) {
     Assert-Contains $harness $fragment "Missing thermally bounded cache-preparation harness contract: $fragment"

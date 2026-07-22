@@ -83,6 +83,7 @@ if ($Action -eq "Status") {
         "runtime_probe_silicon_c=$($maxSiliconTemperatureC - $runtimeProbeWindowC)",
         "runtime_stop_silicon_c=$($maxSiliconTemperatureC - $runtimeStopHeadroomC)",
         "max_silicon_c=$maxSiliconTemperatureC",
+        "required_compile_workers=2",
         "launch_game=False",
         "force_stop=True",
         "progress_checkpoint=True"
@@ -416,7 +417,7 @@ if ($timedOutCleanly -and $accepted -and $nativeActivated -and
     -not $nativeCompleted -and -not $callbackFinished -and
     -not $nativeProcessDied -and -not $nativeFatal -and -not $gameBootDetected -and
     $pidAfter.Count -eq 0 -and $sourceResolved -and $namedWorkerActivated -and
-    $cacheProgress.has_progress) {
+    $cacheProgress.has_progress -and $cacheProgress.compile_worker_count -ge 2) {
     $progressCheckpoint = $true
     $runFailure = $null
 }
@@ -468,6 +469,8 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     "- Callback finished: $callbackFinished",
     "- Source resolved: $sourceResolved",
     "- Named worker activated: $namedWorkerActivated",
+    "- Distinct compile workers: $($cacheProgress.compile_worker_count)",
+    "- Compile worker names: $(if ($cacheProgress.compile_worker_count) { $cacheProgress.compile_worker_names -join ', ' } else { 'none' })",
     "- Progress checkpoint: $progressCheckpoint",
     "- Compiled modules this round: $($cacheProgress.compiled_modules)",
     "- Loaded modules this round: $($cacheProgress.loaded_modules)",
