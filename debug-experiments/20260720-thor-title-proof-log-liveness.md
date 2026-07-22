@@ -1768,3 +1768,36 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   the strict no-launch gate and stop. In a different cool round, run one
   90-second checkpoint. Require full cache completion before separate
   title/field/menu/battle correctness and matched speed/thermal proofs.
+
+### 2026-07-22 - resumable-cache-successor-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: native-stability candidate identity
+- Hypothesis: exact upstream-constructor/resumable-cache successor
+  A7216402...3D15C can replace the prior installed APK under the strict cool
+  gate without launching RPCSX or changing firmware, runtime cache, profile,
+  or game state.
+- Changed files/settings: no source, profile, firmware, runtime cache, or
+  experiment control changed. The strict gate and installer force-stopped
+  RPCSX at both boundaries and used only adb install -r on the frozen ARM64
+  ThorTest APK. No activity launch or cache-preparation path ran.
+- Host result: exact candidate artifact contract passed immediately before
+  device contact. Expected APK SHA-256 was
+  A7216402BDBFE9F14762D9C2C2F2E5A2B857D828D327E2D9A6E50C8C6433D15C,
+  size 72,834,080 bytes.
+- Thor result: pinned serial c3ca0370 passed the three-sample strict gate at
+  30.5 -> 30.9 -> 31.5 C (maximum 31.5 C, rise +1.0 C), with battery/skin
+  23.0/30.0 C. adb install -r returned success. Expected, host, and installed
+  base.apk SHA-256 all equal A7216402...3D15C. PID was absent before and
+  after, no activity launched, and post-install battery/skin/silicon were
+  23.0/30.0/33.5 C. No retry or follow-up device action ran.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260722-180609-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260722-180621-upstream-named-thread-resumable-cache-successor-thortest-apk-install.
+- Visual correctness and FPS/frame-time: not exercised. Installation identity
+  and bounded temperature grant no cache, speed, thermal-win, gameplay,
+  flicker, or runtime-stability credit.
+- Decision: installed-exact-no-launch / route-tooling. Exact successor is now
+  frozen on-device and RPCSX is stopped. After a separate independently cool
+  interval, run one 90-second cache checkpoint. Reserve title/field/menu/
+  battle correctness and matched speed/thermal proof for later cool rounds.

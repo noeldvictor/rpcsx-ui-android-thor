@@ -1329,3 +1329,14 @@ Put dated run details in `debug-experiments/`, not here.
   not install it until a later strict cool no-launch round, then run at most
   one checkpoint in another cool round. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+
+- Exact resumable-cache successor A7216402...3D15C is now installed after
+  strict no-boot gate 20260722-180609 passed silicon
+  30.5 -> 30.9 -> 31.5 C (maximum 31.5 C, rise +1.0 C), with battery/skin
+  23.0/30.0 C. Install capture 20260722-180621 proves expected, host, and
+  installed hashes match; RPCSX PID was absent before and after, no activity
+  launched, and post-install silicon was 33.5 C. This grants installed
+  identity only, with no cache-completion, speed, temperature-win, FPS,
+  flicker, field, menu, battle, gameplay, or runtime-stability credit. Stop
+  this device round. After a separate independent cooldown, run at most one
+  90-second cache checkpoint; reserve title/gameplay proof for later rounds.
