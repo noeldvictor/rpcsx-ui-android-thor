@@ -1703,3 +1703,68 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   require source=iso, named PPU workers, native completion,
   callback-finished, bounded thermals, no game boot, and absent final PID.
   Reserve title and gameplay correctness/speed proof for later cool rounds.
+
+### 2026-07-22 - named-worker-cache-preparation-progress
+
+- Status: stable-native-thread-fix / bounded-progress / not-comparable
+- Scope: native stability and stopped-emulator cache preparation
+- Hypothesis: exact installed named-worker successor 95DF7F6C...ED6D36 can
+  compile BLUS30161 PPU cache objects without the raw JNI caller crash while
+  preserving exact source, affinity, stopped-process, and thermal bounds.
+- Thor result: capture
+  debug-captures/android-speed-sprint/20260722-172750-firmware-ppu-prewarm
+  matched the exact installed APK. Preflight silicon was
+  32.1 -> 31.9 -> 31.9 C. The exact ISO, virtual PS3_GAME root, EBOOT,
+  PARAM.SFO, and BLUS30161 title resolved; native preparation activated; and
+  named PPU workers reported requested=0x7,effective=0x7 affinity. The process
+  remained alive in PPU LLVM work instead of crashing at about 1.294 seconds.
+  Sixteen modules compiled and progress reached 16/41 before the 150-second
+  bound; 18 module jobs had started. Runtime was 152.514 seconds, peak silicon
+  was 55.4 C, average runtime silicon was 40.77 C, and post-stop silicon was
+  36.1 C. Native completion and callback-finished were absent, PID was absent
+  at both boundaries, and no fatal or game-boot evidence exists. No retry or
+  follow-up device action ran.
+- Visual correctness and FPS/frame-time: not exercised. The capture proves
+  the raw-thread crash is fixed and cache work progresses, but it does not
+  prove complete cache preparation, faster startup, higher FPS, lower
+  gameplay temperature, field/menu/battle correctness, or flicker removal.
+- Decision: retain named-worker design / clean resumable progress /
+  bounded-timeout / not-comparable. Grant native-stability credit only.
+
+### 2026-07-22 - upstream-named-thread-fix-and-resumable-successor
+
+- Status: host-pass / successor-uninstalled
+- Scope: native worker correctness and thermally bounded cache continuation
+- Root cause: the vendored named_thread_group constructor predates upstream
+  RPCS3 commit d8710c431d88ff59bc73f21bc7c3453ebe460151. Its final-context
+  check used m_count - 1, which underflows for a one-thread group, and its
+  thread slot/name arithmetic duplicates an earlier worker for larger groups.
+  The saved run's PPUW.1.1-only tags exposed the naming defect even though
+  overlapping compilations prove both configured lanes ran.
+- Changed files/settings: port the upstream constructor fix exactly. Only
+  named PPU compile workers enter the affinity scope; the foreign JNI caller
+  waits. Cache preparation now defaults to a 90-second checkpoint and accepts
+  timeout as a clean checkpoint only with exact ISO source, exact named-worker
+  affinity, measurable compiled progress, no completion/callback, no process
+  death or native fatal, no game boot, and an absent final PID. All other
+  failures remain fail-closed. JITLLVM writes completed cache objects through
+  fs::pending_file and commit(), so a controlled stop preserves completed
+  objects without exposing a half-written final object.
+- Host result: focused route, progress/fatal classifier, firmware, constructor,
+  atomic-write, host-only Status, ABI, optimized-variant, artifact-identity,
+  packaged-core, and export-surface checks pass. The optimized ARM64 native
+  build and ARM64-only ThorTest APK build pass. Exact host-only successor APK
+  A7216402BDBFE9F14762D9C2C2F2E5A2B857D828D327E2D9A6E50C8C6433D15C
+  is 72,834,080 bytes. Merged core
+  36B6B7110BD07B7983E0339D93B64BB714B44E4592B52107B8036945B9C22797
+  is 1,304,242,880 bytes. Packaged core
+  0AB29DC734CC3444D5A6F1976281703A25A3137C385535D4CD90A62B6033B9E3
+  is 62,983,352 bytes and matches the APK entry exactly.
+- Thor result: successor A7216402...3D15C is host-only and uninstalled. The
+  device still has exact 95DF7F6C...ED6D36 stopped. No device contact occurred
+  while building, validating, or documenting this successor.
+- Decision: retain / host-pass / successor-uninstalled / no measured speed.
+  In a later independently cool round, install only the exact successor under
+  the strict no-launch gate and stop. In a different cool round, run one
+  90-second checkpoint. Require full cache completion before separate
+  title/field/menu/battle correctness and matched speed/thermal proofs.

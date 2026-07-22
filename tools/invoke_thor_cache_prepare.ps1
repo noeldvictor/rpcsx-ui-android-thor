@@ -5,12 +5,13 @@ param(
     [string]$CandidatePath = "",
     [string]$GamePath = "/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso",
     [ValidateRange(30, 180)]
-    [int]$MaxSeconds = 150
+    [int]$MaxSeconds = 90
 )
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
 . "$PSScriptRoot\thor_cache_prepare_process_health.ps1"
+. "$PSScriptRoot\thor_cache_prepare_progress.ps1"
 
 $expectedSerial = "c3ca0370"
 $titleId = "BLUS30161"
@@ -27,6 +28,7 @@ $preflightSamples = 3
 $preflightIntervalSeconds = 2
 $pollIntervalSeconds = 2
 $acceptDeadlineSeconds = 15
+$timeoutFailureMessage = "Cache preparation did not complete inside the $MaxSeconds-second bound."
 
 if ($Serial -ne $expectedSerial) {
     throw "This cache-preparation proof is pinned to Thor serial $expectedSerial; got $Serial."
@@ -82,7 +84,8 @@ if ($Action -eq "Status") {
         "runtime_stop_silicon_c=$($maxSiliconTemperatureC - $runtimeStopHeadroomC)",
         "max_silicon_c=$maxSiliconTemperatureC",
         "launch_game=False",
-        "force_stop=True"
+        "force_stop=True",
+        "progress_checkpoint=True"
     ) | Write-Output
     return
 }
@@ -178,6 +181,11 @@ $accepted = $false
 $nativeActivated = $false
 $nativeCompleted = $false
 $nativeProcessDied = $false
+$nativeFatal = $false
+$progressCheckpoint = $false
+$sourceResolved = $false
+$namedWorkerActivated = $false
+$cacheProgress = Get-ThorCachePrepareProgress -NativeText ""
 $callbackFinished = $false
 $nativeText = ""
 $deviceApkHash = ""
@@ -318,7 +326,7 @@ try {
     }
 
     if (-not $success) {
-        throw "Cache preparation did not complete inside the $MaxSeconds-second bound."
+        throw $timeoutFailureMessage
     }
 } catch {
     $runFailure = $_
@@ -341,6 +349,14 @@ try {
             $nativeCompleted = $nativeText.Contains(
                 "Thor PPU cache preparation completed: title=$titleId"
             )
+            $sourceResolved = $nativeText.Contains(
+                "Thor PPU cache source resolved: title=$titleId, source=iso"
+            )
+            $namedWorkerActivated = $nativeText.Contains(
+                "Thor PPU LLVM compile-worker affinity enabled: requested=0x7, effective=0x7."
+            )
+            $nativeFatal = Test-ThorCachePrepareNativeFatal -NativeText $nativeText
+            $cacheProgress = Get-ThorCachePrepareProgress -NativeText $nativeText
         }
     } else {
         "RPCSX.log was not collected because the current request ID never reached app logcat; an existing remote log may be stale." |
@@ -357,6 +373,8 @@ if ($pidAfter.Count -ne 0 -and $null -eq $runFailure) {
 }
 
 $finalText = $finalLogcat -join "`n"
+$nativeProcessDied = $nativeProcessDied -or
+    (Test-ThorCachePrepareNativeProcessDeath -LogText $finalText -Package $package)
 $acceptedMarker = "Thor debug cache preparation accepted: request=$requestId titleId=$titleId"
 $activationMarker = "Thor PPU cache preparation activated: title=$titleId"
 $completionMarker = "Thor PPU cache preparation completed: title=$titleId"
@@ -365,6 +383,25 @@ $acceptedIndex = $finalText.IndexOf($acceptedMarker, [StringComparison]::Ordinal
 $activationIndex = $nativeText.IndexOf($activationMarker, [StringComparison]::Ordinal)
 $completionIndex = $nativeText.IndexOf($completionMarker, [StringComparison]::Ordinal)
 $finishedIndex = $finalText.IndexOf($finishedMarker, [StringComparison]::Ordinal)
+
+if ($nativeProcessDied) {
+    $runFailure = [System.Management.Automation.RuntimeException]::new(
+        "Cache preparation native process died before completion; inspect logcat-full.txt."
+    )
+}
+if ($nativeFatal) {
+    $runFailure = [System.Management.Automation.RuntimeException]::new(
+        "Cache preparation native log contains a fatal marker; inspect RPCSX.log."
+    )
+}
+$gameBootDetected = $finalText.Contains("Thor debug boot accepted:") -or
+    $finalText.Contains("net.rpcsx.RPCSXActivity")
+if ($gameBootDetected) {
+    $runFailure = [System.Management.Automation.RuntimeException]::new(
+        "Cache preparation unexpectedly entered the game-boot activity path."
+    )
+}
+
 if ($null -eq $runFailure -and
     ($acceptedIndex -lt 0 -or $finishedIndex -le $acceptedIndex -or
         $activationIndex -lt 0 -or $completionIndex -le $activationIndex)) {
@@ -372,14 +409,32 @@ if ($null -eq $runFailure -and
         "Logcat accepted/finished or native activated/completed evidence is incomplete or internally out of order."
     )
 }
-if ($null -eq $runFailure -and
-    ($finalText.Contains("Thor debug boot accepted:") -or $finalText.Contains("net.rpcsx.RPCSXActivity"))) {
-    $runFailure = [System.Management.Automation.RuntimeException]::new(
-        "Cache preparation unexpectedly entered the game-boot activity path."
-    )
+
+$timedOutCleanly = $runFailure -is [System.Management.Automation.ErrorRecord] -and
+    $runFailure.Exception.Message -eq $timeoutFailureMessage
+if ($timedOutCleanly -and $accepted -and $nativeActivated -and
+    -not $nativeCompleted -and -not $callbackFinished -and
+    -not $nativeProcessDied -and -not $nativeFatal -and -not $gameBootDetected -and
+    $pidAfter.Count -eq 0 -and $sourceResolved -and $namedWorkerActivated -and
+    $cacheProgress.has_progress) {
+    $progressCheckpoint = $true
+    $runFailure = $null
 }
 
-$status = if ($null -eq $runFailure) { "cache-prepared-exact-no-game-boot" } else { "failed" }
+$failureMessage = if ($null -eq $runFailure) {
+    "none"
+} elseif ($runFailure -is [System.Management.Automation.ErrorRecord]) {
+    $runFailure.Exception.Message
+} else {
+    $runFailure.Message
+}
+$status = if ($null -ne $runFailure) {
+    "failed"
+} elseif ($progressCheckpoint) {
+    "cache-progress-checkpoint"
+} else {
+    "cache-prepared-exact-no-game-boot"
+}
 $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     (@($preflight | ForEach-Object { Format-ThorTemperatureC $_.silicon_temperature_c }) -join " -> ") + " C"
 } else {
@@ -409,15 +464,28 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     "- Native activated: $nativeActivated",
     "- Native completed: $nativeCompleted",
     "- Native process died: $nativeProcessDied",
+    "- Native fatal: $nativeFatal",
     "- Callback finished: $callbackFinished",
+    "- Source resolved: $sourceResolved",
+    "- Named worker activated: $namedWorkerActivated",
+    "- Progress checkpoint: $progressCheckpoint",
+    "- Compiled modules this round: $($cacheProgress.compiled_modules)",
+    "- Loaded modules this round: $($cacheProgress.loaded_modules)",
+    "- Latest module progress: $($cacheProgress.latest_module)/$($cacheProgress.total_modules)",
     "- PID before: $(if ($pidBefore.Count) { $pidBefore -join ' ' } else { 'absent' })",
     "- PID after: $(if ($pidAfter.Count) { $pidAfter -join ' ' } else { 'absent' })",
     "- Game boot: no",
-    "- Failure: $(if ($null -eq $runFailure) { 'none' } else { $runFailure.Exception.Message })"
+    "- Failure: $failureMessage"
 ) | Set-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
 if ($null -ne $runFailure) {
-    throw "Thor cache preparation failed; see ${captureDir}: $($runFailure.Exception.Message)"
+    throw "Thor cache preparation failed; see ${captureDir}: $failureMessage"
+}
+
+if ($progressCheckpoint) {
+    Write-Output "Thor cache preparation checkpoint: $captureDir"
+    Write-Output "Committed cache progress was preserved with RPCSX PID absent and no game boot."
+    return
 }
 
 Write-Output "Thor cache preparation capture: $captureDir"

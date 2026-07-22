@@ -6923,8 +6923,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thread_ctrl::scoped_priority low_prio(-1);
 
 #ifdef __ANDROID__
-				// This scope also covers the caller when no helper thread is created.
-				// Restore its ordinary affinity before returning to runtime work.
+				// Only named compile workers enter this scope. The foreign cache-
+				// preparation JNI caller waits for the group and keeps its affinity.
 				scoped_compile_affinity compile_affinity(affinity_mask);
 				if (affinity_mask)
 				{

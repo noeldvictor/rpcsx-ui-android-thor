@@ -1313,3 +1313,19 @@ Put dated run details in `debug-experiments/`, not here.
   independently cool interval, run one bounded cache preparation; reserve
   title/field/menu/battle proof for later rounds. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+
+- One independently cool cache-preparation round on exact installed
+  95DF7F6C...ED6D36 reached module 16/41 and compiled 16 objects without the
+  prior raw-JNI-thread crash. Capture 20260722-172750 passed preflight at
+  32.1 -> 31.9 -> 31.9 C, peaked at 55.4 C, ended at 36.1 C with PID absent,
+  and contained exact ISO/title/root, named-worker affinity 0x7, no fatal, and
+  no game boot. It timed out at 152.514 s before native/callback completion,
+  so classify stable-native-thread-fix / bounded-progress / not-comparable,
+  with no FPS, startup-speed, gameplay, flicker, or thermal-win credit.
+  Upstream RPCS3 d8710c431 fixes a separate vendored named_thread_group index
+  and naming defect exposed by the full worker pool. The exact port plus a
+  90-second resumable checkpoint harness is built host-only as APK
+  A7216402...3D15C; all completed cache objects are atomically committed. Do
+  not install it until a later strict cool no-launch round, then run at most
+  one checkpoint in another cool round. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.

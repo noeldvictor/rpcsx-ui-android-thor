@@ -3,11 +3,13 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $androidPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp"
 $ppuPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
+$threadPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/Thread.h"
 $repositoryPath = Join-Path $repoRoot "app/src/main/java/net/rpcsx/performance/GameCacheRepository.kt"
 $settingsPath = Join-Path $repoRoot "app/src/main/java/net/rpcsx/config/GameSettingsDatabase.kt"
 
 $android = Get-Content -LiteralPath $androidPath -Raw
 $ppu = Get-Content -LiteralPath $ppuPath -Raw
+$thread = Get-Content -LiteralPath $threadPath -Raw
 $repository = Get-Content -LiteralPath $repositoryPath -Raw
 $settings = Get-Content -LiteralPath $settingsPath -Raw
 
@@ -77,6 +79,22 @@ foreach ($fragment in @(
 }
 if ($ppu.Contains('thread_ctrl::set_name(worker_group_name')) {
     throw "PPU cache compilation can still rename and execute on a foreign JNI caller thread."
+}
+
+foreach ($fragment in @(
+    'for (; m_count < count - 1; m_count++)',
+    'std::invoke(std::forward<CheckAndPrepare>(check), m_count, context)',
+    'new (static_cast<void*>(m_threads + m_count)) Thread(std::string(name) + std::to_string(m_count + 1), std::move(context));'
+)) {
+    Assert-Contains $thread $fragment "Named worker construction is missing upstream fix d8710c431: $fragment"
+}
+foreach ($stale in @(
+    'std::invoke(std::forward<CheckAndPrepare>(check), m_count - 1, context)',
+    'Thread(std::string(name) + std::to_string(m_count - 1), std::move(context))'
+)) {
+    if ($thread.Contains($stale)) {
+        throw "Named worker construction retains the underflow-prone pre-d8710c431 form: $stale"
+    }
 }
 
 $prepareStart = $android.IndexOf('bool prepare(JNIEnv *env, std::string path, std::string titleId,')

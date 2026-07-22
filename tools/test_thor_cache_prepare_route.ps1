@@ -6,12 +6,16 @@ $nativePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-andr
 $harnessPath = Join-Path $repoRoot "tools/invoke_thor_cache_prepare.ps1"
 $commonPath = Join-Path $repoRoot "tools/thor_debug_common.ps1"
 $processHealthPath = Join-Path $repoRoot "tools/thor_cache_prepare_process_health.ps1"
+$progressPath = Join-Path $repoRoot "tools/thor_cache_prepare_progress.ps1"
+$jitPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/JITLLVM.cpp"
 
 $mainActivity = Get-Content -LiteralPath $mainActivityPath -Raw
 $native = Get-Content -LiteralPath $nativePath -Raw
 $harness = Get-Content -LiteralPath $harnessPath -Raw
 . $commonPath
 . $processHealthPath
+. $progressPath
+$jit = Get-Content -LiteralPath $jitPath -Raw
 
 function Assert-Contains {
     param([string]$Source, [string]$Needle, [string]$Message)
@@ -42,6 +46,28 @@ if (-not (Test-ThorCachePrepareNativeProcessDeath -LogText $fatalSignal -Package
 }
 if (Test-ThorCachePrepareNativeProcessDeath -LogText $fatalSignal -Package "net.rpcsx.other") {
     throw "Cache-preparation process health detector matched another package."
+}
+
+$progressFixture = @'
+S 0:00:10.000000 {PPUW.1.1} PPU: LLVM: Compiled module first.obj
+S 0:00:11.000000 {PPUW.1.2} PPU: LLVM: Loaded module cached.obj
+W 0:00:11.100000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: module 2 of 41 (4m remaining))
+'@
+$progress = Get-ThorCachePrepareProgress -NativeText $progressFixture
+if (-not $progress.has_progress -or $progress.compiled_modules -ne 1 -or
+    $progress.loaded_modules -ne 1 -or $progress.latest_module -ne 2 -or
+    $progress.total_modules -ne 41) {
+    throw "Cache-preparation progress parser rejected a clean resumable checkpoint."
+}
+if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
+    -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {
+    throw "Cache-preparation native-fatal classifier is not fail-closed."
+}
+foreach ($fragment in @(
+    'fs::pending_file module_file;',
+    'if (!module_file.commit())'
+)) {
+    Assert-Contains $jit $fragment "PPU cache object writes are no longer atomically committed: $fragment"
 }
 
 foreach ($fragment in @(
@@ -157,7 +183,7 @@ if ($boundedRoot -lt 0 -or $queuedRoot -le $boundedRoot -or
 
 foreach ($fragment in @(
     '[string]$Serial = "c3ca0370"',
-    '[int]$MaxSeconds = 150',
+    '[int]$MaxSeconds = 90',
     '/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso',
     '$intentAction = "net.rpcsx.THOR_DEBUG_PREPARE_CACHE"',
     '$maxLaunchSiliconTemperatureC = 35.0',
@@ -189,7 +215,11 @@ foreach ($fragment in @(
     'Thor PPU cache preparation completed: title=',
     'Thor debug cache preparation finished: request=',
     'Cache preparation unexpectedly entered the game-boot activity path.',
-    'cache-prepared-exact-no-game-boot'
+    'cache-prepared-exact-no-game-boot',
+    'cache-progress-checkpoint',
+    'progress_checkpoint=True',
+    '$cacheProgress.has_progress',
+    '$progressCheckpoint = $true'
 )) {
     Assert-Contains $harness $fragment "Missing thermally bounded cache-preparation harness contract: $fragment"
 }

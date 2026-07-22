@@ -1,0 +1,34 @@
+$ErrorActionPreference = "Stop"
+
+function Get-ThorCachePrepareProgress {
+    param([string]$NativeText)
+
+    $compiledModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Compiled module ').Count
+    $loadedModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Loaded module ').Count
+    $progressMatches = [regex]::Matches($NativeText, 'Progress: module ([0-9]+) of ([0-9]+)')
+    $latestModule = 0
+    $totalModules = 0
+    if ($progressMatches.Count -gt 0) {
+        $latest = $progressMatches[$progressMatches.Count - 1]
+        $latestModule = [int]$latest.Groups[1].Value
+        $totalModules = [int]$latest.Groups[2].Value
+    }
+
+    return [pscustomobject]@{
+        compiled_modules = $compiledModules
+        loaded_modules = $loadedModules
+        latest_module = $latestModule
+        total_modules = $totalModules
+        has_progress = $compiledModules -gt 0 -and $latestModule -gt 0 -and
+            $totalModules -ge $latestModule
+    }
+}
+
+function Test-ThorCachePrepareNativeFatal {
+    param([string]$NativeText)
+
+    return [regex]::IsMatch(
+        $NativeText,
+        '(?im)^(?:[^\x00-\x7f]+)?F\s|VM:\s+Access violation|VK_ERROR_DEVICE_LOST|Fatal signal'
+    )
+}
