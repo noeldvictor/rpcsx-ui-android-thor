@@ -218,6 +218,16 @@ Put dated run details in `debug-experiments/`, not here.
   ADB/device/cache action ran, so it earns no startup, FPS, thermal, flicker,
   gameplay, or stability credit. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Exact successor 3B6ACA6D...C76404 is now installed after strict no-boot gate
+  20260722-144216 passed silicon 33.1 -> 33.1 -> 32.5 C (maximum 33.1 C,
+  rise -0.6 C), with battery/skin 23.0/30.0 C. Install capture
+  20260722-144228 proves expected, host, and installed hashes match, PID was
+  absent before and after, no activity launched, and post-install silicon was
+  36.5 C. This grants installed identity only, with no speed, temperature,
+  FPS, flicker, gameplay, or stability credit. Stop this device round; run
+  stopped-emulator Prepare Cache only after another independent cooldown.
+  Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
   in `47.022 s` (`1,994.5/s`); one initial probe plus one per `1,024` calls

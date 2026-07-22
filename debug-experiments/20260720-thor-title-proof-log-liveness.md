@@ -1288,3 +1288,39 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   stopped and capture its activation/completion evidence. Only a still later
   cool round may run one self-stopping title proof; do not combine these into a
   heat-soak sequence.
+### 2026-07-22 - firmware-ppu-prewarm-successor-install
+
+- Status: installed-exact-no-launch
+- Scope: route-tooling
+- Hypothesis: the exact host-validated firmware-prewarm successor can be
+  installed without launching RPCSX or materially heating the Thor, preserving
+  a clean boundary before the later stopped-emulator cache-preparation round.
+- Changed files/settings: no source, profile, firmware, or runtime cache was
+  changed during validation. The strict-cool gate force-stopped RPCSX and the
+  installer used adb install -r on exact APK 3B6ACA6D...C76404. The app was
+  never launched.
+- Rollback: reinstall the prior pinned B5B5DB6B...B4074522 APK with the same
+  no-launch gate. No rollback is needed from this successful install.
+- Host result: exact candidate artifact, ARM64-only ABI, optimized variant,
+  pinned hashes, and no-launch installer contracts passed immediately before
+  device contact.
+- Thor result: pinned serial c3ca0370 passed the three-sample gate at
+  33.1 -> 33.1 -> 32.5 C (maximum 33.1 C, rise -0.6 C), with battery/skin
+  23.0/30.0 C. adb install -r returned Success. Expected, host, and installed
+  base.apk SHA-256 all equal
+  3B6ACA6D3E393197FFFB35D58FC6F7DAE947CEC35C6DA091DC20368478C76404.
+  PID was absent before and after, no activity launched, and post-install
+  battery/skin/silicon were 23.0/30.0/36.5 C.
+- Visual correctness and FPS/frame-time: not exercised. Installation identity
+  and bounded install temperature grant no speed, thermal-win, gameplay,
+  flicker, or stability credit.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260722-144216-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260722-144228-firmware-ppu-prewarm-thortest-apk-install.
+- Decision: installed-exact-no-launch / route-tooling. The successor is now
+  frozen on-device and RPCSX is stopped.
+- Next: stop this device round. After a different independently cool interval,
+  run exactly one stopped-emulator Prepare Cache action for BLUS30161. Require
+  the managed-profile/firmware activation row, successful completion, bounded
+  thermals, and absent final PID. Reserve title launch for another later cool
+  round; do not combine cache preparation and title proof.
