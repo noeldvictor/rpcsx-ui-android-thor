@@ -1270,3 +1270,13 @@ Put dated run details in `debug-experiments/`, not here.
   1DCDBBEB...6F4885. Wait for a separate cool install-only round. This is
   route-tooling only and grants no performance or stability credit. Detailed
   ledger: debug-experiments/20260720-thor-title-proof-log-liveness.md.
+- Exact bounded-ISO-root successor BBAD241D...550B89 is now installed after
+  strict no-boot gate 20260722-162508 passed silicon 32.9 -> 32.9 -> 33.5 C
+  (maximum 33.5 C, rise +0.6 C), with battery/skin 23.0/30.0 C. Install capture
+  20260722-162521 proves expected, host, and installed hashes match, RPCSX PID
+  was absent before and after, no activity launched, and post-install silicon
+  was 35.1 C. This grants installed identity only, with no speed, temperature,
+  FPS, flicker, gameplay, or stability credit. Stop this device round. After a
+  separate independently cool interval, run one bounded cache preparation;
+  reserve title/field/menu/battle proof for a later round. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.

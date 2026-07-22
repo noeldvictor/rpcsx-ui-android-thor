@@ -1559,3 +1559,44 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   invoke the corrected strict gate and exact no-launch installer once, then
   stop. Reserve cache preparation and title/gameplay proof for two still later
   independently cool rounds.
+
+### 2026-07-22 - bounded-iso-root-successor-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: route-tooling
+- Hypothesis: exact bounded-ISO-root successor BBAD241D...550B89 can replace
+  the old installed cache-preparation APK under the strict cool gate without
+  launching RPCSX or changing firmware, cache, profile, or game state.
+- Changed files/settings: no source, profile, firmware, runtime cache, or
+  experiment control changed. The strict gate and installer force-stopped
+  RPCSX at both boundaries and used only adb install -r on the frozen ARM64
+  ThorTest APK. No activity launch path ran.
+- Rollback: reinstall exact prior APK 1DCDBBEB...6F4885 through the same strict
+  no-launch flow. No rollback is indicated because identity and stopped-state
+  evidence passed.
+- Host result: immediately before device contact, the strict-cool, no-launch
+  installer, and candidate-artifact contracts passed. Exact host APK SHA-256
+  BBAD241DB2BDA4510B7F8892DAEB1B8C9E51E010E6C43799E183537574550B89 and
+  size 72,834,260 bytes matched the pinned candidate.
+- Thor result: pinned serial c3ca0370 passed the three-sample gate at
+  32.9 -> 32.9 -> 33.5 C (maximum 33.5 C, rise +0.6 C), with battery/skin
+  23.0/30.0 C. adb install -r returned Success. Expected, host, and installed
+  base.apk SHA-256 all equal
+  BBAD241DB2BDA4510B7F8892DAEB1B8C9E51E010E6C43799E183537574550B89.
+  PID was absent before and after, no activity launched, and post-install
+  battery/skin/silicon were 23.0/30.0/35.1 C. No retry or follow-up device
+  action ran.
+- Visual correctness and FPS/frame-time: not exercised. Installation identity
+  and bounded temperature grant no speed, thermal-win, gameplay, flicker, or
+  stability credit.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260722-162508-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260722-162521-bounded-iso-root-successor-thortest-apk-install.
+- Decision: installed-exact-no-launch / route-tooling. Exact successor is now
+  frozen on-device and RPCSX is stopped.
+- Next: stop this device round. After a different independently cool interval,
+  run exactly one tools/invoke_thor_cache_prepare.ps1 -Action Run action.
+  Require source=iso, a virtual PS3_GAME scan root, exact BLUS30161 PARAM.SFO,
+  ordered native completion plus callback-finished evidence, bounded thermals,
+  no game boot, and absent final PID. Reserve title and gameplay proof for a
+  still later cool round.
