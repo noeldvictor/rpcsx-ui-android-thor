@@ -127,14 +127,37 @@ LLVM commits after that checkout form one relevant sequence:
 The Android fork does not contain this sequence: `get_known_bits` still calls
 `llvm::computeKnownBits` directly, and `get_const_vector<v128>` does not look
 through bitcasts. The PHI safety fix is plausibly relevant to stability because
-the historical Thor failure includes corrupted PPU-produced command words,
-but no capture currently attributes that failure to known-bit analysis. Treat
-that relationship as a hypothesis, not proof or performance credit.
+the historical Thor failure includes corrupted SPU-produced guest-memory draw
+records consumed by the PPU parser, but no capture currently attributes that
+failure to known-bit analysis. Treat that relationship as a hypothesis, not
+proof or performance credit.
 
 Do not port/build the series before the exact installed A7216402...3D15C cache
-checkpoint. Rebuilding would overwrite the frozen host artifact, invalidate
-the installed-identity route, and obscure whether upstream d8710c431 fixed the
-two-lane worker contract. After that checkpoint, port the four commits as one
-ordered unit, run optimized ARM64 and all Thor contracts, and ensure the PPU
-object-cache compatibility decision is explicit before any install. No Thor
-contact occurred during this refresh.
+baseline and title proof finish. Rebuilding would overwrite the frozen host
+artifact and obscure whether the named-worker/cache changes improved startup.
+After that baseline, port the four commits as one ordered unit, run optimized
+ARM64 and all Thor contracts, and make cache compatibility explicit before any
+install. No Thor contact occurred during this refresh.
+
+## 2026-07-22 translator/cache compatibility refinement
+
+Current-source call-site inspection narrows the required cache handling:
+
+- Every get_known_bits consumer is in SPULLVMRecompiler.cpp; none is in the
+  PPU translator.
+- get_const_vector<v128> is consumed by both PPU and SPU LLVM paths.
+- The Thor title route keeps the optional persistent SPU native-object cache
+  off, so its normal SPU program cache is recompiled through the current LLVM
+  translator on each launch.
+- PPU LLVM objects are persistent and their v7-kusa identity does not encode
+  translator source version.
+
+Therefore, a later port needs two explicit compatibility decisions. Preserve
+the normal SPU program list, but bump both the thor-spu-native-v2 key and
+spu-native-v2 directory if the optional native-object experiment is retained.
+For PPU objects, add a BLUS30161-scoped compiler-identity bit or deliberately
+bump the global PPU cache version before expecting the bitcast extraction
+change to execute. Do not silently reuse old PPU objects and call the port
+tested. This is host-only planning; it does not change the frozen APK, grant a
+stability result, or justify invalidating the current baseline before its cache
+and title proof are complete.
