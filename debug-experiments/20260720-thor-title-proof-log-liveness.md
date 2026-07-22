@@ -1382,3 +1382,44 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   action and require exact identity, ordered completion evidence, bounded
   thermals, complete logs, and absent PID. Reserve title/field/menu/battle proof
   for still another cool round; never combine these steps into a heat soak.
+
+### 2026-07-22 - deterministic-prewarm-route-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: route-tooling
+- Hypothesis: exact deterministic-prewarm successor 1DCDBBEB...6F4885 can
+  replace the previous installed APK under the strict cool gate without
+  launching RPCSX, mutating cache/firmware/profile state, or leaving a process
+  active.
+- Changed files/settings: no source, profile, firmware, runtime cache, or
+  experiment control changed. The strict gate and installer force-stopped
+  RPCSX at both boundaries and used only adb install -r on the frozen ARM64
+  ThorTest APK. No activity launch path ran.
+- Rollback: reinstall exact prior APK 3B6ACA6D...C76404 through the same strict
+  no-launch flow. No rollback is indicated because identity and stopped-state
+  evidence passed.
+- Host result: immediately before device contact, the candidate artifact,
+  packaged native/DEX markers, strict gate, and no-launch installer contracts
+  passed. Expected host APK SHA-256 was
+  1DCDBBEB01FFF2A3F04A40A8D503D9ECC3F6CBDD1BEFB9FDE97C8252826F4885.
+- Thor result: pinned serial c3ca0370 passed the three-sample gate at
+  34.7 -> 32.7 -> 33.5 C (maximum 34.7 C, rise -1.2 C), with battery/skin
+  23.0/30.0 C. adb install -r returned Success. Expected, host, and installed
+  base.apk SHA-256 all equal
+  1DCDBBEB01FFF2A3F04A40A8D503D9ECC3F6CBDD1BEFB9FDE97C8252826F4885.
+  PID was absent before and after, no activity launched, and post-install
+  battery/skin/silicon were 23.0/30.0/35.1 C. No retry or follow-up device
+  action ran.
+- Visual correctness and FPS/frame-time: not exercised. Installation identity
+  and bounded temperature grant no speed, thermal-win, gameplay, flicker, or
+  stability credit.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260722-151931-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260722-151943-bounded-firmware-prewarm-route-thortest-apk-install.
+- Decision: installed-exact-no-launch / route-tooling. Exact successor is now
+  frozen on-device and RPCSX is stopped.
+- Next: stop this device round. After a different independently cool interval,
+  run exactly one tools/invoke_thor_cache_prepare.ps1 -Action Run action.
+  Require exact APK identity, accepted/activated/completed/finished ordering,
+  complete logs, bounded thermals, no game boot, and absent final PID. Reserve
+  title and gameplay proof for a still later cool round.

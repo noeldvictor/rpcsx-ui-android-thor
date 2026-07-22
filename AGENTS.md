@@ -238,11 +238,15 @@ Put dated run details in `debug-experiments/`, not here.
   Optimized ARM64 native/APK builds, Kotlin compilation, artifact identity,
   and all 66/66 Thor contracts pass. Exact APK is 72,831,772 bytes; merged
   core A1BB2700...9D728 is 1,304,111,840 bytes and packaged core
-  34D0401E...61A1F is 62,975,480 bytes. It is uninstalled/device-unmeasured;
-  installed APK remains 3B6ACA6D...C76404, no ADB/device action ran, and no
-  speed, temperature, FPS, flicker, gameplay, or stability credit exists.
-  Install only in a later independently cool no-launch round; prepare cache
-  and prove title in two additional separate cool rounds. Detailed ledger:
+  34D0401E...61A1F is 62,975,480 bytes. It is now the exact installed APK
+  after strict no-boot gate 20260722-151931 passed silicon
+  34.7 -> 32.7 -> 33.5 C (maximum 34.7 C, rise -1.2 C), with battery/skin
+  23.0/30.0 C. Install capture 20260722-151943 proves expected, host, and
+  installed hashes match, PID was absent before and after, no activity
+  launched, and post-install silicon was 35.1 C. This grants installed identity
+  only, with no speed, temperature, FPS, flicker, gameplay, or stability
+  credit. Stop this device round; prepare cache and prove title only in two
+  additional separate independently cool rounds. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
 - The active frame-poll diagnostic logger checks its call counter before
   reading the monotonic clock. Saved matched title evidence has `93,786` calls
