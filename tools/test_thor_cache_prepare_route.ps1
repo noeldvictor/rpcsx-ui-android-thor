@@ -49,14 +49,16 @@ if (Test-ThorCachePrepareNativeProcessDeath -LogText $fatalSignal -Package "net.
 }
 
 $progressFixture = @'
+S 0:00:09.000000 {TID: 100} PPU: LLVM: Module exists: cached.obj
 S 0:00:10.000000 {PPUW.1.1} PPU: LLVM: Compiled module first.obj
-S 0:00:11.000000 {PPUW.1.2} PPU: LLVM: Loaded module cached.obj
+W 0:00:11.000000 {PPUW.1.2} PPU: LLVM: Compiling module second.obj
 W 0:00:11.100000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: module 2 of 41 (4m remaining))
 '@
 $progress = Get-ThorCachePrepareProgress -NativeText $progressFixture
 if (-not $progress.has_reuse -or -not $progress.has_progress -or
     $progress.compiled_modules -ne 1 -or
-    $progress.loaded_modules -ne 1 -or $progress.latest_module -ne 2 -or
+    $progress.loaded_modules -ne 0 -or $progress.existing_modules -ne 1 -or
+    $progress.reused_modules -ne 1 -or $progress.latest_module -ne 2 -or
     $progress.total_modules -ne 41 -or $progress.compile_worker_count -ne 2 -or
     ($progress.compile_worker_names -join ',') -ne 'PPUW.1.1,PPUW.1.2') {
     throw "Cache-preparation progress parser rejected a clean resumable checkpoint."
@@ -221,7 +223,7 @@ foreach ($fragment in @(
     'cache-progress-checkpoint',
     'progress_checkpoint=True',
     'required_compile_workers=2',
-    'require_loaded_cache_reuse=True',
+    'require_validated_cache_reuse=True',
     '$cacheProgress.has_reuse',
     '$cacheProgress.has_progress',
     '$cacheProgress.compile_worker_count -ge 2',

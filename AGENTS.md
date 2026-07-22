@@ -1342,9 +1342,27 @@ Put dated run details in `debug-experiments/`, not here.
   90-second cache checkpoint; reserve title/gameplay proof for later rounds.
 
 - The post-install cache controller now accepts a bounded timeout only when
-  the current log proves both durable reuse (`Loaded module` > 0) and new
+  the current log proves both durable validated reuse (`Module exists` or
+  `Loaded module` > 0) and new
   progress (`Compiled module` > 0), plus two distinct `PPUW` worker names.
   The saved pre-fix 20260722-172750 capture correctly replays as reuse=false,
   worker-count=1, so it cannot satisfy the successor checkpoint contract.
   All 66/66 Thor host contracts pass. No device contact followed installation;
   after an independent cooldown, run one 90-second checkpoint and stop.
+
+- Exact installed A7216402...3D15C completed one independently cool 90-second
+  cache checkpoint in capture 20260722-183628-firmware-ppu-prewarm. Exact APK,
+  ISO/root/title, affinity 0x7, and distinct PPUW.1.1/PPUW.1.2 workers passed;
+  16 prior objects were validated as LLVM: Module exists and 10 new objects
+  compiled, leaving 15 of the 25-module continuation workload. Preflight was
+  30.9 -> 30.7 -> 30.9 C, runtime averaged 38.10 C and peaked at 40.2 C with
+  zero samples at or above 50 C, post-stop was 34.9 C, PID was absent, and no
+  fatal, process death, or game boot occurred. The original host result was a
+  false rejection because stopped-emulator preparation reports validated reuse
+  as Module exists, not Loaded module; the corrected parser replays this as
+  reuse=16 / compiled=10 / workers=2 and therefore a clean progress checkpoint.
+  No retry or follow-up ADB action ran. Classify cache-progress-checkpoint /
+  native-worker-correctness / thermal-progress / not-comparable, with no FPS,
+  startup-speed, gameplay, flicker, or controlled thermal-win credit. After a
+  separate later cooldown, run at most one more checkpoint; require complete
+  cache preparation before title/field/menu/battle proof.

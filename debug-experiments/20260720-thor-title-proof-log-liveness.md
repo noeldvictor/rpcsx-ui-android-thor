@@ -1824,10 +1824,42 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   observed cache path. Neither is stacked before the installed successor's
   proof, preserving attribution and avoiding another rebuild/install cycle.
 - Host result: focused cache-route/firmware contracts and all 66/66 Thor host
-  contracts pass; Status is device-free and exposes the two-worker and loaded
-  cache-reuse requirements. Exact installed APK A7216402...3D15C is unchanged.
+  contracts pass; Status is device-free and exposes the two-worker and
+  validated cache-reuse requirements. Exact installed APK A7216402...3D15C is
+  unchanged.
 - Thor result: none. No ADB query, launch, cache action, or thermal read ran
   after the no-launch installation round.
 - Decision: retain proof tightening / no speed credit. After a separate
   independent cooldown, run one 90-second checkpoint and stop regardless of
   result. Require full cache completion before title/gameplay measurements.
+
+### 2026-07-22 - two-worker-resumable-cache-checkpoint
+
+- Status: cache-progress-checkpoint / native-worker-correctness /
+  thermal-progress / not-comparable
+- Scope: stopped-emulator PPU cache reuse and bounded continuation
+- Thor result: exact installed APK A7216402...3D15C passed strict preflight at
+  30.9 -> 30.7 -> 30.9 C, exact ISO/root/title resolution, managed two-worker
+  activation, and exact requested/effective affinity 0x7. Distinct worker names
+  PPUW.1.1 and PPUW.1.2 prove the upstream named-thread constructor fix on the
+  device. Sixteen prior objects were validated as LLVM: Module exists; ten new
+  objects compiled and progress reached 10/25, leaving 15 modules for a later
+  continuation. The 89.7-second runtime averaged 38.10 C, peaked at 40.2 C, had
+  zero samples at or above 50 C, and ended at 39.4 C; post-stop was 34.9 C. No
+  native fatal, process death, callback completion, game boot, or residual PID
+  occurred. Capture:
+  debug-captures/android-speed-sprint/20260722-183628-firmware-ppu-prewarm.
+- Host false-negative and fix: the live harness rejected the timeout because it
+  required Loaded module reuse. Stopped-emulator PPU preparation validates and
+  skips durable objects through LLVM: Module exists before building its remaining
+  workload, so it never emits the title-boot Loaded module row. The parser now
+  counts both forms as reuse, reports existing/reused counts, and the route
+  contract uses an exact Module exists fixture. Local replay of this capture is
+  reuse=16, compiled=10, workers=2, latest=10/25 and satisfies the corrected
+  checkpoint contract. Exact APK/core bytes are unchanged.
+- Decision: retain the installed successor and corrected host proof. This is a
+  clean, cool cache-progress checkpoint and native worker correctness proof, not
+  an FPS, startup-speed, gameplay, flicker, or controlled thermal win. No retry
+  or follow-up ADB action ran. After another independent cooldown, run at most one
+  more 90-second checkpoint; require full native/callback completion before title,
+  field, menu, and first-battle measurements.

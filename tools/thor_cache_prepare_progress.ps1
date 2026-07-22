@@ -5,6 +5,8 @@ function Get-ThorCachePrepareProgress {
 
     $compiledModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Compiled module ').Count
     $loadedModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Loaded module ').Count
+    $existingModules = [regex]::Matches($NativeText, '(?m)PPU: LLVM: Module exists: ').Count
+    $reusedModules = $loadedModules + $existingModules
     $compileWorkerNames = @(
         [regex]::Matches(
             $NativeText,
@@ -25,11 +27,13 @@ function Get-ThorCachePrepareProgress {
     return [pscustomobject]@{
         compiled_modules = $compiledModules
         loaded_modules = $loadedModules
+        existing_modules = $existingModules
+        reused_modules = $reusedModules
         compile_worker_names = $compileWorkerNames
         compile_worker_count = $compileWorkerNames.Count
         latest_module = $latestModule
         total_modules = $totalModules
-        has_reuse = $loadedModules -gt 0
+        has_reuse = $reusedModules -gt 0
         has_progress = $compiledModules -gt 0 -and $latestModule -gt 0 -and
             $totalModules -ge $latestModule
     }
