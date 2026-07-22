@@ -103,3 +103,21 @@ research project, not the next Thor patch.
 
 Every proof retains the strict multi-sensor guard and early stop. A neutral or
 hotter result is parked rather than stacked into the default configuration.
+
+## 2026-07-22 phase-aware mobile-SoC evidence
+
+The June 2026 hardware-in-the-loop study "Phase Matters" separates cold,
+cold-cache, and warm execution on a Snapdragon 8 Elite and reports materially
+different backend efficiency by phase, plus a 10.47 C average steady-state
+temperature gap between its CPU and NPU paths over 100 runs:
+<https://arxiv.org/abs/2606.27906>.
+
+Its VLM/NPU speedups do not transfer to RPCSX, Adreno, or PS3 workloads. The
+useful systems lesson is narrower: cache state and phase placement are
+first-class experimental variables. The current Thor design already follows
+that shape by separating stopped-emulator PPU cache preparation on efficiency
+cores from gameplay runtime scheduling. Future comparisons must use the same
+completed cache, scene, duration, and core identity; they must not compare a
+cold compiler phase against a warm gameplay route or cite the paper as support
+for NPU/GPU offload of tiny synchronization loops. No device contact or speed
+credit follows from this research note.
