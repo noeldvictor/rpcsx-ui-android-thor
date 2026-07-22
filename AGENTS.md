@@ -1301,3 +1301,15 @@ Put dated run details in `debug-experiments/`, not here.
   stability credit. Install only after a separate strict cool no-launch round,
   then reserve cache preparation for a different cool round. Detailed ledger:
   debug-experiments/20260720-thor-title-proof-log-liveness.md.
+
+- Exact named-worker successor 95DF7F6C...ED6D36 is now installed after
+  strict no-boot gate 20260722-170704 passed silicon
+  33.1 -> 33.3 -> 33.1 C (maximum 33.3 C, rise 0.0 C), with battery/skin
+  23.0/30.0 C. Install capture 20260722-170716 proves expected, host, and
+  installed hashes match, RPCSX PID was absent before and after, no activity
+  launched, and post-install silicon was 35.3 C. This grants installed
+  identity only, with no speed, temperature, FPS, flicker, cache-completion,
+  gameplay, or stability credit. Stop this device round. After a separate
+  independently cool interval, run one bounded cache preparation; reserve
+  title/field/menu/battle proof for later rounds. Detailed ledger:
+  debug-experiments/20260720-thor-title-proof-log-liveness.md.

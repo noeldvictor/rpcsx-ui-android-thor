@@ -1663,3 +1663,43 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   source=iso, named PPU workers, native completion, callback-finished, bounded
   thermals, no game boot, and absent final PID. Reserve title/field/menu/battle
   correctness and speed proof for still later cool rounds.
+
+### 2026-07-22 - named-worker-cache-successor-exact-no-launch-install
+
+- Status: installed-exact-no-launch
+- Scope: route-tooling and native-stability candidate identity
+- Hypothesis: exact named-worker cache successor 95DF7F6C...ED6D36 can
+  replace the crashing installed APK under the strict cool gate without
+  launching RPCSX or changing firmware, cache, profile, or game state.
+- Changed files/settings: no source, profile, firmware, runtime cache, or
+  experiment control changed. The strict gate and installer force-stopped
+  RPCSX at both boundaries and used only adb install -r on the frozen ARM64
+  ThorTest APK. No activity launch or cache-preparation path ran.
+- Rollback: reinstall exact prior APK BBAD241D...550B89 through the same strict
+  no-launch flow. No rollback is indicated because exact identity and stopped
+  state passed; the prior APK contains the proven raw-thread crash.
+- Host result: strict-cool, no-launch installer, candidate artifact, ABI,
+  optimized variant, and exact packaged-core gates passed before contact.
+  Expected APK SHA-256 was
+  95DF7F6CAEDC70762AECAD7620ECBBB6CA515B286FBF05B88870A17CCEED6D36.
+- Thor result: pinned serial c3ca0370 passed the three-sample gate at
+  33.1 -> 33.3 -> 33.1 C (maximum 33.3 C, rise 0.0 C), with battery/skin
+  23.0/30.0 C. adb install -r returned Success. Expected, host, and installed
+  base.apk SHA-256 all equal
+  95DF7F6CAEDC70762AECAD7620ECBBB6CA515B286FBF05B88870A17CCEED6D36.
+  PID was absent before and after, no activity launched, and post-install
+  battery/skin/silicon were 23.0/30.0/35.3 C. No retry or follow-up device
+  query ran.
+- Capture paths:
+  debug-captures/android-speed-sprint/20260722-170704-thor-input-strict-cool-gate;
+  debug-captures/android-speed-sprint/20260722-170716-named-worker-cache-successor-thortest-apk-install.
+- Visual correctness and FPS/frame-time: not exercised. Installation grants
+  exact candidate identity only, with no speed, temperature-win, FPS, flicker,
+  field, menu, battle, gameplay, cache-completion, or stability credit.
+- Decision: installed-exact-no-launch / route-tooling. Exact successor is now
+  frozen on-device and RPCSX is stopped.
+- Next: stop this device round. After a different independently cool interval,
+  run exactly one tools/invoke_thor_cache_prepare.ps1 -Action Run action and
+  require source=iso, named PPU workers, native completion,
+  callback-finished, bounded thermals, no game boot, and absent final PID.
+  Reserve title and gameplay correctness/speed proof for later cool rounds.
