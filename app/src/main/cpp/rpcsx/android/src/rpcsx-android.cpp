@@ -1542,6 +1542,8 @@ std::atomic<jlong> MessageDialog::s_pendingProgressId = -1;
 struct CompilationWorkload {
   jlong progressId;
   std::string path;
+  std::string scanRoot;
+  std::string paramSfoPath;
   std::string titleId;
   bool precompileFirmwareModules = false;
 };
@@ -1556,6 +1558,18 @@ extern bool ppu_initialize(const ppu_module<lv2_obj> &, bool check_only = false,
                            u64 file_size = 0);
 extern void ppu_finalize(const ppu_module<lv2_obj> &);
 extern bool ppu_load_rel_exec(const ppu_rel_object &);
+
+static bool isCachePreparationExecutable(std::string_view path) {
+  fs::file file{std::string(path)};
+  if (!file || file.size() < sizeof(u32)) {
+    return false;
+  }
+
+  file.seek(0);
+  u32 magic{};
+  return file.read(magic) &&
+         (magic == "SCE\0"_u32 || magic == "\177ELF"_u32);
+}
 
 class CompilationQueue {
   std::atomic<std::uint64_t> nextWorkTag{0};
@@ -1623,13 +1637,105 @@ public:
       return false;
     }
 
-    auto ebootPath = locateEbootPath(path);
-    if (ebootPath.empty()) {
+    std::string ebootPath;
+    std::string scanRoot;
+    std::string paramSfoPath;
+    std::string sourceKind = "directory";
+    shared_ptr<fs::device_base> isoDevice;
+    std::string isoPrefix;
+    bool isoRegistered = false;
+    AtExit isoRestore{[&] {
+      if (!isoRegistered) {
+        return;
+      }
+
+      const auto removed = fs::set_virtual_device(isoPrefix, {});
+      if (removed != isoDevice) {
+        rpcsx_android.fatal(
+            "Failed to remove cache-preparation ISO virtual device: %s",
+            isoPrefix);
+      }
+    }};
+
+    if (fs::is_file(path)) {
+      fs::file source{path};
+      if (getFileType(source) == FileType::Iso) {
+        auto openedIso = iso_dev::open(
+            std::make_unique<file_block_dev>(std::move(source)));
+        if (!openedIso) {
+          progress.failure("The selected cache-preparation ISO is invalid.");
+          return false;
+        }
+
+        isoDevice = stx::make_shared<iso_dev>(std::move(*openedIso));
+        isoPrefix = isoDevice->fs_prefix;
+        if (fs::set_virtual_device(isoPrefix, isoDevice) != isoDevice) {
+          progress.failure(
+              "The selected ISO could not be mounted for cache preparation.");
+          return false;
+        }
+        isoRegistered = true;
+        sourceKind = "iso";
+        scanRoot = isoPrefix + "/PS3_GAME";
+        paramSfoPath = scanRoot + "/PARAM.SFO";
+        ebootPath = scanRoot + "/USRDIR/EBOOT.BIN";
+      } else {
+        sourceKind = "executable";
+        ebootPath = path;
+      }
+    } else if (fs::is_dir(path)) {
+      ebootPath = locateEbootPath(path);
+    }
+
+    if (ebootPath.empty() || !fs::is_file(ebootPath) ||
+        !isCachePreparationExecutable(ebootPath)) {
       progress.failure("No bootable EBOOT.BIN found for cache preparation.");
       return false;
     }
 
+    if (scanRoot.empty()) {
+      auto rootPath = std::filesystem::path(ebootPath).parent_path();
+      if (rootPath.filename() == "USRDIR") {
+        rootPath = rootPath.parent_path();
+      }
+      scanRoot = rootPath.string();
+      paramSfoPath = scanRoot + "/PARAM.SFO";
+    }
+
+    if (!fs::is_dir(scanRoot)) {
+      progress.failure(
+          "The selected game root is invalid for cache preparation.");
+      return false;
+    }
+
+    if (fs::is_file(paramSfoPath)) {
+      const auto psf = psf::load_object(paramSfoPath);
+      const std::string sourceTitleId =
+          std::string(psf::get_string(psf, "TITLE_ID"));
+      if (sourceTitleId.empty()) {
+        progress.failure(
+            "The selected game has no title ID for cache preparation.");
+        return false;
+      }
+      if (!titleId.empty() && sourceTitleId != titleId) {
+        progress.failure(
+            "The selected game does not match the requested title ID.");
+        return false;
+      }
+      titleId = sourceTitleId;
+    } else if (!titleId.empty()) {
+      progress.failure(
+          "The selected game has no PARAM.SFO for cache preparation.");
+      return false;
+    }
+
     const bool precompileFirmwareModules = titleId == "BLUS30161";
+    if (precompileFirmwareModules) {
+      rpcsx_android.always()(
+          "Thor PPU cache source resolved: title=%s, source=%s, "
+          "scan-root=%s, eboot=%s",
+          titleId, sourceKind, scanRoot, ebootPath);
+    }
     std::string previousConfig;
     std::string previousConfigName;
     bool restoreConfig = false;
@@ -1713,6 +1819,8 @@ public:
                    {
                        .progressId = progressId,
                        .path = std::move(ebootPath),
+                       .scanRoot = std::move(scanRoot),
+                       .paramSfoPath = std::move(paramSfoPath),
                        .titleId = titleId,
                        .precompileFirmwareModules = precompileFirmwareModules,
                    });
@@ -1755,11 +1863,12 @@ private:
     g_fxo->init<named_thread<progress_dialog_server>>();
     g_fxo->init<main_ppu_module<lv2_obj>>();
     g_fxo->init(false, nullptr);
-    auto rootPath = std::filesystem::path(workload.path);
+    auto rootPath = std::filesystem::path(
+        workload.scanRoot.empty() ? workload.path : workload.scanRoot);
 
     if (is_vsh) {
       rootPath = g_cfg_vfs.get_dev_flash() + "sys/external/";
-    } else {
+    } else if (workload.scanRoot.empty()) {
       if (!std::filesystem::is_directory(rootPath)) {
         rootPath = rootPath.parent_path();
         if (rootPath.filename() == "USRDIR") {
@@ -1772,9 +1881,11 @@ private:
 
     if (fs::is_file(workload.path)) {
       if (!is_vsh) {
-        auto sfoPath = locateParamSfoPath(std::string(rootPath));
+        auto sfoPath = workload.paramSfoPath.empty()
+                           ? locateParamSfoPath(std::string(rootPath))
+                           : workload.paramSfoPath;
 
-        if (!sfoPath.empty()) {
+        if (!sfoPath.empty() && fs::is_file(sfoPath)) {
           const auto psf = psf::load_object(sfoPath);
           rpcsx_android.warning("title id is %s",
                                 psf::get_string(psf, "TITLE_ID"));

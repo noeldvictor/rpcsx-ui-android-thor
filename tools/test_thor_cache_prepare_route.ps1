@@ -85,24 +85,62 @@ if (-not $cacheHandler.Contains('fun reject(reason: String): Boolean') -or
 }
 
 foreach ($fragment in @(
+    'std::string scanRoot;',
+    'std::string paramSfoPath;',
     'std::string titleId;',
+    'getFileType(source) == FileType::Iso',
+    'iso_dev::open(',
+    'fs::set_virtual_device(isoPrefix, isoDevice)',
+    'fs::set_virtual_device(isoPrefix, {})',
+    'scanRoot = isoPrefix + "/PS3_GAME";',
+    'paramSfoPath = scanRoot + "/PARAM.SFO";',
+    'ebootPath = scanRoot + "/USRDIR/EBOOT.BIN";',
+    '!isCachePreparationExecutable(ebootPath)',
+    'sourceTitleId != titleId',
+    '.scanRoot = std::move(scanRoot),',
+    '.paramSfoPath = std::move(paramSfoPath),',
     '.titleId = titleId,',
+    'Thor PPU cache source resolved: title=%s, source=%s,',
     'Thor PPU cache preparation activated: title=%s',
     'Thor PPU cache preparation completed: title=%s'
 )) {
     Assert-Contains $native $fragment "Missing native cache-preparation evidence contract: $fragment"
 }
+$prepareStart = $native.IndexOf('bool prepare(JNIEnv *env, std::string path, std::string titleId,')
+$prepareEnd = $native.IndexOf('private:', $prepareStart)
+if ($prepareStart -lt 0 -or $prepareEnd -le $prepareStart) {
+    throw "Could not isolate CompilationQueue::prepare."
+}
+$prepareBlock = $native.Substring($prepareStart, $prepareEnd - $prepareStart)
+foreach ($fragment in @(
+    'sourceKind = "iso";',
+    'scanRoot = isoPrefix + "/PS3_GAME";',
+    'paramSfoPath = scanRoot + "/PARAM.SFO";',
+    'ebootPath = scanRoot + "/USRDIR/EBOOT.BIN";',
+    'The selected game does not match the requested title ID.',
+    'Thor PPU cache source resolved: title=%s, source=%s,'
+)) {
+    Assert-Contains $prepareBlock $fragment "Cache preparation is not fail-closed to the selected ISO/title root: $fragment"
+}
+if ($prepareBlock.Contains('vfs::mount("/dev_bdvd"')) {
+    throw "Cache preparation mutates the global /dev_bdvd VFS mount."
+}
+
 $compileStart = $native.IndexOf('bool compile(JNIEnv *env, CompilationWorkload workload)')
 $compileEnd = $native.IndexOf('} static g_compilationQueue;', $compileStart)
 if ($compileStart -lt 0 -or $compileEnd -le $compileStart) {
     throw "Could not isolate CompilationQueue::compile."
 }
 $compileBlock = $native.Substring($compileStart, $compileEnd - $compileStart)
+$boundedRoot = $compileBlock.IndexOf('workload.scanRoot.empty() ? workload.path : workload.scanRoot')
+$queuedRoot = $compileBlock.IndexOf('dir_queue.push_back(rootPath.string());')
 $precompileCall = $compileBlock.IndexOf('ppu_precompile(dir_queue, mod_list.empty() ? nullptr : &mod_list);')
 $completionEvidence = $compileBlock.IndexOf('Thor PPU cache preparation completed: title=%s')
 $finalization = $compileBlock.IndexOf('rpcsx_android.error("Finalization")')
-if ($precompileCall -lt 0 -or $completionEvidence -le $precompileCall -or $finalization -le $completionEvidence) {
-    throw "Native completion evidence does not prove ppu_precompile returned before finalization."
+if ($boundedRoot -lt 0 -or $queuedRoot -le $boundedRoot -or
+    $precompileCall -le $queuedRoot -or $completionEvidence -le $precompileCall -or
+    $finalization -le $completionEvidence) {
+    throw "Native cache preparation is not bounded to its resolved root or completion evidence is out of order."
 }
 
 foreach ($fragment in @(
@@ -126,6 +164,10 @@ foreach ($fragment in @(
     'ConvertTo-ThorRemoteShellLiteral -Value $GamePath',
     '"--es", "path", $quotedGamePath',
     '$requestReachedApp = ($finalLogcat -join "`n").Contains($requestId)',
+    '$nativeText = Get-Content -LiteralPath $nativeLogPath -Raw',
+    '$activationIndex = $nativeText.IndexOf($activationMarker',
+    '$completionIndex = $nativeText.IndexOf($completionMarker',
+    'Logcat accepted/finished or native activated/completed evidence is incomplete or internally out of order.',
     'RPCSX-log-not-collected.txt',
     'Get-ThorThermalRuntimeGuardDecision',
     'Thor debug cache preparation accepted: request=',
@@ -136,6 +178,11 @@ foreach ($fragment in @(
     'cache-prepared-exact-no-game-boot'
 )) {
     Assert-Contains $harness $fragment "Missing thermally bounded cache-preparation harness contract: $fragment"
+}
+
+if ($harness.Contains('$nativeActivated = $logText.Contains') -or
+    $harness.Contains('$nativeCompleted = $logText.Contains')) {
+    throw "Harness still expects native RPCSX markers in logcat instead of the pulled current RPCSX.log."
 }
 
 foreach ($forbidden in @(

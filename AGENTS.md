@@ -1242,3 +1242,21 @@ Put dated run details in `debug-experiments/`, not here.
   then reserve another cool round for one self-stopping proof. Detailed
   ledger: `debug-experiments/20260720-thor-title-proof-log-liveness.md`.
 - Add new dated facts to the ledger. Update this file only for standing rules, current state, or repeated gotchas.
+- The 2026-07-22 bounded cache-preparation retry is a wrong-input-root
+  counterproof, not a speed result. Capture
+  20260722-154128-firmware-ppu-prewarm accepted BLUS30161 but the old native
+  route treated the ISO as EBOOT, failed it, scanned the whole PS3 ROM parent,
+  and timed out at 150.11 s with native completion absent. Silicon peaked at
+  55.4 C, post-stop was 38.6 C, PID was absent, and no game boot occurred.
+  The successor resolves the selected ISO through a unique read-only virtual
+  device, validates exact PS3_GAME/PARAM.SFO title BLUS30161, constrains
+  scanning to that ISO's PS3_GAME, and removes the virtual device afterward.
+  All 66/66 host contracts, ARM64 native compile, optimized ARM64-only
+  package, candidate identity, and APK-entry checks pass. Exact uninstalled
+  successor APK BBAD241D...550B89 (72,834,260 bytes) packages merged core
+  E1B05DC9...99C6 as stripped core 83EB9B07...8B28. Installed APK remains
+  1DCDBBEB...6F4885; no device action ran after the failed capture. A later
+  cool round may install the exact successor without launch, then a different
+  cool round may run one bounded prewarm. Grant no speed, temperature, FPS,
+  flicker, field, menu, battle, gameplay, or stability credit yet. Detailed
+  ledger: debug-experiments/20260720-thor-title-proof-log-liveness.md.

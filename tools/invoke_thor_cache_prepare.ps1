@@ -177,6 +177,7 @@ $accepted = $false
 $nativeActivated = $false
 $nativeCompleted = $false
 $callbackFinished = $false
+$nativeText = ""
 $deviceApkHash = ""
 $pidBefore = @()
 $pidAfter = @()
@@ -298,13 +299,11 @@ try {
             throw "Cache preparation intent was rejected; inspect logcat-full.txt."
         }
         $accepted = $logText.Contains("Thor debug cache preparation accepted: request=$requestId titleId=$titleId")
-        $nativeActivated = $logText.Contains("Thor PPU cache preparation activated: title=$titleId")
-        $nativeCompleted = $logText.Contains("Thor PPU cache preparation completed: title=$titleId")
         $callbackFinished = $logText.Contains("Thor debug cache preparation finished: request=$requestId titleId=$titleId")
         if (-not $accepted -and $stopwatch.Elapsed.TotalSeconds -ge $acceptDeadlineSeconds) {
             throw "Cache preparation intent was not accepted within $acceptDeadlineSeconds seconds."
         }
-        if ($accepted -and $nativeActivated -and $nativeCompleted -and $callbackFinished) {
+        if ($accepted -and $callbackFinished) {
             $success = $true
             break
         }
@@ -327,6 +326,16 @@ try {
     $requestReachedApp = ($finalLogcat -join "`n").Contains($requestId)
     if ($requestReachedApp) {
         [void](Copy-ThorAdbFile -Adb $adb -CaptureDir $captureDir -DeviceFilesDir $captureDir -Remote $remoteLog -LocalName "RPCSX.log")
+        $nativeLogPath = Join-Path $captureDir "RPCSX.log"
+        if (Test-Path -LiteralPath $nativeLogPath -PathType Leaf) {
+            $nativeText = Get-Content -LiteralPath $nativeLogPath -Raw
+            $nativeActivated = $nativeText.Contains(
+                "Thor PPU cache preparation activated: title=$titleId"
+            )
+            $nativeCompleted = $nativeText.Contains(
+                "Thor PPU cache preparation completed: title=$titleId"
+            )
+        }
     } else {
         "RPCSX.log was not collected because the current request ID never reached app logcat; an existing remote log may be stale." |
             Set-Content -LiteralPath (Join-Path $captureDir "RPCSX-log-not-collected.txt") -Encoding UTF8
@@ -347,14 +356,14 @@ $activationMarker = "Thor PPU cache preparation activated: title=$titleId"
 $completionMarker = "Thor PPU cache preparation completed: title=$titleId"
 $finishedMarker = "Thor debug cache preparation finished: request=$requestId titleId=$titleId"
 $acceptedIndex = $finalText.IndexOf($acceptedMarker, [StringComparison]::Ordinal)
-$activationIndex = $finalText.IndexOf($activationMarker, [StringComparison]::Ordinal)
-$completionIndex = $finalText.IndexOf($completionMarker, [StringComparison]::Ordinal)
+$activationIndex = $nativeText.IndexOf($activationMarker, [StringComparison]::Ordinal)
+$completionIndex = $nativeText.IndexOf($completionMarker, [StringComparison]::Ordinal)
 $finishedIndex = $finalText.IndexOf($finishedMarker, [StringComparison]::Ordinal)
 if ($null -eq $runFailure -and
-    ($acceptedIndex -lt 0 -or $activationIndex -le $acceptedIndex -or
-        $completionIndex -le $activationIndex -or $finishedIndex -le $completionIndex)) {
+    ($acceptedIndex -lt 0 -or $finishedIndex -le $acceptedIndex -or
+        $activationIndex -lt 0 -or $completionIndex -le $activationIndex)) {
     $runFailure = [System.Management.Automation.RuntimeException]::new(
-        "Accepted, activated, native-completed, and callback-finished evidence is incomplete or out of order."
+        "Logcat accepted/finished or native activated/completed evidence is incomplete or internally out of order."
     )
 }
 if ($null -eq $runFailure -and

@@ -1466,3 +1466,59 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   the quoted path in intent-start.txt, exact APK identity, ordered accepted /
   activated / completed / finished evidence, bounded thermals, no game boot,
   and absent final PID. Reserve title/gameplay proof for a still later round.
+
+### 2026-07-22 - deterministic-prewarm-iso-root-timeout-and-successor
+
+- Status: windows-pass / device-failed / successor-uninstalled
+- Scope: route-tooling
+- Hypothesis: the stopped-emulator prewarmer must resolve an ISO to that
+  disc's exact EBOOT/PARAM.SFO/root before compiling; otherwise treating the
+  ISO as a direct executable can broaden recursive scanning to the entire ROM
+  collection and defeat the thermal/runtime bound.
+- Changed files/settings: cache preparation now opens a selected ISO through
+  the existing read-only iso_dev virtual filesystem, registers only its unique
+  virtual prefix for the synchronous compile lifetime, resolves exactly
+  PS3_GAME/USRDIR/EBOOT.BIN and PS3_GAME/PARAM.SFO, validates the requested
+  title ID, and supplies PS3_GAME as the explicit scan root. Invalid ISO,
+  EBOOT, PARAM.SFO, title, or root inputs fail closed. It does not mount or
+  mutate the global /dev_bdvd VFS route. The host harness now treats accepted
+  and callback-finished as logcat evidence while deriving native
+  activated/completed markers from the pulled current RPCSX.log, where native
+  logging actually writes them.
+- Rollback: revert the prepare-only ISO resolver, explicit workload scan/SFO
+  paths, current-native-log marker check, and candidate pin. Do not roll back:
+  the bounded capture directly proves the old parent-directory behavior.
+- Host result: all 66/66 test_thor_*.ps1 contracts pass. The focused route and
+  host-only Status checks pass. The ARM64 RelWithDebInfo native build and
+  ARM64-only :app:assembleThortest build pass. Exact successor APK
+  BBAD241DB2BDA4510B7F8892DAEB1B8C9E51E010E6C43799E183537574550B89 is
+  72,834,260 bytes. Merged core
+  E1B05DC9AA985B575068A67BE129109D7FCE629FFE63586D31C55E4EABD499C6 is
+  1,304,256,928 bytes. Packaged core
+  83EB9B0762990BCC5BC4244D0452F75C6AEC3CE35DAF700F8734A59B7BC58B28 is
+  62,984,088 bytes and matches the APK entry exactly.
+- Thor result: capture
+  debug-captures/android-speed-sprint/20260722-154128-firmware-ppu-prewarm
+  matched installed APK 1DCDBBEB...6F4885 and passed preflight at
+  33.7 -> 32.7 -> 33.3 C. MainActivity accepted the exact BLUS30161 request
+  and native activation is present in the current RPCSX.log. The old native
+  route then reported missing PARAM.SFO, tried to load the ISO as an
+  executable, failed it, and scanned /storage/2664-21DE/Roms/ps3 plus firmware.
+  At the 150.11-second hard bound it had reached file 68/142 and module 42/44;
+  no native completion or callback-finished row exists. Silicon peaked at
+  55.4 C, post-stop silicon was 38.6 C, battery/skin stayed 23.0/30.0 C, PID
+  was absent at both boundaries, and no game boot occurred. No further device
+  action ran after this capture.
+- Visual correctness and FPS/frame-time: not exercised. The failed prewarm
+  grants no startup-speed, FPS, temperature, flicker, field, menu, battle,
+  gameplay, or stability credit. Partial firmware cache objects may exist,
+  but cache preparation is not complete.
+- Decision: retain-successor / wrong-input-root-counterproof /
+  bounded-timeout / device-unmeasured-successor. Exact successor
+  BBAD241D...550B89 is built and pinned but is not installed.
+- Next: keep Thor idle. After a separate independently cool interval, install
+  exact successor BBAD241D...550B89 through one strict no-launch round and
+  stop. In another independently cool round, run one bounded cache preparation
+  and require source=iso with a virtual PS3_GAME scan root, exact BLUS30161
+  PARAM.SFO, native completion, callback-finished, bounded thermals, no game
+  boot, and absent final PID. Reserve title/gameplay proof for a later round.
