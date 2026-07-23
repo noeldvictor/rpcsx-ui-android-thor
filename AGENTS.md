@@ -1900,4 +1900,6 @@ Put dated run details in `debug-experiments/`, not here.
   `ThorCoolTitle` and `ThorCoolGameplay` now use a `64 C` hard ceiling with
   both probe and early-stop at `60 C`; replaying `63.4 C` changes
   `confirm -> stop` and removes the second telemetry sample. The installed APK
-  is unchanged and no device contact accompanied this host change.
+  is unchanged and no device contact accompanied this host change. The title
+  analyzer and synthetic thermal-stop fixture require the same `4/64 C`
+  metadata and classify an immediate `63.4 C` stop correctly.

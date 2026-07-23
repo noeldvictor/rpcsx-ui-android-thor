@@ -2648,7 +2648,10 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Verification: saved-log replay changes the same `63.4 C` snapshot from
   `confirm` (`probe=52`, `stop=64`) to immediate `stop`
   (`probe=60`, `stop=60`). Focused cool-profile and generic thermal-guard
-  contracts pass. The installed APK/core and device state are unchanged.
+  contracts pass. The title analyzer now requires the new `4 C` confirmation
+  window and `64 C` ceiling; its immediate-stop fixture peaks at `63.4 C` and
+  retains the thermal-stop-before-title classification. The installed APK/core
+  and device state are unchanged.
 - Decision and next: this is safety tooling, not a speed or thermal-runtime
   win. Keep the install-sourced cooldown; after it opens, spend at most one
   exact self-stopping title proof with the new immediate-stop envelope.
