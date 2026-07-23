@@ -118,6 +118,17 @@ bool serialize<rsx::rsx_iomap_table>(utils::serial& ar, rsx::rsx_iomap_table& o)
 
 namespace rsx
 {
+	static inline void publish_vblank_edge(atomic_t<u64>& count) noexcept
+	{
+#ifdef __ANDROID__
+		// The VBlank thread publishes a monotonic edge; it consumes no data
+		// through this counter, so Android does not need an acquire barrier.
+		__atomic_fetch_add(&count.raw(), u64{1}, __ATOMIC_RELEASE);
+#else
+		count++;
+#endif
+	}
+
 	static inline void publish_vblank_wait_completion(atomic_t<u32>& token) noexcept
 	{
 #ifdef __ANDROID__
@@ -907,7 +918,7 @@ namespace rsx
 
 	void thread::post_vblank_event(u64 post_event_time)
 	{
-		vblank_count++;
+		publish_vblank_edge(vblank_count);
 
 		if (isHLE)
 		{

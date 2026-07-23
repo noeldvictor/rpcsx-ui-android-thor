@@ -246,6 +246,20 @@ foreach ($fragment in @(
     }
 }
 
+foreach ($fragment in @(
+    'publish_vblank_edge(atomic_t<u64>& count) noexcept',
+    '__atomic_fetch_add(&count.raw(), u64{1}, __ATOMIC_RELEASE)',
+    'count++',
+    'publish_vblank_edge(vblank_count)'
+)) {
+    if (-not $mainRsxSource.Contains($fragment)) {
+        throw "Android release-published VBlank edge is missing: $fragment"
+    }
+}
+
+if ($mainRsxSource -match '(?m)^\s*vblank_count\+\+;') {
+    throw 'Android VBlank edge reintroduced a sequentially consistent increment.'
+}
 if ($mainRsxSource.Contains('renderer->vblank_wait_token.notify_all()') -or
     $mainRsxSource -match '(?m)^\s*vblank_wait_token\.notify_all\(\);') {
     throw 'Android single-waiter completion reintroduced a direct broadcast wake.'
@@ -262,6 +276,7 @@ if ($mainTimer.Contains('vblank_waiters.fetch_') -or
 }
 
 foreach ($fragment in @(
+    'vblank_count++',
     'renderer->vblank_wait_token++',
     'vblank_wait_token++',
     'vblank_wait_token.notify_all()',
@@ -319,4 +334,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published VBlank edge and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

@@ -2120,3 +2120,17 @@ Put dated run details in `debug-experiments/`, not here.
   was not contacted. Classify as host-verified `stackable-cpu-pressure`, not
   measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-frame-wait-grace-bound-hoist.md`.
+- Host-only Android raw VBlank edge publication now uses a release
+  64-bit atomic increment; desktop retains the sequentially consistent form.
+  The sole live producer consumes no data through the counter, while all
+  frame-wait and PS3 flip readers remain acquire loads. Exact ARM64 changes
+  the edge from `LDADDAL` to `LDADDL`; the prior release completion token,
+  one-waiter notification, and cached grace bound remain intact. Saved clean
+  routes contain 2,703 title, 8,719 first-battle, and 2,704 Options edges. The
+  exact successor is APK `64A44CA9...ACCE39` / `72,838,240` bytes, merged core
+  `4683AB54...9E7724` / `1,304,307,864` bytes, and packaged core
+  `74D21D34...3F55F8C` / `62,988,904` bytes. ARM64 native/APK builds, linked
+  producer/reader proof, artifact gate, and all `69/69` host contracts pass.
+  Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
+  not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-edge-release-publication.md`.
