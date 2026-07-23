@@ -55,3 +55,23 @@
   After its independent cooldown, run one stopped prewarm for that same APK.
   Only a later independently cool title proof may consume the resulting exact
   continuity floor.
+
+## 2026-07-23 - exact successor no-launch install
+
+- Status: installed exact, no launch
+- Strict gate: `20260723-174922-thor-input-strict-cool-gate` passed
+  `30.9 -> 30.9 -> 30.5 C` (maximum `30.9 C`, rise `-0.4 C`) with battery
+  `23.0 C`, skin `30.0 C`, `BootGame=False`, and `ForceStop=True`.
+- Install capture: `20260723-174947-spu-continuity-exact-apk-install` proves
+  host/on-device APK SHA-256
+  `D6798739F7BC06E8CFDBEEFFD9AFA0369F361CA90A625E98BEA7C1E8908D549F`
+  matched exactly. RPCSX PID was absent before and after; emulator launch was
+  `no`; failure was `none`.
+- Post-install thermal snapshot: battery `23.0 C`, skin `30.0 C`, silicon
+  `32.9 C`.
+- Device-free Status now selects the install as the cooldown source, keeps
+  SPU continuity `none` / floor `0`, and blocks further contact until
+  `2026-07-23T18:19:54.8683910-04:00`.
+- Decision: retain installation identity/safety evidence only. Do not grant
+  speed, title, thermal-runtime, FPS, flicker, gameplay, or stability credit.
+  Do not run stopped prewarm or title in this install round.

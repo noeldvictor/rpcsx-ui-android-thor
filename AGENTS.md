@@ -2036,6 +2036,12 @@ Put dated run details in `debug-experiments/`, not here.
   discarded because it cannot validate the exact final-IR object key. Exact
   host successor is APK `D6798739...D549F` / `72,838,264` bytes, merged core
   `E9DDCDA3...6F215C` / `1,304,307,080` bytes, and packaged core
-  `BDBA4361...A39EE` / `62,988,824` bytes. It remains host-only with no new
-  device or performance credit. Ledger:
+  `BDBA4361...A39EE` / `62,988,824` bytes. Strict gate
+  `20260723-174922-thor-input-strict-cool-gate` passed
+  `30.9 -> 30.9 -> 30.5 C`; no-launch install
+  `20260723-174947-spu-continuity-exact-apk-install` proves the exact APK is
+  now installed, PID stayed absent, no emulator activity launched, and
+  post-install silicon was `32.9 C`. Status blocks further contact until
+  `2026-07-23T18:19:54.8683910-04:00`; installation grants identity/safety
+  only and no performance credit. Ledger:
   `debug-experiments/20260723-thor-spu-continuity-apk-identity-gate.md`.
