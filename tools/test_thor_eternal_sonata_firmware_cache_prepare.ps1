@@ -32,11 +32,14 @@ foreach ($fragment in @(
     'g_cfg.core.ppu_set_vnan.set(false);',
     'g_cfg.core.ppu_set_fpcc.set(false);',
     'g_cfg.core.ppu_decoder != ppu_decoder_type::llvm_legacy',
+    'g_cfg.core.spu_decoder != spu_decoder_type::llvm',
     '!g_cfg.core.set_daz_and_ftz',
     'g_cfg.core.llvm_threads != 2',
     'fs::is_dir(firmwareRoot)',
     'Thor PPU cache preparation activated: title=%s',
     'Thor PPU cache preparation completed: title=%s',
+    'Thor SPU native-object cache preparation activated: title=%s',
+    'Thor SPU native-object cache preparation completed: title=%s',
     '.precompileFirmwareModules =',
     'if (workload.precompileFirmwareModules) {',
     'dir_queue.push_back(g_cfg_vfs.get_dev_flash() + "sys/external/");'
@@ -138,9 +141,16 @@ if ($firmwareAppend -lt 0 -or $firmwareScope -lt 0 -or $firmwareScope -gt $firmw
 
 $precompileCall = $compileBlock.IndexOf('ppu_precompile(dir_queue, mod_list.empty() ? nullptr : &mod_list);')
 $completionEvidence = $compileBlock.IndexOf('Thor PPU cache preparation completed: title=%s')
+$spuActivationEvidence = $compileBlock.IndexOf('Thor SPU native-object cache preparation activated: title=%s')
+$spuInitialize = $compileBlock.IndexOf('spu_cache::initialize();')
+$spuCompletionEvidence = $compileBlock.IndexOf('Thor SPU native-object cache preparation completed: title=%s')
 $finalization = $compileBlock.IndexOf('rpcsx_android.error("Finalization")')
-if ($precompileCall -lt 0 -or $completionEvidence -le $precompileCall -or $finalization -le $completionEvidence) {
-    throw "Firmware cache completion evidence no longer proves ppu_precompile returned before finalization."
+if ($precompileCall -lt 0 -or $completionEvidence -le $precompileCall -or
+    $spuActivationEvidence -le $completionEvidence -or
+    $spuInitialize -le $spuActivationEvidence -or
+    $spuCompletionEvidence -le $spuInitialize -or
+    $finalization -le $spuCompletionEvidence) {
+    throw "PPU/SPU cache completion evidence no longer proves bounded preparation returned before finalization."
 }
 
 $tokens = $null

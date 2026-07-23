@@ -262,7 +262,9 @@ foreach ($fragment in @(
     '.titleId = titleId,',
     'Thor PPU cache source resolved: title=%s, source=%s,',
     'Thor PPU cache preparation activated: title=%s',
-    'Thor PPU cache preparation completed: title=%s'
+    'Thor PPU cache preparation completed: title=%s',
+    'Thor SPU native-object cache preparation activated: title=%s',
+    'Thor SPU native-object cache preparation completed: title=%s'
 )) {
     Assert-Contains $native $fragment "Missing native cache-preparation evidence contract: $fragment"
 }
@@ -296,11 +298,15 @@ $boundedRoot = $compileBlock.IndexOf('workload.scanRoot.empty() ? workload.path 
 $queuedRoot = $compileBlock.IndexOf('dir_queue.push_back(rootPath.string());')
 $precompileCall = $compileBlock.IndexOf('ppu_precompile(dir_queue, mod_list.empty() ? nullptr : &mod_list);')
 $completionEvidence = $compileBlock.IndexOf('Thor PPU cache preparation completed: title=%s')
+$spuActivationEvidence = $compileBlock.IndexOf('Thor SPU native-object cache preparation activated: title=%s')
+$spuCompletionEvidence = $compileBlock.IndexOf('Thor SPU native-object cache preparation completed: title=%s')
 $finalization = $compileBlock.IndexOf('rpcsx_android.error("Finalization")')
 if ($boundedRoot -lt 0 -or $queuedRoot -le $boundedRoot -or
     $precompileCall -le $queuedRoot -or $completionEvidence -le $precompileCall -or
-    $finalization -le $completionEvidence) {
-    throw "Native cache preparation is not bounded to its resolved root or completion evidence is out of order."
+    $spuActivationEvidence -le $completionEvidence -or
+    $spuCompletionEvidence -le $spuActivationEvidence -or
+    $finalization -le $spuCompletionEvidence) {
+    throw "Native cache preparation is not bounded to its resolved root or PPU/SPU completion evidence is out of order."
 }
 
 foreach ($fragment in @(
@@ -345,7 +351,7 @@ foreach ($fragment in @(
     '$nativeText = Get-Content -LiteralPath $nativeLogPath -Raw',
     '$activationIndex = $nativeText.IndexOf($activationMarker',
     '$completionIndex = $nativeText.IndexOf($completionMarker',
-    'Logcat accepted/finished or native activated/completed evidence is incomplete or internally out of order.',
+    'PPU/SPU cache-preparation evidence is incomplete, unsafe, or internally out of order.',
     'RPCSX-log-not-collected.txt',
     'Get-ThorThermalRuntimeGuardDecision',
     'Thor debug cache preparation accepted: request=',
@@ -357,6 +363,22 @@ foreach ($fragment in @(
     'cache-progress-checkpoint',
     'progress_checkpoint=True',
     'required_compile_workers=2',
+    '$spuNativeObjectCache = "on"',
+    '$spuCachePreloadLimit = 64',
+    '$spuCacheCompileBudgetMs = 100',
+    'setprop debug.rpcsx.thor.spu_native_object_cache $spuNativeObjectCache',
+    'setprop debug.rpcsx.thor.spu_cache_preload_limit $spuCachePreloadLimit',
+    'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs',
+    'setprop debug.rpcsx.thor.spu_native_object_cache off',
+    'setprop debug.rpcsx.thor.spu_cache_preload_limit 0',
+    'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0',
+    'Thor SPU native-object cache preparation activated: title=',
+    'Thor SPU native-object cache preparation completed: title=',
+    'SPU native cache enabled:',
+    'SPU preload bounded:',
+    'SPU compile budget enabled:',
+    'SPU cache affinity matched:',
+    'SPU properties reset:',
     'require_validated_cache_reuse=True',
     'minimum_required_reused_modules=',
     '$reuseFloorSatisfied = $cacheProgress.reused_modules -ge $minimumRequiredReuse',

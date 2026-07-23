@@ -1788,10 +1788,11 @@ public:
       g_cfg.core.ppu_set_fpcc.set(false);
 
       if (g_cfg.core.ppu_decoder != ppu_decoder_type::llvm_legacy ||
+          g_cfg.core.spu_decoder != spu_decoder_type::llvm ||
           !g_cfg.core.set_daz_and_ftz || g_cfg.core.llvm_threads != 2) {
         progress.failure(
-            "The Eternal Sonata Thor profile is not the expected LLVM/FTZ "
-            "cache variant.");
+            "The Eternal Sonata Thor profile is not the expected PPU/SPU "
+            "LLVM/FTZ cache variant.");
         return false;
       }
 
@@ -1941,6 +1942,18 @@ private:
     if (workload.precompileFirmwareModules) {
       rpcsx_android.always()("Thor PPU cache preparation completed: title=%s",
                              workload.titleId);
+      if (spu_native_object_cache_enabled() &&
+          g_cfg.core.spu_decoder == spu_decoder_type::llvm) {
+        rpcsx_android.always()(
+            "Thor SPU native-object cache preparation activated: title=%s",
+            workload.titleId);
+        spu_cache::initialize();
+        if (!Emu.IsStopped()) {
+          rpcsx_android.always()(
+              "Thor SPU native-object cache preparation completed: title=%s",
+              workload.titleId);
+        }
+      }
     }
 
     rpcsx_android.error("Finalization");

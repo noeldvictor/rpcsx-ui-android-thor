@@ -11,6 +11,8 @@ $jitSourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/JITLLVM.
 $macroPath = Join-Path $repoRoot "tools/thor_input_macro.ps1"
 $sprintPath = Join-Path $repoRoot "tools/eternal_sonata_speed_sprint.ps1"
 $installerPath = Join-Path $repoRoot "tools/install_thor_apk_no_launch.ps1"
+$androidPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp"
+$cachePreparePath = Join-Path $repoRoot "tools/invoke_thor_cache_prepare.ps1"
 
 $spuHeader = Get-Content -LiteralPath $spuHeaderPath -Raw
 $spuCommon = Get-Content -LiteralPath $spuCommonPath -Raw
@@ -20,6 +22,8 @@ $jitSource = Get-Content -LiteralPath $jitSourcePath -Raw
 $macroSource = Get-Content -LiteralPath $macroPath -Raw
 $sprintSource = Get-Content -LiteralPath $sprintPath -Raw
 $installerSource = Get-Content -LiteralPath $installerPath -Raw
+$androidSource = Get-Content -LiteralPath $androidPath -Raw
+$cachePrepareSource = Get-Content -LiteralPath $cachePreparePath -Raw
 
 function Assert-Contains {
     param([string]$Source, [string]$Needle, [string]$Message)
@@ -110,8 +114,29 @@ if ($sprintSource -notmatch '(?s)\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$
 }
 Assert-Contains $sprintSource 'SpuNativeObjectCache = $AndroidSpuNativeObjectCache' "Speed sprint does not forward the SPU native-cache control."
 Assert-Contains $installerSource 'spu_native_cache=' "No-launch installer does not capture SPU native-cache state."
+foreach ($fragment in @(
+    'Thor SPU native-object cache preparation activated: title=%s',
+    'spu_cache::initialize();',
+    'Thor SPU native-object cache preparation completed: title=%s'
+)) {
+    Assert-Contains $androidSource $fragment "Stopped-emulator SPU native-object preparation is missing: $fragment"
+}
+foreach ($fragment in @(
+    '$spuNativeObjectCache = "on"',
+    '$spuCachePreloadLimit = 64',
+    '$spuCacheCompileBudgetMs = 100',
+    'setprop debug.rpcsx.thor.spu_native_object_cache $spuNativeObjectCache',
+    'setprop debug.rpcsx.thor.spu_cache_preload_limit $spuCachePreloadLimit',
+    'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs',
+    'setprop debug.rpcsx.thor.spu_native_object_cache off',
+    'setprop debug.rpcsx.thor.spu_cache_preload_limit 0',
+    'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0',
+    'SPU properties reset:'
+)) {
+    Assert-Contains $cachePrepareSource $fragment "Guarded cache-preparation SPU control is missing: $fragment"
+}
 
-foreach ($path in @($macroPath, $sprintPath, $installerPath, $PSCommandPath)) {
+foreach ($path in @($macroPath, $sprintPath, $installerPath, $cachePreparePath, $PSCommandPath)) {
     $tokens = $null
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)

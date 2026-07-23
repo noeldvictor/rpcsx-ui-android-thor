@@ -31,6 +31,9 @@ $preflightIntervalSeconds = 2
 $pollIntervalSeconds = 2
 $acceptDeadlineSeconds = 15
 $timeoutFailureMessage = "Cache preparation did not complete inside the $MaxSeconds-second bound."
+$spuNativeObjectCache = "on"
+$spuCachePreloadLimit = 64
+$spuCacheCompileBudgetMs = 100
 
 if ($Serial -ne $expectedSerial) {
     throw "This cache-preparation proof is pinned to Thor serial $expectedSerial; got $Serial."
@@ -130,6 +133,9 @@ if ($Action -eq "Status") {
         "cache_cooldown_ready_at=$(if ($null -eq $cacheCooldown.ready_at) { 'now' } else { $cacheCooldown.ready_at.ToString('o') })",
         "cache_cooldown_remaining_seconds=$($cacheCooldown.remaining_seconds)",
         "required_compile_workers=2",
+        "spu_native_object_cache=$spuNativeObjectCache",
+        "spu_cache_preload_limit=$spuCachePreloadLimit",
+        "spu_cache_compile_budget_ms=$spuCacheCompileBudgetMs",
         "require_validated_cache_reuse=True",
         "minimum_required_reused_modules=$minimumRequiredReuse",
         "launch_game=False",
@@ -239,6 +245,15 @@ $success = $false
 $accepted = $false
 $nativeActivated = $false
 $nativeCompleted = $false
+$spuNativeActivated = $false
+$spuNativeCompleted = $false
+$spuNativeCacheEnabled = $false
+$spuCachePreloadBounded = $false
+$spuCacheBudgetEnabled = $false
+$spuCacheAffinityMatched = $false
+$spuNativeLoadedObjects = 0
+$spuWorkersBuiltPrograms = 0
+$spuPropertiesReset = $false
 $nativeProcessDied = $false
 $nativeFatal = $false
 $progressCheckpoint = $false
@@ -281,6 +296,21 @@ try {
     $deviceApkHash = $deviceHashMatch.Groups[1].Value.ToUpperInvariant()
     if ($deviceApkHash -ne $expectedApkHash) {
         throw "Installed APK mismatch: expected $expectedApkHash, got $deviceApkHash."
+    }
+
+    Invoke-ThorAdbText $adb $captureDir "spu-native-object-cache-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache $spuNativeObjectCache") | Out-Null
+    $spuNativeEffectivePath = Invoke-ThorAdbText $adb $captureDir "spu-native-object-cache-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_native_object_cache")
+    Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit $spuCachePreloadLimit") | Out-Null
+    $spuPreloadEffectivePath = Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_preload_limit")
+    Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs") | Out-Null
+    $spuBudgetEffectivePath = Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_compile_budget_ms")
+    $spuNativeEffective = (Get-ThorCapturedBody $spuNativeEffectivePath) -join ""
+    $spuPreloadEffective = (Get-ThorCapturedBody $spuPreloadEffectivePath) -join ""
+    $spuBudgetEffective = (Get-ThorCapturedBody $spuBudgetEffectivePath) -join ""
+    if ($spuNativeEffective -ne $spuNativeObjectCache -or
+        $spuPreloadEffective -ne [string]$spuCachePreloadLimit -or
+        $spuBudgetEffective -ne [string]$spuCacheCompileBudgetMs) {
+        throw "SPU cache-preparation properties did not apply exactly."
     }
 
     Write-ThorLaunchPowerState -Adb $adb -CaptureDir $captureDir -Prefix "prelaunch"
@@ -411,6 +441,16 @@ try {
 } finally {
     $stopwatch.Stop()
     Invoke-ThorAdbText $adb $captureDir "force-stop-after.txt" @("shell", "am force-stop $package") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $adb $captureDir "spu-native-object-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
+    $spuNativeResetPath = Invoke-ThorAdbText $adb $captureDir "spu-native-object-cache-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_native_object_cache") -AllowFailure
+    $spuPreloadResetPath = Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_preload_limit") -AllowFailure
+    $spuBudgetResetPath = Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_compile_budget_ms") -AllowFailure
+    $spuPropertiesReset =
+        ((Get-ThorCapturedBody $spuNativeResetPath) -join "") -eq "off" -and
+        ((Get-ThorCapturedBody $spuPreloadResetPath) -join "") -eq "0" -and
+        ((Get-ThorCapturedBody $spuBudgetResetPath) -join "") -eq "0"
     $pidAfterPath = Invoke-ThorAdbText $adb $captureDir "pid-after.txt" @("shell", "pidof $package") -AllowFailure
     $pidAfter = @(Get-ThorCapturedBody $pidAfterPath)
     $finalLogcat = Read-FreshLogcat
@@ -427,6 +467,41 @@ try {
             $nativeCompleted = $nativeText.Contains(
                 "Thor PPU cache preparation completed: title=$titleId"
             )
+            $spuActivationMarker = "Thor SPU native-object cache preparation activated: title=$titleId"
+            $spuCompletionMarker = "Thor SPU native-object cache preparation completed: title=$titleId"
+            $spuActivationLogIndex = $nativeText.IndexOf($spuActivationMarker, [StringComparison]::Ordinal)
+            $spuCompletionLogIndex = $nativeText.IndexOf($spuCompletionMarker, [StringComparison]::Ordinal)
+            $spuNativeActivated = $spuActivationLogIndex -ge 0
+            $spuNativeCompleted = $spuCompletionLogIndex -gt $spuActivationLogIndex
+            if ($spuNativeCompleted) {
+                $spuPhaseText = $nativeText.Substring(
+                    $spuActivationLogIndex,
+                    $spuCompletionLogIndex - $spuActivationLogIndex
+                )
+                $spuNativeCacheEnabled = $spuPhaseText.Contains(
+                    "Thor SPU native-object cache enabled for startup LLVM objects:"
+                )
+                $spuCachePreloadBounded = $spuPhaseText.Contains(
+                    "Thor SPU cache preload limit: $spuCachePreloadLimit of "
+                )
+                $spuCacheBudgetEnabled = $spuPhaseText.Contains(
+                    "Thor SPU cache compile budget enabled for BLUS30161: $spuCacheCompileBudgetMs ms."
+                )
+                $spuCacheAffinityMatched = $spuPhaseText.Contains(
+                    "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7."
+                )
+                $spuNativeLoadedObjects = ([regex]::Matches(
+                    $spuPhaseText,
+                    '(?m)LLVM: Loaded module: [^\r\n]+[.]obj\r?$'
+                )).Count
+                $spuBuiltMatch = [regex]::Match(
+                    $spuPhaseText,
+                    'SPU Runtime: Workers built ([0-9]+) programs[.]'
+                )
+                if ($spuBuiltMatch.Success) {
+                    $spuWorkersBuiltPrograms = [int]$spuBuiltMatch.Groups[1].Value
+                }
+            }
             $sourceResolved = $nativeText.Contains(
                 "Thor PPU cache source resolved: title=$titleId, source=iso"
             )
@@ -449,6 +524,11 @@ if ($pidAfter.Count -ne 0 -and $null -eq $runFailure) {
         "RPCSX PID remained active after force-stop: $($pidAfter -join ' ')"
     )
 }
+if (-not $spuPropertiesReset -and $null -eq $runFailure) {
+    $runFailure = [System.Management.Automation.RuntimeException]::new(
+        "SPU cache-preparation properties did not reset exactly after force-stop."
+    )
+}
 
 $finalText = $finalLogcat -join "`n"
 $nativeProcessDied = $nativeProcessDied -or
@@ -456,10 +536,14 @@ $nativeProcessDied = $nativeProcessDied -or
 $acceptedMarker = "Thor debug cache preparation accepted: request=$requestId titleId=$titleId"
 $activationMarker = "Thor PPU cache preparation activated: title=$titleId"
 $completionMarker = "Thor PPU cache preparation completed: title=$titleId"
+$spuActivationMarker = "Thor SPU native-object cache preparation activated: title=$titleId"
+$spuCompletionMarker = "Thor SPU native-object cache preparation completed: title=$titleId"
 $finishedMarker = "Thor debug cache preparation finished: request=$requestId titleId=$titleId"
 $acceptedIndex = $finalText.IndexOf($acceptedMarker, [StringComparison]::Ordinal)
 $activationIndex = $nativeText.IndexOf($activationMarker, [StringComparison]::Ordinal)
 $completionIndex = $nativeText.IndexOf($completionMarker, [StringComparison]::Ordinal)
+$spuActivationIndex = $nativeText.IndexOf($spuActivationMarker, [StringComparison]::Ordinal)
+$spuCompletionIndex = $nativeText.IndexOf($spuCompletionMarker, [StringComparison]::Ordinal)
 $finishedIndex = $finalText.IndexOf($finishedMarker, [StringComparison]::Ordinal)
 
 if ($nativeProcessDied) {
@@ -482,9 +566,13 @@ if ($gameBootDetected) {
 
 if ($null -eq $runFailure -and
     ($acceptedIndex -lt 0 -or $finishedIndex -le $acceptedIndex -or
-        $activationIndex -lt 0 -or $completionIndex -le $activationIndex)) {
+        $activationIndex -lt 0 -or $completionIndex -le $activationIndex -or
+        $spuActivationIndex -le $completionIndex -or
+        $spuCompletionIndex -le $spuActivationIndex -or
+        -not $spuNativeCacheEnabled -or -not $spuCachePreloadBounded -or
+        -not $spuCacheBudgetEnabled -or -not $spuCacheAffinityMatched)) {
     $runFailure = [System.Management.Automation.RuntimeException]::new(
-        "Logcat accepted/finished or native activated/completed evidence is incomplete or internally out of order."
+        "PPU/SPU cache-preparation evidence is incomplete, unsafe, or internally out of order."
     )
 }
 
@@ -560,6 +648,15 @@ $runtimeThermalSummary = Get-ThorCachePrepareThermalSummary `
     "- Accepted: $accepted",
     "- Native activated: $nativeActivated",
     "- Native completed: $nativeCompleted",
+    "- SPU native activated: $spuNativeActivated",
+    "- SPU native completed: $spuNativeCompleted",
+    "- SPU native cache enabled: $spuNativeCacheEnabled",
+    "- SPU preload bounded: $spuCachePreloadBounded",
+    "- SPU compile budget enabled: $spuCacheBudgetEnabled",
+    "- SPU cache affinity matched: $spuCacheAffinityMatched",
+    "- SPU native objects loaded: $spuNativeLoadedObjects",
+    "- SPU workers built programs: $spuWorkersBuiltPrograms",
+    "- SPU properties reset: $spuPropertiesReset",
     "- Native process died: $nativeProcessDied",
     "- Native fatal: $nativeFatal",
     "- Callback finished: $callbackFinished",

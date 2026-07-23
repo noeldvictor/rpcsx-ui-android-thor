@@ -1548,3 +1548,15 @@ Put dated run details in `debug-experiments/`, not here.
   `64/68 C` early/hard guard (`52 C` probe); keep the exact APK/cache frozen
   and investigate the CPU/SPU startup burst before another independently cool
   one-shot proof.
+- Host-only successor
+  `8F1C9838EFC428AB5E4DDBFF2E433A4BDA1A79BD41FB086CEF820653C01D1C25`
+  moves bounded SPU native-object compilation out of the simultaneous title
+  startup burst and into the stopped-emulator cache-preparation action. It is
+  BLUS30161/LLVM/property gated, selects at most 64 oldest programs, retains
+  the 100 ms compile budget and exact `0x7` cache-worker affinity, and requires
+  ordered native evidence plus verified `off/0/0` property cleanup. ARM64
+  native and optimized ARM64-only APK builds, exact packaging, and focused
+  host contracts pass. Thor was not contacted, the successor is not installed,
+  and no speed/thermal/gameplay credit exists. Keep no-launch install, stopped
+  SPU seeding, and warm title proof in separate independently cool rounds; see
+  `debug-experiments/20260722-thor-stopped-spu-native-prewarm.md`.
