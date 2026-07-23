@@ -1948,3 +1948,15 @@ Put dated run details in `debug-experiments/`, not here.
   `87761DAD...083CC`; installed `3DFB5F55...A34A78` is unchanged, no device
   contact occurred, and no speed/thermal/flicker/gameplay/stability credit
   exists. Ledger: `debug-experiments/20260723-thor-llvm-known-bits-upstream-slice.md`.
+
+- Exact LLVM KnownBits candidate `490418F9...D95BF63` is now installed after
+  one separately cool no-launch round. Strict gate
+  `20260723-154824-thor-input-strict-cool-gate` passed
+  `33.3 -> 32.9 -> 32.9 C` (maximum `33.3 C`, rise `-0.4 C`); install capture
+  `20260723-154836-llvm-known-bits-thortest-apk-install` proves host/on-device
+  hashes match, PID was absent before/after, no activity launched, controls
+  were safe, and post-install battery/skin/silicon were `24.0/30.0/35.3 C`.
+  Installation grants identity/safety only. Do not contact Thor before
+  `2026-07-23T16:18:43.5172237-04:00`; then spend at most one separate guarded
+  title proof. No speed, thermal-runtime, flicker, gameplay, or stability
+  credit exists yet.

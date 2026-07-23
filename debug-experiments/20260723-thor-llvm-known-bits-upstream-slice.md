@@ -71,10 +71,22 @@ Exact host artifact:
 - the APK's `lib/arm64-v8a/librpcsx-android.so` entry matches the packaged core
   exactly and no RPCSX x86_64 library remains in the accepted APK.
 
-## Device Boundary
+## Device Installation
 
-Thor remains stopped on installed APK `3DFB5F55...A34A78`. The rejected hot
-install gate remains authoritative for that round. This new candidate must
-first pass one future strict, independently cool, no-launch installation; only
-a later separately cool self-stopping title proof may earn performance,
-thermal, flicker, or stability credit.
+A separately cool install-only round passed:
+
+- strict gate `20260723-154824-thor-input-strict-cool-gate` sampled
+  `33.3 -> 32.9 -> 32.9 C` (maximum `33.3 C`, rise `-0.4 C`);
+- install capture
+  `20260723-154836-llvm-known-bits-thortest-apk-install` proves host and
+  on-device APK hashes both equal `490418F9...D95BF63`;
+- RPCSX PID was absent before and after, and no activity or game launched;
+- transient RSX/SPU/cache-affinity/diagnostic controls were default-safe while
+  the persistent Vulkan driver cache remained on;
+- post-install battery/skin/silicon were `24.0/30.0/35.3 C`.
+
+Installation grants identity and thermal-safety credit only. It grants no
+startup, title, FPS, temperature-under-load, flicker, gameplay, or stability
+credit. The host ledger forbids another device action before
+`2026-07-23T16:18:43.5172237-04:00`; only a later independently cool,
+self-stopping title proof may evaluate this candidate.
