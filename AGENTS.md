@@ -1478,3 +1478,14 @@ Put dated run details in `debug-experiments/`, not here.
   `not-comparable`; the next cool run must prove the 16 atomic objects persisted
   by reusing at least 169 before credit. No more Thor contact before
   `2026-07-22T21:49:31.1302428-04:00` and a fresh strict cool gate.
+
+- After the late `55.4 C` cache stop, the host controller now defaults to a
+  `70 s` bound instead of `90 s`, checks elapsed time immediately after each
+  thermal decision before log collection, and caps its final sleep to the
+  exact remaining bound. The latest and prior dangerous spikes arrived about
+  `76.3 s` and `73.3 s` after their first runtime samples, while completed
+  objects had already been atomically committed. This is host-only safety
+  hardening: exact installed APK/core/cache identity is unchanged. The next
+  independently cool run must still prove continuity by reusing at least 169
+  objects, and no title/gameplay proof may run until native plus callback
+  completion.

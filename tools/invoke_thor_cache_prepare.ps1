@@ -5,7 +5,7 @@ param(
     [string]$CandidatePath = "",
     [string]$GamePath = "/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso",
     [ValidateRange(30, 180)]
-    [int]$MaxSeconds = 90
+    [int]$MaxSeconds = 70
 )
 
 $ErrorActionPreference = "Stop"
@@ -357,6 +357,12 @@ try {
             }
         }
 
+        # Do not let log collection plus the fixed poll sleep extend a bounded
+        # cache round after its useful atomic writes have already completed.
+        if ($stopwatch.Elapsed.TotalSeconds -ge $MaxSeconds) {
+            break
+        }
+
         $logcat = Read-FreshLogcat
         $logText = $logcat -join "`n"
         if ($logText.Contains("Thor debug cache preparation rejected: request=$requestId")) {
@@ -376,7 +382,14 @@ try {
             break
         }
 
-        Start-Sleep -Seconds $pollIntervalSeconds
+        $remainingMilliseconds = [Math]::Max(
+            0,
+            [Math]::Ceiling(($MaxSeconds - $stopwatch.Elapsed.TotalSeconds) * 1000.0)
+        )
+        if ($remainingMilliseconds -le 0) {
+            break
+        }
+        Start-Sleep -Milliseconds ([Math]::Min($pollIntervalSeconds * 1000, $remainingMilliseconds))
     }
 
     if (-not $success) {

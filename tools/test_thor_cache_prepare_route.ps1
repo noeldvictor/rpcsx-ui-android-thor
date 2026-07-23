@@ -272,7 +272,7 @@ if ($boundedRoot -lt 0 -or $queuedRoot -le $boundedRoot -or
 
 foreach ($fragment in @(
     '[string]$Serial = "c3ca0370"',
-    '[int]$MaxSeconds = 90',
+    '[int]$MaxSeconds = 70',
     '/storage/2664-21DE/Roms/ps3/Eternal Sonata (USA) (En,Fr).iso',
     '$intentAction = "net.rpcsx.THOR_DEBUG_PREPARE_CACHE"',
     '$maxLaunchSiliconTemperatureC = 35.0',
@@ -287,6 +287,9 @@ foreach ($fragment in @(
     'Runtime samples at or above $runtimeProbeSiliconC C:',
     'minimum_cache_cooldown_minutes=',
     'Cache cooldown refused before device contact:',
+    'if ($stopwatch.Elapsed.TotalSeconds -ge $MaxSeconds)',
+    '$remainingMilliseconds = [Math]::Max(',
+    'Start-Sleep -Milliseconds ([Math]::Min($pollIntervalSeconds * 1000, $remainingMilliseconds))',
     '$preflightSamples = 3',
     'device_contact=False',
     'sha256sum',

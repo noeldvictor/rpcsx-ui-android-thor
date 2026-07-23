@@ -2134,3 +2134,26 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   and a fresh strict cool gate pass. Continue with one bounded cache round only;
   require native completion plus callback-finished before the separately cooled
   title and field/menu/battle proof.
+
+### 2026-07-22 - post-thermal-stop-cache-bound-tightening
+
+- Status: host-safety-hardening / no-device-contact / not-comparable
+- Saved-trace basis: the latest `55.4 C` sample arrived about `76.3 s` after
+  its first runtime sample; the earlier `20260722-172750` spike arrived about
+  `73.3 s` after its first sample. In the latest native log, eleven new objects
+  were already atomically committed by emulator time `68.587 s`, while the
+  next compile burst began at `73.992 s` and continued through `79.818 s`.
+- Host change: stopped-emulator cache preparation now defaults to `70 s`
+  rather than `90 s`. After every thermal decision it checks the elapsed bound
+  before pulling logcat, and its final poll sleep is capped to the exact
+  remaining milliseconds. The native/APK/cache identity and two-worker
+  `0x07` compile contract are unchanged.
+- Verification: the focused cache-route and thermal-guard contracts pass;
+  host-only Status reports `max_seconds=70`, `device_contact=False`, and the
+  candidate artifact gate still proves APK `A7216402...3D15C`, merged core
+  `36B6B711...22797`, and packaged core `0AB29DC7...B9E3` exactly.
+- Decision: no Thor contact occurred. This is a conservative safety change,
+  not startup-speed, FPS, gameplay, flicker, stability, or thermal-win proof.
+  After the independent cooldown, allow only one new 70-second round under the
+  unchanged strict cool gate and require reuse of at least 169 objects before
+  crediting the stopped round's 16 atomic writes.
