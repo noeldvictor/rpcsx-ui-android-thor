@@ -1700,3 +1700,12 @@ Put dated run details in `debug-experiments/`, not here.
   not speed/FPS/gameplay/flicker/stability/thermal-win. In one later cool round,
   run the native-cache-on title proof requiring actual activation and at least
   one loaded `.obj`; do not seed or launch again in this round.
+
+- `ThorCoolTitle` now checks the device-free cache-preparation Status before
+  serial/ADB resolution. It requires matching package/title/APK identity, a
+  successful continuity capture, native cache `on`, at least one durable SPU
+  object, `device_contact=False`, and the 30-minute cooldown ready. During the
+  new cooldown, a route using invalid serial `must-not-be-resolved` failed
+  locally with `remaining=1488s`; no ADB/device command ran. Profile dry-run,
+  AST parsing, and all `66/66` host contracts pass. Other profiles/actions are
+  unchanged. This is host-only thermal safety, not performance credit.

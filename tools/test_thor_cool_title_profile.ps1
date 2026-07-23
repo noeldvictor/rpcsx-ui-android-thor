@@ -24,6 +24,7 @@ $sourceContracts = @(
     'if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus"))',
     'Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value',
     'Set-AndroidStartupProfile',
+    'Assert-ThorCoolTitleCooldown',
     '"AndroidProfileStatus" {',
     'Write-AndroidStartupProfileSummary'
 )
@@ -35,14 +36,37 @@ foreach ($fragment in $sourceContracts) {
 
 $applyIndex = $source.LastIndexOf('Set-AndroidStartupProfile', $source.IndexOf('if ($Action -in @('))
 $deviceResolutionIndex = $source.IndexOf('if ($Action -in @(')
+$cooldownGateIndex = $source.LastIndexOf('Assert-ThorCoolTitleCooldown', $deviceResolutionIndex)
 $switchIndex = $source.IndexOf('switch ($Action)', $deviceResolutionIndex)
-if ($applyIndex -lt 0 -or $deviceResolutionIndex -le $applyIndex -or $switchIndex -le $deviceResolutionIndex) {
-    throw 'Thor startup profile is no longer applied before device resolution and action dispatch.'
+if ($applyIndex -lt 0 -or $cooldownGateIndex -le $applyIndex -or
+    $deviceResolutionIndex -le $cooldownGateIndex -or $switchIndex -le $deviceResolutionIndex) {
+    throw 'Thor startup profile/cooldown gate is no longer applied before device resolution and action dispatch.'
 }
 
 $deviceResolutionBlock = $source.Substring($deviceResolutionIndex, $switchIndex - $deviceResolutionIndex)
 if ($deviceResolutionBlock.Contains('AndroidProfileStatus')) {
     throw 'AndroidProfileStatus must remain host-only and must not resolve or query ADB.'
+}
+
+$cooldownFunctionStart = $source.IndexOf('function Assert-ThorCoolTitleCooldown')
+$serialFunctionStart = $source.IndexOf('function Resolve-SpeedAndroidSerial', $cooldownFunctionStart)
+if ($cooldownFunctionStart -lt 0 -or $serialFunctionStart -le $cooldownFunctionStart) {
+    throw 'Could not isolate the Thor cool-title cooldown gate.'
+}
+$cooldownFunction = $source.Substring($cooldownFunctionStart, $serialFunctionStart - $cooldownFunctionStart)
+foreach ($fragment in @(
+    'invoke_thor_cache_prepare.ps1',
+    '-Action Status',
+    '"device_contact"',
+    '"spu_continuity_capture"',
+    '"cache_cooldown_ready"',
+    '"minimum_required_spu_native_objects"',
+    'requires at least one durable SPU native object',
+    'post-seed cooldown is not ready'
+)) {
+    if (-not $cooldownFunction.Contains($fragment)) {
+        throw "Thor cool-title cooldown gate is missing: $fragment"
+    }
 }
 
 $summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | ForEach-Object { $_.ToString() })

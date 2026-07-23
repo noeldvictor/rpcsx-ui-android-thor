@@ -514,3 +514,26 @@ query or emulator action ran after the installer completed.
   round, run the pinned native-cache-on `ThorCoolTitle` proof. Require at least
   one `LLVM: Loaded module: ...obj`, activation marker, exact property/runtime
   gates, title visuals, no fatal/flicker, `68 C` ceiling, and final PID absence.
+
+### 2026-07-23 - cool-title-post-seed-cooldown-gate
+
+- Status: proposed
+- Scope: thermal-safety
+- Hypothesis: the exact title command should be unable to contact Thor before
+  the post-seed independent cooldown expires, even if invoked accidentally.
+- Changed files/settings: before serial/ADB resolution, `ThorCoolTitle` now
+  reads only `invoke_thor_cache_prepare.ps1 -Action Status` and requires
+  `device_contact=False`, matching package/title/APK, successful SPU continuity
+  capture, native cache `on`, at least one durable object, and cooldown ready.
+  Other profiles/actions return without applying the gate.
+- Host result: AST parsing and focused profile contract pass; all `66/66`
+  Thor host contracts and `git diff --check` pass. A direct route attempt with
+  serial `must-not-be-resolved` failed locally before serial resolution:
+  `remaining=1488s`,
+  `ready_at=2026-07-23T02:35:03.3577951-04:00`.
+- Thor result: not contacted. The gate consumed only local capture metadata.
+- Decision: retain as fail-closed thermal safety. Grant no speed, FPS,
+  gameplay, flicker, stability, or thermal-win credit.
+- Next: the wrapper may permit one title proof only after Status reports
+  cooldown ready; its existing exact identity, thermal, self-stop, native-load,
+  visual, and fatal gates remain mandatory.

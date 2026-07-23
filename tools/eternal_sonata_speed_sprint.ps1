@@ -319,6 +319,66 @@ function Write-AndroidStartupProfileSummary {
     ) | Write-Output
 }
 
+function Assert-ThorCoolTitleCooldown {
+    if ($AndroidStartupProfile -ne "ThorCoolTitle" -or $Action -ne "AndroidRouteScene") {
+        return
+    }
+
+    $statusPath = Join-Path $PSScriptRoot "invoke_thor_cache_prepare.ps1"
+    $global:LASTEXITCODE = 0
+    $statusLines = @(& $statusPath -Action Status 2>&1 | ForEach-Object { $_.ToString().Trim() })
+    if ($global:LASTEXITCODE -ne 0) {
+        throw "Thor cool-title cooldown status failed with exit $global:LASTEXITCODE."
+    }
+
+    $status = @{}
+    foreach ($line in $statusLines) {
+        if ($line -match '^([^=]+)=(.*)$') {
+            $status[$Matches[1]] = $Matches[2]
+        }
+    }
+
+    foreach ($key in @(
+        "device_contact",
+        "package",
+        "title_id",
+        "apk_sha256",
+        "spu_continuity_capture",
+        "cache_cooldown_ready",
+        "cache_cooldown_ready_at",
+        "cache_cooldown_remaining_seconds",
+        "spu_native_object_cache",
+        "minimum_required_spu_native_objects"
+    )) {
+        if (-not $status.ContainsKey($key)) {
+            throw "Thor cool-title cooldown status is missing '$key'."
+        }
+    }
+
+    if ($status.device_contact -cne "False") {
+        throw "Thor cool-title cooldown status unexpectedly contacted the device."
+    }
+    if ($status.package -cne $Package -or $status.title_id -cne "BLUS30161") {
+        throw "Thor cool-title cooldown identity does not match package/title '$Package/BLUS30161'."
+    }
+    if ($status.apk_sha256 -ine $AndroidExpectedInstalledApkSha256) {
+        throw "Thor cool-title cooldown APK identity does not match '$AndroidExpectedInstalledApkSha256'."
+    }
+    if ($status.spu_native_object_cache -cne "on" -or $status.spu_continuity_capture -ceq "none") {
+        throw "Thor cool-title requires a successful stopped-prewarm native-object continuity capture."
+    }
+
+    $minimumObjects = 0
+    if (-not [int]::TryParse($status.minimum_required_spu_native_objects, [ref]$minimumObjects) -or $minimumObjects -lt 1) {
+        throw "Thor cool-title requires at least one durable SPU native object before launch."
+    }
+    if ($status.cache_cooldown_ready -cne "True") {
+        throw "Thor cool-title post-seed cooldown is not ready: remaining=$($status.cache_cooldown_remaining_seconds)s, ready_at=$($status.cache_cooldown_ready_at)."
+    }
+
+    Write-Host "Thor cool-title cooldown passed: capture=$($status.spu_continuity_capture), minimum-native-objects=$minimumObjects."
+}
+
 function Resolve-SpeedAndroidSerial {
     param([string]$RequestedSerial)
 
@@ -924,6 +984,7 @@ function Invoke-AndroidRouteScene {
 }
 
 Set-AndroidStartupProfile
+Assert-ThorCoolTitleCooldown
 
 if ($Action -in @(
     "DeviceSnapshot",
