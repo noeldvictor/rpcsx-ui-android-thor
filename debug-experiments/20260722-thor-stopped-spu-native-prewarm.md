@@ -251,3 +251,37 @@ query or emulator action ran after the installer completed.
   strict no-launch round. Reserve the stopped-emulator seed for a different
   cool round, and require exact three-worker plus durable native-cache evidence
   before any later warm title/gameplay comparison.
+
+### 2026-07-23 - exact-affinity-proof-successor-no-launch-install
+
+- Status: android-pass
+- Scope: spu-codegen
+- Hypothesis: install the exact affinity/evidence successor without starting
+  RPCSX, preserving a clean identity and thermal boundary for a later stopped
+  SPU seed.
+- Changed files/settings: installed exact APK
+  `D6584048525CFDFF5342D39F350391B44A366038BCE11A24B9F8E3363F4E77CE`.
+  No emulator setting changed and no activity launched. Startup controls were
+  observed at safe defaults, including SPU native cache `off`, preload/budget
+  `0/0`, and cache-worker affinity `0`.
+- Rollback: reinstall the preceding exact APK through the same strict
+  no-launch procedure. RPCSX remained stopped throughout this installation.
+- Windows result: not applicable.
+- Thor result: strict no-boot gate
+  `20260723-003158-thor-input-strict-cool-gate` passed silicon
+  `31.9 -> 32.1 -> 32.3 C` (maximum `32.3 C`, rise `+0.4 C`) with
+  battery/skin `23.0/30.0 C`. Install capture
+  `20260723-003221-affinity-proof-spu-prewarm-successor-thortest-apk-install`
+  proves expected, host, and installed hashes match; PID was absent before and
+  after; post-install silicon was `36.1 C`.
+- Visual correctness: not exercised; emulator launch was `no`.
+- FPS/frame-time: unmeasured.
+- Decision: `installed-exact-no-launch` / `route-tooling` /
+  `not-comparable`. Grant no speed, FPS, thermal-win, cache-seed, gameplay,
+  flicker, or stability credit.
+- Next: no Thor contact before
+  `2026-07-23T01:02:28.4844422-04:00`. After that independent interval and a
+  fresh strict cool gate, run at most one stopped-emulator SPU seed. Require
+  durable native-cache activation, `requested=3, workers=3, mask=0x7`, exact
+  property cleanup, final PID absence, and no game boot. Reserve title and
+  gameplay proof for later cool rounds.

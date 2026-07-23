@@ -1596,3 +1596,17 @@ Put dated run details in `debug-experiments/`, not here.
   `74B7EC4D...78C0C` is `62,983,800` bytes. It is uninstalled and
   device-unmeasured. Do not contact Thor again before a new cooldown,
   no-launch install round, and later separately cool seed round.
+
+- Exact successor `D6584048...E77CE` is now installed after strict no-boot gate
+  `20260723-003158-thor-input-strict-cool-gate` passed silicon
+  `31.9 -> 32.1 -> 32.3 C` (maximum `32.3 C`, rise `+0.4 C`) with battery/skin
+  `23.0/30.0 C`. Install capture
+  `20260723-003221-affinity-proof-spu-prewarm-successor-thortest-apk-install`
+  proves expected/host/installed hashes match, PID was absent before and after,
+  every startup experiment control remained at its safe default, no activity
+  launched, and post-install silicon was `36.1 C`. This grants installed
+  identity only, with no speed, temperature-win, FPS, flicker, gameplay, cache
+  seed, or stability credit. Stop this device round. Do not contact Thor before
+  `2026-07-23T01:02:28.4844422-04:00`; after that independent interval, run at
+  most one stopped-emulator seed and reserve title/gameplay proof for later
+  cool rounds.
