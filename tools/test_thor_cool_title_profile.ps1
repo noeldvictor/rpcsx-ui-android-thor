@@ -2,9 +2,11 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sprintPath = Join-Path $repoRoot "tools/eternal_sonata_speed_sprint.ps1"
+$analyzerPath = Join-Path $repoRoot "tools/analyze_thor_cool_title_capture.ps1"
 $candidatePath = Join-Path $repoRoot "tools/thor_cool_title_candidate.psd1"
 $candidate = Import-PowerShellDataFile -LiteralPath $candidatePath
 $source = Get-Content -LiteralPath $sprintPath -Raw
+$analyzerSource = Get-Content -LiteralPath $analyzerPath -Raw
 
 $tokens = $null
 $parseErrors = $null
@@ -120,6 +122,27 @@ $requiredSummary = @(
 foreach ($line in $requiredSummary) {
     if ($summary -notcontains $line) {
         throw "Thor cool-title dry-run is missing: $line"
+    }
+}
+
+$summaryValues = @{}
+foreach ($line in $summary) {
+    $separator = $line.IndexOf("=")
+    if ($separator -gt 0) {
+        $summaryValues[$line.Substring(0, $separator)] = $line.Substring($separator + 1)
+    }
+}
+foreach ($mapping in @(
+    [pscustomobject]@{ Key = "thermal_stop_headroom_c"; AnalyzerLabel = "Runtime thermal early-stop headroom C" },
+    [pscustomobject]@{ Key = "thermal_probe_window_c"; AnalyzerLabel = "Runtime thermal confirmation window C" },
+    [pscustomobject]@{ Key = "max_silicon_c"; AnalyzerLabel = "Max silicon temperature C" }
+)) {
+    if (-not $summaryValues.ContainsKey($mapping.Key)) {
+        throw "Thor cool-title dry-run has no analyzer mapping value: $($mapping.Key)"
+    }
+    $requiredAnalyzerLine = '"- {0}: {1}"' -f $mapping.AnalyzerLabel, $summaryValues[$mapping.Key]
+    if (-not $analyzerSource.Contains($requiredAnalyzerLine)) {
+        throw "Thor title analyzer drifted from the route profile: missing $requiredAnalyzerLine"
     }
 }
 
