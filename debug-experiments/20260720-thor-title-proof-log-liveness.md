@@ -1951,3 +1951,26 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   bounded checkpoint and stop; repeat across later cool rounds until native
   completion plus callback-finished is captured, then reserve a different cool
   round for the first auditable title baseline.
+
+### 2026-07-22 - cache-prewarm-thermal-ceiling-tightening
+
+- Status: host-pass / device-unchanged
+- Scope: resumable cache-preparation thermal safety
+- Rationale: cache objects are atomically committed and resumable, so the
+  stopped-emulator prewarm gains nothing from approaching the generic runtime
+  `68/72 C` stop/hard limits. A cooler early stop preserves completed work and
+  moves unfinished compilation to a later independent round.
+- Changed files/settings: the cache-only controller now takes an immediate
+  confirmation sample at `50 C`, stops if that level persists, stops directly
+  at `55 C`, and retains a `60 C` hard ceiling. The strict below-`35 C`
+  three-sample launch gate, maximum `+1 C` preflight trend, 90-second bound,
+  exact APK/title/source checks, no-game-boot route, forced stop, and final PID
+  absence remain unchanged.
+- Host result: device-free Status reports probe/stop/hard thresholds
+  `50/55/60 C`, and the focused cache-preparation contract passes. Exact frozen
+  APK A7216402...3D15C and core bytes are unchanged; no ADB query, temperature
+  read, launch, or cache mutation occurred.
+- Decision: retain as safety hardening. It grants no speed, FPS, gameplay,
+  flicker, stability, or measured thermal-win credit. Use only after a fresh
+  independent cooldown for one bounded continuation, then stop regardless of
+  completion or thermal result.

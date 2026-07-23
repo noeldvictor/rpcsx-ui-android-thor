@@ -1411,3 +1411,13 @@ Put dated run details in `debug-experiments/`, not here.
   or one final round: later independently cool checkpoints must finish the
   growing firmware scan and produce native plus callback completion before
   the separately cooled title proof.
+
+- The resumable cache controller now probes at `50 C`, stops at `55 C`, and
+  retains a `60 C` hard silicon ceiling instead of the generic `56/68/72 C`
+  runtime envelope. Its strict below-`35 C` launch gate, three-sample trend,
+  90-second bound, atomic cache commits, forced stop, and absent-PID proof are
+  unchanged. Device-free Status reports the exact `50/55/60 C` contract and
+  the focused cache route test passes. This is host-only safety hardening: the
+  frozen APK/core and Thor state are unchanged, and no performance or thermal
+  win is claimed. Use this stricter controller for the next independently
+  cooled firmware-cache continuation.
