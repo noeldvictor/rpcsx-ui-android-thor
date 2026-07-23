@@ -22,6 +22,7 @@ foreach ($path in @($analyzerPath, $macroPath)) {
 $macroSource = Get-Content -LiteralPath $macroPath -Raw
 foreach ($fragment in @(
     'startup-profile-effective.txt',
+    'startup-profile-reset-effective.txt',
     'debug.rpcsx.thor.es_frame_wait',
     'debug.rpcsx.thor.es_frame_wait_grace_us',
     'debug.rpcsx.thor.es_frame_wait_continuous_rearm',
@@ -158,6 +159,24 @@ function Write-ReadyFixture {
     ) | Set-Content -LiteralPath (Join-Path $Directory "startup-profile-effective.txt") -Encoding UTF8
 
     @(
+        "debug.rpcsx.thor.rsx_cache_workers=0",
+        "debug.rpcsx.thor.rsx_cache_preload_limit=0",
+        "debug.rpcsx.thor.rsx_cache_load_budget_ms=0",
+        "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
+        "debug.rpcsx.thor.spu_cache_preload_limit=0",
+        "debug.rpcsx.thor.spu_cache_compile_budget_ms=0",
+        "debug.rpcsx.thor.spu_native_object_cache=off",
+        "debug.rpcsx.thor.cache_worker_affinity_mask=0",
+        "debug.rpcsx.thor.vk_pipeline_cache=on",
+        "debug.rpcsx.thor.vk_preload_cache_hits_only=off",
+        "debug.rpcsx.thor.adpf_rsx=off",
+        "debug.rpcsx.thor.cache_phase_pacing=off",
+        "debug.rpcsx.thor.es_ppu_command_interp=off",
+        "debug.rpcsx.thor.es_ppu_dispatch_probe=off",
+        "debug.rpcsx.thor.es_async_draw_barrier=off"
+    ) | Set-Content -LiteralPath (Join-Path $Directory "startup-profile-reset-effective.txt") -Encoding UTF8
+
+    @(
         "package=net.rpcsx.easy",
         "remote_path=/data/app/example/net.rpcsx.easy/base.apk",
         "expected_sha256=$candidateApkSha256",
@@ -241,6 +260,7 @@ try {
     Write-ReadyFixture $readyDir
     $ready = & $analyzerPath -CaptureDir $readyDir
     if ($ready.status -ne "title-proof-ready" -or -not $ready.ready_for_comparison -or $ready.speed_credit -or
+        -not $ready.cleanup_ready -or $ready.cleanup_property_mismatches.Count -ne 0 -or
         $ready.first_title_frame_elapsed_ms -ne 1200 -or $ready.stable_title_frame_elapsed_ms -ne 6500 -or
         $ready.title_stability_window_ms -ne 5300 -or $ready.spu_native_objects_loaded -ne 1 -or
         $ready.minimum_required_spu_native_objects -ne 1 -or -not $ready.spu_native_object_reuse_floor_satisfied) {
@@ -250,6 +270,7 @@ try {
     & $analyzerPath -CaptureDir $readyDir -OutputPath $readyJsonPath -RequireReady | Out-Null
     $readyJson = Get-Content -LiteralPath $readyJsonPath -Raw | ConvertFrom-Json
     if ($readyJson.status -ne "title-proof-ready" -or -not $readyJson.ready_for_comparison -or
+        -not $readyJson.cleanup_ready -or $readyJson.cleanup_property_mismatches.Count -ne 0 -or
         $readyJson.first_title_frame_elapsed_ms -ne 1200 -or $readyJson.stable_title_frame_elapsed_ms -ne 6500 -or
         $readyJson.title_stability_window_ms -ne 5300 -or $readyJson.spu_native_objects_loaded -ne 1 -or
         $readyJson.minimum_required_spu_native_objects -ne 1 -or -not $readyJson.spu_native_object_reuse_floor_satisfied) {
@@ -299,6 +320,26 @@ try {
     $mismatch = & $analyzerPath -CaptureDir $mismatchDir
     if ($mismatch.status -ne "activation-incomplete" -or $mismatch.ready_for_comparison -or $mismatch.property_mismatches.Count -eq 0) {
         throw "Synthetic activation mismatch did not fail closed."
+    }
+
+    $cleanupMissingDir = Join-Path $tempRoot "cleanup-evidence-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $cleanupMissingDir -Recurse
+    Remove-Item -LiteralPath (Join-Path $cleanupMissingDir "startup-profile-reset-effective.txt") -Force
+    $cleanupMissing = & $analyzerPath -CaptureDir $cleanupMissingDir
+    if ($cleanupMissing.status -ne "proof-sequence-incomplete" -or $cleanupMissing.ready_for_comparison -or
+        $cleanupMissing.cleanup_ready -or $cleanupMissing.cleanup_property_mismatches.Count -ne 15) {
+        throw "Synthetic missing post-stop property evidence did not fail closed."
+    }
+
+    $cleanupMismatchDir = Join-Path $tempRoot "cleanup-property-mismatch"
+    Copy-Item -LiteralPath $readyDir -Destination $cleanupMismatchDir -Recurse
+    (Get-Content -LiteralPath (Join-Path $cleanupMismatchDir "startup-profile-reset-effective.txt")) -replace '^debug[.]rpcsx[.]thor[.]spu_native_object_cache=off$', 'debug.rpcsx.thor.spu_native_object_cache=on' |
+        Set-Content -LiteralPath (Join-Path $cleanupMismatchDir "startup-profile-reset-effective.txt") -Encoding UTF8
+    $cleanupMismatch = & $analyzerPath -CaptureDir $cleanupMismatchDir
+    if ($cleanupMismatch.status -ne "proof-sequence-incomplete" -or $cleanupMismatch.ready_for_comparison -or
+        $cleanupMismatch.cleanup_ready -or $cleanupMismatch.cleanup_property_mismatches.Count -ne 1 -or
+        $cleanupMismatch.cleanup_property_mismatches -notmatch 'spu_native_object_cache') {
+        throw "Synthetic leaked SPU native-object cache property did not fail closed."
     }
 
     $identityMismatchDir = Join-Path $tempRoot "apk-identity-mismatch"

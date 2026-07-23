@@ -560,3 +560,13 @@ query or emulator action ran after the installer completed.
 - Next: after the enforced cooldown, one title proof must load all seven seeded
   objects and pass exact identity, activation, visual, fatal, thermal, and
   final-stop gates before any later comparison.
+- Host-only title cleanup proof now records one batched post-stop readback of
+  all 15 transient RSX/SPU/Vulkan/ADPF/affinity/experiment properties. A title
+  capture is comparison-ready only when force-stop evidence, absent PID, and
+  every safe reset value agree. Missing evidence and a synthetic leaked
+  `spu_native_object_cache=on` both fail `proof-sequence-incomplete`; AST
+  parsing, the focused analyzer contract, and all `66/66` Thor host contracts
+  pass. No APK/core build, ADB, launch, install, or device query occurred.
+  Exact installed `5044976A...D83E5C` remains frozen, and no speed, FPS,
+  gameplay, flicker, stability, or thermal-win credit is granted before the
+  independently cool `7/7` title proof.

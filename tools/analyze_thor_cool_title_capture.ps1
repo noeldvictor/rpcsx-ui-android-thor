@@ -115,6 +115,37 @@ foreach ($entry in $startupExpected.GetEnumerator()) {
     }
 }
 
+$cleanupExpected = [ordered]@{
+    "debug.rpcsx.thor.rsx_cache_workers" = "0"
+    "debug.rpcsx.thor.rsx_cache_preload_limit" = "0"
+    "debug.rpcsx.thor.rsx_cache_load_budget_ms" = "0"
+    "debug.rpcsx.thor.rsx_cache_compile_budget_ms" = "0"
+    "debug.rpcsx.thor.spu_cache_preload_limit" = "0"
+    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "0"
+    "debug.rpcsx.thor.spu_native_object_cache" = "off"
+    "debug.rpcsx.thor.cache_worker_affinity_mask" = "0"
+    "debug.rpcsx.thor.vk_pipeline_cache" = "on"
+    "debug.rpcsx.thor.vk_preload_cache_hits_only" = "off"
+    "debug.rpcsx.thor.adpf_rsx" = "off"
+    "debug.rpcsx.thor.cache_phase_pacing" = "off"
+    "debug.rpcsx.thor.es_ppu_command_interp" = "off"
+    "debug.rpcsx.thor.es_ppu_dispatch_probe" = "off"
+    "debug.rpcsx.thor.es_async_draw_barrier" = "off"
+}
+$cleanupActual = @{}
+foreach ($line in (Read-OptionalLines "startup-profile-reset-effective.txt")) {
+    if ($line -match '^([^#][^=]+)=(.*)$') {
+        $cleanupActual[$Matches[1].Trim()] = $Matches[2].Trim()
+    }
+}
+$cleanupPropertyMismatches = New-Object System.Collections.Generic.List[string]
+foreach ($entry in $cleanupExpected.GetEnumerator()) {
+    $actual = if ($cleanupActual.ContainsKey($entry.Key)) { $cleanupActual[$entry.Key] } else { $null }
+    if ($actual -cne $entry.Value) {
+        $actualText = if ($null -eq $actual) { "<missing>" } else { $actual }
+        $cleanupPropertyMismatches.Add("$($entry.Key): expected reset '$($entry.Value)', got '$actualText'") | Out-Null
+    }
+}
 $installedApkIdentity = @{}
 foreach ($line in (Read-OptionalLines "installed-apk-identity.txt")) {
     if ($line -match '^([^#][^=]+)=(.*)$') {
@@ -423,6 +454,7 @@ $postPidEvidence = Test-Path -LiteralPath $postPidPath -PathType Leaf
 $postPidValue = Get-LastEvidenceValue "post-pid.txt"
 $processAbsentAfterProof = $postPidEvidence -and ($null -eq $postPidValue -or $postPidValue -notmatch '^\d+(?:\s+\d+)*$')
 $stoppedAfterProof = $stopEvidence -and $processAbsentAfterProof
+$cleanupReady = $stoppedAfterProof -and $cleanupPropertyMismatches.Count -eq 0
 $profileActivationReady = (
     $profilePropertyMismatches.Count -eq 0 -and
     $activationMissing.Count -eq 0 -and
@@ -437,7 +469,7 @@ $readyForComparison = (
     $gateStable -and
     $gateTimingReady -and
     $titleMenuPresent -and
-    $stoppedAfterProof
+    $cleanupReady
 )
 
 $status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -and -not $titleMenuPresent) {
@@ -468,7 +500,7 @@ $status = if ($preflightRefusalLines.Count -gt 0 -and $processAbsentAtFailure -a
     "title-proof-log-incomplete"
 } elseif (-not $profileActivationReady) {
     "activation-incomplete"
-} elseif (-not $gateStable -or -not $gateTimingReady -or -not $stoppedAfterProof -or $macroFailure) {
+} elseif (-not $gateStable -or -not $gateTimingReady -or -not $cleanupReady -or $macroFailure) {
     "proof-sequence-incomplete"
 } else {
     "title-proof-ready"
@@ -495,6 +527,7 @@ $result = [pscustomobject]@{
     stable_title_frame_elapsed_ms = $stableTitleFrameElapsedMs
     title_stability_window_ms = $titleStabilityWindowMs
     stopped_after_proof = $stoppedAfterProof
+    cleanup_ready = $cleanupReady
     debug_boot_accepted = $debugBootAccepted
     debug_boot_rejected = $debugBootRejected
     debug_boot_timed_out = $debugBootTimedOut
@@ -507,6 +540,7 @@ $result = [pscustomobject]@{
     process_absent_at_failure = $processAbsentAtFailure
     fatal_hits = @($fatalHits)
     property_mismatches = @($profilePropertyMismatches)
+    cleanup_property_mismatches = @($cleanupPropertyMismatches)
     activation_missing = @($activationMissing)
     activation_fallback_hits = @($activationFallbackHits)
     spu_native_objects_loaded = $spuNativeObjectLoadCount
@@ -519,9 +553,9 @@ if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
     $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
 }
 
-Write-Host "Thor cool-title capture classification: $status (comparison-ready=$readyForComparison, max-silicon-C=$maxSiliconTemperatureC, spu-native-objects=$spuNativeObjectLoadCount/$MinimumSpuNativeObjects)"
+Write-Host "Thor cool-title capture classification: $status (comparison-ready=$readyForComparison, cleanup-ready=$cleanupReady, max-silicon-C=$maxSiliconTemperatureC, spu-native-objects=$spuNativeObjectLoadCount/$MinimumSpuNativeObjects)"
 if ($RequireReady -and -not $readyForComparison) {
-    throw "Thor cool-title capture is not comparison-ready: status=$status, property-mismatches=$($profilePropertyMismatches.Count), activation-missing=$($activationMissing.Count), spu-native-objects=$spuNativeObjectLoadCount/$MinimumSpuNativeObjects, fatal-hits=$($fatalHits.Count), thermal-failures=$($thermalFailureLines.Count)."
+    throw "Thor cool-title capture is not comparison-ready: status=$status, property-mismatches=$($profilePropertyMismatches.Count), cleanup-mismatches=$($cleanupPropertyMismatches.Count), activation-missing=$($activationMissing.Count), spu-native-objects=$spuNativeObjectLoadCount/$MinimumSpuNativeObjects, fatal-hits=$($fatalHits.Count), thermal-failures=$($thermalFailureLines.Count)."
 }
 
 $result
