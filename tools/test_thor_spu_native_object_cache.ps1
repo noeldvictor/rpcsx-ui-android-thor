@@ -40,12 +40,19 @@ Assert-Contains $spuCommon 'normalized == "1" || normalized == "on" || normalize
 Assert-Contains $spuCommon 'g_cfg.core.spu_decoder == spu_decoder_type::llvm' "SPU native cache is not restricted to LLVM startup paths."
 Assert-Contains $spuCommon 'spu_native_object_cache_enabled() && g_cfg.core.spu_decoder == spu_decoder_type::llvm' "The native-cache capability is no longer independent of guest-program cache contents."
 Assert-Contains $spuCommon 'runtime.enable_native_object_cache()' "SPU native-cache directory creation is not fail-closed."
+Assert-Contains $spuCommon 'm_cache_path = rpcs3::cache::get_ppu_cache();' "SPU native-cache activation does not refresh a cache path configured after runtime construction."
+if (([regex]::Matches($spuCommon, [regex]::Escape('m_cache_path = rpcs3::cache::get_ppu_cache();'))).Count -ne 2) {
+    throw "SPU native-cache activation must refresh the cache path once after the constructor path."
+}
 Assert-Contains $spuCommon 'startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.' "Startup-object activation and runtime-miss isolation are not documented."
 Assert-Contains $spuCommon 'spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects:' "Android native-cache activation evidence is not durable."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache)' "The startup LLVM interpreter does not receive the native-cache capability."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache)' "Startup workers do not receive the native-cache capability."
 Assert-Contains $spuCommon 'compiler = spu_recompiler_base::make_llvm_recompiler();' "The runtime optimization worker no longer retains the default uncached compiler."
 Assert-Contains $spuCommon 'm_cache_path + "spu-native-v2/"' "SPU native objects are not isolated from debug and guest-program caches."
+Assert-Contains $spuCommon '__system_property_get("debug.rpcsx.thor.spu_cache_worker_limit", property_value)' "Stopped-prewarm SPU worker override is missing."
+Assert-Contains $spuCommon 'RPCSX_THOR_SPU_CACHE_WORKER_LIMIT' "Stopped-prewarm SPU worker environment fallback is missing."
+Assert-Contains $spuCommon 'worker_count = std::min<u32>(cache_worker_limit, ::narrow<u32>(add_count));' "Stopped-prewarm SPU workers do not honor the bounded override."
 
 Assert-Contains $spuHeader 'std::string m_native_object_cache_path;' "SPU runtime does not own a separate native-cache path."
 Assert-Contains $spuHeader 'bool use_native_object_cache = false' "LLVM compiler factory is not default-off."
@@ -115,6 +122,8 @@ if ($sprintSource -notmatch '(?s)\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$
 }
 Assert-Contains $sprintSource 'SpuNativeObjectCache = $AndroidSpuNativeObjectCache' "Speed sprint does not forward the SPU native-cache control."
 Assert-Contains $installerSource 'spu_native_cache=' "No-launch installer does not capture SPU native-cache state."
+Assert-Contains $installerSource 'spu_workers=' "No-launch installer does not capture the stopped-prewarm SPU worker override."
+Assert-Contains $installerSource 'getprop debug.rpcsx.thor.spu_cache_worker_limit' "No-launch installer does not capture the stopped-prewarm SPU worker property."
 foreach ($fragment in @(
     'Thor SPU native-object cache preparation activated: title=%s',
     'spu_cache::initialize();',
@@ -133,10 +142,12 @@ foreach ($fragment in @(
     'setprop debug.rpcsx.thor.spu_native_object_cache $spuNativeObjectCache',
     'setprop debug.rpcsx.thor.spu_cache_preload_limit $spuCachePreloadLimit',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs',
+    'setprop debug.rpcsx.thor.spu_cache_worker_limit $spuCacheWorkerLimit',
     'setprop debug.rpcsx.thor.cache_worker_affinity_mask $cacheWorkerAffinityMask',
     'setprop debug.rpcsx.thor.spu_native_object_cache off',
     'setprop debug.rpcsx.thor.spu_cache_preload_limit 0',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0',
+    'setprop debug.rpcsx.thor.spu_cache_worker_limit 0',
     'setprop debug.rpcsx.thor.cache_worker_affinity_mask 0',
     'SPU properties reset:'
 )) {

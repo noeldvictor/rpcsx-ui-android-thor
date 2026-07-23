@@ -229,6 +229,7 @@ function Get-ThorSpuNativeObjectReuseFloor {
         return 0
     }
 
+    $status = [regex]::Match($LatestReadmeText, '(?m)^- Status:\s*(.+)$')
     $loaded = [regex]::Match(
         $LatestReadmeText,
         '(?m)^- SPU native objects loaded:\s*([0-9]+)\s*$'
@@ -240,12 +241,24 @@ function Get-ThorSpuNativeObjectReuseFloor {
     if (-not $loaded.Success -and -not $built.Success) {
         return 0
     }
+    if (-not $status.Success -or
+        $status.Groups[1].Value.Trim() -notin @(
+            'cache-progress-checkpoint',
+            'cache-prepared-exact-no-game-boot'
+        )) {
+        return 0
+    }
     if (-not $loaded.Success -or -not $built.Success) {
         throw 'Latest cache capture has incomplete SPU native-object continuity evidence.'
     }
 
     foreach ($requiredSafetyRow in @(
         '- SPU native completed: True',
+        '- SPU native cache enabled: True',
+        '- SPU preload bounded: True',
+        '- SPU compile budget enabled: True',
+        '- SPU cache affinity matched: True',
+        '- SPU cache worker pool matched: True',
         '- SPU properties reset: True',
         '- Native process died: False',
         '- Native fatal: False',

@@ -201,7 +201,13 @@ if (-not $malformedCheckpointRejected) {
     throw "Malformed checkpoint continuity evidence was accepted."
 }
 $spuNativeReuseFloor = Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText @'
+- Status: cache-prepared-exact-no-game-boot
 - SPU native completed: True
+- SPU native cache enabled: True
+- SPU preload bounded: True
+- SPU compile budget enabled: True
+- SPU cache affinity matched: True
+- SPU cache worker pool matched: True
 - SPU native objects loaded: 4
 - SPU workers built programs: 6
 - SPU properties reset: True
@@ -213,10 +219,24 @@ if ($spuNativeReuseFloor -ne 10 -or
     (Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText "") -ne 0) {
     throw "SPU native-object reuse floor did not preserve cumulative cache continuity."
 }
+if ((Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText @'
+- Status: failed
+- SPU native completed: True
+- SPU native objects loaded: 4
+- SPU workers built programs: 6
+'@) -ne 0) {
+    throw "Failed SPU evidence incorrectly established a native-object continuity floor."
+}
 $malformedSpuNativeReuseRejected = $false
 try {
     [void](Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText @'
+- Status: cache-prepared-exact-no-game-boot
 - SPU native completed: True
+- SPU native cache enabled: True
+- SPU preload bounded: True
+- SPU compile budget enabled: True
+- SPU cache affinity matched: True
+- SPU cache worker pool matched: True
 - SPU native objects loaded: 4
 - SPU properties reset: True
 - Native process died: False
@@ -431,10 +451,12 @@ foreach ($fragment in @(
     'setprop debug.rpcsx.thor.spu_native_object_cache $spuNativeObjectCache',
     'setprop debug.rpcsx.thor.spu_cache_preload_limit $spuCachePreloadLimit',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs',
+    'setprop debug.rpcsx.thor.spu_cache_worker_limit $spuCacheWorkerLimit',
     'setprop debug.rpcsx.thor.cache_worker_affinity_mask $cacheWorkerAffinityMask',
     'setprop debug.rpcsx.thor.spu_native_object_cache off',
     'setprop debug.rpcsx.thor.spu_cache_preload_limit 0',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0',
+    'setprop debug.rpcsx.thor.spu_cache_worker_limit 0',
     'setprop debug.rpcsx.thor.cache_worker_affinity_mask 0',
     'Thor SPU native-object cache preparation activated: title=',
     'Thor SPU native-object cache preparation completed: title=',
@@ -450,6 +472,7 @@ foreach ($fragment in @(
     'require_validated_cache_reuse=True',
     'minimum_required_reused_modules=',
     'minimum_required_spu_native_objects=',
+    'spu_continuity_capture=',
     'Get-ThorSpuNativeObjectReuseFloor',
     '$spuNativeObjectReuseFloorSatisfied =',
     '-not $spuNativeObjectReuseFloorSatisfied',

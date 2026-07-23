@@ -315,3 +315,66 @@ query or emulator action ran after the installer completed.
   seed must load at least six native objects, prove the exact three-worker
   affinity pool, build any new objects inside the `100 ms` budget, clean up all
   properties, leave PID absent, and never boot the game.
+
+### 2026-07-23 - stopped-spu-native-cache-path-counterproof
+
+- Status: failed
+- Scope: spu-codegen
+- Capture: `20260723-010252-firmware-ppu-prewarm`
+- Exact candidate: installed APK
+  `D6584048525CFDFF5342D39F350391B44A366038BCE11A24B9F8E3363F4E77CE`
+  matched the pinned host artifact.
+- Thermal result: strict preflight passed at
+  `31.7 -> 32.3 -> 31.5 C`; the bounded action finished in `1.544 s`, its
+  single runtime sample was `35.9 C`, post-stop was `32.9 C`, and PID was
+  absent. No thermal threshold fired.
+- PPU result: `209` validated objects reused, firmware `142/142`, current
+  module workload `64/64`, callback finished, no compile workers required.
+- SPU result: activation/completion, preload `64/1165`, `100 ms` budget, and
+  affinity `requested=0x7,effective=0x7` appeared. The pool was only `2/2`,
+  native cache enablement was absent, zero native objects loaded, and the same
+  six programs rebuilt. Properties reset; no fatal, process death, or game
+  boot occurred.
+- Root cause: `spu_runtime` was constructed before the stopped route called
+  `ConfigurePPUCache()`, so its cached path remained empty and
+  `enable_native_object_cache()` returned false. Separately, the title's
+  normal `Max LLVM Compile Threads: 2` capped the pool because the controller's
+  intended three-worker limit was never passed into the core.
+- Decision: retain as `failed-evidence-gate` / `safe-counterproof` /
+  `not-comparable`. It grants no speed, FPS, gameplay, flicker, stability, or
+  thermal-win credit. Do not retry or contact Thor again in this device round.
+
+### 2026-07-23 - lazy-native-cache-path-and-explicit-worker-successor
+
+- Status: proposed
+- Scope: spu-codegen
+- Hypothesis: resolving the cache path at opt-in time and explicitly overriding
+  only the stopped-prewarm worker pool will allow exact native objects to be
+  written without changing normal title runtime scheduling.
+- Changed files/settings: `enable_native_object_cache()` now refreshes an empty
+  cache path after cache configuration. A BLUS30161/property-gated worker limit
+  overrides the normal two-thread cap only when bounded preload plus compile
+  budget are active. The host controller sets/verifies/resets the limit at `3`;
+  the no-launch installer captures its default state. Failed or incomplete
+  native-cache captures cannot establish a reuse floor, and historical scanning
+  selects only the newest successful safe continuity capture.
+- Exact host artifact:
+  - APK: `5044976A53036961883A3723ECE8C54811B6AEB45D4EB1116ACD802D40D83E5C`
+    / `72,835,952` bytes.
+  - merged core:
+    `9A22B5B29BCD5B9F959AA523B550BCC0E86F9BD31EA372A8B40EB439042E1065`
+    / `1,304,256,560` bytes.
+  - packaged core:
+    `294723803F285762162B56158CEEB3F832444A4CC01E988A72B79E240AF6EDDF`
+    / `62,984,952` bytes.
+- Host result: optimized ARM64 native build and ARM64-only APK packaging pass;
+  exact artifact, optimized variant, ABI, focused route/native-cache contracts,
+  and all `66/66` Thor host contracts pass. Device-free Status reports
+  `spu_continuity_capture=none`, floor `0`, and worker limit `3`.
+- Thor result: not run. The successor is uninstalled and device-unmeasured.
+- Decision: retain as host-only `route-tooling`. No speed, FPS, gameplay,
+  flicker, stability, or thermal-win credit.
+- Next: honor the failed seed's independent cooldown. In one later strict cool
+  round, install this exact APK without launching it. In a still later cool
+  round, one stopped seed must prove native-cache enabled, exact three-worker
+  affinity, durable builds, cleanup, no fatal/game boot, and PID absence.

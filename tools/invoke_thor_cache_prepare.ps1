@@ -75,14 +75,15 @@ if ($apkItem.Length -ne [long]$candidate.ApkSize -or $hostApkHash -ne $expectedA
 $latestCacheCaptureName = "none"
 $latestCacheCompletedAt = $null
 $latestCacheReadmeText = ""
+$cacheCaptures = @()
 $latestInstallCaptureName = "none"
 $latestInstallCompletedAt = $null
 $cacheCaptureRoot = Join-Path $repoRoot "debug-captures\android-speed-sprint"
 if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
-    $latestCacheCapture = Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
+    $cacheCaptures = @(Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
         Where-Object { $_.Name -match '^[0-9]{8}-[0-9]{6}-firmware-ppu-prewarm$' } |
-        Sort-Object Name -Descending |
-        Select-Object -First 1
+        Sort-Object Name -Descending)
+    $latestCacheCapture = $cacheCaptures | Select-Object -First 1
     if ($null -ne $latestCacheCapture) {
         $latestCacheCaptureName = $latestCacheCapture.Name
         $latestReadme = Join-Path $latestCacheCapture.FullName "README.md"
@@ -143,9 +144,23 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
     }
 }
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
-$minimumRequiredSpuNativeObjects = Get-ThorSpuNativeObjectReuseFloor `
-    -LatestReadmeText $latestCacheReadmeText `
-    -MaximumObjects $spuCachePreloadLimit
+$minimumRequiredSpuNativeObjects = 0
+$spuContinuityCaptureName = "none"
+foreach ($cacheCapture in $cacheCaptures) {
+    $continuityReadme = Join-Path $cacheCapture.FullName "README.md"
+    if (-not (Test-Path -LiteralPath $continuityReadme -PathType Leaf)) {
+        continue
+    }
+    $continuityReadmeText = Get-Content -LiteralPath $continuityReadme -Raw
+    $candidateSpuFloor = Get-ThorSpuNativeObjectReuseFloor `
+        -LatestReadmeText $continuityReadmeText `
+        -MaximumObjects $spuCachePreloadLimit
+    if ($candidateSpuFloor -gt 0) {
+        $minimumRequiredSpuNativeObjects = $candidateSpuFloor
+        $spuContinuityCaptureName = $cacheCapture.Name
+        break
+    }
+}
 $cooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName $latestCacheCaptureName `
     -CacheCompletedAt $latestCacheCompletedAt `
@@ -176,6 +191,7 @@ if ($Action -eq "Status") {
         "minimum_cache_cooldown_minutes=$minimumCacheCooldownMinutes",
         "latest_cache_capture=$latestCacheCaptureName",
         "latest_cache_completed_at=$(if ($null -eq $latestCacheCompletedAt) { 'none' } else { $latestCacheCompletedAt.ToString('o') })",
+        "spu_continuity_capture=$spuContinuityCaptureName",
         "latest_install_capture=$latestInstallCaptureName",
         "latest_install_completed_at=$(if ($null -eq $latestInstallCompletedAt) { 'none' } else { $latestInstallCompletedAt.ToString('o') })",
         "cooldown_source_kind=$($cooldownSource.kind)",
@@ -364,14 +380,18 @@ try {
     $spuPreloadEffectivePath = Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_preload_limit")
     Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs") | Out-Null
     $spuBudgetEffectivePath = Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_compile_budget_ms")
+    Invoke-ThorAdbText $adb $captureDir "spu-cache-worker-limit-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_worker_limit $spuCacheWorkerLimit") | Out-Null
+    $spuWorkerLimitEffectivePath = Invoke-ThorAdbText $adb $captureDir "spu-cache-worker-limit-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_worker_limit")
     $cacheAffinityEffective = (Get-ThorCapturedBody $cacheAffinityEffectivePath) -join ""
     $spuNativeEffective = (Get-ThorCapturedBody $spuNativeEffectivePath) -join ""
     $spuPreloadEffective = (Get-ThorCapturedBody $spuPreloadEffectivePath) -join ""
     $spuBudgetEffective = (Get-ThorCapturedBody $spuBudgetEffectivePath) -join ""
+    $spuWorkerLimitEffective = (Get-ThorCapturedBody $spuWorkerLimitEffectivePath) -join ""
     if ($cacheAffinityEffective -ne [string]$cacheWorkerAffinityMask -or
         $spuNativeEffective -ne $spuNativeObjectCache -or
         $spuPreloadEffective -ne [string]$spuCachePreloadLimit -or
-        $spuBudgetEffective -ne [string]$spuCacheCompileBudgetMs) {
+        $spuBudgetEffective -ne [string]$spuCacheCompileBudgetMs -or
+        $spuWorkerLimitEffective -ne [string]$spuCacheWorkerLimit) {
         throw "SPU cache-preparation properties did not apply exactly."
     }
 
@@ -507,15 +527,18 @@ try {
     Invoke-ThorAdbText $adb $captureDir "spu-native-object-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $adb $captureDir "spu-cache-worker-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_worker_limit 0") -AllowFailure | Out-Null
     $cacheAffinityResetPath = Invoke-ThorAdbText $adb $captureDir "cache-worker-affinity-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.cache_worker_affinity_mask") -AllowFailure
     $spuNativeResetPath = Invoke-ThorAdbText $adb $captureDir "spu-native-object-cache-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_native_object_cache") -AllowFailure
     $spuPreloadResetPath = Invoke-ThorAdbText $adb $captureDir "spu-cache-preload-limit-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_preload_limit") -AllowFailure
     $spuBudgetResetPath = Invoke-ThorAdbText $adb $captureDir "spu-cache-compile-budget-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_compile_budget_ms") -AllowFailure
+    $spuWorkerLimitResetPath = Invoke-ThorAdbText $adb $captureDir "spu-cache-worker-limit-reset-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_worker_limit") -AllowFailure
     $spuPropertiesReset =
         ((Get-ThorCapturedBody $cacheAffinityResetPath) -join "") -eq "0" -and
         ((Get-ThorCapturedBody $spuNativeResetPath) -join "") -eq "off" -and
         ((Get-ThorCapturedBody $spuPreloadResetPath) -join "") -eq "0" -and
-        ((Get-ThorCapturedBody $spuBudgetResetPath) -join "") -eq "0"
+        ((Get-ThorCapturedBody $spuBudgetResetPath) -join "") -eq "0" -and
+        ((Get-ThorCapturedBody $spuWorkerLimitResetPath) -join "") -eq "0"
     $pidAfterPath = Invoke-ThorAdbText $adb $captureDir "pid-after.txt" @("shell", "pidof $package") -AllowFailure
     $pidAfter = @(Get-ThorCapturedBody $pidAfterPath)
     $finalLogcat = Read-FreshLogcat

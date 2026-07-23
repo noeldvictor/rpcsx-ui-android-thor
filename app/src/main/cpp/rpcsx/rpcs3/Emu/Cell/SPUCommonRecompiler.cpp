@@ -334,6 +334,49 @@ static u32 spu_cache_compile_budget_ms() noexcept
 	return result;
 }
 
+static u32 spu_cache_worker_limit() noexcept
+{
+	if (Emu.GetTitleID() != "BLUS30161")
+	{
+		return 0;
+	}
+
+	const char* value = nullptr;
+	usz length = 0;
+
+#ifdef ANDROID
+	char property_value[PROP_VALUE_MAX]{};
+	const int property_length = __system_property_get("debug.rpcsx.thor.spu_cache_worker_limit", property_value);
+
+	if (property_length > 0)
+	{
+		value = property_value;
+		length = static_cast<usz>(property_length);
+	}
+#endif
+
+	if (!value)
+	{
+		value = std::getenv("RPCSX_THOR_SPU_CACHE_WORKER_LIMIT");
+		length = value ? std::strlen(value) : 0;
+	}
+
+	if (!value || !length)
+	{
+		return 0;
+	}
+
+	u32 result = 0;
+	const auto parse = std::from_chars(value, value + length, result);
+
+	if (parse.ec != std::errc{} || parse.ptr != value + length || result > 16)
+	{
+		return 0;
+	}
+
+	return result;
+}
+
 // Move 4 args for calling native function from a GHC calling convention function
 #if defined(ARCH_X64)
 static u8* move_args_ghc_to_native(u8* raw)
@@ -1061,6 +1104,7 @@ void spu_cache::initialize(bool build_existing_cache)
 	auto func_list = cache.get();
 	const u32 preload_limit = spu_cache_preload_limit();
 	const u32 compile_budget_ms = spu_cache_compile_budget_ms();
+	const u32 cache_worker_limit = spu_cache_worker_limit();
 	auto& runtime = g_fxo->get<spu_runtime>();
 
 	if ((preload_limit || compile_budget_ms) && !func_list.empty())
@@ -1203,6 +1247,10 @@ void spu_cache::initialize(bool build_existing_cache)
 		}
 
 		worker_count = std::min<u32>(rpcs3::utils::get_max_threads(), ::narrow<u32>(add_count));
+		if (cache_worker_limit && preload_limit && compile_budget_ms && !func_list.empty())
+		{
+			worker_count = std::min<u32>(cache_worker_limit, ::narrow<u32>(add_count));
+		}
 	}
 
 	atomic_t<u32> pending_progress = 0;
@@ -1808,7 +1856,11 @@ bool spu_runtime::enable_native_object_cache()
 
 	if (m_cache_path.empty())
 	{
-		return false;
+		m_cache_path = rpcs3::cache::get_ppu_cache();
+		if (m_cache_path.empty())
+		{
+			return false;
+		}
 	}
 
 	const std::string path = m_cache_path + "spu-native-v2/";

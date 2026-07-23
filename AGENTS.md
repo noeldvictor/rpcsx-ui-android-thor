@@ -1620,3 +1620,31 @@ Put dated run details in `debug-experiments/`, not here.
   partial, unsafe, fatal, process-death, unclean-property, or game-boot evidence
   fails closed. All `66/66` Thor host contracts pass. Installed APK/core and
   device state are unchanged; no ADB contact followed the no-launch install.
+
+- Exact installed `D6584048...E77CE` completed one independently cool
+  stopped-emulator seed in `20260723-010252-firmware-ppu-prewarm`. Exact APK
+  identity passed; preflight was `31.7 -> 32.3 -> 31.5 C`, runtime was
+  `1.544 s` with one `35.9 C` sample, and post-stop was `32.9 C`. The PPU
+  phase reused `209` objects and completed firmware `142/142`; the SPU phase
+  built `6/64` under the `100 ms` budget with affinity `0x7`, but it loaded
+  zero native objects, reported native cache disabled, and used only `2/2`
+  workers. PID was absent, properties reset, and there was no fatal or game
+  boot. Classify `failed-evidence-gate` / `safe-counterproof` /
+  `not-comparable`, with no speed, FPS, gameplay, stability, flicker, or
+  thermal-win credit. Root cause: the SPU runtime captured an empty cache path
+  before the stopped route configured the PPU cache, and the controller never
+  supplied its intended three-worker override.
+
+- Exact host successor
+  `5044976A53036961883A3723ECE8C54811B6AEB45D4EB1116ACD802D40D83E5C`
+  lazily refreshes the SPU native-cache path, adds a title-gated stopped-prewarm
+  worker limit, and makes the controller set/verify/reset that limit at `3`.
+  Only successful native-cache evidence can establish a continuity floor, so
+  both failed six-build captures correctly produce `spu_continuity_capture=none`
+  and `minimum_required_spu_native_objects=0`. ARM64 native and APK builds,
+  exact artifact/optimized/ABI gates, and all `66/66` Thor host contracts pass.
+  The APK is `72,835,952` bytes; merged core `9A22B5B2...2E1065` is
+  `1,304,256,560` bytes and packaged core `29472380...6EDDF` is `62,984,952`
+  bytes. It is uninstalled and device-unmeasured. Do not install before a
+  separate independently cool no-launch round; reserve the seed and title/
+  gameplay proofs for later cool rounds.
