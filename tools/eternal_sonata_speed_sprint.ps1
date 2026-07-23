@@ -237,7 +237,7 @@ function Set-AndroidStartupProfile {
         AndroidRsxCacheCompileBudgetMs = 0
         AndroidSpuCachePreloadLimit = 64
         AndroidSpuCacheCompileBudgetMs = 100
-        AndroidSpuNativeObjectCache = "off"
+        AndroidSpuNativeObjectCache = "on"
         AndroidCacheWorkerAffinityMask = 7
         AndroidVkPipelineCache = "on"
         AndroidVkPreloadCacheHitsOnly = "on"
@@ -302,6 +302,7 @@ function Write-AndroidStartupProfileSummary {
         "rsx_compile_budget_ms=$AndroidRsxCacheCompileBudgetMs",
         "spu_preload_limit=$AndroidSpuCachePreloadLimit",
         "spu_compile_budget_ms=$AndroidSpuCacheCompileBudgetMs",
+        "spu_native_object_cache=$AndroidSpuNativeObjectCache",
         "cache_affinity_mask=$AndroidCacheWorkerAffinityMask",
         "vk_pipeline_cache=$AndroidVkPipelineCache",
         "vk_hits_only=$AndroidVkPreloadCacheHitsOnly",

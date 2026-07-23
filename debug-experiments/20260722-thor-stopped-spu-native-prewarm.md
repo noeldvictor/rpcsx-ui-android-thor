@@ -404,3 +404,39 @@ query or emulator action ran after the installer completed.
   `2026-07-23T02:04:26.6355691-04:00`. In a later independently cool round,
   run at most one stopped seed and require native-cache enabled, three workers
   on affinity `0x7`, property cleanup, no fatal/game boot, and PID absence.
+
+### 2026-07-23 - cool-title-consumes-stopped-spu-native-objects
+
+- Status: proposed
+- Scope: route-tooling
+- Hypothesis: the stopped prewarm cannot reduce title-start work unless the
+  exact later title route opts into the same durable SPU native-object cache.
+- Root cause: `ThorCoolTitle` explicitly forced SPU native cache `off`, so it
+  would ignore the objects created by a successful stopped seed even though
+  the global default-off control and forwarding path were correct.
+- Changed files/settings: only the pinned `ThorCoolTitle` profile now requires
+  `AndroidSpuNativeObjectCache=on`. Global and ordinary-route defaults remain
+  `off`. The profile summary reports the state, the capture analyzer requires
+  both effective-property and startup-property `on`, and explicit attempts to
+  turn it off fail closed.
+- Rollback: revert this host-only profile/analyzer/test slice. Installed APK,
+  native core, cached objects, and runtime defaults are unchanged.
+- Host result: PowerShell AST parsing passed for all five changed scripts;
+  focused profile, analyzer, and native-cache contracts pass; device-free
+  `AndroidProfileStatus` pins APK
+  `5044976A53036961883A3723ECE8C54811B6AEB45D4EB1116ACD802D40D83E5C`,
+  packaged core
+  `294723803F285762162B56158CEEB3F832444A4CC01E988A72B79E240AF6EDDF`,
+  and reports `spu_native_object_cache=on`; all `66/66` Thor host contracts
+  pass; `git diff --check` passes.
+- Thor result: not run. No build, install, launch, ADB, or device query
+  occurred, so the exact installed successor remains frozen and cooling.
+- Visual correctness: not exercised.
+- FPS/frame-time: unmeasured.
+- Decision: retain as fail-closed `route-tooling`. This closes the
+  cache-consumption gap but grants no speed, startup, FPS, thermal-win,
+  gameplay, flicker, or stability credit.
+- Next: after the independent cooldown, run one stopped seed requiring durable
+  native-cache enablement, requested/workers `3/3`, affinity `0x7`, safe
+  cleanup, final PID absence, and no game boot. Reserve the native-cache-on
+  title proof and field/menu/first-battle comparisons for later cool rounds.

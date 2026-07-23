@@ -121,6 +121,7 @@ if ($sprintSource -notmatch '(?s)\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\$
     throw "Speed-sprint native-cache control is missing or not default-off."
 }
 Assert-Contains $sprintSource 'SpuNativeObjectCache = $AndroidSpuNativeObjectCache' "Speed sprint does not forward the SPU native-cache control."
+Assert-Contains $sprintSource 'AndroidSpuNativeObjectCache = "on"' "Thor cool-title profile does not consume stopped-prewarm native objects."
 Assert-Contains $installerSource 'spu_native_cache=' "No-launch installer does not capture SPU native-cache state."
 Assert-Contains $installerSource 'spu_workers=' "No-launch installer does not capture the stopped-prewarm SPU worker override."
 Assert-Contains $installerSource 'getprop debug.rpcsx.thor.spu_cache_worker_limit' "No-launch installer does not capture the stopped-prewarm SPU worker property."

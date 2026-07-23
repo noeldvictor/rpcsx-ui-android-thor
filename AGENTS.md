@@ -1662,3 +1662,15 @@ Put dated run details in `debug-experiments/`, not here.
   the cooldown source and refuses cache preparation before
   `2026-07-23T02:04:26.6355691-04:00`; run at most one stopped seed in a later
   independently cool round.
+
+- Host-only title-route repair now makes the exact `ThorCoolTitle` profile
+  consume the durable SPU native objects produced by stopped prewarm. Global
+  and normal-route defaults remain `off`; only this pinned BLUS30161 proof
+  profile requires native cache `on`. Its analyzer requires both captured
+  effective state and startup property `on`, the dry-run reports
+  `spu_native_object_cache=on`, explicit `off` conflicts fail closed, and all
+  `66/66` Thor host contracts pass. No APK/core rebuild, install, launch, ADB,
+  or device query occurred. This is route-tooling only and grants no speed,
+  FPS, thermal-win, gameplay, flicker, or stability credit. Keep exact
+  installed APK `5044976A...D83E5C` frozen; first prove one stopped native-cache
+  seed after the independent cooldown, then use a later cool round for title.

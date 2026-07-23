@@ -116,7 +116,7 @@ function Write-ReadyFixture {
         "rsx-cache-compile-budget-effective.txt" = "0"
         "spu-cache-preload-limit-effective.txt" = "64"
         "spu-cache-compile-budget-effective.txt" = "100"
-        "spu-native-object-cache-effective.txt" = "off"
+        "spu-native-object-cache-effective.txt" = "on"
         "cache-worker-affinity-effective.txt" = "7"
         "vk-pipeline-cache-effective.txt" = "on"
         "vk-preload-cache-hits-only-effective.txt" = "on"
@@ -134,7 +134,7 @@ function Write-ReadyFixture {
         "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
         "debug.rpcsx.thor.spu_cache_preload_limit=64",
         "debug.rpcsx.thor.spu_cache_compile_budget_ms=100",
-        "debug.rpcsx.thor.spu_native_object_cache=off",
+        "debug.rpcsx.thor.spu_native_object_cache=on",
         "debug.rpcsx.thor.cache_worker_affinity_mask=7",
         "debug.rpcsx.thor.vk_pipeline_cache=on",
         "debug.rpcsx.thor.vk_preload_cache_hits_only=on",

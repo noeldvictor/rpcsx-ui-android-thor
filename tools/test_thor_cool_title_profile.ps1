@@ -19,6 +19,7 @@ $sourceContracts = @(
     '$ScriptBoundParameters = @{} + $PSBoundParameters',
     'thor_cool_title_candidate.psd1',
     'AndroidExpectedInstalledApkSha256 = [string]$thorCoolTitleCandidate.ApkSha256',
+    'AndroidSpuNativeObjectCache = "on"',
     'ExpectedInstalledApkSha256 = $AndroidExpectedInstalledApkSha256',
     'if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus"))',
     'Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value',
@@ -70,6 +71,7 @@ $requiredSummary = @(
     'rsx_compile_budget_ms=0',
     'spu_preload_limit=64',
     'spu_compile_budget_ms=100',
+    'spu_native_object_cache=on',
     'cache_affinity_mask=7',
     'vk_pipeline_cache=on',
     'vk_hits_only=on',
@@ -140,6 +142,16 @@ try {
 }
 if (-not $budgetConflictRejected) {
     throw 'Thor cool-title profile did not reject an unbounded SPU compile-budget override.'
+}
+
+$nativeCacheConflictRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidSpuNativeObjectCache off 2>&1 | Out-Null
+} catch {
+    $nativeCacheConflictRejected = $_.Exception.Message -like "*requires -AndroidSpuNativeObjectCache 'on'*"
+}
+if (-not $nativeCacheConflictRejected) {
+    throw 'Thor cool-title profile did not reject disabling durable SPU native-object reuse.'
 }
 
 $apkIdentityConflictRejected = $false
