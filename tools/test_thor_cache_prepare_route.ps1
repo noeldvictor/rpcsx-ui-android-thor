@@ -160,8 +160,8 @@ $checkpointReuseFloor = Get-ThorCachePrepareReuseFloor -LatestReadmeText @'
 - Reused modules this round: 169
 - Failure: none
 '@
-if ($thermalStopReuseFloor -ne 169 -or $checkpointReuseFloor -ne 1) {
-    throw "Cache-preparation reuse floor did not preserve thermal-stop continuity."
+if ($thermalStopReuseFloor -ne 169 -or $checkpointReuseFloor -ne 179) {
+    throw "Cache-preparation reuse floor did not preserve checkpoint continuity."
 }
 $malformedThermalStopRejected = $false
 try {
@@ -171,6 +171,15 @@ try {
 }
 if (-not $malformedThermalStopRejected) {
     throw "Malformed thermal-stop continuity evidence was accepted."
+}
+$malformedCheckpointRejected = $false
+try {
+    [void](Get-ThorCachePrepareReuseFloor -LatestReadmeText "- Status: cache-progress-checkpoint`n- Failure: none")
+} catch {
+    $malformedCheckpointRejected = $true
+}
+if (-not $malformedCheckpointRejected) {
+    throw "Malformed checkpoint continuity evidence was accepted."
 }
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {

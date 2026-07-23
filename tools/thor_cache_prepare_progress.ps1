@@ -166,19 +166,24 @@ function Get-ThorCachePrepareReuseFloor {
 
     $status = [regex]::Match($LatestReadmeText, '(?m)^- Status:\s*(.+)$')
     $failure = [regex]::Match($LatestReadmeText, '(?m)^- Failure:\s*(.+)$')
+    $isProgressCheckpoint = $status.Success -and
+        $status.Groups[1].Value.Trim() -eq 'cache-progress-checkpoint'
     $isThermalStop = $status.Success -and $status.Groups[1].Value.Trim() -eq 'failed' -and
         $failure.Success -and $failure.Groups[1].Value.Trim().StartsWith('Runtime thermal stop:')
-    if (-not $isThermalStop) {
+    if (-not $isProgressCheckpoint -and -not $isThermalStop) {
         return $DefaultMinimum
     }
 
     $reused = [regex]::Match($LatestReadmeText, '(?m)^- Reused modules this round:\s*([0-9]+)\s*$')
     $compiled = [regex]::Match($LatestReadmeText, '(?m)^- Compiled modules this round:\s*([0-9]+)\s*$')
     if (-not $reused.Success -or -not $compiled.Success) {
-        throw 'Latest thermal-stop capture is missing reusable-object continuity evidence.'
+        throw 'Latest cache-progress capture is missing reusable-object continuity evidence.'
     }
 
-    return [int]$reused.Groups[1].Value + [int]$compiled.Groups[1].Value
+    return [Math]::Max(
+        $DefaultMinimum,
+        [int]$reused.Groups[1].Value + [int]$compiled.Groups[1].Value
+    )
 }
 
 function Test-ThorCachePrepareNativeFatal {

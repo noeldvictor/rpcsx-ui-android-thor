@@ -1507,3 +1507,11 @@ Put dated run details in `debug-experiments/`, not here.
   stability, or controlled thermal-win credit. Do not contact Thor again
   before `2026-07-22T22:21:44.5031527-04:00` and a fresh strict cool gate;
   require native plus callback completion before title/gameplay proof.
+
+- Cache continuity is cumulative after both thermal stops and normal progress
+  checkpoints. The latest checkpoint's 169 reused plus 16 compiled objects set
+  `minimum_required_reused_modules=185` for the next run; the prior reset to one
+  after a normal checkpoint is retired. Malformed continuity evidence fails
+  closed. This is host-only evidence hardening with frozen APK/core/cache bytes
+  unchanged and no device contact. The next cool continuation must reuse at
+  least 185 objects before checkpoint credit.

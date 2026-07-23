@@ -2219,3 +2219,27 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   with at most one 70-second cache round; require native completion plus
   callback-finished before a separately cooled title baseline and later
   field/menu/first-battle correctness and performance proof.
+
+### 2026-07-22 - cumulative-checkpoint-reuse-floor
+
+- Status: host-evidence-hardening / no-device-contact / not-comparable
+- Scope: prove atomic cache persistence after every bounded checkpoint
+- Gap and change: the earlier controller raised the reuse floor only after a
+  thermal stop and reset it to one after a normal progress checkpoint. A later
+  run could therefore earn checkpoint credit without proving the newest normal
+  checkpoint objects persisted. Both `cache-progress-checkpoint` and thermal
+  stop evidence now require the next run to reuse at least the prior
+  `reused + compiled` total. Other statuses retain the baseline floor.
+- Current result: device-free Status reads capture
+  `20260722-215019-firmware-ppu-prewarm` and now reports
+  `minimum_required_reused_modules=185` from `169 + 16`, rather than `1`.
+  Malformed checkpoint and malformed thermal-stop evidence both fail closed.
+- Verification: the focused cache-route and thermal-guard contracts pass; the
+  frozen candidate gate still proves APK A7216402...3D15C, merged core
+  36B6B711...22797, and packaged core 0AB29DC7...B9E3 exactly. Status reports
+  `device_contact=False`; no ADB resolution, temperature read, launch, or cache
+  mutation occurred.
+- Decision and next: retain the cumulative floor. This is evidence integrity,
+  not startup-speed, FPS, gameplay, flicker, stability, or thermal-win credit.
+  After the existing cooldown and a fresh strict cool gate, allow at most one
+  70-second continuation and refuse checkpoint credit below 185 reused objects.
