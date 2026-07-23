@@ -131,6 +131,29 @@ if ($emptyThermalSummary.sample_count -ne 0 -or
     $emptyThermalSummary.at_or_above_probe -ne 0) {
     throw "Cache-preparation thermal summary did not handle an empty run deterministically."
 }
+$completionFixture = Join-Path ([IO.Path]::GetTempPath()) ("rpcsx-thor-recorded-completion-" + [Guid]::NewGuid().ToString("N"))
+try {
+    New-Item -ItemType Directory -Path $completionFixture | Out-Null
+    @(
+        "2026-07-22T20:15:40.0000000-04:00 stage=pre-run",
+        "2026-07-22T20:15:42.0000000-04:00 stage=post-stop"
+    ) | Set-Content -LiteralPath (Join-Path $completionFixture "thermal-guard.log") -Encoding UTF8
+    @(
+        "# adb shell pidof net.rpcsx.easy",
+        "# captured 2026-07-22T20:15:43.2500000-04:00",
+        "exit=1"
+    ) | Set-Content -LiteralPath (Join-Path $completionFixture "failure-pid.txt") -Encoding UTF8
+    '{"analyzed_at":"2026-07-22T21:30:00-04:00"}' |
+        Set-Content -LiteralPath (Join-Path $completionFixture "cool-title-analysis.json") -Encoding UTF8
+    $recordedCompletion = Get-ThorCaptureRecordedCompletion -CaptureDirectory $completionFixture
+    if ($recordedCompletion.ToString('o') -ne '2026-07-22T20:15:43.2500000-04:00') {
+        throw "Cooldown completion followed mutable host analysis time instead of recorded device evidence."
+    }
+} finally {
+    if (Test-Path -LiteralPath $completionFixture) {
+        Remove-Item -LiteralPath $completionFixture -Recurse -Force
+    }
+}
 $lastCompletedAt = [DateTimeOffset]::Parse('2026-07-22T20:15:42-04:00')
 $cooldownWaiting = Get-ThorCachePrepareCooldownState `
     -LastCompletedAt $lastCompletedAt `
@@ -414,6 +437,7 @@ foreach ($fragment in @(
     'latest_title_completed_at=',
     'cooldown_source_kind=',
     'cooldown_source=',
+    'Get-ThorCaptureRecordedCompletion',
     'Get-ThorCachePrepareCooldownSource',
     'Cache cooldown refused before device contact:',
     'if ($stopwatch.Elapsed.TotalSeconds -ge $MaxSeconds)',

@@ -154,6 +154,62 @@ function Get-ThorCachePrepareCooldownState {
     }
 }
 
+function Get-ThorCaptureRecordedCompletion {
+    param([Parameter(Mandatory = $true)][string]$CaptureDirectory)
+
+    if (-not (Test-Path -LiteralPath $CaptureDirectory -PathType Container)) {
+        throw "Thor capture directory does not exist: $CaptureDirectory"
+    }
+
+    $timestamps = New-Object System.Collections.Generic.List[DateTimeOffset]
+    $evidenceFiles = @(
+        Get-ChildItem -LiteralPath $CaptureDirectory -File -Filter "*.txt"
+        foreach ($name in @(
+            "thermal-guard.log",
+            "debug-boot-handshake.log",
+            "debug-boot-handshake-status.log",
+            "macro.log",
+            "process-guard.log"
+        )) {
+            $path = Join-Path $CaptureDirectory $name
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+                Get-Item -LiteralPath $path
+            }
+        }
+    ) | Sort-Object FullName -Unique
+
+    foreach ($file in $evidenceFiles) {
+        foreach ($line in (Get-Content -LiteralPath $file.FullName)) {
+            $timestampText = if ($line -match '^# captured\s+(\S+)\s*$') {
+                $Matches[1]
+            } elseif ($file.Extension -eq ".log" -and $line -match '^(\d{4}-\d{2}-\d{2}T\S+)\s') {
+                $Matches[1]
+            } else {
+                $null
+            }
+            if ($null -eq $timestampText) {
+                continue
+            }
+
+            $parsed = [DateTimeOffset]::MinValue
+            if (-not [DateTimeOffset]::TryParse(
+                    $timestampText,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    [Globalization.DateTimeStyles]::RoundtripKind,
+                    [ref]$parsed
+                )) {
+                throw "Thor capture contains an invalid recorded timestamp in $($file.Name): $timestampText"
+            }
+            $timestamps.Add($parsed) | Out-Null
+        }
+    }
+
+    if ($timestamps.Count -eq 0) {
+        throw "Thor capture has no recorded device-contact timestamp: $CaptureDirectory"
+    }
+
+    return @($timestamps | Sort-Object -Descending)[0]
+}
 function Get-ThorCachePrepareCooldownSource {
     param(
         [string]$CacheCaptureName = "none",

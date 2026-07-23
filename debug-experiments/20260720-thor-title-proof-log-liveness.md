@@ -2357,3 +2357,21 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   Do not contact Thor before the title-sourced cooldown opens at
   `2026-07-23T03:05:48.9964640-04:00`; then run at most one guarded cooler
   `64 RSX / 200 ms, 17 SPU / 25 ms` title proof.
+
+### 2026-07-23 - recorded-device-cooldown-source
+
+- Status: host thermal-safety repair / no-device-contact / not-comparable
+- Counterexample: archiving `cool-title-analysis.json` updated the capture
+  directory mtime, and the controller incorrectly moved cooldown readiness
+  from `03:05:48` to `03:25:27` despite reporting `device_contact=False`.
+- Change: title completion now uses the newest ISO timestamp recorded by ADB
+  evidence headers and bounded runtime/thermal logs. Mutable host analysis
+  files and directory mtimes cannot create false device activity; missing
+  recorded evidence fails closed.
+- Verification: a synthetic later analysis JSON cannot change the parsed
+  device completion, the real capture resolves to
+  `2026-07-23T02:35:48.9151347-04:00`, readiness is restored to
+  `03:05:48.9151347`, and all `66/66` Thor host contracts pass.
+- Decision and next: no cooldown was shortened below real device evidence and
+  no Thor command ran. Wait for the restored guard, then allow one cooler title
+  proof only.

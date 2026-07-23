@@ -1761,3 +1761,12 @@ Put dated run details in `debug-experiments/`, not here.
   pass. No APK/core build or device contact occurred; installed
   `5044976A...D83E5C` remains frozen until the title-sourced cooldown opens at
   `2026-07-23T03:05:48.9964640-04:00`.
+
+- Cooldown completion for title captures now comes from the newest timestamp
+  recorded in ADB evidence/thermal logs, not the mutable directory mtime.
+  Writing `cool-title-analysis.json` had falsely moved readiness to `03:25:27`
+  despite `device_contact=False`; the repaired parser restores the real
+  completion/readiness to `02:35:48.915` / `03:05:48.915`, ignores later host
+  analysis files, and fails closed when recorded evidence is absent. Synthetic
+  and real-capture checks plus all `66/66` host contracts pass. No device
+  command ran and the original safety interval remains intact.

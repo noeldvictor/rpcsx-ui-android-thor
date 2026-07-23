@@ -164,7 +164,8 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
             -not $latestTitleReadmeText.Contains("- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop")) {
             throw "Latest title capture is not valid exact-candidate evidence: $latestTitleCaptureName"
         }
-        $latestTitleCompletedAt = [DateTimeOffset]$latestTitleCapture.LastWriteTime
+        $latestTitleCompletedAt = Get-ThorCaptureRecordedCompletion `
+            -CaptureDirectory $latestTitleCapture.FullName
     }
 }
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
