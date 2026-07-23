@@ -86,3 +86,11 @@ credit. The Thor remains stopped on `3DFB5F55...A34A78`. A future device round
 must first use a separate strict no-launch install. Only a later independently
 cool round may spend one self-stopping title proof. Do not retry in the same
 hot round.
+
+At `2026-07-23T15:21:43-04:00`, strict no-launch install preflight
+`20260723-152143-thor-input-strict-cool-gate` refused on its first sample:
+silicon was `48.6 C`, above the `<35 C` install threshold. The guard
+force-stopped RPCSX, recorded `46.6 C` after stop, and did not run either of
+the remaining preflight samples or `adb install`. The successor therefore
+remains host-only and the installed APK remains `3DFB5F55...A34A78`. Do not
+retry this device round.

@@ -1926,3 +1926,11 @@ Put dated run details in `debug-experiments/`, not here.
   `87761DAD...083CC` / `72,835,124` bytes, merged core
   `4EEE302C...B274C90` / `1,304,256,792` bytes, and packaged core
   `6E7F3251...FAD0E2C` / `62,985,064` bytes. It is not installed or
+  launched and has no device performance or thermal credit.
+
+- Strict no-launch install gate
+  `20260723-152143-thor-input-strict-cool-gate` refused immediately at
+  `48.6 C`, above the `<35 C` silicon threshold. RPCSX was force-stopped,
+  post-stop silicon was `46.6 C`, and neither the remaining gate samples nor
+  `adb install` ran. Exact successor `87761DAD...083CC` remains host-only;
+  installed `3DFB5F55...A34A78` is unchanged. Do not retry this hot round.
