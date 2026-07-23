@@ -2609,3 +2609,27 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   After an independently cool interval, use one separate no-launch install
   round; only a later cool exact-title pass may unlock separate field, menu,
   and battle measurements.
+
+### 2026-07-23 - warm-ppu-finalization-restore-exact-no-launch-install
+
+- Status: installed-exact-no-launch / identity-and-safety-proof /
+  runtime-unmeasured / not-comparable
+- Cool gate: host-only cooldown was already ready, then the single device
+  round created `20260723-141331-thor-input-strict-cool-gate`. Three samples
+  were `32.1 -> 31.9 -> 32.3 C`, maximum `32.3 C`, rise `+0.2 C`; battery and
+  skin stayed `23.0/30.0 C`. The gate used `BootGame: False`,
+  `ForceStop: True`, and no input macro.
+- Install: capture
+  `20260723-141343-ppu-warm-finalize-restore-thortest-apk-install` records
+  `adb install -r` success for APK
+  `3DFB5F5560775C843210BC80B16943DE20C9887D0DD250DF666B2F9AC2A34A78`
+  (`72,835,176` bytes). The installed `base.apk` SHA-256 exactly matches the
+  host candidate. PID was absent before and after, no activity launched, and
+  post-install battery/skin/silicon were `23.0/30.0/37.7 C`.
+- Cooldown: host-only status selects this install as the newest device-contact
+  source, reports `device_contact=False`, and forbids another contact before
+  `2026-07-23T14:43:50.4744930-04:00`.
+- Decision and next: installation grants exact identity and safe cleanup only.
+  Grant no startup-speed, FPS, gameplay, flicker, stability, or runtime thermal
+  credit. After the independent cooldown, spend at most one exact
+  `ThorCoolTitle` round; field/menu/battle remain locked until title passes.

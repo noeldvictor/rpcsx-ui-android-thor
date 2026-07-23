@@ -13,6 +13,7 @@ Put dated run details in `debug-experiments/`, not here.
 
 - Work on `master` only for this repo.
 - Remote push target: `git@github.com:noeldvictor/rpcsx-ui-android-thor.git`.
+- Never use GitHub CLI (`gh`) for this repo; use plain Git over SSH.
 - Commit and push completed work to `origin master`.
 - Do not create feature branches, PR branches, or extra RPCSX forks unless the user explicitly asks.
 - Do not commit game data, firmware, generated builds, Gradle caches, `.cxx`, runtime caches, APKs, or capture blobs.
@@ -1880,3 +1881,15 @@ Put dated run details in `debug-experiments/`, not here.
   always verify force-stop after a macro, and become cooldown sources. Install
   only in a later separate cool no-launch round; title must pass in another
   cool round before any gameplay route.
+
+- Exact repaired successor `3DFB5F55...A34A78` is now installed after one
+  no-launch round. Strict gate `20260723-141331-thor-input-strict-cool-gate`
+  passed `32.1 -> 31.9 -> 32.3 C` (maximum `32.3 C`, rise `+0.2 C`).
+  Install capture
+  `20260723-141343-ppu-warm-finalize-restore-thortest-apk-install` proves
+  host/on-device hashes match, `adb install -r` succeeded, no activity
+  launched, PID was absent before/after, and post-install battery/skin/silicon
+  were `23.0/30.0/37.7 C`. This grants identity/safety only, not speed,
+  gameplay, flicker, stability, or thermal-runtime credit. Do not contact Thor
+  before `2026-07-23T14:43:50.4744930-04:00`; then spend at most one separate
+  guarded title proof.
