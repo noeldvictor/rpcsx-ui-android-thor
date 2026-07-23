@@ -1903,3 +1903,26 @@ Put dated run details in `debug-experiments/`, not here.
   is unchanged and no device contact accompanied this host change. The title
   analyzer and synthetic thermal-stop fixture require the same `4/64 C`
   metadata and classify an immediate `63.4 C` stop correctly.
+
+- The separately cool title attempt
+  `20260723-145352-thor-input-custom` passed preflight
+  `33.3 -> 33.1 -> 33.9 C`, exact debug boot, and `8/7` SPU native-object
+  continuity, but never reached title. The hard guard stopped RPCSX at
+  `65.0 C`; post-stop silicon was `48.6 C`, PID was absent, and all failure
+  resets passed. Its fully warm PPU `41 -> 1` interval was `1915.119 ms`, only
+  `31.110 ms` better than the prior `1946.229 ms` counterproof and still
+  `5.27x` the matched `363.6635 ms` baseline. Restoring before `jit->fin()`
+  was therefore insufficient: warm-object admission itself must not run on
+  the `0x7` efficiency-core mask. Grant no title, FPS, gameplay, flicker,
+  stability, speed, or thermal-win credit.
+
+- Host successor removes warm-link affinity entirely: fully warm PPU object
+  admission, finalization, symbol resolution, and runtime remain on the
+  default scheduler, while actual cold PPU compile workers and bounded RSX/SPU
+  preload workers retain their scoped affinity. The analyzer accepts archived
+  markers for timing but rejects them as fallback and requires the new
+  default-scheduler activation marker. ARM64 native and optimized ThorTest
+  builds plus all `66/66` host contracts pass. Exact host-only APK is
+  `87761DAD...083CC` / `72,835,124` bytes, merged core
+  `4EEE302C...B274C90` / `1,304,256,792` bytes, and packaged core
+  `6E7F3251...FAD0E2C` / `62,985,064` bytes. It is not installed or

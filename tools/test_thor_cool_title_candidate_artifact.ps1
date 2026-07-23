@@ -133,7 +133,7 @@ function Get-MissingBinaryAsciiMarkers {
 
 $nativeMarkers = @(
     "Thor PPU LLVM compile-worker affinity enabled:",
-    "Thor PPU warm-cache link affinity enabled:",
+    "Thor PPU warm-cache link using default scheduler:",
     "Thor PPU cache preparation activated:",
     "Thor PPU cache preparation completed:",
     "Thor SPU native-object cache preparation activated:",
@@ -157,6 +157,16 @@ if ($missingNativeMarkers.Count -gt 0) {
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$forbiddenNativeMarkers = @(
+    "Thor PPU warm-cache link affinity enabled:",
+    "Thor PPU warm-cache link affinity was not applied exactly:"
+)
+$missingForbiddenNativeMarkers = @(Get-MissingBinaryAsciiMarkers -Path $StrippedCorePath -Markers $forbiddenNativeMarkers)
+$presentForbiddenNativeMarkers = @($forbiddenNativeMarkers | Where-Object { $_ -notin $missingForbiddenNativeMarkers })
+if ($presentForbiddenNativeMarkers.Count -gt 0) {
+    throw "Pinned Thor native core retains forbidden warm-link affinity markers: $($presentForbiddenNativeMarkers -join ', ')"
+}
 $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ApkPath))
 try {
     $entryName = "lib/arm64-v8a/librpcsx-android.so"

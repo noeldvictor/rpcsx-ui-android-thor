@@ -293,11 +293,11 @@ foreach ($line in $guestLogLines) {
         }
     }
 }
-$ppuWarmAffinityEvents = @(
+$ppuWarmLinkEvents = @(
     foreach ($line in $guestLogLines) {
         $match = [regex]::Match(
             $line,
-            'Thor PPU warm-cache link affinity enabled:\s*requested=0x7,\s*effective=0x7,\s*objects=(\d+)[.]'
+			'(?:Thor PPU warm-cache link using default scheduler:\s*objects=|Thor PPU warm-cache link affinity enabled:\s*requested=0x7,\s*effective=0x7,\s*objects=)(\d+)[.]'
         )
         if (-not $match.Success) {
             continue
@@ -312,11 +312,11 @@ $ppuWarmAffinityEvents = @(
         }
     }
 ) | Sort-Object seconds, objects -Unique
-$ppuWarmPrimaryEvent = $ppuWarmAffinityEvents |
+$ppuWarmPrimaryEvent = $ppuWarmLinkEvents |
     Sort-Object @{ Expression = "objects"; Descending = $true }, seconds |
     Select-Object -First 1
 $ppuWarmNextEvent = if ($null -ne $ppuWarmPrimaryEvent) {
-    $ppuWarmAffinityEvents |
+    $ppuWarmLinkEvents |
         Where-Object { $_.seconds -gt $ppuWarmPrimaryEvent.seconds } |
         Sort-Object seconds |
         Select-Object -First 1
@@ -328,7 +328,7 @@ $ppuWarmPrimaryToNextModuleMs = if ($null -ne $ppuWarmNextEvent) {
 } else {
     $null
 }$ppuWarmTimingReady = (
-    $ppuWarmAffinityEvents.Count -ge 2 -and
+    $ppuWarmLinkEvents.Count -ge 2 -and
     $null -ne $ppuWarmPrimaryEvent -and
     $ppuWarmPrimaryEvent.objects -gt 0 -and
     $null -ne $ppuWarmPrimaryToNextModuleMs -and
@@ -354,7 +354,7 @@ $spuNativeObjectReuseFloorSatisfied = $spuNativeObjectLoadCount -ge $MinimumSpuN
 
 $activationRequirements = [ordered]@{
     "two little-core PPU compile threads" = 'Max LLVM Compile Threads:\s*2'
-    "PPU efficiency-core startup affinity" = 'Thor PPU (?:LLVM compile-worker|warm-cache link) affinity enabled:\s*requested=0x7, effective=0x7'
+    "PPU warm-cache default scheduler" = 'Thor PPU warm-cache link using default scheduler:\s*objects=\d+[.]'
     "bounded RSX preload" = 'Android shader cache preload limit:\s*64 of'
     "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*200 ms'
     "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 200 ms budget; \d+ will load and compile on demand\.'
@@ -382,7 +382,7 @@ if (-not $spuNativeObjectReuseFloorSatisfied -and $activationMissing -notcontain
     $activationMissing.Add("SPU native-object reuse") | Out-Null
 }
 
-$activationFallbackPattern = 'cache-worker affinity was not applied exactly|warm-cache link affinity was not applied exactly|preload cache-hits-only was requested (?:without|but)|startup cache phase pacing timed out'
+$activationFallbackPattern = 'cache-worker affinity was not applied exactly|warm-cache link affinity (?:enabled|was not applied exactly)|preload cache-hits-only was requested (?:without|but)|startup cache phase pacing timed out'
 $activationFallbackHits = @(
     $guestLogLines |
         Select-String -Pattern $activationFallbackPattern -CaseSensitive:$false |
@@ -619,12 +619,12 @@ $result = [pscustomobject]@{
     guest_log_trusted = $guestLogTrusted
     guest_log_latest_emulator_seconds = $guestLogLatestEmulatorSeconds
     guest_log_evidence_incomplete = $guestLogEvidenceIncomplete
-    ppu_warm_affinity_event_count = $ppuWarmAffinityEvents.Count
-    ppu_warm_primary_objects = if ($null -ne $ppuWarmPrimaryEvent) { $ppuWarmPrimaryEvent.objects } else { $null }
-    ppu_warm_primary_start_seconds = if ($null -ne $ppuWarmPrimaryEvent) { $ppuWarmPrimaryEvent.seconds } else { $null }
-    ppu_warm_next_module_start_seconds = if ($null -ne $ppuWarmNextEvent) { $ppuWarmNextEvent.seconds } else { $null }
-    ppu_warm_primary_to_next_module_ms = $ppuWarmPrimaryToNextModuleMs
-    ppu_warm_timing_ready = $ppuWarmTimingReady
+    ppu_warm_link_event_count = $ppuWarmLinkEvents.Count
+    ppu_warm_link_primary_objects = if ($null -ne $ppuWarmPrimaryEvent) { $ppuWarmPrimaryEvent.objects } else { $null }
+    ppu_warm_link_primary_start_seconds = if ($null -ne $ppuWarmPrimaryEvent) { $ppuWarmPrimaryEvent.seconds } else { $null }
+    ppu_warm_link_next_module_start_seconds = if ($null -ne $ppuWarmNextEvent) { $ppuWarmNextEvent.seconds } else { $null }
+    ppu_warm_link_primary_to_next_module_ms = $ppuWarmPrimaryToNextModuleMs
+    ppu_warm_link_timing_ready = $ppuWarmTimingReady
     post_proof_pid_value = $postPidValue
     max_silicon_temperature_c = $maxSiliconTemperatureC
     thermal_failure_lines = @($thermalFailureLines)

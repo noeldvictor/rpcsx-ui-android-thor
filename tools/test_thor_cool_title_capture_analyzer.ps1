@@ -252,8 +252,8 @@ function Write-ReadyFixture {
     ) | Set-Content -LiteralPath (Join-Path $Directory "thermal-guard.log") -Encoding UTF8
     @(
         "  Max LLVM Compile Threads: 2",
-        "Â·A 0:00:01.384222 PPU: Thor PPU warm-cache link affinity enabled: requested=0x7, effective=0x7, objects=41.",
-        "Â·A 0:00:01.690222 PPU: Thor PPU warm-cache link affinity enabled: requested=0x7, effective=0x7, objects=1.",
+        "Â·A 0:00:01.384222 PPU: Thor PPU warm-cache link using default scheduler: objects=41.",
+        "Â·A 0:00:01.690222 PPU: Thor PPU warm-cache link using default scheduler: objects=1.",
         "Android shader cache preload limit: 64 of 939 oldest pipelines; 875 will compile on demand",
         "Android shader cache load budget enabled for BLUS30161: 200 ms.",
         "Android shader cache load budget: attempted 16 of 64 cached pipelines with a 200 ms budget; 48 will load and compile on demand.",
@@ -281,9 +281,9 @@ try {
         -not $ready.cleanup_ready -or $ready.cleanup_property_mismatches.Count -ne 0 -or
         $ready.first_title_frame_elapsed_ms -ne 1200 -or $ready.stable_title_frame_elapsed_ms -ne 6500 -or
         $ready.title_stability_window_ms -ne 5300 -or $ready.spu_native_objects_loaded -ne 1 -or
-        $ready.ppu_warm_affinity_event_count -ne 2 -or $ready.ppu_warm_primary_objects -ne 41 -or
-        $ready.ppu_warm_primary_start_seconds -ne 1.384222 -or $ready.ppu_warm_next_module_start_seconds -ne 1.690222 -or
-        $ready.ppu_warm_primary_to_next_module_ms -ne 306 -or -not $ready.ppu_warm_timing_ready -or
+        $ready.ppu_warm_link_event_count -ne 2 -or $ready.ppu_warm_link_primary_objects -ne 41 -or
+        $ready.ppu_warm_link_primary_start_seconds -ne 1.384222 -or $ready.ppu_warm_link_next_module_start_seconds -ne 1.690222 -or
+        $ready.ppu_warm_link_primary_to_next_module_ms -ne 306 -or -not $ready.ppu_warm_link_timing_ready -or
         $ready.minimum_required_spu_native_objects -ne 1 -or -not $ready.spu_native_object_reuse_floor_satisfied) {
         throw "Synthetic ready capture was not classified as title-proof-ready without speed credit and exact title timing."
     }
@@ -294,9 +294,9 @@ try {
         -not $readyJson.cleanup_ready -or $readyJson.cleanup_property_mismatches.Count -ne 0 -or
         $readyJson.first_title_frame_elapsed_ms -ne 1200 -or $readyJson.stable_title_frame_elapsed_ms -ne 6500 -or
         $readyJson.title_stability_window_ms -ne 5300 -or $readyJson.spu_native_objects_loaded -ne 1 -or
-        $readyJson.ppu_warm_affinity_event_count -ne 2 -or $readyJson.ppu_warm_primary_objects -ne 41 -or
-        $readyJson.ppu_warm_primary_start_seconds -ne 1.384222 -or $readyJson.ppu_warm_next_module_start_seconds -ne 1.690222 -or
-        $readyJson.ppu_warm_primary_to_next_module_ms -ne 306 -or -not $readyJson.ppu_warm_timing_ready -or
+        $readyJson.ppu_warm_link_event_count -ne 2 -or $readyJson.ppu_warm_link_primary_objects -ne 41 -or
+        $readyJson.ppu_warm_link_primary_start_seconds -ne 1.384222 -or $readyJson.ppu_warm_link_next_module_start_seconds -ne 1.690222 -or
+        $readyJson.ppu_warm_link_primary_to_next_module_ms -ne 306 -or -not $readyJson.ppu_warm_link_timing_ready -or
         $readyJson.minimum_required_spu_native_objects -ne 1 -or -not $readyJson.spu_native_object_reuse_floor_satisfied) {
         throw "Persisted title analysis JSON did not retain exact classification and timing evidence."
     }
@@ -443,16 +443,16 @@ try {
         throw "Synthetic missing two-thread little-core PPU compile cap did not fail closed."
     }
 
-    $ppuAffinityMissingDir = Join-Path $tempRoot "ppu-compile-affinity-missing"
-    Copy-Item -LiteralPath $readyDir -Destination $ppuAffinityMissingDir -Recurse
-    $ppuAffinityLogPath = Join-Path $ppuAffinityMissingDir "post-RPCSX.log"
-    @(Get-Content -LiteralPath $ppuAffinityLogPath) |
-        Where-Object { $_ -notmatch 'Thor PPU (?:LLVM compile-worker|warm-cache link) affinity enabled:' } |
-        Set-Content -LiteralPath $ppuAffinityLogPath -Encoding UTF8
-    $ppuAffinityMissing = & $analyzerPath -CaptureDir $ppuAffinityMissingDir
-    if ($ppuAffinityMissing.status -ne "activation-incomplete" -or $ppuAffinityMissing.ready_for_comparison -or
-        $ppuAffinityMissing.activation_missing -notcontains "PPU efficiency-core startup affinity") {
-        throw "Synthetic missing PPU startup affinity did not fail closed."
+    $ppuSchedulerMissingDir = Join-Path $tempRoot "ppu-warm-default-scheduler-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $ppuSchedulerMissingDir -Recurse
+    $ppuSchedulerLogPath = Join-Path $ppuSchedulerMissingDir "post-RPCSX.log"
+    @(Get-Content -LiteralPath $ppuSchedulerLogPath) |
+        Where-Object { $_ -notmatch 'Thor PPU warm-cache link using default scheduler:' } |
+        Set-Content -LiteralPath $ppuSchedulerLogPath -Encoding UTF8
+    $ppuSchedulerMissing = & $analyzerPath -CaptureDir $ppuSchedulerMissingDir
+    if ($ppuSchedulerMissing.status -ne "activation-incomplete" -or $ppuSchedulerMissing.ready_for_comparison -or
+        $ppuSchedulerMissing.activation_missing -notcontains "PPU warm-cache default scheduler") {
+        throw "Synthetic missing PPU warm-cache default-scheduler evidence did not fail closed."
     }
 
     $runningDir = Join-Path $tempRoot "still-running"

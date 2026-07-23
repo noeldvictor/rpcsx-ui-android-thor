@@ -26,6 +26,13 @@ function Assert-Contains {
     }
 }
 
+function Assert-NotContains {
+    param([string]$Source, [string]$Needle, [string]$Message)
+    if ($Source.Contains($Needle)) {
+        throw $Message
+    }
+}
+
 foreach ($fragment in @(
     'inline u64 get_cache_worker_affinity_mask(std::string_view title_id) noexcept',
     'inline u64 get_ppu_compile_worker_affinity_mask(std::string_view title_id) noexcept',
@@ -94,13 +101,8 @@ foreach ($fragment in @(
     'Thor PPU LLVM compile-worker affinity enabled:',
     'Thor PPU LLVM compile-worker affinity was not applied exactly:',
     'ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged',
-    'struct scoped_warm_link_affinity',
-    'void restore() noexcept',
     'workload.empty() && retained_validated_count',
-    'warm_link_affinity.emplace(warm_link_affinity_mask);',
-    'warm_link_affinity->restore();',
-    'Thor PPU warm-cache link affinity enabled:',
-    'Thor PPU warm-cache link affinity was not applied exactly:'
+    'Thor PPU warm-cache link using default scheduler:'
 )) {
     Assert-Contains $ppu $fragment "Missing PPU compile-worker affinity contract: $fragment"
 }
@@ -116,20 +118,25 @@ if ($ppuRestore -lt 0 -or $ppuRestore -ge $ppuApply) {
     throw "PPU compile affinity is not guarded by a scoped restore."
 }
 
-$ppuWarmApply = $ppu.IndexOf('warm_link_affinity.emplace(warm_link_affinity_mask);')
-$ppuWarmReuse = $ppu.IndexOf('LLVM: Reusing %u validated warm-cache objects.', $ppuWarmApply)
-$ppuWarmLink = $ppu.IndexOf('jits[mod_index / c_moudles_per_jit]->add', $ppuWarmApply)
-$ppuWarmRelease = $ppu.IndexOf('warm_link_affinity->restore();', $ppuWarmLink)
-$ppuWarmFinalize = $ppu.IndexOf('jit->fin();', $ppuWarmRelease)
+$ppuWarmMarker = $ppu.IndexOf('Thor PPU warm-cache link using default scheduler:')
+$ppuWarmReuse = $ppu.IndexOf('LLVM: Reusing %u validated warm-cache objects.', $ppuWarmMarker)
+$ppuWarmLink = $ppu.IndexOf('jits[mod_index / c_moudles_per_jit]->add', $ppuWarmReuse)
+$ppuWarmFinalize = $ppu.IndexOf('jit->fin();', $ppuWarmLink)
 $ppuWarmResolve = $ppu.IndexOf('for (auto& sim : jit_mod.symbol_resolvers)', $ppuWarmFinalize)
-if ($ppuWarmApply -lt 0 -or $ppuWarmReuse -le $ppuWarmApply -or $ppuWarmLink -le $ppuWarmReuse -or
-    $ppuWarmRelease -le $ppuWarmLink -or $ppuWarmFinalize -le $ppuWarmRelease -or $ppuWarmResolve -le $ppuWarmFinalize) {
-    throw "PPU warm-cache affinity does not cover object admission and end before finalization/symbol resolution."
+if ($ppuWarmMarker -lt 0 -or $ppuWarmReuse -le $ppuWarmMarker -or $ppuWarmLink -le $ppuWarmReuse -or
+    $ppuWarmFinalize -le $ppuWarmLink -or $ppuWarmResolve -le $ppuWarmFinalize) {
+    throw "PPU warm-cache default-scheduler marker does not precede object admission/finalization/symbol resolution."
 }
-$ppuWarmRestore = $ppu.IndexOf('~scoped_warm_link_affinity()', $ppuApply)
-if ($ppuWarmRestore -lt 0 -or $ppuWarmRestore -ge $ppuWarmApply -or
-    $ppu.IndexOf('restore();', $ppuWarmRestore) -le $ppuWarmRestore) {
-    throw "PPU warm-cache link affinity is not guarded by a scoped restore."
+
+foreach ($forbidden in @(
+    'warm_link_affinity_mask',
+    'warm_link_affinity.emplace',
+	'warm_link_affinity->restore',
+	'struct scoped_warm_link_affinity',
+	'Thor PPU warm-cache link affinity enabled:',
+	'Thor PPU warm-cache link affinity was not applied exactly:'
+)) {
+    Assert-NotContains $ppu $forbidden "PPU warm-cache admission must stay on the default scheduler: $forbidden"
 }
 
 if ($macro -notmatch '(?s)\[ValidateRange\(0,\s*255\)\]\s*\[int\]\$CacheWorkerAffinityMask\s*=\s*0') {
