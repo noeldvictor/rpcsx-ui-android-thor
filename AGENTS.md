@@ -1648,3 +1648,17 @@ Put dated run details in `debug-experiments/`, not here.
   bytes. It is uninstalled and device-unmeasured. Do not install before a
   separate independently cool no-launch round; reserve the seed and title/
   gameplay proofs for later cool rounds.
+
+- Exact successor `5044976A...D83E5C` is now installed after strict no-boot gate
+  `20260723-013345-thor-input-strict-cool-gate` passed silicon
+  `30.9 -> 31.3 -> 31.1 C` (maximum `31.3 C`, rise `+0.2 C`) with
+  battery/skin `23.0/30.0 C`. Install capture
+  `20260723-013419-lazy-native-cache-path-spu-prewarm-successor-thortest-apk-install`
+  proves expected/host/installed hashes match, PID was absent before and after,
+  no activity launched, startup controls were safe, and post-install silicon
+  was `32.7 C`. This grants installed identity only, with no native-cache
+  persistence, speed, temperature-win, FPS, gameplay, flicker, or stability
+  credit. Stop this device round. Device-free Status selects this install as
+  the cooldown source and refuses cache preparation before
+  `2026-07-23T02:04:26.6355691-04:00`; run at most one stopped seed in a later
+  independently cool round.

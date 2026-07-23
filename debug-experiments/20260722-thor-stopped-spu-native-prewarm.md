@@ -378,3 +378,29 @@ query or emulator action ran after the installer completed.
   round, install this exact APK without launching it. In a still later cool
   round, one stopped seed must prove native-cache enabled, exact three-worker
   affinity, durable builds, cleanup, no fatal/game boot, and PID absence.
+
+### 2026-07-23 - lazy-native-cache-successor-installed-no-launch
+
+- Status: installed-exact-no-launch
+- Scope: route-tooling
+- Strict gate:
+  `20260723-013345-thor-input-strict-cool-gate` passed at
+  `30.9 -> 31.3 -> 31.1 C` (maximum `31.3 C`, net rise `+0.2 C`) with
+  battery/skin `23.0/30.0 C`.
+- Install capture:
+  `20260723-013419-lazy-native-cache-path-spu-prewarm-successor-thortest-apk-install`.
+- Exact identity: expected, host, and installed APK hashes all equal
+  `5044976A53036961883A3723ECE8C54811B6AEB45D4EB1116ACD802D40D83E5C`;
+  size is `72,835,952` bytes.
+- Safety: PID absent before/after, emulator launch `no`, post-install silicon
+  `32.7 C`, battery/skin `23.0/30.0 C`. Startup properties were safe:
+  RSX/SPU limits and budgets zero, stopped-prewarm worker limit unset,
+  SPU native cache off, cache affinity zero, and experimental runtime paths
+  off.
+- Decision: retain as exact installed identity only. No native-cache
+  persistence, speed, FPS, gameplay, flicker, stability, or thermal-win credit.
+- Next: stop this device round. Device-free Status selects this install as the
+  30-minute cooldown source and refuses a seed before
+  `2026-07-23T02:04:26.6355691-04:00`. In a later independently cool round,
+  run at most one stopped seed and require native-cache enabled, three workers
+  on affinity `0x7`, property cleanup, no fatal/game boot, and PID absence.
