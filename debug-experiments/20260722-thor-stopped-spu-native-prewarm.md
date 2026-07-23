@@ -483,3 +483,34 @@ query or emulator action ran after the installer completed.
   thermal-win, gameplay, flicker, or stability credit.
 - Next: keep the exact installed APK frozen and honor the independent cooldown
   before the single stopped-prewarm seed.
+
+### 2026-07-23 - durable-spu-native-object-seed-success
+
+- Status: android-pass
+- Scope: spu-codegen
+- Capture: `20260723-020444-firmware-ppu-prewarm`
+- Exact identity: expected, host, and installed APK hashes all matched
+  `5044976A53036961883A3723ECE8C54811B6AEB45D4EB1116ACD802D40D83E5C`.
+- Thermal result: strict preflight passed at
+  `30.9 -> 31.1 -> 31.3 C`; runtime completed in `1.535 s` with one
+  `35.1 C` sample and zero samples at or above `45 C`; post-stop silicon was
+  `32.5 C`, battery/skin `23.0/30.0 C`.
+- PPU result: `209` validated objects reused; firmware scan `142/142`; current
+  workload `64/64`; no PPU compile worker was needed.
+- SPU result: preparation activated/completed; native cache enabled; bounded
+  preload/budget `64/100 ms`; exact worker pool requested/workers `3/3`;
+  affinity requested/effective `0x7/0x7`; zero prior native objects loaded on
+  this first valid seed; seven new native programs built and persisted.
+- Safety result: all SPU properties reset (`off/0/0/0/0`), callback finished,
+  PID absent before/after, native fatal/process-death false, and no game boot.
+- Host continuation: device-free Status selects this successful capture,
+  raises `minimum_required_spu_native_objects` from `0` to `7`, and starts the
+  next cooldown until `2026-07-23T02:35:03.3577951-04:00`.
+- Decision: retain as `cache-prepared-exact-no-game-boot` / `android-pass`.
+  This proves safe persistent SPU native-object creation, but grants no speed,
+  startup, FPS, gameplay, flicker, stability, or thermal-win credit because no
+  title or gameplay scene ran.
+- Next: no more device contact this round. In one later independently cool
+  round, run the pinned native-cache-on `ThorCoolTitle` proof. Require at least
+  one `LLVM: Loaded module: ...obj`, activation marker, exact property/runtime
+  gates, title visuals, no fatal/flicker, `68 C` ceiling, and final PID absence.

@@ -1686,3 +1686,17 @@ Put dated run details in `debug-experiments/`, not here.
   instead of stale `72 C` README/thermal fixtures. Synthetic ready, thermal
   stop, and preflight-refusal captures plus all `66/66` contracts pass. This is
   host-only route repair; no device contact or performance credit.
+
+- Exact installed successor `5044976A...D83E5C` completed one stopped-emulator
+  seed in `20260723-020444-firmware-ppu-prewarm`. Strict preflight was
+  `30.9 -> 31.1 -> 31.3 C`; bounded runtime was `1.535 s` with one `35.1 C`
+  sample; post-stop was `32.5 C`. PPU reused `209` validated objects and
+  completed firmware/workload `142/142` and `64/64`. SPU native cache enabled,
+  preload/budget were `64/100 ms`, exact pool/affinity were `3/3` and `0x7`,
+  and seven native objects were built. Properties reset, PID was absent,
+  callback finished, and no fatal/process death/game boot occurred. Local
+  continuity floor is now `7`; no device contact before
+  `2026-07-23T02:35:03.3577951-04:00`. This proves a safe durable seed only,
+  not speed/FPS/gameplay/flicker/stability/thermal-win. In one later cool round,
+  run the native-cache-on title proof requiring actual activation and at least
+  one loaded `.obj`; do not seed or launch again in this round.
