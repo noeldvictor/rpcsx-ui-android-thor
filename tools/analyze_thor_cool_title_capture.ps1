@@ -223,6 +223,8 @@ $activationRequirements = [ordered]@{
     "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*500 ms'
     "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 500 ms budget; \d+ will load and compile on demand\.'
     "bounded SPU preload" = 'Thor SPU cache preload limit:\s*64 of'
+    "SPU native-object cache activation" = 'Thor SPU native-object cache enabled for startup LLVM objects:'
+    "SPU native-object reuse" = '(?m)LLVM: Loaded module: [^\r\n]+[.]obj\r?$'
     "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
     "SPU efficiency-core affinity" = 'Thor SPU cache-worker affinity enabled:\s*requested=0x7, effective=0x7'

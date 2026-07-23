@@ -1674,3 +1674,10 @@ Put dated run details in `debug-experiments/`, not here.
   FPS, thermal-win, gameplay, flicker, or stability credit. Keep exact
   installed APK `5044976A...D83E5C` frozen; first prove one stopped native-cache
   seed after the independent cooldown, then use a later cool round for title.
+
+- The host title analyzer now also refuses comparison readiness unless the
+  guest log proves both `Thor SPU native-object cache enabled...` and at least
+  one exact `LLVM: Loaded module: ...obj` row. Property-on without activation
+  or reuse is `activation-incomplete`. Synthetic omission tests and all
+  `66/66` Thor host contracts pass. No APK/core/device action occurred; this is
+  proof-hardening only and grants no performance or correctness credit.

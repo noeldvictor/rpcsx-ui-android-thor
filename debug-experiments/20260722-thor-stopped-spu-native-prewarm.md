@@ -440,3 +440,28 @@ query or emulator action ran after the installer completed.
   native-cache enablement, requested/workers `3/3`, affinity `0x7`, safe
   cleanup, final PID absence, and no game boot. Reserve the native-cache-on
   title proof and field/menu/first-battle comparisons for later cool rounds.
+
+### 2026-07-23 - cool-title-native-object-reuse-proof-gate
+
+- Status: proposed
+- Scope: route-tooling
+- Hypothesis: a title capture must prove actual native-object activation and
+  reuse, not merely a requested/effective Android property, before it can
+  authorize any later speed comparison.
+- Changed files/settings: the host-only title analyzer now requires the core's
+  durable native-cache activation row and at least one exact
+  `LLVM: Loaded module: ...obj` row, matching the stopped-prewarm controller's
+  existing object-load pattern. Synthetic captures independently remove the
+  activation and load rows and must classify `activation-incomplete`.
+- Rollback: revert the analyzer/test/evidence-count slice. No runtime setting,
+  APK, core, or device cache changed.
+- Host result: changed PowerShell scripts parse; focused analyzer and evidence
+  logging contracts pass; all `66/66` Thor host contracts and
+  `git diff --check` pass.
+- Thor result: not run. No build, install, launch, ADB, or device query
+  occurred.
+- Decision: retain as fail-closed proof hardening. Grant no speed, FPS,
+  thermal-win, gameplay, flicker, or stability credit.
+- Next: keep the exact installed APK frozen. After cooldown, prove one stopped
+  seed; in a later title round require both native-cache activation and at
+  least one loaded native object before comparison readiness.

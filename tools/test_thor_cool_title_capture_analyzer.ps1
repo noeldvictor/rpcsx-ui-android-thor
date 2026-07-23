@@ -221,6 +221,8 @@ function Write-ReadyFixture {
         "Android shader cache load budget enabled for BLUS30161: 500 ms.",
         "Android shader cache load budget: attempted 84 of 256 cached pipelines with a 500 ms budget; 172 will load and compile on demand.",
         "Thor SPU cache preload limit: 64 of 300 oldest unique programs (300 records, 236 will compile on demand).",
+        "Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.",
+        "LLVM: Loaded module: 4E6Tn-thor-native-key.obj",
         "Shader cache preload workers: load=2, compile=2",
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
@@ -318,6 +320,30 @@ try {
         throw "Synthetic managed-profile FTZ omission did not fail closed."
     }
 
+    $nativeActivationMissingDir = Join-Path $tempRoot "native-object-cache-activation-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $nativeActivationMissingDir -Recurse
+    $nativeActivationLogPath = Join-Path $nativeActivationMissingDir "post-RPCSX.log"
+    @(Get-Content -LiteralPath $nativeActivationLogPath) |
+        Where-Object { $_ -notmatch 'Thor SPU native-object cache enabled for startup LLVM objects:' } |
+        Set-Content -LiteralPath $nativeActivationLogPath -Encoding UTF8
+    $nativeActivationMissing = & $analyzerPath -CaptureDir $nativeActivationMissingDir
+    if ($nativeActivationMissing.status -ne "activation-incomplete" -or $nativeActivationMissing.ready_for_comparison -or
+        $nativeActivationMissing.activation_missing -notcontains "SPU native-object cache activation") {
+        throw "Synthetic missing SPU native-object cache activation did not fail closed."
+    }
+
+    $nativeReuseMissingDir = Join-Path $tempRoot "native-object-reuse-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $nativeReuseMissingDir -Recurse
+    $nativeReuseLogPath = Join-Path $nativeReuseMissingDir "post-RPCSX.log"
+    @(Get-Content -LiteralPath $nativeReuseLogPath) |
+        Where-Object { $_ -notmatch 'LLVM: Loaded module: [^\r\n]+[.]obj' } |
+        Set-Content -LiteralPath $nativeReuseLogPath -Encoding UTF8
+    $nativeReuseMissing = & $analyzerPath -CaptureDir $nativeReuseMissingDir
+    if ($nativeReuseMissing.status -ne "activation-incomplete" -or $nativeReuseMissing.ready_for_comparison -or
+        $nativeReuseMissing.activation_missing -notcontains "SPU native-object reuse") {
+        throw "Synthetic missing SPU native-object reuse did not fail closed."
+    }
+
     $logIncompleteDir = Join-Path $tempRoot "title-proof-log-incomplete"
     Copy-Item -LiteralPath $readyDir -Destination $logIncompleteDir -Recurse
     "·! 0:00:00.010546 Input: startup log writer stopped before activation evidence" |
@@ -325,7 +351,7 @@ try {
     $logIncomplete = & $analyzerPath -CaptureDir $logIncompleteDir
     if ($logIncomplete.status -ne "title-proof-log-incomplete" -or $logIncomplete.ready_for_comparison -or
         -not $logIncomplete.guest_log_evidence_incomplete -or $logIncomplete.guest_log_latest_emulator_seconds -ge 1.0 -or
-        $logIncomplete.activation_missing.Count -ne 13) {
+        $logIncomplete.activation_missing.Count -ne 15) {
         throw "Synthetic stable title with a stalled runtime log was not classified precisely and fail closed."
     }
 
@@ -404,4 +430,4 @@ try {
     }
 }
 
-Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, two-thread little-core PPU compile cap, managed FTZ, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
+Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, two-thread little-core PPU compile cap, managed FTZ, durable SPU native-object activation/reuse, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."

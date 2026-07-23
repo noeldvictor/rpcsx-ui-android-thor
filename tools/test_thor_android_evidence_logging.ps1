@@ -48,6 +48,7 @@ foreach ($contract in @(
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Shader cache preload workers: load=' },
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Thor RSX cache-worker affinity enabled for %s:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache preload limit:' },
+    @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache compile budget enabled for BLUS30161:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache-worker pool matched to affinity:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache-worker affinity enabled:' },
@@ -79,6 +80,7 @@ if ($source.Rsx -notmatch '(?s)#ifdef __ANDROID__\s*rsx_log\.always\(\)\("Shader
 }
 foreach ($message in @(
     'Thor SPU cache preload limit:',
+    'Thor SPU native-object cache enabled for startup LLVM objects:',
     'Thor SPU cache compile budget enabled for BLUS30161:'
 )) {
     $escaped = [regex]::Escape($message)
@@ -97,8 +99,8 @@ if ([string]::IsNullOrWhiteSpace($activationBlock)) {
     throw "Could not isolate the Thor activation requirements."
 }
 $activationCount = ([regex]::Matches($activationBlock, '(?m)^\s*"[^"]+"\s*=')).Count
-if ($activationCount -ne 13) {
-    throw "Expected exactly 13 Thor activation requirements; found $activationCount."
+if ($activationCount -ne 15) {
+    throw "Expected exactly 15 Thor activation requirements; found $activationCount."
 }
 
 Assert-Contains 'Android' 'if (!android_logcat_allows(prio))'
@@ -117,4 +119,4 @@ foreach ($scriptPath in @($paths.Analyzer, $PSCommandPath)) {
     }
 }
 
-Write-Output "Thor Android evidence-logging contract passed: 13 bounded activation rows and failures survive Quiet logging, fatal/error rows remain durable, desktop Notice behavior is preserved, and logcat keeps its independent filter."
+Write-Output "Thor Android evidence-logging contract passed: 15 bounded activation rows and failures survive Quiet logging, fatal/error rows remain durable, desktop Notice behavior is preserved, and logcat keeps its independent filter."
