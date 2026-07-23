@@ -2134,3 +2134,18 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
   not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-vblank-edge-release-publication.md`.
+- Host-only Android HLE VBlank command-ready publication now uses a
+  release store; desktop retains the sequentially consistent store. The PPU
+  queue head is already atomically published, consumers exchange/recheck the
+  flag or command head, and the producer ignores the old flag value. Exact
+  ARM64 changes `SWPAL` to `STLR`, removing one RMW/acquire barrier per active
+  HLE VBlank command while preserving queue-before-store-before-wake ordering.
+  The prior release edge/token increments, one-waiter wake, and cached grace
+  bound remain intact. Exact successor is APK `5C949AB5...B8AE185` /
+  `72,838,236` bytes, merged core `7CA9F1D9...41666A8` /
+  `1,304,307,992` bytes, and packaged core `FFA11A60...F2DD099` /
+  `62,988,904` bytes. ARM64 native/APK builds, linked ordering proof, artifact
+  gate, and all `69/69` host contracts pass. Thor was not contacted. Classify
+  as host-verified `stackable-cpu-pressure`, not measured speed or thermal
+  credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-command-release-store.md`.

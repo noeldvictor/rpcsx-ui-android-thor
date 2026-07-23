@@ -129,6 +129,17 @@ namespace rsx
 #endif
 	}
 
+	static inline void publish_vblank_command_ready(atomic_t<u32>& notify) noexcept
+	{
+#ifdef __ANDROID__
+		// Command publication does not consume the previous flag. A release
+		// store makes the queued command visible without a seq-cst swap.
+		notify.release(1);
+#else
+		notify.store(1);
+#endif
+	}
+
 	static inline void publish_vblank_wait_completion(atomic_t<u32>& token) noexcept
 	{
 #ifdef __ANDROID__
@@ -949,7 +960,7 @@ namespace rsx
 						{ppu_cmd::sleep, 0}});
 				}
 
-				intr_thread->cmd_notify.store(1);
+				publish_vblank_command_ready(intr_thread->cmd_notify);
 				intr_thread->cmd_notify.notify_one();
 				return;
 			}

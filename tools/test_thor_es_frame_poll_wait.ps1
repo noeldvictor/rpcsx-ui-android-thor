@@ -247,6 +247,28 @@ foreach ($fragment in @(
 }
 
 foreach ($fragment in @(
+    'publish_vblank_command_ready(atomic_t<u32>& notify) noexcept',
+    'notify.release(1)',
+    'notify.store(1)',
+    'publish_vblank_command_ready(intr_thread->cmd_notify)',
+    'intr_thread->cmd_notify.notify_one()'
+)) {
+    if (-not $mainRsxSource.Contains($fragment)) {
+        throw "Android release-published VBlank command notification is missing: $fragment"
+    }
+}
+
+$mainCommandPublish = [regex]::Match(
+    $mainRsxSource,
+    '(?s)void thread::post_vblank_event.*?intr_thread->cmd_list.*?publish_vblank_command_ready\(intr_thread->cmd_notify\).*?intr_thread->cmd_notify\.notify_one\(\).*?return;')
+if (-not $mainCommandPublish.Success) {
+    throw 'Android VBlank command publication is not ordered after queueing and before wake/return.'
+}
+
+if ($mainRsxSource -match '(?s)void thread::post_vblank_event.*?intr_thread->cmd_notify\.store\(1\).*?if \(!isHLE\)') {
+    throw 'Android VBlank command publication reintroduced a sequentially consistent flag swap.'
+}
+foreach ($fragment in @(
     'publish_vblank_edge(atomic_t<u64>& count) noexcept',
     '__atomic_fetch_add(&count.raw(), u64{1}, __ATOMIC_RELEASE)',
     'count++',
@@ -280,6 +302,8 @@ foreach ($fragment in @(
     'renderer->vblank_wait_token++',
     'vblank_wait_token++',
     'vblank_wait_token.notify_all()',
+    'intr_thread->cmd_notify.store(1)',
+    'intr_thread->cmd_notify.notify_one()',
     'if (vblank_waiters)'
 )) {
     if (-not $upstreamRsxSource.Contains($fragment)) {
@@ -334,4 +358,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published VBlank edge and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published VBlank edge, command, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
