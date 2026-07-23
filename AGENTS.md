@@ -1794,3 +1794,17 @@ Put dated run details in `debug-experiments/`, not here.
   object reuse bypasses them, while the vendored core already has the relevant
   July 1 PPU worker/concurrency and ARM64 SPU compare work. Nothing unrelated
   was imported.
+
+- The one guarded cooler-profile runtime attempt is
+  `20260723-033645-thor-input-custom`. Exact APK and power state matched;
+  preflight was `32.1 -> 32.3 -> 31.9 C`; RSX attempted `18/64`; PPU warm
+  reuse began about `348 ms` earlier and the SPU phase finished about `444 ms`
+  earlier than the prior `256/64` attempt. It still stopped before title at
+  `61.8 C` confirmation, post-stop was `46.2 C`, PID was absent, all `21/21`
+  failure resets matched, and no fatal hit exists. The `25 ms` SPU budget
+  loaded only `6/7` durable native objects, so comparison correctly failed.
+  The host successor retains the 17-program prefix and raises only that budget
+  to `50 ms`, the midpoint below the old `100 ms` envelope. Grant no speed,
+  FPS, thermal-win, gameplay, flicker, or stability credit. Do not contact Thor
+  before `2026-07-23T04:07:07.7409903-04:00`; then allow at most one guarded
+  `7/7` title proof in a later independently cool round.

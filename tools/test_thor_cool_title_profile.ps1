@@ -98,7 +98,7 @@ $requiredSummary = @(
     'rsx_load_budget_ms=200',
     'rsx_compile_budget_ms=0',
     'spu_preload_limit=17',
-    'spu_compile_budget_ms=25',
+    'spu_compile_budget_ms=50',
     'spu_native_object_cache=on',
     'cache_affinity_mask=7',
     'vk_pipeline_cache=on',
@@ -167,7 +167,7 @@ $budgetConflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidSpuCacheCompileBudgetMs 0 2>&1 | Out-Null
 } catch {
-    $budgetConflictRejected = $_.Exception.Message -like "*requires -AndroidSpuCacheCompileBudgetMs '25'*"
+    $budgetConflictRejected = $_.Exception.Message -like "*requires -AndroidSpuCacheCompileBudgetMs '50'*"
 }
 if (-not $budgetConflictRejected) {
     throw 'Thor cool-title profile did not reject an unbounded SPU compile-budget override.'

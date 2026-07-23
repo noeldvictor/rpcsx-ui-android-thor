@@ -237,7 +237,7 @@ function Set-AndroidStartupProfile {
         AndroidRsxCacheLoadBudgetMs = 200
         AndroidRsxCacheCompileBudgetMs = 0
         AndroidSpuCachePreloadLimit = 17
-        AndroidSpuCacheCompileBudgetMs = 25
+        AndroidSpuCacheCompileBudgetMs = 50
         AndroidSpuNativeObjectCache = "on"
         AndroidCacheWorkerAffinityMask = 7
         AndroidVkPipelineCache = "on"

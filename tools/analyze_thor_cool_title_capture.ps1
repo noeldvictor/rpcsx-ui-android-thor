@@ -53,7 +53,7 @@ $effectiveProperties = [ordered]@{
     "rsx-cache-load-budget-effective.txt" = "200"
     "rsx-cache-compile-budget-effective.txt" = "0"
     "spu-cache-preload-limit-effective.txt" = "17"
-    "spu-cache-compile-budget-effective.txt" = "25"
+    "spu-cache-compile-budget-effective.txt" = "50"
     "spu-native-object-cache-effective.txt" = "on"
     "cache-worker-affinity-effective.txt" = "7"
     "vk-pipeline-cache-effective.txt" = "on"
@@ -77,7 +77,7 @@ $startupExpected = [ordered]@{
     "debug.rpcsx.thor.rsx_cache_load_budget_ms" = "200"
     "debug.rpcsx.thor.rsx_cache_compile_budget_ms" = "0"
     "debug.rpcsx.thor.spu_cache_preload_limit" = "17"
-    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "25"
+    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "50"
     "debug.rpcsx.thor.spu_native_object_cache" = "on"
     "debug.rpcsx.thor.cache_worker_affinity_mask" = "7"
     "debug.rpcsx.thor.vk_pipeline_cache" = "on"
@@ -213,7 +213,7 @@ $requiredReadmeLines = @(
     "- RSX cached pipeline load budget ms (0=unbounded): 200",
     "- RSX cached pipeline compile budget ms (0=unbounded): 0",
     "- SPU cached-program preload limit (0=all): 17",
-    "- SPU cached-program compile budget ms (0=unbounded): 25",
+    "- SPU cached-program compile budget ms (0=unbounded): 50",
     "- Startup cache-worker affinity mask (0=default scheduler): 7",
     "- Persistent Vulkan driver pipeline cache: on",
     "- Vulkan preload cache hits only: on",
@@ -309,7 +309,7 @@ $activationRequirements = [ordered]@{
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
     "SPU efficiency-core affinity" = 'Thor SPU cache-worker affinity enabled:\s*requested=0x7, effective=0x7'
     "two SPU preload workers" = 'Thor SPU cache-worker pool matched to affinity:\s*requested=2, workers=2, mask=0x7'
-    "bounded SPU compile time" = 'Thor SPU cache compile budget enabled for BLUS30161:\s*25 ms'
+    "bounded SPU compile time" = 'Thor SPU cache compile budget enabled for BLUS30161:\s*50 ms'
     "warm Vulkan hit-only preload" = 'Vulkan preload cache-hits-only enabled for validated warm seed'
     "managed hardware FTZ" = 'Set DAZ and FTZ:\s*true'
 }

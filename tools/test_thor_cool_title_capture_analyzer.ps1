@@ -127,7 +127,7 @@ function Write-ReadyFixture {
         "rsx-cache-load-budget-effective.txt" = "200"
         "rsx-cache-compile-budget-effective.txt" = "0"
         "spu-cache-preload-limit-effective.txt" = "17"
-        "spu-cache-compile-budget-effective.txt" = "25"
+        "spu-cache-compile-budget-effective.txt" = "50"
         "spu-native-object-cache-effective.txt" = "on"
         "cache-worker-affinity-effective.txt" = "7"
         "vk-pipeline-cache-effective.txt" = "on"
@@ -145,7 +145,7 @@ function Write-ReadyFixture {
         "debug.rpcsx.thor.rsx_cache_load_budget_ms=200",
         "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
         "debug.rpcsx.thor.spu_cache_preload_limit=17",
-        "debug.rpcsx.thor.spu_cache_compile_budget_ms=25",
+        "debug.rpcsx.thor.spu_cache_compile_budget_ms=50",
         "debug.rpcsx.thor.spu_native_object_cache=on",
         "debug.rpcsx.thor.cache_worker_affinity_mask=7",
         "debug.rpcsx.thor.vk_pipeline_cache=on",
@@ -219,7 +219,7 @@ function Write-ReadyFixture {
         "- RSX cached pipeline load budget ms (0=unbounded): 200",
         "- RSX cached pipeline compile budget ms (0=unbounded): 0",
         "- SPU cached-program preload limit (0=all): 17",
-        "- SPU cached-program compile budget ms (0=unbounded): 25",
+        "- SPU cached-program compile budget ms (0=unbounded): 50",
         "- Startup cache-worker affinity mask (0=default scheduler): 7",
         "- Persistent Vulkan driver pipeline cache: on",
         "- Vulkan preload cache hits only: on",
@@ -263,7 +263,7 @@ function Write-ReadyFixture {
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.",
-        "Thor SPU cache compile budget enabled for BLUS30161: 25 ms.",
+        "Thor SPU cache compile budget enabled for BLUS30161: 50 ms.",
         "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes).",
         "·! 0:00:03.000000 SYS: Set DAZ and FTZ: true"
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8

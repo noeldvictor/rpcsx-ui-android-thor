@@ -2423,3 +2423,38 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Decision: this reduces unnecessary device contact after a safe refusal; it
   is not emulator FPS/startup/thermal-win evidence. Keep the installed candidate
   frozen and the cooldown intact.
+
+### 2026-07-23 - cooler-title-runtime-counterproof
+
+- Status: thermal-stop-before-title / startup-stage-progress /
+  safe-counterproof / not-comparable
+- Scope: one exact-APK `ThorCoolTitle` action after the recorded cooldown;
+  capture `20260723-033645-thor-input-custom`. No retry or later device query
+  ran.
+- Identity and controls: installed APK
+  `5044976A53036961883A3723ECE8C54811B6AEB45D4EB1116ACD802D40D83E5C`
+  matched. Preflight passed at `32.1 -> 32.3 -> 31.9 C`; power state matched
+  the prior title attempt (`performance_mode=0`, `fan_mode=4`, WALT governors).
+  The guest proved RSX `64/200 ms`, SPU `17/25 ms`, two workers, affinity
+  `0x7`, Vulkan cache hit-only, and native cache `on`.
+- Startup staging: RSX attempted `18/64` rather than the prior `41/256`; PPU
+  warm-object reuse began at emulator `1.384 s` rather than `1.732 s`, and the
+  bounded SPU phase finished at `1.820 s` rather than `2.264 s`. This is
+  roughly `348-444 ms` of guest-stage progress only.
+- Counterproof: the first runtime poll was `61.4 C`, immediate confirmation
+  was `61.8 C`, and the route force-stopped below the `68 C` hard limit before
+  title. Post-stop was `46.2 C`, PID was absent, all `21/21` failure-reset
+  properties matched, and targeted fatal hits were zero. The prior route
+  confirmed at `63.0 C`; different transient shapes and no title make this
+  insufficient for a thermal-win claim.
+- Native-cache gap: the `25 ms` budget processed only six programs and loaded
+  `6/7` durable native objects; the proof gate correctly rejected comparison.
+  The host successor keeps the smaller 17-program prefix but raises only the
+  SPU compile budget midpoint to `50 ms`, between the failed `25 ms` bound and
+  the prior hot `100 ms` bound. Analyzer fixtures and profile contracts now
+  require `50 ms`.
+- Decision and next: no startup-speed, FPS, thermal-win, gameplay, flicker, or
+  stability credit. Device-free Status refuses contact before
+  `2026-07-23T04:07:07.7409903-04:00`. A later independently cool round may
+  run at most one exact title proof; it must load all `7/7` native objects and
+  reach the real title before any field/menu/battle work.
