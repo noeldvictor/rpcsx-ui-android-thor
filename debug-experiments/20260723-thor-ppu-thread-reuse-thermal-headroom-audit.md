@@ -86,3 +86,33 @@ probe:
 This design targets sustainable temperature directly and preserves clean
 attribution. It earns no speed, thermal, flicker, gameplay, or stability
 credit until device-measured.
+
+## Observation-Only Probe Implemented
+
+The host follow-through implements the first diagnostic boundary without
+changing scheduling:
+
+- the Gradle/CMake build gate is default-off;
+- normal Android and desktop builds compile the probe to constant no-ops;
+- the diagnostic Android build resolves the API-30/31 Thermal API entry points
+  from `libandroid.so`, preserving the app's API-29 load boundary;
+- the property and title gates restrict one process-lifetime sample to
+  `BLUS30161`;
+- the sample logs headroom, thermal status, PPU worker count, and affinity,
+  always with `scheduling=unchanged`;
+- route tooling resets the transient property before launch and after both
+  success and failure.
+
+ARM64 native builds passed with the diagnostic both enabled and disabled. The
+diagnostic compile tree contains the probe definition; the final default-off
+tree contains zero such definitions. All `69/69` Thor host contracts pass,
+including the new build/route gate. The exact candidate artifact contract
+still passes for APK `490418F9...D95BF63`, merged core
+`9049E583...5AB749E`, and packaged core `C0007C41...CDED102`.
+
+No APK was rebuilt, installed, or launched for this implementation pass, and
+no ADB query occurred. The exact installed candidate remains stopped and
+authoritative. This diagnostic therefore earns no speed, temperature,
+flicker, gameplay, or stability credit. Its first permitted runtime use is a
+separately guarded title proof; only supported, repeatable headroom evidence
+can justify a later `1 <-> 2` PPU startup-worker experiment.

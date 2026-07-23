@@ -1973,3 +1973,15 @@ Put dated run details in `debug-experiments/`, not here.
   No native/APK/device change occurred; installed `490418F9...D95BF63` remains
   stopped and authoritative. Ledger:
   `debug-experiments/20260723-thor-ppu-thread-reuse-thermal-headroom-audit.md`.
+
+- Default-off Thor Thermal Headroom diagnostics are now implemented without a
+  scheduling change. The API-29-safe Android path dynamically resolves the
+  newer Thermal API, is property/title gated to one `BLUS30161` sample per
+  process, and reports status/headroom plus the unchanged PPU worker and
+  affinity selection. Diagnostic-on and final default-off ARM64 native builds,
+  zero probe defines in the normal compile tree, exact candidate artifact
+  identity, and all `69/69` host contracts pass. No APK rebuild, ADB query,
+  install, launch, or device measurement occurred; installed
+  `490418F9...D95BF63` remains stopped and has no new speed, thermal, flicker,
+  gameplay, or stability credit. Ledger:
+  `debug-experiments/20260723-thor-ppu-thread-reuse-thermal-headroom-audit.md`.

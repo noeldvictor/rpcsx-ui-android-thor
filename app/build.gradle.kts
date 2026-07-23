@@ -93,6 +93,12 @@ val rpcsxThorAdpfRsxHint =
         else -> false
     }
 
+val rpcsxThorThermalHeadroomProbe =
+    when (providers.gradleProperty("rpcsxThorThermalHeadroomProbe").orNull ?: System.getenv("RPCSX_THOR_THERMAL_HEADROOM_PROBE_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
@@ -146,6 +152,7 @@ android {
                     "-DRPCSX_THOR_ES_SPU_EXPERIMENTS=${if (rpcsxThorEsSpuExperiments) "ON" else "OFF"}",
                     "-DRPCSX_THOR_ES_PPU_EXPERIMENTS=${if (rpcsxThorEsPpuExperiments) "ON" else "OFF"}",
                     "-DRPCSX_THOR_ADPF_RSX_HINT=${if (rpcsxThorAdpfRsxHint) "ON" else "OFF"}",
+                    "-DRPCSX_THOR_THERMAL_HEADROOM_PROBE=${if (rpcsxThorThermalHeadroomProbe) "ON" else "OFF"}",
                 )
             }
         }

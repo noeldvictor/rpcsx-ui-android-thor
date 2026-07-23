@@ -142,6 +142,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$AndroidAdpfRsx = "off",
     [ValidateSet("on", "off")]
+    [string]$AndroidThermalHeadroomProbe = "off",
+    [ValidateSet("on", "off")]
     [string]$AndroidCachePhasePacing = "off",
     [int]$ScreenshotEverySeconds = 15,
     [int]$ScreenshotStartSeconds = 15,
@@ -242,6 +244,7 @@ function Set-AndroidStartupProfile {
         AndroidVkPipelineCache = "on"
         AndroidVkPreloadCacheHitsOnly = "on"
         AndroidAdpfRsx = "off"
+        AndroidThermalHeadroomProbe = "off"
         AndroidCachePhasePacing = "off"
         AndroidLogMode = "Quiet"
         AndroidRuntimeAffinityMode = "Keep"
@@ -319,6 +322,7 @@ function Write-AndroidStartupProfileSummary {
         "vk_hits_only=$AndroidVkPreloadCacheHitsOnly",
         "cache_phase_pacing=$AndroidCachePhasePacing",
         "adpf=$AndroidAdpfRsx",
+        "thermal_headroom_probe=$AndroidThermalHeadroomProbe",
         "log_mode=$AndroidLogMode",
         "frame_wait=$EternalSonataFramePollWait",
         "frame_grace_us=$EternalSonataFramePollHandlerGraceUs",
@@ -956,6 +960,7 @@ function Invoke-AndroidRouteScene {
         VkPipelineCache = $AndroidVkPipelineCache
         VkPreloadCacheHitsOnly = $AndroidVkPreloadCacheHitsOnly
         AdpfRsx = $AndroidAdpfRsx
+        ThermalHeadroomProbe = $AndroidThermalHeadroomProbe
         CachePhasePacing = $AndroidCachePhasePacing
         ExpectedInstalledApkSha256 = $AndroidExpectedInstalledApkSha256
     }

@@ -55,6 +55,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$AdpfRsx = "off",
     [ValidateSet("on", "off")]
+    [string]$ThermalHeadroomProbe = "off",
+    [ValidateSet("on", "off")]
     [string]$CachePhasePacing = "off",
     [ValidateSet("off", "publisher", "parser", "both")]
     [string]$EsPpuCommandInterp = "off",
@@ -1028,6 +1030,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Vulkan preload cache hits only: $VkPreloadCacheHitsOnly",
     "- Android RSX performance hint: $AdpfRsx",
+    "- Android thermal-headroom probe: $ThermalHeadroomProbe",
     "- Startup cache phase pacing: $CachePhasePacing",
     "- Eternal Sonata PPU command interpreter: $EsPpuCommandInterp",
     "- Eternal Sonata PPU dispatch probe: $EsPpuDispatchProbe",
@@ -1060,6 +1063,7 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "adpf-rsx-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.adpf_rsx off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "thermal-headroom-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.thermal_headroom_probe off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-phase-pacing-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.cache_phase_pacing off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
@@ -1083,6 +1087,7 @@ function Get-ThorStartupProfileResetPropertyCommand {
         "debug.rpcsx.thor.vk_pipeline_cache",
         "debug.rpcsx.thor.vk_preload_cache_hits_only",
         "debug.rpcsx.thor.adpf_rsx",
+        "debug.rpcsx.thor.thermal_headroom_probe",
         "debug.rpcsx.thor.cache_phase_pacing",
         "debug.rpcsx.thor.es_ppu_command_interp",
         "debug.rpcsx.thor.es_ppu_dispatch_probe",
@@ -1127,6 +1132,8 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-effective.txt" @("shell", "getprop debug.rpcsx.thor.vk_preload_cache_hits_only") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "adpf-rsx-set.txt" @("shell", "setprop debug.rpcsx.thor.adpf_rsx $AdpfRsx") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "adpf-rsx-effective.txt" @("shell", "getprop debug.rpcsx.thor.adpf_rsx") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "thermal-headroom-probe-set.txt" @("shell", "setprop debug.rpcsx.thor.thermal_headroom_probe $ThermalHeadroomProbe") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "thermal-headroom-probe-effective.txt" @("shell", "getprop debug.rpcsx.thor.thermal_headroom_probe") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-phase-pacing-set.txt" @("shell", "setprop debug.rpcsx.thor.cache_phase_pacing $CachePhasePacing") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-phase-pacing-effective.txt" @("shell", "getprop debug.rpcsx.thor.cache_phase_pacing") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-set.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp $EsPpuCommandInterp") | Out-Null
@@ -1147,6 +1154,7 @@ if ($BootGame) {
         "debug.rpcsx.thor.vk_pipeline_cache",
         "debug.rpcsx.thor.vk_preload_cache_hits_only",
         "debug.rpcsx.thor.adpf_rsx",
+        "debug.rpcsx.thor.thermal_headroom_probe",
         "debug.rpcsx.thor.cache_phase_pacing",
         "debug.rpcsx.thor.logcat",
         "debug.rpcsx.thor.syscall_stats",
@@ -1518,6 +1526,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "adpf-rsx-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.adpf_rsx off") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "thermal-headroom-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.thermal_headroom_probe off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "cache-phase-pacing-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.cache_phase_pacing off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
@@ -1541,6 +1550,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "adpf-rsx-reset.txt" @("shell", "setprop debug.rpcsx.thor.adpf_rsx off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "thermal-headroom-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.thermal_headroom_probe off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-phase-pacing-reset.txt" @("shell", "setprop debug.rpcsx.thor.cache_phase_pacing off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null

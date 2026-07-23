@@ -16,6 +16,7 @@ option(RPCSX_THOR_SEMA_SUPERPATH "Build the Eternal Sonata semaphore experiment 
 option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata SPU experiments on Android" OFF)
 option(RPCSX_THOR_ES_PPU_EXPERIMENTS "Build Eternal Sonata PPU and PRX diagnostics on Android" OFF)
 option(RPCSX_THOR_ADPF_RSX_HINT "Build the experimental Android RSX performance-hint session" OFF)
+option(RPCSX_THOR_THERMAL_HEADROOM_PROBE "Build the diagnostic Android PPU thermal-headroom probe" OFF)
 set(RPCSX_ANDROID_ARM_ARCH "armv8.2-a" CACHE STRING "AArch64 ISA baseline for Android native code")
 set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model for Android native code")
 
@@ -65,6 +66,10 @@ endif()
 
 if (RPCSX_THOR_ADPF_RSX_HINT)
 	add_compile_definitions(RPCSX_THOR_ADPF_RSX_HINT=1)
+endif()
+
+if (RPCSX_THOR_THERMAL_HEADROOM_PROBE)
+	add_compile_definitions(RPCSX_THOR_THERMAL_HEADROOM_PROBE=1)
 endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")

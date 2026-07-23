@@ -9,6 +9,7 @@
 #include "Loader/mself.hpp"
 #include "Emu/localized_string.h"
 #include "Emu/cache_phase_pacing.h"
+#include "Emu/thermal_headroom_probe.h"
 #include "Emu/perf_meter.hpp"
 #include "Emu/Memory/vm_reservation.h"
 #include "Emu/Memory/vm_locking.h"
@@ -6850,6 +6851,23 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		const u32 thread_count = std::min<u32>(::size32(workload), rpcs3::utils::get_max_threads());
 		const u64 ppu_compile_worker_affinity_mask = rpcsx::startup_cache_phase::get_ppu_compile_worker_affinity_mask(Emu.GetTitleID());
 		atomic_t<bool> ppu_compile_worker_affinity_logged = false;
+
+		const auto thermal_probe = rpcsx::thermal_headroom_probe::sample_before_ppu_compile(Emu.GetTitleID());
+		if (thermal_probe.attempted)
+		{
+			if (!thermal_probe.available)
+			{
+				ppu_log.always()("Thor PPU thermal-headroom probe unavailable: workers=%u, affinity=0x%x, scheduling=unchanged.", thread_count, ppu_compile_worker_affinity_mask);
+			}
+			else if (!thermal_probe.headroom_valid)
+			{
+				ppu_log.always()("Thor PPU thermal-headroom probe: headroom=nan, status=%d, workers=%u, affinity=0x%x, scheduling=unchanged.", thermal_probe.status, thread_count, ppu_compile_worker_affinity_mask);
+			}
+			else
+			{
+				ppu_log.always()("Thor PPU thermal-headroom probe: headroom=%.3f, status=%d, workers=%u, affinity=0x%x, scheduling=unchanged.", thermal_probe.headroom, thermal_probe.status, thread_count, ppu_compile_worker_affinity_mask);
+			}
+		}
 
 		struct thread_index_allocator
 		{
