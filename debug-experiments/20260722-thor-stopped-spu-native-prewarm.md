@@ -465,3 +465,21 @@ query or emulator action ran after the installer completed.
 - Next: keep the exact installed APK frozen. After cooldown, prove one stopped
   seed; in a later title round require both native-cache activation and at
   least one loaded native object before comparison readiness.
+
+### 2026-07-23 - cool-title-analyzer-68c-alignment
+
+- Status: proposed
+- Scope: route-tooling
+- Root cause: `ThorCoolTitle` correctly lowered the hard silicon ceiling to
+  `68 C`, but its capture analyzer and synthetic README/thermal evidence still
+  required the superseded `72 C` value. A real safe route would therefore fail
+  analysis despite applying the stricter profile.
+- Changed files/settings: host analyzer and synthetic ready/thermal/preflight
+  fixtures now require and exercise `68 C`. Runtime profile remains unchanged.
+- Host result: both scripts parse; focused analyzer replay and all `66/66`
+  Thor host contracts pass; `git diff --check` passes.
+- Thor result: not run. No build, install, launch, ADB, or device query.
+- Decision: retain as host-only route repair. Grant no speed, FPS,
+  thermal-win, gameplay, flicker, or stability credit.
+- Next: keep the exact installed APK frozen and honor the independent cooldown
+  before the single stopped-prewarm seed.

@@ -177,7 +177,7 @@ function Write-ReadyFixture {
         "- Runtime thermal confirmation window C: 16",
         "- Max battery temperature C: 34",
         "- Max skin temperature C: 40",
-        "- Max silicon temperature C: 72",
+        "- Max silicon temperature C: 68",
         "- RSX cache preload workers (0=auto): 2",
         "- RSX cached pipeline preload limit (0=all): 256",
         "- RSX cached pipeline load budget ms (0=unbounded): 500",
@@ -211,8 +211,8 @@ function Write-ReadyFixture {
         "stage=pre-run-1-of-3 silicon_temperature_c=31.5 silicon_limit_c=35",
         "stage=pre-run-2-of-3 silicon_temperature_c=31.8 silicon_limit_c=35",
         "stage=pre-run-3-of-3 silicon_temperature_c=31.7 silicon_limit_c=35",
-        "stage=screenshot-title-proof silicon_temperature_c=58.0 silicon_limit_c=72",
-        "stage=post-run silicon_temperature_c=44.0 silicon_limit_c=72"
+        "stage=screenshot-title-proof silicon_temperature_c=58.0 silicon_limit_c=68",
+        "stage=post-run silicon_temperature_c=44.0 silicon_limit_c=68"
     ) | Set-Content -LiteralPath (Join-Path $Directory "thermal-guard.log") -Encoding UTF8
     @(
         "  Max LLVM Compile Threads: 2",
@@ -390,8 +390,8 @@ try {
     $thermalDir = Join-Path $tempRoot "thermal-stop"
     Copy-Item -LiteralPath $readyDir -Destination $thermalDir -Recurse
     Remove-Item -LiteralPath (Join-Path $thermalDir "03-title-proof.png") -Force
-    "Thor CPU/GPU silicon temperature is 72.7 C, at or above the 72 C limit." | Set-Content -LiteralPath (Join-Path $thermalDir "macro-failure.txt") -Encoding UTF8
-    "stage=screenshot-ppu-ready-near-limit-confirm silicon_temperature_c=72.7 silicon_limit_c=72" |
+    "Thor CPU/GPU silicon temperature is 68.7 C, at or above the 68 C limit." | Set-Content -LiteralPath (Join-Path $thermalDir "macro-failure.txt") -Encoding UTF8
+    "stage=screenshot-ppu-ready-near-limit-confirm silicon_temperature_c=68.7 silicon_limit_c=68" |
         Add-Content -LiteralPath (Join-Path $thermalDir "thermal-guard.log") -Encoding UTF8
     Write-AdbEvidence -Directory $thermalDir -Name "failure-pid.txt" -Value "exit=1"
     $thermal = & $analyzerPath -CaptureDir $thermalDir
@@ -403,7 +403,7 @@ try {
     New-Item -ItemType Directory -Force -Path $preflightDir | Out-Null
     @(
         "stage=pre-run-1-of-3 silicon_temperature_c=44.9 silicon_limit_c=35",
-        "stage=failure-post-stop silicon_temperature_c=45.8 silicon_limit_c=72"
+        "stage=failure-post-stop silicon_temperature_c=45.8 silicon_limit_c=68"
     ) | Set-Content -LiteralPath (Join-Path $preflightDir "thermal-guard.log") -Encoding UTF8
     "Thor CPU/GPU silicon temperature is 44.9 C, at or above the 35 C limit. Stage 'pre-run-1-of-3'. RPCSX was force-stopped." |
         Set-Content -LiteralPath (Join-Path $preflightDir "macro-failure.txt") -Encoding UTF8

@@ -1681,3 +1681,8 @@ Put dated run details in `debug-experiments/`, not here.
   or reuse is `activation-incomplete`. Synthetic omission tests and all
   `66/66` Thor host contracts pass. No APK/core/device action occurred; this is
   proof-hardening only and grants no performance or correctness credit.
+
+- The same host analyzer now expects the profile's current `68 C` hard ceiling
+  instead of stale `72 C` README/thermal fixtures. Synthetic ready, thermal
+  stop, and preflight-refusal captures plus all `66/66` contracts pass. This is
+  host-only route repair; no device contact or performance credit.

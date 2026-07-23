@@ -154,7 +154,7 @@ $requiredReadmeLines = @(
     "- Runtime thermal confirmation window C: 16",
     "- Max battery temperature C: 34",
     "- Max skin temperature C: 40",
-    "- Max silicon temperature C: 72",
+    "- Max silicon temperature C: 68",
     "- RSX cache preload workers (0=auto): 2",
     "- RSX cached pipeline preload limit (0=all): 256",
     "- RSX cached pipeline load budget ms (0=unbounded): 500",
