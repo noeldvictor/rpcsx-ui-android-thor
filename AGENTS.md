@@ -2010,3 +2010,17 @@ Put dated run details in `debug-experiments/`, not here.
   `69/69` Thor host contracts pass. No build, install, launch,
   ADB query, device measurement, or new speed/thermal credit occurred. Ledger:
   `debug-experiments/20260723-thor-rsx-compile-budget-successor.md`.
+- One guarded `ThorCoolTitle` attempt for the `50 ms` RSX compile-budget
+  successor stopped before launch in `20260723-171427-thor-input-custom`:
+  strict preflight rose `34.5 -> 35.5 C`, violating the `<35 C` launch rule
+  at sample two. Debug boot/game launch/property application never ran; RPCSX
+  was stopped, PID was absent, failure cleanup reset all properties, and
+  post-stop silicon was `34.9 C`. Classify `preflight-refused-hot` / not
+  comparable and grant no new speed, title, thermal, FPS, flicker, gameplay,
+  or stability credit; the RSX cap remains unmeasured. `AndroidRouteScene`
+  now saves host-only refusal analysis from the exact exception capture before
+  rethrowing, and the pinned artifact gate requires the compile-budget markers.
+  All `69/69` Thor host contracts pass. No retry or further device contact
+  occurred; next independent host-recorded gate is
+  `2026-07-23T17:44:38.4571921-04:00`. Ledger:
+  `debug-experiments/20260723-thor-rsx-compile-budget-successor.md`.

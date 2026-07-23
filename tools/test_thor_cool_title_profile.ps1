@@ -174,23 +174,32 @@ foreach ($line in @(
     }
 }
 
-$routeFunctionStart = $source.IndexOf('function Invoke-AndroidRouteScene')
+$routeFunctionStart = $source.IndexOf('function Resolve-ThorCoolTitleInputCapture')
 $profileApplyStart = $source.IndexOf('Set-AndroidStartupProfile', $routeFunctionStart)
 if ($routeFunctionStart -lt 0 -or $profileApplyStart -le $routeFunctionStart) {
     throw 'Could not isolate the Android route function for cool-title stop/proof contracts.'
 }
 $routeFunction = $source.Substring($routeFunctionStart, $profileApplyStart - $routeFunctionStart)
 $routeContracts = @(
+    'function Resolve-ThorCoolTitleInputCapture',
+    '$Failure.Exception.Data["ThorCaptureDirectory"]',
+    '$_.Name -like "*-thor-input-$Profile"',
+    '-Profile $macroParams.Profile',
+    'function Write-ThorCoolTitleAnalysis',
     '$macroStartedAt = Get-Date',
     '$AndroidStartupProfile -eq "ThorCoolTitle"',
     '$AndroidStartupProfile -eq "ThorCoolGameplay"',
     '$macroParams.StopAfterMacro = $true',
+    'catch {',
+    'Write-ThorCoolTitleAnalysis -InputCapture $inputCapture',
+    'failure analysis saved before propagating the route failure',
+    'throw $routeFailure',
     'cool-gameplay profile self-stopped',
     'analyze_thor_cool_title_capture.ps1',
     'cool-title-analysis.json',
-    '-OutputPath $analysisPath',
-    '-RequireReady',
-    '-MinimumSpuNativeObjects $ThorCoolTitleMinimumNativeObjects',
+    '$analysisParams.RequireReady = $true',
+    'MinimumSpuNativeObjects = $ThorCoolTitleMinimumNativeObjects',
+    'Write-ThorCoolTitleAnalysis -InputCapture $inputCapture -RequireReady',
     'redundant live scene capture skipped',
     'return'
 )

@@ -927,6 +927,55 @@ function Invoke-AndroidSceneCapture {
     Write-Host "Android scene capture: $captureDir"
 }
 
+function Resolve-ThorCoolTitleInputCapture {
+    param(
+        [datetime]$StartedAt,
+        [Parameter(Mandatory)]
+        [string]$Profile,
+        [System.Management.Automation.ErrorRecord]$Failure
+    )
+
+    if ($Failure -and $Failure.Exception) {
+        $failureCapturePath = [string]$Failure.Exception.Data["ThorCaptureDirectory"]
+        if (-not [string]::IsNullOrWhiteSpace($failureCapturePath) -and
+            (Test-Path -LiteralPath $failureCapturePath -PathType Container)) {
+            return Get-Item -LiteralPath $failureCapturePath
+        }
+    }
+
+    $captureRoot = Join-Path $RepoRoot "debug-captures\android-speed-sprint"
+    return Get-ChildItem -LiteralPath $captureRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -like "*-thor-input-$Profile" -and
+            $_.LastWriteTime -ge $StartedAt.AddMinutes(-1)
+        } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+function Write-ThorCoolTitleAnalysis {
+    param(
+        [System.IO.DirectoryInfo]$InputCapture,
+        [switch]$RequireReady
+    )
+
+    if (-not $InputCapture) {
+        throw "Thor cool-title input capture directory could not be resolved."
+    }
+
+    $analysisPath = Join-Path $InputCapture.FullName "cool-title-analysis.json"
+    $analysisParams = @{
+        CaptureDir = $InputCapture.FullName
+        MinimumSpuNativeObjects = $ThorCoolTitleMinimumNativeObjects
+        OutputPath = $analysisPath
+    }
+    if ($RequireReady) {
+        $analysisParams.RequireReady = $true
+    }
+
+    & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") @analysisParams
+}
+
 function Invoke-AndroidRouteScene {
     $profile = Get-SpeedAndroidSceneProfile -Scene $Scene
     if ([string]::IsNullOrWhiteSpace($profile) -and [string]::IsNullOrWhiteSpace($InputMacro)) {
@@ -982,23 +1031,25 @@ function Invoke-AndroidRouteScene {
 
     $macroStartedAt = Get-Date
     Write-Host "Routing Android scene with thor_input_macro.ps1 profile=$($macroParams.Profile) input=$AndroidInputMode scene=$Scene"
-    & (Join-Path $PSScriptRoot "thor_input_macro.ps1") @macroParams
+    try {
+        & (Join-Path $PSScriptRoot "thor_input_macro.ps1") @macroParams
+    } catch {
+        $routeFailure = $_
+        if ($AndroidStartupProfile -eq "ThorCoolTitle") {
+            try {
+                $inputCapture = Resolve-ThorCoolTitleInputCapture -StartedAt $macroStartedAt -Profile $macroParams.Profile -Failure $routeFailure
+                Write-ThorCoolTitleAnalysis -InputCapture $inputCapture
+                Write-Host "Thor cool-title failure analysis saved before propagating the route failure."
+            } catch {
+                Write-Warning "Thor cool-title failure analysis could not be saved: $($_.Exception.Message)"
+            }
+        }
+        throw $routeFailure
+    }
 
     if ($AndroidStartupProfile -eq "ThorCoolTitle") {
-        $captureRoot = Join-Path $RepoRoot "debug-captures\android-speed-sprint"
-        $inputCapture = Get-ChildItem -LiteralPath $captureRoot -Directory -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -like "*-thor-input-$($macroParams.Profile)" -and
-                $_.LastWriteTime -ge $macroStartedAt.AddMinutes(-1)
-            } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-        if (-not $inputCapture) {
-            throw "Thor cool-title route completed but its input capture directory could not be resolved."
-        }
-
-        $analysisPath = Join-Path $inputCapture.FullName "cool-title-analysis.json"
-        & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") -CaptureDir $inputCapture.FullName -MinimumSpuNativeObjects $ThorCoolTitleMinimumNativeObjects -OutputPath $analysisPath -RequireReady
+        $inputCapture = Resolve-ThorCoolTitleInputCapture -StartedAt $macroStartedAt -Profile $macroParams.Profile
+        Write-ThorCoolTitleAnalysis -InputCapture $inputCapture -RequireReady
         Write-Host "Thor cool-title profile stopped after its title proof; redundant live scene capture skipped."
         return
     }

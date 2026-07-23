@@ -76,3 +76,15 @@ No native source or packaged artifact changed, so no native/APK rebuild or insta
 This is a host-validated successor configuration only. It has no new title, FPS, gameplay, flicker, stability, speed, or thermal credit.
 
 A future independently cool, single self-stopping title route must prove the 50 ms activation and deferred summary, preserve the approximately `371 ms` warm-link recovery, load the full required SPU native-object floor, reach and hold title, remain within thermal limits, and reset properties safely. Promotion still requires separate field, menu, and battle correctness evidence. Do not retry in the same hot round.
+
+## Guarded Device Attempt
+
+The one permitted `ThorCoolTitle` route produced capture `20260723-171427-thor-input-custom`. The strict preflight sampled `34.5 C` and then `35.5 C`; because launch requires every silicon sample to remain below `35 C`, it refused at sample two before debug boot, game launch, or application of the `50 ms` RSX compile property.
+
+RPCSX was force-stopped, the failure PID proof was absent, failure cleanup reset all startup properties, and failure post-stop silicon was `34.9 C`. Host-only analysis classifies the capture as `preflight-refused-hot`, `ready_for_comparison=False`, `speed_credit=False`, with `0/7` SPU native objects and no title evidence. The `50 ms` successor therefore remains device-unmeasured. No retry occurred in this thermal round; the host-only cooldown record moved the next independent gate to `2026-07-23T17:44:38.4571921-04:00`.
+
+## Refusal Analysis Hardening
+
+`AndroidRouteScene` now catches a failed `ThorCoolTitle` macro, resolves the exact capture directory carried in the exception (with a profile-specific timestamp fallback), runs the host-only analyzer without `RequireReady`, saves `cool-title-analysis.json`, and then propagates the original failure. Successful title proofs still require comparison-ready analysis. The pinned-artifact contract now also requires the title-gated RSX compile-budget activation, attempted/deferred summary, and property-name markers from the exact installed core.
+
+PowerShell parsing, the focused profile and exact-artifact contracts, `git diff --check`, and all `69/69` `tools/test_thor_*.ps1` host contracts pass. This PowerShell/test/documentation follow-up made no APK/core change and performed no additional device contact.
