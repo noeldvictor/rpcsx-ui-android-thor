@@ -890,7 +890,7 @@ namespace rsx
 		{
 			if (auto ptr = vblank_handler)
 			{
-				if (vblank_waiters)
+				if (vblank_waiter_registered)
 				{
 					intr_thread->cmd_list({{ppu_cmd::set_args, 1}, u64{1},
 						{ppu_cmd::lle_call, ptr},
@@ -899,7 +899,7 @@ namespace rsx
 							if (const auto renderer = rsx::get_current_renderer())
 							{
 								renderer->vblank_wait_token++;
-								if (renderer->vblank_waiters)
+								if (renderer->vblank_waiter_registered)
 								{
 									renderer->vblank_wait_token.notify_all();
 								}
@@ -921,7 +921,7 @@ namespace rsx
 			}
 		}
 
-		if (vblank_waiters)
+		if (vblank_waiter_registered)
 		{
 			vblank_wait_token++;
 			vblank_wait_token.notify_all();

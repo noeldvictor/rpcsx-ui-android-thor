@@ -52,9 +52,9 @@ foreach ($timerContract in @(
     'divisor != 30 && divisor != 60',
     'const u32 threshold = 60 / divisor',
     'counter >= threshold',
-    'renderer->vblank_waiters.fetch_add(1)',
+    'renderer->vblank_waiter_registered.release(true)',
     'thread_ctrl::wait_on(renderer->vblank_wait_token',
-    'renderer->vblank_waiters.fetch_sub(1)',
+    'renderer->vblank_waiter_registered.release(false)',
     'const u32 after_wait_token = renderer->vblank_wait_token',
     'state.handler_wakes++',
     'state.handler_grace_waits++',
@@ -67,8 +67,19 @@ foreach ($timerContract in @(
     if (-not $mainTimer.Contains($timerContract)) {
         throw "Android frame-poll wait is missing a narrow gate or fallback: $timerContract"
     }
-    if (-not $upstreamTimer.Contains($timerContract)) {
+    if ($timerContract -notmatch 'vblank_waiter_registered' -and
+        -not $upstreamTimer.Contains($timerContract)) {
         throw "Windows frame-poll wait is missing a narrow gate or fallback: $timerContract"
+    }
+}
+
+foreach ($upstreamTimerContract in @(
+    'renderer->vblank_waiters.fetch_add(1)',
+    'thread_ctrl::wait_on(renderer->vblank_wait_token',
+    'renderer->vblank_waiters.fetch_sub(1)'
+)) {
+    if (-not $upstreamTimer.Contains($upstreamTimerContract)) {
+        throw "Windows frame-poll wait is missing a narrow gate or fallback: $upstreamTimerContract"
     }
 }
 
@@ -155,14 +166,21 @@ foreach ($source in @($mainTimer, $upstreamTimer)) {
     }
 }
 
-foreach ($rsxHeader in @($mainRsxHeader, $upstreamRsxHeader)) {
-    foreach ($fragment in @(
-        'atomic_t<u32> vblank_wait_token{0}',
-        'atomic_t<u32> vblank_waiters{0}'
-    )) {
-        if (-not $rsxHeader.Contains($fragment)) {
-            throw "RSX VBlank wait state is missing: $fragment"
-        }
+foreach ($fragment in @(
+    'atomic_t<u32> vblank_wait_token{0}',
+    'atomic_t<bool> vblank_waiter_registered{false}'
+)) {
+    if (-not $mainRsxHeader.Contains($fragment)) {
+        throw "Android RSX VBlank wait state is missing: $fragment"
+    }
+}
+
+foreach ($fragment in @(
+    'atomic_t<u32> vblank_wait_token{0}',
+    'atomic_t<u32> vblank_waiters{0}'
+)) {
+    if (-not $upstreamRsxHeader.Contains($fragment)) {
+        throw "Windows RSX VBlank wait state is missing: $fragment"
     }
 }
 
@@ -171,7 +189,6 @@ foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
         'ppu_cmd::ptr_call',
         'renderer->vblank_wait_token++',
         'vblank_wait_token++',
-        'if (vblank_waiters)',
         'vblank_wait_token.notify_all()'
     )) {
         if (-not $rsxSource.Contains($fragment)) {
@@ -189,6 +206,24 @@ foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
     if (-not $handlerQueue.Success) {
         throw "The guest VBlank completion marker is not ordered after the handler and before interrupt-thread sleep."
     }
+}
+
+foreach ($fragment in @(
+    'if (vblank_waiter_registered)',
+    'if (renderer->vblank_waiter_registered)'
+)) {
+    if (-not $mainRsxSource.Contains($fragment)) {
+        throw "Android single-waiter VBlank notification is missing: $fragment"
+    }
+}
+
+if ($mainTimer.Contains('vblank_waiters.fetch_') -or
+    $mainRsxHeader.Contains('atomic_t<u32> vblank_waiters')) {
+    throw 'Android frame-poll wait reintroduced a read-modify-write waiter counter.'
+}
+
+if (-not $upstreamRsxSource.Contains('if (vblank_waiters)')) {
+    throw 'Windows RSX VBlank waiter notification is missing.'
 }
 
 foreach ($fragment in @(
@@ -238,4 +273,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, completion notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, Android release-store single-waiter registration, completion notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

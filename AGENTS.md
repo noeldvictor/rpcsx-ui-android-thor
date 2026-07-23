@@ -2067,3 +2067,16 @@ Put dated run details in `debug-experiments/`, not here.
   contacted; the prior installed `D6798739...D549F` remains stopped. Grant no
   new speed, FPS, flicker, gameplay, stability, or thermal credit. Ledger:
   `debug-experiments/20260723-thor-rsx-single-lane-compile-budget.md`.
+- Host-only Android frame-wait hardening replaces the exact BLUS30161 main
+  PPU's redundant 32-bit waiter counter with an explicit single-waiter boolean.
+  Each bounded VBlank-handler wait now emits two ARM64 release byte stores
+  instead of two sequentially consistent `LDADDAL` RMW operations; completion
+  token acquire loads, handler ordering, the 1 ms bound, continuous rearm, and
+  fallback are unchanged. The exact successor is APK
+  `A0233800...55045` / `72,838,240` bytes, merged core
+  `80838821...E636D` / `1,304,307,480` bytes, and packaged core
+  `2EFCB6B3...7C32D` / `62,988,904` bytes. ARM64 native/APK builds, linked
+  disassembly, exact artifact gates, and all `69/69` host contracts pass.
+  Thor was not contacted. Classify this as host-verified
+  `stackable-cpu-pressure`, not a measured speed/thermal result. Ledger:
+  `debug-experiments/20260723-thor-frame-wait-single-waiter-registration.md`.

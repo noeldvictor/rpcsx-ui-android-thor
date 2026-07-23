@@ -305,7 +305,9 @@ namespace rsx
 		atomic_t<u64> vblank_count{0};
 		// Portable 32-bit completion generation for optional VBlank-handler-assisted guest waits.
 		atomic_t<u32> vblank_wait_token{0};
-		atomic_t<u32> vblank_waiters{0};
+		// The title-gated path admits only the main PPU, so avoid a contended
+		// read-modify-write counter on every bounded wait.
+		atomic_t<bool> vblank_waiter_registered{false};
 		bool capture_current_frame = false;
 
 		u64 vblank_at_flip = umax;

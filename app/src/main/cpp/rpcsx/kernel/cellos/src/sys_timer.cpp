@@ -274,12 +274,12 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   // raw VBlank edge. This keeps the counter load after the guest callback.
   // The portable 32-bit generation avoids a newer 64-bit wait dependency.
   const u32 wait_token = renderer->vblank_wait_token;
-  renderer->vblank_waiters.fetch_add(1);
+  renderer->vblank_waiter_registered.release(true);
   if (renderer->vblank_wait_token == wait_token) {
     thread_ctrl::wait_on(renderer->vblank_wait_token, wait_token,
                          thor_es_frame_poll_wait_max_us);
   }
-  renderer->vblank_waiters.fetch_sub(1);
+  renderer->vblank_waiter_registered.release(false);
 
   const u32 after_wait_token = renderer->vblank_wait_token;
   u32 after_counter = vm::read32(object_addr);
