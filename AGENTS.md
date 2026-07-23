@@ -1610,3 +1610,13 @@ Put dated run details in `debug-experiments/`, not here.
   `2026-07-23T01:02:28.4844422-04:00`; after that independent interval, run at
   most one stopped-emulator seed and reserve title/gameplay proof for later
   cool rounds.
+
+- The host cache controller now turns the prior safe seed's `0` loaded plus
+  `6` built SPU objects into a cumulative native-object continuity floor.
+  Device-free Status reports `minimum_required_spu_native_objects=6`; the next
+  completed seed cannot pass unless at least six exact v2 objects load before
+  newly built objects are counted. Each later safe completed seed raises the
+  floor by loaded plus built objects, capped at the selected `64`. Missing,
+  partial, unsafe, fatal, process-death, unclean-property, or game-boot evidence
+  fails closed. All `66/66` Thor host contracts pass. Installed APK/core and
+  device state are unchanged; no ADB contact followed the no-launch install.

@@ -143,6 +143,9 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
     }
 }
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
+$minimumRequiredSpuNativeObjects = Get-ThorSpuNativeObjectReuseFloor `
+    -LatestReadmeText $latestCacheReadmeText `
+    -MaximumObjects $spuCachePreloadLimit
 $cooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName $latestCacheCaptureName `
     -CacheCompletedAt $latestCacheCompletedAt `
@@ -188,6 +191,7 @@ if ($Action -eq "Status") {
         "spu_cache_worker_limit=$spuCacheWorkerLimit",
         "require_validated_cache_reuse=True",
         "minimum_required_reused_modules=$minimumRequiredReuse",
+        "minimum_required_spu_native_objects=$minimumRequiredSpuNativeObjects",
         "launch_game=False",
         "force_stop=True",
         "progress_checkpoint=True"
@@ -306,6 +310,7 @@ $spuCacheWorkerPoolRequested = 0
 $spuCacheWorkerPoolWorkers = 0
 $spuNativeLoadedObjects = 0
 $spuWorkersBuiltPrograms = 0
+$spuNativeObjectReuseFloorSatisfied = $minimumRequiredSpuNativeObjects -eq 0
 $spuPropertiesReset = $false
 $nativeProcessDied = $false
 $nativeFatal = $false
@@ -634,6 +639,8 @@ if ($gameBootDetected) {
         "Cache preparation unexpectedly entered the game-boot activity path."
     )
 }
+$spuNativeObjectReuseFloorSatisfied =
+    $spuNativeLoadedObjects -ge $minimumRequiredSpuNativeObjects
 
 if ($null -eq $runFailure -and
     ($acceptedIndex -lt 0 -or $finishedIndex -le $acceptedIndex -or
@@ -642,7 +649,8 @@ if ($null -eq $runFailure -and
         $spuCompletionIndex -le $spuActivationIndex -or
         -not $spuNativeCacheEnabled -or -not $spuCachePreloadBounded -or
         -not $spuCacheBudgetEnabled -or -not $spuCacheAffinityMatched -or
-        -not $spuCacheWorkerPoolMatched)) {
+        -not $spuCacheWorkerPoolMatched -or
+        -not $spuNativeObjectReuseFloorSatisfied)) {
     $runFailure = [System.Management.Automation.RuntimeException]::new(
         "PPU/SPU cache-preparation evidence is incomplete, unsafe, or internally out of order."
     )
@@ -730,6 +738,8 @@ $runtimeThermalSummary = Get-ThorCachePrepareThermalSummary `
     "- SPU cache worker pool requested/workers: $spuCacheWorkerPoolRequested/$spuCacheWorkerPoolWorkers",
     "- SPU native objects loaded: $spuNativeLoadedObjects",
     "- SPU workers built programs: $spuWorkersBuiltPrograms",
+    "- Minimum required SPU native objects loaded: $minimumRequiredSpuNativeObjects",
+    "- SPU native-object reuse floor satisfied: $spuNativeObjectReuseFloorSatisfied",
     "- SPU properties reset: $spuPropertiesReset",
     "- Native process died: $nativeProcessDied",
     "- Native fatal: $nativeFatal",

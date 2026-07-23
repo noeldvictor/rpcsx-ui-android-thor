@@ -219,6 +219,51 @@ function Get-ThorCachePrepareReuseFloor {
     )
 }
 
+function Get-ThorSpuNativeObjectReuseFloor {
+    param(
+        [AllowEmptyString()][string]$LatestReadmeText,
+        [ValidateRange(1, [int]::MaxValue)][int]$MaximumObjects = 64
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LatestReadmeText)) {
+        return 0
+    }
+
+    $loaded = [regex]::Match(
+        $LatestReadmeText,
+        '(?m)^- SPU native objects loaded:\s*([0-9]+)\s*$'
+    )
+    $built = [regex]::Match(
+        $LatestReadmeText,
+        '(?m)^- SPU workers built programs:\s*([0-9]+)\s*$'
+    )
+    if (-not $loaded.Success -and -not $built.Success) {
+        return 0
+    }
+    if (-not $loaded.Success -or -not $built.Success) {
+        throw 'Latest cache capture has incomplete SPU native-object continuity evidence.'
+    }
+
+    foreach ($requiredSafetyRow in @(
+        '- SPU native completed: True',
+        '- SPU properties reset: True',
+        '- Native process died: False',
+        '- Native fatal: False',
+        '- Game boot: no'
+    )) {
+        if (-not $LatestReadmeText.Contains($requiredSafetyRow)) {
+            throw "Latest cache capture cannot seed SPU native-object continuity: missing '$requiredSafetyRow'."
+        }
+    }
+
+    $floor = [int]$loaded.Groups[1].Value + [int]$built.Groups[1].Value
+    if ($floor -gt $MaximumObjects) {
+        throw "Latest cache capture reports $floor SPU native objects, above the $MaximumObjects-object bound."
+    }
+
+    return $floor
+}
+
 function Test-ThorCachePrepareNativeFatal {
     param([string]$NativeText)
 

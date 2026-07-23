@@ -285,3 +285,33 @@ query or emulator action ran after the installer completed.
   durable native-cache activation, `requested=3, workers=3, mask=0x7`, exact
   property cleanup, final PID absence, and no game boot. Reserve title and
   gameplay proof for later cool rounds.
+
+### 2026-07-23 - cumulative-spu-native-object-continuity-floor
+
+- Status: proposed
+- Scope: spu-codegen
+- Hypothesis: a repeated stopped-emulator seed is useful only if it proves
+  prior native objects persisted instead of recompiling the same prefix.
+- Changed files/settings: host-only cache progress parsing now derives the next
+  SPU native-object reuse floor from the latest safe completed phase:
+  `loaded + built`, capped at the selected `64`. The prior capture contributes
+  `0 + 6`, so device-free Status now reports
+  `minimum_required_spu_native_objects=6`. A completed seed fails closed below
+  that floor. Partial rows, missing completion/cleanup, native fatal, process
+  death, or game boot evidence are rejected.
+- Rollback: revert the host controller/progress/test slice. Installed APK,
+  native core, runtime defaults, and cached object bytes are unchanged.
+- Windows result: not applicable. Focused cache-route replay and all `66/66`
+  Thor host contracts pass; PowerShell AST parsing and `git diff --check` pass.
+- Thor result: not run. No ADB, install, launch, or device query occurred after
+  the completed no-launch install round.
+- Visual correctness: not exercised.
+- FPS/frame-time: unmeasured.
+- Decision: retain as fail-closed `route-tooling`. This proves cache
+  accumulation on the next seed but grants no speed, FPS, thermal-win,
+  gameplay, flicker, or stability credit.
+- Next: keep the installed exact APK frozen and honor the existing cooldown.
+  After `2026-07-23T01:02:28.4844422-04:00`, one strict cool stopped-emulator
+  seed must load at least six native objects, prove the exact three-worker
+  affinity pool, build any new objects inside the `100 ms` budget, clean up all
+  properties, leave PID absent, and never boot the game.

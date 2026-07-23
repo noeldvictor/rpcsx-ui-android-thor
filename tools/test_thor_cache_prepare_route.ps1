@@ -200,6 +200,36 @@ try {
 if (-not $malformedCheckpointRejected) {
     throw "Malformed checkpoint continuity evidence was accepted."
 }
+$spuNativeReuseFloor = Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText @'
+- SPU native completed: True
+- SPU native objects loaded: 4
+- SPU workers built programs: 6
+- SPU properties reset: True
+- Native process died: False
+- Native fatal: False
+- Game boot: no
+'@
+if ($spuNativeReuseFloor -ne 10 -or
+    (Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText "") -ne 0) {
+    throw "SPU native-object reuse floor did not preserve cumulative cache continuity."
+}
+$malformedSpuNativeReuseRejected = $false
+try {
+    [void](Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText @'
+- SPU native completed: True
+- SPU native objects loaded: 4
+- SPU properties reset: True
+- Native process died: False
+- Native fatal: False
+- Game boot: no
+'@)
+} catch {
+    $malformedSpuNativeReuseRejected = $true
+}
+if (-not $malformedSpuNativeReuseRejected) {
+    throw "Malformed SPU native-object continuity evidence was accepted."
+}
+
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {
     throw "Cache-preparation native-fatal classifier is not fail-closed."
@@ -419,6 +449,12 @@ foreach ($fragment in @(
     'SPU properties reset:',
     'require_validated_cache_reuse=True',
     'minimum_required_reused_modules=',
+    'minimum_required_spu_native_objects=',
+    'Get-ThorSpuNativeObjectReuseFloor',
+    '$spuNativeObjectReuseFloorSatisfied =',
+    '-not $spuNativeObjectReuseFloorSatisfied',
+    'Minimum required SPU native objects loaded:',
+    'SPU native-object reuse floor satisfied:',
     '$reuseFloorSatisfied = $cacheProgress.reused_modules -ge $minimumRequiredReuse',
     '$cacheProgress.has_reuse -and $reuseFloorSatisfied -and $cacheProgress.has_progress',
     'Minimum required reused modules:',
