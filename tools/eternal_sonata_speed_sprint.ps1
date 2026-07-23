@@ -222,7 +222,7 @@ function Set-AndroidStartupProfile {
         AndroidSceneSeconds = 1
         AndroidThermalPollSeconds = 1
         AndroidThermalRuntimeStopHeadroomC = 4.0
-        AndroidThermalRuntimeProbeWindowC = 16.0
+        AndroidThermalRuntimeProbeWindowC = 4.0
         AndroidThermalPreflightSamples = 3
         AndroidThermalPreflightIntervalSeconds = 2
         AndroidThermalPreflightHeadroomC = 0.0
@@ -230,7 +230,7 @@ function Set-AndroidStartupProfile {
         AndroidThermalPreflightMaxRiseC = 1.0
         AndroidMaxBatteryTemperatureC = 34.0
         AndroidMaxSkinTemperatureC = 40.0
-        AndroidMaxSiliconTemperatureC = 68.0
+        AndroidMaxSiliconTemperatureC = 64.0
         AndroidRsxCacheWorkers = 2
         AndroidRsxCachePreloadLimit = 64
         AndroidRsxCacheLoadBudgetMs = 200

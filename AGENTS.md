@@ -1893,3 +1893,11 @@ Put dated run details in `debug-experiments/`, not here.
   gameplay, flicker, stability, or thermal-runtime credit. Do not contact Thor
   before `2026-07-23T14:43:50.4744930-04:00`; then spend at most one separate
   guarded title proof.
+
+- Host-only route safety now closes the measured confirmation overshoot:
+  capture `20260723-050847-thor-input-custom` sampled `63.4 C`, requested a
+  confirmation, and reached `70.3 C` during the `0.98 s` telemetry read.
+  `ThorCoolTitle` and `ThorCoolGameplay` now use a `64 C` hard ceiling with
+  both probe and early-stop at `60 C`; replaying `63.4 C` changes
+  `confirm -> stop` and removes the second telemetry sample. The installed APK
+  is unchanged and no device contact accompanied this host change.

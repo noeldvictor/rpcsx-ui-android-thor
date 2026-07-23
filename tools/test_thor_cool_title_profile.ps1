@@ -87,7 +87,7 @@ $requiredSummary = @(
     'scene_seconds=1',
     'thermal_poll_seconds=1',
     'thermal_stop_headroom_c=4',
-    'thermal_probe_window_c=16',
+    'thermal_probe_window_c=4',
     'preflight_samples=3',
     'preflight_interval_seconds=2',
     'preflight_headroom_c=0',
@@ -95,7 +95,7 @@ $requiredSummary = @(
     'max_preflight_rise_c=1',
     'max_battery_c=34',
     'max_skin_c=40',
-    'max_silicon_c=68',
+    'max_silicon_c=64',
     'rsx_workers=2',
     'rsx_preload_limit=64',
     'rsx_load_budget_ms=200',
@@ -131,7 +131,9 @@ foreach ($line in @(
     'input_macro=',
     'input_mode=Direct',
     'max_launch_silicon_c=35',
-    'max_silicon_c=68',
+    'thermal_stop_headroom_c=4',
+    'thermal_probe_window_c=4',
+    'max_silicon_c=64',
     'rsx_preload_limit=64',
     'spu_preload_limit=17',
     'spu_compile_budget_ms=50',
@@ -247,7 +249,7 @@ $thermalCeilingConflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidMaxSiliconTemperatureC 72 2>&1 | Out-Null
 } catch {
-    $thermalCeilingConflictRejected = $_.Exception.Message -like "*requires -AndroidMaxSiliconTemperatureC '68'*"
+    $thermalCeilingConflictRejected = $_.Exception.Message -like "*requires -AndroidMaxSiliconTemperatureC '64'*"
 }
 if (-not $thermalCeilingConflictRejected) {
     throw 'Thor cool-title profile did not reject the superseded 72 C hard ceiling.'

@@ -2633,3 +2633,22 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   Grant no startup-speed, FPS, gameplay, flicker, stability, or runtime thermal
   credit. After the independent cooldown, spend at most one exact
   `ThorCoolTitle` round; field/menu/battle remain locked until title passes.
+
+### 2026-07-23 - cool-route-immediate-sixty-c-stop
+
+- Status: host-only safety correction / no device contact / not-comparable
+- Trigger: capture `20260723-050847-thor-input-custom` sampled silicon at
+  `63.4 C`, classified it below the old `64 C` early-stop threshold, and
+  requested confirmation. Collecting that confirmation took `0.983 s`; the
+  next sample was `70.3 C`, above the old `68 C` hard ceiling.
+- Change: `ThorCoolTitle` and `ThorCoolGameplay` retain a `4 C` stop headroom
+  but lower the hard ceiling from `68 C` to `64 C` and the probe window from
+  `16 C` to `4 C`. Probe and early-stop therefore coincide at `60 C`, so the
+  cool profiles no longer take a confirmation sample at or above that point.
+- Verification: saved-log replay changes the same `63.4 C` snapshot from
+  `confirm` (`probe=52`, `stop=64`) to immediate `stop`
+  (`probe=60`, `stop=60`). Focused cool-profile and generic thermal-guard
+  contracts pass. The installed APK/core and device state are unchanged.
+- Decision and next: this is safety tooling, not a speed or thermal-runtime
+  win. Keep the install-sourced cooldown; after it opens, spend at most one
+  exact self-stopping title proof with the new immediate-stop envelope.
