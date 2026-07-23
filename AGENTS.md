@@ -1934,3 +1934,17 @@ Put dated run details in `debug-experiments/`, not here.
   post-stop silicon was `46.6 C`, and neither the remaining gate samples nor
   `adb install` ran. Exact successor `87761DAD...083CC` remains host-only;
   installed `3DFB5F55...A34A78` is unchanged. Do not retry this hot round.
+
+- Fresh official RPCS3 tip `7a90d09cf` contributes the July 21 LLVM
+  KnownBits repair: one-pass IR now rejects incomplete PHI ancestry, preserves
+  directly provable scalar/vector OR/AND mask facts through a corrected
+  fallback, and exposes bitcasted `v128` constants. The port covers two
+  generic ARM64 shift and nine SPU lowering query sites statically. ARM64
+  native and optimized arm64-only ThorTest builds, exact APK/core/ZIP identity,
+  export surface, and all `67/67` host contracts pass. Exact host-only APK is
+  `490418F9...D95BF63` / `72,838,428` bytes, merged core
+  `9049E583...5AB749E` / `1,304,306,328` bytes, and packaged core
+  `C0007C41...CDED102` / `62,988,824` bytes. It supersedes uninstalled
+  `87761DAD...083CC`; installed `3DFB5F55...A34A78` is unchanged, no device
+  contact occurred, and no speed/thermal/flicker/gameplay/stability credit
+  exists. Ledger: `debug-experiments/20260723-thor-llvm-known-bits-upstream-slice.md`.
