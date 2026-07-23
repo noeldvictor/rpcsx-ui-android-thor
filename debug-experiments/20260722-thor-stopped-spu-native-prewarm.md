@@ -146,3 +146,32 @@ The focused route contract covers install-newer, cache-newer, and no-history
 selection. The cooldown decision remains before ADB resolution, malformed
 install evidence fails closed, and `git diff --check` passes. No follow-up ADB
 query or emulator action ran after the installer completed.
+
+### 2026-07-22 - packaged-spu-prewarm-artifact-proof
+
+- Status: proposed
+- Scope: spu-codegen
+- Hypothesis: reject a stale or incorrectly packaged Thor candidate before any
+  device action by proving the stripped core contains the entire stopped-SPU
+  prewarm lifecycle and property contract.
+- Changed files/settings:
+  `tools/test_thor_cool_title_candidate_artifact.ps1` now scans the packaged
+  core once for all required PPU/SPU markers instead of reopening and rereading
+  the 62,983,832-byte ELF once per marker. It requires SPU activation and
+  completion, native-cache enablement, preload limit, compile budget, cache
+  affinity, all three Android properties, and the v2 cache namespace/key.
+- Rollback: revert this test-only slice. Emulator runtime behavior is unchanged.
+- Windows result: host-only artifact, native-cache, firmware-preparation, route,
+  optimized-variant, and exact ARM64 APK contracts pass.
+- Thor result: not run. Cooldown status reported `device_contact=False`,
+  source `install`, and `cache_cooldown_ready=False`.
+- Visual correctness: not exercised.
+- FPS/frame-time: unmeasured; this is artifact identity evidence only.
+- Capture paths: none.
+- Decision: retain as fail-closed `route-tooling`. Exact APK
+  `8F1C9838...C01D1C25` and packaged core `863AB71F...33D552` pass the expanded
+  marker contract. Grant no speed, FPS, thermal, gameplay, flicker, or stability
+  credit.
+- Next: wait until the install cooldown expires, require one fresh strict cool
+  gate, and run at most one stopped-emulator cache preparation. Do not boot the
+  game in that round.

@@ -93,40 +93,63 @@ $rows = @(
     Assert-PinnedFileIdentity -Label "Stripped core" -Path $StrippedCorePath -ExpectedSize ([long]$candidate.PackagedCoreSize) -ExpectedSha256 ([string]$candidate.PackagedCoreSha256)
 )
 
-function Test-BinaryAsciiMarker {
+function Get-MissingBinaryAsciiMarkers {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
         [Parameter(Mandatory = $true)]
-        [string]$Marker
+        [string[]]$Markers
     )
+
+    $pending = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $maxMarkerLength = 0
+    foreach ($marker in $Markers) {
+        if ([string]::IsNullOrEmpty($marker)) {
+            throw "Binary marker must not be empty."
+        }
+        [void]$pending.Add($marker)
+        $maxMarkerLength = [Math]::Max($maxMarkerLength, $marker.Length)
+    }
 
     $reader = [IO.StreamReader]::new($Path, [Text.Encoding]::ASCII, $false, 1MB)
     $buffer = New-Object char[] 1MB
     $carry = ""
     try {
-        while (($read = $reader.ReadBlock($buffer, 0, $buffer.Length)) -gt 0) {
+        while ($pending.Count -gt 0 -and ($read = $reader.ReadBlock($buffer, 0, $buffer.Length)) -gt 0) {
             $chunk = $carry + [string]::new($buffer, 0, $read)
-            if ($chunk.Contains($Marker)) {
-                return $true
+            foreach ($marker in @($pending)) {
+                if ($chunk.Contains($marker)) {
+                    [void]$pending.Remove($marker)
+                }
             }
-            $carryLength = [Math]::Min($Marker.Length - 1, $chunk.Length)
+            $carryLength = [Math]::Min($maxMarkerLength - 1, $chunk.Length)
             $carry = $chunk.Substring($chunk.Length - $carryLength)
         }
     } finally {
         $reader.Dispose()
     }
-    return $false
+    return @($pending | Sort-Object)
 }
 
-foreach ($nativeMarker in @(
+$nativeMarkers = @(
     "Thor PPU LLVM compile-worker affinity enabled:",
     "Thor PPU cache preparation activated:",
-    "Thor PPU cache preparation completed:"
-)) {
-    if (-not (Test-BinaryAsciiMarker -Path $StrippedCorePath -Marker $nativeMarker)) {
-        throw "Pinned Thor native core is missing required marker: $nativeMarker"
-    }
+    "Thor PPU cache preparation completed:",
+    "Thor SPU native-object cache preparation activated:",
+    "Thor SPU native-object cache preparation completed:",
+    "Thor SPU native-object cache enabled for startup LLVM objects:",
+    "Thor SPU cache preload limit:",
+    "Thor SPU cache compile budget enabled for BLUS30161:",
+    "Thor SPU cache-worker affinity enabled:",
+    "debug.rpcsx.thor.spu_native_object_cache",
+    "debug.rpcsx.thor.spu_cache_preload_limit",
+    "debug.rpcsx.thor.spu_cache_compile_budget_ms",
+    "thor-spu-native-v2",
+    "spu-native-v2/"
+)
+$missingNativeMarkers = @(Get-MissingBinaryAsciiMarkers -Path $StrippedCorePath -Markers $nativeMarkers)
+if ($missingNativeMarkers.Count -gt 0) {
+    throw "Pinned Thor native core is missing required markers: $($missingNativeMarkers -join ', ')"
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
