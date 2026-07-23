@@ -154,6 +154,39 @@ function Get-ThorCachePrepareCooldownState {
     }
 }
 
+function Get-ThorCachePrepareCooldownSource {
+    param(
+        [string]$CacheCaptureName = "none",
+        [AllowNull()][object]$CacheCompletedAt,
+        [string]$InstallCaptureName = "none",
+        [AllowNull()][object]$InstallCompletedAt
+    )
+
+    if ($null -ne $InstallCompletedAt -and
+        ($null -eq $CacheCompletedAt -or
+            [DateTimeOffset]$InstallCompletedAt -ge [DateTimeOffset]$CacheCompletedAt)) {
+        return [pscustomobject]@{
+            kind = "install"
+            name = $InstallCaptureName
+            completed_at = [DateTimeOffset]$InstallCompletedAt
+        }
+    }
+
+    if ($null -ne $CacheCompletedAt) {
+        return [pscustomobject]@{
+            kind = "cache"
+            name = $CacheCaptureName
+            completed_at = [DateTimeOffset]$CacheCompletedAt
+        }
+    }
+
+    return [pscustomobject]@{
+        kind = "none"
+        name = "none"
+        completed_at = $null
+    }
+}
+
 function Get-ThorCachePrepareReuseFloor {
     param(
         [AllowEmptyString()][string]$LatestReadmeText,

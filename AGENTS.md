@@ -1560,3 +1560,19 @@ Put dated run details in `debug-experiments/`, not here.
   and no speed/thermal/gameplay credit exists. Keep no-launch install, stopped
   SPU seeding, and warm title proof in separate independently cool rounds; see
   `debug-experiments/20260722-thor-stopped-spu-native-prewarm.md`.
+- Exact successor
+  `8F1C9838EFC428AB5E4DDBFF2E433A4BDA1A79BD41FB086CEF820653C01D1C25`
+  is now installed after strict no-boot gate
+  `20260722-232951-thor-input-strict-cool-gate` passed silicon
+  `33.3 -> 33.9 -> 33.3 C` (maximum `33.9 C`, rise `0.0 C`) with
+  battery/skin `23.0/30.0 C`. Install capture
+  `20260722-233018-stopped-spu-prewarm-successor-thortest-apk-install`
+  proves expected/host/installed hashes match, PID absent before/after, no
+  activity launch, safe experiment controls, and post-install silicon
+  `34.9 C`. This grants installed identity only and no performance, thermal,
+  gameplay, or stability credit. The cache controller now selects the newer
+  of the latest cache or no-launch install as its 30-minute cooldown source;
+  host-only status refuses this install until
+  `2026-07-23T00:00:25.9542488-04:00` before resolving ADB. Do not contact Thor
+  again before then and a fresh strict cool gate; run only one stopped-emulator
+  SPU seed in that later round.

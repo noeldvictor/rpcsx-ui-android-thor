@@ -73,6 +73,8 @@ if ($apkItem.Length -ne [long]$candidate.ApkSize -or $hostApkHash -ne $expectedA
 $latestCacheCaptureName = "none"
 $latestCacheCompletedAt = $null
 $latestCacheReadmeText = ""
+$latestInstallCaptureName = "none"
+$latestInstallCompletedAt = $null
 $cacheCaptureRoot = Join-Path $repoRoot "debug-captures\android-speed-sprint"
 if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
     $latestCacheCapture = Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
@@ -102,10 +104,50 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
         }
         $latestCacheCompletedAt = $parsedCreatedAt
     }
+
+    $latestInstallCapture = Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
+        Where-Object { $_.Name -match '^[0-9]{8}-[0-9]{6}-.+-apk-install$' } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($null -ne $latestInstallCapture) {
+        $latestInstallCaptureName = $latestInstallCapture.Name
+        $latestInstallReadme = Join-Path $latestInstallCapture.FullName "README.md"
+        if (-not (Test-Path -LiteralPath $latestInstallReadme -PathType Leaf)) {
+            throw "Latest install capture has no README; refusing cooldown inference: $latestInstallCaptureName"
+        }
+        $latestInstallReadmeText = Get-Content -LiteralPath $latestInstallReadme -Raw
+        if (-not $latestInstallReadmeText.StartsWith("# Thor APK No-Launch Install", [StringComparison]::Ordinal) -or
+            -not $latestInstallReadmeText.Contains("- Device serial: $Serial") -or
+            -not $latestInstallReadmeText.Contains("- Package: $package") -or
+            -not $latestInstallReadmeText.Contains("- Emulator launch: no") -or
+            $latestInstallReadmeText -notmatch '(?m)^- Status: (installed-exact-no-launch|failed)\r?$') {
+            throw "Latest install capture is not valid no-launch evidence: $latestInstallCaptureName"
+        }
+        $installCreatedMatch = [regex]::Match(
+            $latestInstallReadmeText,
+            '(?m)^- Created:\s*(\S.+)$'
+        )
+        $parsedInstallAt = [DateTimeOffset]::MinValue
+        if (-not $installCreatedMatch.Success -or
+            -not [DateTimeOffset]::TryParse(
+                $installCreatedMatch.Groups[1].Value.Trim(),
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind,
+                [ref]$parsedInstallAt
+            )) {
+            throw "Latest install capture has an invalid Created timestamp: $latestInstallCaptureName"
+        }
+        $latestInstallCompletedAt = $parsedInstallAt
+    }
 }
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
+$cooldownSource = Get-ThorCachePrepareCooldownSource `
+    -CacheCaptureName $latestCacheCaptureName `
+    -CacheCompletedAt $latestCacheCompletedAt `
+    -InstallCaptureName $latestInstallCaptureName `
+    -InstallCompletedAt $latestInstallCompletedAt
 $cacheCooldown = Get-ThorCachePrepareCooldownState `
-    -LastCompletedAt $latestCacheCompletedAt `
+    -LastCompletedAt $cooldownSource.completed_at `
     -MinimumMinutes $minimumCacheCooldownMinutes
 
 if ($Action -eq "Status") {
@@ -129,6 +171,10 @@ if ($Action -eq "Status") {
         "minimum_cache_cooldown_minutes=$minimumCacheCooldownMinutes",
         "latest_cache_capture=$latestCacheCaptureName",
         "latest_cache_completed_at=$(if ($null -eq $latestCacheCompletedAt) { 'none' } else { $latestCacheCompletedAt.ToString('o') })",
+        "latest_install_capture=$latestInstallCaptureName",
+        "latest_install_completed_at=$(if ($null -eq $latestInstallCompletedAt) { 'none' } else { $latestInstallCompletedAt.ToString('o') })",
+        "cooldown_source_kind=$($cooldownSource.kind)",
+        "cooldown_source=$($cooldownSource.name)",
         "cache_cooldown_ready=$($cacheCooldown.ready)",
         "cache_cooldown_ready_at=$(if ($null -eq $cacheCooldown.ready_at) { 'now' } else { $cacheCooldown.ready_at.ToString('o') })",
         "cache_cooldown_remaining_seconds=$($cacheCooldown.remaining_seconds)",
@@ -146,7 +192,7 @@ if ($Action -eq "Status") {
 }
 
 if (-not $cacheCooldown.ready) {
-    throw "Cache cooldown refused before device contact: $($cacheCooldown.remaining_seconds) seconds remain until $($cacheCooldown.ready_at.ToString('o'))."
+    throw "Cache cooldown refused before device contact: source=$($cooldownSource.kind) '$($cooldownSource.name)'; $($cacheCooldown.remaining_seconds) seconds remain until $($cacheCooldown.ready_at.ToString('o'))."
 }
 
 $adb = Resolve-ThorAdb

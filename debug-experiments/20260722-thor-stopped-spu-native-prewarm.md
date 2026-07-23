@@ -91,3 +91,58 @@ The installed Thor APK remains the prior
 `A7216402BDBFE9F14762D9C2C2F2E5A2B857D828D327E2D9A6E50C8C6433D15C`
 candidate. The new manifest therefore makes any premature preparation action
 fail exact installed-APK identity before the SPU properties are applied.
+
+### 2026-07-22 - exact-no-launch-install
+
+- Status: android-pass
+- Scope: spu-codegen
+- Hypothesis: install the exact SPU-prewarm successor without launching RPCSX,
+  preserving a cool device and a clean identity boundary for a later
+  stopped-emulator seed.
+- Changed files/settings: installed exact APK
+  `8F1C9838EFC428AB5E4DDBFF2E433A4BDA1A79BD41FB086CEF820653C01D1C25`.
+  No emulator setting was changed. The cache controller now treats the newest
+  exact no-launch install as a cooldown source as well as the newest cache run.
+- Rollback: reinstall the prior exact APK through the same strict no-launch
+  procedure. No RPCSX process or new cache phase was started.
+- Windows result: not applicable.
+- Thor result: strict no-boot gate passed at
+  `33.3 -> 33.9 -> 33.3 C` (maximum `33.9 C`, rise `0.0 C`) with
+  battery/skin `23.0/30.0 C`. Expected, host, and installed APK hashes match.
+  PID was absent before and after installation. Post-install silicon was
+  `34.9 C`.
+- Visual correctness: not exercised; no activity launched.
+- FPS/frame-time: not measured.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260722-232951-thor-input-strict-cool-gate`;
+  `debug-captures/android-speed-sprint/20260722-233018-stopped-spu-prewarm-successor-thortest-apk-install`.
+- Decision: `installed-exact-no-launch` / `route-tooling` /
+  `not-comparable`. Installation grants identity only, with no speed, FPS,
+  temperature-win, flicker, gameplay, cache-seed, or stability credit.
+- Next: no Thor contact before
+  `2026-07-23T00:00:25.9542488-04:00`. After that independent interval and a
+  fresh strict cool gate, run at most one stopped-emulator cache preparation.
+  Reserve title and gameplay proof for another independently cool round.
+
+## Post-Install Cooldown Enforcement
+
+The cache controller previously considered only the latest
+`firmware-ppu-prewarm` capture. That could permit cache compilation immediately
+after a new APK install when the older cache timestamp was already mature.
+Host-only logic now validates the latest `*-apk-install` README as no-launch
+evidence, parses its creation time, and selects the newer of install or cache
+as the 30-minute cooldown source. Reuse continuity still comes only from the
+latest cache README.
+
+After the install, host-only status reports:
+
+- cooldown source kind: `install`
+- cooldown source:
+  `20260722-233018-stopped-spu-prewarm-successor-thortest-apk-install`
+- ready: `False`
+- ready at: `2026-07-23T00:00:25.9542488-04:00`
+
+The focused route contract covers install-newer, cache-newer, and no-history
+selection. The cooldown decision remains before ADB resolution, malformed
+install evidence fails closed, and `git diff --check` passes. No follow-up ADB
+query or emulator action ran after the installer completed.

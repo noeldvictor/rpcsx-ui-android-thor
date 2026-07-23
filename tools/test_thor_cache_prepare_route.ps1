@@ -148,6 +148,25 @@ if ($cooldownWaiting.ready -or
     -not $cooldownNoHistory.ready -or $cooldownNoHistory.remaining_seconds -ne 0) {
     throw "Cache-preparation independent cooldown accounting is not fail-closed."
 }
+$cacheCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:15:42-04:00')
+$installCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:30:42-04:00')
+$installCooldownSource = Get-ThorCachePrepareCooldownSource `
+    -CacheCaptureName "cache-old" -CacheCompletedAt $cacheCooldownAt `
+    -InstallCaptureName "install-new" -InstallCompletedAt $installCooldownAt
+$cacheCooldownSource = Get-ThorCachePrepareCooldownSource `
+    -CacheCaptureName "cache-new" -CacheCompletedAt $installCooldownAt `
+    -InstallCaptureName "install-old" -InstallCompletedAt $cacheCooldownAt
+$noCooldownSource = Get-ThorCachePrepareCooldownSource
+if ($installCooldownSource.kind -ne "install" -or
+    $installCooldownSource.name -ne "install-new" -or
+    $installCooldownSource.completed_at -ne $installCooldownAt -or
+    $cacheCooldownSource.kind -ne "cache" -or
+    $cacheCooldownSource.name -ne "cache-new" -or
+    $cacheCooldownSource.completed_at -ne $installCooldownAt -or
+    $noCooldownSource.kind -ne "none" -or
+    $null -ne $noCooldownSource.completed_at) {
+    throw "Cache preparation did not select the newest cache/install cooldown source."
+}
 $thermalStopReuseFloor = Get-ThorCachePrepareReuseFloor -LatestReadmeText @'
 - Status: failed
 - Compiled modules this round: 16
@@ -325,6 +344,15 @@ foreach ($fragment in @(
     'Runtime average silicon C:',
     'Runtime samples at or above $runtimeProbeSiliconC C:',
     'minimum_cache_cooldown_minutes=',
+    '^[0-9]{8}-[0-9]{6}-.+-apk-install$',
+    '# Thor APK No-Launch Install',
+    '(installed-exact-no-launch|failed)\r?$',
+    '- Emulator launch: no',
+    'latest_install_capture=',
+    'latest_install_completed_at=',
+    'cooldown_source_kind=',
+    'cooldown_source=',
+    'Get-ThorCachePrepareCooldownSource',
     'Cache cooldown refused before device contact:',
     'if ($stopwatch.Elapsed.TotalSeconds -ge $MaxSeconds)',
     '$remainingMilliseconds = [Math]::Max(',
