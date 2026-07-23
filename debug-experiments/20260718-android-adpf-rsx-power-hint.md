@@ -204,3 +204,60 @@ finishes its independent proof, a future diagnostic APK may compare ADPF off
 and on with the same artifact, warm caches, scene, frame cap, visual gates, and
 thermal guard. Promote only a matched frame-time result with lower thermal
 rise; park neutral behavior and reject any throughput or visual regression.
+
+## 2026-07-22 Primary-source refresh and experiment ranking
+
+Status: host-research / no source or device change
+
+Current Android guidance still makes the existing default-off RSX experiment
+the narrowest plausible sustained-thermal A/B after the frozen candidate has a
+valid warm-cache baseline:
+
+- The current NDK Performance Hint reference defines sessions for periodic
+  workloads such as frame production and requires actual duration every cycle
+  against a target duration. The existing first-draw-to-flip, 33,333,333 ns,
+  every-positive-cycle implementation matches that API-33 contract:
+  https://developer.android.com/ndk/reference/group/a-performance-hint
+- Android's Thermal API guidance recommends adapting worker count, affinity,
+  fidelity, or frame rate using thermal headroom, but warns that headroom must
+  not be queried more often than once per 10 seconds and may return NaN. Any
+  future in-process headroom probe must therefore be read-only, single-threaded,
+  and no faster than 10 seconds before it can drive policy:
+  https://developer.android.com/games/optimize/adpf/thermal
+- Explicit `setPreferPowerEfficiency`, structured CPU/GPU work duration,
+  graphics-pipeline sessions, and surface binding are newer feature-gated APIs.
+  The saved Thor is Android 13, so they cannot be credited or required for the
+  first A/B. Basic `reportActualWorkDuration` remains the applicable path.
+- Android fixed-performance mode is a benchmark-variance tool, not a thermal
+  solution; official guidance says it can still overheat. Keep it off for the
+  user's normal and sustained-temperature runs:
+  https://developer.android.com/games/optimize/adpf/fixed-performance-mode
+
+Recent DBT research does not provide a safe upstream-style cherry-pick:
+
+- Partial cross-compilation/mixed execution reports large gains by moving
+  eligible functions across an emulated/native boundary, but requires a
+  calling channel and function eligibility proof. That supports this repo's
+  existing title/signature-gated superpath strategy; it does not justify broad
+  PPU/SPU replacement without verify-only output equivalence:
+  https://arxiv.org/abs/2512.00487
+- Direct translation that bypasses an intermediate representation reports
+  proof-of-concept gains against QEMU TCG. RPCSX's hot SPU/PPU paths already use
+  specialized LLVM/JIT machinery, so applying the paper means a new backend,
+  not a local optimization. Park it until a stable profile identifies a tiny,
+  repeatable guest block family worth a direct verified emitter:
+  https://arxiv.org/abs/2501.03427
+- Baseline-JIT meta-compilation targets warm-up latency by trading peak
+  optimization for faster compilation. The current frozen candidate is instead
+  finishing a persistent offline cache, which removes compilation from the
+  measured gameplay route without sacrificing optimized code quality:
+  https://arxiv.org/abs/2502.20543
+
+Decision order after cache completion is therefore: first obtain the exact
+ADPF-off title/field/menu/battle baseline; then run one matched default-off/on
+RSX Performance Hint A/B under independent cooldowns; promote only if visuals,
+fatal cleanliness, FPS/frame pacing, and temperature rise all pass. Thermal
+headroom instrumentation is a later read-only diagnostic. The cross-compiled
+function/direct-emitter ideas remain parked behind a stable hot-signature and
+byte-for-byte verify gate. No APK/core/cache/device state changed in this
+research round, and it earns no speed or thermal credit.
