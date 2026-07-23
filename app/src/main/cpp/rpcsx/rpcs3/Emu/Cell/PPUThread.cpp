@@ -7042,6 +7042,53 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_LINKING_PPU_MODULES);
 
+#ifdef __ANDROID__
+		struct scoped_warm_link_affinity
+		{
+			u64 previous_mask = 0;
+			u64 effective_mask = 0;
+
+			explicit scoped_warm_link_affinity(u64 requested_mask) noexcept
+			{
+				if (requested_mask)
+				{
+					previous_mask = thread_ctrl::get_thread_affinity_mask();
+					if (previous_mask)
+					{
+						thread_ctrl::set_thread_affinity_mask(requested_mask);
+						effective_mask = thread_ctrl::get_thread_affinity_mask();
+					}
+				}
+			}
+
+			~scoped_warm_link_affinity() noexcept
+			{
+				if (previous_mask)
+				{
+					thread_ctrl::set_thread_affinity_mask(previous_mask);
+				}
+			}
+		};
+
+		const u64 warm_link_affinity_mask = workload.empty() && retained_validated_count
+			? rpcsx::startup_cache_phase::get_ppu_compile_worker_affinity_mask(Emu.GetTitleID())
+			: 0;
+		scoped_warm_link_affinity warm_link_affinity(warm_link_affinity_mask);
+		if (warm_link_affinity_mask)
+		{
+			if (warm_link_affinity.effective_mask == warm_link_affinity_mask)
+			{
+				ppu_log.always()("Thor PPU warm-cache link affinity enabled: requested=0x%x, effective=0x%x, objects=%u.",
+					warm_link_affinity_mask, warm_link_affinity.effective_mask, retained_validated_count);
+			}
+			else
+			{
+				ppu_log.always()("Thor PPU warm-cache link affinity was not applied exactly: requested=0x%x, effective=0x%x, objects=%u.",
+					warm_link_affinity_mask, warm_link_affinity.effective_mask, retained_validated_count);
+			}
+		}
+#endif
+
 		if (retained_validated_count)
 		{
 			ppu_log.notice("LLVM: Reusing %u validated warm-cache objects.", retained_validated_count);

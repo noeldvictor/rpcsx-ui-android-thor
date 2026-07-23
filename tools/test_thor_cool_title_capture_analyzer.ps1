@@ -252,7 +252,7 @@ function Write-ReadyFixture {
     ) | Set-Content -LiteralPath (Join-Path $Directory "thermal-guard.log") -Encoding UTF8
     @(
         "  Max LLVM Compile Threads: 2",
-        "Thor PPU LLVM compile-worker affinity enabled: requested=0x7, effective=0x7.",
+        "Thor PPU warm-cache link affinity enabled: requested=0x7, effective=0x7, objects=41.",
         "Android shader cache preload limit: 64 of 939 oldest pipelines; 875 will compile on demand",
         "Android shader cache load budget enabled for BLUS30161: 200 ms.",
         "Android shader cache load budget: attempted 16 of 64 cached pipelines with a 200 ms budget; 48 will load and compile on demand.",
@@ -440,12 +440,12 @@ try {
     Copy-Item -LiteralPath $readyDir -Destination $ppuAffinityMissingDir -Recurse
     $ppuAffinityLogPath = Join-Path $ppuAffinityMissingDir "post-RPCSX.log"
     @(Get-Content -LiteralPath $ppuAffinityLogPath) |
-        Where-Object { $_ -notmatch 'Thor PPU LLVM compile-worker affinity enabled:' } |
+        Where-Object { $_ -notmatch 'Thor PPU (?:LLVM compile-worker|warm-cache link) affinity enabled:' } |
         Set-Content -LiteralPath $ppuAffinityLogPath -Encoding UTF8
     $ppuAffinityMissing = & $analyzerPath -CaptureDir $ppuAffinityMissingDir
     if ($ppuAffinityMissing.status -ne "activation-incomplete" -or $ppuAffinityMissing.ready_for_comparison -or
-        $ppuAffinityMissing.activation_missing -notcontains "PPU efficiency-core compile affinity") {
-        throw "Synthetic missing PPU compile-worker affinity did not fail closed."
+        $ppuAffinityMissing.activation_missing -notcontains "PPU efficiency-core startup affinity") {
+        throw "Synthetic missing PPU startup affinity did not fail closed."
     }
 
     $runningDir = Join-Path $tempRoot "still-running"

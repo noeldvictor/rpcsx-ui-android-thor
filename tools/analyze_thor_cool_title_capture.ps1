@@ -298,7 +298,7 @@ $spuNativeObjectReuseFloorSatisfied = $spuNativeObjectLoadCount -ge $MinimumSpuN
 
 $activationRequirements = [ordered]@{
     "two little-core PPU compile threads" = 'Max LLVM Compile Threads:\s*2'
-    "PPU efficiency-core compile affinity" = 'Thor PPU LLVM compile-worker affinity enabled:\s*requested=0x7, effective=0x7'
+    "PPU efficiency-core startup affinity" = 'Thor PPU (?:LLVM compile-worker|warm-cache link) affinity enabled:\s*requested=0x7, effective=0x7'
     "bounded RSX preload" = 'Android shader cache preload limit:\s*64 of'
     "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*200 ms'
     "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 200 ms budget; \d+ will load and compile on demand\.'
@@ -323,7 +323,7 @@ if (-not $spuNativeObjectReuseFloorSatisfied -and $activationMissing -notcontain
     $activationMissing.Add("SPU native-object reuse") | Out-Null
 }
 
-$activationFallbackPattern = 'cache-worker affinity was not applied exactly|preload cache-hits-only was requested (?:without|but)|startup cache phase pacing timed out'
+$activationFallbackPattern = 'cache-worker affinity was not applied exactly|warm-cache link affinity was not applied exactly|preload cache-hits-only was requested (?:without|but)|startup cache phase pacing timed out'
 $activationFallbackHits = @(
     $guestLogLines |
         Select-String -Pattern $activationFallbackPattern -CaseSensitive:$false |

@@ -2458,3 +2458,53 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   `2026-07-23T04:07:07.7409903-04:00`. A later independently cool round may
   run at most one exact title proof; it must load all `7/7` native objects and
   reach the real title before any field/menu/battle work.
+
+### 2026-07-23 - fifty-ms-preflight-refusal
+
+- Status: preflight-refused-hot / no-game-launch / safety-pass /
+  not-comparable
+- Scope: one guarded `ThorCoolTitle` action with the corrected
+  `64 RSX / 200 ms, 17 SPU / 50 ms` profile; capture
+  `20260723-040730-thor-input-custom`. No retry or later device query ran.
+- Result: preflight samples were `34.5 -> 34.5 -> 35.1 C`; the third sample
+  crossed the strict below-`35 C` launch ceiling. Debug boot was never
+  requested, guest-log evidence is untrusted/absent, native reuse is `0/7`,
+  and no screenshot, title, or gameplay frame exists.
+- Cleanup: PID was absent and all `21/21` transient properties matched their
+  safe reset values. Maximum silicon was `35.1 C`.
+- Decision: grant no startup-speed, FPS, thermal-win, gameplay, flicker, or
+  stability credit. Recorded device completion was
+  `2026-07-23T04:07:45.1904512-04:00`; no contact is allowed before
+  `04:37:45.1904512-04:00`.
+
+### 2026-07-23 - warm-ppu-link-affinity-host-candidate
+
+- Status: host candidate / uninstalled / unmeasured / not-comparable
+- Measured trigger: both launched counterproofs spent a repeatable
+  `0.363-0.364 s` between the fully warm PPU reuse marker and the next warm
+  module while the caller thread had no startup affinity gate. Cold PPU
+  compile workers already used the BLUS30161 efficiency-core mask.
+- Change: Android BLUS30161 fully warm linking now temporarily applies the
+  existing startup affinity mask (`0x7` by profile), logs requested/effective
+  state, and restores the exact prior caller mask on scope exit. The gate
+  requires `workload.empty()` and retained validated objects; cold
+  compilation, runtime PPU execution, desktop, and other titles are unchanged.
+  The title analyzer accepts either cold compile-worker or warm-link affinity
+  proof and fails closed on a warm-link mismatch.
+- Build and identity: ARM64 native build passed in `95.7 s`; ARM64-only
+  optimized `assembleThortest` passed in `127.9 s`. APK
+  `81BAF133B6442E5AC3856D76E091187D772C660FE68EC1DFC78177B914D54BC2`
+  is `72,835,284` bytes; merged core
+  `5E90A68D4D3600CFC67C191B7DADD90053784A9D3D6304216C39B98B51EBE6BC`
+  is `1,304,260,536` bytes; stripped/APK core
+  `5A1C89DFFE2447BBE510A2778D835ACEAAB2A5D15DAA946443E56082D793D53A`
+  is `62,985,608` bytes.
+- Verification: ARM64 ABI, optimized variant, exact artifact/embedded marker,
+  focused analyzer/affinity, PowerShell parse, `git diff --check`, and all
+  `66/66` Thor host contracts pass.
+- Decision and next: this is a measured-path hypothesis, not a speed or
+  thermal win. The new APK is not installed or launched; installed
+  `5044976A...D83E5C` remains frozen. After an independently cool interval,
+  use one no-launch install round; a later separate round must prove exact
+  identity, `7/7` reuse, title, field, menu, battle, frame pacing, flicker,
+  stability, and sustained thermals before credit.

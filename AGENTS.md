@@ -1808,3 +1808,24 @@ Put dated run details in `debug-experiments/`, not here.
   FPS, thermal-win, gameplay, flicker, or stability credit. Do not contact Thor
   before `2026-07-23T04:07:07.7409903-04:00`; then allow at most one guarded
   `7/7` title proof in a later independently cool round.
+
+- The next single guarded `17 SPU / 50 ms` action produced
+  `20260723-040730-thor-input-custom` and refused before boot: preflight was
+  `34.5 -> 34.5 -> 35.1 C`, so sample three crossed the strict below-`35 C`
+  ceiling. No debug-boot request, guest log, screenshot, game frame, or retry
+  occurred; PID was absent and all `21/21` failure resets matched. Classify
+  `preflight-refused-hot` / `not-comparable`; grant no speed, FPS, gameplay,
+  flicker, stability, or thermal-win credit. Its recorded cooldown forbids
+  device contact before `2026-07-23T04:37:45.1904512-04:00`.
+
+- Host-only successor `81BAF133...D54BC2` temporarily applies the existing
+  BLUS30161 `0x7` startup affinity only while a fully warm PPU cache is linked,
+  then restores the caller's exact mask. Cold compilation, runtime PPU
+  execution, desktop, and other titles are unchanged. ARM64 native and
+  optimized `thortest` builds pass; merged core
+  `5E90A68D...51EBE6BC` / `1,304,260,536` bytes and packaged core
+  `5A1C89DF...D793D53A` / `62,985,608` bytes match the APK exactly, artifact
+  gates pass, and all `66/66` Thor host contracts pass. This candidate is not
+  installed or launched. Installed `5044976A...D83E5C` remains frozen, and
+  the successor earns no performance or correctness credit until a separate
+  independently cool no-launch install and later title/field/menu/battle proof.

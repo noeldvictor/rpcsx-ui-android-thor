@@ -133,6 +133,7 @@ function Get-MissingBinaryAsciiMarkers {
 
 $nativeMarkers = @(
     "Thor PPU LLVM compile-worker affinity enabled:",
+    "Thor PPU warm-cache link affinity enabled:",
     "Thor PPU cache preparation activated:",
     "Thor PPU cache preparation completed:",
     "Thor SPU native-object cache preparation activated:",
