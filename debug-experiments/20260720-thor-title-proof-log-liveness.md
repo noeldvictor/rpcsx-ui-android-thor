@@ -2375,3 +2375,29 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Decision and next: no cooldown was shortened below real device evidence and
   no Thor command ran. Wait for the restored guard, then allow one cooler title
   proof only.
+
+### 2026-07-23 - cooler-title-preflight-refusal
+
+- Status: preflight-refused-hot / no-game-launch / safety-pass /
+  not-comparable
+- Scope: the one allowed action after the title-sourced cooldown, using the
+  cooler `64 RSX / 200 ms, 17 SPU / 25 ms` title profile.
+- Thor result: capture `20260723-030615-thor-input-custom` matched the exact
+  installed APK but refused at the first preflight sample. The hottest silicon
+  sensor was `35.5 C`, above the strict below-`35 C` launch ceiling. The debug
+  boot intent was never issued, the game never started, no screenshot/gameplay
+  frame was taken, and no retry occurred.
+- Cleanup: failure PID evidence was absent and the new failure-reset proof
+  matched all `21/21` safe property values. Maximum recorded silicon remained
+  `35.5 C`; battery/skin were `24.0/30.0 C`.
+- Evidence repair: the pulled `failure-RPCSX.log` was byte-identical to the
+  prior launched capture and therefore stale. The collector now skips guest-log
+  pulls when no boot request was issued, and the analyzer trusts activation,
+  fatal, and native-object rows only after an accepted nonce-bound handshake.
+  Reanalysis reports `guest_log_trusted=False`, native objects `0/7`, no fatal
+  hits, and the same primary `preflight-refused-hot` classification.
+- Verification: focused analyzer/thermal tests and all `66/66` Thor host
+  contracts pass.
+- Decision and next: grant no startup-speed, FPS, thermal-win, gameplay,
+  flicker, or stability credit. Device-free Status sets the next earliest
+  contact to `2026-07-23T03:36:27.5707936-04:00`; do not retry in this round.

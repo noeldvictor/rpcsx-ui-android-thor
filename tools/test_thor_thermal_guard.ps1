@@ -155,6 +155,9 @@ $debugCommonSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_deb
 if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?Copy-ThorAdbFile[\s\S]*?\$\{namePrefix\}RPCSX\.log') {
     throw "Standard Thor snapshots do not preserve the full guest RPCSX log."
 }
+if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?\[switch\]\$SkipGuestLog[\s\S]*?if\s*\(-not\s+\$SkipGuestLog\)[\s\S]*?Copy-ThorAdbFile') {
+    throw "Standard Thor snapshots cannot suppress stale guest logs before a boot request."
+}
 if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?performance_mode[\s\S]*?fan_mode[\s\S]*?scaling_governor[\s\S]*?scaling_max_freq') {
     throw "Thor launch evidence does not preserve the AYN performance/fan mode and CPU policy state."
 }

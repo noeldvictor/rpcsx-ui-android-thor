@@ -245,10 +245,19 @@ if (($actualMacroTokens -join "|") -cne ($expectedMacroTokens -join "|")) {
     $profilePropertyMismatches.Add("macro.log did not execute the exact bounded title-proof/stop sequence") | Out-Null
 }
 
-$logFiles = @(
-    Get-ChildItem -LiteralPath $resolvedCaptureDir -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '(?i)(RPCSX.*\.log|guest-health.*\.log|logcat.*\.txt)$' }
-)
+$debugBootHandshakeLines = Read-OptionalLines "debug-boot-handshake-status.log"
+$debugBootAccepted = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=accepted\b' }).Count -gt 0
+$debugBootRejected = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=rejected\b' }).Count -gt 0
+$debugBootTimedOut = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=timeout\b' }).Count -gt 0
+$guestLogTrusted = $debugBootAccepted
+$logFiles = if ($guestLogTrusted) {
+    @(
+        Get-ChildItem -LiteralPath $resolvedCaptureDir -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '(?i)(RPCSX.*\.log|guest-health.*\.log|logcat.*\.txt)$' }
+    )
+} else {
+    @()
+}
 $guestLogLines = New-Object System.Collections.Generic.List[string]
 foreach ($file in $logFiles) {
     foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
@@ -464,10 +473,6 @@ $guestLogEvidenceIncomplete = (
     $guestLogLatestEmulatorSeconds -lt 1.0
 )
 
-$debugBootHandshakeLines = Read-OptionalLines "debug-boot-handshake-status.log"
-$debugBootAccepted = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=accepted\b' }).Count -gt 0
-$debugBootRejected = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=rejected\b' }).Count -gt 0
-$debugBootTimedOut = @($debugBootHandshakeLines | Where-Object { $_ -match '\bstatus=timeout\b' }).Count -gt 0
 $macroFailure = $macroFailureLines.Count -gt 0
 $stopEvidence = Test-Path -LiteralPath (Join-Path $resolvedCaptureDir "macro-stop.txt") -PathType Leaf
 $postPidPath = Join-Path $resolvedCaptureDir "post-pid.txt"
@@ -552,6 +557,7 @@ $result = [pscustomobject]@{
     debug_boot_accepted = $debugBootAccepted
     debug_boot_rejected = $debugBootRejected
     debug_boot_timed_out = $debugBootTimedOut
+    guest_log_trusted = $guestLogTrusted
     guest_log_latest_emulator_seconds = $guestLogLatestEmulatorSeconds
     guest_log_evidence_incomplete = $guestLogEvidenceIncomplete
     post_proof_pid_value = $postPidValue

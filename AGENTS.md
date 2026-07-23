@@ -1770,3 +1770,16 @@ Put dated run details in `debug-experiments/`, not here.
   analysis files, and fails closed when recorded evidence is absent. Synthetic
   and real-capture checks plus all `66/66` host contracts pass. No device
   command ran and the original safety interval remains intact.
+
+- The one allowed cooler-title action after that interval produced capture
+  `20260723-030615-thor-input-custom` but did not launch: first preflight was
+  `35.5 C` against the strict below-`35 C` ceiling. PID was absent, all 21
+  failure-reset properties matched safe values, maximum silicon stayed
+  `35.5 C`, and no retry ran. Its pulled `failure-RPCSX.log` was byte-identical
+  to the prior launched capture, proving it stale. The collector now omits
+  guest logs when no debug-boot request was issued, and the analyzer trusts
+  guest activation/fatal/native-object evidence only after an accepted
+  handshake. Reanalysis is `preflight-refused-hot`,
+  `guest_log_trusted=False`, and `0/7` objects; all `66/66` host contracts
+  pass. No speed or correctness credit exists. Do not contact Thor before
+  `2026-07-23T03:36:27.5707936-04:00`.

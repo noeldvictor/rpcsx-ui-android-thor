@@ -24,6 +24,9 @@ foreach ($fragment in @(
     'startup-profile-effective.txt',
     'startup-profile-reset-effective.txt',
     'startup-profile-failure-reset-effective.txt',
+    '$script:ThorDebugBootRequested = $false',
+    '$script:ThorDebugBootRequested = $true',
+    '-SkipGuestLog:(-not $script:ThorDebugBootRequested)',
     'setprop debug.rpcsx.thor.es_sema_superpath off',
     'setprop debug.rpcsx.thor.es_dma_superpath off',
     'setprop debug.rpcsx.thor.rsx_blit_source_resolve off',
@@ -491,8 +494,11 @@ try {
         "",
         "exit=1"
     ) | Set-Content -LiteralPath (Join-Path $preflightDir "failure-pid.txt") -Encoding UTF8
+    Copy-Item -LiteralPath (Join-Path $readyDir "post-RPCSX.log") -Destination (Join-Path $preflightDir "failure-RPCSX.log")
     $preflight = & $analyzerPath -CaptureDir $preflightDir
-    if ($preflight.status -ne "preflight-refused-hot" -or $preflight.ready_for_comparison -or $preflight.speed_credit -or -not $preflight.process_absent_at_failure) {
+    if ($preflight.status -ne "preflight-refused-hot" -or $preflight.ready_for_comparison -or $preflight.speed_credit -or
+        -not $preflight.process_absent_at_failure -or $preflight.guest_log_trusted -or
+        $preflight.spu_native_objects_loaded -ne 0 -or $preflight.spu_native_object_reuse_floor_satisfied) {
         throw "Synthetic hot preflight refusal was not distinguished from a launched thermal stop."
     }
 

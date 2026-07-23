@@ -1079,6 +1079,7 @@ function Get-ThorStartupProfileResetPropertyCommand {
 $tokens = @()
 $index = 1
 $script:LastThorScreenshotPath = $null
+$script:ThorDebugBootRequested = $false
 try {
 Assert-ThorInstalledApkIdentity
 Assert-ThorThermalPreflight "pre-run"
@@ -1152,6 +1153,7 @@ if ($BootGame) {
     $debugBootRequestId = [Guid]::NewGuid().ToString("N")
     Invoke-ThorAdbText $Adb $captureDir "debug-boot-logcat-clear.txt" @("logcat", "-c") -AllowFailure | Out-Null
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
+    $script:ThorDebugBootRequested = $true
     Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
     Initialize-ThorProcessIdentity
     Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId
@@ -1471,7 +1473,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
     if ($PostSnapshot -or $BootGame) {
         try {
-            Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "failure"
+            Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "failure" -SkipGuestLog:(-not $script:ThorDebugBootRequested)
         } catch {
             $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "macro-failure-snapshot-error.txt") -Encoding UTF8
         }
