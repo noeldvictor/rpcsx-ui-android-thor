@@ -443,6 +443,13 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
 } else {
     "incomplete"
 }
+$initialProgressSummary = if ($cacheProgress.initial_progress_observed) {
+    "$($cacheProgress.initial_module)/$($cacheProgress.initial_total_modules)"
+} elseif ($cacheProgress.initial_workload_complete) {
+    "not emitted; firmware scan start proves phase completion"
+} else {
+    "not observed"
+}
 @(
     "# Thor Firmware PPU Cache Preparation",
     "",
@@ -479,7 +486,7 @@ $preflightSummary = if ($preflight.Count -eq $preflightSamples) {
     "- Existing validated modules this round: $($cacheProgress.existing_modules)",
     "- Reused modules this round: $($cacheProgress.reused_modules)",
     "- Cache reuse observed: $($cacheProgress.has_reuse)",
-    "- Initial EBOOT module progress: $($cacheProgress.initial_module)/$($cacheProgress.initial_total_modules)",
+    "- Initial EBOOT module progress: $initialProgressSummary",
     "- Initial EBOOT workload complete: $($cacheProgress.initial_workload_complete)",
     "- Firmware scan progress: $($cacheProgress.latest_file)/$($cacheProgress.total_files)",
     "- Remaining firmware files to scan: $($cacheProgress.remaining_files)",

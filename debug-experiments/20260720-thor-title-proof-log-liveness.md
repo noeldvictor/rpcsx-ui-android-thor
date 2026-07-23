@@ -1974,3 +1974,45 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   flicker, stability, or measured thermal-win credit. Use only after a fresh
   independent cooldown for one bounded continuation, then stop regardless of
   completion or thermal result.
+
+### 2026-07-22 - fourth-cache-checkpoint-and-warm-phase-accounting
+
+- Status: cache-progress-checkpoint / warm-eboot-complete /
+  firmware-scan-progress / thermal-progress / not-comparable
+- Scope: stopped-emulator firmware cache continuation and truthful warm-EBOOT
+  phase reporting
+- Thor result: exact installed APK A7216402...3D15C passed strict preflight at
+  `30.5 -> 29.9 -> 30.3 C`, exact ISO/root/title resolution, requested/effective
+  affinity `0x7`, and 18 distinct named PPUW worker instances across successive
+  firmware work groups. The already-complete EBOOT phase returned without a
+  standalone module-progress row. Firmware scanning resumed through file
+  `83/142` and reached `16/21` discovered modules, leaving five known modules
+  in the scanned workload and 59 files still to enumerate. The run reused 122
+  validated objects and compiled 16 new objects. Twenty-six runtime thermal
+  samples averaged `38.10 C`, ranged from `35.5` to `49.4 C`, included one
+  sample at or above `45 C`, and had zero samples at or above the new `50 C`
+  confirmation threshold. Post-stop silicon was `34.5 C`.
+- Health result: the request was accepted and native preparation activated.
+  Native completion and callback-finished remain absent. Saved log replay has
+  no target native fatal, process death, FATAL EXCEPTION, ANR,
+  `VK_ERROR_DEVICE_LOST`, game boot, or residual PID. The only broad-text
+  `crash` match is the ordinary exported firmware module name
+  `sys_crashdump`, not a process-health event. No retry or follow-up device
+  command ran.
+- Host diagnosis and fix: when all EBOOT objects are warm, `ppu_initialize()`
+  emits no `Progress: module` row and firmware enumeration begins directly at
+  `Progress: file ..., module 0 of 1`. Those counters belong to the growing
+  SPRX scan. The old phase-aware parser incorrectly reported EBOOT `0/1` and
+  incomplete. It now derives EBOOT numeric progress only from non-file rows,
+  treats entry into firmware enumeration as proof that the preceding EBOOT
+  phase returned successfully, and reports the no-row case explicitly. A warm
+  fixture locks `file 83/142, module 16/21` without inventing EBOOT counters;
+  replay of the preceding checkpoint remains EBOOT `5/5` complete.
+- Visual correctness and FPS/frame-time: not exercised. This is durable cache
+  progress under the tighter controller, not startup-speed, FPS, gameplay,
+  flicker, sustained-stability, or controlled thermal-win evidence.
+- Decision: retain the exact installed successor and newly committed objects.
+  Do not contact Thor again in this round. After another independent cooldown,
+  run at most one bounded cache continuation. Require native completion plus
+  callback-finished before a separately cooled auditable title baseline, then
+  field/menu/first-battle correctness and matched performance/thermal proof.

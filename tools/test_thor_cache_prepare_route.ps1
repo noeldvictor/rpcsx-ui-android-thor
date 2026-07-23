@@ -81,8 +81,36 @@ if (-not $firmwareProgress.has_progress -or
     $firmwareProgress.remaining_files -ne 72 -or
     $firmwareProgress.initial_module -ne 5 -or
     $firmwareProgress.initial_total_modules -ne 5 -or
+    -not $firmwareProgress.initial_progress_observed -or
     -not $firmwareProgress.initial_workload_complete) {
     throw "Cache-preparation progress parser conflated completed EBOOT work with the growing firmware scan."
+}
+$warmEbootProgressFixture = @"
+S 0:00:01.000000 {PPUW.1.1} PPU: LLVM: Module exists: cached-title.obj
+W 0:00:01.100000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: file 0 of 142, module 0 of 1)
+W 0:00:09.000000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: file 83 of 142, module 16 of 21)
+"@
+$warmEbootProgress = Get-ThorCachePrepareProgress -NativeText $warmEbootProgressFixture
+if ($warmEbootProgress.initial_progress_observed -or
+    -not $warmEbootProgress.initial_workload_complete -or
+    $warmEbootProgress.initial_module -ne 0 -or
+    $warmEbootProgress.initial_total_modules -ne 0 -or
+    $warmEbootProgress.latest_file -ne 83 -or
+    $warmEbootProgress.total_files -ne 142 -or
+    $warmEbootProgress.latest_module -ne 16 -or
+    $warmEbootProgress.total_modules -ne 21) {
+    throw "Cache-preparation progress parser treated warm EBOOT firmware counters as initial-module progress."
+}
+$fileOnlyProgress = Get-ThorCachePrepareProgress -NativeText @"
+W 0:00:01.100000 {Progress Dialog Server} ANDROID: ProgressMessageDialog::ProgressBarSetMsg(0, Progress: file 12 of 142)
+"@
+if (-not $fileOnlyProgress.initial_workload_complete -or
+    $fileOnlyProgress.initial_progress_observed -or
+    $fileOnlyProgress.latest_file -ne 12 -or
+    $fileOnlyProgress.total_files -ne 142 -or
+    $fileOnlyProgress.latest_module -ne 0 -or
+    $fileOnlyProgress.total_modules -ne 0) {
+    throw "Cache-preparation progress parser missed firmware scan entry before the first module is discovered."
 }
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {

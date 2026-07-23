@@ -1421,3 +1421,20 @@ Put dated run details in `debug-experiments/`, not here.
   frozen APK/core and Thor state are unchanged, and no performance or thermal
   win is claimed. Use this stricter controller for the next independently
   cooled firmware-cache continuation.
+
+- The next independently cool checkpoint
+  `20260722-201353-firmware-ppu-prewarm` matched exact installed APK
+  A7216402...3D15C, reused 122 validated objects, compiled 16 new firmware
+  modules, and advanced the growing scan from file `70/142`, module `8/11` to
+  file `83/142`, module `16/21`. Preflight was `30.5 -> 29.9 -> 30.3 C`;
+  26 runtime samples averaged `38.10 C`, peaked once at `49.4 C`, and never
+  reached the new `50 C` confirmation threshold. Post-stop was `34.5 C`.
+  Native completion and callback remain absent, but no native fatal, process
+  death, game boot, or residual PID occurred. A warm EBOOT emits no standalone
+  module-progress row; the host parser now treats firmware-scan entry as proof
+  that the EBOOT phase returned successfully without mislabeling firmware
+  `0/1` as EBOOT progress. Classify `cache-progress-checkpoint` /
+  `warm-eboot-complete` / `firmware-scan-progress` / `thermal-progress` /
+  `not-comparable`. Do not contact Thor again in this round. Continue only
+  after another independent cooldown; require native plus callback completion
+  before the separate title/gameplay proof.

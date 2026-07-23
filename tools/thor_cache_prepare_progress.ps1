@@ -19,39 +19,48 @@ function Get-ThorCachePrepareProgress {
         $NativeText,
         'Progress: (?:file ([0-9]+) of ([0-9]+), )?module ([0-9]+) of ([0-9]+)'
     )
+    $fileProgressMatches = [regex]::Matches(
+        $NativeText,
+        'Progress: file ([0-9]+) of ([0-9]+)'
+    )
     $latestModule = 0
     $totalModules = 0
     $latestFile = 0
     $totalFiles = 0
     if ($progressMatches.Count -gt 0) {
         $latest = $progressMatches[$progressMatches.Count - 1]
-        if ($latest.Groups[1].Success) {
-            $latestFile = [int]$latest.Groups[1].Value
-            $totalFiles = [int]$latest.Groups[2].Value
-        }
         $latestModule = [int]$latest.Groups[3].Value
         $totalModules = [int]$latest.Groups[4].Value
+    }
+    if ($fileProgressMatches.Count -gt 0) {
+        $latestFileProgress = $fileProgressMatches[$fileProgressMatches.Count - 1]
+        $latestFile = [int]$latestFileProgress.Groups[1].Value
+        $totalFiles = [int]$latestFileProgress.Groups[2].Value
     }
 
     $initialProgressMatches = [regex]::Matches(
         $NativeText,
         'Progress: module ([0-9]+) of ([0-9]+)'
     )
-    $scanProgressMatches = [regex]::Matches(
-        $NativeText,
-        'Progress: file ([0-9]+) of ([0-9]+), module ([0-9]+) of ([0-9]+)'
-    )
+
     $initialModule = 0
     $initialTotalModules = 0
-    if ($scanProgressMatches.Count -gt 0) {
-        $scanStarted = $scanProgressMatches[0]
-        $initialModule = [int]$scanStarted.Groups[3].Value
-        $initialTotalModules = [int]$scanStarted.Groups[4].Value
-    } elseif ($initialProgressMatches.Count -gt 0) {
+    $initialProgressObserved = $initialProgressMatches.Count -gt 0
+    $firmwareScanStarted = $fileProgressMatches.Count -gt 0
+    if ($initialProgressObserved) {
         $initialLatest = $initialProgressMatches[$initialProgressMatches.Count - 1]
         $initialModule = [int]$initialLatest.Groups[1].Value
         $initialTotalModules = [int]$initialLatest.Groups[2].Value
+        if ($firmwareScanStarted) {
+            # Firmware enumeration starts only after ppu_initialize() returns.
+            # Its module counters belong to the growing SPRX workload, not the
+            # main EBOOT phase. Crossing that boundary proves the prior phase
+            # completed even when its last emitted row was N-1/N.
+            $initialModule = $initialTotalModules
+        }
     }
+    $initialWorkloadComplete = $firmwareScanStarted -or
+        ($initialTotalModules -gt 0 -and $initialModule -eq $initialTotalModules)
 
     $remainingModules = if ($totalModules -ge $latestModule) {
         $totalModules - $latestModule
@@ -79,8 +88,8 @@ function Get-ThorCachePrepareProgress {
         remaining_files = $remainingFiles
         initial_module = $initialModule
         initial_total_modules = $initialTotalModules
-        initial_workload_complete = $initialTotalModules -gt 0 -and
-            $initialModule -eq $initialTotalModules
+        initial_progress_observed = $initialProgressObserved
+        initial_workload_complete = $initialWorkloadComplete
         has_reuse = $reusedModules -gt 0
         has_progress = $compiledModules -gt 0 -and $latestModule -gt 0 -and
             $totalModules -ge $latestModule
