@@ -1829,3 +1829,25 @@ Put dated run details in `debug-experiments/`, not here.
   installed or launched. Installed `5044976A...D83E5C` remains frozen, and
   the successor earns no performance or correctness credit until a separate
   independently cool no-launch install and later title/field/menu/battle proof.
+
+- Supersede that uninstalled host candidate. Audit showed LLVM's actual
+  `finalizeObject()` occurs in `jit->fin()` after the original temporary
+  affinity scope. Corrected APK `351C6748...A1181E` covers warm object
+  admission and finalization, explicitly restores the prior mask before symbol
+  resolution, and retains destructor restoration on every early return.
+  Optimized ARM64 build, exact APK/core gates, the ordering contract, and all
+  `66/66` Thor host contracts pass. Merged core
+  `5319D739...AA0CE0B6` / `1,304,271,400` bytes and packaged core
+  `C550C011...84DB09AA` / `62,985,816` bytes match the APK exactly.
+
+- Exact candidate `351C6748...A1181E` is now installed after one no-launch
+  round. Strict gate `20260723-043753-thor-input-strict-cool-gate` passed
+  `32.3 -> 31.9 -> 31.7 C`; install capture
+  `20260723-043805-ppu-warm-finalize-affinity-thortest-apk-install` proves
+  host/on-device hashes match, PID was absent before/after, no activity
+  launched, transient controls were safe, and post-install silicon was
+  `33.7 C`. Host-only cooldown status now treats any structurally valid prior
+  exact-hash title route as thermal evidence without mistaking it for the new
+  candidate; the newer install is authoritative and forbids device contact
+  before `2026-07-23T05:08:12.6406001-04:00`. Installation grants no speed,
+  FPS, thermal-runtime, flicker, gameplay, or stability credit.

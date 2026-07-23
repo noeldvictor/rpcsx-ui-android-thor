@@ -158,11 +158,11 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
         if (-not $latestTitleReadmeText.StartsWith("# Thor Input Macro", [StringComparison]::Ordinal) -or
             -not $latestTitleReadmeText.Contains("- Device serial: $Serial") -or
             -not $latestTitleReadmeText.Contains("- Package: $package") -or
-            -not $latestTitleReadmeText.Contains("- Expected installed APK SHA-256: $expectedApkHash") -or
+            $latestTitleReadmeText -notmatch '(?m)^- Expected installed APK SHA-256: [0-9A-Fa-f]{64}\r?$' -or
             -not $latestTitleReadmeText.Contains("- BootGame: True") -or
             -not $latestTitleReadmeText.Contains("- ForceStop: True") -or
             -not $latestTitleReadmeText.Contains("- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop")) {
-            throw "Latest title capture is not valid exact-candidate evidence: $latestTitleCaptureName"
+            throw "Latest title capture is not valid safe title-route cooldown evidence: $latestTitleCaptureName"
         }
         $latestTitleCompletedAt = Get-ThorCaptureRecordedCompletion `
             -CaptureDirectory $latestTitleCapture.FullName

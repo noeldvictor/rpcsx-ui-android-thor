@@ -2508,3 +2508,50 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   use one no-launch install round; a later separate round must prove exact
   identity, `7/7` reuse, title, field, menu, battle, frame pacing, flicker,
   stability, and sustained thermals before credit.
+
+### 2026-07-23 - warm-ppu-finalize-affinity-exact-no-launch-install
+
+- Status: installed-exact-no-launch / host-scope-repaired /
+  runtime-unmeasured / not-comparable
+- Pre-install audit: `jit_compiler::add()` only admits validated objects;
+  LLVM's actual `finalizeObject()` is called by `jit->fin()` after the original
+  RAII block. APK `81BAF133...D54BC2` was therefore superseded before device
+  installation rather than testing an incomplete scope.
+- Change: the BLUS30161 fully warm affinity lifetime now spans object admission
+  and every first-use `jit->fin()`, explicitly restores the exact prior caller
+  mask before symbol resolution, and retains destructor restoration for every
+  stop/error/empty-JIT early return. Cold compilation, runtime PPU execution,
+  desktop, other titles, and post-finalization symbol/application work remain
+  unchanged. The source contract proves admission -> finalization -> restore
+  -> symbol-resolution order.
+- Build and identity: optimized ARM64-only `assembleThortest` passed in
+  `80.6 s`. APK
+  `351C67488203F63AD79B98A9CE9884CA2D6F7F42A0E73C1178A78ECBF5A1181E`
+  is `72,835,876` bytes; merged core
+  `5319D7390B932039ECCF03B8FA45D84852C1AD17DC40FB9889BBA1F0AA0CE0B6`
+  is `1,304,271,400` bytes; stripped/APK core
+  `C550C01152577CF3523035CD06229A20A0B5AEFB64EF275F7C922E5684DB09AA`
+  is `62,985,816` bytes. ABI, optimized variant, embedded marker, exact
+  artifact, focused affinity, and all `66/66` Thor host contracts pass.
+- Thor result: the one combined no-boot round first passed strict gate
+  `20260723-043753-thor-input-strict-cool-gate` at
+  `32.3 -> 31.9 -> 31.7 C` (maximum `32.3 C`, rise `-0.6 C`). Capture
+  `20260723-043805-ppu-warm-finalize-affinity-thortest-apk-install` proves
+  `adb install -r` success and exact host/on-device APK identity. PID was
+  absent before and after, no activity launched, all captured transient
+  controls were safe, and post-install battery/skin/silicon were
+  `23.0/30.0/33.7 C`. No retry or later device query ran.
+- Cooldown evidence repair: host-only status previously rejected the prior
+  old-candidate title capture before considering the newer exact install.
+  Title routes now require a real 64-hex installed-hash record plus the exact
+  safe title macro/stop metadata, but candidate identity is left to the
+  analyzer/runtime gate. This preserves old-title thermal contact without
+  granting it new-candidate correctness. Status selects the install at
+  `04:38:12.6406001-04:00`, reports `device_contact=False`, and refuses contact
+  until `05:08:12.6406001-04:00`.
+- Decision and next: installation is identity/safety proof only. After that
+  independently cool interval, spend at most one corrected `64 RSX / 200 ms,
+  17 SPU / 50 ms` title round. Require exact affinity activation, all `7/7`
+  native objects, title visual proof, absent fatal hits, safe cleanup, and
+  measured warm-link timing before field/menu/battle work or any performance
+  claim.

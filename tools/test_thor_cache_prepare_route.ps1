@@ -433,6 +433,7 @@ foreach ($fragment in @(
     'latest_install_completed_at=',
     '^[0-9]{8}-[0-9]{6}-thor-input-custom$',
     '# Thor Input Macro',
+    '(?m)^- Expected installed APK SHA-256: [0-9A-Fa-f]{64}\r?$',
     'latest_title_capture=',
     'latest_title_completed_at=',
     'cooldown_source_kind=',

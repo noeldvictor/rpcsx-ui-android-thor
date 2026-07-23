@@ -95,8 +95,10 @@ foreach ($fragment in @(
     'Thor PPU LLVM compile-worker affinity was not applied exactly:',
     'ppu_compile_worker_affinity_mask, &ppu_compile_worker_affinity_logged',
     'struct scoped_warm_link_affinity',
+    'void restore() noexcept',
     'workload.empty() && retained_validated_count',
-    'scoped_warm_link_affinity warm_link_affinity(warm_link_affinity_mask);',
+    'warm_link_affinity.emplace(warm_link_affinity_mask);',
+    'warm_link_affinity->restore();',
     'Thor PPU warm-cache link affinity enabled:',
     'Thor PPU warm-cache link affinity was not applied exactly:'
 )) {
@@ -114,14 +116,19 @@ if ($ppuRestore -lt 0 -or $ppuRestore -ge $ppuApply) {
     throw "PPU compile affinity is not guarded by a scoped restore."
 }
 
-$ppuWarmApply = $ppu.IndexOf('scoped_warm_link_affinity warm_link_affinity(warm_link_affinity_mask);')
+$ppuWarmApply = $ppu.IndexOf('warm_link_affinity.emplace(warm_link_affinity_mask);')
 $ppuWarmReuse = $ppu.IndexOf('LLVM: Reusing %u validated warm-cache objects.', $ppuWarmApply)
 $ppuWarmLink = $ppu.IndexOf('jits[mod_index / c_moudles_per_jit]->add', $ppuWarmApply)
-$ppuWarmRestore = $ppu.IndexOf('~scoped_warm_link_affinity()', $ppuApply)
-if ($ppuWarmApply -lt 0 -or $ppuWarmReuse -le $ppuWarmApply -or $ppuWarmLink -le $ppuWarmReuse) {
-    throw "PPU warm-cache link affinity does not cover warm reuse and linking."
+$ppuWarmFinalize = $ppu.IndexOf('jit->fin();', $ppuWarmLink)
+$ppuWarmRelease = $ppu.IndexOf('warm_link_affinity->restore();', $ppuWarmFinalize)
+$ppuWarmResolve = $ppu.IndexOf('for (auto& sim : jit_mod.symbol_resolvers)', $ppuWarmRelease)
+if ($ppuWarmApply -lt 0 -or $ppuWarmReuse -le $ppuWarmApply -or $ppuWarmLink -le $ppuWarmReuse -or
+    $ppuWarmFinalize -le $ppuWarmLink -or $ppuWarmRelease -le $ppuWarmFinalize -or $ppuWarmResolve -le $ppuWarmRelease) {
+    throw "PPU warm-cache affinity does not cover object admission/finalization and end before symbol resolution."
 }
-if ($ppuWarmRestore -lt 0 -or $ppuWarmRestore -ge $ppuWarmApply) {
+$ppuWarmRestore = $ppu.IndexOf('~scoped_warm_link_affinity()', $ppuApply)
+if ($ppuWarmRestore -lt 0 -or $ppuWarmRestore -ge $ppuWarmApply -or
+    $ppu.IndexOf('restore();', $ppuWarmRestore) -le $ppuWarmRestore) {
     throw "PPU warm-cache link affinity is not guarded by a scoped restore."
 }
 
