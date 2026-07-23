@@ -230,7 +230,7 @@ function Set-AndroidStartupProfile {
         AndroidThermalPreflightMaxRiseC = 1.0
         AndroidMaxBatteryTemperatureC = 34.0
         AndroidMaxSkinTemperatureC = 40.0
-        AndroidMaxSiliconTemperatureC = 72.0
+        AndroidMaxSiliconTemperatureC = 68.0
         AndroidRsxCacheWorkers = 2
         AndroidRsxCachePreloadLimit = 256
         AndroidRsxCacheLoadBudgetMs = 500

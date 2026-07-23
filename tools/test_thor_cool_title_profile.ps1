@@ -63,7 +63,7 @@ $requiredSummary = @(
     'max_preflight_rise_c=1',
     'max_battery_c=34',
     'max_skin_c=40',
-    'max_silicon_c=72',
+    'max_silicon_c=68',
     'rsx_workers=2',
     'rsx_preload_limit=256',
     'rsx_load_budget_ms=500',
@@ -170,6 +170,16 @@ try {
 }
 if (-not $keepRunningRejected) {
     throw 'Thor cool-title profile did not reject keeping the emulator alive after capture.'
+}
+
+$thermalCeilingConflictRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidMaxSiliconTemperatureC 72 2>&1 | Out-Null
+} catch {
+    $thermalCeilingConflictRejected = $_.Exception.Message -like "*requires -AndroidMaxSiliconTemperatureC '68'*"
+}
+if (-not $thermalCeilingConflictRejected) {
+    throw 'Thor cool-title profile did not reject the superseded 72 C hard ceiling.'
 }
 
 Write-Output 'Thor cool-title startup profile contract passed: exact APK/core identity, host-only dry-run, lower-power controls, unsafe overrides, and device-resolution gates are fail closed.'

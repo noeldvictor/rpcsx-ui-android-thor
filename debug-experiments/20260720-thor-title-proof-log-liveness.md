@@ -2283,3 +2283,50 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   independent cooldown. Next run exactly one self-stopping `ThorCoolTitle`
   baseline, then reserve later cool rounds for field, full Options/menu, first
   battle, matched FPS/frame pacing, flicker, fatal cleanliness, and thermals.
+
+### 2026-07-22 - completed-cache-title-thermal-stop
+
+- Status: failed
+- Scope: scene-route
+- Hypothesis: the completed exact PPU/firmware cache would let the frozen
+  candidate reach a stable title inside the guarded cool-start envelope.
+- Changed files/settings: the device ran exact installed APK
+  `A7216402...3D15C` with the pinned `ThorCoolTitle` profile: Direct input,
+  RSX `256` / `500 ms`, SPU `64` / `100 ms`, two cache workers, affinity
+  `0x07`, Vulkan cache plus hit-only preload, hardware FTZ, quiet logs, and the
+  `68/72 C` early/hard guard. No APK, core, cache, or device setting changed.
+- Rollback: the macro force-stopped the package and reset its experiment
+  properties. The host-only successor profile tightens the same route to a
+  `64/68 C` early/hard guard with a `52 C` confirmation threshold; the APK and
+  prepared cache remain frozen.
+- Windows result: not applicable; this was the first post-cache Thor title
+  baseline.
+- Thor result: capture
+  `debug-captures/android-speed-sprint/20260722-225338-thor-input-custom`
+  matched the exact installed APK and passed preflight at
+  `31.3 -> 30.9 -> 30.9 C`. Debug boot was accepted. The first title poll at
+  `1.243 s` was still a pale pre-title frame and sampled `50.6 C`; the next
+  wait sample reached `65.0 C`, requested confirmation, and confirmed
+  `69.9 C` about `0.649 s` later. The wrapper force-stopped below the `72 C`
+  hard limit. Post-stop battery/skin/silicon were `22.0/30.0/44.1 C`, Android
+  thermal status was `0`, and final PID evidence was absent.
+- Runtime evidence: managed `Set DAZ and FTZ: true`, the validated
+  `4,899,180`-byte Vulkan seed, RSX `load=2, compile=2`, exact RSX affinity,
+  the `500 ms` load budget (`40/256` attempted), SPU two-worker affinity, and
+  the `100 ms` SPU budget (`5/64` built) activated. The saved guest log reached
+  emulator time `4.077166 s`; no PPU compile-affinity row appeared before the
+  stop, so the analyzer correctly reports activation incomplete in addition
+  to the thermal failure.
+- Visual correctness: failed before title. The only saved frame is the
+  pale/gray pre-title transition, with `title_menu_present=False` and one
+  unstable PPU-ready sample. No field, menu, battle, or flicker proof exists.
+- FPS/frame-time: none.
+- Decision: `thermal-stop-before-title` / `failed` / `not-comparable`.
+  `ready_for_comparison=False` and `speed_credit=False`; grant no startup-speed,
+  FPS, thermal-win, flicker, gameplay, or stability credit. The burst was
+  CPU-side: the hottest CPU sensor reached `69.9 C` while the hottest saved
+  GPU sensor was `35.2 C`.
+- Next: do not contact Thor again in this round. Keep the exact APK/cache
+  frozen, use the tightened `64/68 C` title profile for any later independently
+  cool proof, and investigate the post-cache CPU/SPU startup burst host-side
+  before another one-shot route.

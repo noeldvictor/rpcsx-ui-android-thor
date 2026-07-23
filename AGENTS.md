@@ -1531,3 +1531,20 @@ Put dated run details in `debug-experiments/`, not here.
   independent cooldown; the next device action is one self-stopping exact-APK
   `ThorCoolTitle` baseline, followed only in later cool rounds by field/menu/
   first-battle correctness and matched performance proof.
+- The first post-cache exact-APK title baseline
+  `20260722-225338-thor-input-custom` passed strict preflight at
+  `31.3 -> 30.9 -> 30.9 C` and exact installed identity, but the only frame at
+  `1.243 s` was still pre-title. Silicon rose through `50.6` and `65.0 C`, then
+  confirmed `69.9 C`; the `68 C` early guard force-stopped below the `72 C`
+  hard limit. Post-stop was `44.1 C`, PID was absent, thermal status was zero,
+  and the saved log reached only emulator time `4.077166 s`. Managed FTZ,
+  Vulkan seed/hits-only, RSX `load=2,compile=2` plus `500 ms` budget, and SPU
+  two-worker affinity plus `5/64` budgeted preload activated; no PPU compile
+  affinity row appeared before stop. The hottest saved GPU sensor was only
+  `35.2 C`, so classify the burst CPU-side. This is
+  `thermal-stop-before-title` / `failed` / `not-comparable`, with no speed,
+  FPS, thermal-win, flicker, gameplay, or stability credit. Do not contact Thor
+  again in this round. The host-only `ThorCoolTitle` successor uses a stricter
+  `64/68 C` early/hard guard (`52 C` probe); keep the exact APK/cache frozen
+  and investigate the CPU/SPU startup burst before another independently cool
+  one-shot proof.
