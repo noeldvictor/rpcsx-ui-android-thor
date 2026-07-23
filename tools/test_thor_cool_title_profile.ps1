@@ -21,6 +21,7 @@ $sourceContracts = @(
     '$ScriptBoundParameters = @{} + $PSBoundParameters',
     'thor_cool_title_candidate.psd1',
     'AndroidExpectedInstalledApkSha256 = [string]$thorCoolTitleCandidate.ApkSha256',
+    '$settings.AndroidRsxCacheCompileBudgetMs = 50',
     'AndroidSpuNativeObjectCache = "on"',
     '$ThorCoolTitleMinimumNativeObjects = 0',
     'ExpectedInstalledApkSha256 = $AndroidExpectedInstalledApkSha256',
@@ -101,7 +102,7 @@ $requiredSummary = @(
     'rsx_workers=2',
     'rsx_preload_limit=64',
     'rsx_load_budget_ms=200',
-    'rsx_compile_budget_ms=0',
+    'rsx_compile_budget_ms=50',
     'spu_preload_limit=17',
     'spu_compile_budget_ms=50',
     'spu_native_object_cache=on',
@@ -135,7 +136,8 @@ foreach ($line in $summary) {
 foreach ($mapping in @(
     [pscustomobject]@{ Key = "thermal_stop_headroom_c"; AnalyzerLabel = "Runtime thermal early-stop headroom C" },
     [pscustomobject]@{ Key = "thermal_probe_window_c"; AnalyzerLabel = "Runtime thermal confirmation window C" },
-    [pscustomobject]@{ Key = "max_silicon_c"; AnalyzerLabel = "Max silicon temperature C" }
+    [pscustomobject]@{ Key = "max_silicon_c"; AnalyzerLabel = "Max silicon temperature C" },
+    [pscustomobject]@{ Key = "rsx_compile_budget_ms"; AnalyzerLabel = "RSX cached pipeline compile budget ms (0=unbounded)" }
 )) {
     if (-not $summaryValues.ContainsKey($mapping.Key)) {
         throw "Thor cool-title dry-run has no analyzer mapping value: $($mapping.Key)"
@@ -158,6 +160,7 @@ foreach ($line in @(
     'thermal_probe_window_c=4',
     'max_silicon_c=64',
     'rsx_preload_limit=64',
+    'rsx_compile_budget_ms=0',
     'spu_preload_limit=17',
     'spu_compile_budget_ms=50',
     'spu_native_object_cache=on',
@@ -216,6 +219,16 @@ try {
 }
 if (-not $loadBudgetConflictRejected) {
     throw 'Thor cool-title profile did not reject an unbounded RSX load-budget override.'
+}
+
+$compileBudgetConflictRejected = $false
+try {
+    & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidRsxCacheCompileBudgetMs 0 2>&1 | Out-Null
+} catch {
+    $compileBudgetConflictRejected = $_.Exception.Message -like "*requires -AndroidRsxCacheCompileBudgetMs '50'*"
+}
+if (-not $compileBudgetConflictRejected) {
+    throw 'Thor cool-title profile did not reject an unbounded RSX compile-budget override.'
 }
 
 $budgetConflictRejected = $false

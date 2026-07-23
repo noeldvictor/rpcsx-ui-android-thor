@@ -99,8 +99,8 @@ if ([string]::IsNullOrWhiteSpace($activationBlock)) {
     throw "Could not isolate the Thor activation requirements."
 }
 $activationCount = ([regex]::Matches($activationBlock, '(?m)^\s*"[^"]+"\s*=')).Count
-if ($activationCount -ne 15) {
-    throw "Expected exactly 15 Thor activation requirements; found $activationCount."
+if ($activationCount -ne 18) {
+    throw "Expected exactly 18 Thor activation requirements; found $activationCount."
 }
 
 Assert-Contains 'Android' 'if (!android_logcat_allows(prio))'
@@ -119,4 +119,4 @@ foreach ($scriptPath in @($paths.Analyzer, $PSCommandPath)) {
     }
 }
 
-Write-Output "Thor Android evidence-logging contract passed: 15 bounded activation rows and failures survive Quiet logging, fatal/error rows remain durable, desktop Notice behavior is preserved, and logcat keeps its independent filter."
+Write-Output "Thor Android evidence-logging contract passed: 18 bounded activation rows and failures survive Quiet logging, fatal/error rows remain durable, desktop Notice behavior is preserved, and logcat keeps its independent filter."

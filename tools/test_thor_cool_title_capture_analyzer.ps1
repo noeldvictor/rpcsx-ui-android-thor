@@ -125,7 +125,7 @@ function Write-ReadyFixture {
         "rsx-cache-workers-effective.txt" = "2"
         "rsx-cache-preload-limit-effective.txt" = "64"
         "rsx-cache-load-budget-effective.txt" = "200"
-        "rsx-cache-compile-budget-effective.txt" = "0"
+        "rsx-cache-compile-budget-effective.txt" = "50"
         "spu-cache-preload-limit-effective.txt" = "17"
         "spu-cache-compile-budget-effective.txt" = "50"
         "spu-native-object-cache-effective.txt" = "on"
@@ -143,7 +143,7 @@ function Write-ReadyFixture {
         "debug.rpcsx.thor.rsx_cache_workers=2",
         "debug.rpcsx.thor.rsx_cache_preload_limit=64",
         "debug.rpcsx.thor.rsx_cache_load_budget_ms=200",
-        "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
+        "debug.rpcsx.thor.rsx_cache_compile_budget_ms=50",
         "debug.rpcsx.thor.spu_cache_preload_limit=17",
         "debug.rpcsx.thor.spu_cache_compile_budget_ms=50",
         "debug.rpcsx.thor.spu_native_object_cache=on",
@@ -217,7 +217,7 @@ function Write-ReadyFixture {
         "- RSX cache preload workers (0=auto): 2",
         "- RSX cached pipeline preload limit (0=all): 64",
         "- RSX cached pipeline load budget ms (0=unbounded): 200",
-        "- RSX cached pipeline compile budget ms (0=unbounded): 0",
+        "- RSX cached pipeline compile budget ms (0=unbounded): 50",
         "- SPU cached-program preload limit (0=all): 17",
         "- SPU cached-program compile budget ms (0=unbounded): 50",
         "- Startup cache-worker affinity mask (0=default scheduler): 7",
@@ -257,11 +257,14 @@ function Write-ReadyFixture {
         "Android shader cache preload limit: 64 of 939 oldest pipelines; 875 will compile on demand",
         "Android shader cache load budget enabled for BLUS30161: 200 ms.",
         "Android shader cache load budget: attempted 16 of 64 cached pipelines with a 200 ms budget; 48 will load and compile on demand.",
+        "Android shader cache compile budget enabled for BLUS30161: 50 ms.",
+        "Android shader cache compile budget: attempted 2 of 16 pipelines with a 50 ms budget; 14 will compile on demand.",
         "Thor SPU cache preload limit: 17 of 300 oldest unique programs (300 records, 283 will compile on demand).",
         "Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.",
         "LLVM: Loaded module: 4E6Tn-thor-native-key.obj",
         "Shader cache preload workers: load=2, compile=2",
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
+        "Thor RSX cache-worker affinity enabled for compile: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.",
         "Thor SPU cache compile budget enabled for BLUS30161: 50 ms.",
@@ -420,6 +423,19 @@ try {
         throw "Synthetic partial SPU native-object reuse did not fail the continuity floor."
     }
 
+    $rsxCompileBudgetMissingDir = Join-Path $tempRoot "rsx-compile-budget-missing"
+    Copy-Item -LiteralPath $readyDir -Destination $rsxCompileBudgetMissingDir -Recurse
+    $rsxCompileBudgetLogPath = Join-Path $rsxCompileBudgetMissingDir "post-RPCSX.log"
+    @(Get-Content -LiteralPath $rsxCompileBudgetLogPath) |
+        Where-Object { $_ -notmatch 'Android shader cache compile budget' } |
+        Set-Content -LiteralPath $rsxCompileBudgetLogPath -Encoding UTF8
+    $rsxCompileBudgetMissing = & $analyzerPath -CaptureDir $rsxCompileBudgetMissingDir
+    if ($rsxCompileBudgetMissing.status -ne "activation-incomplete" -or $rsxCompileBudgetMissing.ready_for_comparison -or
+        $rsxCompileBudgetMissing.activation_missing -notcontains "bounded RSX compile time" -or
+        $rsxCompileBudgetMissing.activation_missing -notcontains "deferred RSX compile fallback") {
+        throw "Synthetic missing RSX compile-budget activation and fallback did not fail closed."
+    }
+
     $logIncompleteDir = Join-Path $tempRoot "title-proof-log-incomplete"
     Copy-Item -LiteralPath $readyDir -Destination $logIncompleteDir -Recurse
     "·! 0:00:00.010546 Input: startup log writer stopped before activation evidence" |
@@ -427,7 +443,7 @@ try {
     $logIncomplete = & $analyzerPath -CaptureDir $logIncompleteDir
     if ($logIncomplete.status -ne "title-proof-log-incomplete" -or $logIncomplete.ready_for_comparison -or
         -not $logIncomplete.guest_log_evidence_incomplete -or $logIncomplete.guest_log_latest_emulator_seconds -ge 1.0 -or
-        $logIncomplete.activation_missing.Count -ne 16) {
+        $logIncomplete.activation_missing.Count -ne 19) {
         throw "Synthetic stable title with a stalled runtime log was not classified precisely and fail closed."
     }
 
@@ -525,4 +541,4 @@ try {
     }
 }
 
-Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, two-thread little-core PPU compile cap, managed FTZ, durable SPU native-object activation/reuse floor, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
+Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, bounded RSX load/compile work, two-thread little-core PPU compile cap, managed FTZ, durable SPU native-object activation/reuse floor, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."

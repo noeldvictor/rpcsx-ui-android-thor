@@ -2001,3 +2001,12 @@ Put dated run details in `debug-experiments/`, not here.
   end-to-end speed/thermal credit. Do not contact Thor before
   `2026-07-23T17:14:05.4848450-04:00`. Ledger:
   `debug-experiments/20260723-thor-ppu-warm-link-default-scheduler.md`.
+- The next host-only successor bounds cached RSX pipeline compile submissions to
+  `50 ms` in `ThorCoolTitle` only. Global defaults, `ThorCoolGameplay`, and
+  cleanup remain `0` (unbounded); two RSX workers and the recovered PPU
+  default-scheduler path are unchanged. The analyzer now requires exact
+  property evidence, compile-budget activation, attempted/deferred fallback,
+  and compile affinity, with a synthetic missing-evidence counterproof. All
+  `69/69` Thor host contracts pass. No build, install, launch,
+  ADB query, device measurement, or new speed/thermal credit occurred. Ledger:
+  `debug-experiments/20260723-thor-rsx-compile-budget-successor.md`.

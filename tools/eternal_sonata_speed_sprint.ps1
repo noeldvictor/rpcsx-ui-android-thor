@@ -261,6 +261,7 @@ function Set-AndroidStartupProfile {
         KeepAndroidRunningAfterCapture = [Management.Automation.SwitchParameter]::new($false)
     }
     if ($AndroidStartupProfile -eq "ThorCoolTitle") {
+        $settings.AndroidRsxCacheCompileBudgetMs = 50
         $settings.InputMacro = "gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
         $settings.AndroidInputProfile = ""
     } elseif ($AndroidStartupProfile -eq "ThorCoolGameplay") {
