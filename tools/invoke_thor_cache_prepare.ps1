@@ -25,6 +25,7 @@ $maxSiliconTemperatureC = 60.0
 $runtimeStopHeadroomC = 5.0
 $runtimeProbeWindowC = 10.0
 $runtimeWarmTelemetryC = 45.0
+$minimumCacheCooldownMinutes = 30.0
 $preflightSamples = 3
 $preflightIntervalSeconds = 2
 $pollIntervalSeconds = 2
@@ -66,6 +67,41 @@ if ($apkItem.Length -ne [long]$candidate.ApkSize -or $hostApkHash -ne $expectedA
     throw "Pinned host APK identity does not match $resolvedCandidatePath."
 }
 
+$latestCacheCaptureName = "none"
+$latestCacheCompletedAt = $null
+$cacheCaptureRoot = Join-Path $repoRoot "debug-captures\android-speed-sprint"
+if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
+    $latestCacheCapture = Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
+        Where-Object { $_.Name -match '^[0-9]{8}-[0-9]{6}-firmware-ppu-prewarm$' } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($null -ne $latestCacheCapture) {
+        $latestCacheCaptureName = $latestCacheCapture.Name
+        $latestReadme = Join-Path $latestCacheCapture.FullName "README.md"
+        if (-not (Test-Path -LiteralPath $latestReadme -PathType Leaf)) {
+            throw "Latest cache capture has no README; refusing cooldown inference: $latestCacheCaptureName"
+        }
+        $createdMatch = [regex]::Match(
+            (Get-Content -LiteralPath $latestReadme -Raw),
+            '(?m)^- Created:\s*(\S.+)$'
+        )
+        $parsedCreatedAt = [DateTimeOffset]::MinValue
+        if (-not $createdMatch.Success -or
+            -not [DateTimeOffset]::TryParse(
+                $createdMatch.Groups[1].Value.Trim(),
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind,
+                [ref]$parsedCreatedAt
+            )) {
+            throw "Latest cache capture has an invalid Created timestamp: $latestCacheCaptureName"
+        }
+        $latestCacheCompletedAt = $parsedCreatedAt
+    }
+}
+$cacheCooldown = Get-ThorCachePrepareCooldownState `
+    -LastCompletedAt $latestCacheCompletedAt `
+    -MinimumMinutes $minimumCacheCooldownMinutes
+
 if ($Action -eq "Status") {
     @(
         "action=Status",
@@ -84,6 +120,12 @@ if ($Action -eq "Status") {
         "runtime_probe_silicon_c=$($maxSiliconTemperatureC - $runtimeProbeWindowC)",
         "runtime_stop_silicon_c=$($maxSiliconTemperatureC - $runtimeStopHeadroomC)",
         "max_silicon_c=$maxSiliconTemperatureC",
+        "minimum_cache_cooldown_minutes=$minimumCacheCooldownMinutes",
+        "latest_cache_capture=$latestCacheCaptureName",
+        "latest_cache_completed_at=$(if ($null -eq $latestCacheCompletedAt) { 'none' } else { $latestCacheCompletedAt.ToString('o') })",
+        "cache_cooldown_ready=$($cacheCooldown.ready)",
+        "cache_cooldown_ready_at=$(if ($null -eq $cacheCooldown.ready_at) { 'now' } else { $cacheCooldown.ready_at.ToString('o') })",
+        "cache_cooldown_remaining_seconds=$($cacheCooldown.remaining_seconds)",
         "required_compile_workers=2",
         "require_validated_cache_reuse=True",
         "launch_game=False",
@@ -91,6 +133,10 @@ if ($Action -eq "Status") {
         "progress_checkpoint=True"
     ) | Write-Output
     return
+}
+
+if (-not $cacheCooldown.ready) {
+    throw "Cache cooldown refused before device contact: $($cacheCooldown.remaining_seconds) seconds remain until $($cacheCooldown.ready_at.ToString('o'))."
 }
 
 $adb = Resolve-ThorAdb

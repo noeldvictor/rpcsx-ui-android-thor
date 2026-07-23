@@ -130,6 +130,30 @@ function Get-ThorCachePrepareThermalSummary {
     }
 }
 
+function Get-ThorCachePrepareCooldownState {
+    param(
+        [AllowNull()][object]$LastCompletedAt,
+        [DateTimeOffset]$Now = [DateTimeOffset]::Now,
+        [double]$MinimumMinutes = 30.0
+    )
+
+    if ($null -eq $LastCompletedAt) {
+        return [pscustomobject]@{
+            ready = $true
+            ready_at = $null
+            remaining_seconds = 0
+        }
+    }
+
+    $readyAt = ([DateTimeOffset]$LastCompletedAt).AddMinutes($MinimumMinutes)
+    $remainingSeconds = [Math]::Max(0.0, ($readyAt - $Now).TotalSeconds)
+    return [pscustomobject]@{
+        ready = $remainingSeconds -le 0.0
+        ready_at = $readyAt
+        remaining_seconds = [int][Math]::Ceiling($remainingSeconds)
+    }
+}
+
 function Test-ThorCachePrepareNativeFatal {
     param([string]$NativeText)
 

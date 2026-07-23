@@ -131,6 +131,23 @@ if ($emptyThermalSummary.sample_count -ne 0 -or
     $emptyThermalSummary.at_or_above_probe -ne 0) {
     throw "Cache-preparation thermal summary did not handle an empty run deterministically."
 }
+$lastCompletedAt = [DateTimeOffset]::Parse('2026-07-22T20:15:42-04:00')
+$cooldownWaiting = Get-ThorCachePrepareCooldownState `
+    -LastCompletedAt $lastCompletedAt `
+    -Now ([DateTimeOffset]::Parse('2026-07-22T20:25:42-04:00')) `
+    -MinimumMinutes 30
+$cooldownReady = Get-ThorCachePrepareCooldownState `
+    -LastCompletedAt $lastCompletedAt `
+    -Now ([DateTimeOffset]::Parse('2026-07-22T20:45:42-04:00')) `
+    -MinimumMinutes 30
+$cooldownNoHistory = Get-ThorCachePrepareCooldownState -LastCompletedAt $null
+if ($cooldownWaiting.ready -or
+    $cooldownWaiting.remaining_seconds -ne 1200 -or
+    $cooldownWaiting.ready_at.ToString('o') -ne '2026-07-22T20:45:42.0000000-04:00' -or
+    -not $cooldownReady.ready -or $cooldownReady.remaining_seconds -ne 0 -or
+    -not $cooldownNoHistory.ready -or $cooldownNoHistory.remaining_seconds -ne 0) {
+    throw "Cache-preparation independent cooldown accounting is not fail-closed."
+}
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {
     throw "Cache-preparation native-fatal classifier is not fail-closed."
@@ -264,9 +281,12 @@ foreach ($fragment in @(
     '$runtimeStopHeadroomC = 5.0',
     '$runtimeProbeWindowC = 10.0',
     '$runtimeWarmTelemetryC = 45.0',
+    '$minimumCacheCooldownMinutes = 30.0',
     '$runtimeSiliconTemperaturesC += [double]$snapshot.silicon_temperature_c',
     'Runtime average silicon C:',
     'Runtime samples at or above $runtimeProbeSiliconC C:',
+    'minimum_cache_cooldown_minutes=',
+    'Cache cooldown refused before device contact:',
     '$preflightSamples = 3',
     'device_contact=False',
     'sha256sum',
@@ -329,6 +349,11 @@ $forceStopCount = ([regex]::Matches($harness, [regex]::Escape('am force-stop $pa
 $pidCount = ([regex]::Matches($harness, [regex]::Escape('pidof $package'))).Count
 if ($forceStopCount -lt 2 -or $pidCount -lt 2) {
     throw "Harness must force-stop and prove PID absence at both boundaries."
+}
+$cooldownGateIndex = $harness.IndexOf('if (-not $cacheCooldown.ready)')
+$adbResolveIndex = $harness.IndexOf('$adb = Resolve-ThorAdb')
+if ($cooldownGateIndex -lt 0 -or $adbResolveIndex -le $cooldownGateIndex) {
+    throw "Cache cooldown gate can resolve or contact ADB before refusing an early retry."
 }
 
 $tokens = $null

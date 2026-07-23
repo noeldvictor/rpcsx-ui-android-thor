@@ -1445,3 +1445,9 @@ Put dated run details in `debug-experiments/`, not here.
   or preflight-refused runs report deterministically, and a pure host fixture
   locks the arithmetic. This is device-free evidence hardening; it changes no
   APK/core/cache bytes and grants no performance or thermal-win credit.
+
+- Cache preparation now enforces a 30-minute independent interval from the
+  latest completed `firmware-ppu-prewarm` README before resolving ADB. Its
+  device-free Status reports the latest capture, completion/ready timestamps,
+  readiness, and remaining seconds; missing or malformed latest evidence fails
+  closed. The strict temperature gate remains a second, independent check.

@@ -2038,3 +2038,28 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Decision: retain as safety/evidence hardening. It grants no startup-speed,
   FPS, gameplay, flicker, stability, or measured thermal-win credit. Use the
   richer capture summary only in a later independently cool cache round.
+
+### 2026-07-22 - cache-independent-cooldown-gate
+
+- Status: host-pass / device-unchanged
+- Scope: prevent accidental rapid cache retries even when instantaneous
+  temperature has already fallen
+- Changed files/settings: before resolving ADB, the cache controller finds the
+  latest timestamped `firmware-ppu-prewarm` capture, parses its durable README
+  completion time, and requires a full 30-minute interval. Missing or malformed
+  latest README evidence fails closed. Device-free Status exposes the latest
+  capture, completed/ready timestamps, readiness, and remaining seconds. The
+  existing three-sample below-`35 C` thermal gate still runs independently
+  after the time gate passes.
+- Host result: deterministic fixtures prove the waiting boundary, the exact
+  ready boundary, no-history behavior, and integer remaining seconds. Source
+  order requires the refusal gate before `Resolve-ThorAdb`. Live device-free
+  Status found checkpoint 20260722-201353 completed at
+  `20:15:42.0340706-04:00`, ready at `20:45:42.0340706-04:00`, and correctly
+  reported not-ready during the interval. The focused route and full Thor host
+  suite pass.
+- Thor result: none after the preceding checkpoint. Status is explicitly
+  device-free; no ADB query, thermal read, launch, or cache action occurred.
+- Decision: retain. This is a safety invariant, not speed, FPS, gameplay,
+  flicker, stability, or thermal-win evidence. A later Run must pass both the
+  time gate and the fresh three-sample temperature gate.
