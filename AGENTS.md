@@ -2093,3 +2093,16 @@ Put dated run details in `debug-experiments/`, not here.
   Classify as host-verified `stackable-cpu-pressure`, not measured speed or
   thermal credit. Ledger:
   `debug-experiments/20260723-thor-vblank-completion-release-publication.md`.
+- Host-only Android VBlank completion now wakes the exact single
+  title-gated main-PPU waiter with `notify_one`; desktop retains `notify_all`.
+  Exact linked ARM64 calls `notify_one` after both release `LDADDL` completion
+  increments. This avoids `notify_all`'s full slot scan, 128-handle batch, and
+  multi-pass wake machinery while preserving acquire observation, ordering,
+  bounds, gates, and fallback. The exact successor is APK
+  `85423E61...B26163` / `72,838,248` bytes, merged core
+  `269A551B...506628` / `1,304,307,696` bytes, and packaged core
+  `A5E8DCFB...F3E18C` / `62,988,904` bytes. ARM64 native/APK builds, linked
+  call-target proof, artifact gate, and all `69/69` host contracts pass. Thor
+  was not contacted. Classify as host-verified `stackable-cpu-pressure`, not
+  measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-single-waiter-notification.md`.

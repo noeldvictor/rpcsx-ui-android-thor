@@ -130,6 +130,17 @@ namespace rsx
 #endif
 	}
 
+	static inline void notify_vblank_waiter(atomic_t<u32>& token) noexcept
+	{
+#ifdef __ANDROID__
+		// The Android fast path has one title-gated main-PPU waiter. Avoid
+		// notify_all's hashtable-wide collection and batched wake machinery.
+		token.notify_one();
+#else
+		token.notify_all();
+#endif
+	}
+
 	bool is_es_ppu_rsx_profile_enabled() noexcept
 	{
 		static const bool requested = []()
@@ -913,7 +924,7 @@ namespace rsx
 								publish_vblank_wait_completion(renderer->vblank_wait_token);
 								if (renderer->vblank_waiter_registered)
 								{
-									renderer->vblank_wait_token.notify_all();
+									notify_vblank_waiter(renderer->vblank_wait_token);
 								}
 							}
 							return true;
@@ -936,7 +947,7 @@ namespace rsx
 		if (vblank_waiter_registered)
 		{
 			publish_vblank_wait_completion(vblank_wait_token);
-			vblank_wait_token.notify_all();
+			notify_vblank_waiter(vblank_wait_token);
 		}
 
 		if (!isHLE)

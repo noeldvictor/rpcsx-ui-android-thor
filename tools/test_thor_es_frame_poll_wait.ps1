@@ -186,8 +186,7 @@ foreach ($fragment in @(
 
 foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
     foreach ($fragment in @(
-        'ppu_cmd::ptr_call',
-        'vblank_wait_token.notify_all()'
+        'ppu_cmd::ptr_call'
     )) {
         if (-not $rsxSource.Contains($fragment)) {
             throw "RSX VBlank notification is missing: $fragment"
@@ -201,7 +200,7 @@ foreach ($rsxSource in @($mainRsxSource, $upstreamRsxSource)) {
 
 $mainHandlerQueue = [regex]::Match(
     $mainRsxSource,
-    '(?s)ppu_cmd::lle_call.*?ppu_cmd::ptr_call.*?publish_vblank_wait_completion\(renderer->vblank_wait_token\).*?vblank_wait_token\.notify_all\(\).*?ppu_cmd::sleep')
+    '(?s)ppu_cmd::lle_call.*?ppu_cmd::ptr_call.*?publish_vblank_wait_completion\(renderer->vblank_wait_token\).*?notify_vblank_waiter\(renderer->vblank_wait_token\).*?ppu_cmd::sleep')
 if (-not $mainHandlerQueue.Success) {
     throw "The Android guest VBlank completion marker is not ordered after the handler and before interrupt-thread sleep."
 }
@@ -217,7 +216,9 @@ foreach ($fragment in @(
     'if (vblank_waiter_registered)',
     'if (renderer->vblank_waiter_registered)',
     'publish_vblank_wait_completion(renderer->vblank_wait_token)',
-    'publish_vblank_wait_completion(vblank_wait_token)'
+    'publish_vblank_wait_completion(vblank_wait_token)',
+    'notify_vblank_waiter(renderer->vblank_wait_token)',
+    'notify_vblank_waiter(vblank_wait_token)'
 )) {
     if (-not $mainRsxSource.Contains($fragment)) {
         throw "Android single-waiter VBlank notification is missing: $fragment"
@@ -226,13 +227,21 @@ foreach ($fragment in @(
 
 foreach ($fragment in @(
     'publish_vblank_wait_completion(atomic_t<u32>& token) noexcept',
+    'notify_vblank_waiter(atomic_t<u32>& token) noexcept',
     '#ifdef __ANDROID__',
     '__atomic_fetch_add(&token.raw(), u32{1}, __ATOMIC_RELEASE)',
+    'token.notify_one()',
+    'token.notify_all()',
     'token++'
 )) {
     if (-not $mainRsxSource.Contains($fragment)) {
         throw "Android release-published VBlank completion is missing: $fragment"
     }
+}
+
+if ($mainRsxSource.Contains('renderer->vblank_wait_token.notify_all()') -or
+    $mainRsxSource -match '(?m)^\s*vblank_wait_token\.notify_all\(\);') {
+    throw 'Android single-waiter completion reintroduced a direct broadcast wake.'
 }
 
 if ($mainRsxSource.Contains('renderer->vblank_wait_token++') -or
@@ -248,6 +257,7 @@ if ($mainTimer.Contains('vblank_waiters.fetch_') -or
 foreach ($fragment in @(
     'renderer->vblank_wait_token++',
     'vblank_wait_token++',
+    'vblank_wait_token.notify_all()',
     'if (vblank_waiters)'
 )) {
     if (-not $upstreamRsxSource.Contains($fragment)) {
@@ -302,4 +312,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, Android release-store single-waiter registration, release-published completion generation, completion notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, Android release-store single-waiter registration, release-published completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
