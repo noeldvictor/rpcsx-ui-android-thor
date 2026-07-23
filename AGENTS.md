@@ -1851,3 +1851,10 @@ Put dated run details in `debug-experiments/`, not here.
   candidate; the newer install is authoritative and forbids device contact
   before `2026-07-23T05:08:12.6406001-04:00`. Installation grants no speed,
   FPS, thermal-runtime, flicker, gameplay, or stability credit.
+
+- Host-only title analysis now deduplicates timestamped warm-affinity markers,
+  selects the largest-object PPU event, and reports its start-to-next-module
+  interval. Comparison-ready requires at least two ordered events and a
+  positive interval, so log truncation cannot erase the optimization
+  measurement. Synthetic `41 -> 1` events prove an exact `306 ms` interval and
+  all `66/66` Thor contracts pass. No device contact or APK change occurred.

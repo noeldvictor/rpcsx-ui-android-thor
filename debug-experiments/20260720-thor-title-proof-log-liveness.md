@@ -2555,3 +2555,20 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   native objects, title visual proof, absent fatal hits, safe cleanup, and
   measured warm-link timing before field/menu/battle work or any performance
   claim.
+
+### 2026-07-23 - warm-ppu-link-timing-proof
+
+- Status: host analyzer hardening / no-device-contact / not-comparable
+- Change: the title analyzer deduplicates timestamped successful warm-affinity
+  events, selects the event with the largest object count, and records its
+  start time, the next warm module start, object count, event count, and
+  millisecond interval. Comparison-ready now requires at least two ordered
+  events and a positive interval.
+- Verification: a synthetic `41`-object event at `1.384222 s` followed by a
+  one-object event at `1.690222 s` reports exactly `306 ms`; persisted JSON
+  retains every value, truncated evidence fails activation, and all `66/66`
+  Thor host contracts pass.
+- Decision: no APK/core or device state changed. The later one-shot title
+  proof can now compare the corrected interval directly with prior
+  `363-364 ms` old-candidate observations without granting speed credit unless
+  title correctness and thermal gates also pass.

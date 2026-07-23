@@ -265,19 +265,75 @@ foreach ($file in $logFiles) {
     }
 }
 $guestLogText = $guestLogLines -join "`n"
+function ConvertFrom-ThorEmulatorTimestamp {
+    param([string]$Line)
+
+    $match = [regex]::Match(
+        $Line,
+        '(?<!\d)(?<hours>\d+):(?<minutes>\d{2}):(?<seconds>\d{2})[.](?<fraction>\d{6})(?!\d)'
+    )
+    if (-not $match.Success) {
+        return $null
+    }
+
+    return (
+        ([double]$match.Groups["hours"].Value * 3600) +
+        ([double]$match.Groups["minutes"].Value * 60) +
+        [double]$match.Groups["seconds"].Value +
+        ([double]$match.Groups["fraction"].Value / 1000000)
+    )
+}
+
 $guestLogLatestEmulatorSeconds = $null
 foreach ($line in $guestLogLines) {
-    if ($line -match '(?<!\d)(?<hours>\d+):(?<minutes>\d{2}):(?<seconds>\d{2})[.](?<fraction>\d{6})(?!\d)') {
-        $timestampSeconds =
-            ([double]$Matches.hours * 3600) +
-            ([double]$Matches.minutes * 60) +
-            [double]$Matches.seconds +
-            ([double]$Matches.fraction / 1000000)
+    $timestampSeconds = ConvertFrom-ThorEmulatorTimestamp -Line $line
+    if ($null -ne $timestampSeconds) {
         if ($null -eq $guestLogLatestEmulatorSeconds -or $timestampSeconds -gt $guestLogLatestEmulatorSeconds) {
             $guestLogLatestEmulatorSeconds = $timestampSeconds
         }
     }
 }
+$ppuWarmAffinityEvents = @(
+    foreach ($line in $guestLogLines) {
+        $match = [regex]::Match(
+            $line,
+            'Thor PPU warm-cache link affinity enabled:\s*requested=0x7,\s*effective=0x7,\s*objects=(\d+)[.]'
+        )
+        if (-not $match.Success) {
+            continue
+        }
+        $timestampSeconds = ConvertFrom-ThorEmulatorTimestamp -Line $line
+        if ($null -eq $timestampSeconds) {
+            continue
+        }
+        [pscustomobject]@{
+            seconds = [double]$timestampSeconds
+            objects = [int]$match.Groups[1].Value
+        }
+    }
+) | Sort-Object seconds, objects -Unique
+$ppuWarmPrimaryEvent = $ppuWarmAffinityEvents |
+    Sort-Object @{ Expression = "objects"; Descending = $true }, seconds |
+    Select-Object -First 1
+$ppuWarmNextEvent = if ($null -ne $ppuWarmPrimaryEvent) {
+    $ppuWarmAffinityEvents |
+        Where-Object { $_.seconds -gt $ppuWarmPrimaryEvent.seconds } |
+        Sort-Object seconds |
+        Select-Object -First 1
+} else {
+    $null
+}
+$ppuWarmPrimaryToNextModuleMs = if ($null -ne $ppuWarmNextEvent) {
+    [Math]::Round(($ppuWarmNextEvent.seconds - $ppuWarmPrimaryEvent.seconds) * 1000, 3)
+} else {
+    $null
+}$ppuWarmTimingReady = (
+    $ppuWarmAffinityEvents.Count -ge 2 -and
+    $null -ne $ppuWarmPrimaryEvent -and
+    $ppuWarmPrimaryEvent.objects -gt 0 -and
+    $null -ne $ppuWarmPrimaryToNextModuleMs -and
+    $ppuWarmPrimaryToNextModuleMs -gt 0
+)
 $spuNativeObjectPhaseMarker = "Thor SPU native-object cache enabled for startup LLVM objects:"
 $spuNativeObjectPhaseIndex = $guestLogText.IndexOf($spuNativeObjectPhaseMarker, [StringComparison]::Ordinal)
 $spuNativeObjectPhaseText = if ($spuNativeObjectPhaseIndex -ge 0) {
@@ -318,6 +374,9 @@ foreach ($entry in $activationRequirements.GetEnumerator()) {
     if ($guestLogText -notmatch $entry.Value) {
         $activationMissing.Add($entry.Key) | Out-Null
     }
+}
+if (-not $ppuWarmTimingReady) {
+    $activationMissing.Add("PPU warm-link timing") | Out-Null
 }
 if (-not $spuNativeObjectReuseFloorSatisfied -and $activationMissing -notcontains "SPU native-object reuse") {
     $activationMissing.Add("SPU native-object reuse") | Out-Null
@@ -560,6 +619,12 @@ $result = [pscustomobject]@{
     guest_log_trusted = $guestLogTrusted
     guest_log_latest_emulator_seconds = $guestLogLatestEmulatorSeconds
     guest_log_evidence_incomplete = $guestLogEvidenceIncomplete
+    ppu_warm_affinity_event_count = $ppuWarmAffinityEvents.Count
+    ppu_warm_primary_objects = if ($null -ne $ppuWarmPrimaryEvent) { $ppuWarmPrimaryEvent.objects } else { $null }
+    ppu_warm_primary_start_seconds = if ($null -ne $ppuWarmPrimaryEvent) { $ppuWarmPrimaryEvent.seconds } else { $null }
+    ppu_warm_next_module_start_seconds = if ($null -ne $ppuWarmNextEvent) { $ppuWarmNextEvent.seconds } else { $null }
+    ppu_warm_primary_to_next_module_ms = $ppuWarmPrimaryToNextModuleMs
+    ppu_warm_timing_ready = $ppuWarmTimingReady
     post_proof_pid_value = $postPidValue
     max_silicon_temperature_c = $maxSiliconTemperatureC
     thermal_failure_lines = @($thermalFailureLines)
