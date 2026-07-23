@@ -104,6 +104,9 @@ foreach ($mainContract in @(
     'state.continuous_rearms++',
     'state.continuous_rearm_timeouts++',
     'state.continuous_rearm_progress++',
+    'const u64 handler_grace_us =',
+    'after_counter == counter ? get_thor_es_frame_poll_handler_grace_us() : 0',
+    'waited_us < handler_grace_us',
     'return false;'
 )) {
     if (-not $mainTimer.Contains($mainContract)) {
@@ -122,6 +125,10 @@ if ($waitFunctionStart -lt 0 -or $fallbackFunctionStart -le $waitFunctionStart) 
 $waitFunction = $mainTimer.Substring(
     $waitFunctionStart,
     $fallbackFunctionStart - $waitFunctionStart)
+
+if ($waitFunction -match 'waited_us\s*<\s*get_thor_es_frame_poll_handler_grace_us\(\)') {
+    throw 'Android frame-poll grace loop reintroduced a static accessor call per wait iteration.'
+}
 $logCalls = [regex]::Matches(
     $waitFunction,
     '(?m)^\s*log_thor_es_frame_poll_wait\(')
@@ -312,4 +319,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, 0-500 us post-handler grace, Android release-store single-waiter registration, release-published completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

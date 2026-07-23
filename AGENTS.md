@@ -2106,3 +2106,17 @@ Put dated run details in `debug-experiments/`, not here.
   was not contacted. Classify as host-verified `stackable-cpu-pressure`, not
   measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-vblank-single-waiter-notification.md`.
+- Host-only Android frame-wait grace handling now loads the static
+  0-500 us bound once per needed handler-grace sequence, while preserving zero
+  accessor calls when the guest counter already advanced. Saved clean routes
+  imply 1,320 redundant calls removed at title, 4,985 in first battle, and
+  1,980 in Options. Exact ARM64 `sys_timer_usleep` drops its in-loop accessor
+  call, shrinks `0x6f0 -> 0x6ec`, and keeps all ordering, wait, counter,
+  continuous-rearm, and fallback gates. The exact successor is APK
+  `9DC30B9C...879698E` / `72,838,240` bytes, merged core
+  `D0A038D4...C2051C0` / `1,304,307,832` bytes, and packaged core
+  `D7B9F75D...85FE02` / `62,988,904` bytes. ARM64 native/APK builds, linked
+  call-count proof, artifact gate, and all `69/69` host contracts pass. Thor
+  was not contacted. Classify as host-verified `stackable-cpu-pressure`, not
+  measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-frame-wait-grace-bound-hoist.md`.

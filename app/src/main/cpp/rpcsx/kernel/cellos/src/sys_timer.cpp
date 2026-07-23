@@ -286,9 +286,11 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   if (after_wait_token != wait_token) {
     state.handler_wakes++;
     bool waited_for_grace = false;
+    const u64 handler_grace_us =
+        after_counter == counter ? get_thor_es_frame_poll_handler_grace_us() : 0;
     for (u64 waited_us = 0;
          after_counter == counter &&
-         waited_us < get_thor_es_frame_poll_handler_grace_us();
+         waited_us < handler_grace_us;
          waited_us += 100) {
       thread_ctrl::wait_for(100);
       waited_for_grace = true;
