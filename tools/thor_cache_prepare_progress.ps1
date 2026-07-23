@@ -159,8 +159,22 @@ function Get-ThorCachePrepareCooldownSource {
         [string]$CacheCaptureName = "none",
         [AllowNull()][object]$CacheCompletedAt,
         [string]$InstallCaptureName = "none",
-        [AllowNull()][object]$InstallCompletedAt
+        [AllowNull()][object]$InstallCompletedAt,
+        [string]$TitleCaptureName = "none",
+        [AllowNull()][object]$TitleCompletedAt
     )
+
+    if ($null -ne $TitleCompletedAt -and
+        ($null -eq $InstallCompletedAt -or
+            [DateTimeOffset]$TitleCompletedAt -ge [DateTimeOffset]$InstallCompletedAt) -and
+        ($null -eq $CacheCompletedAt -or
+            [DateTimeOffset]$TitleCompletedAt -ge [DateTimeOffset]$CacheCompletedAt)) {
+        return [pscustomobject]@{
+            kind = "title"
+            name = $TitleCaptureName
+            completed_at = [DateTimeOffset]$TitleCompletedAt
+        }
+    }
 
     if ($null -ne $InstallCompletedAt -and
         ($null -eq $CacheCompletedAt -or

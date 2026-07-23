@@ -61,9 +61,11 @@ foreach ($fragment in @(
     '"device_contact"',
     '"spu_continuity_capture"',
     '"cache_cooldown_ready"',
+    '"cooldown_source_kind"',
+    '"latest_title_capture"',
     '"minimum_required_spu_native_objects"',
     'requires at least one durable SPU native object',
-    'post-seed cooldown is not ready',
+    'independent cooldown is not ready',
     '$script:ThorCoolTitleMinimumNativeObjects = $minimumObjects'
 )) {
     if (-not $cooldownFunction.Contains($fragment)) {
@@ -92,11 +94,11 @@ $requiredSummary = @(
     'max_skin_c=40',
     'max_silicon_c=68',
     'rsx_workers=2',
-    'rsx_preload_limit=256',
-    'rsx_load_budget_ms=500',
+    'rsx_preload_limit=64',
+    'rsx_load_budget_ms=200',
     'rsx_compile_budget_ms=0',
-    'spu_preload_limit=64',
-    'spu_compile_budget_ms=100',
+    'spu_preload_limit=17',
+    'spu_compile_budget_ms=25',
     'spu_native_object_cache=on',
     'cache_affinity_mask=7',
     'vk_pipeline_cache=on',
@@ -145,7 +147,7 @@ $conflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidRsxCachePreloadLimit 0 2>&1 | Out-Null
 } catch {
-    $conflictRejected = $_.Exception.Message -like "*requires -AndroidRsxCachePreloadLimit '256'*"
+    $conflictRejected = $_.Exception.Message -like "*requires -AndroidRsxCachePreloadLimit '64'*"
 }
 if (-not $conflictRejected) {
     throw 'Thor cool-title profile did not reject an explicit unsafe RSX preload-limit conflict.'
@@ -155,7 +157,7 @@ $loadBudgetConflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidRsxCacheLoadBudgetMs 0 2>&1 | Out-Null
 } catch {
-    $loadBudgetConflictRejected = $_.Exception.Message -like "*requires -AndroidRsxCacheLoadBudgetMs '500'*"
+    $loadBudgetConflictRejected = $_.Exception.Message -like "*requires -AndroidRsxCacheLoadBudgetMs '200'*"
 }
 if (-not $loadBudgetConflictRejected) {
     throw 'Thor cool-title profile did not reject an unbounded RSX load-budget override.'
@@ -165,7 +167,7 @@ $budgetConflictRejected = $false
 try {
     & $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle -AndroidSpuCacheCompileBudgetMs 0 2>&1 | Out-Null
 } catch {
-    $budgetConflictRejected = $_.Exception.Message -like "*requires -AndroidSpuCacheCompileBudgetMs '100'*"
+    $budgetConflictRejected = $_.Exception.Message -like "*requires -AndroidSpuCacheCompileBudgetMs '25'*"
 }
 if (-not $budgetConflictRejected) {
     throw 'Thor cool-title profile did not reject an unbounded SPU compile-budget override.'

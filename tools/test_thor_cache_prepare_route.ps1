@@ -150,12 +150,17 @@ if ($cooldownWaiting.ready -or
 }
 $cacheCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:15:42-04:00')
 $installCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:30:42-04:00')
+$titleCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:40:42-04:00')
 $installCooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName "cache-old" -CacheCompletedAt $cacheCooldownAt `
     -InstallCaptureName "install-new" -InstallCompletedAt $installCooldownAt
 $cacheCooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName "cache-new" -CacheCompletedAt $installCooldownAt `
     -InstallCaptureName "install-old" -InstallCompletedAt $cacheCooldownAt
+$titleCooldownSource = Get-ThorCachePrepareCooldownSource `
+    -CacheCaptureName "cache-old" -CacheCompletedAt $cacheCooldownAt `
+    -InstallCaptureName "install-old" -InstallCompletedAt $installCooldownAt `
+    -TitleCaptureName "title-new" -TitleCompletedAt $titleCooldownAt
 $noCooldownSource = Get-ThorCachePrepareCooldownSource
 if ($installCooldownSource.kind -ne "install" -or
     $installCooldownSource.name -ne "install-new" -or
@@ -163,9 +168,12 @@ if ($installCooldownSource.kind -ne "install" -or
     $cacheCooldownSource.kind -ne "cache" -or
     $cacheCooldownSource.name -ne "cache-new" -or
     $cacheCooldownSource.completed_at -ne $installCooldownAt -or
+    $titleCooldownSource.kind -ne "title" -or
+    $titleCooldownSource.name -ne "title-new" -or
+    $titleCooldownSource.completed_at -ne $titleCooldownAt -or
     $noCooldownSource.kind -ne "none" -or
     $null -ne $noCooldownSource.completed_at) {
-    throw "Cache preparation did not select the newest cache/install cooldown source."
+    throw "Cache preparation did not select the newest cache/install/title cooldown source."
 }
 $thermalStopReuseFloor = Get-ThorCachePrepareReuseFloor -LatestReadmeText @'
 - Status: failed
@@ -400,6 +408,10 @@ foreach ($fragment in @(
     '- Emulator launch: no',
     'latest_install_capture=',
     'latest_install_completed_at=',
+    '^[0-9]{8}-[0-9]{6}-thor-input-custom$',
+    '# Thor Input Macro',
+    'latest_title_capture=',
+    'latest_title_completed_at=',
     'cooldown_source_kind=',
     'cooldown_source=',
     'Get-ThorCachePrepareCooldownSource',

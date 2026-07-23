@@ -23,6 +23,7 @@ $macroSource = Get-Content -LiteralPath $macroPath -Raw
 foreach ($fragment in @(
     'startup-profile-effective.txt',
     'startup-profile-reset-effective.txt',
+    'startup-profile-failure-reset-effective.txt',
     'setprop debug.rpcsx.thor.es_sema_superpath off',
     'setprop debug.rpcsx.thor.es_dma_superpath off',
     'setprop debug.rpcsx.thor.rsx_blit_source_resolve off',
@@ -118,11 +119,11 @@ function Write-ReadyFixture {
     New-Item -ItemType Directory -Force -Path $Directory | Out-Null
     $effectiveProperties = [ordered]@{
         "rsx-cache-workers-effective.txt" = "2"
-        "rsx-cache-preload-limit-effective.txt" = "256"
-        "rsx-cache-load-budget-effective.txt" = "500"
+        "rsx-cache-preload-limit-effective.txt" = "64"
+        "rsx-cache-load-budget-effective.txt" = "200"
         "rsx-cache-compile-budget-effective.txt" = "0"
-        "spu-cache-preload-limit-effective.txt" = "64"
-        "spu-cache-compile-budget-effective.txt" = "100"
+        "spu-cache-preload-limit-effective.txt" = "17"
+        "spu-cache-compile-budget-effective.txt" = "25"
         "spu-native-object-cache-effective.txt" = "on"
         "cache-worker-affinity-effective.txt" = "7"
         "vk-pipeline-cache-effective.txt" = "on"
@@ -136,11 +137,11 @@ function Write-ReadyFixture {
 
     @(
         "debug.rpcsx.thor.rsx_cache_workers=2",
-        "debug.rpcsx.thor.rsx_cache_preload_limit=256",
-        "debug.rpcsx.thor.rsx_cache_load_budget_ms=500",
+        "debug.rpcsx.thor.rsx_cache_preload_limit=64",
+        "debug.rpcsx.thor.rsx_cache_load_budget_ms=200",
         "debug.rpcsx.thor.rsx_cache_compile_budget_ms=0",
-        "debug.rpcsx.thor.spu_cache_preload_limit=64",
-        "debug.rpcsx.thor.spu_cache_compile_budget_ms=100",
+        "debug.rpcsx.thor.spu_cache_preload_limit=17",
+        "debug.rpcsx.thor.spu_cache_compile_budget_ms=25",
         "debug.rpcsx.thor.spu_native_object_cache=on",
         "debug.rpcsx.thor.cache_worker_affinity_mask=7",
         "debug.rpcsx.thor.vk_pipeline_cache=on",
@@ -210,11 +211,11 @@ function Write-ReadyFixture {
         "- Max skin temperature C: 40",
         "- Max silicon temperature C: 68",
         "- RSX cache preload workers (0=auto): 2",
-        "- RSX cached pipeline preload limit (0=all): 256",
-        "- RSX cached pipeline load budget ms (0=unbounded): 500",
+        "- RSX cached pipeline preload limit (0=all): 64",
+        "- RSX cached pipeline load budget ms (0=unbounded): 200",
         "- RSX cached pipeline compile budget ms (0=unbounded): 0",
-        "- SPU cached-program preload limit (0=all): 64",
-        "- SPU cached-program compile budget ms (0=unbounded): 100",
+        "- SPU cached-program preload limit (0=all): 17",
+        "- SPU cached-program compile budget ms (0=unbounded): 25",
         "- Startup cache-worker affinity mask (0=default scheduler): 7",
         "- Persistent Vulkan driver pipeline cache: on",
         "- Vulkan preload cache hits only: on",
@@ -248,17 +249,17 @@ function Write-ReadyFixture {
     @(
         "  Max LLVM Compile Threads: 2",
         "Thor PPU LLVM compile-worker affinity enabled: requested=0x7, effective=0x7.",
-        "Android shader cache preload limit: 256 of 939 oldest pipelines; 683 will compile on demand",
-        "Android shader cache load budget enabled for BLUS30161: 500 ms.",
-        "Android shader cache load budget: attempted 84 of 256 cached pipelines with a 500 ms budget; 172 will load and compile on demand.",
-        "Thor SPU cache preload limit: 64 of 300 oldest unique programs (300 records, 236 will compile on demand).",
+        "Android shader cache preload limit: 64 of 939 oldest pipelines; 875 will compile on demand",
+        "Android shader cache load budget enabled for BLUS30161: 200 ms.",
+        "Android shader cache load budget: attempted 16 of 64 cached pipelines with a 200 ms budget; 48 will load and compile on demand.",
+        "Thor SPU cache preload limit: 17 of 300 oldest unique programs (300 records, 283 will compile on demand).",
         "Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.",
         "LLVM: Loaded module: 4E6Tn-thor-native-key.obj",
         "Shader cache preload workers: load=2, compile=2",
         "Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7.",
         "Thor SPU cache-worker pool matched to affinity: requested=2, workers=2, mask=0x7.",
-        "Thor SPU cache compile budget enabled for BLUS30161: 100 ms.",
+        "Thor SPU cache compile budget enabled for BLUS30161: 25 ms.",
         "Vulkan preload cache-hits-only enabled for validated warm seed (4899180 bytes).",
         "·! 0:00:03.000000 SYS: Set DAZ and FTZ: true"
     ) | Set-Content -LiteralPath (Join-Path $Directory "post-RPCSX.log") -Encoding UTF8

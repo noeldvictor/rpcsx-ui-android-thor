@@ -571,3 +571,24 @@ query or emulator action ran after the installer completed.
   Exact installed `5044976A...D83E5C` remains frozen, and no speed, FPS,
   gameplay, flicker, stability, or thermal-win credit is granted before the
   independently cool `7/7` title proof.
+- Exact installed candidate `5044976A...D83E5C` attempted one independently
+  cool title proof in `20260723-023526-thor-input-custom`. Exact APK identity
+  and debug boot passed after preflight `32.5 -> 32.1 -> 32.1 C`. The guest
+  reused all required `7/7` SPU native objects, but the old startup profile
+  also attempted `41/256` RSX pipelines within `500 ms` and built 10 more SPU
+  programs under `100 ms`. Silicon rose to `52.6 C`, confirmed at `63.0 C`
+  0.6 seconds later, and the early thermal guard force-stopped before title;
+  post-stop was `44.9 C` and PID was absent. There was no retry or later device
+  contact. Classify `thermal-stop-before-title` / `safe-counterproof` /
+  `not-comparable`; grant no speed, FPS, gameplay, flicker, stability, or
+  thermal-win credit.
+
+- Host-only cooler successor makes every valid title attempt a cache/install/
+  title cooldown source, so the failed capture above enforces a new 30-minute
+  device-free interval. It reduces the next title-only startup envelope to 64
+  RSX pipelines / `200 ms` and 17 SPU programs / `25 ms`, preserving two
+  efficiency-core workers, Vulkan hit-only preload, exact `7/7` native-object
+  reuse, and the existing hard thermal gates. Future failure cleanup adds one
+  batched 21-property reset readback. No APK/core build, install, launch, ADB,
+  or device query accompanied these host changes; the exact installed candidate
+  remains frozen pending a later independently cool proof.

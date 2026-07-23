@@ -1050,6 +1050,32 @@ if ($BootGame) {
     Write-ThorLaunchPowerState -Adb $Adb -CaptureDir $captureDir
 }
 
+function Get-ThorStartupProfileResetPropertyCommand {
+    $propertyNames = @(
+        "debug.rpcsx.thor.rsx_cache_workers",
+        "debug.rpcsx.thor.rsx_cache_preload_limit",
+        "debug.rpcsx.thor.rsx_cache_load_budget_ms",
+        "debug.rpcsx.thor.rsx_cache_compile_budget_ms",
+        "debug.rpcsx.thor.spu_cache_preload_limit",
+        "debug.rpcsx.thor.spu_cache_compile_budget_ms",
+        "debug.rpcsx.thor.spu_native_object_cache",
+        "debug.rpcsx.thor.cache_worker_affinity_mask",
+        "debug.rpcsx.thor.vk_pipeline_cache",
+        "debug.rpcsx.thor.vk_preload_cache_hits_only",
+        "debug.rpcsx.thor.adpf_rsx",
+        "debug.rpcsx.thor.cache_phase_pacing",
+        "debug.rpcsx.thor.es_ppu_command_interp",
+        "debug.rpcsx.thor.es_ppu_dispatch_probe",
+        "debug.rpcsx.thor.es_async_draw_barrier",
+        "debug.rpcsx.thor.es_sema_superpath",
+        "debug.rpcsx.thor.es_dma_superpath",
+        "debug.rpcsx.thor.rsx_blit_source_resolve",
+        "debug.rpcsx.thor.es_frame_wait",
+        "debug.rpcsx.thor.es_frame_wait_grace_us",
+        "debug.rpcsx.thor.es_frame_wait_continuous_rearm"
+    )
+    return 'for p in ' + ($propertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
+}
 $tokens = @()
 $index = 1
 $script:LastThorScreenshotPath = $null
@@ -1467,6 +1493,8 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off; setprop debug.rpcsx.thor.es_sema_superpath off; setprop debug.rpcsx.thor.es_dma_superpath off; setprop debug.rpcsx.thor.rsx_blit_source_resolve off; setprop debug.rpcsx.thor.es_frame_wait off; setprop debug.rpcsx.thor.es_frame_wait_grace_us 0; setprop debug.rpcsx.thor.es_frame_wait_continuous_rearm off") -AllowFailure | Out-Null
+        $startupProfileFailureResetPropertyCommand = Get-ThorStartupProfileResetPropertyCommand
+        Invoke-ThorAdbText $Adb $captureDir "startup-profile-failure-reset-effective.txt" @("shell", $startupProfileFailureResetPropertyCommand) -AllowFailure | Out-Null
     }
 
     throw $failure
@@ -1488,30 +1516,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-command-interp-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_command_interp off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-ppu-dispatch-probe-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_ppu_dispatch_probe off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "es-async-draw-barrier-reset.txt" @("shell", "setprop debug.rpcsx.thor.es_async_draw_barrier off; setprop debug.rpcsx.thor.es_sema_superpath off; setprop debug.rpcsx.thor.es_dma_superpath off; setprop debug.rpcsx.thor.rsx_blit_source_resolve off; setprop debug.rpcsx.thor.es_frame_wait off; setprop debug.rpcsx.thor.es_frame_wait_grace_us 0; setprop debug.rpcsx.thor.es_frame_wait_continuous_rearm off") -AllowFailure | Out-Null
-    $startupProfileResetPropertyNames = @(
-        "debug.rpcsx.thor.rsx_cache_workers",
-        "debug.rpcsx.thor.rsx_cache_preload_limit",
-        "debug.rpcsx.thor.rsx_cache_load_budget_ms",
-        "debug.rpcsx.thor.rsx_cache_compile_budget_ms",
-        "debug.rpcsx.thor.spu_cache_preload_limit",
-        "debug.rpcsx.thor.spu_cache_compile_budget_ms",
-        "debug.rpcsx.thor.spu_native_object_cache",
-        "debug.rpcsx.thor.cache_worker_affinity_mask",
-        "debug.rpcsx.thor.vk_pipeline_cache",
-        "debug.rpcsx.thor.vk_preload_cache_hits_only",
-        "debug.rpcsx.thor.adpf_rsx",
-        "debug.rpcsx.thor.cache_phase_pacing",
-        "debug.rpcsx.thor.es_ppu_command_interp",
-        "debug.rpcsx.thor.es_ppu_dispatch_probe",
-        "debug.rpcsx.thor.es_async_draw_barrier",
-        "debug.rpcsx.thor.es_sema_superpath",
-        "debug.rpcsx.thor.es_dma_superpath",
-        "debug.rpcsx.thor.rsx_blit_source_resolve",
-        "debug.rpcsx.thor.es_frame_wait",
-        "debug.rpcsx.thor.es_frame_wait_grace_us",
-        "debug.rpcsx.thor.es_frame_wait_continuous_rearm"
-    )
-    $startupProfileResetPropertyCommand = 'for p in ' + ($startupProfileResetPropertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
+    $startupProfileResetPropertyCommand = Get-ThorStartupProfileResetPropertyCommand
     Invoke-ThorAdbText $Adb $captureDir "startup-profile-reset-effective.txt" @("shell", $startupProfileResetPropertyCommand) | Out-Null
 }
 

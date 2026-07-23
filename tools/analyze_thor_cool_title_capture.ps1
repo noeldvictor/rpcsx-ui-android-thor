@@ -49,11 +49,11 @@ function Read-OptionalLines {
 
 $effectiveProperties = [ordered]@{
     "rsx-cache-workers-effective.txt" = "2"
-    "rsx-cache-preload-limit-effective.txt" = "256"
-    "rsx-cache-load-budget-effective.txt" = "500"
+    "rsx-cache-preload-limit-effective.txt" = "64"
+    "rsx-cache-load-budget-effective.txt" = "200"
     "rsx-cache-compile-budget-effective.txt" = "0"
-    "spu-cache-preload-limit-effective.txt" = "64"
-    "spu-cache-compile-budget-effective.txt" = "100"
+    "spu-cache-preload-limit-effective.txt" = "17"
+    "spu-cache-compile-budget-effective.txt" = "25"
     "spu-native-object-cache-effective.txt" = "on"
     "cache-worker-affinity-effective.txt" = "7"
     "vk-pipeline-cache-effective.txt" = "on"
@@ -73,11 +73,11 @@ foreach ($entry in $effectiveProperties.GetEnumerator()) {
 
 $startupExpected = [ordered]@{
     "debug.rpcsx.thor.rsx_cache_workers" = "2"
-    "debug.rpcsx.thor.rsx_cache_preload_limit" = "256"
-    "debug.rpcsx.thor.rsx_cache_load_budget_ms" = "500"
+    "debug.rpcsx.thor.rsx_cache_preload_limit" = "64"
+    "debug.rpcsx.thor.rsx_cache_load_budget_ms" = "200"
     "debug.rpcsx.thor.rsx_cache_compile_budget_ms" = "0"
-    "debug.rpcsx.thor.spu_cache_preload_limit" = "64"
-    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "100"
+    "debug.rpcsx.thor.spu_cache_preload_limit" = "17"
+    "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "25"
     "debug.rpcsx.thor.spu_native_object_cache" = "on"
     "debug.rpcsx.thor.cache_worker_affinity_mask" = "7"
     "debug.rpcsx.thor.vk_pipeline_cache" = "on"
@@ -195,11 +195,11 @@ $requiredReadmeLines = @(
     "- Max skin temperature C: 40",
     "- Max silicon temperature C: 68",
     "- RSX cache preload workers (0=auto): 2",
-    "- RSX cached pipeline preload limit (0=all): 256",
-    "- RSX cached pipeline load budget ms (0=unbounded): 500",
+    "- RSX cached pipeline preload limit (0=all): 64",
+    "- RSX cached pipeline load budget ms (0=unbounded): 200",
     "- RSX cached pipeline compile budget ms (0=unbounded): 0",
-    "- SPU cached-program preload limit (0=all): 64",
-    "- SPU cached-program compile budget ms (0=unbounded): 100",
+    "- SPU cached-program preload limit (0=all): 17",
+    "- SPU cached-program compile budget ms (0=unbounded): 25",
     "- Startup cache-worker affinity mask (0=default scheduler): 7",
     "- Persistent Vulkan driver pipeline cache: on",
     "- Vulkan preload cache hits only: on",
@@ -276,17 +276,17 @@ $spuNativeObjectReuseFloorSatisfied = $spuNativeObjectLoadCount -ge $MinimumSpuN
 $activationRequirements = [ordered]@{
     "two little-core PPU compile threads" = 'Max LLVM Compile Threads:\s*2'
     "PPU efficiency-core compile affinity" = 'Thor PPU LLVM compile-worker affinity enabled:\s*requested=0x7, effective=0x7'
-    "bounded RSX preload" = 'Android shader cache preload limit:\s*256 of'
-    "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*500 ms'
-    "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 500 ms budget; \d+ will load and compile on demand\.'
-    "bounded SPU preload" = 'Thor SPU cache preload limit:\s*64 of'
+    "bounded RSX preload" = 'Android shader cache preload limit:\s*64 of'
+    "bounded RSX load time" = 'Android shader cache load budget enabled for BLUS30161:\s*200 ms'
+    "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 200 ms budget; \d+ will load and compile on demand\.'
+    "bounded SPU preload" = 'Thor SPU cache preload limit:\s*17 of'
     "SPU native-object cache activation" = 'Thor SPU native-object cache enabled for startup LLVM objects:'
     "SPU native-object reuse" = '(?m)LLVM: Loaded module: [^\r\n]+[.]obj\r?$'
     "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
     "SPU efficiency-core affinity" = 'Thor SPU cache-worker affinity enabled:\s*requested=0x7, effective=0x7'
     "two SPU preload workers" = 'Thor SPU cache-worker pool matched to affinity:\s*requested=2, workers=2, mask=0x7'
-    "bounded SPU compile time" = 'Thor SPU cache compile budget enabled for BLUS30161:\s*100 ms'
+    "bounded SPU compile time" = 'Thor SPU cache compile budget enabled for BLUS30161:\s*25 ms'
     "warm Vulkan hit-only preload" = 'Vulkan preload cache-hits-only enabled for validated warm seed'
     "managed hardware FTZ" = 'Set DAZ and FTZ:\s*true'
 }

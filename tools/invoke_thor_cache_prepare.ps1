@@ -78,6 +78,8 @@ $latestCacheReadmeText = ""
 $cacheCaptures = @()
 $latestInstallCaptureName = "none"
 $latestInstallCompletedAt = $null
+$latestTitleCaptureName = "none"
+$latestTitleCompletedAt = $null
 $cacheCaptureRoot = Join-Path $repoRoot "debug-captures\android-speed-sprint"
 if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
     $cacheCaptures = @(Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
@@ -142,6 +144,28 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
         }
         $latestInstallCompletedAt = $parsedInstallAt
     }
+    $latestTitleCapture = Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
+        Where-Object { $_.Name -match '^[0-9]{8}-[0-9]{6}-thor-input-custom$' } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($null -ne $latestTitleCapture) {
+        $latestTitleCaptureName = $latestTitleCapture.Name
+        $latestTitleReadme = Join-Path $latestTitleCapture.FullName "README.md"
+        if (-not (Test-Path -LiteralPath $latestTitleReadme -PathType Leaf)) {
+            throw "Latest title capture has no README; refusing cooldown inference: $latestTitleCaptureName"
+        }
+        $latestTitleReadmeText = Get-Content -LiteralPath $latestTitleReadme -Raw
+        if (-not $latestTitleReadmeText.StartsWith("# Thor Input Macro", [StringComparison]::Ordinal) -or
+            -not $latestTitleReadmeText.Contains("- Device serial: $Serial") -or
+            -not $latestTitleReadmeText.Contains("- Package: $package") -or
+            -not $latestTitleReadmeText.Contains("- Expected installed APK SHA-256: $expectedApkHash") -or
+            -not $latestTitleReadmeText.Contains("- BootGame: True") -or
+            -not $latestTitleReadmeText.Contains("- ForceStop: True") -or
+            -not $latestTitleReadmeText.Contains("- Macro: gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop")) {
+            throw "Latest title capture is not valid exact-candidate evidence: $latestTitleCaptureName"
+        }
+        $latestTitleCompletedAt = [DateTimeOffset]$latestTitleCapture.LastWriteTime
+    }
 }
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
 $minimumRequiredSpuNativeObjects = 0
@@ -165,7 +189,9 @@ $cooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName $latestCacheCaptureName `
     -CacheCompletedAt $latestCacheCompletedAt `
     -InstallCaptureName $latestInstallCaptureName `
-    -InstallCompletedAt $latestInstallCompletedAt
+    -InstallCompletedAt $latestInstallCompletedAt `
+    -TitleCaptureName $latestTitleCaptureName `
+    -TitleCompletedAt $latestTitleCompletedAt
 $cacheCooldown = Get-ThorCachePrepareCooldownState `
     -LastCompletedAt $cooldownSource.completed_at `
     -MinimumMinutes $minimumCacheCooldownMinutes
@@ -194,6 +220,8 @@ if ($Action -eq "Status") {
         "spu_continuity_capture=$spuContinuityCaptureName",
         "latest_install_capture=$latestInstallCaptureName",
         "latest_install_completed_at=$(if ($null -eq $latestInstallCompletedAt) { 'none' } else { $latestInstallCompletedAt.ToString('o') })",
+        "latest_title_capture=$latestTitleCaptureName",
+        "latest_title_completed_at=$(if ($null -eq $latestTitleCompletedAt) { 'none' } else { $latestTitleCompletedAt.ToString('o') })",
         "cooldown_source_kind=$($cooldownSource.kind)",
         "cooldown_source=$($cooldownSource.name)",
         "cache_cooldown_ready=$($cacheCooldown.ready)",

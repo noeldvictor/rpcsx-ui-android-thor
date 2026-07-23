@@ -233,11 +233,11 @@ function Set-AndroidStartupProfile {
         AndroidMaxSkinTemperatureC = 40.0
         AndroidMaxSiliconTemperatureC = 68.0
         AndroidRsxCacheWorkers = 2
-        AndroidRsxCachePreloadLimit = 256
-        AndroidRsxCacheLoadBudgetMs = 500
+        AndroidRsxCachePreloadLimit = 64
+        AndroidRsxCacheLoadBudgetMs = 200
         AndroidRsxCacheCompileBudgetMs = 0
-        AndroidSpuCachePreloadLimit = 64
-        AndroidSpuCacheCompileBudgetMs = 100
+        AndroidSpuCachePreloadLimit = 17
+        AndroidSpuCacheCompileBudgetMs = 25
         AndroidSpuNativeObjectCache = "on"
         AndroidCacheWorkerAffinityMask = 7
         AndroidVkPipelineCache = "on"
@@ -348,6 +348,10 @@ function Assert-ThorCoolTitleCooldown {
         "cache_cooldown_ready",
         "cache_cooldown_ready_at",
         "cache_cooldown_remaining_seconds",
+        "cooldown_source_kind",
+        "cooldown_source",
+        "latest_title_capture",
+        "latest_title_completed_at",
         "spu_native_object_cache",
         "minimum_required_spu_native_objects"
     )) {
@@ -374,7 +378,7 @@ function Assert-ThorCoolTitleCooldown {
         throw "Thor cool-title requires at least one durable SPU native object before launch."
     }
     if ($status.cache_cooldown_ready -cne "True") {
-        throw "Thor cool-title post-seed cooldown is not ready: remaining=$($status.cache_cooldown_remaining_seconds)s, ready_at=$($status.cache_cooldown_ready_at)."
+        throw "Thor cool-title independent cooldown is not ready: source=$($status.cooldown_source_kind) '$($status.cooldown_source)', remaining=$($status.cache_cooldown_remaining_seconds)s, ready_at=$($status.cache_cooldown_ready_at)."
     }
 
     $script:ThorCoolTitleMinimumNativeObjects = $minimumObjects
