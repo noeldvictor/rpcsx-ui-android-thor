@@ -2401,3 +2401,25 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Decision and next: grant no startup-speed, FPS, thermal-win, gameplay,
   flicker, or stability credit. Device-free Status sets the next earliest
   contact to `2026-07-23T03:36:27.5707936-04:00`; do not retry in this round.
+
+### 2026-07-23 - minimal-preflight-refusal-cleanup
+
+- Status: host thermal-safety improvement / no-device-contact / not-comparable
+- Measured trigger: the no-launch refusal command occupied `16.7 s`; after its
+  thermal stop, the generic failure path collected a full activity/window/
+  memory/frequency/cache postmortem even though no boot intent had been issued.
+- Change: a pre-boot refusal now retains the already-recorded post-stop thermal
+  sample, performs exactly one PID query, and then records the existing batched
+  21-property reset proof. Full postmortem and guest-log collection remain
+  unchanged after an actual debug-boot request.
+- Verification: macro AST/source contracts and all `66/66` Thor host contracts
+  pass. No device measurement is claimed until a later independently cooled
+  refusal or launch exercises it.
+- Upstream audit: official July 21 RPCS3 patches `85c5920`, `2aeb08f`, and
+  `d75543a` improve LLVM known-bit/constant analysis but do not execute when the
+  measured PPU path reuses already-compiled objects. The vendored core already
+  contains the relevant July 1 PPU worker/concurrency changes and ARM64 SPU
+  compare optimization. No unrelated upstream patch was imported.
+- Decision: this reduces unnecessary device contact after a safe refusal; it
+  is not emulator FPS/startup/thermal-win evidence. Keep the installed candidate
+  frozen and the cooldown intact.

@@ -1473,7 +1473,11 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
     if ($PostSnapshot -or $BootGame) {
         try {
-            Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "failure" -SkipGuestLog:(-not $script:ThorDebugBootRequested)
+            if ($script:ThorDebugBootRequested) {
+                Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "failure"
+            } else {
+                Invoke-ThorAdbText $Adb $captureDir "failure-pid.txt" @("shell", "pidof $Package") -AllowFailure | Out-Null
+            }
         } catch {
             $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "macro-failure-snapshot-error.txt") -Encoding UTF8
         }

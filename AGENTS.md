@@ -1783,3 +1783,14 @@ Put dated run details in `debug-experiments/`, not here.
   `guest_log_trusted=False`, and `0/7` objects; all `66/66` host contracts
   pass. No speed or correctness credit exists. Do not contact Thor before
   `2026-07-23T03:36:27.5707936-04:00`.
+
+- Pre-boot refusal cleanup is now minimal: after the already-recorded
+  post-stop thermal sample it performs one PID query and the batched 21-property
+  reset proof, instead of the full activity/window/memory/frequency/cache
+  snapshot that occupied the remainder of the `16.7 s` no-launch command.
+  Actual booted failures still collect the full postmortem. All `66/66` host
+  contracts pass; no device remeasurement occurred. A fresh official upstream
+  audit found July 21 LLVM known-bit/constant-analysis patches, but warm PPU
+  object reuse bypasses them, while the vendored core already has the relevant
+  July 1 PPU worker/concurrency and ARM64 SPU compare work. Nothing unrelated
+  was imported.
