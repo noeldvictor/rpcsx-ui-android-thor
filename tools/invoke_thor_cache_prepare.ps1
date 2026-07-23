@@ -228,6 +228,12 @@ function Read-FreshLogcat {
     )
 }
 
+function Read-RecentLogcat {
+    return @(
+        Invoke-ThorAdbLines -Adb $adb -AdbArgs @("logcat", "-d", "-v", "threadtime", "-t", "500") -ScratchDir $captureDir -TimeoutSeconds 10
+    )
+}
+
 $runFailure = $null
 $success = $false
 $accepted = $false
@@ -368,13 +374,13 @@ try {
             break
         }
 
-        $logcat = Read-FreshLogcat
+        $logcat = Read-RecentLogcat
         $logText = $logcat -join "`n"
         if ($logText.Contains("Thor debug cache preparation rejected: request=$requestId")) {
             throw "Cache preparation intent was rejected; inspect logcat-full.txt."
         }
-        $accepted = $logText.Contains("Thor debug cache preparation accepted: request=$requestId titleId=$titleId")
-        $callbackFinished = $logText.Contains("Thor debug cache preparation finished: request=$requestId titleId=$titleId")
+        $accepted = $accepted -or $logText.Contains("Thor debug cache preparation accepted: request=$requestId titleId=$titleId")
+        $callbackFinished = $callbackFinished -or $logText.Contains("Thor debug cache preparation finished: request=$requestId titleId=$titleId")
         if (Test-ThorCachePrepareNativeProcessDeath -LogText $logText -Package $package) {
             $nativeProcessDied = $true
             throw "Cache preparation native process died before completion; inspect logcat-full.txt."

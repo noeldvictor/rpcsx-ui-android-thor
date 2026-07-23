@@ -2175,3 +2175,47 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Decision: no Thor contact occurred and exact APK/core/cache bytes are
   unchanged. This prevents false durable-progress credit; it is not speed,
   FPS, gameplay, flicker, stability, or thermal-win evidence.
+
+### 2026-07-22 - recent-log-poll-and-seventh-cache-checkpoint
+
+- Status: cache-progress-checkpoint / continuity-pass / safety-pass /
+  firmware-scan-progress / not-comparable
+- Scope: lower-overhead bounded cache polling plus one independently cooled
+  stopped-emulator continuation
+- Hypothesis and host change: repeated full-buffer `adb logcat -d` reads grow
+  with the run and are unnecessary for the live health loop. Runtime polling
+  now reads only the newest 500 threadtime rows, latches accepted/finished
+  markers once observed, and still pulls and saves the complete final logcat
+  after force-stop. Rollback is `Read-FreshLogcat` in the polling loop; native,
+  APK, cache, thermal, and no-game-boot behavior are unchanged. The focused
+  cache route, thermal guard, and frozen candidate artifact contracts pass.
+- Thor result: after device-free Status proved the 30-minute interval complete,
+  exact installed APK A7216402...3D15C and the strict gate passed at
+  `30.9 -> 30.1 -> 30.3 C`. Capture
+  `20260722-215019-firmware-ppu-prewarm` reused exactly 169 validated objects,
+  satisfying the required continuity floor from the preceding thermal stop,
+  and compiled 16 new objects. Firmware scanning advanced from file `104/142`
+  to `118/142`; the current discovered workload reached `16/18`, leaving two
+  known modules and 24 files still to enumerate.
+- Thermal result: the 70.024-second bounded runtime produced 20 samples with
+  average `38.0 C`, minimum `35.9 C`, peak `48.2 C`, one sample at/above
+  `45 C`, and zero samples at/above the `50 C` confirmation threshold.
+  Post-stop silicon was `34.1 C`; no thermal guard fired. This safely avoids
+  the prior trace's post-73-second danger window, but different cool rounds
+  prevent a controlled thermal-win claim.
+- Health and evidence result: request acceptance, exact ISO/title/root,
+  native activation, affinity `requested=0x7,effective=0x7`, and named workers
+  passed. The full final logcat was retained (`120,648` bytes); the accepted
+  marker appeared once and the polling latch survived later log growth. Native
+  completion and callback-finished remain absent. Saved evidence has zero
+  target fatal signals or unplanned process-death markers, `RPCSXActivity` rows,
+  game boot, or residual PID. No retry or follow-up ADB command ran.
+- Visual correctness and FPS/frame-time: not exercised. This is durable cache
+  and controller-safety progress, not startup-speed, FPS, flicker, gameplay,
+  sustained-stability, or temperature-win evidence.
+- Decision and next: retain the polling cap, frozen installed candidate, and
+  committed objects. Do not contact Thor again before
+  `2026-07-22T22:21:44.5031527-04:00` and a fresh strict cool gate. Continue
+  with at most one 70-second cache round; require native completion plus
+  callback-finished before a separately cooled title baseline and later
+  field/menu/first-battle correctness and performance proof.

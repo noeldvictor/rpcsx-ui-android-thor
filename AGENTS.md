@@ -1491,3 +1491,19 @@ Put dated run details in `debug-experiments/`, not here.
   cool run must still prove continuity by reusing at least 169
   objects, and no title/gameplay proof may run until native plus callback
   completion.
+
+- The next independently cool cache round
+  `20260722-215019-firmware-ppu-prewarm` proved the thermal-stop continuity
+  floor exactly: it reused 169 validated objects, compiled 16 more, and
+  advanced the firmware scan from file `104/142` to `118/142`, leaving 24
+  files. Strict preflight was `30.9 -> 30.1 -> 30.3 C`; the new 70-second
+  bound recorded 20 runtime samples averaging `38.0 C`, peaking at `48.2 C`,
+  with zero at/above `50 C`, and post-stop silicon `34.1 C`. Native completion
+  and callback remain absent, but no fatal, unplanned process death, game boot,
+  or residual PID occurred. The live loop now polls only the newest 500 logcat
+  rows and latches request markers, while the complete final logcat remains
+  saved. Classify `cache-progress-checkpoint` / `continuity-pass` /
+  `safety-pass` / `not-comparable`, with no speed, FPS, flicker, gameplay,
+  stability, or controlled thermal-win credit. Do not contact Thor again
+  before `2026-07-22T22:21:44.5031527-04:00` and a fresh strict cool gate;
+  require native plus callback completion before title/gameplay proof.
