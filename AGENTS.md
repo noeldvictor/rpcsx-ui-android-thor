@@ -1960,3 +1960,16 @@ Put dated run details in `debug-experiments/`, not here.
   `2026-07-23T16:18:43.5172237-04:00`; then spend at most one separate guarded
   title proof. No speed, thermal-runtime, flicker, gameplay, or stability
   credit exists yet.
+
+- Upstream PPU audit parks `24a157662` current-thread recycling for the
+  installed proof lane. The two prerequisite locking/hash commits are already
+  present, while recycling affects only cold misses, leaves two active compile
+  lanes under Thor's cap, and would repurpose the foreign JNI caller into the
+  little-core/low-priority scope; it cannot explain the measured all-hit warm
+  link. New host contract keeps two named cold-compile workers and caller
+  isolation. Current Android guidance instead favors a later default-off,
+  API-29-safe Thermal Headroom probe sampled no more than every 10 seconds,
+  followed by measured `1 <-> 2` startup-worker adaptation only if supported.
+  No native/APK/device change occurred; installed `490418F9...D95BF63` remains
+  stopped and authoritative. Ledger:
+  `debug-experiments/20260723-thor-ppu-thread-reuse-thermal-headroom-audit.md`.
