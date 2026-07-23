@@ -537,3 +537,26 @@ query or emulator action ran after the installer completed.
 - Next: the wrapper may permit one title proof only after Status reports
   cooldown ready; its existing exact identity, thermal, self-stop, native-load,
   visual, and fatal gates remain mandatory.
+
+### 2026-07-23 - cool-title-exact-native-object-floor
+
+- Status: proposed
+- Scope: route-tooling
+- Hypothesis: comparison readiness must prove every object in the latest safe
+  continuity floor, not merely any single native-object load.
+- Changed files/settings: the device-free cooldown gate stores
+  `minimum_required_spu_native_objects` and passes it to the title analyzer.
+  The analyzer counts `.obj` load rows only inside the SPU startup native-cache
+  phase, publishes loaded/required/floor-satisfied fields, and adds
+  `SPU native-object reuse` to missing activation when the floor is short.
+  Current successful seed therefore requires `7/7`.
+- Host result: four changed PowerShell scripts parse; synthetic default `1/1`
+  is ready, persisted JSON retains the floor, and synthetic `1/2` is
+  `activation-incomplete`; all `66/66` Thor host contracts and
+  `git diff --check` pass.
+- Thor result: not contacted. Installed APK/core/cache remain unchanged.
+- Decision: retain as fail-closed proof hardening. Grant no speed, FPS,
+  gameplay, flicker, stability, or thermal-win credit.
+- Next: after the enforced cooldown, one title proof must load all seven seeded
+  objects and pass exact identity, activation, visual, fatal, thermal, and
+  final-stop gates before any later comparison.

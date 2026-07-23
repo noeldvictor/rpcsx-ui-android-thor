@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$CaptureDir,
+    [ValidateRange(1, 64)]
+    [int]$MinimumSpuNativeObjects = 1,
     [switch]$RequireReady,
     [string]$OutputPath = ""
 )
@@ -216,6 +218,24 @@ foreach ($line in $guestLogLines) {
         }
     }
 }
+$spuNativeObjectPhaseMarker = "Thor SPU native-object cache enabled for startup LLVM objects:"
+$spuNativeObjectPhaseIndex = $guestLogText.IndexOf($spuNativeObjectPhaseMarker, [StringComparison]::Ordinal)
+$spuNativeObjectPhaseText = if ($spuNativeObjectPhaseIndex -ge 0) {
+    $spuNativeObjectPhaseEndIndex = $guestLogText.IndexOf("SPU Runtime: Workers built", $spuNativeObjectPhaseIndex, [StringComparison]::Ordinal)
+    if ($spuNativeObjectPhaseEndIndex -gt $spuNativeObjectPhaseIndex) {
+        $guestLogText.Substring($spuNativeObjectPhaseIndex, $spuNativeObjectPhaseEndIndex - $spuNativeObjectPhaseIndex)
+    } else {
+        $guestLogText.Substring($spuNativeObjectPhaseIndex)
+    }
+} else {
+    ""
+}
+$spuNativeObjectLoadCount = ([regex]::Matches(
+    $spuNativeObjectPhaseText,
+    '(?m)LLVM: Loaded module: [^\r\n]+[.]obj\r?$'
+)).Count
+$spuNativeObjectReuseFloorSatisfied = $spuNativeObjectLoadCount -ge $MinimumSpuNativeObjects
+
 $activationRequirements = [ordered]@{
     "two little-core PPU compile threads" = 'Max LLVM Compile Threads:\s*2'
     "PPU efficiency-core compile affinity" = 'Thor PPU LLVM compile-worker affinity enabled:\s*requested=0x7, effective=0x7'
@@ -238,6 +258,9 @@ foreach ($entry in $activationRequirements.GetEnumerator()) {
     if ($guestLogText -notmatch $entry.Value) {
         $activationMissing.Add($entry.Key) | Out-Null
     }
+}
+if (-not $spuNativeObjectReuseFloorSatisfied -and $activationMissing -notcontains "SPU native-object reuse") {
+    $activationMissing.Add("SPU native-object reuse") | Out-Null
 }
 
 $activationFallbackPattern = 'cache-worker affinity was not applied exactly|preload cache-hits-only was requested (?:without|but)|startup cache phase pacing timed out'
@@ -486,6 +509,9 @@ $result = [pscustomobject]@{
     property_mismatches = @($profilePropertyMismatches)
     activation_missing = @($activationMissing)
     activation_fallback_hits = @($activationFallbackHits)
+    spu_native_objects_loaded = $spuNativeObjectLoadCount
+    minimum_required_spu_native_objects = $MinimumSpuNativeObjects
+    spu_native_object_reuse_floor_satisfied = $spuNativeObjectReuseFloorSatisfied
     note = "Title-proof-ready authorizes a later correctness-locked A/B only; it is not FPS, speed, stability, or temperature credit."
 }
 
@@ -493,9 +519,9 @@ if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
     $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
 }
 
-Write-Host "Thor cool-title capture classification: $status (comparison-ready=$readyForComparison, max-silicon-C=$maxSiliconTemperatureC)"
+Write-Host "Thor cool-title capture classification: $status (comparison-ready=$readyForComparison, max-silicon-C=$maxSiliconTemperatureC, spu-native-objects=$spuNativeObjectLoadCount/$MinimumSpuNativeObjects)"
 if ($RequireReady -and -not $readyForComparison) {
-    throw "Thor cool-title capture is not comparison-ready: status=$status, property-mismatches=$($profilePropertyMismatches.Count), activation-missing=$($activationMissing.Count), fatal-hits=$($fatalHits.Count), thermal-failures=$($thermalFailureLines.Count)."
+    throw "Thor cool-title capture is not comparison-ready: status=$status, property-mismatches=$($profilePropertyMismatches.Count), activation-missing=$($activationMissing.Count), spu-native-objects=$spuNativeObjectLoadCount/$MinimumSpuNativeObjects, fatal-hits=$($fatalHits.Count), thermal-failures=$($thermalFailureLines.Count)."
 }
 
 $result

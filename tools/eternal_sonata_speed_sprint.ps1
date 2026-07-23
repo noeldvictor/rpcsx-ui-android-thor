@@ -198,6 +198,7 @@ if (
     throw "Thor cool-title candidate identity is invalid: $thorCoolTitleCandidatePath"
 }
 $thorCoolTitleCandidate.ApkSha256 = $thorCoolTitleCandidate.ApkSha256.ToUpperInvariant()
+$ThorCoolTitleMinimumNativeObjects = 0
 $Adb = "C:\Users\leanerdesigner\AppData\Local\Android\Sdk\platform-tools\adb.exe"
 if ($env:ANDROID_HOME -and (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"))) {
     $Adb = Join-Path $env:ANDROID_HOME "platform-tools\adb.exe"
@@ -376,6 +377,7 @@ function Assert-ThorCoolTitleCooldown {
         throw "Thor cool-title post-seed cooldown is not ready: remaining=$($status.cache_cooldown_remaining_seconds)s, ready_at=$($status.cache_cooldown_ready_at)."
     }
 
+    $script:ThorCoolTitleMinimumNativeObjects = $minimumObjects
     Write-Host "Thor cool-title cooldown passed: capture=$($status.spu_continuity_capture), minimum-native-objects=$minimumObjects."
 }
 
@@ -971,7 +973,7 @@ function Invoke-AndroidRouteScene {
         }
 
         $analysisPath = Join-Path $inputCapture.FullName "cool-title-analysis.json"
-        & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") -CaptureDir $inputCapture.FullName -OutputPath $analysisPath -RequireReady
+        & (Join-Path $PSScriptRoot "analyze_thor_cool_title_capture.ps1") -CaptureDir $inputCapture.FullName -MinimumSpuNativeObjects $ThorCoolTitleMinimumNativeObjects -OutputPath $analysisPath -RequireReady
         Write-Host "Thor cool-title profile stopped after its title proof; redundant live scene capture skipped."
         return
     }

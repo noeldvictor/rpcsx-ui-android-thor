@@ -20,6 +20,7 @@ $sourceContracts = @(
     'thor_cool_title_candidate.psd1',
     'AndroidExpectedInstalledApkSha256 = [string]$thorCoolTitleCandidate.ApkSha256',
     'AndroidSpuNativeObjectCache = "on"',
+    '$ThorCoolTitleMinimumNativeObjects = 0',
     'ExpectedInstalledApkSha256 = $AndroidExpectedInstalledApkSha256',
     'if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus"))',
     'Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value',
@@ -62,7 +63,8 @@ foreach ($fragment in @(
     '"cache_cooldown_ready"',
     '"minimum_required_spu_native_objects"',
     'requires at least one durable SPU native object',
-    'post-seed cooldown is not ready'
+    'post-seed cooldown is not ready',
+    '$script:ThorCoolTitleMinimumNativeObjects = $minimumObjects'
 )) {
     if (-not $cooldownFunction.Contains($fragment)) {
         throw "Thor cool-title cooldown gate is missing: $fragment"
@@ -128,6 +130,7 @@ $routeContracts = @(
     'cool-title-analysis.json',
     '-OutputPath $analysisPath',
     '-RequireReady',
+    '-MinimumSpuNativeObjects $ThorCoolTitleMinimumNativeObjects',
     'redundant live scene capture skipped',
     'return'
 )

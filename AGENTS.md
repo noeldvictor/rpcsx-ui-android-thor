@@ -1709,3 +1709,12 @@ Put dated run details in `debug-experiments/`, not here.
   locally with `remaining=1488s`; no ADB/device command ran. Profile dry-run,
   AST parsing, and all `66/66` host contracts pass. Other profiles/actions are
   unchanged. This is host-only thermal safety, not performance credit.
+
+- The cooldown gate now passes its exact successful seed floor into the title
+  analyzer. For current capture `20260723-020444...`, title readiness requires
+  all `7/7` native objects loaded, not merely one. Loads are counted only after
+  the SPU native-cache activation marker and before the worker summary, avoiding
+  unrelated PPU/JIT rows. A synthetic `1/2` capture fails
+  `activation-incomplete`; default `1/1`, JSON persistence, AST parsing, and all
+  `66/66` host contracts pass. No APK/core/device action occurred. This is
+  proof-hardening only and grants no performance or correctness credit.

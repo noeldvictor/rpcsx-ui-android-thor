@@ -242,7 +242,8 @@ try {
     $ready = & $analyzerPath -CaptureDir $readyDir
     if ($ready.status -ne "title-proof-ready" -or -not $ready.ready_for_comparison -or $ready.speed_credit -or
         $ready.first_title_frame_elapsed_ms -ne 1200 -or $ready.stable_title_frame_elapsed_ms -ne 6500 -or
-        $ready.title_stability_window_ms -ne 5300) {
+        $ready.title_stability_window_ms -ne 5300 -or $ready.spu_native_objects_loaded -ne 1 -or
+        $ready.minimum_required_spu_native_objects -ne 1 -or -not $ready.spu_native_object_reuse_floor_satisfied) {
         throw "Synthetic ready capture was not classified as title-proof-ready without speed credit and exact title timing."
     }
     $readyJsonPath = Join-Path $readyDir "cool-title-analysis.json"
@@ -250,7 +251,8 @@ try {
     $readyJson = Get-Content -LiteralPath $readyJsonPath -Raw | ConvertFrom-Json
     if ($readyJson.status -ne "title-proof-ready" -or -not $readyJson.ready_for_comparison -or
         $readyJson.first_title_frame_elapsed_ms -ne 1200 -or $readyJson.stable_title_frame_elapsed_ms -ne 6500 -or
-        $readyJson.title_stability_window_ms -ne 5300) {
+        $readyJson.title_stability_window_ms -ne 5300 -or $readyJson.spu_native_objects_loaded -ne 1 -or
+        $readyJson.minimum_required_spu_native_objects -ne 1 -or -not $readyJson.spu_native_object_reuse_floor_satisfied) {
         throw "Persisted title analysis JSON did not retain exact classification and timing evidence."
     }
 
@@ -344,6 +346,15 @@ try {
         throw "Synthetic missing SPU native-object reuse did not fail closed."
     }
 
+    $partialNativeReuse = & $analyzerPath -CaptureDir $readyDir -MinimumSpuNativeObjects 2
+    if ($partialNativeReuse.status -ne "activation-incomplete" -or $partialNativeReuse.ready_for_comparison -or
+        $partialNativeReuse.spu_native_objects_loaded -ne 1 -or
+        $partialNativeReuse.minimum_required_spu_native_objects -ne 2 -or
+        $partialNativeReuse.spu_native_object_reuse_floor_satisfied -or
+        $partialNativeReuse.activation_missing -notcontains "SPU native-object reuse") {
+        throw "Synthetic partial SPU native-object reuse did not fail the continuity floor."
+    }
+
     $logIncompleteDir = Join-Path $tempRoot "title-proof-log-incomplete"
     Copy-Item -LiteralPath $readyDir -Destination $logIncompleteDir -Recurse
     "·! 0:00:00.010546 Input: startup log writer stopped before activation evidence" |
@@ -430,4 +441,4 @@ try {
     }
 }
 
-Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, two-thread little-core PPU compile cap, managed FTZ, durable SPU native-object activation/reuse, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
+Write-Output "Thor cool-title capture analyzer contract passed: exact APK/core identity, two-thread little-core PPU compile cap, managed FTZ, durable SPU native-object activation/reuse floor, stalled-log diagnosis, property/runtime activation, title, fatal, thermal, self-stop, and no-speed-credit gates are deterministic and host-only."
