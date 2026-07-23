@@ -2080,3 +2080,16 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify this as host-verified
   `stackable-cpu-pressure`, not a measured speed/thermal result. Ledger:
   `debug-experiments/20260723-thor-frame-wait-single-waiter-registration.md`.
+- Host-only Android VBlank completion publication now uses a release atomic
+  increment at both queued-handler and fallback sites. Exact ARM64 successor
+  emits `LDADDL` instead of `LDADDAL` for the completion token while waiter
+  `LDAR`, atomic modification order/release sequences, notification, bounds,
+  gates, and fallback remain intact; the unrelated VBlank counter stays
+  `LDADDAL`. The exact successor is APK `6ED1D40A...8C8BA1` /
+  `72,838,248` bytes, merged core `85463279...53E3B5` /
+  `1,304,307,440` bytes, and packaged core `D3ACADBF...81FBC` /
+  `62,988,904` bytes. ARM64 native/APK builds, linked disassembly, exact
+  artifact gate, and all `69/69` host contracts pass. Thor was not contacted.
+  Classify as host-verified `stackable-cpu-pressure`, not measured speed or
+  thermal credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-completion-release-publication.md`.

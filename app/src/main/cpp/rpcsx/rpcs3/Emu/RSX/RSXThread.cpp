@@ -118,6 +118,18 @@ bool serialize<rsx::rsx_iomap_table>(utils::serial& ar, rsx::rsx_iomap_table& o)
 
 namespace rsx
 {
+	static inline void publish_vblank_wait_completion(atomic_t<u32>& token) noexcept
+	{
+#ifdef __ANDROID__
+		// Completion publishes the guest handler's preceding writes. The
+		// producer never consumes data through this token, so Android needs
+		// release ordering without the acquire half of a seq-cst increment.
+		__atomic_fetch_add(&token.raw(), u32{1}, __ATOMIC_RELEASE);
+#else
+		token++;
+#endif
+	}
+
 	bool is_es_ppu_rsx_profile_enabled() noexcept
 	{
 		static const bool requested = []()
@@ -898,7 +910,7 @@ namespace rsx
 						{
 							if (const auto renderer = rsx::get_current_renderer())
 							{
-								renderer->vblank_wait_token++;
+								publish_vblank_wait_completion(renderer->vblank_wait_token);
 								if (renderer->vblank_waiter_registered)
 								{
 									renderer->vblank_wait_token.notify_all();
@@ -923,7 +935,7 @@ namespace rsx
 
 		if (vblank_waiter_registered)
 		{
-			vblank_wait_token++;
+			publish_vblank_wait_completion(vblank_wait_token);
 			vblank_wait_token.notify_all();
 		}
 
