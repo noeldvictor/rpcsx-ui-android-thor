@@ -1465,3 +1465,16 @@ Put dated run details in `debug-experiments/`, not here.
   `not-comparable`. Do not compare growing per-run module totals as cumulative
   progress; file position and committed-object reuse are the continuity proof.
   No more Thor contact before the new 30-minute gate passes.
+
+- The next independently cool round
+  `20260722-211758-firmware-ppu-prewarm` passed exact identity/source/affinity
+  and preflight `31.3 -> 31.5 -> 30.1 C`, reused 153 objects, compiled 16, and
+  advanced to firmware file `104/142` with 38 files remaining. At `77.817 s`,
+  after 21 samples no higher than `39.0 C`, sample 22 reached `55.4 C`; the
+  controller immediately force-stopped at its `55 C` early threshold below the
+  `60 C` hard ceiling. Post-stop was `35.5 C`, PID was absent, and there was no
+  fatal, process death, callback, native completion, or game boot. Classify
+  `thermal-stop-with-durable-cache-progress` / `safety-pass` /
+  `not-comparable`; the next cool run must prove the 16 atomic objects persisted
+  by reusing at least 169 before credit. No more Thor contact before
+  `2026-07-22T21:49:31.1302428-04:00` and a fresh strict cool gate.

@@ -2101,3 +2101,36 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   one bounded round at a time until native completion plus callback-finished,
   then reserve a separate cool round for title and later field/menu/battle
   correctness, performance, flicker, stability, and thermal proof.
+
+### 2026-07-22 - sixth-cache-round-thermal-stop
+
+- Status: thermal-stop-with-durable-cache-progress / safety-pass /
+  firmware-scan-progress / not-comparable
+- Thor result: capture `20260722-211758-firmware-ppu-prewarm` passed exact
+  installed APK A7216402...3D15C, ISO/root/title, requested/effective affinity
+  `0x7`, and strict preflight `31.3 -> 31.5 -> 30.1 C`. It reused 153
+  validated objects, compiled 16 new objects, and advanced the firmware scan
+  from file `92/142` to `104/142`; the current discovered workload reached
+  `16/18`, leaving two known modules and 38 files still to enumerate.
+- Thermal result: the controller ran for `77.817 s`. Twenty-two runtime samples
+  averaged `38.2 C`, minimum `35.9 C`, and stayed at or below `39.0 C` through
+  sample 21. Sample 22 rose to `55.4 C`, so the controller immediately
+  force-stopped at the `55 C` early threshold below the `60 C` hard ceiling.
+  Post-stop silicon was `35.5 C`; battery/skin were `22.0/30.0 C`.
+- Health result: request acceptance, native activation, exact source, and named
+  workers passed. Native completion and callback-finished remain absent. The
+  saved capture reports no native fatal, process death, FATAL EXCEPTION, ANR,
+  game boot, or residual PID. No follow-up ADB query or retry ran.
+- Progress interpretation: the controller correctly classifies the thermal
+  stop as failed rather than a normal checkpoint. Atomic object writes mean the
+  16 completed modules should remain reusable, but the next independently cool
+  run must prove continuity by reusing at least 169 objects before granting
+  durable-progress credit for this stopped round.
+- Visual correctness and FPS/frame-time: not exercised. This safety stop is not
+  startup-speed, FPS, gameplay, flicker, sustained-stability, or thermal-win
+  evidence.
+- Decision: keep Thor stopped and do not contact it again before both the new
+  30-minute interval (ready no earlier than `2026-07-22T21:49:31.1302428-04:00`)
+  and a fresh strict cool gate pass. Continue with one bounded cache round only;
+  require native completion plus callback-finished before the separately cooled
+  title and field/menu/battle proof.
