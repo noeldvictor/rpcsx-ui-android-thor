@@ -1451,3 +1451,17 @@ Put dated run details in `debug-experiments/`, not here.
   device-free Status reports the latest capture, completion/ready timestamps,
   readiness, and remaining seconds; missing or malformed latest evidence fails
   closed. The strict temperature gate remains a second, independent check.
+
+- After the enforced interval, checkpoint
+  `20260722-204551-firmware-ppu-prewarm` passed exact APK/source/affinity and
+  strict preflight at `30.9 -> 30.9 -> 30.5 C`. It reused 138 validated objects,
+  compiled 15 new firmware modules, and advanced to file `92/142`, current
+  discovered workload `15/19` with four known modules remaining. The new
+  summary recorded 25 runtime samples averaging `38.3 C`, minimum `35.1 C`,
+  peak `48.2 C`, two at/above `45 C`, zero at/above `50 C`, and post-stop
+  `34.3 C`. Native completion/callback remain absent; no fatal, process death,
+  game boot, or residual PID occurred. Classify `cache-progress-checkpoint` /
+  `warm-eboot-complete` / `firmware-scan-progress` / `thermal-progress` /
+  `not-comparable`. Do not compare growing per-run module totals as cumulative
+  progress; file position and committed-object reuse are the continuity proof.
+  No more Thor contact before the new 30-minute gate passes.

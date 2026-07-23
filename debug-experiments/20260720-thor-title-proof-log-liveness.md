@@ -2063,3 +2063,41 @@ requiring synchronized success plus complete activation/fatal-log evidence.
 - Decision: retain. This is a safety invariant, not speed, FPS, gameplay,
   flicker, stability, or thermal-win evidence. A later Run must pass both the
   time gate and the fresh three-sample temperature gate.
+
+### 2026-07-22 - fifth-cache-checkpoint
+
+- Status: cache-progress-checkpoint / warm-eboot-complete /
+  firmware-scan-progress / thermal-progress / not-comparable
+- Scope: stopped-emulator firmware cache continuation under enforced time and
+  temperature gates
+- Thor result: the host time crossed the exact prior ready boundary at
+  `20:45:42.548-04:00`; the controller then independently passed exact
+  installed APK A7216402...3D15C, ISO/root/title, requested/effective affinity
+  `0x7`, and strict preflight `30.9 -> 30.9 -> 30.5 C`. The warm EBOOT phase
+  returned without standalone compile progress. Firmware scanning advanced to
+  file `92/142`; the current growing workload reached `15/19`, leaving four
+  known modules and 50 files still to enumerate. The run reused 138 validated
+  objects and compiled 15 new objects, exactly continuing from the prior
+  round's 122 reused plus 16 compiled objects.
+- Thermal result: the new durable summary recorded 25 runtime samples,
+  average `38.3 C`, minimum `35.1 C`, peak `48.2 C`, two samples at/above
+  `45 C`, zero at/above the `50 C` confirmation threshold, and post-stop
+  silicon `34.3 C`. No thermal guard fired.
+- Health result: request acceptance and native activation passed. Native
+  completion and callback-finished remain absent. Saved log replay has no
+  target native fatal, process death, FATAL EXCEPTION, ANR,
+  `VK_ERROR_DEVICE_LOST`, game boot, or residual PID. No retry or follow-up
+  device command ran.
+- Progress interpretation: firmware module totals are reconstructed per run
+  while additional files are discovered and already cached modules are skipped;
+  therefore prior `16/21` versus current `15/19` is not regression or a
+  cumulative counter. Durable continuity is proven by reuse rising `122 -> 138`
+  and firmware file position rising `83 -> 92` while new objects compile.
+- Visual correctness and FPS/frame-time: not exercised. This is bounded cache
+  progress, not startup-speed, FPS, gameplay, flicker, sustained-stability, or
+  controlled thermal-win evidence.
+- Decision: retain the frozen installed candidate and completed objects. No
+  more Thor contact before the new capture's 30-minute gate passes. Continue
+  one bounded round at a time until native completion plus callback-finished,
+  then reserve a separate cool round for title and later field/menu/battle
+  correctness, performance, flicker, stability, and thermal proof.
