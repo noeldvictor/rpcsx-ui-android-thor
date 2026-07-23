@@ -152,6 +152,20 @@ foreach ($entry in $cleanupExpected.GetEnumerator()) {
         $cleanupPropertyMismatches.Add("$($entry.Key): expected reset '$($entry.Value)', got '$actualText'") | Out-Null
     }
 }
+$failureCleanupActual = @{}
+foreach ($line in (Read-OptionalLines "startup-profile-failure-reset-effective.txt")) {
+    if ($line -match '^([^#][^=]+)=(.*)$') {
+        $failureCleanupActual[$Matches[1].Trim()] = $Matches[2].Trim()
+    }
+}
+$failureCleanupPropertyMismatches = New-Object System.Collections.Generic.List[string]
+foreach ($entry in $cleanupExpected.GetEnumerator()) {
+    $actual = if ($failureCleanupActual.ContainsKey($entry.Key)) { $failureCleanupActual[$entry.Key] } else { $null }
+    if ($actual -cne $entry.Value) {
+        $actualText = if ($null -eq $actual) { "<missing>" } else { $actual }
+        $failureCleanupPropertyMismatches.Add("$($entry.Key): expected failure reset '$($entry.Value)', got '$actualText'") | Out-Null
+    }
+}
 $installedApkIdentity = @{}
 foreach ($line in (Read-OptionalLines "installed-apk-identity.txt")) {
     if ($line -match '^([^#][^=]+)=(.*)$') {
@@ -339,6 +353,7 @@ $failurePidValues = @(
         Where-Object { $_ -match '^\d+(?:\s+\d+)*$' }
 )
 $processAbsentAtFailure = $failurePidLines.Count -gt 0 -and $failurePidValues.Count -eq 0
+$failureCleanupReady = $processAbsentAtFailure -and $failureCleanupPropertyMismatches.Count -eq 0
 $siliconTemperatures = New-Object System.Collections.Generic.List[double]
 foreach ($line in $thermalLines) {
     if ($line -match 'silicon_temperature_c=([0-9]+(?:\.[0-9]+)?)') {
@@ -544,6 +559,8 @@ $result = [pscustomobject]@{
     thermal_failure_lines = @($thermalFailureLines)
     preflight_refusal_lines = @($preflightRefusalLines)
     process_absent_at_failure = $processAbsentAtFailure
+    failure_cleanup_ready = $failureCleanupReady
+    failure_cleanup_property_mismatches = @($failureCleanupPropertyMismatches)
     fatal_hits = @($fatalHits)
     property_mismatches = @($profilePropertyMismatches)
     cleanup_property_mismatches = @($cleanupPropertyMismatches)

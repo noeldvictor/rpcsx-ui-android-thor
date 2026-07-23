@@ -2330,3 +2330,30 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   frozen, use the tightened `64/68 C` title profile for any later independently
   cool proof, and investigate the post-cache CPU/SPU startup burst host-side
   before another one-shot route.
+
+### 2026-07-23 - failure-cleanup-proof
+
+- Status: host-evidence-hardening / no-device-contact / not-comparable
+- Authoritative failed title capture:
+  `20260723-023526-thor-input-custom` remains
+  `thermal-stop-before-title`: exact APK and `7/7` native-object reuse passed,
+  silicon peaked at `63.0 C`, title was not reached, and final PID was absent.
+- Gap and change: the macro now writes a batched 21-property reset readback on
+  failed booted routes, but the analyzer previously validated only the normal
+  success cleanup file. It now parses
+  `startup-profile-failure-reset-effective.txt` independently and reports
+  `failure_cleanup_ready` plus exact failure-reset mismatches without hiding
+  the primary thermal/fatal/preflight classification.
+- Current evidence: the old failed capture predates that readback, so its
+  archived analysis honestly reports `failure_cleanup_ready=False` and all
+  `21` reset facts missing while retaining `process_absent_at_failure=True`.
+  A future capture can earn cleanup readiness only with absent PID and all
+  21 safe values.
+- Verification: synthetic complete and leaked-property failure paths pass,
+  PowerShell parses, `git diff --check` passes, and all `66/66` Thor host
+  contracts pass.
+- Decision and next: this is cleanup-proof hardening, not speed, FPS, thermal,
+  flicker, gameplay, or stability credit. The installed APK/core remain frozen.
+  Do not contact Thor before the title-sourced cooldown opens at
+  `2026-07-23T03:05:48.9964640-04:00`; then run at most one guarded cooler
+  `64 RSX / 200 ms, 17 SPU / 25 ms` title proof.

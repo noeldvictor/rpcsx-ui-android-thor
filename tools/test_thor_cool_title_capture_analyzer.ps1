@@ -459,9 +459,23 @@ try {
     "stage=screenshot-ppu-ready-near-limit-confirm silicon_temperature_c=68.7 silicon_limit_c=68" |
         Add-Content -LiteralPath (Join-Path $thermalDir "thermal-guard.log") -Encoding UTF8
     Write-AdbEvidence -Directory $thermalDir -Name "failure-pid.txt" -Value "exit=1"
+    Copy-Item -LiteralPath (Join-Path $thermalDir "startup-profile-reset-effective.txt") `
+        -Destination (Join-Path $thermalDir "startup-profile-failure-reset-effective.txt")
     $thermal = & $analyzerPath -CaptureDir $thermalDir
-    if ($thermal.status -ne "thermal-stop-before-title" -or $thermal.ready_for_comparison) {
+    if ($thermal.status -ne "thermal-stop-before-title" -or $thermal.ready_for_comparison -or
+        -not $thermal.failure_cleanup_ready -or $thermal.failure_cleanup_property_mismatches.Count -ne 0) {
         throw "Synthetic launched thermal stop with normal preflight rows did not retain its primary failure classification."
+    }
+
+    $thermalCleanupMismatchDir = Join-Path $tempRoot "thermal-stop-cleanup-mismatch"
+    Copy-Item -LiteralPath $thermalDir -Destination $thermalCleanupMismatchDir -Recurse
+    (Get-Content -LiteralPath (Join-Path $thermalCleanupMismatchDir "startup-profile-failure-reset-effective.txt")) -replace '^debug[.]rpcsx[.]thor[.]spu_native_object_cache=off$', 'debug.rpcsx.thor.spu_native_object_cache=on' |
+        Set-Content -LiteralPath (Join-Path $thermalCleanupMismatchDir "startup-profile-failure-reset-effective.txt") -Encoding UTF8
+    $thermalCleanupMismatch = & $analyzerPath -CaptureDir $thermalCleanupMismatchDir
+    if ($thermalCleanupMismatch.status -ne "thermal-stop-before-title" -or $thermalCleanupMismatch.ready_for_comparison -or
+        $thermalCleanupMismatch.failure_cleanup_ready -or $thermalCleanupMismatch.failure_cleanup_property_mismatches.Count -ne 1 -or
+        $thermalCleanupMismatch.failure_cleanup_property_mismatches -notmatch 'spu_native_object_cache') {
+        throw "Synthetic launched thermal stop with leaked failure-reset state did not report incomplete cleanup."
     }
 
     $preflightDir = Join-Path $tempRoot "preflight-refused-hot"

@@ -1750,3 +1750,14 @@ Put dated run details in `debug-experiments/`, not here.
   batched 21-property reset readback. No APK/core build, install, launch, ADB,
   or device query accompanied these host changes; the exact installed candidate
   remains frozen pending a later independently cool proof.
+
+- The title analyzer now validates the failure path's batched 21-property
+  reset readback independently from normal successful cleanup. It reports
+  `failure_cleanup_ready` only when failure PID is absent and every transient
+  property is at its safe value while preserving the primary thermal/fatal/
+  preflight classification. The prior `20260723-023526...` capture predates
+  readback and therefore reports all 21 facts missing, not a false cleanup
+  pass. Synthetic complete/leaked-reset cases and all `66/66` host contracts
+  pass. No APK/core build or device contact occurred; installed
+  `5044976A...D83E5C` remains frozen until the title-sourced cooldown opens at
+  `2026-07-23T03:05:48.9964640-04:00`.
