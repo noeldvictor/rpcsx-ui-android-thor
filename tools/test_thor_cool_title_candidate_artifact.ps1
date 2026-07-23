@@ -140,6 +140,7 @@ $nativeMarkers = @(
     "Thor SPU native-object cache enabled for startup LLVM objects:",
     "Thor SPU cache preload limit:",
     "Thor SPU cache compile budget enabled for BLUS30161:",
+    "Thor SPU cache-worker pool matched to affinity:",
     "Thor SPU cache-worker affinity enabled:",
     "debug.rpcsx.thor.spu_native_object_cache",
     "debug.rpcsx.thor.spu_cache_preload_limit",

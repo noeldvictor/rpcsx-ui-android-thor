@@ -41,6 +41,7 @@ Assert-Contains $spuCommon 'g_cfg.core.spu_decoder == spu_decoder_type::llvm' "S
 Assert-Contains $spuCommon 'spu_native_object_cache_enabled() && g_cfg.core.spu_decoder == spu_decoder_type::llvm' "The native-cache capability is no longer independent of guest-program cache contents."
 Assert-Contains $spuCommon 'runtime.enable_native_object_cache()' "SPU native-cache directory creation is not fail-closed."
 Assert-Contains $spuCommon 'startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.' "Startup-object activation and runtime-miss isolation are not documented."
+Assert-Contains $spuCommon 'spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects:' "Android native-cache activation evidence is not durable."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache)' "The startup LLVM interpreter does not receive the native-cache capability."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache)' "Startup workers do not receive the native-cache capability."
 Assert-Contains $spuCommon 'compiler = spu_recompiler_base::make_llvm_recompiler();' "The runtime optimization worker no longer retains the default uncached compiler."
@@ -125,12 +126,18 @@ foreach ($fragment in @(
     '$spuNativeObjectCache = "on"',
     '$spuCachePreloadLimit = 64',
     '$spuCacheCompileBudgetMs = 100',
+    '$cacheWorkerAffinityMask = 7',
+    '$spuCacheWorkerLimit = 3',
+    'Thor SPU cache-worker pool matched to affinity:',
+    'SPU cache worker pool matched:',
     'setprop debug.rpcsx.thor.spu_native_object_cache $spuNativeObjectCache',
     'setprop debug.rpcsx.thor.spu_cache_preload_limit $spuCachePreloadLimit',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms $spuCacheCompileBudgetMs',
+    'setprop debug.rpcsx.thor.cache_worker_affinity_mask $cacheWorkerAffinityMask',
     'setprop debug.rpcsx.thor.spu_native_object_cache off',
     'setprop debug.rpcsx.thor.spu_cache_preload_limit 0',
     'setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0',
+    'setprop debug.rpcsx.thor.cache_worker_affinity_mask 0',
     'SPU properties reset:'
 )) {
     Assert-Contains $cachePrepareSource $fragment "Guarded cache-preparation SPU control is missing: $fragment"

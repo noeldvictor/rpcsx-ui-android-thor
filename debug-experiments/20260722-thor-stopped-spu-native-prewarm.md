@@ -175,3 +175,79 @@ query or emulator action ran after the installer completed.
 - Next: wait until the install cooldown expires, require one fresh strict cool
   gate, and run at most one stopped-emulator cache preparation. Do not boot the
   game in that round.
+
+### 2026-07-23 - first-stopped-spu-seed-evidence-failure
+
+- Status: failed
+- Scope: spu-codegen
+- Hypothesis: reuse the complete PPU cache and seed bounded SPU native objects
+  off-boot without heating the device or entering gameplay.
+- Changed files/settings: the run requested SPU native objects `on`, oldest
+  preload `64`, and a `100 ms` compile budget. The controller had not applied
+  `debug.rpcsx.thor.cache_worker_affinity_mask=7`, so the SPU pool used the
+  default scheduler. The successor controller now applies/verifies `7`, limits
+  the pool proof to three workers, and resets/readbacks `0`; Android native-cache
+  activation is promoted to the durable `Always` log level.
+- Rollback: the failed run force-stopped RPCSX and read back native cache
+  `off`, preload `0`, and budget `0`; PID was absent. The successor retains the
+  same finally-path cleanup and adds affinity reset to `0`.
+- Windows result: not applicable. All focused host contracts pass after repair.
+- Thor result: strict no-boot gate passed at `32.7 -> 32.1 -> 32.9 C`.
+  Cache preflight passed at `32.5 -> 32.7 -> 33.5 C`. PPU preparation reused
+  `209` validated modules, completed all `142/142` firmware files, and reached
+  `64/64` module progress. The SPU phase found `1,165` unique programs and
+  workers built `6/64` within the `100 ms` budget. Runtime peak was `36.3 C`;
+  post-stop was `33.9 C`; no native fatal or process death occurred.
+- Visual correctness: not exercised; game boot was `no`.
+- FPS/frame-time: unmeasured.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260723-000042-thor-input-strict-cool-gate`;
+  `debug-captures/android-speed-sprint/20260723-000120-firmware-ppu-prewarm`.
+- Decision: `failed-evidence-gate` / `not-comparable`. The callback and both
+  native phases completed, but exact native-cache enablement and three-worker
+  affinity were not proven. The six compiled programs are useful side-effect
+  evidence, not a verified cache seed or speed/thermal win. Grant no FPS,
+  startup-speed, gameplay, flicker, stability, or end-to-end temperature credit.
+- Next: build an exact successor with durable native-cache evidence, install it
+  only after a new cooldown and strict no-launch gate, then reserve any seed
+  rerun for a still later independently cool round. Do not contact Thor again
+  in this round.
+
+### 2026-07-23 - affinity-proof-successor-host-artifact
+
+- Status: proposed
+- Scope: spu-codegen
+- Hypothesis: make the stopped-emulator SPU native-object seed fail closed
+  unless its workers are proven on the three-core `0x7` affinity set and
+  native-cache activation remains visible under quiet Android logging.
+- Changed files/settings: the cache controller now applies and verifies
+  `debug.rpcsx.thor.cache_worker_affinity_mask=7`, requires
+  `requested=3, workers=3, mask=0x7`, and resets/readbacks affinity `0` after
+  force-stop. The Android native-cache activation row now uses durable
+  `Always` logging; desktop keeps its existing notice level. Exact artifact
+  gates require both behaviors in the packaged core and controller.
+- Rollback: reinstall the preceding exact APK through the strict no-launch
+  gate. Runtime defaults remain native cache `off`, preload `0`, compile budget
+  `0`, and cache-worker affinity `0`.
+- Windows result: not applicable. Optimized ARM64 native build passed in
+  `1m 8s`; incremental ARM64-only ThorTest packaging passed in `12s`.
+  All `66/66` Thor host contracts, exact ARM64 APK identity, optimized-variant,
+  cool-title profile, cache-preparation route, native-object cache, affinity,
+  and artifact gates pass.
+- Thor result: not run. No ADB, install, launch, or device query occurred.
+- Visual correctness: not exercised.
+- FPS/frame-time: unmeasured.
+- Exact host artifact:
+  - APK: `72,834,432` bytes,
+    `D6584048525CFDFF5342D39F350391B44A366038BCE11A24B9F8E3363F4E77CE`
+  - merged ARM64 core: `1,304,246,096` bytes,
+    `BC9D58E5298C60A36AA4106D104648871CA210DA3440F623FC4AB736F0DE8CF1`
+  - stripped/packaged core: `62,983,800` bytes,
+    `74B7EC4DC43C8ED7BD13B6135C19B90CE31EB196811C25623554074A56678C0C`
+- Decision: `host-verified-successor` / `uninstalled` / `not-comparable`.
+  This closes the two evidence gaps exposed by the first seed but grants no
+  speed, startup, FPS, thermal-win, gameplay, flicker, or stability credit.
+- Next: after a new independent cooldown, install this exact APK under one
+  strict no-launch round. Reserve the stopped-emulator seed for a different
+  cool round, and require exact three-worker plus durable native-cache evidence
+  before any later warm title/gameplay comparison.

@@ -1108,7 +1108,11 @@ void spu_cache::initialize(bool build_existing_cache)
 		use_native_object_cache = runtime.enable_native_object_cache();
 		if (use_native_object_cache)
 		{
+#ifdef __ANDROID__
+			spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
+#else
 			spu_log.notice("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
+#endif
 		}
 	}
 

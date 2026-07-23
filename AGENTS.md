@@ -1576,3 +1576,23 @@ Put dated run details in `debug-experiments/`, not here.
   `2026-07-23T00:00:25.9542488-04:00` before resolving ADB. Do not contact Thor
   again before then and a fresh strict cool gate; run only one stopped-emulator
   SPU seed in that later round.
+- Exact installed `8F1C9838...C01D1C25` then ran one stopped-emulator seed in
+  `20260723-000120-firmware-ppu-prewarm` after strict gate
+  `20260723-000042-thor-input-strict-cool-gate` passed at
+  `32.7 -> 32.1 -> 32.9 C`. The callback and PPU/SPU phases completed, `209`
+  PPU modules were reused, all `142/142` firmware files completed, and SPU
+  workers built `6/64` of `1,165` unique programs under the `100 ms` budget.
+  Peak silicon was only `36.3 C`, post-stop was `33.9 C`, PID was absent, and
+  properties reset. Classify it `failed-evidence-gate` / `not-comparable`
+  because the controller had not applied cache-worker mask `0x7` and the
+  native-cache enabled row was not durable. Grant no speed, FPS, gameplay,
+  stability, or thermal-win credit. Exact host successor
+  `D6584048525CFDFF5342D39F350391B44A366038BCE11A24B9F8E3363F4E77CE`
+  applies/verifies/reset-readbacks affinity `7/0`, requires a three-worker pool,
+  and emits native-cache enablement at Android `Always`. Optimized ARM64 native
+  and APK builds, exact package/core identity, and all `66/66` Thor host
+  contracts pass. The APK is `72,834,432` bytes; merged core
+  `BC9D58E5...E8CF1` is `1,304,246,096` bytes and packaged core
+  `74B7EC4D...78C0C` is `62,983,800` bytes. It is uninstalled and
+  device-unmeasured. Do not contact Thor again before a new cooldown,
+  no-launch install round, and later separately cool seed round.
