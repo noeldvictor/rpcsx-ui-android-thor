@@ -145,6 +145,8 @@ $nativeMarkers = @(
     "debug.rpcsx.thor.spu_native_object_cache",
     "debug.rpcsx.thor.spu_cache_preload_limit",
     "debug.rpcsx.thor.spu_cache_compile_budget_ms",
+    "debug.rpcsx.thor.spu_cache_worker_limit",
+    "RPCSX_THOR_SPU_CACHE_WORKER_LIMIT",
     "thor-spu-native-v2",
     "spu-native-v2/"
 )
