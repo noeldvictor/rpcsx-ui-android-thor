@@ -259,6 +259,39 @@ if ($spuNativeReuseFloor -ne 10 -or
     (Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText "") -ne 0) {
     throw "SPU native-object reuse floor did not preserve cumulative cache continuity."
 }
+$exactContinuityHash = 'A' * 64
+$staleContinuityHash = 'B' * 64
+$exactContinuityReadme = @"
+- Status: cache-prepared-exact-no-game-boot
+- Expected/host APK SHA-256: $exactContinuityHash
+- Installed APK SHA-256: $exactContinuityHash
+- SPU native completed: True
+- SPU native cache enabled: True
+- SPU preload bounded: True
+- SPU compile budget enabled: True
+- SPU cache affinity matched: True
+- SPU cache worker pool matched: True
+- SPU native objects loaded: 4
+- SPU workers built programs: 6
+- SPU properties reset: True
+- Native process died: False
+- Native fatal: False
+- Game boot: no
+"@
+if ((Get-ThorSpuNativeObjectReuseFloorForApk -LatestReadmeText $exactContinuityReadme -ExpectedApkSha256 $exactContinuityHash) -ne 10 -or
+    (Get-ThorSpuNativeObjectReuseFloorForApk -LatestReadmeText $exactContinuityReadme -ExpectedApkSha256 $staleContinuityHash) -ne 0 -or
+    (Get-ThorSpuNativeObjectReuseFloorForApk -LatestReadmeText ($exactContinuityReadme -replace "Installed APK SHA-256: $exactContinuityHash", "Installed APK SHA-256: $staleContinuityHash") -ExpectedApkSha256 $exactContinuityHash) -ne 0) {
+    throw "SPU native-object continuity did not fail closed across APK identity changes."
+}
+$invalidContinuityHashRejected = $false
+try {
+    [void](Get-ThorSpuNativeObjectReuseFloorForApk -LatestReadmeText $exactContinuityReadme -ExpectedApkSha256 'invalid')
+} catch {
+    $invalidContinuityHashRejected = $true
+}
+if (-not $invalidContinuityHashRejected) {
+    throw "SPU native-object continuity accepted an invalid expected APK hash."
+}
 if ((Get-ThorSpuNativeObjectReuseFloor -LatestReadmeText @'
 - Status: failed
 - SPU native completed: True
@@ -522,6 +555,9 @@ foreach ($fragment in @(
     'minimum_required_reused_modules=',
     'minimum_required_spu_native_objects=',
     'spu_continuity_capture=',
+    'spu_continuity_apk_sha256=',
+    'Get-ThorSpuNativeObjectReuseFloorForApk',
+    '-ExpectedApkSha256 $expectedApkHash',
     'Get-ThorSpuNativeObjectReuseFloor',
     '$spuNativeObjectReuseFloorSatisfied =',
     '-not $spuNativeObjectReuseFloorSatisfied',

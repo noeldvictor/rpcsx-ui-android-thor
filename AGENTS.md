@@ -2024,3 +2024,18 @@ Put dated run details in `debug-experiments/`, not here.
   occurred; next independent host-recorded gate is
   `2026-07-23T17:44:38.4571921-04:00`. Ledger:
   `debug-experiments/20260723-thor-rsx-compile-budget-successor.md`.
+
+- SPU native-object continuity is now bound to the exact candidate that seeded
+  it. Capture `20260723-020444-firmware-ppu-prewarm` created seven objects
+  under APK `5044976A...D83E5C`, so it cannot establish a floor for installed
+  `490418F9...D95BF63` or host successor `D6798739...D549F`. Status publishes
+  `spu_continuity_apk_sha256`; both the capture's expected/host and installed
+  hashes must match the pinned candidate before any title-route serial/ADB
+  resolution. Host counterproof now reports continuity `none`, floor `0`, and
+  refuses locally. A stable-prefix preload reordering was compiled then
+  discarded because it cannot validate the exact final-IR object key. Exact
+  host successor is APK `D6798739...D549F` / `72,838,264` bytes, merged core
+  `E9DDCDA3...6F215C` / `1,304,307,080` bytes, and packaged core
+  `BDBA4361...A39EE` / `62,988,824` bytes. It remains host-only with no new
+  device or performance credit. Ledger:
+  `debug-experiments/20260723-thor-spu-continuity-apk-identity-gate.md`.

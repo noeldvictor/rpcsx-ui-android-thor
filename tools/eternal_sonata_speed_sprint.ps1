@@ -360,6 +360,7 @@ function Assert-ThorCoolRouteCooldown {
         "title_id",
         "apk_sha256",
         "spu_continuity_capture",
+        "spu_continuity_apk_sha256",
         "cache_cooldown_ready",
         "cache_cooldown_ready_at",
         "cache_cooldown_remaining_seconds",
@@ -388,6 +389,9 @@ function Assert-ThorCoolRouteCooldown {
     }
     if ($status.spu_native_object_cache -cne "on" -or $status.spu_continuity_capture -ceq "none") {
         throw "Thor cool-title requires a successful stopped-prewarm native-object continuity capture."
+    }
+    if ($status.spu_continuity_apk_sha256 -ine $AndroidExpectedInstalledApkSha256) {
+        throw "Thor cool-title SPU continuity was seeded by a different APK; run exact-candidate stopped prewarm before launch."
     }
 
     $minimumObjects = 0

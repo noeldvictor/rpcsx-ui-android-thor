@@ -63,12 +63,14 @@ foreach ($fragment in @(
     '-Action Status',
     '"device_contact"',
     '"spu_continuity_capture"',
+    '"spu_continuity_apk_sha256"',
     '"cache_cooldown_ready"',
     '"cooldown_source_kind"',
     '"latest_title_capture"',
     '"latest_gameplay_capture"',
     '"minimum_required_spu_native_objects"',
     'requires at least one durable SPU native object',
+    'SPU continuity was seeded by a different APK',
     'independent cooldown is not ready',
     '$script:ThorCoolTitleMinimumNativeObjects = $minimumObjects'
 )) {

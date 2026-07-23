@@ -337,6 +337,40 @@ function Get-ThorSpuNativeObjectReuseFloor {
     return $floor
 }
 
+function Get-ThorSpuNativeObjectReuseFloorForApk {
+    param(
+        [AllowEmptyString()][string]$LatestReadmeText,
+        [Parameter(Mandatory = $true)][string]$ExpectedApkSha256,
+        [ValidateRange(1, [int]::MaxValue)][int]$MaximumObjects = 64
+    )
+
+    $expectedHash = $ExpectedApkSha256.Trim().ToUpperInvariant()
+    if ($expectedHash -notmatch '^[0-9A-F]{64}$') {
+        throw "Expected SPU continuity APK SHA-256 is invalid: $ExpectedApkSha256"
+    }
+    if ([string]::IsNullOrWhiteSpace($LatestReadmeText)) {
+        return 0
+    }
+
+    $expectedRow = [regex]::Match(
+        $LatestReadmeText,
+        '(?m)^- Expected/host APK SHA-256:\s*([0-9A-Fa-f]{64})\s*$'
+    )
+    $installedRow = [regex]::Match(
+        $LatestReadmeText,
+        '(?m)^- Installed APK SHA-256:\s*([0-9A-Fa-f]{64})\s*$'
+    )
+    if (-not $expectedRow.Success -or -not $installedRow.Success -or
+        $expectedRow.Groups[1].Value.ToUpperInvariant() -cne $expectedHash -or
+        $installedRow.Groups[1].Value.ToUpperInvariant() -cne $expectedHash) {
+        return 0
+    }
+
+    return Get-ThorSpuNativeObjectReuseFloor `
+        -LatestReadmeText $LatestReadmeText `
+        -MaximumObjects $MaximumObjects
+}
+
 function Test-ThorCachePrepareNativeFatal {
     param([string]$NativeText)
 

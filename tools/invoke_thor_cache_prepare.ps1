@@ -202,18 +202,21 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
 $minimumRequiredSpuNativeObjects = 0
 $spuContinuityCaptureName = "none"
+$spuContinuityApkSha256 = "none"
 foreach ($cacheCapture in $cacheCaptures) {
     $continuityReadme = Join-Path $cacheCapture.FullName "README.md"
     if (-not (Test-Path -LiteralPath $continuityReadme -PathType Leaf)) {
         continue
     }
     $continuityReadmeText = Get-Content -LiteralPath $continuityReadme -Raw
-    $candidateSpuFloor = Get-ThorSpuNativeObjectReuseFloor `
+    $candidateSpuFloor = Get-ThorSpuNativeObjectReuseFloorForApk `
         -LatestReadmeText $continuityReadmeText `
+        -ExpectedApkSha256 $expectedApkHash `
         -MaximumObjects $spuCachePreloadLimit
     if ($candidateSpuFloor -gt 0) {
         $minimumRequiredSpuNativeObjects = $candidateSpuFloor
         $spuContinuityCaptureName = $cacheCapture.Name
+        $spuContinuityApkSha256 = $expectedApkHash
         break
     }
 }
@@ -252,6 +255,7 @@ if ($Action -eq "Status") {
         "latest_cache_capture=$latestCacheCaptureName",
         "latest_cache_completed_at=$(if ($null -eq $latestCacheCompletedAt) { 'none' } else { $latestCacheCompletedAt.ToString('o') })",
         "spu_continuity_capture=$spuContinuityCaptureName",
+        "spu_continuity_apk_sha256=$spuContinuityApkSha256",
         "latest_install_capture=$latestInstallCaptureName",
         "latest_install_completed_at=$(if ($null -eq $latestInstallCompletedAt) { 'none' } else { $latestInstallCompletedAt.ToString('o') })",
         "latest_title_capture=$latestTitleCaptureName",
