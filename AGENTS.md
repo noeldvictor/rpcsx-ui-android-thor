@@ -1858,3 +1858,25 @@ Put dated run details in `debug-experiments/`, not here.
   positive interval, so log truncation cannot erase the optimization
   measurement. Synthetic `41 -> 1` events prove an exact `306 ms` interval and
   all `66/66` Thor contracts pass. No device contact or APK change occurred.
+- Exact installed candidate `351C6748...A1181E` produced decisive counterproof
+  `20260723-050847-thor-input-custom`: strict preflight passed
+  `32.3 -> 32.1 -> 32.1 C`, debug boot and `8/7` native-object reuse passed,
+  but the route never reached title and the hard guard stopped at confirmed
+  `70.3 C`. PID was absent after stop and all `21/21` transient properties
+  were safe. Its fully warm PPU `41 -> 1` interval was `1946.229 ms` versus
+  `364.325/363.002 ms` in the two matched older captures, about `5.36x`
+  slower. Do not grant speed, FPS, gameplay, flicker, stability, or thermal
+  credit.
+
+- Host successor restores the caller affinity before `jit->fin()`, symbol
+  resolution, and runtime work while retaining the existing temporary `0x7`
+  gate for BLUS30161 warm-object admission and destructor cleanup for early
+  exits. Optimized ARM64-only `assembleThortest` passes. Exact successor is
+  APK `3DFB5F55...A34A78` / `72,835,176` bytes, merged core
+  `A21A5095...FC1DBA` / `1,304,269,848` bytes, and packaged core
+  `05085F21...22F909` / `62,985,688` bytes. Exact artifact gates and all
+  `66/66` Thor host contracts pass; it is not installed. New
+  `ThorCoolGameplay` field/menu/battle routes inherit the strict thermal gate,
+  always verify force-stop after a macro, and become cooldown sources. Install
+  only in a later separate cool no-launch round; title must pass in another
+  cool round before any gameplay route.

@@ -14,7 +14,7 @@ if ($parseErrors.Count) {
 }
 
 $sourceContracts = @(
-    '[ValidateSet("Off", "ThorCoolTitle")]',
+    '[ValidateSet("Off", "ThorCoolTitle", "ThorCoolGameplay")]',
     '[string]$AndroidStartupProfile = "Off"',
     '$ScriptBoundParameters = @{} + $PSBoundParameters',
     'thor_cool_title_candidate.psd1',
@@ -25,7 +25,7 @@ $sourceContracts = @(
     'if ($Action -notin @("AndroidRouteScene", "AndroidProfileStatus"))',
     'Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value',
     'Set-AndroidStartupProfile',
-    'Assert-ThorCoolTitleCooldown',
+    'Assert-ThorCoolRouteCooldown',
     '"AndroidProfileStatus" {',
     'Write-AndroidStartupProfileSummary'
 )
@@ -37,7 +37,7 @@ foreach ($fragment in $sourceContracts) {
 
 $applyIndex = $source.LastIndexOf('Set-AndroidStartupProfile', $source.IndexOf('if ($Action -in @('))
 $deviceResolutionIndex = $source.IndexOf('if ($Action -in @(')
-$cooldownGateIndex = $source.LastIndexOf('Assert-ThorCoolTitleCooldown', $deviceResolutionIndex)
+$cooldownGateIndex = $source.LastIndexOf('Assert-ThorCoolRouteCooldown', $deviceResolutionIndex)
 $switchIndex = $source.IndexOf('switch ($Action)', $deviceResolutionIndex)
 if ($applyIndex -lt 0 -or $cooldownGateIndex -le $applyIndex -or
     $deviceResolutionIndex -le $cooldownGateIndex -or $switchIndex -le $deviceResolutionIndex) {
@@ -49,7 +49,7 @@ if ($deviceResolutionBlock.Contains('AndroidProfileStatus')) {
     throw 'AndroidProfileStatus must remain host-only and must not resolve or query ADB.'
 }
 
-$cooldownFunctionStart = $source.IndexOf('function Assert-ThorCoolTitleCooldown')
+$cooldownFunctionStart = $source.IndexOf('function Assert-ThorCoolRouteCooldown')
 $serialFunctionStart = $source.IndexOf('function Resolve-SpeedAndroidSerial', $cooldownFunctionStart)
 if ($cooldownFunctionStart -lt 0 -or $serialFunctionStart -le $cooldownFunctionStart) {
     throw 'Could not isolate the Thor cool-title cooldown gate.'
@@ -63,6 +63,7 @@ foreach ($fragment in @(
     '"cache_cooldown_ready"',
     '"cooldown_source_kind"',
     '"latest_title_capture"',
+    '"latest_gameplay_capture"',
     '"minimum_required_spu_native_objects"',
     'requires at least one durable SPU native object',
     'independent cooldown is not ready',
@@ -76,6 +77,8 @@ foreach ($fragment in @(
 $summary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolTitle 2>&1 | ForEach-Object { $_.ToString() })
 $requiredSummary = @(
     'profile=ThorCoolTitle',
+    'route_profile=custom',
+    'self_stopping=True',
     'package=net.rpcsx.easy',
     "expected_installed_apk_sha256=$($candidate.ApkSha256)",
     "expected_packaged_core_sha256=$($candidate.PackagedCoreSha256)",
@@ -119,6 +122,30 @@ foreach ($line in $requiredSummary) {
         throw "Thor cool-title dry-run is missing: $line"
     }
 }
+
+$gameplaySummary = @(& $sprintPath -Action AndroidProfileStatus -AndroidStartupProfile ThorCoolGameplay -Scene field 2>&1 | ForEach-Object { $_.ToString() })
+foreach ($line in @(
+    'profile=ThorCoolGameplay',
+    'route_profile=eternal-sonata-field-route',
+    'self_stopping=True',
+    'input_macro=',
+    'input_mode=Direct',
+    'max_launch_silicon_c=35',
+    'max_silicon_c=68',
+    'rsx_preload_limit=64',
+    'spu_preload_limit=17',
+    'spu_compile_budget_ms=50',
+    'spu_native_object_cache=on',
+    'no_perfetto=True',
+    'no_screen_record=True',
+    'keep_running=False',
+    'route_post_wait_seconds=0'
+)) {
+    if ($gameplaySummary -notcontains $line) {
+        throw "Thor cool-gameplay dry-run is missing: $line"
+    }
+}
+
 $routeFunctionStart = $source.IndexOf('function Invoke-AndroidRouteScene')
 $profileApplyStart = $source.IndexOf('Set-AndroidStartupProfile', $routeFunctionStart)
 if ($routeFunctionStart -lt 0 -or $profileApplyStart -le $routeFunctionStart) {
@@ -128,6 +155,9 @@ $routeFunction = $source.Substring($routeFunctionStart, $profileApplyStart - $ro
 $routeContracts = @(
     '$macroStartedAt = Get-Date',
     '$AndroidStartupProfile -eq "ThorCoolTitle"',
+    '$AndroidStartupProfile -eq "ThorCoolGameplay"',
+    '$macroParams.StopAfterMacro = $true',
+    'cool-gameplay profile self-stopped',
     'analyze_thor_cool_title_capture.ps1',
     'cool-title-analysis.json',
     '-OutputPath $analysisPath',

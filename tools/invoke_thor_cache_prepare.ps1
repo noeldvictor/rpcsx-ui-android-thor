@@ -80,6 +80,8 @@ $latestInstallCaptureName = "none"
 $latestInstallCompletedAt = $null
 $latestTitleCaptureName = "none"
 $latestTitleCompletedAt = $null
+$latestGameplayCaptureName = "none"
+$latestGameplayCompletedAt = $null
 $cacheCaptureRoot = Join-Path $repoRoot "debug-captures\android-speed-sprint"
 if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
     $cacheCaptures = @(Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
@@ -167,6 +169,35 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
         $latestTitleCompletedAt = Get-ThorCaptureRecordedCompletion `
             -CaptureDirectory $latestTitleCapture.FullName
     }
+
+    $gameplayCapturePattern = '^[0-9]{8}-[0-9]{6}-thor-input-(eternal-sonata-field-route|eternal-sonata-menu-route|eternal-sonata-battle-intro-route)$'
+    foreach ($gameplayCapture in @(
+        Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
+            Where-Object { $_.Name -match $gameplayCapturePattern } |
+            Sort-Object Name -Descending
+    )) {
+        $gameplayReadme = Join-Path $gameplayCapture.FullName "README.md"
+        if (-not (Test-Path -LiteralPath $gameplayReadme -PathType Leaf)) {
+            continue
+        }
+        $gameplayReadmeText = Get-Content -LiteralPath $gameplayReadme -Raw
+        if ($gameplayReadmeText -notmatch '(?m)^- Expected installed APK SHA-256: [0-9A-Fa-f]{64}\r?$') {
+            continue
+        }
+        $profileName = $gameplayCapture.Name -replace '^[0-9]{8}-[0-9]{6}-thor-input-', ''
+        if (-not $gameplayReadmeText.StartsWith("# Thor Input Macro", [StringComparison]::Ordinal) -or
+            -not $gameplayReadmeText.Contains("- Device serial: $Serial") -or
+            -not $gameplayReadmeText.Contains("- Package: $package") -or
+            -not $gameplayReadmeText.Contains("- Profile: $profileName") -or
+            -not $gameplayReadmeText.Contains("- BootGame: True") -or
+            -not $gameplayReadmeText.Contains("- ForceStop: True")) {
+            throw "Latest exact-hash gameplay capture is not valid cooldown evidence: $($gameplayCapture.Name)"
+        }
+        $latestGameplayCaptureName = $gameplayCapture.Name
+        $latestGameplayCompletedAt = Get-ThorCaptureRecordedCompletion `
+            -CaptureDirectory $gameplayCapture.FullName
+        break
+    }
 }
 $minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
 $minimumRequiredSpuNativeObjects = 0
@@ -192,7 +223,9 @@ $cooldownSource = Get-ThorCachePrepareCooldownSource `
     -InstallCaptureName $latestInstallCaptureName `
     -InstallCompletedAt $latestInstallCompletedAt `
     -TitleCaptureName $latestTitleCaptureName `
-    -TitleCompletedAt $latestTitleCompletedAt
+    -TitleCompletedAt $latestTitleCompletedAt `
+    -GameplayCaptureName $latestGameplayCaptureName `
+    -GameplayCompletedAt $latestGameplayCompletedAt
 $cacheCooldown = Get-ThorCachePrepareCooldownState `
     -LastCompletedAt $cooldownSource.completed_at `
     -MinimumMinutes $minimumCacheCooldownMinutes
@@ -223,6 +256,8 @@ if ($Action -eq "Status") {
         "latest_install_completed_at=$(if ($null -eq $latestInstallCompletedAt) { 'none' } else { $latestInstallCompletedAt.ToString('o') })",
         "latest_title_capture=$latestTitleCaptureName",
         "latest_title_completed_at=$(if ($null -eq $latestTitleCompletedAt) { 'none' } else { $latestTitleCompletedAt.ToString('o') })",
+        "latest_gameplay_capture=$latestGameplayCaptureName",
+        "latest_gameplay_completed_at=$(if ($null -eq $latestGameplayCompletedAt) { 'none' } else { $latestGameplayCompletedAt.ToString('o') })",
         "cooldown_source_kind=$($cooldownSource.kind)",
         "cooldown_source=$($cooldownSource.name)",
         "cache_cooldown_ready=$($cacheCooldown.ready)",

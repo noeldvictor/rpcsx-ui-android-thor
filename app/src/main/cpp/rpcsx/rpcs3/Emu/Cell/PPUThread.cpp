@@ -7153,6 +7153,13 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		}
 	}
 
+#ifdef __ANDROID__
+	if (warm_link_affinity)
+	{
+		warm_link_affinity->restore();
+	}
+#endif
+
 	if (failed_to_load || !is_being_used_in_emulation || (cpu ? cpu->state.all_of(cpu_flag::exit) : Emu.IsStopped()))
 	{
 		return compiled_new;
@@ -7185,13 +7192,6 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			jit->fin();
 		}
 	}
-
-#ifdef __ANDROID__
-	if (warm_link_affinity)
-	{
-		warm_link_affinity->restore();
-	}
-#endif
 
 #ifdef __APPLE__
 	// Symbol resolver is in JIT mem, so we must enable execution

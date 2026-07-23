@@ -2572,3 +2572,40 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   proof can now compare the corrected interval directly with prior
   `363-364 ms` old-candidate observations without granting speed credit unless
   title correctness and thermal gates also pass.
+### 2026-07-23 - warm-ppu-finalization-affinity-counterproof-and-host-repair
+
+- Status: thermal-stop-before-title / decisive timing regression /
+  host successor built / successor uninstalled / not-comparable
+- Thor counterproof: the single guarded `ThorCoolTitle` attempt produced
+  `20260723-050847-thor-input-custom`. Exact installed APK and debug boot
+  passed after preflight `32.3 -> 32.1 -> 32.1 C`; `8/7` durable SPU native
+  objects loaded and no fatal hit was recorded. The route never reached title.
+  Silicon rose through `47.4`, `63.4`, and confirmed `70.3 C`; the hard guard
+  force-stopped at the `68 C` limit. Post-stop was `48.6 C`, PID was absent,
+  and all `21/21` transient properties matched safe values. No retry or later
+  device query ran.
+- Timing counterproof: matched captures measured the fully warm primary
+  `41`-object event to the next one-object module at `364.325 ms`
+  (`20260723-023526`), `363.002 ms` (`20260723-033645`), and `1946.229 ms`
+  in the new capture. Extending the `0x7` efficiency-core affinity through
+  `jit->fin()` was therefore about `5.36x` slower on this observed interval.
+- Host repair: BLUS30161 warm-cache object admission remains temporarily
+  affinity-gated, but the exact caller mask is now restored before
+  `jit->fin()`, symbol resolution, and later runtime work. Destructor
+  restoration remains for early exits. `ThorCoolGameplay` adds exact-candidate
+  field/menu/battle routes with the same strict thermal envelope, verified
+  force-stop after every macro, and gameplay captures as cooldown sources.
+- Rebuilt identity: optimized ARM64-only `assembleThortest` passed in
+  `1m29s`. APK
+  `3DFB5F5560775C843210BC80B16943DE20C9887D0DD250DF666B2F9AC2A34A78`
+  is `72,835,176` bytes; merged core
+  `A21A5095E482DE1889454DF16200C04F51D5EA296AE0F91C727835086EFC1DBA`
+  is `1,304,269,848` bytes; stripped/APK core
+  `05085F2195CEE804EF9371373FB747D3D0D2CA249B50FB908A6C09483A22F909`
+  is `62,985,688` bytes. Exact artifact, ABI, optimized-variant, affinity
+  ordering, and all `66/66` Thor host contracts pass.
+- Decision and next: grant no speed, FPS, thermal-win, gameplay, flicker, or
+  stability credit. The repaired successor is host-built but not installed.
+  After an independently cool interval, use one separate no-launch install
+  round; only a later cool exact-title pass may unlock separate field, menu,
+  and battle measurements.

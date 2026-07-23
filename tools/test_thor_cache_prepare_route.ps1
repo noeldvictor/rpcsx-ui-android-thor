@@ -174,6 +174,7 @@ if ($cooldownWaiting.ready -or
 $cacheCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:15:42-04:00')
 $installCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:30:42-04:00')
 $titleCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:40:42-04:00')
+$gameplayCooldownAt = [DateTimeOffset]::Parse('2026-07-22T20:50:42-04:00')
 $installCooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName "cache-old" -CacheCompletedAt $cacheCooldownAt `
     -InstallCaptureName "install-new" -InstallCompletedAt $installCooldownAt
@@ -184,6 +185,11 @@ $titleCooldownSource = Get-ThorCachePrepareCooldownSource `
     -CacheCaptureName "cache-old" -CacheCompletedAt $cacheCooldownAt `
     -InstallCaptureName "install-old" -InstallCompletedAt $installCooldownAt `
     -TitleCaptureName "title-new" -TitleCompletedAt $titleCooldownAt
+$gameplayCooldownSource = Get-ThorCachePrepareCooldownSource `
+    -CacheCaptureName "cache-old" -CacheCompletedAt $cacheCooldownAt `
+    -InstallCaptureName "install-old" -InstallCompletedAt $installCooldownAt `
+    -TitleCaptureName "title-old" -TitleCompletedAt $titleCooldownAt `
+    -GameplayCaptureName "gameplay-new" -GameplayCompletedAt $gameplayCooldownAt
 $noCooldownSource = Get-ThorCachePrepareCooldownSource
 if ($installCooldownSource.kind -ne "install" -or
     $installCooldownSource.name -ne "install-new" -or
@@ -194,9 +200,12 @@ if ($installCooldownSource.kind -ne "install" -or
     $titleCooldownSource.kind -ne "title" -or
     $titleCooldownSource.name -ne "title-new" -or
     $titleCooldownSource.completed_at -ne $titleCooldownAt -or
+    $gameplayCooldownSource.kind -ne "gameplay" -or
+    $gameplayCooldownSource.name -ne "gameplay-new" -or
+    $gameplayCooldownSource.completed_at -ne $gameplayCooldownAt -or
     $noCooldownSource.kind -ne "none" -or
     $null -ne $noCooldownSource.completed_at) {
-    throw "Cache preparation did not select the newest cache/install/title cooldown source."
+    throw "Cache preparation did not select the newest cache/install/title/gameplay cooldown source."
 }
 $thermalStopReuseFloor = Get-ThorCachePrepareReuseFloor -LatestReadmeText @'
 - Status: failed
@@ -436,6 +445,9 @@ foreach ($fragment in @(
     '(?m)^- Expected installed APK SHA-256: [0-9A-Fa-f]{64}\r?$',
     'latest_title_capture=',
     'latest_title_completed_at=',
+    'thor-input-(eternal-sonata-field-route|eternal-sonata-menu-route|eternal-sonata-battle-intro-route)',
+    'latest_gameplay_capture=',
+    'latest_gameplay_completed_at=',
     'cooldown_source_kind=',
     'cooldown_source=',
     'Get-ThorCaptureRecordedCompletion',

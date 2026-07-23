@@ -119,12 +119,12 @@ if ($ppuRestore -lt 0 -or $ppuRestore -ge $ppuApply) {
 $ppuWarmApply = $ppu.IndexOf('warm_link_affinity.emplace(warm_link_affinity_mask);')
 $ppuWarmReuse = $ppu.IndexOf('LLVM: Reusing %u validated warm-cache objects.', $ppuWarmApply)
 $ppuWarmLink = $ppu.IndexOf('jits[mod_index / c_moudles_per_jit]->add', $ppuWarmApply)
-$ppuWarmFinalize = $ppu.IndexOf('jit->fin();', $ppuWarmLink)
-$ppuWarmRelease = $ppu.IndexOf('warm_link_affinity->restore();', $ppuWarmFinalize)
-$ppuWarmResolve = $ppu.IndexOf('for (auto& sim : jit_mod.symbol_resolvers)', $ppuWarmRelease)
+$ppuWarmRelease = $ppu.IndexOf('warm_link_affinity->restore();', $ppuWarmLink)
+$ppuWarmFinalize = $ppu.IndexOf('jit->fin();', $ppuWarmRelease)
+$ppuWarmResolve = $ppu.IndexOf('for (auto& sim : jit_mod.symbol_resolvers)', $ppuWarmFinalize)
 if ($ppuWarmApply -lt 0 -or $ppuWarmReuse -le $ppuWarmApply -or $ppuWarmLink -le $ppuWarmReuse -or
-    $ppuWarmFinalize -le $ppuWarmLink -or $ppuWarmRelease -le $ppuWarmFinalize -or $ppuWarmResolve -le $ppuWarmRelease) {
-    throw "PPU warm-cache affinity does not cover object admission/finalization and end before symbol resolution."
+    $ppuWarmRelease -le $ppuWarmLink -or $ppuWarmFinalize -le $ppuWarmRelease -or $ppuWarmResolve -le $ppuWarmFinalize) {
+    throw "PPU warm-cache affinity does not cover object admission and end before finalization/symbol resolution."
 }
 $ppuWarmRestore = $ppu.IndexOf('~scoped_warm_link_affinity()', $ppuApply)
 if ($ppuWarmRestore -lt 0 -or $ppuWarmRestore -ge $ppuWarmApply -or

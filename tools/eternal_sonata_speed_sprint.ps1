@@ -3,7 +3,7 @@ param(
     [string]$Action = "ToolStatus",
     [ValidateSet("field", "battle", "menu")]
     [string]$Scene = "field",
-    [ValidateSet("Off", "ThorCoolTitle")]
+    [ValidateSet("Off", "ThorCoolTitle", "ThorCoolGameplay")]
     [string]$AndroidStartupProfile = "Off",
     [ValidatePattern('^$|^[0-9A-Fa-f]{64}$')]
     [string]$AndroidExpectedInstalledApkSha256 = "",
@@ -218,7 +218,6 @@ function Set-AndroidStartupProfile {
     $settings = [ordered]@{
         Package = [string]$thorCoolTitleCandidate.Package
         AndroidExpectedInstalledApkSha256 = [string]$thorCoolTitleCandidate.ApkSha256
-        InputMacro = "gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
         AndroidInputMode = "Direct"
         AndroidSceneSeconds = 1
         AndroidThermalPollSeconds = 1
@@ -258,6 +257,15 @@ function Set-AndroidStartupProfile {
         NoScreenRecord = [Management.Automation.SwitchParameter]::new($true)
         KeepAndroidRunningAfterCapture = [Management.Automation.SwitchParameter]::new($false)
     }
+    if ($AndroidStartupProfile -eq "ThorCoolTitle") {
+        $settings.InputMacro = "gate:ppu-ready:90000;shot:title-proof;check:visual:title-menu;check:guest:title-proof;stop"
+        $settings.AndroidInputProfile = ""
+    } elseif ($AndroidStartupProfile -eq "ThorCoolGameplay") {
+        $settings.InputMacro = ""
+        $settings.AndroidInputProfile = ""
+    } else {
+        throw "Unknown Android startup profile '$AndroidStartupProfile'."
+    }
 
     foreach ($setting in $settings.GetEnumerator()) {
         if ($ScriptBoundParameters.ContainsKey($setting.Key)) {
@@ -270,16 +278,18 @@ function Set-AndroidStartupProfile {
         Set-Variable -Scope Script -Name $setting.Key -Value $setting.Value
     }
 
-    Write-Host "Android startup profile applied: $AndroidStartupProfile (bounded title proof, no install, no trace/video)."
+    $profilePurpose = if ($AndroidStartupProfile -eq "ThorCoolTitle") { "title proof" } else { "scene proof" }
+    Write-Host "Android startup profile applied: $AndroidStartupProfile (bounded $profilePurpose, no install, no trace/video)."
 }
-
 function Write-AndroidStartupProfileSummary {
     if ($AndroidStartupProfile -eq "Off") {
-        throw "AndroidProfileStatus requires -AndroidStartupProfile ThorCoolTitle."
+        throw "AndroidProfileStatus requires -AndroidStartupProfile ThorCoolTitle or ThorCoolGameplay."
     }
 
     @(
         "profile=$AndroidStartupProfile",
+        "route_profile=$(if ($AndroidStartupProfile -eq 'ThorCoolTitle') { 'custom' } else { Get-SpeedAndroidSceneProfile -Scene $Scene })",
+        "self_stopping=True",
         "package=$Package",
         "expected_installed_apk_sha256=$AndroidExpectedInstalledApkSha256",
         "expected_packaged_core_sha256=$($thorCoolTitleCandidate.PackagedCoreSha256)",
@@ -320,8 +330,8 @@ function Write-AndroidStartupProfileSummary {
     ) | Write-Output
 }
 
-function Assert-ThorCoolTitleCooldown {
-    if ($AndroidStartupProfile -ne "ThorCoolTitle" -or $Action -ne "AndroidRouteScene") {
+function Assert-ThorCoolRouteCooldown {
+    if ($AndroidStartupProfile -notin @("ThorCoolTitle", "ThorCoolGameplay") -or $Action -ne "AndroidRouteScene") {
         return
     }
 
@@ -352,6 +362,8 @@ function Assert-ThorCoolTitleCooldown {
         "cooldown_source",
         "latest_title_capture",
         "latest_title_completed_at",
+        "latest_gameplay_capture",
+        "latest_gameplay_completed_at",
         "spu_native_object_cache",
         "minimum_required_spu_native_objects"
     )) {
@@ -382,7 +394,7 @@ function Assert-ThorCoolTitleCooldown {
     }
 
     $script:ThorCoolTitleMinimumNativeObjects = $minimumObjects
-    Write-Host "Thor cool-title cooldown passed: capture=$($status.spu_continuity_capture), minimum-native-objects=$minimumObjects."
+    Write-Host "Thor cool-route cooldown passed: profile=$AndroidStartupProfile, capture=$($status.spu_continuity_capture), minimum-native-objects=$minimumObjects."
 }
 
 function Resolve-SpeedAndroidSerial {
@@ -958,6 +970,9 @@ function Invoke-AndroidRouteScene {
     } else {
         $macroParams.Profile = $profile
     }
+    if ($AndroidStartupProfile -eq "ThorCoolGameplay") {
+        $macroParams.StopAfterMacro = $true
+    }
 
     $macroStartedAt = Get-Date
     Write-Host "Routing Android scene with thor_input_macro.ps1 profile=$($macroParams.Profile) input=$AndroidInputMode scene=$Scene"
@@ -982,6 +997,11 @@ function Invoke-AndroidRouteScene {
         return
     }
 
+    if ($AndroidStartupProfile -eq "ThorCoolGameplay") {
+        Write-Host "Thor cool-gameplay profile self-stopped after its route proof; redundant live scene capture skipped."
+        return
+    }
+
     if ($AndroidRoutePostWaitSeconds -gt 0) {
         Start-Sleep -Seconds $AndroidRoutePostWaitSeconds
     }
@@ -990,7 +1010,7 @@ function Invoke-AndroidRouteScene {
 }
 
 Set-AndroidStartupProfile
-Assert-ThorCoolTitleCooldown
+Assert-ThorCoolRouteCooldown
 
 if ($Action -in @(
     "DeviceSnapshot",

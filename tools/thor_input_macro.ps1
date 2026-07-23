@@ -68,6 +68,7 @@ param(
     [string]$ExpectedInstalledApkSha256 = "",
     [switch]$BootGame,
     [switch]$ForceStop,
+    [switch]$StopAfterMacro,
     [switch]$PostSnapshot,
     [switch]$PassThruCaptureDirectory,
     [switch]$AllowUnknownDraw
@@ -932,6 +933,24 @@ function Get-ThorEvidenceBody {
     )
 }
 
+function Stop-ThorPackageAndVerify {
+    param([Parameter(Mandatory = $true)][string]$EvidencePrefix)
+
+    Invoke-ThorAdbText $Adb $captureDir "$EvidencePrefix.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        $pidEvidence = Invoke-ThorAdbText $Adb $captureDir ("$EvidencePrefix-pid-{0:D2}.txt" -f $attempt) @("shell", "pidof $Package") -AllowFailure
+        $pidRows = @(Get-ThorEvidenceBody $pidEvidence)
+        if ($pidRows.Count -eq 0) {
+            return
+        }
+        if ($attempt -lt 5) {
+            Start-Sleep -Milliseconds 100
+        }
+    }
+
+    throw "RPCSX PID remained active after '$EvidencePrefix' force-stop."
+}
+
 function Assert-ThorInstalledApkIdentity {
     if (-not $BootGame -or [string]::IsNullOrWhiteSpace($normalizedExpectedInstalledApkSha256)) {
         return
@@ -1018,6 +1037,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Expected installed APK SHA-256: $(if ($normalizedExpectedInstalledApkSha256) { $normalizedExpectedInstalledApkSha256 } else { 'not-required' })",
     "- BootGame: $BootGame",
     "- ForceStop: $ForceStop",
+    "- Stop after macro: $StopAfterMacro",
     "- Macro: $resolvedMacro",
     "",
     'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
@@ -1422,7 +1442,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
                 Throw-ThorVisualFailure "Battle UI was not detected after $approachAttempts bounded movement attempts." "visual-battle-approach-failure"
             }
         } elseif ($token -eq 'stop') {
-            Invoke-ThorAdbText $Adb $captureDir "macro-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
+            Stop-ThorPackageAndVerify -EvidencePrefix "macro-stop"
         } elseif ($token -match '^threads:(.+)$') {
             Save-ThorThreadSnapshot $Matches[1]
         } elseif ($token -match '^virtual:(.+)$') {
@@ -1451,6 +1471,9 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         if ($token -ne 'stop') {
             Assert-ThorProcessIdentity "token-$token-post"
         }
+    }
+    if ($StopAfterMacro -and $tokens -notcontains 'stop') {
+        Stop-ThorPackageAndVerify -EvidencePrefix "macro-complete-stop"
     }
 } catch {
     $failure = $_

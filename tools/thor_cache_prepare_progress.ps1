@@ -217,37 +217,28 @@ function Get-ThorCachePrepareCooldownSource {
         [string]$InstallCaptureName = "none",
         [AllowNull()][object]$InstallCompletedAt,
         [string]$TitleCaptureName = "none",
-        [AllowNull()][object]$TitleCompletedAt
+        [AllowNull()][object]$TitleCompletedAt,
+        [string]$GameplayCaptureName = "none",
+        [AllowNull()][object]$GameplayCompletedAt
     )
 
-    if ($null -ne $TitleCompletedAt -and
-        ($null -eq $InstallCompletedAt -or
-            [DateTimeOffset]$TitleCompletedAt -ge [DateTimeOffset]$InstallCompletedAt) -and
-        ($null -eq $CacheCompletedAt -or
-            [DateTimeOffset]$TitleCompletedAt -ge [DateTimeOffset]$CacheCompletedAt)) {
-        return [pscustomobject]@{
-            kind = "title"
-            name = $TitleCaptureName
-            completed_at = [DateTimeOffset]$TitleCompletedAt
+    $candidates = @(
+        if ($null -ne $CacheCompletedAt) {
+            [pscustomobject]@{ kind = "cache"; name = $CacheCaptureName; completed_at = [DateTimeOffset]$CacheCompletedAt }
         }
-    }
-
-    if ($null -ne $InstallCompletedAt -and
-        ($null -eq $CacheCompletedAt -or
-            [DateTimeOffset]$InstallCompletedAt -ge [DateTimeOffset]$CacheCompletedAt)) {
-        return [pscustomobject]@{
-            kind = "install"
-            name = $InstallCaptureName
-            completed_at = [DateTimeOffset]$InstallCompletedAt
+        if ($null -ne $InstallCompletedAt) {
+            [pscustomobject]@{ kind = "install"; name = $InstallCaptureName; completed_at = [DateTimeOffset]$InstallCompletedAt }
         }
-    }
-
-    if ($null -ne $CacheCompletedAt) {
-        return [pscustomobject]@{
-            kind = "cache"
-            name = $CacheCaptureName
-            completed_at = [DateTimeOffset]$CacheCompletedAt
+        if ($null -ne $TitleCompletedAt) {
+            [pscustomobject]@{ kind = "title"; name = $TitleCaptureName; completed_at = [DateTimeOffset]$TitleCompletedAt }
         }
+        if ($null -ne $GameplayCompletedAt) {
+            [pscustomobject]@{ kind = "gameplay"; name = $GameplayCaptureName; completed_at = [DateTimeOffset]$GameplayCompletedAt }
+        }
+    )
+    $latest = $candidates | Sort-Object completed_at -Descending | Select-Object -First 1
+    if ($null -ne $latest) {
+        return $latest
     }
 
     return [pscustomobject]@{
@@ -256,7 +247,6 @@ function Get-ThorCachePrepareCooldownSource {
         completed_at = $null
     }
 }
-
 function Get-ThorCachePrepareReuseFloor {
     param(
         [AllowEmptyString()][string]$LatestReadmeText,
