@@ -398,12 +398,19 @@ function Assert-ThorCoolRouteCooldown {
     if (-not [int]::TryParse($status.minimum_required_spu_native_objects, [ref]$minimumObjects) -or $minimumObjects -lt 1) {
         throw "Thor cool-title requires at least one durable SPU native object before launch."
     }
+    if ($minimumObjects -gt $AndroidSpuCachePreloadLimit) {
+        throw "Thor cool-title SPU continuity floor '$minimumObjects' exceeds the safe startup preload envelope '$AndroidSpuCachePreloadLimit'; refusing before device resolution."
+    }
     if ($status.cache_cooldown_ready -cne "True") {
         throw "Thor cool-title independent cooldown is not ready: source=$($status.cooldown_source_kind) '$($status.cooldown_source)', remaining=$($status.cache_cooldown_remaining_seconds)s, ready_at=$($status.cache_cooldown_ready_at)."
     }
 
     $script:ThorCoolTitleMinimumNativeObjects = $minimumObjects
-    Write-Host "Thor cool-route cooldown passed: profile=$AndroidStartupProfile, capture=$($status.spu_continuity_capture), minimum-native-objects=$minimumObjects."
+    # Stopped prewarm builds the oldest prefix in deterministic order. At title
+    # boot, process exactly that proven prefix instead of the larger safety
+    # envelope so LLVM cannot compile unseeded misses in the hottest window.
+    $script:AndroidSpuCachePreloadLimit = $minimumObjects
+    Write-Host "Thor cool-route cooldown passed: profile=$AndroidStartupProfile, capture=$($status.spu_continuity_capture), minimum-native-objects=$minimumObjects, spu-preload-limit=$AndroidSpuCachePreloadLimit."
 }
 
 function Resolve-SpeedAndroidSerial {
@@ -971,6 +978,7 @@ function Write-ThorCoolTitleAnalysis {
     $analysisParams = @{
         CaptureDir = $InputCapture.FullName
         MinimumSpuNativeObjects = $ThorCoolTitleMinimumNativeObjects
+        ExpectedSpuCachePreloadLimit = $AndroidSpuCachePreloadLimit
         OutputPath = $analysisPath
     }
     if ($RequireReady) {

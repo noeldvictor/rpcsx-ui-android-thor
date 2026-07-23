@@ -71,8 +71,10 @@ foreach ($fragment in @(
     '"minimum_required_spu_native_objects"',
     'requires at least one durable SPU native object',
     'SPU continuity was seeded by a different APK',
+    'exceeds the safe startup preload envelope',
     'independent cooldown is not ready',
-    '$script:ThorCoolTitleMinimumNativeObjects = $minimumObjects'
+    '$script:ThorCoolTitleMinimumNativeObjects = $minimumObjects',
+    '$script:AndroidSpuCachePreloadLimit = $minimumObjects'
 )) {
     if (-not $cooldownFunction.Contains($fragment)) {
         throw "Thor cool-title cooldown gate is missing: $fragment"
@@ -201,6 +203,7 @@ $routeContracts = @(
     'cool-title-analysis.json',
     '$analysisParams.RequireReady = $true',
     'MinimumSpuNativeObjects = $ThorCoolTitleMinimumNativeObjects',
+    'ExpectedSpuCachePreloadLimit = $AndroidSpuCachePreloadLimit',
     'Write-ThorCoolTitleAnalysis -InputCapture $inputCapture -RequireReady',
     'redundant live scene capture skipped',
     'return'

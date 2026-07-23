@@ -3,6 +3,8 @@ param(
     [string]$CaptureDir,
     [ValidateRange(1, 64)]
     [int]$MinimumSpuNativeObjects = 1,
+    [ValidateRange(1, 17)]
+    [int]$ExpectedSpuCachePreloadLimit = 17,
     [switch]$RequireReady,
     [string]$OutputPath = ""
 )
@@ -52,7 +54,7 @@ $effectiveProperties = [ordered]@{
     "rsx-cache-preload-limit-effective.txt" = "64"
     "rsx-cache-load-budget-effective.txt" = "200"
     "rsx-cache-compile-budget-effective.txt" = "50"
-    "spu-cache-preload-limit-effective.txt" = "17"
+    "spu-cache-preload-limit-effective.txt" = [string]$ExpectedSpuCachePreloadLimit
     "spu-cache-compile-budget-effective.txt" = "50"
     "spu-native-object-cache-effective.txt" = "on"
     "cache-worker-affinity-effective.txt" = "7"
@@ -76,7 +78,7 @@ $startupExpected = [ordered]@{
     "debug.rpcsx.thor.rsx_cache_preload_limit" = "64"
     "debug.rpcsx.thor.rsx_cache_load_budget_ms" = "200"
     "debug.rpcsx.thor.rsx_cache_compile_budget_ms" = "50"
-    "debug.rpcsx.thor.spu_cache_preload_limit" = "17"
+    "debug.rpcsx.thor.spu_cache_preload_limit" = [string]$ExpectedSpuCachePreloadLimit
     "debug.rpcsx.thor.spu_cache_compile_budget_ms" = "50"
     "debug.rpcsx.thor.spu_native_object_cache" = "on"
     "debug.rpcsx.thor.cache_worker_affinity_mask" = "7"
@@ -212,7 +214,7 @@ $requiredReadmeLines = @(
     "- RSX cached pipeline preload limit (0=all): 64",
     "- RSX cached pipeline load budget ms (0=unbounded): 200",
     "- RSX cached pipeline compile budget ms (0=unbounded): 50",
-    "- SPU cached-program preload limit (0=all): 17",
+    "- SPU cached-program preload limit (0=all): $ExpectedSpuCachePreloadLimit",
     "- SPU cached-program compile budget ms (0=unbounded): 50",
     "- Startup cache-worker affinity mask (0=default scheduler): 7",
     "- Persistent Vulkan driver pipeline cache: on",
@@ -360,7 +362,7 @@ $activationRequirements = [ordered]@{
     "deferred RSX load fallback" = 'Android shader cache load budget:\s*attempted \d+ of \d+ cached pipelines with a 200 ms budget; \d+ will load and compile on demand\.'
     "bounded RSX compile time" = 'Android shader cache compile budget enabled for BLUS30161:\s*50 ms'
     "deferred RSX compile fallback" = 'Android shader cache compile budget:\s*attempted \d+ of \d+ pipelines with a 50 ms budget; \d+ will compile on demand\.'
-    "bounded SPU preload" = 'Thor SPU cache preload limit:\s*17 of'
+    "bounded SPU preload" = 'Thor SPU cache preload limit:\s*' + [regex]::Escape([string]$ExpectedSpuCachePreloadLimit) + ' of'
     "SPU native-object cache activation" = 'Thor SPU native-object cache enabled for startup LLVM objects:'
     "SPU native-object reuse" = '(?m)LLVM: Loaded module: [^\r\n]+[.]obj\r?$'
     "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
@@ -642,6 +644,7 @@ $result = [pscustomobject]@{
     activation_fallback_hits = @($activationFallbackHits)
     spu_native_objects_loaded = $spuNativeObjectLoadCount
     minimum_required_spu_native_objects = $MinimumSpuNativeObjects
+    expected_spu_cache_preload_limit = $ExpectedSpuCachePreloadLimit
     spu_native_object_reuse_floor_satisfied = $spuNativeObjectReuseFloorSatisfied
     note = "Title-proof-ready authorizes a later correctness-locked A/B only; it is not FPS, speed, stability, or temperature credit."
 }

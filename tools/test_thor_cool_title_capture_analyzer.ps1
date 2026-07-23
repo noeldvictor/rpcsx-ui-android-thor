@@ -304,6 +304,27 @@ try {
         throw "Persisted title analysis JSON did not retain exact classification and timing evidence."
     }
 
+    $floorLimitedDir = Join-Path $tempRoot "continuity-floor-limited-preload"
+    Copy-Item -LiteralPath $readyDir -Destination $floorLimitedDir -Recurse
+    "exit=0`n1" | Set-Content -LiteralPath (Join-Path $floorLimitedDir "spu-cache-preload-limit-effective.txt") -Encoding UTF8
+    (Get-Content -LiteralPath (Join-Path $floorLimitedDir "startup-profile-effective.txt")) -replace
+        '^debug[.]rpcsx[.]thor[.]spu_cache_preload_limit=17$', 'debug.rpcsx.thor.spu_cache_preload_limit=1' |
+        Set-Content -LiteralPath (Join-Path $floorLimitedDir "startup-profile-effective.txt") -Encoding UTF8
+    (Get-Content -LiteralPath (Join-Path $floorLimitedDir "README.md")) -replace
+        '^- SPU cached-program preload limit [(]0=all[)]: 17$', '- SPU cached-program preload limit (0=all): 1' |
+        Set-Content -LiteralPath (Join-Path $floorLimitedDir "README.md") -Encoding UTF8
+    (Get-Content -LiteralPath (Join-Path $floorLimitedDir "post-RPCSX.log")) -replace
+        'Thor SPU cache preload limit: 17 of 300 oldest unique programs [(]300 records, 283 will compile on demand[)][.]',
+        'Thor SPU cache preload limit: 1 of 300 oldest unique programs (300 records, 299 will compile on demand).' |
+        Set-Content -LiteralPath (Join-Path $floorLimitedDir "post-RPCSX.log") -Encoding UTF8
+    $floorLimited = & $analyzerPath -CaptureDir $floorLimitedDir -MinimumSpuNativeObjects 1 -ExpectedSpuCachePreloadLimit 1
+    if ($floorLimited.status -ne "title-proof-ready" -or -not $floorLimited.ready_for_comparison -or
+        $floorLimited.expected_spu_cache_preload_limit -ne 1 -or
+        $floorLimited.spu_native_objects_loaded -ne 1 -or
+        -not $floorLimited.spu_native_object_reuse_floor_satisfied) {
+        throw "Synthetic continuity-floor-limited SPU preload did not remain comparison-ready."
+    }
+
     $missingTimingDir = Join-Path $tempRoot "missing-title-timing"
     Copy-Item -LiteralPath $readyDir -Destination $missingTimingDir -Recurse
     "attempt=2 ready_candidate_count=2 title_menu_present=True" | Set-Content -LiteralPath (Join-Path $missingTimingDir "ppu-ready-gate.log") -Encoding UTF8

@@ -2045,3 +2045,13 @@ Put dated run details in `debug-experiments/`, not here.
   `2026-07-23T18:19:54.8683910-04:00`; installation grants identity/safety
   only and no performance credit. Ledger:
   `debug-experiments/20260723-thor-spu-continuity-apk-identity-gate.md`.
+- Host-only `ThorCoolTitle`/`ThorCoolGameplay` SPU preload now shrinks from the
+  17-program safety envelope to the exact candidate-matched stopped-prewarm
+  continuity floor after device-free validation. A floor above 17 refuses
+  before serial/ADB resolution. The analyzer validates the dynamic property,
+  startup, README, and native activation value; a synthetic `1/1` floor is
+  comparison-ready only with a one-program preload, and all `69/69` Thor
+  contracts pass. Exact installed APK remains `D6798739...D549F` without an
+  exact stopped-prewarm seed; no device contact or performance/thermal credit
+  accompanied this change. Ledger:
+  `debug-experiments/20260723-thor-spu-continuity-apk-identity-gate.md`.

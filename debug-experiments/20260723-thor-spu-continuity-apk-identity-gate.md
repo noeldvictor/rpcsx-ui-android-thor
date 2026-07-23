@@ -75,3 +75,35 @@
 - Decision: retain installation identity/safety evidence only. Do not grant
   speed, title, thermal-runtime, FPS, flicker, gameplay, or stability credit.
   Do not run stopped prewarm or title in this install round.
+## 2026-07-23 - continuity-floor-limited title preload
+
+- Status: host-verified, device-unmeasured
+- Evidence-driven change: the stopped-prewarm route builds the oldest SPU
+  program prefix deterministically, but `ThorCoolTitle` still requested the
+  full `17`-program safety envelope after a smaller exact continuity floor was
+  proven. That could analyze/compile unseeded misses in the hottest title-boot
+  window; prior `17`-program routes built programs beyond the reusable floor.
+- Retained behavior: after device-free exact-APK continuity validation, the
+  route now sets the title/gameplay SPU preload limit to exactly
+  `minimum_required_spu_native_objects`. If the floor exceeds the safe
+  17-program envelope, it refuses before serial/ADB resolution instead of
+  launching a larger burst.
+- Proof hardening: `analyze_thor_cool_title_capture.ps1` receives and validates
+  the effective floor-limited preload value in property, startup, README, and
+  native activation evidence. Its result records
+  `expected_spu_cache_preload_limit`.
+- Verification: PowerShell AST parsing, focused cool-title profile/analyzer,
+  cache-preparation, and thermal contracts pass. A synthetic one-object
+  continuity capture remains `title-proof-ready` only with an exact
+  one-program preload. All `69/69` `tools/test_thor_*.ps1` contracts and
+  `git diff --check` pass.
+- Device boundary: no ADB query, temperature poll, install, launch, APK build,
+  or Thor contact occurred. Exact installed APK remains
+  `D6798739F7BC06E8CFDBEEFFD9AFA0369F361CA90A625E98BEA7C1E8908D549F`;
+  it still has no exact stopped-prewarm continuity capture. Grant only
+  host-verified avoidable-startup-work reduction, not speed, FPS, title,
+  gameplay, stability, flicker, or thermal-win credit.
+- Next device action, only if device work is explicitly resumed: one bounded
+  stopped-emulator exact-candidate prewarm. A later independently cool title
+  proof will then process only the exact proven SPU prefix rather than 17
+  programs.
