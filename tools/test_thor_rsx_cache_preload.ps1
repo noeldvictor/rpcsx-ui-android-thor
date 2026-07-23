@@ -49,9 +49,10 @@ $requiredCacheFragments = @(
     'parsed < 0 || parsed > 16',
     'worker_override == 0 || g_cfg.video.shader_compiler_threads_count == 0',
     'nb_workers = std::min<uint>(nb_workers, 2);',
+    'rsx_log.always()("Shader cache preload workers: load=%u, compile=%u", preload_workers, compile_workers);',
     'rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);',
     'load_shaders(preload_workers, unpacked, directory_path, entries, entry_count, load_budget_ms, dlg);',
-    'compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);',
+    'compile_shaders(compile_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);',
     'lhs.mtime != rhs.mtime ? lhs.mtime < rhs.mtime : lhs.name < rhs.name',
     'entry_count = static_cast<u32>(preload_limit);',
     'will compile on demand'
@@ -79,8 +80,8 @@ if ($cacheSource.Contains('async_with_interpreter') -or $cacheSource.Contains('S
     throw "The retired interpreter/deferred preload path returned."
 }
 if ($cacheSource -match 'get_preload_compile_worker_count' -or
-    $cacheSource -notmatch 'const uint preload_workers = get_preload_worker_count\(\);[\s\S]*?load_shaders\(preload_workers[\s\S]*?compile_shaders\(preload_workers') {
-    throw "RSX preload no longer shares the same dynamic worker count across load and compile stages."
+    $cacheSource -notmatch 'const uint preload_workers = get_preload_worker_count\(\);[\s\S]*?uint compile_workers = preload_workers;[\s\S]*?if \(compile_budget_ms\)[\s\S]*?compile_workers = 1;[\s\S]*?load_shaders\(preload_workers[\s\S]*?compile_shaders\(compile_workers') {
+    throw "RSX preload no longer preserves shared default workers with a single-lane budgeted compile phase."
 }
 if ($thorProfileSource -notmatch 'PROFILE_VERSION\s*=\s*14' -or
     $thorProfileSource -notmatch 'setSetting\("Video@@Shader Compiler Threads", "0"' -or

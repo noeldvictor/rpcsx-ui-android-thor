@@ -135,6 +135,7 @@ $nativeMarkers = @(
     "Thor PPU LLVM compile-worker affinity enabled:",
     "Thor PPU warm-cache link using default scheduler:",
     "Android shader cache compile budget enabled for BLUS30161:",
+    "Android shader cache compile worker cap enabled for BLUS30161:",
     "Android shader cache compile budget: attempted",
     "debug.rpcsx.thor.rsx_cache_compile_budget_ms",
     "Thor PPU cache preparation activated:",

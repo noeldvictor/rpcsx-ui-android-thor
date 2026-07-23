@@ -2055,3 +2055,15 @@ Put dated run details in `debug-experiments/`, not here.
   exact stopped-prewarm seed; no device contact or performance/thermal credit
   accompanied this change. Ledger:
   `debug-experiments/20260723-thor-spu-continuity-apk-identity-gate.md`.
+- Host-only RSX startup hardening now keeps two cache-load workers but caps the
+  Android `BLUS30161` compile phase to one worker whenever its opt-in budget is
+  nonzero (`50 ms` in `ThorCoolTitle`). This bounds the phase to at most one
+  in-flight driver compile beyond the deadline and lowers peak compile
+  concurrency; zero-budget/default and desktop behavior remain unchanged. The
+  exact successor is APK `47EA2152...F2F90E` / `72,838,180` bytes, merged core
+  `C560E418...0E1F0A` / `1,304,308,288` bytes, and packaged/APK-entry core
+  `F2EB73E4...306898` / `62,988,936` bytes. ARM64 native and APK builds, exact
+  marker/identity gates, and all `69/69` Thor host contracts pass. Thor was not
+  contacted; the prior installed `D6798739...D549F` remains stopped. Grant no
+  new speed, FPS, flicker, gameplay, stability, or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-rsx-single-lane-compile-budget.md`.

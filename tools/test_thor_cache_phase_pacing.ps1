@@ -32,7 +32,7 @@ $requiredRsxFragments = @(
     'steady_clock::now() < deadline',
     "thread_ctrl::wait_for(5'000);",
     'wait_for_android_spu_preload_phase();',
-    'compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);'
+    'compile_shaders(compile_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);'
 )
 
 foreach ($contract in @(
@@ -61,7 +61,7 @@ if ($notStartedGuardIndex -lt 0 -or $waitStartIndex -le $notStartedGuardIndex) {
 }
 
 $waitCallIndex = $rsxSource.IndexOf('wait_for_android_spu_preload_phase();')
-$compileCallIndex = $rsxSource.IndexOf('compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);', $waitCallIndex)
+$compileCallIndex = $rsxSource.IndexOf('compile_shaders(compile_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);', $waitCallIndex)
 if ($waitCallIndex -lt 0 -or $compileCallIndex -le $waitCallIndex) {
     throw "RSX phase wait no longer precedes pipeline compilation."
 }

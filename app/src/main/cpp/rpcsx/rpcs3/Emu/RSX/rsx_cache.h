@@ -715,8 +715,19 @@ namespace rsx
 			// Preload everything needed to compile the shaders
 			unpacked_type unpacked;
 			const uint preload_workers = get_preload_worker_count();
+			uint compile_workers = preload_workers;
+			u32 compile_budget_ms = 0;
 #ifdef __ANDROID__
-			rsx_log.always()("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);
+			compile_budget_ms = get_android_compile_budget_ms();
+			if (compile_budget_ms)
+			{
+				// A time budget bounds new submissions but cannot stop calls already
+				// inside the driver. Keep the opt-in title phase single-lane so the
+				// deadline has at most one in-flight compile and lower peak CPU load.
+				compile_workers = 1;
+				rsx_log.always()("Android shader cache compile worker cap enabled for BLUS30161: workers=1.");
+			}
+			rsx_log.always()("Shader cache preload workers: load=%u, compile=%u", preload_workers, compile_workers);
 #else
 			rsx_log.notice("Shader cache preload workers: load=%u, compile=%u", preload_workers, preload_workers);
 #endif
@@ -745,15 +756,13 @@ namespace rsx
 			wait_for_android_spu_preload_phase();
 #endif
 
-			u32 compile_budget_ms = 0;
 #ifdef __ANDROID__
-			compile_budget_ms = get_android_compile_budget_ms();
 			if (compile_budget_ms)
 			{
 				rsx_log.always()("Android shader cache compile budget enabled for BLUS30161: %u ms.", compile_budget_ms);
 			}
 #endif
-			compile_shaders(preload_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);
+			compile_shaders(compile_workers, unpacked, entry_count, dlg, compile_budget_ms, std::forward<Args>(args)...);
 
 			dlg->refresh();
 			dlg->close();

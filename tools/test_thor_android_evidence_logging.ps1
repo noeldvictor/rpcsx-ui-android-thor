@@ -46,6 +46,7 @@ foreach ($contract in @(
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Android shader cache load budget enabled for BLUS30161:' },
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Android shader cache load budget: attempted' },
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Shader cache preload workers: load=' },
+    @{ Key = 'Rsx'; Text = 'rsx_log.always()("Android shader cache compile worker cap enabled for BLUS30161:' },
     @{ Key = 'Rsx'; Text = 'rsx_log.always()("Thor RSX cache-worker affinity enabled for %s:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU cache preload limit:' },
     @{ Key = 'Spu'; Text = 'spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects:' },
@@ -75,8 +76,8 @@ if ($source.System -notmatch '(?s)#ifdef __ANDROID__.*?if \(m_title_id == "BLUS3
     throw "Managed FTZ evidence is not Android-only and BLUS30161-gated."
 }
 
-if ($source.Rsx -notmatch '(?s)#ifdef __ANDROID__\s*rsx_log\.always\(\)\("Shader cache preload workers:.*?#else\s*rsx_log\.notice\("Shader cache preload workers:.*?#endif') {
-    throw "RSX worker evidence must stay Notice on desktop and Always on Android."
+if ($source.Rsx -notmatch '(?s)#ifdef __ANDROID__[\s\S]*?compile_workers\s*=\s*1;[\s\S]*?Android shader cache compile worker cap enabled for BLUS30161: workers=1\.[\s\S]*?rsx_log\.always\(\)\("Shader cache preload workers:.*?#else\s*rsx_log\.notice\("Shader cache preload workers:.*?#endif') {
+    throw "Android budgeted RSX compile is not single-lane/durable while desktop retains its shared Notice path."
 }
 foreach ($message in @(
     'Thor SPU cache preload limit:',

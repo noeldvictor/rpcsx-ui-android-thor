@@ -48,6 +48,10 @@ Assert-Contains $rsxSource 'atomic_t<bool>* stop_early = nullptr' "RSX worker wa
 Assert-Contains $rsxSource 'will compile on demand.' "RSX deferred fallback is not documented in the activation log."
 Assert-Contains $rsxSource 'if (!compile_budget_ms)' "RSX default-off path still pays budget bookkeeping."
 Assert-Contains $rsxSource 'Preserve the original one-atomic fast path when the experiment is disabled.' "RSX default-off fast-path invariant is missing."
+Assert-Contains $rsxSource 'uint compile_workers = preload_workers;' "RSX default-off compile phase no longer inherits the load worker count."
+Assert-Contains $rsxSource 'compile_workers = 1;' "RSX budgeted compile phase is not constrained to one in-flight driver submission."
+Assert-Contains $rsxSource 'Android shader cache compile worker cap enabled for BLUS30161: workers=1.' "RSX single-lane compile activation is not durably logged."
+Assert-Contains $rsxSource 'compile_shaders(compile_workers' "RSX compile phase does not use the bounded worker selection."
 
 $rsxDeadline = $rsxSource.IndexOf('steady_clock::now() >= deadline')
 $rsxSubmit = $rsxSource.IndexOf('m_storage.add_pipeline_entry', $rsxDeadline)

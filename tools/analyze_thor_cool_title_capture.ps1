@@ -365,7 +365,7 @@ $activationRequirements = [ordered]@{
     "bounded SPU preload" = 'Thor SPU cache preload limit:\s*' + [regex]::Escape([string]$ExpectedSpuCachePreloadLimit) + ' of'
     "SPU native-object cache activation" = 'Thor SPU native-object cache enabled for startup LLVM objects:'
     "SPU native-object reuse" = '(?m)LLVM: Loaded module: [^\r\n]+[.]obj\r?$'
-    "two RSX preload workers" = 'Shader cache preload workers:\s*load=2, compile=2'
+    "single budgeted RSX compile worker" = 'Android shader cache compile worker cap enabled for BLUS30161:\s*workers=1'
     "RSX efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for load:\s*requested=0x7, effective=0x7'
     "RSX compile efficiency-core affinity" = 'Thor RSX cache-worker affinity enabled for compile:\s*requested=0x7, effective=0x7'
     "SPU efficiency-core affinity" = 'Thor SPU cache-worker affinity enabled:\s*requested=0x7, effective=0x7'
