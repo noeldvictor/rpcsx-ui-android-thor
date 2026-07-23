@@ -161,3 +161,35 @@ change to execute. Do not silently reuse old PPU objects and call the port
 tested. This is host-only planning; it does not change the frozen APK, grant a
 stability result, or justify invalidating the current baseline before its cache
 and title proof are complete.
+
+## 2026-07-22 live upstream follow-up
+
+Status: research-only / parked until the frozen warm-cache baseline completes
+
+Official RPCS3 master gained a four-commit CPUTranslator sequence after the
+local comparison checkout's `ee37ef277` tip:
+
+- `2aeb08f929a0299e5f31811b73a00326e5475f0a` rejects LLVM known-bit facts
+  whose value ancestry reaches an incompletely emitted PHI node;
+- `85c59207f7049aea83f765ed8bb419a01643ad69` looks through bitcasts when
+  extracting constant `v128` values;
+- `d75543a5b1f61cb00fb7e6e2852b519792131ddf` restores a narrow PHI-safe
+  known-bits fallback for immediate OR/AND operations with constant operands;
+- `8b05c8cc1f831913a84560b304a8d15a07f4662c` corrects the vector-lane
+  aggregation used by that fallback.
+
+Primary commits:
+
+- https://github.com/RPCS3/rpcs3/commit/2aeb08f929a0299e5f31811b73a00326e5475f0a
+- https://github.com/RPCS3/rpcs3/commit/85c59207f7049aea83f765ed8bb419a01643ad69
+- https://github.com/RPCS3/rpcs3/commit/d75543a5b1f61cb00fb7e6e2852b519792131ddf
+- https://github.com/RPCS3/rpcs3/commit/8b05c8cc1f831913a84560b304a8d15a07f4662c
+
+This sequence is a credible JIT-correctness follow-up if Thor still flickers or
+faults after the exact warm-cache field/menu/battle baseline. It is not yet a
+measured Eternal Sonata hot path or speed win. Do not merge it into the frozen
+candidate: CPUTranslator changes require an explicit PPU/SPU cache-identity
+audit and a fresh verify-only Windows field/menu/battle proof before any later
+Android build. No repository source, APK, core, cache, or device state changed
+in this research step, and it earns no FPS, thermal, flicker, or stability
+credit.
