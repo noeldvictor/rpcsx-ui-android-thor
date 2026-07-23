@@ -2243,3 +2243,43 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   not startup-speed, FPS, gameplay, flicker, stability, or thermal-win credit.
   After the existing cooldown and a fresh strict cool gate, allow at most one
   70-second continuation and refuse checkpoint credit below 185 reused objects.
+
+### 2026-07-22 - completed-firmware-cache-preparation
+
+- Status: cache-prepared-exact-no-game-boot / continuity-pass / safety-pass /
+  not-comparable
+- Scope: one independently cooled, stopped-emulator completion round
+- Hypothesis: the cumulative 185-object floor survived, and the remaining 24
+  firmware files could finish inside the tightened 70-second thermal envelope.
+- Changed files/settings: none on device; exact installed APK
+  A7216402...3D15C, frozen core/cache identity, two-worker configuration,
+  hardware FTZ, and `0x07` cache-worker affinity remained unchanged.
+- Rollback: normal game boot does not invoke the debug-only prepare-cache
+  intent; the package was force-stopped and no runtime setting changed.
+- Thor result: capture
+  `debug-captures/android-speed-sprint/20260722-222211-firmware-ppu-prewarm`
+  reused exactly 185 validated objects, satisfied the cumulative continuity
+  floor, compiled 24 new objects, finished firmware scan `142/142`, reached
+  discovered module progress `24/24`, and reported both native preparation
+  completion and callback finished. Runtime completed in `59.58 s`, below the
+  `70 s` bound. Exact installed APK, ISO/root/title resolution, named workers,
+  and every logged affinity row at `requested=0x7,effective=0x7` passed.
+- Thermal result: strict preflight was `31.1 -> 30.5 -> 30.1 C`. Seventeen
+  runtime samples averaged `37.8 C`, ranged from `33.5` to `46.6 C`, included
+  one sample at/above `45 C`, and zero at/above the `50 C` confirmation
+  threshold. Post-stop battery/skin/silicon were `22.0/30.0/33.3 C`; no
+  thermal guard fired.
+- Health result: request acceptance, native activation/completion, callback,
+  full final logcat retention, and absent PID before/after passed. Saved
+  evidence has no target native fatal, unplanned process death, FATAL
+  EXCEPTION, ANR, `VK_ERROR_DEVICE_LOST`, RPCSXActivity/game boot, or residual
+  PID. No retry or follow-up ADB action ran.
+- Visual correctness: not exercised; the game never booted.
+- FPS/frame-time: not measured.
+- Decision: the cache-preparation prerequisite is complete and the exact
+  frozen candidate remains the next baseline. This does not prove startup
+  speed, FPS, flicker removal, gameplay correctness, sustained stability, or a
+  controlled thermal win. Do not contact Thor again before a separate
+  independent cooldown. Next run exactly one self-stopping `ThorCoolTitle`
+  baseline, then reserve later cool rounds for field, full Options/menu, first
+  battle, matched FPS/frame pacing, flicker, fatal cleanliness, and thermals.

@@ -1515,3 +1515,19 @@ Put dated run details in `debug-experiments/`, not here.
   closed. This is host-only evidence hardening with frozen APK/core/cache bytes
   unchanged and no device contact. The next cool continuation must reuse at
   least 185 objects before checkpoint credit.
+
+- Exact installed A7216402...3D15C completed stopped-emulator cache preparation
+  in `20260722-222211-firmware-ppu-prewarm`. It reused the required 185
+  validated objects, compiled 24 new objects, finished firmware file `142/142`
+  and module `24/24`, and produced both native-completed and callback-finished
+  evidence in 59.58 seconds. Strict preflight was
+  `31.1 -> 30.5 -> 30.1 C`; 17 runtime samples averaged `37.8 C`, peaked at
+  `46.6 C`, and never reached `50 C`; post-stop was `33.3 C`. Exact APK,
+  ISO/root/title, affinity `requested=0x7,effective=0x7`, no fatal/process
+  death/game boot, and absent PID before/after all passed. Classify
+  `cache-prepared-exact-no-game-boot` / `continuity-pass` / `safety-pass` /
+  `not-comparable`, with no speed, FPS, flicker, gameplay, stability, or
+  controlled thermal-win credit. Do not contact Thor again before a separate
+  independent cooldown; the next device action is one self-stopping exact-APK
+  `ThorCoolTitle` baseline, followed only in later cool rounds by field/menu/
+  first-battle correctness and matched performance proof.

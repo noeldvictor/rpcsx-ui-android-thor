@@ -193,3 +193,35 @@ audit and a fresh verify-only Windows field/menu/battle proof before any later
 Android build. No repository source, APK, core, cache, or device state changed
 in this research step, and it earns no FPS, thermal, flicker, or stability
 credit.
+
+## 2026-07-22 current-master recheck
+
+- Status: `parked`
+- Scope: `upstream-audit`
+- Hypothesis: a newer official core commit may supersede the frozen Thor
+  candidate before its warm-cache baseline completes.
+- Changed files/settings: this audit entry only; no source, build, cache, or
+  device state changed.
+- Rollback: remove this research-only entry.
+- Windows result: not run; the current candidate remains frozen.
+- Thor result: no device contact.
+- Visual correctness: not tested.
+- FPS/frame-time: not measured.
+- Capture paths: none.
+- Decision: official master is now
+  `5ecfc95c137c5b2cb13fdfe3bc9213ec715542b4`, seven commits ahead of the
+  read-only local `ee37ef277` reference. The only commit after the prior
+  `8604f1c5` refresh is `5ecfc95c1`, a Qt guest-memory dump utility; it adds no
+  Android, ARM64, SPU, PPU, RSX, Vulkan, scheduler, or cache runtime change.
+  The four CPUTranslator/LLVM commits already listed above remain the only
+  relevant sequence, and they remain a correctness hypothesis rather than a
+  measured speed or flicker fix.
+- Next: finish the exact A7216402 warm-cache baseline and title proof first.
+  If flicker or draw corruption survives, port the four translator commits as
+  one ordered unit with explicit PPU/SPU cache identity changes and rerun the
+  correctness-locked Windows field/menu/battle gate before Android packaging.
+
+Primary comparison:
+
+- https://github.com/RPCS3/rpcs3/compare/ee37ef277d9f729cb4abeffc50eac26e994884ee...5ecfc95c137c5b2cb13fdfe3bc9213ec715542b4
+- https://github.com/RPCS3/rpcs3/commit/5ecfc95c137c5b2cb13fdfe3bc9213ec715542b4
