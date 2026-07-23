@@ -561,7 +561,8 @@ query or emulator action ran after the installer completed.
   objects and pass exact identity, activation, visual, fatal, thermal, and
   final-stop gates before any later comparison.
 - Host-only title cleanup proof now records one batched post-stop readback of
-  all 15 transient RSX/SPU/Vulkan/ADPF/affinity/experiment properties. A title
+  all 21 transient RSX/SPU/Vulkan/ADPF/affinity/experiment properties,
+  including the six title-only frame-wait/superpath controls. A title
   capture is comparison-ready only when force-stop evidence, absent PID, and
   every safe reset value agree. Missing evidence and a synthetic leaked
   `spu_native_object_cache=on` both fail `proof-sequence-incomplete`; AST

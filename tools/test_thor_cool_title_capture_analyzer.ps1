@@ -23,6 +23,12 @@ $macroSource = Get-Content -LiteralPath $macroPath -Raw
 foreach ($fragment in @(
     'startup-profile-effective.txt',
     'startup-profile-reset-effective.txt',
+    'setprop debug.rpcsx.thor.es_sema_superpath off',
+    'setprop debug.rpcsx.thor.es_dma_superpath off',
+    'setprop debug.rpcsx.thor.rsx_blit_source_resolve off',
+    'setprop debug.rpcsx.thor.es_frame_wait off',
+    'setprop debug.rpcsx.thor.es_frame_wait_grace_us 0',
+    'setprop debug.rpcsx.thor.es_frame_wait_continuous_rearm off',
     'debug.rpcsx.thor.es_frame_wait',
     'debug.rpcsx.thor.es_frame_wait_grace_us',
     'debug.rpcsx.thor.es_frame_wait_continuous_rearm',
@@ -173,7 +179,13 @@ function Write-ReadyFixture {
         "debug.rpcsx.thor.cache_phase_pacing=off",
         "debug.rpcsx.thor.es_ppu_command_interp=off",
         "debug.rpcsx.thor.es_ppu_dispatch_probe=off",
-        "debug.rpcsx.thor.es_async_draw_barrier=off"
+        "debug.rpcsx.thor.es_async_draw_barrier=off",
+        "debug.rpcsx.thor.es_sema_superpath=off",
+        "debug.rpcsx.thor.es_dma_superpath=off",
+        "debug.rpcsx.thor.rsx_blit_source_resolve=off",
+        "debug.rpcsx.thor.es_frame_wait=off",
+        "debug.rpcsx.thor.es_frame_wait_grace_us=0",
+        "debug.rpcsx.thor.es_frame_wait_continuous_rearm=off"
     ) | Set-Content -LiteralPath (Join-Path $Directory "startup-profile-reset-effective.txt") -Encoding UTF8
 
     @(
@@ -327,7 +339,7 @@ try {
     Remove-Item -LiteralPath (Join-Path $cleanupMissingDir "startup-profile-reset-effective.txt") -Force
     $cleanupMissing = & $analyzerPath -CaptureDir $cleanupMissingDir
     if ($cleanupMissing.status -ne "proof-sequence-incomplete" -or $cleanupMissing.ready_for_comparison -or
-        $cleanupMissing.cleanup_ready -or $cleanupMissing.cleanup_property_mismatches.Count -ne 15) {
+        $cleanupMissing.cleanup_ready -or $cleanupMissing.cleanup_property_mismatches.Count -ne 21) {
         throw "Synthetic missing post-stop property evidence did not fail closed."
     }
 

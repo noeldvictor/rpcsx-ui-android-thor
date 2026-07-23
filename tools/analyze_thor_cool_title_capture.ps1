@@ -131,6 +131,12 @@ $cleanupExpected = [ordered]@{
     "debug.rpcsx.thor.es_ppu_command_interp" = "off"
     "debug.rpcsx.thor.es_ppu_dispatch_probe" = "off"
     "debug.rpcsx.thor.es_async_draw_barrier" = "off"
+    "debug.rpcsx.thor.es_sema_superpath" = "off"
+    "debug.rpcsx.thor.es_dma_superpath" = "off"
+    "debug.rpcsx.thor.rsx_blit_source_resolve" = "off"
+    "debug.rpcsx.thor.es_frame_wait" = "off"
+    "debug.rpcsx.thor.es_frame_wait_grace_us" = "0"
+    "debug.rpcsx.thor.es_frame_wait_continuous_rearm" = "off"
 }
 $cleanupActual = @{}
 foreach ($line in (Read-OptionalLines "startup-profile-reset-effective.txt")) {

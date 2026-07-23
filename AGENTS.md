@@ -1719,7 +1719,8 @@ Put dated run details in `debug-experiments/`, not here.
   `66/66` host contracts pass. No APK/core/device action occurred. This is
   proof-hardening only and grants no performance or correctness credit.
 - Host-only title cleanup proof now records one batched post-stop readback of
-  all 15 transient RSX/SPU/Vulkan/ADPF/affinity/experiment properties. A title
+  all 21 transient RSX/SPU/Vulkan/ADPF/affinity/experiment properties,
+  including the six title-only frame-wait/superpath controls. A title
   capture is comparison-ready only when force-stop evidence, absent PID, and
   every safe reset value agree. Missing evidence and a synthetic leaked
   `spu_native_object_cache=on` both fail `proof-sequence-incomplete`; AST
