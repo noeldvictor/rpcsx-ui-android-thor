@@ -1985,3 +1985,19 @@ Put dated run details in `debug-experiments/`, not here.
   `490418F9...D95BF63` remains stopped and has no new speed, thermal, flicker,
   gameplay, or stability credit. Ledger:
   `debug-experiments/20260723-thor-ppu-thread-reuse-thermal-headroom-audit.md`.
+
+- Exact installed candidate `490418F9...D95BF63` completed one guarded title
+  attempt in `20260723-164343-thor-input-custom`. Preflight passed
+  `32.1 -> 33.3 -> 32.9 C`, debug boot was accepted in `753 ms`, and the new
+  default-scheduler marker dynamically proves the 41-object warm PPU link now
+  takes `371.267 ms` versus the prior installed candidate's `1915.119 ms`
+  (`-80.61%`, `5.158x` faster), within `2.09%` of the older default-scheduler
+  mean. This banks a PPU startup-stage speed recovery only. The route loaded
+  `6/7` required SPU native objects, never reached title, and self-stopped at
+  the first readiness poll at `67.0 C` against the `64 C` hard ceiling.
+  Post-stop was `47.4 C`, PID was absent, failure resets were safe, and no
+  targeted fatal occurred. Classify `thermal-stop-before-title` /
+  `not-comparable`; grant no title, FPS, gameplay, flicker, stability, or
+  end-to-end speed/thermal credit. Do not contact Thor before
+  `2026-07-23T17:14:05.4848450-04:00`. Ledger:
+  `debug-experiments/20260723-thor-ppu-warm-link-default-scheduler.md`.

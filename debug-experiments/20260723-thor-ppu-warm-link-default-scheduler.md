@@ -94,3 +94,35 @@ force-stopped RPCSX, recorded `46.6 C` after stop, and did not run either of
 the remaining preflight samples or `adb install`. The successor therefore
 remains host-only and the installed APK remains `3DFB5F55...A34A78`. Do not
 retry this device round.
+
+## Installed Successor Runtime Proof
+
+The later exact installed candidate
+`490418F9A43B287C376CB9D121C5C3BC93E1AFDEA51ED618BA6AB5882D95BF63`
+contains the default-scheduler correction plus the independent upstream LLVM
+KnownBits safety slice. Its one permitted route is
+`20260723-164343-thor-input-custom`.
+
+Strict preflight passed at `32.1 -> 33.3 -> 32.9 C`. Debug boot was accepted
+in `753 ms`, exact installed identity matched, and the guest emitted the new
+default-scheduler marker. The largest fully warm PPU event began with 41
+objects at emulator time `1.397486 s`; the next one-object module began at
+`1.768753 s`, an interval of `371.267 ms`.
+
+This recovers `1543.852 ms` versus the preceding installed counterproof's
+`1915.119 ms`: an `80.61%` reduction or `5.158x` faster stage. It is only
+`2.09%` above the matched older default-scheduler mean of `363.6635 ms`.
+Therefore the warm-object affinity removal is dynamically proven to have
+removed the measured PPU link regression.
+
+The route is not an end-to-end win. It attempted `18/64` RSX pipelines, loaded
+only `6/7` required SPU native objects, never reached title, and hit `67.0 C`
+at the first readiness poll, above the `64 C` hard ceiling. The harness
+force-stopped immediately; post-stop silicon was `47.4 C`, PID was absent,
+transient properties reset safely, and no targeted fatal occurred.
+
+Classification: device-proven PPU startup-stage speed recovery plus
+`thermal-stop-before-title` / `not-comparable`. Grant no title, gameplay, FPS,
+flicker, stability, or end-to-end thermal/speed credit. Do not retry this
+round; the title capture enforces device-free cooldown until
+`2026-07-23T17:14:05.4848450-04:00`.
