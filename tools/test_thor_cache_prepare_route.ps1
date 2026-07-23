@@ -112,6 +112,25 @@ if (-not $fileOnlyProgress.initial_workload_complete -or
     $fileOnlyProgress.total_modules -ne 0) {
     throw "Cache-preparation progress parser missed firmware scan entry before the first module is discovered."
 }
+$thermalSummary = Get-ThorCachePrepareThermalSummary `
+    -SiliconTemperaturesC @(35.5, 38.1, 45.0, 49.4, 50.0) `
+    -WarmThresholdC 45.0 `
+    -ProbeThresholdC 50.0
+if ($thermalSummary.sample_count -ne 5 -or
+    [Math]::Round($thermalSummary.average_c, 2) -ne 43.6 -or
+    $thermalSummary.minimum_c -ne 35.5 -or
+    $thermalSummary.maximum_c -ne 50.0 -or
+    $thermalSummary.at_or_above_warm -ne 3 -or
+    $thermalSummary.at_or_above_probe -ne 1) {
+    throw "Cache-preparation thermal summary lost sample or threshold accounting."
+}
+$emptyThermalSummary = Get-ThorCachePrepareThermalSummary -SiliconTemperaturesC @()
+if ($emptyThermalSummary.sample_count -ne 0 -or
+    $null -ne $emptyThermalSummary.average_c -or
+    $emptyThermalSummary.at_or_above_warm -ne 0 -or
+    $emptyThermalSummary.at_or_above_probe -ne 0) {
+    throw "Cache-preparation thermal summary did not handle an empty run deterministically."
+}
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {
     throw "Cache-preparation native-fatal classifier is not fail-closed."
@@ -244,6 +263,10 @@ foreach ($fragment in @(
     '$maxSiliconTemperatureC = 60.0',
     '$runtimeStopHeadroomC = 5.0',
     '$runtimeProbeWindowC = 10.0',
+    '$runtimeWarmTelemetryC = 45.0',
+    '$runtimeSiliconTemperaturesC += [double]$snapshot.silicon_temperature_c',
+    'Runtime average silicon C:',
+    'Runtime samples at or above $runtimeProbeSiliconC C:',
     '$preflightSamples = 3',
     'device_contact=False',
     'sha256sum',

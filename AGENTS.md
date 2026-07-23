@@ -1438,3 +1438,10 @@ Put dated run details in `debug-experiments/`, not here.
   `not-comparable`. Do not contact Thor again in this round. Continue only
   after another independent cooldown; require native plus callback completion
   before the separate title/gameplay proof.
+
+- Future cache-checkpoint READMEs now summarize every runtime silicon sample:
+  count, average, minimum, peak, samples at/above `45 C`, and samples at/above
+  the `50 C` confirmation threshold. Confirmatory samples are included, empty
+  or preflight-refused runs report deterministically, and a pure host fixture
+  locks the arithmetic. This is device-free evidence hardening; it changes no
+  APK/core/cache bytes and grants no performance or thermal-win credit.

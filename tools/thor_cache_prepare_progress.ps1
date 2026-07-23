@@ -96,6 +96,40 @@ function Get-ThorCachePrepareProgress {
     }
 }
 
+function Get-ThorCachePrepareThermalSummary {
+    param(
+        [object[]]$SiliconTemperaturesC,
+        [double]$WarmThresholdC = 45.0,
+        [double]$ProbeThresholdC = 50.0
+    )
+
+    $temperatures = @(
+        $SiliconTemperaturesC |
+            Where-Object { $null -ne $_ } |
+            ForEach-Object { [double]$_ }
+    )
+    if ($temperatures.Count -eq 0) {
+        return [pscustomobject]@{
+            sample_count = 0
+            average_c = $null
+            minimum_c = $null
+            maximum_c = $null
+            at_or_above_warm = 0
+            at_or_above_probe = 0
+        }
+    }
+
+    $measure = $temperatures | Measure-Object -Average -Minimum -Maximum
+    return [pscustomobject]@{
+        sample_count = $temperatures.Count
+        average_c = [double]$measure.Average
+        minimum_c = [double]$measure.Minimum
+        maximum_c = [double]$measure.Maximum
+        at_or_above_warm = @($temperatures | Where-Object { $_ -ge $WarmThresholdC }).Count
+        at_or_above_probe = @($temperatures | Where-Object { $_ -ge $ProbeThresholdC }).Count
+    }
+}
+
 function Test-ThorCachePrepareNativeFatal {
     param([string]$NativeText)
 

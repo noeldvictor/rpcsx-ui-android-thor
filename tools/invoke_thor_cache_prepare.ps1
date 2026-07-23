@@ -24,6 +24,7 @@ $maxPreflightRiseC = 1.0
 $maxSiliconTemperatureC = 60.0
 $runtimeStopHeadroomC = 5.0
 $runtimeProbeWindowC = 10.0
+$runtimeWarmTelemetryC = 45.0
 $preflightSamples = 3
 $preflightIntervalSeconds = 2
 $pollIntervalSeconds = 2
@@ -195,6 +196,7 @@ $pidBefore = @()
 $pidAfter = @()
 $preflight = @()
 $runtimeSnapshots = 0
+$runtimeSiliconTemperaturesC = @()
 $peakSiliconC = $null
 $stopwatch = [Diagnostics.Stopwatch]::new()
 
@@ -265,9 +267,11 @@ try {
         $snapshot = Get-CachePrepareThermalSnapshot
         $runtimeSnapshots++
         Add-ThermalSnapshot -Stage "runtime-$runtimeSnapshots" -Snapshot $snapshot
-        if ($null -ne $snapshot.silicon_temperature_c -and
-            ($null -eq $peakSiliconC -or [double]$snapshot.silicon_temperature_c -gt $peakSiliconC)) {
-            $peakSiliconC = [double]$snapshot.silicon_temperature_c
+        if ($null -ne $snapshot.silicon_temperature_c) {
+            $runtimeSiliconTemperaturesC += [double]$snapshot.silicon_temperature_c
+            if ($null -eq $peakSiliconC -or [double]$snapshot.silicon_temperature_c -gt $peakSiliconC) {
+                $peakSiliconC = [double]$snapshot.silicon_temperature_c
+            }
         }
 
         $hardViolation = Get-ThorThermalGuardViolation `
@@ -290,9 +294,11 @@ try {
             $confirm = Get-CachePrepareThermalSnapshot
             $runtimeSnapshots++
             Add-ThermalSnapshot -Stage "runtime-$runtimeSnapshots-confirm" -Snapshot $confirm
-            if ($null -ne $confirm.silicon_temperature_c -and
-                ($null -eq $peakSiliconC -or [double]$confirm.silicon_temperature_c -gt $peakSiliconC)) {
-                $peakSiliconC = [double]$confirm.silicon_temperature_c
+            if ($null -ne $confirm.silicon_temperature_c) {
+                $runtimeSiliconTemperaturesC += [double]$confirm.silicon_temperature_c
+                if ($null -eq $peakSiliconC -or [double]$confirm.silicon_temperature_c -gt $peakSiliconC) {
+                    $peakSiliconC = [double]$confirm.silicon_temperature_c
+                }
             }
             $confirmDecision = Get-ThorThermalRuntimeGuardDecision `
                 -Snapshot $confirm `
@@ -450,6 +456,11 @@ $initialProgressSummary = if ($cacheProgress.initial_progress_observed) {
 } else {
     "not observed"
 }
+$runtimeProbeSiliconC = $maxSiliconTemperatureC - $runtimeProbeWindowC
+$runtimeThermalSummary = Get-ThorCachePrepareThermalSummary `
+    -SiliconTemperaturesC $runtimeSiliconTemperaturesC `
+    -WarmThresholdC $runtimeWarmTelemetryC `
+    -ProbeThresholdC $runtimeProbeSiliconC
 @(
     "# Thor Firmware PPU Cache Preparation",
     "",
@@ -466,7 +477,12 @@ $initialProgressSummary = if ($cacheProgress.initial_progress_observed) {
     "- Preflight silicon: $preflightSummary",
     "- Runtime bound seconds: $MaxSeconds",
     "- Runtime elapsed seconds: $([Math]::Round($stopwatch.Elapsed.TotalSeconds, 3))",
+    "- Runtime thermal samples: $($runtimeThermalSummary.sample_count)",
+    "- Runtime average silicon C: $(Format-ThorTemperatureC $runtimeThermalSummary.average_c)",
+    "- Runtime minimum silicon C: $(Format-ThorTemperatureC $runtimeThermalSummary.minimum_c)",
     "- Runtime peak silicon C: $(Format-ThorTemperatureC $peakSiliconC)",
+    "- Runtime samples at or above $runtimeWarmTelemetryC C: $($runtimeThermalSummary.at_or_above_warm)",
+    "- Runtime samples at or above $runtimeProbeSiliconC C: $($runtimeThermalSummary.at_or_above_probe)",
     "- Post-stop battery C: $(Format-ThorTemperatureC $postStopSnapshot.battery_temperature_c)",
     "- Post-stop skin C: $(Format-ThorTemperatureC $postStopSnapshot.skin_temperature_c)",
     "- Post-stop silicon C: $(Format-ThorTemperatureC $postStopSnapshot.silicon_temperature_c)",

@@ -2016,3 +2016,25 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   run at most one bounded cache continuation. Require native completion plus
   callback-finished before a separately cooled auditable title baseline, then
   field/menu/first-battle correctness and matched performance/thermal proof.
+
+### 2026-07-22 - cache-checkpoint-thermal-summary-hardening
+
+- Status: host-pass / device-unchanged
+- Scope: durable near-limit thermal accounting for resumable cache rounds
+- Changed files/settings: the cache controller retains every valid runtime
+  silicon sample, including an immediate confirmation sample, and writes the
+  count, average, minimum, peak, count at/above `45 C`, and count at/above the
+  dynamic `50 C` probe threshold into each capture README. Empty or
+  preflight-refused runs return a deterministic zero/null summary instead of
+  inventing measurements.
+- Host result: the pure summary fixture proves average/minimum/maximum and both
+  inclusive threshold counts; replay of capture 20260722-201353 produces
+  `26` samples, average `38.10 C`, minimum `35.5 C`, maximum `49.4 C`, one
+  sample at/above `45 C`, and zero at/above `50 C`. The focused route,
+  PowerShell AST, and full Thor host suite pass.
+- Thor result: none after the preceding checkpoint. No ADB query, temperature
+  read, launch, cache action, or other device contact occurred. Frozen APK and
+  core identity remain unchanged.
+- Decision: retain as safety/evidence hardening. It grants no startup-speed,
+  FPS, gameplay, flicker, stability, or measured thermal-win credit. Use the
+  richer capture summary only in a later independently cool cache round.
