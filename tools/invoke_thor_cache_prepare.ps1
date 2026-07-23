@@ -69,6 +69,7 @@ if ($apkItem.Length -ne [long]$candidate.ApkSize -or $hostApkHash -ne $expectedA
 
 $latestCacheCaptureName = "none"
 $latestCacheCompletedAt = $null
+$latestCacheReadmeText = ""
 $cacheCaptureRoot = Join-Path $repoRoot "debug-captures\android-speed-sprint"
 if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
     $latestCacheCapture = Get-ChildItem -LiteralPath $cacheCaptureRoot -Directory |
@@ -81,8 +82,9 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
         if (-not (Test-Path -LiteralPath $latestReadme -PathType Leaf)) {
             throw "Latest cache capture has no README; refusing cooldown inference: $latestCacheCaptureName"
         }
+        $latestCacheReadmeText = Get-Content -LiteralPath $latestReadme -Raw
         $createdMatch = [regex]::Match(
-            (Get-Content -LiteralPath $latestReadme -Raw),
+            $latestCacheReadmeText,
             '(?m)^- Created:\s*(\S.+)$'
         )
         $parsedCreatedAt = [DateTimeOffset]::MinValue
@@ -98,6 +100,7 @@ if (Test-Path -LiteralPath $cacheCaptureRoot -PathType Container) {
         $latestCacheCompletedAt = $parsedCreatedAt
     }
 }
+$minimumRequiredReuse = Get-ThorCachePrepareReuseFloor -LatestReadmeText $latestCacheReadmeText
 $cacheCooldown = Get-ThorCachePrepareCooldownState `
     -LastCompletedAt $latestCacheCompletedAt `
     -MinimumMinutes $minimumCacheCooldownMinutes
@@ -128,6 +131,7 @@ if ($Action -eq "Status") {
         "cache_cooldown_remaining_seconds=$($cacheCooldown.remaining_seconds)",
         "required_compile_workers=2",
         "require_validated_cache_reuse=True",
+        "minimum_required_reused_modules=$minimumRequiredReuse",
         "launch_game=False",
         "force_stop=True",
         "progress_checkpoint=True"
@@ -235,6 +239,7 @@ $progressCheckpoint = $false
 $sourceResolved = $false
 $namedWorkerActivated = $false
 $cacheProgress = Get-ThorCachePrepareProgress -NativeText ""
+$reuseFloorSatisfied = $false
 $callbackFinished = $false
 $nativeText = ""
 $deviceApkHash = ""
@@ -479,11 +484,12 @@ if ($null -eq $runFailure -and
 
 $timedOutCleanly = $runFailure -is [System.Management.Automation.ErrorRecord] -and
     $runFailure.Exception.Message -eq $timeoutFailureMessage
+$reuseFloorSatisfied = $cacheProgress.reused_modules -ge $minimumRequiredReuse
 if ($timedOutCleanly -and $accepted -and $nativeActivated -and
     -not $nativeCompleted -and -not $callbackFinished -and
     -not $nativeProcessDied -and -not $nativeFatal -and -not $gameBootDetected -and
     $pidAfter.Count -eq 0 -and $sourceResolved -and $namedWorkerActivated -and
-    $cacheProgress.has_reuse -and $cacheProgress.has_progress -and
+    $cacheProgress.has_reuse -and $reuseFloorSatisfied -and $cacheProgress.has_progress -and
     $cacheProgress.compile_worker_count -ge 2) {
     $progressCheckpoint = $true
     $runFailure = $null
@@ -561,6 +567,8 @@ $runtimeThermalSummary = Get-ThorCachePrepareThermalSummary `
     "- Existing validated modules this round: $($cacheProgress.existing_modules)",
     "- Reused modules this round: $($cacheProgress.reused_modules)",
     "- Cache reuse observed: $($cacheProgress.has_reuse)",
+    "- Minimum required reused modules: $minimumRequiredReuse",
+    "- Reuse floor satisfied: $reuseFloorSatisfied",
     "- Initial EBOOT module progress: $initialProgressSummary",
     "- Initial EBOOT workload complete: $($cacheProgress.initial_workload_complete)",
     "- Firmware scan progress: $($cacheProgress.latest_file)/$($cacheProgress.total_files)",

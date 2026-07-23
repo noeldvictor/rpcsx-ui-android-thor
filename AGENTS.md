@@ -1485,7 +1485,9 @@ Put dated run details in `debug-experiments/`, not here.
   exact remaining bound. The latest and prior dangerous spikes arrived about
   `76.3 s` and `73.3 s` after their first runtime samples, while completed
   objects had already been atomically committed. This is host-only safety
-  hardening: exact installed APK/core/cache identity is unchanged. The next
-  independently cool run must still prove continuity by reusing at least 169
+  hardening: exact installed APK/core/cache identity is unchanged. The host
+  now derives `minimum_required_reused_modules=169` from that thermal-stop
+  README and refuses checkpoint credit below the floor. The next independently
+  cool run must still prove continuity by reusing at least 169
   objects, and no title/gameplay proof may run until native plus callback
   completion.

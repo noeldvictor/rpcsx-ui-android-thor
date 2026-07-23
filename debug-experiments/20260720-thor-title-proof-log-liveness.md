@@ -2157,3 +2157,21 @@ requiring synchronized success plus complete activation/fatal-log evidence.
   After the independent cooldown, allow only one new 70-second round under the
   unchanged strict cool gate and require reuse of at least 169 objects before
   crediting the stopped round's 16 atomic writes.
+
+### 2026-07-22 - thermal-stop-reuse-floor
+
+- Status: host-evidence-hardening / no-device-contact / not-comparable
+- The cache controller now derives a reuse floor from the latest failed
+  thermal-stop README. Exact latest evidence `reused=153` plus `compiled=16`
+  produces `minimum_required_reused_modules=169` in device-free Status.
+- A clean bounded timeout can become `cache-progress-checkpoint` only when the
+  current capture reuses at least that floor in addition to the existing
+  source, worker, progress, health, thermal, game-boot, and final-PID gates.
+  Full native/callback completion remains independently acceptable.
+- Verification: focused fixtures prove floor `169`, reset to baseline `1`
+  after a normal checkpoint, and reject malformed thermal-stop continuity
+  evidence. The cache route contract passes and Status remains
+  `device_contact=False`.
+- Decision: no Thor contact occurred and exact APK/core/cache bytes are
+  unchanged. This prevents false durable-progress credit; it is not speed,
+  FPS, gameplay, flicker, stability, or thermal-win evidence.

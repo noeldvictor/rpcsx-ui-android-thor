@@ -148,6 +148,30 @@ if ($cooldownWaiting.ready -or
     -not $cooldownNoHistory.ready -or $cooldownNoHistory.remaining_seconds -ne 0) {
     throw "Cache-preparation independent cooldown accounting is not fail-closed."
 }
+$thermalStopReuseFloor = Get-ThorCachePrepareReuseFloor -LatestReadmeText @'
+- Status: failed
+- Compiled modules this round: 16
+- Reused modules this round: 153
+- Failure: Runtime thermal stop: silicon reached the early threshold.
+'@
+$checkpointReuseFloor = Get-ThorCachePrepareReuseFloor -LatestReadmeText @'
+- Status: cache-progress-checkpoint
+- Compiled modules this round: 10
+- Reused modules this round: 169
+- Failure: none
+'@
+if ($thermalStopReuseFloor -ne 169 -or $checkpointReuseFloor -ne 1) {
+    throw "Cache-preparation reuse floor did not preserve thermal-stop continuity."
+}
+$malformedThermalStopRejected = $false
+try {
+    [void](Get-ThorCachePrepareReuseFloor -LatestReadmeText "- Status: failed`n- Failure: Runtime thermal stop: test")
+} catch {
+    $malformedThermalStopRejected = $true
+}
+if (-not $malformedThermalStopRejected) {
+    throw "Malformed thermal-stop continuity evidence was accepted."
+}
 if ((Test-ThorCachePrepareNativeFatal -NativeText $progressFixture) -or
     -not (Test-ThorCachePrepareNativeFatal -NativeText "F 0:00:12.0 PPU: fatal")) {
     throw "Cache-preparation native-fatal classifier is not fail-closed."
@@ -319,6 +343,11 @@ foreach ($fragment in @(
     'progress_checkpoint=True',
     'required_compile_workers=2',
     'require_validated_cache_reuse=True',
+    'minimum_required_reused_modules=',
+    '$reuseFloorSatisfied = $cacheProgress.reused_modules -ge $minimumRequiredReuse',
+    '$cacheProgress.has_reuse -and $reuseFloorSatisfied -and $cacheProgress.has_progress',
+    'Minimum required reused modules:',
+    'Reuse floor satisfied:',
     '$cacheProgress.has_reuse',
     '$cacheProgress.has_progress',
     '$cacheProgress.compile_worker_count -ge 2',
