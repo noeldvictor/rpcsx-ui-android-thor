@@ -7,11 +7,26 @@ $upstreamRoot = Join-Path $workspaceRoot "rpcs3-upstream"
 $mainPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
 $mainHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.h"
 $mainLocklessPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/lockless.h"
+$mainPpuSyscallPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_ppu_thread.cpp"
+$mainInterruptPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_interrupt.cpp"
 $upstreamPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/PPUThread.cpp"
 $upstreamHeaderPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/PPUThread.h"
 $upstreamLocklessPath = Join-Path $upstreamRoot "Utilities/lockless.h"
+$upstreamPpuSyscallPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/lv2/sys_ppu_thread.cpp"
+$upstreamInterruptPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/lv2/sys_interrupt.cpp"
 
-foreach ($path in @($mainPath, $mainHeaderPath, $mainLocklessPath, $upstreamPath, $upstreamHeaderPath, $upstreamLocklessPath)) {
+foreach ($path in @(
+    $mainPath,
+    $mainHeaderPath,
+    $mainLocklessPath,
+    $mainPpuSyscallPath,
+    $mainInterruptPath,
+    $upstreamPath,
+    $upstreamHeaderPath,
+    $upstreamLocklessPath,
+    $upstreamPpuSyscallPath,
+    $upstreamInterruptPath
+)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Missing PPU command publication dependency: $path"
     }
@@ -20,9 +35,13 @@ foreach ($path in @($mainPath, $mainHeaderPath, $mainLocklessPath, $upstreamPath
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
 $mainHeader = Get-Content -LiteralPath $mainHeaderPath -Raw
 $mainLockless = Get-Content -LiteralPath $mainLocklessPath -Raw
+$mainPpuSyscall = Get-Content -LiteralPath $mainPpuSyscallPath -Raw
+$mainInterrupt = Get-Content -LiteralPath $mainInterruptPath -Raw
 $upstreamSource = Get-Content -LiteralPath $upstreamPath -Raw
 $upstreamHeader = Get-Content -LiteralPath $upstreamHeaderPath -Raw
 $upstreamLockless = Get-Content -LiteralPath $upstreamLocklessPath -Raw
+$upstreamPpuSyscall = Get-Content -LiteralPath $upstreamPpuSyscallPath -Raw
+$upstreamInterrupt = Get-Content -LiteralPath $upstreamInterruptPath -Raw
 
 foreach ($fragment in @(
     'reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count = 1) noexcept',
@@ -37,7 +56,7 @@ foreach ($fragment in @(
     'slot.release(command)',
     'slot = command',
     'clear_ppu_command_ready(atomic_t<u32>& notify) noexcept',
-    'notify.release(0)',
+    '__atomic_store_n(&notify.raw(), u32{0}, __ATOMIC_RELAXED)',
     'notify = 0',
     'cmd_queue[pos + i].raw() = list.begin()[i]',
     'acquire_ppu_command_head(atomic_t<cmd64>& slot) noexcept',
@@ -202,6 +221,26 @@ if (-not $waitClear.Success) {
 if ($mainSource.Contains('cmd_notify = 0;')) {
     throw 'Android PPU command wait reintroduced a sequentially consistent notification clear.'
 }
+if ($mainSource.Contains('notify.release(0);')) {
+    throw 'Android PPU command wait reintroduced a release barrier on its payload-free notification clear.'
+}
+
+foreach ($source in @($mainPpuSyscall, $mainInterrupt)) {
+    if (-not $source.Contains('thread->notify_cmd_ready();')) {
+        throw 'Android PPU command producer bypasses the platform-aware release-store notification helper.'
+    }
+    if ($source.Contains('thread->cmd_notify.store(1);') -or
+        $source.Contains('thread->cmd_notify.notify_one();')) {
+        throw 'Android PPU command producer reintroduced a sequentially consistent notification exchange.'
+    }
+}
+
+$producerHelperCalls = [regex]::Matches(
+    $mainPpuSyscall + $mainInterrupt,
+    'thread->notify_cmd_ready\(\);')
+if ($producerHelperCalls.Count -ne 2) {
+    throw "Android must route exactly two syscall/interrupt PPU command wakes through the release-store helper; found $($producerHelperCalls.Count)."
+}
 
 foreach ($fragment in @(
     'cmd_queue.push_begin();',
@@ -221,4 +260,15 @@ if (-not $upstreamHeader.Contains('cmd64 cmd_get(u32 index) { return cmd_queue[c
     throw 'Upstream PPU command tail-read baseline changed.'
 }
 
-Write-Host "Thor Android PPU command minimal-handoff/reservation/publication/consumer-read/completion/clear contract passed."
+foreach ($source in @($upstreamPpuSyscall, $upstreamInterrupt)) {
+    foreach ($fragment in @(
+        'thread->cmd_notify.store(1);',
+        'thread->cmd_notify.notify_one();'
+    )) {
+        if (-not $source.Contains($fragment)) {
+            throw "Upstream PPU command notification baseline changed: $fragment"
+        }
+    }
+}
+
+Write-Host "Thor Android PPU command minimal-handoff/notification/reservation/publication/consumer/completion contract passed."

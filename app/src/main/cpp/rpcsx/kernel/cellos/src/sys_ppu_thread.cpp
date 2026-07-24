@@ -554,8 +554,7 @@ error_code sys_ppu_thread_start(ppu_thread &ppu, u32 thread_id) {
   if (thread.ret) {
     return thread.ret;
   } else {
-    thread->cmd_notify.store(1);
-    thread->cmd_notify.notify_one();
+    thread->notify_cmd_ready();
   }
 
   return CELL_OK;

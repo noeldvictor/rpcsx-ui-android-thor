@@ -2,6 +2,15 @@
 
 Date: 2026-07-23
 
+## Superseded clear ordering
+
+The release clear documented below removed the old sequentially consistent RMW
+but was still conservative. Current Android code uses a relaxed atomic clear
+because the flag carries no payload and the loop immediately reacquires the
+release-published command head. Producer flag publication remains release
+ordered. See
+`debug-experiments/20260723-thor-ppu-command-notification-minimal-ordering.md`.
+
 ## Outcome
 
 Android now clears `ppu_thread::cmd_notify` after a command wait with a one-way

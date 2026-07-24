@@ -70,8 +70,7 @@ void lv2_int_serv::join() const {
   thread->cmd_list(
       {{ppu_cmd::ptr_call, 0}, std::bit_cast<u64>(&ppu_thread_exit)});
 
-  thread->cmd_notify.store(1);
-  thread->cmd_notify.notify_one();
+  thread->notify_cmd_ready();
   (*thread)();
 
   idm::remove_verify<named_thread<ppu_thread>>(thread->id, thread);

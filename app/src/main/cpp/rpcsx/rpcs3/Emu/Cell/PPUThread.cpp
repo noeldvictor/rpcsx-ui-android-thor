@@ -4117,8 +4117,8 @@ static inline void clear_ppu_command_ready(atomic_t<u32>& notify) noexcept
 {
 #ifdef __ANDROID__
 	// The queue head carries the payload's acquire/release contract. Clearing
-	// this level flag publishes no data and does not need the old flag value.
-	notify.release(0);
+	// this level flag publishes no data and orders no later producer action.
+	__atomic_store_n(&notify.raw(), u32{0}, __ATOMIC_RELAXED);
 #else
 	notify = 0;
 #endif

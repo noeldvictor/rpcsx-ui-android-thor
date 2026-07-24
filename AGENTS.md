@@ -2254,3 +2254,18 @@ Put dated run details in `debug-experiments/`, not here.
   correction plus `stackable-cpu-pressure`, not measured speed or thermal
   credit. Ledger:
   `debug-experiments/20260723-thor-ppu-command-minimal-handoff-ordering.md`.
+- Host-only Android PPU command notification now uses minimal ordering. The
+  consumer's payload-free post-wait clear is a relaxed atomic `STR`; command
+  producers in `sys_ppu_thread_start` and `lv2_int_serv::join` now share the
+  existing Android release-store helper, changing both `SWPAL` exchanges to
+  `STLR`. The queue head remains authoritative, producer head-before-flag
+  ordering and `notify_one` remain, the separate interrupt-disestablish
+  `SWPAL` is unchanged, and desktop retains sequentially consistent behavior.
+  Exact successor is APK `130CDBBA...B6D6DD8` / `72,837,756` bytes, merged
+  core `C354674D...5EC94B66` / `1,304,307,216` bytes, and packaged core
+  `18F720A8...E8B3756` / `62,988,856` bytes. ARM64 native/APK builds, exact
+  linked `STR/STLR` plus retained `LDADDA/STLR/SWPA/CASL` proof, artifact gate,
+  and all `70/70` host contracts pass. Thor was not contacted. Classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
+  Ledger:
+  `debug-experiments/20260723-thor-ppu-command-notification-minimal-ordering.md`.
