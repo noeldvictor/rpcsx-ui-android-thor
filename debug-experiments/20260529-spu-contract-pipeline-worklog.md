@@ -1,4 +1,26 @@
-﻿## 2026-07-24 18:16 ET - polling load-target route reaches field but drifts after left200 under reservation verifier (no speed)
+﻿## 2026-07-24 18:22 ET - loader-control left200x2 route stays field-clean under reservation verifier (no speed)
+
+Classification: route-tooling/valid-field-triage/loader-control-left200x2-clean/reservation-loop-verify-telemetry/no-speed.
+
+Evidence:
+- Followed the refiner decision to back off from the prior non-field/cutscene drift and re-prove the last loader-control left200x2 route before adding diagonal movement or any HLE/GPU fast mode.
+- Ran tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-confirm-visualgate with WindowsGameScreen 1, CPU affinity 0x0F, frame/vblank 240, EternalSonataReservationLoop Verify, and CleanAfterField visual gate.
+- Run dir: debug-captures\windows-lab\20260724-181748-cpu4-loader-control-left200x2-confirm-visualgate-windows.
+- Visual gate status was FIELD_LIKE_PRESENT and passed for triage. First field-like screenshot was screenshot-0117s.png at 117s, required field-like by 160s passed, and all 16 screenshots through screenshot-0210s.png were field-like-large-png. Invalid screenshots after first field-like: 0.
+- The two left200 inputs completed after field-like proof: screenshots screenshot-0135s.png and screenshot-0139s.png remained field-like, and the 10s/late holds through 210s stayed field-like.
+- Targeted fatal scan found 0 hits for VM access violations, prior 0x002aedd0, prior 0x0007dccc, Vulkan/device-loss, assertion, dynamic-fail, output mismatch, or descriptor overflow patterns.
+- Direct reservation/GPU counters from RPCS3.log: gpu_candidate=1680, mfc_dynamic=1680, mfc_wait=1785, mfc_wait_pc=94772, reservation_mode=verify rows=153680, PUTLLC16 detections=7, PUTLLC breakage=11, rsx_get/put byte rows=0, output_mismatch=0, dynamic_fail=0, desc_overflow=0.
+- Host external contention stayed clean across all 7 snapshots. Overall host grade was moderate only because sample-0210s had CPU 45.7%; do not use this run for FPS/timing comparison.
+
+Result:
+- Advances CPU/SPU bottleneck relief: yes, as a restored route/control surface and dense reservation verifier telemetry without fatal or mismatch evidence.
+- Advances GPU-feed/offload: no. GPU engine usage was visible in host samples, but the probe still had rsx_get_bytes/rsx_put_bytes=0 and no RSX-local buffer proof, so this remains CPU/SPU reduced-loop/codegen investigation.
+- Speed increase: no. Reservation verifier mode is not a fast path, host timing was not clean enough for comparison, and there is still no Options/menu plus first-battle A/B proof.
+
+Next narrow hypothesis:
+- Use this left200x2 route as the current clean boundary. Add exactly one non-diagonal route step toward the first-battle prompt, with screenshots immediately before/after and the same fatal/counter scan. Do not enable 25cc body/codegen or GPU fast paths until field, Options/menu, and first-battle proof stay clean.
+
+## 2026-07-24 18:16 ET - polling load-target route reaches field but drifts after left200 under reservation verifier (no speed)
 
 Classification: route-tooling/load-target-pollgate-restored/field-reached/later-visual-invalid/reservation-loop-verify-telemetry/no-speed.
 
@@ -11431,6 +11453,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
