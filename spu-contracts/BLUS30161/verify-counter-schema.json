@@ -1,4 +1,4 @@
-﻿{
+{
     "schema_version":  1,
     "generated_at":  "2026-07-24T17:23:13.7683175-04:00",
     "title_id":  "BLUS30161",
@@ -12,6 +12,7 @@
     "mode":  "verify-only",
     "required_environment":  {
                                  "RPCS3_ES_SPU_HLE_VERIFY":  "verify-25cc-shadow",
+                                 "RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD":  "full-for-promotion; counts-or-sampled-for-route-repair-only",
                                  "RPCS3_ES_SPU_HLE_25CC_BODY":  "disabled-or-verify-only",
                                  "blocked_values":  [
                                                         "RPCS3_ES_SPU_HLE_VERIFY=skip",
@@ -160,6 +161,7 @@
                                      "contract_bytes",
                                      "contract_get_hits",
                                      "contract_put_hits",
+                                     "payload_mode=full|sampled|counts",
                                      "contract_reject_total",
                                      "reject_title",
                                      "reject_image_sig",
@@ -186,6 +188,7 @@
                               "contract_hits == contract_get_hits + contract_put_hits",
                               "spu_hle_25cc_shadow_output_mismatch == 0",
                               "spu_hle_25cc_shadow_desc_overflow == 0",
+                              "payload_mode == full for promotion; missing/counts/sampled rows are route-repair only",
                               "fatal_log_hits == 0",
                               "visual_gate in field, Options/menu, and first-battle is clean before promotion"
                           ],

@@ -9,6 +9,8 @@ param(
     [switch]$RequireNoRejected,
     [switch]$RequirePromotionScore,
     [switch]$RequireCpuHleRecommendation,
+    [ValidateSet("Any", "Full", "Sampled", "Counts")]
+    [string]$RequiredPayloadMode = "Any",
     [Int64]$MinContractHits = 0,
     [switch]$FailOnGate
 )
@@ -242,6 +244,15 @@ if ($lines.Count -eq 0) {
 }
 
 $promotionAvailable = [bool]$promotionRow
+$payloadModeCounts = [ordered]@{}
+if ($result.PSObject.Properties.Name.Contains("rows_detail")) {
+    foreach ($detail in @($result.rows_detail)) {
+        $mode = if ($detail.fields.PSObject.Properties.Name.Contains("payload_mode")) { [string]$detail.fields.payload_mode } else { "missing" }
+        if (-not $payloadModeCounts.Contains($mode)) { $payloadModeCounts[$mode] = 0 }
+        $payloadModeCounts[$mode]++
+    }
+}
+$result | Add-Member -NotePropertyName payload_mode_counts -NotePropertyValue ([pscustomobject]$payloadModeCounts)
 $result | Add-Member -NotePropertyName promotion_score_available -NotePropertyValue $promotionAvailable
 $result | Add-Member -NotePropertyName promotion_score_source -NotePropertyValue $promotionFullPath
 if ($promotionRow) {
@@ -260,7 +271,7 @@ if ($promotionRow) {
     $result | Add-Member -NotePropertyName rsx_destination_evidence -NotePropertyValue "unknown"
 }
 
-$strictRequested = $RequireAcceptedRow -or $RequireNoRejected -or $RequirePromotionScore -or $RequireCpuHleRecommendation -or ($MinContractHits -gt 0)
+$strictRequested = $RequireAcceptedRow -or $RequireNoRejected -or $RequirePromotionScore -or $RequireCpuHleRecommendation -or ($RequiredPayloadMode -ne "Any") -or ($MinContractHits -gt 0)
 $strictFailures = New-Object System.Collections.Generic.List[string]
 if ($RequireAcceptedRow -and $result.accepted_rows -lt 1) {
     $strictFailures.Add("accepted_rows_lt_1") | Out-Null
@@ -279,6 +290,22 @@ if ($strictRequested -and ([Int64]$result.total_desc_overflow -ne 0)) {
 }
 if ($RequirePromotionScore -and -not $promotionAvailable) {
     $strictFailures.Add("promotion_score_missing") | Out-Null
+}
+if ($RequiredPayloadMode -ne "Any") {
+    $wantedPayloadMode = $RequiredPayloadMode.ToLowerInvariant()
+    $badPayloadRows = 0
+    if ($result.PSObject.Properties.Name.Contains("rows_detail")) {
+        foreach ($detail in @($result.rows_detail)) {
+            if (-not $detail.fields.PSObject.Properties.Name.Contains("payload_mode") -or [string]$detail.fields.payload_mode -ne $wantedPayloadMode) {
+                $badPayloadRows++
+            }
+        }
+    } else {
+        $badPayloadRows = [int]$result.rows
+    }
+    if ($badPayloadRows -gt 0) {
+        $strictFailures.Add("payload_mode_not_${wantedPayloadMode}:$badPayloadRows") | Out-Null
+    }
 }
 if ($RequireCpuHleRecommendation -and ([string]$result.recommended_lane -ne "verify-only-cpu-hle-or-codegen")) {
     $strictFailures.Add("recommended_lane_not_cpu_hle_or_codegen:$($result.recommended_lane)") | Out-Null
@@ -321,6 +348,8 @@ if (-not [string]::IsNullOrWhiteSpace($OutMarkdown)) {
     $md.Add("- Vulkan/GPU score: $bt$($result.vulkan_gpu_score)$bt") | Out-Null
     $md.Add("- Readback risk: $bt$($result.readback_risk)$bt") | Out-Null
     $md.Add("- RSX destination evidence: $bt$($result.rsx_destination_evidence)$bt") | Out-Null
+    $md.Add("- Payload modes: $bt$($result.payload_mode_counts | ConvertTo-Json -Compress)$bt") | Out-Null
+    $md.Add("- Required payload mode: $bt$RequiredPayloadMode$bt") | Out-Null
     $md.Add("- Strict gate requested: $bt$($result.strict_gate_requested)$bt") | Out-Null
     $md.Add("- Strict gate pass: $bt$($result.strict_gate_pass)$bt") | Out-Null
     $md.Add("") | Out-Null
@@ -346,3 +375,4 @@ $result | ConvertTo-Json -Depth 16
 if ($FailOnGate -and $strictRequested -and -not $strictGatePass) {
     exit 2
 }
+

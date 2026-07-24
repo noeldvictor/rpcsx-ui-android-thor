@@ -35,6 +35,8 @@ param(
     [string]$EternalSonataFramePollContinuousRearm = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
+    [ValidateSet("Off", "Full", "Sampled", "Counts")]
+    [string]$EternalSonataSpuHle25ccShadowPayload = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
     [string]$EternalSonataSpuHle25ccBody = "Off",
     [ValidateSet("Off", "Verify")]
@@ -2873,6 +2875,7 @@ Write-LabLine $runLog "- Eternal Sonata frame-poll wait: $EternalSonataFramePoll
 Write-LabLine $runLog "- Eternal Sonata frame-poll handler grace: ${EternalSonataFramePollHandlerGraceUs}us"
 Write-LabLine $runLog "- Eternal Sonata frame-poll continuous rearm: $EternalSonataFramePollContinuousRearm"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE verifier: $EternalSonataSpuHleVerify"
+Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x25cc shadow payload: $EternalSonataSpuHle25ccShadowPayload"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x25cc body: $EternalSonataSpuHle25ccBody"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE size16 body: $EternalSonataSpuHleSize16Body"
 Write-LabLine $runLog "- Eternal Sonata SPU HLE 0x451c preserve body: $EternalSonataSpuHle451cPreserveBody"
@@ -2995,6 +2998,7 @@ $previousEsFramePollWait = [Environment]::GetEnvironmentVariable("RPCS3_ES_FRAME
 $previousEsFramePollHandlerGraceUs = [Environment]::GetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "Process")
 $previousEsFramePollContinuousRearm = [Environment]::GetEnvironmentVariable("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM", "Process")
 $previousEsSpuHleVerify = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", "Process")
+$previousEsSpuHle25ccShadowPayload = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD", "Process")
 $previousEsSpuHle25ccBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", "Process")
 $previousEsSpuHleSize16Body = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", "Process")
 $previousEsSpuHle451cPreserveBody = [Environment]::GetEnvironmentVariable("RPCS3_ES_SPU_HLE_451C_PRESERVE_BODY", "Process")
@@ -3073,6 +3077,12 @@ $esSpuHleVerifyEnv = switch ($EternalSonataSpuHleVerify) {
     "VerifyShadow" { "verify-shadow" }
     "Verify25ccShadow" { "verify-25cc-shadow" }
     "Skip" { "skip" }
+    default { "off" }
+}
+$esSpuHle25ccShadowPayloadEnv = switch ($EternalSonataSpuHle25ccShadowPayload) {
+    "Full" { "full" }
+    "Sampled" { "sampled" }
+    "Counts" { "counts" }
     default { "off" }
 }
 $esSpuHle25ccBodyEnv = switch ($EternalSonataSpuHle25ccBody) {
@@ -3205,6 +3215,7 @@ if ($EternalSonataJoinSpin -ge 0) {
 [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "$EternalSonataFramePollHandlerGraceUs", "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM", $esFramePollContinuousRearmEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $esSpuHleVerifyEnv, "Process")
+[Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD", $esSpuHle25ccShadowPayloadEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $esSpuHle25ccBodyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $esSpuHleSize16BodyEnv, "Process")
 [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_451C_PRESERVE_BODY", $esSpuHle451cPreserveBodyEnv, "Process")
@@ -3252,6 +3263,7 @@ try {
     [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", $previousEsFramePollHandlerGraceUs, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM", $previousEsFramePollContinuousRearm, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_VERIFY", $previousEsSpuHleVerify, "Process")
+    [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD", $previousEsSpuHle25ccShadowPayload, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_25CC_BODY", $previousEsSpuHle25ccBody, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_SIZE16_BODY", $previousEsSpuHleSize16Body, "Process")
     [Environment]::SetEnvironmentVariable("RPCS3_ES_SPU_HLE_451C_PRESERVE_BODY", $previousEsSpuHle451cPreserveBody, "Process")
@@ -3520,3 +3532,4 @@ if ($processExitedBeforeDeadline) {
     "Process exited before deadline: exit_code=$exitCode; max_seconds=$MaxSeconds" | Set-Content -LiteralPath $processExitGatePath -Encoding UTF8
     throw "RPCS3 exited before the run deadline: exit_code=$exitCode; run=$runDir"
 }
+

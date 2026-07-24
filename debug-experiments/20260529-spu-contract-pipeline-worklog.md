@@ -1,4 +1,11 @@
-﻿## 2026-07-24 19:14 ET - 25cc route-safety audit points at payload hashing cost (no speed)
+﻿## 2026-07-24 19:20 ET - harness/parser payload-mode gate for 25cc route repair (no speed)
+
+- Workflow/refiner context: the 25cc route-safety audit identified payload hashing/memcmp as the remaining likely verifier perturbation after compact log volume was already fixed. This round prepared the repo-local harness and parser gates for an explicit 25cc shadow payload mode before touching fast/body/GPU paths.
+- Harness change: `tools\windows_rpcs3_lab.ps1` and `tools\eternal_sonata_speed_sprint.ps1` now accept `EternalSonataSpuHle25ccShadowPayload` with `Off|Full|Sampled|Counts` and pass it through `RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD`. The Windows run log records the selected 25cc shadow payload mode.
+- Parser/schema change: `tools\parse_spu_contract_verify_log.ps1` now supports `-RequiredPayloadMode Full|Sampled|Counts`, records `payload_mode_counts`, and fails the strict gate when contract rows are missing `payload_mode` or do not match the requested mode. `spu-contracts\BLUS30161\verify-counter-schema.json` documents `payload_mode=full|sampled|counts` and requires `payload_mode == full` for promotion; missing/counts/sampled rows are route-repair-only.
+- Why this advances CPU/SPU bottleneck relief: once the Windows C++ row emits `payload_mode`, automation can run low-perturbation counts/sampled 25cc routes to regain clean field proof, while the parser prevents those lighter rows from being promoted as correctness/full-verifier evidence.
+- Classification: source/tooling gate only. No emulator run, no FPS proof, no GPU migration credit, no fast path, and no speed increase.
+## 2026-07-24 19:14 ET - 25cc route-safety audit points at payload hashing cost (no speed)
 
 - Workflow/refiner context: after the refiner learned to block duplicate loader-control reruns for unsafe 25cc visuals, its next action now runs a narrow route-safety/RAG audit instead of another Windows scene proof.
 - Tooling change: added `tools\summarize_eternal_sonata_25cc_route_safety.ps1` and wired the unsafe-25cc refiner branch to suggest it. The audit writes `spu-contracts\BLUS30161\25cc-route-safety-audit.md`.
@@ -11586,6 +11593,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 

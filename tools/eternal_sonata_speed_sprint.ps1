@@ -42,6 +42,8 @@ param(
     [string]$EternalSonataFramePollContinuousRearm = "Off",
     [ValidateSet("Off", "Verify", "VerifyShadow", "Verify25ccShadow", "Skip")]
     [string]$EternalSonataSpuHleVerify = "Off",
+    [ValidateSet("Off", "Full", "Sampled", "Counts")]
+    [string]$EternalSonataSpuHle25ccShadowPayload = "Off",
     [ValidateSet("Off", "Verify", "Fast")]
     [string]$EternalSonataSpuHle25ccBody = "Off",
     [ValidateSet("Off", "Verify")]
@@ -1137,6 +1139,7 @@ switch ($Action) {
             EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs
             EternalSonataFramePollContinuousRearm = $EternalSonataFramePollContinuousRearm
             EternalSonataSpuHleVerify = $EternalSonataSpuHleVerify
+            EternalSonataSpuHle25ccShadowPayload = $EternalSonataSpuHle25ccShadowPayload
             EternalSonataSpuHle25ccBody = $EternalSonataSpuHle25ccBody
             EternalSonataSpuHleSize16Body = $EternalSonataSpuHleSize16Body
             EternalSonataSpuHle451cPreserveBody = $EternalSonataSpuHle451cPreserveBody
@@ -1238,3 +1241,4 @@ switch ($Action) {
         & (Join-Path $PSScriptRoot "thor_ooda.ps1") -Action Stop -Profile eternal-sonata-speed -Label "$safeLabel-android-stop" -Symptom "Eternal Sonata $Scene baseline stop, driver=$Driver, core=$Core"
     }
 }
+
