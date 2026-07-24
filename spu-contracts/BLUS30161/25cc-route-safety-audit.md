@@ -47,3 +47,8 @@
 
 - The payload-mode split is now applied to sibling checkout ..\\rpcs3-upstream and the repo-local patch artifact has been regenerated from that actual source diff.
 - Build and route proof are still pending; counts/sampled mode is route-repair evidence only, while promotion still requires full payload mode plus valid field, Options/menu, and first-battle proof.
+
+## 2026-07-24 19:43 ET - Windows exe linked
+
+- The patched upstream source compiled and linked ..\\rpcs3-upstream\\build-msvc\\bin\\rpcs3.exe; MSBuild still failed only in Qt post-build deployment because windeployqt could not query qtpaths.
+- Next route-safe proof should run counts mode from the linked exe. Promotion remains blocked until full payload mode plus valid field, Options/menu, and first-battle proof all pass.

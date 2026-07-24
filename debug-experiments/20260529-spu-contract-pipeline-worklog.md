@@ -1,3 +1,10 @@
+## 2026-07-24 19:43 ET - patched 25cc payload-mode Windows exe linked; Qt deploy step failed (no speed)
+
+- Workflow/refiner context: followed the patched-source build step. `RelWithDebInfo` was not a valid config for this existing Visual Studio solution, so the build was retried with `Release|x64`.
+- Build environment repair: the first `Release` attempt reached `rpcs3_emu` but MSBuild/CL failed because the process environment contained duplicate `Path` and `PATH` entries. A sanitized process environment with one `Path` entry allowed compilation to continue.
+- Build result: the patched `rpcs3\Emu\Cell\SPUThread.cpp` and `rpcs3\Emu\Cell\lv2\sys_spu.cpp` compiled, `rpcs3_emu.lib`, `rpcs3_ui.lib`, and `rpcs3_lib.lib` rebuilt, and `..\rpcs3-upstream\build-msvc\bin\rpcs3.exe` linked at 65,074,688 bytes with timestamp 2026-07-24 19:40:43 ET.
+- Remaining build issue: the MSBuild target still returned failure in the post-build Qt deployment step because `windeployqt.exe` could not query `qtpaths`; direct Qt tool probing also timed out. Existing `Qt6Core.dll` is already present in `build-msvc\bin`, so the next heartbeat should use the linked exe for exactly one counts-mode route repair instead of repeating the same deploy step.
+- Classification: build/link progress only. No emulator run, no valid field/menu/battle proof, no GPU migration credit, and no speed increase.
 ## 2026-07-24 19:32 ET - upstream 25cc payload-mode source applied (build pending, no speed)
 
 - Workflow/refiner context: followed the refiner's apply/build step after the malformed review-sketch artifact failed `git apply --check` as not being a real unified diff. Target source files in `..\rpcs3-upstream` were clean; only third-party submodules were dirty, so the narrow C++ patch could be applied without touching unrelated source changes.
@@ -2085,7 +2092,7 @@ Run directory: `debug-captures/windows-lab/20260530-202133-cpu4-stateaware-one-s
 . \tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-124130-cpu4-stateaware-one-step-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
 ```
 
-- Failed: no SPU disassembly windows found for PCs `0x9676`,`17692` under that runÃ¢â‚¬â„¢s `spu-images` path.
+- Failed: no SPU disassembly windows found for PCs `0x9676`,`17692` under that runÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s `spu-images` path.
 - `spu-contracts\BLUS30161` was **not** regenerated from this run.
 
 ## Classification
@@ -3359,7 +3366,7 @@ $runDir = '.\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visu
 
 ## Next Step
 - Keep movement and battle reruns blocked.
-- Stay on SPU verifier lane: capture command-read/PAIR verification evidence on a clean field run, then run verified `FIELD Ã¢â€ â€™ Options Ã¢â€ â€™ first-battle` under `Verify25ccShadow` before any fast-mode proposals.
+- Stay on SPU verifier lane: capture command-read/PAIR verification evidence on a clean field run, then run verified `FIELD ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Options ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ first-battle` under `Verify25ccShadow` before any fast-mode proposals.
 
 ## 2026-05-30 04:32:31-04:00 SPU Verify-Lane Re-Run (Field Clean, No Verifier Rows)
 
@@ -5629,7 +5636,7 @@ $runDir = ".\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left
 - Continue verify-only lane:
   - do not change fast paths on this evidence yet;
   - wire/align Windows upstream log-row+reject-bucket counters for `hle_mode=contract-25cc-9e4000`;
-  - then rerun strict parser and field + Options + first-battle with the same verify schema before any `verify`Ã¢â€ â€™`fast` promotion.
+  - then rerun strict parser and field + Options + first-battle with the same verify schema before any `verify`ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢`fast` promotion.
 
 ## 2026-05-29 13:50:32-04:00 Refiner-Blocked SPU Verification Hold
 
