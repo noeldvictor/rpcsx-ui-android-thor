@@ -1,4 +1,11 @@
-﻿## 2026-07-24 19:02 ET - 25cc direction-split retry still black-overlays despite fieldproof screenshots (no speed)
+﻿## 2026-07-24 19:06 ET - refiner now blocks duplicate loader reruns after unsafe 25cc visuals (no speed)
+
+- Workflow/refiner context: the latest refiner still recommended re-proving `loader-control-left200x2` after the 25cc direction-split retry failed visuals, even though the two immediately preceding loader-control proofs and the diag200 boundary were already field-clean.
+- Change: updated `tools\ps3_harness_refiner.ps1` to detect a latest failed-visual `25cc` run whose primary visual class is cutscene/non-field or black-overlay. That state now produces a no-auto-rerun decision and a comment-only suggested command directing the next heartbeat to patch/inspect `Verify25ccShadow` or harness route safety first.
+- Why this advances the sprint: prevents the automation from burning Windows cycles on duplicate clean-route proofs when the current evidence says the 25cc verifier/instrumentation path is route-unsafe. This keeps work aimed at CPU/SPU bottleneck relief by forcing lower-overhead logging, accepted-field gating, or pre-field abort design before another 25cc promotion attempt.
+- Verification/classification: source-only harness/refiner update; no emulator run, no FPS proof, no GPU migration credit, and no speed increase. Existing untracked scratch refiner logs were left untouched.
+- Next narrow hypothesis: inspect the active 25cc verifier implementation and add route-safe throttling or visual-state gating so clean field/menu/battle proof can coexist with 25cc GET/PUT descriptor counters before any body/codegen/Vulkan fast path is retried.
+## 2026-07-24 19:02 ET - 25cc direction-split retry still black-overlays despite fieldproof screenshots (no speed)
 
 - Workflow/refiner context: followed the refiner recommendation after the clean `left200x2+diag200` boundary proof: retry the 0x25cc direction-split verifier on the known-clean route instead of adding another route-only proof.
 - Run: `debug-captures\windows-lab\20260724-185816-cpu4-loader-control-left200x2-diag200-25cc-dirsplit-fieldproof-windows`
@@ -11570,6 +11577,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 

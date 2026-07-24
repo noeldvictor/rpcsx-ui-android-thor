@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$RunRoot = "",
 
@@ -1485,6 +1485,7 @@ $latestValidLoaderControlLeft200x4 = $false
 $latestValidLoaderControlDiag200 = $false
 $latestValidLoaderControlLeftCount = -1
 $latestCutsceneOrNonfield = $false
+$latestHle25ccVerifierRouteUnsafe = $false
 $latestBlackOverlay = $false
 $latestFatal = $false
 $latestLoaderControlReconfirm = $false
@@ -1790,6 +1791,10 @@ if ($latestRun) {
         $latestText -like "*titleload-down160-loadtarget-reproof*"
     $latestCutsceneOrNonfield = (Test-HarnessCutsceneOrNonFieldClass -Class $latestRun.Visual.PrimarySmallClass) -and $latestRun.Decision -ne "valid-field-triage"
     $latestBlackOverlay = $latestRun.Visual.PrimarySmallClass -eq "black-overlay-small-png" -and $latestRun.Decision -ne "valid-field-triage"
+    $latestHle25ccVerifierRouteUnsafe =
+        $latestRun.Decision -eq "failed-visual-gate" -and
+        $latestText -like "*25cc*" -and
+        ($latestCutsceneOrNonfield -or $latestBlackOverlay)
     $latestStateAwarePromptStuck =
         $latestRun.Decision -eq "failed-visual-gate" -and
         $latestRun.Visual.PrimarySmallClass -eq "wrong-window-or-other-small-png" -and
@@ -3393,6 +3398,8 @@ $nextAction = if ($currentUpstreamWindowsPromotionGateCleared) {
     "Latest 0x451c preserve-body path reached the full title Options page. Keep it opt-in and prove first-battle visuals before matched timing, speed A/B, or promotion."
 } elseif ($latestCleanHle451cPreserveBodyField) {
     "Latest 0x451c preserve-body field smoke is clean. Keep it opt-in, do not add movement next, and prove title Options before first-battle or speed A/B claims."
+} elseif ($latestHle25ccVerifierRouteUnsafe) {
+    "Latest 0x25cc verifier route produced non-field/black-overlay frames after clean loader-control proofs. Do not re-prove loader-control or rerun 25cc as-is; inspect/patch the active 25cc verifier or harness for route-safe lower-overhead logging, or add an accepted-field early gate before any 25cc counter promotion."
 } elseif ($latestCutsceneOrNonfield -and $blockFailedNextLoaderControl) {
     "Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis."
 } elseif ($latestCutsceneOrNonfield) {
@@ -3733,6 +3740,8 @@ $suggestedCommand = if ($currentUpstreamWindowsPromotionGateCleared) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label hle-451c-preserve-body-first-battle-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 330 -ScreenshotEverySeconds 20 -ScreenshotStartSeconds 220 -ScreenshotMaxCount 8"
 } elseif ($latestCleanHle451cPreserveBodyField) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label hle-451c-preserve-body-options-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 90 -ScreenshotMaxCount 8"
+} elseif ($latestHle25ccVerifierRouteUnsafe) {
+    "# No automatic loader/25cc rerun: latest 0x25cc verifier produced non-field or black-overlay frames while recent loader-control proofs were clean. Patch Verify25ccShadow/harness route safety first: lower per-hit logging, gate counter parsing on accepted field, or add a pre-field abort before another Windows run."
 } elseif ($latestCutsceneOrNonfield -and $blockFailedNextLoaderControl) {
     "# No automatic loader-control movement rerun: latest route produced cutscene/non-field frames after a clean lower boundary. Repair route-state detection, shrink/change the pulse after pre-movement field proof, or switch to SPU kernel HLE/codegen/verifier analysis."
 } elseif ($latestCutsceneOrNonfield) {
@@ -3884,3 +3893,4 @@ if (-not $NoWrite) {
     Write-Output ("Markdown: {0}" -f $OutPath)
     Write-Output ("JSON: {0}" -f $JsonPath)
 }
+
