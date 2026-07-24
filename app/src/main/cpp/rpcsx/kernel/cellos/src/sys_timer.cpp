@@ -64,6 +64,13 @@ enum class thor_es_frame_poll_wait_mode : u8 {
   fast,
 };
 
+enum class thor_es_frame_poll_wait_result : u8 {
+  not_candidate,
+  normal_sleep_fast,
+  normal_sleep_diagnostic,
+  waited,
+};
+
 enum class thor_es_frame_poll_cached_bool : u8 {
   uninitialized,
   disabled,
@@ -293,28 +300,33 @@ void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
 }
 
 template <bool TrackStats>
-FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu) {
+FORCE_INLINE thor_es_frame_poll_wait_result
+try_thor_es_frame_poll_wait_impl(ppu_thread &ppu) {
+  constexpr auto normal_sleep_result =
+      TrackStats
+          ? thor_es_frame_poll_wait_result::normal_sleep_diagnostic
+          : thor_es_frame_poll_wait_result::normal_sleep_fast;
   const u32 object_addr = static_cast<u32>(ppu.gpr[28]);
   const u32 frame_config_addr = static_cast<u32>(ppu.gpr[31]);
   if (frame_config_addr != object_addr + 4 || !vm::check_addr(object_addr) ||
       !vm::check_addr(frame_config_addr + 0x260)) {
-    return false;
+    return thor_es_frame_poll_wait_result::not_candidate;
   }
 
   const u8 divisor = vm::read8(frame_config_addr + 0x260);
   if (divisor != 30 && divisor != 60) {
-    return false;
+    return thor_es_frame_poll_wait_result::not_candidate;
   }
 
   const u32 threshold = 60 / divisor;
   const u32 counter = vm::read32(object_addr);
   if (counter >= threshold) {
-    return false;
+    return thor_es_frame_poll_wait_result::not_candidate;
   }
 
   const auto renderer = rsx::get_current_renderer();
   if (!renderer) {
-    return false;
+    return thor_es_frame_poll_wait_result::not_candidate;
   }
 
   auto &state = g_thor_es_frame_poll_wait_state;
@@ -336,7 +348,7 @@ FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu) {
         log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
       }
     }
-    return false;
+    return normal_sleep_result;
   }
 
   [[maybe_unused]] bool continuous_rearmed = false;
@@ -349,7 +361,7 @@ FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu) {
           log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
         }
       }
-      return false;
+      return normal_sleep_result;
     }
 
     // A completed normal sleep has already proven this exact
@@ -437,23 +449,24 @@ FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu) {
       log_thor_es_frame_poll_wait(ppu, after_counter, threshold, after_vblank);
     }
   }
-  return true;
+  return thor_es_frame_poll_wait_result::waited;
 }
 
-NEVER_INLINE bool
+NEVER_INLINE thor_es_frame_poll_wait_result
 try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu) {
   return try_thor_es_frame_poll_wait_impl<true>(ppu);
 }
 
-bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
+thor_es_frame_poll_wait_result
+try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
       sleep_time != 100 || !ppu.is_thor_es_title) {
-    return false;
+    return thor_es_frame_poll_wait_result::not_candidate;
   }
 
   const auto mode = get_thor_es_frame_poll_wait_mode();
   if (mode == thor_es_frame_poll_wait_mode::off) {
-    return false;
+    return thor_es_frame_poll_wait_result::not_candidate;
   }
 
   if (mode == thor_es_frame_poll_wait_mode::fast) {
@@ -463,18 +476,8 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   return try_thor_es_frame_poll_wait_diagnostic(ppu);
 }
 
-void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
-                                         u64 sleep_time) {
-  if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
-      sleep_time != 100 || !ppu.is_thor_es_title) {
-    return;
-  }
-
-  const auto mode = get_thor_es_frame_poll_wait_mode();
-  if (mode == thor_es_frame_poll_wait_mode::off) {
-    return;
-  }
-
+void observe_thor_es_frame_poll_fallback(
+    const ppu_thread &ppu, thor_es_frame_poll_wait_result result) {
   auto &state = g_thor_es_frame_poll_wait_state;
   if (state.ppu_id != ppu.id || !state.object_addr ||
       !vm::check_addr(state.object_addr)) {
@@ -486,7 +489,8 @@ void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
     if (const auto renderer = rsx::get_current_renderer()) {
       state.completed_vblank = renderer->vblank_count;
       state.armed = true;
-      if (mode == thor_es_frame_poll_wait_mode::diagnostic) {
+      if (result ==
+          thor_es_frame_poll_wait_result::normal_sleep_diagnostic) {
         state.fallback_rearms++;
       }
     }
@@ -913,7 +917,9 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
           std::max<u64>(1, rx::sub_saturate<u64>(sleep_time, -add_time));
     }
 
-    if (try_thor_es_frame_poll_wait(ppu, sleep_time)) {
+    const auto frame_poll_result =
+        try_thor_es_frame_poll_wait(ppu, sleep_time);
+    if (frame_poll_result == thor_es_frame_poll_wait_result::waited) {
       thor_spurs_probe_log_ppu_wait(
           "usleep-frame-poll", ppu, 0, requested_sleep_time,
           thor_es_frame_poll_wait_max_us,
@@ -930,7 +936,10 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
       ppu.state += cpu_flag::again;
     }
 
-    observe_thor_es_frame_poll_fallback(ppu, sleep_time);
+    if (frame_poll_result !=
+        thor_es_frame_poll_wait_result::not_candidate) {
+      observe_thor_es_frame_poll_fallback(ppu, frame_poll_result);
+    }
   } else {
     std::this_thread::yield();
   }

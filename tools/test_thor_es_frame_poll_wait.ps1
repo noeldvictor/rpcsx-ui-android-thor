@@ -110,8 +110,8 @@ if ($mainTimer.Contains('Emu.GetTitleID() != "BLUS30161"')) {
     throw 'Android frame-poll hot path reintroduced a per-call title string comparison.'
 }
 $titleLoads = [regex]::Matches($mainTimer, '!ppu[.]is_thor_es_title')
-if ($titleLoads.Count -ne 2) {
-    throw "Android frame-poll wrapper and fallback must both use the PPU-lifetime title gate; found $($titleLoads.Count)."
+if ($titleLoads.Count -ne 1) {
+    throw "Android frame-poll wrapper must use exactly one PPU-lifetime title gate; found $($titleLoads.Count)."
 }
 
 foreach ($registrationStoreContract in @(
@@ -176,6 +176,10 @@ foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
     'constexpr u64 thor_es_frame_poll_log_probe_mask = 1023',
     'enum class thor_es_frame_poll_wait_mode : u8',
+    'enum class thor_es_frame_poll_wait_result : u8',
+    'normal_sleep_fast',
+    'normal_sleep_diagnostic',
+    'thor_es_frame_poll_wait_result::waited',
     'thor_es_frame_poll_wait_mode::uninitialized',
     'thor_es_frame_poll_wait_mode::diagnostic',
     'thor_es_frame_poll_wait_mode::fast',
@@ -197,10 +201,12 @@ foreach ($mainContract in @(
     '[[unlikely]]',
     'get_thor_es_frame_poll_wait_mode()',
     'template <bool TrackStats>',
-    'FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu)',
+    'FORCE_INLINE thor_es_frame_poll_wait_result',
+    'try_thor_es_frame_poll_wait_impl(ppu_thread &ppu)',
+    'constexpr auto normal_sleep_result =',
     'try_thor_es_frame_poll_wait_impl<false>(ppu)',
     'try_thor_es_frame_poll_wait_impl<true>(ppu)',
-    'NEVER_INLINE bool',
+    'NEVER_INLINE thor_es_frame_poll_wait_result',
     'try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu)',
     'try_thor_es_frame_poll_wait_diagnostic(ppu)',
     'bool should_probe_thor_es_frame_poll_log() noexcept',
@@ -223,7 +229,7 @@ foreach ($mainContract in @(
     'const u64 handler_grace_us =',
     'after_counter == counter ? get_thor_es_frame_poll_handler_grace_us() : 0',
     'waited_us < handler_grace_us',
-    'return false;'
+    'return thor_es_frame_poll_wait_result::not_candidate;'
 )) {
     if (-not $mainTimer.Contains($mainContract)) {
         throw "Android frame-poll wait is missing its opt-in or bounded-wait contract: $mainContract"
@@ -279,7 +285,7 @@ foreach ($increment in $diagnosticIncrements) {
         throw "Android fast frame-poll mode still executes a diagnostic increment: $($increment.Value)"
     }
 }
-if ($mainTimer -notmatch '(?s)if \(mode == thor_es_frame_poll_wait_mode::diagnostic\) \{\s*state[.]fallback_rearms[+][+];\s*\}') {
+if ($mainTimer -notmatch '(?s)if \(result ==\s*thor_es_frame_poll_wait_result::normal_sleep_diagnostic\) \{\s*state[.]fallback_rearms[+][+];\s*\}') {
     throw 'Android fast frame-poll fallback still records its diagnostic rearm counter.'
 }
 
@@ -294,7 +300,7 @@ foreach ($guardedStatic in @(
 }
 
 $waitWrapperStart = $waitFunction.IndexOf(
-    'bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time)')
+    'try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time)')
 $waitModeLoad = $waitFunction.IndexOf(
     'const auto mode = get_thor_es_frame_poll_wait_mode()',
     $waitWrapperStart)
@@ -306,15 +312,47 @@ if ($waitWrapperStart -lt 0 -or $waitNumericGate -lt $waitWrapperStart -or
     throw 'Android frame-poll wrapper must reject cheap numeric mismatches before reading cached settings.'
 }
 
-$fallbackModeLoad = $mainTimer.IndexOf(
-    'const auto mode = get_thor_es_frame_poll_wait_mode()',
-    $fallbackFunctionStart)
-$fallbackNumericGate = $mainTimer.IndexOf(
-    'if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300',
-    $fallbackFunctionStart)
-if ($fallbackNumericGate -lt $fallbackFunctionStart -or
-    $fallbackModeLoad -le $fallbackNumericGate) {
-    throw 'Android frame-poll fallback must reject cheap numeric mismatches before reading cached settings.'
+$fallbackFunctionEnd = $mainTimer.IndexOf('} // namespace', $fallbackFunctionStart)
+if ($fallbackFunctionEnd -le $fallbackFunctionStart) {
+    throw 'Could not isolate the Android frame-poll fallback observer.'
+}
+$fallbackFunction = $mainTimer.Substring(
+    $fallbackFunctionStart,
+    $fallbackFunctionEnd - $fallbackFunctionStart)
+foreach ($redundantFallbackGate in @(
+    'ppu.cia',
+    'sleep_time',
+    '!ppu.is_thor_es_title',
+    'get_thor_es_frame_poll_wait_mode()'
+)) {
+    if ($fallbackFunction.Contains($redundantFallbackGate)) {
+        throw "Android frame-poll fallback repeated a wrapper gate after normal sleep: $redundantFallbackGate"
+    }
+}
+
+foreach ($resultContract in @(
+    'const auto frame_poll_result =',
+    'frame_poll_result == thor_es_frame_poll_wait_result::waited',
+    'frame_poll_result !=',
+    'thor_es_frame_poll_wait_result::not_candidate',
+    'observe_thor_es_frame_poll_fallback(ppu, frame_poll_result)',
+    'result ==',
+    'thor_es_frame_poll_wait_result::normal_sleep_diagnostic'
+)) {
+    if (-not $mainTimer.Contains($resultContract)) {
+        throw "Android frame-poll result forwarding is missing: $resultContract"
+    }
+}
+
+$normalSleepStart = $mainTimer.IndexOf('lv2_obj::sleep(ppu')
+$resultWaitedCheck = $mainTimer.IndexOf(
+    'frame_poll_result == thor_es_frame_poll_wait_result::waited')
+$resultFallbackCheck = $mainTimer.IndexOf(
+    'frame_poll_result !=',
+    $normalSleepStart)
+if ($resultWaitedCheck -lt 0 -or $normalSleepStart -le $resultWaitedCheck -or
+    $resultFallbackCheck -le $normalSleepStart) {
+    throw 'Android frame-poll result must return before normal sleep and gate fallback observation after it.'
 }
 
 if ($waitFunction -match 'waited_us\s*<\s*get_thor_es_frame_poll_handler_grace_us\(\)') {

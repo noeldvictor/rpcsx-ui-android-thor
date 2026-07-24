@@ -2363,3 +2363,20 @@ Put dated run details in `debug-experiments/`, not here.
   not contacted. Classify as host-verified `stackable-cpu-pressure`, not
   measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-frame-wait-ppu-title-cache.md`.
+- Host-only Android Eternal Sonata frame-poll classification now survives the
+  normal timer sleep as a compact four-state result. Only the two genuine
+  fallback results enter post-sleep rearm observation; unrelated sleeps no
+  longer repeat PPU/CIA/duration/title/mode gates. Post-sleep object/VM,
+  counter, renderer, completion, and armed checks remain. Exact ARM64 replaces
+  the 19-instruction repeated gate block with one result branch and shrinks
+  `sys_timer_usleep` `0x4d4 -> 0x494` (64 bytes / 5.2%). Saved clean
+  title/battle/Options routes contain 107 genuine fallback sleeps, implying at
+  least 1,926 linked gate instruction executions removed; no unrelated-call
+  count is claimed. Exact successor is APK `CD73E1E5...EC5B59F8` /
+  `72,837,768` bytes, merged core `58C1A18D...A14906E` /
+  `1,304,325,912` bytes, and packaged core `39989CFF...9EF99F0` /
+  `62,989,144` bytes. Native/APK builds, exact codegen, artifact identity, and
+  all `70/70` host contracts pass. Thor was not contacted. Classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
+  Ledger:
+  `debug-experiments/20260723-thor-frame-wait-result-forwarding.md`.
