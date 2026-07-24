@@ -166,6 +166,14 @@ public:
 		return static_cast<u32>(m_ctrl.fetch_add(count));
 	}
 
+#ifdef __ANDROID__
+	// Reserve positions only; the caller must publish each element separately.
+	u32 push_begin_relaxed(u32 count = 1)
+	{
+		return static_cast<u32>(__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_RELAXED));
+	}
+#endif
+
 	// Get current "pop" position
 	u32 peek() const
 	{

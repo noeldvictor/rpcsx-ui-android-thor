@@ -2203,3 +2203,17 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
   not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-ppu-command-notify-clear-release-store.md`.
+- Host-only Android PPU command FIFO reservation now uses a relaxed
+  atomic fetch-add in `cmd_push`/`cmd_list`; generic and desktop
+  `lf_fifo::push_begin` behavior is unchanged. FIFO control gives unique
+  positions only, `pop_end` retains its atomic CAS/update, and each command
+  head independently release-publishes readiness. Exact ARM64 changes the
+  common reservation at `0x3540a50` from `LDADDAL` to `LDADD`, while head
+  `STLR`, consumer `SWPAL`, and notification-clear `STLR` remain intact. Exact
+  successor is APK `0B9B26FB...290598B` / `72,838,104` bytes, merged core
+  `865A0B35...72C5F44` / `1,304,308,920` bytes, and packaged core
+  `EAC6FBC6...6E42FDD` / `62,988,904` bytes. ARM64 native/APK builds, focused
+  FIFO race/order/codegen proof, artifact gate, and all `70/70` host contracts
+  pass. Thor was not contacted. Classify as host-verified
+  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-ppu-command-relaxed-reservation.md`.

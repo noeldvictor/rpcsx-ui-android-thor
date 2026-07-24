@@ -4070,6 +4070,15 @@ ppu_thread::thread_name_t::operator std::string() const
 	return thread_name;
 }
 
+static inline u32 reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count = 1) noexcept
+{
+#ifdef __ANDROID__
+	return queue.push_begin_relaxed(count);
+#else
+	return queue.push_begin(count);
+#endif
+}
+
 static inline void publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command) noexcept
 {
 #ifdef __ANDROID__
@@ -4095,7 +4104,7 @@ static inline void clear_ppu_command_ready(atomic_t<u32>& notify) noexcept
 void ppu_thread::cmd_push(cmd64 cmd)
 {
 	// Reserve queue space
-	const u32 pos = cmd_queue.push_begin();
+	const u32 pos = reserve_ppu_command_slots(cmd_queue);
 
 	// Write single command
 	publish_ppu_command_head(cmd_queue[pos], cmd);
@@ -4104,7 +4113,7 @@ void ppu_thread::cmd_push(cmd64 cmd)
 void ppu_thread::cmd_list(std::initializer_list<cmd64> list)
 {
 	// Reserve queue space
-	const u32 pos = cmd_queue.push_begin(static_cast<u32>(list.size()));
+	const u32 pos = reserve_ppu_command_slots(cmd_queue, static_cast<u32>(list.size()));
 
 	// Write command tail in relaxed manner
 	for (u32 i = 1; i < list.size(); i++)

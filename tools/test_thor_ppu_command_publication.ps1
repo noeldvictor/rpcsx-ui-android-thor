@@ -5,18 +5,25 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $upstreamRoot = Join-Path $workspaceRoot "rpcs3-upstream"
 
 $mainPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
+$mainLocklessPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/lockless.h"
 $upstreamPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/PPUThread.cpp"
+$upstreamLocklessPath = Join-Path $upstreamRoot "Utilities/lockless.h"
 
-foreach ($path in @($mainPath, $upstreamPath)) {
+foreach ($path in @($mainPath, $mainLocklessPath, $upstreamPath, $upstreamLocklessPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Missing PPU command publication dependency: $path"
     }
 }
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
+$mainLockless = Get-Content -LiteralPath $mainLocklessPath -Raw
 $upstreamSource = Get-Content -LiteralPath $upstreamPath -Raw
+$upstreamLockless = Get-Content -LiteralPath $upstreamLocklessPath -Raw
 
 foreach ($fragment in @(
+    'reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count = 1) noexcept',
+    'queue.push_begin_relaxed(count)',
+    'queue.push_begin(count)',
     'publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command) noexcept',
     '#ifdef __ANDROID__',
     'slot.release(command)',
@@ -30,6 +37,31 @@ foreach ($fragment in @(
     if (-not $mainSource.Contains($fragment)) {
         throw "Android PPU command publication contract is missing: $fragment"
     }
+}
+
+$reservationCalls = [regex]::Matches(
+    $mainSource,
+    'reserve_ppu_command_slots\(cmd_queue')
+if ($reservationCalls.Count -ne 2) {
+    throw "Android must relaxed-reserve exactly cmd_push and cmd_list queue ranges; found $($reservationCalls.Count)."
+}
+if ($mainSource.Contains('cmd_queue.push_begin(')) {
+    throw 'Android PPU command publication bypasses the PPU-only relaxed reservation helper.'
+}
+
+foreach ($fragment in @(
+    '#ifdef __ANDROID__',
+    'u32 push_begin_relaxed(u32 count = 1)',
+    '__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_RELAXED)',
+    'm_ctrl.fetch_add(count)',
+    'm_ctrl.atomic_op([&](u64& ctrl)'
+)) {
+    if (-not $mainLockless.Contains($fragment)) {
+        throw "Android PPU queue reservation contract is missing: $fragment"
+    }
+}
+if ($upstreamLockless.Contains('push_begin_relaxed')) {
+    throw 'Desktop upstream unexpectedly contains the Android-only relaxed FIFO reservation.'
 }
 
 $publishCalls = [regex]::Matches(
@@ -46,14 +78,14 @@ if ($mainSource.Contains('cmd_queue[pos] = cmd;') -or
 
 $pushPublish = [regex]::Match(
     $mainSource,
-    '(?s)void ppu_thread::cmd_push\(cmd64 cmd\).*?cmd_queue\.push_begin\(\).*?publish_ppu_command_head\(cmd_queue\[pos\], cmd\);')
+    '(?s)void ppu_thread::cmd_push\(cmd64 cmd\).*?reserve_ppu_command_slots\(cmd_queue\).*?publish_ppu_command_head\(cmd_queue\[pos\], cmd\);')
 if (-not $pushPublish.Success) {
     throw 'cmd_push does not publish its reserved command head.'
 }
 
 $listPublish = [regex]::Match(
     $mainSource,
-    '(?s)void ppu_thread::cmd_list\(std::initializer_list<cmd64> list\).*?cmd_queue\.push_begin.*?cmd_queue\[pos \+ i\]\.raw\(\) = list\.begin\(\)\[i\];.*?publish_ppu_command_head\(cmd_queue\[pos\], \*list\.begin\(\)\);')
+    '(?s)void ppu_thread::cmd_list\(std::initializer_list<cmd64> list\).*?reserve_ppu_command_slots\(cmd_queue, static_cast<u32>\(list\.size\(\)\)\).*?cmd_queue\[pos \+ i\]\.raw\(\) = list\.begin\(\)\[i\];.*?publish_ppu_command_head\(cmd_queue\[pos\], \*list\.begin\(\)\);')
 if (-not $listPublish.Success) {
     throw 'cmd_list does not publish its command head after the relaxed tail.'
 }
@@ -77,6 +109,8 @@ if ($mainSource.Contains('cmd_notify = 0;')) {
 }
 
 foreach ($fragment in @(
+    'cmd_queue.push_begin();',
+    'cmd_queue.push_begin(static_cast<u32>(list.size()));',
     'cmd_queue[pos] = cmd;',
     'cmd_queue[pos] = *list.begin();',
     'cmd_queue[cmd_queue.peek()].exchange(cmd64{})',
@@ -87,4 +121,4 @@ foreach ($fragment in @(
     }
 }
 
-Write-Host "Thor Android PPU command publication/clear contract passed."
+Write-Host "Thor Android PPU command reservation/publication/clear contract passed."
