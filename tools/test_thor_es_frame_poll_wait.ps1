@@ -61,9 +61,10 @@ foreach ($timerContract in @(
     'divisor != 30 && divisor != 60',
     'const u32 threshold = 60 / divisor',
     'counter >= threshold',
-    'renderer->vblank_waiter_registered.release(true)',
+    'set_thor_es_vblank_waiter_registered(',
+    'renderer->vblank_waiter_registered, true)',
     'thread_ctrl::wait_on(renderer->vblank_wait_token',
-    'renderer->vblank_waiter_registered.release(false)',
+    'renderer->vblank_waiter_registered, false)',
     'const u32 after_wait_token = renderer->vblank_wait_token',
     'state.handler_wakes++',
     'state.handler_grace_waits++',
@@ -80,6 +81,27 @@ foreach ($timerContract in @(
         -not $upstreamTimer.Contains($timerContract)) {
         throw "Windows frame-poll wait is missing a narrow gate or fallback: $timerContract"
     }
+}
+
+foreach ($registrationStoreContract in @(
+    'set_thor_es_vblank_waiter_registered(atomic_t<bool> &registered',
+    'auto &raw = const_cast<uchar &>(registered.raw())',
+    '__atomic_store_n(&raw, static_cast<uchar>(value), __ATOMIC_RELAXED)',
+    'registered.release(value)'
+)) {
+    if (-not $mainTimer.Contains($registrationStoreContract)) {
+        throw "Android frame-poll registration store contract is missing: $registrationStoreContract"
+    }
+}
+
+$registrationStoreCalls = [regex]::Matches(
+    $mainTimer,
+    'set_thor_es_vblank_waiter_registered\(\s*renderer->vblank_waiter_registered,\s*(?:true|false)\)')
+if ($registrationStoreCalls.Count -ne 2) {
+    throw "Android frame-poll wait must register and clear exactly once; found $($registrationStoreCalls.Count) stores."
+}
+if ($mainTimer.Contains('renderer->vblank_waiter_registered.release(')) {
+    throw 'Android frame-poll wait reintroduced a release registration store.'
 }
 
 foreach ($upstreamTimerContract in @(
@@ -440,4 +462,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration with relaxed producer gates and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android relaxed-store single-waiter registration with relaxed producer gates and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

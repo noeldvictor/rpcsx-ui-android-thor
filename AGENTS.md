@@ -2285,3 +2285,18 @@ Put dated run details in `debug-experiments/`, not here.
   Classify as host-verified `stackable-cpu-pressure`, not measured speed or
   thermal credit. Ledger:
   `debug-experiments/20260723-thor-vblank-registration-advisory-loads.md`.
+- Host-only Android frame-poll waiter registration now uses relaxed atomic
+  byte stores. The flag is only an advisory producer-work hint; handler data
+  still uses the release completion-token/acquire-reader handoff, every wait
+  remains bounded to one millisecond, and desktop retains release stores.
+  Exact ARM64 changes both hot registration `STLRB`s to `STRB`, retains the
+  surrounding token `LDAR`s and wait call, and keeps `sys_timer_usleep` at
+  `0x6ec`. Saved clean title/battle/Options routes imply `69,084`, `210,290`,
+  and `66,968` ordering barriers removed respectively. Exact successor is APK
+  `A166ACE9...C682964` / `72,837,756` bytes, merged core
+  `95E55A24...D59B103` / `1,304,307,080` bytes, and packaged core
+  `969328CD...F6710FD` / `62,988,856` bytes. ARM64 native/APK builds, exact
+  linked `STRB/LDAR` proof, artifact gate, and all `70/70` host contracts pass.
+  Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
+  not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-registration-relaxed-stores.md`.
