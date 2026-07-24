@@ -2442,3 +2442,17 @@ Put dated run details in `debug-experiments/`, not here.
   contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
   speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-disabled-spurs-probe-argument-elision.md`.
+- Host-only Android `sys_timer_usleep` now reads the independently atomic,
+  dynamically configurable usleep addend through relaxed `cfg::_int::observe()`;
+  desktop retains its ordered access. Exact linked ARM64 changes only this
+  setting load from `LDAR` to `LDR`, keeps later synchronization acquires, and
+  shrinks the hot symbol `0x49c -> 0x494`. Saved clean title/battle/Options
+  routes conservatively imply 584,319 fewer acquire barriers while preserving
+  one live atomic setting read per call. Exact successor is APK
+  `1BAA60FB...7857B65FA` / `72,837,424` bytes, merged core
+  `22D1DDC6...42C64FB6` / `1,304,324,496` bytes, and packaged core
+  `8B9A104B...C7FD0A8` / `62,989,112` bytes. Native/APK builds, exact codegen,
+  artifact identity, and all `70/70` host contracts pass. Thor was not
+  contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
+  speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-usleep-addend-relaxed-load.md`.

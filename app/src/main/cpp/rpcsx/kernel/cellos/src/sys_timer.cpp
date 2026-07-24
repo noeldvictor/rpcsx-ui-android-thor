@@ -915,7 +915,13 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
   [[maybe_unused]] const u64 requested_sleep_time = sleep_time;
 
   if (sleep_time) {
+#ifdef __ANDROID__
+    // This independently atomic scalar publishes no dependent state. Preserve
+    // live updates without paying for an acquire barrier on every micro-sleep.
+    const s64 add_time = g_cfg.core.usleep_addend.observe();
+#else
     const s64 add_time = g_cfg.core.usleep_addend;
+#endif
 
     // Zero is the default and overwhelmingly common. Keep that path to one
     // branch instead of executing the full saturating add/sub sequence for

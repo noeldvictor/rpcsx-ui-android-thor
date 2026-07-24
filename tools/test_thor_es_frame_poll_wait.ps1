@@ -5,6 +5,7 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $upstreamRoot = Join-Path $workspaceRoot "rpcs3-upstream"
 
 $mainTimerPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_timer.cpp"
+$mainConfigPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/Config.h"
 $mainRsxHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/RSXThread.h"
 $mainRsxSourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/RSXThread.cpp"
 $mainPpuHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.h"
@@ -19,6 +20,7 @@ $sprintPath = Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1"
 
 $requiredPaths = @(
     $mainTimerPath,
+    $mainConfigPath,
     $mainRsxHeaderPath,
     $mainRsxSourcePath,
     $mainPpuHeaderPath,
@@ -39,6 +41,7 @@ foreach ($path in $requiredPaths) {
 }
 
 $mainTimer = Get-Content -LiteralPath $mainTimerPath -Raw
+$mainConfig = Get-Content -LiteralPath $mainConfigPath -Raw
 $mainRsxHeader = Get-Content -LiteralPath $mainRsxHeaderPath -Raw
 $mainRsxSource = Get-Content -LiteralPath $mainRsxSourcePath -Raw
 $mainPpuHeader = Get-Content -LiteralPath $mainPpuHeaderPath -Raw
@@ -54,6 +57,16 @@ $sprintSource = Get-Content -LiteralPath $sprintPath -Raw
 $zeroAddendFastPathPattern = '(?s)if \(add_time != 0\) \{\s*// Over/underflow checks\s*if \(add_time > 0\) \{\s*sleep_time = rx::add_saturate<u64>\(sleep_time, add_time\);\s*\} else \{\s*sleep_time =\s*std::max<u64>\(1, rx::sub_saturate<u64>\(sleep_time, -add_time\)\);\s*\}\s*\}'
 if (-not [regex]::IsMatch($mainTimer, $zeroAddendFastPathPattern)) {
     throw 'Android sys_timer_usleep must skip saturating arithmetic for the default zero addend while retaining positive and negative overflow handling.'
+}
+
+$relaxedAddendPattern = '(?s)#ifdef __ANDROID__\s*// This independently atomic scalar publishes no dependent state\. Preserve\s*// live updates without paying for an acquire barrier on every micro-sleep\.\s*const s64 add_time = g_cfg\.core\.usleep_addend\.observe\(\);\s*#else\s*const s64 add_time = g_cfg\.core\.usleep_addend;\s*#endif'
+if (-not [regex]::IsMatch($mainTimer, $relaxedAddendPattern)) {
+    throw 'Android sys_timer_usleep must use a relaxed live usleep-addend read while retaining the ordered desktop read.'
+}
+
+$configObservePattern = '(?s)int_type observe\(\) const\s*\{\s*return m_value\.observe\(\);\s*\}'
+if (-not [regex]::IsMatch($mainConfig, $configObservePattern)) {
+    throw 'cfg::_int must expose an explicit relaxed observe() accessor for independently atomic hot-path scalars.'
 }
 
 foreach ($timerContract in @(

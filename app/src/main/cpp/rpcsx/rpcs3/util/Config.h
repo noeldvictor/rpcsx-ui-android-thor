@@ -385,6 +385,11 @@ namespace cfg
 			return m_value;
 		}
 
+		int_type observe() const
+		{
+			return m_value.observe();
+		}
+
 		void from_default() override
 		{
 			m_value = def;
