@@ -2,6 +2,14 @@
 
 Date: 2026-07-23
 
+## Follow-up synchronization note
+
+Release-only completion is one half of the slot-reuse handoff. Current code
+pairs it with acquire-only producer reservation so cleared raw tail slots happen
+before their next writes. The intervening fully relaxed reservation candidate
+was host-only, never installed on Thor, and has been superseded. See
+`debug-experiments/20260723-thor-ppu-command-minimal-handoff-ordering.md`.
+
 ## Outcome
 
 Android PPU asynchronous-command consumption now completes FIFO ranges with a
@@ -29,11 +37,11 @@ accounting:
    counters to zero.
 
 The completion RMW does not consume producer payload, so it does not need
-acquire ordering. It must retain release ordering: when completion resets an
-empty queue to zero, a producer may immediately reuse slot zero, and all old
-tail clears must be visible before that reuse. `pop_end_release` therefore uses
-a relaxed initial control-word load, a strong release compare/exchange, and a
-relaxed failure order.
+acquire ordering. It must retain release ordering: when completion frees or
+resets queue storage, its old tail clears must happen before later reuse.
+`pop_end_release` therefore uses a relaxed initial control-word load, a strong
+release compare/exchange, and a relaxed failure order; the producer's matching
+acquire reservation completes that synchronization pair.
 
 Concurrent reservation cannot be lost because both operations share the same
 64-bit atomic modification order. A reservation that wins before the CAS makes

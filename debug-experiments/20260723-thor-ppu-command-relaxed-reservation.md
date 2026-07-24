@@ -1,6 +1,22 @@
-# Thor PPU command relaxed FIFO reservation
+# Thor PPU command relaxed FIFO reservation (superseded)
 
 Date: 2026-07-23
+
+## Superseded stability correction
+
+This was an intermediate host-only candidate and is not the current design. A
+follow-up audit found that atomic counter uniqueness alone does not establish a
+C++ happens-before edge for reuse of the queue's raw tail slots. The consumer's
+release completion must pair with an acquire reservation before producers can
+safely overwrite cleared storage. The candidate was never installed or run on
+Thor.
+
+Current code uses acquire-only `push_begin_acquire` (`LDADDA`), preserving the
+minimum reuse synchronization while still removing the generic reservation's
+unnecessary release half. See
+`debug-experiments/20260723-thor-ppu-command-minimal-handoff-ordering.md`.
+All remaining sections below document the superseded experiment rather than a
+current correctness claim.
 
 ## Outcome
 

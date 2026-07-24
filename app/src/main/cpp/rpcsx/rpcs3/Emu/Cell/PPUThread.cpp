@@ -4073,7 +4073,7 @@ ppu_thread::thread_name_t::operator std::string() const
 static inline u32 reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count = 1) noexcept
 {
 #ifdef __ANDROID__
-	return queue.push_begin_relaxed(count);
+	return queue.push_begin_acquire(count);
 #else
 	return queue.push_begin(count);
 #endif
@@ -4096,6 +4096,20 @@ static inline void publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command
 	slot.release(command);
 #else
 	slot = command;
+#endif
+}
+
+static inline cmd64 acquire_ppu_command_head(atomic_t<cmd64>& slot) noexcept
+{
+#ifdef __ANDROID__
+	// Acquire the release-published tails. Clearing the head publishes no data;
+	// the later release completion orders that clear before slot reuse.
+	cmd64 empty{};
+	cmd64 result{};
+	__atomic_exchange(&slot.raw(), &empty, &result, __ATOMIC_ACQUIRE);
+	return result;
+#else
+	return slot.exchange(cmd64{});
 #endif
 }
 
@@ -4153,7 +4167,7 @@ cmd64 ppu_thread::cmd_wait()
 {
 	while (true)
 	{
-		if (cmd64 result = cmd_queue[cmd_queue_position()].exchange(cmd64{}))
+		if (cmd64 result = acquire_ppu_command_head(cmd_queue[cmd_queue_position()]))
 		{
 			return result;
 		}

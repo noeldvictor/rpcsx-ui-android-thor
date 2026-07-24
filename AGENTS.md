@@ -2203,20 +2203,12 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
   not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-ppu-command-notify-clear-release-store.md`.
-- Host-only Android PPU command FIFO reservation now uses a relaxed
-  atomic fetch-add in `cmd_push`/`cmd_list`; generic and desktop
-  `lf_fifo::push_begin` behavior is unchanged. FIFO control gives unique
-  positions only, `pop_end` retains its atomic CAS/update, and each command
-  head independently release-publishes readiness. Exact ARM64 changes the
-  common reservation at `0x3540a50` from `LDADDAL` to `LDADD`, while head
-  `STLR`, consumer `SWPAL`, and notification-clear `STLR` remain intact. Exact
-  successor is APK `0B9B26FB...290598B` / `72,838,104` bytes, merged core
-  `865A0B35...72C5F44` / `1,304,308,920` bytes, and packaged core
-  `EAC6FBC6...6E42FDD` / `62,988,904` bytes. ARM64 native/APK builds, focused
-  FIFO race/order/codegen proof, artifact gate, and all `70/70` host contracts
-  pass. Thor was not contacted. Classify as host-verified
-  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
-  `debug-experiments/20260723-thor-ppu-command-relaxed-reservation.md`.
+- Superseded host-only experiment: fully relaxed PPU command reservation
+  (`LDADD`) preserved counter uniqueness but did not establish the required
+  C++ happens-before edge for reuse of raw tail slots. It was never installed
+  or run on Thor. Current code instead pairs release completion with
+  acquire-only reservation; historical artifact details remain in
+  debug-experiments/20260723-thor-ppu-command-relaxed-reservation.md.
 - Host-only Android PPU command FIFO completion now uses a release-only
   compare/exchange in `cmd_pop`; generic and desktop `lf_fifo::pop_end`
   behavior is unchanged. Consumed tail clears must release before an empty
@@ -2247,3 +2239,18 @@ Put dated run details in `debug-experiments/`, not here.
   host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
   Ledger:
   `debug-experiments/20260723-thor-ppu-command-relaxed-consumer-reads.md`.
+- Host-only Android PPU command queues now use minimal paired handoff
+  ordering. Release completion `CASL` pairs with acquire reservation `LDADDA`
+  for safe raw-slot reuse; release head publication `STLR` pairs with acquire
+  head exchange `SWPA` for payload delivery. This supersedes the never-deployed
+  fully relaxed reservation candidate, whose atomic uniqueness lacked the
+  required C++ happens-before edge. Desktop/generic behavior is unchanged;
+  relaxed position/tail `LDR` reads remain. Exact successor is APK
+  `D9CFF3E8...B6FF7DCD` / `72,838,040` bytes, merged core
+  `888767BB...46869E9` / `1,304,308,416` bytes, and packaged core
+  `BCF54B18...D894E3A9` / `62,989,000` bytes. ARM64 native/APK builds, focused
+  two-handoff correctness/codegen proof, artifact gate, and all `70/70` host
+  contracts pass. Thor was not contacted. Classify as host-verified stability
+  correction plus `stackable-cpu-pressure`, not measured speed or thermal
+  credit. Ledger:
+  `debug-experiments/20260723-thor-ppu-command-minimal-handoff-ordering.md`.

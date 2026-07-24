@@ -26,7 +26,7 @@ $upstreamLockless = Get-Content -LiteralPath $upstreamLocklessPath -Raw
 
 foreach ($fragment in @(
     'reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count = 1) noexcept',
-    'queue.push_begin_relaxed(count)',
+    'queue.push_begin_acquire(count)',
     'queue.push_begin(count)',
     'complete_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count) noexcept',
     'queue.pop_end_release(count)',
@@ -40,7 +40,10 @@ foreach ($fragment in @(
     'notify.release(0)',
     'notify = 0',
     'cmd_queue[pos + i].raw() = list.begin()[i]',
-    'cmd_queue[cmd_queue_position()].exchange(cmd64{})'
+    'acquire_ppu_command_head(atomic_t<cmd64>& slot) noexcept',
+    '__atomic_exchange(&slot.raw(), &empty, &result, __ATOMIC_ACQUIRE)',
+    'return slot.exchange(cmd64{})',
+    'acquire_ppu_command_head(cmd_queue[cmd_queue_position()])'
 )) {
     if (-not $mainSource.Contains($fragment)) {
         throw "Android PPU command publication contract is missing: $fragment"
@@ -87,16 +90,16 @@ $reservationCalls = [regex]::Matches(
     $mainSource,
     'reserve_ppu_command_slots\(cmd_queue')
 if ($reservationCalls.Count -ne 2) {
-    throw "Android must relaxed-reserve exactly cmd_push and cmd_list queue ranges; found $($reservationCalls.Count)."
+    throw "Android must acquire-reserve exactly cmd_push and cmd_list queue ranges; found $($reservationCalls.Count)."
 }
 if ($mainSource.Contains('cmd_queue.push_begin(')) {
-    throw 'Android PPU command publication bypasses the PPU-only relaxed reservation helper.'
+    throw 'Android PPU command publication bypasses the PPU-only acquire reservation helper.'
 }
 
 foreach ($fragment in @(
     '#ifdef __ANDROID__',
-    'u32 push_begin_relaxed(u32 count = 1)',
-    '__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_RELAXED)',
+    'u32 push_begin_acquire(u32 count = 1)',
+    '__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_ACQUIRE)',
     'u32 peek_relaxed() const',
     'm_ctrl.observe()',
     'u32 pop_end_release(u32 count = 1)',
@@ -109,14 +112,34 @@ foreach ($fragment in @(
         throw "Android PPU queue reservation contract is missing: $fragment"
     }
 }
-if ($upstreamLockless.Contains('push_begin_relaxed')) {
-    throw 'Desktop upstream unexpectedly contains the Android-only relaxed FIFO reservation.'
+if ($upstreamLockless.Contains('push_begin_acquire')) {
+    throw 'Desktop upstream unexpectedly contains the Android-only acquire FIFO reservation.'
+}
+if ($mainLockless.Contains('push_begin_relaxed') -or $mainLockless.Contains('__ATOMIC_RELAXED));')) {
+    throw 'Android PPU FIFO reservation lost the acquire half required for safe slot reuse.'
 }
 if ($upstreamLockless.Contains('pop_end_release')) {
     throw 'Desktop upstream unexpectedly contains the Android-only release FIFO completion.'
 }
 if ($upstreamLockless.Contains('peek_relaxed')) {
     throw 'Desktop upstream unexpectedly contains the Android-only relaxed FIFO position read.'
+}
+
+$headAcquireCalls = [regex]::Matches(
+    $mainSource,
+    'acquire_ppu_command_head\(cmd_queue\[cmd_queue_position\(\)\]\)')
+if ($headAcquireCalls.Count -ne 1) {
+    throw "Android must acquire-clear exactly one PPU command head; found $($headAcquireCalls.Count)."
+}
+if ($mainSource.Contains('cmd_queue[cmd_queue_position()].exchange(cmd64{})')) {
+    throw 'Android PPU command consumption reintroduced an acquire/release head exchange.'
+}
+
+$headAcquire = [regex]::Match(
+    $mainSource,
+    '(?s)static inline cmd64 acquire_ppu_command_head\(atomic_t<cmd64>& slot\) noexcept.*?#ifdef __ANDROID__.*?__atomic_exchange\(&slot\.raw\(\), &empty, &result, __ATOMIC_ACQUIRE\);.*?return result;.*?#else.*?return slot\.exchange\(cmd64\{\}\);.*?#endif')
+if (-not $headAcquire.Success) {
+    throw 'PPU command head consumer does not preserve acquire-only Android and default desktop exchange.'
 }
 
 $publishCalls = [regex]::Matches(
@@ -171,7 +194,7 @@ if ($clearCalls.Count -ne 1) {
 
 $waitClear = [regex]::Match(
     $mainSource,
-    '(?s)cmd64 ppu_thread::cmd_wait\(\).*?cmd_queue\[cmd_queue_position\(\)\]\.exchange\(cmd64\{\}\).*?thread_ctrl::wait_on\(cmd_notify, 0\);.*?clear_ppu_command_ready\(cmd_notify\);')
+    '(?s)cmd64 ppu_thread::cmd_wait\(\).*?acquire_ppu_command_head\(cmd_queue\[cmd_queue_position\(\)\]\).*?thread_ctrl::wait_on\(cmd_notify, 0\);.*?clear_ppu_command_ready\(cmd_notify\);')
 if (-not $waitClear.Success) {
     throw 'cmd_wait does not acquire the queue head before wait and one-way flag clear.'
 }
@@ -198,4 +221,4 @@ if (-not $upstreamHeader.Contains('cmd64 cmd_get(u32 index) { return cmd_queue[c
     throw 'Upstream PPU command tail-read baseline changed.'
 }
 
-Write-Host "Thor Android PPU command reservation/publication/consumer-read/completion/clear contract passed."
+Write-Host "Thor Android PPU command minimal-handoff/reservation/publication/consumer-read/completion/clear contract passed."

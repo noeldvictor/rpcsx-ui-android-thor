@@ -167,10 +167,11 @@ public:
 	}
 
 #ifdef __ANDROID__
-	// Reserve positions only; the caller must publish each element separately.
-	u32 push_begin_relaxed(u32 count = 1)
+	// Acquire prior release-completion before reusing slots. The caller
+	// publishes each newly written element separately.
+	u32 push_begin_acquire(u32 count = 1)
 	{
-		return static_cast<u32>(__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_RELAXED));
+		return static_cast<u32>(__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_ACQUIRE));
 	}
 #endif
 
