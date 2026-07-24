@@ -34,7 +34,7 @@ param(
     [string]$EternalSonataPpuRsxProfile = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataSyncProfile = "Off",
-    [ValidateSet("Off", "Wait")]
+    [ValidateSet("Off", "Wait", "Fast")]
     [string]$EternalSonataFramePollWait = "Off",
     [ValidateRange(0, 500)]
     [int]$EternalSonataFramePollHandlerGraceUs = 500,
@@ -253,7 +253,7 @@ function Set-AndroidStartupProfile {
         EternalSonataGpuProbe = "Off"
         EternalSonataDmaSuperPath = "Off"
         AndroidRsxBlitSourceResolve = "Off"
-        EternalSonataFramePollWait = "Wait"
+        EternalSonataFramePollWait = "Fast"
         EternalSonataFramePollHandlerGraceUs = 500
         EternalSonataFramePollContinuousRearm = "On"
         NoPerfetto = [Management.Automation.SwitchParameter]::new($true)
@@ -762,6 +762,7 @@ function Set-AndroidSpeedProperties {
     }
     $framePollWaitMode = switch ($EternalSonataFramePollWait) {
         "Wait" { "wait" }
+        "Fast" { "fast" }
         default { "off" }
     }
     $framePollContinuousRearmMode = switch ($EternalSonataFramePollContinuousRearm) {

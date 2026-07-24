@@ -27,7 +27,7 @@ param(
     [string]$EternalSonataPpuRsxProfile = "Off",
     [ValidateSet("Off", "Profile")]
     [string]$EternalSonataSyncProfile = "Off",
-    [ValidateSet("Off", "Wait")]
+    [ValidateSet("Off", "Wait", "Fast")]
     [string]$EternalSonataFramePollWait = "Off",
     [ValidateRange(0, 500)]
     [int]$EternalSonataFramePollHandlerGraceUs = 500,
@@ -3029,6 +3029,7 @@ $esSyncProfileEnv = switch ($EternalSonataSyncProfile) {
 }
 $esFramePollWaitEnv = switch ($EternalSonataFramePollWait) {
     "Wait" { "wait" }
+    "Fast" { "fast" }
     default { "off" }
 }
 $esFramePollContinuousRearmEnv = switch ($EternalSonataFramePollContinuousRearm) {

@@ -162,7 +162,7 @@ function Write-ReadyFixture {
         "debug.rpcsx.thor.rsx_blit_source_resolve=off",
         "debug.rpcsx.thor.rsx_auditor=0",
         "debug.rpcsx.thor.dump_prx=0",
-        "debug.rpcsx.thor.es_frame_wait=wait",
+        "debug.rpcsx.thor.es_frame_wait=fast",
         "debug.rpcsx.thor.es_frame_wait_grace_us=500",
         "debug.rpcsx.thor.es_frame_wait_continuous_rearm=on",
         "log.tag.RPCS3=S",

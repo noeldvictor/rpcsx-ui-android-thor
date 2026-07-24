@@ -2316,3 +2316,18 @@ Put dated run details in `debug-experiments/`, not here.
   pass. Thor was not contacted. Classify as host-verified
   `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-vblank-prewait-relaxed-loads.md`.
+- Host-only Android Eternal Sonata frame-poll `Fast` mode now compiles
+  steady-state diagnostics out while `Wait` preserves the full counters and
+  logger. Exact ARM64 retains `LDR/LDR`, registration `STRB`s, the bounded 1 ms
+  wait, final publication `LDAR`, 100 us grace, completion store, and fallback;
+  the Fast span has no diagnostic offsets/increments/logger calls.
+  `sys_timer_usleep` shrinks `0x6ec -> 0x5b4`; full diagnostics are outlined as
+  `0x3b4`. Saved clean title/battle/Options routes imply a conservative minimum
+  of 541,932 load/add/store counter sequences removed. Exact successor is APK
+  `528BFEE0...69754222` / `72,838,016` bytes, merged core
+  `97A485B5...91C735CB` / `1,304,313,728` bytes, and packaged core
+  `ED62C46D...CA7A4A8` / `62,989,896` bytes. Native/APK builds, exact codegen,
+  artifact identity, and all `70/70` host contracts pass. Thor was not
+  contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
+  speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-frame-wait-fast-stats-free.md`.

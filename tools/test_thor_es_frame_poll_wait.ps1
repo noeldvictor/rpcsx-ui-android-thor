@@ -144,6 +144,18 @@ foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_wait_max_us = 1000',
     'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
     'constexpr u64 thor_es_frame_poll_log_probe_mask = 1023',
+    'enum class thor_es_frame_poll_wait_mode : u8',
+    'thor_es_frame_poll_wait_mode::diagnostic',
+    'thor_es_frame_poll_wait_mode::fast',
+    'get_thor_es_frame_poll_wait_mode()',
+    'is_thor_es_frame_poll_wait_diagnostic()',
+    'template <bool TrackStats>',
+    'FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu)',
+    'try_thor_es_frame_poll_wait_impl<false>(ppu)',
+    'try_thor_es_frame_poll_wait_impl<true>(ppu)',
+    'NEVER_INLINE bool',
+    'try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu)',
+    'try_thor_es_frame_poll_wait_diagnostic(ppu)',
     'bool should_probe_thor_es_frame_poll_log() noexcept',
     'const u64 calls = g_thor_es_frame_poll_wait_state.calls',
     'calls == 1 ||',
@@ -171,17 +183,58 @@ foreach ($mainContract in @(
     }
 }
 
-$waitFunctionStart = $mainTimer.IndexOf('bool try_thor_es_frame_poll_wait')
+$waitFunctionStart = $mainTimer.IndexOf('template <bool TrackStats>')
 $fallbackFunctionStart = $mainTimer.IndexOf(
     'void observe_thor_es_frame_poll_fallback',
     $waitFunctionStart)
 if ($waitFunctionStart -lt 0 -or $fallbackFunctionStart -le $waitFunctionStart) {
-    throw 'Could not isolate the Android frame-poll wait function.'
+    throw 'Could not isolate the Android frame-poll wait specialization and wrapper.'
 }
 
 $waitFunction = $mainTimer.Substring(
     $waitFunctionStart,
     $fallbackFunctionStart - $waitFunctionStart)
+
+$trackStatsBlocks = @()
+foreach ($match in [regex]::Matches($waitFunction, 'if constexpr \(TrackStats\)\s*\{')) {
+    $openBrace = $waitFunction.IndexOf('{', $match.Index)
+    $depth = 0
+    $closeBrace = -1
+    for ($index = $openBrace; $index -lt $waitFunction.Length; $index++) {
+        if ($waitFunction[$index] -eq '{') {
+            $depth++
+        } elseif ($waitFunction[$index] -eq '}') {
+            $depth--
+            if ($depth -eq 0) {
+                $closeBrace = $index
+                break
+            }
+        }
+    }
+    if ($closeBrace -lt 0) {
+        throw 'Android frame-poll TrackStats block has unmatched braces.'
+    }
+    $trackStatsBlocks += [pscustomobject]@{ Start = $openBrace; End = $closeBrace }
+}
+if ($trackStatsBlocks.Count -ne 12) {
+    throw "Android frame-poll diagnostic specialization must retain exactly 12 TrackStats blocks; found $($trackStatsBlocks.Count)."
+}
+
+$diagnosticIncrements = [regex]::Matches($waitFunction, 'state[.][a-z_]+[+][+]')
+if ($diagnosticIncrements.Count -ne 13) {
+    throw "Android frame-poll specialization must retain exactly 13 diagnostic increments; found $($diagnosticIncrements.Count)."
+}
+foreach ($increment in $diagnosticIncrements) {
+    $guarded = @($trackStatsBlocks | Where-Object {
+        $increment.Index -gt $_.Start -and $increment.Index -lt $_.End
+    }).Count -gt 0
+    if (-not $guarded) {
+        throw "Android fast frame-poll mode still executes a diagnostic increment: $($increment.Value)"
+    }
+}
+if ($mainTimer -notmatch '(?s)if \(is_thor_es_frame_poll_wait_diagnostic\(\)\) \{\s*state[.]fallback_rearms[+][+];\s*\}') {
+    throw 'Android fast frame-poll fallback still records its diagnostic rearm counter.'
+}
 
 if ($waitFunction -match 'waited_us\s*<\s*get_thor_es_frame_poll_handler_grace_us\(\)') {
     throw 'Android frame-poll grace loop reintroduced a static accessor call per wait iteration.'
@@ -442,10 +495,12 @@ if ($upstreamMethodStores.Count -ne 2 -or $upstreamMethodWakes.Count -ne 2) {
     throw "Windows RSX methods must retain both flip/user store+wake pairs; found stores=$($upstreamMethodStores.Count), wakes=$($upstreamMethodWakes.Count)."
 }
 foreach ($fragment in @(
+    '[ValidateSet("Off", "Wait", "Fast")]',
     '[string]$EternalSonataFramePollWait = "Off"',
     '[int]$EternalSonataFramePollHandlerGraceUs = 500',
     '[string]$EternalSonataFramePollContinuousRearm = "Off"',
     '"Wait" { "wait" }',
+    '"Fast" { "fast" }',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_WAIT", $esFramePollWaitEnv, "Process")',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_HANDLER_GRACE_US", "$EternalSonataFramePollHandlerGraceUs", "Process")',
     '[Environment]::SetEnvironmentVariable("RPCS3_ES_FRAME_POLL_CONTINUOUS_REARM", $esFramePollContinuousRearmEnv, "Process")',
@@ -458,9 +513,11 @@ foreach ($fragment in @(
 }
 
 foreach ($fragment in @(
+    '[ValidateSet("Off", "Wait", "Fast")]',
     '[string]$EternalSonataFramePollWait = "Off"',
     '[int]$EternalSonataFramePollHandlerGraceUs = 500',
     '[string]$EternalSonataFramePollContinuousRearm = "Off"',
+    '"Fast" { "fast" }',
     'EternalSonataFramePollWait = $EternalSonataFramePollWait',
     'EternalSonataFramePollHandlerGraceUs = $EternalSonataFramePollHandlerGraceUs',
     'EternalSonataFramePollContinuousRearm = $EternalSonataFramePollContinuousRearm',
@@ -488,4 +545,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android relaxed pre-wait token reads with an acquire post-wait publication read, relaxed-store single-waiter registration with relaxed producer gates, and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, a stats-free Fast specialization plus full Wait diagnostics, Android relaxed pre-wait token reads with an acquire post-wait publication read, relaxed-store single-waiter registration with relaxed producer gates, and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

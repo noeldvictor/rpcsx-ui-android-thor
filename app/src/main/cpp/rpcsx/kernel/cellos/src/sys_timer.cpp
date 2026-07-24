@@ -57,9 +57,24 @@ struct thor_es_frame_poll_wait_state {
 
 thor_es_frame_poll_wait_state g_thor_es_frame_poll_wait_state;
 
-bool parse_thor_es_frame_poll_wait(std::string_view value) {
-  return value == "1" || value == "on" || value == "true" ||
-         value == "wait" || value == "fast";
+enum class thor_es_frame_poll_wait_mode : u8 {
+  off,
+  diagnostic,
+  fast,
+};
+
+thor_es_frame_poll_wait_mode
+parse_thor_es_frame_poll_wait(std::string_view value) {
+  if (value == "fast") {
+    return thor_es_frame_poll_wait_mode::fast;
+  }
+
+  if (value == "1" || value == "on" || value == "true" ||
+      value == "wait") {
+    return thor_es_frame_poll_wait_mode::diagnostic;
+  }
+
+  return thor_es_frame_poll_wait_mode::off;
 }
 
 void set_thor_es_vblank_waiter_registered(atomic_t<bool> &registered,
@@ -86,8 +101,8 @@ u32 observe_thor_es_vblank_wait_token(
 #endif
 }
 
-bool is_thor_es_frame_poll_wait_enabled() {
-  static const bool enabled = [] {
+thor_es_frame_poll_wait_mode get_thor_es_frame_poll_wait_mode() {
+  static const thor_es_frame_poll_wait_mode mode = [] {
 #ifdef ANDROID
     char property_value[PROP_VALUE_MAX]{};
     const int property_length = __system_property_get(
@@ -107,10 +122,20 @@ bool is_thor_es_frame_poll_wait_enabled() {
       return parse_thor_es_frame_poll_wait(value);
     }
 
-    return false;
+    return thor_es_frame_poll_wait_mode::off;
   }();
 
-  return enabled;
+  return mode;
+}
+
+bool is_thor_es_frame_poll_wait_enabled() {
+  return get_thor_es_frame_poll_wait_mode() !=
+         thor_es_frame_poll_wait_mode::off;
+}
+
+bool is_thor_es_frame_poll_wait_diagnostic() {
+  return get_thor_es_frame_poll_wait_mode() ==
+         thor_es_frame_poll_wait_mode::diagnostic;
 }
 
 bool parse_thor_es_frame_poll_continuous_rearm(std::string_view value) {
@@ -226,13 +251,8 @@ void log_thor_es_frame_poll_wait(const ppu_thread &ppu, u32 counter,
       state.counter_progress_after_event);
 }
 
-bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
-  if (!is_thor_es_frame_poll_wait_enabled() ||
-      Emu.GetTitleID() != "BLUS30161" || ppu.id != 0x01000000 ||
-      ppu.cia != 0x002a8300 || sleep_time != 100) {
-    return false;
-  }
-
+template <bool TrackStats>
+FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu) {
   const u32 object_addr = static_cast<u32>(ppu.gpr[28]);
   const u32 frame_config_addr = static_cast<u32>(ppu.gpr[31]);
   if (frame_config_addr != object_addr + 4 || !vm::check_addr(object_addr) ||
@@ -263,24 +283,30 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
     state.object_addr = object_addr;
   }
 
-  state.calls++;
+  if constexpr (TrackStats) {
+    state.calls++;
+  }
   const auto vblank = +renderer->vblank_count;
   if (!state.armed) {
     state.normal_pre_counter = counter;
-    state.fallback_sleeps++;
-    if (should_probe_thor_es_frame_poll_log()) {
-      log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+    if constexpr (TrackStats) {
+      state.fallback_sleeps++;
+      if (should_probe_thor_es_frame_poll_log()) {
+        log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+      }
     }
     return false;
   }
 
-  bool continuous_rearmed = false;
+  [[maybe_unused]] bool continuous_rearmed = false;
   if (vblank != state.completed_vblank) {
     if (!is_thor_es_frame_poll_continuous_rearm_enabled()) {
       state.normal_pre_counter = counter;
-      state.fallback_sleeps++;
-      if (should_probe_thor_es_frame_poll_log()) {
-        log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+      if constexpr (TrackStats) {
+        state.fallback_sleeps++;
+        if (should_probe_thor_es_frame_poll_log()) {
+          log_thor_es_frame_poll_wait(ppu, counter, threshold, vblank);
+        }
       }
       return false;
     }
@@ -289,11 +315,15 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
     // title/object/counter relation. Keep using the bounded VBlank-handler
     // completion wait instead of returning to repeated 100 us guest sleeps.
     state.completed_vblank = vblank;
-    state.continuous_rearms++;
-    continuous_rearmed = true;
+    if constexpr (TrackStats) {
+      state.continuous_rearms++;
+      continuous_rearmed = true;
+    }
   }
 
-  state.event_waits++;
+  if constexpr (TrackStats) {
+    state.event_waits++;
+  }
   // Wait for the queued guest VBlank handler to finish, not merely for the
   // raw VBlank edge. This keeps the counter load after the guest callback.
   // The portable 32-bit generation avoids a newer 64-bit wait dependency.
@@ -312,8 +342,10 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   const u32 after_wait_token = renderer->vblank_wait_token;
   u32 after_counter = vm::read32(object_addr);
   if (after_wait_token != wait_token) {
-    state.handler_wakes++;
-    bool waited_for_grace = false;
+    if constexpr (TrackStats) {
+      state.handler_wakes++;
+    }
+    [[maybe_unused]] bool waited_for_grace = false;
     const u64 handler_grace_us =
         after_counter == counter ? get_thor_es_frame_poll_handler_grace_us() : 0;
     for (u64 waited_us = 0;
@@ -321,38 +353,70 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
          waited_us < handler_grace_us;
          waited_us += 100) {
       thread_ctrl::wait_for(100);
-      waited_for_grace = true;
-      state.handler_grace_waits++;
+      if constexpr (TrackStats) {
+        waited_for_grace = true;
+        state.handler_grace_waits++;
+      }
       after_counter = vm::read32(object_addr);
     }
 
-    if (waited_for_grace && after_counter != counter) {
-      state.counter_progress_after_grace++;
+    if constexpr (TrackStats) {
+      if (waited_for_grace && after_counter != counter) {
+        state.counter_progress_after_grace++;
+      }
     }
   } else {
-    state.timeouts++;
-    if (continuous_rearmed) {
-      state.continuous_rearm_timeouts++;
+    if constexpr (TrackStats) {
+      state.timeouts++;
+      if (continuous_rearmed) {
+        state.continuous_rearm_timeouts++;
+      }
     }
   }
 
   const auto after_vblank = +renderer->vblank_count;
-  if (after_vblank != vblank) {
-    state.vblank_wakes++;
+  if constexpr (TrackStats) {
+    if (after_vblank != vblank) {
+      state.vblank_wakes++;
+    }
   }
 
   if (after_counter != counter) {
-    state.counter_progress_after_event++;
-    if (continuous_rearmed) {
-      state.continuous_rearm_progress++;
+    if constexpr (TrackStats) {
+      state.counter_progress_after_event++;
+      if (continuous_rearmed) {
+        state.continuous_rearm_progress++;
+      }
     }
     state.completed_vblank = after_vblank;
   }
 
-  if (should_probe_thor_es_frame_poll_log()) {
-    log_thor_es_frame_poll_wait(ppu, after_counter, threshold, after_vblank);
+  if constexpr (TrackStats) {
+    if (should_probe_thor_es_frame_poll_log()) {
+      log_thor_es_frame_poll_wait(ppu, after_counter, threshold, after_vblank);
+    }
   }
   return true;
+}
+
+NEVER_INLINE bool
+try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu) {
+  return try_thor_es_frame_poll_wait_impl<true>(ppu);
+}
+
+bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
+  const auto mode = get_thor_es_frame_poll_wait_mode();
+  if (mode == thor_es_frame_poll_wait_mode::off ||
+      Emu.GetTitleID() != "BLUS30161" || ppu.id != 0x01000000 ||
+      ppu.cia != 0x002a8300 || sleep_time != 100) {
+    return false;
+  }
+
+  if (mode == thor_es_frame_poll_wait_mode::fast) {
+    return try_thor_es_frame_poll_wait_impl<false>(ppu);
+  }
+
+  return try_thor_es_frame_poll_wait_diagnostic(ppu);
 }
 
 void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
@@ -374,7 +438,9 @@ void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
     if (const auto renderer = rsx::get_current_renderer()) {
       state.completed_vblank = renderer->vblank_count;
       state.armed = true;
-      state.fallback_rearms++;
+      if (is_thor_es_frame_poll_wait_diagnostic()) {
+        state.fallback_rearms++;
+      }
     }
   }
 }
