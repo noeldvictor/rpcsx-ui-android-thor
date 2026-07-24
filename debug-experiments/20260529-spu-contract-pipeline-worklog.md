@@ -1,3 +1,27 @@
+## 2026-07-24 17:12 ET - refiner one-step route black-overlays; reservation lane 1 not clean (no speed)
+
+Command/run:
+- Refiner `2026-07-24T17:07:19-04:00` chose the newest valid-field route base and recommended one small state-aware movement step with CleanAfterField.
+- Ran the exact Windows-only suggested route: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stateaware-one-step-visualgate-windows -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 160`.
+- Run dir: `debug-captures\windows-lab\20260724-170742-cpu4-stateaware-one-step-visualgate-windows-windows`.
+
+Evidence:
+- Live visual gate stopped RPCS3 at `117s`: marker says probable RPCS3 crash/device-loss overlay in `screenshot-0117s.png`.
+- Visual summary status: `NO_FIELD_LIKE_SCREENSHOT`; only `1` screenshot, classified `black-overlay-small-png` (`32,537` bytes, dark ratio `0.91`). No field, Options/menu, movement, or first-battle proof.
+- Targeted fatal scan found `0` real `VM: Access violation`, `VK_ERROR`, device-lost, unhandled, assertion, verification-failed, output-mismatch, dynamic-fail, or unknown STOP lines in `RPCS3.log`, stdout, or stderr. The visual failure is still decisive.
+- Host contention was clean across prelaunch/postlaunch/postrun.
+- Full GPU-probe summarizer timed out on the `48 MB` log, so a narrow counter extraction was used instead: `912` GPU candidate rows, `842.67 MB` total DMA, `0` RSX-local bytes; hot PCs were `0x451c` (`709` rows) and `0x25cc` (`203` rows).
+- Reservation-loop verifier extraction found `2,200` live verify-lane rows, `930` command probes, and `25,362` command-PC rows. Lane `2` was clean (`916` rows, `0` bad) and lane `3` was clean (`354` rows, `0` bad), but lane `1` was not clean (`930` rows, `367` bad; `failure=1` in `183` rows and `unexpected=1/read_unexpected=1` in `197` rows). Lane `0` had no rows.
+- PUTLLC16 analyzer evidence in the log stayed consistent with earlier runs: `7` detected PUTLLC16 patterns and `11` pattern breakage rows.
+
+Classification:
+- `failed-black-overlay`, `failed-visual-gate`, `reservation-loop-counterproof`, `not-speed`.
+- Speed increase remains `0%` proven. This is not a field proof, Options/menu proof, first-battle proof, GPU migration credit, or Windows micro-win.
+- Acceleration reading: do not promote reservation-loop/HLE fast mode from this route. Even ignoring the black overlay, lane `1` verifier rows are not clean; only lanes `2` and `3` look verifier-clean in this invalid visual run.
+
+Next narrow hypothesis:
+- Stop using the old state-aware one-step route as the acceleration base. Rebase the next verifier or Options/menu proof on the stable two-frame `gate_load_target_stable` route that reached field-like triage at `20260724-165853`, then add only one post-field action at a time.
+- For SPU/HLE work, collect verify rows for `0x451c` and `0x25cc` on the stable field-valid route before any fast/HLE/GPU replacement, and require lane `1` to be either clean or excluded by a title/signature/PC gate with explicit counterproof.
 ## 2026-07-24 17:05 ET - stable load-target gate reaches field triage; GPU probe still says SPU/HLE first (no speed)
 
 Command/run:
