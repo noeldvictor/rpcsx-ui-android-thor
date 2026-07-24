@@ -1,16 +1,11 @@
 diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
+index abf24ba73..93c287191 100644
 --- a/rpcs3/Emu/Cell/SPUThread.cpp
 +++ b/rpcs3/Emu/Cell/SPUThread.cpp
-@@
- static bool is_es_spu_hle_25cc_shadow_enabled()
- {
- 	static const bool enabled = []
- 	{
- 		const char* raw = ::getenv("RPCS3_ES_SPU_HLE_VERIFY");
-@@
+@@ -416,6 +416,59 @@ static bool is_es_spu_hle_25cc_shadow_enabled()
  	return enabled && Emu.GetTitleID() == "BLUS30161";
  }
-+
+ 
 +enum class es_spu_hle_25cc_shadow_payload_mode : u8
 +{
 +	full,
@@ -64,11 +59,10 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
 +
 +	return true;
 +}
- 
  enum class es_spu_hle_25cc_body_mode : u8
  {
  	disabled,
-@@
+@@ -1967,6 +2020,7 @@ static u64 compute_es_spu_hle_shadow_hash(const void* payload, u32 size)
  struct es_spu_hle_shadow_sample
  {
  	bool active = false;
@@ -76,12 +70,10 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
  	u64 src_hash = 0;
  	u64 dst_pre_hash = 0;
  };
-@@
- 	if (!spu || !src || !dst || !is_es_spu_hle_shadow_shape_candidate(spu, cmd))
- 	{
+@@ -1978,15 +2032,27 @@ static es_spu_hle_shadow_sample begin_es_spu_hle_shadow_sample(spu_thread* spu,
  		return {};
  	}
-+
+ 
 +	if (is_es_spu_hle_25cc_shadow_enabled() && get_es_mfc_25cc_runtime_family(spu, cmd) && !should_sample_es_spu_hle_25cc_shadow_payload(spu))
 +	{
 +		return
@@ -92,11 +84,11 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
 +			0,
 +		};
 +	}
- 
++
  	return
  	{
- 		true,
 +		true,
+ 		true,
  		compute_es_spu_hle_shadow_hash(src, cmd.size),
  		compute_es_spu_hle_shadow_hash(dst, cmd.size),
  	};
@@ -107,7 +99,7 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
  {
  	if (!spu || !sample.active || !is_es_spu_hle_25cc_shadow_enabled())
  	{
-@@
+@@ -2006,7 +2072,7 @@ static void record_es_spu_hle_25cc_shadow_sample(spu_thread* spu, const spu_mfc_
  	const bool is_get = base_cmd == static_cast<u8>(MFC_GET_CMD);
  	const bool is_put = base_cmd == static_cast<u8>(MFC_PUT_CMD);
  	const u32 direction = is_get ? 1 : (is_put ? 2 : 0);
@@ -116,7 +108,7 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
  
  	probe.spu_hle_25cc_shadow_src_repeats += had_previous && probe.spu_hle_25cc_shadow_last_src_hash == sample.src_hash ? 1 : 0;
  	probe.spu_hle_25cc_shadow_dst_pre_repeats += had_previous && probe.spu_hle_25cc_shadow_last_dst_pre_hash == sample.dst_pre_hash ? 1 : 0;
-@@
+@@ -2019,10 +2085,10 @@ static void record_es_spu_hle_25cc_shadow_sample(spu_thread* spu, const spu_mfc_
  	probe.spu_hle_25cc_shadow_ea4f0b80_hits += family == 2 ? 1 : 0;
  	probe.spu_hle_25cc_shadow_exact_a1c000_hits += family == 3 ? 1 : 0;
  	probe.spu_hle_25cc_shadow_other_ea_hits += family == 4 ? 1 : 0;
@@ -130,7 +122,8 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
 +	probe.spu_hle_25cc_shadow_output_mismatch += payload_checked && !output_match ? 1 : 0;
  	probe.spu_hle_25cc_shadow_last_family = family;
  	probe.spu_hle_25cc_shadow_last_pc = spu->pc;
-@@
+ 	probe.spu_hle_25cc_shadow_last_cmd = raw_cmd;
+@@ -2030,9 +2096,12 @@ static void record_es_spu_hle_25cc_shadow_sample(spu_thread* spu, const spu_mfc_
  	probe.spu_hle_25cc_shadow_last_size = cmd.size;
  	probe.spu_hle_25cc_shadow_last_lsa = lsa;
  	probe.spu_hle_25cc_shadow_last_eal = cmd.eal;
@@ -143,7 +136,13 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
 +		probe.spu_hle_25cc_shadow_last_dst_pre_hash = sample.dst_pre_hash;
 +		probe.spu_hle_25cc_shadow_last_dst_post_hash = dst_post_hash;
 +	}
-@@
+ 
+ 	auto matches = [&](const spu_thread::es_gpu_probe_state_t::spu_hle_25cc_shadow_desc_t& desc)
+ 	{
+@@ -2081,18 +2150,21 @@ static void record_es_spu_hle_25cc_shadow_sample(spu_thread* spu, const spu_mfc_
+ 		slot->eal = cmd.eal;
+ 	}
+ 
 -	slot->src_repeats += desc_had_previous && slot->last_src_hash == sample.src_hash ? 1 : 0;
 -	slot->dst_pre_repeats += desc_had_previous && slot->last_dst_pre_hash == sample.dst_pre_hash ? 1 : 0;
 -	slot->dst_post_repeats += desc_had_previous && slot->last_dst_post_hash == dst_post_hash ? 1 : 0;
@@ -172,19 +171,23 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
  }
  
  static void finish_es_spu_hle_shadow_sample(spu_thread* spu, const spu_mfc_cmd& cmd, const void* src, const void* dst, const es_spu_hle_shadow_sample& sample)
-@@
- 	{
+@@ -2102,6 +2174,12 @@ static void finish_es_spu_hle_shadow_sample(spu_thread* spu, const spu_mfc_cmd&
  		return;
  	}
-+
+ 
 +	if (!sample.payload_checked)
 +	{
 +		record_es_spu_hle_25cc_shadow_sample(spu, cmd, sample, 0, false, false, false);
 +		return;
 +	}
- 
++
  	auto& probe = spu->es_gpu_probe;
-@@
+ 	const u32 lsa = cmd.lsa & (SPU_LS_SIZE - 1);
+ 	const u64 dst_post_hash = compute_es_spu_hle_shadow_hash(dst, cmd.size);
+@@ -2128,12 +2206,12 @@ static void finish_es_spu_hle_shadow_sample(spu_thread* spu, const spu_mfc_cmd&
+ 	probe.spu_hle_shadow_last_dst_pre_hash = sample.dst_pre_hash;
+ 	probe.spu_hle_shadow_last_dst_post_hash = dst_post_hash;
+ 
 -	record_es_spu_hle_25cc_shadow_sample(spu, cmd, sample, dst_post_hash, dst_changed, output_match);
 +	record_es_spu_hle_25cc_shadow_sample(spu, cmd, sample, dst_post_hash, dst_changed, output_match, true);
  }
@@ -197,17 +200,13 @@ diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
  		return false;
  	}
 diff --git a/rpcs3/Emu/Cell/lv2/sys_spu.cpp b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
+index 88ed3faaa..e1d03c981 100644
 --- a/rpcs3/Emu/Cell/lv2/sys_spu.cpp
 +++ b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
-@@
- 		const auto get_verify_body_mode = []() -> const char*
- 		{
- 			const char* raw = ::getenv("RPCS3_ES_SPU_HLE_25CC_BODY");
-@@
- 
+@@ -1637,6 +1637,27 @@ static void log_es_gpu_probe(const ppu_thread& ppu, const lv2_spu_group& group,
  			return "verify";
  		}();
-+
+ 
 +		const auto get_verify_payload_mode = []() -> const char*
 +		{
 +			const char* raw = ::getenv("RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD");
@@ -228,10 +227,14 @@ diff --git a/rpcs3/Emu/Cell/lv2/sys_spu.cpp b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
 +
 +			return "full";
 +		}();
++
+ 		const char* raw_gpu_probe = ::getenv("RPCS3_ES_GPU_PROBE");
+ 		if ((raw_gpu_probe && std::strcmp(raw_gpu_probe, "fast") == 0))
+ 		{
+@@ -1664,10 +1685,11 @@ static void log_es_gpu_probe(const ppu_thread& ppu, const lv2_spu_group& group,
+ 			reject_accurate_dma +
+ 			reject_fast_mode;
  
- 		const u64 contract_reject_total =
- 			reject_title +
-@@
 -		sys_spu.notice("Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=\"BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0\" title=%s mode=%s verify_mode=verify-25cc-shadow body_mode=%s group_name=\"%s\" spu_name=\"%s\" entry=0x%x image_sig=0x%llx pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=%llu contract_bytes=%llu contract_get_hits=%llu contract_put_hits=%llu contract_reject_total=%llu reject_title=%llu reject_image_sig=%llu reject_pc=%llu reject_group=%llu reject_spu_name=%llu reject_cmd=%llu reject_list=%llu reject_tag=%llu reject_size=%llu reject_eah=%llu reject_eal_family=%llu reject_lsa_range=%llu reject_mfc_shuffle=%llu reject_accurate_dma=%llu reject_fast_mode=%llu output_mismatch=%llu desc_overflow=%llu last_src_hash=0x%llx last_dst_pre_hash=0x%llx last_dst_post_hash=0x%llx cause=0x%x status=0x%x",
 +		sys_spu.notice("Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=\"BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0\" title=%s mode=%s verify_mode=verify-25cc-shadow body_mode=%s payload_mode=%s group_name=\"%s\" spu_name=\"%s\" entry=0x%x image_sig=0x%llx pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=%llu contract_bytes=%llu contract_get_hits=%llu contract_put_hits=%llu contract_reject_total=%llu reject_title=%llu reject_image_sig=%llu reject_pc=%llu reject_group=%llu reject_spu_name=%llu reject_cmd=%llu reject_list=%llu reject_tag=%llu reject_size=%llu reject_eah=%llu reject_eal_family=%llu reject_lsa_range=%llu reject_mfc_shuffle=%llu reject_accurate_dma=%llu reject_fast_mode=%llu output_mismatch=%llu desc_overflow=%llu last_src_hash=0x%llx last_dst_pre_hash=0x%llx last_dst_post_hash=0x%llx cause=0x%x status=0x%x",
  			Emu.GetTitleID(),
@@ -240,3 +243,4 @@ diff --git a/rpcs3/Emu/Cell/lv2/sys_spu.cpp b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
 +			get_verify_payload_mode,
  			group.name,
  			spu_name,
+ 			probe.entry,

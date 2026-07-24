@@ -42,3 +42,8 @@
 - Intended target checkout: `..\rpcs3-upstream`
 - Apply/build gate: apply the patch to the sibling Windows upstream checkout, rebuild RPCS3, then run `Verify25ccShadow` with `EternalSonataSpuHle25ccShadowPayload Counts` for route repair only.
 - Promotion gate: rerun with `EternalSonataSpuHle25ccShadowPayload Full` and parse with `-RequiredPayloadMode Full` before field + Options/menu + first-battle evidence can count.
+
+## 2026-07-24 19:32 ET - upstream source applied
+
+- The payload-mode split is now applied to sibling checkout ..\\rpcs3-upstream and the repo-local patch artifact has been regenerated from that actual source diff.
+- Build and route proof are still pending; counts/sampled mode is route-repair evidence only, while promotion still requires full payload mode plus valid field, Options/menu, and first-battle proof.

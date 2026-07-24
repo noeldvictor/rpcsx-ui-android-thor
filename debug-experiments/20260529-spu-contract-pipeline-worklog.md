@@ -1,3 +1,10 @@
+## 2026-07-24 19:32 ET - upstream 25cc payload-mode source applied (build pending, no speed)
+
+- Workflow/refiner context: followed the refiner's apply/build step after the malformed review-sketch artifact failed `git apply --check` as not being a real unified diff. Target source files in `..\rpcs3-upstream` were clean; only third-party submodules were dirty, so the narrow C++ patch could be applied without touching unrelated source changes.
+- Upstream source step: `rpcs3\Emu\Cell\SPUThread.cpp` now supports `RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD=full|sampled|counts`. Full remains the default. Counts mode records 25cc descriptor/family/hit/byte/direction counters without 16 KiB payload hashes or memcmp. Sampled mode keeps sparse payload checks. Guarded skip remains disabled whenever the payload was not checked.
+- Contract row step: `rpcs3\Emu\Cell\lv2\sys_spu.cpp` now emits `payload_mode=` in the 25cc strict contract row so the repo parser can reject counts/sampled rows for promotion and require `payload_mode=full` for correctness promotion.
+- Artifact repair: regenerated `spu-contracts\BLUS30161\25cc-shadow-payload-mode-upstream.patch` from the actual `..\rpcs3-upstream` diff, replacing the prior non-applyable sketch.
+- Classification: upstream source-prep only. No Windows rebuild, no emulator run, no valid field/menu/battle proof, no GPU migration credit, and no speed increase.
 ## 2026-07-24 19:24 ET - upstream 25cc payload-mode patch artifact prepared (no speed)
 
 - Workflow/refiner context: refiner still blocks another `Verify25ccShadow` Windows route because the latest 25cc run produced non-field/black-overlay frames after clean loader-control proofs. Since harness/parser payload-mode gates now exist in this repo, the next concrete source step is the Windows upstream C++ payload-mode split.
@@ -2078,7 +2085,7 @@ Run directory: `debug-captures/windows-lab/20260530-202133-cpu4-stateaware-one-s
 . \tools\spu_contract_pipeline.ps1 -RunDir .\debug-captures\windows-lab\20260530-124130-cpu4-stateaware-one-step-visualgate-windows-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000 -NoGhidra -MaxWindows 6
 ```
 
-- Failed: no SPU disassembly windows found for PCs `0x9676`,`17692` under that runâ€™s `spu-images` path.
+- Failed: no SPU disassembly windows found for PCs `0x9676`,`17692` under that runÃ¢â‚¬â„¢s `spu-images` path.
 - `spu-contracts\BLUS30161` was **not** regenerated from this run.
 
 ## Classification
@@ -3352,7 +3359,7 @@ $runDir = '.\debug-captures\windows-lab\20260529-095956-cpu4-loader-control-visu
 
 ## Next Step
 - Keep movement and battle reruns blocked.
-- Stay on SPU verifier lane: capture command-read/PAIR verification evidence on a clean field run, then run verified `FIELD â†’ Options â†’ first-battle` under `Verify25ccShadow` before any fast-mode proposals.
+- Stay on SPU verifier lane: capture command-read/PAIR verification evidence on a clean field run, then run verified `FIELD Ã¢â€ â€™ Options Ã¢â€ â€™ first-battle` under `Verify25ccShadow` before any fast-mode proposals.
 
 ## 2026-05-30 04:32:31-04:00 SPU Verify-Lane Re-Run (Field Clean, No Verifier Rows)
 
@@ -5622,7 +5629,7 @@ $runDir = ".\debug-captures\windows-lab\20260529-051307-cpu4-loader-control-left
 - Continue verify-only lane:
   - do not change fast paths on this evidence yet;
   - wire/align Windows upstream log-row+reject-bucket counters for `hle_mode=contract-25cc-9e4000`;
-  - then rerun strict parser and field + Options + first-battle with the same verify schema before any `verify`â†’`fast` promotion.
+  - then rerun strict parser and field + Options + first-battle with the same verify schema before any `verify`Ã¢â€ â€™`fast` promotion.
 
 ## 2026-05-29 13:50:32-04:00 Refiner-Blocked SPU Verification Hold
 
