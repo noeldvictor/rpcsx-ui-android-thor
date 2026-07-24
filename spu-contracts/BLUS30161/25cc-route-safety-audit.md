@@ -52,3 +52,9 @@
 
 - The patched upstream source compiled and linked ..\\rpcs3-upstream\\build-msvc\\bin\\rpcs3.exe; MSBuild still failed only in Qt post-build deployment because windeployqt could not query qtpaths.
 - Next route-safe proof should run counts mode from the linked exe. Promotion remains blocked until full payload mode plus valid field, Options/menu, and first-battle proof all pass.
+
+## 2026-07-24 19:50 ET - counts-mode route repair failed visual
+
+- The linked patched Windows exe emitted valid counts-mode 25cc contract rows (16 rows, 36 hits, 589,824 bytes, payload_mode_counts={counts:16}, zero mismatch/overflow), proving the new row field is live.
+- The route still black-overlayed before accepted field and stopped at 117s; this remains route-repair-only evidence and grants no promotion, GPU migration credit, or speed increase.
+- Next should re-prove loader-control-left200x2 under CleanAfterField before another 25cc attempt.

@@ -1,3 +1,13 @@
+## 2026-07-24 19:50 ET - counts-mode 25cc route repair black-overlayed before field (no speed)
+
+- Workflow/refiner context: followed the linked patched Windows exe decision and ran exactly one counts-mode `Verify25ccShadow` route repair with `EternalSonataSpuHle25ccShadowPayload Counts`, Windows screen 1, CPU affinity `0x0F`, 240/240 frame/vblank, and clean external host contention.
+- Run: `debug-captures\windows-lab\20260724-194537-cpu4-25cc-counts-route-repair-after-payload-split-windows`.
+- Visual/process result: live fatal visual gate stopped RPCS3 at `117s` after `screenshot-0117s.png`; marker says probable crash/device-loss overlay. Process exited at `118s` with exit code `-1` before the `220s` deadline. The screenshot is `1296x759`, 29,524 bytes, and the window title sample was `42.69 FPS | Vulkan | 0.0.41-600 | ETERNAL SONATA [BLUS30161]`, but this is not valid field proof.
+- Host/fatal verification: host contention stayed clean across `3` snapshots. Targeted raw-log scan found `0` `VM: Access violation`, `0` `VK_ERROR`, `0` device-lost string hits, `0` unhandled/unknown STOP/assertion hits, and `0` dynamic-fail hits. `rpcs3.stderr.txt` only contained the existing missing MIDI-input warning.
+- Counts-mode contract proof: strict parser with `-RequiredPayloadMode Counts -RequireAcceptedRow -RequireNoRejected` passed for run-local artifacts only: rows `16`, accepted `16`, rejected `0`, total hits `36`, total bytes `589,824`, `payload_mode_counts={counts:16}`, output mismatch `0`, descriptor overflow `0`, promotion_ready `false`. Hash fields were zero as expected for counts mode.
+- GPU/RSX/counter result: GPU probe summary had `0` GPU/DMA candidate rows, `0` MFC dynamic/wait rows, `0` SPU HLE shadow summary rows, `0` RSX auditor rows, and `0` RSX-local/offload evidence. PUTLLC16 analyzer still reported `7` detected CPU-side patterns and `11` breakage records.
+- Classification: failed-black-overlay-visual / counts-mode-logrow-smoke / route-repair-only / gpu-offload-parked / not-comparable / no speed increase.
+- Next hypothesis: do not repeat counts-mode 25cc immediately. Follow the refiner back to the newest clean loader-control-left200x2 boundary with CleanAfterField, then re-add 25cc only after accepted field is stable again. Full promotion still requires `payload_mode=full` plus valid field, Options/menu, and first-battle proof.
 ## 2026-07-24 19:43 ET - patched 25cc payload-mode Windows exe linked; Qt deploy step failed (no speed)
 
 - Workflow/refiner context: followed the patched-source build step. `RelWithDebInfo` was not a valid config for this existing Visual Studio solution, so the build was retried with `Release|x64`.
