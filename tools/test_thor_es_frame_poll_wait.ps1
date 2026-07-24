@@ -51,6 +51,11 @@ $upstreamRsxMethods = Get-Content -LiteralPath $upstreamRsxMethodsPath -Raw
 $labSource = Get-Content -LiteralPath $labPath -Raw
 $sprintSource = Get-Content -LiteralPath $sprintPath -Raw
 
+$zeroAddendFastPathPattern = '(?s)if \(add_time != 0\) \{\s*// Over/underflow checks\s*if \(add_time > 0\) \{\s*sleep_time = rx::add_saturate<u64>\(sleep_time, add_time\);\s*\} else \{\s*sleep_time =\s*std::max<u64>\(1, rx::sub_saturate<u64>\(sleep_time, -add_time\)\);\s*\}\s*\}'
+if (-not [regex]::IsMatch($mainTimer, $zeroAddendFastPathPattern)) {
+    throw 'Android sys_timer_usleep must skip saturating arithmetic for the default zero addend while retaining positive and negative overflow handling.'
+}
+
 foreach ($timerContract in @(
     'ppu.thor_es_frame_poll_mode',
     'ppu.cia != 0x002a8300',
@@ -701,4 +706,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, a stats-free Fast specialization plus full Wait diagnostics, Android relaxed pre-wait token reads with an acquire post-wait publication read, relaxed-store single-waiter registration with relaxed producer gates, and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: the default zero usleep addend skips saturating arithmetic, opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, a stats-free Fast specialization plus full Wait diagnostics, Android relaxed pre-wait token reads with an acquire post-wait publication read, relaxed-store single-waiter registration with relaxed producer gates, and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."

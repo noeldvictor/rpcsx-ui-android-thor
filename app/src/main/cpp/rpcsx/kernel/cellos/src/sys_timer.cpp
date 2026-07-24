@@ -917,12 +917,17 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
   if (sleep_time) {
     const s64 add_time = g_cfg.core.usleep_addend;
 
-    // Over/underflow checks
-    if (add_time >= 0) {
-      sleep_time = rx::add_saturate<u64>(sleep_time, add_time);
-    } else {
-      sleep_time =
-          std::max<u64>(1, rx::sub_saturate<u64>(sleep_time, -add_time));
+    // Zero is the default and overwhelmingly common. Keep that path to one
+    // branch instead of executing the full saturating add/sub sequence for
+    // every guest micro-sleep.
+    if (add_time != 0) {
+      // Over/underflow checks
+      if (add_time > 0) {
+        sleep_time = rx::add_saturate<u64>(sleep_time, add_time);
+      } else {
+        sleep_time =
+            std::max<u64>(1, rx::sub_saturate<u64>(sleep_time, -add_time));
+      }
     }
 
     const auto frame_poll_result =

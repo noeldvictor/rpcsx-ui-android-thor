@@ -2412,3 +2412,18 @@ Put dated run details in `debug-experiments/`, not here.
   not contacted. Classify as host-verified `stackable-cpu-pressure`, not
   measured speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-frame-wait-fast-first-mode.md`.
+- Host-only Android `sys_timer_usleep` now skips saturating add/sub arithmetic
+  when the configured usleep addend is its zero default. Exact linked ARM64
+  replaces the 12-instruction default-addend selection with an addend load,
+  zero branch, and mode load plus one earlier duration move. After block-layout
+  effects, saved exact title/battle/Options frame-poll calls conservatively
+  imply 1,212,946 fewer executed instructions; other nonzero guest sleeps are
+  additional unclaimed savings. Positive/negative saturation, timer accuracy,
+  frame-wait gates, fallback, and logging are unchanged. Exact successor is APK
+  `C96CD570...A374DBA` / `72,837,176` bytes, merged core
+  `7C40DA22...A817DD` / `1,304,324,368` bytes, and packaged core
+  `28DD7506...0530A1` / `62,989,160` bytes. Native/APK builds, exact codegen,
+  artifact identity, and all `70/70` host contracts pass. Thor was not
+  contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
+  speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-usleep-zero-addend-fast-path.md`.
