@@ -1,4 +1,25 @@
-﻿## 2026-07-24 18:27 ET - diag200 extension attempt stopped by live visual gate before movement (no speed)
+﻿## 2026-07-24 18:34 ET - delayed-shot diag200 route extension stays field-clean under reservation verifier (no speed)
+
+Classification: route-tooling/valid-field-triage/left200x2-plus-diag200-clean/reservation-loop-verify-telemetry/no-speed.
+
+Evidence:
+- Retried the refiner's one-step diagonal extension from the clean loader-control-left200x2 boundary, but removed inline macro shot tokens so the live fatal visual pre-stop could not abort before movement. Offline CleanAfterField visual gate and fatal log scan remained authoritative.
+- Ran tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-delayedshot-visualgate with WindowsGameScreen 1, CPU affinity 0x0F, frame/vblank 240, EternalSonataReservationLoop Verify, and CleanAfterField visual gate.
+- Run dir: debug-captures\windows-lab\20260724-182944-cpu4-loader-control-left200x2-diag200-delayedshot-visualgate-windows.
+- The route executed both left200 inputs and the planned combo:ls_left+ls_down:200 diagonal micro-pulse before screenshot capture. Visual gate status was FIELD_LIKE_PRESENT and passed for triage. First field-like screenshot was screenshot-0149s.png at 149s, required field-like by 160s passed, all 12 screenshots through screenshot-0220s.png were field-like-large-png, and invalid screenshots after first field-like were 0.
+- Targeted fatal scan found 0 hits for VM access violations, prior 0x002aedd0, prior 0x0007dccc, Vulkan/device-loss, assertion, dynamic-fail, output mismatch, or descriptor overflow patterns.
+- Direct reservation/GPU counters from RPCS3.log: gpu_candidate=1629, mfc_dynamic=1628, mfc_wait=1752, mfc_wait_pc=91937, reservation_mode=verify rows=149529, PUTLLC16 detections=7, PUTLLC breakage=11, rsx_get/put byte rows=0, output_mismatch=0, dynamic_fail=0, desc_overflow=0.
+- Host contention was clean across all 7 snapshots; GPU engine usage reached about 32.1 percent in one sample, but there were still no RSX get/put byte rows proving an offloadable RSX-local buffer.
+
+Result:
+- Advances CPU/SPU bottleneck relief: yes, as a new clean route boundary and dense reservation verifier telemetry without fatal or mismatch evidence. The diag200 pulse is now route-safe in this loader-control context.
+- Advances GPU-feed/offload: no. Host GPU activity alone is not enough; no RSX-local or GPU-consumed buffer proof appeared.
+- Speed increase: no. Reservation verifier mode is not a fast path, and there is still no Options/menu plus first-battle A/B proof.
+
+Next narrow hypothesis:
+- Extend from this confirmed left200x2-plus-diag200 boundary by exactly one additional tiny non-diagonal/approach step toward the first-battle prompt, keeping inline macro shots delayed or removed and relying on offline CleanAfterField plus targeted fatal/counter scans. Keep 25cc body/codegen and GPU fast paths blocked until field, Options/menu, and first-battle are all clean.
+
+## 2026-07-24 18:27 ET - diag200 extension attempt stopped by live visual gate before movement (no speed)
 
 Classification: failed-live-visual-gate/pre-extension-abort/not-comparable/reservation-loop-verify-telemetry/no-speed.
 
@@ -11476,6 +11497,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
