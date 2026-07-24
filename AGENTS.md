@@ -2331,3 +2331,18 @@ Put dated run details in `debug-experiments/`, not here.
   contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
   speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-frame-wait-fast-stats-free.md`.
+- Host-only Android frame-poll setting caches now use constant-initialized
+  atomic sentinels with direct relaxed hot loads and outlined cold parsing.
+  Cheap PPU/CIA/sleep gates precede title/cache work, and fallback reuses one
+  mode read. Exact ARM64 removes all three C++ guard variables, at least
+  184,419 saved-route `LDARB` guard loads, 184,419 redundant value loads, and
+  11,141 continuous/grace helper calls while retaining the bounded wait,
+  registration stores, post-wait `LDAR`, grace, completion, and fallback.
+  `sys_timer_usleep` shrinks `0x5b4 -> 0x590`. Exact successor is APK
+  `9B244D20...4463F53` / `72,837,528` bytes, merged core
+  `9658E657...75A3C28` / `1,304,325,056` bytes, and packaged core
+  `B7150001...B5BE8F7` / `62,989,080` bytes. Native/APK builds, exact codegen,
+  artifact identity, and all `70/70` host contracts pass. Thor was not
+  contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
+  speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-frame-wait-relaxed-setting-caches.md`.

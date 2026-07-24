@@ -58,10 +58,24 @@ struct thor_es_frame_poll_wait_state {
 thor_es_frame_poll_wait_state g_thor_es_frame_poll_wait_state;
 
 enum class thor_es_frame_poll_wait_mode : u8 {
+  uninitialized,
   off,
   diagnostic,
   fast,
 };
+
+enum class thor_es_frame_poll_cached_bool : u8 {
+  uninitialized,
+  disabled,
+  enabled,
+};
+
+atomic_t<thor_es_frame_poll_wait_mode> g_thor_es_frame_poll_wait_mode{
+    thor_es_frame_poll_wait_mode::uninitialized};
+atomic_t<thor_es_frame_poll_cached_bool>
+    g_thor_es_frame_poll_continuous_rearm{
+        thor_es_frame_poll_cached_bool::uninitialized};
+atomic_t<u64> g_thor_es_frame_poll_handler_grace_us{u64{umax}};
 
 thor_es_frame_poll_wait_mode
 parse_thor_es_frame_poll_wait(std::string_view value) {
@@ -101,8 +115,9 @@ u32 observe_thor_es_vblank_wait_token(
 #endif
 }
 
-thor_es_frame_poll_wait_mode get_thor_es_frame_poll_wait_mode() {
-  static const thor_es_frame_poll_wait_mode mode = [] {
+NEVER_INLINE thor_es_frame_poll_wait_mode
+initialize_thor_es_frame_poll_wait_mode() {
+  const auto mode = [] {
 #ifdef ANDROID
     char property_value[PROP_VALUE_MAX]{};
     const int property_length = __system_property_get(
@@ -125,17 +140,21 @@ thor_es_frame_poll_wait_mode get_thor_es_frame_poll_wait_mode() {
     return thor_es_frame_poll_wait_mode::off;
   }();
 
+  // The cached value is self-contained, so hot readers only need a relaxed
+  // load. A concurrent first reader can compute and publish the same immutable
+  // process property without consuming any dependent state.
+  g_thor_es_frame_poll_wait_mode.release(mode);
   return mode;
 }
 
-bool is_thor_es_frame_poll_wait_enabled() {
-  return get_thor_es_frame_poll_wait_mode() !=
-         thor_es_frame_poll_wait_mode::off;
-}
+FORCE_INLINE thor_es_frame_poll_wait_mode
+get_thor_es_frame_poll_wait_mode() {
+  const auto mode = g_thor_es_frame_poll_wait_mode.observe();
+  if (mode == thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]] {
+    return initialize_thor_es_frame_poll_wait_mode();
+  }
 
-bool is_thor_es_frame_poll_wait_diagnostic() {
-  return get_thor_es_frame_poll_wait_mode() ==
-         thor_es_frame_poll_wait_mode::diagnostic;
+  return mode;
 }
 
 bool parse_thor_es_frame_poll_continuous_rearm(std::string_view value) {
@@ -143,8 +162,8 @@ bool parse_thor_es_frame_poll_continuous_rearm(std::string_view value) {
          value == "continuous";
 }
 
-bool is_thor_es_frame_poll_continuous_rearm_enabled() {
-  static const bool enabled = [] {
+NEVER_INLINE bool initialize_thor_es_frame_poll_continuous_rearm() {
+  const bool enabled = [] {
 #ifdef ANDROID
     char property_value[PROP_VALUE_MAX]{};
     const int property_length = __system_property_get(
@@ -169,7 +188,19 @@ bool is_thor_es_frame_poll_continuous_rearm_enabled() {
     return false;
   }();
 
+  g_thor_es_frame_poll_continuous_rearm.release(
+      enabled ? thor_es_frame_poll_cached_bool::enabled
+              : thor_es_frame_poll_cached_bool::disabled);
   return enabled;
+}
+
+FORCE_INLINE bool is_thor_es_frame_poll_continuous_rearm_enabled() {
+  const auto cached = g_thor_es_frame_poll_continuous_rearm.observe();
+  if (cached == thor_es_frame_poll_cached_bool::uninitialized) [[unlikely]] {
+    return initialize_thor_es_frame_poll_continuous_rearm();
+  }
+
+  return cached == thor_es_frame_poll_cached_bool::enabled;
 }
 
 u64 parse_thor_es_frame_poll_handler_grace_us(const char *value) {
@@ -186,8 +217,8 @@ u64 parse_thor_es_frame_poll_handler_grace_us(const char *value) {
   return std::clamp<u64>(parsed, 0, 500);
 }
 
-u64 get_thor_es_frame_poll_handler_grace_us() {
-  static const u64 grace_us = [] {
+NEVER_INLINE u64 initialize_thor_es_frame_poll_handler_grace_us() {
+  const u64 grace_us = [] {
 #ifdef ANDROID
     char property_value[PROP_VALUE_MAX]{};
     if (__system_property_get("debug.rpcsx.thor.es_frame_wait_grace_us",
@@ -208,6 +239,16 @@ u64 get_thor_es_frame_poll_handler_grace_us() {
 
     return thor_es_frame_poll_handler_grace_us_default;
   }();
+
+  g_thor_es_frame_poll_handler_grace_us.release(grace_us);
+  return grace_us;
+}
+
+FORCE_INLINE u64 get_thor_es_frame_poll_handler_grace_us() {
+  const u64 grace_us = g_thor_es_frame_poll_handler_grace_us.observe();
+  if (grace_us == u64{umax}) [[unlikely]] {
+    return initialize_thor_es_frame_poll_handler_grace_us();
+  }
 
   return grace_us;
 }
@@ -405,10 +446,13 @@ try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu) {
 }
 
 bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
+  if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
+      sleep_time != 100 || Emu.GetTitleID() != "BLUS30161") {
+    return false;
+  }
+
   const auto mode = get_thor_es_frame_poll_wait_mode();
-  if (mode == thor_es_frame_poll_wait_mode::off ||
-      Emu.GetTitleID() != "BLUS30161" || ppu.id != 0x01000000 ||
-      ppu.cia != 0x002a8300 || sleep_time != 100) {
+  if (mode == thor_es_frame_poll_wait_mode::off) {
     return false;
   }
 
@@ -421,9 +465,13 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
 
 void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
                                          u64 sleep_time) {
-  if (!is_thor_es_frame_poll_wait_enabled() ||
-      Emu.GetTitleID() != "BLUS30161" || ppu.id != 0x01000000 ||
-      ppu.cia != 0x002a8300 || sleep_time != 100) {
+  if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
+      sleep_time != 100 || Emu.GetTitleID() != "BLUS30161") {
+    return;
+  }
+
+  const auto mode = get_thor_es_frame_poll_wait_mode();
+  if (mode == thor_es_frame_poll_wait_mode::off) {
     return;
   }
 
@@ -438,7 +486,7 @@ void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
     if (const auto renderer = rsx::get_current_renderer()) {
       state.completed_vblank = renderer->vblank_count;
       state.armed = true;
-      if (is_thor_es_frame_poll_wait_diagnostic()) {
+      if (mode == thor_es_frame_poll_wait_mode::diagnostic) {
         state.fallback_rearms++;
       }
     }

@@ -145,10 +145,26 @@ foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
     'constexpr u64 thor_es_frame_poll_log_probe_mask = 1023',
     'enum class thor_es_frame_poll_wait_mode : u8',
+    'thor_es_frame_poll_wait_mode::uninitialized',
     'thor_es_frame_poll_wait_mode::diagnostic',
     'thor_es_frame_poll_wait_mode::fast',
+    'enum class thor_es_frame_poll_cached_bool : u8',
+    'atomic_t<thor_es_frame_poll_wait_mode> g_thor_es_frame_poll_wait_mode',
+    'atomic_t<u64> g_thor_es_frame_poll_handler_grace_us{u64{umax}}',
+    'g_thor_es_frame_poll_wait_mode.observe()',
+    'g_thor_es_frame_poll_wait_mode.release(mode)',
+    'g_thor_es_frame_poll_continuous_rearm.observe()',
+    'g_thor_es_frame_poll_continuous_rearm.release(',
+    'g_thor_es_frame_poll_handler_grace_us.observe()',
+    'g_thor_es_frame_poll_handler_grace_us.release(grace_us)',
+    'initialize_thor_es_frame_poll_wait_mode()',
+    'initialize_thor_es_frame_poll_continuous_rearm()',
+    'initialize_thor_es_frame_poll_handler_grace_us()',
+    'FORCE_INLINE thor_es_frame_poll_wait_mode',
+    'FORCE_INLINE bool is_thor_es_frame_poll_continuous_rearm_enabled()',
+    'FORCE_INLINE u64 get_thor_es_frame_poll_handler_grace_us()',
+    '[[unlikely]]',
     'get_thor_es_frame_poll_wait_mode()',
-    'is_thor_es_frame_poll_wait_diagnostic()',
     'template <bool TrackStats>',
     'FORCE_INLINE bool try_thor_es_frame_poll_wait_impl(ppu_thread &ppu)',
     'try_thor_es_frame_poll_wait_impl<false>(ppu)',
@@ -232,8 +248,42 @@ foreach ($increment in $diagnosticIncrements) {
         throw "Android fast frame-poll mode still executes a diagnostic increment: $($increment.Value)"
     }
 }
-if ($mainTimer -notmatch '(?s)if \(is_thor_es_frame_poll_wait_diagnostic\(\)\) \{\s*state[.]fallback_rearms[+][+];\s*\}') {
+if ($mainTimer -notmatch '(?s)if \(mode == thor_es_frame_poll_wait_mode::diagnostic\) \{\s*state[.]fallback_rearms[+][+];\s*\}') {
     throw 'Android fast frame-poll fallback still records its diagnostic rearm counter.'
+}
+
+foreach ($guardedStatic in @(
+    'static const thor_es_frame_poll_wait_mode mode',
+    'static const bool enabled',
+    'static const u64 grace_us'
+)) {
+    if ($mainTimer.Contains($guardedStatic)) {
+        throw "Android frame-poll hot settings reintroduced a guarded local static: $guardedStatic"
+    }
+}
+
+$waitWrapperStart = $waitFunction.IndexOf(
+    'bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time)')
+$waitModeLoad = $waitFunction.IndexOf(
+    'const auto mode = get_thor_es_frame_poll_wait_mode()',
+    $waitWrapperStart)
+$waitNumericGate = $waitFunction.IndexOf(
+    'if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300',
+    $waitWrapperStart)
+if ($waitWrapperStart -lt 0 -or $waitNumericGate -lt $waitWrapperStart -or
+    $waitModeLoad -le $waitNumericGate) {
+    throw 'Android frame-poll wrapper must reject cheap numeric mismatches before reading cached settings.'
+}
+
+$fallbackModeLoad = $mainTimer.IndexOf(
+    'const auto mode = get_thor_es_frame_poll_wait_mode()',
+    $fallbackFunctionStart)
+$fallbackNumericGate = $mainTimer.IndexOf(
+    'if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300',
+    $fallbackFunctionStart)
+if ($fallbackNumericGate -lt $fallbackFunctionStart -or
+    $fallbackModeLoad -le $fallbackNumericGate) {
+    throw 'Android frame-poll fallback must reject cheap numeric mismatches before reading cached settings.'
 }
 
 if ($waitFunction -match 'waited_us\s*<\s*get_thor_es_frame_poll_handler_grace_us\(\)') {
