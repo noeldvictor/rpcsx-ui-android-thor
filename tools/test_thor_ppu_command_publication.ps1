@@ -5,19 +5,23 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $upstreamRoot = Join-Path $workspaceRoot "rpcs3-upstream"
 
 $mainPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
+$mainHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.h"
 $mainLocklessPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/lockless.h"
 $upstreamPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/PPUThread.cpp"
+$upstreamHeaderPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/PPUThread.h"
 $upstreamLocklessPath = Join-Path $upstreamRoot "Utilities/lockless.h"
 
-foreach ($path in @($mainPath, $mainLocklessPath, $upstreamPath, $upstreamLocklessPath)) {
+foreach ($path in @($mainPath, $mainHeaderPath, $mainLocklessPath, $upstreamPath, $upstreamHeaderPath, $upstreamLocklessPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Missing PPU command publication dependency: $path"
     }
 }
 
 $mainSource = Get-Content -LiteralPath $mainPath -Raw
+$mainHeader = Get-Content -LiteralPath $mainHeaderPath -Raw
 $mainLockless = Get-Content -LiteralPath $mainLocklessPath -Raw
 $upstreamSource = Get-Content -LiteralPath $upstreamPath -Raw
+$upstreamHeader = Get-Content -LiteralPath $upstreamHeaderPath -Raw
 $upstreamLockless = Get-Content -LiteralPath $upstreamLocklessPath -Raw
 
 foreach ($fragment in @(
@@ -36,11 +40,47 @@ foreach ($fragment in @(
     'notify.release(0)',
     'notify = 0',
     'cmd_queue[pos + i].raw() = list.begin()[i]',
-    'cmd_queue[cmd_queue.peek()].exchange(cmd64{})'
+    'cmd_queue[cmd_queue_position()].exchange(cmd64{})'
 )) {
     if (-not $mainSource.Contains($fragment)) {
         throw "Android PPU command publication contract is missing: $fragment"
     }
+}
+
+foreach ($fragment in @(
+    'u32 cmd_queue_position() const noexcept',
+    'return cmd_queue.peek_relaxed()',
+    'return cmd_queue.peek()',
+    'return cmd_queue[cmd_queue_position() + index].observe()',
+    'return cmd_queue[cmd_queue_position() + index].load()'
+)) {
+    if (-not $mainHeader.Contains($fragment)) {
+        throw "Android PPU command consumer-read contract is missing: $fragment"
+    }
+}
+
+$positionUses = [regex]::Matches(
+    $mainSource + $mainHeader,
+    'cmd_queue_position\(\)')
+if ($positionUses.Count -ne 5) {
+    throw "Android must route exactly three compiled PPU position reads through one platform helper; found $($positionUses.Count) source references."
+}
+if ($mainSource.Contains('cmd_queue.peek()')) {
+    throw 'Android PPU command source bypasses the platform position helper.'
+}
+
+$positionHelper = [regex]::Match(
+    $mainHeader,
+    '(?s)u32 cmd_queue_position\(\) const noexcept.*?#ifdef __ANDROID__.*?return cmd_queue\.peek_relaxed\(\);.*?#else.*?return cmd_queue\.peek\(\);.*?#endif')
+if (-not $positionHelper.Success) {
+    throw 'PPU command position helper does not preserve relaxed Android and default desktop reads.'
+}
+
+$tailRead = [regex]::Match(
+    $mainHeader,
+    '(?s)cmd64 cmd_get\(u32 index\).*?#ifdef __ANDROID__.*?cmd_queue\[cmd_queue_position\(\) \+ index\]\.observe\(\).*?#else.*?cmd_queue\[cmd_queue_position\(\) \+ index\]\.load\(\).*?#endif')
+if (-not $tailRead.Success) {
+    throw 'PPU command tail read does not remain relaxed only after Android head acquisition.'
 }
 
 $reservationCalls = [regex]::Matches(
@@ -57,6 +97,8 @@ foreach ($fragment in @(
     '#ifdef __ANDROID__',
     'u32 push_begin_relaxed(u32 count = 1)',
     '__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_RELAXED)',
+    'u32 peek_relaxed() const',
+    'm_ctrl.observe()',
     'u32 pop_end_release(u32 count = 1)',
     '__atomic_load_n(&m_ctrl.raw(), __ATOMIC_RELAXED)',
     '__atomic_compare_exchange_n(&m_ctrl.raw(), &ctrl, next, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED)',
@@ -72,6 +114,9 @@ if ($upstreamLockless.Contains('push_begin_relaxed')) {
 }
 if ($upstreamLockless.Contains('pop_end_release')) {
     throw 'Desktop upstream unexpectedly contains the Android-only release FIFO completion.'
+}
+if ($upstreamLockless.Contains('peek_relaxed')) {
+    throw 'Desktop upstream unexpectedly contains the Android-only relaxed FIFO position read.'
 }
 
 $publishCalls = [regex]::Matches(
@@ -126,7 +171,7 @@ if ($clearCalls.Count -ne 1) {
 
 $waitClear = [regex]::Match(
     $mainSource,
-    '(?s)cmd64 ppu_thread::cmd_wait\(\).*?cmd_queue\[cmd_queue\.peek\(\)\]\.exchange\(cmd64\{\}\).*?thread_ctrl::wait_on\(cmd_notify, 0\);.*?clear_ppu_command_ready\(cmd_notify\);')
+    '(?s)cmd64 ppu_thread::cmd_wait\(\).*?cmd_queue\[cmd_queue_position\(\)\]\.exchange\(cmd64\{\}\).*?thread_ctrl::wait_on\(cmd_notify, 0\);.*?clear_ppu_command_ready\(cmd_notify\);')
 if (-not $waitClear.Success) {
     throw 'cmd_wait does not acquire the queue head before wait and one-way flag clear.'
 }
@@ -149,4 +194,8 @@ foreach ($fragment in @(
     }
 }
 
-Write-Host "Thor Android PPU command reservation/publication/clear contract passed."
+if (-not $upstreamHeader.Contains('cmd64 cmd_get(u32 index) { return cmd_queue[cmd_queue.peek() + index].load(); }')) {
+    throw 'Upstream PPU command tail-read baseline changed.'
+}
+
+Write-Host "Thor Android PPU command reservation/publication/consumer-read/completion/clear contract passed."

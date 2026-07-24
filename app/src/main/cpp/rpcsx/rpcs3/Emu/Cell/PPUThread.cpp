@@ -4137,7 +4137,7 @@ void ppu_thread::cmd_list(std::initializer_list<cmd64> list)
 void ppu_thread::cmd_pop(u32 count)
 {
 	// Get current position
-	const u32 pos = cmd_queue.peek();
+	const u32 pos = cmd_queue_position();
 
 	// Clean command buffer for command tail
 	for (u32 i = 1; i <= count; i++)
@@ -4153,7 +4153,7 @@ cmd64 ppu_thread::cmd_wait()
 {
 	while (true)
 	{
-		if (cmd64 result = cmd_queue[cmd_queue.peek()].exchange(cmd64{}))
+		if (cmd64 result = cmd_queue[cmd_queue_position()].exchange(cmd64{}))
 		{
 			return result;
 		}

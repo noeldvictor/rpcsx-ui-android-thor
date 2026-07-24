@@ -187,9 +187,23 @@ public:
 	void cmd_list(std::initializer_list<cmd64>);
 	void cmd_pop(u32 = 0);
 	cmd64 cmd_wait(); // Empty command means caller must return, like true from cpu_thread::check_status().
+	u32 cmd_queue_position() const noexcept
+	{
+#ifdef __ANDROID__
+		return cmd_queue.peek_relaxed();
+#else
+		return cmd_queue.peek();
+#endif
+	}
 	cmd64 cmd_get(u32 index)
 	{
-		return cmd_queue[cmd_queue.peek() + index].load();
+#ifdef __ANDROID__
+		// cmd_wait has already acquired the release-published head. Command
+		// tails remain reserved until cmd_pop release-completes the range.
+		return cmd_queue[cmd_queue_position() + index].observe();
+#else
+		return cmd_queue[cmd_queue_position() + index].load();
+#endif
 	}
 	atomic_t<u32> cmd_notify = 0;
 

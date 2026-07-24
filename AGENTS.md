@@ -2231,3 +2231,19 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify as host-verified
   `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-ppu-command-release-completion.md`.
+- Host-only Android PPU command FIFO consumers now use relaxed
+  position reads in `cmd_wait`, `cmd_get`, and `cmd_pop`, plus relaxed tail
+  reads after the command-head acquire. Each queue has one owning consumer;
+  the control word carries indices only, and the retained `SWPAL` head
+  exchange acquires the producer's release-published tail data. Desktop and
+  generic `lf_fifo::peek` behavior remain unchanged. Exact merged ARM64 changes
+  targeted `LDAR` instructions to `LDR`, retains head `SWPAL` and completion
+  `CASL`, and shrinks `ppu_thread::cpu_task` by 8 bytes. Exact successor is APK
+  `D5F2E5BB...9ED4ADD0` / `72,838,084` bytes, merged core
+  `39F1C9BF...2BE30143` / `1,304,308,552` bytes, and packaged core
+  `59F25E23...9EB9853` / `62,989,000` bytes. ARM64 native/APK builds, focused
+  single-consumer/payload-ordering/codegen proof, artifact gate, and all
+  `70/70` host contracts pass. Thor was not contacted. Classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
+  Ledger:
+  `debug-experiments/20260723-thor-ppu-command-relaxed-consumer-reads.md`.

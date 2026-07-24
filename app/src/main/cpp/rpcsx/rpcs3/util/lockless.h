@@ -180,6 +180,15 @@ public:
 		return static_cast<u32>(m_ctrl >> 32);
 	}
 
+#ifdef __ANDROID__
+	// The single consumer owns the pop counter; payload synchronization is
+	// carried by each element rather than this position-only control word.
+	u32 peek_relaxed() const
+	{
+		return static_cast<u32>(m_ctrl.observe() >> 32);
+	}
+#endif
+
 	// Acknowledge processed element, return number of the next one.
 	// Perform clear if possible, zero is returned in this case.
 	u32 pop_end(u32 count = 1)
