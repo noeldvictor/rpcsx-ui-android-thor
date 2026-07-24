@@ -129,7 +129,7 @@ namespace rsx
 #endif
 	}
 
-	static inline void publish_vblank_command_ready(atomic_t<u32>& notify) noexcept
+	static inline void publish_ppu_command_ready(atomic_t<u32>& notify) noexcept
 	{
 #ifdef __ANDROID__
 		// Command publication does not consume the previous flag. A release
@@ -960,7 +960,7 @@ namespace rsx
 						{ppu_cmd::sleep, 0}});
 				}
 
-				publish_vblank_command_ready(intr_thread->cmd_notify);
+				publish_ppu_command_ready(intr_thread->cmd_notify);
 				intr_thread->cmd_notify.notify_one();
 				return;
 			}
@@ -3432,7 +3432,7 @@ namespace rsx
 					{ppu_cmd::lle_call, ptr},
 					{ppu_cmd::sleep, 0}});
 
-				intr_thread->cmd_notify.store(1);
+				publish_ppu_command_ready(intr_thread->cmd_notify);
 				intr_thread->cmd_notify.notify_one();
 			}
 		}

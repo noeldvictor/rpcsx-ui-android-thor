@@ -2149,3 +2149,16 @@ Put dated run details in `debug-experiments/`, not here.
   as host-verified `stackable-cpu-pressure`, not measured speed or thermal
   credit. Ledger:
   `debug-experiments/20260723-thor-vblank-command-release-store.md`.
+- Host-only Android RSX flip-handler command publication now shares the
+  release-store helper used by HLE VBlank commands. Both producer paths queue,
+  `STLR` the level-triggered flag, then `notify_one`; desktop retains both
+  sequentially consistent stores. Exact ARM64 changes the remaining flip-site
+  `SWPAL` at `0x3837398` to `STLR`, removing a second RMW/acquire barrier from
+  a per-frame RSX-to-PPU path while preserving the atomic queue-head contract.
+  Exact successor is APK `E8B84EAA...D867100` / `72,838,236` bytes, merged
+  core `796BBF97...EAD7303` / `1,304,307,912` bytes, and packaged core
+  `FB5329EF...0771FFA` / `62,988,904` bytes. ARM64 native/APK builds, linked
+  two-store ordering proof, artifact gate, and all `69/69` host contracts pass.
+  Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
+  not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-rsx-flip-command-release-store.md`.

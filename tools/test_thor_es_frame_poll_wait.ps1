@@ -247,10 +247,10 @@ foreach ($fragment in @(
 }
 
 foreach ($fragment in @(
-    'publish_vblank_command_ready(atomic_t<u32>& notify) noexcept',
+    'publish_ppu_command_ready(atomic_t<u32>& notify) noexcept',
     'notify.release(1)',
     'notify.store(1)',
-    'publish_vblank_command_ready(intr_thread->cmd_notify)',
+    'publish_ppu_command_ready(intr_thread->cmd_notify)',
     'intr_thread->cmd_notify.notify_one()'
 )) {
     if (-not $mainRsxSource.Contains($fragment)) {
@@ -260,13 +260,26 @@ foreach ($fragment in @(
 
 $mainCommandPublish = [regex]::Match(
     $mainRsxSource,
-    '(?s)void thread::post_vblank_event.*?intr_thread->cmd_list.*?publish_vblank_command_ready\(intr_thread->cmd_notify\).*?intr_thread->cmd_notify\.notify_one\(\).*?return;')
+    '(?s)void thread::post_vblank_event.*?intr_thread->cmd_list.*?publish_ppu_command_ready\(intr_thread->cmd_notify\).*?intr_thread->cmd_notify\.notify_one\(\).*?return;')
 if (-not $mainCommandPublish.Success) {
     throw 'Android VBlank command publication is not ordered after queueing and before wake/return.'
 }
 
-if ($mainRsxSource -match '(?s)void thread::post_vblank_event.*?intr_thread->cmd_notify\.store\(1\).*?if \(!isHLE\)') {
-    throw 'Android VBlank command publication reintroduced a sequentially consistent flag swap.'
+$mainFlipCommandPublish = [regex]::Match(
+    $mainRsxSource,
+    '(?s)void thread::handle_emu_flip.*?intr_thread->cmd_list.*?publish_ppu_command_ready\(intr_thread->cmd_notify\).*?intr_thread->cmd_notify\.notify_one\(\)')
+if (-not $mainFlipCommandPublish.Success) {
+    throw 'Android flip command publication is not ordered after queueing and before wake.'
+}
+
+$mainCommandReadyCalls = [regex]::Matches(
+    $mainRsxSource,
+    'publish_ppu_command_ready\(intr_thread->cmd_notify\)')
+if ($mainCommandReadyCalls.Count -ne 2) {
+    throw "Android must release-publish exactly the VBlank and flip PPU command flags; found $($mainCommandReadyCalls.Count)."
+}
+if ($mainRsxSource.Contains('intr_thread->cmd_notify.store(1)')) {
+    throw 'Android RSX command publication reintroduced a sequentially consistent flag swap.'
 }
 foreach ($fragment in @(
     'publish_vblank_edge(atomic_t<u64>& count) noexcept',
@@ -311,6 +324,12 @@ foreach ($fragment in @(
     }
 }
 
+$upstreamCommandStores = [regex]::Matches(
+    $upstreamRsxSource,
+    'intr_thread->cmd_notify\.store\(1\);')
+if ($upstreamCommandStores.Count -ne 2) {
+    throw "Windows RSX must retain both VBlank and flip command stores; found $($upstreamCommandStores.Count)."
+}
 foreach ($fragment in @(
     '[string]$EternalSonataFramePollWait = "Off"',
     '[int]$EternalSonataFramePollHandlerGraceUs = 500',
@@ -358,4 +377,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published VBlank edge, command, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
