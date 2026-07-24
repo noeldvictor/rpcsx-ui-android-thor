@@ -1,3 +1,24 @@
+## 2026-07-24 17:36 ET - 25cc/9e4000 contract verifier row accepted on stable field route (no speed)
+
+Classification: analysis/spu-contract-verifier/strict-parser-pass/no-speed.
+
+Evidence:
+- Ran `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stable-path-25cc-contract-row-verify -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow` against `debug-captures\windows-lab\20260724-172941-cpu4-stable-path-25cc-contract-row-verify-windows`.
+- Visual gate passed for triage: stable load target confirmed at 100s/103s, first field-like screenshot at 217s, field-like screenshots persisted at 263s/308s/309s, invalid screenshots after first field-like = 0.
+- Fatal log gate reported 0 fatal/crash signature lines; host contention stayed clean across prelaunch/postlaunch/sample/postrun snapshots.
+- Strict parser outputs refreshed at `spu-contracts\BLUS30161\latest-verify-logrow-results.json` and `.md`.
+- Contract parser result: rows=115, accepted_rows=115, rejected_rows=0, total_contract_hits=248, total_contract_bytes=4063232, total_contract_rejects=3475, total_output_mismatch=0, total_desc_overflow=0, strict_gate_pass=true, promotion_ready=false.
+- Contract row ID: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`, hle_mode=`contract-25cc-9e4000`, verify_mode=`verify-25cc-shadow`, body_mode=`disabled`, PC=`0x25cc`, EA=`0x9e4000`, tag=31, size=0x4000.
+- GPU probe summary still found no `Eternal Sonata GPU/DMA candidate probe` records and no RSX-local/offload evidence; the old GPU summary parser does not count the newer contract verifier rows, but the strict contract parser consumed them successfully.
+- Reservation-loop verifier was intentionally Off in this run; the prior dirty lane-1 result still blocks any broad reservation-loop fast path.
+
+Result:
+- Advances CPU/SPU bottleneck relief: yes. This proves the Windows 0x25cc/0x9e4000 contract verifier row emits and is strict-parser clean during a stable field run.
+- Advances GPU-feed/offload: no. No fresh RSX-local/DMA candidate evidence appeared; GPU score remains low versus CPU/HLE/SIMD, and readback risk remains high.
+- Speed increase: no. Body mode was disabled, and this is not field + Options/menu + first-battle A/B speed proof.
+
+Next narrow hypothesis:
+- Run the same `Verify25ccShadow` verifier through field + Options/menu + first-battle. If strict parser still reports accepted rows with zero mismatch/overflow/fatals, promote only to verify-only CPU HLE/codegen instrumentation for 0x25cc/0x9e4000; keep GPU fast paths parked until RSX-consumed/bulk-transfer evidence exists.
 ## 2026-07-24 17:25 ET - 25cc/451c contract pipeline refreshed from stable field verifier run; strict parser blocks promotion (no speed)
 
 Command/run:
@@ -11290,3 +11311,4 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
