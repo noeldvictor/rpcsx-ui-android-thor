@@ -1,4 +1,25 @@
-﻿## 2026-07-24 18:49 ET - loader-control left200x2 boundary reconfirmed after 25cc black-overlay regression (no speed)
+﻿## 2026-07-24 18:55 ET - diag200 boundary reconfirmed after black-overlay repair (no speed)
+
+Classification: route-tooling/valid-field-triage/left200x2-plus-diag200-reconfirmed/reservation-loop-verify-telemetry/no-speed.
+
+Evidence:
+- Followed the refiner decision after the loader-control left200x2 boundary was reconfirmed: extend that newest valid base by exactly one tiny diagonal micro-pulse while keeping lane-2 HLE/GPU dry-runs and fast modes blocked.
+- Ran tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-reconfirm-after-blackoverlay-visualgate with WindowsGameScreen 1, CPU affinity 0x0F, frame/vblank 240, EternalSonataReservationLoop Verify, and CleanAfterField visual gate.
+- Run dir: debug-captures\windows-lab\20260724-185147-cpu4-loader-control-left200x2-diag200-reconfirm-after-blackoverlay-visualgate-windows.
+- Visual gate status was FIELD_LIKE_PRESENT and passed for triage. First field-like screenshot was screenshot-0117s.png at 117s, required field-like by 160s passed, all 18 screenshots from screenshot-0117s.png through screenshot-0220s.png were field-like-large-png, and invalid screenshots after first field-like were 0.
+- Both ls_left:200 inputs executed after accepted field evidence, then combo:ls_left+ls_down:200 executed at the diagonal micro-pulse point. The immediate screenshot screenshot-0141s.png and all later screenshots through 220s stayed field-like.
+- Targeted fatal scan found 0 hits for VM access violations, prior 0x002aedd0, prior 0x0007dccc, Vulkan/device-loss, assertion, dynamic-fail, output mismatch, or descriptor overflow patterns.
+- Direct counters from RPCS3.log: gpu_candidate=1767, mfc_dynamic=1767, mfc_wait=101460, mfc_wait_pc=832, reservation_mode=verify rows=161638, PUTLLC breakage=11, rsx_get/put byte rows=0, output_mismatch=0, dynamic_fail=0, desc_overflow=0.
+- Host contention summary was clean across 6 snapshots; GPU engine usage reached about 29.5 percent in one sample, but there were still no RSX-local bytes or GPU-consumed buffer evidence.
+
+Result:
+- Advances CPU/SPU bottleneck relief: yes, as restored route-control evidence and dense reservation verifier telemetry after the failed 25cc black-overlay attempt. The clean boundary is again left200x2-plus-diag200 under reservation-loop verify.
+- Advances GPU-feed/offload: no. Host GPU activity remained ordinary renderer load only; no RSX-local transfer, RSX destination, or offloadable GPU-fed buffer was proven.
+- Speed increase: no. Reservation verifier mode is not a fast path, and there is still no valid Options/menu plus first-battle A/B proof.
+
+Next narrow hypothesis:
+- Retry the 25cc direction-split verifier from this freshly reconfirmed left200x2-plus-diag200 boundary, but gate or screenshot accepted field before the 25cc counter rows are considered promotion evidence. Keep 25cc body/codegen/Vulkan fast modes blocked until field, Options/menu, and first-battle all pass with zero mismatch, zero descriptor overflow, zero fatal hits, and valid visuals.
+## 2026-07-24 18:49 ET - loader-control left200x2 boundary reconfirmed after 25cc black-overlay regression (no speed)
 
 Classification: route-tooling/valid-field-triage/loader-control-left200x2-reconfirmed/reservation-loop-verify-telemetry/no-speed.
 
@@ -11539,6 +11560,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
