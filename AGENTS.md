@@ -2555,3 +2555,17 @@ Put dated run details in `debug-experiments/`, not here.
   host-verified `stackable-cpu-pressure`, not measured speed or thermal
   credit. Ledger:
   `debug-experiments/20260724-thor-spu-rsx-lock-config-relaxed-reads.md`.
+- Host-only Android SPU GETLLAR/event/SPURS wait-policy reads now use relaxed
+  observations for spin selection, busy-wait percentages, loop detection,
+  the SPURS thread cap, and the GETLLAR RSX-lock selector; desktop retains
+  ordered reads and dynamic settings remain live. Exact ARM64 removes seven
+  acquire loads, retains all 100 non-target acquires, shrinks four affected
+  symbols 88 bytes, and shrinks the packaged runtime core 80 bytes. Exact
+  successor is APK `6F1D89FF...1A4224A1` / `72,836,788` bytes, merged core
+  `83B3493A...999DBA26` / `1,304,324,344` bytes, and packaged core
+  `2BA69B66...457C4AE` / `62,988,664` bytes. Native/APK builds, exact codegen,
+  artifact identity, and all `78/78` host contracts pass. Thor was not
+  contacted. No exact Android execution count exists; classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal
+  credit. Ledger:
+  `debug-experiments/20260724-thor-spu-wait-policy-relaxed-reads.md`.

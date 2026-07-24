@@ -141,6 +141,16 @@ static FORCE_INLINE bool get_rsx_fifo_accuracy_for_spu_mfc() noexcept
 #endif
 }
 
+template <typename T>
+static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexcept
+{
+#ifdef ANDROID
+	return setting.observe();
+#else
+	return setting.get();
+#endif
+}
+
 static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
 {
 #ifdef ANDROID
@@ -5484,7 +5494,7 @@ u32 spu_thread::get_mfc_completed() const
 	return ch_tag_mask & ~mfc_fence;
 }
 
-u32 evaluate_spin_optimization(std::span<u8> stats, u64 evaluate_time, const cfg::uint<0, 100>& wait_percent, bool inclined_for_responsiveness = false)
+u32 evaluate_spin_optimization(std::span<u8> stats, u64 evaluate_time, u32 wait_percent, bool inclined_for_responsiveness = false)
 {
 	ensure(stats.size() >= 2 && stats.size() <= 16);
 
@@ -5733,13 +5743,13 @@ bool spu_thread::process_mfc_cmd()
 								if (getllar_busy_waiting_switch == umax && getllar_spin_count == 4)
 								{
 									// Hidden value to force busy waiting (100 to 1 are dynamically adjusted, 0 is not)
-									if (!g_cfg.core.spu_getllar_spin_optimization_disabled)
+									if (!get_spu_wait_policy_for_runtime(g_cfg.core.spu_getllar_spin_optimization_disabled))
 									{
 										getllar_evaluate_time = perf0.get();
 										auto& history = getllar_wait_time[(addr % SPU_LS_SIZE) / 128];
 
 										getllar_busy_waiting_switch =
-											evaluate_spin_optimization({history.data(), history.size()}, getllar_evaluate_time, g_cfg.core.spu_getllar_busy_waiting_percentage);
+											evaluate_spin_optimization({history.data(), history.size()}, getllar_evaluate_time, get_spu_wait_policy_for_runtime(g_cfg.core.spu_getllar_busy_waiting_percentage));
 									}
 									else
 									{
@@ -5750,7 +5760,7 @@ bool spu_thread::process_mfc_cmd()
 								else if (getllar_busy_waiting_switch == 1 && perf0.get() > getllar_evaluate_time && perf0.get() - getllar_evaluate_time >= 400'000)
 								{
 									// Hidden value to force busy waiting
-									if (!g_cfg.core.spu_getllar_spin_optimization_disabled)
+									if (!get_spu_wait_policy_for_runtime(g_cfg.core.spu_getllar_spin_optimization_disabled))
 									{
 										spu_log.trace("SPU wait for 0x%x", addr);
 										getllar_wait_time[(addr % SPU_LS_SIZE) / 128].front() = 1;
@@ -5919,7 +5929,7 @@ bool spu_thread::process_mfc_cmd()
 
 		u64 ntime = 0;
 		const bool skip_rsx_lock = thor_es_getllar_skip_rsx_lock(*this, addr, ch_mfc_cmd.lsa);
-		rsx::reservation_lock rsx_lock(addr, 128, !skip_rsx_lock && g_cfg.core.rsx_accurate_res_access && addr < rsx::constants::local_mem_base);
+		rsx::reservation_lock rsx_lock(addr, 128, !skip_rsx_lock && get_spu_wait_policy_for_runtime(g_cfg.core.rsx_accurate_res_access) && addr < rsx::constants::local_mem_base);
 
 		u64 getllar_retry_count = 0;
 		bool getllar_slow_yield = false;
@@ -6912,7 +6922,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 		u32 out = read_dec().first;
 
 		// Polling: We might as well hint to the scheduler to slot in another thread since this one is counting down
-		if (g_cfg.core.spu_loop_detection && out > spu::scheduler::native_jiffy_duration_us)
+		if (get_spu_wait_policy_for_runtime(g_cfg.core.spu_loop_detection) && out > spu::scheduler::native_jiffy_duration_us)
 		{
 			state += cpu_flag::wait;
 			std::this_thread::yield();
@@ -7052,9 +7062,9 @@ s64 spu_thread::get_ch_value(u32 ch)
 		{
 			bool value = false;
 
-			if (is_LR_wait && g_cfg.core.spu_reservation_busy_waiting_enabled)
+			if (is_LR_wait && get_spu_wait_policy_for_runtime(g_cfg.core.spu_reservation_busy_waiting_enabled))
 			{
-				value = evaluate_spin_optimization({history.data(), history.size()}, eventstat_evaluate_time, g_cfg.core.spu_reservation_busy_waiting_percentage, group && group->max_num == 1) != 0;
+				value = evaluate_spin_optimization({history.data(), history.size()}, eventstat_evaluate_time, get_spu_wait_policy_for_runtime(g_cfg.core.spu_reservation_busy_waiting_percentage), group && group->max_num == 1) != 0;
 			}
 
 			eventstat_busy_waiting_switch = value ? 1 : 0;
@@ -7143,7 +7153,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 
 			if (raddr && (mask1 & ~SPU_EVENT_TM) == SPU_EVENT_LR)
 			{
-				if (u32 max_threads = std::min<u32>(g_cfg.core.max_spurs_threads, group ? group->max_num : u32{umax}); group && group->max_run != max_threads)
+				if (u32 max_threads = std::min<u32>(get_spu_wait_policy_for_runtime(g_cfg.core.max_spurs_threads), group ? group->max_num : u32{umax}); group && group->max_run != max_threads)
 				{
 					constexpr std::string_view spurs_suffix = "CellSpursKernelGroup"sv;
 
