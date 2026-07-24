@@ -2540,3 +2540,18 @@ Put dated run details in `debug-experiments/`, not here.
   execution count exists; classify as host-verified `stackable-cpu-pressure`,
   not measured speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-spu-mfc-scheduler-relaxed-reads.md`.
+- Host-only Android SPU RSX reservation-lock selection now uses relaxed reads
+  of the non-dynamic/default-off strict-rendering selector and the non-dynamic/
+  default-fast FIFO-accuracy selector; desktop retains ordered reads and all
+  RSX-lock, accurate-DMA, address-gate, reservation, and transfer ordering
+  remains. Exact ARM64 removes four acquire loads, retains all 46 non-target
+  acquires, and shrinks `do_list_transfer` 24 bytes while
+  `do_dma_transfer` is size-neutral. Exact successor is APK
+  `24AB810C...46F0C2C8` / `72,836,464` bytes, merged core
+  `D2C52C03...AFA9E8A4` / `1,304,323,496` bytes, and packaged core
+  `78F07D31...0FABEE8A` / `62,988,744` bytes. Native/APK builds, exact
+  codegen, artifact identity, and all `77/77` host contracts pass. Thor was
+  not contacted. No exact Android execution count exists; classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal
+  credit. Ledger:
+  `debug-experiments/20260724-thor-spu-rsx-lock-config-relaxed-reads.md`.

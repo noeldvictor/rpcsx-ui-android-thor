@@ -123,6 +123,24 @@ static FORCE_INLINE bool get_spu_accurate_dma_for_mfc() noexcept
 #endif
 }
 
+static FORCE_INLINE bool get_strict_rendering_mode_for_spu_mfc() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.video.strict_rendering_mode.observe();
+#else
+	return g_cfg.video.strict_rendering_mode.get();
+#endif
+}
+
+static FORCE_INLINE bool get_rsx_fifo_accuracy_for_spu_mfc() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.rsx_fifo_accuracy.observe() != rsx_fifo_mode::fast;
+#else
+	return g_cfg.core.rsx_fifo_accuracy.get() != rsx_fifo_mode::fast;
+#endif
+}
+
 static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
 {
 #ifdef ANDROID
@@ -3407,7 +3425,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 	record_thor_es_dma_payload(_this, args.cmd, src, args.size);
 
-	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !get_spu_accurate_dma_for_mfc() && eal < rsx::constants::local_mem_base)));
+	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (get_strict_rendering_mode_for_spu_mfc() || (get_rsx_fifo_accuracy_for_spu_mfc() && !get_spu_accurate_dma_for_mfc() && eal < rsx::constants::local_mem_base)));
 
 	if ((!g_use_rtm && !is_get) || get_spu_accurate_dma_for_mfc()) [[unlikely]]
 	{
@@ -4126,7 +4144,7 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 		optimization_compatible = 0;
 	}
 
-	rsx::reservation_lock<false, 1> rsx_lock(0, 128, optimization_compatible == MFC_PUT_CMD && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !get_spu_accurate_dma_for_mfc())));
+	rsx::reservation_lock<false, 1> rsx_lock(0, 128, optimization_compatible == MFC_PUT_CMD && (get_strict_rendering_mode_for_spu_mfc() || (get_rsx_fifo_accuracy_for_spu_mfc() && !get_spu_accurate_dma_for_mfc())));
 
 	constexpr u32 ts_mask = 0x7fff;
 
