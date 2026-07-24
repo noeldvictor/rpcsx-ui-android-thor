@@ -1,0 +1,242 @@
+diff --git a/rpcs3/Emu/Cell/SPUThread.cpp b/rpcs3/Emu/Cell/SPUThread.cpp
+--- a/rpcs3/Emu/Cell/SPUThread.cpp
++++ b/rpcs3/Emu/Cell/SPUThread.cpp
+@@
+ static bool is_es_spu_hle_25cc_shadow_enabled()
+ {
+ 	static const bool enabled = []
+ 	{
+ 		const char* raw = ::getenv("RPCS3_ES_SPU_HLE_VERIFY");
+@@
+ 	return enabled && Emu.GetTitleID() == "BLUS30161";
+ }
++
++enum class es_spu_hle_25cc_shadow_payload_mode : u8
++{
++	full,
++	sampled,
++	counts,
++};
++
++static es_spu_hle_25cc_shadow_payload_mode get_es_spu_hle_25cc_shadow_payload_mode()
++{
++	static const es_spu_hle_25cc_shadow_payload_mode mode = []
++	{
++		const char* raw = ::getenv("RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD");
++
++		if (!raw || !*raw)
++		{
++			return es_spu_hle_25cc_shadow_payload_mode::full;
++		}
++
++		const std::string_view value{raw};
++		if (value == "counts" || value == "count" || value == "nohash" || value == "off")
++		{
++			return es_spu_hle_25cc_shadow_payload_mode::counts;
++		}
++		if (value == "sampled" || value == "sample" || value == "sparse")
++		{
++			return es_spu_hle_25cc_shadow_payload_mode::sampled;
++		}
++
++		return es_spu_hle_25cc_shadow_payload_mode::full;
++	}();
++
++	return mode;
++}
++
++static bool should_sample_es_spu_hle_25cc_shadow_payload(spu_thread* spu)
++{
++	if (!spu)
++	{
++		return false;
++	}
++
++	switch (get_es_spu_hle_25cc_shadow_payload_mode())
++	{
++	case es_spu_hle_25cc_shadow_payload_mode::full:
++		return true;
++	case es_spu_hle_25cc_shadow_payload_mode::sampled:
++		return (spu->es_gpu_probe.spu_hle_25cc_shadow_hits & 0x0f) == 0;
++	case es_spu_hle_25cc_shadow_payload_mode::counts:
++		return false;
++	}
++
++	return true;
++}
+ 
+ enum class es_spu_hle_25cc_body_mode : u8
+ {
+ 	disabled,
+@@
+ struct es_spu_hle_shadow_sample
+ {
+ 	bool active = false;
++	bool payload_checked = false;
+ 	u64 src_hash = 0;
+ 	u64 dst_pre_hash = 0;
+ };
+@@
+ 	if (!spu || !src || !dst || !is_es_spu_hle_shadow_shape_candidate(spu, cmd))
+ 	{
+ 		return {};
+ 	}
++
++	if (is_es_spu_hle_25cc_shadow_enabled() && get_es_mfc_25cc_runtime_family(spu, cmd) && !should_sample_es_spu_hle_25cc_shadow_payload(spu))
++	{
++		return
++		{
++			true,
++			false,
++			0,
++			0,
++		};
++	}
+ 
+ 	return
+ 	{
+ 		true,
++		true,
+ 		compute_es_spu_hle_shadow_hash(src, cmd.size),
+ 		compute_es_spu_hle_shadow_hash(dst, cmd.size),
+ 	};
+ }
+ 
+-static void record_es_spu_hle_25cc_shadow_sample(spu_thread* spu, const spu_mfc_cmd& cmd, const es_spu_hle_shadow_sample& sample, u64 dst_post_hash, bool dst_changed, bool output_match)
++static void record_es_spu_hle_25cc_shadow_sample(spu_thread* spu, const spu_mfc_cmd& cmd, const es_spu_hle_shadow_sample& sample, u64 dst_post_hash, bool dst_changed, bool output_match, bool payload_checked)
+ {
+ 	if (!spu || !sample.active || !is_es_spu_hle_25cc_shadow_enabled())
+ 	{
+@@
+ 	const bool is_get = base_cmd == static_cast<u8>(MFC_GET_CMD);
+ 	const bool is_put = base_cmd == static_cast<u8>(MFC_PUT_CMD);
+ 	const u32 direction = is_get ? 1 : (is_put ? 2 : 0);
+-	const bool had_previous = probe.spu_hle_25cc_shadow_hits != 0;
++	const bool had_previous = payload_checked && probe.spu_hle_25cc_shadow_hits != 0;
+ 
+ 	probe.spu_hle_25cc_shadow_src_repeats += had_previous && probe.spu_hle_25cc_shadow_last_src_hash == sample.src_hash ? 1 : 0;
+ 	probe.spu_hle_25cc_shadow_dst_pre_repeats += had_previous && probe.spu_hle_25cc_shadow_last_dst_pre_hash == sample.dst_pre_hash ? 1 : 0;
+@@
+ 	probe.spu_hle_25cc_shadow_ea4f0b80_hits += family == 2 ? 1 : 0;
+ 	probe.spu_hle_25cc_shadow_exact_a1c000_hits += family == 3 ? 1 : 0;
+ 	probe.spu_hle_25cc_shadow_other_ea_hits += family == 4 ? 1 : 0;
+-	probe.spu_hle_25cc_shadow_dst_changed += dst_changed ? 1 : 0;
+-	probe.spu_hle_25cc_shadow_dst_unchanged += dst_changed ? 0 : 1;
+-	probe.spu_hle_25cc_shadow_output_match += output_match ? 1 : 0;
+-	probe.spu_hle_25cc_shadow_output_mismatch += output_match ? 0 : 1;
++	probe.spu_hle_25cc_shadow_dst_changed += payload_checked && dst_changed ? 1 : 0;
++	probe.spu_hle_25cc_shadow_dst_unchanged += payload_checked && !dst_changed ? 1 : 0;
++	probe.spu_hle_25cc_shadow_output_match += payload_checked && output_match ? 1 : 0;
++	probe.spu_hle_25cc_shadow_output_mismatch += payload_checked && !output_match ? 1 : 0;
+ 	probe.spu_hle_25cc_shadow_last_family = family;
+ 	probe.spu_hle_25cc_shadow_last_pc = spu->pc;
+@@
+ 	probe.spu_hle_25cc_shadow_last_size = cmd.size;
+ 	probe.spu_hle_25cc_shadow_last_lsa = lsa;
+ 	probe.spu_hle_25cc_shadow_last_eal = cmd.eal;
+-	probe.spu_hle_25cc_shadow_last_src_hash = sample.src_hash;
+-	probe.spu_hle_25cc_shadow_last_dst_pre_hash = sample.dst_pre_hash;
+-	probe.spu_hle_25cc_shadow_last_dst_post_hash = dst_post_hash;
++	if (payload_checked)
++	{
++		probe.spu_hle_25cc_shadow_last_src_hash = sample.src_hash;
++		probe.spu_hle_25cc_shadow_last_dst_pre_hash = sample.dst_pre_hash;
++		probe.spu_hle_25cc_shadow_last_dst_post_hash = dst_post_hash;
++	}
+@@
+-	slot->src_repeats += desc_had_previous && slot->last_src_hash == sample.src_hash ? 1 : 0;
+-	slot->dst_pre_repeats += desc_had_previous && slot->last_dst_pre_hash == sample.dst_pre_hash ? 1 : 0;
+-	slot->dst_post_repeats += desc_had_previous && slot->last_dst_post_hash == dst_post_hash ? 1 : 0;
++	slot->src_repeats += payload_checked && desc_had_previous && slot->last_src_hash == sample.src_hash ? 1 : 0;
++	slot->dst_pre_repeats += payload_checked && desc_had_previous && slot->last_dst_pre_hash == sample.dst_pre_hash ? 1 : 0;
++	slot->dst_post_repeats += payload_checked && desc_had_previous && slot->last_dst_post_hash == dst_post_hash ? 1 : 0;
+ 	slot->hits++;
+ 	slot->bytes += cmd.size;
+-	slot->dst_changed += dst_changed ? 1 : 0;
+-	slot->dst_unchanged += dst_changed ? 0 : 1;
+-	slot->output_match += output_match ? 1 : 0;
+-	slot->output_mismatch += output_match ? 0 : 1;
+-	slot->last_src_hash = sample.src_hash;
+-	slot->last_dst_pre_hash = sample.dst_pre_hash;
+-	slot->last_dst_post_hash = dst_post_hash;
++	slot->dst_changed += payload_checked && dst_changed ? 1 : 0;
++	slot->dst_unchanged += payload_checked && !dst_changed ? 1 : 0;
++	slot->output_match += payload_checked && output_match ? 1 : 0;
++	slot->output_mismatch += payload_checked && !output_match ? 1 : 0;
++	if (payload_checked)
++	{
++		slot->last_src_hash = sample.src_hash;
++		slot->last_dst_pre_hash = sample.dst_pre_hash;
++		slot->last_dst_post_hash = dst_post_hash;
++	}
+ }
+ 
+ static void finish_es_spu_hle_shadow_sample(spu_thread* spu, const spu_mfc_cmd& cmd, const void* src, const void* dst, const es_spu_hle_shadow_sample& sample)
+@@
+ 	{
+ 		return;
+ 	}
++
++	if (!sample.payload_checked)
++	{
++		record_es_spu_hle_25cc_shadow_sample(spu, cmd, sample, 0, false, false, false);
++		return;
++	}
+ 
+ 	auto& probe = spu->es_gpu_probe;
+@@
+-	record_es_spu_hle_25cc_shadow_sample(spu, cmd, sample, dst_post_hash, dst_changed, output_match);
++	record_es_spu_hle_25cc_shadow_sample(spu, cmd, sample, dst_post_hash, dst_changed, output_match, true);
+ }
+ 
+ static bool try_es_spu_hle_shadow_guarded_skip(spu_thread* spu, const spu_mfc_cmd& cmd, const void* src, const void* dst, const es_spu_hle_shadow_sample& sample)
+ {
+-	if (!spu || !src || !dst || !sample.active || !is_es_spu_hle_skip_enabled() || g_cfg.core.mfc_debug)
++	if (!spu || !src || !dst || !sample.active || !sample.payload_checked || !is_es_spu_hle_skip_enabled() || g_cfg.core.mfc_debug)
+ 	{
+ 		return false;
+ 	}
+diff --git a/rpcs3/Emu/Cell/lv2/sys_spu.cpp b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
+--- a/rpcs3/Emu/Cell/lv2/sys_spu.cpp
++++ b/rpcs3/Emu/Cell/lv2/sys_spu.cpp
+@@
+ 		const auto get_verify_body_mode = []() -> const char*
+ 		{
+ 			const char* raw = ::getenv("RPCS3_ES_SPU_HLE_25CC_BODY");
+@@
+ 
+ 			return "verify";
+ 		}();
++
++		const auto get_verify_payload_mode = []() -> const char*
++		{
++			const char* raw = ::getenv("RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD");
++			if (!raw || !*raw)
++			{
++				return "full";
++			}
++
++			const std::string_view value{raw};
++			if (value == "counts" || value == "count" || value == "nohash" || value == "off")
++			{
++				return "counts";
++			}
++			if (value == "sampled" || value == "sample" || value == "sparse")
++			{
++				return "sampled";
++			}
++
++			return "full";
++		}();
+ 
+ 		const u64 contract_reject_total =
+ 			reject_title +
+@@
+-		sys_spu.notice("Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=\"BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0\" title=%s mode=%s verify_mode=verify-25cc-shadow body_mode=%s group_name=\"%s\" spu_name=\"%s\" entry=0x%x image_sig=0x%llx pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=%llu contract_bytes=%llu contract_get_hits=%llu contract_put_hits=%llu contract_reject_total=%llu reject_title=%llu reject_image_sig=%llu reject_pc=%llu reject_group=%llu reject_spu_name=%llu reject_cmd=%llu reject_list=%llu reject_tag=%llu reject_size=%llu reject_eah=%llu reject_eal_family=%llu reject_lsa_range=%llu reject_mfc_shuffle=%llu reject_accurate_dma=%llu reject_fast_mode=%llu output_mismatch=%llu desc_overflow=%llu last_src_hash=0x%llx last_dst_pre_hash=0x%llx last_dst_post_hash=0x%llx cause=0x%x status=0x%x",
++		sys_spu.notice("Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=\"BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0\" title=%s mode=%s verify_mode=verify-25cc-shadow body_mode=%s payload_mode=%s group_name=\"%s\" spu_name=\"%s\" entry=0x%x image_sig=0x%llx pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=%llu contract_bytes=%llu contract_get_hits=%llu contract_put_hits=%llu contract_reject_total=%llu reject_title=%llu reject_image_sig=%llu reject_pc=%llu reject_group=%llu reject_spu_name=%llu reject_cmd=%llu reject_list=%llu reject_tag=%llu reject_size=%llu reject_eah=%llu reject_eal_family=%llu reject_lsa_range=%llu reject_mfc_shuffle=%llu reject_accurate_dma=%llu reject_fast_mode=%llu output_mismatch=%llu desc_overflow=%llu last_src_hash=0x%llx last_dst_pre_hash=0x%llx last_dst_post_hash=0x%llx cause=0x%x status=0x%x",
+ 			Emu.GetTitleID(),
+ 			get_es_gpu_probe_mode_name(),
+ 			get_verify_body_mode,
++			get_verify_payload_mode,
+ 			group.name,
+ 			spu_name,

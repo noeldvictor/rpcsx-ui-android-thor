@@ -1,4 +1,11 @@
-﻿## 2026-07-24 19:20 ET - harness/parser payload-mode gate for 25cc route repair (no speed)
+## 2026-07-24 19:24 ET - upstream 25cc payload-mode patch artifact prepared (no speed)
+
+- Workflow/refiner context: refiner still blocks another `Verify25ccShadow` Windows route because the latest 25cc run produced non-field/black-overlay frames after clean loader-control proofs. Since harness/parser payload-mode gates now exist in this repo, the next concrete source step is the Windows upstream C++ payload-mode split.
+- Artifact: added `spu-contracts\BLUS30161\25cc-shadow-payload-mode-upstream.patch`, a reviewable patch for the sibling `..\rpcs3-upstream` checkout. It proposes `RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD=full|sampled|counts`, keeps existing full-payload behavior as the default, skips the 16 KiB pre/post hash + memcmp payload checks in counts mode, sparsely samples in sampled mode, preserves descriptor/family/count rows, and emits `payload_mode=` in the strict contract row.
+- Refiner/audit update: the unsafe-25cc branch now detects the patch artifact and points the next heartbeat at applying/building it before another Windows proof. `spu-contracts\BLUS30161\25cc-route-safety-audit.md` now links the patch and separates counts-mode route repair from full-mode promotion.
+- Safety: sibling `..\rpcs3-upstream` has unrelated dirty submodule state, so this round did not modify that checkout. The patch artifact is repo-local and committed with the ledger instead.
+- Classification: source-prep/tooling only. No emulator run, no binary rebuild, no FPS proof, no GPU migration credit, no fast path, and no speed increase.
+## 2026-07-24 19:20 ET - harness/parser payload-mode gate for 25cc route repair (no speed)
 
 - Workflow/refiner context: the 25cc route-safety audit identified payload hashing/memcmp as the remaining likely verifier perturbation after compact log volume was already fixed. This round prepared the repo-local harness and parser gates for an explicit 25cc shadow payload mode before touching fast/body/GPU paths.
 - Harness change: `tools\windows_rpcs3_lab.ps1` and `tools\eternal_sonata_speed_sprint.ps1` now accept `EternalSonataSpuHle25ccShadowPayload` with `Off|Full|Sampled|Counts` and pass it through `RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD`. The Windows run log records the selected 25cc shadow payload mode.
@@ -11593,6 +11600,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 

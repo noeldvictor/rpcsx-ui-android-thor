@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$RunRoot = "",
 
@@ -3124,6 +3124,7 @@ if ($latestHle451cPreserveBodyOffBattleTopslotLeftOnlyProcessExit) {
     Add-AntiPattern -List $antiPatterns -Name "hle-451c-preserve-body-off-battle-topslot-leftonly-exit" -Severity "blocker" -Evidence ("Newest preserve-body-off top-slot left-only diagnostic reached accepted field at {0}s, then RPCS3 exited after the left-only movement branch." -f $latestRun.Visual.FirstFieldSeconds) -Action "Do not fall back to the old non-top-slot no-post diagnostic. Top-slot no-post already stayed alive; shrink or repair the left-only movement branch before diagonal or preserve-body-on battle work."
 }
 
+$has25ccPayloadModePatch = Test-Path -LiteralPath (Join-Path $RepoRoot "spu-contracts\BLUS30161\25cc-shadow-payload-mode-upstream.patch") -PathType Leaf
 $nextAction = if ($currentUpstreamWindowsPromotionGateCleared) {
     "Current upstream all-core 240/240 has clean Path-to-Tenuto field/first-battle plus matching Options evidence at 400% gameplay speed. Do not rerun Windows CPU4 routes; next is one thermally gated Thor baseline after a safe temperature query."
 } elseif ($latestStateAwarePromptStuck) {
@@ -3399,7 +3400,7 @@ $nextAction = if ($currentUpstreamWindowsPromotionGateCleared) {
 } elseif ($latestCleanHle451cPreserveBodyField) {
     "Latest 0x451c preserve-body field smoke is clean. Keep it opt-in, do not add movement next, and prove title Options before first-battle or speed A/B claims."
 } elseif ($latestHle25ccVerifierRouteUnsafe) {
-    "Latest 0x25cc verifier route produced non-field/black-overlay frames after clean loader-control proofs. Do not re-prove loader-control or rerun 25cc as-is; inspect/patch the active 25cc verifier or harness for route-safe lower-overhead logging, or add an accepted-field early gate before any 25cc counter promotion."
+    $(if ($has25ccPayloadModePatch) { "Latest 0x25cc verifier route is still unsafe, and the payload-mode upstream patch artifact now exists. Apply/build that patch before any new 25cc Windows proof; counts/sampled mode is route repair only and parser promotion still requires payload_mode=full." } else { "Latest 0x25cc verifier route produced non-field/black-overlay frames after clean loader-control proofs. Do not re-prove loader-control or rerun 25cc as-is; inspect/patch the active 25cc verifier or harness for route-safe lower-overhead logging, or add an accepted-field early gate before any 25cc counter promotion." })
 } elseif ($latestCutsceneOrNonfield -and $blockFailedNextLoaderControl) {
     "Latest loader-control movement produced non-field/cutscene frames after a clean lower boundary; do not auto-rerun that movement. Add or repair route-state visual detection, shrink/change the pulse only after pre-movement field is proven, or switch to focused SPU kernel HLE/codegen/verifier analysis."
 } elseif ($latestCutsceneOrNonfield) {
@@ -3741,7 +3742,7 @@ $suggestedCommand = if ($currentUpstreamWindowsPromotionGateCleared) {
 } elseif ($latestCleanHle451cPreserveBodyField) {
     ".\tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene menu -Label hle-451c-preserve-body-options-proof -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataSpuHleVerify Verify -EternalSonataSpuHleSize16Body Off -EternalSonataSpuHle451cPreserveBody Verify -WindowsHostContentionGate ExternalFail -MaxSeconds 190 -ScreenshotEverySeconds 10 -ScreenshotStartSeconds 90 -ScreenshotMaxCount 8"
 } elseif ($latestHle25ccVerifierRouteUnsafe) {
-    ".\tools\summarize_eternal_sonata_25cc_route_safety.ps1"
+    $(if ($has25ccPayloadModePatch) { "# Apply/build next: git -C ..\rpcs3-upstream apply ..\rpcsx-ui-android\spu-contracts\BLUS30161\25cc-shadow-payload-mode-upstream.patch ; then rebuild Windows RPCS3 before counts-mode route repair." } else { ".\tools\summarize_eternal_sonata_25cc_route_safety.ps1" })
 } elseif ($latestCutsceneOrNonfield -and $blockFailedNextLoaderControl) {
     "# No automatic loader-control movement rerun: latest route produced cutscene/non-field frames after a clean lower boundary. Repair route-state detection, shrink/change the pulse after pre-movement field proof, or switch to SPU kernel HLE/codegen/verifier analysis."
 } elseif ($latestCutsceneOrNonfield) {
@@ -3893,5 +3894,3 @@ if (-not $NoWrite) {
     Write-Output ("Markdown: {0}" -f $OutPath)
     Write-Output ("JSON: {0}" -f $JsonPath)
 }
-
-

@@ -35,3 +35,10 @@
 - Emit a `payload_mode=` field in the strict contract row and teach the parser to reject promotion unless `payload_mode=full`.
 - In counts/sampled mode, keep descriptor GET/PUT/family/bytes/overflow counters but avoid or sparsely run the 16 KiB source/destination hashing and memcmp path.
 - Only after a counts/sampled 25cc run reaches clean field should a full-payload verifier rerun be attempted, followed by Options/menu and first battle before any body/codegen/Vulkan fast mode.
+
+## Patch artifact
+
+- Proposed upstream patch: `spu-contracts\BLUS30161\25cc-shadow-payload-mode-upstream.patch`
+- Intended target checkout: `..\rpcs3-upstream`
+- Apply/build gate: apply the patch to the sibling Windows upstream checkout, rebuild RPCS3, then run `Verify25ccShadow` with `EternalSonataSpuHle25ccShadowPayload Counts` for route repair only.
+- Promotion gate: rerun with `EternalSonataSpuHle25ccShadowPayload Full` and parse with `-RequiredPayloadMode Full` before field + Options/menu + first-battle evidence can count.
