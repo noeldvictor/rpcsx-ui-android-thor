@@ -1,3 +1,25 @@
+## 2026-07-24 17:05 ET - stable load-target gate reaches field triage; GPU probe still says SPU/HLE first (no speed)
+
+Command/run:
+- Ran Windows-only route proof from the stable load-target gate work: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loadlist-stable-path-gate-slotcross-field-visualgate ... -EternalSonataGpuProbe Profile -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "...gate_load_target_stable:60000;cross:80;..."`.
+- Run dir: `debug-captures\windows-lab\20260724-165853-cpu4-loadlist-stable-path-gate-slotcross-field-visualgate-windows`.
+
+Evidence:
+- Stable load-target gate passed on Path-to-Tenuto after 2 consecutive target frames: `screenshot-0101s-load-target-gate.png` at 101s and `screenshot-0103s-load-target-gate-2.png` at 103s, both `PATH_TO_TENUTO_PRESENT`, crop Y 190, Good diff 0.000, no lower-row cursor markers, no damaged-save markers.
+- Field visual gate status: `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0217s-post-load-complete-strongdismiss600-18s.png` at 217s, then 263s/308s/309s stayed field-like; no invalid screenshots after first field-like; required field-like by 260s passed.
+- Fatal/log gate: visual gate reported 0 fatal/crash signature lines. A broad manual pattern saw one false-positive `Show fatal error hints: false` config line, not an actionable fatal.
+- Host contention clean prelaunch/postlaunch/sample/postrun; at sample 309s host was CPU 41.8%, memory 39.7%, GPU-engine sum 29.3%, no competing emulators.
+- GPU probe: 2,641 records, 3,441.20 MB observed DMA, offload fit mix `spu-kernel-hle=1614` and `too-small=1027`; RSX-local traffic records 0, RSX resource profile records 0, promoted CPU/SPU-to-GPU replacement 0.
+- Hot PCs remain `0x451c` (1,877 records, 2,216.04 MB, TCX_CellSpursKernelGroup) and `0x25cc` (764 records, 1,225.17 MB, CellSpursKernelGroup); top 0x451c row maxed at 12.23 MB total DMA with 16 KB max DMA command.
+- Reservation-loop verifier rows were 0 because verifier mode was off; lane-join rows were 3 raw/empty, PUTLLC16 analyzer had 40 records and 7 detected PUTLLC16 patterns but no pair verify rows.
+
+Classification:
+- Route/harness progress: yes. The stable target gate no longer stops at a target-only proof; it now carries into field-like triage on the same route shape.
+- Speed increase: no / 0% proven. This did not include Options/menu plus first-battle A/B proof, and GPU scoreboard shows no new RSX-local or CPU/SPU-to-GPU replacement work.
+- CPU-bottleneck relief: not yet; the run strengthens the evidence that the practical acceleration lane is still verified SPU kernel/HLE/reduced-loop work around 0x451c and 0x25cc, not blind GPU offload.
+
+Next narrow hypothesis:
+- Use this now-field-valid route as the base for either (1) Options/menu plus first-battle A/B proof at 200% before any speed claim, or (2) verify-only SPU contract/HLE instrumentation for 0x451c and 0x25cc with live verifier rows enabled, because current GPU probe evidence has zero RSX-local replacement candidates.
 # 2026-07-24 15:40 ET - stable two-frame Path-to-Tenuto load-target gate added and target-proved (no speed)
 
 - User continuation: continue PS3 Eternal Sonata speed sprint after the immediate-gate nondeterminism finding.
