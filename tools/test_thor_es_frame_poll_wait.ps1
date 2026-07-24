@@ -8,6 +8,7 @@ $mainTimerPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/s
 $mainRsxHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/RSXThread.h"
 $mainRsxSourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/RSXThread.cpp"
 $mainPpuHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.h"
+$mainPpuSourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp"
 $mainRsxMethodsPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/rsx_methods.cpp"
 $upstreamTimerPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/lv2/sys_timer.cpp"
 $upstreamRsxHeaderPath = Join-Path $upstreamRoot "rpcs3/Emu/RSX/RSXThread.h"
@@ -21,6 +22,7 @@ $requiredPaths = @(
     $mainRsxHeaderPath,
     $mainRsxSourcePath,
     $mainPpuHeaderPath,
+    $mainPpuSourcePath,
     $mainRsxMethodsPath,
     $upstreamTimerPath,
     $upstreamRsxHeaderPath,
@@ -40,6 +42,7 @@ $mainTimer = Get-Content -LiteralPath $mainTimerPath -Raw
 $mainRsxHeader = Get-Content -LiteralPath $mainRsxHeaderPath -Raw
 $mainRsxSource = Get-Content -LiteralPath $mainRsxSourcePath -Raw
 $mainPpuHeader = Get-Content -LiteralPath $mainPpuHeaderPath -Raw
+$mainPpuSource = Get-Content -LiteralPath $mainPpuSourcePath -Raw
 $mainRsxMethods = Get-Content -LiteralPath $mainRsxMethodsPath -Raw
 $upstreamTimer = Get-Content -LiteralPath $upstreamTimerPath -Raw
 $upstreamRsxHeader = Get-Content -LiteralPath $upstreamRsxHeaderPath -Raw
@@ -49,7 +52,7 @@ $labSource = Get-Content -LiteralPath $labPath -Raw
 $sprintSource = Get-Content -LiteralPath $sprintPath -Raw
 
 foreach ($timerContract in @(
-    'Emu.GetTitleID() != "BLUS30161"',
+    '!ppu.is_thor_es_title',
     'ppu.id != 0x01000000',
     'ppu.cia != 0x002a8300',
     'sleep_time != 100',
@@ -77,10 +80,38 @@ foreach ($timerContract in @(
     if (-not $mainTimer.Contains($timerContract)) {
         throw "Android frame-poll wait is missing a narrow gate or fallback: $timerContract"
     }
-    if ($timerContract -notmatch 'vblank_waiter_registered' -and
+    if ($timerContract -notmatch 'vblank_waiter_registered|is_thor_es_title' -and
         -not $upstreamTimer.Contains($timerContract)) {
         throw "Windows frame-poll wait is missing a narrow gate or fallback: $timerContract"
     }
+}
+
+if (-not $upstreamTimer.Contains('Emu.GetTitleID() != "BLUS30161"')) {
+    throw 'Windows frame-poll wait lost its exact title gate.'
+}
+
+foreach ($titleCacheContract in @(
+    'const bool is_thor_es_title;',
+    'is_thor_es_title(Emu.GetTitleID() == "BLUS30161")'
+)) {
+    if (-not $mainPpuHeader.Contains($titleCacheContract) -and
+        -not $mainPpuSource.Contains($titleCacheContract)) {
+        throw "Android PPU-lifetime title cache is missing: $titleCacheContract"
+    }
+}
+
+$titleCacheInitializers = [regex]::Matches(
+    $mainPpuSource,
+    'is_thor_es_title\(Emu[.]GetTitleID\(\) == "BLUS30161"\)')
+if ($titleCacheInitializers.Count -ne 2) {
+    throw "Both normal and savestate PPU construction must initialize the immutable title gate; found $($titleCacheInitializers.Count)."
+}
+if ($mainTimer.Contains('Emu.GetTitleID() != "BLUS30161"')) {
+    throw 'Android frame-poll hot path reintroduced a per-call title string comparison.'
+}
+$titleLoads = [regex]::Matches($mainTimer, '!ppu[.]is_thor_es_title')
+if ($titleLoads.Count -ne 2) {
+    throw "Android frame-poll wrapper and fallback must both use the PPU-lifetime title gate; found $($titleLoads.Count)."
 }
 
 foreach ($registrationStoreContract in @(

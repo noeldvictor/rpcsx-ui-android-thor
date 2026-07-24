@@ -2346,3 +2346,20 @@ Put dated run details in `debug-experiments/`, not here.
   contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
   speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-frame-wait-relaxed-setting-caches.md`.
+- Host-only Android Eternal Sonata frame-poll title gating is now immutable
+  for each PPU object's lifetime. Both normal and savestate constructors do
+  the exact `BLUS30161` string comparison once; the hot timer wrapper and
+  fallback each read one byte from the PPU instead of re-reading the emulator
+  title string. This cannot leak across games because every emulation creates
+  new PPU objects, and an unavailable title fails closed. Exact ARM64 replaces
+  both 23-instruction string blocks with three-instruction byte gates, removes
+  all title string words from `sys_timer_usleep`, and shrinks it
+  `0x590 -> 0x4d4` (188 bytes / 13.2%). Saved clean title/battle/Options routes
+  imply at least 3,465,560 linked title-gate instruction executions removed.
+  Exact successor is APK `D65C474C...F844C3EA` / `72,837,616` bytes, merged
+  core `2A61C4EA...A69E7DDD` / `1,304,324,952` bytes, and packaged core
+  `405A08CA...A9CE3646` / `62,989,080` bytes. Native/APK builds, exact
+  codegen, artifact identity, and all `70/70` host contracts pass. Thor was
+  not contacted. Classify as host-verified `stackable-cpu-pressure`, not
+  measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-frame-wait-ppu-title-cache.md`.

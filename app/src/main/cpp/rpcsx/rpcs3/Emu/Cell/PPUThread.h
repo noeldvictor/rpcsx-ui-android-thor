@@ -229,6 +229,7 @@ public:
 	const char* current_module{};   // Current module name, for savestates.
 
 	const bool is_interrupt_thread; // True for interrupts-handler threads
+	const bool is_thor_es_title;    // Immutable title gate for Android hot paths
 
 	// Thread name
 	atomic_ptr<std::string> ppu_tname;

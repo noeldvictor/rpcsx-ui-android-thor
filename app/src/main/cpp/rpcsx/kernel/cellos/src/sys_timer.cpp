@@ -447,7 +447,7 @@ try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu) {
 
 bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
-      sleep_time != 100 || Emu.GetTitleID() != "BLUS30161") {
+      sleep_time != 100 || !ppu.is_thor_es_title) {
     return false;
   }
 
@@ -466,7 +466,7 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
 void observe_thor_es_frame_poll_fallback(const ppu_thread &ppu,
                                          u64 sleep_time) {
   if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
-      sleep_time != 100 || Emu.GetTitleID() != "BLUS30161") {
+      sleep_time != 100 || !ppu.is_thor_es_title) {
     return;
   }
 
