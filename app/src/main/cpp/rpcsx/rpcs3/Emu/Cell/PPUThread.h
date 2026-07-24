@@ -39,6 +39,14 @@ enum class ppu_join_status : u32
 	max = 4, // Values above it indicate PPU id of joining thread
 };
 
+enum class thor_es_frame_poll_wait_mode : u8
+{
+	uninitialized,
+	off,
+	diagnostic,
+	fast,
+};
+
 enum ppu_thread_status : u32
 {
 	PPU_THREAD_STATUS_IDLE,
@@ -229,7 +237,7 @@ public:
 	const char* current_module{};   // Current module name, for savestates.
 
 	const bool is_interrupt_thread; // True for interrupts-handler threads
-	const bool is_thor_es_title;    // Immutable title gate for Android hot paths
+	thor_es_frame_poll_wait_mode thor_es_frame_poll_mode; // PPU-lifetime eligibility and immutable process mode
 
 	// Thread name
 	atomic_ptr<std::string> ppu_tname;

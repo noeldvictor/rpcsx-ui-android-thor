@@ -57,13 +57,6 @@ struct thor_es_frame_poll_wait_state {
 
 thor_es_frame_poll_wait_state g_thor_es_frame_poll_wait_state;
 
-enum class thor_es_frame_poll_wait_mode : u8 {
-  uninitialized,
-  off,
-  diagnostic,
-  fast,
-};
-
 enum class thor_es_frame_poll_wait_result : u8 {
   not_candidate,
   normal_sleep_fast,
@@ -459,14 +452,18 @@ try_thor_es_frame_poll_wait_diagnostic(ppu_thread &ppu) {
 
 thor_es_frame_poll_wait_result
 try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
-  if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300 ||
-      sleep_time != 100 || !ppu.is_thor_es_title) {
+  auto mode = ppu.thor_es_frame_poll_mode;
+  if (mode == thor_es_frame_poll_wait_mode::off ||
+      ppu.cia != 0x002a8300 || sleep_time != 100) {
     return thor_es_frame_poll_wait_result::not_candidate;
   }
 
-  const auto mode = get_thor_es_frame_poll_wait_mode();
-  if (mode == thor_es_frame_poll_wait_mode::off) {
-    return thor_es_frame_poll_wait_result::not_candidate;
+  if (mode == thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]] {
+    mode = get_thor_es_frame_poll_wait_mode();
+    ppu.thor_es_frame_poll_mode = mode;
+    if (mode == thor_es_frame_poll_wait_mode::off) {
+      return thor_es_frame_poll_wait_result::not_candidate;
+    }
   }
 
   if (mode == thor_es_frame_poll_wait_mode::fast) {

@@ -2380,3 +2380,19 @@ Put dated run details in `debug-experiments/`, not here.
   host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
   Ledger:
   `debug-experiments/20260723-thor-frame-wait-result-forwarding.md`.
+- Host-only Android Eternal Sonata frame-poll main-PPU, title, and immutable
+  process-mode classification now collapses into one PPU-lifetime mode byte.
+  Only main PPU `0x01000000` for `BLUS30161` starts unresolved; the first exact
+  CIA/100 us candidate stores the already immutable process mode, while every
+  other PPU/title fails closed as `off`. Exact linked ARM64 reduces a
+  steady-state `Fast` call from 21 classification instructions to 13. Saved
+  title/battle/Options routes therefore imply 1,386,224 gate instructions
+  removed. `sys_timer_usleep` grows `0x494 -> 0x498` solely for the cold store,
+  so this is a dynamic hot-path win rather than a static-size win. Exact
+  successor is APK `6F57A84A...EC5C15B2` / `72,837,024` bytes, merged core
+  `6C9DA0D5...EC5F53F1` / `1,304,324,744` bytes, and packaged core
+  `DD392B89...209531B1` / `62,989,160` bytes. Native/APK builds, exact
+  predecessor/successor codegen, artifact identity, and all `70/70` host
+  contracts pass. Thor was not contacted. Classify as host-verified
+  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-frame-wait-ppu-mode-cache.md`.

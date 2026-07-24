@@ -3721,12 +3721,19 @@ void ppu_thread::exec_task()
 	}
 }
 
+static thor_es_frame_poll_wait_mode get_initial_thor_es_frame_poll_wait_mode(u32 id)
+{
+	return id == 0x01000000 && Emu.GetTitleID() == "BLUS30161"
+		? thor_es_frame_poll_wait_mode::uninitialized
+		: thor_es_frame_poll_wait_mode::off;
+}
+
 ppu_thread::~ppu_thread()
 {
 }
 
 ppu_thread::ppu_thread(const ppu_thread_params& param, std::string_view name, u32 _prio, int detached)
-	: cpu_thread(idm::last_id()), stack_size(param.stack_size), stack_addr(param.stack_addr), joiner(detached != 0 ? ppu_join_status::detached : ppu_join_status::joinable), entry_func(param.entry), start_time(get_guest_system_time()), is_interrupt_thread(detached < 0), is_thor_es_title(Emu.GetTitleID() == "BLUS30161"), ppu_tname(make_single<std::string>(name))
+	: cpu_thread(idm::last_id()), stack_size(param.stack_size), stack_addr(param.stack_addr), joiner(detached != 0 ? ppu_join_status::detached : ppu_join_status::joinable), entry_func(param.entry), start_time(get_guest_system_time()), is_interrupt_thread(detached < 0), thor_es_frame_poll_mode(get_initial_thor_es_frame_poll_wait_mode(id)), ppu_tname(make_single<std::string>(name))
 {
 	prio.raw().prio = _prio;
 
@@ -3823,7 +3830,7 @@ struct save_lv2_tag
 ppu_thread::ppu_thread(utils::serial& ar)
 	: cpu_thread(idm::last_id()) // last_id() is showed to constructor on serialization
 	  ,
-	  stack_size(ar), stack_addr(ar), joiner(ar.pop<ppu_join_status>()), entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar)), is_interrupt_thread(ar), is_thor_es_title(Emu.GetTitleID() == "BLUS30161")
+	  stack_size(ar), stack_addr(ar), joiner(ar.pop<ppu_join_status>()), entry_func(std::bit_cast<ppu_func_opd_t, u64>(ar)), is_interrupt_thread(ar), thor_es_frame_poll_mode(get_initial_thor_es_frame_poll_wait_mode(id))
 {
 	[[maybe_unused]] const s32 version = GET_SERIALIZATION_VERSION(ppu);
 

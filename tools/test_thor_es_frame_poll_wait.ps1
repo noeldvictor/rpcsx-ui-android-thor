@@ -52,8 +52,7 @@ $labSource = Get-Content -LiteralPath $labPath -Raw
 $sprintSource = Get-Content -LiteralPath $sprintPath -Raw
 
 foreach ($timerContract in @(
-    '!ppu.is_thor_es_title',
-    'ppu.id != 0x01000000',
+    'ppu.thor_es_frame_poll_mode',
     'ppu.cia != 0x002a8300',
     'sleep_time != 100',
     'const u32 object_addr = static_cast<u32>(ppu.gpr[28])',
@@ -80,7 +79,7 @@ foreach ($timerContract in @(
     if (-not $mainTimer.Contains($timerContract)) {
         throw "Android frame-poll wait is missing a narrow gate or fallback: $timerContract"
     }
-    if ($timerContract -notmatch 'vblank_waiter_registered|is_thor_es_title' -and
+    if ($timerContract -notmatch 'vblank_waiter_registered|thor_es_frame_poll_mode' -and
         -not $upstreamTimer.Contains($timerContract)) {
         throw "Windows frame-poll wait is missing a narrow gate or fallback: $timerContract"
     }
@@ -90,28 +89,35 @@ if (-not $upstreamTimer.Contains('Emu.GetTitleID() != "BLUS30161"')) {
     throw 'Windows frame-poll wait lost its exact title gate.'
 }
 
-foreach ($titleCacheContract in @(
-    'const bool is_thor_es_title;',
-    'is_thor_es_title(Emu.GetTitleID() == "BLUS30161")'
+foreach ($modeCacheContract in @(
+    'enum class thor_es_frame_poll_wait_mode : u8',
+    'thor_es_frame_poll_wait_mode thor_es_frame_poll_mode;',
+    'static thor_es_frame_poll_wait_mode get_initial_thor_es_frame_poll_wait_mode(u32 id)',
+    'id == 0x01000000 && Emu.GetTitleID() == "BLUS30161"',
+    'thor_es_frame_poll_mode(get_initial_thor_es_frame_poll_wait_mode(id))'
 )) {
-    if (-not $mainPpuHeader.Contains($titleCacheContract) -and
-        -not $mainPpuSource.Contains($titleCacheContract)) {
-        throw "Android PPU-lifetime title cache is missing: $titleCacheContract"
+    if (-not $mainPpuHeader.Contains($modeCacheContract) -and
+        -not $mainPpuSource.Contains($modeCacheContract)) {
+        throw "Android PPU-lifetime frame-wait mode cache is missing: $modeCacheContract"
     }
 }
 
-$titleCacheInitializers = [regex]::Matches(
+$modeCacheInitializers = [regex]::Matches(
     $mainPpuSource,
-    'is_thor_es_title\(Emu[.]GetTitleID\(\) == "BLUS30161"\)')
-if ($titleCacheInitializers.Count -ne 2) {
-    throw "Both normal and savestate PPU construction must initialize the immutable title gate; found $($titleCacheInitializers.Count)."
+    'thor_es_frame_poll_mode\(get_initial_thor_es_frame_poll_wait_mode\(id\)\)')
+if ($modeCacheInitializers.Count -ne 2) {
+    throw "Both normal and savestate PPU construction must initialize the frame-wait mode cache; found $($modeCacheInitializers.Count)."
 }
 if ($mainTimer.Contains('Emu.GetTitleID() != "BLUS30161"')) {
     throw 'Android frame-poll hot path reintroduced a per-call title string comparison.'
 }
-$titleLoads = [regex]::Matches($mainTimer, '!ppu[.]is_thor_es_title')
-if ($titleLoads.Count -ne 1) {
-    throw "Android frame-poll wrapper must use exactly one PPU-lifetime title gate; found $($titleLoads.Count)."
+if ($mainTimer.Contains('ppu.id != 0x01000000') -or
+    $mainTimer.Contains('is_thor_es_title')) {
+    throw 'Android frame-poll wrapper reintroduced a separate main-PPU or title gate.'
+}
+$modeCacheAccesses = [regex]::Matches($mainTimer, 'ppu[.]thor_es_frame_poll_mode')
+if ($modeCacheAccesses.Count -ne 2) {
+    throw "Android frame-poll wrapper must load and cold-store its PPU-lifetime mode exactly once each; found $($modeCacheAccesses.Count) accesses."
 }
 
 foreach ($registrationStoreContract in @(
@@ -175,7 +181,6 @@ foreach ($mainContract in @(
     'constexpr u64 thor_es_frame_poll_wait_max_us = 1000',
     'constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500',
     'constexpr u64 thor_es_frame_poll_log_probe_mask = 1023',
-    'enum class thor_es_frame_poll_wait_mode : u8',
     'enum class thor_es_frame_poll_wait_result : u8',
     'normal_sleep_fast',
     'normal_sleep_diagnostic',
@@ -302,14 +307,24 @@ foreach ($guardedStatic in @(
 $waitWrapperStart = $waitFunction.IndexOf(
     'try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time)')
 $waitModeLoad = $waitFunction.IndexOf(
-    'const auto mode = get_thor_es_frame_poll_wait_mode()',
+    'auto mode = ppu.thor_es_frame_poll_mode',
     $waitWrapperStart)
-$waitNumericGate = $waitFunction.IndexOf(
-    'if (ppu.id != 0x01000000 || ppu.cia != 0x002a8300',
+$waitCandidateGate = $waitFunction.IndexOf(
+    'if (mode == thor_es_frame_poll_wait_mode::off ||',
     $waitWrapperStart)
-if ($waitWrapperStart -lt 0 -or $waitNumericGate -lt $waitWrapperStart -or
-    $waitModeLoad -le $waitNumericGate) {
-    throw 'Android frame-poll wrapper must reject cheap numeric mismatches before reading cached settings.'
+$waitColdGate = $waitFunction.IndexOf(
+    'if (mode == thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]]',
+    $waitWrapperStart)
+$waitModeResolve = $waitFunction.IndexOf(
+    'mode = get_thor_es_frame_poll_wait_mode()',
+    $waitWrapperStart)
+$waitModeStore = $waitFunction.IndexOf(
+    'ppu.thor_es_frame_poll_mode = mode',
+    $waitWrapperStart)
+if ($waitWrapperStart -lt 0 -or $waitModeLoad -lt $waitWrapperStart -or
+    $waitCandidateGate -le $waitModeLoad -or $waitColdGate -le $waitCandidateGate -or
+    $waitModeResolve -le $waitColdGate -or $waitModeStore -le $waitModeResolve) {
+    throw 'Android frame-poll wrapper must load its PPU cache, reject mismatches, then resolve and store settings only on the cold path.'
 }
 
 $fallbackFunctionEnd = $mainTimer.IndexOf('} // namespace', $fallbackFunctionStart)
@@ -322,7 +337,7 @@ $fallbackFunction = $mainTimer.Substring(
 foreach ($redundantFallbackGate in @(
     'ppu.cia',
     'sleep_time',
-    '!ppu.is_thor_es_title',
+    'ppu.thor_es_frame_poll_mode',
     'get_thor_es_frame_poll_wait_mode()'
 )) {
     if ($fallbackFunction.Contains($redundantFallbackGate)) {
