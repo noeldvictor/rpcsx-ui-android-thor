@@ -1,3 +1,24 @@
+## 2026-07-24 17:54 ET - first post-field movement bisection stays clean with 25cc verifier (no speed)
+
+Classification: route-tooling/post-field-movement-bisection/valid-field-triage/spu-contract-verifier-clean/no-speed.
+
+Evidence:
+- Ran `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-stable-field-firstmove-25cc-contract-bisect -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate CleanAfterField` with the stable loader-control route plus only the first failed-battle movement segment: `combo:ls_left+ls_down:700`, then 60 seconds of field hold.
+- Run dir: `debug-captures\windows-lab\20260724-175010-cpu4-stable-field-firstmove-25cc-contract-bisect-windows`.
+- Title-menu gate passed at 48s. Stable load target gate confirmed two consecutive `PATH_TO_TENUTO_PRESENT` frames at 66s and 68s. Load-complete gate passed at 84s. Field gate passed at 86s.
+- The first movement segment completed and screenshot `screenshot-0089s-after-firstmove-leftdown700.png` remained field-like. Field-like screenshots persisted through `screenshot-0119s-firstmove-hold-30s.png`, `screenshot-0150s-firstmove-hold-60s.png`, and late screenshots through 160s. Invalid screenshots after first field-like = 0.
+- Fatal scan found 0 targeted fatal/access/Vulkan/assertion/verifier-mismatch hits, including no recurrence of guest `0x002aedd0` and no `VM: Access violation`.
+- Strict contract parser was refreshed into `spu-contracts\BLUS30161\latest-verify-logrow-results.*`: rows=80, accepted_rows=80, rejected_rows=0, total_contract_hits=186, total_contract_bytes=3047424, total_contract_rejects=2607, total_output_mismatch=0, total_desc_overflow=0, strict_gate_pass=true, promotion_ready=false.
+- Host contention summary was clean across 5 snapshots; this still is not a timing/FPS proof because it is a route bisection with body mode disabled.
+- GPU probe summary again reported no `Eternal Sonata GPU/DMA candidate probe` records and no RSX/offload evidence under this verifier mode; PUTLLC16 analyzer still found 7 detected patterns and 11 breakage rows.
+
+Result:
+- Advances CPU/SPU bottleneck relief: yes, as route/proof infrastructure. The 25cc/9e4000 contract verifier survives stable field entry plus the first post-field movement segment and 60-second hold with clean rows and no fatal.
+- Advances GPU-feed/offload: no. This remains CPU/SPU HLE/codegen preparation; broad GPU offload stays parked.
+- Speed increase: no. Body mode was disabled and there is still no Options/menu + first-battle A/B proof.
+
+Next narrow hypothesis:
+- Add exactly the second movement segment from the failed battle macro (`ls_left:900` after the first `ls_left+ls_down:700`) and hold/scan before `gate_first_battle_prompt`. If that stays clean, the fault may be tied to the prompt-gate approach/timing; if it faults, replace the second segment with a safer route before any 25cc body/codegen promotion.
 ## 2026-07-24 17:48 ET - no-movement loader/control isolates first-battle fault to post-field route (no speed)
 
 Classification: route-tooling/valid-field-triage/spu-contract-verifier-clean/no-movement-boundary-proof/no-speed.
@@ -11353,6 +11374,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
