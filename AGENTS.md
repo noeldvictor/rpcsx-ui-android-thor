@@ -2189,3 +2189,17 @@ Put dated run details in `debug-experiments/`, not here.
   `70/70` host contracts pass. Thor was not contacted. Classify as host-
   verified `stackable-cpu-pressure`, not measured speed or thermal credit.
   Ledger: `debug-experiments/20260723-thor-rsx-method-command-release-store.md`.
+- Host-only Android PPU command notification clearing now uses a release
+  store after each wait; desktop retains the sequentially consistent clear.
+  The flag carries no payload, every producer publishes the authoritative
+  queue head before flag/wake, and `cmd_wait` immediately reacquires that head
+  after clearing. Exact ARM64 changes `ppu_thread::cpu_task+0xe0` at
+  `0x353cf40` from `SWPAL wzr` to `STLR wzr`; the consuming command-head
+  `SWPAL` at `0x353cf64` remains unchanged. Exact successor is APK
+  `98D15FF3...0AD315D` / `72,838,304` bytes, merged core
+  `5EC8827E...0BD1C80` / `1,304,308,184` bytes, and packaged core
+  `286FD0EB...1CCA51D` / `62,988,904` bytes. ARM64 native/APK builds, focused
+  race/order/codegen proof, artifact gate, and all `70/70` host contracts pass.
+  Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
+  not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-ppu-command-notify-clear-release-store.md`.

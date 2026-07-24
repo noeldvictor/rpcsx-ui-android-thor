@@ -21,6 +21,9 @@ foreach ($fragment in @(
     '#ifdef __ANDROID__',
     'slot.release(command)',
     'slot = command',
+    'clear_ppu_command_ready(atomic_t<u32>& notify) noexcept',
+    'notify.release(0)',
+    'notify = 0',
     'cmd_queue[pos + i].raw() = list.begin()[i]',
     'cmd_queue[cmd_queue.peek()].exchange(cmd64{})'
 )) {
@@ -55,14 +58,33 @@ if (-not $listPublish.Success) {
     throw 'cmd_list does not publish its command head after the relaxed tail.'
 }
 
+$clearCalls = [regex]::Matches(
+    $mainSource,
+    'clear_ppu_command_ready\(cmd_notify\)')
+if ($clearCalls.Count -ne 1) {
+    throw "Android must clear exactly one PPU command-ready flag after waiting; found $($clearCalls.Count)."
+}
+
+$waitClear = [regex]::Match(
+    $mainSource,
+    '(?s)cmd64 ppu_thread::cmd_wait\(\).*?cmd_queue\[cmd_queue\.peek\(\)\]\.exchange\(cmd64\{\}\).*?thread_ctrl::wait_on\(cmd_notify, 0\);.*?clear_ppu_command_ready\(cmd_notify\);')
+if (-not $waitClear.Success) {
+    throw 'cmd_wait does not acquire the queue head before wait and one-way flag clear.'
+}
+
+if ($mainSource.Contains('cmd_notify = 0;')) {
+    throw 'Android PPU command wait reintroduced a sequentially consistent notification clear.'
+}
+
 foreach ($fragment in @(
     'cmd_queue[pos] = cmd;',
     'cmd_queue[pos] = *list.begin();',
-    'cmd_queue[cmd_queue.peek()].exchange(cmd64{})'
+    'cmd_queue[cmd_queue.peek()].exchange(cmd64{})',
+    'cmd_notify = 0;'
 )) {
     if (-not $upstreamSource.Contains($fragment)) {
         throw "Upstream PPU command publication baseline changed: $fragment"
     }
 }
 
-Write-Host "Thor Android PPU command publication contract passed."
+Write-Host "Thor Android PPU command publication/clear contract passed."

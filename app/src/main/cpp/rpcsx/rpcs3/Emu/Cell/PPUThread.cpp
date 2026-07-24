@@ -4081,6 +4081,17 @@ static inline void publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command
 #endif
 }
 
+static inline void clear_ppu_command_ready(atomic_t<u32>& notify) noexcept
+{
+#ifdef __ANDROID__
+	// The queue head carries the payload's acquire/release contract. Clearing
+	// this level flag publishes no data and does not need the old flag value.
+	notify.release(0);
+#else
+	notify = 0;
+#endif
+}
+
 void ppu_thread::cmd_push(cmd64 cmd)
 {
 	// Reserve queue space
@@ -4135,7 +4146,7 @@ cmd64 ppu_thread::cmd_wait()
 		}
 
 		thread_ctrl::wait_on(cmd_notify, 0);
-		cmd_notify = 0;
+		clear_ppu_command_ready(cmd_notify);
 	}
 }
 
