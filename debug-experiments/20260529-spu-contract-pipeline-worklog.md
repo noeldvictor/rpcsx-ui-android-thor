@@ -1,3 +1,27 @@
+## 2026-07-24 17:21 ET - stable field route with reservation verifier proves lane 1 dirty, lanes 2/3 clean (no speed)
+
+Command/run:
+- Refiner `2026-07-24T17:14:15-04:00` still suggested the old one-step route, but the newest ledger evidence already counterproved that route with a black overlay. This step followed the stronger current evidence instead: rebase verifier collection onto the stable two-frame load-target route that already reached field.
+- Ran Windows-only stable route with live reservation verification: `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loadlist-stable-path-gate-field-resloop-verify -WindowsInputBackend PadApi -WindowsGameScreen 1 -WindowsCpuAffinityMask 0x0F -WindowsFrameLimit 240 -WindowsVblankRate 240 -EternalSonataGpuProbe Profile -EternalSonataReservationLoop Verify -WindowsVisualGate CleanAfterField -WindowsVisualGateFieldSeconds 260 -InputMacro "...gate_load_target_stable:60000;cross:80;..."`.
+- Run dir: `debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`.
+
+Evidence:
+- Stable load-target gate passed after 2 consecutive `PATH_TO_TENUTO_PRESENT` frames: `screenshot-0101s-load-target-gate.png` at `101s` and `screenshot-0103s-load-target-gate-2.png` at `103s`, both crop Y `190`, Good diff `0.000`, no lower-row cursor markers, no damaged-save markers.
+- Visual gate status: `FIELD_LIKE_PRESENT`; first field-like screenshot `screenshot-0217s-post-load-complete-strongdismiss600-18s-resverif.png` at `217s` (`2.50 MB`), with later field-like frames at `262s` and `308s`; no invalid screenshots after first field-like; required field-like by `260s` passed.
+- Fatal/log verification: targeted scan found `0` real `VM: Access violation`, `VK_ERROR`, device-lost, unhandled, assertion, verification-failed, output-mismatch, dynamic-fail, or unknown STOP lines in `RPCS3.log`, stdout, or stderr.
+- Host contention clean across prelaunch/postlaunch/sample/postrun. Sample at `308s`: CPU `32.4%`, memory `38.2%`, GPU-engine sum `15.2%`, no competing emulators.
+- GPU probe summary was deferred because `RPCS3.log` was `137 MB`, so a narrow extraction was used: `2,474` GPU candidate rows, `3,261.30 MB` total DMA, `0` RSX-local bytes. Hot PCs were `0x451c` (`1,606` rows) and `0x25cc` (`868` rows).
+- Reservation-loop verifier extraction on the valid-field route found `6,335` verify-lane rows, `2,633` command-probe rows, and `71,521` command-PC rows. Lane `2` was clean (`2,508` rows, `0` bad) and lane `3` was clean (`1,194` rows, `0` bad). Lane `1` was not clean (`2,633` rows, `855` bad; `failure=1` in `467` rows and `unexpected=1/read_unexpected=1` in `442` rows). Lane `0` had no rows.
+- PUTLLC16 analyzer evidence stayed stable: `7` detected PUTLLC16 patterns and `11` pattern-breakage rows.
+
+Classification:
+- `valid-field-triage`, `reservation-loop-counterproof`, `stackable-cpu-pressure`, `not-speed`.
+- Speed increase remains `0%` proven. This is not an Options/menu proof, first-battle proof, 200% proof, GPU migration credit, or Windows micro-win.
+- Acceleration reading: a broad reservation-loop fast path is unsafe because lane `1` fails even on the stable field-valid route. Lanes `2` and `3` are the only verifier-clean candidates so far, and they still require narrow title/signature/PC gating plus Options/menu/first-battle proof before any fast mode.
+
+Next narrow hypothesis:
+- Build the next verify-only contract around the clean lane `2`/`3` reservation-loop shapes while explicitly excluding or preserving lane `1`. For `0x451c`/`0x25cc`, keep GPU offload parked until a scout shows RSX-local/resource overlap; current valid-field evidence still shows `0` RSX-local bytes.
+- Before a speed claim, run the stable route through Options/menu and first-battle A/B at 200%; before an HLE claim, collect lane-specific output/hash verification that proves lane `2`/`3` replacement behavior without touching lane `1`.
 ## 2026-07-24 17:12 ET - refiner one-step route black-overlays; reservation lane 1 not clean (no speed)
 
 Command/run:
