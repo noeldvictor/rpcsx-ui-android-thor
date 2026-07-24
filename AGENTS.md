@@ -2526,3 +2526,17 @@ Put dated run details in `debug-experiments/`, not here.
   host-verified `stackable-cpu-pressure`, not measured speed or thermal
   credit. Ledger:
   `debug-experiments/20260724-thor-spu-accurate-reservations-relaxed-reads.md`.
+- Host-only Android MFC scheduling now uses relaxed reads for four shuffling-
+  limit, one timeout, and one in-steps setting observation; desktop retains
+  ordered reads and MFC queue/barrier/fence/interrupt/DMA ordering remains.
+  The default zero-shuffling path now branches around the previously unused
+  timeout atomic load in every `cpu_work()` pass. Exact ARM64 removes six
+  acquire loads, retains all 50 non-target acquires, and shrinks the affected
+  symbols 20 bytes. Exact successor is APK `093E077A...88396235` /
+  `72,836,504` bytes, merged core `B6183DB2...7FF8E016` /
+  `1,304,323,752` bytes, and packaged core `7EE500BD...1032CDAE` /
+  `62,988,744` bytes. Native/APK builds, exact codegen, artifact identity, and
+  all `76/76` host contracts pass. Thor was not contacted. No exact Android
+  execution count exists; classify as host-verified `stackable-cpu-pressure`,
+  not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-spu-mfc-scheduler-relaxed-reads.md`.

@@ -141,6 +141,33 @@ static FORCE_INLINE bool get_spu_accurate_reservations_for_runtime() noexcept
 #endif
 }
 
+static FORCE_INLINE u32 get_mfc_transfers_shuffling_for_runtime() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.mfc_transfers_shuffling.observe();
+#else
+	return g_cfg.core.mfc_transfers_shuffling.get();
+#endif
+}
+
+static FORCE_INLINE u32 get_mfc_transfers_timeout_for_runtime() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.mfc_transfers_timeout.observe();
+#else
+	return g_cfg.core.mfc_transfers_timeout.get();
+#endif
+}
+
+static FORCE_INLINE bool get_mfc_shuffling_in_steps_for_runtime() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.mfc_shuffling_in_steps.observe();
+#else
+	return g_cfg.core.mfc_shuffling_in_steps.get();
+#endif
+}
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_SPURS_PROBE)
 static bool thor_spurs_probe_enabled() noexcept
 {
@@ -2892,10 +2919,10 @@ void spu_thread::cpu_work()
 		current_bp_pc = umax;
 	}
 
-	const auto timeout = +g_cfg.core.mfc_transfers_timeout;
-
-	if (u32 shuffle_count = g_cfg.core.mfc_transfers_shuffling)
+	if (u32 shuffle_count = get_mfc_transfers_shuffling_for_runtime())
 	{
+		const u32 timeout = get_mfc_transfers_timeout_for_runtime();
+
 		// If either MFC size exceeds limit or timeout has been reached execute pending MFC commands
 		if (mfc_size > shuffle_count || (timeout && get_system_time() - mfc_last_timestamp >= timeout))
 		{
@@ -5177,7 +5204,7 @@ bool spu_thread::do_mfc(bool can_escape, bool must_finish)
 	{
 		// Get commands' execution mask
 		// Mask bits are always set when mfc_transfers_shuffling is 0
-		return static_cast<u16>((0 - (1u << std::min<u32>(g_cfg.core.mfc_transfers_shuffling, size))) | rx::get_tsc());
+		return static_cast<u16>((0 - (1u << std::min<u32>(get_mfc_transfers_shuffling_for_runtime(), size))) | rx::get_tsc());
 	};
 
 	// Process enqueued commands
@@ -5223,7 +5250,7 @@ bool spu_thread::do_mfc(bool can_escape, bool must_finish)
 			break;
 		}
 
-		if (!must_finish && g_cfg.core.mfc_shuffling_in_steps)
+		if (!must_finish && get_mfc_shuffling_in_steps_for_runtime())
 		{
 			// Exit early, not all pending commands have to be executed at a single iteration
 			// Update last timestamp so the next MFC timeout check will use the current time
@@ -6237,7 +6264,7 @@ bool spu_thread::process_mfc_cmd()
 		{
 			if (do_dma_check(ch_mfc_cmd)) [[likely]]
 			{
-				if (!g_cfg.core.mfc_transfers_shuffling)
+				if (!get_mfc_transfers_shuffling_for_runtime())
 				{
 					if (ch_mfc_cmd.size)
 					{
@@ -6290,7 +6317,7 @@ bool spu_thread::process_mfc_cmd()
 
 			if (do_dma_check(cmd)) [[likely]]
 			{
-				if (!g_cfg.core.mfc_transfers_shuffling)
+				if (!get_mfc_transfers_shuffling_for_runtime())
 				{
 					if (!cmd.size || do_list_transfer(cmd)) [[likely]]
 					{
