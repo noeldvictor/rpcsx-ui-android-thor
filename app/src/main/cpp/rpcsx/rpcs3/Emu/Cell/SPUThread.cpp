@@ -132,6 +132,15 @@ static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
 #endif
 }
 
+static FORCE_INLINE bool get_spu_accurate_reservations_for_runtime() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.spu_accurate_reservations.observe();
+#else
+	return g_cfg.core.spu_accurate_reservations.get();
+#endif
+}
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_SPURS_PROBE)
 static bool thor_spurs_probe_enabled() noexcept
 {
@@ -4683,7 +4692,7 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 
 			if (rtime != res)
 			{
-				if (!g_cfg.core.spu_accurate_reservations && cmp_rdata(to_write, rdata))
+				if (!get_spu_accurate_reservations_for_runtime() && cmp_rdata(to_write, rdata))
 				{
 					raddr = 0;
 					return true;
@@ -4694,7 +4703,7 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 
 			if (cmp_rdata(to_write, rdata))
 			{
-				if (!g_cfg.core.spu_accurate_reservations)
+				if (!get_spu_accurate_reservations_for_runtime())
 				{
 					raddr = 0;
 					return true;
@@ -4730,7 +4739,7 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 				return false;
 			}
 
-			if (!g_cfg.core.spu_accurate_reservations)
+			if (!get_spu_accurate_reservations_for_runtime())
 			{
 				if (addr - spurs_addr <= 0x80)
 				{
@@ -4991,7 +5000,7 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
 
 		u64 result = 1;
 
-		if (!g_cfg.core.spu_accurate_reservations)
+		if (!get_spu_accurate_reservations_for_runtime())
 		{
 			mov_rdata(sdata, *static_cast<const spu_rdata_t*>(to_write));
 			vm::reservation_acquire(addr) += 32;
@@ -5048,7 +5057,7 @@ void spu_thread::do_putlluc(const spu_mfc_cmd& args)
 
 	const u32 addr = args.eal & -128;
 
-	if (raddr && addr == raddr && g_cfg.core.spu_accurate_reservations)
+	if (raddr && addr == raddr && get_spu_accurate_reservations_for_runtime())
 	{
 		// Try to process PUTLLUC using PUTLLC when a reservation is active:
 		// If it fails the reservation is cleared, LR event is set and we fallback to the main implementation
@@ -7133,7 +7142,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 					thor_spurs_wait_probe_log(*this, thor_spurs_wait_event::notifier,
 						mask1, raddr, rtime, eventstat_busy_waiting_switch);
 
-					if (raddr - spurs_addr <= 0x80 && !g_cfg.core.spu_accurate_reservations && mask1 == SPU_EVENT_LR)
+					if (raddr - spurs_addr <= 0x80 && !get_spu_accurate_reservations_for_runtime() && mask1 == SPU_EVENT_LR)
 					{
 						// Wait with extended timeout, in this situation we have notifications for nearly all writes making it possible
 						// Abort notifications are handled specially for performance reasons
