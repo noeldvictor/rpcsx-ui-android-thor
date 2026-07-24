@@ -152,6 +152,18 @@ namespace rsx
 #endif
 	}
 
+	static inline bool is_vblank_waiter_registered(const atomic_t<bool>& registered) noexcept
+	{
+#ifdef __ANDROID__
+		// Registration is only an advisory wake-work gate. Handler data is
+		// published through vblank_wait_token, and a missed hint retains the
+		// bounded one-millisecond timeout, so no acquire barrier is needed.
+		return registered.observe();
+#else
+		return registered;
+#endif
+	}
+
 	bool is_es_ppu_rsx_profile_enabled() noexcept
 	{
 		static const bool requested = []()
@@ -924,7 +936,7 @@ namespace rsx
 		{
 			if (auto ptr = vblank_handler)
 			{
-				if (vblank_waiter_registered)
+				if (is_vblank_waiter_registered(vblank_waiter_registered))
 				{
 					intr_thread->cmd_list({{ppu_cmd::set_args, 1}, u64{1},
 						{ppu_cmd::lle_call, ptr},
@@ -933,10 +945,10 @@ namespace rsx
 							if (const auto renderer = rsx::get_current_renderer())
 							{
 								publish_vblank_wait_completion(renderer->vblank_wait_token);
-								if (renderer->vblank_waiter_registered)
-								{
-									notify_vblank_waiter(renderer->vblank_wait_token);
-								}
+								// This callback is queued only after observing a waiter.
+								// A timed-out waiter makes notify_one a harmless no-op,
+								// while a new waiter benefits from the completed token.
+								notify_vblank_waiter(renderer->vblank_wait_token);
 							}
 							return true;
 						},
@@ -954,7 +966,7 @@ namespace rsx
 			}
 		}
 
-		if (vblank_waiter_registered)
+		if (is_vblank_waiter_registered(vblank_waiter_registered))
 		{
 			publish_vblank_wait_completion(vblank_wait_token);
 			notify_vblank_waiter(vblank_wait_token);

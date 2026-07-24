@@ -2269,3 +2269,19 @@ Put dated run details in `debug-experiments/`, not here.
   host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
   Ledger:
   `debug-experiments/20260723-thor-ppu-command-notification-minimal-ordering.md`.
+- Host-only Android VBlank waiter registration is now treated as an advisory
+  work gate. The two live producer checks use relaxed `LDRB` instead of
+  acquire `LDARB`, and the queued completion callback always calls
+  `notify_one` after its release token increment rather than reloading the
+  flag. A stale false retains the one-millisecond timeout/fallback; a stale
+  true can only schedule harmless extra completion/wake work. Handler data
+  still uses the release-token/acquire-reader handoff, and desktop is
+  unchanged. The callback shrinks `0x68 -> 0x58`; exact successor is APK
+  `17C74C6B...9A195FD` / `72,837,732` bytes, merged core
+  `69797EA4...075A99E` / `1,304,307,160` bytes, and packaged core
+  `49F32203...6F11502` / `62,988,856` bytes. ARM64 native/APK builds, exact
+  linked `LDRB`/no-callback-`LDARB` plus retained `LDADDL + notify_one` proof,
+  artifact gate, and all `70/70` host contracts pass. Thor was not contacted.
+  Classify as host-verified `stackable-cpu-pressure`, not measured speed or
+  thermal credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-registration-advisory-loads.md`.

@@ -229,8 +229,9 @@ if (-not $upstreamHandlerQueue.Success) {
 }
 
 foreach ($fragment in @(
-    'if (vblank_waiter_registered)',
-    'if (renderer->vblank_waiter_registered)',
+    'is_vblank_waiter_registered(const atomic_t<bool>& registered) noexcept',
+    'return registered.observe()',
+    'if (is_vblank_waiter_registered(vblank_waiter_registered))',
     'publish_vblank_wait_completion(renderer->vblank_wait_token)',
     'publish_vblank_wait_completion(vblank_wait_token)',
     'notify_vblank_waiter(renderer->vblank_wait_token)',
@@ -239,6 +240,24 @@ foreach ($fragment in @(
     if (-not $mainRsxSource.Contains($fragment)) {
         throw "Android single-waiter VBlank notification is missing: $fragment"
     }
+}
+
+$registrationGateCalls = [regex]::Matches(
+    $mainRsxSource,
+    'if \(is_vblank_waiter_registered\(vblank_waiter_registered\)\)')
+if ($registrationGateCalls.Count -ne 2) {
+    throw "Android must retain exactly the queued-handler and fallback registration gates; found $($registrationGateCalls.Count)."
+}
+if ($mainRsxSource.Contains('if (renderer->vblank_waiter_registered)') -or
+    $mainRsxSource.Contains('if (vblank_waiter_registered)')) {
+    throw 'Android VBlank handling reintroduced an acquire registration load.'
+}
+
+$mainQueuedCompletion = [regex]::Match(
+    $mainRsxSource,
+    '(?s)ppu_cmd::ptr_call.*?publish_vblank_wait_completion\(renderer->vblank_wait_token\);\s*// This callback is queued only after observing a waiter\..*?notify_vblank_waiter\(renderer->vblank_wait_token\);')
+if (-not $mainQueuedCompletion.Success) {
+    throw 'Android queued VBlank completion must notify without a second registration load.'
 }
 
 foreach ($fragment in @(
@@ -421,4 +440,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android release-store single-waiter registration with relaxed producer gates and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
