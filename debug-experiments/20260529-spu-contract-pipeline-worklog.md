@@ -1,4 +1,25 @@
-﻿## 2026-07-24 18:34 ET - delayed-shot diag200 route extension stays field-clean under reservation verifier (no speed)
+﻿## 2026-07-24 18:43 ET - 25cc direction-split verifier black-overlay counterproof (no speed)
+
+Classification: failed-visual-gate/black-overlay/25cc-direction-split-diagnostic-only/not-comparable/no-speed.
+
+Evidence:
+- Followed the refiner decision to prove direction-split `0x25cc` counters on the newest clean loader-control-left200x2-plus-diag200 route, without adding another duplicate movement report and without enabling body, codegen-fast, reservation-loop fast, or GPU fast modes.
+- Ran tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-25cc-dirsplit-visualgate with WindowsGameScreen 1, CPU affinity 0x0F, frame/vblank 240, EternalSonataGpuProbe Profile, EternalSonataSpuHleVerify Verify25ccShadow, and CleanAfterField visual gate.
+- Run dir: debug-captures\windows-lab\20260724-183752-cpu4-loader-control-left200x2-diag200-25cc-dirsplit-visualgate-windows.
+- The same delayed-shot left200x2-plus-diag200 macro ran, but this verifier/probe configuration failed the visual gate. Status was NO_FIELD_LIKE_SCREENSHOT; all 12 screenshots from screenshot-0149s.png through screenshot-0220s.png were black-overlay-small-png, first field-like was none, and required field-like at/before 160s failed.
+- Visual-gate fatal/crash signature lines were 0, and the targeted fatal scan found 0 hits for VM access violations, prior 0x002aedd0, prior 0x0007dccc, Vulkan/device-loss, assertion, dynamic-fail, output mismatch, or descriptor overflow patterns.
+- Host contention was clean across all 7 snapshots. GPU engine usage reached about 19.9 percent in one sample, but the GPU probe summary reported 0 GPU/DMA candidate records, 0 MFC dynamic/list/wait records, 0 RSX auditor records, and no nonzero RSX get/put byte rows.
+- Parsed the 25cc contract rows into the run directory only, not the global latest JSON, because the route was visually invalid. Parser output: contract-verify-logrow-results.json / .md in the run dir. Rows=84, accepted_rows=84, rejected_rows=0, total_contract_hits=178, total_contract_bytes=2916352, direction split contract_get_hits=83 and contract_put_hits=95, total_output_mismatch=0, total_desc_overflow=0, strict_gate_pass=true, recommended_lane=verify-only-cpu-hle-or-codegen, cpu_hle_score=10, host_simd_score=9, vulkan_gpu_score=4, readback_risk=high, rsx_destination_evidence=none-observed.
+- PUTLLC16 analyzer remained at 7 detected patterns and 11 breakage records, so the recognizer still points to CPU/SPU reduced-loop/codegen opportunities rather than a broad GPU offload.
+
+Result:
+- Advances CPU/SPU bottleneck relief: partially. It proves the active Windows binary already has explicit verify-only `0x25cc/0x9e4000` direction-split counters and reject buckets, but the black-overlay visual failure prevents using these rows as clean route promotion evidence.
+- Advances GPU-feed/offload: no. There were no GPU/DMA candidate rows, no RSX-local bytes, no RSX destination evidence, and readback risk remains high.
+- Speed increase: no. This was verifier/probe mode, the field visual gate failed, and there is no Options/menu plus first-battle A/B proof.
+
+Next narrow hypothesis:
+- Re-run the direction-split 25cc verifier with a route-control fix instead of adding movement: use a state-aware stable load/field gate or earlier load-target screenshots so the black-overlay timing regression is caught before the post-field macro. Keep parser output run-local on any failed visual gate and keep 25cc body/codegen/Vulkan fast modes blocked until field, Options/menu, and first-battle all pass with zero mismatch, zero descriptor overflow, zero fatal hits, and valid visuals.
+## 2026-07-24 18:34 ET - delayed-shot diag200 route extension stays field-clean under reservation verifier (no speed)
 
 Classification: route-tooling/valid-field-triage/left200x2-plus-diag200-clean/reservation-loop-verify-telemetry/no-speed.
 
@@ -11497,6 +11518,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
