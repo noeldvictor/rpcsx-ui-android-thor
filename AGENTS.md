@@ -2471,3 +2471,16 @@ Put dated run details in `debug-experiments/`, not here.
   all `71/71` host contracts pass. Thor was not contacted. Classify as
   host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
   Ledger: `debug-experiments/20260724-thor-timer-config-relaxed-reads.md`.
+- Host-only Android PPU scheduler and VM-lock code now observes the non-dynamic,
+  range-bounded PPU-thread count with relaxed atomic loads; desktop retains
+  ordered reads and no cross-session cache was introduced. Exact ARM64 changes
+  eleven config `LDAR` sites into ten immediate-offset `LDR`s because both
+  sequential writer-lock scans now reuse one count. Affected symbols shrink 80
+  bytes total while 60 real synchronization acquires remain. Exact successor
+  is APK `6F9C32F7...1F293FDB` / `72,837,104` bytes, merged core
+  `FBAC81A5...FE790676` / `1,304,328,360` bytes, and packaged core
+  `85E7B139...ACFCF2E7` / `62,988,984` bytes. Native/APK builds, exact codegen,
+  artifact identity, and all `72/72` host contracts pass. Thor was not
+  contacted. No dynamic execution count exists; classify as host-verified
+  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-ppu-thread-count-relaxed-reads.md`.

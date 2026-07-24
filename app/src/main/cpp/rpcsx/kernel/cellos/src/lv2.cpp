@@ -85,6 +85,14 @@ void set_rsx_yield_flag() noexcept;
 using spu_rdata_t = decltype(spu_thread::rdata);
 extern u32 compute_rdata_hash32(const spu_rdata_t &_src);
 
+static FORCE_INLINE u32 get_ppu_thread_count_for_scheduler() noexcept {
+#ifdef __ANDROID__
+  return static_cast<u32>(g_cfg.core.ppu_threads.observe());
+#else
+  return static_cast<u32>(g_cfg.core.ppu_threads.get());
+#endif
+}
+
 static FORCE_INLINE sleep_timers_accuracy_level
 get_sleep_timers_accuracy_for_wait() noexcept {
 #ifdef __ANDROID__
@@ -1964,7 +1972,7 @@ bool lv2_obj::awake_unlocked(cpu_thread *cpu, s32 prio) {
         *ppu_next =
             std::exchange(ppu->next_ppu, std::exchange(ppu2->next_ppu, ppu));
 
-        if (i < g_cfg.core.ppu_threads + 0u) {
+        if (i < get_ppu_thread_count_for_scheduler()) {
           // Threads were rotated, but no context switch was made
           return false;
         }
@@ -2032,7 +2040,8 @@ bool lv2_obj::awake_unlocked(cpu_thread *cpu, s32 prio) {
 
   s32 lowest_new_priority = smax;
   const bool has_free_hw_thread_space =
-      count_non_sleeping_threads().onproc_count < g_cfg.core.ppu_threads + 0u;
+      count_non_sleeping_threads().onproc_count <
+      get_ppu_thread_count_for_scheduler();
 
   if (cpu && prio != yield_cmd) {
     // Emplace current thread
@@ -2057,7 +2066,7 @@ bool lv2_obj::awake_unlocked(cpu_thread *cpu, s32 prio) {
   usz i = 0;
 
   // Suspend threads if necessary
-  for (usz thread_count = g_cfg.core.ppu_threads; target;
+  for (usz thread_count = get_ppu_thread_count_for_scheduler(); target;
        target = target->next_ppu, i++) {
     if (i >= thread_count && cpu_flag::suspend - target->state) {
       ppu_log.trace("suspend(): %s", target->id);
@@ -2129,7 +2138,7 @@ void lv2_obj::schedule_all(u64 current_time) {
     auto target = +g_ppu;
 
     // Wake up threads
-    for (usz x = g_cfg.core.ppu_threads; target && x;
+    for (usz x = get_ppu_thread_count_for_scheduler(); target && x;
          target = target->next_ppu, x--) {
       if (target->state & cpu_flag::suspend) {
         ppu_log.trace("schedule(): %s", target->id);
@@ -2204,7 +2213,8 @@ void lv2_obj::schedule_all(u64 current_time) {
       auto target = +g_ppu;
       cpu_thread *cpu = nullptr;
 
-      for (usz x = g_cfg.core.ppu_threads;; target = target->next_ppu, x--) {
+      for (usz x = get_ppu_thread_count_for_scheduler();;
+           target = target->next_ppu, x--) {
         if (!target || !x) {
           if (g_ppu && cpu_flag::preempt - g_ppu->state) {
             // Don't be picky, pick up any running PPU thread even it has a wait
@@ -2290,7 +2300,7 @@ lv2_obj::ppu_state(ppu_thread *ppu, bool lock_idm, bool lock_lv2) {
     return {PPU_THREAD_STATUS_SLEEP, 0};
   }
 
-  if (pos >= g_cfg.core.ppu_threads + 0u) {
+  if (pos >= get_ppu_thread_count_for_scheduler()) {
     return {PPU_THREAD_STATUS_RUNNABLE, pos};
   }
 
@@ -2311,7 +2321,7 @@ ppu_non_sleeping_count_t lv2_obj::count_non_sleeping_threads() {
 
   auto target = atomic_storage<ppu_thread *>::load(g_ppu);
 
-  for (usz thread_count = g_cfg.core.ppu_threads; target;
+  for (usz thread_count = get_ppu_thread_count_for_scheduler(); target;
        target = atomic_storage<ppu_thread *>::load(target->next_ppu)) {
     if (total.onproc_count == thread_count) {
       total.has_running = true;

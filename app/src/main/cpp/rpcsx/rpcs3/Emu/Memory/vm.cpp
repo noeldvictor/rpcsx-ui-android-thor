@@ -77,6 +77,15 @@ namespace vm
 	// Memory mutex: passive locks
 	std::array<atomic_t<cpu_thread*>, g_cfg.core.ppu_threads.max> g_locks{};
 
+	static FORCE_INLINE u32 get_ppu_thread_count_for_locks() noexcept
+	{
+#ifdef __ANDROID__
+		return static_cast<u32>(g_cfg.core.ppu_threads.observe());
+#else
+		return static_cast<u32>(g_cfg.core.ppu_threads.get());
+#endif
+	}
+
 	// Range lock slot allocation bits
 	atomic_t<u64, 64> g_range_lock_bits[2]{};
 
@@ -137,7 +146,7 @@ namespace vm
 
 	static void _register_lock(cpu_thread* _cpu)
 	{
-		for (u32 i = 0, max = g_cfg.core.ppu_threads;;)
+		for (u32 i = 0, max = get_ppu_thread_count_for_locks();;)
 		{
 			if (!g_locks[i] && g_locks[i].compare_and_swap_test(nullptr, _cpu))
 			{
@@ -548,8 +557,9 @@ namespace vm
 		if (range_lock)
 		{
 			perf_meter<"SUSPEND"_u64> perf0;
+			const u32 ppu_thread_count = get_ppu_thread_count_for_locks();
 
-			for (auto lock = g_locks.cbegin(), end = lock + g_cfg.core.ppu_threads; lock != end; lock++)
+			for (auto lock = g_locks.cbegin(), end = lock + ppu_thread_count; lock != end; lock++)
 			{
 				if (auto ptr = +*lock; ptr && ptr->state.none_of(cpu_flag::wait + cpu_flag::memory))
 				{
@@ -615,7 +625,7 @@ namespace vm
 				rx::pause();
 			}
 
-			for (auto lock = g_locks.cbegin(), end = lock + g_cfg.core.ppu_threads; lock != end; lock++)
+			for (auto lock = g_locks.cbegin(), end = lock + ppu_thread_count; lock != end; lock++)
 			{
 				if (auto ptr = +*lock)
 				{
