@@ -123,6 +123,15 @@ static FORCE_INLINE bool get_spu_accurate_dma_for_mfc() noexcept
 #endif
 }
 
+static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.mfc_debug.observe();
+#else
+	return g_cfg.core.mfc_debug.get();
+#endif
+}
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_SPURS_PROBE)
 static bool thor_spurs_probe_enabled() noexcept
 {
@@ -3035,7 +3044,7 @@ spu_thread::spu_thread(lv2_spu_group* group, u32 index, std::string_view name, u
 #endif
 	}
 
-	if (g_cfg.core.mfc_debug)
+	if (get_mfc_debug_for_runtime())
 	{
 		utils::memory_commit(vm::g_stat_addr + vm_offset(), SPU_LS_SIZE);
 		mfc_history.resize(max_mfc_dump_idx);
@@ -3101,7 +3110,7 @@ spu_thread::spu_thread(utils::serial& ar, lv2_spu_group* group)
 #endif
 	}
 
-	if (g_cfg.core.mfc_debug)
+	if (get_mfc_debug_for_runtime())
 	{
 		utils::memory_commit(vm::g_stat_addr + vm_offset(), SPU_LS_SIZE);
 		mfc_history.resize(max_mfc_dump_idx);
@@ -3280,7 +3289,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 	// SPU Thread Group MMIO (LS and SNR) and RawSPU MMIO
 	if (_this && eal >= RAW_SPU_BASE_ADDR)
 	{
-		if (g_cfg.core.mfc_debug && _this)
+		if (get_mfc_debug_for_runtime() && _this)
 		{
 			// TODO
 		}
@@ -3502,7 +3511,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 			if (size == size0)
 			{
-				if (g_cfg.core.mfc_debug && _this)
+				if (get_mfc_debug_for_runtime() && _this)
 				{
 					auto& dump = _this->mfc_history[_this->mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 					dump.cmd = args;
@@ -3701,7 +3710,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 			// atomic_fence_seq_cst();
 
-			if (g_cfg.core.mfc_debug && _this)
+			if (get_mfc_debug_for_runtime() && _this)
 			{
 				auto& dump = _this->mfc_history[_this->mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 				dump.cmd = args;
@@ -3905,7 +3914,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 		}
 		}
 
-		if (g_cfg.core.mfc_debug && _this)
+		if (get_mfc_debug_for_runtime() && _this)
 		{
 			auto& dump = _this->mfc_history[_this->mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 			dump.cmd = args;
@@ -3982,7 +3991,7 @@ plain_access:
 	}
 	}
 
-	if (g_cfg.core.mfc_debug && _this)
+	if (get_mfc_debug_for_runtime() && _this)
 	{
 		auto& dump = _this->mfc_history[_this->mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 		dump.cmd = args;
@@ -4076,7 +4085,7 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 
 	u8 optimization_compatible = transfer.cmd & (MFC_GET_CMD | MFC_PUT_CMD);
 
-	if (spu_log.trace || get_spu_accurate_dma_for_mfc() || g_cfg.core.mfc_debug)
+	if (spu_log.trace || get_spu_accurate_dma_for_mfc() || get_mfc_debug_for_runtime())
 	{
 		optimization_compatible = 0;
 	}
@@ -5699,7 +5708,7 @@ bool spu_thread::process_mfc_cmd()
 								return getllar_busy_waiting_switch != 0;
 							}())
 						{
-							if (g_cfg.core.mfc_debug)
+							if (get_mfc_debug_for_runtime())
 							{
 								auto& dump = mfc_history[mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 								dump.cmd = ch_mfc_cmd;
@@ -5778,7 +5787,7 @@ bool spu_thread::process_mfc_cmd()
 
 						if (new_time % 128 == 0 && cmp_rdata(rdata, data) && res == new_time && cmp_rdata(rdata, data))
 						{
-							if (g_cfg.core.mfc_debug)
+							if (get_mfc_debug_for_runtime())
 							{
 								auto& dump = mfc_history[mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 								dump.cmd = ch_mfc_cmd;
@@ -5951,7 +5960,7 @@ bool spu_thread::process_mfc_cmd()
 
 		ch_atomic_stat.set_value(MFC_GETLLAR_SUCCESS);
 
-		if (g_cfg.core.mfc_debug)
+		if (get_mfc_debug_for_runtime())
 		{
 			auto& dump = mfc_history[mfc_dump_idx++ % spu_thread::max_mfc_dump_idx];
 			dump.cmd = ch_mfc_cmd;
@@ -5966,7 +5975,7 @@ bool spu_thread::process_mfc_cmd()
 	case MFC_PUTLLC_CMD:
 	{
 		// Avoid logging useless commands if there is no reservation
-		const bool dump = g_cfg.core.mfc_debug && raddr;
+		const bool dump = get_mfc_debug_for_runtime() && raddr;
 
 		const bool is_spurs_task_wait = pc == 0x11e4 && spurs_addr != 0u - 0x80u;
 
@@ -6154,7 +6163,7 @@ bool spu_thread::process_mfc_cmd()
 	}
 	case MFC_PUTLLUC_CMD:
 	{
-		if (g_cfg.core.mfc_debug)
+		if (get_mfc_debug_for_runtime())
 		{
 			auto& dump = mfc_history[mfc_dump_idx++ % max_mfc_dump_idx];
 			dump.cmd = ch_mfc_cmd;
@@ -6170,7 +6179,7 @@ bool spu_thread::process_mfc_cmd()
 	}
 	case MFC_PUTQLLUC_CMD:
 	{
-		if (g_cfg.core.mfc_debug)
+		if (get_mfc_debug_for_runtime())
 		{
 			auto& dump = mfc_history[mfc_dump_idx++ % max_mfc_dump_idx];
 			dump.cmd = ch_mfc_cmd;
@@ -6261,7 +6270,7 @@ bool spu_thread::process_mfc_cmd()
 			auto& cmd = mfc_queue[mfc_size];
 			cmd = ch_mfc_cmd;
 
-			// if (g_cfg.core.mfc_debug)
+			// if (get_mfc_debug_for_runtime())
 			//{
 			//   TODO: This needs a disambiguator with list elements dumping
 			//	auto& dump = mfc_history[mfc_dump_idx++ % max_mfc_dump_idx];
