@@ -197,6 +197,31 @@ public:
 				return static_cast<u32>(ctrl >> 32);
 			});
 	}
+
+#ifdef __ANDROID__
+	// Complete positions after their contents have been cleared. Release ordering
+	// prevents a producer from reusing a reset slot before those clears finish;
+	// no acquire operation is needed because this path consumes no producer data.
+	u32 pop_end_release(u32 count = 1)
+	{
+		u64 ctrl = __atomic_load_n(&m_ctrl.raw(), __ATOMIC_RELAXED);
+
+		for (;;)
+		{
+			u64 next = ctrl + (u64{count} << 32);
+
+			if (next >> 32 == static_cast<u32>(next))
+			{
+				next = 0;
+			}
+
+			if (__atomic_compare_exchange_n(&m_ctrl.raw(), &ctrl, next, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED))
+			{
+				return static_cast<u32>(next >> 32);
+			}
+		}
+	}
+#endif
 };
 
 // Helper type, linked list element

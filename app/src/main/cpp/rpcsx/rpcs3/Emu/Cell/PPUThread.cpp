@@ -4079,6 +4079,15 @@ static inline u32 reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue
 #endif
 }
 
+static inline void complete_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count) noexcept
+{
+#ifdef __ANDROID__
+	queue.pop_end_release(count);
+#else
+	queue.pop_end(count);
+#endif
+}
+
 static inline void publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command) noexcept
 {
 #ifdef __ANDROID__
@@ -4137,7 +4146,7 @@ void ppu_thread::cmd_pop(u32 count)
 	}
 
 	// Free
-	cmd_queue.pop_end(count + 1);
+	complete_ppu_command_slots(cmd_queue, count + 1);
 }
 
 cmd64 ppu_thread::cmd_wait()

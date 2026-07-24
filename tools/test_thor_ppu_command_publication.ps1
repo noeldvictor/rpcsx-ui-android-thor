@@ -24,6 +24,10 @@ foreach ($fragment in @(
     'reserve_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count = 1) noexcept',
     'queue.push_begin_relaxed(count)',
     'queue.push_begin(count)',
+    'complete_ppu_command_slots(lf_fifo<atomic_t<cmd64>, 127>& queue, u32 count) noexcept',
+    'queue.pop_end_release(count)',
+    'queue.pop_end(count)',
+    'complete_ppu_command_slots(cmd_queue, count + 1)',
     'publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command) noexcept',
     '#ifdef __ANDROID__',
     'slot.release(command)',
@@ -53,6 +57,9 @@ foreach ($fragment in @(
     '#ifdef __ANDROID__',
     'u32 push_begin_relaxed(u32 count = 1)',
     '__atomic_fetch_add(&m_ctrl.raw(), u64{count}, __ATOMIC_RELAXED)',
+    'u32 pop_end_release(u32 count = 1)',
+    '__atomic_load_n(&m_ctrl.raw(), __ATOMIC_RELAXED)',
+    '__atomic_compare_exchange_n(&m_ctrl.raw(), &ctrl, next, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED)',
     'm_ctrl.fetch_add(count)',
     'm_ctrl.atomic_op([&](u64& ctrl)'
 )) {
@@ -62,6 +69,9 @@ foreach ($fragment in @(
 }
 if ($upstreamLockless.Contains('push_begin_relaxed')) {
     throw 'Desktop upstream unexpectedly contains the Android-only relaxed FIFO reservation.'
+}
+if ($upstreamLockless.Contains('pop_end_release')) {
+    throw 'Desktop upstream unexpectedly contains the Android-only release FIFO completion.'
 }
 
 $publishCalls = [regex]::Matches(
@@ -90,6 +100,23 @@ if (-not $listPublish.Success) {
     throw 'cmd_list does not publish its command head after the relaxed tail.'
 }
 
+$completionCalls = [regex]::Matches(
+    $mainSource,
+    'complete_ppu_command_slots\(cmd_queue, count \+ 1\)')
+if ($completionCalls.Count -ne 1) {
+    throw "Android must release-complete exactly one PPU command queue range; found $($completionCalls.Count)."
+}
+if ($mainSource.Contains('cmd_queue.pop_end(count + 1);')) {
+    throw 'Android PPU command completion bypasses the PPU-only release helper.'
+}
+
+$popCompletion = [regex]::Match(
+    $mainSource,
+    '(?s)void ppu_thread::cmd_pop\(u32 count\).*?cmd_queue\[pos \+ i\]\.raw\(\) = cmd64\{\};.*?complete_ppu_command_slots\(cmd_queue, count \+ 1\);')
+if (-not $popCompletion.Success) {
+    throw 'cmd_pop does not clear command tails before release-completing the queue range.'
+}
+
 $clearCalls = [regex]::Matches(
     $mainSource,
     'clear_ppu_command_ready\(cmd_notify\)')
@@ -114,6 +141,7 @@ foreach ($fragment in @(
     'cmd_queue[pos] = cmd;',
     'cmd_queue[pos] = *list.begin();',
     'cmd_queue[cmd_queue.peek()].exchange(cmd64{})',
+    'cmd_queue.pop_end(count + 1);',
     'cmd_notify = 0;'
 )) {
     if (-not $upstreamSource.Contains($fragment)) {

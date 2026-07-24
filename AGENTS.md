@@ -2217,3 +2217,17 @@ Put dated run details in `debug-experiments/`, not here.
   pass. Thor was not contacted. Classify as host-verified
   `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-ppu-command-relaxed-reservation.md`.
+- Host-only Android PPU command FIFO completion now uses a release-only
+  compare/exchange in `cmd_pop`; generic and desktop `lf_fifo::pop_end`
+  behavior is unchanged. Consumed tail clears must release before an empty
+  queue resets and permits slot reuse, but completion consumes no producer
+  payload and needs no acquire ordering. Exact merged ARM64 changes the
+  completion from `LDAR` + `CASAL` to `LDR` + `CASL`; the earlier queue-position
+  acquire remains. Exact successor is APK `C48FF787...CF9636B0` /
+  `72,838,072` bytes, merged core `8E486141...45BD0807` /
+  `1,304,306,800` bytes, and packaged core `0EFE60AF...411CB8B3` /
+  `62,989,000` bytes. ARM64 native/APK builds, focused FIFO
+  ordering/codegen proof, artifact gate, and all `70/70` host contracts pass.
+  Thor was not contacted. Classify as host-verified
+  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-ppu-command-release-completion.md`.
