@@ -1,4 +1,13 @@
-﻿## 2026-07-24 19:06 ET - refiner now blocks duplicate loader reruns after unsafe 25cc visuals (no speed)
+﻿## 2026-07-24 19:14 ET - 25cc route-safety audit points at payload hashing cost (no speed)
+
+- Workflow/refiner context: after the refiner learned to block duplicate loader-control reruns for unsafe 25cc visuals, its next action now runs a narrow route-safety/RAG audit instead of another Windows scene proof.
+- Tooling change: added `tools\summarize_eternal_sonata_25cc_route_safety.ps1` and wired the unsafe-25cc refiner branch to suggest it. The audit writes `spu-contracts\BLUS30161\25cc-route-safety-audit.md`.
+- Evidence from the generated audit: latest unsafe run is `20260724-185816-cpu4-loader-control-left200x2-diag200-25cc-dirsplit-fieldproof-windows`, visual status `NO_FIELD_LIKE_SCREENSHOT`, gate failed, first field-like none, class count `cutscene-or-nonfield-small-png=18`, contract rows=161, hits=326, bytes=5,341,184, GET=160, PUT=166, output_mismatch=0, desc_overflow=0.
+- Source alignment: active Windows hook is `rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp`; `compute_es_spu_hle_shadow_hash` line 1952, `begin_es_spu_hle_shadow_sample` line 1974, `record_es_spu_hle_25cc_shadow_sample` line 1989, `finish_es_spu_hle_shadow_sample` line 2098, and `std::memcmp(src, dst, cmd.size)` line 2110. The compact contract row logger remains in `rpcs3-upstream\rpcs3\Emu\Cell\lv2\sys_spu.cpp` line 1667, with verbose trace opt-in at line 451.
+- Route-safety read: default compact logging already avoids deep trace volume, so the remaining likely route perturbation is synchronous 16 KiB payload sampling. This unsafe run implies about 20.375 MiB of extra payload reads in the SPU MFC hot path from source/destination pre-hash, destination post-hash, and memcmp across 326 contract hits.
+- Recommended next source change: add an explicit 25cc shadow payload mode such as `RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD=full|sampled|counts`; emit `payload_mode=` in the contract row; teach the parser to reject promotion unless `payload_mode=full`; use counts/sampled only for route repair, then rerun full verifier after visuals are clean.
+- Classification: source/RAG route-safety audit and process-tooling improvement. No emulator run, no FPS proof, no GPU migration credit, no fast path, and no speed increase.
+## 2026-07-24 19:06 ET - refiner now blocks duplicate loader reruns after unsafe 25cc visuals (no speed)
 
 - Workflow/refiner context: the latest refiner still recommended re-proving `loader-control-left200x2` after the 25cc direction-split retry failed visuals, even though the two immediately preceding loader-control proofs and the diag200 boundary were already field-clean.
 - Change: updated `tools\ps3_harness_refiner.ps1` to detect a latest failed-visual `25cc` run whose primary visual class is cutscene/non-field or black-overlay. That state now produces a no-auto-rerun decision and a comment-only suggested command directing the next heartbeat to patch/inspect `Verify25ccShadow` or harness route safety first.
@@ -11577,6 +11586,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
