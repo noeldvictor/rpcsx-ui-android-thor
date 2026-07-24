@@ -2300,3 +2300,19 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
   not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-vblank-registration-relaxed-stores.md`.
+- Host-only Android frame-poll waiter token snapshots now use relaxed loads
+  for the two pre-wait control decisions. The wait engine still compares the
+  expected token at futex/generic wait entry, every wait remains bounded to one
+  millisecond, and the final acquire token load still publishes guest-handler
+  writes before the counter read. Desktop retains its prior implicit acquire
+  loads. Exact ARM64 changes the two hot pre-wait `LDAR`s to `LDR`, retains the
+  post-wait `LDAR`, both registration `STRB`s, the wait call, and
+  `sys_timer_usleep` size `0x6ec`. Saved clean title/battle/Options routes imply
+  `69,084`, `210,290`, and `66,968` acquire barriers removed respectively.
+  Exact successor is APK `71D9C0C2...DD4E977B` / `72,837,748` bytes, merged
+  core `562142F3...750C0E0` / `1,304,307,320` bytes, and packaged core
+  `EC383041...8897CF` / `62,988,856` bytes. ARM64 native/APK builds, exact
+  linked `LDR/LDR/LDAR` proof, artifact gate, and all `70/70` host contracts
+  pass. Thor was not contacted. Classify as host-verified
+  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-vblank-prewait-relaxed-loads.md`.

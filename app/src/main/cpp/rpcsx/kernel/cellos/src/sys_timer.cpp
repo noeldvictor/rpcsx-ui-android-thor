@@ -74,6 +74,18 @@ void set_thor_es_vblank_waiter_registered(atomic_t<bool> &registered,
 #endif
 }
 
+u32 observe_thor_es_vblank_wait_token(
+    const atomic_t<u32> &wait_token) noexcept {
+#ifdef __ANDROID__
+  // These pre-wait reads only gate a bounded wait. wait_on rechecks the token
+  // against the expected value, while the post-wait acquire publishes handler
+  // writes before the guest counter load.
+  return wait_token.observe();
+#else
+  return wait_token;
+#endif
+}
+
 bool is_thor_es_frame_poll_wait_enabled() {
   static const bool enabled = [] {
 #ifdef ANDROID
@@ -285,10 +297,12 @@ bool try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
   // Wait for the queued guest VBlank handler to finish, not merely for the
   // raw VBlank edge. This keeps the counter load after the guest callback.
   // The portable 32-bit generation avoids a newer 64-bit wait dependency.
-  const u32 wait_token = renderer->vblank_wait_token;
+  const u32 wait_token =
+      observe_thor_es_vblank_wait_token(renderer->vblank_wait_token);
   set_thor_es_vblank_waiter_registered(
       renderer->vblank_waiter_registered, true);
-  if (renderer->vblank_wait_token == wait_token) {
+  if (observe_thor_es_vblank_wait_token(renderer->vblank_wait_token) ==
+      wait_token) {
     thread_ctrl::wait_on(renderer->vblank_wait_token, wait_token,
                          thor_es_frame_poll_wait_max_us);
   }

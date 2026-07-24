@@ -104,6 +104,32 @@ if ($mainTimer.Contains('renderer->vblank_waiter_registered.release(')) {
     throw 'Android frame-poll wait reintroduced a release registration store.'
 }
 
+foreach ($tokenLoadContract in @(
+    'u32 observe_thor_es_vblank_wait_token(',
+    'const atomic_t<u32> &wait_token) noexcept',
+    '  return wait_token.observe();',
+    '  return wait_token;',
+    'const u32 after_wait_token = renderer->vblank_wait_token'
+)) {
+    if (-not $mainTimer.Contains($tokenLoadContract)) {
+        throw "Android frame-poll token-load contract is missing: $tokenLoadContract"
+    }
+}
+
+if ($mainTimer -notmatch '(?s)u32 observe_thor_es_vblank_wait_token\(\s*const atomic_t<u32> &wait_token\) noexcept \{\s*#ifdef __ANDROID__.*?return wait_token[.]observe\(\);\s*#else\s*return wait_token;\s*#endif\s*\}') {
+    throw 'Android frame-poll token helper must relax only Android pre-wait reads and retain desktop acquire loads.'
+}
+
+$relaxedTokenReads = [regex]::Matches(
+    $mainTimer,
+    'observe_thor_es_vblank_wait_token\(renderer->vblank_wait_token\)')
+if ($relaxedTokenReads.Count -ne 2) {
+    throw "Android frame-poll wait must use exactly two relaxed pre-wait token reads; found $($relaxedTokenReads.Count)."
+}
+if ($mainTimer -match 'const u32 after_wait_token\s*=\s*observe_thor_es_vblank_wait_token') {
+    throw 'Android frame-poll wait relaxed the post-wait publication read.'
+}
+
 foreach ($upstreamTimerContract in @(
     'renderer->vblank_waiters.fetch_add(1)',
     'thread_ctrl::wait_on(renderer->vblank_wait_token',
@@ -462,4 +488,4 @@ foreach ($path in @($labPath, $sprintPath)) {
     }
 }
 
-Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android relaxed-store single-waiter registration with relaxed producer gates and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
+Write-Output "Thor Eternal Sonata frame-poll wait contract passed: opt-in gates, 1 ms bound, cached 0-500 us post-handler grace, Android relaxed pre-wait token reads with an acquire post-wait publication read, relaxed-store single-waiter registration with relaxed producer gates, and no redundant callback load, release-published VBlank edge, VBlank/flip commands, and completion generation, one-waiter notification, counter-progress rearm, Android 1/1024 diagnostic call/clock sampling, Android/Windows continuous rearm, and fallback plumbing are intact."
