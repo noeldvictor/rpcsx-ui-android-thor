@@ -1,4 +1,25 @@
-﻿## 2026-07-24 18:43 ET - 25cc direction-split verifier black-overlay counterproof (no speed)
+﻿## 2026-07-24 18:49 ET - loader-control left200x2 boundary reconfirmed after 25cc black-overlay regression (no speed)
+
+Classification: route-tooling/valid-field-triage/loader-control-left200x2-reconfirmed/reservation-loop-verify-telemetry/no-speed.
+
+Evidence:
+- Followed the refiner decision after the failed 25cc direction-split run black-overlayed before accepted field: re-prove the newest clean loader-control-left200x2 boundary with CleanAfterField before adding movement or returning to 25cc lane-2 counters.
+- Ran tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-reconfirm-visualgate-windows with WindowsGameScreen 1, CPU affinity 0x0F, frame/vblank 240, EternalSonataReservationLoop Verify, and CleanAfterField visual gate.
+- Run dir: debug-captures\windows-lab\20260724-184535-cpu4-loader-control-left200x2-reconfirm-visualgate-windows-windows.
+- Visual gate status was FIELD_LIKE_PRESENT and passed for triage. First field-like screenshot was screenshot-0117s.png at 117s, required field-like by 160s passed, all 16 screenshots from screenshot-0117s.png through screenshot-0210s.png were field-like-large-png, and invalid screenshots after first field-like were 0.
+- Both ls_left:200 inputs executed after accepted field evidence, with screenshots at 136s/138s and later holds through 210s staying field-like. This restores the route-control boundary that the 25cc direction-split attempt failed to preserve.
+- Targeted fatal scan found 0 hits for VM access violations, prior 0x002aedd0, prior 0x0007dccc, Vulkan/device-loss, assertion, dynamic-fail, output mismatch, or descriptor overflow patterns.
+- Direct counters from RPCS3.log: gpu_candidate=1658, mfc_dynamic=1658, mfc_wait=96494, mfc_wait_pc=787, reservation_mode=verify rows=153933, PUTLLC breakage=11, rsx_get/put byte rows=0, output_mismatch=0, dynamic_fail=0, desc_overflow=0.
+- Host contention was clean across all 7 snapshots in the harness summary; GPU engine usage reached about 32.6 percent in one sample, but there were still no RSX-local bytes proving an offloadable GPU-consumed buffer.
+
+Result:
+- Advances CPU/SPU bottleneck relief: yes, as restored route-control evidence and dense reservation verifier telemetry after the failed 25cc black-overlay attempt. The clean boundary is again loader-control left200x2, not the invalid 25cc direction-split run.
+- Advances GPU-feed/offload: no. GPU activity remained host-level only; no RSX-local or GPU-consumed buffer evidence appeared.
+- Speed increase: no. Reservation verifier mode is not a fast path, and there is still no valid Options/menu plus first-battle A/B proof.
+
+Next narrow hypothesis:
+- Retry the 25cc direction-split verifier from this reconfirmed boundary, but add state-aware load/field screenshots or stable gates before the post-field movement so any black-overlay regression is caught before the counter rows are treated as promotion evidence. Keep 25cc body/codegen/Vulkan fast modes blocked.
+## 2026-07-24 18:43 ET - 25cc direction-split verifier black-overlay counterproof (no speed)
 
 Classification: failed-visual-gate/black-overlay/25cc-direction-split-diagnostic-only/not-comparable/no-speed.
 
@@ -11518,6 +11539,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
