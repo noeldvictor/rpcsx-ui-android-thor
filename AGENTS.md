@@ -2162,3 +2162,17 @@ Put dated run details in `debug-experiments/`, not here.
   Thor was not contacted. Classify as host-verified `stackable-cpu-pressure`,
   not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-rsx-flip-command-release-store.md`.
+- Host-only Android PPU asynchronous-command queue heads now use release stores
+  in both `cmd_push` and `cmd_list`; desktop retains the sequentially consistent
+  store. FIFO reservation gives each producer a unique range, relaxed tail
+  writes precede the head, and the consumer still acquires with
+  `exchange(cmd64{})`. Exact ARM64 changes the common `cmd_list` head at
+  `0x3540b4c` from `SWPAL` to `STLR`, removing an RMW/acquire barrier from all
+  asynchronous PPU command publications, including RSX VBlank/flip callbacks.
+  Exact successor is APK `AB4803B7...E93614F` / `72,838,396` bytes, merged core
+  `F128D577...EC5B01` / `1,304,307,280` bytes, and packaged core
+  `29C2A237...85E337` / `62,988,904` bytes. ARM64 native/APK builds, focused
+  queue-ordering/codegen proof, artifact gate, and all `70/70` host contracts
+  pass. Thor was not contacted. Classify as host-verified
+  `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
+  `debug-experiments/20260723-thor-ppu-command-head-release-store.md`.

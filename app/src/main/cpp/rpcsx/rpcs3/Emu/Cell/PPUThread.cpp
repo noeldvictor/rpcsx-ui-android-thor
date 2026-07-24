@@ -4070,13 +4070,24 @@ ppu_thread::thread_name_t::operator std::string() const
 	return thread_name;
 }
 
+static inline void publish_ppu_command_head(atomic_t<cmd64>& slot, cmd64 command) noexcept
+{
+#ifdef __ANDROID__
+	// The consumer acquires the command head with exchange(). Publishing the
+	// head only needs to release the preceding relaxed tail writes.
+	slot.release(command);
+#else
+	slot = command;
+#endif
+}
+
 void ppu_thread::cmd_push(cmd64 cmd)
 {
 	// Reserve queue space
 	const u32 pos = cmd_queue.push_begin();
 
 	// Write single command
-	cmd_queue[pos] = cmd;
+	publish_ppu_command_head(cmd_queue[pos], cmd);
 }
 
 void ppu_thread::cmd_list(std::initializer_list<cmd64> list)
@@ -4091,7 +4102,7 @@ void ppu_thread::cmd_list(std::initializer_list<cmd64> list)
 	}
 
 	// Write command head after all
-	cmd_queue[pos] = *list.begin();
+	publish_ppu_command_head(cmd_queue[pos], *list.begin());
 }
 
 void ppu_thread::cmd_pop(u32 count)
