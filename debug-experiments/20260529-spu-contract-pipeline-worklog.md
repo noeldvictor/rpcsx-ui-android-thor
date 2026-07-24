@@ -1,4 +1,27 @@
-﻿## 2026-07-24 18:22 ET - loader-control left200x2 route stays field-clean under reservation verifier (no speed)
+﻿## 2026-07-24 18:27 ET - diag200 extension attempt stopped by live visual gate before movement (no speed)
+
+Classification: failed-live-visual-gate/pre-extension-abort/not-comparable/reservation-loop-verify-telemetry/no-speed.
+
+Evidence:
+- Followed the refiner decision to extend the newest valid loader-control-left200x2 route by exactly one tiny diagonal micro-pulse while keeping HLE/GPU fast paths blocked.
+- Ran tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene field -Label cpu4-loader-control-left200x2-diag200-visualgate with WindowsGameScreen 1, CPU affinity 0x0F, frame/vblank 240, EternalSonataReservationLoop Verify, and CleanAfterField visual gate.
+- Run dir: debug-captures\windows-lab\20260724-182429-cpu4-loader-control-left200x2-diag200-visualgate-windows.
+- The run reached the first scheduled screenshot at 117s, then live fatal visual gate stopped RPCS3 immediately. Marker live-fatal-visual-gate-failed.txt says probable crash or device-loss overlay was detected at screenshot-0117s.png.
+- The macro aborted before the 15s field hold, before both left200 inputs, and before the planned combo:ls_left+ls_down:200 pulse. Therefore this run does not test the diagonal micro-pulse and cannot supersede the prior clean left200x2 boundary.
+- No Windows visual-gate summary was generated because the live gate stopped early.
+- Targeted fatal scan found 0 hits for VM access violations, prior 0x002aedd0, prior 0x0007dccc, Vulkan/device-loss, assertion, dynamic-fail, output mismatch, or descriptor overflow patterns.
+- Direct reservation/GPU counters from the truncated RPCS3.log: gpu_candidate=822, mfc_dynamic=822, mfc_wait=897, mfc_wait_pc=45780, reservation_mode=verify rows=75087, PUTLLC16 detections=7, PUTLLC breakage=11, rsx_get/put byte rows=0, output_mismatch=0, dynamic_fail=0, desc_overflow=0.
+- Host contention was clean across prelaunch, postlaunch, and postrun snapshots.
+
+Result:
+- Advances CPU/SPU bottleneck relief: weakly, as a negative harness/route-control datapoint only. Reservation verifier counters remained mismatch-free before the visual abort, but the route extension did not execute.
+- Advances GPU-feed/offload: no. There were no RSX-local bytes or stable GPU-consumed buffer proofs.
+- Speed increase: no. No movement extension, Options/menu, first-battle, or A/B timing proof occurred.
+
+Next narrow hypothesis:
+- Re-run from the proven left200x2 boundary with the same planned diag200 micro-pulse, but disable or delay the live fatal visual pre-stop until at least the post-left200x2 screenshot confirms true field pixels. Keep the offline fatal log scan as the authority; do not enable 25cc body/codegen or GPU fast paths.
+
+## 2026-07-24 18:22 ET - loader-control left200x2 route stays field-clean under reservation verifier (no speed)
 
 Classification: route-tooling/valid-field-triage/loader-control-left200x2-clean/reservation-loop-verify-telemetry/no-speed.
 
@@ -11453,6 +11476,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
