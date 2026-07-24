@@ -2176,3 +2176,16 @@ Put dated run details in `debug-experiments/`, not here.
   pass. Thor was not contacted. Classify as host-verified
   `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
   `debug-experiments/20260723-thor-ppu-command-head-release-store.md`.
+- Host-only Android GCM flip and RSX user-command wake flags now share
+  `ppu_thread::notify_cmd_ready()` with the prior VBlank/flip-handler paths.
+  All four callers queue first, `STLR` the level-triggered flag, then
+  `notify_one`; desktop retains sequentially consistent stores. Exact ARM64
+  changes method sites `0x386cf74` and `0x386d100` from `SWPAL` to `STLR`,
+  while queue-head `0x3540b4c` and prior VBlank/flip-handler release stores
+  remain intact. Exact successor is APK `0CF81511...649763C` / `72,838,380`
+  bytes, merged core `3B61B265...C8B2178` / `1,304,308,000` bytes, and
+  packaged core `6D6C3C62...F8790E1` / `62,988,904` bytes. ARM64 native/APK
+  builds, focused four-producer/desktop-baseline proof, artifact gate, and all
+  `70/70` host contracts pass. Thor was not contacted. Classify as host-
+  verified `stackable-cpu-pressure`, not measured speed or thermal credit.
+  Ledger: `debug-experiments/20260723-thor-rsx-method-command-release-store.md`.

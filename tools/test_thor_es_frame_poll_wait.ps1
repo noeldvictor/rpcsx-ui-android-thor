@@ -7,9 +7,12 @@ $upstreamRoot = Join-Path $workspaceRoot "rpcs3-upstream"
 $mainTimerPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_timer.cpp"
 $mainRsxHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/RSXThread.h"
 $mainRsxSourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/RSXThread.cpp"
+$mainPpuHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.h"
+$mainRsxMethodsPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/RSX/rsx_methods.cpp"
 $upstreamTimerPath = Join-Path $upstreamRoot "rpcs3/Emu/Cell/lv2/sys_timer.cpp"
 $upstreamRsxHeaderPath = Join-Path $upstreamRoot "rpcs3/Emu/RSX/RSXThread.h"
 $upstreamRsxSourcePath = Join-Path $upstreamRoot "rpcs3/Emu/RSX/RSXThread.cpp"
+$upstreamRsxMethodsPath = Join-Path $upstreamRoot "rpcs3/Emu/RSX/rsx_methods.cpp"
 $labPath = Join-Path $PSScriptRoot "windows_rpcs3_lab.ps1"
 $sprintPath = Join-Path $PSScriptRoot "eternal_sonata_speed_sprint.ps1"
 
@@ -17,9 +20,12 @@ $requiredPaths = @(
     $mainTimerPath,
     $mainRsxHeaderPath,
     $mainRsxSourcePath,
+    $mainPpuHeaderPath,
+    $mainRsxMethodsPath,
     $upstreamTimerPath,
     $upstreamRsxHeaderPath,
     $upstreamRsxSourcePath,
+    $upstreamRsxMethodsPath,
     $labPath,
     $sprintPath
 )
@@ -33,9 +39,12 @@ foreach ($path in $requiredPaths) {
 $mainTimer = Get-Content -LiteralPath $mainTimerPath -Raw
 $mainRsxHeader = Get-Content -LiteralPath $mainRsxHeaderPath -Raw
 $mainRsxSource = Get-Content -LiteralPath $mainRsxSourcePath -Raw
+$mainPpuHeader = Get-Content -LiteralPath $mainPpuHeaderPath -Raw
+$mainRsxMethods = Get-Content -LiteralPath $mainRsxMethodsPath -Raw
 $upstreamTimer = Get-Content -LiteralPath $upstreamTimerPath -Raw
 $upstreamRsxHeader = Get-Content -LiteralPath $upstreamRsxHeaderPath -Raw
 $upstreamRsxSource = Get-Content -LiteralPath $upstreamRsxSourcePath -Raw
+$upstreamRsxMethods = Get-Content -LiteralPath $upstreamRsxMethodsPath -Raw
 $labSource = Get-Content -LiteralPath $labPath -Raw
 $sprintSource = Get-Content -LiteralPath $sprintPath -Raw
 
@@ -247,39 +256,64 @@ foreach ($fragment in @(
 }
 
 foreach ($fragment in @(
-    'publish_ppu_command_ready(atomic_t<u32>& notify) noexcept',
-    'notify.release(1)',
-    'notify.store(1)',
-    'publish_ppu_command_ready(intr_thread->cmd_notify)',
-    'intr_thread->cmd_notify.notify_one()'
+    'void notify_cmd_ready() noexcept',
+    'cmd_notify.release(1)',
+    'cmd_notify.store(1)',
+    'cmd_notify.notify_one()'
 )) {
-    if (-not $mainRsxSource.Contains($fragment)) {
-        throw "Android release-published VBlank command notification is missing: $fragment"
+    if (-not $mainPpuHeader.Contains($fragment)) {
+        throw "Android release-published PPU command notification is missing: $fragment"
     }
 }
 
 $mainCommandPublish = [regex]::Match(
     $mainRsxSource,
-    '(?s)void thread::post_vblank_event.*?intr_thread->cmd_list.*?publish_ppu_command_ready\(intr_thread->cmd_notify\).*?intr_thread->cmd_notify\.notify_one\(\).*?return;')
+    '(?s)void thread::post_vblank_event.*?intr_thread->cmd_list.*?intr_thread->notify_cmd_ready\(\).*?return;')
 if (-not $mainCommandPublish.Success) {
     throw 'Android VBlank command publication is not ordered after queueing and before wake/return.'
 }
 
 $mainFlipCommandPublish = [regex]::Match(
     $mainRsxSource,
-    '(?s)void thread::handle_emu_flip.*?intr_thread->cmd_list.*?publish_ppu_command_ready\(intr_thread->cmd_notify\).*?intr_thread->cmd_notify\.notify_one\(\)')
+    '(?s)void thread::handle_emu_flip.*?intr_thread->cmd_list.*?intr_thread->notify_cmd_ready\(\)')
 if (-not $mainFlipCommandPublish.Success) {
     throw 'Android flip command publication is not ordered after queueing and before wake.'
 }
 
 $mainCommandReadyCalls = [regex]::Matches(
     $mainRsxSource,
-    'publish_ppu_command_ready\(intr_thread->cmd_notify\)')
+    'intr_thread->notify_cmd_ready\(\)')
 if ($mainCommandReadyCalls.Count -ne 2) {
-    throw "Android must release-publish exactly the VBlank and flip PPU command flags; found $($mainCommandReadyCalls.Count)."
+    throw "Android must wake exactly the VBlank and flip PPU command waiters in RSXThread; found $($mainCommandReadyCalls.Count)."
 }
-if ($mainRsxSource.Contains('intr_thread->cmd_notify.store(1)')) {
-    throw 'Android RSX command publication reintroduced a sequentially consistent flag swap.'
+if ($mainRsxSource.Contains('intr_thread->cmd_notify.store(1)') -or
+    $mainRsxSource.Contains('intr_thread->cmd_notify.notify_one()')) {
+    throw 'Android RSX thread command publication bypasses the centralized wake contract.'
+}
+
+$methodFlipCommandPublish = [regex]::Match(
+    $mainRsxMethods,
+    '(?s)void flip_command.*?intr_thread->cmd_list.*?intr_thread->notify_cmd_ready\(\).*?RSX\(ctx\)->reset\(\)')
+if (-not $methodFlipCommandPublish.Success) {
+    throw 'Android GCM flip command publication is not ordered after queueing and before frame completion.'
+}
+
+$methodUserCommandPublish = [regex]::Match(
+    $mainRsxMethods,
+    '(?s)void user_command.*?intr_thread->cmd_list.*?intr_thread->notify_cmd_ready\(\)')
+if (-not $methodUserCommandPublish.Success) {
+    throw 'Android RSX user command publication is not ordered after queueing and before return.'
+}
+
+$methodCommandReadyCalls = [regex]::Matches(
+    $mainRsxMethods,
+    'intr_thread->notify_cmd_ready\(\)')
+if ($methodCommandReadyCalls.Count -ne 2) {
+    throw "Android must wake exactly the GCM flip and user command waiters in rsx_methods; found $($methodCommandReadyCalls.Count)."
+}
+if ($mainRsxMethods.Contains('intr_thread->cmd_notify.store(1)') -or
+    $mainRsxMethods.Contains('intr_thread->cmd_notify.notify_one()')) {
+    throw 'Android RSX method command publication bypasses the centralized wake contract.'
 }
 foreach ($fragment in @(
     'publish_vblank_edge(atomic_t<u64>& count) noexcept',
@@ -329,6 +363,16 @@ $upstreamCommandStores = [regex]::Matches(
     'intr_thread->cmd_notify\.store\(1\);')
 if ($upstreamCommandStores.Count -ne 2) {
     throw "Windows RSX must retain both VBlank and flip command stores; found $($upstreamCommandStores.Count)."
+}
+
+$upstreamMethodStores = [regex]::Matches(
+    $upstreamRsxMethods,
+    'intr_thread->cmd_notify\.store\(1\);')
+$upstreamMethodWakes = [regex]::Matches(
+    $upstreamRsxMethods,
+    'intr_thread->cmd_notify\.notify_one\(\);')
+if ($upstreamMethodStores.Count -ne 2 -or $upstreamMethodWakes.Count -ne 2) {
+    throw "Windows RSX methods must retain both flip/user store+wake pairs; found stores=$($upstreamMethodStores.Count), wakes=$($upstreamMethodWakes.Count)."
 }
 foreach ($fragment in @(
     '[string]$EternalSonataFramePollWait = "Off"',

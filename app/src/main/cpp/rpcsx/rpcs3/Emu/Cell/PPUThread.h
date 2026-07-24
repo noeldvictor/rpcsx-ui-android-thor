@@ -193,6 +193,18 @@ public:
 	}
 	atomic_t<u32> cmd_notify = 0;
 
+	void notify_cmd_ready() noexcept
+	{
+#ifdef __ANDROID__
+		// The queue head is authoritative. Release its level-triggered wake
+		// flag without a sequentially consistent read-modify-write.
+		cmd_notify.release(1);
+#else
+		cmd_notify.store(1);
+#endif
+		cmd_notify.notify_one();
+	}
+
 	alignas(64) const ppu_func_opd_t entry_func;
 	u64 start_time{0};              // Sleep start timepoint
 	u64 end_time{umax};             // Sleep end timepoint
