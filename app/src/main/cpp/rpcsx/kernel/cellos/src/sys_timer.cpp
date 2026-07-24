@@ -912,7 +912,7 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
 
   sys_timer.trace("sys_timer_usleep(sleep_time=0x%llx)", sleep_time);
 
-  const u64 requested_sleep_time = sleep_time;
+  [[maybe_unused]] const u64 requested_sleep_time = sleep_time;
 
   if (sleep_time) {
     const s64 add_time = g_cfg.core.usleep_addend;
@@ -933,7 +933,7 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
     const auto frame_poll_result =
         try_thor_es_frame_poll_wait(ppu, sleep_time);
     if (frame_poll_result == thor_es_frame_poll_wait_result::waited) {
-      thor_spurs_probe_log_ppu_wait(
+      THOR_SPURS_PROBE_LOG_PPU_WAIT(
           "usleep-frame-poll", ppu, 0, requested_sleep_time,
           thor_es_frame_poll_wait_max_us,
           static_cast<u64>((+ppu.state).raw()), CELL_OK);
@@ -957,7 +957,7 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
     std::this_thread::yield();
   }
 
-  thor_spurs_probe_log_ppu_wait("usleep", ppu, 0, requested_sleep_time,
+  THOR_SPURS_PROBE_LOG_PPU_WAIT("usleep", ppu, 0, requested_sleep_time,
                                 sleep_time, static_cast<u64>((+ppu.state).raw()),
                                 CELL_OK);
   return CELL_OK;

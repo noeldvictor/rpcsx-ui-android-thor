@@ -441,13 +441,13 @@ error_code sys_event_queue_receive(ppu_thread &ppu, u32 equeue_id,
 
   if (queue.ret) {
     if (queue.ret != CELL_EBUSY) {
-      thor_spurs_probe_log_ppu_wait(
+      THOR_SPURS_PROBE_LOG_PPU_WAIT(
           "event_receive_error", ppu, equeue_id, timeout, queue->key,
           queue->name, static_cast<s32>(queue.ret));
       return queue.ret;
     }
   } else {
-    thor_spurs_probe_log_ppu_wait("event_receive_ready", ppu, equeue_id,
+    THOR_SPURS_PROBE_LOG_PPU_WAIT("event_receive_ready", ppu, equeue_id,
                                   timeout, queue->key, queue->name, CELL_OK);
     return CELL_OK;
   }
@@ -511,7 +511,7 @@ error_code sys_event_queue_receive(ppu_thread &ppu, u32 equeue_id,
   }
 
   const s32 result = static_cast<s32>(ppu.gpr[3]);
-  thor_spurs_probe_log_ppu_wait("event_receive_wait", ppu, equeue_id, timeout,
+  THOR_SPURS_PROBE_LOG_PPU_WAIT("event_receive_wait", ppu, equeue_id, timeout,
                                 queue->key, queue->name, result);
   return not_an_error(result);
 }

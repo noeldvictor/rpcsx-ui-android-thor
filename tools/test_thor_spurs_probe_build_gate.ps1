@@ -33,8 +33,8 @@ foreach ($fragment in $requiredCmakeFragments) {
     }
 }
 
-if ($headerSource -notmatch '#if defined\(__ANDROID__\) && !defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?static FORCE_INLINE constexpr bool thor_spurs_probe_enabled\(\) noexcept[\s\S]*?return false;[\s\S]*?static FORCE_INLINE constexpr void\s+thor_spurs_probe_log_ppu_wait[\s\S]*?#else[\s\S]*?bool thor_spurs_probe_enabled\(\) noexcept;[\s\S]*?#endif') {
-    throw "Normal Android PPU syscall call sites do not see compile-time SPURS-probe no-ops."
+if ($headerSource -notmatch '#if defined\(__ANDROID__\) && !defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?static FORCE_INLINE constexpr bool thor_spurs_probe_enabled\(\) noexcept[\s\S]*?return false;[\s\S]*?#define THOR_SPURS_PROBE_LOG_PPU_WAIT\(\.\.\.\) \(\(void\)0\)[\s\S]*?#else[\s\S]*?void thor_spurs_probe_log_ppu_wait[\s\S]*?#define THOR_SPURS_PROBE_LOG_PPU_WAIT\(\.\.\.\)[\s\S]*?thor_spurs_probe_log_ppu_wait\(__VA_ARGS__\)[\s\S]*?#endif') {
+    throw "Normal Android PPU syscall probe hooks must discard arguments while diagnostic/desktop builds retain the logger."
 }
 
 if ($kernelSource -notmatch '#if !defined\(__ANDROID__\) \|\| defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?__system_property_get\("debug\.rpcsx\.thor\.spurs_probe", value\)[\s\S]*?Thor SPURS PPU wait probe:[\s\S]*?Thor SPURS probe:[\s\S]*?#else\s+static FORCE_INLINE constexpr void\s+thor_spurs_probe_log[\s\S]*?#endif') {
@@ -45,12 +45,15 @@ if ($spuThreadSource -notmatch '#if !defined\(ANDROID\) \|\| defined\(RPCSX_THOR
     throw "SPU reservation/wait diagnostics are not wholly excluded from normal Android builds."
 }
 
-$ppuHookCount =
-    [regex]::Matches($eventSource, 'thor_spurs_probe_log_ppu_wait\(').Count +
-    [regex]::Matches($semaphoreSource, 'thor_spurs_probe_log_ppu_wait\(').Count +
-    [regex]::Matches($timerSource, 'thor_spurs_probe_log_ppu_wait\(').Count
+$ppuSources = @($eventSource, $semaphoreSource, $timerSource)
+$ppuHookCount = ($ppuSources | ForEach-Object {
+    [regex]::Matches($_, 'THOR_SPURS_PROBE_LOG_PPU_WAIT\(').Count
+} | Measure-Object -Sum).Sum
 if ($ppuHookCount -ne 9) {
     throw "Expected all 9 restorable PPU SPURS-probe hooks, found $ppuHookCount."
+}
+if (($ppuSources | Where-Object { $_ -cmatch 'thor_spurs_probe_log_ppu_wait\(' }).Count -ne 0) {
+    throw "Normal Android PPU syscall sources contain a direct probe call that would still evaluate disabled arguments."
 }
 
 $spuHookCount = [regex]::Matches($spuThreadSource, 'thor_spurs_wait_probe_log\(\*this,').Count
@@ -62,4 +65,4 @@ if ($gradleSource -match 'rpcsxThorSpursProbe[^\r\n]*\?:\s*true') {
     throw "The Android SPURS probe must remain disabled by default."
 }
 
-Write-Output "Thor SPURS-probe build gate passed: normal Android omits PPU/SPU probe calls and state while explicit diagnostics and desktop behavior remain."
+Write-Output "Thor SPURS-probe build gate passed: normal Android discards all PPU probe arguments and omits PPU/SPU probe calls and state while explicit diagnostics and desktop behavior remain."

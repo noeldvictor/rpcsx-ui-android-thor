@@ -1486,7 +1486,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
 #endif
 
   if (sem.ret) {
-    thor_spurs_probe_log_ppu_wait("sem_wait_ready", ppu, sem_id, timeout,
+    THOR_SPURS_PROBE_LOG_PPU_WAIT("sem_wait_ready", ppu, sem_id, timeout,
                                   sem->key, static_cast<u64>(+sem->val),
                                   CELL_OK);
     maybe_thor_es_draw_stream_probe_after_wait(ppu, sem_id);
@@ -1552,7 +1552,7 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
   }
 
   const s32 result = static_cast<s32>(ppu.gpr[3]);
-  thor_spurs_probe_log_ppu_wait("sem_wait_wait", ppu, sem_id, timeout,
+  THOR_SPURS_PROBE_LOG_PPU_WAIT("sem_wait_wait", ppu, sem_id, timeout,
                                 sem->key, static_cast<u64>(+sem->val),
                                 result);
   if (result == CELL_OK) {
@@ -1657,7 +1657,7 @@ error_code sys_semaphore_post(ppu_thread &ppu, u32 sem_id, s32 count) {
   lv2_obj::notify_all_t notify;
 
   if (sem.ret) {
-    thor_spurs_probe_log_ppu_wait("sem_post_fast", ppu, sem_id,
+    THOR_SPURS_PROBE_LOG_PPU_WAIT("sem_post_fast", ppu, sem_id,
                                   static_cast<u64>(count), sem->key,
                                   static_cast<u64>(+sem->val), CELL_OK);
     return CELL_OK;
@@ -1696,7 +1696,7 @@ error_code sys_semaphore_post(ppu_thread &ppu, u32 sem_id, s32 count) {
     }
   }
 
-  thor_spurs_probe_log_ppu_wait("sem_post", ppu, sem_id,
+  THOR_SPURS_PROBE_LOG_PPU_WAIT("sem_post", ppu, sem_id,
                                 static_cast<u64>(count), sem->key,
                                 static_cast<u64>(+sem->val), CELL_OK);
   return CELL_OK;

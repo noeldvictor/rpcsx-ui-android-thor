@@ -2427,3 +2427,18 @@ Put dated run details in `debug-experiments/`, not here.
   contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
   speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-usleep-zero-addend-fast-path.md`.
+- Host-only normal-Android SPURS wait hooks now use an argument-discard macro
+  instead of an empty function, so diagnostic-only atomic expressions are not
+  evaluated in `sys_timer_usleep`, `sys_semaphore_wait`, or
+  `sys_semaphore_post`. Exact linked ARM64 removes one discarded acquire load
+  and 16 bytes from each function; the complete merged core shrinks 1,104
+  bytes. Saved clean title/battle/Options routes conservatively imply 994,378
+  fewer acquire loads. Diagnostic/desktop builds retain all nine original
+  hooks and arguments. Exact successor is APK `896E0F8F...163CDA87` /
+  `72,837,436` bytes, merged core `CA4D4B93...236C42F` / `1,304,323,264`
+  bytes, and packaged core `0F2EA7B8...0CB2C54DE` / `62,989,112` bytes.
+  Native/APK builds, exact codegen, targeted diagnostic-on syntax checks,
+  artifact identity, and all `70/70` host contracts pass. Thor was not
+  contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
+  speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-disabled-spurs-probe-argument-elision.md`.
