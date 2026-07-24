@@ -1,3 +1,28 @@
+## 2026-07-24 17:25 ET - 25cc/451c contract pipeline refreshed from stable field verifier run; strict parser blocks promotion (no speed)
+
+Command/run:
+- Followed the current ledger evidence instead of repeating the refiner's stale one-step route suggestion. The source capture was the stable field-valid verifier run `debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`.
+- Ran: `tools\spu_contract_pipeline.ps1 -RunDir debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows -TitleId BLUS30161 -Pc 0x25cc,0x451c -Ea 0x9e4000`.
+- Updated artifacts under `spu-contracts\BLUS30161`, including `index.json`, `latest-summary.md`, per-contract JSON, `verify-counter-plan.*`, `source-alignment.*`, `verify-counter-schema.*`, `verify-logrow-implementation.*`, `promotion-score.*`, and refreshed `latest-verify-logrow-results.*`.
+
+Contract output:
+- Pipeline generated `2` contracts from measured runtime evidence, both on image `0x958dfe208b686622` and classified `dynamic-mfc-shape,dma-window,spurs-kernel`.
+- Priority 1: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`, PC `0x25cc`, group `CellSpursKernelGroup`, SPU `CellSpursKernel0`, target EA family `0x9e4000`, `80` hot log hits. Promotion score recommends `verify-only-cpu-hle-or-codegen` with CPU/HLE `10`, host SIMD `9`, Vulkan/GPU `4`, readback risk `high`, RSX destination `none-observed`.
+- Priority 2: `BLUS30161-958dfe208b686622-pc0451c-TCX_CellSpursKernel0`, PC `0x451c`, group `TCX_CellSpursKernelGroup`, SPU `TCX_CellSpursKernel0`, `80` hot log hits. Recommendation is also `verify-only-cpu-hle-or-codegen`; Vulkan remains weak because RSX-local evidence is still absent.
+- Source alignment says Windows upstream already has the `25cc` runtime-family predicate and `451c` dynamic-list classifier plus HLE verify hooks and LLVM verify callout. Vendored RPCSX currently has only generic Thor DMA probe support and lacks the Windows `25cc/451c` contract predicate lane, so Android/Thor fast paths remain out of scope until Windows proof is clean.
+
+Verifier/parser result:
+- The verify log-row scaffold requires a new parseable row prefix `Eternal Sonata SPU contract verifier` with `hle_mode=contract-25cc-9e4000`, `contract_id=BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`, contract hit/byte counters, reject buckets, src/dst hashes, `output_mismatch`, and `desc_overflow`.
+- Ran strict parser against the current stable-field log and refreshed `latest-verify-logrow-results.*`: rows `0`, accepted rows `0`, total contract hits `0`, `promotion_ready=false`, strict gate failed with `accepted_rows_lt_1` and `contract_hits_lt_1` because the contract verifier row is not implemented yet.
+- Required promotion visuals remain field + Options/menu + first-battle, with `output_mismatch=0`, `descriptor_overflow=0`, and fatal log hits `0`.
+
+Classification:
+- `analysis`, `spu-contract-scaffold`, `verify-counter-plan`, `promotion-blocked-by-missing-log-row`, `not-speed`.
+- Speed increase remains `0%` proven. This is not a GPU migration credit, Windows micro-win, or 200% gate candidate.
+
+Next narrow hypothesis:
+- Implement the log-only priority-1 `0x25cc/0x9e4000` contract verifier row in Windows upstream first, reusing existing family/shadow counters and adding reject buckets only as needed. Do not change copy/body behavior, do not enable bodyfast/codegen-fast/Vulkan fast mode, and do not touch vendored Android RPCSX until Windows strict parser accepts at least one clean row on field + Options/menu + first-battle gates.
+- Keep dirty reservation lane `1` excluded/preserved in any later reservation-loop idea; lane `2`/`3` cleanliness from the valid-field route is candidate evidence only, not promotion proof.
 ## 2026-07-24 17:21 ET - stable field route with reservation verifier proves lane 1 dirty, lanes 2/3 clean (no speed)
 
 Command/run:

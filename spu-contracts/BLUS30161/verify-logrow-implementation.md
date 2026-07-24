@@ -1,8 +1,8 @@
 ﻿# SPU Verify Log-Row Implementation Scaffold
 
-- Generated: `2026-06-03T12:53:01.2410342-04:00`
+- Generated: `2026-07-24T17:23:13.5881581-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`
 - Contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
 - Classification: `analysis`, `verify-logrow-implementation-scaffold`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
@@ -119,18 +119,3 @@ Required keys:
 - Field, Options/menu, and first-battle visual gates are still required.
 
 Next action: Apply the log-only row in the Windows upstream checkout after isolating or stashing unrelated upstream changes; then run field/Options/first-battle verifier captures.
-
-## 2026-07-15 Implementation Status
-
-- Applied and build-validated the log-only row in the clean Windows checkout at
-  commit `7bddf372c566ef5958ec9093e935f3744d8aca5e`.
-- Corrected `reject_eah` so it is no longer inferred from `eal`; the existing
-  classifier already rejects non-zero EAH before recording a descriptor.
-- The row now reports fixed contract anchors (`pc=0x25cc`, `tag=31`,
-  `size=16384`, `eal=0x9e4000`) and target-family hashes/mismatch counts rather
-  than the last sample from any accepted 25cc address family.
-- The strict parser schema now verifies the exact title/image/PC/group/SPU/
-  transfer anchors, `contract_bytes == contract_hits * 16384`, reject-bucket
-  sum consistency, and blocked fast modes.
-- This remains verify-only instrumentation. No copy, body, codegen, or fast-path
-  behavior changed.

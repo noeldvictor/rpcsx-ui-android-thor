@@ -1,8 +1,8 @@
 ﻿# SPU Contract Source Alignment
 
-- Generated: `2026-06-03T12:53:01.2410342-04:00`
+- Generated: `2026-07-24T17:23:13.5881581-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`
 - Classification: `analysis`, `source-alignment`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
 
 | Source | Lane | Feature | Status | Patterns |
@@ -57,19 +57,19 @@
 - File: `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp`
 - Expectation: LLVM-generated paths can report the same contract counters as interpreter/MFC paths.
 - Interpretation: Keep this in verify-only parity before any codegen-fast path.
-- `exec_es_spu_hle_verify_candidate`: line 4401
-- `pc != 0x25cc`: line 4412
-- `else if (pc == 0x451c)`: line 4497
-- `spu_es_hle_verify_candidate`: line 5511
+- `exec_es_spu_hle_verify_candidate`: line 4466
+- `pc != 0x25cc`: line 4477
+- `else if (pc == 0x451c)`: line 4562
+- `spu_es_hle_verify_candidate`: line 5576
 
 ### vendored-rpcsx-core: Thor generic DMA probe
 
 - File: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\app\src\main\cpp\rpcsx\kernel\cellos\src\sys_spu.cpp`
 - Expectation: Vendored core has generic DMA profiling, but this is not the 25cc/451c contract lane.
 - Interpretation: Do not port or enable Android fast paths during the Windows gate; use this only as later porting context.
-- `thor_es_dma_superpath_mode`: line 288
-- `record_thor_es_dma_seen`: line 428
-- `log_thor_es_dma_probe`: line 455
+- `thor_es_dma_superpath_mode`: line 295
+- `record_thor_es_dma_seen`: line 435
+- `log_thor_es_dma_probe`: line 462
 
 ### vendored-rpcsx-core: Vendored 25cc/451c contract predicates
 

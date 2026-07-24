@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
-    "generated_at":  "2026-06-03T12:53:01.3673041-04:00",
+    "generated_at":  "2026-07-24T17:23:13.7205093-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260603-115211-cpu4-loader-control-left200x2-reconfirm-after-blackoverlay-visualgate-windows-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows",
     "classification":  [
                            "analysis",
                            "source-alignment"
@@ -158,22 +158,22 @@
                                           {
                                               "pattern":  "exec_es_spu_hle_verify_candidate",
                                               "present":  true,
-                                              "line":  4401
+                                              "line":  4466
                                           },
                                           {
                                               "pattern":  "pc != 0x25cc",
                                               "present":  true,
-                                              "line":  4412
+                                              "line":  4477
                                           },
                                           {
                                               "pattern":  "else if (pc == 0x451c)",
                                               "present":  true,
-                                              "line":  4497
+                                              "line":  4562
                                           },
                                           {
                                               "pattern":  "spu_es_hle_verify_candidate",
                                               "present":  true,
-                                              "line":  5511
+                                              "line":  5576
                                           }
                                       ]
                      },
@@ -192,17 +192,17 @@
                                           {
                                               "pattern":  "thor_es_dma_superpath_mode",
                                               "present":  true,
-                                              "line":  288
+                                              "line":  295
                                           },
                                           {
                                               "pattern":  "record_thor_es_dma_seen",
                                               "present":  true,
-                                              "line":  428
+                                              "line":  435
                                           },
                                           {
                                               "pattern":  "log_thor_es_dma_probe",
                                               "present":  true,
-                                              "line":  455
+                                              "line":  462
                                           }
                                       ]
                      },
