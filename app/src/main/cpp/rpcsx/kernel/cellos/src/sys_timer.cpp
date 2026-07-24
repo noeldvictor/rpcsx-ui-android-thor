@@ -29,6 +29,15 @@ LOG_CHANNEL(sys_timer);
 
 namespace {
 
+static FORCE_INLINE sleep_timers_accuracy_level
+get_sleep_timers_accuracy_for_wait() noexcept {
+#ifdef __ANDROID__
+  return g_cfg.core.sleep_timers_accuracy.observe();
+#else
+  return g_cfg.core.sleep_timers_accuracy.get();
+#endif
+}
+
 constexpr u64 thor_es_frame_poll_wait_max_us = 1000;
 constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500;
 constexpr u64 thor_es_frame_poll_log_probe_mask = 1023;
@@ -946,7 +955,7 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
       return CELL_OK;
     }
 
-    lv2_obj::sleep(ppu, g_cfg.core.sleep_timers_accuracy <
+    lv2_obj::sleep(ppu, get_sleep_timers_accuracy_for_wait() <
                                 sleep_timers_accuracy_level::_usleep
                             ? sleep_time
                             : 0);

@@ -85,6 +85,15 @@ void set_rsx_yield_flag() noexcept;
 using spu_rdata_t = decltype(spu_thread::rdata);
 extern u32 compute_rdata_hash32(const spu_rdata_t &_src);
 
+static FORCE_INLINE sleep_timers_accuracy_level
+get_sleep_timers_accuracy_for_wait() noexcept {
+#ifdef __ANDROID__
+  return g_cfg.core.sleep_timers_accuracy.observe();
+#else
+  return g_cfg.core.sleep_timers_accuracy.get();
+#endif
+}
+
 #if defined(__ANDROID__) && !defined(RPCSX_THOR_SYSCALL_STATS)
 static FORCE_INLINE constexpr bool ppu_syscall_stats_enabled() noexcept {
   return false;
@@ -2085,8 +2094,9 @@ bool lv2_obj::awake_unlocked(cpu_thread *cpu, s32 prio) {
 
       // When not being set to All timers - activate only for
       // sys_ppu_thread_start
-      if (is_create_thread || g_cfg.core.sleep_timers_accuracy ==
-                                  sleep_timers_accuracy_level::_all_timers) {
+      if (is_create_thread ||
+          get_sleep_timers_accuracy_for_wait() ==
+              sleep_timers_accuracy_level::_all_timers) {
         if (!current_ppu->state.test_and_set(cpu_flag::yield) ||
             current_ppu->hw_sleep_time != 0) {
           current_ppu->hw_sleep_time += (is_create_thread ? 51 : 35);
@@ -2372,7 +2382,12 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread *cpu, bool scale,
 
   if (scale) {
     // Scale time
-    usec = std::min<u64>(usec, u64{umax} / 100) * 100 / g_cfg.core.clocks_scale;
+#ifdef __ANDROID__
+    const u64 clocks_scale = g_cfg.core.clocks_scale.observe();
+#else
+    const u64 clocks_scale = g_cfg.core.clocks_scale.get();
+#endif
+    usec = std::min<u64>(usec, u64{umax} / 100) * 100 / clocks_scale;
   }
 
   // Clamp
@@ -2418,7 +2433,7 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread *cpu, bool scale,
 #endif
     // TODO: Tune for other non windows operating sytems
 
-    if (g_cfg.core.sleep_timers_accuracy <
+    if (get_sleep_timers_accuracy_for_wait() <
         (is_usleep ? sleep_timers_accuracy_level::_usleep
                    : sleep_timers_accuracy_level::_all_timers)) {
       wait_for(remaining);

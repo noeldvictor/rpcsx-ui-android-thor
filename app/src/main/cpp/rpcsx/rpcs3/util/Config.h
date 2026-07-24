@@ -279,6 +279,11 @@ namespace cfg
 			return m_value;
 		}
 
+		T observe() const
+		{
+			return m_value.observe();
+		}
+
 		T get_default() const
 		{
 			return def;

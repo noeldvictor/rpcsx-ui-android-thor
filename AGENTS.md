@@ -2456,3 +2456,18 @@ Put dated run details in `debug-experiments/`, not here.
   contacted. Classify as host-verified `stackable-cpu-pressure`, not measured
   speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-usleep-addend-relaxed-load.md`.
+- Host-only Android timer/scheduler configuration reads now use relaxed atomic
+  observation for independent `sleep_timers_accuracy` and `clocks_scale`
+  scalars; desktop retains ordered reads, dynamic accuracy updates remain live,
+  and real state/token/queue acquires are unchanged. Exact ARM64 changes four
+  targeted `LDAR`s to immediate-offset `LDR`s and shrinks
+  `awake_unlocked`/`wait_timeout`/`sys_timer_usleep` by 64 bytes combined.
+  Saved title/battle/Options routes prove 411,148 normal timer calls avoid the
+  outer accuracy barrier; timeout-loop and scheduler savings are additional
+  uncounted credit. Exact successor is APK `BAE484CC...1B92D87DE` /
+  `72,837,128` bytes, merged core `AB8AE9A0...10FC48550` /
+  `1,304,328,192` bytes, and packaged core `298AC1FD...21D5A1850` /
+  `62,989,016` bytes. Native/APK builds, exact codegen, artifact identity, and
+  all `71/71` host contracts pass. Thor was not contacted. Classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal credit.
+  Ledger: `debug-experiments/20260724-thor-timer-config-relaxed-reads.md`.
