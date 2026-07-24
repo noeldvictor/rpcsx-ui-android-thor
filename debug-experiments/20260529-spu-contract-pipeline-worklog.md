@@ -1,3 +1,24 @@
+## 2026-07-24 17:42 ET - first-battle 25cc contract verifier route hits guest VM fault before prompt (no speed)
+
+Classification: failed-first-battle-route/fatal-vm-access-violation/spu-contract-verifier-clean-before-fault/no-speed.
+
+Evidence:
+- Ran `tools\eternal_sonata_speed_sprint.ps1 -Action WindowsScene -Scene battle -Label cpu4-stable-battle-25cc-contract-row-verify -EternalSonataGpuProbe Profile -EternalSonataSpuHleVerify Verify25ccShadow -WindowsVisualGate BattleRoute` with a custom battle macro that replaced the old single-frame load target gate with `gate_load_target_stable:45000`.
+- Run dir: `debug-captures\windows-lab\20260724-173853-cpu4-stable-battle-25cc-contract-row-verify-windows`.
+- Title-menu gate passed at 48s. Stable load target gate initially saw six unknown/non-target frames while the load UI settled, then confirmed two consecutive `PATH_TO_TENUTO_PRESENT` frames at 65s and 67s. Load-complete gate passed at 80s. Field gate passed at 83s and saved `screenshot-0083s-loaded-field-contract-battle.png`.
+- First-battle prompt gate timed out at 112s after 23 screenshots; the macro aborted before tutorial prompt input and RPCS3 exited before the 340s deadline.
+- Targeted fatal scan found a real fault in `RPCS3.log`: `VM: Access violation reading location 0x40 (unmapped memory)` at guest `0x002aedd0` around 87s. This invalidates the run for first-battle promotion even though field/load routing was clean up to that point.
+- Strict contract parser was refreshed into `spu-contracts\BLUS30161\latest-verify-logrow-results.*`: rows=27, accepted_rows=27, rejected_rows=0, total_contract_hits=59, total_contract_bytes=966656, total_contract_rejects=829, total_output_mismatch=0, total_desc_overflow=0, strict_gate_pass=true, promotion_ready=false.
+- GPU probe summary again reported no `Eternal Sonata GPU/DMA candidate probe` records and no RSX/offload evidence under this verifier mode; PUTLLC16 analyzer still found 7 detected patterns and 11 breakage rows.
+- Host contention stayed clean across 3 snapshots. Reservation-loop verifier was intentionally Off, so prior dirty lane-1 counterproof remains in force.
+
+Result:
+- Advances CPU/SPU bottleneck relief: partial only. The 25cc/9e4000 contract row stayed parser-clean before the route fault, which supports the verifier itself, but the scene failed before first-battle proof.
+- Advances GPU-feed/offload: no. No RSX-local/resource-flow evidence appeared, and the run ended on a guest VM fault.
+- Speed increase: no. This is not first-battle proof, not Options/menu proof, not A/B proof, and not a fast body/codegen run.
+
+Next narrow hypothesis:
+- Do not promote 25cc body/codegen from this run. First repair the first-battle route around the known `0x002aedd0` fault: either restore the previously validated battle movement timing without the failing custom post-field sequence, or add one route diagnostic that screenshots the movement position before `gate_first_battle_prompt` without changing verifier/body behavior. Keep `Verify25ccShadow` as log-only until field + Options/menu + first-battle all pass without VM faults.
 ## 2026-07-24 17:36 ET - 25cc/9e4000 contract verifier row accepted on stable field route (no speed)
 
 Classification: analysis/spu-contract-verifier/strict-parser-pass/no-speed.
@@ -11311,4 +11332,5 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
