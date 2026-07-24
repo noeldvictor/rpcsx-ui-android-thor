@@ -1,14 +1,14 @@
 ﻿# SPU Contract Verify Log Parse
 
-- Generated: `2026-07-24T17:53:52.4297554-04:00`
+- Generated: `2026-07-24T18:00:17.0596330-04:00`
 - Contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
 - HLE mode: `contract-25cc-9e4000`
-- Rows: `80`
-- Accepted rows: `80`
+- Rows: `30`
+- Accepted rows: `30`
 - Rejected rows: `0`
-- Total hits: `186`
-- Total bytes: `3047424`
-- Total contract rejects: `2607`
+- Total hits: `64`
+- Total bytes: `1048576`
+- Total contract rejects: `899`
 - Output mismatch: `0`
 - Descriptor overflow: `0`
 - Promotion score available: `True`
