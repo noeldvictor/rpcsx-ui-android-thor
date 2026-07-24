@@ -1576,7 +1576,9 @@ function Invoke-LabLoadTargetGate {
         [string]$RunLog,
         [datetime]$LaunchTime = (Get-Date),
         [int]$TimeoutMilliseconds = 15000,
-        [int]$PollMilliseconds = 1500
+        [int]$PollMilliseconds = 1500,
+        [int]$RequiredPathFrames = 1,
+        [switch]$ContinueOnWrongTarget
     )
 
     if ([string]::IsNullOrWhiteSpace($ScreenshotDir)) {
@@ -1601,6 +1603,9 @@ function Invoke-LabLoadTargetGate {
     }
     if ($PollMilliseconds -le 0) {
         $PollMilliseconds = 1500
+    }
+    if ($RequiredPathFrames -le 0) {
+        $RequiredPathFrames = 1
     }
 
     function Get-LabLoadTargetGateColorStats {
@@ -1758,9 +1763,14 @@ function Invoke-LabLoadTargetGate {
 
     $deadline = (Get-Date).AddMilliseconds($TimeoutMilliseconds)
     $attempt = 1
+    $consecutivePathTargets = 0
     $consecutiveWrongStateScreenshots = 0
     $wrongStateAbortThreshold = 2
-    Write-LabLine $RunLog "Load target gate polling for PATH_TO_TENUTO_PRESENT for up to ${TimeoutMilliseconds}ms."
+    if ($RequiredPathFrames -gt 1) {
+        Write-LabLine $RunLog "Load target gate polling for $RequiredPathFrames consecutive PATH_TO_TENUTO_PRESENT frames for up to ${TimeoutMilliseconds}ms."
+    } else {
+        Write-LabLine $RunLog "Load target gate polling for PATH_TO_TENUTO_PRESENT for up to ${TimeoutMilliseconds}ms."
+    }
     while ($true) {
         if ($Process) {
             $Process.Refresh()
@@ -1781,22 +1791,39 @@ function Invoke-LabLoadTargetGate {
             foreach ($line in @($output)) {
                 Write-LabLine $RunLog "Load target gate: $line"
             }
-            Write-LabLine $RunLog "Load target gate passed after attempt ${attempt}: PATH_TO_TENUTO_PRESENT."
-            return $true
+            $consecutivePathTargets++
+            if ($consecutivePathTargets -ge $RequiredPathFrames) {
+                Write-LabLine $RunLog "Load target gate passed after attempt ${attempt}: PATH_TO_TENUTO_PRESENT stable frames $consecutivePathTargets/$RequiredPathFrames."
+                return $true
+            }
+            Write-LabLine $RunLog "Load target gate stable frame ${consecutivePathTargets}/${RequiredPathFrames}; continuing until confirmed."
+            if ((Get-Date) -ge $deadline) {
+                Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message ("timed out after {0}ms after only {1}/{2} stable Path-to-Tenuto frames" -f $TimeoutMilliseconds, $consecutivePathTargets, $RequiredPathFrames)
+                return $false
+            }
+            $remainingMs = [int][Math]::Max(0, ($deadline - (Get-Date)).TotalMilliseconds)
+            Start-Sleep -Milliseconds ([Math]::Min($PollMilliseconds, $remainingMs))
+            $attempt++
+            continue
         } catch {
             $message = $_.Exception.Message
             $status = Get-LabLoadTargetStatus -ClassifierOutput (@($output) + @($message))
             if ([string]::IsNullOrWhiteSpace($status)) {
                 $status = "UNKNOWN_LOAD_TARGET"
             }
+            $consecutivePathTargets = 0
 
             Write-LabLine $RunLog "Load target gate attempt ${attempt}: $status ($message)"
-            if ($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS" -or $status -eq "DAMAGED_SAVE_TARGET") {
+            if (($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS" -or $status -eq "DAMAGED_SAVE_TARGET") -and -not $ContinueOnWrongTarget) {
                 foreach ($line in @($output)) {
                     Write-LabLine $RunLog "Load target gate: $line"
                 }
                 Write-LabLoadTargetFailure -ElapsedSeconds $elapsedSeconds -Message $message
                 return $false
+            } elseif ($status -eq "DEBUG_SAVE_PROLOGUE_PRESENT" -or $status -eq "MIXED_LOAD_TARGETS" -or $status -eq "DAMAGED_SAVE_TARGET") {
+                foreach ($line in @($output)) {
+                    Write-LabLine $RunLog "Load target gate: $line"
+                }
             }
 
             $screenshotClass = Get-LabLoadTargetGateScreenshotClass -Path $screenshotPath
@@ -1997,10 +2024,15 @@ function Invoke-LabInputMacro {
             continue
         }
 
-        if ($nameLower -eq "gate_load_target" -or $nameLower -eq "assert_load_target" -or $nameLower -eq "load_target_gate") {
+        if ($nameLower -eq "gate_load_target" -or $nameLower -eq "assert_load_target" -or $nameLower -eq "load_target_gate" -or $nameLower -eq "gate_load_target_stable" -or $nameLower -eq "stable_load_target_gate" -or $nameLower -eq "assert_load_target_stable") {
             $gateTimeoutMilliseconds = if ($duration -gt 0) { $duration } else { 15000 }
-            Write-LabLine $RunLog "Input load target gate (timeout ${gateTimeoutMilliseconds}ms)"
-            $gatePassed = Invoke-LabLoadTargetGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds
+            $stableLoadTargetGate = ($nameLower -eq "gate_load_target_stable" -or $nameLower -eq "stable_load_target_gate" -or $nameLower -eq "assert_load_target_stable")
+            if ($stableLoadTargetGate) {
+                Write-LabLine $RunLog "Input stable load target gate (timeout ${gateTimeoutMilliseconds}ms; required consecutive Path frames 2)"
+            } else {
+                Write-LabLine $RunLog "Input load target gate (timeout ${gateTimeoutMilliseconds}ms)"
+            }
+            $gatePassed = Invoke-LabLoadTargetGate -Process $Process -ScreenshotDir $ScreenshotDir -RunLog $RunLog -LaunchTime $LaunchTime -TimeoutMilliseconds $gateTimeoutMilliseconds -RequiredPathFrames $(if ($stableLoadTargetGate) { 2 } else { 1 }) -ContinueOnWrongTarget:$stableLoadTargetGate
             if (-not $gatePassed) {
                 Write-LabLine $RunLog "Input macro aborted before pressing Cross because the load target gate failed."
                 if (-not $Process.HasExited) {
