@@ -2396,3 +2396,19 @@ Put dated run details in `debug-experiments/`, not here.
   contracts pass. Thor was not contacted. Classify as host-verified
   `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-frame-wait-ppu-mode-cache.md`.
+- Host-only Android Eternal Sonata frame-poll mode encoding now makes `off`
+  zero and dispatches `Fast` before unresolved/cold work. A rejected first
+  link duplicated the inlined Fast body and grew `sys_timer_usleep` to
+  `0x67c`; the retained source shares one Fast block. Exact linked ARM64
+  reduces steady exact Fast classification `13 -> 10` instructions, implying
+  519,834 fewer gate instructions across saved title/battle/Options routes.
+  `sys_timer_usleep` grows only `0x498 -> 0x4a4` for cold defensive dispatch.
+  Exact successor is APK `B825212A...10E006` / `72,837,192` bytes, merged core
+  `DC6B9D3D...B63A6EB` / `1,304,324,400` bytes, and packaged core
+  `29350625...762660` / `62,989,160` bytes. Official upstream master remains
+  `7a90d09cf`; its recent ARM64-relevant FMA/reduced-loop work is already
+  represented locally. Native/APK builds, exact predecessor/successor
+  codegen, artifact identity, and all `70/70` host contracts pass. Thor was
+  not contacted. Classify as host-verified `stackable-cpu-pressure`, not
+  measured speed or thermal credit. Ledger:
+  `debug-experiments/20260724-thor-frame-wait-fast-first-mode.md`.

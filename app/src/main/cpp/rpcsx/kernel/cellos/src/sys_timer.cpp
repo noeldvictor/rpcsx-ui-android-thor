@@ -458,19 +458,30 @@ try_thor_es_frame_poll_wait(ppu_thread &ppu, u64 sleep_time) {
     return thor_es_frame_poll_wait_result::not_candidate;
   }
 
-  if (mode == thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]] {
-    mode = get_thor_es_frame_poll_wait_mode();
-    ppu.thor_es_frame_poll_mode = mode;
-    if (mode == thor_es_frame_poll_wait_mode::off) {
-      return thor_es_frame_poll_wait_result::not_candidate;
-    }
-  }
-
   if (mode == thor_es_frame_poll_wait_mode::fast) {
-    return try_thor_es_frame_poll_wait_impl<false>(ppu);
+    goto fast_wait;
   }
 
-  return try_thor_es_frame_poll_wait_diagnostic(ppu);
+  if (mode == thor_es_frame_poll_wait_mode::diagnostic) {
+    return try_thor_es_frame_poll_wait_diagnostic(ppu);
+  }
+
+  if (mode != thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]] {
+    return thor_es_frame_poll_wait_result::not_candidate;
+  }
+
+  mode = get_thor_es_frame_poll_wait_mode();
+  ppu.thor_es_frame_poll_mode = mode;
+  if (mode == thor_es_frame_poll_wait_mode::diagnostic) {
+    return try_thor_es_frame_poll_wait_diagnostic(ppu);
+  }
+
+  if (mode != thor_es_frame_poll_wait_mode::fast) {
+    return thor_es_frame_poll_wait_result::not_candidate;
+  }
+
+fast_wait:
+  return try_thor_es_frame_poll_wait_impl<false>(ppu);
 }
 
 void observe_thor_es_frame_poll_fallback(

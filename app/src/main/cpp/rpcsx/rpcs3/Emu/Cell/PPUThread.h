@@ -41,10 +41,10 @@ enum class ppu_join_status : u32
 
 enum class thor_es_frame_poll_wait_mode : u8
 {
-	uninitialized,
 	off,
-	diagnostic,
 	fast,
+	diagnostic,
+	uninitialized,
 };
 
 enum ppu_thread_status : u32

@@ -102,6 +102,11 @@ foreach ($modeCacheContract in @(
     }
 }
 
+$modeEncodingPattern = '(?s)enum class thor_es_frame_poll_wait_mode : u8\s*\{\s*off,\s*fast,\s*diagnostic,\s*uninitialized,\s*\};'
+if (-not [regex]::IsMatch($mainPpuHeader, $modeEncodingPattern)) {
+    throw 'Android PPU frame-wait mode must keep the hot off and fast states encoded as zero and one.'
+}
+
 $modeCacheInitializers = [regex]::Matches(
     $mainPpuSource,
     'thor_es_frame_poll_mode\(get_initial_thor_es_frame_poll_wait_mode\(id\)\)')
@@ -312,8 +317,14 @@ $waitModeLoad = $waitFunction.IndexOf(
 $waitCandidateGate = $waitFunction.IndexOf(
     'if (mode == thor_es_frame_poll_wait_mode::off ||',
     $waitWrapperStart)
+$waitFastGate = $waitFunction.IndexOf(
+    'if (mode == thor_es_frame_poll_wait_mode::fast)',
+    $waitWrapperStart)
+$waitDiagnosticGate = $waitFunction.IndexOf(
+    'if (mode == thor_es_frame_poll_wait_mode::diagnostic)',
+    $waitWrapperStart)
 $waitColdGate = $waitFunction.IndexOf(
-    'if (mode == thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]]',
+    'if (mode != thor_es_frame_poll_wait_mode::uninitialized) [[unlikely]]',
     $waitWrapperStart)
 $waitModeResolve = $waitFunction.IndexOf(
     'mode = get_thor_es_frame_poll_wait_mode()',
@@ -321,10 +332,21 @@ $waitModeResolve = $waitFunction.IndexOf(
 $waitModeStore = $waitFunction.IndexOf(
     'ppu.thor_es_frame_poll_mode = mode',
     $waitWrapperStart)
+$waitFastLabel = $waitFunction.IndexOf(
+    'fast_wait:',
+    $waitWrapperStart)
 if ($waitWrapperStart -lt 0 -or $waitModeLoad -lt $waitWrapperStart -or
-    $waitCandidateGate -le $waitModeLoad -or $waitColdGate -le $waitCandidateGate -or
-    $waitModeResolve -le $waitColdGate -or $waitModeStore -le $waitModeResolve) {
-    throw 'Android frame-poll wrapper must load its PPU cache, reject mismatches, then resolve and store settings only on the cold path.'
+    $waitCandidateGate -le $waitModeLoad -or $waitFastGate -le $waitCandidateGate -or
+    $waitDiagnosticGate -le $waitFastGate -or $waitColdGate -le $waitDiagnosticGate -or
+    $waitModeResolve -le $waitColdGate -or $waitModeStore -le $waitModeResolve -or
+    $waitFastLabel -le $waitModeStore) {
+    throw 'Android frame-poll wrapper must reject mismatches, dispatch hot fast and diagnostic modes, then resolve and store settings only on the cold path.'
+}
+$fastWaitCalls = [regex]::Matches(
+    $waitFunction,
+    'return try_thor_es_frame_poll_wait_impl<false>\(ppu\);')
+if ($fastWaitCalls.Count -ne 1) {
+    throw "Android frame-poll wrapper must share exactly one inlined Fast body; found $($fastWaitCalls.Count)."
 }
 
 $fallbackFunctionEnd = $mainTimer.IndexOf('} // namespace', $fallbackFunctionStart)
