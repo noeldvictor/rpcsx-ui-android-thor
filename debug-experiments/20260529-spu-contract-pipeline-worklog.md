@@ -1,4 +1,14 @@
-﻿## 2026-07-24 18:55 ET - diag200 boundary reconfirmed after black-overlay repair (no speed)
+﻿## 2026-07-24 19:02 ET - 25cc direction-split retry still black-overlays despite fieldproof screenshots (no speed)
+
+- Workflow/refiner context: followed the refiner recommendation after the clean `left200x2+diag200` boundary proof: retry the 0x25cc direction-split verifier on the known-clean route instead of adding another route-only proof.
+- Run: `debug-captures\windows-lab\20260724-185816-cpu4-loader-control-left200x2-diag200-25cc-dirsplit-fieldproof-windows`
+- Mode/config: Windows-only RPCS3 screen-1 run, `Verify25ccShadow` enabled, GPU candidate probe off, reservation-loop verify off, body/codegen/Vulkan fast paths off; inline screenshots were added around the route boundary.
+- Visual gate: failed, `NO_FIELD_LIKE_SCREENSHOT`; first field-like screenshot was none; required field-like by 160s failed; 18/18 screenshots were `cutscene-or-nonfield-small-png` from 117s through 220s; fatal/crash signature lines: 0.
+- 25cc contract parser output, run-local only because visuals were invalid: rows=161, accepted=161, rejected=0, total_contract_hits=326, total_contract_bytes=5,341,184, GET hits=160, PUT hits=166, output_mismatch=0, desc_overflow=0, strict_failures=none; outputs written to `contract-verify-logrow-results.json` and `.md` in the run directory.
+- RSX/GPU evidence: nonzero `rsx_get_bytes`/`rsx_put_bytes` rows=0; GPU probe summary had records=0, MFC dynamic/wait records=0, SPU HLE 0x25cc shadow records=0, and only existing PUTLLC16 analyzer diagnostics. Host was clean, but GPU engine remained low; no GPU-feed/offload proof.
+- Classification: failed visual gate / black-overlay 25cc direction-split repeat counterproof / not comparable / no speed increase. The verifier rows are useful for contract shape, but cannot promote any fast path because the route/render state did not reach valid field proof.
+- Decision/next hypothesis: stop rerunning `Verify25ccShadow` as-is. The clean reservation-loop route immediately before this plus repeated 25cc black-overlay counterproofs point at the active 25cc verifier instrumentation/config perturbing the route or render state. Next non-duplicative step should inspect/patch the active 25cc source/harness for route-safe lower-overhead logging or an accepted-field early gate before contract-row promotion; 25cc body/codegen/Vulkan fast modes remain blocked until that clean proof exists.
+## 2026-07-24 18:55 ET - diag200 boundary reconfirmed after black-overlay repair (no speed)
 
 Classification: route-tooling/valid-field-triage/left200x2-plus-diag200-reconfirmed/reservation-loop-verify-telemetry/no-speed.
 
@@ -11560,6 +11570,7 @@ ot-speed.
 - Classification: `save-list-inventory`, `path-to-tenuto-visible-middle-row`, `damaged-save-target`, `route-repair-target-found`, `gpu-offload-parked`, `not-speed`.
 - Speed status: confirmed speed increase remains `0%`. This is not field proof, Options/menu proof, first-battle proof, 200% proof, HLE proof, or GPU migration credit.
 - Next hypothesis: repair route targeting to select the visible middle `Save File 04 / Path to Tenuto` row before pressing load confirm. Only after `PATH_TO_TENUTO_PRESENT` and field visuals pass should `Verify25ccShadow` or any bodyfast/codegen/GPU lane resume.
+
 
 
 
