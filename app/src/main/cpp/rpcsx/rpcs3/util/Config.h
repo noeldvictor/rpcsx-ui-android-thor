@@ -197,6 +197,11 @@ namespace cfg
 			return m_value;
 		}
 
+		bool observe() const
+		{
+			return m_value.observe();
+		}
+
 		void from_default() override;
 
 		std::string to_string() const override

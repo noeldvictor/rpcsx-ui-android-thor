@@ -2484,3 +2484,17 @@ Put dated run details in `debug-experiments/`, not here.
   contacted. No dynamic execution count exists; classify as host-verified
   `stackable-cpu-pressure`, not measured speed or thermal credit. Ledger:
   `debug-experiments/20260724-thor-ppu-thread-count-relaxed-reads.md`.
+- Host-only Android SPU MFC accurate-DMA decisions now use relaxed reads of
+  the independent, non-dynamic config byte; desktop retains ordered reads and
+  all DMA, RSX-lock, reservation, fence, and notification ordering is
+  unchanged. Exact ARM64 changes five `LDARB` sites into direct-offset `LDRB`
+  loads, removes five address-forming instructions, retains all 56 non-target
+  acquires, and shrinks the two linked functions eight bytes total. Exact
+  successor is APK `87237F66...68DFD4F6` / `72,837,220` bytes, merged core
+  `5296091F...BC1FD337` / `1,304,327,520` bytes, and packaged core
+  `B651E5C7...D54D4126` / `62,988,888` bytes. Native/APK builds, exact
+  codegen, artifact identity, and all `73/73` host contracts pass. Thor was
+  not contacted. No exact Android execution count exists; classify as
+  host-verified `stackable-cpu-pressure`, not measured speed or thermal
+  credit. Ledger:
+  `debug-experiments/20260724-thor-spu-accurate-dma-relaxed-reads.md`.

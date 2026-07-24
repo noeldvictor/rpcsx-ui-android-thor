@@ -114,6 +114,15 @@ const u32 spu_frsqest_exponent_lut[256] =
 
 using spu_rdata_t = decltype(spu_thread::rdata);
 
+static FORCE_INLINE bool get_spu_accurate_dma_for_mfc() noexcept
+{
+#ifdef ANDROID
+	return g_cfg.core.spu_accurate_dma.observe();
+#else
+	return g_cfg.core.spu_accurate_dma.get();
+#endif
+}
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_SPURS_PROBE)
 static bool thor_spurs_probe_enabled() noexcept
 {
@@ -3353,9 +3362,9 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 	record_thor_es_dma_payload(_this, args.cmd, src, args.size);
 
-	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !g_cfg.core.spu_accurate_dma && eal < rsx::constants::local_mem_base)));
+	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !get_spu_accurate_dma_for_mfc() && eal < rsx::constants::local_mem_base)));
 
-	if ((!g_use_rtm && !is_get) || g_cfg.core.spu_accurate_dma) [[unlikely]]
+	if ((!g_use_rtm && !is_get) || get_spu_accurate_dma_for_mfc()) [[unlikely]]
 	{
 		perf_meter<"ADMA_GET"_u64> perf_get = perf_;
 		perf_meter<"ADMA_PUT"_u64> perf_put = perf_;
@@ -3506,7 +3515,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 			}
 		}
 
-		if (g_cfg.core.spu_accurate_dma) [[unlikely]]
+		if (get_spu_accurate_dma_for_mfc()) [[unlikely]]
 		{
 			for (u32 size0, size = args.size;; size -= size0, dst += size0, src += size0, eal += size0)
 			{
@@ -4067,12 +4076,12 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 
 	u8 optimization_compatible = transfer.cmd & (MFC_GET_CMD | MFC_PUT_CMD);
 
-	if (spu_log.trace || g_cfg.core.spu_accurate_dma || g_cfg.core.mfc_debug)
+	if (spu_log.trace || get_spu_accurate_dma_for_mfc() || g_cfg.core.mfc_debug)
 	{
 		optimization_compatible = 0;
 	}
 
-	rsx::reservation_lock<false, 1> rsx_lock(0, 128, optimization_compatible == MFC_PUT_CMD && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !g_cfg.core.spu_accurate_dma)));
+	rsx::reservation_lock<false, 1> rsx_lock(0, 128, optimization_compatible == MFC_PUT_CMD && (g_cfg.video.strict_rendering_mode || (g_cfg.core.rsx_fifo_accuracy && !get_spu_accurate_dma_for_mfc())));
 
 	constexpr u32 ts_mask = 0x7fff;
 
