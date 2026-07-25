@@ -1,3 +1,7 @@
+## 2026-07-24 20:45 ET - post-guard Options/menu rerun has no valid 25cc evidence
+- Evidence: `debug-captures/windows-lab/20260724-204312-cpu4-title-options-25cc-counts-freshlog-menuproof-windows-windows` reproduced the menu failure with no screenshots and `RPCS3 game window was not found`; process exited at `47s` with exit code `1`.
+- The stale-log guard worked: no run-local `RPCS3.log` was copied, and `stale-rpcs3-log-skipped.txt` records source `RPCS3.log` last write `20:29:44` before launch `20:43:15`. There are no valid parser rows or SPU/GPU counters for this menu attempt.
+- Safety classification: `failed-menu-window-missing / stale-log-guard-proven / no-speed / no-gpu-migration-credit`. Do not use prior counts rows for Options/menu promotion; fix fresh log/window capture first.
 ## 2026-07-24 20:40 ET - stale log evidence invalidates prior Options/menu counts rows
 - Recheck found `debug-captures/windows-lab/20260724-203436-cpu4-title-options-25cc-counts-menuproof-windows-windows/RPCS3.log` was older than the run launch (`20:29:44` log write vs `20:34:36` run create). The `80/80` counts rows previously parsed from that file are stale and are not valid menu-run evidence.
 - Guard added in `tools/windows_rpcs3_lab.ps1`: stale source RPCS3 logs are skipped with `stale-rpcs3-log-skipped.txt` instead of copied and summarized. Promotion remains blocked until a fresh run-local log and real Options/menu screenshots exist.
