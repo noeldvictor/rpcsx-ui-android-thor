@@ -492,6 +492,7 @@ function New-VerifyCounterSchema {
         mode = "verify-only"
         required_environment = [pscustomobject]@{
             RPCS3_ES_SPU_HLE_VERIFY = "verify-25cc-shadow"
+            RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD = "full-for-promotion; counts-or-sampled-for-route-repair-only"
             RPCS3_ES_SPU_HLE_25CC_BODY = "disabled-or-verify-only"
             blocked_values = @(
                 "RPCS3_ES_SPU_HLE_VERIFY=skip",
@@ -558,6 +559,7 @@ function New-VerifyCounterSchema {
         )
         counters_to_add_or_label = @(
             "contract_id=mfc-descriptor-family-25cc-9e4000",
+            "payload_mode=full|sampled|counts",
             "contract_hits",
             "contract_bytes",
             "contract_get_hits",
@@ -589,6 +591,7 @@ function New-VerifyCounterSchema {
             "spu_hle_25cc_shadow_output_mismatch == 0",
             "spu_hle_25cc_shadow_desc_overflow == 0",
             "fatal_log_hits == 0",
+            "payload_mode == full for promotion; missing/counts/sampled rows are route-repair only",
             "visual_gate in field, Options/menu, and first-battle is clean before promotion"
         )
         implementation_sites = @(
@@ -603,7 +606,8 @@ function New-VerifyCounterSchema {
             "Any nonzero descriptor overflow",
             "Any fatal/access/device-lost/assertion log hit",
             "Any black, wrong-window, loading-only, corrupt, crash-overlay, or nonfield visual where field/menu/battle is required",
-            "Any fast/body/codegen/Vulkan mode enabled before verify-only proof"
+            "Any fast/body/codegen/Vulkan mode enabled before verify-only proof",
+            "Any missing/counts/sampled payload_mode row promoted as full verifier evidence"
         )
         next_action = "Implement the log-label/reject-bucket row for the priority-1 lane; do not change copy/body behavior."
     }
@@ -648,6 +652,7 @@ function New-VerifyLogRowImplementation {
                 "mode",
                 "verify_mode",
                 "body_mode",
+                "payload_mode",
                 "group_name",
                 "spu_name",
                 "entry",
@@ -684,8 +689,8 @@ function New-VerifyLogRowImplementation {
                 "cause",
                 "status"
             )
-            example = "Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=$contractId title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled group_name=`"CellSpursKernelGroup`" spu_name=`"CellSpursKernel0`" entry=0x0 image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 reject_title=0 reject_image_sig=0 reject_pc=0 reject_group=0 reject_spu_name=0 reject_cmd=0 reject_list=0 reject_tag=0 reject_size=0 reject_eah=0 reject_eal_family=0 reject_lsa_range=0 reject_mfc_shuffle=0 reject_accurate_dma=0 reject_fast_mode=0 output_mismatch=0 desc_overflow=0 last_src_hash=0x0 last_dst_pre_hash=0x0 last_dst_post_hash=0x0 cause=0x0 status=0x0"
-            strict_parser_command = ".\tools\parse_spu_contract_verify_log.ps1 -LogPath <RPCS3.log> -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate"
+            example = "Eternal Sonata SPU contract verifier: hle_mode=contract-25cc-9e4000 contract_id=$contractId title=BLUS30161 mode=profile verify_mode=verify-25cc-shadow body_mode=disabled payload_mode=full group_name=`"CellSpursKernelGroup`" spu_name=`"CellSpursKernel0`" entry=0x0 image_sig=0x958dfe208b686622 pc=0x25cc tag=31 size=16384 eal=0x9e4000 contract_hits=0 contract_bytes=0 contract_get_hits=0 contract_put_hits=0 contract_reject_total=0 reject_title=0 reject_image_sig=0 reject_pc=0 reject_group=0 reject_spu_name=0 reject_cmd=0 reject_list=0 reject_tag=0 reject_size=0 reject_eah=0 reject_eal_family=0 reject_lsa_range=0 reject_mfc_shuffle=0 reject_accurate_dma=0 reject_fast_mode=0 output_mismatch=0 desc_overflow=0 last_src_hash=0x0 last_dst_pre_hash=0x0 last_dst_post_hash=0x0 cause=0x0 status=0x0"
+            strict_parser_command = ".\tools\parse_spu_contract_verify_log.ps1 -LogPath <RPCS3.log> -RequiredPayloadMode Full -RequireAcceptedRow -RequireNoRejected -MinContractHits 1 -FailOnGate"
         }
         derived_from_existing = @(
             [pscustomobject]@{ target = "contract_hits"; source = "spu_hle_25cc_shadow_ea9e4000_hits or sum(desc.hits where desc.family == 1)" },
@@ -725,7 +730,7 @@ function New-VerifyLogRowImplementation {
             "No memcpy/body/fast path behavior changes in the first patch.",
             "The row appears under RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow.",
             "The row does not appear under blocked fast modes except as reject_fast_mode > 0.",
-            "The strict parser command exits 0 only when at least one accepted row exists and contract_hits >= 1.",
+            "The strict parser command exits 0 only when at least one accepted row exists, payload_mode=full, and contract_hits >= 1.",
             "contract_hits equals contract_get_hits + contract_put_hits.",
             "output_mismatch == 0 and desc_overflow == 0 are required before any promotion.",
             "Field, Options/menu, and first-battle visual gates are still required."
@@ -915,6 +920,7 @@ $counterMd.Add("") | Out-Null
 $counterMd.Add("## Required Environment") | Out-Null
 $counterMd.Add("") | Out-Null
 $counterMd.Add("- $($bt)RPCS3_ES_SPU_HLE_VERIFY=$($counterSchema.required_environment.RPCS3_ES_SPU_HLE_VERIFY)$bt") | Out-Null
+$counterMd.Add("- $($bt)RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD=$($counterSchema.required_environment.RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD)$bt") | Out-Null
 $counterMd.Add("- $($bt)RPCS3_ES_SPU_HLE_25CC_BODY=$($counterSchema.required_environment.RPCS3_ES_SPU_HLE_25CC_BODY)$bt") | Out-Null
 $counterMd.Add("- Blocked: $bt$($counterSchema.required_environment.blocked_values -join ', ')$bt") | Out-Null
 $counterMd.Add("") | Out-Null

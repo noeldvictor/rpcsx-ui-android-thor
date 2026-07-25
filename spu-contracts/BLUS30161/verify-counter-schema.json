@@ -1,8 +1,8 @@
-{
+﻿{
     "schema_version":  1,
-    "generated_at":  "2026-07-24T17:23:13.7683175-04:00",
+    "generated_at":  "2026-07-24T20:18:14.9582190-04:00",
     "title_id":  "BLUS30161",
-    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows",
+    "source_run":  "C:\\Users\\leanerdesigner\\Documents\\New project 6\\rpcsx-ui-android\\debug-captures\\windows-lab\\20260724-200742-cpu4-loader-control-left200-visualgate-windows-windows",
     "classification":  [
                            "analysis",
                            "verify-counter-schema"
@@ -157,11 +157,11 @@
                                    ],
     "counters_to_add_or_label":  [
                                      "contract_id=mfc-descriptor-family-25cc-9e4000",
+                                     "payload_mode=full|sampled|counts",
                                      "contract_hits",
                                      "contract_bytes",
                                      "contract_get_hits",
                                      "contract_put_hits",
-                                     "payload_mode=full|sampled|counts",
                                      "contract_reject_total",
                                      "reject_title",
                                      "reject_image_sig",
@@ -188,8 +188,8 @@
                               "contract_hits == contract_get_hits + contract_put_hits",
                               "spu_hle_25cc_shadow_output_mismatch == 0",
                               "spu_hle_25cc_shadow_desc_overflow == 0",
-                              "payload_mode == full for promotion; missing/counts/sampled rows are route-repair only",
                               "fatal_log_hits == 0",
+                              "payload_mode == full for promotion; missing/counts/sampled rows are route-repair only",
                               "visual_gate in field, Options/menu, and first-battle is clean before promotion"
                           ],
     "implementation_sites":  [
@@ -224,7 +224,8 @@
                                "Any nonzero descriptor overflow",
                                "Any fatal/access/device-lost/assertion log hit",
                                "Any black, wrong-window, loading-only, corrupt, crash-overlay, or nonfield visual where field/menu/battle is required",
-                               "Any fast/body/codegen/Vulkan mode enabled before verify-only proof"
+                               "Any fast/body/codegen/Vulkan mode enabled before verify-only proof",
+                               "Any missing/counts/sampled payload_mode row promoted as full verifier evidence"
                            ],
     "next_action":  "Implement the log-label/reject-bucket row for the priority-1 lane; do not change copy/body behavior."
 }

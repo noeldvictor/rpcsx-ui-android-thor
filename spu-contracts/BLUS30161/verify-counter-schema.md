@@ -1,8 +1,8 @@
 ﻿# SPU Verify Counter Schema
 
-- Generated: `2026-07-24T17:23:13.5881581-04:00`
+- Generated: `2026-07-24T20:18:14.8290466-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-200742-cpu4-loader-control-left200-visualgate-windows-windows`
 - Lane: `mfc-descriptor-family-25cc-9e4000`
 - Contract: `BLUS30161-958dfe208b686622-pc025cc-CellSpursKernel0`
 - Classification: `analysis`, `verify-counter-schema`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
@@ -10,6 +10,7 @@
 ## Required Environment
 
 - `RPCS3_ES_SPU_HLE_VERIFY=verify-25cc-shadow`
+- `RPCS3_ES_SPU_HLE_25CC_SHADOW_PAYLOAD=full-for-promotion; counts-or-sampled-for-route-repair-only`
 - `RPCS3_ES_SPU_HLE_25CC_BODY=disabled-or-verify-only`
 - Blocked: `RPCS3_ES_SPU_HLE_VERIFY=skip, RPCS3_ES_SPU_HLE_VERIFY=fast, RPCS3_ES_SPU_HLE_25CC_BODY=fast, RPCS3_ES_GPU_PROBE=fast, vulkan-compute-fast-path`
 
@@ -73,6 +74,7 @@
 
 ## Counters To Add Or Label
 - `contract_id=mfc-descriptor-family-25cc-9e4000`
+- `payload_mode=full|sampled|counts`
 - `contract_hits`
 - `contract_bytes`
 - `contract_get_hits`
@@ -104,6 +106,7 @@
 - spu_hle_25cc_shadow_output_mismatch == 0
 - spu_hle_25cc_shadow_desc_overflow == 0
 - fatal_log_hits == 0
+- payload_mode == full for promotion; missing/counts/sampled rows are route-repair only
 - visual_gate in field, Options/menu, and first-battle is clean before promotion
 
 ## Implementation Sites

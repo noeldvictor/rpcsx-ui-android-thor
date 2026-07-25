@@ -1,11 +1,11 @@
 ﻿# SPU Contract Pipeline Summary
 
-- Generated: `2026-07-24T17:23:13.5881581-04:00`
+- Generated: `2026-07-24T20:18:14.8290466-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-200742-cpu4-loader-control-left200-visualgate-windows-windows`
 - Target PCs: `0x25cc, 0x451c`
 - Target EAs: `0x9e4000`
-- Ghidra headless: `C:\Users\leanerdesigner\Documents\SteamPortableTools\toolchains\ghidra_12.0.4_PUBLIC\support\analyzeHeadless.bat`
+- Ghidra headless: `missing-or-skipped`
 - Contracts: `2`
 
 | Contract | PC | Image | Classes | Hot log hits |

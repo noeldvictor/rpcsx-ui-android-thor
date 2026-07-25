@@ -1,8 +1,8 @@
 ﻿# SPU Contract Source Alignment
 
-- Generated: `2026-07-24T17:23:13.5881581-04:00`
+- Generated: `2026-07-24T20:18:14.8290466-04:00`
 - Title: `BLUS30161`
-- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-171442-cpu4-loadlist-stable-path-gate-field-resloop-verify-windows`
+- Source run: `C:\Users\leanerdesigner\Documents\New project 6\rpcsx-ui-android\debug-captures\windows-lab\20260724-200742-cpu4-loader-control-left200-visualgate-windows-windows`
 - Classification: `analysis`, `source-alignment`, not speed, not `gpu-migration-credit`, not a 200% gate candidate.
 
 | Source | Lane | Feature | Status | Patterns |
@@ -27,20 +27,20 @@
 - File: `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp`
 - Expectation: Priority-1 contract can be keyed by image, PC, tag, size, EA family, and command shape.
 - Interpretation: If present, the next useful change is counter labeling/reject accounting, not inventing a new predicate.
-- `get_es_mfc_25cc_runtime_family_raw`: line 656
-- `cmd.tag != 31`: line 672
-- `cmd.size != 0x4000`: line 673
-- `cmd.eal == 0x9e4000`: line 683
-- `get_es_mfc_25cc_runtime_family(spu, cmd)`: line 1938
+- `get_es_mfc_25cc_runtime_family_raw`: line 709
+- `cmd.tag != 31`: line 725
+- `cmd.size != 0x4000`: line 726
+- `cmd.eal == 0x9e4000`: line 736
+- `get_es_mfc_25cc_runtime_family(spu, cmd)`: line 1991
 
 ### windows-upstream: 451c dynamic list predicate
 
 - File: `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream\rpcs3\Emu\Cell\SPUThread.cpp`
 - Expectation: Priority-2 contract can reuse the existing 451c list-family classifier after the 25cc lane is labeled.
 - Interpretation: Use as a second lane after the 25cc verify counters are explicit.
-- `get_es_mfc_451c_dynamic_list_family`: line 616
-- `spu->pc != 0x451c`: line 580
-- `record_es_mfc_dynamic_cmd`: line 711
+- `get_es_mfc_451c_dynamic_list_family`: line 669
+- `spu->pc != 0x451c`: line 633
+- `record_es_mfc_dynamic_cmd`: line 764
 
 ### windows-upstream: SPU HLE verify hooks
 
@@ -48,9 +48,9 @@
 - Expectation: Verify-only counters should extend existing HLE verification hooks instead of adding fast mode.
 - Interpretation: Use these hooks for contract-id counters, reject buckets, and source/destination hashes.
 - `RPCS3_ES_SPU_HLE_VERIFY`: line 349
-- `record_es_spu_hle_verify_candidate`: line 1883
+- `record_es_spu_hle_verify_candidate`: line 1936
 - `is_es_spu_hle_25cc_shadow_enabled`: line 401
-- `is_es_spu_hle_25cc_body_enabled`: line 455
+- `is_es_spu_hle_25cc_body_enabled`: line 508
 
 ### windows-upstream: LLVM verify callout
 
