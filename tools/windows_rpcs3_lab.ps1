@@ -2976,6 +2976,18 @@ $stderrReadTask = $null
 [System.IO.File]::WriteAllText($stderrPath, "", [System.Text.UTF8Encoding]::new($false))
 
 $launchTime = Get-Date
+$liveRpcs3Log = Join-Path $rpcs3LogDir "RPCS3.log"
+if (Test-Path -LiteralPath $liveRpcs3Log -PathType Leaf) {
+    $prelaunchLogArchive = Join-Path $runDir ("prelaunch-stale-RPCS3-{0}.log" -f $launchTime.ToString("yyyyMMdd-HHmmss"))
+    try {
+        Move-Item -LiteralPath $liveRpcs3Log -Destination $prelaunchLogArchive -Force
+        Write-LabLine $runLog "RPCS3 prelaunch log archived: $prelaunchLogArchive"
+    } catch {
+        $prelaunchLogMarker = Join-Path $runDir "prelaunch-stale-rpcs3-log-archive-failed.txt"
+        "Failed to archive prelaunch RPCS3.log: source=$liveRpcs3Log; destination=$prelaunchLogArchive; error=$($_.Exception.Message)" | Set-Content -LiteralPath $prelaunchLogMarker -Encoding UTF8
+        Write-LabLine $runLog "RPCS3 prelaunch log archive failed: marker=$prelaunchLogMarker"
+    }
+}
 $padApiFile = ""
 if ($InputMacro -and $InputBackend -eq "PadApi") {
     $padApiFile = Join-Path $runDir "windows-pad-api-state.txt"
@@ -3520,6 +3532,10 @@ if (Test-Path -LiteralPath $sourceLog) {
         }
     }
     }
+} else {
+    $missingLogMarker = Join-Path $runDir "fresh-rpcs3-log-missing.txt"
+    "No fresh RPCS3.log was produced for this run after launch_time=$($launchTime.ToString('o')); source=$sourceLog" | Set-Content -LiteralPath $missingLogMarker -Encoding UTF8
+    Write-LabLine $runLog "RPCS3 log missing: marker=$missingLogMarker"
 }
 
 if ($null -ne $forceHwMsaaResolveOverride -and $forceHwMsaaResolveOverride.found) {
