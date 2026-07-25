@@ -1,3 +1,6 @@
+## 2026-07-24 20:40 ET - stale log evidence invalidates prior Options/menu counts rows
+- Recheck found `debug-captures/windows-lab/20260724-203436-cpu4-title-options-25cc-counts-menuproof-windows-windows/RPCS3.log` was older than the run launch (`20:29:44` log write vs `20:34:36` run create). The `80/80` counts rows previously parsed from that file are stale and are not valid menu-run evidence.
+- Guard added in `tools/windows_rpcs3_lab.ps1`: stale source RPCS3 logs are skipped with `stale-rpcs3-log-skipped.txt` instead of copied and summarized. Promotion remains blocked until a fresh run-local log and real Options/menu screenshots exist.
 ## 2026-07-24 20:36 ET - Options/menu counts gate blocked by missing RPCS3 game window
 - Evidence: `debug-captures/windows-lab/20260724-203436-cpu4-title-options-25cc-counts-menuproof-windows-windows` attempted `-Scene menu` with `Verify25ccShadow` and `payload_mode=Counts`, but RPCS3 exited at `47s` before the Options route. PadApi skipped all menu input because the game window was not found; screenshots saved: `0`.
 - Contract rows: strict parser accepted `80/80` counts rows, rejected `0`, logged `160` hits and `2,621,440` bytes, with `output_mismatch=0` and `desc_overflow=0`. Counts rows remain route-repair-only and are not promotion evidence.

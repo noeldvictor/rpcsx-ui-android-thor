@@ -3427,9 +3427,16 @@ Write-LabLine $runLog "stderr: $stderrPath"
 
 $sourceLog = Join-Path $rpcs3LogDir "RPCS3.log"
 if (Test-Path -LiteralPath $sourceLog) {
-    $destLog = Join-Path $runDir "RPCS3.log"
-    Copy-Item -LiteralPath $sourceLog -Destination $destLog -Force
-    Write-LabLine $runLog "RPCS3 log: $destLog"
+    $sourceLogItem = Get-Item -LiteralPath $sourceLog
+    if ($sourceLogItem.LastWriteTime -lt $launchTime) {
+        $staleLogMarker = Join-Path $runDir "stale-rpcs3-log-skipped.txt"
+        $staleLogMessage = "Skipped stale RPCS3.log: source_last_write=$($sourceLogItem.LastWriteTime.ToString('o')); launch_time=$($launchTime.ToString('o')); source=$sourceLog"
+        $staleLogMessage | Set-Content -LiteralPath $staleLogMarker -Encoding UTF8
+        Write-LabLine $runLog "RPCS3 log skipped: stale source last_write=$($sourceLogItem.LastWriteTime.ToString('o')); launch_time=$($launchTime.ToString('o')); marker=$staleLogMarker"
+    } else {
+        $destLog = Join-Path $runDir "RPCS3.log"
+        Copy-Item -LiteralPath $sourceLog -Destination $destLog -Force
+        Write-LabLine $runLog "RPCS3 log: $destLog"
 
     if ($EternalSonataSpuHeatProfile -eq "Profile") {
         $heatSummaryPath = Join-Path $runDir "spu-heat-summary.txt"
@@ -3511,6 +3518,7 @@ if (Test-Path -LiteralPath $sourceLog) {
                 }
             }
         }
+    }
     }
 }
 
