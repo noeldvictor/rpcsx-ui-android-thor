@@ -1,3 +1,7 @@
+## 2026-07-24 20:24 ET - counts-mode route-control passed field triage
+- New evidence: `debug-captures/windows-lab/20260724-201959-cpu4-loader-control-25cc-counts-visualgate-windows-windows` ran `Verify25ccShadow` with `EternalSonataSpuHle25ccShadowPayload Counts` on the loader-control base and passed CleanAfterField triage (`FIELD_LIKE_PRESENT`, first field-like `117s`, required-by-160s passed, `10/10` field-like screenshots, invalid-after-first `0`).
+- Strict counts parser passed: rows `68`, accepted `68`, rejected `0`, total hits `136`, total bytes `2,228,224`, rejects `1,907`, `payload_mode_counts={counts:68}`, mismatch `0`, descriptor overflow `0`, strict gate pass `true`, promotion_ready `false`.
+- Safety interpretation: counts mode now appears route-safe on the no-movement loader-control base and is useful for low-perturbation counter collection. It is still not promotion evidence: `payload_mode=full` plus field, Options/menu, and first-battle visuals remain required before any body/codegen/Vulkan fast path.
 # Eternal Sonata 25cc Route-Safety Audit
 
 - Generated: `2026-07-24T19:13:56.3180899-04:00`
