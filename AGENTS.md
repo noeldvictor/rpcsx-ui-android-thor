@@ -509,9 +509,23 @@ Thor predictions.
   3. `FSM` family, and `SHL`/`ROTM` via the `USHL` intrinsic to dodge an LLVM
      poison-value pessimization. Saves ~2 instructions per shift.
   4. Remaining SPU multiply widening cases.
-  - Explicitly out of scope for Thor: SVE. Every consumer ARM device that
-    supports SVE implements it at 128-bit only, so length-agnostic SVE loops can
-    be slower than the NEON equivalent. Thor gains nothing here.
+  - Out of scope for Thor: SVE. `4a92d96cf` (SVE2 FMS) and `6349ea2ee` (SVE
+    multiply) are the only upstream ARM64 commits genuinely absent here, at
+    `5/43` and `23/82` added lines. Both are unusable: Thor's `/proc/cpuinfo`
+    Features line reports `asimddp bf16 i8mm sha3` and no `sve` or `sve2`, so
+    the 8 Gen 2 exposes no SVE to userspace regardless of core generation.
+    Verified on device 2026-08-05. Do not port these.
+  - Untried opportunity: Thor does report `sha3`, so the `BCAX` instruction is
+    available. Whatcookie notes it would cut SHUFB from five host instructions
+    to four. Small, but it is free hardware we are not using.
+
+- Audit method, learned the hard way: `rpcs3-upstream` is a SHALLOW checkout
+  (`is-shallow-repository` true, 610 commits) and carries local Eternal Sonata
+  commits on top. `git log --grep`, `git log -S`, and per-file history are all
+  unreliable there. An early `--grep=arm` sweep missed the `busy_wait` change
+  entirely and turned up nothing for `arm_timer_scale`. Audit ARM64 coverage by
+  diffing added lines of a known commit against the vendored file, or by
+  comparing `ARCH_ARM64` blocks directly. Do not trust commit archaeology.
 
 - Measurement rule for this series: it changes SPU/PPU permute codegen only.
   Expect instruction-count reduction on shuffle-heavy SPU blocks, not a frame
