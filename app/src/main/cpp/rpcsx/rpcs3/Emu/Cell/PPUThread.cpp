@@ -277,6 +277,29 @@ private:
 	}
 };
 
+// Budget for concurrent PPU LLVM compilation.
+//
+// Upstream sizes this as a fraction of total system memory, which assumes a
+// dedicated machine with real swap. On Android that assumption breaks: Thor
+// reports MemTotal ~14.9 GB, so total/2 authorises roughly 7.4 GB of concurrent
+// LLVM allocation for a single game boot. A PPU worker (PPUW.1.1) aborted with
+// "Scudo ERROR: internal map failure (NO MEMORY) requesting 4KB" 18s into boot
+// on 2026-08-05 under exactly that budget. Overflow also lands in zram, whose
+// compression is CPU work and therefore heat, on a part with a 72 C ceiling.
+//
+// Cap it so the compile stage cannot price itself into swap. This bounds peak
+// pressure; it does not reduce total compile work.
+static u64 ppu_compile_memory_budget(u64 fraction_divisor)
+{
+	const u64 total = utils::get_total_memory();
+#ifdef ANDROID
+	static_cast<void>(fraction_divisor);
+	return std::min<u64>(total / 6, u64{1536} << 20);
+#else
+	return rx::aligned_div<u64>(total, fraction_divisor);
+#endif
+}
+
 extern void ppu_initialize();
 extern void ppu_finalize(const ppu_module<lv2_obj>& info, bool force_mem_release = false);
 extern bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only = false, u64 file_size = 0);
@@ -5561,25 +5584,11 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 
 	lf_queue<file_info> possible_exec_file_paths;
 
-#ifdef ANDROID
-	// `total / 3` is a desktop assumption: it presumes a dedicated machine with
-	// real swap. Thor reports MemTotal ~14.9 GB, so that budget authorises about
-	// 5 GB of concurrent LLVM module allocation, which matches the ~5.6 GB RSS
-	// measured during cold PPU compile. Anything past physical headroom lands in
-	// zram, and zram compression is CPU work, so overflow converts directly into
-	// heat on a passively cooled part with a 72 C ceiling.
-	//
-	// Budget from available rather than total memory and cap it, so the compile
-	// stage cannot price itself into swap. This bounds peak power during the
-	// ramp; it does not by itself reduce total compile work.
-	const u64 ppu_compile_budget = std::min<u64>(utils::get_total_memory() / 6, u64{1536} << 20);
+	const u64 ppu_compile_budget = ppu_compile_memory_budget(3);
 	concurent_memory_limit memory_limit(ppu_compile_budget);
-	ppu_log.always()("Thor PPU compile memory budget: %u MB (total %u MB)",
+	ppu_log.always()("PPU precompile memory budget: %u MB (total %u MB)",
 		static_cast<u32>(ppu_compile_budget >> 20),
 		static_cast<u32>(utils::get_total_memory() >> 20));
-#else
-	concurent_memory_limit memory_limit(utils::get_total_memory() / 3);
-#endif
 
 	const u32 software_thread_limit = std::min<u32>(g_cfg.core.llvm_threads ? g_cfg.core.llvm_threads : u32{umax}, ::size32(file_queue));
 	const u32 cpu_thread_limit = utils::get_thread_count() > 8u ? std::max<u32>(utils::get_thread_count(), 2) - 1 : utils::get_thread_count(); // One LLVM thread less
@@ -7297,7 +7306,13 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_size)
 {
-	concurent_memory_limit memory_limit(rx::aligned_div<u64>(utils::get_total_memory(), 2));
+	// This is the single-module path taken when a game boots, and it is the one
+	// that aborted on 2026-08-05. It previously allowed total/2.
+	const u64 budget = ppu_compile_memory_budget(2);
+	ppu_log.always()("PPU module compile memory budget: %u MB (total %u MB)",
+		static_cast<u32>(budget >> 20),
+		static_cast<u32>(utils::get_total_memory() >> 20));
+	concurent_memory_limit memory_limit(budget);
 	return ppu_initialize(info, check_only, file_size, memory_limit);
 }
 
