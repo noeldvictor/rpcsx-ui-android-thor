@@ -4,6 +4,41 @@
 
 ## I am testing stuff right now. Do not treat this as a general PS3-on-Android release.
 
+### Upstream ARM64 integration (2026-08-05)
+
+Audited this tree against upstream RPCS3's ARM64 CPU-emulation series, the work
+covered in Whatcookie's "PS3 emulation is fast on ARM now".
+
+Result of the audit: this tree was already carrying nearly all of it. SPU
+multiplies, the inlined decrementer, `FSM`, the `GB`/`GBH`/`GBB` dot-product
+paths, the `FCGT` workaround and the ARM `UABA` checksum path were all present,
+several in forms further along than upstream's. This tree also has `smmla` /
+`ummla` (i8mm) helpers that upstream does not.
+
+Newly integrated: SPU `SHUFB` and PPU `VPERM` now emit native `TBL2`/`TBX2`
+instead of an emulated x86 `PSHUFB` sequence, together with the recoverable-JIT
+and register-scavenger retry mechanism that makes those instructions safe to
+use. Upstream measures the shuffle change at about +8% on its own hardware.
+
+Deliberately not taken: upstream's `busy_wait` timer scaling. This tree had
+already solved the same problem by hand-retuning its spin sites against the real
+19.2MHz generic timer, so applying the upstream scale on top divided already
+correct values a second time and collapsed Thor to roughly 1 FPS. Reverted. See
+`debug-experiments/20260805-arm64-upstream-perf-uplift.md`. The two remaining
+unported upstream commits are SVE-only and the Snapdragon 8 Gen 2 exposes no SVE.
+
+Early result: informal testing on Thor of build `49FCB2F5...7FED7` reports many
+titles running well. That build carries the `TBL2`/`TBX2` shuffle work and the
+retry mechanism, with the `busy_wait` scaling and ISB changes reverted, so it is
+a reasonably clean read on the shuffle port.
+
+This is hands-on testing rather than a harness-gated measurement. No FPS figure,
+no thermal envelope and no per-title compatibility matrix has been captured yet,
+and the automated gated run still thermal-stops during cold PPU/SPU compilation
+before the title renders. A separate change bounding the cold-compile memory
+budget on Android is committed but is not in the build above and remains
+unmeasured. Read the above as promising, not as a benchmark.
+
 <p align="center">
   <img src="docs/images/rpcsx-thor-experiment-banner.png" alt="RPCSX for AYN Thor Experiment">
 </p>
