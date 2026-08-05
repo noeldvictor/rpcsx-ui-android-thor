@@ -5561,7 +5561,25 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 
 	lf_queue<file_info> possible_exec_file_paths;
 
+#ifdef ANDROID
+	// `total / 3` is a desktop assumption: it presumes a dedicated machine with
+	// real swap. Thor reports MemTotal ~14.9 GB, so that budget authorises about
+	// 5 GB of concurrent LLVM module allocation, which matches the ~5.6 GB RSS
+	// measured during cold PPU compile. Anything past physical headroom lands in
+	// zram, and zram compression is CPU work, so overflow converts directly into
+	// heat on a passively cooled part with a 72 C ceiling.
+	//
+	// Budget from available rather than total memory and cap it, so the compile
+	// stage cannot price itself into swap. This bounds peak power during the
+	// ramp; it does not by itself reduce total compile work.
+	const u64 ppu_compile_budget = std::min<u64>(utils::get_total_memory() / 6, u64{1536} << 20);
+	concurent_memory_limit memory_limit(ppu_compile_budget);
+	ppu_log.always()("Thor PPU compile memory budget: %u MB (total %u MB)",
+		static_cast<u32>(ppu_compile_budget >> 20),
+		static_cast<u32>(utils::get_total_memory() >> 20));
+#else
 	concurent_memory_limit memory_limit(utils::get_total_memory() / 3);
+#endif
 
 	const u32 software_thread_limit = std::min<u32>(g_cfg.core.llvm_threads ? g_cfg.core.llvm_threads : u32{umax}, ::size32(file_queue));
 	const u32 cpu_thread_limit = utils::get_thread_count() > 8u ? std::max<u32>(utils::get_thread_count(), 2) - 1 : utils::get_thread_count(); // One LLVM thread less
