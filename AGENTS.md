@@ -23,7 +23,7 @@ Put dated run details in `debug-experiments/`, not here.
 - Vendored RPCSX core: `app/src/main/cpp/rpcsx`.
 - Android JNI full-core bridge: `app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp`.
 - Lightweight loader wrapper: `app/src/main/cpp/native-lib.cpp`.
-- Upstream RPCS3 comparison checkout: `C:\Users\leanerdesigner\Documents\New project 6\rpcs3-upstream`.
+- Upstream RPCS3 comparison checkout: `C:\Users\leanerdesigner\Documents\ps3-thor\rpcs3-upstream`.
 - Refresh vendored core with `tools/sync_rpcsx_core.ps1`.
 - Hydrate core deps with `tools/hydrate_rpcsx_core_deps.ps1`.
 - Normal debug build: `.\gradlew.bat :app:assembleDebug`.
@@ -418,6 +418,95 @@ Put dated run details in `debug-experiments/`, not here.
 - Source-aligned Windows repair `e12beb222fea26fa5e5f86fa507ad91536fa4d60` now includes upstream RPCS3 reservation-priority fix `e379fba` and disables the unsafe CellSpurs JobChain acquire hash. Exact rebuilt binary `0.0.41-597-e12beb22` / SHA256 `C31622E54441A6946A9AFC6986E8F7C9193F55541E158B2959BEE95B07AA3CC9` removed the prior unknown-draw/VM-access corruption on the same bounded route.
 - Latest corrected-contract field proof `20260715-220332-cpu4-verify25cc-e379fba-extendedkey-first-battle-windows` is a valid moving-field counterproof: correct field/animation through `185s`, five external-clean host snapshots, zero targeted fatal/draw/access/Vulkan/device-lost/assertion hits, and strict verifier `732/732` accepted with `1878` hits and mismatch/overflow `0`. Scripted screenshot labels did not make it a battle.
 - Exact repaired-binary Options proof `20260715-223137-cpu4-verify25cc-e379fba-options-fastselect-windows` reached and held the complete title Options page through `130s`, had six external-clean host snapshots and zero targeted fatal signatures, and passed the strict verifier `461/461` with `957` hits and mismatch/overflow `0`. Do not rerun capped field or Options; genuine first battle is the only remaining correctness checkpoint.
+
+## ARM64 Upstream Perf Uplift
+
+Tracks the upstream RPCS3 ARM64 CPU-emulation series against the vendored core.
+Port status is verified by diffing added lines against
+`rpcs3-upstream`, not by reading commit titles.
+
+Primary source: Whatcookie (Malcolm Jestadt, author of the commits below),
+"PS3 emulation is fast on ARM now", 2026-08-04,
+`https://www.youtube.com/watch?v=-aI_XEwmKFk`. He reports 60% faster at 25%
+less power across six months. Local transcript procedure: `yt-dlp` audio pull
+plus `faster-whisper`. His per-change numbers are on his own ARM device
+(Odin 2 class, Linux), not on Thor, so treat them as ordering hints, not
+Thor predictions.
+
+- Highest-value items, ported 2026-08-05. These are host-timing and spin-loop
+  fixes, not codegen, and they were the largest wins in the talk:
+  - `busy_wait` timer scaling in `rx/include/rx/asm.hpp`. RPCS3's busy waits
+    assumed an x86 timer near 3GHz. Thor's Snapdragon 8 Gen 2 runs `CNTFRQ_EL0`
+    at 19.2MHz, so `busy_wait(3000)` blocked about 156us instead of ~1us.
+    Added `arm_timer_scale` / `init_arm_timer_scale()` and scaled the wait by
+    `(cycles / 100) * arm_timer_scale`. Whatcookie reports this one fix as
+    +25% performance and -10% power. `init_arm_timer_scale()` is called from
+    `_rpcsx_initialize` in `android/src/rpcsx-android.cpp` and MUST run before
+    any `busy_wait`.
+  - `pause()` now emits `isb`, not `yield`. `YIELD` is an SMT hint and is a
+    no-op on the SMP cores in essentially all consumer ARM parts, so it never
+    throttled the spin.
+  - The pre-existing `RPCSX_THOR_BUSY_WAIT_EXPERIMENT` pause-batching path only
+    changed how often `get_tsc()` was polled inside an already 150x-too-long
+    window. It was treating a symptom. It now inherits the scaled duration;
+    re-evaluate whether it earns its keep at all.
+
+- Already landed in the vendored core, do not re-port:
+  - `4542020c8` SPU LLVM ARM64 `UDOT` for `SUMB`. The vendored core is ahead of
+    upstream here: it has a runtime `arm64_spu_feature_mode` gate
+    (`utils::use_spu_dotprod()`, `utils::has_i8mm()`) that upstream lacks.
+    Keep the gate; do not replace it with upstream's unconditional
+    `utils::has_dotprod()` check.
+  - `7e436f9bf` SPU LLVM ARM multiply optimization.
+  - `61a260482` inlined SPU decrementer via `readcyclecounter`.
+- Ported 2026-08-05, `dff29a786` + `a87d17529` as one unit:
+  - `tbl2`/`tbx2` helpers and the `m_use_tbl2` gate in `Emu/CPU/CPUTranslator.h`.
+    With the gate cleared they lower to `TBL1`/`TBX1` pairs, so correctness does
+    not depend on the register pair being available.
+  - SPU `SHUFB` two-source case and PPU `VPERM` now emit native table lookups
+    instead of the emulated x86 `PSHUFB` sequence.
+  - Recoverable JIT: `thread_ctrl::silent_exit`, `jit_compiler::try_add` /
+    `try_fin`, and `run_recoverable_llvm` in `util/JITLLVM.cpp` run codegen on a
+    disposable thread so an LLVM fatal error kills only that thread.
+  - `compile_spu_llvm_with_retry` in `SPUCommonRecompiler.cpp` retries a block
+    without `TBL2`/`TBX2` when the error text contains
+    `Cannot scavenge register without an emergency spill slot`.
+
+- Rules for this area:
+  - `TBL2`/`TBX2` must never be emitted on a path that has no retry owner.
+    The SPU block compiler has one; the SPU interpreter builder does not, and is
+    deliberately left on the plain `m_jit.add`/`m_jit.fin` path.
+  - PPU `VPERM` emits `TBL2` with no retry, matching upstream. If PPU LLVM starts
+    reporting scavenger failures, gate `m_use_tbl2` off for PPUTranslator rather
+    than reverting the SPU work.
+  - The retry helper takes a compiler factory. Any new call site must pass a
+    factory reproducing that site's own `make_llvm_recompiler` arguments;
+    upstream's hardcoded no-arg version would silently drop `magn` and
+    `use_native_object_cache`.
+  - Do not keep the vendored `TBL2/TBX2 is excluded` comments alive after a port.
+    Stale exclusion notes caused this gap to be re-diagnosed from scratch.
+
+- Not yet ported, ranked backlog from the talk. Each needs its own diff against
+  `rpcs3-upstream` before being assumed missing:
+  1. SPU cache lookup: checksum/comparison reworked around load-to-arithmetic
+     ratio, plus a dot-product trick for the compare. Reported +22% mid-cores /
+     +16% A510 on the compare, +38% mid / +21% large on the checksum, ~5%
+     overall on ARM. Thor-relevant because it is a startup and dispatch cost,
+     and Thor's current blocker is cold PPU/SPU compile time, not steady state.
+  2. `FCGT` via inline assembly, 15 instructions down to 7. Carries a real cost:
+     inline asm blocks further LLVM optimization, and an upstream LLVM issue is
+     open to remove it later. Port only if measured.
+  3. `FSM` family, and `SHL`/`ROTM` via the `USHL` intrinsic to dodge an LLVM
+     poison-value pessimization. Saves ~2 instructions per shift.
+  4. Remaining SPU multiply widening cases.
+  - Explicitly out of scope for Thor: SVE. Every consumer ARM device that
+    supports SVE implements it at 128-bit only, so length-agnostic SVE loops can
+    be slower than the NEON equivalent. Thor gains nothing here.
+
+- Measurement rule for this series: it changes SPU/PPU permute codegen only.
+  Expect instruction-count reduction on shuffle-heavy SPU blocks, not a frame
+  rate target. A run that thermal-stops before the title renders produces no
+  speed credit for it, per `Speed Claim Rules`.
 
 ## Banked Findings
 

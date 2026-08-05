@@ -275,7 +275,10 @@ constexpr u32 clz128(u128 arg) {
 
 inline void pause() {
 #if defined(ARCH_ARM64)
-  __asm__ volatile("yield");
+  // YIELD is an SMT hint and is a no-op on the SMP cores used by essentially
+  // all consumer ARM parts, so it did not throttle the spin at all. ISB stalls
+  // instruction fetch and execution, which is the closest analogue to x86 PAUSE.
+  __asm__ volatile("isb" ::: "memory");
 #elif defined(_M_X64)
   _mm_pause();
 #elif defined(ARCH_X64)
@@ -286,6 +289,26 @@ inline void pause() {
 }
 
 inline void yield() { std::this_thread::yield(); }
+
+#if defined(ARCH_ARM64)
+// RPCS3's busy waits were written for x86 hardware timers running around 3GHz.
+// Many ARM generic timers run far slower -- the Snapdragon 8 Gen 2 in the AYN
+// Thor clocks CNTFRQ_EL0 at 19.2MHz. Left unscaled, busy_wait(3000) blocks for
+// roughly 156us instead of the intended ~1us, which is where a large share of
+// ARM CPU time was going. Scale the cycle count by the real timer frequency.
+inline u64 arm_timer_scale = 1;
+
+inline void init_arm_timer_scale() {
+  u64 freq = 0;
+  __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+
+  // Try to scale hardware timer to match 3GHz.
+  const u64 timer_scale = freq / 30000000;
+  if (timer_scale) {
+    arm_timer_scale = timer_scale;
+  }
+}
+#endif
 
 #if defined(ARCH_ARM64) && defined(ANDROID) && \
     defined(RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
@@ -354,11 +377,19 @@ inline u32 thor_busy_wait_poll_batch(usz cycles) {
 
 // Synchronization helper (cache-friendly busy waiting)
 inline void busy_wait(usz cycles = 3000) {
+#if defined(ARCH_ARM64)
+  // See init_arm_timer_scale(): convert the x86-derived cycle count into ticks
+  // of this machine's generic timer.
+  const u64 wait_ticks = (cycles / 100) * arm_timer_scale;
+#else
+  const u64 wait_ticks = cycles;
+#endif
+
 #if defined(ARCH_ARM64) && defined(ANDROID) && \
     defined(RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
   const u32 batch = thor_busy_wait_poll_batch(cycles);
   if (batch > 1) {
-    const u64 stop = get_tsc() + cycles;
+    const u64 stop = get_tsc() + wait_ticks;
     while (get_tsc() < stop) {
       for (u32 i = 0; i < batch; i++) {
         pause();
@@ -368,7 +399,7 @@ inline void busy_wait(usz cycles = 3000) {
   }
 #endif
 
-  const u64 stop = get_tsc() + cycles;
+  const u64 stop = get_tsc() + wait_ticks;
   do
     pause();
   while (get_tsc() < stop);

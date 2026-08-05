@@ -71,6 +71,16 @@ static bool spu_compile_diagnostics_enabled() noexcept
 
 #ifdef ARCH_ARM64
 #include "Emu/CPU/Backends/AArch64/AArch64JIT.h"
+
+namespace
+{
+	thread_local spu_llvm_compile_context* g_spu_llvm_compile_context = nullptr;
+}
+
+void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept
+{
+	g_spu_llvm_compile_context = context;
+}
 #endif
 
 class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
@@ -1637,6 +1647,15 @@ public:
 			std::memcpy(&hash_start, output, sizeof(hash_start));
 			m_hash_start = hash_start;
 		}
+
+#ifdef ARCH_ARM64
+		m_use_tbl2 = !g_spu_llvm_compile_context || g_spu_llvm_compile_context->use_tbl2;
+
+		if (g_spu_llvm_compile_context)
+		{
+			g_spu_llvm_compile_context->llvm_error.clear();
+		}
+#endif
 
 		spu_log.trace("Building function 0x%x... (size %u, %s)", func.entry_point, func.data.size(), m_hash);
 
@@ -3570,10 +3589,16 @@ public:
 		pthread_jit_write_protect_np(false);
 #endif
 
+		// Resolve the destination once so the recoverable and plain paths below
+		// cannot drift apart.
+		std::string jit_cache_path;
+		bool jit_use_cache_path = false;
+
 		if (g_cfg.core.spu_debug)
 		{
 			// Testing only
-			m_jit.add(std::move(_module), m_spurt->get_cache_path() + "llvm/");
+			jit_cache_path = m_spurt->get_cache_path() + "llvm/";
+			jit_use_cache_path = true;
 		}
 		else if (m_use_native_object_cache && !m_spurt->get_native_object_cache_path().empty())
 		{
@@ -3582,14 +3607,46 @@ public:
 			// rebuild launch-specific helper mappings before MCJIT links a warm hit.
 			const std::string key = m_jit.make_object_cache_key(*_module, "thor-spu-native-v2");
 			_module->setModuleIdentifier(fmt::format("%s-%s.obj", m_hash, key));
-			m_jit.add(std::move(_module), m_spurt->get_native_object_cache_path());
-		}
-		else
-		{
-			m_jit.add(std::move(_module));
+			jit_cache_path = m_spurt->get_native_object_cache_path();
+			jit_use_cache_path = true;
 		}
 
-		m_jit.fin();
+#ifdef ARCH_ARM64
+		// When a compile context is installed, TBL2/TBX2 codegen can trip the
+		// AArch64 register scavenger. Take the recoverable path so the caller
+		// can retry the same block without TBL2/TBX2 instead of aborting.
+		if (g_spu_llvm_compile_context)
+		{
+			std::string& llvm_error = g_spu_llvm_compile_context->llvm_error;
+
+			const bool added = jit_use_cache_path
+				? m_jit.try_add(std::move(_module), jit_cache_path, llvm_error)
+				: m_jit.try_add(std::move(_module), llvm_error);
+
+			if (!added || !m_jit.try_fin(llvm_error))
+			{
+				if (add_to_file)
+				{
+					add_loc->cached = 0;
+				}
+
+				return nullptr;
+			}
+		}
+		else
+#endif
+		{
+			if (jit_use_cache_path)
+			{
+				m_jit.add(std::move(_module), jit_cache_path);
+			}
+			else
+			{
+				m_jit.add(std::move(_module));
+			}
+
+			m_jit.fin();
+		}
 
 		// Register function pointer
 		const spu_function_t fn = reinterpret_cast<spu_function_t>(m_jit.get_engine().getPointerToFunction(main_func));
@@ -7054,9 +7111,9 @@ public:
 		const auto b = get_vr<u8[16]>(op.rb);
 
 #ifdef ARCH_ARM64
-		// Keep the Thor path on single-table TBL/TBX forms. Two-source
-		// TBL2/TBX2 still needs upstream's larger register-scavenger retry
-		// mechanism and remains on the established fallback below.
+		// Prefer single-table TBL/TBX whenever the selector provably reads only
+		// one source: it needs no register pair and cannot trip the scavenger.
+		// Genuine two-source shuffles use TBL2/TBX2 further below.
 		if (idx_selects_single || (op.ra == op.rb && !m_interp_magn))
 		{
 			const bool select_b = idx_selects_single && known_idx.One[4];
@@ -7107,8 +7164,7 @@ public:
 		const bool b_is_splat = b_is_const && b_data == v128::from8p(b_data._u8[0]);
 
 		// Official RPCS3 a7fc31f: when both sources are constant splats, the
-		// low selector bits are irrelevant. Avoid the generic two-source
-		// shuffle while keeping TBL2/TBX2 out of Thor's constrained JIT path.
+		// low selector bits are irrelevant, so a single table lookup is enough.
 		if (a_is_splat && b_is_splat)
 		{
 			if (perm_only)
@@ -7121,7 +7177,48 @@ public:
 			set_vr(op.rt4, tbl(splat_lut, (c >> 4)));
 			return;
 		}
-#endif
+
+		// Upstream dff29a786: emit native two-source table lookups instead of
+		// falling through to the emulated x86 PSHUFB sequence. TBL2/TBX2 can
+		// exhaust the AArch64 register scavenger on some blocks; the caller
+		// retries with m_use_tbl2 cleared, which lowers these to TBL1/TBX1
+		// pairs. Either way ARM64 no longer reaches the PSHUFB fallback.
+		const auto zero_lut = build<u8[16]>(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x80, 0x80);
+
+		// Data with swapped endian from a load instruction: the byteswap and the
+		// selector's low-nibble reversal cancel, so no XOR is needed.
+		if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
+		{
+			if (auto [ok, bs] = match_expr(b, byteswap(match<u8[16]>())); ok)
+			{
+				if (perm_only)
+				{
+					set_vr(op.rt4, tbl2(as, bs, eval(c & 0x1f)));
+					return;
+				}
+
+				const auto x = tbl(zero_lut, (c >> 4));
+				set_vr(op.rt4, tbx2(x, as, bs, eval(c & 0x9f)));
+				return;
+			}
+		}
+
+		if (perm_only)
+		{
+			const auto cm = eval(c & 0x9f);
+			set_vr(op.rt4, tbl2(a, b, eval(cm ^ 0x0f)));
+			return;
+		}
+
+		{
+			const auto x = tbl(zero_lut, (c >> 4));
+			// AND should be before XOR so that llvm can combine them into BCAX
+			// Though for some reason it doesn't seem to be doing that.
+			const auto cm = eval(c & ~0x60);
+			set_vr(op.rt4, tbx2(x, a, b, eval(cm ^ 0x0f)));
+			return;
+		}
+#else
 		// Data with swapped endian from a load instruction
 		if (auto [ok, as] = match_expr(a, byteswap(match<u8[16]>())); ok)
 		{
@@ -7265,6 +7362,7 @@ public:
 			set_vr(op.rt4, select_by_bit4(cr, ax, bx));
 		else
 			set_vr(op.rt4, select_by_bit4(cr, ax, bx) | x);
+#endif
 	}
 
 	void MPYA(spu_opcode_t op)

@@ -112,6 +112,98 @@ void fmt_class_string<spu_recompiler_base::compare_direction>::format(std::strin
 	});
 }
 
+#ifdef ARCH_ARM64
+constexpr const char s_spu_llvm_reg_scavenge_error[] = "Cannot scavenge register without an emergency spill slot";
+
+class spu_llvm_compile_scope
+{
+public:
+	spu_llvm_compile_scope(spu_llvm_compile_context& context, bool use_tbl2) noexcept
+	{
+		context = {};
+		context.use_tbl2 = use_tbl2;
+		spu_llvm_set_compile_context(&context);
+	}
+
+	~spu_llvm_compile_scope() noexcept
+	{
+		spu_llvm_set_compile_context(nullptr);
+	}
+};
+
+static spu_program analyse_spu_llvm_program(spu_recompiler_base& compiler, const spu_program& program)
+{
+	std::vector<be_t<u32>> ls(SPU_LS_SIZE / sizeof(be_t<u32>));
+
+	for (u32 i = 0, pos = program.lower_bound; i < program.data.size(); i++, pos += 4)
+	{
+		ls[pos / 4] = std::bit_cast<be_t<u32>>(program.data[i]);
+	}
+
+	return compiler.analyse(ls.data(), program.entry_point);
+}
+
+// Compiles with TBL2/TBX2 first. If LLVM aborts inside the AArch64 register
+// scavenger, rebuild the compiler via `make_compiler` (which must reproduce the
+// caller's original construction parameters) and retry without TBL2/TBX2.
+template <typename MakeCompiler>
+static spu_function_t compile_spu_llvm_with_retry(std::unique_ptr<spu_recompiler_base>& compiler, const spu_program& program, MakeCompiler&& make_compiler)
+{
+	spu_llvm_compile_context context;
+
+	{
+		spu_llvm_compile_scope scope(context, true);
+
+		if (const auto result = compiler->compile(spu_program{program}))
+		{
+			return result;
+		}
+	}
+
+	if (context.llvm_error.find(s_spu_llvm_reg_scavenge_error) == std::string::npos)
+	{
+		if (!context.llvm_error.empty())
+		{
+			spu_log.error("LLVM failed to compile SPU block 0x%x: %s", program.entry_point, context.llvm_error);
+		}
+
+		return nullptr;
+	}
+
+	spu_log.warning("LLVM failed to compile SPU block 0x%x with TBL2/TBX2: %s. Retrying without TBL2/TBX2.", program.entry_point, context.llvm_error);
+
+	// LLVM fatal recovery does not unwind MCJIT state. Abandon the failed
+	// compiler and retry from a fresh analysis/JIT instance.
+	static_cast<void>(compiler.release());
+	compiler = std::forward<MakeCompiler>(make_compiler)();
+	compiler->init();
+
+	const auto retry_program = analyse_spu_llvm_program(*compiler, program);
+
+	if (retry_program != program)
+	{
+		spu_log.error("[0x%05x] SPU analyser failed during TBL2/TBX2 retry, %u vs %u", retry_program.entry_point, retry_program.data.size(), program.data.size());
+		return nullptr;
+	}
+
+	spu_llvm_compile_context retry_context;
+	spu_llvm_compile_scope scope(retry_context, false);
+
+	const auto result = compiler->compile(spu_program{retry_program});
+
+	if (result)
+	{
+		spu_log.notice("SPU LLVM block 0x%x compiled successfully without TBL2/TBX2.", program.entry_point);
+	}
+	else if (!retry_context.llvm_error.empty())
+	{
+		spu_log.error("LLVM failed to compile SPU block 0x%x without TBL2/TBX2: %s", program.entry_point, retry_context.llvm_error);
+	}
+
+	return result;
+}
+#endif
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS)
 static bool spu_reduced_loop_detect_only_enabled() noexcept
 {
@@ -1349,6 +1441,18 @@ void spu_cache::initialize(bool build_existing_cache)
 
 			compiler->init();
 
+			auto compile_program = [&](spu_program&& program) -> spu_function_t
+			{
+#ifdef ARCH_ARM64
+				return compile_spu_llvm_with_retry(compiler, program, [&]()
+				{
+					return spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache);
+				});
+#else
+				return compiler->compile(std::move(program));
+#endif
+			};
+
 			// Counter for error reporting
 			u32 logged_error = 0;
 
@@ -1428,7 +1532,7 @@ void spu_cache::initialize(bool build_existing_cache)
 						logged_error++;
 					}
 				}
-				else if (!compiler->compile(std::move(func2)))
+				else if (!compile_program(std::move(func2)))
 				{
 					// Likely, out of JIT memory. Signal to prevent further building.
 					fail_flag |= 1;
@@ -1526,7 +1630,7 @@ void spu_cache::initialize(bool build_existing_cache)
 					const u32 last_inst = std::bit_cast<be_t<u32>>(func2.data.back());
 					const u32 prog_size = ::size32(func2.data);
 
-					if (!compiler->compile(std::move(func2)))
+					if (!compile_program(std::move(func2)))
 					{
 						// Likely, out of JIT memory. Signal to prevent further building.
 						fail_flag |= 1;
@@ -2683,7 +2787,15 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 		return;
 	}
 
-	const auto func = spu.jit->compile(spu.jit->analyse(spu._ptr<u32>(0), spu.pc));
+	auto program = spu.jit->analyse(spu._ptr<u32>(0), spu.pc);
+#ifdef ARCH_ARM64
+	const auto func = compile_spu_llvm_with_retry(spu.jit, program, []()
+	{
+		return spu_recompiler_base::make_llvm_recompiler();
+	});
+#else
+	const auto func = spu.jit->compile(std::move(program));
+#endif
 
 	if (!func)
 	{
@@ -8582,8 +8694,23 @@ struct spu_llvm_worker
 			{
 				spu_log.error("[0x%05x] SPU Analyser failed, %u vs %u", func2.entry_point, func2.data.size(), size0);
 			}
-			else if (const auto target = compiler->compile(std::move(func2)))
+			else
 			{
+#ifdef ARCH_ARM64
+				const auto target = compile_spu_llvm_with_retry(compiler, func2, []()
+				{
+					return spu_recompiler_base::make_llvm_recompiler();
+				});
+#else
+				const auto target = compiler->compile(std::move(func2));
+#endif
+
+				if (!target)
+				{
+					spu_log.fatal("[0x%05x] Compilation failed.", func.entry_point);
+					break;
+				}
+
 				// Redirect old function (TODO: patch in multiple places)
 				const s64 rel = reinterpret_cast<u64>(target) - prog->first - 5;
 
@@ -8600,11 +8727,6 @@ struct spu_llvm_worker
 				bytes[7] = 0x90;
 
 				atomic_storage<u64>::release(*reinterpret_cast<u64*>(prog->first), result);
-			}
-			else
-			{
-				spu_log.fatal("[0x%05x] Compilation failed.", func.entry_point);
-				break;
 			}
 
 			// Clear fake LS

@@ -1817,6 +1817,11 @@ void PPUTranslator::VPERM(ppu_opcode_t op)
 		return;
 	}
 
+#ifdef ARCH_ARM64
+	// Upstream dff29a786: one TBL2 instead of two emulated PSHUFB plus a select.
+	set_vr(op.vd, tbl2(b, a, (~c & 0x1f)));
+	return;
+#else
 	if (m_use_avx512_icl)
 	{
 		const auto i = eval(~c);
@@ -1826,6 +1831,7 @@ void PPUTranslator::VPERM(ppu_opcode_t op)
 
 	const auto i = eval(~c & 0x1f);
 	set_vr(op.vd, select(noncast<s8[16]>(c << 3) >= 0, pshufb(a, i), pshufb(b, i)));
+#endif
 }
 
 void PPUTranslator::VPKPX(ppu_opcode_t op)

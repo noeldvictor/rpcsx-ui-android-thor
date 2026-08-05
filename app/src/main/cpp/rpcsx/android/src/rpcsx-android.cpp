@@ -2274,6 +2274,12 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
 
   g_initialized = true;
 
+#ifdef ARCH_ARM64
+  // Must run before any busy_wait: it reads CNTFRQ_EL0 so busy waits written
+  // against ~3GHz x86 timers are scaled to this device's generic timer.
+  rx::init_arm_timer_scale();
+#endif
+
   if (int r = libusb_set_option(nullptr, LIBUSB_OPTION_NO_DEVICE_DISCOVERY,
                                 nullptr);
       r != 0) {
