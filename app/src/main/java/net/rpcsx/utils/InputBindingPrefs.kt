@@ -28,35 +28,92 @@ object InputBindingPrefs {
         666666 to Pair(Digital1Flags.CELL_PAD_CTRL_PS.bit, 0)
     )
 
-    fun saveBindings(bindings: Map<Int, Pair<Int, Int>>): Boolean {
+    private const val GLOBAL_KEY = "input_bindings"
+
+    private val TITLE_ID_RE = Regex("^[A-Z]{4}[0-9]{5}$")
+
+    /**
+     * Storage key for a title's own bindings, or the global key when [titleId]
+     * is null or not a valid PS3 title id. Guarding the format keeps a stray
+     * value from silently creating an orphan preference key.
+     */
+    private fun keyFor(titleId: String?): String {
+        val id = titleId?.trim()?.uppercase()
+        return if (id != null && TITLE_ID_RE.matches(id)) "${GLOBAL_KEY}_$id" else GLOBAL_KEY
+    }
+
+    private fun parse(jsonString: String): Map<Int, Pair<Int, Int>>? {
+        return try {
+            val json = JSONObject(jsonString)
+            val map = mutableMapOf<Int, Pair<Int, Int>>()
+            json.keys().forEach { key ->
+                val parts = json.getString(key).split(",")
+                val keyCode = key.toIntOrNull() ?: return@forEach
+                if (parts.size == 2) {
+                    map[keyCode] = Pair(parts[0].toIntOrNull() ?: 0, parts[1].toIntOrNull() ?: 0)
+                }
+            }
+            if (map.isEmpty()) null else map
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Persist bindings. With a [titleId] this writes that game's own layout and
+     * leaves the global one untouched; without one it writes the global layout
+     * used by every game that has no override.
+     */
+    fun saveBindings(bindings: Map<Int, Pair<Int, Int>>, titleId: String? = null): Boolean {
         try {
             val json = JSONObject()
             bindings.forEach { (keyCode, value) ->
                 json.put(keyCode.toString(), "${value.first},${value.second}")
             }
 
-            GeneralSettings.setValue("input_bindings", json.toString())
+            GeneralSettings.setValue(keyFor(titleId), json.toString())
         } catch (_: Exception) {
             return false
         }
         return true
     }
 
-    fun loadBindings(): Map<Int, Pair<Int, Int>> {
-        val jsonString = GeneralSettings["input_bindings"] as String? ?: return defaultBindings
-
-        val json = JSONObject(jsonString)
-        val map = mutableMapOf<Int, Pair<Int, Int>>()
-
-        json.keys().forEach { key ->
-            val parts = json.getString(key).split(",")
-            val keyCode = key.toIntOrNull() ?: return@forEach
-            if (parts.size == 2) {
-                map[keyCode] = Pair(parts[0].toIntOrNull() ?: 0, parts[1].toIntOrNull() ?: 0)
+    /**
+     * Resolve bindings for a game: its own layout if it has one, otherwise the
+     * global layout, otherwise the built-in defaults.
+     */
+    fun loadBindings(titleId: String? = null): Map<Int, Pair<Int, Int>> {
+        if (titleId != null) {
+            val perGame = GeneralSettings[keyFor(titleId)] as String?
+            if (perGame != null) {
+                parse(perGame)?.let { return it }
             }
         }
 
-        return map
+        val global = GeneralSettings[GLOBAL_KEY] as String? ?: return defaultBindings
+        return parse(global) ?: defaultBindings
+    }
+
+    /** True when this game overrides the global layout. */
+    fun hasPerGameBindings(titleId: String?): Boolean {
+        if (titleId == null) return false
+        val key = keyFor(titleId)
+        if (key == GLOBAL_KEY) return false
+        return (GeneralSettings[key] as String?) != null
+    }
+
+    /**
+     * Drop a game's override so it follows the global layout again. Returns
+     * false when there was nothing to remove.
+     */
+    fun clearPerGameBindings(titleId: String?): Boolean {
+        if (!hasPerGameBindings(titleId)) return false
+        return try {
+            GeneralSettings.setValue(keyFor(titleId), null)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun rpcsxKeyCodeToString(keyCode: Int, digitalNumber: Int): String {

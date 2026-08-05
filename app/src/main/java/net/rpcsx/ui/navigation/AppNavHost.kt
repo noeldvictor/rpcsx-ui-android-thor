@@ -214,7 +214,8 @@ fun AppNavHost() {
                     game = game,
                     navigateBack = navController::navigateUp,
                     navigateToCheats = { navigateTo("cheats/${Uri.encode(path)}") },
-                    navigateToTrim = { navigateTo("trim/${Uri.encode(path)}") }
+                    navigateToTrim = { navigateTo("trim/${Uri.encode(path)}") },
+                    navigateToControls = { navigateTo("controls/${Uri.encode(path)}") }
                 )
             } else {
                 GamesScreen { selected -> navigateTo("game/${Uri.encode(selected.info.path)}") }
@@ -306,6 +307,17 @@ fun AppNavHost() {
             route = "controls"
         ) {
             ControllerSettings(
+                navigateBack = navController::navigateUp
+            )
+        }
+
+        composable(
+            route = "controls/{path}",
+            arguments = listOf(navArgument("path") { type = NavType.StringType })
+        ) { entry ->
+            val path = Uri.decode(entry.arguments?.getString("path").orEmpty())
+            ControllerSettings(
+                titleId = GameRepository.find(path)?.info?.titleId?.value,
                 navigateBack = navController::navigateUp
             )
         }

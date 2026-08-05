@@ -54,7 +54,8 @@ fun GameDetailScreen(
     game: Game,
     navigateBack: () -> Unit,
     navigateToCheats: () -> Unit,
-    navigateToTrim: () -> Unit
+    navigateToTrim: () -> Unit,
+    navigateToControls: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -161,6 +162,11 @@ fun GameDetailScreen(
                         Icon(painter = painterResource(id = R.drawable.ic_star), contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Cheats")
+                    }
+                    Button(onClick = navigateToControls) {
+                        Icon(painter = painterResource(id = R.drawable.ic_keyboard_arrow_left), contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Controls")
                     }
                 }
             }

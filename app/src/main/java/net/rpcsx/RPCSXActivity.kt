@@ -87,7 +87,12 @@ class RPCSXActivity : Activity() {
     private var activeSelectStickHotkey = SelectStickHotkey.None
     @Volatile
     private var homeMenuLikelyOpen = false
-    private val inputBindings by lazy { InputBindingPrefs.loadBindings() }
+    /** Title id of the running game, used to pick its own control layout. */
+    private val runningTitleId: String? get() = intent?.getStringExtra("titleId")
+
+    // Resolves to this game's own layout when it has one, otherwise the global
+    // layout. Read once per session, so remapping applies on the next launch.
+    private val inputBindings by lazy { InputBindingPrefs.loadBindings(runningTitleId) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

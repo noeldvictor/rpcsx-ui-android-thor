@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import com.github.ishan09811.compose_preferences.core.PreferenceHeader
 import com.github.ishan09811.compose_preferences.core.PreferenceIcon
+import com.github.ishan09811.compose_preferences.core.PreferenceSubtitle
 import com.github.ishan09811.compose_preferences.core.PreferenceValue
 import com.github.ishan09811.compose_preferences.preference.HomePreference
 import com.github.ishan09811.compose_preferences.preference.RegularPreference
@@ -866,8 +867,14 @@ private fun CacheStorageDialog(
 @Composable
 fun ControllerSettings(
     modifier: Modifier = Modifier,
+    titleId: String? = null,
     navigateBack: () -> Unit
 ) {
+    // Null titleId edits the global layout used by every game without an
+    // override. A non-null titleId edits that one game's layout.
+    var hasOverride by remember(titleId) {
+        mutableStateOf(InputBindingPrefs.hasPerGameBindings(titleId))
+    }
     val topBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
         modifier = Modifier
@@ -888,9 +895,9 @@ fun ControllerSettings(
         }
     ) { contentPadding ->
         //val context = LocalContext.current
-        val inputBindings = remember {
+        val inputBindings = remember(titleId) {
             mutableStateMapOf<Int, Pair<Int, Int>>().apply {
-                putAll(InputBindingPrefs.loadBindings())
+                putAll(InputBindingPrefs.loadBindings(titleId))
             }
         }
 
@@ -906,6 +913,39 @@ fun ControllerSettings(
         ) {
             item {
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (titleId != null) {
+                item {
+                    PreferenceHeader("Button mapping scope")
+                }
+
+                item {
+                    RegularPreference(
+                        title = if (hasOverride) {
+                            "Using custom mapping for $titleId"
+                        } else {
+                            "Using the global mapping"
+                        },
+                        subtitle = {
+                            PreferenceSubtitle(
+                                text = if (hasOverride) {
+                                    "Changes affect only this game. Tap to remove the override and follow the global mapping again."
+                                } else {
+                                    "Remapping a button below creates a mapping just for this game."
+                                }
+                            )
+                        },
+                        leadingIcon = null,
+                        onClick = {
+                            if (hasOverride && InputBindingPrefs.clearPerGameBindings(titleId)) {
+                                hasOverride = false
+                                inputBindings.clear()
+                                inputBindings.putAll(InputBindingPrefs.loadBindings(null))
+                            }
+                        }
+                    )
+                }
             }
 
             item {
@@ -1033,7 +1073,8 @@ fun ControllerSettings(
                                 inputBindings.remove(currentInput)
                                 inputBindings[it.key] = value
                             }
-                            InputBindingPrefs.saveBindings(inputBindings.toMap())
+                            InputBindingPrefs.saveBindings(inputBindings.toMap(), titleId)
+                            if (titleId != null) hasOverride = true
                         }
                     }
                 },
