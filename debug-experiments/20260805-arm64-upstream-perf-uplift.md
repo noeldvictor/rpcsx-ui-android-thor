@@ -1,5 +1,12 @@
 # 2026-08-05 ARM64 upstream perf uplift port
 
+- Status: `failed`
+- Title ID: BLUS30161
+- Game: Eternal Sonata
+- Platform scope: `android-thor`
+- Created: 2026-08-05
+- Last updated: 2026-08-05
+
 Source: Whatcookie (Malcolm Jestadt), "PS3 emulation is fast on ARM now",
 2026-08-04. He is the author of the upstream commits ported here. Local
 transcript via `yt-dlp` + `faster-whisper`, kept out of the repo.
