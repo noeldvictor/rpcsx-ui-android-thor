@@ -2,6 +2,7 @@ package net.rpcsx
 
 import android.app.Activity
 import android.os.Bundle
+import android.content.Intent
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -248,6 +249,35 @@ class RPCSXActivity : Activity() {
         runNativeHotkey("FastForward") { RPCSX.instance.toggleFastForward() }
     }
 
+    /**
+     * Select + L1 brings up this game's tools page, which hosts both Cheats and
+     * Controls.
+     *
+     * The in-game menu is the core's native ImGui overlay, so reaching it from
+     * there would mean reimplementing the cheat list and the button remapper in
+     * C++. Both already exist as Compose screens, so the hotkey hands off to the
+     * Android UI instead. The emulator keeps running in the background; cheats
+     * and remapped buttons both apply on the next game launch regardless, so
+     * leaving the surface briefly costs nothing.
+     */
+    private fun openGameToolsOsd() {
+        val gamePath = intent?.getStringExtra("path")
+        if (gamePath.isNullOrEmpty()) {
+            Log.w("RPCSX Hotkeys", "GameTools: no game path on the launch intent")
+            return
+        }
+
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    putExtra("osdGamePath", gamePath)
+                    runningTitleId?.let { putExtra("osdTitleId", it) }
+                }
+            )
+        }.onFailure { Log.e("RPCSX Hotkeys", "GameTools failed", it) }
+    }
+
     private fun triggerSaveState() {
         runNativeHotkey("SaveState") { RPCSX.instance.saveState() }
     }
@@ -449,6 +479,14 @@ class RPCSXActivity : Activity() {
                 if (event.repeatCount == 0 && isGameplayHotkeyState()) {
                     selectHotkeyConsumed = true
                     triggerFastForwardToggle()
+                }
+                return true
+            }
+
+            if (selectHeld && keyCode == KeyEvent.KEYCODE_BUTTON_L1) {
+                if (event.repeatCount == 0) {
+                    selectHotkeyConsumed = true
+                    openGameToolsOsd()
                 }
                 return true
             }

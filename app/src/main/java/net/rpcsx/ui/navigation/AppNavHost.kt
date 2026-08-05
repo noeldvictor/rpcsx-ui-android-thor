@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -119,6 +120,20 @@ fun AppNavHost() {
         navController.navigate(route) {
             launchSingleTop = true
             restoreState = true
+        }
+    }
+
+    // Select + L1 during gameplay reopens this activity with the running game's
+    // path, so land straight on that game's page instead of the library. Guarded
+    // by a flag so returning here later does not re-navigate.
+    var osdRouteHandled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (osdRouteHandled) return@LaunchedEffect
+        val osdPath = (context as? android.app.Activity)
+            ?.intent?.getStringExtra("osdGamePath")
+        if (!osdPath.isNullOrEmpty()) {
+            osdRouteHandled = true
+            navigateTo("game/${Uri.encode(osdPath)}")
         }
     }
 
