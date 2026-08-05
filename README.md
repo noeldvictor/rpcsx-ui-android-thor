@@ -1,182 +1,272 @@
-# RPCSX for AYN Thor Experiment
-
-# EXTREMELY UNSTABLE RESEARCH BUILD
-
-## I am testing stuff right now. Do not treat this as a general PS3-on-Android release.
-
-### Upstream ARM64 integration (2026-08-05)
-
-Audited this tree against upstream RPCS3's ARM64 CPU-emulation series, the work
-covered in Whatcookie's "PS3 emulation is fast on ARM now".
-
-Result of the audit: this tree was already carrying nearly all of it. SPU
-multiplies, the inlined decrementer, `FSM`, the `GB`/`GBH`/`GBB` dot-product
-paths, the `FCGT` workaround and the ARM `UABA` checksum path were all present,
-several in forms further along than upstream's. This tree also has `smmla` /
-`ummla` (i8mm) helpers that upstream does not.
-
-Newly integrated: SPU `SHUFB` and PPU `VPERM` now emit native `TBL2`/`TBX2`
-instead of an emulated x86 `PSHUFB` sequence, together with the recoverable-JIT
-and register-scavenger retry mechanism that makes those instructions safe to
-use. Upstream measures the shuffle change at about +8% on its own hardware.
-
-Deliberately not taken: upstream's `busy_wait` timer scaling. This tree had
-already solved the same problem by hand-retuning its spin sites against the real
-19.2MHz generic timer, so applying the upstream scale on top divided already
-correct values a second time and collapsed Thor to roughly 1 FPS. Reverted. See
-`debug-experiments/20260805-arm64-upstream-perf-uplift.md`. The two remaining
-unported upstream commits are SVE-only and the Snapdragon 8 Gen 2 exposes no SVE.
-
-Early result: informal testing on Thor of build `49FCB2F5...7FED7` reports many
-titles running well. That build carries the `TBL2`/`TBX2` shuffle work and the
-retry mechanism, with the `busy_wait` scaling and ISB changes reverted, so it is
-a reasonably clean read on the shuffle port.
-
-This is hands-on testing rather than a harness-gated measurement. No FPS figure,
-no thermal envelope and no per-title compatibility matrix has been captured yet,
-and the automated gated run still thermal-stops during cold PPU/SPU compilation
-before the title renders. A separate change bounding the cold-compile memory
-budget on Android is committed but is not in the build above and remains
-unmeasured. Read the above as promising, not as a benchmark.
-
 <p align="center">
   <img src="docs/images/rpcsx-thor-experiment-banner.png" alt="RPCSX for AYN Thor Experiment">
 </p>
 
-<p align="center">
-  <a href="https://github.com/noeldvictor/rpcsx-ui-android-thor/fork">
-    <img src="docs/images/fork-it-button.png" alt="Fork and build yourself - no APK support queue" width="620">
-  </a>
-</p>
+# RPCSX for AYN Thor
 
-Personal-use Android fork of RPCSX-UI-Android for **AYN Thor Base, Pro, and Max**. It targets Snapdragon 8 Gen 2 / Adreno 740 Thor hardware and handheld PS3 testing.
+PlayStation 3 emulation on the AYN Thor handheld. This is a personal fork of
+RPCSX-UI-Android, tuned specifically for Thor's Snapdragon 8 Gen 2 hardware.
 
-No stability guarantee. No support queue. No APK support. Build it yourself and use legally owned dumps with legally obtained firmware.
+> ### ⚠️ Read this before anything else
+>
+> **This is a research build, not a product.** It is frequently broken. There is
+> no APK download, no support queue, and no stability guarantee. Things that
+> worked last week may not work today.
+>
+> If you want to play PS3 games on a handheld with minimal hassle, this is not
+> the right project for you yet.
 
-## Quick Read
+---
 
-- **Target:** AYN Thor Base / Pro / Max. Thor Lite may run it, but is not the PS3 performance target.
-- **Purpose:** library setup, Thor controls, cheat lists, cache status, and Thor-specific performance experiments.
-- **Current benchmark:** Eternal Sonata `BLUS30161` reaches near-30-FPS first-field and first-battle-prompt performance on Thor Max with the optimized RelWithDebInfo native core. This is not broad compatibility or a finished 30-FPS guarantee.
-- **Release style:** source-first. GitHub Actions artifacts may exist, but builds are the expected path.
-- **Upstream:** still GPLv2, still based on RPCSX-UI-Android, still dependent on RPCSX core behavior.
+## Is this for you?
 
-## Current Performance Canary
+**Probably yes, if:**
+- You own an AYN Thor and enjoy tinkering
+- You are comfortable building an Android app from source
+- You want to follow or contribute to PS3-on-ARM performance work
+- You accept that some games crash, and some don't boot at all
 
-The current focused test game is **Eternal Sonata `BLUS30161`** on an AYN Thor Max, stock Qualcomm Vulkan driver, 720p Rocknix-correct profile, Write Color Buffers on, reduced-loop u4 enabled, and the optimized Android native core.
+**Probably no, if:**
+- You want a download-and-play experience
+- You need reliability
+- You don't own an AYN Thor (other devices are untested and unsupported)
 
-As of **2026-05-17**, this fork matches the public Rocknix/RPCS3 720p field target for the tested scene. The Android Thor core is no longer stuck at `10-13 FPS` in the first playable field when using the optimized dev-core workflow.
+---
 
-Measured on Thor Max:
+## What you need
 
-| Scene/check | FPS | Status |
+| | |
+| --- | --- |
+| **Device** | AYN Thor Base, Pro, or Max. Thor Lite may run it but isn't the performance target. |
+| **Android** | 10 or newer |
+| **Games** | Your own legally-made dumps of discs you own |
+| **Firmware** | PS3 firmware obtained legally from Sony |
+| **To build** | Android SDK, JDK 17, and a Windows machine for the PowerShell tooling |
+
+This project does not provide games, firmware, or keys, and never will. Do not
+ask for them.
+
+---
+
+## Getting it running
+
+There is no APK to download. You build it yourself. Roughly 20-40 minutes the
+first time, mostly waiting on the native core to compile.
+
+### 1. Clone and prepare dependencies
+
+```powershell
+git clone https://github.com/noeldvictor/rpcsx-ui-android-thor.git
+cd rpcsx-ui-android-thor
+.\tools\hydrate_rpcsx_core_deps.ps1
+```
+
+That last script fetches the pinned RPCSX third-party submodules. You only need
+it once, before your first full build.
+
+### 2. Build the APK
+
+```powershell
+.\gradlew.bat :app:assembleDebug
+```
+
+The result lands here:
+
+```text
+app\build\outputs\apk\debug\rpcsx-thor-experiment-debug.apk
+```
+
+### 3. Install it
+
+```powershell
+adb install -r app\build\outputs\apk\debug\rpcsx-thor-experiment-debug.apk
+```
+
+### 4. First-time setup in the app
+
+1. **Install firmware** — point the app at your `PS3UPDAT.PUP`
+2. **Add your games** — external folders and SD cards are supported
+3. **Let it compile** — the first launch of any game compiles PPU/SPU code and
+   is much slower than later launches. Expect heat and a wait.
+4. **Turn on Recommended Settings** on the game detail page, if one exists for
+   your title
+
+<details>
+<summary><b>Faster rebuilds while iterating</b></summary>
+
+UI-only changes, skipping the native core:
+
+```powershell
+.\gradlew.bat :app:assembleDebug -PbuildBundledRpcsxCore=false
+```
+
+Native core changes, hot-swapped onto a connected Thor:
+
+```powershell
+.\tools\build_push_thor_core.ps1 -Label my-experiment
+```
+
+This defaults to `:app:buildCMakeRelWithDebInfo[arm64-v8a]`, so performance
+testing uses `-O2 -DNDEBUG -flto=thin`. Debug native cores are opt-in via
+`-AllowDebugFallback` and must never be used for FPS claims — they are far
+slower and any number from them is meaningless.
+
+</details>
+
+---
+
+## Controls
+
+Thor has physical controls, so the on-screen touch overlay is hidden by default.
+
+| Action | Buttons |
+| --- | --- |
+| Fast Forward 2x | `Select` + `R1` |
+| Save State | `Select` + right stick down |
+| Load State | `Select` + right stick up |
+| In-game menu | Android **Back** button (also pauses) |
+
+Fast Forward uses the emulator's internal clock scaling rather than uncapped
+rendering, so it stays comparatively stable.
+
+---
+
+## Cheats
+
+The app ships with a cheat database (`2501` Aldos/Artemis entries and `28`
+RPCS3-ready patch entries), so matching cheats appear without any network fetch.
+
+**Offline single-player only.** This will not help with DRM, anti-cheat, or
+anything online, and that is deliberate.
+
+1. Add a game so the app can read its title ID
+2. Open the game's detail page, then **Cheats**
+3. For Aldos/Artemis cheats: **start the game once, close it, then come back.**
+   The emulator needs the PPU patch hash before it can write the patch file.
+4. Enable the cheats you want
+5. **Restart the game** — changes apply on the next launch
+
+RPCS3-ready entries already carry PPU hashes and skip step 3. Risky AoB and
+runtime codes stay listed but greyed out until native validation exists.
+
+---
+
+## Known issues
+
+- **Launching a second game after closing the first can fail.** Under
+  investigation. Restarting the app is the current workaround.
+- Heavy scenes still drop well below 30 FPS.
+- Cold compilation on first launch generates significant heat and can stall
+  before a game reaches its title screen.
+- Many games do not boot. There is no compatibility list yet.
+
+---
+
+## Where performance actually stands
+
+Honest summary: **one game has been measured properly, and it is not a promise
+about anything else.**
+
+The test case is Eternal Sonata (`BLUS30161`) on a Thor Max at 720p with the
+optimized native core. As of 2026-05-17:
+
+| Scene | FPS | Status |
 | --- | ---: | --- |
-| First field route | `29.14 FPS` | Near target |
-| Short moving field, open view | `27.35-28.08 FPS` | Near target |
-| Short moving field, tree-heavy view | `19.68 FPS` | Still a hotspot |
-| First battle tutorial prompt | `30.00 FPS` | Target met |
+| First field route | `29.14` | Near target |
+| Moving field, open view | `27.35-28.08` | Near target |
+| Moving field, tree-heavy | `19.68` | Hotspot |
+| First battle prompt | `30.00` | Target met |
 
-Important caveats:
+This is a **single-game canary**. It says nothing about broad compatibility, and
+there is no 30 FPS guarantee for any other title.
 
-- This is a **single-game canary**, not proof that all PS3 games are fast.
-- The menu checkpoint still needs a clean correctness pass; one quick menu probe opened the ImGui debug overlay instead of the game menu.
-- The worst tree-heavy field camera still dips below the 30-FPS target. Remaining work is RSX/SPU/GPU hot-path tuning.
-- Do not compare FPS from `app\.cxx\Debug\...` native cores. FPS runs must use the optimized RelWithDebInfo dev core or a release-equivalent build.
+Recent hands-on testing after the August 2026 ARM64 work reports more titles
+running well, but no FPS figures or compatibility matrix have been captured for
+that, so treat it as encouraging rather than measured.
 
-## Thor Variants
+---
 
-Base, Pro, and Max share the same CPU/GPU target. The main difference is cache/storage headroom.
+## Thor variants
 
-| Variant | CPU/GPU | RAM | Storage | Practical note |
-| --- | --- | ---: | ---: | --- |
-| Thor Base | Snapdragon 8 Gen 2 / Adreno 740 | 8 GB | 128 GB | Same speed target, tightest cache budget. |
-| Thor Pro | Snapdragon 8 Gen 2 / Adreno 740 | 12 GB | 256 GB | Default comfort target. |
-| Thor Max | Snapdragon 8 Gen 2 / Adreno 740 | 16 GB | 1 TB | Best cache/library headroom. |
+All three share the same CPU and GPU. The difference is headroom for caches and
+game storage.
+
+| Variant | RAM | Storage | Note |
+| --- | ---: | ---: | --- |
+| Base | 8 GB | 128 GB | Same speed target, tightest cache budget |
+| Pro | 12 GB | 256 GB | Comfortable default |
+| Max | 16 GB | 1 TB | Best cache and library headroom |
+
+All are Snapdragon 8 Gen 2 with Adreno 740.
+
+---
 
 ## Screenshots
-
-Captured from the connected AYN Thor test device.
 
 ![Thor library](docs/screenshots/rpcsx-thor-library.png)
 
 ![Thor menu](docs/screenshots/rpcsx-thor-menu.png)
 
-## User-Facing Differences
+---
 
-Summary: upstream is the general Android app; this fork is the Thor handheld build.
+## What this fork changes
 
-| Area | This fork changes |
+Upstream RPCSX-UI-Android is a general Android app. This fork is a Thor handheld
+build.
+
+| Area | Change |
 | --- | --- |
-| Updates | Upstream-style update nags are disabled for this fork. |
-| Library setup | External PS3 folders and ISOs can be added with SD-card use in mind. |
-| Titles and covers | Reads `PARAM.SFO` and `ICON0.PNG` from PS3 game folders/ISOs where possible. |
-| Cheats | Adds cheat badges, per-game cheat lists, bundled cheat database, and toggles. |
-| In-game menu | Adds Thor-friendly Cheats, Fast Forward 2x, Show FPS, Save State, and Load State paths. |
-| Hotkeys | `Select + R1` fast-forward, `Select + right stick down` save, `Select + right stick up` load. |
-| Back button | Android Back opens the in-game menu during gameplay and pauses. |
-| Touch overlay | Thor defaults to hidden on-screen controls because it has physical controls. |
-| Sixaxis | Thor motion sensors are wired for PS3 motion when the bundled core exposes the bridge. |
-| Recommended settings | Per-game settings can be enabled with one switch. |
-| Compiled cache | Game detail shows PPU, SPU, and shader cache status instead of hiding it. |
-| Cache storage | Internal or app-owned SD-card compiled-cache storage can be selected when Android exposes both. |
-| Trim / Optimize | Experimental personal-use trimming tools are available in the app. |
-| GPU drivers | Driver UI is Thor-guided with Adreno 740 notes and curated Turnip-style sources. |
-| Debugging | Thor log/screenshot capture scripts are included for reproducible play-session debugging. |
+| Library | External PS3 folders and ISOs with SD-card use in mind |
+| Titles and covers | Reads `PARAM.SFO` and `ICON0.PNG` from folders and ISOs |
+| Cheats | Badges, per-game lists, bundled database, toggles |
+| In-game menu | Cheats, Fast Forward 2x, Show FPS, Save/Load State |
+| Touch overlay | Hidden by default, since Thor has real controls |
+| Sixaxis | Motion sensors wired for PS3 motion input |
+| Cache visibility | PPU, SPU, and shader cache status shown per game |
+| Cache storage | Choose internal or app-owned SD-card storage |
+| Trim / Optimize | Experimental personal-use trimming tools |
+| GPU drivers | Thor-guided driver UI with Adreno 740 notes |
+| Updates | Upstream update prompts disabled |
 
-## Technical Differences
+<details>
+<summary><b>Technical details (for developers)</b></summary>
 
-- RPCSX core source is vendored under `app/src/main/cpp/rpcsx`, so Android UI and Thor core experiments live in one repo.
-- The default Gradle APK bundles this fork's source-built RPCSX core unless `-PbuildBundledRpcsxCore=false` is passed.
-- Fork update prompts are disabled through `BuildConfig.FORK_BUILD=true`.
-- Cheat work includes bundled database assets, Artemis/Aldos conversion experiments, RPCS3 patch imports, and patch-hash learning.
-- Recommended settings use a bundled RPCS3 config snapshot plus a writable local cache.
-- Per-game compiled-cache status reads `cache/cache/TITLEID` and counts PPU, SPU, and RSX shader cache entries.
-- RSX shader cache lives below the PPU cache tree (`.../ppu-*/shaders_cache/`), so selected compiled-cache storage covers CPU and shader cache together.
-- Thor defaults cap LLVM compile workers, disable full first-boot PPU precompile, enable SPU and on-disk shader cache, and use a Thor-safe `cortex-a78` LLVM target.
-- ARM64 native code uses the Thor-wide ARMv8.2-A baseline for inline LSE atomics and an A715 scheduling model; these tune ahead-of-time host code without changing runtime JIT feature gates.
-- The old Android `cortex-a34` startup override is removed because it silently downgrades Thor JIT codegen.
-- Fast Forward 2x uses RPCSX/RPCS3 `Clocks scale`, not raw uncapped rendering.
-- System Info includes `Thor Feature Doctor` output for LLVM CPU, detected AArch64 cores, and Android feature flags.
-- Android-side cleanup reduces main-thread file probing, speeds folder scan queues, improves large-file copy, caches patch status reads, and debounces library saves.
+- RPCSX core is vendored at `app/src/main/cpp/rpcsx`, so UI and core experiments
+  share one repo
+- Gradle bundles this fork's source-built core unless
+  `-PbuildBundledRpcsxCore=false` is passed
+- Thor defaults cap LLVM compile workers, disable full first-boot PPU precompile,
+  enable SPU and on-disk shader cache, and use a `cortex-a78` LLVM target
+- ARM64 builds default to `-march=armv8.2-a -mtune=cortex-a715` for inline LSE
+  atomics and A715 scheduling. Override with `-PrpcsxAndroidArmArch=` or
+  `-PrpcsxAndroidArmTune=`
+- The old `cortex-a34` startup override is removed, as it silently downgraded
+  Thor JIT codegen
+- RSX shader cache lives under the PPU cache tree, so the selected cache storage
+  location covers CPU and shader caches together
+- System Info exposes `Thor Feature Doctor` for LLVM CPU, detected AArch64 cores,
+  and Android feature flags
 
-## Cheats Setup
-
-The APK bundles `app/src/main/assets/cheats/cheats.db`. It currently contains `2501` Aldos/Artemis entries and `28` RPCS3-ready patch entries, so the app can show matching cheats on a game detail page without a network fetch.
-
-Install flow:
-
-1. Add a game so the app can read its title ID from `PARAM.SFO` or the ISO.
-2. Open the game detail page, then open `Cheats`.
-3. For Aldos/Artemis cheats, start the game once, close it, then return to `Cheats`. RPCSX needs the PPU patch hash before it can write RPCS3 patch files.
-4. Turn on the cheats you want. The app writes generated patches to `config/patches/TITLEID_patch.yml` and enables them in `config/patch_config.yml`.
-5. Restart the game. Cheat changes apply on the next game start.
-
-RPCS3-ready patch entries already include PPU hashes and can be toggled without the Aldos/Artemis conversion step. Risky AoB, runtime, or unsupported Artemis codes stay visible as unavailable until native validation exists.
-
-Developer refresh:
+Cheat database refresh:
 
 ```powershell
 .\tools\update_aldos_cheats.ps1
 python .\tools\build_cheat_db.py
 ```
 
+</details>
+
 <details>
-<summary>AYN Thor hardware notes</summary>
+<summary><b>Thor CPU layout and affinity masks</b></summary>
 
-The connected Thor reports `kalama` hardware and this CPU layout from `/proc/cpuinfo`:
+Thor reports `kalama` hardware with four core types:
 
-| CPU | Part | Interpreted core |
+| CPU | Part | Core |
 | ---: | --- | --- |
-| 0 | `0xd46` | Cortex-A510 |
-| 1 | `0xd46` | Cortex-A510 |
-| 2 | `0xd46` | Cortex-A510 |
-| 3 | `0xd4d` | Cortex-A715 |
-| 4 | `0xd4d` | Cortex-A715 |
-| 5 | `0xd47` | Cortex-A710 |
-| 6 | `0xd47` | Cortex-A710 |
+| 0-2 | `0xd46` | Cortex-A510 |
+| 3-4 | `0xd4d` | Cortex-A715 |
+| 5-6 | `0xd47` | Cortex-A710 |
 | 7 | `0xd4e` | Cortex-X3 |
-
-Useful masks for native/core experiments:
 
 | Group | CPUs | Mask |
 | --- | --- | --- |
@@ -184,58 +274,16 @@ Useful masks for native/core experiments:
 | A715 only | `3-4` | `0x18` |
 | A710 only | `5-6` | `0x60` |
 | Prime X3 only | `7` | `0x80` |
-| Performance plus prime | `3-7` | `0xF8` |
-| A715 plus prime | `3-4,7` | `0x98` |
+| Performance + prime | `3-7` | `0xF8` |
+| A715 + prime | `3-4,7` | `0x98` |
 
-Practical direction: keep PPU/SPU/shader caches on internal storage when possible, cap LLVM compile workers before heat and memory pressure snowball, and expose obvious Thor controls instead of making users dig through advanced settings.
+Note that two of the three A510s share a single 128-bit vector unit, which
+matters when placing SIMD-heavy threads.
 
 </details>
 
-## Reports
-
-- [APS3E, RPCSX, and Thor PPU compile notes](report/2026-05-10-aps3e-rpcsx-thor-ppu-compile.md)
-- [RPCS3 automatic game settings notes](report/2026-05-10-rpcs3-auto-game-settings.md)
-- [AYN Thor Base/Pro/Max Snapdragon 8 Gen 2 target notes](report/2026-05-10-snapdragon-8-gen-2-thor-target.md)
-- [Markdown and Thor variant audit](report/2026-05-10-markdown-and-thor-variant-audit.md)
-- [Thor black screen debug pipeline](report/2026-05-11-thor-black-screen-debug-pipeline.md)
-
-## Building
-
-Requirements: Android SDK, JDK 17, Android 10+ target device.
-
-```powershell
-.\gradlew.bat :app:assembleDebug
-```
-
-Debug APK:
-
-```text
-app\build\outputs\apk\debug\rpcsx-thor-experiment-debug.apk
-```
-
-The default build compiles the Android JNI wrapper and bundles this fork's source-built RPCSX core. Hydrate pinned RPCSX third-party submodules once before the first full source-core build:
-
-```powershell
-.\tools\hydrate_rpcsx_core_deps.ps1
-```
-
-For faster UI-only iteration:
-
-```powershell
-.\gradlew.bat :app:assembleDebug -PbuildBundledRpcsxCore=false
-```
-
-For native/core speed iteration on Thor, use the optimized dev-core hot-swap path:
-
-```powershell
-.\tools\build_push_thor_core.ps1 -Label eternal-sonata-speed
-```
-
-That script defaults to `:app:buildCMakeRelWithDebInfo[arm64-v8a]` so FPS tests use `-O2 -DNDEBUG -flto=thin`. Debug native fallback is intentionally opt-in with `-AllowDebugFallback`; Debug native cores are useful for diagnosis, not FPS claims.
-
-ARM64 builds also default to `-march=armv8.2-a -mtune=cortex-a715`. Override either setting for a diagnostic build with `-PrpcsxAndroidArmArch=...` or `-PrpcsxAndroidArmTune=...`; pass an empty value to disable that flag. The architecture baseline is valid across Thor's Snapdragon 865 and Snapdragon 8 Gen 2 variants, while `-mtune` changes scheduling decisions only.
-
-## Thor Debug Capture
+<details>
+<summary><b>Debug capture tooling</b></summary>
 
 Live stream while playing:
 
@@ -251,8 +299,36 @@ One-shot capture:
 .\tools\collect_thor_debug.ps1 -Label game-name
 ```
 
-Debug streams and captures are written to ignored `debug-captures/` folders.
+Output goes to the ignored `debug-captures/` folder.
+
+</details>
+
+---
+
+## Development notes
+
+Ongoing performance work is logged in `debug-experiments/`. Recent highlights:
+
+- [ARM64 upstream integration, August 2026](debug-experiments/20260805-arm64-upstream-perf-uplift.md)
+  — audit against upstream RPCS3's ARM64 series, native `TBL2`/`TBX2` shuffles,
+  and a `busy_wait` regression worth reading before porting upstream ARM fixes
+
+Background reports:
+
+- [APS3E, RPCSX, and Thor PPU compile notes](report/2026-05-10-aps3e-rpcsx-thor-ppu-compile.md)
+- [RPCS3 automatic game settings](report/2026-05-10-rpcs3-auto-game-settings.md)
+- [Snapdragon 8 Gen 2 Thor target notes](report/2026-05-10-snapdragon-8-gen-2-thor-target.md)
+- [Thor black screen debug pipeline](report/2026-05-11-thor-black-screen-debug-pipeline.md)
+
+---
 
 ## License
 
-This fork keeps the upstream GPLv2 license unless a directory or file contains its own license.
+GPLv2, inherited from upstream RPCSX-UI-Android, unless a specific directory or
+file carries its own license.
+
+<p align="center">
+  <a href="https://github.com/noeldvictor/rpcsx-ui-android-thor/fork">
+    <img src="docs/images/fork-it-button.png" alt="Fork and build yourself - no APK support queue" width="620">
+  </a>
+</p>
