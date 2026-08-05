@@ -397,6 +397,10 @@ struct cfg_root : cfg::node
 		cfg::_bool show_analog_limiter_toggle_hint{this, "Show analog limiter toggle hint", true, true};
 		cfg::_bool show_mouse_and_keyboard_toggle_hint{this, "Show mouse and keyboard toggle hint", true, true};
 		cfg::_bool use_native_interface{this, "Use native user interface", true};
+		// Multiplies the scale the game asks for on the on-screen keyboard. PS3
+		// titles size the OSK for a TV at couch distance, which is far too small
+		// on a handheld panel. Defaults to 2x on Thor.
+		cfg::_float<0, 400> osk_scale{this, "On-screen Keyboard Scale", 200, true};
 		cfg::string gdb_server{this, "GDB Server", "127.0.0.1:2345"};
 		cfg::_bool silence_all_logs{this, "Silence All Logs", false, true};
 		cfg::string title_format{this, "Window Title Format", "FPS: %F | %R | %V | %T [%t]", true};

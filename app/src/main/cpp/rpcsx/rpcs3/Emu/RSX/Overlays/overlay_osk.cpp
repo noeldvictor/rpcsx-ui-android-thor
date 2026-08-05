@@ -1363,7 +1363,10 @@ namespace rsx
 			m_input_layout = params.input_layout;
 			m_panel_layout = params.panel_layout;
 			m_input_field_window_width = params.input_field_window_width;
-			m_scaling = params.initial_scale;
+			// Titles size the OSK for a TV, which is unusable on a handheld
+			// panel. Apply the user's multiplier on top of the requested scale.
+			const f32 osk_user_scale = std::max(0.1f, static_cast<f32>(g_cfg.misc.osk_scale) / 100.f);
+			m_scaling = params.initial_scale * osk_user_scale;
 			m_input_frame.back_color.r = params.base_color.r;
 			m_input_frame.back_color.g = params.base_color.g;
 			m_input_frame.back_color.b = params.base_color.b;
