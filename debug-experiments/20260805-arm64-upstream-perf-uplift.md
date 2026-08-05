@@ -71,3 +71,52 @@ known cold PPU/SPU LLVM compile spike already recorded for
   fallback behaves as upstream describes (about 3 blocks in 10,000).
 - Only after a clean title proof does any `busy_wait` speed claim become
   measurable.
+
+## Regression: busy_wait scaling dropped Thor to ~1 FPS. Reverted.
+
+User reported roughly 1 FPS on the installed `82E7E397...BADAD` build. Cause was
+the `busy_wait` timer scaling, and it was a porting error.
+
+Upstream scales `busy_wait` because its call sites pass x86-derived counts tuned
+for a ~3GHz timer. This fork had already solved that problem the other way: the
+hot spin sites were hand-retuned against Thor's real 19.2MHz generic timer and
+already pass generic-timer ticks directly.
+
+- `busy_wait(100)` in `util/Thread.cpp:2618`, `Emu/RSX/RSXThread.cpp:2840`
+- `profiled_busy_wait(..., 200)` in `Emu/Memory/vm.cpp` x3, `RSXFIFO.cpp`
+- `profiled_busy_wait(..., 300)` in `SPUThread.cpp` x4, `CPUThread.cpp` x2
+- `profiled_busy_wait(..., 500)` in `SPUThread.cpp` x4, `vm.cpp` x2
+
+`arm_timer_scale` resolves to 1 on Thor because `19200000 / 30000000` truncates
+to 0 and falls back, so the applied scale was purely the `/100`. That divided
+already-correct values a second time:
+
+| call | before | after |
+| --- | --- | --- |
+| `busy_wait(100)` | 5.2 us | 52 ns |
+| `busy_wait(300)` | 15.6 us | 156 ns |
+| `busy_wait(500)` | 26 us | 260 ns |
+
+Collapsing the backoff on contended reservations, SPU channels and mutexes
+produces a lock convoy with cacheline ping-pong across all eight cores, which
+matches the observed ~1 FPS.
+
+`rx::get_tsc()` reads `cntvct_el0`, so the timer source was never the variable.
+The call-site calibration was.
+
+Reverted the scaling. Also reverted `pause()` from `isb` back to `yield`: `isb`
+is probably the better throttle, but it changes per-iteration spin cost and
+these counts were tuned with `yield`, so it must be measured alone.
+
+Ruled out as causes, from live logcat during the 1 FPS session: zero
+`Retrying without TBL2/TBX2` and zero `compiled successfully without TBL2`
+records, so the scavenger retry path never fired and the SHUFB/TBL2 work is not
+implicated. That work is retained.
+
+Fixed APK `49FCB2F5...7FED7`, 100,239,664 bytes, installed with `adb install -r`
+rather than the gated installer, because this is a regression fix rather than a
+measured run. It carries no cool-gate capture and earns no speed credit.
+
+Lesson recorded in `AGENTS.md`: before porting an upstream ARM tuning fix, check
+whether this fork already compensated at the call sites. Two fixes for one
+problem multiply.

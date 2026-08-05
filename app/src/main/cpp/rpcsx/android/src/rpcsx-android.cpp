@@ -2275,8 +2275,9 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
   g_initialized = true;
 
 #ifdef ARCH_ARM64
-  // Must run before any busy_wait: it reads CNTFRQ_EL0 so busy waits written
-  // against ~3GHz x86 timers are scaled to this device's generic timer.
+  // Records this device's generic-timer frequency for diagnostics. busy_wait
+  // deliberately does NOT apply the scale on this fork; see the note in
+  // rx/asm.hpp for why.
   rx::init_arm_timer_scale();
 #endif
 

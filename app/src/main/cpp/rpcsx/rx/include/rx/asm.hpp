@@ -275,10 +275,11 @@ constexpr u32 clz128(u128 arg) {
 
 inline void pause() {
 #if defined(ARCH_ARM64)
-  // YIELD is an SMT hint and is a no-op on the SMP cores used by essentially
-  // all consumer ARM parts, so it did not throttle the spin at all. ISB stalls
-  // instruction fetch and execution, which is the closest analogue to x86 PAUSE.
-  __asm__ volatile("isb" ::: "memory");
+  // Upstream switched this to `isb` because YIELD is an SMT hint and a no-op on
+  // SMP cores. That is likely correct, but it changes the cost of every spin
+  // iteration and this fork's spin counts were hand-tuned with YIELD in place.
+  // Reintroduce and measure it on its own, not bundled with other changes.
+  __asm__ volatile("yield");
 #elif defined(_M_X64)
   _mm_pause();
 #elif defined(ARCH_X64)
@@ -377,13 +378,16 @@ inline u32 thor_busy_wait_poll_batch(usz cycles) {
 
 // Synchronization helper (cache-friendly busy waiting)
 inline void busy_wait(usz cycles = 3000) {
-#if defined(ARCH_ARM64)
-  // See init_arm_timer_scale(): convert the x86-derived cycle count into ticks
-  // of this machine's generic timer.
-  const u64 wait_ticks = (cycles / 100) * arm_timer_scale;
-#else
+  // NOTE: do NOT apply arm_timer_scale here. Upstream scales busy_wait by the
+  // generic-timer frequency because its call sites pass x86-derived counts
+  // tuned for a ~3GHz timer. This fork already solved that problem the other
+  // way: every hot call site was retuned by hand against Thor's real 19.2MHz
+  // timer (see the 100/200/300/500 arguments in vm.cpp, SPUThread.cpp,
+  // CPUThread.cpp, mutex.cpp and RSXFIFO.cpp). Dividing those by 100 a second
+  // time collapses a 5-26us backoff to 50-260ns and produces a lock convoy on
+  // every contended reservation, channel and mutex. Measured on Thor as a drop
+  // to about 1 FPS. See debug-experiments/20260805-arm64-upstream-perf-uplift.md.
   const u64 wait_ticks = cycles;
-#endif
 
 #if defined(ARCH_ARM64) && defined(ANDROID) && \
     defined(RPCSX_THOR_BUSY_WAIT_EXPERIMENT)

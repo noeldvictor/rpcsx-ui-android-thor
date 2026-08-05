@@ -433,23 +433,33 @@ plus `faster-whisper`. His per-change numbers are on his own ARM device
 (Odin 2 class, Linux), not on Thor, so treat them as ordering hints, not
 Thor predictions.
 
-- Highest-value items, ported 2026-08-05. These are host-timing and spin-loop
-  fixes, not codegen, and they were the largest wins in the talk:
-  - `busy_wait` timer scaling in `rx/include/rx/asm.hpp`. RPCS3's busy waits
-    assumed an x86 timer near 3GHz. Thor's Snapdragon 8 Gen 2 runs `CNTFRQ_EL0`
-    at 19.2MHz, so `busy_wait(3000)` blocked about 156us instead of ~1us.
-    Added `arm_timer_scale` / `init_arm_timer_scale()` and scaled the wait by
-    `(cycles / 100) * arm_timer_scale`. Whatcookie reports this one fix as
-    +25% performance and -10% power. `init_arm_timer_scale()` is called from
-    `_rpcsx_initialize` in `android/src/rpcsx-android.cpp` and MUST run before
-    any `busy_wait`.
-  - `pause()` now emits `isb`, not `yield`. `YIELD` is an SMT hint and is a
-    no-op on the SMP cores in essentially all consumer ARM parts, so it never
-    throttled the spin.
-  - The pre-existing `RPCSX_THOR_BUSY_WAIT_EXPERIMENT` pause-batching path only
-    changed how often `get_tsc()` was polled inside an already 150x-too-long
-    window. It was treating a symptom. It now inherits the scaled duration;
-    re-evaluate whether it earns its keep at all.
+- DO NOT apply upstream's `busy_wait` timer scaling to this fork. Tried and
+  reverted 2026-08-05 after it dropped Thor to about 1 FPS.
+  - Upstream scales by `(cycles / 100) * arm_timer_scale` because its call
+    sites pass x86-derived counts tuned for a ~3GHz timer, while ARM generic
+    timers are far slower. Whatcookie reports +25% perf / -10% power for it.
+  - It does not transfer here, because this fork already fixed the same problem
+    the other way. Every hot spin site was hand-retuned against Thor's real
+    19.2MHz timer: `busy_wait(100)`, and `profiled_busy_wait(..., 200/300/500)`
+    across `vm.cpp`, `SPUThread.cpp`, `CPUThread.cpp`, `mutex.cpp`, `sema.cpp`
+    and `RSXFIFO.cpp`. Those arguments are already generic-timer ticks.
+  - `arm_timer_scale` resolves to 1 on Thor, since `19200000 / 30000000`
+    truncates to 0 and falls back. So the scale is purely the `/100`, which
+    divides already-correct values a second time and collapses a 5-26us backoff
+    to 50-260ns on every contended reservation, channel and mutex. The result
+    is a lock convoy, not a speedup.
+  - `rx::get_tsc()` reads `cntvct_el0` directly, so the timer source is not the
+    variable here. The call-site calibration is.
+  - `init_arm_timer_scale()` is retained and called from `_rpcsx_initialize`
+    for diagnostics only. Nothing reads `arm_timer_scale`.
+  - General rule this establishes: before porting an upstream ARM tuning fix,
+    check whether this fork already compensated at the call sites. Two fixes
+    for one problem multiply.
+- `pause()` remains `yield`, not upstream's `isb`. `isb` is probably the more
+  correct throttle, but it changes the cost of every spin iteration and the
+  spin counts above were tuned with `yield` in place. Reintroduce it alone,
+  with a measured run, never bundled with other changes.
+- The `RPCSX_THOR_BUSY_WAIT_EXPERIMENT` pause-batching path is unchanged.
 
 - Already landed in the vendored core, do not re-port:
   - `4542020c8` SPU LLVM ARM64 `UDOT` for `SUMB`. The vendored core is ahead of
