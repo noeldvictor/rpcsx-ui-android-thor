@@ -76,6 +76,7 @@ import net.rpcsx.utils.DriversFetcher
 import net.rpcsx.utils.GeneralSettings
 import net.rpcsx.utils.GeneralSettings.string
 import net.rpcsx.utils.GitHub
+import net.rpcsx.utils.GpuDriverAdvisor
 import net.rpcsx.utils.GpuDriverHelper
 import net.rpcsx.utils.GpuDriverInstallResult
 import java.io.File
@@ -266,12 +267,42 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (metadata.label == selectedDriver) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                driverCompatibilityWarning(metadata.label)?.let { warning ->
+                                if (metadata.name != "Default") {
+                                    val assessment = remember(metadata.label) {
+                                        GpuDriverAdvisor.assess(metadata)
+                                    }
+                                    val isSelected = metadata.label == selectedDriver
+                                    val verdictColor = when {
+                                        isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+                                        assessment.verdict == GpuDriverAdvisor.Verdict.INCOMPATIBLE ->
+                                            MaterialTheme.colorScheme.error
+                                        assessment.verdict == GpuDriverAdvisor.Verdict.RISKY ->
+                                            MaterialTheme.colorScheme.error
+                                        assessment.verdict == GpuDriverAdvisor.Verdict.COMPATIBLE ->
+                                            MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = warning,
+                                        text = "${GpuDriverAdvisor.badge(assessment.verdict)} · ${assessment.summary}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (metadata.label == selectedDriver) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.error
+                                        color = verdictColor
                                     )
+                                    assessment.driverVersion?.let { version ->
+                                        Text(
+                                            text = "Mesa $version",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    assessment.reasons.forEach { reason ->
+                                        Text(
+                                            text = "• $reason",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -440,15 +471,6 @@ private fun DriverSourceDialog(
     )
 }
 
-private fun driverCompatibilityWarning(name: String): String? {
-    return when {
-        name.contains("Gen8", ignoreCase = true) || name.contains("A8", ignoreCase = true) ->
-            "Not for Thor Adreno 740 unless you are deliberately testing."
-        name.contains("OneUI", ignoreCase = true) ->
-            "Samsung OneUI variant; usually skip on AYN Thor."
-        else -> null
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -574,12 +596,22 @@ fun FetchAndShowDrivers(
                                     onClick = { chosenIndex = index })
                                 Column(modifier = Modifier.padding(start = 8.dp)) {
                                     Text(text = driver.first)
-                                    driverCompatibilityWarning(driver.first)?.let { warning ->
-                                        Text(
-                                            warning,
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
+                                    // Judge before download: only the asset name is
+                                    // known at this point, which is enough to spot a
+                                    // package built for another Adreno generation.
+                                    val preAssessment = remember(driver.first) {
+                                        GpuDriverAdvisor.assess(name = driver.first)
                                     }
+                                    Text(
+                                        text = "${GpuDriverAdvisor.badge(preAssessment.verdict)} · ${preAssessment.summary}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = when (preAssessment.verdict) {
+                                            GpuDriverAdvisor.Verdict.INCOMPATIBLE,
+                                            GpuDriverAdvisor.Verdict.RISKY -> MaterialTheme.colorScheme.error
+                                            GpuDriverAdvisor.Verdict.COMPATIBLE -> MaterialTheme.colorScheme.primary
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
                                 }
                             }
                         }
