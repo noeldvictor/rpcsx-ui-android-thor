@@ -303,3 +303,76 @@ Recipe for the next operator, so this does not restart from scratch:
 3. Pull `.../BLUS30161/ppu-*/spu-native-v2` and count with NDK `llvm-objdump`:
    `bcax`, two-source `tbl v.16b, { v.16b, v.16b }`, and vector `mvn`. Success
    is `bcax > 0` with the `movi #0xf` + `and` selector gone.
+
+## Measured: startup cache workers belong on the A510 cluster
+
+Startup cache compilation is the hottest phase of a Thor boot, and it was the
+one running on the ordinary scheduler. The PPU compile workers already defaulted
+to `0x07`; the RSX and SPU cache workers did not, unless someone passed the
+diagnostic flag, which nothing did by default.
+
+Controlled pair, same build, same route, same guard settings, only the mask
+differing. Captures `20260806-014920` (mask 0) and `20260806-021948` (mask 7):
+
+| | ordinary scheduler | A510 cluster `0x07` |
+| --- | --- | --- |
+| preflight | `34.7 -> 34.9 -> 34.5 C` | `34.7 -> 34.7 -> 34.3 C` |
+| first runtime sample, `ppu-ready-poll-01` | `71.1 C` | `53.8 C` |
+| peak inside the guarded window | `71.1 C` | `67.8 C` |
+| guarded runtime before force-stop | `0.7 s` | `9.5 s` |
+
+`get_cache_worker_affinity_mask` now returns `0x07` when nothing is set. An
+explicitly set property still wins, including an explicit `0`, which is how the
+A/B arm above is reproduced.
+
+Two traps in the harness would have silently undone this, both fixed:
+
+- It wrote the property on every run from a parameter defaulting to `0`, so a
+  plain run would have measured the old behavior while appearing to measure the
+  default. It now leaves the property empty unless the caller bound the
+  parameter.
+- Its prelaunch, failure and success resets wrote `0` rather than clearing, so
+  after any route the device would sit at "ordinary scheduler" and the next
+  ordinary app launch would lose the default. The resets now clear the property.
+
+`tools/test_thor_startup_cache_worker_affinity.ps1` pins both rules and the new
+core default.
+
+## BCAX proven on device
+
+Verification build `B1BAEB38...21272`, installed under strict cool gate
+`20260806-025039-thor-input-strict-cool-gate`, run with no affinity flag at all
+so the run exercises the shipped default. Capture
+`20260806-025058-thor-input-custom`, preflight `35.5 -> 34.7 -> 34.3 C`.
+
+The default applied itself to all three worker kinds, from the device log:
+
+- `RSX: Thor RSX cache-worker affinity enabled for load: requested=0x7, effective=0x7`
+- `RSX: Thor RSX cache-worker affinity enabled for compile: requested=0x7, effective=0x7`
+- `SPU: Thor SPU cache-worker affinity enabled: requested=0x7, effective=0x7`
+
+That run held `29.2 s` of guarded runtime, peaking `67.0 C`, and compiled SPU
+blocks with the new lowering. The object cache reached 24 objects and
+disassembly finally shows the instruction:
+
+```
+movi v17.16b, #0xf
+bcax v11.16b, v17.16b, v11.16b, v16.16b
+tbx  v4.16b, { v9.16b, v10.16b }, v11.16b
+```
+
+`bcax(0x0f, c, 0x60)` feeding a two-source `TBX2`, which is exactly the `SHUFB`
+selector path. The pre-change baseline object computes the same selector the old
+way, `movi #0xf` / `eor` / `movi #0x8f` / `and`, and then uses a single-source
+`tbx`. So on real Eternal Sonata SPU code the selector went from two vector ops
+plus two constant materializations to one `bcax`, and the lookup went from
+`TBX1` to `TBX2`.
+
+Note for future audits: count two-source `tbx` as well as two-source `tbl`. An
+earlier sweep reported `two_source_tbl=0` and wrongly read it as "no SHUFB
+path", when the path in question emits `TBX2`.
+
+Classification: `codegen-proven-on-device` for BCAX, and
+`stackable-thermal-win` for the affinity default. Still no FPS or gameplay
+credit: no run has reached the title, so nothing here is a speed claim under
+`Speed Claim Rules`.

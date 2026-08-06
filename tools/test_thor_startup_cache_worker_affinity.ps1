@@ -1,4 +1,4 @@
-param()
+﻿param()
 
 $ErrorActionPreference = "Stop"
 
@@ -142,13 +142,25 @@ foreach ($forbidden in @(
 if ($macro -notmatch '(?s)\[ValidateRange\(0,\s*255\)\]\s*\[int\]\$CacheWorkerAffinityMask\s*=\s*0') {
     throw "Thor route cache-worker affinity parameter is missing or not default-off/range-bounded."
 }
-Assert-Contains $macro 'setprop debug.rpcsx.thor.cache_worker_affinity_mask $CacheWorkerAffinityMask' "Thor route does not set cache-worker affinity."
+
+# The core now defaults these workers to the A510 cluster, so the route must
+# distinguish "caller said nothing" from "caller said 0". Writing the parameter
+# unconditionally would push a 0 onto every run and silently measure the old
+# behavior while claiming to measure the default.
+Assert-Contains $macro '$PSBoundParameters.ContainsKey("CacheWorkerAffinityMask")' "Thor route overrides the core default instead of honoring an unset mask."
+Assert-Contains $macro 'setprop debug.rpcsx.thor.cache_worker_affinity_mask $cacheWorkerAffinityProperty' "Thor route does not set cache-worker affinity."
 Assert-Contains $macro 'getprop debug.rpcsx.thor.cache_worker_affinity_mask' "Thor route does not capture effective cache-worker affinity."
 
-$reset = 'setprop debug.rpcsx.thor.cache_worker_affinity_mask 0'
+# For the same reason the resets clear the property rather than forcing 0.
+# A trailing 0 would outlive the run and disable the default for the next
+# ordinary app launch.
+$reset = 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""'
 $resetCount = ([regex]::Matches($macro, [regex]::Escape($reset))).Count
 if ($resetCount -ne 3) {
-    throw "Expected prelaunch, failure, and success affinity resets; found $resetCount."
+    throw "Expected prelaunch, failure, and success affinity resets to clear the property; found $resetCount."
+}
+if ($macro.Contains('setprop debug.rpcsx.thor.cache_worker_affinity_mask 0')) {
+    throw "Thor route still forces the cache-worker affinity property to 0."
 }
 
 if ($sprint -notmatch '(?s)\[ValidateRange\(0,\s*255\)\]\s*\[int\]\$AndroidCacheWorkerAffinityMask\s*=\s*0') {

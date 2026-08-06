@@ -120,10 +120,25 @@ namespace rpcsx::startup_cache_phase
 		const int length = __system_property_get("debug.rpcsx.thor.cache_worker_affinity_mask", value);
 		if (length > 0)
 		{
+			// An explicitly set property wins, including an explicit 0, which
+			// asks for the ordinary scheduler and is how the A/B below is run.
 			return parse_mask(value);
 		}
 
-		return parse_mask(std::getenv("RPCSX_THOR_CACHE_WORKER_AFFINITY_MASK"));
+		if (const char* env = std::getenv("RPCSX_THOR_CACHE_WORKER_AFFINITY_MASK"); env && *env)
+		{
+			return parse_mask(env);
+		}
+
+		// Measured default on Thor, matching what the PPU compile workers
+		// already do. Startup cache compilation is the emulator's hottest
+		// phase here: with the workers on the ordinary scheduler the boot
+		// reads 71.1 C at the first runtime sample and the thermal guard stops
+		// it 0.7 s in, while pinning them to the three A510 cores reads 53.8 C
+		// at the same stage, peaks 67.8 C, and survives 9.5 s. Both arms
+		// launched from a 34.7 C preflight on the same build and route
+		// (captures 20260806-014920 and 20260806-021948).
+		return 0x07;
 #else
 		(void)title_id;
 		return 0;

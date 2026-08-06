@@ -520,6 +520,14 @@ Thor predictions.
     Features line reports `asimddp bf16 i8mm sha3` and no `sve` or `sve2`, so
     the 8 Gen 2 exposes no SVE to userspace regardless of core generation.
     Verified on device 2026-08-05. Do not port these.
+  - Proven on device 2026-08-06, capture `20260806-025058-thor-input-custom`:
+    a real BLUS30161 SPU block compiled as
+    `movi v17.16b, #0xf` / `bcax v11.16b, v17.16b, v11.16b, v16.16b` /
+    `tbx v4.16b, { v9.16b, v10.16b }, v11.16b`, against a pre-change object that
+    spends `movi`/`eor`/`movi`/`and` on the same selector and then a
+    single-source `tbx`. When auditing this, count two-source `tbx` as well as
+    two-source `tbl`; this path emits `TBX2`, and a `tbl`-only sweep reads as a
+    false negative.
   - Landed 2026-08-05, `8b45c9fe7`: SHA-3 `BCAX` for `EQV` and both `SHUFB`
     selector paths, past what upstream emits. `bcax()`/`eor3()` live in
     `CPUTranslator.h` behind `m_use_sha3` (`utils::has_sha3()`), and fall back
@@ -540,6 +548,27 @@ Thor predictions.
   Expect instruction-count reduction on shuffle-heavy SPU blocks, not a frame
   rate target. A run that thermal-stops before the title renders produces no
   speed credit for it, per `Speed Claim Rules`.
+
+## Startup Cache Worker Affinity
+
+- Startup cache compilation is the hottest phase of a Thor boot. Measured pair
+  at matched preflight, same build and route, only the mask differing: ordinary
+  scheduler reads `71.1 C` at the first runtime sample and the guard stops the
+  boot `0.7 s` in; the A510 cluster reads `53.8 C` at the same stage, peaks
+  `67.8 C`, and survives `9.5 s`. Captures `20260806-014920` and
+  `20260806-021948`.
+- `get_cache_worker_affinity_mask` therefore defaults to `0x07`, matching what
+  the PPU compile workers already did. An explicitly set property still wins,
+  including an explicit `0`, which means ordinary scheduler and is how the A/B
+  arm is reproduced.
+- `thor_input_macro.ps1` must not write that property unless the caller bound
+  `-CacheWorkerAffinityMask`, and its resets must clear it rather than write
+  `0`. Writing `0` by default would measure the old behavior while claiming to
+  measure the default, and a `0` left behind disables the default for the next
+  ordinary app launch. `tools/test_thor_startup_cache_worker_affinity.ps1` pins
+  both rules.
+- This is `stackable-thermal-win` only. No run has reached the title, so it
+  carries no FPS or gameplay credit.
 
 ## Banked Findings
 
