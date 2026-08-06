@@ -1895,9 +1895,18 @@ void PPUTranslator::VPKUHUM(ppu_opcode_t op)
 void PPUTranslator::VPKUHUS(ppu_opcode_t op)
 {
 	const auto [a, b] = get_vrs<u16[8]>(op.va, op.vb);
+#ifdef ARCH_ARM64
+	// Clamping each half and then picking bytes is an x86 accommodation:
+	// PACKUSWB narrows signed to unsigned, so it cannot do this pack directly.
+	// AArch64 has UQXTN, and LLVM forms it from the same concat/clamp/truncate
+	// shape the sibling packs already use, turning four instructions into two.
+	const auto ab = shuffle2(b, a, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+	const auto r = trunc<u8[16]>(min(ab, splat<u16[16]>(0xff)));
+#else
 	const auto ta = bitcast<u8[16]>(min(a, splat<u16[8]>(0xff)));
 	const auto tb = bitcast<u8[16]>(min(b, splat<u16[8]>(0xff)));
 	const auto r = shuffle2(tb, ta, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30);
+#endif
 	set_vr(op.vd, r);
 	set_sat((a | b) >> 8);
 }
@@ -1912,9 +1921,17 @@ void PPUTranslator::VPKUWUM(ppu_opcode_t op)
 void PPUTranslator::VPKUWUS(ppu_opcode_t op)
 {
 	const auto [a, b] = get_vrs<u32[4]>(op.va, op.vb);
+#ifdef ARCH_ARM64
+	// Same as VPKUHUS: the split clamp exists because x86 lacks an unsigned to
+	// unsigned saturating pack. UQXTN does it in one, so use the shape LLVM
+	// recognizes.
+	const auto ab = shuffle2(b, a, 0, 1, 2, 3, 4, 5, 6, 7);
+	const auto r = trunc<u16[8]>(min(ab, splat<u32[8]>(0xffff)));
+#else
 	const auto ta = bitcast<u16[8]>(min(a, splat<u32[4]>(0xffff)));
 	const auto tb = bitcast<u16[8]>(min(b, splat<u32[4]>(0xffff)));
 	const auto r = shuffle2(tb, ta, 0, 2, 4, 6, 8, 10, 12, 14);
+#endif
 	set_vr(op.vd, r);
 	set_sat((a | b) >> 16);
 }
