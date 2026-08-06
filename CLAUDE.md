@@ -196,6 +196,7 @@ hunt is a decision that is *correct reasoning on x86* applied unconditionally.
 | MFC DMA width | AVX aligned moves want a 32-byte aligned constant address | `LDP`/`STP` pair at any alignment, so the gate only halves throughput |
 | `VPKUHUS`/`VPKUWUS` | `PACKUSWB` narrows signed to unsigned, so pre-clamp each half | blocks `UQXTN`; the sibling shape gets it in two instructions |
 | `mov_rdata_nt` | streaming stores are an x86 intrinsic, so everyone else gets `memcpy` | the non-temporal intent is silently dropped; `STNP` restores it for free |
+| `scan16_rdata` | `PTEST` sets flags directly, so eight separate vector compares are nearly free | `gv_testz` narrows and moves to a GPR, so it is eight `SQXTN`/`FMOV`/`CSET` triples with the transfers on the critical path |
 | PPU 128-bit guest access | `llvm.bswap.iN` is the portable spelling, and on x86 a 16-byte reverse is a shuffle anyway | forces the value through GPRs: `ldp`, two `rev`, `fmov`, `mov Vd.d[1]`, versus `ldr q`/`rev64`/`ext` |
 
 That last one is the widest-reaching of the set. PS3 memory is big-endian, so
@@ -397,6 +398,48 @@ deleted. What is left:
    emitted before trusting it.
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
+
+## There is no movemask, and it shapes more code than it looks like
+
+The most consequential missing x86 instruction on AArch64 is not an arithmetic
+one. It is `PMOVMSKB`/`PTEST`: the ability to collapse a vector into flags or a
+scalar bitmask for free. NEON has no equivalent, and every crossing from the
+vector unit to a general-purpose register is an `FMOV`/`UMOV` with real latency.
+
+This inverts a habit. On x86, "reduce each vector to a bool and combine the
+bools" is idiomatic and cheap. On AArch64 it is the expensive spelling, and the
+cheap one is to keep the whole computation in vector registers and cross over
+exactly once, at the end.
+
+`scan16_rdata` is the clean example. Eight `v128 != v128` compares look like
+eight cheap tests; on AArch64 they are eight `SQXTN`/`FMOV`/`CSET` triples, 65
+instructions with eight transfers on the critical path. `UMAXP` folds lane pairs
+while preserving their order, so two rounds collapse eight 4-lane blocks into
+eight lanes, one per block, each nonzero exactly when its block differs.
+Weighting those lanes and adding across produces the identical bitmask in 42
+instructions with a single transfer.
+
+The reduction toolkit worth knowing, since it replaces movemask idioms:
+
+| want | AArch64 |
+| --- | --- |
+| any lane nonzero | `UMAXV` / `ADDV`, then one move |
+| per-block nonzero, order kept | `UMAXP` folds, no move until the end |
+| bitmask of lane predicates | `AND` with a weight vector, then `ADDV` |
+| all lanes equal | compare, then `UMINV` |
+
+The counter-example matters just as much. `cmp_rdata`, immediately above
+`scan16_rdata`, also looks wrong: its ARM path is a serial chain of four
+`vmlaq_s16`. It is not worth touching. The multiplied values are `0`/`-1` masks,
+so clang strength-reduces the multiply into `and`/`sub`, giving 29 instructions
+against 28 for an XOR/OR reduction tree at comparable dependency depth. **Check
+what the compiler actually emitted before rewriting the ugly-looking one.**
+
+Correctness for this class is cheap to establish by execution and should be.
+The `scan16_rdata` change was verified on the device across all 256 patterns of
+which blocks differ, 64 randomised byte positions each, plus 200000 random
+pairs: 216384 cases, zero mismatches. Pinned by
+`tools/test_thor_arm64_scan16_rdata.ps1`.
 
 ## The dead macro that cost every 16-byte atomic
 
