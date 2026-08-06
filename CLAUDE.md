@@ -189,9 +189,23 @@ hunt is a decision that is *correct reasoning on x86* applied unconditionally.
 
 | site | the x86 assumption | what it does on ARM |
 | --- | --- | --- |
+| PPU pass pipeline | none; the gate was just never revisited | **no IR optimization at all**, not even EarlyCSE |
+| PPU `FCTIW`/`FCTIWZ`/`FCTID`/`FCTIDZ` | `CVTSD2SI` yields INT_MIN on overflow, so XOR-correct it | `FCVTNS`/`FCVTZS` saturate, so the correction *inverts* the result, four times over, plus NaN |
 | SPU `CFLTS` | `CVTTPS2DQ` yields `0x80000000` on overflow, so XOR-correct it | `FCVTZS` already saturates, so the correction *produces* the wrong value |
 | `m_use_fma` | FMA is optional; allowlist CPU names | FMA is mandatory, so the allowlist can only fail to enable it |
 | MFC DMA width | AVX aligned moves want a 32-byte aligned constant address | `LDP`/`STP` pair at any alignment, so the gate only halves throughput |
+| `VPKUHUS`/`VPKUWUS` | `PACKUSWB` narrows signed to unsigned, so pre-clamp each half | blocks `UQXTN`; the sibling shape gets it in two instructions |
+
+The PPU interpreter is a useful oracle here. It implements the same conversions
+and already did the right thing on ARM, saturating and mapping NaN to the
+minimum, while the recompiler inverted them. When a shared lowering looks
+suspicious, check whether the interpreter agrees before assuming the semantics.
+
+Verified on device from five freshly compiled SPU blocks, identified by diffing
+the `spu-native-v2` listing across a boot rather than by clearing the cache,
+which scoped storage does not permit from a shell: `bcax` present, `fcvtzs`
+standing alone with no XOR correction beside it, `fmla` confirming fused
+multiply-add is live, and dense `ldp`/`stp` pairing.
 
 Checked and cleared, so nobody repeats the work:
 
