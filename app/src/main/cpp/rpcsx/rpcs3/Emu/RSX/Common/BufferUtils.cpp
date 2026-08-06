@@ -308,10 +308,26 @@ namespace
 			T min_index = index_limit<T>();
 			T max_index = 0;
 
+			// Written branch-free on purpose. Updating the running min/max only
+			// on the non-restart side makes the loop carry a conditional side
+			// effect, which stops it vectorizing: on AArch64 it compiled to a
+			// scalar ldrh/rev/csel/strh per index, while x86 has a hand-written
+			// SIMD kernel for this and never noticed.
+			//
+			// Feeding the reductions a neutral value for restart entries keeps
+			// the result identical, since index_limit can never lower a minimum
+			// and zero can never raise a maximum, and leaves only min/max
+			// reductions in the loop. That vectorizes to rev16/cmeq/umin/umax
+			// with uminv/umaxv, which is also why this is not arch-gated.
 			for (u32 i = 0; i < count; ++i)
 			{
-				T index = src[i].value();
-				dst[i] = index == restart_index ? index_limit<T>() : min_max(min_index, max_index, index);
+				const T index = src[i].value();
+				const bool is_restart = index == restart_index;
+
+				dst[i] = is_restart ? index_limit<T>() : index;
+
+				min_index = std::min<T>(min_index, is_restart ? index_limit<T>() : index);
+				max_index = std::max<T>(max_index, is_restart ? T{0} : index);
 			}
 
 			return (u64{max_index} << 32) | u64{min_index};
