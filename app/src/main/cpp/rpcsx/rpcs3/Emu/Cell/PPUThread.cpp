@@ -6446,7 +6446,15 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 				write_le(code, mov_pch.op);
 
-				const s64 branch_offset = (*full_sample - reinterpret_cast<u64>(code + 4));
+				// NOTE: still disabled above, but the arithmetic here was wrong
+				// and is the likely reason why. It was carried over from the x86
+				// path, where JMP rel32 is relative to the *end* of the
+				// instruction, so `code + 4` is correct there. AArch64 B is
+				// relative to the address of the B itself, and write_le has
+				// already advanced `code` to exactly that address. Adding 4
+				// again aims 4 bytes past, so the branch lands on
+				// full_sample - 4: one instruction before the target.
+				const s64 branch_offset = (*full_sample - reinterpret_cast<u64>(code));
 
 				// B full_sample
 				arm_op b_sample{0x14000000};
