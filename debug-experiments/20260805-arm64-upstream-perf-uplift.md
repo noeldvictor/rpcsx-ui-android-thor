@@ -127,3 +127,85 @@ measured run. It carries no cool-gate capture and earns no speed credit.
 Lesson recorded in `AGENTS.md`: before porting an upstream ARM tuning fix, check
 whether this fork already compensated at the call sites. Two fixes for one
 problem multiply.
+
+## Backlog re-audit: the talk's series was already in
+
+Re-audited the four ranked items by diffing the vendored files against
+`origin/master` blobs rather than reading commit titles, because the shallow
+`rpcs3-upstream` checkout makes commit archaeology unreliable. All four were
+already present, so the ledger's "not yet ported" list was stale:
+
+- Checksum/compare: present, and ahead of `35f65c224`. The vendored path has
+  both the unrolled `checksum_parts`/`aarch64_neon_uabd` form and the rolled
+  `acc_phi` loop, matching `origin/master`.
+- `FCGT`: the `#if defined(ARCH_ARM64)` `bsl` inline-asm block is byte-identical
+  to upstream. Only the surrounding `register_intrinsic`/`std::bitset` shape
+  differs, which is structural, not an ARM gap.
+- `FSM`/`FSMH`/`FSMB`/`FSMBI`, `USHL` in `inf_shl`/`inf_lshr`, and the `ROTQBY`
+  TBL helpers: present at every upstream call site.
+- Multiply widening: all six non-SVE `smull`/`umull` sites present. The only
+  absent upstream sites are the SVE-only `sve_smullt`/`sve_umullt` top halves.
+
+Also verified the rule `AGENTS.md` records about retry factories: all three
+`compile_spu_llvm_with_retry` call sites pass a factory matching their own
+site's `make_llvm_recompiler` arguments, so none silently drops `magn` or
+`use_native_object_cache`.
+
+## SHA-3 BCAX, commit `8b45c9fe7`
+
+`EQV` and both `SHUFB` selector paths now emit `BCAX` directly. NEON has no
+XNOR, so `~(a ^ b)` costs an EOR plus a NOT; `BCAX(a, ~0, b)` is `a ^ ~b` in
+one instruction. `SHUFB`'s selector `(c & ~0x60) ^ 0x0f` is
+`BCAX(0x0f, c, 0x60)`, replacing a BIC plus an EOR. Upstream notes LLVM should
+form BCAX here on its own and does not.
+
+Safety, all verified in source rather than assumed:
+
+- `utils::has_sha3()` reads `HWCAP_SHA3`, and Thor reports `sha3`.
+- `JITLLVM.cpp` already pushed `+sha3`/`-sha3` to `setMAttrs`, so selection is
+  legal on Thor and impossible elsewhere.
+- Bundled LLVM 20.1.3 defines `SHA3_pattern` for `bcaxu`/`eor3u` on `v2i64`,
+  which is the overload the helpers request, so there is no "cannot select"
+  path.
+- `bcax()`/`eor3()` fall back to the arithmetic form when `m_use_sha3` is clear,
+  so no caller branches and non-SHA-3 ARM hosts keep the previous codegen.
+
+Contract tests: `tools/test_thor_spu_arm64_bcax_lowering.ps1` (new) pins all of
+the above. `tools/test_thor_spu_shufb_splat_lowering.ps1` was failing because it
+still asserted TBL2/TBX2 were parked; it now asserts the real rule, that they
+are allowed only while the scavenger retry owner and the `m_use_tbl2` gate
+exist. `eor3()` has no call site yet.
+
+## Device round: baseline captured, boot not yet achieved
+
+Instruction-level A/B rather than an FPS claim. The SPU native-object cache key
+hashes the optimized IR plus target/CPU/feature identity, so a codegen change
+invalidates stale objects by construction and a fresh compile is guaranteed to
+reflect the new lowering.
+
+Baseline, pulled from the 10 pre-change objects under
+`BLUS30161/.../spu-native-v2` dated 2026-07-23 and disassembled with NDK
+`llvm-objdump`: `bcax=0`, `eor=27`, `tbl=50`.
+
+Exact APK `7CD49709...2FE40` (thortest) installed on pinned serial `c3ca0370`
+under strict cool gate `20260805-212321-thor-input-strict-cool-gate`, install
+capture `20260805-212341-bcax-sha3-apk-install`, hash matched, PID absent after
+install.
+
+Two boot attempts, neither reached the title:
+
+- `20260805-212413-thor-input-custom`: invocation defect, not a result. The run
+  omitted `-BootGame`, so the game never started and all eight readiness polls
+  classified `dark_percent=100` with `ppu_compilation_screen_present=False`.
+  The emulator log stops after VFS mount, which confirms no boot was requested.
+- Second attempt with `-BootGame` and the installed-APK hash bound: rejected at
+  preflight with silicon `46.2 C` against the `40 C` launch limit, residual heat
+  from the first attempt. `cpu-1-9` is the governing sensor.
+
+Classification so far: `route-tooling` for the first attempt and
+`thermal-preflight-refusal` for the second. No speed, FPS, gameplay, stability,
+or thermal-win credit, and no BCAX emission proof yet.
+
+Note for the next round: a host-side probe that filters only
+`cpu|gpu|soc|...` thermal zones read `34 C` a minute before the harness
+measured `46.2 C`. Trust the harness preflight, not an ad-hoc zone scan.
