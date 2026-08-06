@@ -470,6 +470,42 @@ which needs a device that starts cold. The tooling is now the easy half: run
 `eternal-sonata-field-route` and, in a second shell,
 `.\tools\measure_thor_fps.ps1 -Seconds 20 -WaitForLayerSeconds 120`.
 
+### Result: title at 30.00 FPS, and there was never a thermal wall
+
+Booting the game directly through the same `THOR_DEBUG_BOOT` intent the harness
+uses, but with the `72 C` bound enforced by a 4-second poll instead of the
+harness's own guard, the emulator ran for `111 s` and **peaked at `57.8 C`**.
+
+Timeline from screenshots taken every ~6 s:
+
+| t | screen | overlay |
+| --- | --- | --- |
+| `4 s` | launch | temp spikes `56.6 C` then falls to `46.6 C` |
+| `49 s` | `Building SPU Cache... module 1083 of 1179 (4s remaining)` | - |
+| `87 s` | Eternal Sonata title menu | `FPS 30.00`, PPU `8.6%`, SPU `22.1%`, RSX `2.4%`, total `33.1%` |
+| `111 s` | Eternal Sonata title menu | `FPS 30.00`, PPU `6.4%`, SPU `16.9%`, RSX `1.4%`, total `24.7%` |
+
+`30.00 FPS` is Eternal Sonata's PS3 target, so the title runs at full native
+speed, sustained across at least 24 seconds of sampling, using a quarter to a
+third of the machine, at `53-57 C`.
+
+Two things this settles:
+
+- **The "stall" was not a stall.** It was the SPU cache build, which emits no
+  per-module log line, which is why guest logging appeared to stop dead at
+  `8.94 s` while the screen stayed black. It finishes around `50 s` and the
+  title follows.
+- **The thermal wall was a measurement artifact.** Launch produces a transient
+  that reads `56.6 C` at `t=4s` and falls back to `46.6 C` by `t=10s`. The
+  harness samples straight into that transient and its near-limit probe
+  "confirms" on an immediate re-read, so it force-stopped fifteen runs between
+  `14 s` and `30 s` on a spike the machine never sustained. Nothing in this
+  ledger above that talks about a `66-71 C` ceiling is describing steady state.
+
+So the fifteen guarded runs never failed for the reason recorded. They failed
+because the guard cannot tell a launch transient from sustained heat, and the
+SPU cache build needs about `50 s` that the guard never allowed.
+
 ### Correction: two artifacts invalidated most of the thermal reasoning below
 
 Read this before trusting the section that follows it. Two things were wrong,

@@ -596,6 +596,26 @@ Thor predictions.
 - Direction-split PUT-heavy `0x25cc` evidence now has clean field and Options/menu counterproofs with zero 25cc descriptor mismatches/overflow. It is still not promotion until first-battle visuals are clean under the same proof discipline.
 - Broad SPU-to-GPU compute offload remains parked unless a candidate has stable batching, low readback pressure, and explicit correctness gates.
 
+## Thermal Guard Is Not A Steady-State Signal
+
+- Launch produces a thermal transient. Measured 2026-08-06: `56.6 C` at `t=4s`,
+  falling to `46.6 C` by `t=10s`, then `47-58 C` sustained across a `111 s` run
+  that peaked at `57.8 C`. The runtime guard samples straight into that
+  transient and its near-limit probe confirms on an immediate re-read, so it
+  force-stopped fifteen consecutive runs at `14-30 s` on a spike the device
+  never sustained.
+- Before recording a run as thermally limited, check the emulator's own overlay.
+  A run reporting `66-71 C` while the overlay reads `Total : 22.7 %` is not
+  emulation-bound, and that combination means the guard tripped, not the
+  hardware.
+- Boot needs about `50 s` of headroom that the guard has never allowed: the SPU
+  cache build runs to roughly `module 1179` and emits no per-module log line, so
+  guest logging looks dead from `~9 s` while the screen stays black. That is
+  normal startup, not a hang.
+- To measure anything past boot, drive the `THOR_DEBUG_BOOT` intent directly and
+  enforce the `72 C` bound with a short poll, rather than relying on the
+  harness's early-stop and near-limit probe.
+
 ## Visual Evidence Rules
 
 - Open a capture screenshot before trusting any visual classification. On
