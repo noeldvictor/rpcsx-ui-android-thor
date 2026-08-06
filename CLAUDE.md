@@ -399,6 +399,46 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## Branch offsets do not mean the same thing
+
+x86 `JMP rel32` is relative to the **end** of the instruction. AArch64 `B` is
+relative to the **address of the branch itself**. Any hand-written code
+generator ported across will be wrong by exactly one instruction, and it will
+be wrong in the quietest possible way: it jumps to a valid instruction, four
+bytes early.
+
+This is sitting in the PPU symbol trampoline. x86 builds a 16-byte stub per
+symbol, `mov edx, func_addr` then a jump to shared code. An AArch64 equivalent
+exists directly beneath it, `MOVZ`/`MOVK`/`B` in 12 bytes, but it is behind
+`#elif 0`, so ARM falls through to `build_function_asm` and emits the *whole*
+dispatch sequence per symbol instead of a stub. The disabled code computed
+
+    full_sample - (code + 4)
+
+which is exactly right for x86 and wrong here, because `write_le` takes `code`
+by reference and has already advanced it to the address the `B` will occupy.
+The result branches to `full_sample - 4`.
+
+Verified against the assembler rather than argued, which is the cheap way to
+settle any encoding question: a reference `B` at `0x8` targeting `0x14` encodes
+`0x14000003`, so imm26 is `(0x14 - 0x8) / 4`, self-relative. The same
+disassembly confirms the block's `MOVZ`/`MOVK` encodings are already correct
+(`mov w15, #0x1234` is `0x5282468f`, which is `0x5280000F | 0x1234 << 5`).
+
+**The offset is fixed; the block is still disabled**, and that is deliberate.
+Correct arithmetic is not the same as a working code generator. Enabling it
+needs three integration facts this fork cannot currently establish without
+booting a game: that `x19`/`x20` hold what the stub assumes at the call site,
+that `jit_runtime::alloc`'d memory gets the i-cache maintenance AArch64 requires
+before executing freshly written instructions, and that `full_sample` reliably
+lands inside `B`'s +-128MB range. Fixing the bug now means whoever enables it is
+debugging one thing instead of two.
+
+Note the third point is itself an ARM concern with no x86 analogue. x86 has
+coherent instruction caches; AArch64 does not, so **any** self-modifying or
+JIT-written code needs explicit cache maintenance. Worth checking whenever
+hand-written codegen appears.
+
 ## Host capability answered by x86 model name
 
 `cpu_translator::initialize` decides what the host can do with a run of string
