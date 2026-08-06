@@ -515,6 +515,27 @@ So the real blocker on reaching the title is probably a functional stall a few
 seconds into boot, not the thermal envelope. That is a different investigation
 and it is the one worth doing next.
 
+What the stall looks like, for whoever picks it up. Guest logging stops dead at
+`0:00:08.94` and nothing but the ten-second `Performance Sensor` line appears
+through `0:00:45`. The last activity is SPURS kernels taking `GETLLAR pattern
+entry point` paths. Shortly before, at `0:00:06.41`, `sys_semaphore_wait` and
+`sys_semaphore_post` each fail three times with `0x80010005 CELL_ESRCH`.
+
+Two hypotheses ruled out already:
+
+- Not the `RPCSX_THOR_SEMA_SUPERPATH` experiment. `CMakeCache.txt` for the
+  build under test records `RPCSX_THOR_SEMA_SUPERPATH:BOOL=OFF`.
+- Not storage throughput. The ISO's SD card reads `91 MB/s` sequential, well
+  above anything a PS3 disc streams, against `875 MB/s` write and `6.9 GB/s`
+  cached read on internal storage. Random-access behavior through FUSE is still
+  unmeasured, so it is not fully cleared, but bulk throughput is not the
+  problem.
+
+The profile to explain is `FPS 06.10` with `PPU 5.0%`, `SPU 0.0%`, `RSX 17.7%`,
+so something is presenting black frames at a steady low rate while the guest
+does no SPU work at all. `tools/thor_thread_wait_snapshot.ps1` is the tool
+already in the tree for this.
+
 ### Superseded: the title is unreachable from this thermal baseline, at any margin
 
 Final attempt, capture `20260806-070046-thor-input-eternal-sonata-field-route`.
