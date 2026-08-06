@@ -188,13 +188,33 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 		m_use_gfni = true;
 	}
 
-	// Aarch64 CPUs
+	// Aarch64 CPUs.
+	//
+	// Deciding this by CPU name is an x86 habit. There, FMA genuinely is an
+	// optional feature and an allowlist is the only way to know. On AArch64 it
+	// is mandatory: FMLA/FMADD are base ARMv8-A, so every part that can run this
+	// code has it. The name check therefore cannot enable anything that was not
+	// already there, and can only fail to enable it.
+	//
+	// It did fail, for everything not literally named cortex-*. The MIDR table
+	// in AArch64Common.cpp resolves to kryo, krait, falkor, saphira, oryon-1,
+	// apple-m1/m2/m3, neoverse-*, ampere1*, carmel, tsv110 and more, and each of
+	// those silently dropped to separate multiply and add. That costs speed and
+	// changes rounding, because a fused multiply-add is what the guest performs.
+	//
+	// Thor only escaped because sanitize_android_arm64_llvm_cpu rewrites its
+	// Armv9 name to cortex-a78 to dodge SVE.
+#ifdef ARCH_ARM64
+	m_use_fma = true;
+	// AVX does not use intrinsics so far; this gates codegen shape only.
+	m_use_avx = true;
+#else
 	if (cpu == "cyclone" || cpu.contains("cortex"))
 	{
 		m_use_fma = true;
-		// AVX does not use intrinsics so far
 		m_use_avx = true;
 	}
+#endif
 
 #ifdef ARCH_ARM64
 	m_use_dotprod = utils::use_spu_dotprod();
