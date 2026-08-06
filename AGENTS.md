@@ -579,8 +579,12 @@ Thor predictions.
   measure the default, and a `0` left behind disables the default for the next
   ordinary app launch. `tools/test_thor_startup_cache_worker_affinity.ps1` pins
   both rules.
-- This is `stackable-thermal-win` only. No run has reached the title, so it
-  carries no FPS or gameplay credit.
+- Re-measured 2026-08-06 after the guard artifact was understood, and the
+  default stays. From a matched `33.9 C` launch, pinned to the A510s the SPU
+  cache build completes all 1179 functions at `0:00:52.3` peaking at `53.0 C`;
+  on the ordinary scheduler it reaches `70 C` six seconds in, peaks `71.5 C`,
+  and never completes inside the `72 C` bound. Use
+  `SPU Runtime: Built %u functions.` as the completion marker.
 
 ## Banked Findings
 

@@ -187,12 +187,24 @@ Items 1 to 4 of the original list are resolved: `SQRDMLAH` measured and
 declined, the float conversions fixed, `FLAGM` found unreachable, and `eor3`
 deleted. What is left:
 
-1. **Re-evaluate the A510 cache-worker default.** It was justified by surviving
-   the thermal guard longer, and that guard was tripping on a launch transient.
-   Pinning compile workers to three little cores plausibly makes the ~50 s SPU
-   cache build slower, which is the largest user-visible cost at boot. Measure
-   time-to-title with the property unset versus explicitly `0`, using the direct
-   `THOR_DEBUG_BOOT` method rather than the harness.
+1. ~~Re-evaluate the A510 cache-worker default.~~ **Done, and it stays.**
+   Re-measured after the guard artifact was understood, using
+   `SPU Runtime: Built %u functions.` as the completion marker and direct
+   `THOR_DEBUG_BOOT` rather than the harness. Both arms launched from `33.9 C`:
+
+   | cache workers | SPU cache build, 1179 functions | peak |
+   | --- | --- | --- |
+   | A510 cluster, the default | completes at `0:00:52.3` | `53.0 C` |
+   | ordinary scheduler | never completes | `70 C` at wall `t=6s`, `71.5 C` |
+
+   The original justification was wrong, but the conclusion holds for a better
+   reason. Letting the build run on all eight cores puts it on the X3 at full
+   clock and takes the device from `33.9` to `70 C` in six seconds, so it cannot
+   finish inside the `72 C` bound at all. Pinned to the A510s it completes the
+   whole build with `19 C` of headroom to spare. The unmeasured question is
+   wall-clock: the ordinary scheduler might finish sooner if allowed to run hot,
+   but it would be throttling by then, so that comparison needs a run that is
+   allowed past the bound and is not obviously worth taking.
 2. **Advertise the features the device actually has.** The JIT sends
    `+sha3,+dotprod,+i8mm,-sve,-sve2` on top of `cortex-a78`, so everything past
    Armv8.2 is invisible to LLVM: `lrcpc`, `flagm`, `flagm2`, `frint`, `fcma`.
