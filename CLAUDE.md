@@ -196,6 +196,14 @@ hunt is a decision that is *correct reasoning on x86* applied unconditionally.
 | MFC DMA width | AVX aligned moves want a 32-byte aligned constant address | `LDP`/`STP` pair at any alignment, so the gate only halves throughput |
 | `VPKUHUS`/`VPKUWUS` | `PACKUSWB` narrows signed to unsigned, so pre-clamp each half | blocks `UQXTN`; the sibling shape gets it in two instructions |
 | `mov_rdata_nt` | streaming stores are an x86 intrinsic, so everyone else gets `memcpy` | the non-temporal intent is silently dropped; `STNP` restores it for free |
+| PPU 128-bit guest access | `llvm.bswap.iN` is the portable spelling, and on x86 a 16-byte reverse is a shuffle anyway | forces the value through GPRs: `ldp`, two `rev`, `fmov`, `mov Vd.d[1]`, versus `ldr q`/`rev64`/`ext` |
+
+That last one is the widest-reaching of the set. PS3 memory is big-endian, so
+**every** VMX load and store is byte-reversed, and expressing it as an integer
+byteswap gives the backend no way to keep the value in the vector unit. Six
+instructions with two GPR-to-SIMD transfers become three that never leave SIMD.
+Only the 128-bit case needs the special case; narrower accesses already lower to
+a single `REV`.
 
 Two traps while verifying this class:
 

@@ -1052,6 +1052,28 @@ Value* PPUTranslator::ReadMemory(Value* addr, Type* type, bool is_be, u32 align)
 	{
 		llvm::Value* value{};
 
+#ifdef ARCH_ARM64
+		// A 128-bit byteswap through llvm.bswap.i128 makes the backend load the
+		// value into two general-purpose registers, REV each, and then move both
+		// halves back into a vector register: five instructions with two
+		// GPR-to-SIMD transfers, which are several cycles each on AArch64.
+		//
+		// Expressed as a byte-reversing shuffle it stays in the SIMD unit and
+		// becomes LDR Q, REV64, EXT. VMX loads are common enough in PS3 code for
+		// this to be worth the special case.
+		// The MMIO special case above is 32-bit only, so it cannot apply here.
+		if (size == 128)
+		{
+			const auto vec_type = GetType<u8[16]>();
+			const auto vec = m_ir->CreateAlignedLoad(vec_type, GetMemory(addr), llvm::MaybeAlign{align});
+			vec->setVolatile(true);
+
+			const int reversed[16]{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+			const auto swapped = m_ir->CreateShuffleVector(vec, llvm::PoisonValue::get(vec_type), llvm::ArrayRef(reversed, 16));
+			return bitcast(swapped, type);
+		}
+#endif
+
 		// Read, byteswap, bitcast
 		const auto int_type = m_ir->getIntNTy(size);
 
@@ -1099,9 +1121,24 @@ void PPUTranslator::WriteMemory(Value* addr, Value* value, bool is_be, u32 align
 
 	if (is_be ^ m_is_be && size > 8)
 	{
-		// Bitcast, byteswap
-		const auto int_type = m_ir->getIntNTy(size);
-		value = Call(int_type, fmt::format("llvm.bswap.i%u", size), bitcast(value, int_type));
+#ifdef ARCH_ARM64
+		// Mirror of the read path: reverse 128-bit stores as a vector shuffle so
+		// the value never leaves the SIMD unit. REV64 plus EXT then STR Q,
+		// instead of two GPR transfers, two REVs and a pair store.
+		if (size == 128)
+		{
+			const auto vec_type = GetType<u8[16]>();
+			const int reversed[16]{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+			const auto as_bytes = bitcast(value, vec_type);
+			value = m_ir->CreateShuffleVector(as_bytes, llvm::PoisonValue::get(vec_type), llvm::ArrayRef(reversed, 16));
+		}
+		else
+#endif
+		{
+			// Bitcast, byteswap
+			const auto int_type = m_ir->getIntNTy(size);
+			value = Call(int_type, fmt::format("llvm.bswap.i%u", size), bitcast(value, int_type));
+		}
 	}
 
 	if (m_may_be_mmio && size == 32)
