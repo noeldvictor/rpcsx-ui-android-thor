@@ -8670,8 +8670,14 @@ public:
 				return;
 			}
 
+#ifdef ARCH_ARM64
+			// FCVTZS saturates to 0x7fffffff on overflow, so the x86 correction
+			// below would flip an already-correct result to 0x80000000.
+			set_vr(op.rt, fptosi_sat<s32[4]>(a));
+#else
 			r.value = m_ir->CreateFPToSI(a.value, get_type<s32[4]>());
 			set_vr(op.rt, r ^ sext<s32[4]>(fcmp_ord(a >= fsplat<f64[4]>(std::exp2(31.f)))));
+#endif
 		}
 		else
 		{
@@ -8684,9 +8690,15 @@ public:
 			if (op.i8 != 173 || m_interp_magn)
 				a = eval(a * s);
 
+#ifdef ARCH_ARM64
+			// Same correction hazard as the accurate path: on AArch64 the
+			// conversion already saturates, so let the hardware do it.
+			set_vr(op.rt, fptosi_sat<s32[4]>(a));
+#else
 			value_t<s32[4]> r;
 			r.value = m_ir->CreateFPToSI(a.value, get_type<s32[4]>());
 			set_vr(op.rt, r ^ sext<s32[4]>(bitcast<s32[4]>(a) > splat<s32[4]>(((31 + 127) << 23) - 1)));
+#endif
 		}
 	}
 
@@ -8742,8 +8754,14 @@ public:
 				return;
 			}
 
+#ifdef ARCH_ARM64
+			// FCVTZU already clamps negatives to zero and saturates at 2^32, so
+			// the select and sign mask are redundant work here.
+			set_vr(op.rt, fptoui_sat<s32[4]>(a));
+#else
 			r.value = m_ir->CreateFPToUI(a.value, get_type<s32[4]>());
 			set_vr(op.rt, select(fcmp_ord(a >= fsplat<f64[4]>(std::exp2(32.f))), splat<s32[4]>(-1), r & sext<s32[4]>(fcmp_ord(a >= fsplat<f64[4]>(0.)))));
+#endif
 		}
 		else
 		{
@@ -8766,8 +8784,12 @@ public:
 				return;
 			}
 
+#ifdef ARCH_ARM64
+			set_vr(op.rt, fptoui_sat<s32[4]>(a));
+#else
 			r.value = m_ir->CreateFPToUI(a.value, get_type<s32[4]>());
 			set_vr(op.rt, select(bitcast<s32[4]>(a) > splat<s32[4]>(((32 + 127) << 23) - 1), splat<s32[4]>(-1), r & ~(bitcast<s32[4]>(a) >> 31)));
+#endif
 		}
 	}
 

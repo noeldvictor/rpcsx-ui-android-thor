@@ -52,9 +52,9 @@ if (-not $translatorHeader.Contains('bool m_use_sha3 = false;')) {
     throw "m_use_sha3 is gone, or no longer defaults to off."
 }
 
-# 4. Both helpers must keep an arithmetic fallback, so callers never branch and
+# 4. The helper must keep an arithmetic fallback, so callers never branch and
 #    non-SHA-3 ARM hosts keep the previous codegen.
-foreach ($helper in @('bcax', 'eor3')) {
+foreach ($helper in @('bcax')) {
     $match = [regex]::Match($translatorHeader, "(?s)value_t<T> $helper\(T1 a, T2 b, T3 c\)\s*\{.*?\n\t\}")
     if (-not $match.Success) {
         throw "Could not isolate the $helper helper in CPUTranslator.h."
@@ -77,9 +77,13 @@ if (-not $bcaxBody.Contains('m_ir->CreateXor(va, m_ir->CreateAnd(vb, m_ir->Creat
     throw "The bcax fallback no longer computes a ^ (b & ~c), so it would disagree with the instruction."
 }
 
-$eor3Body = [regex]::Match($translatorHeader, '(?s)value_t<T> eor3\(T1 a, T2 b, T3 c\)\s*\{.*?\n\t\}').Value
-if (-not $eor3Body.Contains('m_ir->CreateXor(m_ir->CreateXor(va, vb), vc)')) {
-    throw "The eor3 fallback no longer computes a ^ b ^ c."
+# There is deliberately no eor3 helper. With +sha3 advertised, LLVM forms EOR3
+# itself from a ^ b ^ c on value operands; it only misses these patterns when an
+# operand is constant and the NOT gets folded away first, which is the reason
+# bcax is emitted by hand. If someone reintroduces eor3, it needs a real
+# constant-operand call site to justify it.
+if ($translatorHeader -match '(?s)value_t<T>\s+eor3\s*\(') {
+    throw "An eor3 helper reappeared without a constant-operand call site."
 }
 
 # 5. EQV: BCAX with an all-ones second operand is a ^ ~b, which is ~(a ^ b).
@@ -112,4 +116,4 @@ if ($shufb.Value.Contains('const auto cm = eval(c & 0x9f);') -or $shufb.Value.Co
     throw "SHUFB still carries the superseded AND/XOR selector next to the BCAX one."
 }
 
-Write-Output "Thor ARM64 SHA-3 contract passed: HWCAP detection, +sha3/-sha3 advertisement, m_use_sha3 gate, arithmetic fallbacks, and BCAX at EQV plus both SHUFB selectors."
+Write-Output "Thor ARM64 SHA-3 contract passed: HWCAP detection, +sha3/-sha3 advertisement, m_use_sha3 gate, arithmetic fallbacks, and BCAX at EQV plus both SHUFB selectors, and no stray eor3 helper."

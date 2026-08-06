@@ -134,36 +134,78 @@ false negative and cost hours once.
   scavenger. The SPU block compiler has `compile_spu_llvm_with_retry`; the SPU
   interpreter builder deliberately does not, and stays on the plain path.
 
+## When LLVM already does it, and when it does not
+
+Measure the baseline before writing a lowering. LLVM's AArch64 backend is
+better at this than it looks, and three of the four opportunities on the first
+version of the list below evaporated on contact.
+
+- **It forms `BCAX` and `EOR3` by itself** from `a ^ (b & ~c)` and `a ^ b ^ c`
+  whenever `+sha3` is advertised, on **value** operands.
+- **Constant operands defeat it.** With a constant mask, instcombine folds the
+  `NOT` away first (`c & ~0x60` becomes `c & 0x9f`), so the pattern never
+  matches and you get `movi`/`and`/`movi`/`eor`. This is exactly why the
+  `SHUFB` selector and `EQV` emit `bcax()` by hand and why there is no `eor3()`
+  helper: no site needs one.
+- **It already fuses the AltiVec multiply-highs.** `VMHRADDSHS` lowers to
+  `smlal`/`smlal2`/`ssra`/`sshr`/`saddw2`/`sqxtn`, 11 instructions, and 13 with
+  the SAT indicator. An exact `SQRDMULH` rewrite measured 12. One instruction
+  saved is not worth the risk, so it was not taken. The 1-instruction
+  `sqrdmlah` form only exists if you give up the SAT flag and the
+  `a == b == INT16_MIN` case, where PowerPC does not saturate the intermediate
+  and the true value `32769` cannot be held in a 16-bit lane.
+- **`FLAGM` is unreachable.** LLVM 20.1.3 exposes no `RMIF`/`SETF8`/`SETF16`/
+  `AXFLAG` intrinsics, and PPU condition emulation is value-based
+  (`CreateICmp` into CR fields) rather than host-flag based, so there is
+  nothing to map even with inline asm.
+
+## Where the wins actually were
+
+`fptosi`/`fptoui` are **poison** on overflow, so shared code bolts a correction
+on by hand, and that correction is written for x86. AArch64 saturates in
+hardware, which makes the correction wrong rather than merely redundant:
+
+- **SPU `CFLTS` was incorrect on ARM64.** `CVTTPS2DQ` returns `0x80000000` on
+  overflow so the x86 path XORs it to `0x7fffffff`; `FCVTZS` already gives
+  `0x7fffffff`, and the same XOR turns it into `0x80000000`. Any value at or
+  above `2^31` produced the wrong result, upstream included.
+- **SPU `CFLTU` was correct but redundant.** `FCVTZU` already clamps negatives
+  to zero and saturates at `2^32`, so the select and sign mask were dead work.
+
+`llvm.fptosi.sat` / `llvm.fptoui.sat` lower to a single `FCVTZS` / `FCVTZU`,
+fixing the first and shortening both from four instructions to one. The x86
+paths keep their corrections; only the ARM64 branches changed. Pinned by
+`tools/test_thor_spu_arm64_float_convert.ps1`.
+
+The general lesson: on a target whose hardware semantics are *stronger* than
+the IR's, a portable correction can be worse than nothing. Grep for the other
+places shared code compensates for x86 quirks before assuming they are neutral.
+
 ## Open opportunities, ranked
 
-1. **`SQRDMLAH` for PPU `VMHRADDSHS` / `VMHADDSHS`**
-   (`Emu/Cell/PPUTranslator.cpp:1539`). The current lowering sign-extends to
-   `s32[8]`, multiplies, adds `0x4000`, shifts, adds, clamps twice and
-   truncates. `SQRDMULH` computes `sat((a*b + 0x4000) >> 15)` and `SQRDMLAH`
-   folds the accumulate in, one instruction for all eight lanes. `asimdrdm` is
-   present and already implied by `cortex-a78`. The catch is `set_sat`, which
-   wants the pre-saturation value, so the VSCR SAT bit needs its own cheap
-   computation or an explicit decision to derive it differently.
-2. **`FRINT32Z`/`FRINT64Z` for SPU `CFLTS`/`CFLTU`**
-   (`Emu/Cell/SPULLVMRecompiler.cpp:8621`, `:8693`). Float to integer with
-   saturation currently needs explicit clamp sequences. `frint` is present but
-   **not** implied by `cortex-a78`, so this needs `+frint` added to the JIT
-   attribute list first, gated on a new `utils::has_frint()`.
-3. **`FLAGM`/`FLAGM2` (`RMIF`, `SETF8`/`SETF16`, `AXFLAG`) for PPU condition
-   and carry emulation.** Present on device, not implied by `cortex-a78`.
-   Worth profiling PPU `CR`/`XER` update paths before committing.
-4. **`EOR3` currently has no call site.** The helper exists next to `bcax` in
-   `CPUTranslator.h` and is contract-tested, but nothing emits it. Either find
-   a genuine three-way XOR in the PPU or SPU lowering or delete it; carrying an
-   unused helper invites someone to assume it is load-bearing.
-5. **Re-evaluate the A510 cache-worker default.** It was justified by surviving
-   the thermal guard longer, and that guard was tripping on an artifact.
+Items 1 to 4 of the original list are resolved: `SQRDMLAH` measured and
+declined, the float conversions fixed, `FLAGM` found unreachable, and `eor3`
+deleted. What is left:
+
+1. **Re-evaluate the A510 cache-worker default.** It was justified by surviving
+   the thermal guard longer, and that guard was tripping on a launch transient.
    Pinning compile workers to three little cores plausibly makes the ~50 s SPU
    cache build slower, which is the largest user-visible cost at boot. Measure
-   time-to-title with the property unset versus explicitly `0` now that runs
-   complete.
-6. **Revisit `mcpu`.** `cortex-a78` is a v8.2 scheduling model standing in for a
+   time-to-title with the property unset versus explicitly `0`, using the direct
+   `THOR_DEBUG_BOOT` method rather than the harness.
+2. **Advertise the features the device actually has.** The JIT sends
+   `+sha3,+dotprod,+i8mm,-sve,-sve2` on top of `cortex-a78`, so everything past
+   Armv8.2 is invisible to LLVM: `lrcpc`, `flagm`, `flagm2`, `frint`, `fcma`.
+   Adding them costs nothing when each is gated on its own `utils::has_*()` with
+   an explicit negative, and it lets the backend choose instructions we have not
+   had to think about. `frint` turned out unnecessary for the conversions, but
+   the general point stands.
+3. **Revisit `mcpu`.** `cortex-a78` is a v8.2 scheduling model standing in for a
    1+2+2+3 Armv9 machine. `cortex-a715` or `cortex-x3` with explicit `-sve`
    `-sve2` may schedule better, but only if the negative attributes reliably
    clear the implied SVE. Verify with `llvm-objdump` that no SVE instruction is
    emitted before trusting it.
+4. **Audit the other x86 compensations.** `CFLTS` was wrong on ARM64 because a
+   portable correction assumed x86 overflow semantics. The same shape may exist
+   elsewhere; `CreateFPToSI`, `CreateFPToUI`, and any `^ sext(...)` correction
+   next to a conversion or saturation are the places to look.

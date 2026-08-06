@@ -3646,6 +3646,28 @@ public:
 		return llvm::Intrinsic::getDeclaration(_module, id, {get_type<Types>()...});
 	}
 
+	// Saturating float to integer conversion. AArch64's FCVTZS/FCVTZU already
+	// clamp out-of-range inputs and flush NaN to zero, so these lower to a
+	// single instruction there, while plain fptosi/fptoui are poison on
+	// overflow and force callers to bolt a correction on by hand.
+	template <typename T, typename U>
+	value_t<T> fptosi_sat(U a)
+	{
+		value_t<T> result;
+		const auto data = a.eval(m_ir);
+		result.value = m_ir->CreateIntrinsic(llvm::Intrinsic::fptosi_sat, {get_type<T>(), data->getType()}, {data});
+		return result;
+	}
+
+	template <typename T, typename U>
+	value_t<T> fptoui_sat(U a)
+	{
+		value_t<T> result;
+		const auto data = a.eval(m_ir);
+		result.value = m_ir->CreateIntrinsic(llvm::Intrinsic::fptoui_sat, {get_type<T>(), data->getType()}, {data});
+		return result;
+	}
+
 	template <typename T1, typename T2>
 	value_t<u8[16]> gf2p8affineqb(T1 a, T2 b, u8 c)
 	{
@@ -3831,31 +3853,11 @@ public:
 		return result;
 	}
 
-	// EOR3: a ^ b ^ c, in one instruction instead of two EORs.
-	template <typename T1, typename T2, typename T3, typename T = llvm_common_t<T1, T2, T3>>
-	value_t<T> eor3(T1 a, T2 b, T3 c)
-	{
-		value_t<T> result;
-		const auto va = a.eval(m_ir);
-		const auto vb = b.eval(m_ir);
-		const auto vc = c.eval(m_ir);
-
-		if (!m_use_sha3)
-		{
-			result.value = m_ir->CreateXor(m_ir->CreateXor(va, vb), vc);
-			return result;
-		}
-
-		const auto i64x2 = get_type<u64[2]>();
-		const auto call = m_ir->CreateCall(
-			get_intrinsic<u64[2]>(llvm::Intrinsic::aarch64_crypto_eor3u),
-			{m_ir->CreateBitCast(va, i64x2),
-			 m_ir->CreateBitCast(vb, i64x2),
-			 m_ir->CreateBitCast(vc, i64x2)});
-
-		result.value = m_ir->CreateBitCast(call, get_type<T>());
-		return result;
-	}
+	// There is deliberately no eor3() helper. With +sha3 advertised, LLVM forms
+	// EOR3 on its own from a ^ b ^ c whenever the operands are values. It only
+	// fails to form these when an operand is constant, because it folds the NOT
+	// away first, which is exactly why bcax() above is emitted by hand: the
+	// SHUFB selector masks are constants.
 
 	template <typename T1, typename T2, typename T3>
 	value_t<u8[16]> tbl2(T1 a, T2 b, T3 indices)
