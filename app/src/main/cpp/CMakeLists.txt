@@ -137,6 +137,12 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     adrenotools
 )
 
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    # For linkernsbypass_load_status(), used to report why a custom GPU driver
+    # failed to load instead of leaving it as an unexplained null.
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE libadrenotools/lib/linkernsbypass)
+endif()
+
 if (RPCSX_BUILD_BUNDLED_CORE)
 	add_subdirectory(rpcsx/android rpcsx-bundled-core)
 endif()

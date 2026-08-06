@@ -17,10 +17,13 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 #if defined(__aarch64__)
 #include <adrenotools/driver.h>
 #include <adrenotools/priv.h>
+#include <vulkan/vulkan.h>
+#include <android_linker_ns.h>
 #endif
 
 struct RPCSXApi {
@@ -489,6 +492,154 @@ Java_net_rpcsx_RPCSX_setPatchEnabled(JNIEnv *env, jobject, jstring jhash,
 
   return rpcsxLib.setPatchEnabled(unwrap(env, jhash), unwrap(env, jdescription),
                                   jenabled == JNI_TRUE);
+}
+
+#if defined(__aarch64__)
+// Ask a driver package what it actually is.
+//
+// Selecting a driver used to be guesswork twice over: the package name rarely
+// says which Adreno family or Mesa version it carries, and on success the app
+// said nothing at all, so there was no way to tell whether the custom driver
+// was really in use. Only failures were reported.
+//
+// This opens the package in its own loader handle, spins up a throwaway Vulkan
+// instance through it, and reads back what the driver reports about itself.
+// The handle is closed again, so the emulator's active driver is untouched.
+// Everything is best-effort: any failure yields an empty string and the UI
+// simply says nothing rather than guessing.
+static std::string queryDriverDescription(const std::string &path,
+                                          const std::string &libraryName,
+                                          const std::string &hookDir) {
+  void *loader = nullptr;
+
+  if (path.empty()) {
+    // System driver. A plain dlopen("libvulkan.so") returns null here: the app's
+    // linker namespace does not hand out the loader that way. Go through the
+    // same adrenotools entry point with no custom-driver flags, which is what
+    // selecting "Default" does anyway.
+    loader = adrenotools_open_libvulkan(RTLD_NOW, 0, nullptr,
+                                        (hookDir + "/").c_str(), nullptr,
+                                        nullptr, nullptr, nullptr);
+  } else {
+    loader = adrenotools_open_libvulkan(
+        RTLD_NOW, ADRENOTOOLS_DRIVER_CUSTOM, nullptr, (hookDir + "/").c_str(),
+        (path + "/").c_str(), libraryName.c_str(), nullptr, nullptr);
+  }
+
+  if (loader == nullptr) {
+    __android_log_print(ANDROID_LOG_WARN, "RPCSX-UI",
+                        "driver probe: loader null path=[%s] hook=[%s] api=%d nsbypass=%d",
+                        path.c_str(), hookDir.c_str(),
+                        android_get_device_api_level(),
+                        (int)linkernsbypass_load_status());
+    return {};
+  }
+
+  std::string result;
+
+  auto getInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+      ::dlsym(loader, "vkGetInstanceProcAddr"));
+
+  if (getInstanceProcAddr == nullptr) {
+    __android_log_print(ANDROID_LOG_WARN, "RPCSX-UI", "driver probe: no vkGetInstanceProcAddr");
+  }
+
+  if (getInstanceProcAddr != nullptr) {
+    auto createInstance = reinterpret_cast<PFN_vkCreateInstance>(
+        getInstanceProcAddr(nullptr, "vkCreateInstance"));
+
+    VkInstance instance = VK_NULL_HANDLE;
+
+    if (createInstance != nullptr) {
+      VkApplicationInfo app{};
+      app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+      app.pApplicationName = "rpcsx-driver-probe";
+      // 1.1 is what makes vkGetPhysicalDeviceProperties2 core, which is how the
+      // driver name and version are read below.
+      app.apiVersion = VK_API_VERSION_1_1;
+
+      VkInstanceCreateInfo ci{};
+      ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+      ci.pApplicationInfo = &app;
+
+      VkResult ir = createInstance(&ci, nullptr, &instance);
+      if (ir != VK_SUCCESS) {
+        __android_log_print(ANDROID_LOG_WARN, "RPCSX-UI", "driver probe: vkCreateInstance failed %d", (int)ir);
+        instance = VK_NULL_HANDLE;
+      }
+    }
+
+    if (instance != VK_NULL_HANDLE) {
+      auto enumerate = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+          getInstanceProcAddr(instance, "vkEnumeratePhysicalDevices"));
+      auto getProps2 =
+          reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+              getInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties2"));
+      auto destroyInstance = reinterpret_cast<PFN_vkDestroyInstance>(
+          getInstanceProcAddr(instance, "vkDestroyInstance"));
+
+      uint32_t count = 0;
+      VkPhysicalDevice device = VK_NULL_HANDLE;
+
+      if (enumerate != nullptr && enumerate(instance, &count, nullptr) == VK_SUCCESS && count > 0) {
+        std::vector<VkPhysicalDevice> devices(count);
+        if (enumerate(instance, &count, devices.data()) == VK_SUCCESS && count > 0) {
+          device = devices[0];
+        }
+      }
+
+      if (device == VK_NULL_HANDLE || getProps2 == nullptr) {
+        __android_log_print(ANDROID_LOG_WARN, "RPCSX-UI", "driver probe: device=%p getProps2=%p count=%u", (void*)device, (void*)getProps2, count);
+      }
+
+      if (device != VK_NULL_HANDLE && getProps2 != nullptr) {
+        VkPhysicalDeviceDriverProperties driver{};
+        driver.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+
+        VkPhysicalDeviceProperties2 props{};
+        props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props.pNext = &driver;
+
+        getProps2(device, &props);
+
+        const uint32_t api = props.properties.apiVersion;
+        char buf[1024];
+
+        // Newline-separated key=value. driverName/driverInfo are only populated
+        // when the driver supports VK_KHR_driver_properties; Turnip does, the
+        // Qualcomm blob does too, but guard anyway.
+        std::snprintf(
+            buf, sizeof(buf),
+            "device=%s\ndriverName=%s\ndriverInfo=%s\napi=%u.%u.%u\n",
+            props.properties.deviceName,
+            driver.driverName[0] ? driver.driverName : "",
+            driver.driverInfo[0] ? driver.driverInfo : "",
+            VK_VERSION_MAJOR(api), VK_VERSION_MINOR(api), VK_VERSION_PATCH(api));
+
+        result = buf;
+      }
+
+      if (destroyInstance != nullptr) {
+        destroyInstance(instance, nullptr);
+      }
+    }
+  }
+
+  ::dlclose(loader);
+  return result;
+}
+#endif // __aarch64__
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_net_rpcsx_RPCSX_queryDriverInfo(JNIEnv *env, jobject, jstring jpath,
+                                     jstring jlibraryName, jstring jhookDir) {
+#ifdef __aarch64__
+  return wrap(env, queryDriverDescription(unwrap(env, jpath),
+                                          unwrap(env, jlibraryName),
+                                          unwrap(env, jhookDir)));
+#else
+  return wrap(env, std::string{});
+#endif
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

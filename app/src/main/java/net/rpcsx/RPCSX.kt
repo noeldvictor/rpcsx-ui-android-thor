@@ -107,6 +107,17 @@ class RPCSX {
     external fun getDirInstallPath(sfoFd: Int) : String?
     external fun getVersion(): String
     external fun setCustomDriver(path: String, libraryName: String, hookDir: String): Boolean
+
+    /**
+     * Asks a driver package what it actually is, by loading it in a throwaway
+     * handle and creating a short-lived Vulkan instance through it.
+     *
+     * Returns newline-separated key=value pairs (device, driverName, driverInfo,
+     * api), or an empty string if the package could not be loaded or queried.
+     * Pass an empty [path] to query the system driver. Does not disturb the
+     * driver currently in use.
+     */
+    external fun queryDriverInfo(path: String, libraryName: String, hookDir: String): String
     external fun setPatchEnabled(hash: String, description: String, enabled: Boolean): Boolean
     external fun setProcessAffinityMask(mask: Int): Boolean
     external fun supportsPpuCachePreparation(): Boolean

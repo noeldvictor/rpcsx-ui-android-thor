@@ -216,6 +216,10 @@ fun GpuDriversScreen(navigateBack: () -> Unit) {
                     ThorGpuDriverNote()
                 }
 
+                item(key = "active_driver_readout") {
+                    ActiveDriverCard(selectedDriver)
+                }
+
                 items(drivers.entries.toList(), key = { it.key }) { (file, metadata) ->
                     DeletableListItem(onDelete = if (metadata.name == "Default") null else ({
                         coroutineScope.launch(Dispatchers.IO) {
@@ -388,6 +392,69 @@ fun DriverDialog(
             Text(text = stringResource(android.R.string.cancel))
         }
     })
+}
+
+/**
+ * Reports what the selected driver actually is, by loading it and asking it.
+ *
+ * Picking a driver used to be guesswork twice: package names rarely say which
+ * Adreno family or Mesa version they carry, and on success the app said nothing
+ * at all, so there was no way to confirm the custom driver was in use rather
+ * than a silent fallback. Only failures were reported. This shows the GPU and
+ * driver the package really provides, which also makes the advisor's guess
+ * checkable instead of something to be taken on trust.
+ */
+@Composable
+private fun ActiveDriverCard(selectedDriver: String?) {
+    var live by remember { mutableStateOf<GpuDriverAdvisor.LiveDriver?>(null) }
+    var probing by remember { mutableStateOf(true) }
+
+    // Re-probe whenever the selection changes, since that is exactly when the
+    // answer changes.
+    LaunchedEffect(selectedDriver) {
+        probing = true
+        live = withContext(Dispatchers.IO) {
+            val path = GeneralSettings["gpu_driver_path"] as? String ?: ""
+            val name = GeneralSettings["gpu_driver_name"] as? String ?: ""
+            GpuDriverAdvisor.parseLiveDriver(
+                RPCSX.instance.queryDriverInfo(path, name, RPCSX.nativeLibDirectory)
+            )
+        }
+        probing = false
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Currently running", style = MaterialTheme.typography.titleMedium)
+
+            when {
+                probing -> Text(
+                    "Checking the active driver…",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                live != null -> {
+                    Text(live!!.summary(), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "Read back from the driver itself, not from the package name.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                else -> Text(
+                    "Could not load or query the selected driver. If a game fails to start, switch back to Default.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
 }
 
 @Composable

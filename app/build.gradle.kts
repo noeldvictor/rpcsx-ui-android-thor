@@ -140,10 +140,28 @@ android {
 
         externalNativeBuild {
             cmake {
+                // The adrenotools hook libraries have to be built and packaged or
+                // custom GPU drivers cannot load at all. adrenotools_open_libvulkan
+                // dlopens libhook_impl.so and then libmain_hook.so out of
+                // nativeLibraryDir, and returns null the moment either is missing.
+                // They were absent from this list, so the APK shipped without them
+                // and every Turnip package failed silently: the only symptom was
+                // "failed to load selected driver" with no reason given.
+                //
+                // file_redirect_hook and gsl_alloc_hook are only dlopened when
+                // their feature flags are set, but they are a few KiB each and
+                // leaving them out is how this class of bug happens.
+                val adrenotoolsHooks = listOf(
+                    "hook_impl",
+                    "main_hook",
+                    "file_redirect_hook",
+                    "gsl_alloc_hook"
+                )
+
                 targets += if (buildBundledRpcsxCore) {
-                    listOf("rpcsx-ui-jni", "rpcsx-android")
+                    listOf("rpcsx-ui-jni", "rpcsx-android") + adrenotoolsHooks
                 } else {
-                    listOf("rpcsx-ui-jni")
+                    listOf("rpcsx-ui-jni") + adrenotoolsHooks
                 }
                 arguments += listOf(
                     "-DRPCSX_BUILD_BUNDLED_CORE=${if (buildBundledRpcsxCore) "ON" else "OFF"}",

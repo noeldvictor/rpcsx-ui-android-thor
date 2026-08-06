@@ -53,7 +53,88 @@ object GpuDriverAdvisor {
     private val ADRENO_MODEL_RE = Regex("""adreno\s*\(?tm\)?\s*(\d{3})""", RegexOption.IGNORE_CASE)
     private val FAMILY_RE = Regex("""\ba([678])xx\b""", RegexOption.IGNORE_CASE)
     private val GEN_RE = Regex("""\bgen\s*([0-9])\b""", RegexOption.IGNORE_CASE)
-    private val MESA_RE = Regex("""\b(2[0-9]\.[0-9]+(?:\.[0-9]+)?)\b""")
+
+    // Not \b before the digits. Real asset names look like "Turnip_v26.0.0_R8",
+    // and 'v' is a word character, so \b never matches there and every genuine
+    // package read as having no version at all. Bound on digits instead.
+    private val MESA_RE = Regex("""(?<![0-9.])(2[0-9]\.[0-9]+(?:\.[0-9]+)?)(?![0-9])""")
+
+    /**
+     * Underscores are word characters, so "turnip_a8xx" has no \b before "a8xx"
+     * and the family match silently failed on exactly the packages it exists to
+     * catch. Separators become spaces before matching; dots are kept so version
+     * numbers survive.
+     */
+    private fun normalize(text: String) = text.replace(Regex("""[^A-Za-z0-9.]+"""), " ")
+    private val TURNIP_RE = Regex("""turnip|freedreno|mesa""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Mesa release from which a7xx (Adreno 730/740) support is dependable.
+     * a7xx landed earlier than this, but earlier builds are patchy enough that
+     * recommending them would be misleading.
+     */
+    const val A7XX_MESA_MIN = "24.0"
+
+    private fun isTurnip(text: String) = TURNIP_RE.containsMatchIn(text)
+
+    /** Compares dotted Mesa versions numerically, not lexically: 24.0 > 9.9, 25.1 > 24.3. */
+    private fun mesaAtLeast(version: String?, minimum: String): Boolean {
+        if (version == null) return false
+        val a = version.split('.').mapNotNull { it.toIntOrNull() }
+        val b = minimum.split('.').mapNotNull { it.toIntOrNull() }
+        if (a.isEmpty() || b.isEmpty()) return false
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return true
+    }
+
+    /**
+     * Parses the newline-separated key=value block returned by
+     * RPCSX.queryDriverInfo. Returns null when the package could not be loaded,
+     * which is itself the useful answer: the driver does not work here.
+     */
+    fun parseLiveDriver(raw: String): LiveDriver? {
+        if (raw.isBlank()) return null
+        val fields = raw.lineSequence()
+            .mapNotNull { line ->
+                val i = line.indexOf('=')
+                if (i <= 0) null else line.substring(0, i) to line.substring(i + 1)
+            }
+            .toMap()
+
+        val device = fields["device"].orEmpty()
+        if (device.isBlank()) return null
+
+        return LiveDriver(
+            deviceName = device,
+            driverName = fields["driverName"].orEmpty(),
+            driverInfo = fields["driverInfo"].orEmpty(),
+            apiVersion = fields["api"].orEmpty()
+        )
+    }
+
+    /** What a driver reports about itself once actually loaded. */
+    data class LiveDriver(
+        val deviceName: String,
+        val driverName: String,
+        val driverInfo: String,
+        val apiVersion: String
+    ) {
+        /** One line for the UI, e.g. "Adreno (TM) 740 — turnip Mesa 25.0.2 (Vulkan 1.3.274)". */
+        fun summary(): String {
+            val driver = listOf(driverName, driverInfo)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+            return buildString {
+                append(deviceName)
+                if (driver.isNotBlank()) append(" — ").append(driver)
+                if (apiVersion.isNotBlank()) append(" (Vulkan ").append(apiVersion).append(")")
+            }
+        }
+    }
 
     /**
      * Thor is Snapdragon 8 Gen 2 / Adreno 740, which is the a7xx family. Detected
@@ -110,11 +191,11 @@ object GpuDriverAdvisor {
         minApi: Int = 0
     ): Assessment {
         val device = deviceTarget()
-        val haystack = listOf(name, description, vendor).joinToString(" ")
+        val haystack = normalize(listOf(name, description, vendor).joinToString(" "))
         val reasons = mutableListOf<String>()
 
-        val mesa = MESA_RE.find(driverVersion)?.value
-            ?: MESA_RE.find(name)?.value
+        val mesa = MESA_RE.find(normalize(driverVersion))?.value
+            ?: MESA_RE.find(haystack)?.value
 
         // API level is a hard gate: the loader will refuse the library outright.
         if (minApi > 0 && minApi > device.sdkInt) {
@@ -144,10 +225,29 @@ object GpuDriverAdvisor {
         }
 
         return when {
+            // Most real Turnip releases never name a family, because Turnip is
+            // one Mesa driver covering many Adreno generations. Judging those
+            // "Unverified" made almost every genuine package look unjudged,
+            // which is worse than no advice at all. What actually decides it is
+            // whether the Mesa build is new enough to support a7xx.
+            claimed.isEmpty() && isTurnip(haystack) && mesaAtLeast(mesa, A7XX_MESA_MIN) -> Assessment(
+                verdict = if (oneUi) Verdict.RISKY else Verdict.COMPATIBLE,
+                summary = if (oneUi) "Mesa $mesa, but a OneUI build" else "Turnip Mesa $mesa — supports ${device.family}",
+                reasons = reasons + "Turnip is a single Mesa driver covering several Adreno generations, so it does not name one. Mesa $mesa is at or past $A7XX_MESA_MIN, which is where a7xx support (${device.model}) is usable.",
+                driverVersion = mesa
+            )
+
+            claimed.isEmpty() && isTurnip(haystack) && mesa != null -> Assessment(
+                verdict = Verdict.RISKY,
+                summary = "Turnip Mesa $mesa — older than $A7XX_MESA_MIN",
+                reasons = reasons + "Mesa $mesa predates dependable a7xx support, so ${device.model} may render incorrectly or fail to boot. Keep the default driver ready.",
+                driverVersion = mesa
+            )
+
             claimed.isEmpty() -> Assessment(
                 verdict = if (oneUi) Verdict.RISKY else Verdict.UNKNOWN,
-                summary = if (oneUi) "Likely wrong: OneUI build" else "No target GPU named in the package",
-                reasons = reasons + "Nothing in the name or description identifies an Adreno family, so it cannot be matched against ${device.model}. Keep the default driver ready.",
+                summary = if (oneUi) "Likely wrong: OneUI build" else "No target GPU or Mesa version in the package",
+                reasons = reasons + "Nothing in the name or description identifies an Adreno family or a Mesa version, so it cannot be matched against ${device.model}. Keep the default driver ready.",
                 driverVersion = mesa
             )
 
