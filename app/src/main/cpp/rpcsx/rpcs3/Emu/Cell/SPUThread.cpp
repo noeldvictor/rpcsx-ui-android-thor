@@ -1156,6 +1156,41 @@ static FORCE_INLINE usz scan16_rdata(const spu_rdata_t& _lhs, const spu_rdata_t&
 	const auto rhs = reinterpret_cast<const v128*>(_rhs);
 	u32 mask = 0;
 
+#if defined(ARCH_ARM64)
+	// v128::operator!= is gv_testz, which on AArch64 narrows and then moves the
+	// result to a general-purpose register. Written as eight separate compares
+	// that is eight SQXTN/FMOV/CSET triples, and the FMOVs are SIMD-to-GPR
+	// transfers on the critical path. x86 gets away with it because PTEST sets
+	// flags directly; AArch64 has no equivalent, so the mask is better built in
+	// the vector unit and moved across once.
+	//
+	// UMAXP folds pairs of lanes while keeping their order, so two rounds turn
+	// eight 4-lane blocks into eight lanes, one per block, each nonzero exactly
+	// when that block differs. Weighting those lanes and adding across gives the
+	// same bitmask the scalar loop produced, for one transfer instead of eight.
+	uint32x4_t x[8];
+
+	for (usz i = 0; i < 8; i++)
+	{
+		x[i] = static_cast<uint32x4_t>(lhs[i] ^ rhs[i]);
+	}
+
+	const uint32x4_t p0 = vpmaxq_u32(x[0], x[1]);
+	const uint32x4_t p1 = vpmaxq_u32(x[2], x[3]);
+	const uint32x4_t p2 = vpmaxq_u32(x[4], x[5]);
+	const uint32x4_t p3 = vpmaxq_u32(x[6], x[7]);
+
+	// blocks 0-3 and 4-7, one lane each
+	const uint32x4_t q0 = vpmaxq_u32(p0, p1);
+	const uint32x4_t q1 = vpmaxq_u32(p2, p3);
+
+	const uint32x4_t w0 = {1u, 2u, 4u, 8u};
+	const uint32x4_t w1 = {16u, 32u, 64u, 128u};
+	const uint32x4_t m0 = vandq_u32(vtstq_u32(q0, q0), w0);
+	const uint32x4_t m1 = vandq_u32(vtstq_u32(q1, q1), w1);
+
+	mask = vaddvq_u32(vorrq_u32(m0, m1));
+#else
 	for (usz i = 0; i < 8; i += 4)
 	{
 		const u32 a = lhs[i + 0] != rhs[i + 0];
@@ -1165,6 +1200,7 @@ static FORCE_INLINE usz scan16_rdata(const spu_rdata_t& _lhs, const spu_rdata_t&
 
 		mask |= ((a << 0) | (b << 1) | (c << 2) | (d << 3)) << i;
 	}
+#endif
 
 	if (mask && !(mask & (mask - 1)))
 	{
