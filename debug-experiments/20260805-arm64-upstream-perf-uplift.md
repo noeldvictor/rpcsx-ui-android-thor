@@ -469,3 +469,30 @@ A real FPS result needs the guest rendering gameplay, which needs the title,
 which needs a device that starts cold. The tooling is now the easy half: run
 `eternal-sonata-field-route` and, in a second shell,
 `.\tools\measure_thor_fps.ps1 -Seconds 20 -WaitForLayerSeconds 120`.
+
+### Settled: the title is unreachable from this thermal baseline, at any margin
+
+Final attempt, capture `20260806-070046-thor-input-eternal-sonata-field-route`.
+The full field route, launched at `32.7 C`, with the conservative buffers taken
+all the way down: near-limit probe window `3`, early-stop headroom `1`, so the
+run was allowed to proceed to `71 C` against this project's own `72 C` hard
+limit, which was left untouched.
+
+It still stopped, at `screenshot-ppu-ready-poll-04`, with
+`title_menu_present=False` at `30098 ms`. The concurrent sample was `17` frames
+at a `16.873 ms` median, panel cadence for the loading screen again, and again
+not a speed result.
+
+That settles the question. Fifteen runs, and the mitigations that helped are
+exhausted: little-core cache workers, capped RSX preload, cache warming across
+rounds, and finally running to the declared hard limit. From this baseline the
+emulator reaches roughly `71 C` about thirty seconds into a boot, and the title
+needs longer than that.
+
+The variable that is left is the baseline itself. The device idles with the big
+cluster at `41-45 C` and `pm8550b_lite_tz` at `55 C` because it is on USB power
+for adb, which leaves only about thirty seconds of headroom between a cold start
+and the hard limit. The captures that reached the title and a first battle were
+taken with the device at `23-25 C`, where that headroom is far larger. So the
+next attempt should be made off charge, in a cooler room, and it should be the
+first thing tried rather than the last.
