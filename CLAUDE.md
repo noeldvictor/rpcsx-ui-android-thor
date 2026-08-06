@@ -391,11 +391,33 @@ deleted. What is left:
    callers are the PPU interpreter and the rpcsx PPU semantic tree, both cold
    under the LLVM decoder. Widening the baseline for a one-instruction win on a
    path that does not execute is not worth the SIGILL surface.
-3. **Revisit `mcpu`.** `cortex-a78` is a v8.2 scheduling model standing in for a
-   1+2+2+3 Armv9 machine. `cortex-a715` or `cortex-x3` with explicit `-sve`
-   `-sve2` may schedule better, but only if the negative attributes reliably
-   clear the implied SVE. Verify with `llvm-objdump` that no SVE instruction is
-   emitted before trusting it.
+3. ~~Revisit `mcpu`.~~ **Question answered; change deliberately not made.**
+   The open worry was whether negative attributes reliably clear the SVE that a
+   real Armv9 scheduling model turns on. They do. Measured with clang at `-O3`
+   on identical IR, counting SVE instructions emitted:
+
+   | `-mcpu` | SVE instructions | total |
+   | --- | --- | --- |
+   | `cortex-a78` | 0 | 46 |
+   | `cortex-a710` | 7 | 54 |
+   | `cortex-a715` | 7 | 54 |
+   | `cortex-x3` | 7 | 54 |
+   | `cortex-x3` + `-target-feature -sve -sve2` | **0** | 46 |
+
+   So every scheduling model that actually matches Thor's silicon (X3 + A715 +
+   A710 + A510) enables SVE by default, and the JIT's existing
+   `setMAttrs({"-sve","-sve2"})` is sufficient on its own to switch it back off,
+   producing byte-identical instruction counts to `cortex-a78`. The `+nosve`
+   spelling works too. This also confirms `sanitize_android_arm64_llvm_cpu` is
+   load-bearing rather than superstition, and that keeping both mechanisms is
+   correct for a failure that is an immediate SIGILL in JIT-emitted code.
+
+   The change is still not made, and that is the honest position: moving to a
+   closer scheduling model can only affect *how well* code is scheduled, never
+   whether it is correct, so the entire case for it is a performance claim. This
+   fork cannot benchmark, so there is nothing to justify the risk against. What
+   changed is that it is now a measured, safe option rather than an unknown.
+   Pinned by `tools/test_thor_arm64_jit_no_sve.ps1`.
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
