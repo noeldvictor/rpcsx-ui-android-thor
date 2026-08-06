@@ -421,6 +421,44 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## Acquire is one-way, and a seqlock needs both
+
+The reservation seqlock is where TSO quietly did work nobody had to write down.
+GETLLAR and the MFC DMA read share a shape:
+
+    t0 = vm::reservation_acquire(addr)        // load-acquire
+    ... copy guest data ...                   // plain loads
+    if (t0 != vm::reservation_acquire(addr))  // validate
+        retry
+
+The copy is only meaningful if it is observed **strictly between** the two
+reservation reads. The first read is a load-acquire, so the copy cannot be
+hoisted above it. That is the half everyone remembers. The other half:
+**load-acquire is one-way.** It orders later accesses after itself and does
+nothing to stop earlier accesses from being observed after it. So the copy can
+be satisfied *after* the validating read, and a writer that bumped the counter
+in between goes undetected — which is precisely the case the check exists for.
+
+x86 never exhibits this, because TSO does not reorder loads with loads. The read
+side was correct as written, for the architecture it was written for. There was
+no barrier to port because there was never a barrier.
+
+`atomic_fence_acquire()` closes it. On x86 it is a compiler barrier and costs
+nothing, so this is not a trade.
+
+The DMA path deserved the fence as much as GETLLAR despite looking better
+guarded. It re-compares the copied data, but **only in the 128-byte case**;
+every smaller transfer rests on the timestamp check alone.
+
+Two things to carry forward. First, the failure mode is an SPU atomic accepting
+stale reservation data, which surfaces as a desync or hang long after the fact
+and never as a slow frame — so its absence proves nothing, and no measurement
+would have found it. Second, and more useful for the rest of this sweep:
+**a barrier that does not exist cannot be found by reading the ARM path**,
+because there is no ARM path. Grep for the *shape* — a validated re-read, a
+double-check, a publish-then-flag — and ask what TSO was providing for free.
+Pinned by `tools/test_thor_arm64_seqlock_fences.ps1`.
+
 ## The instruction cache is not coherent, and this chip says so
 
 x86 instruction caches are coherent with the data caches. Write code, jump to
