@@ -1325,6 +1325,29 @@ extern void mov_rdata_nt(spu_rdata_t& _dst, const spu_rdata_t& _src)
 	_mm_stream_si128(reinterpret_cast<__m128i*>(_dst + 80), v1);
 	_mm_stream_si128(reinterpret_cast<__m128i*>(_dst + 96), v2);
 	_mm_stream_si128(reinterpret_cast<__m128i*>(_dst + 112), v3);
+#elif defined(ARCH_ARM64) && defined(__clang__)
+	// The whole point of this variant is that a reservation write-back should
+	// not evict lines that are still useful, which is why x86 uses streaming
+	// stores. Falling back to memcpy kept the copy but dropped the intent, so
+	// the write polluted cache on ARM.
+	//
+	// AArch64 expresses it with STNP. Clang emits that for a non-temporal store
+	// of a 32-byte vector, giving four LDP/STNP pairs: the same eight
+	// instructions memcpy expands to here, without the pollution. A 16-byte
+	// vector is not equivalent, since clang splits it into D registers first.
+	// Written out rather than looped: loop-idiom recognition rewrites a store
+	// loop back into memcpy and drops the non-temporal metadata on the way,
+	// which puts us right back where we started.
+	typedef unsigned char nt_chunk_t __attribute__((vector_size(32)));
+	static_assert(sizeof(nt_chunk_t) == 32, "non-temporal chunk must stay 32 bytes wide");
+	static_assert(sizeof(spu_rdata_t) == 128, "reservation data is four non-temporal chunks");
+	const auto* src_chunks = reinterpret_cast<const nt_chunk_t*>(_src);
+	auto* dst_chunks = reinterpret_cast<nt_chunk_t*>(_dst);
+
+	__builtin_nontemporal_store(src_chunks[0], &dst_chunks[0]);
+	__builtin_nontemporal_store(src_chunks[1], &dst_chunks[1]);
+	__builtin_nontemporal_store(src_chunks[2], &dst_chunks[2]);
+	__builtin_nontemporal_store(src_chunks[3], &dst_chunks[3]);
 #else
 	std::memcpy(_dst, _src, 128);
 #endif
