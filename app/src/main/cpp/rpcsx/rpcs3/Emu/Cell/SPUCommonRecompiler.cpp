@@ -2695,9 +2695,11 @@ spu_function_t spu_runtime::make_branch_patchpoint(u16 data) const
 	pthread_jit_write_protect_np(true);
 #endif
 
-	// Flush all cache lines after potentially writing executable code
-	asm("ISB");
-	asm("DSB ISH");
+	// The exact range just written is known here, so invalidate it properly
+	// rather than only ordering. This device reports CTR_EL0.DIC=0, meaning
+	// instruction cache invalidation is architecturally required; the previous
+	// asm("ISB"); asm("DSB ISH") did none, and had the two barriers backwards.
+	__builtin___clear_cache(reinterpret_cast<char*>(patch_fn), reinterpret_cast<char*>(raw));
 
 	return reinterpret_cast<spu_function_t>(patch_fn);
 #else
@@ -2763,9 +2765,21 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 		pthread_jit_write_protect_np(true);
 #endif
 
-		// Flush all cache lines after potentially writing executable code
-		asm("ISB");
-		asm("DSB ISH");
+		// Publish the newly written branch to instruction fetch.
+		//
+		// AArch64 instruction caches are not coherent with the data caches. On
+		// x86 a store to code is visible to instruction fetch and only ordering
+		// is needed, which is why this was written as two loose barriers.
+		//
+		// The previous sequence was asm("ISB"); asm("DSB ISH"), which is wrong
+		// three ways: the barriers are in the opposite of the required order, so
+		// the pipeline was flushed before the store was guaranteed complete;
+		// neither is asm volatile with a memory clobber, so the compiler was
+		// free to move them across the store; and no cache maintenance was done
+		// at all. __builtin___clear_cache emits the architecturally required
+		// clean-to-PoU, invalidate, DSB, ISB, and consults CTR_EL0 so it skips
+		// the maintenance on cores that advertise IDC/DIC.
+		__builtin___clear_cache(reinterpret_cast<char*>(rip), reinterpret_cast<char*>(rip) + 16);
 #else
 #error "Unimplemented"
 #endif
@@ -2819,8 +2833,12 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 
 #if defined(ARCH_ARM64)
 	// Flush all cache lines after potentially writing executable code
-	asm("ISB");
-	asm("DSB ISH");
+	// Barriers were reversed here: DSB must complete before ISB, and both
+	// must be volatile with a memory clobber so they cannot move across the
+	// code that was just written. This device reports CTR_EL0.DIC=0, so the
+	// instruction cache genuinely needs invalidating; MCJIT code ranges are
+	// handled in JITLLVM's finalizeMemory, and this orders the rest.
+	__asm__ volatile("dsb ish\n\tisb" ::: "memory");
 #endif
 	spu_runtime::g_tail_escape(&spu, func, nullptr);
 }
@@ -2911,9 +2929,10 @@ void spu_recompiler_base::branch(spu_thread& spu, void*, u8* rip)
 	pthread_jit_write_protect_np(true);
 #endif
 
-	// Flush all cache lines after potentially writing executable code
-	asm("ISB");
-	asm("DSB ISH");
+	// See the matching comment in dispatch(): AArch64 instruction caches are not
+	// coherent with the data caches, and the barriers here were reversed, not
+	// volatile, and unaccompanied by any cache maintenance.
+	__builtin___clear_cache(reinterpret_cast<char*>(rip), reinterpret_cast<char*>(rip) + 16);
 #else
 #error "Unimplemented"
 #endif

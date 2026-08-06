@@ -3681,8 +3681,12 @@ public:
 #endif
 #if defined(ARCH_ARM64)
 		// Flush all cache lines after potentially writing executable code
-		asm("ISB");
-		asm("DSB ISH");
+		// Barriers were reversed here: DSB must complete before ISB, and both
+		// must be volatile with a memory clobber so they cannot move across the
+		// code that was just written. This device reports CTR_EL0.DIC=0, so the
+		// instruction cache genuinely needs invalidating; MCJIT code ranges are
+		// handled in JITLLVM's finalizeMemory, and this orders the rest.
+		__asm__ volatile("dsb ish\n\tisb" ::: "memory");
 #endif
 
 		if (auto& cache = g_fxo->get<spu_cache>())

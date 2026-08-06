@@ -332,6 +332,44 @@ struct JITAnnouncer : llvm::JITEventListener
 };
 
 // Simple memory manager
+// AArch64 instruction caches are not coherent with the data caches. MCJIT writes
+// code through normal stores, so unless the instruction cache is invalidated for
+// those addresses the core may fetch whatever was there before.
+//
+// Whether that maintenance is actually required is advertised in CTR_EL0. Read
+// on the AYN Thor's Snapdragon 8 Gen 2: IDC=1, DIC=0. So the data cache does not
+// need cleaning to the point of unification, but the instruction cache *does*
+// need invalidating. Apple Silicon reports DIC=1, which is very likely why this
+// never surfaced upstream despite RPCS3 running on arm64 Macs.
+//
+// The stock llvm::SectionMemoryManager does this in finalizeMemory. Both
+// managers here override finalizeMemory to return false and do nothing, so
+// nothing was invalidating anything. __builtin___clear_cache expands to the
+// architecturally correct sequence and consults CTR_EL0 itself.
+using jit_code_ranges_t = std::vector<std::pair<u8*, uptr>>;
+
+static void jit_record_code_section([[maybe_unused]] jit_code_ranges_t& ranges, [[maybe_unused]] u8* ptr, [[maybe_unused]] uptr size)
+{
+#ifdef ARCH_ARM64
+	if (ptr && size)
+	{
+		ranges.emplace_back(ptr, size);
+	}
+#endif
+}
+
+static void jit_flush_code_sections([[maybe_unused]] jit_code_ranges_t& ranges)
+{
+#ifdef ARCH_ARM64
+	for (const auto& [ptr, size] : ranges)
+	{
+		__builtin___clear_cache(reinterpret_cast<char*>(ptr), reinterpret_cast<char*>(ptr) + size);
+	}
+
+	ranges.clear();
+#endif
+}
+
 struct MemoryManager1 : llvm::RTDyldMemoryManager
 {
 	// 256 MiB for code or data
@@ -352,6 +390,10 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
 	// First fallback for non-existing symbols
 	// May be a memory container internally
 	std::function<u64(const std::string&)> m_symbols_cement;
+
+	// Code sections written since the last finalizeMemory, pending i-cache
+	// invalidation. Empty and unused where i-caches are coherent.
+	jit_code_ranges_t m_code_ranges;
 
 	MemoryManager1(std::function<u64(const std::string&)> symbols_cement = {}) noexcept
 		: m_symbols_cement(std::move(symbols_cement))
@@ -461,7 +503,9 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
 
 	u8* allocateCodeSection(uptr size, uint align, uint /*sec_id*/, llvm::StringRef /*sec_name*/) override
 	{
-		return allocate(code_ptr, m_code_mems, size, align, utils::protection::wx);
+		u8* const ptr = allocate(code_ptr, m_code_mems, size, align, utils::protection::wx);
+		jit_record_code_section(m_code_ranges, ptr, size);
+		return ptr;
 	}
 
 	u8* allocateDataSection(uptr size, uint align, uint /*sec_id*/, llvm::StringRef /*sec_name*/, bool is_ro) override
@@ -477,6 +521,9 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
 
 	bool finalizeMemory(std::string* = nullptr) override
 	{
+		// Nothing here changes protection, but code just written still has to be
+		// published to instruction fetch on AArch64. See jit_flush_code_sections.
+		jit_flush_code_sections(m_code_ranges);
 		return false;
 	}
 
@@ -495,6 +542,10 @@ struct MemoryManager2 : llvm::RTDyldMemoryManager
 	// First fallback for non-existing symbols
 	// May be a memory container internally
 	std::function<u64(const std::string&)> m_symbols_cement;
+
+	// Code sections written since the last finalizeMemory, pending i-cache
+	// invalidation. Empty and unused where i-caches are coherent.
+	jit_code_ranges_t m_code_ranges;
 
 	MemoryManager2(std::function<u64(const std::string&)> symbols_cement = {}) noexcept
 		: m_symbols_cement(std::move(symbols_cement))
@@ -529,7 +580,9 @@ struct MemoryManager2 : llvm::RTDyldMemoryManager
 
 	u8* allocateCodeSection(uptr size, uint align, uint /*sec_id*/, llvm::StringRef /*sec_name*/) override
 	{
-		return jit_runtime::alloc(size, align, true);
+		u8* const ptr = jit_runtime::alloc(size, align, true);
+		jit_record_code_section(m_code_ranges, ptr, size);
+		return ptr;
 	}
 
 	u8* allocateDataSection(uptr size, uint align, uint /*sec_id*/, llvm::StringRef /*sec_name*/, bool /*is_ro*/) override
@@ -539,6 +592,9 @@ struct MemoryManager2 : llvm::RTDyldMemoryManager
 
 	bool finalizeMemory(std::string* = nullptr) override
 	{
+		// Nothing here changes protection, but code just written still has to be
+		// published to instruction fetch on AArch64. See jit_flush_code_sections.
+		jit_flush_code_sections(m_code_ranges);
 		return false;
 	}
 
