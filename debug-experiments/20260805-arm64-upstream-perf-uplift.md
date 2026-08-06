@@ -408,3 +408,44 @@ requires before any speed claim.
 Also worth knowing for whoever picks this up: FPS is never logged. It is only
 drawn by `overlay_perf_metrics.cpp` into the on-screen overlay, so an FPS figure
 comes from reading a capture, not from parsing a log.
+
+## Measured on silicon: what BCAX is worth per instruction
+
+An FPS figure needs the title. What the change itself is worth does not, so it
+was measured directly on Thor with `tools/bcax_bench.c`: the two sequences that
+compute the same value, written as inline asm so neither side can be folded or
+turned into the other, pinned to one core at a time. Build with the NDK
+(`--target=aarch64-linux-android29 -O2 -march=armv8.2-a+sha3 -static`), push to
+`/data/local/tmp`, and pass the cpu index. Best of five, `64` ops per block,
+`200000` blocks.
+
+Latency shape, one serial dependency chain:
+
+| sequence | Cortex-X3 (cpu7) | Cortex-A715 (cpu4) | Cortex-A510 (cpu0) |
+| --- | --- | --- | --- |
+| `SHUFB` selector, `and`+`eor` -> `bcax` | `0.861 -> 0.439 ns`, `1.96x` | `1.129 -> 0.562 ns`, `2.01x` | `3.145 -> 1.572 ns`, `2.00x` |
+| `EQV`, `eor`+`mvn` -> `bcax` | `0.852 -> 0.439 ns`, `1.94x` | `1.124 -> 0.561 ns`, `2.00x` | `3.117 -> 1.556 ns`, `2.00x` |
+
+Throughput shape, four independent chains, is where it is not a free win:
+
+| | Cortex-X3 | Cortex-A715 | Cortex-A510 |
+| --- | --- | --- | --- |
+| `SHUFB` selector | `0.318 -> 0.339 ns`, `0.94x` | `0.376 -> 0.377 ns`, `1.00x` | `1.074 -> 0.533 ns`, `2.02x` |
+
+So on the big cores BCAX is worth about `2x` when the result is consumed
+immediately and roughly nothing, `-6%` on the X3, when four independent
+selectors can issue in parallel across the wide vector pipes. On the A510 it is
+`2x` in both shapes, which matters because that is where this fork now runs the
+startup cache workers.
+
+The latency row is the one that describes the real code. The device object
+disassembles as `bcax` immediately followed by the `tbx` that consumes it, so
+the selector sits on the dependency chain, not beside it. Halving that chain
+also halves the constant materialization, since the old form needs both
+`movi #0xf` and `movi #0x8f`.
+
+Honest limits on this number: it measures the instruction sequence, not a
+frame. How much a title gains depends on how often `SHUFB` and `EQV` sit on hot
+SPU dependency chains, which is a per-title property this measurement does not
+answer. If a future profile ever shows SHUFB-heavy independent chains dominating
+on the prime core, the `m_use_sha3` gate is the place to revisit it.

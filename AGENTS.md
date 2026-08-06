@@ -520,6 +520,13 @@ Thor predictions.
     Features line reports `asimddp bf16 i8mm sha3` and no `sve` or `sve2`, so
     the 8 Gen 2 exposes no SVE to userspace regardless of core generation.
     Verified on device 2026-08-05. Do not port these.
+  - Measured on Thor silicon with `tools/bcax_bench.c`, best of five per core:
+    on a dependency chain, which is what the real code is, `BCAX` is `1.96x` on
+    the X3, `2.01x` on the A715 and `2.00x` on the A510 for the `SHUFB`
+    selector, and `1.94x`/`2.00x`/`2.00x` for `EQV`. On four independent chains
+    it is `0.94x` on the X3, `1.00x` on the A715 and `2.02x` on the A510, so it
+    is not a free win when wide vector pipes can issue the old pair in
+    parallel. This measures the sequence, not a frame.
   - Proven on device 2026-08-06, capture `20260806-025058-thor-input-custom`:
     a real BLUS30161 SPU block compiled as
     `movi v17.16b, #0xf` / `bcax v11.16b, v17.16b, v11.16b, v16.16b` /
