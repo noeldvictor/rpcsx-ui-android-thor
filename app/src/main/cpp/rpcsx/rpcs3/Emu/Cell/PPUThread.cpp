@@ -6854,7 +6854,15 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 
 			// Write version, hash, CPU, settings
-			fmt::append(obj_name, "v7-kusa-%s-%s-%s.obj", fmt::base57(output, 16), fmt::base57(settings), jit_compiler::cpu(g_cfg.core.llvm_cpu));
+			//
+			// v8: the IR optimization pipeline below used to be inside
+			// #ifdef ARCH_X64, so every PPU module compiled on AArch64 was
+			// emitted from unoptimized IR, not even EarlyCSE. Enabling it
+			// changes the generated code but nothing in this key, so cached v7
+			// objects would keep being loaded and the fix would never reach a
+			// machine that had already booted a game. The version bump is what
+			// makes it take effect; the cost is one recompilation per module.
+			fmt::append(obj_name, "v8-kusa-%s-%s-%s.obj", fmt::base57(output, 16), fmt::base57(settings), jit_compiler::cpu(g_cfg.core.llvm_cpu));
 		}
 
 		if (cpu ? cpu->state.all_of(cpu_flag::exit) : Emu.IsStopped())

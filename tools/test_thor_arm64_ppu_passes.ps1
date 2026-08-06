@@ -45,4 +45,18 @@ if ($ppu -match '#ifdef ARCH_X64 // TODO') {
     throw "The ARCH_X64 TODO gate around the PPU optimization passes is back."
 }
 
-Write-Output "Thor PPU pass-pipeline contract passed: analysis managers and EarlyCSE build unconditionally, both run sites reachable on ARM64."
+# Enabling the pipeline changes the emitted code but nothing in the object cache
+# key, which is version, hash, settings and CPU. A machine that had already
+# booted a game would keep loading its v7 objects and never see the fix, so the
+# two changes only work as a pair. v7 is the version that shipped with the
+# pipeline disabled on ARM64; anything at or below it means the cache was not
+# invalidated when the codegen changed.
+$version = [regex]::Match($ppu, 'fmt::append\(obj_name, "v(?<n>\d+)-kusa-')
+if (-not $version.Success) {
+    throw "Could not read the PPU object cache version."
+}
+if ([int]$version.Groups['n'].Value -lt 8) {
+    throw "PPU object cache is at v$($version.Groups['n'].Value); the pass pipeline was enabled on ARM64 without bumping past v7, so cached objects still bypass it."
+}
+
+Write-Output "Thor PPU pass-pipeline contract passed: analysis managers and EarlyCSE build unconditionally, both run sites reachable on ARM64, object cache at v$($version.Groups['n'].Value)."
