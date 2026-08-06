@@ -399,6 +399,43 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## Host capability answered by x86 model name
+
+`cpu_translator::initialize` decides what the host can do with a run of string
+comparisons against x86 CPU model names. That is reasonable on x86. On AArch64
+those same flags still gate real lowerings, so a CPU string matching nothing
+useful selects a fallback written for 2006 hardware.
+
+Two instances, both now closed:
+
+| flag | was decided by | what it actually gates on ARM |
+| --- | --- | --- |
+| `m_use_fma` | `cpu == "cyclone" \|\| cpu.contains("cortex")` | FMA, which is *mandatory* on AArch64, so the allowlist could only fail to enable it |
+| `m_use_ssse3` | an allowlist of old x86 parts, including `"generic"` | the `x86_pshufb` lowering, which on ARM is `AND 0x8F` then `TBL` |
+
+The second is the more alarming one, because the fallback is not a slightly
+slower shuffle. It is a **16-iteration scalar loop** of
+`extractelement`/`insertelement`, and `pshufb` backs `VPERM`, `LVLX`, `LVRX`,
+`STVLX`, `STVRX`, `ROTQBY` and `SHUFB`. One unlucky CPU string would have
+degraded every byte permute in both recompilers simultaneously.
+
+It was not firing: `getTargetCPU()` returns the sanitized `cortex-a78`, and the
+Android `fallback_cpu_detection()` returns a real core name or `cortex-a78`,
+never `"generic"`. This was removing a possibility rather than fixing an
+observed failure, which is worth saying plainly instead of claiming a win.
+
+Worth knowing for its own sake: the ARM lowering is exactly right, and subtle.
+x86 `PSHUFB` zeroes a lane when the index's **high bit** is set; ARM `TBL`
+zeroes when the index is **≥ 16**. Masking with `0x8F` keeps the high bit and
+the low four bits, so indices below 128 wrap to `0..15` and indices with the
+high bit set land in `128..143`, which `TBL` zeroes. Two different zeroing rules
+reconciled by one constant. Do not "simplify" that mask to `0x0F`.
+
+The general rule: **a host-capability flag should be answered by the
+architecture or a runtime probe, never by a model-name allowlist**, and any
+allowlist that predates the port should be assumed to be x86-only. Pinned by
+`tools/test_thor_arm64_feature_flags_not_x86_names.ps1`.
+
 ## A fix that cannot reach the machine is not a fix
 
 The PPU pass pipeline was the most valuable single find of the whole sweep: the
