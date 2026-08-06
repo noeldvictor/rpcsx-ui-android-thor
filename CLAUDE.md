@@ -386,7 +386,48 @@ deleted. What is left:
    `-sve2` may schedule better, but only if the negative attributes reliably
    clear the implied SVE. Verify with `llvm-objdump` that no SVE instruction is
    emitted before trusting it.
-4. **Audit the other x86 compensations.** `CFLTS` was wrong on ARM64 because a
-   portable correction assumed x86 overflow semantics. The same shape may exist
-   elsewhere; `CreateFPToSI`, `CreateFPToUI`, and any `^ sext(...)` correction
-   next to a conversion or saturation are the places to look.
+4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
+   below for what the remaining subsystems turned up.
+
+## The rest of the codebase, and why it needed nothing
+
+The sweep that found the eight items in the x86-habit table was carried to the
+end. The last three subsystem groups produced no changes, and the reasons are
+worth keeping so the ground is not re-covered.
+
+**lv2, HLE modules, Audio and Io are architecture-neutral.** Not "mostly": a
+grep for `ARCH_X64`, `_mm_`, `__m128` and `__asm__` across
+`Emu/Cell/lv2`, `Emu/Cell/Modules`, `Emu/Audio` and `Emu/Io` matches **zero
+files**. These are syscall and device emulation written in portable C++, and
+there is no host-architecture assumption in them to port.
+
+**The audio loops already compile to the good form.** They are the one hot-loop
+class in that group, and they are written as plain scalar loops, which is the
+shape that usually means a missed vectorization. It is not one here.
+`convert_to_s16` and `apply_volume_static` both vectorize to eight floats per
+iteration, `fmul v.4s` and `fcvtzs v.4s` over `ldp q`/`stp q` with only a
+scalar tail. Better still, the `std::clamp` folds *into* the saturating
+`fcvtzs` and costs nothing — the same hardware property that made the hand-written
+corrections in SPU `CFLTS` and PPU `FCTIW` actively wrong. Written naively, the
+clamp is free; written as an x86-style correction, it was a bug.
+
+**Six `gv_` helpers in `rx/simd.hpp` have x86 paths and no ARM path**, out of
+179. They are `gv_dots16x2`, `gv_dots_s16x2`, `gv_mul_even_s16`,
+`gv_mul_odds_s16`, `gv_exp2_approxfs` and `gv_log2_approxfs`, and ARM has the
+instructions to implement all of them: `SDOT`/`SMLAL` for the dot products,
+`SMULL`/`SMULL2` for the even and odd multiplies. They are still not worth
+writing, because every caller is `Emu/Cell/PPUInterpreter.cpp` and
+`ppu_decoder` defaults to `llvm_legacy`. Same conclusion as the SPU interpreter
+and for the same reason: **an unported SIMD helper only matters if a default
+configuration reaches it.** Establish the caller before writing the NEON.
+
+**`utils::lfence()` is correct on ARM64 despite its `TODO`.** It emits
+`isb`, which is an instruction-synchronization barrier and orders no memory
+access at all, so it reads like an obvious bug. All three call sites are
+`(utils::lfence(), rx::get_tsc())`, serializing before a timestamp read, and
+`ISB` before reading `CNTVCT_EL0` is exactly what AArch64 requires to stop the
+counter read being reordered. The x86 spelling is `LFENCE` before `RDTSC` for
+the same purpose. The code is right; the name and the `TODO` are what mislead.
+Worth knowing before "fixing" it into a `DMB ISHLD`, which would be slower and
+would not serialize the counter. If a genuine load fence is ever needed, it
+needs a differently-named helper rather than a change here.
