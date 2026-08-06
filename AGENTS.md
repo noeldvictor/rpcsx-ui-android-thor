@@ -496,28 +496,37 @@ Thor predictions.
   - Do not keep the vendored `TBL2/TBX2 is excluded` comments alive after a port.
     Stale exclusion notes caused this gap to be re-diagnosed from scratch.
 
-- Not yet ported, ranked backlog from the talk. Each needs its own diff against
-  `rpcs3-upstream` before being assumed missing:
-  1. SPU cache lookup: checksum/comparison reworked around load-to-arithmetic
-     ratio, plus a dot-product trick for the compare. Reported +22% mid-cores /
-     +16% A510 on the compare, +38% mid / +21% large on the checksum, ~5%
-     overall on ARM. Thor-relevant because it is a startup and dispatch cost,
-     and Thor's current blocker is cold PPU/SPU compile time, not steady state.
-  2. `FCGT` via inline assembly, 15 instructions down to 7. Carries a real cost:
-     inline asm blocks further LLVM optimization, and an upstream LLVM issue is
-     open to remove it later. Port only if measured.
-  3. `FSM` family, and `SHL`/`ROTM` via the `USHL` intrinsic to dodge an LLVM
-     poison-value pessimization. Saves ~2 instructions per shift.
-  4. Remaining SPU multiply widening cases.
+- The ranked backlog from the talk is now closed. Re-audited 2026-08-05 by
+  diffing the vendored files against `origin/master` blobs, not commit titles.
+  All four items are present in the vendored core:
+  1. SPU cache lookup checksum/compare: present, and ahead of the plain
+     upstream commit. The vendored path has both the unrolled
+     `checksum_parts` / `aarch64_neon_uabd` form and the rolled `acc_phi`
+     loop, matching upstream `origin/master` rather than `35f65c224` alone.
+  2. `FCGT` inline-asm `bsl` selection: present and byte-identical to upstream
+     inside `#if defined(ARCH_ARM64)`. The surrounding function still uses this
+     fork's older `register_intrinsic` / `std::bitset` shape; that difference is
+     structural, not an ARM gap.
+  3. `FSM`/`FSMH`/`FSMB`/`FSMBI` idiomatic masks and the `USHL` path in
+     `inf_shl`/`inf_lshr`: present. `ROTQBY` TBL helpers
+     (`rotqby_reverse_base`, `pshufb_for_x86_and_tbl_for_aarch64`) are present
+     at every upstream call site.
+  4. SPU multiply widening: all six non-SVE `smull`/`umull` sites present. The
+     only upstream sites missing are the SVE-only `sve_smullt`/`sve_umullt`
+     top-half variants, which are out of scope below.
   - Out of scope for Thor: SVE. `4a92d96cf` (SVE2 FMS) and `6349ea2ee` (SVE
     multiply) are the only upstream ARM64 commits genuinely absent here, at
     `5/43` and `23/82` added lines. Both are unusable: Thor's `/proc/cpuinfo`
     Features line reports `asimddp bf16 i8mm sha3` and no `sve` or `sve2`, so
     the 8 Gen 2 exposes no SVE to userspace regardless of core generation.
     Verified on device 2026-08-05. Do not port these.
-  - Untried opportunity: Thor does report `sha3`, so the `BCAX` instruction is
-    available. Whatcookie notes it would cut SHUFB from five host instructions
-    to four. Small, but it is free hardware we are not using.
+  - Landed 2026-08-05, `8b45c9fe7`: SHA-3 `BCAX` for `EQV` and both `SHUFB`
+    selector paths, past what upstream emits. `bcax()`/`eor3()` live in
+    `CPUTranslator.h` behind `m_use_sha3` (`utils::has_sha3()`), and fall back
+    to the arithmetic form so callers never branch. The JIT already advertises
+    `+sha3`, and bundled LLVM 20.1.3 has `SHA3_pattern` for `bcaxu`/`eor3u` on
+    `v2i64`, so selection is safe. Built for `arm64-v8a`; not device-measured.
+    `eor3()` currently has no call site; keep it only while a use is pending.
 
 - Audit method, learned the hard way: `rpcs3-upstream` is a SHALLOW checkout
   (`is-shallow-repository` true, 610 commits) and carries local Eternal Sonata
