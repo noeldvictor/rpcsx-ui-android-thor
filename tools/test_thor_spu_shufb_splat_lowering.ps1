@@ -38,10 +38,30 @@ foreach ($fragment in $requiredFragments) {
     }
 }
 
-foreach ($unsafeHelper in @('tbl2(', 'tbx2(')) {
-    if ($armBlock.Contains($unsafeHelper)) {
-        throw "Thor SHUFB lowering unexpectedly enables the parked $unsafeHelper path."
+# TBL2/TBX2 are no longer parked here. They were ported on 2026-08-05 together
+# with the register-scavenger retry, and the SPU block compiler is the owner of
+# that retry. The contract is therefore not "never emit them" but "never emit
+# them without a retry owner", so assert the owner still exists.
+if ($armBlock.Contains('tbl2(') -or $armBlock.Contains('tbx2(')) {
+    $translatorPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/CPU/CPUTranslator.h"
+    $translator = Get-Content -LiteralPath $translatorPath -Raw
+    if (-not $translator.Contains('bool m_use_tbl2 = true;')) {
+        throw "SHUFB emits TBL2/TBX2 but the m_use_tbl2 gate is gone."
+    }
+
+    $commonPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp"
+    $common = Get-Content -LiteralPath $commonPath -Raw
+    if (-not $common.Contains('compile_spu_llvm_with_retry')) {
+        throw "SHUFB emits TBL2/TBX2 but the SPU block compiler lost its scavenger retry."
+    }
+    if (-not $common.Contains('Cannot scavenge register without an emergency spill slot')) {
+        throw "SHUFB emits TBL2/TBX2 but the retry no longer matches the scavenger error."
+    }
+
+    $spuBuilder = [regex]::Match($spuSource, '(?s)m_use_tbl2 = [^;]+;')
+    if (-not $spuBuilder.Success) {
+        throw "SHUFB emits TBL2/TBX2 but nothing clears m_use_tbl2 on retry."
     }
 }
 
-Write-Output "Thor ARM64 SPU SHUFB contract passed: two constant splats use SELECT/TBL while TBL2/TBX2 stays parked."
+Write-Output "Thor ARM64 SPU SHUFB contract passed: two constant splats use SELECT/TBL, and TBL2/TBX2 keep their scavenger retry owner."
