@@ -449,3 +449,23 @@ frame. How much a title gains depends on how often `SHUFB` and `EQV` sit on hot
 SPU dependency chains, which is a per-title property this measurement does not
 answer. If a future profile ever shows SHUFB-heavy independent chains dominating
 on the prime core, the `m_use_sha3` gate is the place to revisit it.
+
+## FPS instrumentation exists now; the FPS number still does not
+
+`tools/measure_thor_fps.ps1` reads presented frame timestamps from
+SurfaceFlinger, so an FPS figure no longer depends on reading an overlay out of
+a screenshot. Validated against the app's own UI at `16.869 ms` median, and
+validated again alongside a live route once it learned to wait for the layer,
+since a route spends its preflight and boot handshake before the emulator has a
+surface at all.
+
+The number that run produced is **not** an emulation speed result and must not
+be quoted as one. It sampled `18` presented frames at a `16.881 ms` median,
+which is panel cadence for the loading screen: the route stopped at
+`wait-10000-ms`, still inside PPU compilation, so no guest frame was ever drawn.
+Under `Speed Claim Rules` this is a wrong-scene sample and earns no credit.
+
+A real FPS result needs the guest rendering gameplay, which needs the title,
+which needs a device that starts cold. The tooling is now the easy half: run
+`eternal-sonata-field-route` and, in a second shell,
+`.\tools\measure_thor_fps.ps1 -Seconds 20 -WaitForLayerSeconds 120`.

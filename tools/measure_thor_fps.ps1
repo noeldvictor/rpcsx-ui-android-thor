@@ -26,6 +26,11 @@ param(
     [int]$Seconds = 10,
     [ValidateRange(1, 30)]
     [int]$SampleIntervalSeconds = 2,
+    # A route spends its preflight and boot handshake before the emulator has a
+    # surface, so sampling alongside one has to wait for the layer to appear
+    # rather than assume it is already there.
+    [ValidateRange(0, 300)]
+    [int]$WaitForLayerSeconds = 0,
     [string]$Label = "thor-fps"
 )
 
@@ -34,16 +39,25 @@ $ErrorActionPreference = "Stop"
 
 $adb = Resolve-ThorAdb
 
-function Get-RpcsxLayerName {
+function Find-RpcsxLayerName {
     $rows = @(& $adb -s $Serial shell "dumpsys SurfaceFlinger --list" 2>&1)
-    $match = $rows |
-        Where-Object { $_ -match [regex]::Escape($Package) } |
-        Where-Object { $_ -notmatch 'Background|Dim|ScreenDecor|InputMethod' } |
+    # The emulator draws from RPCSXActivity, and its SurfaceView carries its own
+    # layer, so match the package or the fork name rather than one activity.
+    return $rows |
+        Where-Object { $_ -match [regex]::Escape($Package) -or $_ -match '(?i)rpcsx' } |
+        Where-Object { $_ -notmatch 'Background|Dim|ScreenDecor|InputMethod|Wallpaper' } |
         Select-Object -Last 1
-    if (-not $match) {
-        throw "No SurfaceFlinger layer for $Package. Is it running and in the foreground?"
-    }
-    return $match.ToString().Trim()
+}
+
+function Get-RpcsxLayerName {
+    $deadline = (Get-Date).AddSeconds($WaitForLayerSeconds)
+    do {
+        $match = Find-RpcsxLayerName
+        if ($match) { return $match.ToString().Trim() }
+        if ($WaitForLayerSeconds -gt 0) { Start-Sleep -Seconds 1 }
+    } while ((Get-Date) -lt $deadline)
+
+    throw "No SurfaceFlinger layer for $Package after ${WaitForLayerSeconds}s. Is it running and in the foreground?"
 }
 
 function Get-FrameTimestamps {
