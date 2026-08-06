@@ -1,7 +1,9 @@
 package net.rpcsx.ui.cheats
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,17 +13,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -189,7 +194,7 @@ fun CheatsScreen(
                 ),
                 title = {
                     Text(
-                        if (game == null) "Browse All Cheats" else "Cheats",
+                        game?.info?.name?.value ?: if (game == null) "Browse All Cheats" else "Cheats",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -207,131 +212,196 @@ fun CheatsScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
+        val isBusy = CheatRepository.isLoading.value || isExpandingGlobal
+
+        Column(
             modifier = Modifier
                 .padding(padding)
-                .padding(12.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .fillMaxSize()
         ) {
-            if (game != null) {
-                item {
-                    Text(
-                        game.info.name.value ?: "This game",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                item {
-                    CheatStatusCard(
-                        enabledCount = enabledEntries.size,
-                        needsFirstBoot = needsFirstBoot(sourceEntries, patchStatus),
-                        isGameRunning = isGameRunning,
-                        isSaving = isSaving,
-                        result = saveResult,
-                        error = saveError
-                    )
-                }
-            } else {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            "This is a read-only browser. Open a game to turn its cheats on or off.",
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-
-            item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text(if (game == null) "Search games or cheats" else "Search cheats") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            if (hiddenUnavailableCount > 0) {
-                item {
-                    Row(
+            Surface(tonalElevation = 2.dp) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = {
+                            Text(if (game == null) "Search games or cheats" else "Search cheats")
+                        },
+                        leadingIcon = {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_search),
+                                contentDescription = null
+                            )
+                        },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_close),
+                                        contentDescription = "Clear search"
+                                    )
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                        singleLine = true
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Show cheats that are not available yet",
+                            countLabel(baseEntries.size, enabledEntries.size, game != null),
                             modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.labelLarge
                         )
-                        Switch(checked = showUnavailable, onCheckedChange = { showUnavailable = it })
+                        if (hiddenUnavailableCount > 0) {
+                            Text(
+                                "Show $hiddenUnavailableCount unavailable",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Switch(
+                                checked = showUnavailable,
+                                onCheckedChange = { showUnavailable = it }
+                            )
+                        }
                     }
-                }
-            }
 
-            if (CheatRepository.isLoading.value || isExpandingGlobal) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator()
-                        Spacer(Modifier.width(8.dp))
+                    if (isBusy) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Text(
                             if (isExpandingGlobal) "Preparing cheats" else "Loading cheats",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
 
-            CheatRepository.lastError.value?.let {
-                item {
-                    Text(it, color = MaterialTheme.colorScheme.error)
-                }
-            }
-
-            globalExpandError?.let {
-                item {
-                    Text(it, color = MaterialTheme.colorScheme.error)
-                }
-            }
-
-            item {
-                Text("${baseEntries.size} cheats", style = MaterialTheme.typography.labelLarge)
-            }
-
-            items(baseEntries, key = { entryKey(it) }) { entry ->
-                val canToggle = game != null && canToggleCheat(entry, patchStatus)
-                val isEnabled = game != null && CheatSelectionRepository.isEnabled(context, gameKey, entry)
-                CheatEntryCard(
-                    entry = entry,
-                    enabled = isEnabled,
-                    showToggle = game != null,
-                    toggleEnabled = canToggle && !isSaving,
-                    status = cheatStatusText(entry, isEnabled, canToggle, game != null),
-                    onEnabledChange = { checked ->
-                        if (game != null && canToggle) {
-                            CheatSelectionRepository.setEnabled(context, gameKey, entry, checked)
-                            selectionNonce++
-                            saveCheatToggles()
+            LazyColumn(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (game != null) {
+                    item {
+                        CheatStatusCard(
+                            enabledCount = enabledEntries.size,
+                            needsFirstBoot = needsFirstBoot(sourceEntries, patchStatus),
+                            isGameRunning = isGameRunning,
+                            isSaving = isSaving,
+                            result = saveResult,
+                            error = saveError
+                        )
+                    }
+                } else {
+                    item {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "This is a read-only browser. Open a game to turn its cheats on or off.",
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
-                    },
-                    onOpen = { selectedEntry = entry }
-                )
+                    }
+                }
 
-                if (selectedEntry?.let { entryKey(it) } == entryKey(entry)) {
-                    Spacer(Modifier.height(8.dp))
-                    CheatPreview(
+                CheatRepository.lastError.value?.let {
+                    item {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+
+                globalExpandError?.let {
+                    item {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+
+                if (baseEntries.isEmpty() && !isBusy) {
+                    item {
+                        EmptyCheatsCard(
+                            hasQuery = query.isNotBlank(),
+                            hiddenUnavailableCount = hiddenUnavailableCount,
+                            isGameScreen = game != null
+                        )
+                    }
+                }
+
+                items(baseEntries, key = { entryKey(it) }) { entry ->
+                    val canToggle = game != null && canToggleCheat(entry, patchStatus)
+                    val isEnabled = game != null && CheatSelectionRepository.isEnabled(context, gameKey, entry)
+                    val isOpen = selectedEntry?.let { entryKey(it) } == entryKey(entry)
+
+                    CheatEntryCard(
                         entry = entry,
-                        text = selectedText,
-                        error = selectedError,
-                        canToggle = canToggle,
-                        isGameScreen = game != null
+                        enabled = isEnabled,
+                        showToggle = game != null,
+                        toggleEnabled = canToggle && !isSaving,
+                        status = cheatStatusText(entry, isEnabled, canToggle, game != null),
+                        expanded = isOpen,
+                        onEnabledChange = { checked ->
+                            if (game != null && canToggle) {
+                                CheatSelectionRepository.setEnabled(context, gameKey, entry, checked)
+                                selectionNonce++
+                                saveCheatToggles()
+                            }
+                        },
+                        onOpen = { selectedEntry = if (isOpen) null else entry }
                     )
+
+                    if (isOpen) {
+                        Spacer(Modifier.height(8.dp))
+                        CheatPreview(
+                            entry = entry,
+                            text = selectedText,
+                            error = selectedError,
+                            canToggle = canToggle,
+                            isGameScreen = game != null
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+private fun countLabel(visible: Int, enabled: Int, isGameScreen: Boolean): String {
+    val cheats = if (visible == 1) "1 cheat" else "$visible cheats"
+    return if (isGameScreen && enabled > 0) "$cheats  ·  $enabled on" else cheats
+}
+
+@Composable
+private fun EmptyCheatsCard(
+    hasQuery: Boolean,
+    hiddenUnavailableCount: Int,
+    isGameScreen: Boolean
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                if (hasQuery) "No cheats match that search" else "No cheats for this game yet",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                when {
+                    hasQuery -> "Try the game name, a title id like BLUS30161, or a shorter word."
+                    hiddenUnavailableCount > 0 ->
+                        "$hiddenUnavailableCount are in the library but cannot be used yet. Turn on the switch above to see them."
+                    isGameScreen ->
+                        "The bundled Artemis and RPCS3 collections have nothing for this title id."
+                    else -> "The bundled cheat library did not load."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -375,30 +445,64 @@ private fun CheatEntryCard(
     showToggle: Boolean,
     toggleEnabled: Boolean,
     status: String,
+    expanded: Boolean,
     onEnabledChange: (Boolean) -> Unit,
     onOpen: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (enabled) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        }
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(start = 12.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(entry.cheatName ?: entry.title, style = MaterialTheme.typography.titleMedium)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    entry.cheatName ?: entry.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 if (entry.cheatName != null) {
-                    Text(entry.title, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        entry.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Text(status, style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CheatBadge(text = status, tone = statusTone(status))
+                    CheatBadge(text = sourceLabel(entry), tone = BadgeTone.Neutral)
+                }
                 if (entry.titleIds.isNotEmpty()) {
-                    Text(entry.titleIds.joinToString(), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        entry.titleIds.joinToString("  "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
-            TextButton(onClick = onOpen) {
-                Text("Details")
-            }
+            Icon(
+                painter = painterResource(
+                    id = if (expanded) R.drawable.ic_keyboard_arrow_up else R.drawable.ic_keyboard_arrow_down
+                ),
+                contentDescription = if (expanded) "Hide details" else "Show details",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             if (showToggle) {
+                Spacer(Modifier.width(4.dp))
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
@@ -406,6 +510,43 @@ private fun CheatEntryCard(
                 )
             }
         }
+    }
+}
+
+private enum class BadgeTone { On, Pending, Unavailable, Neutral }
+
+private fun statusTone(status: String): BadgeTone = when {
+    status.startsWith("On") -> BadgeTone.On
+    status.startsWith("Not available") -> BadgeTone.Unavailable
+    status.startsWith("Start game") || status.startsWith("Open this game") -> BadgeTone.Pending
+    else -> BadgeTone.Neutral
+}
+
+private fun sourceLabel(entry: CheatEntry): String =
+    if (entry.format == CheatRepository.FORMAT_RPCS3_PATCH) "RPCS3 patch" else "Artemis code"
+
+@Composable
+private fun CheatBadge(text: String, tone: BadgeTone) {
+    val container = when (tone) {
+        BadgeTone.On -> MaterialTheme.colorScheme.primary
+        BadgeTone.Pending -> MaterialTheme.colorScheme.tertiaryContainer
+        BadgeTone.Unavailable -> MaterialTheme.colorScheme.errorContainer
+        BadgeTone.Neutral -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val content = when (tone) {
+        BadgeTone.On -> MaterialTheme.colorScheme.onPrimary
+        BadgeTone.Pending -> MaterialTheme.colorScheme.onTertiaryContainer
+        BadgeTone.Unavailable -> MaterialTheme.colorScheme.onErrorContainer
+        BadgeTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(6.dp)) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1
+        )
     }
 }
 
@@ -417,7 +558,7 @@ private fun CheatPreview(
     canToggle: Boolean,
     isGameScreen: Boolean
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(entry.cheatName ?: entry.fileName, style = MaterialTheme.typography.titleMedium)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
