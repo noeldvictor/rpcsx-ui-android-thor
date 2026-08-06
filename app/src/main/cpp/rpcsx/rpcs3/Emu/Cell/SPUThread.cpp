@@ -3611,6 +3611,14 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 				}
 				}
 
+				// Same seqlock read side as GETLLAR: the copy above has to be
+				// observed between the two reservation reads, and the first read's
+				// load-acquire only stops it being hoisted, not sunk. Sizes below
+				// 128 have no data re-compare below to fall back on, so the
+				// timestamp check is the only guard and it needs this barrier to
+				// mean anything on AArch64. Free on x86.
+				atomic_fence_acquire();
+
 				if (time0 != vm::reservation_acquire(eal) || (size0 == 128 && !cmp_rdata(*reinterpret_cast<spu_rdata_t*>(dst0), *reinterpret_cast<const spu_rdata_t*>(src))))
 				{
 					continue;
@@ -6052,6 +6060,22 @@ bool spu_thread::process_mfc_cmd()
 			{
 				mov_rdata(rdata, data);
 			}
+
+			// Seqlock read side: the 128-byte copy above is only valid if it is
+			// observed strictly between the two reservation reads.
+			//
+			// The first read is a load-acquire, which stops the copy being hoisted
+			// above it. Load-acquire is one-way though: it orders later accesses
+			// after itself and does nothing to stop earlier accesses being observed
+			// after it. Without a barrier here the copy may be satisfied after the
+			// validating read below, so a writer that bumped the counter in between
+			// would go undetected, which is the exact case this check exists for.
+			//
+			// x86 never shows this: TSO does not reorder loads with loads, so the
+			// read side needs no barrier there and none was written.
+			// atomic_fence_acquire is a compiler barrier only on x86, so this costs
+			// nothing there and emits the DMB that AArch64 actually requires.
+			atomic_fence_acquire();
 
 			if (u64 time0 = vm::reservation_acquire(addr); (ntime & test_mask) != (time0 & test_mask))
 			{
