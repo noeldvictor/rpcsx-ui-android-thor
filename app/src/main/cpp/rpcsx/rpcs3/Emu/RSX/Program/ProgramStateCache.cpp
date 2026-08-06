@@ -787,7 +787,18 @@ namespace rsx
 			const char* data = static_cast<const char*>(rsx_prog.get_data()) + offset_in_fragment_program;
 
 			const __m128i vector = _mm_loadu_si128(reinterpret_cast<const __m128i*>(data));
+
+#ifdef ARCH_ARM64
+			// Reversing the bytes within each 16-bit lane is a single REV16 on
+			// AArch64. The shift/shift/or idiom below is how x86 has to spell
+			// it, and running that through sse2neon costs three vector
+			// operations plus a duplicated shift amount for what one
+			// instruction does. This is a per-draw path when fragment constants
+			// change, so it is worth the split.
+			const __m128i shuffled_vector = vreinterpretq_m128i_u8(vrev16q_u8(vreinterpretq_u8_m128i(vector)));
+#else
 			const __m128i shuffled_vector = _mm_or_si128(_mm_slli_epi16(vector, 8), _mm_srli_epi16(vector, 8));
+#endif
 
 			if (sanitize)
 			{
