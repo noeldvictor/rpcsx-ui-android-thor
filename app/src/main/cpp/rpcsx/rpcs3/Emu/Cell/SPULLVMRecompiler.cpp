@@ -6391,7 +6391,14 @@ public:
 
 	void EQV(spu_opcode_t op)
 	{
+#ifdef ARCH_ARM64
+		// NEON has no XNOR, so ~(a ^ b) costs an EOR plus a NOT. BCAX with an
+		// all-ones second operand is a ^ ~b, which is the same value in one
+		// instruction. Falls back to the plain form without SHA-3.
+		set_vr(op.rt, bcax(get_vr<u32[4]>(op.ra), splat<u32[4]>(0xffffffff), get_vr<u32[4]>(op.rb)));
+#else
 		set_vr(op.rt, ~(get_vr(op.ra) ^ get_vr(op.rb)));
+#endif
 	}
 
 	void CGTB(spu_opcode_t op)
@@ -7205,17 +7212,19 @@ public:
 
 		if (perm_only)
 		{
-			const auto cm = eval(c & 0x9f);
-			set_vr(op.rt4, tbl2(a, b, eval(cm ^ 0x0f)));
+			// 0x9f is ~0x60, so (c & 0x9f) ^ 0x0f is BCAX(0x0f, c, 0x60).
+			set_vr(op.rt4, tbl2(a, b, bcax(splat<u8[16]>(0x0f), c, splat<u8[16]>(0x60))));
 			return;
 		}
 
 		{
 			const auto x = tbl(zero_lut, (c >> 4));
-			// AND should be before XOR so that llvm can combine them into BCAX
-			// Though for some reason it doesn't seem to be doing that.
-			const auto cm = eval(c & ~0x60);
-			set_vr(op.rt4, tbx2(x, a, b, eval(cm ^ 0x0f)));
+			// Upstream notes that AND-before-XOR here should let LLVM form BCAX
+			// and that it does not. Thor reports sha3, so emit it directly:
+			// BCAX(0x0f, c, 0x60) is 0x0f ^ (c & ~0x60), which is the selector
+			// this path wants, in one instruction rather than a BIC plus an EOR.
+			// bcax() falls back to the arithmetic form without SHA-3.
+			set_vr(op.rt4, tbx2(x, a, b, bcax(splat<u8[16]>(0x0f), c, splat<u8[16]>(0x60))));
 			return;
 		}
 #else

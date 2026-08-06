@@ -3102,6 +3102,10 @@ protected:
 
 	// Allow direct TBL2/TBX2 emission. Cleared on register-scavenger retry.
 	bool m_use_tbl2 = true;
+
+	// Allow AArch64 SHA-3 bitwise instructions (BCAX, EOR3). They are ordinary
+	// bitwise ops that happen to be gated behind the crypto extension.
+	bool m_use_sha3 = false;
 #endif
 
 	// IR builder
@@ -3790,6 +3794,66 @@ public:
 		}
 
 		result.value = m_ir->CreateCall(get_intrinsic<u8[16]>(llvm::Intrinsic::aarch64_neon_tbl1), {data0, index});
+		return result;
+	}
+
+	// AArch64 SHA-3 bitwise ops. Despite the extension name these are plain
+	// logic instructions, and they collapse two-op sequences the SPU emulation
+	// produces constantly. LLVM does not form them on its own here, so they are
+	// emitted directly. Both fall back to the arithmetic form when the CPU has
+	// no SHA-3, so callers never need to branch.
+
+	// BCAX: a ^ (b & ~c), in one instruction instead of a BIC plus an EOR.
+	template <typename T1, typename T2, typename T3, typename T = llvm_common_t<T1, T2, T3>>
+	value_t<T> bcax(T1 a, T2 b, T3 c)
+	{
+		value_t<T> result;
+		const auto va = a.eval(m_ir);
+		const auto vb = b.eval(m_ir);
+		const auto vc = c.eval(m_ir);
+
+		if (!m_use_sha3)
+		{
+			result.value = m_ir->CreateXor(va, m_ir->CreateAnd(vb, m_ir->CreateNot(vc)));
+			return result;
+		}
+
+		// The intrinsic is defined over <2 x i64>; the operation is bitwise so
+		// the lane view is irrelevant.
+		const auto i64x2 = get_type<u64[2]>();
+		const auto call = m_ir->CreateCall(
+			get_intrinsic<u64[2]>(llvm::Intrinsic::aarch64_crypto_bcaxu),
+			{m_ir->CreateBitCast(va, i64x2),
+			 m_ir->CreateBitCast(vb, i64x2),
+			 m_ir->CreateBitCast(vc, i64x2)});
+
+		result.value = m_ir->CreateBitCast(call, get_type<T>());
+		return result;
+	}
+
+	// EOR3: a ^ b ^ c, in one instruction instead of two EORs.
+	template <typename T1, typename T2, typename T3, typename T = llvm_common_t<T1, T2, T3>>
+	value_t<T> eor3(T1 a, T2 b, T3 c)
+	{
+		value_t<T> result;
+		const auto va = a.eval(m_ir);
+		const auto vb = b.eval(m_ir);
+		const auto vc = c.eval(m_ir);
+
+		if (!m_use_sha3)
+		{
+			result.value = m_ir->CreateXor(m_ir->CreateXor(va, vb), vc);
+			return result;
+		}
+
+		const auto i64x2 = get_type<u64[2]>();
+		const auto call = m_ir->CreateCall(
+			get_intrinsic<u64[2]>(llvm::Intrinsic::aarch64_crypto_eor3u),
+			{m_ir->CreateBitCast(va, i64x2),
+			 m_ir->CreateBitCast(vb, i64x2),
+			 m_ir->CreateBitCast(vc, i64x2)});
+
+		result.value = m_ir->CreateBitCast(call, get_type<T>());
 		return result;
 	}
 
