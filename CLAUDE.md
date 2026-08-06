@@ -195,6 +195,18 @@ hunt is a decision that is *correct reasoning on x86* applied unconditionally.
 | `m_use_fma` | FMA is optional; allowlist CPU names | FMA is mandatory, so the allowlist can only fail to enable it |
 | MFC DMA width | AVX aligned moves want a 32-byte aligned constant address | `LDP`/`STP` pair at any alignment, so the gate only halves throughput |
 | `VPKUHUS`/`VPKUWUS` | `PACKUSWB` narrows signed to unsigned, so pre-clamp each half | blocks `UQXTN`; the sibling shape gets it in two instructions |
+| `mov_rdata_nt` | streaming stores are an x86 intrinsic, so everyone else gets `memcpy` | the non-temporal intent is silently dropped; `STNP` restores it for free |
+
+Two traps while verifying this class:
+
+- **The build uses LTO, so the `.o` files are bitcode.** `llvm-objdump` reports
+  "not recognized as a valid object file" and any instruction count taken from
+  them reads zero, which looks exactly like "my change did nothing". Check
+  codegen with a standalone compile of the same shape, or against the linked
+  `.so`.
+- **Loop-idiom recognition undoes non-temporal stores.** A tidy loop of
+  `__builtin_nontemporal_store` gets rewritten back into `memcpy` with the
+  metadata dropped. Write those out.
 
 The PPU interpreter is a useful oracle here. It implements the same conversions
 and already did the right thing on ARM, saturating and mapping NaN to the
