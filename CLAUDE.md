@@ -227,6 +227,20 @@ which scoped storage does not permit from a shell: `bcax` present, `fcvtzs`
 standing alone with no XOR correction beside it, `fmla` confirming fused
 multiply-add is live, and dense `ldp`/`stp` pairing.
 
+**An x86-only SIMD fast path is not automatically an ARM gap.** RSX builds
+`copy_data_swap_u32` and the index-buffer `upload_untouched` as hand-written
+asmjit SIMD kernels under `#if defined(ARCH_X64)`, leaving everyone else on
+functions named `_naive`. That reads like ARM running a scalar loop over
+megabytes of vertex data per frame. It is not: clang vectorizes both. The swap
+loop compiles to `rev32` over `ldp`/`stp`, and the index loop to `umin`/`umax`
+with `uminv`/`umaxv` reductions and `rev16`, with scalar code only in the tail.
+
+The reason the asmjit machinery exists is that SSSE3 and AVX are *optional* on
+x86, so the fast path has to be selected at runtime. NEON is mandatory on
+AArch64, so the compiler can just emit it at build time. That whole apparatus is
+solving an x86 problem. Check the generated code before hand-writing NEON to
+"fix" a `_naive` fallback.
+
 Checked and cleared, so nobody repeats the work:
 
 - **Floating-point mode.** No `MXCSR`, `FPCR`, `DAZ` or `FTZ` anywhere. Denormal
