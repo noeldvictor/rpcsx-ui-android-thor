@@ -376,3 +376,35 @@ Classification: `codegen-proven-on-device` for BCAX, and
 `stackable-thermal-win` for the affinity default. Still no FPS or gameplay
 credit: no run has reached the title, so nothing here is a speed claim under
 `Speed Claim Rules`.
+
+## Why no FPS number: the title is out of thermal reach tonight
+
+Twelve guarded boots across the night, every one from its own cool window,
+launch temperatures `31.9` to `35.5 C`. None reached the title.
+
+Cache warmth is not the limiter. Runtime survival rose `0.7 -> 9.5 -> 29.2 s`
+as the RSX, PPU and SPU caches filled, then stopped improving; four further
+rounds held flat at 10 to 20 s and the readiness gate never classified
+`title_menu_present=True`. A final attempt capped the Vulkan pipeline preload
+to 16 with hits-only, on the theory that compiling 593 pipelines is the largest
+optional heat source before the title. It reached `29.9 s` of gate progress,
+the best of the series, and still stopped at `wait-10000-ms`.
+
+The binding constraint is the device's thermal starting point, not the
+emulator. The boot climbs from about `33 C` to `66-69 C` in ten to twenty
+seconds no matter how warm the caches are, because the whole emulator is busy
+across all eight cores. Meanwhile the device idles with `cpu-1-9` plateauing at
+`41-45 C` and `pm8550b_lite_tz` at `55 C`, since it is on USB power for adb.
+The July captures that did reach the title and a first battle were taken with
+the device sitting at `23-25 C`.
+
+So the missing FPS number needs an environment change, not more engineering:
+the Thor has to start from a genuinely cold state, which in practice means
+off charge and in a cooler room, after which the existing
+`eternal-sonata-field-route` and `eternal-sonata-battle-intro-route` profiles
+produce the field, menu and first-battle proofs that `Speed Claim Rules`
+requires before any speed claim.
+
+Also worth knowing for whoever picks this up: FPS is never logged. It is only
+drawn by `overlay_perf_metrics.cpp` into the on-screen overlay, so an FPS figure
+comes from reading a capture, not from parsing a log.
