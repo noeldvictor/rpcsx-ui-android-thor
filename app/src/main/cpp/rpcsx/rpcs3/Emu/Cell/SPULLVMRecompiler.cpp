@@ -5042,11 +5042,28 @@ public:
 
 					u32 stride = 16;
 
+#ifdef ARCH_ARM64
+					// LDP/STP pair two 128-bit accesses at any alignment, so the
+					// constant 32-byte alignment the x86 path insists on is a
+					// vmovdqa habit rather than a requirement. Demanding it here
+					// meant every copy whose LS address was not a known aligned
+					// constant fell back to the 16-byte stride and emitted twice
+					// the memory instructions. The copies below already declare
+					// align 16, so widening on size alone is safe.
+					(void)clsa;
+
+					if (csize >= 32)
+					{
+						vtype = get_type<u8[32]>();
+						stride = 32;
+					}
+#else
 					if (m_use_avx && csize >= 32 && !(clsa % 32))
 					{
 						vtype = get_type<u8[32]>();
 						stride = 32;
 					}
+#endif
 
 					if (csize > 0 && csize <= 16)
 					{

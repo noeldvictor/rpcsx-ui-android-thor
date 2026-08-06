@@ -180,6 +180,39 @@ version of the list below evaporated on contact.
   (`CreateICmp` into CR fields) rather than host-flag based, so there is
   nothing to map even with inline asm.
 
+## The x86-habit audit
+
+The most productive review of this codebase is not "where can we add an ARM
+instruction" but "where does portable code encode an x86 assumption". Three of
+those found so far, and two were wrong rather than merely slow. The pattern to
+hunt is a decision that is *correct reasoning on x86* applied unconditionally.
+
+| site | the x86 assumption | what it does on ARM |
+| --- | --- | --- |
+| SPU `CFLTS` | `CVTTPS2DQ` yields `0x80000000` on overflow, so XOR-correct it | `FCVTZS` already saturates, so the correction *produces* the wrong value |
+| `m_use_fma` | FMA is optional; allowlist CPU names | FMA is mandatory, so the allowlist can only fail to enable it |
+| MFC DMA width | AVX aligned moves want a 32-byte aligned constant address | `LDP`/`STP` pair at any alignment, so the gate only halves throughput |
+
+Checked and cleared, so nobody repeats the work:
+
+- **Floating-point mode.** No `MXCSR`, `FPCR`, `DAZ` or `FTZ` anywhere. Denormal
+  flushing is explicit in software (`ppu_flush_denormal`), so there is no host
+  FP-mode assumption to port.
+- **Fences.** `atomic_fence_*` fall through to `__atomic_thread_fence`, which
+  emits real `DMB` on AArch64. Only the MSVC/x86 branches are compiler-barrier
+  only, which is correct for TSO.
+- **Bit gather.** `GB`, `GBH` and `GBB` all have ARM paths via `SDOT` and
+  `SMMLA`/`UMMLA`; the `m_use_gfni` branches are x86-only and fall through.
+- **AltiVec float to fixed.** `VCTSXS` and `VCTUXS` clamp *before* converting
+  rather than correcting afterwards, so they are architecture-neutral. This is
+  the shape `CFLTS` should have had.
+- **Dead x86 branches.** The 256-bit checksum loads and the VNNI `SUMB` path sit
+  inside `#ifndef ARCH_ARM64`, so `m_use_avx` and `m_use_vnni` cost nothing
+  there. `m_use_avx` remains live in exactly two places, and only the DMA one
+  mattered.
+- **Atomics.** AOT builds emit inline LSE, with no `__aarch64_cas*` outline
+  calls to remove.
+
 ## Where the wins actually were
 
 `fptosi`/`fptoui` are **poison** on overflow, so shared code bolts a correction
