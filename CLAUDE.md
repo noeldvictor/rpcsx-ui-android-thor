@@ -241,6 +241,26 @@ AArch64, so the compiler can just emit it at build time. That whole apparatus is
 solving an x86 problem. Check the generated code before hand-writing NEON to
 "fix" a `_naive` fallback.
 
+## sse2neon, and which callers of it matter
+
+`Emu/CPU/sse2neon.h` is a compatibility shim that implements SSE intrinsics on
+NEON, and three files run through it on ARM. The instinct is to rewrite all of
+them; the useful question is which are hot.
+
+| caller | SSE uses | verdict |
+| --- | --- | --- |
+| `Emu/Cell/SPUInterpreter.cpp` | 248 | cold here. `spu_decoder` defaults to `llvm`, so this C++ interpreter is only reached in interpreter decoder modes. The SPU LLVM path builds its own interpreter through `compile_interpreter`, which is generated IR, not this file. |
+| `Emu/RSX/Program/ProgramStateCache.cpp` | 11 | hot, and fixed. Fragment-constant byteswap now uses `REV16` instead of the shift/shift/or idiom. The AVX-512 routines beside it are `#ifdef ARCH_X64` and never reach ARM. |
+| `Emu/RSX/Common/buffer_stream.hpp` | 4 | fine. `_mm_set_epi32`, `_mm_loadu_si128` and `_mm_stream_si128` all map cleanly. |
+
+One caveat worth knowing rather than acting on: sse2neon routes
+`_mm_stream_si128` through `__builtin_nontemporal_store`, which preserves the
+non-temporal intent but, for an isolated 16-byte value, lowers to a D-register
+split and `STNP d0, d1`, three instructions where a plain `STR Q` is one. Paired
+32-byte stores get the good form, `STNP q0, q1`. Whether the cache benefit pays
+for the extra instructions in the vertex streaming path is a measurement, not a
+guess.
+
 Checked and cleared, so nobody repeats the work:
 
 - **Floating-point mode.** No `MXCSR`, `FPCR`, `DAZ` or `FTZ` anywhere. Denormal
