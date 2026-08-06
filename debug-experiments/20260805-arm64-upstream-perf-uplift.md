@@ -536,6 +536,24 @@ so something is presenting black frames at a steady low rate while the guest
 does no SPU work at all. `tools/thor_thread_wait_snapshot.ps1` is the tool
 already in the tree for this.
 
+Two probe attempts, so the next one does not repeat them:
+
+- Routing the probe through the macro as `wait:14000;threads:...` never reached
+  its first snapshot. The guard fires during the heavy first ten seconds of
+  compile, before the stall window opens, so the snapshot has to come from
+  outside the macro.
+- Sampling `/proc/<pid>/task/*` live alongside the run does work and survives
+  the force-stop, but the first cut of it was useless: it sorted by frequency
+  and kept the top 22, which is all Android and RPCSX infrastructure threads.
+  PPU and SPU threads carry unique names and therefore a count of one, so they
+  fell off the tail. Filter to `comm` matching `ppu|spu|rsx` instead of ranking
+  by count, and read `stat` field 3 by index rather than by whitespace split,
+  since several thread names contain spaces and shift the columns.
+
+The unanswered question is narrow and worth one clean run: at roughly `15 s`,
+with SPU utilization at zero, what are the PPU threads blocked on, and is the
+`CELL_ESRCH` semaphore the thing they are waiting for.
+
 ### Superseded: the title is unreachable from this thermal baseline, at any margin
 
 Final attempt, capture `20260806-070046-thor-input-eternal-sonata-field-route`.
