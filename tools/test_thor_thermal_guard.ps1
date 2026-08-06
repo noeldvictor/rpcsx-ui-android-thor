@@ -343,6 +343,24 @@ if ($speedSprintSource -notmatch '\[ValidateSet\("on",\s*"off"\)\]\s*\[string\]\
     $speedSprintSource -notmatch 'VkPreloadCacheHitsOnly\s*=\s*\$AndroidVkPreloadCacheHitsOnly') {
     throw "The Android speed-sprint wrapper does not expose and forward the opt-in Vulkan preload cache-hits-only route."
 }
+# The near-limit probe must be sustained, not confirmed by an immediate re-read.
+# Launch reads 56.6 C at t=4s and falls to 46.6 C by t=10s, so an immediate
+# re-read samples the same spike and stops a run that was never in danger. The
+# hard early-stop stays immediate; only the softer probe waits.
+$macroSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_input_macro.ps1") -Raw
+if ($macroSource -notmatch '\[ValidateRange\(0,\s*60\)\]\s*\[int\]\$ThermalRuntimeProbeSustainSeconds\s*=\s*6') {
+    throw "The route does not expose a bounded near-limit probe sustain window."
+}
+if ($macroSource -notmatch '(?s)action -eq "confirm".*?sustainDeadline = \(Get-Date\)\.AddSeconds\(\$ThermalRuntimeProbeSustainSeconds\)') {
+    throw "The near-limit probe no longer holds open across a sustain window."
+}
+if ($macroSource -notmatch '(?s)sustainDeadline.*?status=confirm-cleared') {
+    throw "A probe that falls back below the threshold must clear rather than stop the run."
+}
+if ($macroSource -notmatch '(?s)sustainDeadline.*?\$interim\.action -eq "stop"') {
+    throw "The early-stop threshold must still stop immediately inside the sustain window."
+}
+
 if ($zoneCommand -match '\$\(\s*cat') {
     throw "Thermal-zone polling still spawns per-zone cat processes instead of using shell built-ins."
 }

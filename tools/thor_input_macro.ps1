@@ -27,6 +27,11 @@
     [double]$ThermalRuntimeStopHeadroomC = 4.0,
     [ValidateRange(0, 30)]
     [double]$ThermalRuntimeProbeWindowC = 16.0,
+    # How long the near-limit probe must stay hot before it counts. Launch
+    # produces a transient that decays within a few seconds, so an immediate
+    # re-read confirms the spike rather than the load.
+    [ValidateRange(0, 60)]
+    [int]$ThermalRuntimeProbeSustainSeconds = 6,
     [double]$MaxBatteryTemperatureC = 39.0,
     [ValidateRange(35, 60)]
     [double]$MaxSkinTemperatureC = 45.0,
@@ -749,12 +754,43 @@ function Assert-ThorRuntimeThermalBudget {
     $decision = Get-ThorThermalRuntimeGuardDecision @decisionParams
 
     if ($null -ne $decision -and $decision.action -eq "confirm") {
-        "$(Get-Date -Format o) stage=$Stage status=confirm-requested code=$($decision.code) probe_temperature_c=$($decision.probe_temperature_c) stop_temperature_c=$($decision.stop_temperature_c) hard_limit_c=$MaxSiliconTemperatureC" |
+        "$(Get-Date -Format o) stage=$Stage status=confirm-requested code=$($decision.code) probe_temperature_c=$($decision.probe_temperature_c) stop_temperature_c=$($decision.stop_temperature_c) hard_limit_c=$MaxSiliconTemperatureC sustain_seconds=$ThermalRuntimeProbeSustainSeconds" |
             Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
-        $snapshot = Assert-ThorThermalBudget "$Stage-near-limit-confirm" -PassThru
-        $decisionParams.Snapshot = $snapshot
-        $decisionParams.Confirmed = $true
-        $decision = Get-ThorThermalRuntimeGuardDecision @decisionParams
+
+        # Confirming with an immediate re-read cannot tell a launch transient
+        # from sustained load, because the re-read lands inside the same spike.
+        # Measured on 2026-08-06: launch reads 56.6 C at t=4s and falls back to
+        # 46.6 C by t=10s, which force-stopped fifteen consecutive runs on heat
+        # the device never sustained. So hold the probe open across a window and
+        # require it to stay hot. The hard early-stop below is never deferred.
+        $sustainDeadline = (Get-Date).AddSeconds($ThermalRuntimeProbeSustainSeconds)
+        $decision = $null
+
+        while ($true) {
+            Start-Sleep -Seconds 1
+            $snapshot = Assert-ThorThermalBudget "$Stage-near-limit-confirm" -PassThru
+            $decisionParams.Snapshot = $snapshot
+            $decisionParams.Remove("Confirmed") | Out-Null
+            $interim = Get-ThorThermalRuntimeGuardDecision @decisionParams
+
+            if ($null -eq $interim) {
+                "$(Get-Date -Format o) stage=$Stage status=confirm-cleared silicon_temperature_c=$($snapshot.silicon_temperature_c) note=transient" |
+                    Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+                break
+            }
+
+            if ($interim.action -eq "stop") {
+                # Crossed the early-stop threshold; that is a real limit, not a probe.
+                $decision = $interim
+                break
+            }
+
+            if ((Get-Date) -ge $sustainDeadline) {
+                $decisionParams.Confirmed = $true
+                $decision = Get-ThorThermalRuntimeGuardDecision @decisionParams
+                break
+            }
+        }
     }
 
     if ($null -ne $decision -and $decision.action -eq "stop") {
@@ -1016,6 +1052,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Thermal poll interval seconds: $ThermalPollIntervalSeconds",
     "- Runtime thermal early-stop headroom C: $ThermalRuntimeStopHeadroomC",
     "- Runtime thermal confirmation window C: $ThermalRuntimeProbeWindowC",
+    "- Runtime thermal probe sustain seconds: $ThermalRuntimeProbeSustainSeconds",
     "- Max battery temperature C: $MaxBatteryTemperatureC",
     "- Max skin temperature C: $MaxSkinTemperatureC",
     "- Max silicon temperature C: $MaxSiliconTemperatureC",
