@@ -30,9 +30,17 @@ object GpuDriverHelper {
             }
 
             val metadataFile = File(entry.canonicalPath, GPU_DRIVER_META_FILE)
-            // Delete entries without metadata
             if (!metadataFile.exists()) {
-                entry.delete()
+                // This used to call entry.delete(), which silently fails on a
+                // non-empty directory, so such a driver was invisible in the list
+                // yet still on disk and still loadable if it was the selected one.
+                //
+                // Deliberately still not deleting it. Making that delete work
+                // would destroy a driver the user may be running right now, and
+                // an unreadable meta.json is not good enough evidence to throw
+                // away a payload the loader can still use. Skip it and say so.
+                Log.w(TAG, "Driver directory ${entry.name} has no $GPU_DRIVER_META_FILE; " +
+                        "not listing it, and leaving it alone in case it is the driver in use")
                 return@forEach
             }
 
@@ -96,9 +104,29 @@ object GpuDriverHelper {
         return installUnpackedDriver(context, installTempDir)
     }
 
-    private fun installUnpackedDriver(context: Context, unpackDir: File): GpuDriverInstallResult {
+    private fun installUnpackedDriver(context: Context, unpackDirRaw: File): GpuDriverInstallResult {
         val cleanup = {
-            unpackDir.deleteRecursively()
+            unpackDirRaw.deleteRecursively()
+        }
+
+        // AdrenoTools packages are supposed to hold meta.json at the archive
+        // root, and plenty do not: they wrap everything in a single folder named
+        // after the release, e.g. Turnip_v26.0.0_R8/meta.json. Those used to fail
+        // as MissingMetadata, which looked identical to a corrupt download and
+        // left nothing in the driver list. Descend one level when the root is a
+        // single directory that does carry the metadata.
+        val unpackDir = run {
+            if (File(unpackDirRaw, GPU_DRIVER_META_FILE).isFile) return@run unpackDirRaw
+
+            val entries = unpackDirRaw.listFiles().orEmpty()
+            val nested = entries.singleOrNull { it.isDirectory }
+
+            if (nested != null && File(nested, GPU_DRIVER_META_FILE).isFile) {
+                Log.i(TAG, "Driver metadata found one level down, in ${nested.name}")
+                nested
+            } else {
+                unpackDirRaw
+            }
         }
 
         // Check that the metadata file exists
@@ -134,6 +162,12 @@ object GpuDriverHelper {
         if (!unpackDir.renameTo(finalInstallDir)) {
             cleanup()
             throw IOException("Failed to create directory ${finalInstallDir.name}")
+        }
+
+        // When the metadata was one level down, the wrapper directory is still
+        // sitting in the cache. Harmless but it accumulates per install.
+        if (unpackDir != unpackDirRaw) {
+            unpackDirRaw.deleteRecursively()
         }
 
         return GpuDriverInstallResult.Success
