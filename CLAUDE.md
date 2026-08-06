@@ -239,6 +239,53 @@ Checked and cleared, so nobody repeats the work:
 - **Atomics.** AOT builds emit inline LSE, with no `__aarch64_cas*` outline
   calls to remove.
 
+## The memory model, and the one structural gap left
+
+x86 is total-store-ordered and ARM is weakly ordered, so this is where an
+emulator written on x86 is most likely to be subtly wrong. Audited, and the
+synchronization primitives hold up:
+
+- **`atomic_t` is conservative by construction.** `load()` is `SEQ_CST`,
+  `store()` is `RELEASE`, and every read-modify-write is `SEQ_CST`. On ARM those
+  become `LDAR`/`STLR` and full-barrier RMWs, so the default path is safe.
+- **`observe()` is the relaxed one, and it is only used for settings.** All
+  thirteen uses are config reads behind `#ifdef ANDROID`, values written once at
+  boot. That is the one place where relaxed is right and cheap, and it is the
+  only place it appears.
+- **Fences are real.** `atomic_fence_*` fall through to
+  `__atomic_thread_fence`, which emits `DMB` on AArch64; the compiler-barrier
+  forms are x86-only, which is correct for TSO.
+- **`trigger_write_page_fault` looks alarming and is not.** The ARM64 inline-asm
+  path excludes Android, but the generic fallback compiles to
+  `ldset wzr, w8, [x0]`, one instruction, because `-march=armv8.2-a` supplies
+  LSE. It is actually one instruction shorter than the hand-written version.
+
+Two things that are worth knowing rather than acting on blindly:
+
+- **The GETLLAR fast path is a seqlock, and seqlocks are the classic weak-memory
+  trap.** It reads the reservation counter, compares 128 bytes, then re-reads
+  the counter and re-compares. Both counter reads are `SEQ_CST`, so nothing can
+  hoist above the first one. Acquire is one-way though, so in principle the data
+  comparison can sink below the second counter read, which is exactly what a
+  seqlock must not allow. The doubled check makes this extremely narrow rather
+  than theoretical-only, and this code runs on Apple Silicon upstream, so it is
+  recorded as a risk area rather than "fixed" by dropping a `DMB` into the
+  hottest SPU path on a hunch. If reservation desyncs ever show up on ARM, start
+  here, and make the change with a measurement attached.
+- **The SPU atomic fast path is x86-only, and that is the largest remaining
+  structural gap.** `utils::has_rtm()` is hard-coded `false` on AArch64, so
+  `g_use_rtm` is always false and ARM takes the pre-TSX fallback on all eight
+  branches that test it. For a 128-byte atomic store that means
+  `vm::writer_lock`: a CAS loop on one shared 64-bit bitmask, plus
+  `cpu_thread::suspend_all` on some paths, where x86 uses a hardware
+  transaction. Every SPU atomic therefore contends on a single cache line across
+  eight cores.
+
+  There is no ARM equivalent of TSX, so this cannot be ported; it would have to
+  be replaced with something ARM-shaped, such as finer-grained per-reservation
+  locking using LSE. That is a real design change with real risk, and it is the
+  highest-value ARM work left in this codebase.
+
 ## Where the wins actually were
 
 `fptosi`/`fptoui` are **poison** on overflow, so shared code bolts a correction
