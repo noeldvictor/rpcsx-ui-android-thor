@@ -3,6 +3,11 @@
 This file is the compact operating contract. It is not an experiment ledger.
 Put dated run details in `debug-experiments/`, not here.
 
+`CLAUDE.md` holds the AArch64 hardware knowledge: what the 8 Gen 2 exposes,
+what the JIT advertises, which features map to which lowering, how to verify a
+codegen change at three levels, and the ranked list of hardware still unused.
+Read it before proposing a codegen optimization.
+
 ## Communication
 
 - Be concise, factual, and specific.
