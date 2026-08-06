@@ -209,3 +209,39 @@ or thermal-win credit, and no BCAX emission proof yet.
 Note for the next round: a host-side probe that filters only
 `cpu|gpu|soc|...` thermal zones read `34 C` a minute before the harness
 measured `46.2 C`. Trust the harness preflight, not an ad-hoc zone scan.
+
+The round then stopped, because the device stopped being idle. A 25-sample
+cooldown watch from `21:33` to `22:09` never reached the `36 C` mark and instead
+recorded repeated `cpu-1-9` spikes to `75.5`, `71.5`, `70.7`, `75.1`, `68.7` and
+`71.5 C`, with `pidof net.rpcsx.easy` empty at every sample boundary. That is
+another agent's workload on the shared Thor, not ours. Contending would have
+invalidated both sides, so the round was abandoned rather than forced.
+
+Left behind on the device, so the next operator is not surprised: the installed
+package is now the thortest APK `7CD49709...2FE40` carrying the BCAX change,
+replacing whatever was installed before. `debug.rpcsx.thor.spu_native_object_cache`
+was restored to `off`, its pre-round value.
+
+## BCAX proof completed off-device
+
+The device A/B is still the right proof and is still owed. In the meantime the
+chain was closed with everything except execution, using the NDK's own AArch64
+backend (clang 20.0.0, matching the bundled LLVM 20.1.3 JIT closely enough for
+instruction selection) against the exact target the JIT configures on Thor,
+`-mcpu=cortex-a78+sha3`:
+
+- The IR the helpers emit, the `v2i64` overload of `llvm.aarch64.crypto.bcaxu`
+  and `.eor3u`, selects to a single instruction each:
+  `bcax v0.16b, v0.16b, v2.16b, v1.16b` and
+  `eor3 v0.16b, v0.16b, v1.16b, v2.16b`.
+- The same IR without `+sha3` fails with
+  `Cannot select: intrinsic %llvm.aarch64.crypto.bcaxu`. The `m_use_sha3` gate
+  and the JIT's `-sha3` attribute are therefore load-bearing, not decorative,
+  which is why the contract test pins both.
+- The arithmetic fallback the helper emits when the gate is clear lowers to
+  `eor` + `mvn` for `EQV` and `and` + `eor` for the `SHUFB` selector, so the
+  saving BCAX buys is exactly one instruction at each of the three call sites.
+
+What remains unproven is only that Thor executes it, which needs one guarded
+boot on an idle device: pull the `spu-native-v2` objects afterwards and compare
+`bcax` against the recorded `bcax=0` baseline.
