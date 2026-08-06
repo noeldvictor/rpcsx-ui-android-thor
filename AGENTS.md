@@ -624,6 +624,18 @@ Thor predictions.
 - To measure anything past boot, drive the `THOR_DEBUG_BOOT` intent directly and
   enforce the `72 C` bound with a short poll, rather than relying on the
   harness's early-stop and near-limit probe.
+- The near-limit probe now has to stay hot for
+  `-ThermalRuntimeProbeSustainSeconds` (default `6`) instead of confirming on an
+  immediate re-read, so a transient logs `confirm-cleared` and the run
+  continues. The early stop and the hard limit are unchanged and still fire
+  immediately.
+- The harness itself heats the device. Identical build, game and settings reach
+  `70.7 C` in about ten seconds under `thor_input_macro.ps1` and stay in the
+  fifties under a direct boot, because per-sample `adb shell` spawns walk ~50
+  `thermal_zone*` entries, the sustain loop polls once a second, and every
+  readiness poll takes a 1080p `screencap`. Harness temperatures include the
+  observer; sample at 2 s or finer, since a 4 s sweep aliases the launch spike
+  entirely.
 
 ## Visual Evidence Rules
 

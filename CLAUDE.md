@@ -86,8 +86,29 @@ consumes it, so the latency row is the one that describes it.
 
 Boot on a warm cache, measured end to end: SPU cache build finishes around
 `50 s` (`module 1179`), title menu follows, and holds `FPS 30.00`, the game's
-PS3 target, at `24.7-33.1%` total CPU and `53-57 C`. Peak over a `111 s` run
-was `57.8 C`.
+PS3 target, at `24.7-33.1%` total CPU.
+
+Thermal profile of a direct boot, sampled every 2 s (an earlier 4 s sweep
+reported a `57.8 C` peak and simply missed the spike):
+
+```
+2s:56.2  4s:60.2  6s:46.2  8s:47.8  10s:44.9 ... 60s:55.0 ... 90s:56.6
+```
+
+The transient peaks `60.2 C` at `t=4s` and collapses to `46.2 C` two seconds
+later, after which the run sits at `44-57 C` and drifts up slowly. Sample at
+2 s or finer; a 4 s sweep aliases the spike.
+
+**The harness is not thermally free.** The same build, game, and settings run
+through `thor_input_macro.ps1` climbs `59.4 -> 58.6 -> 61.0 -> 64.6 -> 70.7 C`
+within about ten seconds and trips the early stop, while the direct boot above
+never leaves the fifties. Its per-sample `adb shell` spawns walk roughly fifty
+`thermal_zone*` sysfs entries, the sustain loop adds a poll per second exactly
+when the device is hottest, and each readiness poll takes a 1080p `screencap`.
+That overhead lands on a machine with no spare headroom during boot. Treat
+harness temperatures as an upper bound that includes the observer, and use a
+direct `THOR_DEBUG_BOOT` when the question is about the emulator rather than the
+route.
 
 ## How to verify a codegen change actually landed
 
