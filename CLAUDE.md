@@ -389,6 +389,60 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## The dead macro that cost every 16-byte atomic
+
+The single largest find of the sweep, and it was not a missing instruction but a
+macro that could never be true.
+
+`util/atomic.hpp` has LSE2 fast paths for `atomic_t<u128>` guarded on
+`ARM_FEATURE_LSE2`. There is no ACLE feature macro for FEAT_LSE2, so
+`rx/types.hpp` inferred it from `__ARM_ARCH_8_4__`, `__ARM_ARCH_8_5__`,
+`__ARM_ARCH_8_6__` or `__ARM_ARCH_9__`. **Clang on AArch64 defines none of
+those, at any `-march`.** Verified directly: at `armv8.2-a`, `armv8.4-a` and
+`armv9-a` the only things that appear are `__ARM_ARCH 8` or `9` and the
+`__ARM_FEATURE_*` family. The comment above the probe even calls itself a hack
+because `__ARM_ARCH` "isn't universally defined"; the replacement doesn't work
+either. So the macro was never set, and every LSE2 path was dead code.
+
+What the fallback actually does:
+
+| operation | with LSE2 | what we were running |
+| --- | --- | --- |
+| `load` | `ldp` + `dmb ish` | `ldaxp` / `stlxp` / `cbnz` retry loop |
+| `store` | `dmb` + `stp` + `dmb` | falls through to `exchange`, same loop |
+| `release` | `dmb` + `stp` | falls through to `exchange`, same loop |
+
+The instruction count is the least of it. `STLXP` takes the cache line in
+**exclusive** state, so a thread that only wants to *read* a reservation
+acquires it for writing and invalidates every other core's copy. The structure
+this happens on is `vm::g_reservations`, shared by every SPU thread, which is
+the worst possible place in the emulator to force write-intent onto readers.
+This sits directly underneath the contention described in the memory-model
+section below.
+
+The fix is not to write new NEON but to make the build state what it knows.
+`-march` moves to `armv8.4-a`, the lowest baseline that architecturally
+guarantees FEAT_LSE2, and CMake defines `ARM_FEATURE_LSE2` explicitly, gated on
+that baseline. Deliberately **not** `armv9-a`: Armv9 mandates SVE2 and this
+device advertises no SVE, the same constraint `sanitize_android_arm64_llvm_cpu`
+exists to enforce on the JIT side.
+
+Two things had to be checked before trusting it, and both hold. An aligned
+16-byte `LDP` is only single-copy atomic *with* LSE2, so on a lower baseline
+this change would be a data race rather than a slow path — hence the
+configure-time guard that refuses the combination. And the alignment has to be
+real: `atomic_t<u128>` gets `alignas(16)` from `Align = sizeof(T)`, and
+`g_reservations` is `alignas(4096)` with every index a multiple of 16.
+
+Pinned by `tools/test_thor_arm64_lse2_atomics.ps1`, which checks the macro, the
+baseline, the Gradle/CMake agreement, the guard, and that the fast paths are
+still plain `LDP`/`STP`.
+
+The lesson generalizes past this one macro: **a feature probe that cannot fire
+is indistinguishable from a feature the hardware lacks.** Grep for `#if
+defined(SOME_FEATURE)` where nothing defines `SOME_FEATURE`, and check the
+`-dM -E` output rather than trusting the comment above the probe.
+
 ## The rest of the codebase, and why it needed nothing
 
 The sweep that found the eight items in the x86-habit table was carried to the

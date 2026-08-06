@@ -1037,8 +1037,23 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 	static inline T load(const T& dest)
 	{
 #if defined(ARM_FEATURE_LSE2)
+		// atomic_t::load() is sequentially consistent, and the LDAXP/STLXP loop
+		// in the #else branch delivered that: acquire on the load, release on
+		// the store-exclusive. A bare "ldp; dmb ish" is the *acquire* mapping,
+		// which would let this load reorder ahead of an earlier store and
+		// silently weaken every 128-bit reservation read.
+		//
+		// The leading barrier restores the seq_cst mapping. Note the store()
+		// below already uses dmb/stp/dmb while release() uses dmb/stp, so the
+		// distinction was understood; the load was simply never compiled, since
+		// ARM_FEATURE_LSE2 could not be defined before this fork set it.
+		//
+		// This still costs far less than the loop it replaces: no exclusive
+		// monitor, no retry, and above all no write intent, so a reader stops
+		// invalidating every other core's copy of the line.
 		u64 data[2];
 		__asm__ volatile("1:\n"
+						 "dmb ish\n"
 						 "ldp %x[data0], %x[data1], %[dest]\n"
 						 "dmb ish\n"
 			: [data0] "=r"(data[0]), [data1] "=r"(data[1])

@@ -12,10 +12,14 @@ val buildBundledRpcsxCore =
         else -> true
     }
 
+// Armv8.4-A is the lowest baseline guaranteeing FEAT_LSE2, which the 16-byte
+// atomic fast paths in util/atomic.hpp need. Kept in step with the CMake default
+// and its RPCSX_ANDROID_ARM_LSE2 guard; lowering this without also turning that
+// option off is a configure-time error rather than a silent slow path.
 val rpcsxAndroidArmArch =
     providers.gradleProperty("rpcsxAndroidArmArch").orNull
         ?: System.getenv("RPCSX_ANDROID_ARM_ARCH")
-        ?: "armv8.2-a"
+        ?: "armv8.4-a"
 val rpcsxAndroidArmTune =
     providers.gradleProperty("rpcsxAndroidArmTune").orNull
         ?: System.getenv("RPCSX_ANDROID_ARM_TUNE")

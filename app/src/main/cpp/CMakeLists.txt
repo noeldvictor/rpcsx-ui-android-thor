@@ -17,8 +17,24 @@ option(RPCSX_THOR_ES_SPU_EXPERIMENTS "Build Eternal Sonata SPU experiments on An
 option(RPCSX_THOR_ES_PPU_EXPERIMENTS "Build Eternal Sonata PPU and PRX diagnostics on Android" OFF)
 option(RPCSX_THOR_ADPF_RSX_HINT "Build the experimental Android RSX performance-hint session" OFF)
 option(RPCSX_THOR_THERMAL_HEADROOM_PROBE "Build the diagnostic Android PPU thermal-headroom probe" OFF)
-set(RPCSX_ANDROID_ARM_ARCH "armv8.2-a" CACHE STRING "AArch64 ISA baseline for Android native code")
+# Armv8.4-A is the lowest baseline that architecturally guarantees FEAT_LSE2,
+# which is what makes an aligned 16-byte LDP/STP single-copy atomic. Thor's
+# cores (Cortex-X3/A715/A510) are Armv9.0, so this is well within the silicon.
+#
+# Deliberately not armv9-a: Armv9 mandates SVE2, and this device's HWCAP does
+# not advertise SVE at all. See the JIT's sanitize_android_arm64_llvm_cpu, which
+# exists to keep LLVM away from SVE for the same reason.
+set(RPCSX_ANDROID_ARM_ARCH "armv8.4-a" CACHE STRING "AArch64 ISA baseline for Android native code")
 set(RPCSX_ANDROID_ARM_TUNE "cortex-a715" CACHE STRING "AArch64 scheduling model for Android native code")
+
+# There is no compiler-predefined macro for FEAT_LSE2, and the __ARM_ARCH_8_4__
+# style probe in rx/types.hpp never fires on clang/AArch64, so the 16-byte
+# atomic fast paths in util/atomic.hpp were unreachable at every -march. Without
+# them, load/store/release on atomic_t<u128> all fall back to an LDAXP/STLXP
+# retry loop: a pure read takes the cache line exclusive and invalidates every
+# other core's copy, which is the worst possible behaviour for vm::g_reservations.
+# Define it from the build, where the ISA baseline is actually known.
+option(RPCSX_ANDROID_ARM_LSE2 "Assume FEAT_LSE2 (requires an Armv8.4-A or newer baseline)" ON)
 
 if (RPCSX_THOR_WAIT_PROFILER)
 	add_compile_definitions(RPCSX_THOR_WAIT_PROFILER=1)
@@ -91,7 +107,20 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 		add_compile_options("-mtune=${RPCSX_ANDROID_ARM_TUNE}")
 	endif()
 
-	message(STATUS "RPCSX Android ARM tuning: -march=${RPCSX_ANDROID_ARM_ARCH} -mtune=${RPCSX_ANDROID_ARM_TUNE}")
+	if (RPCSX_ANDROID_ARM_LSE2)
+		# Refuse to assume LSE2 on a baseline that does not guarantee it. An
+		# aligned LDP is only single-copy atomic with FEAT_LSE2; below Armv8.4
+		# this would silently turn the 16-byte atomics into a data race rather
+		# than a slow path, which is far worse than the LDAXP/STLXP loop.
+		if (NOT RPCSX_ANDROID_ARM_ARCH MATCHES "^armv(8\\.[4-9]|9)")
+			message(FATAL_ERROR
+				"RPCSX_ANDROID_ARM_LSE2 requires an Armv8.4-A or newer baseline, got '${RPCSX_ANDROID_ARM_ARCH}'. "
+				"Raise RPCSX_ANDROID_ARM_ARCH or set RPCSX_ANDROID_ARM_LSE2=OFF.")
+		endif()
+		add_compile_definitions(ARM_FEATURE_LSE2=1)
+	endif()
+
+	message(STATUS "RPCSX Android ARM tuning: -march=${RPCSX_ANDROID_ARM_ARCH} -mtune=${RPCSX_ANDROID_ARM_TUNE} lse2=${RPCSX_ANDROID_ARM_LSE2}")
 endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
