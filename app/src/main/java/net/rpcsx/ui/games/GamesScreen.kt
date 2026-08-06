@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -46,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -167,7 +168,7 @@ fun GameItem(game: Game, onOpenGameDetails: (Game) -> Unit) {
         }
 
         Card(
-            shape = RectangleShape,
+            shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .combinedClickable(onClick = click@{
@@ -609,7 +610,9 @@ fun GamesScreen(onOpenGameDetails: (Game) -> Unit = {}) {
     ) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 320.dp * 0.6f),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             items(count = games.size, key = { index -> games[index].info.path }) { index ->
