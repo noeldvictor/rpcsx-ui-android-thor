@@ -399,6 +399,47 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## A fix that cannot reach the machine is not a fix
+
+The PPU pass pipeline was the most valuable single find of the whole sweep: the
+analysis managers, `PassBuilder` and `FunctionPassManager` all sat inside
+`#ifdef ARCH_X64`, and both `fpm.run()` sites were gated with a `// TODO`, so
+every PPU module compiled on AArch64 reached the backend from **unoptimized IR**,
+not even EarlyCSE. Removing the gate was a one-line change.
+
+It did nothing, and would have gone on doing nothing.
+
+PPU objects are cached as `v7-kusa-<hash>-<settings>-<cpu>.obj`. The `settings`
+field carries guest-visible options; it does not describe the host pass
+pipeline. So enabling the passes changed the emitted code and changed **nothing
+in the key**. Any machine that had already booted a game kept loading its v7
+objects, and loading a cached object skips compilation entirely, which is
+precisely where the passes live. The measurable effect on a warm cache was zero.
+
+Bumping to `v8` is what makes it real. The cost is one recompilation per module
+on the next boot, which the A510-pinned startup cache workers absorb well inside
+the thermal bound.
+
+Generalize this, because it is the same shape as the dead LSE2 macro one section
+down. **Three distinct ways a change can be perfectly correct and still have no
+effect**, all of which look identical to "the optimization did not help":
+
+1. the code is guarded by a macro nothing defines (`ARM_FEATURE_LSE2`),
+2. the code is behind an architecture gate that excludes the target (the pass
+   pipeline before the fix),
+3. the code is live, but a cache keyed on something that did not change serves a
+   stale artifact instead (the pass pipeline after the fix).
+
+The third is the nastiest because the source looks right, the build looks right,
+and a disassembly of freshly compiled code even shows the improvement. Only the
+warm-cache path is wrong. When changing codegen, ask what is keyed on it before
+concluding anything from a measurement.
+
+The SPU side needed no bump, and the reason is worth recording so it is not
+"fixed" later: its native-object cache is default-off, so SPU code is recompiled
+every run and the BCAX, `CFLTS` and DMA-stride lowerings were live all along.
+That is also why the on-device BCAX verification worked at all.
+
 ## There is no movemask, and it shapes more code than it looks like
 
 The most consequential missing x86 instruction on AArch64 is not an arithmetic
