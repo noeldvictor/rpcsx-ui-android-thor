@@ -421,6 +421,22 @@ writing, because every caller is `Emu/Cell/PPUInterpreter.cpp` and
 and for the same reason: **an unported SIMD helper only matters if a default
 configuration reaches it.** Establish the caller before writing the NEON.
 
+**Over half the shipped APK was x86_64 code.** Not a codegen habit but the same
+reflex one level up: `rpcsxAndroidAbis` defaulted to `arm64-v8a,x86_64`, so
+every build carried a second full copy of the core for an architecture this
+fork's only target cannot run. In a 96 MiB APK that was 26 MiB compressed and
+65 MiB uncompressed, and it doubled the native compile. Defaulting to
+`arm64-v8a` took the APK to 70 MiB, a 27% cut, with the property and
+`RPCSX_ANDROID_ABIS` override kept for anyone who wants x86_64 back.
+
+The reason it survived so long is worth more than the fix. There *was* a gate
+for it, `tools/test_thor_arm64_apk.ps1`, and it *did* check for foreign-ABI
+libraries. It defaulted to `app/build/outputs/apk/release/`, and nobody builds
+`release`; the variant that goes on the device is `thortest`. The gate passed by
+never looking at a real artifact. It now defaults to the most recently built
+APK, which is what caught this. **A contract test pointed at a path that is
+never produced is worse than no test, because it reports success.**
+
 **`utils::lfence()` is correct on ARM64 despite its `TODO`.** It emits
 `isb`, which is an instruction-synchronization barrier and orders no memory
 access at all, so it reads like an obvious bug. All three call sites are

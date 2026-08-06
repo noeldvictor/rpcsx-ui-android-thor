@@ -99,10 +99,15 @@ val rpcsxThorThermalHeadroomProbe =
         else -> false
     }
 
+// This fork targets the AYN Thor, which is arm64-v8a. Building x86_64 as well
+// put 26 MiB compressed / 65 MiB uncompressed of unreachable code into a 96 MiB
+// APK, more than half the payload, and doubled the native compile. Anyone who
+// needs it back can pass -PrpcsxAndroidAbis=arm64-v8a,x86_64 or set
+// RPCSX_ANDROID_ABIS; the arm64-only default is what ships to the device.
 val rpcsxAndroidAbis =
     (providers.gradleProperty("rpcsxAndroidAbis").orNull
         ?: System.getenv("RPCSX_ANDROID_ABIS")
-        ?: "arm64-v8a,x86_64")
+        ?: "arm64-v8a")
         .split(',')
         .map(String::trim)
         .filter(String::isNotEmpty)

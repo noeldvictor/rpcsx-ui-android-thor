@@ -10,7 +10,21 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $gradlePath = Join-Path $repoRoot "app/build.gradle.kts"
 
 if ([string]::IsNullOrWhiteSpace($ApkPath)) {
-    $ApkPath = Join-Path $repoRoot "app/build/outputs/apk/release/rpcsx-thor-experiment-release.apk"
+    # Default to whichever variant was actually built, newest first, rather than
+    # to a fixed release path. Pinning it to release meant the thortest APK, the
+    # one that gets installed on the Thor, was never checked by this gate, and it
+    # shipped x86_64 libraries for months without anything failing.
+    $candidate =
+        Get-ChildItem -LiteralPath (Join-Path $repoRoot "app/build/outputs/apk") -Recurse -Filter "*.apk" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if ($null -eq $candidate) {
+        throw "No Thor APK found under app/build/outputs/apk. Build one first, or pass -ApkPath."
+    }
+
+    $ApkPath = $candidate.FullName
+    Write-Output "Checking most recently built APK: $($candidate.Name)"
 }
 
 if (-not (Test-Path -LiteralPath $ApkPath -PathType Leaf)) {
