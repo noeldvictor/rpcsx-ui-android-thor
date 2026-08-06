@@ -100,6 +100,18 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 	}
 
 	// Test SSSE3 feature (TODO)
+	//
+	// x86 only. m_use_ssse3 gates the x86_pshufb lowering, and on AArch64 that
+	// lowering is an AND with 0x8F followed by TBL, which is baseline NEON and
+	// has nothing to do with SSSE3. Letting an x86 CPU-name allowlist decide it
+	// means an unrecognised or "generic" CPU string would silently route every
+	// byte shuffle through the else branch, which is a 16-iteration scalar loop
+	// of extractelement/insertelement. That branch would land on VPERM, LVLX,
+	// LVRX, STVLX, STVRX, ROTQBY and SHUFB at once.
+	//
+	// Same shape as the m_use_fma allowlist below, which was wrong for the same
+	// reason: a host-feature question answered by matching x86 model names.
+#ifndef ARCH_ARM64
 	if (cpu == "generic" ||
 		cpu == "k8" ||
 		cpu == "opteron" ||
@@ -113,6 +125,7 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 	{
 		m_use_ssse3 = false;
 	}
+#endif
 
 	// Test AVX feature (TODO)
 	if (cpu == "sandybridge" ||
@@ -208,6 +221,10 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 	m_use_fma = true;
 	// AVX does not use intrinsics so far; this gates codegen shape only.
 	m_use_avx = true;
+	// Not an SSSE3 claim: this flag selects the single-instruction byte shuffle
+	// in x86_pshufb, and TBL is mandatory NEON. Stated rather than inherited
+	// from the default so the scalar-loop fallback can never be reached here.
+	m_use_ssse3 = true;
 #else
 	if (cpu == "cyclone" || cpu.contains("cortex"))
 	{
