@@ -5033,13 +5033,18 @@ void PPUTranslator::FRSP(ppu_opcode_t op)
 void PPUTranslator::FCTIW(ppu_opcode_t op)
 {
 	const auto b = GetFpr(op.frb);
-	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(31.))), GetType<s32>());
 
-	// fix result saturation (0x80000000 -> 0x7fffffff)
 #if defined(ARCH_X64)
+	// fix result saturation (0x80000000 -> 0x7fffffff)
+	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(31.))), GetType<s32>());
 	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s32>(), "llvm.x86.sse2.cvtsd2si", m_ir->CreateInsertElement(GetUndef<f64[2]>(), b, u64{0}))));
 #elif defined(ARCH_ARM64)
-	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s32>(), "llvm.aarch64.neon.fcvtns.i32.f64", b)));
+	// FCVTNS saturates to 0x7fffffff by itself, which is already the PowerPC
+	// result, so the x86 correction would flip a correct value to 0x80000000.
+	// The only case AArch64 disagrees on is NaN: it converts to 0 where PowerPC
+	// produces the minimum.
+	const auto conv = Call(GetType<s32>(), "llvm.aarch64.neon.fcvtns.i32.f64", b);
+	SetFpr(op.frd, m_ir->CreateSelect(m_ir->CreateFCmpUNO(b, b), m_ir->getInt32(0x8000'0000u), conv));
 #endif
 
 	// SetFPSCR_FR(Call(GetType<bool>(), m_pure_attr, "__fctiw_get_fr", b));
@@ -5053,13 +5058,16 @@ void PPUTranslator::FCTIW(ppu_opcode_t op)
 void PPUTranslator::FCTIWZ(ppu_opcode_t op)
 {
 	const auto b = GetFpr(op.frb);
-	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(31.))), GetType<s32>());
 
-	// fix result saturation (0x80000000 -> 0x7fffffff)
 #if defined(ARCH_X64)
+	// fix result saturation (0x80000000 -> 0x7fffffff)
+	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(31.))), GetType<s32>());
 	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s32>(), "llvm.x86.sse2.cvttsd2si", m_ir->CreateInsertElement(GetUndef<f64[2]>(), b, u64{0}))));
 #elif defined(ARCH_ARM64)
-	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s32>(), "llvm.aarch64.neon.fcvtzs.i32.f64", b)));
+	// FCVTZS saturates on its own; see FCTIW for why the x86 correction must not
+	// be applied here, and why NaN is the only case still needing a fixup.
+	const auto conv = Call(GetType<s32>(), "llvm.aarch64.neon.fcvtzs.i32.f64", b);
+	SetFpr(op.frd, m_ir->CreateSelect(m_ir->CreateFCmpUNO(b, b), m_ir->getInt32(0x8000'0000u), conv));
 #endif
 }
 
@@ -5340,13 +5348,16 @@ void PPUTranslator::FABS(ppu_opcode_t op)
 void PPUTranslator::FCTID(ppu_opcode_t op)
 {
 	const auto b = GetFpr(op.frb);
-	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(63.))), GetType<s64>());
 
-	// fix result saturation (0x8000000000000000 -> 0x7fffffffffffffff)
 #if defined(ARCH_X64)
+	// fix result saturation (0x8000000000000000 -> 0x7fffffffffffffff)
+	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(63.))), GetType<s64>());
 	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s64>(), "llvm.x86.sse2.cvtsd2si64", m_ir->CreateInsertElement(GetUndef<f64[2]>(), b, u64{0}))));
 #elif defined(ARCH_ARM64)
-	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s64>(), "llvm.aarch64.neon.fcvtns.i64.f64", b)));
+	// FCVTNS saturates on its own; see FCTIW for why the x86 correction must not
+	// be applied here, and why NaN is the only case still needing a fixup.
+	const auto conv = Call(GetType<s64>(), "llvm.aarch64.neon.fcvtns.i64.f64", b);
+	SetFpr(op.frd, m_ir->CreateSelect(m_ir->CreateFCmpUNO(b, b), m_ir->getInt64(0x8000'0000'0000'0000ull), conv));
 #endif
 
 	// SetFPSCR_FR(Call(GetType<bool>(), m_pure_attr, "__fctid_get_fr", b));
@@ -5360,13 +5371,16 @@ void PPUTranslator::FCTID(ppu_opcode_t op)
 void PPUTranslator::FCTIDZ(ppu_opcode_t op)
 {
 	const auto b = GetFpr(op.frb);
-	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(63.))), GetType<s64>());
 
-	// fix result saturation (0x8000000000000000 -> 0x7fffffffffffffff)
 #if defined(ARCH_X64)
+	// fix result saturation (0x8000000000000000 -> 0x7fffffffffffffff)
+	const auto xormask = m_ir->CreateSExt(m_ir->CreateFCmpOGE(b, ConstantFP::get(GetType<f64>(), std::exp2l(63.))), GetType<s64>());
 	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s64>(), "llvm.x86.sse2.cvttsd2si64", m_ir->CreateInsertElement(GetUndef<f64[2]>(), b, u64{0}))));
 #elif defined(ARCH_ARM64)
-	SetFpr(op.frd, m_ir->CreateXor(xormask, Call(GetType<s64>(), "llvm.aarch64.neon.fcvtzs.i64.f64", b)));
+	// FCVTZS saturates on its own; see FCTIW for why the x86 correction must not
+	// be applied here, and why NaN is the only case still needing a fixup.
+	const auto conv = Call(GetType<s64>(), "llvm.aarch64.neon.fcvtzs.i64.f64", b);
+	SetFpr(op.frd, m_ir->CreateSelect(m_ir->CreateFCmpUNO(b, b), m_ir->getInt64(0x8000'0000'0000'0000ull), conv));
 #endif
 }
 
