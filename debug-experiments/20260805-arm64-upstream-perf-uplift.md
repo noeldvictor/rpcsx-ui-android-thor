@@ -470,7 +470,52 @@ which needs a device that starts cold. The tooling is now the easy half: run
 `eternal-sonata-field-route` and, in a second shell,
 `.\tools\measure_thor_fps.ps1 -Seconds 20 -WaitForLayerSeconds 120`.
 
-### Settled: the title is unreachable from this thermal baseline, at any margin
+### Correction: two artifacts invalidated most of the thermal reasoning below
+
+Read this before trusting the section that follows it. Two things were wrong,
+and both were found by finally opening a capture screenshot instead of reading
+gate booleans.
+
+**The panel's anti-image-retention overlay was on top of every run.** Capture
+`20260806-070046` shows the screen reading
+`Anti-image-retention pixel refresh in progress, tap to exit (2s)` over a noise
+field. The Ayn firmware engages it when the display sits static, which is
+exactly what happens during a 25 to 30 minute cooldown, and it survives into the
+next run because it is a system overlay. So every `title_menu_present=False` in
+this ledger is untrustworthy: the classifier was reading noise, not the
+emulator. The two `59 FPS` samples were the overlay compositing at panel
+cadence. `global burn_in_protection=0` is already set and does not disable it;
+`ro.settings.burn_in.protection.enable` is read-only. What works is sleeping the
+panel during the wait so it never goes static-on, and letting the harness wake
+it as part of launching.
+
+**Screen state, not emulator load, dominates the thermal readings.** Panel
+asleep the device sits at `32.3 C`; woken and idle at the launcher it sits at
+`40.5-41.3 C` and stays there, which is at the harness's own `40 C` launch
+limit. Much of the `41-45 C` "idle baseline" blamed on USB charging above was
+the display being awake, and some of that was this automation keeping it awake.
+
+**The emulator was not CPU-bound when the guard fired.** Capture
+`20260806-091241`, launched clean at `32.5 C` with no overlay, shows the
+emulator's own performance overlay at both the 15 s and 30 s polls reading
+identically:
+
+```
+FPS : 06.10
+PPU : 05.0 %   SPU : 00.0 %   RSX : 17.7 %   Total : 22.7 %
+```
+
+A run that trips a `66-71 C` guard while the emulator uses `22.7%` of the
+machine is not thermally limited by emulation. And `SPU 0.0%` with frozen
+counters and a black screen is a guest that has stalled, not one that is slowly
+compiling. The earlier log evidence agrees: SPURS kernels are live at `6.5 s`
+and by `15 s` the SPU is idle.
+
+So the real blocker on reaching the title is probably a functional stall a few
+seconds into boot, not the thermal envelope. That is a different investigation
+and it is the one worth doing next.
+
+### Superseded: the title is unreachable from this thermal baseline, at any margin
 
 Final attempt, capture `20260806-070046-thor-input-eternal-sonata-field-route`.
 The full field route, launched at `32.7 C`, with the conservative buffers taken

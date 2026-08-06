@@ -596,6 +596,29 @@ Thor predictions.
 - Direction-split PUT-heavy `0x25cc` evidence now has clean field and Options/menu counterproofs with zero 25cc descriptor mismatches/overflow. It is still not promotion until first-battle visuals are clean under the same proof discipline.
 - Broad SPU-to-GPU compute offload remains parked unless a candidate has stable batching, low readback pressure, and explicit correctness gates.
 
+## Visual Evidence Rules
+
+- Open a capture screenshot before trusting any visual classification. On
+  2026-08-06 roughly fifteen runs were misread because the Ayn panel's
+  anti-image-retention overlay sat on top of the emulator, so every
+  `title_menu_present=False` was the classifier reading a noise field. One
+  `Read` of a PNG would have caught it immediately.
+- That overlay engages when the display sits static, which a 25 to 30 minute
+  cooldown guarantees, and it persists into the next run. Sleep the panel with
+  `input keyevent KEYCODE_SLEEP` during the wait and let the harness wake it as
+  part of launching. `global burn_in_protection=0` is already set and does not
+  prevent it; `ro.settings.burn_in.protection.enable` is read-only.
+- FPS is readable directly from those screenshots. The core's own overlay
+  renders `FPS` plus PPU/SPU/RSX utilization in the top-left, so a capture is a
+  measurement, not just a gate input.
+- Screen state dominates the thermal sensors: panel asleep reads `32.3 C`,
+  panel awake and idle reads `40.5-41.3 C`, which is already at the `40 C`
+  launch limit. Do not attribute that baseline to load or charging without
+  checking `mScreenState`.
+- Cross-check the guard against utilization before calling a run
+  thermally limited. Capture `20260806-091241` tripped the guard while the
+  overlay read `Total : 22.7 %`, which is not an emulation-bound run.
+
 ## Speed Claim Rules
 
 - Never claim speed from a route miss, wrong scene, black/corrupt visuals, crash overlay, fatal log, lost window, mismatched host grade, or different config/cache state.
