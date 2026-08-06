@@ -381,6 +381,15 @@ deleted. What is left:
    an explicit negative, and it lets the backend choose instructions we have not
    had to think about. `frint` turned out unnecessary for the conversions, but
    the general point stands.
+   The AOT half of this is now done, as a side effect of needing LSE2. Moving
+   `-march` from `armv8.2-a` to `armv8.4-a` also makes clang define
+   `__ARM_FEATURE_CRC32`, `__ARM_FEATURE_DOTPROD`, `__ARM_FEATURE_FMA` and
+   `__ARM_FEATURE_QRDMX` for the whole core. `__ARM_FEATURE_MATMUL_INT8` and the
+   crypto family still need explicit `+i8mm` / `+crypto`, and were left off on
+   purpose: their only AOT consumers are `gv_dotu8s8x4` and `gv_dotu8x4`, whose
+   callers are the PPU interpreter and the rpcsx PPU semantic tree, both cold
+   under the LLVM decoder. Widening the baseline for a one-instruction win on a
+   path that does not execute is not worth the SIGILL surface.
 3. **Revisit `mcpu`.** `cortex-a78` is a v8.2 scheduling model standing in for a
    1+2+2+3 Armv9 machine. `cortex-a715` or `cortex-x3` with explicit `-sve`
    `-sve2` may schedule better, but only if the negative attributes reliably
