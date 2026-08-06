@@ -245,3 +245,61 @@ instruction selection) against the exact target the JIT configures on Thor,
 What remains unproven is only that Thor executes it, which needs one guarded
 boot on an idle device: pull the `spu-native-v2` objects afterwards and compare
 `bcax` against the recorded `bcax=0` baseline.
+
+## Device rounds 2026-08-05/06: core confirmed live, pattern not yet reached
+
+Five guarded boots on pinned serial `c3ca0370`, each from its own cool window
+(preflight `33.1` to `33.7 C`), all with `-SpuNativeObjectCache on`.
+
+What the device proved:
+
+- The built core runs on Thor with the intended features. From
+  `20260805-231505-thor-input-custom`:
+  `JIT: LLVM AArch64 target: cpu=cortex-a78 triple=aarch64-unknown-linux-android
+  attrs=+sha3,+dotprod,+i8mm,-sve,-sve2`. That is the exact configuration the
+  off-device selection proof used, so `+sha3` is live, not assumed.
+- SPU compilation works under it. The native-object cache grew `10 -> 14 -> 17
+  -> 19 -> 21` across rounds, every object disassembles, and no round logged an
+  LLVM fatal, a `Cannot select`, or a TBL2 scavenger retry.
+- `-CacheWorkerAffinityMask 7` measurably helps. Without it the guard fired at
+  the first readiness poll; with it, runs survive to `wait-10000-ms` and poll 3.
+  The PPU cache is warm throughout: `LLVM: Reusing 41 validated warm-cache
+  objects`.
+
+What the device has not proved, and why it is not a negative result:
+
+- `bcax=0` across all 21 objects, but so is the pattern BCAX replaces:
+  `tbl2src=0` two-source table lookups and zero vector `mvn` in any new block.
+  The only `mvn`s are scalar `mvn w10, w10` address arithmetic, and the `tbx`
+  instructions in new blocks sit next to `cmhi`/`and` lane work with no
+  `movi #0xf` selector nearby, so they are LLVM's own masked-shuffle selection,
+  not our `SHUFB` path.
+- The blocks reachable inside the thermal envelope are loader and early-boot
+  code with no `EQV` and no two-source `SHUFB`. For contrast, a pre-change
+  July object does carry the old `SHUFB` selector,
+  `movi v6.16b, #0xf` / `eor` / `movi v6.16b, #0x8f` / `and` / `tbx`, which is
+  exactly the sequence BCAX collapses. The pattern is real in this title; it is
+  just past the point these runs reach.
+
+Thermal ceiling, measured rather than assumed: from a `33 C` launch the boot
+crosses `52 C` by the first readiness poll and `66-69 C` within ten to twenty
+seconds, tripping the guard every time. Cooldown between rounds is roughly 30
+minutes, and `cpu-1-9` plateaus near `41 C` while the device is on USB power
+with `pm8550b_lite_tz` at `55 C`. Runs used `-ThermalRuntimeProbeWindowC 6`,
+which narrows only the conservative near-limit warning band; the `68 C`
+early-stop and `72 C` hard limit were left untouched and both still fired as
+designed.
+
+Classification: `codegen-verified-off-device` plus
+`device-core-identity-confirmed`. No speed, FPS, gameplay, or thermal-win
+credit, and no on-device BCAX instruction yet.
+
+Recipe for the next operator, so this does not restart from scratch:
+
+1. Cool until the `cpu-*` zones read under `35 C` with no RPCSX pid.
+2. Boot with `-SpuNativeObjectCache on -CacheWorkerAffinityMask 7
+   -SpuCacheCompileBudgetMs 100` and a route that reaches the title, not just
+   `gate:ppu-ready`. Title and field code is where `SHUFB` lives.
+3. Pull `.../BLUS30161/ppu-*/spu-native-v2` and count with NDK `llvm-objdump`:
+   `bcax`, two-source `tbl v.16b, { v.16b, v.16b }`, and vector `mvn`. Success
+   is `bcax > 0` with the `movi #0xf` + `and` selector gone.
