@@ -555,7 +555,31 @@ effect**, all of which look identical to "the optimization did not help":
 2. the code is behind an architecture gate that excludes the target (the pass
    pipeline before the fix),
 3. the code is live, but a cache keyed on something that did not change serves a
-   stale artifact instead (the pass pipeline after the fix).
+   stale artifact instead (the pass pipeline after the fix),
+4. the code is live and correct, but a dependency it needs at runtime was never
+   packaged (the adrenotools hooks, below).
+
+The fourth is worth its own note because it cost a whole feature. Custom GPU
+driver loading had never worked in this build. `adrenotools_open_libvulkan`
+dlopens `libhook_impl.so` and `libmain_hook.so` out of `nativeLibraryDir` and
+returns null the instant either is missing, and the APK contained neither:
+Gradle's `externalNativeBuild` restricted the CMake target list to
+`rpcsx-ui-jni` and `rpcsx-android`, so the four hook libraries were never built.
+Every Turnip package failed at load with a bare "failed to load selected
+driver". The source was right, the library was vendored, CMake could build it,
+and none of that mattered.
+
+What kept it hidden was the absence of a readout. The app reported failures and
+said nothing at all on success, so there was no way to tell a working driver
+from a silently ignored one. The fix that found the bug was adding one:
+load the package, create a throwaway Vulkan instance through it, and print what
+the driver says it is. That turned an unfalsifiable feature into a checkable
+one, and confirmed the repair — `Adreno (TM) 740, turnip, Mesa 26.0.0-devel,
+Vulkan 1.4.335`, where previously there was nothing.
+
+**A feature with no feedback channel cannot be observed to be broken.** If a
+subsystem can only report failure, assume it may have been failing the whole
+time.
 
 The third is the nastiest because the source looks right, the build looks right,
 and a disassembly of freshly compiled code even shows the improvement. Only the
