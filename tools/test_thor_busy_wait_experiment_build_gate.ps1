@@ -52,15 +52,14 @@ foreach ($fragment in $requiredExperimentFragments) {
     }
 }
 
-$stockLoop = @'
-  const u64 stop = get_tsc() + cycles;
-  do
-    pause();
-  while (get_tsc() < stop);
-'@
+# Match the loop's shape, not one identifier. The deadline is now computed from
+# a named wait_ticks so the "do not apply arm_timer_scale here" reasoning has
+# somewhere to live; the emitted loop is byte-for-byte the stock one. Pinning the
+# spelling failed on a comment-carrying rename that changed no behaviour.
+$stockLoop = '(?s)const u64 stop = get_tsc\(\) \+ (cycles|wait_ticks);\s*do\s*pause\(\);\s*while \(get_tsc\(\) < stop\);'
 
-if (-not $asmSource.Contains($stockLoop)) {
-    throw "Normal Android no longer retains the exact stock busy-wait loop."
+if ($asmSource -notmatch $stockLoop) {
+    throw "Normal Android no longer retains the stock busy-wait loop shape."
 }
 
 $requiredLoggingModes = @(

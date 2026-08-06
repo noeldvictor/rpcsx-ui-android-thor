@@ -16,7 +16,6 @@ $cpuAndroid = [regex]::Match(
 
 foreach ($fragment in @(
     'static const bool s_logged_spu_features = []()',
-    'AArch64 SPU fast paths: mode=%s, dotprod=%s, i8mm=%s.',
     'utils::get_arm64_spu_feature_mode_name()',
     'utils::use_spu_dotprod()',
     'utils::use_spu_i8mm()'
@@ -24,6 +23,13 @@ foreach ($fragment in @(
     if (-not $cpuAndroid.Contains($fragment)) {
         throw "Android ARM64 feature reporting lost its once-per-process contract: $fragment"
     }
+}
+
+# Match the message by prefix, not by an exact literal. The field list grows as
+# features are gated (sha3 joined it with BCAX), and pinning the whole string
+# meant the contract failed for the harmless reason that it reports more now.
+if ($cpuAndroid -notmatch 'AArch64 SPU fast paths: mode=%s, dotprod=%s, i8mm=%s') {
+    throw "Android ARM64 feature reporting lost its once-per-process summary line."
 }
 
 if ($cpuAndroid.Contains('AArch64 dot-product SPU fast paths enabled.') -or
