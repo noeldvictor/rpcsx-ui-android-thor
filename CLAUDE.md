@@ -399,6 +399,56 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## The instruction cache is not coherent, and this chip says so
+
+x86 instruction caches are coherent with the data caches. Write code, jump to
+it, done. AArch64 makes no such promise, and crucially **what it requires varies
+by implementation and is advertised in `CTR_EL0`**:
+
+    IDC = 1   data cache clean to PoU not required
+    DIC = 1   instruction cache invalidation not required
+
+Read on the Thor's Snapdragon 8 Gen 2, by running a probe on the device rather
+than assuming: **`IDC=1, DIC=0`**, with 64-byte I and D min lines. So the data
+cache does not need cleaning, but **the instruction cache genuinely does need
+invalidating**. Apple Silicon reports `DIC=1`, which is almost certainly why
+this survived upstream despite RPCS3 running on arm64 Macs: on that hardware
+the missing maintenance is harmless.
+
+Seven sites in this codebase carried:
+
+    asm("ISB");
+    asm("DSB ISH");
+
+which is wrong three separate ways:
+
+1. **The barriers are reversed.** `DSB` must complete before `ISB`, so the store
+   is guaranteed visible before the pipeline is flushed. As written, the flush
+   happens first and orders nothing.
+2. **Neither is `volatile`, and neither clobbers memory.** The compiler was free
+   to move them across the very writes they exist to publish, or delete them.
+3. **No cache maintenance at all**, which `DIC=0` says this chip requires.
+
+Where the written range is known it is now invalidated exactly, via
+`__builtin___clear_cache`, which consults `CTR_EL0` itself and emits only the
+maintenance the implementation needs. Elsewhere the barriers became a single
+`__asm__ volatile("dsb ish\n\tisb" ::: "memory")`.
+
+The larger hole was not the hand-written trampolines but **MCJIT**, which writes
+far more code than they do. `llvm::SectionMemoryManager` invalidates in
+`finalizeMemory`; both custom managers here override `finalizeMemory` to
+`return false` and do nothing, so **nothing was invalidating anything** for
+compiled PPU or SPU code. They now record each allocated code section and clear
+it. Pinned by `tools/test_thor_arm64_icache_maintenance.ps1`.
+
+Two things worth carrying forward. First, this is a correctness fix, not a
+speedup, and its failure mode is a stale instruction fetch: an unreproducible
+crash or wrong branch, never a slow frame. Do not expect to see it in a
+measurement. Second, and more generally: **when an architecture makes a
+guarantee optional, read the register that says whether this part provides it**
+instead of reasoning from the architecture manual alone. `CTR_EL0` answered in
+one device-side probe what no amount of source reading would have settled.
+
 ## Branch offsets do not mean the same thing
 
 x86 `JMP rel32` is relative to the **end** of the instruction. AArch64 `B` is
