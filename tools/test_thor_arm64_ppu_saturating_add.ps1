@@ -74,4 +74,19 @@ if ($vmsum -notmatch 'm == 0x80000000u') {
     throw "VMSUMSHS lost the intermediate product-sum fixup."
 }
 
-Write-Output "Thor ARM64 PPU saturating-add contract passed: VADDSWS, VSUBSWS and VMSUMSHS all use the saturating helpers, and VMSUMSHS keeps its intermediate fixup and XOR-derived SAT."
+# VSUMSWS and VSUM2SWS clamp a 64-bit accumulator into 32-bit range. NEON has
+# no SMIN/SMAX for 64-bit lanes, so leaving the clamp wide costs 9 instructions
+# (dup/mov for the constants, then cmgt+bif twice). Truncating after the clamp
+# lets it contract into SQXTN, which saturates and narrows together, for 2.
+foreach ($fn in @('VSUMSWS', 'VSUM2SWS')) {
+    $body = Get-Func $fn
+    if ($body -notmatch 'trunc<s32\[2\]>\(min\(max\(') {
+        throw "$fn no longer truncates after clamping, so the 64-bit lane min/max is emulated again instead of contracting to SQXTN."
+    }
+    # The dead SAT update must not come back. r is clamped before it, so
+    # (r + 0x8000'0000) >> 32 was unconditionally zero and set VSCR never.
+    if ($body -match "r \+ 0x8000'0000") {
+        throw "$fn reintroduced the always-zero SAT update, which also forces the accumulator to stay 64-bit."
+    }
+}
+Write-Output "Thor ARM64 PPU saturating-add contract passed: VADDSWS, VSUBSWS and VMSUMSHS use the saturating helpers, VMSUMSHS keeps its fixup and XOR-derived SAT, and VSUMSWS/VSUM2SWS narrow after clamping so the 64-bit lane min/max contracts to SQXTN."

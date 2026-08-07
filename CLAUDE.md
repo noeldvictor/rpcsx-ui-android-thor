@@ -173,23 +173,35 @@ is emulated. Measured at `-O2 -mcpu=cortex-a78` on the same IR:
 `SQXTN` is exactly this operation, and x86 has no 64-to-32 saturating pack to
 match it, so this is ARM-favourable work being left on the floor.
 
-**Not taken, and the blocker is not the ARM side.** The value path could be
-narrowed easily; what stops it is the line underneath:
+**Taken, and the blocker turned out to be avoidable.** The obstacle was the line
+underneath:
 
     set_sat(bitcast<u64[2]>(r + 0x8000'0000) >> 32);
 
 `r` has already been clamped into `[-2^31, 2^31-1]`, so `r + 2^31` lies in
-`[0, 2^32-1]` and the `>> 32` yields **zero unconditionally**. These two opcodes
-never set the VSCR SAT bit at all. Reaching `SQXTN` means computing the SAT flag
-from the narrowed value instead, and that would *start* the bit working —
-changing guest-visible behaviour in an op that has apparently never set it.
+`[0, 2^32-1]` and the `>> 32` yields **zero unconditionally**. `set_sat` ORs its
+argument into VSCR, so these two opcodes have never set the saturation bit.
 
-That is a correctness question about upstream semantics, not a porting question,
-and it wants a PPU test and a game rather than an instruction count. Recorded
-with the numbers attached so whoever picks it up inherits the analysis instead of
-rediscovering it. Note the contrast with `VMSUMSHS` in the same file, which was
-taken precisely because its SAT idiom was already correct and shared with its
-siblings.
+The first instinct was to derive the flag correctly from the narrowed value, and
+that is what made this look like a blocked change: it would make the bit start
+working, a guest-visible difference in an op that has apparently never had it.
+
+But correcting it is not required to take the ARM win. An expression that
+provably evaluates to zero can simply be **removed**, which changes nothing
+observable and frees the accumulator to be narrowed. So the clamp now truncates
+to 32-bit lanes, contracts to `SQXTN`, and the dead `set_sat` is gone with a
+comment recording why. The semantics question stays open on its own terms rather
+than being bundled into a performance change.
+
+Equivalence checked on device, since this rewrites result construction: 15 edge
+values including both 32-bit boundaries, the 64-bit extremes and values either
+side of the clamp, all pairs, plus 2,000,000 randomised pairs, comparing the
+full 4-lane output of both opcodes. 4,000,450 cases, zero mismatches.
+
+The general lesson is worth more than the two opcodes. **When a correctness
+question blocks a performance change, check whether the code being removed
+actually does anything.** Dead code can be deleted without answering the
+question it appears to raise.
 
 ## The SPU opcode lowering audit
 

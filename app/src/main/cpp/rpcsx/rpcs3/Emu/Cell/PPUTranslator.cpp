@@ -2321,9 +2321,30 @@ void PPUTranslator::VSUMSWS(ppu_opcode_t op)
 	const auto y = sext<s64[2]>(zshuffle(a, 2, 3));
 	const auto z = sext<s64[2]>(zshuffle(b, 0, 4));
 	const auto s = eval(x + y + z);
-	const auto r = min(max(zshuffle(s, 0, 2) + zshuffle(s, 1, 2), splat<s64[2]>(-0x8000'0000ll)), splat<s64[2]>(0x7fff'ffff));
-	set_vr(op.vd, zshuffle(bitcast<u32[4]>(r), 0, 4, 4, 4));
-	set_sat(bitcast<u64[2]>(r + 0x8000'0000) >> 32);
+
+	// Clamp and narrow in one step. NEON has no SMIN/SMAX for 64-bit lanes, only
+	// 8, 16 and 32, so clamping while staying in s64 costs 9 instructions: two
+	// constants materialised with dup/mov, then cmgt+bif twice. Following the
+	// clamp with a truncation to 32-bit lanes lets the backend contract the whole
+	// thing into SQXTN, which saturates and narrows together, for 2. x86 has no
+	// 64-to-32 saturating pack, which is why the original had to stay wide.
+	const auto r = trunc<s32[2]>(min(max(zshuffle(s, 0, 2) + zshuffle(s, 1, 2), splat<s64[2]>(-0x8000'0000ll)), splat<s64[2]>(0x7fff'ffff)));
+	set_vr(op.vd, zshuffle(bitcast<u32[2]>(r), 0, 2, 2, 2));
+
+	// The SAT update that stood here was dead, not merely redundant:
+	//
+	//     set_sat(bitcast<u64[2]>(r + 0x8000'0000) >> 32);
+	//
+	// r had already been clamped into [-2^31, 2^31-1], so r + 2^31 lies in
+	// [0, 2^32-1] and the >> 32 is unconditionally zero. set_sat ORs its argument
+	// into VSCR, so this opcode has never set the saturation bit.
+	//
+	// Dropped rather than corrected, deliberately. Deriving the flag from the
+	// narrowed value would be easy and would make the bit start working, which is
+	// a guest-visible change in an op that has apparently never had it, and that
+	// wants a PPU test and a game rather than an instruction count. Removing an
+	// expression that provably evaluates to zero changes nothing, so the ARM win
+	// is taken here and the semantics question is left open on its own terms.
 }
 
 void PPUTranslator::VSUM2SWS(ppu_opcode_t op)
@@ -2332,9 +2353,13 @@ void PPUTranslator::VSUM2SWS(ppu_opcode_t op)
 	const auto x = a << 32 >> 32;
 	const auto y = a >> 32;
 	const auto z = b >> 32;
-	const auto r = min(max(x + y + z, splat<s64[2]>(-0x8000'0000ll)), splat<s64[2]>(0x7fff'ffff));
-	set_vr(op.vd, zshuffle(bitcast<u32[4]>(r), 0, 4, 2, 4));
-	set_sat(bitcast<u64[2]>(r + 0x8000'0000) >> 32);
+	// Same clamp-and-narrow as VSUMSWS above: truncating after the clamp lets it
+	// contract to SQXTN instead of emulating a 64-bit lane min/max.
+	const auto r = trunc<s32[2]>(min(max(x + y + z, splat<s64[2]>(-0x8000'0000ll)), splat<s64[2]>(0x7fff'ffff)));
+	set_vr(op.vd, zshuffle(bitcast<u32[2]>(r), 0, 2, 1, 2));
+
+	// Same dead SAT update as VSUMSWS, dropped for the same reason: r is already
+	// clamped, so (r + 0x8000'0000) >> 32 was unconditionally zero.
 }
 
 void PPUTranslator::VSUM4SBS(ppu_opcode_t op)
