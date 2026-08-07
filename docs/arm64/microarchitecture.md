@@ -479,3 +479,42 @@ change also moved the bulk of the work off the contended pipe pair.
 operations on `V`, then reduce once, as narrow as possible.** Reaching for
 `ADDV`/`UMAXV` on a full 16-byte vector is the expensive spelling of a reduction,
 not the natural one.
+
+## Level 3 for the reservation copy: the shape is in the shipped binary
+
+This document's verification scheme has three levels — source contract test,
+backend selection at the compiler, and disassembly of what actually shipped. The
+`mov_rdata` rewrite had levels 1 and 2 and was left at that, because a first
+attempt at level 3 found nothing and the search was abandoned rather than fixed.
+That is the wrong place to stop: **a fix that cannot be shown to reach the
+machine is indistinguishable from one that did not.**
+
+Done properly. Scanning the shipped `librpcsx-android.so` instruction stream for
+the exact signature — eight consecutive q-register pair operations alternating
+load and store at offsets `0`, `0x20`, `0x40`, `0x60`:
+
+    exact interleaved 128B copy ladder                 6
+    batched ldp,ldp,stp,stp (the shape memcpy produced)  318
+
+**Six inlined instances**, which is what a `FORCE_INLINE` function with several
+call sites should produce. The 318 batched sequences elsewhere in the binary are
+the control: the scanner is discriminating between the two shapes rather than
+matching every pair of vector loads, and the shape `memcpy` used to emit here is
+still present in the places that legitimately use it.
+
+So the Arm section 4.3 form — non-writeback, interleaved, every store 32-byte
+aligned — is in the machine code that runs, not only in a compiler experiment.
+
+**Both failed attempts at this check failed the same way, and it is worth naming.**
+The first level-3 attempt searched for `strings` output and found zero, because
+GNU `strings` skips sections that `grep -a` reads. The second searched
+disassembly for `#-?[0-9]+` offsets and found zero, because `llvm-objdump` prints
+them in **hex** — the pattern matched `#-0` and stopped at the `x`. Neither was a
+fact about the binary; both were facts about the tool's output format, and both
+read exactly like a change that had not landed.
+
+**When a verification returns zero, check the format of what you searched before
+concluding anything about what you searched for.** That is the same lesson as the
+empty-directory sweep in `ledger.md`, arriving from a different direction: a
+search that cannot match and a search that finds nothing produce identical
+output.
