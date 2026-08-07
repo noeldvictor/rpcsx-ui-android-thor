@@ -431,3 +431,38 @@ the same purpose. The code is right; the name and the `TODO` are what mislead.
 Worth knowing before "fixing" it into a `DMB ISHLD`, which would be slower and
 would not serialize the counter. If a genuine load fence is ever needed, it
 needs a differently-named helper rather than a change here.
+
+## The correction lens, swept and now exhausted
+
+The most productive heuristic recorded here is that **auditing x86 *corrections*
+has high yield where auditing opcodes has low yield** — every real defect in this
+codebase was shared code compensating for an x86 quirk, never LLVM picking a bad
+instruction from a clean description. It found `CFLTS`, the `FCTIW` family,
+`VPKUHUS`, `bswap.i128`, `mov_rdata` and `VMSUMSHS`.
+
+It has now been swept mechanically for its own tell — an XOR against a
+sign-extended comparison, which is the shape a saturation fix-up takes — across
+both translators. **Three sites, all correct:**
+
+| site | verdict |
+| --- | --- |
+| `SPULLVMRecompiler.cpp:8700` (`CFLTS`) | inside `#else` of `#ifdef ARCH_ARM64`; the ARM path above it uses `fptosi_sat` |
+| `SPULLVMRecompiler.cpp:8721` (`CFLTS`, second instance) | same structure, same guard |
+| `PPUTranslator.cpp:1708` (`VMSUMSHS`) | not an x86 workaround — it implements PowerPC's own saturation of the `0x80000000` product |
+
+The first two are the fix working exactly as intended: the correction survives for
+x86, and AArch64 takes hardware saturation. Finding them in a grep is the
+expected result, not a regression. The third is a case where the "correction"
+shape is the *guest architecture's* semantics rather than a host workaround, which
+is the distinction that makes this lens need reading rather than pattern-matching.
+
+**So the lens is exhausted for this shape.** That does not mean no corrections
+remain — it means the ones written as an XOR against a comparison are all
+accounted for. A correction spelled as a `select`, a clamp before a conversion,
+or a literal limit would not match this pattern; the `select` forms were checked
+by hand in the same pass and are `FREST`/`FRSQEST` exponent handling, which is
+algorithm rather than compensation.
+
+Worth recording as a negative result because the alternative is re-running the
+most productive heuristic in this document every time someone looks for work, and
+concluding from silence that they searched badly.
