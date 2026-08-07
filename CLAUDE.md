@@ -421,6 +421,54 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## Where AArch64 is the stronger architecture
+
+Worth stating plainly, because the whole rest of this document points the other
+way: **ARM's `LDAR`/`STLR` are RCsc, and that is stronger than x86 TSO for the
+one reordering TSO allows.**
+
+`vm::range_lock` is the case. Both sides publish their range, then read the
+other side's state, which is Dekker and needs StoreLoad ordering:
+
+    range_lock->store(to_store);                       // release store
+    busy = for_all_range_locks(get_range_lock_bits(true), ...);  // seq_cst load
+
+On AArch64 that is `STLR` then `LDAR`, and an `LDAR` cannot be observed before a
+preceding `STLR`, so the ordering is free. On x86 a release store is a plain
+`MOV` and a seq_cst load is a plain `MOV`, and **StoreLoad is precisely the
+reordering x86 permits**. The exclusive side closes its own half with
+`bit_test_set`, an atomic RMW and therefore a full barrier on both.
+
+So there is nothing to fix here for ARM, and it is the one place found in this
+sweep where the port is safer than the original. Left alone deliberately: the
+protocol is intricate, the reader retries in a loop, and changing the hottest
+lock in the memory subsystem on partial understanding is how you buy a rare
+corruption bug in exchange for nothing.
+
+**This has a sharp edge, and it is one this fork walked into.** Raising `-march`
+to `armv8.4-a` for LSE2 also enables RCPC, and RCPC changes what an *explicit*
+acquire load compiles to:
+
+| | `armv8.2-a` | `armv8.4-a` |
+| --- | --- | --- |
+| `load()` (seq_cst) | `LDAR` | `LDAR` |
+| `load(memory_order_acquire)` | `LDAR` | **`LDAPR`** |
+| `store(memory_order_release)` | `STLR` | `STLR` |
+
+`LDAPR` is RCpc: it is *not* ordered after a preceding `STLR`. Any code relying
+on the RCsc property above would silently lose it, and the symptom would be a
+rare mutual-exclusion failure, not a build error.
+
+Checked before trusting the baseline bump. `atomic_t` is seq_cst throughout, so
+every `atomic_t::load()` keeps `LDAR` and is unaffected. There are exactly two
+explicit `memory_order_acquire` uses in `Emu` and `util`: one is an
+`atomic_thread_fence`, which RCPC does not touch, and the other reads a config
+flag for the raw object cache and participates in no protocol. Both benign.
+
+The rule for anyone adding one later: **on this baseline, `memory_order_acquire`
+buys RCpc, not RCsc.** If a StoreLoad guarantee is wanted, use a seq_cst
+operation or an explicit fence, and do not assume the acquire will be an `LDAR`.
+
 ## Acquire is one-way, and a seqlock needs both
 
 The reservation seqlock is where TSO quietly did work nobody had to write down.
