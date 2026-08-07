@@ -203,6 +203,46 @@ question blocks a performance change, check whether the code being removed
 actually does anything.** Dead code can be deleted without answering the
 question it appears to raise.
 
+## Dimensions audited, and the one that is not code
+
+The sweep was organised by *dimension* rather than by file, because a file-by-file
+read misses anything TSO provided for free. Each of these was taken to
+completion:
+
+| dimension | outcome |
+| --- | --- |
+| `#if defined(ARCH_X64)` blocks | enumerated; every unpaired one accounted for in the ledger below |
+| corrections written for x86 quirks | `CFLTS`, `FCTIW` family, `VPKUHUS`, `bswap.i128`, `mov_rdata`, `VMSUMSHS`, `VSUMSWS`/`VSUM2SWS` |
+| memory ordering shapes | SPU reservation seqlock (fixed), PPU command publish (already correct), `range_lock` (ARM stronger), RSX (already correct) |
+| feature probes that cannot fire | `ARM_FEATURE_LSE2` (fixed), HWCAP macros (verified present) |
+| host capability by CPU model name | `m_use_fma`, `m_use_ssse3` |
+| opcode lowering quality | whole hot SPU table verified against the backend |
+| code publication to instruction fetch | i-cache maintenance, MCJIT `finalizeMemory` |
+| build and packaging | ABI list, adrenotools hooks, `-march`, LSE2 define, PPU cache version |
+| hardware claims in this document | `CTR_EL0`, `ID_AA64ISAR0/2`, `ID_AA64MMFR2`, `ID_AA64PFR0`, `DCZID`, ESR `ISV`, `WFE` latency |
+
+Two dimensions were examined and deliberately not pursued, both because they are
+architecture-neutral rather than ARM concerns: `-fstack-protector-strong` and
+`_FORTIFY_SOURCE=2` cost something in hot code, but FORTIFY reaches only 15 call
+sites here, and disabling hardening is a security trade that has nothing to do
+with porting. Symbol visibility needed no work either: the shipped core exports
+458 dynamic symbols with LTO on, so intra-library calls are already direct.
+
+**The honest closing state.** The static search space is exhausted; what remains
+is not undiscovered code but four decisions blocked on capabilities this fork
+does not have, listed under the ledger. Full contract suite at the end: 92 pass,
+1 fail, and that failure is `test_thor_cool_title_candidate_artifact.ps1`
+refusing to match a rebuilt APK against a recorded proof-run candidate, which is
+the behaviour it is supposed to have.
+
+**And the caveat that outranks all of it.** Nothing here was measured against a
+running game. Every claim in this document is about correctness, instruction
+counts, or hardware capability. Whether any of it makes a title run faster is
+unknown, and the changes most likely to matter in practice are the ones that
+were never about instruction selection at all: custom GPU drivers going from
+never-loading to working, and i-cache maintenance that a stale fetch would have
+turned into an unreproducible crash.
+
 ## The x86-block ledger: what is left, and why each one stays
 
 The sweep is finite, so here is the whole of it. Every `#if defined(ARCH_X64)`
