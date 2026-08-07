@@ -169,12 +169,25 @@ quantity. Removing it, done for the independent reason that ten minutes at
 51-58 C package was a bad trade, turns out to have removed a decision that rested
 on an artifact.
 
-Not changed here, because the guard threshold is a safety bound and belongs to
-whoever owns the device. But whoever revisits it should know: the honest options
-are to classify `cpu-1-*` separately from `cpuss-*`, to guard on `cpuss-*` and
-`aoss-*` which behave like package sensors, or to keep the junction maximum and
-raise the limit toward 95 C. Keeping a 72 C limit on a junction max means the
-guard fires on nearly any real workload.
+**Fixed, without touching the safety bound.** The threshold was never the bug;
+the classification was. `cpu-<cluster>-<core>` now resolves to a new `junction`
+domain, leaving `silicon` to the subsystem sensors it was always meant to
+describe. `MaxSiliconTemperatureC` stays at 72 C against those, and junction gets
+its own `MaxJunctionTemperatureC = 95.0`, which still catches a genuine runaway
+while no longer calling ordinary load an emergency.
+
+Verified on the device at moderate load, and the numbers make the old failure
+plain:
+
+    silicon  : 64.6 C  from cpuss-2   (15 sensors, limit 72)  no violation
+    junction : 71.9 C  from cpu-1-8   (14 sensors, limit 95)  no violation
+
+Under the old classifier `silicon` was the maximum of both sets, so it would have
+reported **71.9 C against a 72 C limit** — one tenth of a degree from stopping a
+run, at a temperature that is entirely unremarkable. That is the mechanism behind
+"stopped it 0.7 s in".
+
+All four thermal contracts still pass.
 
 ## Read the right thermal sensor, and never mix two of them
 

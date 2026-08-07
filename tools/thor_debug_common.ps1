@@ -68,6 +68,22 @@ function Get-ThorTemperatureDomain {
     if ($Name -match '(?i)(skin|case|shell|quiet)') {
         return "skin"
     }
+    # Per-core junction sensors, named cpu-<cluster>-<core> on this SoC, must not
+    # be lumped in with the subsystem sensors. They measure a different quantity
+    # and swing far harder: cpu-1-9 was measured at 90.7 C during a compile and
+    # 55.0 C idle minutes later, while cpuss-0 sat at 49.4 C and the gpuss group
+    # at 43-46 C.
+    #
+    # Classifying them as "silicon" and then taking the maximum of that domain
+    # turned the 72 C silicon limit into a load detector: junction passes 72 C
+    # under any sustained work on this part and is unremarkable until roughly
+    # 95-105 C. That is what recorded "71.1 C, guard stopped it 0.7 s in" for the
+    # unpinned cache-worker arm and 53.8 C for the A510 arm. It was measuring
+    # which arm ran on faster cores, not which arm was too hot.
+    if ($Name -match '(?i)^cpu-\d+-\d+$') {
+        return "junction"
+    }
+
     if ($Name -match '(?i)(cpu|gpu|soc|apss|cluster|silver|gold|prime|cpuss|ddr|memory|modem|pmic|xo)') {
         return "silicon"
     }
@@ -179,9 +195,11 @@ function Get-ThorThermalGuardSnapshot {
     $batteryReading = @($readings | Where-Object domain -eq "battery" | Sort-Object temperature_c -Descending | Select-Object -First 1)
     $skinReading = @($readings | Where-Object domain -eq "skin" | Sort-Object temperature_c -Descending | Select-Object -First 1)
     $siliconReading = @($readings | Where-Object domain -eq "silicon" | Sort-Object temperature_c -Descending | Select-Object -First 1)
+    $junctionReading = @($readings | Where-Object domain -eq "junction" | Sort-Object temperature_c -Descending | Select-Object -First 1)
     $skinReadings = @($readings | Where-Object domain -eq "skin")
     $siliconReadings = @($readings | Where-Object domain -eq "silicon")
-    $guardReadings = @($readings | Where-Object { $_.domain -eq "skin" -or $_.domain -eq "silicon" })
+    $junctionReadings = @($readings | Where-Object domain -eq "junction")
+    $guardReadings = @($readings | Where-Object { $_.domain -eq "skin" -or $_.domain -eq "silicon" -or $_.domain -eq "junction" })
     $sourceSummary = @($readings | Sort-Object domain, source | ForEach-Object {
         "{0}:{1}={2}" -f $_.domain, $_.source, $_.temperature_c.ToString("F1", [Globalization.CultureInfo]::InvariantCulture)
     }) -join ','
@@ -194,6 +212,9 @@ function Get-ThorThermalGuardSnapshot {
         silicon_temperature_c = if ($siliconReading.Count) { $siliconReading[0].temperature_c } else { $null }
         silicon_source = if ($siliconReading.Count) { $siliconReading[0].source } else { "none" }
         skin_sensor_count = $skinReadings.Count
+        junction_temperature_c = if ($junctionReading.Count) { $junctionReading[0].temperature_c } else { $null }
+        junction_source = if ($junctionReading.Count) { $junctionReading[0].source } else { "none" }
+        junction_sensor_count = $junctionReadings.Count
         silicon_sensor_count = $siliconReadings.Count
         guard_sensor_count = $guardReadings.Count
         thermal_zone_count = $zoneReadings.Count
@@ -218,7 +239,13 @@ function Get-ThorThermalGuardViolation {
         [Parameter(Mandatory = $true)][object]$Snapshot,
         [double]$MaxBatteryTemperatureC,
         [double]$MaxSkinTemperatureC,
-        [double]$MaxSiliconTemperatureC
+        [double]$MaxSiliconTemperatureC,
+        # Per-core junction runs far hotter than the subsystem sensors by design
+        # and is unremarkable until roughly 95-105 C on this part, so it gets its
+        # own bound rather than borrowing the package-shaped silicon limit. This
+        # still stops a genuine junction runaway; it just stops calling ordinary
+        # load an emergency.
+        [double]$MaxJunctionTemperatureC = 95.0
     )
 
     if ($null -eq $Snapshot.battery_temperature_c) {
@@ -249,6 +276,12 @@ function Get-ThorThermalGuardViolation {
         return [pscustomobject]@{
             code = "silicon-temperature"
             message = "Thor CPU/GPU silicon temperature is $(Format-ThorTemperatureC $Snapshot.silicon_temperature_c) C, at or above the $MaxSiliconTemperatureC C limit."
+        }
+    }
+    if ($null -ne $Snapshot.junction_temperature_c -and $Snapshot.junction_temperature_c -ge $MaxJunctionTemperatureC) {
+        return [pscustomobject]@{
+            code = "junction-temperature"
+            message = "Thor CPU junction temperature is $(Format-ThorTemperatureC $Snapshot.junction_temperature_c) C, at or above the $MaxJunctionTemperatureC C limit."
         }
     }
 
