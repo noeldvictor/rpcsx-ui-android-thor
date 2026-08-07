@@ -467,11 +467,37 @@ managed against.
 
 `WFE` parks the core; a write to the monitored line clears the exclusive monitor
 and generates the wake. That is `MONITORX`/`MWAITX` with the operands in a
-different order. Armv8.7's `WFET`/`WFIT` add the timeout half, matching
-`MWAITX`'s timer, but are not needed for a first implementation and this chip
-probably lacks them: it is Armv9.0, roughly v8.5. `ID_AA64ISAR2_EL1.WFxT` is the
-field to read, and that check has not been run because the device was
-disconnected when this was written.
+different order.
+
+**Measured on device, and the numbers change the design.** `ID_AA64ISAR2_EL1`
+reads `0`, so **FEAT_WFxT is absent**: there is no `WFET`, and therefore no way
+to bound a `WFE` with a timeout. `MWAITX` *does* take a timer, `min(spin, 17) *
+500` cycles, so on x86 a missed wake costs microseconds. On AArch64 the only
+fallback wake is the generic timer event stream, and that was timed directly:
+
+| sequence | latency |
+| --- | --- |
+| `sevl; wfe` (event already pending) | 0.007 us |
+| `sevl; wfe; wfe` (second one really waits) | **95.06 us** |
+| `ldxr; sevl; wfe; wfe; clrex` | **97.33 us** |
+
+So `WFE` genuinely parks — the first naive probe suggested 10ns and was wrong,
+because its loop never actually consumed the pending event. Confirming that took
+`SEVL` to set the event register deliberately, then timing the *second* `WFE`.
+**When a probe reports a number that would be physically surprising, the probe is
+usually what is broken.**
+
+The consequence is a real asymmetry. The exclusive monitor granule is one cache
+line, 64 bytes, while a reservation is 128. A writer touching only the second
+line may not clear a monitor armed on the first, and the waiter then eats the
+full ~95us instead of the microseconds `MWAITX` would cost. That is why the
+implementation only parks once `getllar_spin_count >= 8`: spinning through the
+early iterations keeps a 95us worst case off short waits, where it would
+dominate, and confines it to waits already long enough not to care.
+
+Also confirmed while probing: `CNTFRQ_EL0` is `19200000`, cross-checking the
+19.2MHz generic timer that `asm.hpp` documents and that the busy-wait tuning
+depends on.
 
 The safe shape matters and is worth writing down, because the unsafe shape
 deadlocks. Arm the monitor, **re-check the condition after arming**, then `WFE`,

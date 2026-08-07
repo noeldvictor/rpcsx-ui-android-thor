@@ -5926,7 +5926,27 @@ bool spu_thread::process_mfc_cmd()
 								}
 								else
 #elif defined(ARCH_ARM64) && defined(RPCSX_THOR_ARM64_WFE_WAIT)
-								if (true)
+								// Only park once a long wait is established, and keep spinning
+								// before that. This is not caution, it is a measured asymmetry
+								// with the x86 path above.
+								//
+								// MWAITX bounds its sleep with a timer, min(spin, 17) * 500
+								// cycles, so a missed wake costs microseconds. AArch64 cannot:
+								// FEAT_WFxT is absent on this chip (ID_AA64ISAR2_EL1 reads 0),
+								// so WFE has no timeout and its only fallback wake is the
+								// generic timer event stream. Measured on device, that is
+								// ~95us: sevl+wfe returns in 0.007us with the event pending,
+								// sevl+wfe+wfe takes 95.06us, and the same with an armed
+								// monitor takes 97.33us.
+								//
+								// The monitor granule is one cache line, 64 bytes, but a
+								// reservation is 128. A writer touching only the second line
+								// may not clear a monitor armed on the first, and then the
+								// waiter eats the full ~95us. Spinning through the early
+								// iterations keeps that penalty off short waits, where it
+								// would dominate, and confines it to waits already long
+								// enough for 95us not to matter.
+								if (getllar_spin_count >= 8)
 								{
 									struct check_wait_t
 									{

@@ -75,6 +75,19 @@ if ($iClrex -lt $iWfe) {
     throw "The WFE helper drops the exclusive monitor before parking, which defeats the wake."
 }
 
+# 4b. Parking must be gated on an established long wait.
+#
+#     MWAITX bounds its sleep with a timer; AArch64 cannot, because FEAT_WFxT
+#     is absent here (ID_AA64ISAR2_EL1 reads 0 on device). WFE's only fallback
+#     wake is the generic timer event stream, measured at ~95us. The monitor
+#     granule is one 64-byte line while a reservation is 128 bytes, so a writer
+#     touching only the second line may not clear the monitor and the waiter
+#     eats the full ~95us. Parking unconditionally would put that penalty on
+#     short waits, where it dominates.
+if ($code -notmatch 'getllar_spin_count >= \d+') {
+    throw "The WFE path no longer waits for an established long spin before parking. Without WFxT there is no timeout, and the fallback wake is ~95us."
+}
+
 # 5. The default path must remain the plain busy wait, reachable when the flag
 #    is off. If this disappears, turning the option off stops being safe.
 if ($code -notmatch 'thor_wait::profiled_busy_wait\(thor_wait::site::spu_getllar, 300\)') {
