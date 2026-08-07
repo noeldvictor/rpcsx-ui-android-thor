@@ -660,3 +660,49 @@ it does not get "restored" for symmetry with the block below it.
 
 The LSE2 contract test still passes, and the difference between the two blocks is
 now visible at a glance: the exclusive form loops, the LSE2 form does not.
+
+## Verifying the ordering fix, and where level 3 is not available
+
+The semaphore fast-cache fix was described as "latent", which conflated two
+different things. The **superpath** is disabled at runtime by default; the **code**
+is compiled in unconditionally. So the instructions it generates are checkable
+even though the path does not execute.
+
+Level 3 turns out not to be available for it, and the reason is worth recording
+rather than glossing. `record_thor_es_sema_fast_object` and
+`get_thor_es_sema_fast_object` are `static`, so they carry no symbols and are
+inlined into their callers; `llvm-nm` finds nothing to anchor on. Library-wide
+instruction counts cannot substitute — 369 `STLR`, 21,607 `LDAR` and 8 `LDAPR`
+across the binary are dominated by `atomic_t`'s seq_cst operations, which is the
+same aggregate-versus-sequence trap that made the `cmp_rdata` opcode census
+meaningless.
+
+Level 2 answers it cleanly. Compiling the exact pair at the shipping baseline:
+
+```
+publish:  str   x2, [x8, #8]     <- the pointer, relaxed: a plain STR
+          stlr  w1, [x8]         <- the flag, release
+
+lookup:   ldapr w9, [x8]         <- the flag, acquire
+          cmp   w9, w1
+          ldr   x0, [x8, #8]     <- the pointer, relaxed: a plain LDR
+```
+
+Three things this confirms that were previously argued from theory.
+
+**One ordered access per side, and the data accesses stay plain.** That is the
+efficiency of the release/acquire pairing and the reason the contract test
+asserts the pointer load must *remain* relaxed: promoting it too would be
+redundant cost and would suggest the pattern had been misunderstood.
+
+**`memory_order_acquire` really does compile to `LDAPR`, not `LDAR`**, on this
+`armv8.4-a` baseline. The RCpc note elsewhere in this document predicted exactly
+that, and it is nice to see it rather than assume it.
+
+**And `LDAPR` is the right instruction here**, which is the part that needed the
+distinction. It provides the synchronises-with edge from the matching release,
+which is all this pattern requires. It does *not* provide the RCsc StoreLoad
+ordering that a Dekker-shaped protocol needs — and `vm::range_lock`, which does
+need that, is built from seq_cst operations rather than an explicit acquire, so
+it is unaffected. **Knowing which of the two guarantees a site depends on is what
+turns that footnote from alarming into useful.**
