@@ -885,3 +885,40 @@ Table 2-1 is a coarse capability map for a whole instruction class, and differen
 crypto instructions land on different pipes within it. **The per-instruction row
 is the authoritative one.** Do not use Table 2-1 to argue that a specific
 instruction has more pipes than its own row says.
+
+## Reductions cost double at full width, which is why folding first wins
+
+The movemask-replacement toolkit leans on reductions, and their cost is not flat.
+Width changes both columns:
+
+| reduce | latency | throughput | pipes |
+| --- | --- | --- | --- |
+| `ADDV`/`SADDLV`/`UADDLV`, **4H/4S** | **2** | **2** | `V13` |
+| `ADDV`/`SADDLV`/`UADDLV`, 8B/8H | 4 | 2 | `V13, V` |
+| `ADDV`/`SADDLV`/`UADDLV`, **16B** | **4** | **1** | `V13` |
+| `UMAXV`/`UMINV`/`SMAXV`/`SMINV`, **4H/4S** | **2** | **2** | `V13` |
+| `UMAXV`/`UMINV`/`SMAXV`/`SMINV`, 8B/8H | 4 | 2 | `V13, V` |
+| `UMAXV`/`UMINV`/`SMAXV`/`SMINV`, **16B** | **4** | **1** | `V13` |
+
+A 16-byte reduction is **twice the latency and half the throughput** of a 4-lane
+one, and every form is stuck on `V13`, the same two pipes as every vector shift.
+Section 4.7 adds a further cycle on top, because ASIMD reductions belong to no
+forwarding region at all, so whatever consumes the result — invariably a move to
+a general-purpose register — waits one more.
+
+**This is the real reason the `scan16_rdata` rewrite works**, and it is a better
+justification than the instruction count that was recorded for it. The obvious
+way to collapse eight 16-byte comparisons is eight full-width reductions. That
+would be eight `V13` µOPs at throughput 1, latency 4, on the narrowest pipe pair
+in the machine, each followed by a cross-region penalty.
+
+What it does instead is fold with `UMAXP` first. Pairwise max is `ASIMD max/min,
+basic and pair-wise`: latency 2, throughput 4, **all four pipes**. So the folding
+happens on the wide, unrestricted part of the machine, and only the final small
+reduction touches `V13`. The 65-to-42 instruction count understates it — the
+change also moved the bulk of the work off the contended pipe pair.
+
+**The generalizable rule for this toolkit: narrow the data with pairwise
+operations on `V`, then reduce once, as narrow as possible.** Reaching for
+`ADDV`/`UMAXV` on a full 16-byte vector is the expensive spelling of a reduction,
+not the natural one.
