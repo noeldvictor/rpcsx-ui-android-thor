@@ -587,3 +587,76 @@ Note the third point is itself an ARM concern with no x86 analogue. x86 has
 coherent instruction caches; AArch64 does not, so **any** self-modifying or
 JIT-written code needs explicit cache maintenance. Worth checking whenever
 hand-written codegen appears.
+
+## Building a vector from 32-bit scalars is cheap on x86 and stalls on A710
+
+The A710 guide carries three sections the X3 guide does not, and two of them
+describe the same hazard from different angles. This matters because A710 and
+A715 are four of Thor's eight cores.
+
+**Section 4.2, dispatch stall:**
+
+> In the event of a V-pipeline µOP containing more than 1 quad-word register
+> source, a portion or all of which was previously written as one or multiple
+> single words, that µOP will stall in dispatch for **three cycles**.
+
+**Section 4.11, register forwarding hazards**, gives the conditions precisely:
+
+- the producer writes an **S-register**, *not* a `D[x]` scalar
+- the consumer reads an overlapping **Q-register**
+- the consumer is an FP/ASIMD µOP, *not* a store or MOV
+
+So the shape to avoid is: assemble a vector out of 32-bit pieces, then feed it
+into a multi-source vector operation.
+
+**That is exactly what `_mm_set_epi32` means**, and on x86 it is an unremarkable
+way to build a constant or pack four values. Verified at `-O2 -mcpu=cortex-a710`
+that clang produces the hazard verbatim:
+
+```
+fmov  s1, w0                 <- S-register write        (4.11 producer)
+mov   v1.s[1], w1            <- single-word lane writes (4.2)
+mov   v1.s[2], w2
+mov   v1.s[3], w3
+add   v0.4s, v1.4s, v0.4s    <- two quad-word sources, FP/ASIMD consumer
+```
+
+All three of 4.11's conditions hold, and 4.2's three-cycle stall applies on top.
+
+**The obvious workaround does not work.** Writing the four values to a stack
+array and loading the vector back compiles to *byte-identical* code: clang folds
+the memory round-trip away and rebuilds it lane by lane.
+
+**The guide's own mitigation does work.** Section 4.11 exempts `D[x]` scalar
+writes, so packing the values into 64-bit halves first gives:
+
+```
+fmov  d1, x8                 <- D-register write, exempt
+mov   v1.d[1], x9            <- D[x] scalar write, exempt
+add   v0.4s, v0.4s, v1.4s
+```
+
+Two extra GPR `orr`s buy the removal of a three-cycle dispatch stall and the
+forwarding hazard, on half the cores in this machine.
+
+**Audited, and this codebase does not currently hit it.** The pattern appears in
+five files; none is a live ARM hot path:
+
+| site | uses | verdict |
+| --- | --- | --- |
+| `Emu/CPU/sse2neon.h` | 64 | the shim's own implementations, not call sites |
+| `Emu/Cell/SPUInterpreter.cpp` | 46 | cold. `spu_decoder` defaults to `llvm`, so this C++ interpreter is not reached |
+| `Emu/RSX/Program/ProgramStateCache.cpp` | 2 | `_mm_set1_epi32` of a **constant**, which lowers to `MOVI`, not lane writes |
+| `Emu/RSX/Common/buffer_stream.hpp` | 1 | consumer is `_mm_stream_si128`, a **store**, which 4.11 explicitly excludes |
+| `Emu/CPU/CPUTranslator.cpp` | 1 | a comment |
+
+So this is a rule for new code rather than a defect to repair, and it is written
+down here because the check is not obvious: a constant splat and a four-scalar
+pack look alike in source and are completely different instructions.
+
+**The generalizable form**, which is the reason this belongs in the x86-habit
+family: on x86 the cost of materialising a vector is roughly independent of how
+you spell it. On A710 the *width of the writes* that produced a register changes
+what the next instruction costs. Prefer 64-bit lane writes when populating a
+vector that an ASIMD instruction will consume, and reserve `_mm_set_epi32`-shaped
+construction for values that go straight to memory.
