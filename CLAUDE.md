@@ -481,17 +481,39 @@ Linux/arm64 enables the generic timer **event stream**, which delivers a
 periodic event (order 100us) that wakes `WFE` regardless. Without that event
 stream a plain `WFE` with no timeout is a hang waiting to happen.
 
-**Not implemented, and the reason is the measurement rule rather than the risk.**
-The entire justification for this change is power and thermal behaviour. Its
-effect on frame time could easily be zero or slightly negative, since parking a
-core adds wake latency to the reservation handoff. A change whose only argument
-is "this should run cooler" cannot be landed by a fork that does not measure,
-because there is nothing to check the claim against. It is also in the hottest
-SPU path, where the existing spin counts were hand-tuned, so it would perturb
-tuning that was arrived at empirically.
+**Implemented behind `RPCSX_THOR_ARM64_WFE_WAIT`, default off.**
+`-PrpcsxThorArm64WfeWait=1` turns it on. Both configurations build.
 
-If device measurement ever becomes available, this is the first thing to try,
-and the thing to measure is sustained temperature and clock residency, not FPS.
+Default-off is not hedging, it is the measurement rule. The entire justification
+is power and thermal behaviour; the effect on frame time could easily be zero or
+slightly negative, because parking a core adds wake latency to the reservation
+handoff. A change whose only argument is "this should run cooler" cannot be
+switched on by a fork that does not measure, because there is nothing to check
+the claim against. It also sits in the hottest SPU path, where the spin counts
+were arrived at empirically. So the code is written, reviewed and compiled,
+and the decision to enable it is left to whoever can put a thermometer on it.
+
+The emitted sequence was verified rather than assumed:
+
+    ldxr  w8, [x0]           arm the monitor
+    bl needs_wait / tbz      re-check AFTER arming
+    wfe                      park
+    clrex                    release the reservation
+
+Both halves of that order matter. Re-checking *before* arming lets the writer
+land in the gap, and the wake it generated is already gone — a lost wakeup, with
+the thread sleeping until something unrelated pokes it. `CLREX` must come after
+the park, not before, or the reservation is dropped while it is still needed;
+leaving a stray monitor armed can also make an unrelated `STXR` fail spuriously.
+
+When measurement becomes possible, the thing to measure is **sustained
+temperature and clock residency, not FPS**. A change that lowers power at
+constant frame rate is a win on this device and would look like a no-op on a
+benchmark chart.
+
+Pinned by `tools/test_thor_arm64_wfe_wait.ps1`, which checks the arm/check/park/
+clear order, that both build systems default it off, that the plain busy-wait
+fallback still exists, and that the x86 path was not touched.
 
 ## The fault handler: ARM hands you what x86 makes you decode
 
