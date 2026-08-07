@@ -551,3 +551,41 @@ establish which layer requires it before checking what the silicon does.
 
 Cost of keeping it is one `CSEL` per divide, which is not worth a JIT-level
 inline-asm escape to avoid.
+
+## Two more dimensions swept clean: `long double` and TLS access cost
+
+**`long double` differs between the hosts and is unused.** It is 80-bit x87 on
+x86_64 and 128-bit quad on AArch64, so any arithmetic routed through it produces
+different results on the two hosts — a correctness divergence for an emulator,
+not a performance one. Swept across `Emu/`, `kernel/`, `rx/` and `util/`: **one
+occurrence**, in `util/cfmt.h` handling the `%L` printf length modifier, whose
+case body says "not supported". No arithmetic uses the type, and there are no
+`__float80` or `_Float80` remnants. Nothing to do.
+
+**TLS access is already on the fast general-dynamic variant.** A `thread_local`
+in a shared library normally resolves through `__tls_get_addr`, a function call
+per access, which would matter if hot code touched TLS. The build sets no
+`-ftls-model`, so this looked like an open question. It is not, for two
+independent reasons:
+
+- **The toolchain already emits TLSDESC.** The shipped library carries **134
+  TLSDESC relocations against 22 `__tls_get_addr` calls** — clang defaults to
+  the TLS-descriptor dialect on AArch64 Android, which resolves through a small
+  inline sequence rather than the classic call, and is substantially cheaper.
+- **The hot path does not use TLS at all.** The GETLLAR spin region, which the
+  profiler measured at 82.5% of all emulator spin, contains **zero** TLS
+  accesses. The `thread_local`s in `SPUThread.cpp` are fault handling, the log
+  prefix, a name cache, wait statistics and a notify flag — all outside the
+  measured hot loop.
+
+`-ftls-model=initial-exec` would be faster still, dropping the descriptor call
+for a `tpidr_el0` read plus a GOT offset. It is deliberately **not** proposed:
+this core is `dlopen`ed, Android reserves only a limited surplus of static TLS
+for dynamically loaded libraries, and exhausting it makes `dlopen` fail outright.
+Trading a guaranteed load failure risk for an unmeasurable gain on a path that
+does not execute is a bad exchange.
+
+Recorded because "no TLS model is set" is the kind of observation that looks like
+a finding, and the two facts that make it a non-issue — which dialect clang
+actually picked, and whether the hot path touches TLS — both need checking rather
+than assuming.
