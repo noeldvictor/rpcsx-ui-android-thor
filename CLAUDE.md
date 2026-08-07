@@ -116,7 +116,8 @@ stands on its own and this file is the map.
 
 | document | what is in it |
 | --- | --- |
-| [`docs/arm64/codegen.md`](docs/arm64/codegen.md) | Instruction selection: the per-core optimization guides and what they say about the lowerings chosen here, the missing movemask, the SPU opcode audit, and the x86-habit table that produced most of the real defects. |
+| [`docs/arm64/codegen.md`](docs/arm64/codegen.md) | What this fork does: the lowerings chosen here, the missing movemask, the SPU opcode audit, and the x86-habit table that produced most of the real defects. |
+| [`docs/arm64/microarchitecture.md`](docs/arm64/microarchitecture.md) | What the hardware does: instruction latency, throughput and pipe assignment from the vendored per-core guides, the forwarding regions, and the chapter 4 rules. |
 | [`docs/arm64/memory-model.md`](docs/arm64/memory-model.md) | Atomics and ordering: the dead LSE2 macro, the reservation seqlock, RCsc versus RCpc, and instruction-cache maintenance. |
 | [`docs/arm64/power-and-thermal.md`](docs/arm64/power-and-thermal.md) | The thermal sensor mistakes, the hot retry loops, the WFE power-optimized wait, and what has actually been measured on device. |
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
