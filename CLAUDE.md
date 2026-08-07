@@ -192,6 +192,21 @@ spelling, `mov_rdata`'s dropped non-temporal intent. None was LLVM failing to
 pick a good instruction from a clean description. So opcode-level auditing has
 low yield, and auditing *corrections* has high yield.
 
+That prediction was then tested by acting on it, and it held. Searching
+`PPUTranslator.cpp` for correction shapes rather than reading opcodes in order —
+`^ sext(...)` beside an operation, a `select` next to a conversion, a literal
+saturation limit — turned up exactly one live instance, `VMSUMSHS`, whose tail
+was a 32-bit signed saturating add written longhand because SSE has no 32-bit
+packed form. `SQADD` does it in one. 12 instructions became 5, or **2 when the
+module never reads VSCR**, since `set_sat` then emits nothing and only the
+`SQADD` survives; the hand-rolled version could never collapse that way because
+it needed the overflow mask to select its own result.
+
+The tell was not the instruction count. It was that `VADDSWS` and `VSUBSWS`
+directly beside it already delegate to `add_sat`/`sub_sat`. **An operation
+hand-rolling what its immediate siblings delegate is worth a second look**, and
+that heuristic is cheaper to apply than reading every opcode.
+
 ## When LLVM already does it, and when it does not
 
 Measure the baseline before writing a lowering. LLVM's AArch64 backend is
@@ -234,6 +249,7 @@ hunt is a decision that is *correct reasoning on x86* applied unconditionally.
 | `VPKUHUS`/`VPKUWUS` | `PACKUSWB` narrows signed to unsigned, so pre-clamp each half | blocks `UQXTN`; the sibling shape gets it in two instructions |
 | `mov_rdata_nt` | streaming stores are an x86 intrinsic, so everyone else gets `memcpy` | the non-temporal intent is silently dropped; `STNP` restores it for free |
 | `scan16_rdata` | `PTEST` sets flags directly, so eight separate vector compares are nearly free | `gv_testz` narrows and moves to a GPR, so it is eight `SQXTN`/`FMOV`/`CSET` triples with the transfers on the critical path |
+| `VMSUMSHS` | SSE saturates at 8 and 16 bits only, so a 32-bit saturating add must be written out longhand | `SQADD` does it in one, and the hand-rolled overflow mask blocks `set_sat` from vanishing when the module never reads VSCR: 12 instructions where 2 suffice |
 | PPU 128-bit guest access | `llvm.bswap.iN` is the portable spelling, and on x86 a 16-byte reverse is a shuffle anyway | forces the value through GPRs: `ldp`, two `rev`, `fmov`, `mov Vd.d[1]`, versus `ldr q`/`rev64`/`ext` |
 
 That last one is the widest-reaching of the set. PS3 memory is big-endian, so
