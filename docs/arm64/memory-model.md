@@ -56,8 +56,20 @@ Two things that are worth knowing rather than acting on blindly:
   nobody needs to re-investigate it on this hardware.
 
   What remains is therefore a redesign rather than a port: something ARM-shaped,
-  such as finer-grained per-reservation locking using LSE. That is a real design
-  change with real risk, and it is the highest-value ARM work left here.
+  such as finer-grained per-reservation locking using LSE. ~~That is a real
+  design change with real risk, and it is the highest-value ARM work left
+  here.~~
+
+  > **Superseded — read the correction section below before acting on this.**
+  > Locking is *already* per-reservation; `vm::reservation_lock` takes the
+  > 128-byte line's own word and each entry has its own cache line. LSE was never
+  > the missing piece, because the cost is which line an atomic touches rather
+  > than how it is spelled. The contention is one `bit_test_set` on
+  > `g_range_lock_bits[1]`, it is paid by `passive_lock`'s **readers** rather
+  > than by the writer, and it was measured at 17.5% of all emulator spin — most
+  > of which was then removed by fixing that site's backoff instead of
+  > redesigning anything. This paragraph is kept because the reasoning that led
+  > to it is instructive, not because its conclusion still holds.
 
   One part of the cost has already come down, though, and it is worth not
   double-counting. The heavyweight path's own bookkeeping runs on 16-byte

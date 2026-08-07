@@ -681,8 +681,23 @@ uncontended atomic on a shared line is a cache-line transfer, not a wait, and th
 redesign's entire case was that eight cores were serialising on it. They are not.
 The remaining upside is bounded by the cost of one uncontended instruction, which
 is far too small to justify redesigning the hottest lock in the memory subsystem.
-**Closed, on evidence, rather than left open as "the highest-value ARM work
-left".**
+~~Closed, on evidence, rather than left open as "the highest-value ARM work
+left".~~
+
+> **Retracted later the same session — that closure was drawn from the wrong
+> site.** `vm_writer_lock` reading zero shows only that the *writer* never
+> blocks. The **readers** do: `passive_lock` spins while `g_range_lock_bits[1]`
+> is non-zero, the shared `writer_lock` path holds a bit in that word for its
+> whole lifetime, and `vm_passive_lock` measured **17.5% of all emulator spin**.
+> The paragraph above is left standing rather than deleted because the reasoning
+> in it is a good example of the failure: every sentence is true, and the
+> conclusion does not follow. See the correction in
+> [`memory-model.md`](memory-model.md) and the re-scoped entry in
+> [`ledger.md`](ledger.md).
+>
+> The site's cost was subsequently removed a different way — by fixing
+> `passive_lock`'s backoff, not by redesigning the lock — so the practical
+> conclusion happened to survive its own broken justification.
 
 **The `lv2` sub-quantum sleep is cold for this title.** `lv2_yield` recorded zero
 calls. The x86-only `TPAUSE`/`MWAITX` path found in `kernel/cellos/src/lv2.cpp`

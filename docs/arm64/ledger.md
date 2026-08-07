@@ -32,7 +32,7 @@ with porting. Symbol visibility needed no work either: the shipped core exports
 
 **The honest closing state.** The static search space is exhausted; what remains
 is not undiscovered code but four decisions blocked on capabilities this fork
-does not have, listed under the ledger. Full contract suite at the end: 96 pass,
+does not have, listed under the ledger. Full contract suite at the end: 97 pass,
 1 fail, and that failure is `test_thor_cool_title_candidate_artifact.ps1`
 refusing to match a rebuilt APK against a recorded proof-run candidate, which is
 the behaviour it is supposed to have.
