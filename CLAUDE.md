@@ -833,6 +833,38 @@ Linux/arm64 enables the generic timer **event stream**, which delivers a
 periodic event (order 100us) that wakes `WFE` regardless. Without that event
 stream a plain `WFE` with no timeout is a hang waiting to happen.
 
+**Run on device, and the result is: safe, thermally neutral, performance
+unmeasured.** The experiment is worth recording mainly for how it failed.
+
+What it established:
+
+- **No hang.** This was the real risk. A lost wakeup would park an SPU thread
+  until an unrelated event, and the failure would look like a freeze rather than
+  a slowdown. The WFE build booted Eternal Sonata, reached gameplay, rendered
+  correctly and stayed alive. The arm/re-check/park ordering holds in practice.
+- **Thermally neutral.** Peak over a matched 120 s window: 64.6 C silicon /
+  74.7 C junction without WFE, 65.4 / 75.9 with. That is inside run-to-run noise.
+
+What it failed to establish, and why: **the scene would not hold still.** Both
+arms boot into the opening cutscene, which advances on its own schedule, so the
+two runs were sampling different content. The control landed in a forest scene
+frame-capped at 29.99 fps; the WFE arm was in a character close-up at 23.19. CPU
+figures diverged accordingly, and the two measurement methods disagreed about
+the direction: the in-game overlay showed WFE using *more* CPU (58.3% vs 47.0%
+total) while process CPU time showed it using far less (1.47 vs 4.09 cores
+busy). **When two instruments disagree on the sign, the experiment is measuring
+the scene, not the change.**
+
+So the flag stays off. Not because it failed, but because nothing was learned
+about the thing it exists to improve.
+
+For whoever runs it properly: the boot-into-cutscene route cannot work, because
+frame-capped and uncapped scenes are not comparable and the content is not
+reproducible. Use a save state loaded at a fixed point, or a static menu, and
+compare process CPU time over a long window at matched frame rates. Measure
+sustained temperature and clock residency rather than FPS; a change that lowers
+power at constant frame rate is the win here and is invisible on a frame counter.
+
 **Implemented behind `RPCSX_THOR_ARM64_WFE_WAIT`, default off.**
 `-PrpcsxThorArm64WfeWait=1` turns it on. Both configurations build.
 
