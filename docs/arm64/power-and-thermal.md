@@ -749,3 +749,58 @@ allowed to vary as long as the metric divided by something that varied with it.*
 Look for a quantity the change under test provably does not touch, and normalise
 by it; here the code structure handed one over for free, and reading which branch
 the flag sat in was worth more than any amount of measurement discipline.
+
+## The WFE A/B, third attempt: the mechanism is proven, the power win is not
+
+Both arms built with the profiler, `debug.rpcsx.thor.wait_profiler=v`, Eternal
+Sonata booted through `THOR_DEBUG_BOOT`, rates taken between timestamped profiler
+reports. Both defines verified at the compiler before spending device time —
+`RPCSX_THOR_ARM64_WFE_WAIT` and `RPCSX_THOR_WAIT_PROFILER` present in
+`SPUThread.cpp`'s compile flags, not merely `ON` in a CMake cache.
+
+| arm | ticks per retry | cores busy | watts (floor) |
+| --- | --- | --- | --- |
+| WFE off, control A | `263.7` | `4.818` | `8.536` |
+| WFE off, control B | `260.7` | `3.916` | `6.942` |
+| **WFE on** | **`209.8`** | `5.453` | `10.514` |
+
+**On the normalized metric the change is -20.0%, against a control-to-control
+spread of 1.1%.** The effect is roughly eighteen times the noise floor, which is
+the first time any WFE experiment here has produced a signal that clears its own
+error bars.
+
+### What that does and does not prove
+
+**Proven: the code path is live and is displacing a fifth of the inner spin.**
+Before this run, the WFE build had been shown to boot without hanging and nothing
+more; whether the park ever actually fired was unverified. It fires, and it
+removes 20% of the recorded inner `GETLLAR` spin per unit of reservation
+contention. That the figure is 20% rather than most of it fits the design, which
+only parks once `getllar_spin_count >= 8` — most waits evidently resolve before
+that.
+
+**Not proven: that this saves power.** `cores_busy` and watts both went *up* in
+the WFE arm. They cannot be read as a regression, because both are absolute
+measures and the control windows themselves differ by 59% and 23% on those same
+quantities. They also cannot be read as a win. They simply do not resolve.
+
+**And normalizing them the same way does not work.** Dividing cores by retry rate
+gives `2.106e-4` and `1.020e-4` on the two control windows, a **69% spread**. The
+retry count is a proxy for *reservation contention*, which is exactly why it
+normalizes the spin metric — inner spin is caused by the thing the denominator
+counts. Total CPU and power include PPU, RSX and audio work, which it does not
+track at all, so it is the wrong denominator for them and behaves like one.
+
+**The sharper caveat, which the metric cannot see.** Displaced spin is not saved
+time. `WFE` parks with no timeout on this part, since FEAT_WFxT is absent, so a
+missed wake costs up to the ~95 us event-stream period against the 15.6 us the
+spin would have taken. Fewer recorded spin ticks is consistent with a thread that
+is parked longer than it would have spun. Whether that trades throughput for
+power, saves both, or costs both is exactly what these numbers do not say.
+
+So the flag stays **default off**, for the third time, but for the first time on
+a different basis. It is no longer "nothing was learned": the mechanism is
+confirmed to work and is quantified. What remains unmeasured is narrower and
+better defined — the power and latency consequences of parking, which need either
+a CPU-isolated power rail this device does not expose, or a fixed workload where
+absolute `cores_busy` becomes meaningful.
