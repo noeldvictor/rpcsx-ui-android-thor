@@ -25,13 +25,22 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $apk = Join-Path $repoRoot "app/build/outputs/apk/thortest/rpcsx-thor-experiment-thortest.apk"
 
 function Get-OnlineSerial {
-    $rows = (adb devices) -split "`n" | Where-Object { $_ -match "\sdevice$" }
-    if (-not $rows) { return $null }
+    # adb devices already returns an array of lines. Running -split on it
+    # stringifies the whole array first and then indexing yields a single
+    # character, which produced "Device: c" and an install against a device
+    # named "c". Filter the lines directly instead.
+    # The @() must wrap the whole pipeline. Where-Object returns a bare string
+    # when exactly one line matches, and indexing a string yields a character,
+    # so $rows[0] became "c" out of "c3ca0370" and the install ran against a
+    # device named "c". One connected device is the normal case here, so the
+    # single-match path is the one that matters.
+    $rows = @(adb devices | Where-Object { $_ -match '^\S+\s+device$' })
+    if ($rows.Count -eq 0) { return $null }
     if ($Serial) {
-        foreach ($r in $rows) { if (($r -split "\s+")[0] -eq $Serial) { return $Serial } }
+        foreach ($r in $rows) { if (($r -split '\s+')[0] -eq $Serial) { return $Serial } }
         return $null
     }
-    return ($rows[0] -split "\s+")[0]
+    return (($rows[0] -split '\s+')[0]).Trim()
 }
 
 # Build first so a returning device is installed to immediately rather than
