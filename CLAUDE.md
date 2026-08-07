@@ -203,6 +203,45 @@ question blocks a performance change, check whether the code being removed
 actually does anything.** Dead code can be deleted without answering the
 question it appears to raise.
 
+## The x86-block ledger: what is left, and why each one stays
+
+The sweep is finite, so here is the whole of it. Every `#if defined(ARCH_X64)`
+block in `Emu/` and `util/` was classified as ARM-paired, `#else`-paired, or
+unpaired, and each unpaired one is accounted for below. Nothing in this list is
+an unexamined gap.
+
+| site | what it is | why it stays |
+| --- | --- | --- |
+| `ProgramStateCache.cpp` ×3 | AVX-512 ICL shader hash and compare, plus their runtime dispatch | AVX-512 has no ARM counterpart. The generic path is what ARM runs, and its hot byteswap was already moved to `REV16` |
+| `ProgramStateCache.cpp`, `CPUThread.cpp` | `#include <emmintrin.h>` | a header include, no code |
+| `BufferUtils.cpp` ×3 | asmjit SIMD kernels for vertex swap and index upload | exists because SSSE3/AVX are *optional on x86* and need runtime selection. NEON is mandatory, so clang emits it at build time; the `_naive` names are misleading and were verified to vectorize |
+| `JITASM.cpp`, `JIT.h` | `simd_builder` | the abstraction those asmjit kernels are written against; unused on ARM for the same reason |
+| `JITLLVM.cpp` | `IntelJITEventListener` | an Intel VTune profiling hook |
+| `PPUThread.cpp` | TSX `asmjit` path for `STCX` | no ARM equivalent; FEAT_TME confirmed absent on this chip |
+| `PPUThread.cpp` | 16-byte symbol trampoline | an AArch64 version exists directly below it behind `#elif 0`, with its branch-offset bug now fixed; enabling it needs integration checks a game run would provide |
+| `SPULLVMRecompiler.cpp` | `!m_use_ssse3` fallback in `ROTQBY` | already inside `ARCH_X64`; ARM uses `pshufb_for_x86_and_tbl_for_aarch64` |
+
+Two things that look unpaired to a naive grep and are not: `SPU_RdDec` in the
+SPU recompiler and `SYS_futex_waitv` in `util/sync.h` both use
+`#if defined(ARCH_X64) || defined(ARCH_ARM64)`, so ARM is included. A classifier
+keyed on `#elif defined(ARCH_ARM64)` reports them as x86-only. Worth knowing
+before trusting any such count, including the ones quoted above.
+
+So the block-level sweep is **complete**. What remains is not undiscovered code
+but four decisions already made and recorded, each blocked on something this
+fork cannot do rather than on analysis:
+
+1. **`WFE` power-optimized wait** — implemented, default off, needs a thermometer.
+2. **RawSPU MMIO fault emulation** — needs an AArch64 load/store decoder, since
+   `ISV=0` here, and can only be exercised by a RawSPU title.
+3. **Per-reservation LSE locking** to replace the TSX path — a redesign, not a port.
+4. **`mcpu` to an Armv9 model** — proven safe, benefit is scheduling quality only.
+
+And one correctness question found in passing that is not an ARM matter at all:
+`VSUMSWS`/`VSUM2SWS` never set the VSCR SAT bit, because the expression that
+did so was arithmetically dead. The performance change around it was taken; the
+semantics were left alone.
+
 ## The SPU opcode lowering audit
 
 The recompiler expresses most opcodes as portable IR and trusts the backend. That
