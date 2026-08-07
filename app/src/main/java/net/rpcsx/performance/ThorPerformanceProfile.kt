@@ -59,7 +59,13 @@ object ThorPerformanceProfile {
         val changed = mutableListOf<String>()
         val failed = mutableListOf<String>()
 
-        setSetting("Core@@Max LLVM Compile Threads", "2", "Max LLVM Compile Threads", changed, failed)
+        // 0 means auto, which is every hardware thread. This was 2, which capped
+        // PPU module compilation two-wide no matter how many cores were available,
+        // and was the dominant cost in a cold recompile: 78 modules took about ten
+        // minutes. The A510 affinity pinning that accompanied it is also gone; both
+        // existed to satisfy a thermal guard that was comparing per-core junction
+        // temperatures against a package-shaped limit.
+        setSetting("Core@@Max LLVM Compile Threads", "0", "Max LLVM Compile Threads", changed, failed)
         setSetting("Core@@LLVM Precompilation", "false", "LLVM Precompilation", changed, failed)
         setSetting("Core@@SPU Cache", "true", "SPU Cache", changed, failed)
         setSetting("Core@@SPU Decoder", "\"Recompiler (LLVM)\"", "SPU Decoder", changed, failed)

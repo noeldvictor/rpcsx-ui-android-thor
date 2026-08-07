@@ -27,29 +27,29 @@ if ($titleEnd -lt 0) {
 }
 $titleProfile = $managed.Substring($titleStart, $titleEnd - $titleStart)
 
-if ($titleProfile -notmatch '(?m)^\s+Max LLVM Compile Threads: 2\s*$') {
-    throw "Eternal Sonata Thor profile must use two cold PPU LLVM compile threads."
+# Compilation is no longer capped. 0 means auto, which is every hardware thread.
+# The old value of 2 capped PPU module compilation two-wide regardless of
+# available cores and was the dominant cost in a cold recompile: 78 modules in
+# roughly ten minutes, at 51-58 C package against a 72 C guard.
+if ($titleProfile -notmatch '(?m)^\s+Max LLVM Compile Threads: 0\s*$') {
+    throw "Eternal Sonata Thor profile must leave PPU LLVM compile threads uncapped (0 = auto)."
 }
-if ($titleProfile -match '(?m)^\s+Max LLVM Compile Threads: (?:0|1|[3-9]|[1-9][0-9]+)\s*$') {
-    throw "Eternal Sonata Thor profile contains a conflicting PPU compile-thread value."
+if ($global -notmatch 'setSetting\("Core@@Max LLVM Compile Threads", "0"') {
+    throw "The global Thor default must leave PPU compile threads uncapped, or it will overwrite the profile on boot."
 }
-if ($global -notmatch 'setSetting\("Core@@Max LLVM Compile Threads", "2"') {
-    throw "The Eternal Sonata compile-thread count must match the bounded global Thor default."
-}
+# The affinity hook must survive so the property override still works, but it
+# must not pin by default. Both the cap above and this pinning existed to satisfy
+# a guard that compared per-core junction temperatures to a package-shaped limit.
 if (-not $control.Contains('inline u64 get_ppu_compile_worker_affinity_mask(std::string_view title_id) noexcept') -or
-    -not $control.Contains('return 0x07;') -or
     -not $ppu.Contains('get_ppu_compile_worker_affinity_mask(Emu.GetTitleID())')) {
-    throw "Eternal Sonata PPU compilers are not default-pinned to the three little cores."
+    throw "The PPU compile-worker affinity hook was removed; the property override depends on it."
 }
-if (-not $analyzer.Contains('"two little-core PPU compile threads" = ''Max LLVM Compile Threads:\s*2''')) {
-    throw "Cool-title analyzer does not require runtime proof of the two-thread PPU compile cap."
+if ($control -match 'return 0x07;') {
+    throw "PPU compilers are pinned to the little cores again by default. Use debug.rpcsx.thor.cache_worker_affinity_mask instead."
 }
-if ($analyzerTest -notmatch 'ppu-compile-cap-missing' -or
-    $analyzerTest -notmatch 'two little-core PPU compile threads') {
-    throw "Cool-title analyzer contract lacks a missing-cap counterproof."
-}
-if (-not $artifactTest.Contains('"Max LLVM Compile Threads: 2"')) {
-    throw "Candidate artifact contract does not require the packaged managed-profile marker."
-}
+# The analyzer and artifact contracts previously demanded runtime proof of the
+# two-thread cap. That proof is meaningless now the cap is gone, so those
+# assertions are dropped rather than inverted: there is nothing to prove about a
+# setting whose value is "use everything".
 
-Write-Output "Thor PPU startup compile thermal-cap contract passed: BLUS30161 uses two LLVM workers pinned to 0x07, runtime threads and other titles retain normal scheduling, and runtime/artifact proof is fail closed."
+Write-Output "Thor PPU startup compile contract passed: compile threads uncapped, no default little-core pinning, affinity override hook intact, other titles retain normal scheduling."

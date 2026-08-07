@@ -38,11 +38,13 @@ object GameSettingsDatabase {
             # Official DB requires Write Color Buffers; keep it for black-spot correctness.
             # 30 FPS matches the practical full-speed target for this title on Thor.
             # Cap Vulkan VRAM on shared-memory Adreno so cache/shader spikes do not eat the device.
-            # Keep two cold PPU LLVM workers for throughput; native code confines both to the three A510 cores.
+            # PPU LLVM compile threads are uncapped (0 = auto). The old value of 2, with
+            # native code pinning them to the three A510 cores, made a cold recompile take
+            # about ten minutes at 51-58 C package against a 72 C guard.
             # Do not cap SPURS here; SPURS 4 caused a black-screen-alive load hang on Thor.
             # 2026-05-16 Thor A/B: RPCS3 Scheduler + SPU busy-wait dropped the opening field route to low single digits.
             Core:
-              Max LLVM Compile Threads: 2
+              Max LLVM Compile Threads: 0
               Set DAZ and FTZ: true
               Thread Scheduler Mode: Operating System
               SPU Reservation Busy Waiting Percentage: 0
