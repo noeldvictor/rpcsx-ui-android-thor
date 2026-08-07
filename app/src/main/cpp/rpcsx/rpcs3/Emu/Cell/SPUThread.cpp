@@ -1101,12 +1101,60 @@ static FORCE_INLINE bool cmp_rdata_avx(const __m256i* lhs, const __m256i* rhs)
 #endif
 
 #if defined(ARCH_ARM64)
-static FORCE_INLINE int16x8_t cmp16_pair_accum_arm64(
-	int16x8_t acc, const v128& lhs0, const v128& rhs0, const v128& lhs1, const v128& rhs1)
+// Reduce eight 16-byte inequality tests to a single all-or-nothing answer.
+//
+// The previous ARM path accumulated match counts serially, four dependent
+// vmlaq_s16 steps into one register, then compared the total against 32. It was
+// examined once and kept on an instruction count of 29 against 28 for this
+// shape, which is close enough to a tie to justify leaving working code alone.
+//
+// Instruction count was the wrong metric, and the per-core optimization guides
+// in docs/hardware/ say why. Measured at -O2 -mcpu=cortex-a710 the two shapes
+// are 30 instructions against 28, still nearly a tie, but they differ on two
+// axes the count cannot see:
+//
+//   dependency depth   The accumulate is a genuine serial chain: each SUB - the
+//                      strength-reduced form of the multiply-accumulate, since
+//                      the operands are 0/-1 masks - waits for the previous one,
+//                      and the chain cannot start until CMEQ and two ANDs have
+//                      completed. Roughly 14 cycles before the reduction. This
+//                      tree's leaves are independent, so its critical path is
+//                      one EOR plus three ORR, roughly 8.
+//
+//   reduction width    Counting matches needs a 16-bit reduction, ADDV 8H, at
+//                      latency 4. Testing for any difference only needs the
+//                      widest lanes available, UMAXV 4S, at latency 2, because
+//                      the question is "any bit set anywhere" and lane
+//                      boundaries are irrelevant to it. A 16B reduction would
+//                      have been latency 4 and half the throughput again.
+//
+// Both remain latency estimates read off the published tables rather than
+// measurements, so this is reasoned rather than benchmarked. It is taken because
+// it is better on all three axes at once - depth, reduction width and
+// instruction count - which is a different situation from the near-tie that the
+// original review correctly declined to act on.
+//
+// The semantics are unchanged and simpler to see: XOR every pair, OR the
+// results, and the reservation matches exactly when nothing is set. The old form
+// had to know that four steps of eight lanes make 32.
+static FORCE_INLINE bool cmp16_all_equal_arm64(const v128* lhs, const v128* rhs)
 {
-	const int16x8_t eq0 = vreinterpretq_s16_u16(vceqq_u16(static_cast<uint16x8_t>(lhs0), static_cast<uint16x8_t>(rhs0)));
-	const int16x8_t eq1 = vreinterpretq_s16_u16(vceqq_u16(static_cast<uint16x8_t>(lhs1), static_cast<uint16x8_t>(rhs1)));
-	return vmlaq_s16(acc, eq0, eq1);
+	const auto ne = [&](u32 i)
+	{
+		return veorq_u8(static_cast<uint8x16_t>(lhs[i]), static_cast<uint8x16_t>(rhs[i]));
+	};
+
+	// Four independent pairs, so the eight EORs and the first four ORRs have no
+	// dependency between them and fill the vector pipes.
+	const uint8x16_t a = vorrq_u8(ne(0), ne(1));
+	const uint8x16_t b = vorrq_u8(ne(2), ne(3));
+	const uint8x16_t c = vorrq_u8(ne(4), ne(5));
+	const uint8x16_t d = vorrq_u8(ne(6), ne(7));
+
+	const uint8x16_t ab = vorrq_u8(a, b);
+	const uint8x16_t cd = vorrq_u8(c, d);
+
+	return vmaxvq_u32(vreinterpretq_u32_u8(vorrq_u8(ab, cd))) == 0;
 }
 
 #endif
@@ -1129,13 +1177,7 @@ __forceinline
 	const auto lhs = reinterpret_cast<const v128*>(_lhs);
 	const auto rhs = reinterpret_cast<const v128*>(_rhs);
 #if defined(ARCH_ARM64)
-	int16x8_t hits = vdupq_n_s16(0);
-	hits = cmp16_pair_accum_arm64(hits, lhs[0], rhs[0], lhs[1], rhs[1]);
-	hits = cmp16_pair_accum_arm64(hits, lhs[2], rhs[2], lhs[3], rhs[3]);
-	hits = cmp16_pair_accum_arm64(hits, lhs[4], rhs[4], lhs[5], rhs[5]);
-	hits = cmp16_pair_accum_arm64(hits, lhs[6], rhs[6], lhs[7], rhs[7]);
-
-	return vaddvq_s16(hits) == 32;
+	return cmp16_all_equal_arm64(lhs, rhs);
 #else
 	const v128 a = (lhs[0] ^ rhs[0]) | (lhs[1] ^ rhs[1]);
 	const v128 c = (lhs[4] ^ rhs[4]) | (lhs[5] ^ rhs[5]);
