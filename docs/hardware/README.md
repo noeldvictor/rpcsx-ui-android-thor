@@ -30,3 +30,21 @@ two-instruction sequence that spreads across `V`. See the BCAX entry in
 
 Extracting text: `pypdf` works, a naive stream scrape does not, because the body
 uses font subsetting and only the cover page survives.
+
+## What is deliberately not here
+
+The **Arm Architecture Reference Manual for A-profile** (`aarch64.pdf`, roughly
+14,000 pages, 65.9 MB) is a different kind of document and is not vendored:
+
+    https://www.scs.stanford.edu/~zyedidia/docs/arm/aarch64.pdf
+
+It specifies instruction *semantics* and *encodings*. It contains **no timing
+data at all**, because timing is per-implementation and lives in the guides
+above. It is the correct reference for the RawSPU MMIO instruction decoder in
+`CLAUDE.md`'s ledger, which needs load/store encodings, and the wrong reference
+for any question about speed.
+
+`CLAUDE.md` records one error already made by reasoning from it without checking
+the part: the ESR syndrome fields, which the architecture defines and this
+silicon reports as zero for ordinary stage-1 faults. Fetch it for encodings when
+that work starts, keep it out of git, and do not consult it about performance.

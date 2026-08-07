@@ -110,6 +110,92 @@ harness temperatures as an upper bound that includes the observer, and use a
 direct `THOR_DEBUG_BOOT` when the question is about the emulator rather than the
 route.
 
+## The core optimization guides, and the column that decides borderline cases
+
+`docs/hardware/` vendors Arm's Non-Confidential Software Optimization Guides for
+the Cortex-X3 (prime) and Cortex-A710 (older mid cluster). They carry the three
+numbers no amount of source reading produces: **execution latency, execution
+throughput, and utilized pipelines**.
+
+The third column is the one that is easy to skip and often decides the answer:
+
+    V    FP/ASIMD 0/1/2/3   all four pipes
+    V01  FP/ASIMD 0/1       two
+    V13  FP/ASIMD 1/3       two
+    V0   FP/ASIMD 0         one
+
+X3 figures for every instruction this fork's codegen work actually selected:
+
+| instruction | latency | throughput | pipes | used by |
+| --- | --- | --- | --- | --- |
+| `EOR`/`BIC`/`AND`/`ORR`/`ORN`/`MVN` | 2 | 4 | `V` | `ANDC`, `ORC`, `NOR`, `NAND` |
+| **`BCAX`/`EOR3`** | 2 | **1** | **`V0`** | `SHUFB` selector, `EQV` |
+| `SQADD`/`UQADD`/`URHADD` | 2 | 4 | `V` | `VMSUMSHS`, `AVGB` |
+| `UMAXP`/`UMAX`/`UMIN` | 2 | 4 | `V` | `scan16_rdata` |
+| `UMAXV`/`UMINV` (reduce) | 2 | 2 | `V13` | reduction toolkit |
+| `CNT`/`CLZ`/`CLS` | 2 | 4 | `V` | `CNTB`, `CLZ` |
+| `UABD` | 2 | 4 | `V` | `ABSDB`, block checksum |
+| `XTN` | 2 | 4 | `V` | plain narrow |
+| **`SQXTN`/`UQXTN`** | **4** | **2** | **`V13`** | `VSUMSWS`, `VPKUHUS` |
+| `TBL`, 1-2 table regs | 2 | 2 | `V01` | `VPERM` |
+| **`TBX`, 2 table regs** | **4** | **2** | `V` | `SHUFB` |
+
+Most of the sweep's choices are confirmed cheap: `SQADD`, `UMAXP`, `CNT` and
+`UABD` are all latency 2 at full rate on all four pipes, so `VMSUMSHS` and
+`scan16_rdata` are landing on the best instructions available.
+
+**`BCAX` is the exception, and the guide explains a measurement this document
+had already recorded without accounting for it.** `BCAX` replaces a dependent
+`BIC` then `EOR`. Read the table:
+
+| | latency | throughput |
+| --- | --- | --- |
+| `BIC` then `EOR`, dependent | 2 + 2 = **4** | 4/cycle, spread across `V` |
+| `BCAX` | **2** | **1/cycle, `V0` only** |
+
+So the guide predicts a **2.00x latency win and a throughput loss**. Against the
+bench in the section above, run before any of this was read:
+
+| shape | predicted | X3 measured | A715 | A510 |
+| --- | --- | --- | --- | --- |
+| latency, serial chain | **2.00x** | `1.96x` | `2.01x` | `2.00x` |
+| throughput, independent chains | **below 1.0** | `0.94x` | `1.00x` | `2.02x` |
+
+The latency row matches the published figure to within measurement noise on all
+three core types, which is a strong check on the bench itself. The throughput
+row confirms the direction but **not the magnitude**: a pure `V0` bottleneck
+implies roughly `0.5x`, and the bench measured `0.94x`, so four independent
+chains do not saturate one pipe. A wider bench would show worse. The earlier
+explanation here — "the big cores have enough vector pipes to issue the old pair
+in parallel" — was directionally right and now has a mechanism and a number.
+
+None of this changes the call. Our `SHUFB` emits `bcax` immediately followed by
+the `tbx` that consumes it, so the latency row is the one that describes the real
+lowering, and that row is a clean 2x. But the general rule is now explicit, and
+it is the reason to keep these PDFs: **an instruction that saves an operation can
+still lose if it issues on one pipe where the sequence it replaces issues on
+four.** Instruction count is not the metric; latency, throughput and pipe are,
+and only the per-core guide has them.
+
+Note also that `SQXTN` is not free — latency 4 and half rate on two pipes, versus
+2 and full rate on four for plain `XTN`. It still wins enormously where it was
+adopted, since `VSUMSWS` went from a 9-instruction emulated clamp to it, but do
+not reach for it as though it were an ordinary narrow.
+
+The A510 column is where BCAX wins on both shapes, which fits a narrow core with
+a vector unit shared between core pairs: there, halving the operation count
+matters more than which pipe it lands on.
+
+**What these guides are not.** The Arm Architecture Reference Manual (`aarch64.pdf`,
+~14,000 pages) is a different document and answers a different question. It gives
+instruction *semantics* and *encodings* and contains no timing data whatsoever,
+because timing is per-implementation. It is the right reference for the RawSPU
+MMIO decoder in the ledger, which needs load/store encodings, and the wrong one
+for any performance question. This document has already recorded one error made
+by reasoning from it without checking the part — the ESR `ISV` fields, which the
+architecture defines and this silicon reports as zero. Get it for encodings when
+that work starts; do not consult it about speed.
+
 ## How to verify a codegen change actually landed
 
 Three levels, cheapest first:

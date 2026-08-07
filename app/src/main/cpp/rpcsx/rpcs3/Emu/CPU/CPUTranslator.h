@@ -3826,6 +3826,17 @@ public:
 	// no SHA-3, so callers never need to branch.
 
 	// BCAX: a ^ (b & ~c), in one instruction instead of a BIC plus an EOR.
+	//
+	// Fewer instructions is not automatically faster here, and the Cortex-X3
+	// optimization guide in docs/hardware/ says why. BCAX is latency 2 but
+	// issues at 1/cycle on pipe V0 alone, where BIC and EOR are latency 2 each
+	// at 4/cycle across all four V pipes. So it halves latency for a dependent
+	// pair, 4 down to 2, and loses on throughput for independent work. Measured
+	// on device: 1.96x on a serial chain, 0.94x on four parallel chains.
+	//
+	// Both call sites feed the result straight into a consuming TBL/TBX, so the
+	// latency shape is the one that applies and this is a win. A future caller
+	// that emits many independent BCAXes would want to check that again.
 	template <typename T1, typename T2, typename T3, typename T = llvm_common_t<T1, T2, T3>>
 	value_t<T> bcax(T1 a, T2 b, T3 c)
 	{
