@@ -768,6 +768,34 @@ non-temporal store lowers to, never about `STNP` itself. With 32-byte chunks,
 which is what that function uses, the paired form costs exactly what a plain
 `STP` costs.
 
+### `LD1`/`ST1` and `LDP`/`STP` are the same instruction as far as the core cares
+
+While choosing the shape for `mov_rdata`, the NEON `vld1q_u8_x2` spelling was
+rejected in favour of plain vector loads because it emitted `LD1`/`ST1` rather
+than `LDP`/`STP`. **That reasoning was wrong, even though the conclusion was
+right.** The tables put the two-register Q-form of each in exactly the same
+place:
+
+| instruction | latency | throughput | pipes |
+| --- | --- | --- | --- |
+| `LDP`/`LDNP` Q, immed offset | 6 | 3/2 | `L` |
+| `LD1`, 1 element, multiple, **2 reg**, Q-form | 6 | 3/2 | `L` |
+| `STP`/`STNP` Q, immed offset | 2 | 1 | `L01, V01` |
+| `ST1`, 1 element, multiple, **2 reg**, Q-form | 2 | 1 | `L01, V01` |
+
+Identical in all three columns, both directions. Arm's section 4.3 example is
+written with `LDP`/`STP`, but nothing in the timing data prefers them.
+
+**The variable that actually mattered was the addressing mode.** `vld1q_u8_x2`
+compiled to the *writeback* form, `ld1 {v0.16b, v1.16b}, [x8], #32`, which adds
+the `I` pipe per the rows above, while the plain vector loads produced
+non-writeback `LDP` at fixed offsets. So the win came from dropping the
+base-register update, not from the mnemonic.
+
+Worth recording because the mistake is an easy one to repeat in either direction:
+seeing `LD1` where the guide's example says `LDP` looks like a miss, and it is
+not. Read the addressing mode, not the instruction name.
+
 ## Floating point: multiply-accumulate is cheap, conversion is not
 
 The SPU is float-heavy, so Table 3-16 is worth having to hand. The shape of it is
