@@ -117,6 +117,39 @@ false negative and cost hours once.
   scavenger. The SPU block compiler has `compile_spu_llvm_with_retry`; the SPU
   interpreter builder deliberately does not, and stays on the plain path.
 
+## Measuring things here, and five ways it went wrong
+
+Every one of these cost a build and a device run, and each is written up where it
+happened. They are collected because they are about *method*, not about any
+subsystem, and every one of them produced a confident wrong answer first.
+
+- **Normalize by something the change provably cannot touch.** Two WFE A/Bs
+  failed on workload variance before the third worked, and the fix was not a
+  steadier workload but a better denominator: `spu_getllar_retry` sits in a loop
+  the flag never enters, so dividing by it took a 59% spread down to 1.1%. Read
+  which branch the flag is in before designing the experiment.
+- **A mean over a heavy-tailed distribution invites the wrong decision.** GETLLAR
+  spin depth averaged `135.2`, which reads as "every wait is long". The histogram
+  put **95.5% below 8**; one deep wait was carrying the mean. The check that
+  catches it — what would a single extreme sample alone produce — is one line of
+  arithmetic.
+- **Instrument what you changed, not only what you hoped to improve.** A
+  graduated backoff on GETLLAR measured as an exact no-op, `300.0` ticks per call
+  unchanged, because the gate it keyed on had already been passed. Had it shifted
+  5% it would have been kept, and the broken denominator never noticed.
+- **A fix that transfers between sites is a hypothesis.** `passive_lock` and
+  `GETLLAR` looked like one shape — a busy-wait whose measured wait seems shorter
+  than its backoff. One spins immediately; the other only after a separate gate
+  has decided the wait is durable. The gate was in the source the whole time.
+- **When a shared variable is suspected of contention, instrument every party
+  that reads it.** `vm_writer_lock` recorded zero spins, which was read as "this
+  word is uncontended". It only showed the *writer* never blocks; the readers in
+  `passive_lock` were 17.5% of all spin, in the same log line.
+
+The pattern across all five: the measurement was correct and the *inference* was
+not. When a number decides something, state what population it is over and what
+it excludes, before acting on it.
+
 ## Where the rest of this lives
 
 These notes outgrew a single file. The detail is split by topic; each document
