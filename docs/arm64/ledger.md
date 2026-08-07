@@ -86,8 +86,8 @@ fork cannot do rather than on analysis:
 1. **`WFE` power-optimized wait** — implemented, default off, needs a thermometer.
 2. **RawSPU MMIO fault emulation** — needs an AArch64 load/store decoder, since
    `ISV=0` here, and can only be exercised by a RawSPU title.
-3. ~~**Per-reservation LSE locking** to replace the TSX path.~~ **Re-scoped: the
-   premise was wrong.** Reservation locking is *already* per-address —
+3. **The range-lock bitmask.** *(Re-scoped twice; read the whole entry before
+   acting on it.)* **First re-scope: the original premise was wrong.** Reservation locking is *already* per-address —
    `vm::reservation_lock` takes the 128-byte line's own word, and `g_reservations`
    gives each one its own cache line. The contention is a single instruction
    elsewhere: `bits.bit_test_set(diff)` on `g_range_lock_bits[1]`, one shared
@@ -97,6 +97,18 @@ fork cannot do rather than on analysis:
    which line is touched, not how the atomic is spelled. See the contention
    section in [`memory-model.md`](memory-model.md) for the candidate fix, which is
    to drop a redundant presence bitmask rather than to introduce a new lock.
+
+   **Then closed on evidence, and that closure was also wrong.** The wait profiler
+   read `vm_writer_lock` at **zero** spin calls across 5.9 million waits, taken to
+   mean the shared word is uncontended. It shows only that the *writer* never
+   blocks. The **readers** do: `passive_lock` spins while `g_range_lock_bits[1]`
+   is nonzero, the shared `writer_lock` path holds a bit in that word for its
+   whole lifetime, and `vm_passive_lock` measured **17.5% of all emulator spin —
+   1.33M calls, 13.9 core-seconds**.
+
+   So the redesign now has a **measured** target. It is still a change to the
+   hottest lock in the memory subsystem, and `bits != umax` doubles as the
+   exclusive-lock detector, so the correctness question is unanswered.
 4. **`mcpu` to an Armv9 model** — proven safe, benefit is scheduling quality only.
 
 And one correctness question found in passing that is not an ARM matter at all:
