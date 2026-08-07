@@ -45,8 +45,17 @@ Two things that are worth knowing rather than acting on blindly:
   branches that test it. For a 128-byte atomic store that means
   `vm::writer_lock`: a CAS loop on one shared 64-bit bitmask, plus
   `cpu_thread::suspend_all` on some paths, where x86 uses a hardware
-  transaction. Every SPU atomic therefore contends on a single cache line across
-  eight cores.
+  transaction. ~~Every SPU atomic therefore contends on a single cache line
+  across eight cores.~~
+
+  > **Measured, and this sentence is wrong in a specific way.** The wait profiler
+  > recorded `vm_writer_lock` at **zero** spin calls across 5.9 million waits, so
+  > the "CAS loop" does not loop: `writer_lock` acquires on its first attempt,
+  > and the *writer* never contends. What does contend is the other side —
+  > `passive_lock` spins while the same word is non-zero, and measured **17.5% of
+  > all emulator spin**. The line is genuinely shared and genuinely hot; it is
+  > the party paying for it that this sentence got backwards. See the correction
+  > section below.
 
   **Armv8.5 does define transactional memory, FEAT_TME, and this chip does not
   have it.** Decoded from the `ID_AA64ISAR0_EL1` captured on device,
