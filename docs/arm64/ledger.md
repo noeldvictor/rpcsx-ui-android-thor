@@ -344,11 +344,24 @@ The sweep that found the eight items in the x86-habit table was carried to the
 end. The last three subsystem groups produced no changes, and the reasons are
 worth keeping so the ground is not re-covered.
 
-**lv2, HLE modules, Audio and Io are architecture-neutral.** Not "mostly": a
-grep for `ARCH_X64`, `_mm_`, `__m128` and `__asm__` across
-`Emu/Cell/lv2`, `Emu/Cell/Modules`, `Emu/Audio` and `Emu/Io` matches **zero
-files**. These are syscall and device emulation written in portable C++, and
-there is no host-architecture assumption in them to port.
+**~~lv2, HLE modules, Audio and Io are architecture-neutral.~~ Half of this was a
+grep against nothing.** The claim rested on a search across `Emu/Cell/lv2`,
+`Emu/Cell/Modules`, `Emu/Audio` and `Emu/Io` matching **zero files**.
+
+`Emu/Cell/lv2` and `Emu/Cell/Modules` **do not exist in this fork.** The syscall
+layer is `kernel/cellos/`, 117 source files, and it was never scanned. `Audio`
+(23 files) and `Io` (73 files) are real and are genuinely clean, so that half
+stands.
+
+Scanning `kernel/cellos/` properly returns one file with x86 markers,
+`src/lv2.cpp`, and it is not trivia: it holds a **second copy of the
+power-optimized wait**, giving x86 `TPAUSE`/`MWAITX` and AArch64 a
+`sched_yield` loop on every sub-quantum guest thread sleep. Written up in
+[`power-and-thermal.md`](power-and-thermal.md).
+
+The lesson is the one the APK gate already taught and this repeated: **a search
+that finds nothing and a search that searches nothing produce identical output.**
+Confirm the path exists before recording a zero.
 
 **The audio loops already compile to the good form.** They are the one hot-loop
 class in that group, and they are written as plain scalar loops, which is the
