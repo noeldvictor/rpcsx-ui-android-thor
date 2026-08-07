@@ -279,8 +279,21 @@ Checked and cleared, so nobody repeats the work:
   inside `#ifndef ARCH_ARM64`, so `m_use_avx` and `m_use_vnni` cost nothing
   there. `m_use_avx` remains live in exactly two places, and only the DMA one
   mattered.
-- **Atomics.** AOT builds emit inline LSE, with no `__aarch64_cas*` outline
-  calls to remove.
+- **Atomics.** AOT builds emit inline LSE. Verified at the compiler rather than
+  assumed: a `compare_exchange_strong` and a `fetch_add` compile to `casal` and
+  `ldaddal` with no `bl __aarch64_*`, and identically at `armv8.2-a`,
+  `armv8.4-a`, and with `-mno-outline-atomics`, so nothing here depends on that
+  switch.
+
+  Worth knowing before someone repeats the check and thinks otherwise: the
+  unstripped core **does define** `__aarch64_cas4_acq_rel`,
+  `__aarch64_ldadd4_acq_rel` and `__aarch64_have_lse_atomics`, so a bare `nm`
+  looks like outline atomics are in use. They are not ours. Nothing in the build
+  references them undefined (`nm --undefined-only` counts zero), they arrive
+  inside prebuilt third-party objects, and they do not survive into the shipped
+  stripped library. `__aarch64_have_lse_atomics` in particular is compiler-rt's
+  runtime dispatch flag, and its presence is what makes this look alarming; the
+  emulator's own atomic operations never consult it.
 
 ## The memory model, and the one structural gap left
 
