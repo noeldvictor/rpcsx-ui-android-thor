@@ -509,3 +509,45 @@ question unreachable. That is worth more than a fix: **a convention that removes
 class of bug is stronger than a sweep that finds none this time**, and it is why
 this dimension needs no re-check when new code lands, provided the convention
 holds.
+
+## Integer division by zero: a divergence that exists and cannot be exploited
+
+Another x86-to-AArch64 divergence not previously covered, and one where the
+tempting ARM conclusion is wrong.
+
+**The divergence is real.** On x86 an integer `div` by zero raises `#DE` and the
+process takes `SIGFPE`; `INT_MIN / -1` traps the same way. On AArch64 `SDIV` and
+`UDIV` are *defined* for both cases — division by zero yields `0`, and
+`INT_MIN / -1` yields `INT_MIN`, with no trap at all.
+
+So the four PPU divide opcodes look like they carry a removable x86 guard. Each
+substitutes a safe divisor before dividing, `DIVW` being representative:
+
+```cpp
+const auto o = CreateOr(IsZero(b), CreateAnd(ICmpEQ(a, smin), IsOnes(b)));
+const auto result = CreateSDiv(a, CreateSelect(o, smin, b));   // <- the guard
+SetGpr(op.rd, CreateSelect(o, 0, result));
+if (op.oe) SetOverflow(o);
+```
+
+**It is not removable, and the reason is worth writing down.** The guard is not
+protecting against an x86 trap. It is protecting against **undefined behaviour in
+LLVM IR**: `sdiv` and `udiv` by zero are UB at the IR level, independent of any
+target. Without the substitution LLVM is entitled to propagate that UB backwards
+and miscompile the surrounding block — a far worse outcome than a wrong quotient,
+and one no amount of hardware definedness prevents, because the optimizer acts
+before the backend sees an `SDIV` at all.
+
+The outer select and `SetOverflow` are separate and also stay: they implement
+PowerPC's own semantics, where both cases set `OV` and leave `rd` undefined,
+which this fork resolves as zero.
+
+**The transferable point: a hardware guarantee does not erase an IR-level
+guarantee.** "AArch64 defines division by zero, so the check is redundant" is a
+plausible sentence, correct about the hardware, and wrong about the compiler. The
+same reasoning would be wrong for shift-count overflow and for `__builtin_clz(0)`.
+When considering whether a defensive construct can be dropped on this target,
+establish which layer requires it before checking what the silicon does.
+
+Cost of keeping it is one `CSEL` per divide, which is not worth a JIT-level
+inline-asm escape to avoid.
