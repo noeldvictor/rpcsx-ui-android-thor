@@ -589,3 +589,42 @@ Recorded because "no TLS model is set" is the kind of observation that looks lik
 a finding, and the two facts that make it a non-issue — which dialect clang
 actually picked, and whether the hot path touches TLS — both need checking rather
 than assuming.
+
+## 16 KB pages: an AArch64-only requirement, clean on both halves
+
+x86 Android is always 4 KB paged. **AArch64 Android can be 16 KB**, and Android 15
+onwards requires apps to support it, so this is a divergence that only exists on
+the architecture this fork targets — and one that fails as a hard load error
+rather than a slowdown. An emulator that `mmap`s and `mprotect`s guest memory
+constantly is exactly where a 4 KB assumption would be buried.
+
+It has **two independent halves**, and passing one says nothing about the other.
+
+**Source: queries the real page size.** No hardcoded `4096` or `0x1000` in
+`util/vm_native.cpp`. The three places that need it all ask:
+
+    util/vm_native.cpp:199   result = ::sysconf(_SC_PAGESIZE);
+    rx/src/mem.cpp:10        rx::mem::pageSize = sysconf(_SC_PAGE_SIZE);
+    util/sysinfo.cpp:1195    ::sysconf(_SC_PHYS_PAGES) * ::sysconf(_SC_PAGE_SIZE)
+
+**Binary: segments are 16 KB aligned.** This is the half that is not a source
+property at all — a library whose `LOAD` segments are 4 KB aligned cannot be
+mapped on a 16 KB kernel no matter how careful the code is. Checked on every
+native library actually inside the shipped APK:
+
+| library | max `LOAD` align |
+| --- | --- |
+| `librpcsx-android.so` | `0x4000` |
+| `librpcsx-ui-jni.so` | `0x4000` |
+| `libhook_impl.so`, `libmain_hook.so` | `0x4000` |
+| `libfile_redirect_hook.so`, `libgsl_alloc_hook.so` | `0x4000` |
+| `libandroidx.graphics.path.so` | `0x4000` |
+
+All seven at `0x4000`, which is 16384. NDK 29 emits this by default, so it is
+inherited rather than configured — worth knowing, because it means the property
+would silently regress if the NDK were pinned back to an older revision, with no
+source change to blame.
+
+Recorded as a clean result on a dimension that had not been examined, and one
+where the failure mode is not subtle: the app would not start at all on a 16 KB
+device. The check is cheap and belongs in any toolchain change.
