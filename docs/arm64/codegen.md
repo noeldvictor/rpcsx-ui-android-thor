@@ -139,6 +139,30 @@ resolved from the source alone: its result feeds whatever the guest program does
 next, so the penalty applies whenever that is an ordinary ASIMD op and vanishes
 when it is another crypto-class one. Situational rather than settled.
 
+**This holds on the mid cluster too, and checking that turned up an erratum in
+Arm's own document.** The A710 guide defines the same five forwarding regions
+with the same membership, so `BCAX` feeding `TBX` crosses regions on A710 and
+A715 as well as on X3 — the finding is not specific to the prime core.
+
+But the cross-reference does not survive. **A710's section 4.7 places "the ASIMD
+miscellaneous instructions in table 3-18" in region 1, and A710's Table 3-18 is
+`AArch64 Tag store instructions`.** The A710 guide covers AArch32 as well, so its
+tables are numbered differently throughout: its ASIMD miscellaneous table is
+**3-33** and its Cryptography extensions table is **3-39**. The number 3-18 is
+the one the *X3* guide uses for ASIMD miscellaneous, so the sentence appears to
+have been carried across revisions without renumbering.
+
+Resolved by content rather than by number: `TBL`/`TBX` are listed under "ASIMD
+table lookup" inside A710's Table 3-33, ASIMD miscellaneous, which is what region
+1 names. `BCAX` is under "Crypto SHA3 ops" in Table 3-39, Cryptography
+extensions, which is region 3.
+
+Worth writing down for two reasons. Anyone following that cross-reference lands
+on tag stores and concludes the section is incoherent. And more generally:
+**when two guides for related cores disagree, check whether the tables are
+numbered the same before assuming the content differs.** Here the content is
+identical and only the numbering moved.
+
 Two further consequences worth carrying, since neither is obvious from reading
 instruction tables in isolation:
 
