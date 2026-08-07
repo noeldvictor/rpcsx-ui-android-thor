@@ -162,12 +162,35 @@ bench in the section above, run before any of this was read:
 | throughput, independent chains | **below 1.0** | `0.94x` | `1.00x` | `2.02x` |
 
 The latency row matches the published figure to within measurement noise on all
-three core types, which is a strong check on the bench itself. The throughput
-row confirms the direction but **not the magnitude**: a pure `V0` bottleneck
-implies roughly `0.5x`, and the bench measured `0.94x`, so four independent
-chains do not saturate one pipe. A wider bench would show worse. The earlier
-explanation here — "the big cores have enough vector pipes to issue the old pair
-in parallel" — was directionally right and now has a mechanism and a number.
+three core types, which is a strong check on the bench itself.
+
+**The throughput row is where it gets interesting, because the two big core types
+disagree and the guides say exactly why.** The A710 guide gives BCAX the same
+latency 2, throughput 1, `V0`-only treatment as X3 — but **A710 has only two
+FP/ASIMD pipes where X3 has four**, so its `EOR`/`BIC` are throughput 2, not 4:
+
+| | X3 (4 V pipes) | A710/A715 (2 V pipes) |
+| --- | --- | --- |
+| `BIC` + `EOR`, independent | 2 ops at 4/cyc = **0.5 cyc** | 2 ops at 2/cyc = **1 cyc** |
+| `BCAX` | 1 op at 1/cyc on `V0` = **1 cyc** | 1 op at 1/cyc on `V0` = **1 cyc** |
+| predicted ratio | **0.5x** | **1.0x** |
+| measured | `0.94x` | **`1.00x`** |
+
+A715 lands on the predicted `1.0x` exactly. X3 does not reach its predicted
+`0.5x` floor, which means four independent chains do not saturate a single pipe;
+a wider bench would look worse. So the prediction is a bound on X3 and an
+equality on A715, and the measurement is consistent with both.
+
+The mechanism is now precise: **the wider the core, the worse BCAX's single-pipe
+restriction looks**, because the pair it replaces has more pipes to spread across
+while BCAX stays pinned to `V0`. That is why the prime core is the one that
+loses. The earlier explanation here — "the big cores have enough vector pipes to
+issue the old pair in parallel" — was directionally right and now has a
+mechanism, a pipe count, and two numbers that agree with it.
+
+A510 has no published guide, but its `2.02x` on *both* shapes fits a narrow core
+with a vector unit shared between core pairs, where halving the operation count
+dominates whatever pipe it issues on.
 
 None of this changes the call. Our `SHUFB` emits `bcax` immediately followed by
 the `tbx` that consumes it, so the latency row is the one that describes the real
@@ -185,6 +208,38 @@ not reach for it as though it were an ordinary narrow.
 The A510 column is where BCAX wins on both shapes, which fits a narrow core with
 a vector unit shared between core pairs: there, halving the operation count
 matters more than which pipe it lands on.
+
+### Chapter 4, checked against this codebase
+
+The guides' "Special considerations" chapter is the non-obvious half. Three of
+its rules touch code here, and all three come back clean, which is worth
+recording so the checks are not repeated:
+
+- **4.4 Load/Store alignment.** X3 penalizes quad-word loads that are not 4-byte
+  aligned and **stores that cross a 32-byte boundary**. An `STP q, q` is exactly
+  32 bytes, so a base that is 16-byte but not 32-byte aligned would penalize
+  every store in the 128-byte reservation copy — the hottest copy in the
+  emulator. It does not happen: `spu_thread::rdata` is `alignas(64)`, so all four
+  32-byte sub-blocks start on a 32-byte boundary, and the guest side is a
+  128-byte reservation granule. Both rules already satisfied.
+- **4.5 Store-to-load forwarding** requires the load to start at the start or
+  middle of the older store, and a load over 8 bytes can forward from at most two
+  stores. The reservation seqlock re-reads a counter rather than the copied data,
+  so it does not depend on forwarding a 128-byte copy.
+- **4.11 Instruction fusion.** `CMP`/`CMN`/`TST` + `B.cond` fuse when adjacent
+  and not shifted or extended. This is a compiler concern, not something to
+  hand-write, and clang already emits the fusible forms.
+
+**And one thing the guide does not say, recorded because the temptation was
+real.** `busy_wait()` spins on `MRS CNTVCT_EL0`, and section 4.10 explains that
+non-renamed special-purpose register accesses can be forced non-speculative,
+in-order, or flush-inducing — which would make that spin far worse than a plain
+loop. But `CNTVCT_EL0` **is not in Table 4-2**, which lists only `APSR`, `DAIF`,
+`FPCR`/`FPSR`, `NZCV`, `SP` and similar. The guide therefore says nothing about
+the timer read, and inferring a penalty from the surrounding prose would be the
+same mistake as the ESR `ISV` entry below: reading a manual's general statement
+as though it covered a specific case it does not list. The 15.6 us figure for
+`busy_wait(300)` stands on the device measurement alone, which is enough.
 
 **What these guides are not.** The Arm Architecture Reference Manual (`aarch64.pdf`,
 ~14,000 pages) is a different document and answers a different question. It gives
