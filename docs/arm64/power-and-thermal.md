@@ -374,33 +374,56 @@ absolute watts computed `usb_in - battery_charge`, so that power could be read
 without unplugging. It returned a **negative wattage**, which is the tell.
 `usb/current_now` sat frozen at 447000 across three seconds while
 `battery/current_now` swung from -1130521 to -770160: it is the negotiated input
-limit, and the `ucsi` source node reports 0. So there is nothing to subtract, and
-the identity had no basis. Absolute power is available only from battery
-discharge; with the cable attached the battery figure is a **floor**, because the
-charger carries an unknown share. The clock-residency metrics do not have that
-problem and are the ones to use with USB attached.
+limit, and the `ucsi` source node reports 0. So there is nothing to subtract and
+the identity had no basis.
+
+**And an instantaneous battery reading is noise.** The second attempt sampled
+`current_now * voltage_now` once per snapshot. Measured five times on an idle
+device that gave **0.300, 0.588, 1.447, 1.914 and 1.961 W** — a spread of
+**1.66 W**, larger than the effect the instrument exists to detect. Over the same
+five runs `cores_busy` held between 0.473 and 0.487. The CPU metrics were solid
+and only the wattage was junk, because `current_now` is a spot reading of a
+supply that fluctuates hard under charging.
+
+The fix is the same trick that made the CPU counters work: **`charge_counter` is
+cumulative**, in microamp-hours. Differencing it across the window gives the mean
+current over that window rather than a sample from one instant. Re-measured four
+times on an idle device: **0.627, 0.629, 0.629, 0.628 W**, a spread of
+**0.002 W**. That is roughly 800x tighter, and comfortably enough to resolve the
+one-watt question that prompted this.
+
+**Use a cumulative counter wherever one exists.** Every metric in this probe that
+works is a difference of two cumulative readings; every one that had to be
+rewritten started as an instantaneous sample.
 
 That is the same lesson as the `WFE` latency probe and the ESR `ISV` decode,
 for the third time: **when a probe returns a physically impossible number, the
 probe is what is broken.** Negative power, like a 10 ns `WFE`, is not a surprising
 result to be explained. It is a bug.
 
-### The first numbers
+### The first numbers, and a retracted one
 
-Eternal Sonata installed, at rest, USB attached so the wattage is a floor:
+Idle, USB attached, so the wattage is a floor:
 
-| | cores busy | power (floor) |
+| | cores busy | power |
 | --- | --- | --- |
-| rpcsx force-stopped | `0.444` | `1.508 W` |
-| rpcsx running | `3.128` | `3.289 W` |
-| **attributable to rpcsx** | **`2.68`** | **`~1.78 W`** |
+| device idle, emulator not running | `0.48` | `0.628 W` |
 
-This independently reproduces the "3 watts at the title screen" observation that
-prompted the work, and decomposes it for the first time. Note where the work sits:
-`1.956` of those busy cores are on the A710/A715 mid cluster. On a warm cache at a
-title screen that is not compilation, which points at the SPU reservation spin
-described above — the loop whose only backoff instruction, `YIELD`, does nothing
-on a non-SMT core.
+**A previously recorded attribution of ~1.78 W to the emulator is withdrawn.**
+It compared a "running" against a "stopped" arm, and the stop was
+`am force-stop net.rpcsx.thortest`. That package does not exist: the APK is named
+for its build variant, `thortest`, while the `applicationId` is
+**`net.rpcsx.easy`**. The force-stop silently did nothing, so both arms were the
+same configuration and the difference between them was whatever the device
+happened to be doing. The wattage in that comparison was also the instantaneous
+kind described above, with a 1.66 W noise floor around a claimed 1.78 W effect.
+
+Two independent errors, either of which was enough to invalidate it. Worth
+stating plainly rather than quietly recomputing, because the failure is a general
+one: **a negative control that does nothing looks exactly like a negative control
+that works.** `am force-stop` on a package that is not installed exits zero and
+prints nothing. Check that the thing you turned off actually went off - here,
+`pidof` against the real package name.
 
 That makes this the instrument the `WFE` question always needed. The earlier
 experiment failed because its two arms sampled different cutscene content and its

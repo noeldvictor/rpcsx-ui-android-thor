@@ -234,46 +234,69 @@ function Get-ThorPowerDelta {
     $totalCycles = ($perCpu | Measure-Object work_mcycles -Sum).Sum
     $totalBusy = ($perCpu | Measure-Object busy_ratio -Sum).Sum
 
-    # Absolute system power, and the honest limits on it.
+    # Absolute system power, from a cumulative counter rather than a sample.
     #
-    # The first version of this subtracted battery charge power from USB input
-    # power, to get system draw without unplugging. That was wrong, and the tell
-    # was a negative wattage. usb/current_now is not a measurement: it sat frozen
-    # at 447000 across a three second window while battery/current_now swung from
-    # -1130521 to -770160. It is the negotiated input current, and the ucsi
-    # source node reports 0. This device exposes no measured input current at
-    # all, so there is nothing to subtract and the identity has no basis.
+    # Three attempts, and the first two are worth recording because both looked
+    # reasonable and both were wrong.
     #
-    # What is real is battery current, which does track load. So:
+    # 1. usb_in minus battery_charge, so power could be read without unplugging.
+    #    Returned a NEGATIVE wattage. usb/current_now is not a measurement: it
+    #    sat frozen at 447000 across three seconds while battery/current_now
+    #    swung from -1130521 to -770160. It is the negotiated input limit, and
+    #    the ucsi source node reports 0. Nothing to subtract; identity has no
+    #    basis on this device.
     #
-    #   discharging  system power = |battery current| * battery voltage, exact
-    #                               when nothing is plugged in.
-    #   charging     the charger is supplying an unknown share of the load, so
-    #                               no absolute figure is derivable.
+    # 2. An instantaneous battery current_now * voltage_now at snapshot time.
+    #    Measured five times on an idle device this ranged 0.300 to 1.961 W, a
+    #    spread of 1.66 W - larger than the effect it was built to detect. Over
+    #    the same runs cores_busy held 0.473 to 0.487. The CPU metrics were
+    #    solid and the wattage was noise, because current_now is a spot reading
+    #    of a supply that fluctuates hard under charging.
     #
-    # Sign convention on this part, observed rather than assumed: negative
-    # current is discharge. A weak USB supply does not prevent discharge, and
-    # both were seen with status reading Charging, so the sign is trusted over
-    # the status string.
+    # 3. charge_counter, which is cumulative in microamp-hours. Differencing it
+    #    across the window gives the AVERAGE current over that window, which is
+    #    the same trick that makes the cpufreq and cpuidle metrics work. This is
+    #    what is used below.
+    #
+    # Sign: charge_counter rising means charge going in. Falling means the
+    # system is drawing from the battery. Trusted over the status string, which
+    # has been observed reading Charging while current was negative.
     $battery = [ordered]@{
-        status_after    = $After.battery.status
-        current_ua      = $After.battery.current_ua
-        voltage_uv      = $After.battery.voltage_uv
-        usb_online      = $After.battery.usb_online
+        status_after   = $After.battery.status
+        usb_online     = $After.battery.usb_online
+        voltage_uv     = $After.battery.voltage_uv
+        charge_delta_uah = $null
     }
 
-    $discharging = ($null -ne $After.battery.current_ua -and $After.battery.current_ua -lt 0)
+    $ccBefore = $Before.battery.charge_counter
+    $ccAfter  = $After.battery.charge_counter
+    $hours = ($wallNs / 1e9) / 3600.0
 
-    if ($discharging -and $After.battery.voltage_uv) {
-        $watts = [math]::Abs(($After.battery.current_ua / 1e6) * ($After.battery.voltage_uv / 1e6))
-        $battery.system_watts = [math]::Round($watts, 3)
-        $battery.usable = $true
-        # Plugged in while discharging means the charger is carrying part of the
-        # load, so the battery figure is a floor rather than the total.
-        $battery.understated = ($After.battery.usb_online -eq 1)
+    if ($null -ne $ccBefore -and $null -ne $ccAfter -and $hours -gt 0) {
+        $deltaUah = $ccAfter - $ccBefore
+        $battery.charge_delta_uah = $deltaUah
+
+        # microamp-hours over hours gives microamps, averaged across the window.
+        $avgUa = $deltaUah / $hours
+        $volts = 0.0
+        if ($After.battery.voltage_uv -and $Before.battery.voltage_uv) {
+            $volts = (($After.battery.voltage_uv + $Before.battery.voltage_uv) / 2.0) / 1e6
+        }
+        $battery.mean_current_ma = [math]::Round(($avgUa / 1000.0), 1)
+
+        if ($volts -gt 0 -and $avgUa -lt 0) {
+            $battery.system_watts = [math]::Round(([math]::Abs($avgUa) / 1e6) * $volts, 3)
+            $battery.usable = $true
+            # Plugged in while net-draining means the charger carries part of
+            # the load, so this is a floor rather than the total.
+            $battery.understated = ($After.battery.usb_online -eq 1)
+        } else {
+            $battery.usable = $false
+            $battery.note = "battery gained charge over the window, so the charger covered the load and system power is not derivable. Unplug USB and use wireless adb."
+        }
     } else {
         $battery.usable = $false
-        $battery.note = "battery is charging; no measured input rail exists on this device, so system power is not derivable. Unplug USB and use wireless adb."
+        $battery.note = "charge_counter unavailable"
     }
 
     return [pscustomobject]@{
@@ -315,11 +338,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
     Write-Output ""
     if ($delta.battery.usable) {
-        if ($delta.battery.understated) {
-            Write-Output "system power      : $($delta.battery.system_watts) W from battery (FLOOR - USB attached is carrying part of the load)"
-        } else {
-            Write-Output "system power      : $($delta.battery.system_watts) W (on battery, exact)"
-        }
+        $tag = if ($delta.battery.understated) { "FLOOR, USB attached" } else { "on battery, exact" }
+        Write-Output "system power      : $($delta.battery.system_watts) W  [$tag, mean over window]"
+        Write-Output "                    mean current $($delta.battery.mean_current_ma) mA, charge delta $($delta.battery.charge_delta_uah) uAh"
     } else {
         Write-Output "system power      : not derivable - $($delta.battery.note)"
     }
