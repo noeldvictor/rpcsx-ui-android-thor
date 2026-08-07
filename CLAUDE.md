@@ -554,40 +554,52 @@ Making that work on x86 costs a **250-line instruction decoder**,
 `decode_x64_reg_op`, which parses prefixes (LOCK, REP, REX, group-2), ModRM and
 SIB just to recover "which register, what size, load or store".
 
-AArch64 needs none of that. For a data abort the ESR already contains the
-answer, and this codebase **already reads the ESR** in
-`AArch64Signal.cpp::_read_ESR_EL1`, then uses exactly two things from it: the
-exception class and the write-not-read bit. The fields that describe the access
-itself are sitting unused in the same value:
+The obvious hope is that AArch64 needs none of that, because the ESR carries a
+syndrome describing the access, and this codebase **already reads the ESR** in
+`AArch64Signal.cpp::_read_ESR_EL1`. The fields exist on paper:
 
 | ESR field | bits | meaning |
 | --- | --- | --- |
 | `ISV` | 24 | the rest of this syndrome is valid |
-| `SAS` | 23:22 | access size: byte, half, word, doubleword |
+| `SAS` | 23:22 | access size |
 | `SSE` | 21 | sign-extend |
-| `SRT` | 20:16 | **which register** |
+| `SRT` | 20:16 | which register |
 | `SF` | 15 | 64-bit vs 32-bit register |
-| `WnR` | 6 | write, not read — the only one currently used |
+| `WnR` | 6 | write, not read |
 
-So the ARM implementation is "read six bit-fields and index
-`uc_mcontext.regs[SRT]`", against x86's full instruction parser. This is one of
-the few places where the port is *less* work than the original, and the piece
-that makes it so is a hardware feature x86 has no counterpart for: the CPU tells
-you what the faulting access was.
+**Measured on device, and the hope does not survive.** A probe that mmaps
+`PROT_NONE`, faults deliberately, and decodes the syndrome from the handler
+reports `ISV = 0` for *every* case, including the simplest ones:
 
-**Not implemented here, deliberately.** Two reasons, and neither is the work
-being hard. It is code that runs inside a signal handler, where a mistake turns
-a recoverable fault into a crash loop rather than an error message. And it can
-only be exercised by a title that actually uses RawSPU MMIO — most use SPU
-thread groups via lv2 instead — which means running a game, which this fork does
-not do. Writing untestable signal-handler code on a hunch is how the
-`#elif 0` trampoline two sections down came to exist.
+    ldr  w9,  [p]   esr=0x92000007  ec=36  isv=0  wnr=0
+    ldr  x11, [p]   esr=0x92000007  ec=36  isv=0  wnr=0
+    str  w13, [p]   esr=0x92000047  ec=36  isv=0  wnr=1
+    ldrb w15, [p]   esr=0x92000007  ec=36  isv=0  wnr=0
+    stp  x17, x18   esr=0x92000047  ec=36  isv=0  wnr=1
 
-Worth knowing about the caveat before starting: `ISV` is not always set. Faults
-from instructions with writeback addressing, and some load/store pair forms, can
-report `ISV = 0`, and then the syndrome carries no register or size. A correct
-implementation needs a fallback for that case, and the honest fallback is the
-existing behaviour of declining to emulate.
+`ISV = 1` is essentially reserved for stage-2 aborts, the virtualization case.
+Ordinary stage-1 userspace translation faults do not populate the syndrome, so
+`SAS`, `SRT`, `SF` and `SSE` are all zero and mean nothing. What *is* reliable
+is the exception class and `WnR`, which are exactly, and only, the two fields
+`decode_fault_reason` already uses. That function is not leaving information on
+the table; it is using everything the hardware actually provides.
+
+So RawSPU MMIO emulation on AArch64 **would still need an instruction decoder**,
+the same as x86. It would be a far smaller one — fixed 32-bit encodings, no
+prefixes, no ModRM, no SIB, so the load/store forms are a handful of mask-and-
+compare tests rather than 250 lines of parser — but the "hardware tells you what
+faulted" shortcut is not available.
+
+That is on top of the reasons it is still not implemented: it runs inside a
+signal handler, where a mistake turns a recoverable fault into a crash loop, and
+it can only be exercised by a title using RawSPU MMIO rather than SPU thread
+groups, which means running a game.
+
+**This entry previously claimed the opposite**, that the port was less work than
+the original because the CPU reports the faulting access. That was written from
+the architecture manual without checking the part, and it was wrong. The
+correction cost one probe. Anything in this document that says a feature "is
+available" without a measurement beside it deserves the same treatment.
 
 ## Where AArch64 is the stronger architecture
 
