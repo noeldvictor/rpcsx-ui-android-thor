@@ -487,3 +487,72 @@ obvious move, and it was not the constraint. Before sharpening a measurement,
 check whether the thing being measured is stable enough for the precision you
 already had. The within-arm control that established this took three minutes and
 would have been worth running before either WFE experiment.
+
+## Two dead ends on the spin, and the instrument that was already built
+
+The retry loop is the right thing to attack — 15.6 us per `busy_wait(300)` against
+roughly 50 cycles of real work per iteration — but the two obvious attacks are
+both closed, and one of them was proposed in this session before checking.
+
+**Retuning the busy-wait constants is the documented catastrophe.** The comment
+on `busy_wait` in `rx/asm.hpp` is explicit: upstream scales the count by the
+generic-timer frequency because its call sites carry x86-derived numbers tuned
+for a ~3 GHz timer, and **this fork already solved it the other way**, by
+retuning every hot call site by hand against the real 19.2 MHz timer. The
+100/200/300/500 arguments in `vm.cpp`, `SPUThread.cpp`, `CPUThread.cpp`,
+`mutex.cpp` and `RSXFIFO.cpp` are those retuned values. Applying the scale on top
+divides them a second time, collapsing a 5-26 us backoff to 50-260 ns, which
+produces a lock convoy on every contended reservation, channel and mutex.
+Measured on Thor as a drop to **about 1 FPS**.
+
+So `busy_wait(300)` meaning 15.6 us is deliberate, not an unconverted x86 number.
+This was proposed here as "the cheapest real win" and it is the exact trap the
+traps list already warns about: *do not port an upstream ARM tuning fix without
+checking whether this fork already compensated.* Reading the comment above the
+function would have cost thirty seconds.
+
+**Batching the polls was tried and failed.** The spin body is
+`do pause(); while (get_tsc() < stop);`, and `pause()` is `YIELD`, which retires
+doing nothing on a non-SMT core, so each iteration is effectively one
+`MRS CNTVCT_EL0`. Reading the timer fewer times looks free, since the wait
+duration is unchanged and only the work done while waiting falls. There is a
+complete implementation of exactly that, batching 2 to 32 `pause()` calls per
+timer read, behind `RPCSX_THOR_BUSY_WAIT_EXPERIMENT` — and the CMake option
+describing it reads *"Build the failed Android ARM64 busy-wait batching
+experiment"*. Already explored, already negative.
+
+### What has not been used: the wait profiler
+
+`util/thor_wait_profiler.h` instruments **24 wait sites** with atomic call and
+cycle counters, including `spu_getllar`, `spu_getllar_retry`,
+`spu_dma_reservation`, `vm_writer_lock`, `vm_reservation_lock` and the mutex
+family. Every `busy_wait` in the SPU path already goes through
+`thor_wait::profiled_busy_wait(site, n)` rather than calling `busy_wait`
+directly, so the instrumentation is in place at every site that matters.
+
+It is off by default and appears not to have been run recently:
+
+    ./gradlew assembleThortest -PrpcsxThorWaitProfiler=1
+    adb shell setprop debug.rpcsx.thor.wait_profiler <interval>
+    # per-site calls and cycles are printed to logcat under the RPCS3 tag
+
+**This is the missing measurement, and it does not need a fixed scene.** The
+counters are cumulative, which is the same property that makes the clock and
+charge counters in `thor_power_probe.ps1` usable while a workload varies. The
+WFE A/B failed because the emulator's workload swings by a factor of two within
+a single arm; a cumulative count of *how many cycles were spent spinning, at
+which site* does not care what is on screen.
+
+What it should settle, in one run:
+
+- what fraction of SPU time is spin rather than work, which is the number the
+  whole `WFE` argument rests on and which has never been measured here;
+- which site dominates, so the effort goes to the right loop — `spu_getllar_retry`
+  is the assumed answer and it is an assumption;
+- whether `vm_writer_lock` and `vm_reservation_lock` show the contention the
+  per-reservation LSE redesign is meant to remove, which is currently the only
+  argument for that redesign and is entirely theoretical.
+
+That last one matters most. The optimization guides document no atomics at all,
+so the LSE item cannot be justified by reading; this profiler is the one
+available instrument that could justify or kill it.
