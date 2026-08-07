@@ -155,6 +155,42 @@ false negative and cost hours once.
   scavenger. The SPU block compiler has `compile_spu_llvm_with_retry`; the SPU
   interpreter builder deliberately does not, and stays on the plain path.
 
+## NEON has no 64-bit lane min/max, and two AltiVec ops pay for it
+
+`VSUMSWS` and `VSUM2SWS` clamp a 64-bit accumulator into 32-bit range and keep
+it in 64-bit lanes:
+
+    r = min(max(sum, -0x80000000), 0x7fffffff)   // s64[2]
+
+**NEON has no `SMIN`/`SMAX` for 64-bit lanes**, only 8, 16 and 32. So that clamp
+is emulated. Measured at `-O2 -mcpu=cortex-a78` on the same IR:
+
+| form | instructions |
+| --- | --- |
+| clamp kept in 64-bit lanes | **9** — `dup`/`mov` to build the constants, then `cmgt`+`bif` twice |
+| clamp followed by `trunc` to 32-bit lanes | **2** — `sqxtn` does clamp and narrow together |
+
+`SQXTN` is exactly this operation, and x86 has no 64-to-32 saturating pack to
+match it, so this is ARM-favourable work being left on the floor.
+
+**Not taken, and the blocker is not the ARM side.** The value path could be
+narrowed easily; what stops it is the line underneath:
+
+    set_sat(bitcast<u64[2]>(r + 0x8000'0000) >> 32);
+
+`r` has already been clamped into `[-2^31, 2^31-1]`, so `r + 2^31` lies in
+`[0, 2^32-1]` and the `>> 32` yields **zero unconditionally**. These two opcodes
+never set the VSCR SAT bit at all. Reaching `SQXTN` means computing the SAT flag
+from the narrowed value instead, and that would *start* the bit working —
+changing guest-visible behaviour in an op that has apparently never set it.
+
+That is a correctness question about upstream semantics, not a porting question,
+and it wants a PPU test and a game rather than an instruction count. Recorded
+with the numbers attached so whoever picks it up inherits the analysis instead of
+rediscovering it. Note the contrast with `VMSUMSHS` in the same file, which was
+taken precisely because its SAT idiom was already correct and shared with its
+siblings.
+
 ## The SPU opcode lowering audit
 
 The recompiler expresses most opcodes as portable IR and trusts the backend. That
