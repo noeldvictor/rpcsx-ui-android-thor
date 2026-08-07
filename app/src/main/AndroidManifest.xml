@@ -83,5 +83,19 @@
         <receiver
             android:name=".utils.PackageInstallStatusReceiver"
             android:exported="false" />
+
+        <!--
+            Debug-only savestate trigger, so a measurement can start from a fixed
+            scene. Exported because `adb shell am broadcast` cannot reach a
+            receiver that is not; the receiver itself returns immediately unless
+            BuildConfig.THOR_DEBUG_TOOLS is set, which is false for release.
+        -->
+        <receiver
+            android:name=".utils.ThorDebugSaveStateReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.rpcsx.THOR_DEBUG_SAVESTATE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
