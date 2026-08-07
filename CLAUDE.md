@@ -132,6 +132,50 @@ When counting, match two-source `tbx v.16b, { v.16b, v.16b }` as well as
 two-source `tbl`. Our `SHUFB` path emits `TBX2`; a `tbl`-only sweep reads as a
 false negative and cost hours once.
 
+## The guard measures junction maxima against a package-shaped limit
+
+Following the sensor mistake below to its source found the same error in the
+project's own tooling, and it explains a decision that was made on it.
+
+`thor_debug_common.ps1` classifies any zone whose name matches
+`cpu|gpu|soc|apss|cluster|silver|gold|prime|cpuss|ddr|memory|modem|pmic|xo` as
+domain `silicon`, then reports `silicon_temperature_c` as the **maximum** of
+that set. On this device that set includes `cpu-1-0` through `cpu-1-10`, which
+are **per-core junction sensors**. Measured directly on the same zone:
+
+    cpu-1-9  during unthrottled compile   90.7 C
+    cpu-1-9  idle, minutes later          55.0 C
+
+A ~35 C swing with load is the signature of a junction sensor. The subsystem
+sensors beside it behave quite differently: `cpuss-0` reads 49.4 C idle, and the
+`gpuss-*` group sits at 43-46 C.
+
+This device also exposes **no `skin`-domain zone at all** — nothing matches
+`skin|case|shell|quiet` — so the guard has no package sensor to fall back to and
+rests entirely on that junction maximum, compared against
+`MaxSiliconTemperatureC = 72.0`.
+
+**A 72 C limit on a junction maximum is not a thermal bound, it is a load
+detector.** Junction routinely passes 72 C on this SoC under any sustained work
+and is unremarkable until roughly 95-105 C. That is why the original
+cache-worker A/B recorded "71.1 C at the first runtime sample, guard stopped it
+0.7 s in" for the ordinary scheduler: the arm that used the big cores tripped a
+junction threshold almost immediately, and the arm pinned to the A510s did not,
+because little cores have lower junction temperatures. The measurement was
+faithfully recording which arm ran on faster cores.
+
+So the A510 pinning was adopted to satisfy a limit that was measuring the wrong
+quantity. Removing it, done for the independent reason that ten minutes at
+51-58 C package was a bad trade, turns out to have removed a decision that rested
+on an artifact.
+
+Not changed here, because the guard threshold is a safety bound and belongs to
+whoever owns the device. But whoever revisits it should know: the honest options
+are to classify `cpu-1-*` separately from `cpuss-*`, to guard on `cpuss-*` and
+`aoss-*` which behave like package sensors, or to keep the junction maximum and
+raise the limit toward 95 C. Keeping a 72 C limit on a junction max means the
+guard fires on nearly any real workload.
+
 ## Read the right thermal sensor, and never mix two of them
 
 `/sys/class/thermal/thermal_zone*/temp` on this device exposes both package-level
