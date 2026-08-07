@@ -220,6 +220,46 @@ manual's general statement
 as though it covered a specific case it does not list. The 15.6 us figure for
 `busy_wait(300)` stands on the device measurement alone, which is enough.
 
+### The guides say nothing about atomics, and that closes off one line of enquiry
+
+Searched both guides for the AArch64 atomic instruction family. The result is a
+clean zero:
+
+| searched | X3 | A710 |
+| --- | --- | --- |
+| `CAS` | 0 real hits | 0 real hits |
+| `LDADD` / `LDSET` / `SWP` | 0 | 0 |
+| `LDXR` / `STXR` / `LDAXR` | 0 | 0 |
+| "atomic" / "exclusive" | 0 | 0 |
+
+The apparent `CAS` matches are the substring inside "cases" and "broadcast", and
+A710's lone `SWP` is `VSWP`, an ASIMD register swap. **There is no latency,
+throughput or pipeline data for a single atomic instruction in either document.**
+
+This matters because it bounds what the manuals can settle. The largest open item
+in `ledger.md` is replacing the x86 TSX reservation path with **per-reservation
+LSE locking**, and the obvious next step was to look up what `CAS` and `LDSET`
+cost on these cores. They are not there, and no amount of further reading will
+produce them.
+
+The omission is coherent rather than an oversight, and the reason points at where
+the win would actually come from. An atomic's cost on a multi-core part is
+dominated by the **coherence state of the line it touches** — whether it is
+already held exclusively, how many other cores have a copy, how far away the
+point of coherence is. None of that is a property of one core's pipeline, so a
+per-core optimization guide has nothing useful to say about it.
+
+Which is exactly the shape of the LSE proposal. The current fallback contends on
+`g_range_lock_bits[0]`, **a single 64-bit word**, so every SPU atomic in the
+emulator serialises on one cache line across all eight cores regardless of which
+guest address it is updating. Moving the lock into the per-reservation word
+gives each 128-byte guest line its own 64-byte reservation entry, and therefore
+its own cache line, so unrelated addresses stop interfering. The benefit is
+entirely in the coherence traffic, not in the instruction selected.
+
+So that item cannot be advanced by reading. It needs a contended measurement on
+hardware, which currently needs the fixed-scene workload that is still missing.
+
 **What these guides are not.** The Arm Architecture Reference Manual (`aarch64.pdf`,
 ~14,000 pages) is a different document and answers a different question. It gives
 instruction *semantics* and *encodings* and contains no timing data whatsoever,
