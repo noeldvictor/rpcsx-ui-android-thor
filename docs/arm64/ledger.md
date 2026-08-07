@@ -86,7 +86,17 @@ fork cannot do rather than on analysis:
 1. **`WFE` power-optimized wait** — implemented, default off, needs a thermometer.
 2. **RawSPU MMIO fault emulation** — needs an AArch64 load/store decoder, since
    `ISV=0` here, and can only be exercised by a RawSPU title.
-3. **Per-reservation LSE locking** to replace the TSX path — a redesign, not a port.
+3. ~~**Per-reservation LSE locking** to replace the TSX path.~~ **Re-scoped: the
+   premise was wrong.** Reservation locking is *already* per-address —
+   `vm::reservation_lock` takes the 128-byte line's own word, and `g_reservations`
+   gives each one its own cache line. The contention is a single instruction
+   elsewhere: `bits.bit_test_set(diff)` on `g_range_lock_bits[1]`, one shared
+   word, executed on every `vm::writer_lock` and therefore on every PUTLLC via
+   `SPUThread.cpp:5109`. Each thread sets a different bit, but an atomic RMW takes
+   the line exclusively anyway. LSE was never the missing piece — the cost is
+   which line is touched, not how the atomic is spelled. See the contention
+   section in [`memory-model.md`](memory-model.md) for the candidate fix, which is
+   to drop a redundant presence bitmask rather than to introduce a new lock.
 4. **`mcpu` to an Armv9 model** — proven safe, benefit is scheduling quality only.
 
 And one correctness question found in passing that is not an ARM matter at all:
