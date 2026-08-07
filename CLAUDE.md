@@ -702,6 +702,13 @@ deleted. What is left:
    nothing. Setting it to `0` means auto, which is `limit()`, which is every
    hardware thread.
 
+   **And the cap is set in three places, two of which overwrite the third.**
+   `config.yml` holds the value, but `ThorPerformanceProfile` calls
+   `setSetting("Core@@Max LLVM Compile Threads", "2")` on every boot and the
+   `BLUS30161` entry in `GameSettingsDatabase` carries it in the managed profile.
+   Editing the config alone is silently undone on the next launch. All three are
+   now `0`, meaning auto, meaning every hardware thread.
+
    Worth internalising as a debugging habit: **when a throttle is removed and
    nothing gets faster, look for the second throttle before doubting the first.**
    Two independent limiters in series are common in this codebase precisely
