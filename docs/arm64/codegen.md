@@ -767,3 +767,51 @@ cache-bypass hint in latency, throughput or pipes; the earlier worry about
 non-temporal store lowers to, never about `STNP` itself. With 32-byte chunks,
 which is what that function uses, the paired form costs exactly what a plain
 `STP` costs.
+
+## Floating point: multiply-accumulate is cheap, conversion is not
+
+The SPU is float-heavy, so Table 3-16 is worth having to hand. The shape of it is
+that ordinary arithmetic is as cheap as integer work and runs on all four vector
+pipes, while **anything that changes representation is restricted to `V02`, two
+pipes, and is slower than it looks**.
+
+| operation | latency | throughput | pipes |
+| --- | --- | --- | --- |
+| `FADD`/`FSUB`/`FADDP` | 2 | 4 | `V` |
+| `FMAX`/`FMIN`/`FMAXNM`/`FMINNM` | 2 | 4 | `V` |
+| `FABS`/`FABD`, `FNEG` | 2 | 4 | `V` |
+| FP compare (`FCMEQ`, `FCMGE`, ...) | 2 | 4 | `V` |
+| `FMUL`/`FMULX` | 3 | 4 | `V` |
+| **`FMLA`/`FMLS`** | **4, accumulator 2** | **4** | `V` |
+| FP convert, D-form F32 / Q-form F64 | 3 | 2 | `V02` |
+| **FP convert, D-form F16 / Q-form F32** | **4** | **1** | `V02` |
+| `FCVTL`/`FCVTN` (F16 to/from F32) | 4 | 1 | `V02` |
+| `FDIV` Q-form F32 | 7 to 10 | 2/9 to 2/7 | `V02` |
+
+Three things follow.
+
+**`FMLA` is the best instruction in the table and the fork is already using it.**
+Latency 4, but only **2 through the accumulator**, at full rate on all four
+pipes. So a dependent chain of multiply-accumulates advances every two cycles.
+The on-device disassembly already confirmed `fmla` present in compiled SPU
+blocks; this says that was worth having.
+
+**`FCVTZS` on a full vector of floats is the expensive case, and that is exactly
+the SPU's case.** The row that applies to `CFLTS`, `CFLTU`, `CSFLT` and `CUFLT`
+is Q-form F32: **latency 4, throughput 1, two pipes**. On top of that, section 4.7
+lists "FP convert and rounding instructions that do not write to general purpose
+registers" as belonging to **no forwarding region at all**, so a further cycle is
+added before whatever consumes the result. Call it 5 effective.
+
+That does not reopen the conversion fix. Replacing a four-instruction x86-style
+correction that was also *wrong* with one correct instruction is still the right
+change by a wide margin. What it does say is that conversions are not free
+padding: an approach that adds float-to-int round trips to save an integer
+operation is very unlikely to pay, because it moves work from four pipes onto
+two, at a quarter of the rate, outside the forwarding network.
+
+**`FDIV` should be treated as unavailable in hot code.** Q-form F32 is latency 7
+to 10 at a throughput between 2/9 and 2/7 per cycle, on two pipes, and also
+outside every forwarding region. Roughly thirty times the cost of `FMUL`. Any SPU
+reciprocal path that reaches a real divide rather than an estimate instruction is
+worth looking at for that reason alone.
