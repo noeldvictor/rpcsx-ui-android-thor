@@ -356,3 +356,69 @@ for nothing measurable. What has changed is that the target is now one named
 instruction on one named line rather than a vague structural gap, and that
 `thor_wait_profiler`'s `vm_writer_lock` counter can confirm or refute its cost in
 a single run.
+
+## A publish-then-flag race in the semaphore fast cache
+
+Found by applying this document's own advice — grep for the *shape*, not for an
+ARM path, because there is no ARM path to read — to `kernel/cellos/`, the
+subsystem the ledger's "architecture-neutral" sweep never actually scanned.
+
+`sys_semaphore.cpp` keeps a 64-entry cache mapping a semaphore id to its
+`lv2_sema*`, so a lookup can skip the id manager. Three operations touch it, and
+every access in all three was `memory_order_relaxed`:
+
+```cpp
+// publish
+entry.sema.store(sema, relaxed);
+entry.sem_id.store(sem_id, relaxed);
+
+// read
+if (entry.sem_id.load(relaxed) != sem_id) return nullptr;
+return entry.sema.load(relaxed);
+
+// invalidate
+if (fast_entry.sem_id.compare_exchange_strong(expected, 0, relaxed))
+    fast_entry.sema.store(nullptr, relaxed);
+```
+
+**All relaxed is correct on x86 and a data race on AArch64.** TSO reorders
+neither store-store nor load-load, so a reader that observed the new id was
+guaranteed to observe the pointer written before it. AArch64 promises neither:
+
+- the id store can become visible **before** the pointer store, so a reader
+  matches the id and reads a stale or null pointer;
+- the pointer load can be satisfied **before** the id load that is supposed to
+  authorise it, so the check validates an id against a pointer read earlier.
+
+Either way the caller dereferences a pointer that may belong to a destroyed
+semaphore.
+
+The fix is the textbook pairing, one ordered access on each side: the id store
+becomes a **release**, the id load an **acquire**, and the pointer accesses stay
+relaxed underneath them. The invalidate CAS becomes `acq_rel`.
+
+**Acquire is sufficient here and RCpc does not weaken it.** The note above warns
+that on this `armv8.4` baseline an explicit `memory_order_acquire` compiles to
+`LDAPR` rather than `LDAR`, losing the RCsc StoreLoad property. That matters for
+Dekker-shaped protocols; it does not matter here. This needs only the
+synchronises-with edge from the matching release, which is exactly what release/
+acquire is defined to give and what `LDAPR` implements. **Knowing which of the
+two guarantees a site actually needs is what makes the distinction useful rather
+than alarming.**
+
+**Latent, not live.** The Eternal Sonata semaphore superpath defaults to
+`disabled` and is enabled by a system property or environment variable, so no
+shipped configuration reaches this today. It is fixed anyway: a race reachable by
+setting one property is not meaningfully safer than one reachable by default, and
+a use-after-free on a destroyed semaphore is not a good thing to leave armed
+behind a flag someone will eventually set.
+
+Two things worth carrying forward. **The statistics counters in the same file
+stay relaxed and must**, which the contract test asserts explicitly — 45 of the
+65 relaxed accesses in `kernel/` are hit counters that participate in no
+protocol, and a uniform "fix the file" sweep would add cost for nothing while
+obscuring the two accesses that genuinely carry ordering. And this is the third
+find in the same family, after the reservation seqlock and the MFC DMA read:
+**every weak-memory defect in this codebase has been an ordering that TSO
+supplied for free, in code with no architecture-specific branch at all.** There
+is nothing to notice when reading; only the shape gives it away.

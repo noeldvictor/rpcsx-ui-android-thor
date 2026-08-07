@@ -1070,8 +1070,13 @@ static void record_thor_es_sema_created_id(u32 sem_id) {
   auto &fast_entry =
       g_thor_es_sema_fast_cache[index % g_thor_es_sema_fast_cache.size()];
   expected = sem_id;
+  // acq_rel keeps the pointer clear from floating above the id clear. The
+  // window this closes is benign on its own - a reader that sees a stale id and
+  // an already-nulled pointer just returns nullptr - but leaving one relaxed
+  // access in a three-operation protocol is how the next reader of this code
+  // concludes the whole thing is relaxed by design.
   if (fast_entry.sem_id.compare_exchange_strong(expected, 0,
-                                                std::memory_order_relaxed)) {
+                                                std::memory_order_acq_rel)) {
     fast_entry.sema.store(nullptr, std::memory_order_relaxed);
   }
 
@@ -1143,8 +1148,17 @@ static void record_thor_es_sema_fast_object(u32 sem_id, lv2_sema *sema) {
 
   auto &entry =
       g_thor_es_sema_fast_cache[index % g_thor_es_sema_fast_cache.size()];
+  // Publish-then-flag. The pointer must be visible to any reader that observes
+  // the id, so the id store is a *release* and the pointer store stays relaxed
+  // underneath it.
+  //
+  // Both were relaxed, which is correct on x86 and a data race here. TSO does
+  // not reorder store-store, so a reader that saw the new id was guaranteed to
+  // see the pointer written before it. AArch64 makes no such promise: with
+  // relaxed ordering the id can become visible first, and the reader then
+  // matches the id and dereferences a stale or null lv2_sema*.
   entry.sema.store(sema, std::memory_order_relaxed);
-  entry.sem_id.store(sem_id, std::memory_order_relaxed);
+  entry.sem_id.store(sem_id, std::memory_order_release);
 }
 
 static lv2_sema *get_thor_es_sema_fast_object(u32 sem_id) {
@@ -1155,7 +1169,17 @@ static lv2_sema *get_thor_es_sema_fast_object(u32 sem_id) {
 
   auto &entry =
       g_thor_es_sema_fast_cache[index % g_thor_es_sema_fast_cache.size()];
-  if (entry.sem_id.load(std::memory_order_relaxed) != sem_id) {
+  // Acquire, pairing with the release in record_thor_es_sema_fast_object. This
+  // is the other half of the same race: relaxed permits the pointer load to be
+  // satisfied *before* the id load, so the validation would run against a
+  // pointer read earlier than the check that is supposed to authorise it.
+  //
+  // Acquire is one-way and that is all this needs - everything sequenced before
+  // the matching release becomes visible. No StoreLoad guarantee is required
+  // here, so the RCpc LDAPR that armv8.4 selects for an explicit acquire is
+  // sufficient; see the RCsc note in docs/arm64/memory-model.md for the case
+  // where it would not be.
+  if (entry.sem_id.load(std::memory_order_acquire) != sem_id) {
     return nullptr;
   }
 
