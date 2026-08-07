@@ -660,3 +660,30 @@ the compiler cannot. Nothing verifies the assertion is wired to anything, so the
 failure mode is silent and indefinite — the APK gate demonstrated exactly that.
 **Breaking the thing on purpose is the only evidence a test works**, it costs one
 edit and one run per test, and it belongs in the same commit as any new gate.
+
+### And the rest of the suite was audited for the same failure
+
+Mutation-testing four new gates says nothing about the ninety-three that were
+already there, and this suite has demonstrably shipped a decorative test before:
+`test_thor_arm64_apk.ps1` defaulted to `app/build/outputs/apk/release/`, a variant
+nobody builds, and passed for months while x86_64 shipped in every APK.
+
+Two checks, because the failure has two shapes.
+
+**Source paths — 294 literal repo paths referenced across the suite, all exist.**
+Every `"app/..."`, `"docs/..."` or `"tools/..."` string in every `test_thor_*.ps1`
+was resolved against the working tree. No test asserts against a file that is not
+there.
+
+**Build outputs — the shape that actually failed.** A source path that vanishes
+breaks loudly; a *build output* path that is never produced fails silently, which
+is why the APK gate survived so long and why a source-path scan would not have
+caught it. Only two tests reference build outputs at all, and the single variant
+either names is `apk/thortest` — which is the variant this project actually
+produces and the one on disk. The historical offender is fixed and nothing else
+in the suite repeats it.
+
+So the suite is clean on the one failure mode it is known to have had. Worth the
+five minutes because the alternative is trusting a green run from ninety-seven
+tests, a number that is reassuring precisely in proportion to how little it means
+if some of them cannot fail.
