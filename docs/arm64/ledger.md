@@ -628,3 +628,35 @@ source change to blame.
 Recorded as a clean result on a dimension that had not been examined, and one
 where the failure mode is not subtle: the app would not start at all on a 16 KB
 device. The check is cheap and belongs in any toolchain change.
+
+## The contract tests added here were mutation-tested
+
+This document records that `tools/test_thor_arm64_apk.ps1` defaulted to a build
+variant nobody produces and **passed for months without inspecting an artifact**,
+and concludes that a contract test pointed at nothing is worse than no test,
+because it reports success. Four new contract tests were added in this round, so
+the obvious question is whether any of them can actually fail.
+
+Each was checked by breaking the thing it protects and confirming it goes red:
+
+| test | mutation injected | result |
+| --- | --- | --- |
+| `test_thor_arm64_rdata_copy_shape` | a `for` loop in place of the unrolled chunk copy | **caught** — fired the loop-idiom check |
+| `test_thor_arm64_cmp_rdata_tree` | reduction narrowed from `vmaxvq_u32` to `vmaxvq_u8` | **caught** |
+| `test_thor_arm64_sema_fast_cache_ordering` | the release store reverted to `memory_order_relaxed` | **caught** |
+| `test_thor_arm64_passive_lock_backoff` | the `20/50/200` ladder collapsed to a flat `20` | **caught** |
+
+The working tree was restored after each, and `git status` reports clean.
+
+**The fourth mutation is the one worth having done.** Collapsing the ladder to its
+smallest value is not a random perturbation — it is the specific plausible-looking
+edit that test was written to prevent, because a flat small constant looks like a
+simplification and reintroduces the lock convoy that once cost about 1 FPS. A
+test whose stated purpose is to catch one particular future mistake should be
+shown to catch *that* mistake, not merely to fail on something.
+
+**And the general point, since this is cheap.** A contract test asserts a property
+the compiler cannot. Nothing verifies the assertion is wired to anything, so the
+failure mode is silent and indefinite — the APK gate demonstrated exactly that.
+**Breaking the thing on purpose is the only evidence a test works**, it costs one
+edit and one run per test, and it belongs in the same commit as any new gate.
