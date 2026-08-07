@@ -101,4 +101,24 @@ if ($storeCount -lt 2) {
     throw "Expected both the load and the store/release LSE2 paths, found $storeCount guard(s)."
 }
 
+# The SPU mailbox is the widest consumer of the 16-byte path after the
+# reservations, and only because sync_var_t is exactly 16 bytes: count plus all
+# three queued values in one atomic. If it ever grows, atomic_t<sync_var_t> no
+# longer resolves to atomic_storage<T, 16>, and both the atomicity this relies
+# on and the LSE2 fast path go away silently.
+$spuHeader = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.h") -Raw
+$syncVar = [regex]::Match($spuHeader, '(?s)struct alignas\(16\) sync_var_t\s*\{(?<body>.*?)\};')
+if (-not $syncVar.Success) {
+    throw "Could not find spu_channel_4_t::sync_var_t, which the 16-byte atomic path depends on."
+}
+
+$fieldBytes = @{ 'u8' = 1; 'u16' = 2; 'u32' = 4; 'u64' = 8 }
+$total = 0
+foreach ($m in [regex]::Matches($syncVar.Groups['body'].Value, '\b(?<type>u8|u16|u32|u64)\s+\w+\s*;')) {
+    $total += $fieldBytes[$m.Groups['type'].Value]
+}
+if ($total -ne 16) {
+    throw "sync_var_t is now $total bytes, not 16. atomic_t<sync_var_t> no longer uses the 128-bit atomic storage, so SPU mailbox updates are no longer one atomic operation."
+}
+
 Write-Output "Thor ARM64 LSE2 atomic contract passed: baseline $arch guarantees FEAT_LSE2, the build defines ARM_FEATURE_LSE2, and the 16-byte fast paths are plain LDP/STP."

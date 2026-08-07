@@ -772,6 +772,22 @@ the worst possible place in the emulator to force write-intent onto readers.
 This sits directly underneath the contention described in the memory-model
 section below.
 
+**The blast radius is wider than the reservation path**, which is worth knowing
+because it is easy to read the above and conclude this only mattered for
+`GETLLAR`. Every 16-byte `atomic_t` in the emulator went through that loop:
+
+| site | what it is |
+| --- | --- |
+| `vm::g_reservations` (two sites) | SPU reservation stamps, the case already described |
+| `spu_channel_4_t::values` | **SPU mailboxes.** `sync_var_t` is `alignas(16)` and exactly 16 bytes (`u8`+`u8`+`u16`+3×`u32`), so count and all three queued values are one 128-bit atomic. Every `try_pop`, `try_read` and `push` on a channel-4 hits it |
+| `s_cpu_bits` | the **global CPU-thread bitmask**, touched by `suspend_all` and by thread state changes, so shared by every thread in the process |
+| RSX label store | one `release`, cold by comparison |
+
+The mailbox one is the sharpest. `try_read` is a pure peek, and before this fix
+peeking at a mailbox took the cache line **exclusive**, on a structure written by
+one thread and read by another. That is the ping-pong described above, on the
+SPU/PPU communication path rather than on reservations.
+
 The fix is not to write new NEON but to make the build state what it knows.
 `-march` moves to `armv8.4-a`, the lowest baseline that architecturally
 guarantees FEAT_LSE2, and CMake defines `ARM_FEATURE_LSE2` explicitly, gated on
