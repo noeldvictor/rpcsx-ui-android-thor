@@ -608,3 +608,43 @@ one turned up both a live race and a second x86-only power path. The difference
 is not diligence, it is that a shape-defined search cannot silently cover
 nothing: if the pattern matches zero files, that is a fact about the pattern,
 which is checkable, rather than a fact about a path list, which is not.
+
+## The inline-asm audit: clobbers, and one dead label
+
+Inline assembly is the one place where the compiler cannot check the work, and
+this document already records one instance getting it wrong — the seven i-cache
+sites whose `ISB`/`DSB` pair was neither `volatile` nor memory-clobbering, so the
+compiler was free to move them across the very stores they existed to publish.
+That made a full audit of every ARM inline-asm block worthwhile.
+
+**Every block that compiles on this target is correct.** Checked against what
+each instruction actually needs rather than by pattern:
+
+| site | clobbers | verdict |
+| --- | --- | --- |
+| `rx/asm.hpp` `yield` | none | correct — a hint that touches no memory |
+| `rx/asm.hpp` `mrs cntfrq_el0` | none | correct — reads a constant system register |
+| `rx/asm.hpp` `ldaxr{,b,h}` ×8 | `"memory"` | correct |
+| `rx/asm.hpp` `wfe`, `clrex` ×4 | `"memory"` | correct |
+| `atomic.hpp` LSE2 `dmb`/`ldp`/`dmb` | `"memory"` | correct |
+| `atomic.hpp` `ldaxp`/`stlxp` loops | `"memory"`, outputs `"=&r"` | correct — early-clobber is required here because the `CBNZ` branches back |
+
+One block is sloppy and does not build here:
+`rx/asm.hpp::trigger_write_page_fault`'s AArch64 arm is
+`#elif defined(ARCH_ARM64) && !defined(ANDROID)`, so Android takes the generic
+`fetch_or` instead. Its template `"ldset %w0, %w0, %1"` references `%0` twice and
+`%1` once, leaving the third operand `"r"(value)` unused. Harmless, unreachable
+on this target, and left alone rather than edited blind for a platform this fork
+cannot test.
+
+**One real wart, and it was mine.** The LSE2 16-byte load carried a `1:` label
+with nothing branching to it — inherited from the `LDAXP`/`STLXP` form below,
+where the `CBNZ` genuinely uses it. Numeric labels are local in GNU as, so
+duplicates across inlined copies assemble fine and it was never a bug. It was
+worse than a bug in one narrow sense: it *implied a retry loop* in the hottest
+16-byte atomic in the emulator, which is precisely the property the LSE2 path
+exists to remove. Removed, with a comment saying why the absence is deliberate so
+it does not get "restored" for symmetry with the block below it.
+
+The LSE2 contract test still passes, and the difference between the two blocks is
+now visible at a glance: the exclusive form loops, the LSE2 form does not.

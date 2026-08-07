@@ -1052,8 +1052,13 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 		// monitor, no retry, and above all no write intent, so a reader stops
 		// invalidating every other core's copy of the line.
 		u64 data[2];
-		__asm__ volatile("1:\n"
-						 "dmb ish\n"
+		// No loop label here, deliberately. This path is straight-line: LSE2
+		// makes the aligned 16-byte LDP single-copy atomic, so there is nothing
+		// to retry. The label this block used to carry was inherited from the
+		// LDAXP/STLXP form below, where the CBNZ genuinely branches back, and
+		// left behind it implied a retry that does not exist in the hottest
+		// 16-byte atomic in the emulator.
+		__asm__ volatile("dmb ish\n"
 						 "ldp %x[data0], %x[data1], %[dest]\n"
 						 "dmb ish\n"
 			: [data0] "=r"(data[0]), [data1] "=r"(data[1])
