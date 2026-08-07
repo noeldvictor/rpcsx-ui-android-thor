@@ -40,13 +40,23 @@ foreach ($fragment in @(
     '__system_property_get("debug.rpcsx.thor.cache_worker_affinity_mask", value)',
     'RPCSX_THOR_CACHE_WORKER_AFFINITY_MASK',
     'if (const u64 requested_mask = get_cache_worker_affinity_mask(title_id))',
-    'return 0x07;',
     'parsed > 0xff',
     '(void)title_id;'
 )) {
     Assert-Contains $control $fragment "Missing shared cache-worker affinity contract: $fragment"
 }
 
+# Compilation must not be throttled by default. The old default pinned these
+# workers to the three A510 cores, which made a cold PPU recompile take about
+# ten minutes while the device sat at 51-58 C against a 72 C guard. The guard
+# already bounds the hot case; throttling every compile to pre-empt it spends a
+# large certain cost against a small uncertain one.
+#
+# The property override survives, so 0x07 can restore the old behaviour if a
+# boot ever does stop on temperature.
+if ($control -match 'return 0x07;') {
+    throw 'The A510 cache-worker pinning is back as a default. Compilation should not be throttled; use debug.rpcsx.thor.cache_worker_affinity_mask instead.'
+}
 foreach ($fragment in @(
     'worker_affinity_mask = rpcsx::startup_cache_phase::get_cache_worker_affinity_mask(Emu.GetTitleID());',
     'if (nb_workers == 1 && !worker_affinity_mask)',

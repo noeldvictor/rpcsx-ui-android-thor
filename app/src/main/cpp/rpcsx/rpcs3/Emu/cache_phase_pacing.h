@@ -130,26 +130,36 @@ namespace rpcsx::startup_cache_phase
 			return parse_mask(env);
 		}
 
-		// Measured default on Thor, matching what the PPU compile workers
-		// already do. Startup cache compilation is the emulator's hottest
-		// phase here: with the workers on the ordinary scheduler the boot
-		// reads 71.1 C at the first runtime sample and the thermal guard stops
-		// it 0.7 s in, while pinning them to the three A510 cores reads 53.8 C
-		// at the same stage, peaks 67.8 C, and survives 9.5 s. Both arms
-		// launched from a 34.7 C preflight on the same build and route
-		// (captures 20260806-014920 and 20260806-021948).
-		return 0x07;
+		// Compilation is no longer throttled. Startup cache builds now run on
+		// the ordinary scheduler, which means all eight cores.
+		//
+		// The previous default pinned these workers to the three A510 cores,
+		// on a measurement that read 71.1 C at the first runtime sample with
+		// the ordinary scheduler against 53.8 C pinned (captures
+		// 20260806-014920 and 20260806-021948, both from a 34.7 C preflight).
+		// That trade was a full PPU recompile taking around ten minutes on the
+		// little cores while the device sat at 51-58 C, which is 14-21 C of
+		// unused headroom below the 72 C guard, and is a bad exchange: the
+		// guard already exists to stop a genuinely hot run, so pre-emptively
+		// throttling every compile to avoid ever reaching it spends a large,
+		// certain cost against an occasional one the guard would catch anyway.
+		//
+		// The thermal guard is unchanged and still bounds the hot case. If a
+		// boot does stop on temperature, set
+		// debug.rpcsx.thor.cache_worker_affinity_mask (0x07 restores the old
+		// A510 pinning) rather than reintroducing a default that slows every
+		// compile.
+		return 0;
 #else
 		(void)title_id;
 		return 0;
 #endif
 	}
 
-	// Eternal Sonata's cold PPU LLVM jobs are both latency-sensitive and bursty.
-	// Keep their normal Android policy on the three Cortex-A510 cores even when
-	// the diagnostic startup-worker property is off; the property can still
-	// provide a non-zero experimental override. Desktop and other titles retain
-	// the ordinary scheduler policy.
+	// PPU compile workers follow the same rule: no throttle by default, all
+	// cores, with the property available as an override. These are the workers
+	// that produce the "Compiling PPU Modules" phase, so pinning them to the
+	// A510s is what made a cold recompile take minutes.
 	inline u64 get_ppu_compile_worker_affinity_mask(std::string_view title_id) noexcept
 	{
 #ifdef __ANDROID__
@@ -163,7 +173,7 @@ namespace rpcsx::startup_cache_phase
 			return requested_mask;
 		}
 
-		return 0x07;
+		return 0;
 #else
 		(void)title_id;
 		return 0;

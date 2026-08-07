@@ -570,24 +570,39 @@ Items 1 to 4 of the original list are resolved: `SQRDMLAH` measured and
 declined, the float conversions fixed, `FLAGM` found unreachable, and `eor3`
 deleted. What is left:
 
-1. ~~Re-evaluate the A510 cache-worker default.~~ **Done, and it stays.**
-   Re-measured after the guard artifact was understood, using
-   `SPU Runtime: Built %u functions.` as the completion marker and direct
-   `THOR_DEBUG_BOOT` rather than the harness. Both arms launched from `33.9 C`:
+1. ~~Re-evaluate the A510 cache-worker default.~~ **Reversed. Compilation is
+   no longer throttled.**
 
-   | cache workers | SPU cache build, 1179 functions | peak |
+   The old default pinned startup cache and PPU compile workers to the three
+   A510 cores, on this measurement, both arms from a 34.7 C preflight:
+
+   | cache workers | first runtime sample | outcome |
    | --- | --- | --- |
-   | A510 cluster, the default | completes at `0:00:52.3` | `53.0 C` |
-   | ordinary scheduler | never completes | `70 C` at wall `t=6s`, `71.5 C` |
+   | ordinary scheduler | `71.1 C` | thermal guard stopped it 0.7 s in |
+   | A510 cluster | `53.8 C` | peaked `67.8 C`, survived 9.5 s |
 
-   The original justification was wrong, but the conclusion holds for a better
-   reason. Letting the build run on all eight cores puts it on the X3 at full
-   clock and takes the device from `33.9` to `70 C` in six seconds, so it cannot
-   finish inside the `72 C` bound at all. Pinned to the A510s it completes the
-   whole build with `19 C` of headroom to spare. The unmeasured question is
-   wall-clock: the ordinary scheduler might finish sooner if allowed to run hot,
-   but it would be throttling by then, so that comparison needs a run that is
-   allowed past the bound and is not obviously worth taking.
+   That reads like a settled case, and it was wrong as a *default*. Watching a
+   real cold PPU recompile with the pinning in place: 78 modules, roughly ten
+   minutes, with the device sitting at **51-58 C the whole time** and the guard
+   at 72 C. Fourteen to twenty-one degrees of headroom went unused for ten
+   minutes to avoid a hot case that the thermal guard already exists to catch.
+
+   The trade was backwards. Pre-emptively throttling *every* compile to avoid
+   occasionally reaching a limit spends a large certain cost against a small
+   uncertain one, when the guard is right there and costs nothing until it
+   fires. The guard is unchanged and still bounds the hot case.
+
+   `debug.rpcsx.thor.cache_worker_affinity_mask` remains, and `0x07` restores
+   the old pinning if a boot ever does stop on temperature. Reach for that
+   before reintroducing a default that slows every compile.
+
+   The general lesson, which is the reason this is written at length: **a
+   measurement can be correct and still support the wrong decision.** The 71.1 C
+   number was real. What it did not capture was how often that case arises, what
+   the alternative costs when it does not, or that a guard already handled it.
+   An A/B that answers "which arm is cooler" does not answer "which default is
+   better".
+
 2. **Advertise the features the device actually has.** The JIT sends
    `+sha3,+dotprod,+i8mm,-sve,-sve2` on top of `cortex-a78`, so everything past
    Armv8.2 is invisible to LLVM: `lrcpc`, `flagm`, `flagm2`, `frint`, `fcma`.
