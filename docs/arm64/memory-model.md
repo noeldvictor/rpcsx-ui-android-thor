@@ -490,3 +490,50 @@ per 200 seconds of play. It remains a change to the hottest lock in the memory
 subsystem and still needs the correctness question answered (the `bits != umax`
 test also detects a held exclusive lock). But it is no longer theoretical, and it
 is no longer competing with `GETLLAR` for attention on a guess.
+
+## Sweeping for the publish-then-flag shape, and what it found
+
+The semaphore fast-cache race was found by chance while auditing an unscanned
+directory. Since the shape is mechanical — a data store followed by a flag store,
+then a flag load guarding a data load — it is worth searching for deliberately
+rather than stumbling on. The signature that catches it is **two adjacent relaxed
+stores to different atomics**.
+
+Swept across the whole of `rpcsx/`. The sweep returned **two** sites, and the
+useful result is how few:
+
+**`SPUThread.cpp:802` — not a defect.** Seven relaxed stores publish descriptive
+fields into a GETLLAR diagnostic bucket after a CAS claims it. A reader could see
+a claimed bucket with stale fields, but the consumer is a statistics dump: the
+fields are last-writer-wins and a torn read produces slightly stale diagnostic
+output, not a dereferenced stale pointer. Left alone.
+
+**`thor_rsx_auditor.h:154` — a real inversion, now fixed.** The pair is:
+
+```cpp
+g_cached_enabled.store(enabled ? 2u : 1u, relaxed);   // the flag
+g_report_interval.store(parse_interval(...), relaxed); // the data
+```
+
+and `enabled()` short-circuits on `g_cached_enabled` being non-zero. So a second
+thread could observe "already polled", skip polling, and read `g_report_interval`
+still holding its default of 60 rather than the configured value.
+
+**This one is wrong on x86 too**, which makes it a cleaner example than the
+semaphore case. TSO preserves store order faithfully — and the store order itself
+was backwards. No weak-memory subtlety is required; the flag was simply published
+before the data it guards. Fixed by swapping the two and pairing a release with an
+acquire on the flag.
+
+Impact is small and worth saying so: it changes a diagnostic report cadence,
+behind `RPCSX_THOR_RSX_AUDITOR`, which defaults off. It is fixed because it is two
+lines and the same shape, not because it mattered.
+
+**The negative result is the more valuable half.** One mechanical sweep across
+every source file in the fork found exactly one live instance of the pattern, and
+it was in default-off diagnostic code. Combined with the earlier audit — the SPU
+reservation seqlock, the MFC DMA read, and the semaphore cache, all found and
+fixed — the codebase now looks genuinely clean of this class rather than merely
+unexamined. That is a different statement from "we looked and found nothing",
+because this time the search space was defined by the shape rather than by which
+files someone happened to open.

@@ -151,8 +151,19 @@ namespace vk::thor::rsx_auditor
 #endif
 
 			const bool enabled = !looks_disabled(value, length);
-			g_cached_enabled.store(enabled ? 2u : 1u, std::memory_order_relaxed);
+
+			// Publish the interval *before* the flag that says the config has been
+			// read, and release the flag.
+			//
+			// The order used to be the other way round, which is an inversion
+			// rather than a weak-memory subtlety: enabled() short-circuits on
+			// g_cached_enabled being non-zero, so a second thread could observe
+			// "already polled", skip polling, and then read g_report_interval
+			// still holding its default of 60 instead of the configured value.
+			// Storing the flag first makes that reachable on x86 as well, since
+			// TSO preserves store order and the store order itself was wrong.
 			g_report_interval.store(enabled ? parse_interval(value, length) : 60u, std::memory_order_relaxed);
+			g_cached_enabled.store(enabled ? 2u : 1u, std::memory_order_release);
 			return enabled;
 		}
 
@@ -399,7 +410,9 @@ namespace vk::thor::rsx_auditor
 		inline bool enabled()
 		{
 			const u64 poll = g_property_poll_counter.fetch_add(1, std::memory_order_relaxed);
-			const u32 cached = g_cached_enabled.load(std::memory_order_relaxed);
+			// Acquire, pairing with the release in poll_enabled_property, so that
+			// observing a polled flag also observes the interval published under it.
+			const u32 cached = g_cached_enabled.load(std::memory_order_acquire);
 
 			if (cached == 0 || (poll & 0xfffu) == 0)
 			{
