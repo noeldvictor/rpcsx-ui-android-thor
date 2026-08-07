@@ -596,6 +596,23 @@ deleted. What is left:
    the old pinning if a boot ever does stop on temperature. Reach for that
    before reintroducing a default that slows every compile.
 
+   **The affinity was only half of it, and the smaller half.** Compilation
+   concurrency is also capped by `Max LLVM Compile Threads` in `config.yml`,
+   which feeds `jit_core_allocator`:
+
+       thread_count = llvm_threads ? min(llvm_threads, limit()) : limit()
+
+   On this device that was set to **2**, so PPU module compilation ran two-wide
+   no matter how many cores the affinity mask allowed. Freeing all eight cores
+   while leaving the cap at 2 would have looked like the affinity change did
+   nothing. Setting it to `0` means auto, which is `limit()`, which is every
+   hardware thread.
+
+   Worth internalising as a debugging habit: **when a throttle is removed and
+   nothing gets faster, look for the second throttle before doubting the first.**
+   Two independent limiters in series are common in this codebase precisely
+   because each was added for a different reason at a different time.
+
    The general lesson, which is the reason this is written at length: **a
    measurement can be correct and still support the wrong decision.** The 71.1 C
    number was real. What it did not capture was how often that case arises, what
