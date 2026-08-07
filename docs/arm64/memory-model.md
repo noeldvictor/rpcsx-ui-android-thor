@@ -279,3 +279,80 @@ measurement. Second, and more generally: **when an architecture makes a
 guarantee optional, read the register that says whether this part provides it**
 instead of reasoning from the architecture manual alone. `CTR_EL0` answered in
 one device-side probe what no amount of source reading would have settled.
+
+## Locating the reservation contention exactly, and what it is not
+
+The ledger calls per-reservation LSE locking the highest-value ARM work left,
+resting on the claim that "every SPU atomic contends on a single cache line
+across eight cores". That claim survives checking, but it was recorded without
+naming the instruction, and the missing detail changes what the fix should be.
+
+**Two independent locking mechanisms exist and only one of them contends.**
+
+`vm::reservation_lock(addr)` in `vm_reservation.h` takes the **per-address**
+reservation word:
+
+    auto res = &vm::reservation_acquire(addr);   // this 128-byte line's own word
+    auto rtime = res->load();
+    if (rtime & 127 || !reservation_try_lock(*res, rtime))
+        rtime = reservation_lock_internal(addr, *res);
+
+`g_reservations` gives every 128-byte guest line 64 bytes, so each of those words
+is on its own cache line. Two SPUs locking different addresses do not interfere
+at all. **This part is already per-reservation and needs nothing.**
+
+`vm::writer_lock` is the other one, and it is the contended one. Traced to its
+callers, `spu_thread::do_putllc` takes it at `SPUThread.cpp:5109` — so it is on
+the hot atomic path, not some cold corner. Reading the constructor, the
+per-acquisition cost is:
+
+    range_lock->release(addr | u64{size} << 32 | flags);   // own slot, own line
+    const auto diff = range_lock - g_range_lock_set;
+    if (bits != umax && !bits.bit_test_set(u32(diff)))     // shared word, atomic RMW
+        break;
+
+`bits` is `g_range_lock_bits[1]`, one 64-bit word. **`bit_test_set` is an atomic
+read-modify-write on it, executed on every `writer_lock` acquisition.** Each
+thread sets a different bit, so there is no logical conflict, but an atomic RMW
+must take the line exclusively regardless, and that is the ping-pong: eight cores
+serialising on one line to set bits that never collide.
+
+**What is not contended, contrary to a first reading.** The per-thread
+`range_lock` slot is `g_range_lock_set[i]`, `alignas(64)`, and each SPU thread
+allocates one **once**, at construction (`SPUThread.cpp:3335` and `:3396`, freed
+at `:3244`). The `fetch_op` on `g_range_lock_bits[0]` inside `alloc_range_lock`
+is therefore thread setup, once per thread lifetime, not per operation. Writing
+the slot itself touches only that thread's own cache line.
+
+So the contention is one instruction, not a lock protocol: a single
+`bit_test_set` on a shared word.
+
+**That reframes the fix, and away from LSE.** The proposal on the ledger is to
+move locking into the per-reservation word — but locking is *already* there. The
+shared word is not a lock at all; it is a **presence bitmask**, published so that
+whoever takes an exclusive range lock can cheaply find which slots are active.
+
+Since every thread already publishes its full range into its own slot, the
+bitmask is redundant for correctness. An exclusive taker could scan the 64 slots
+directly instead of reading one summarised word. That trades:
+
+- **removed:** one atomic RMW on a globally shared line, on every PUTLLC;
+- **added:** a 64-cache-line scan on the exclusive path, which is taken for
+  memory setting changes and the no-argument `writer_lock()`, both rare.
+
+That is a real and specific change, and it is not what "per-reservation LSE
+locking" describes. It needs no new instruction: `LSE` was never the missing
+piece, because the expensive part is *which line is touched*, not how the atomic
+is spelled. Consistent with the finding that neither optimization guide documents
+atomics at all — the cost here is coherence traffic, and coherence traffic is a
+function of the address.
+
+**Not implemented, deliberately.** The `bits != umax` test also detects a held
+exclusive lock, so removing the bitmask means finding another way to answer that,
+and the protocol is a Dekker pattern whose reader retries in a loop. This
+document already records the rule for this code: changing the hottest lock in the
+memory subsystem on partial understanding buys a rare corruption bug in exchange
+for nothing measurable. What has changed is that the target is now one named
+instruction on one named line rather than a vague structural gap, and that
+`thor_wait_profiler`'s `vm_writer_lock` counter can confirm or refute its cost in
+a single run.
