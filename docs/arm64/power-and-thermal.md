@@ -706,3 +706,46 @@ measurement is also of *requested* wait duration summed per site, which is what
 But the shape is unambiguous, and it inverts the priority order this document
 carried all day: the reservation **spin** is worth attacking and the reservation
 **lock** is not.
+
+## The metric that finally makes the WFE A/B possible
+
+Two WFE experiments failed here, both because the workload will not hold still.
+The third attempt starts by fixing the *metric* rather than the instrument, and
+the fix comes from reading how the flag is wired rather than from measuring
+harder.
+
+`SPUThread.cpp` has **two** profiled sites in the reservation wait, and only one
+of them is behind the flag:
+
+| site | line | inside `RPCSX_THOR_ARM64_WFE_WAIT`? |
+| --- | --- | --- |
+| `spu_getllar` | 6064 | **yes** — it is the `else` of `if (getllar_spin_count >= 8)`, so WFE replaces it with a park |
+| `spu_getllar_retry` | 6210 | **no** — a separate outer retry loop the flag never touches |
+
+So the outer retry count is an **independent measure of how much reservation
+contention the workload is actually generating**, unaffected by the change under
+test. That is exactly the denominator this experiment needed:
+
+    inner GETLLAR spin ticks / outer retry calls
+
+Validated on two control windows chosen because they differ wildly in load:
+
+| window | cores spinning | ticks per retry |
+| --- | --- | --- |
+| 8.8 s window | `0.814` | **263.7** |
+| 20.6 s window | `1.295` | **260.7** |
+| spread | **59%** | **1.1%** |
+
+**The absolute spin rate varied by 59% between two windows of the same build, and
+the normalized ratio varied by 1.1%.** That is the difference between an
+experiment that can detect a change and the two that could not.
+
+Control baseline for the WFE arm: **~262 ticks per retry**.
+
+The general lesson is worth more than the number. Both earlier attempts tried to
+stabilise the *workload* — matched settle times, matched window lengths,
+savestates for a fixed scene. None of that was necessary. **The workload was
+allowed to vary as long as the metric divided by something that varied with it.**
+Look for a quantity the change under test provably does not touch, and normalise
+by it; here the code structure handed one over for free, and reading which branch
+the flag sat in was worth more than any amount of measurement discipline.
