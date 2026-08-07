@@ -155,6 +155,43 @@ false negative and cost hours once.
   scavenger. The SPU block compiler has `compile_spu_llvm_with_retry`; the SPU
   interpreter builder deliberately does not, and stays on the plain path.
 
+## The SPU opcode lowering audit
+
+The recompiler expresses most opcodes as portable IR and trusts the backend. That
+trust is mostly warranted, but "mostly" is not a review, so every high-frequency
+SPU opcode was compiled and its AArch64 output counted. Recorded here so the
+next person does not repeat it.
+
+| SPU op | IR shape | AArch64 output | verdict |
+| --- | --- | --- | --- |
+| `ANDC` | `a & ~b` | `bic` | 1 instruction, optimal |
+| `ORC` | `a \| ~b` | `orn` | 1 instruction, optimal |
+| `SELB` | `(a & ~c) \| (b & c)` | `bit` | 1 instruction, optimal |
+| `NOR` | `~(a \| b)` | `orr` + `mvn` | 2, unavoidable |
+| `NAND` | `~(a & b)` | `and` + `mvn` | 2, unavoidable |
+| `AVGB` | widen, `+`, `+1`, `>>1`, trunc | `urhadd` | 1 instruction, optimal |
+| `ABSDB` | `umax - umin` | `uabd` | 1 instruction, optimal |
+| `CNTB` | `ctpop` | `cnt` | 1 instruction, optimal |
+| `CLZ` | `ctlz` | `clz` | 1 instruction, optimal |
+| `XSBH`/`XSHW`/`XSWD` | `x << n >> n` | `shl` + `sshr` | 2, unavoidable |
+| `SUMB` | dot with ones | `udot` | already ARM-specific |
+| `SHUFB` | table lookup | `tbx2` + `bcax` | already ARM-specific |
+| `CFLTS`/`CFLTU` | saturating convert | `fcvtzs`/`fcvtzu` | fixed earlier; was *wrong*, not just slow |
+
+The three "unavoidable" entries are genuinely so. NEON has no vector NOR or
+NAND, so both need an `MVN`; and there is no in-lane sign extend, because `SXTL`
+widens lanes rather than extending within them. SHA-3 does not rescue `NOR` or
+`NAND` either: `BCAX` computes `a ^ (b & ~c)`, and reaching `~(a & b)` from it
+would require already having `~b`.
+
+The useful conclusion is the shape of the remaining risk. **Where the IR is
+portable, LLVM gets it right; where the IR encodes an x86 workaround, it does
+not.** Every defect found in this codebase was in the second category —
+`CFLTS`'s inverted correction, the `VPKUHUS` pre-clamp, the `llvm.bswap.i128`
+spelling, `mov_rdata`'s dropped non-temporal intent. None was LLVM failing to
+pick a good instruction from a clean description. So opcode-level auditing has
+low yield, and auditing *corrections* has high yield.
+
 ## When LLVM already does it, and when it does not
 
 Measure the baseline before writing a lowering. LLVM's AArch64 backend is
