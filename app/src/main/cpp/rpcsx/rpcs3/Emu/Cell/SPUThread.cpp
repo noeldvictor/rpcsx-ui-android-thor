@@ -6103,6 +6103,16 @@ bool spu_thread::process_mfc_cmd()
 									// spinning, which is the number the episode counter could not
 									// give: it is keyed to the spin path rather than to the wait.
 									thor_wait::record(thor_wait::site::spu_getllar_spin_depth, getllar_spin_count);
+									// Bucketed, because the mean above is heavy-tailed and cannot
+									// locate the typical spin. The first boundary is the WFE park
+									// threshold, so lt8 counts exactly the spins a park would never
+									// have caught.
+									thor_wait::record(
+										getllar_spin_count < 8 ? thor_wait::site::spu_getllar_depth_lt8 :
+										getllar_spin_count < 32 ? thor_wait::site::spu_getllar_depth_8_31 :
+										getllar_spin_count < 128 ? thor_wait::site::spu_getllar_depth_32_127 :
+										thor_wait::site::spu_getllar_depth_ge128,
+										0);
 									thor_wait::profiled_busy_wait(thor_wait::site::spu_getllar, 300);
 								}
 

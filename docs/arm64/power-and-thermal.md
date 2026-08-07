@@ -950,3 +950,60 @@ that conclusion is unsupported by this statistic. **A mean over a heavy-tailed
 distribution is a number that invites exactly the wrong decision**, and the check
 that catches it — what would one extreme sample alone produce — costs a line of
 arithmetic.
+
+### The histogram: 95.5% of GETLLAR spins are too shallow to park, and the gate is right
+
+The mean spin depth of 135.2 was heavy-tailed and could not locate the typical
+spin. Bucketing it can, with the first boundary placed at the WFE park threshold:
+
+| depth | spins | share |
+| --- | --- | --- |
+| **`< 8`** — the park never reaches these | `7,083` | **95.5%** |
+| `8-31` | `277` | 3.7% |
+| `32-127` | `57` | 0.8% |
+| `>= 128` | `0` | 0.0% |
+
+**The median is below 8.** The mean of 135 was a small number of very deep waits
+dragging the average; the typical GETLLAR spin is shallow, and **95.5% of spins
+are ones the park can never catch.**
+
+That sounds like an argument for lowering the threshold. It is the opposite,
+because the wake floor decides it:
+
+    one GETLLAR backoff    15.62 us   (300 ticks at 19.2 MHz)
+    WFE park wake floor    95.06 us   (measured; FEAT_WFxT absent, so no timeout)
+
+| depth | cost of continuing to spin | cost of parking | parking is |
+| --- | --- | --- | --- |
+| 1 | `15.6 us` | `95.1 us` | **worse** |
+| 2 | `31.2 us` | `95.1 us` | **worse** |
+| 4 | `62.5 us` | `95.1 us` | **worse** |
+| 8 | `125.0 us` | `95.1 us` | better |
+| 16 | `250.0 us` | `95.1 us` | better |
+
+**Break-even is depth 6.1. The threshold is 8.** The gate sits almost exactly
+where parking begins to pay, and it was not derived from this measurement — it
+was set from the reasoning about the 95 us event-stream period recorded when the
+WFE path was written. The histogram confirms it independently.
+
+### So the WFE thread closes, and not on "unmeasured"
+
+Three runs and three instruments later, the picture is coherent:
+
+- The park **works** — it displaces recorded inner spin at eighteen times the
+  noise floor.
+- It is **correctly gated** — break-even 6.1, threshold 8.
+- And it is **structurally capped on this device**, because 95.5% of GETLLAR
+  spins are shorter than the 95 us it costs to park at all. That ceiling is not a
+  tuning failure; it is FEAT_WFxT being absent. With `WFET` the wake would be
+  bounded in microseconds and the threshold could drop to 1, putting essentially
+  all of that 82.5% in reach.
+
+The honest summary is therefore not "WFE is unmeasured" but **"WFE is worth
+roughly the few percent of GETLLAR spin that is deep enough to park, and no more,
+on hardware without `WFET`."** That is a much smaller prize than the 82.5% figure
+suggested at the start, and knowing its size is worth more than the flag.
+
+It stays default off. Not because nothing was learned, but because what was
+learned is that the ceiling is low and the remaining question — whether parking a
+genuinely deep wait saves measurable power — applies to under 5% of the spin.

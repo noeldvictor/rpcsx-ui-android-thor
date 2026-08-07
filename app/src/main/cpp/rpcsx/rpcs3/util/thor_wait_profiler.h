@@ -65,6 +65,14 @@ namespace thor_wait
 		// begins once getllar_busy_waiting_switch is set at count 4 - the
 		// distinction that made the episode ratio unusable for tuning the backoff.
 		spu_getllar_spin_depth,
+		// Histogram of getllar_spin_count at each busy-wait. The mean alone is
+		// heavy-tailed - one wait reaching depth D contributes a sum of ~D^2/2 -
+		// so it cannot say where the typical spin sits, which is what decides
+		// whether the WFE park threshold of 8 is placed well. Buckets can.
+		spu_getllar_depth_lt8,
+		spu_getllar_depth_8_31,
+		spu_getllar_depth_32_127,
+		spu_getllar_depth_ge128,
 		count
 	};
 
@@ -167,7 +175,7 @@ namespace thor_wait
 			"Thor wait profiler core total=%llu rsx_fifo=%llu/%llu vm_range=%llu/%llu "
 			"vm_passive=%llu/%llu vm_writer=%llu/%llu vm_res_lock=%llu/%llu vm_res_shared=%llu/%llu "
 			"cpu_slot=%llu/%llu cpu_suspend=%llu/%llu sema=%llu/%llu mutex_s=%llu/%llu mutex_x=%llu/%llu "
-			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu getllar_episodes=%llu getllar_depth=%llu/%llu",
+			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu getllar_episodes=%llu getllar_depth=%llu/%llu hist=%llu/%llu/%llu/%llu",
 			static_cast<unsigned long long>(total),
 			static_cast<unsigned long long>(calls(site::rsx_fifo_cache_fill)),
 			static_cast<unsigned long long>(cycles(site::rsx_fifo_cache_fill)),
@@ -201,7 +209,11 @@ namespace thor_wait
 			static_cast<unsigned long long>(calls(site::vm_passive_lock_taken)),
 			static_cast<unsigned long long>(calls(site::spu_getllar_episode)),
 			static_cast<unsigned long long>(calls(site::spu_getllar_spin_depth)),
-			static_cast<unsigned long long>(cycles(site::spu_getllar_spin_depth)));
+			static_cast<unsigned long long>(cycles(site::spu_getllar_spin_depth)),
+			static_cast<unsigned long long>(calls(site::spu_getllar_depth_lt8)),
+			static_cast<unsigned long long>(calls(site::spu_getllar_depth_8_31)),
+			static_cast<unsigned long long>(calls(site::spu_getllar_depth_32_127)),
+			static_cast<unsigned long long>(calls(site::spu_getllar_depth_ge128)));
 #else
 		(void)total;
 #endif
