@@ -441,6 +441,54 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## The fault handler: ARM hands you what x86 makes you decode
+
+`handle_access_violation` has a large `#if defined(ARCH_X64)` body and an
+`#else static_cast<void>(context);`. What lives inside it is **RawSPU MMIO
+emulation**: when guest code touches a RawSPU problem-state register, which is
+mapped in the guest address space but backed by no memory, the store faults, and
+the x86 handler decodes the faulting instruction, performs the register access
+itself, then steps over it with `RIP += i_size`.
+
+Making that work on x86 costs a **250-line instruction decoder**,
+`decode_x64_reg_op`, which parses prefixes (LOCK, REP, REX, group-2), ModRM and
+SIB just to recover "which register, what size, load or store".
+
+AArch64 needs none of that. For a data abort the ESR already contains the
+answer, and this codebase **already reads the ESR** in
+`AArch64Signal.cpp::_read_ESR_EL1`, then uses exactly two things from it: the
+exception class and the write-not-read bit. The fields that describe the access
+itself are sitting unused in the same value:
+
+| ESR field | bits | meaning |
+| --- | --- | --- |
+| `ISV` | 24 | the rest of this syndrome is valid |
+| `SAS` | 23:22 | access size: byte, half, word, doubleword |
+| `SSE` | 21 | sign-extend |
+| `SRT` | 20:16 | **which register** |
+| `SF` | 15 | 64-bit vs 32-bit register |
+| `WnR` | 6 | write, not read — the only one currently used |
+
+So the ARM implementation is "read six bit-fields and index
+`uc_mcontext.regs[SRT]`", against x86's full instruction parser. This is one of
+the few places where the port is *less* work than the original, and the piece
+that makes it so is a hardware feature x86 has no counterpart for: the CPU tells
+you what the faulting access was.
+
+**Not implemented here, deliberately.** Two reasons, and neither is the work
+being hard. It is code that runs inside a signal handler, where a mistake turns
+a recoverable fault into a crash loop rather than an error message. And it can
+only be exercised by a title that actually uses RawSPU MMIO — most use SPU
+thread groups via lv2 instead — which means running a game, which this fork does
+not do. Writing untestable signal-handler code on a hunch is how the
+`#elif 0` trampoline two sections down came to exist.
+
+Worth knowing about the caveat before starting: `ISV` is not always set. Faults
+from instructions with writeback addressing, and some load/store pair forms, can
+report `ISV = 0`, and then the syndrome carries no register or size. A correct
+implementation needs a fallback for that case, and the honest fallback is the
+existing behaviour of declining to emulate.
+
 ## Where AArch64 is the stronger architecture
 
 Worth stating plainly, because the whole rest of this document points the other
