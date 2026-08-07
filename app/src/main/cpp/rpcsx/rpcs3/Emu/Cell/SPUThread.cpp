@@ -6098,6 +6098,11 @@ bool spu_thread::process_mfc_cmd()
 									//
 									// Anything tried here must be keyed on a counter that starts
 									// when this path starts, not on getllar_spin_count.
+									// Record how deep this spinning wait has gone. cycles/calls on
+									// this site is the mean getllar_spin_count seen while actually
+									// spinning, which is the number the episode counter could not
+									// give: it is keyed to the spin path rather than to the wait.
+									thor_wait::record(thor_wait::site::spu_getllar_spin_depth, getllar_spin_count);
 									thor_wait::profiled_busy_wait(thor_wait::site::spu_getllar, 300);
 								}
 

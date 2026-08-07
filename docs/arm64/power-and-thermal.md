@@ -909,3 +909,44 @@ shape at the level of "a busy-wait whose measured wait seems shorter than its
 backoff". They are not the same shape, because one spins immediately and the
 other spins only after a separate gate has already decided the wait is durable.
 The gate was visible in the source the whole time.
+
+### Asking the GETLLAR question properly: mean spin depth 135, and heavy-tailed
+
+The episode counter could not answer whether GETLLAR's 300-tick backoff
+overshoots, because it was keyed to the *wait* and the spin path only begins once
+`getllar_busy_waiting_switch` is set at `getllar_spin_count == 4`. The fix is a
+counter keyed to the spin path: record the **value** of `getllar_spin_count` at
+every busy-wait, so `cycles/calls` is the mean depth a spinning wait reaches.
+
+Measured: **9,934 spins, sum of depths 1,342,867, mean 135.2.**
+
+That is the opposite of `passive_lock`, and it settles the tuning question in the
+opposite direction:
+
+| site | mean depth at wait | reading |
+| --- | --- | --- |
+| `vm::passive_lock` | `1.24` iterations | backoff overshoots a released lock — **shortened, -68% spin** |
+| `spu_getllar` | `135.2` | the wait genuinely persists — **shortening would only poll a shared line harder** |
+
+**But the mean is heavy-tailed, and saying so matters more than the number.** A
+single wait reaching depth `D` contributes `D` spins and a sum of about `D^2/2`.
+The observed sum is close to what **one** wait of depth ~1600 produces on its
+own. So a few very deep waits dominate both columns and the **median** spin depth
+is probably far below 135.
+
+What that does and does not license:
+
+- **Established:** GETLLAR spinning includes genuinely long waits, so the backoff
+  is not obviously oversized and the `passive_lock` fix does not transfer. This
+  was the question asked, and it is answered.
+- **Not established:** where the typical spin sits, and therefore whether WFE's
+  park threshold of 8 is well placed. The mean cannot say. A **histogram** of
+  spin depth is the instrument for that, and it is the natural next step if
+  anyone returns to the WFE threshold.
+
+The reason to write the caveat down rather than round the mean off: 135.2 read
+naively says "every wait is long, park them all", and the arithmetic above says
+that conclusion is unsupported by this statistic. **A mean over a heavy-tailed
+distribution is a number that invites exactly the wrong decision**, and the check
+that catches it — what would one extreme sample alone produce — costs a line of
+arithmetic.
