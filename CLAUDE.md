@@ -441,6 +441,58 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## The power-optimized wait, which ARM has and this fork does not use
+
+The most valuable unexploited hardware feature found in this sweep, and the one
+that fits this device's actual constraint, which is heat rather than throughput.
+
+The SPU `GETLLAR` spin has an x86-only fast path. When a thread is waiting for a
+reservation line to change, x86 does not spin:
+
+- **`MONITORX` + `MWAITX`** arms a cache line and parks the core in a low-power
+  C-state until *that line is written* or a timer expires. The comment in
+  `SPUThread.cpp` is right that it "fits reservations almost perfectly".
+- **`TPAUSE`** (waitpkg) does the timed half without the address monitor.
+
+Both sit inside `#if defined(ARCH_X64)`. ARM has no counterpart there, so it
+falls back to `busy_wait()`, which spins on `yield`. A spinning core on a
+passively cooled handheld is heat, and heat is the budget this whole fork is
+managed against.
+
+**AArch64 has the same capability**, and has since Armv8.0:
+
+    ldxr  wzr, [cline]      // arm the exclusive monitor on the reservation line
+    // re-check the condition here
+    wfe                     // park until the monitor is cleared or an event arrives
+
+`WFE` parks the core; a write to the monitored line clears the exclusive monitor
+and generates the wake. That is `MONITORX`/`MWAITX` with the operands in a
+different order. Armv8.7's `WFET`/`WFIT` add the timeout half, matching
+`MWAITX`'s timer, but are not needed for a first implementation and this chip
+probably lacks them: it is Armv9.0, roughly v8.5. `ID_AA64ISAR2_EL1.WFxT` is the
+field to read, and that check has not been run because the device was
+disconnected when this was written.
+
+The safe shape matters and is worth writing down, because the unsafe shape
+deadlocks. Arm the monitor, **re-check the condition after arming**, then `WFE`,
+all inside the existing retry loop. A spurious wake then costs one extra
+iteration instead of a hang, and a missed event cannot wedge the thread because
+Linux/arm64 enables the generic timer **event stream**, which delivers a
+periodic event (order 100us) that wakes `WFE` regardless. Without that event
+stream a plain `WFE` with no timeout is a hang waiting to happen.
+
+**Not implemented, and the reason is the measurement rule rather than the risk.**
+The entire justification for this change is power and thermal behaviour. Its
+effect on frame time could easily be zero or slightly negative, since parking a
+core adds wake latency to the reservation handoff. A change whose only argument
+is "this should run cooler" cannot be landed by a fork that does not measure,
+because there is nothing to check the claim against. It is also in the hottest
+SPU path, where the existing spin counts were hand-tuned, so it would perturb
+tuning that was arrived at empirically.
+
+If device measurement ever becomes available, this is the first thing to try,
+and the thing to measure is sustained temperature and clock residency, not FPS.
+
 ## The fault handler: ARM hands you what x86 makes you decode
 
 `handle_access_violation` has a large `#if defined(ARCH_X64)` body and an
