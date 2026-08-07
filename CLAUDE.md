@@ -105,6 +105,14 @@ false negative and cost hours once.
   already compensated.** Upstream's `busy_wait` scaling dropped Thor to ~1 FPS
   because every call site had already been retuned for the real `19.2 MHz`
   timer; two fixes for one problem multiply.
+- **A search that finds nothing and a search that searches nothing look
+  identical.** This has now cost twice. `tools/test_thor_arm64_apk.ps1` defaulted
+  to `app/build/outputs/apk/release/`, a variant nobody builds, and passed for
+  months while x86_64 shipped. Then the ledger recorded `lv2` and the HLE modules
+  as architecture-neutral on a grep across `Emu/Cell/lv2` and `Emu/Cell/Modules`,
+  **neither of which exists in this fork** — the syscall layer is
+  `kernel/cellos/`, and scanning it properly turned up a second x86-only
+  power-optimized wait. Before recording a zero, confirm the path exists.
 - **`TBL2`/`TBX2` need a retry owner.** They can trip the AArch64 register
   scavenger. The SPU block compiler has `compile_spu_llvm_with_retry`; the SPU
   interpreter builder deliberately does not, and stays on the plain path.
