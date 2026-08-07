@@ -132,6 +132,43 @@ When counting, match two-source `tbx v.16b, { v.16b, v.16b }` as well as
 two-source `tbl`. Our `SHUFB` path emits `TBX2`; a `tbl`-only sweep reads as a
 false negative and cost hours once.
 
+## Read the right thermal sensor, and never mix two of them
+
+`/sys/class/thermal/thermal_zone*/temp` on this device exposes both package-level
+and **per-core junction** sensors. Taking the maximum across all of them is
+wrong, and wrong in a way that manufactures alarm:
+
+    cpu-1-9  = 90.7 C     per-core junction (Tj)
+    cpu-1-10 = 83.9 C
+    cpuss-0  = 68.7 C     CPU subsystem
+    (AYN FanBase / on-device readout: 57-61 C, package)
+
+Junction temperature always reads far above package. Roughly 90 C Tj under load
+is ordinary for this SoC, which throttles nearer 95-105 C. The number the fan
+curve uses, the number the device shows the user, and the number
+`MaxSiliconTemperatureC = 72.0` bounds are all **package**, not junction.
+
+This was found the hard way: an unthrottled compile was reported as "81.5 C,
+above the 72 C gate" and nearly reversed a good change, when the device was
+actually at 57 C and the reading came from a junction sensor. **A limit and a
+measurement taken from different sensors cannot be compared**, and taking a
+`max` over a heterogeneous sensor set silently does exactly that.
+
+This is the same failure as the thermal wall recorded in the traps below, in a
+new costume. That one was sampling aliasing; this one is sensor mismatch. Both
+produced a confident number that meant nothing. Use the project's own
+`silicon_temperature_c` from `tools/thor_input_macro.ps1`, or the package sensor
+the fan controller reads, and never a bare `sort -rn | head -1` over every zone.
+
+With the correct sensor, the compile-throttle change reads:
+
+| | time | package temp |
+| --- | --- | --- |
+| throttled (A510 x3, 2 LLVM threads) | ~10 min | 51-58 C |
+| unthrottled (all cores, auto threads) | **~3 min** | **57-61 C** |
+
+Roughly three times faster for about three degrees.
+
 ## Traps that have already cost time
 
 - **The thermal guard trips on a launch transient.** Launch reads `56.6 C` at
