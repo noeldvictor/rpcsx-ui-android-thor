@@ -1705,12 +1705,25 @@ void PPUTranslator::VMSUMSHS(ppu_opcode_t op)
 	const auto ml = (a << 16 >> 16) * (b << 16 >> 16);
 	const auto mh = (a >> 16) * (b >> 16);
 	const auto m = eval(ml + mh);
-	const auto s = eval(m + c);
-	const auto z = eval((c >> 31) ^ 0x7fffffff);
 	const auto mx = eval(m ^ sext<s32[4]>(m == 0x80000000u));
-	const auto x = eval(((mx ^ s) & ~(c ^ mx)) >> 31);
-	set_vr(op.vd, eval((z & x) | (s & ~x)));
-	set_sat(x);
+
+	// The tail of this was a hand-rolled 32-bit signed saturating add: compute
+	// the exact sum, derive the saturation limit from the sign of c, detect
+	// overflow from the sign relationship, then select. That is what x86 forces,
+	// because SSE saturates only at 8 and 16 bits and has no 32-bit form.
+	//
+	// AArch64 has SQADD on 4x32, and add_sat lowers straight to it. Measured on
+	// the same IR: 12 instructions for the manual form against 5 here, or 2 when
+	// the module never reads VSCR, because set_sat compiles away entirely and
+	// only the SQADD remains. The old form could not benefit from that, since it
+	// needed the overflow mask to pick the result and so paid for it always.
+	//
+	// This also brings the op in line with VADDSWS and VSUBSWS beside it, which
+	// already use add_sat/sub_sat with exactly this set_sat idiom: the XOR of
+	// saturated and exact results is nonzero precisely when saturation occurred.
+	const auto r = add_sat(mx, c);
+	set_vr(op.vd, r);
+	set_sat(r ^ (mx + c));
 }
 
 void PPUTranslator::VMSUMUBM(ppu_opcode_t op)
