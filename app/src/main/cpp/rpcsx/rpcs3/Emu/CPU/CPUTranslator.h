@@ -3837,6 +3837,16 @@ public:
 	// Both call sites feed the result straight into a consuming TBL/TBX, so the
 	// latency shape is the one that applies and this is a win. A future caller
 	// that emits many independent BCAXes would want to check that again.
+	//
+	// The win is smaller than that bench suggests, though. Guide section 4.7
+	// adds a cycle when a producer and consumer are in different forwarding
+	// regions. BCAX is Crypto, region 3; TBL/TBX are ASIMD miscellaneous,
+	// region 1. So BCAX feeding TBX costs 2+1 = 3, while BIC->EOR->TBX stays
+	// inside region 1 and costs 4. Still a win, but 1.33x rather than 2x.
+	//
+	// The bench read 2x because a serial BCAX chain forwards region 3 to
+	// region 3 and pays nothing - a shape that appears nowhere in this
+	// codebase. Benchmark a lowering against its real consumer.
 	template <typename T1, typename T2, typename T3, typename T = llvm_common_t<T1, T2, T3>>
 	value_t<T> bcax(T1 a, T2 b, T3 c)
 	{

@@ -3,10 +3,21 @@
 This file is the compact operating contract. It is not an experiment ledger.
 Put dated run details in `debug-experiments/`, not here.
 
-`CLAUDE.md` holds the AArch64 hardware knowledge: what the 8 Gen 2 exposes,
-what the JIT advertises, which features map to which lowering, how to verify a
-codegen change at three levels, and the ranked list of hardware still unused.
-Read it before proposing a codegen optimization.
+`CLAUDE.md` holds the AArch64 hardware knowledge: what the 8 Gen 2 exposes, what
+the JIT advertises, which features map to which lowering, how to verify a codegen
+change at three levels, and the traps that have already cost time. Read it before
+proposing a codegen optimization.
+
+The detail behind it is split by topic, because a single file had grown past
+1,600 lines and it is loaded every session:
+
+- `docs/arm64/codegen.md` — instruction selection and the x86-habit audit
+- `docs/arm64/memory-model.md` — atomics, ordering, i-cache maintenance
+- `docs/arm64/power-and-thermal.md` — power, heat, and what has been measured
+- `docs/arm64/ledger.md` — the audit ledger and open opportunities
+- `docs/hardware/` — Arm's vendored per-core optimization guides
+
+Keep `CLAUDE.md` as the map. New detail belongs in the topic file, not in it.
 
 ## Communication
 

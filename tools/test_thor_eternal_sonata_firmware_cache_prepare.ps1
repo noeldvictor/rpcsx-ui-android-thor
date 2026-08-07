@@ -56,8 +56,21 @@ foreach ($fragment in @(
     Assert-Contains $repository $fragment "Missing app-side managed-profile cache gate: $fragment"
 }
 
+# 'Max LLVM Compile Threads: 0' means auto, which is every hardware thread.
+#
+# This used to assert 2, pinning a compile throttle that has since been removed
+# deliberately: a cold PPU recompile took roughly ten minutes at 51-58 C with the
+# device's thermal guard sitting unused at 72 C, and the cap was set in three
+# places, two of which overwrote the third. The reasoning is in
+# docs/arm64/power-and-thermal.md.
+#
+# The assertion is kept rather than deleted, because the value still needs
+# pinning - just at the value the profile is supposed to carry now. A test that
+# enforces a throttle the project removed on purpose is worse than no test: it
+# reports the old behaviour as correct and pushes whoever hits it toward
+# reinstating it.
 foreach ($fragment in @(
-    'Max LLVM Compile Threads: 2',
+    'Max LLVM Compile Threads: 0',
     'Set DAZ and FTZ: true'
 )) {
     Assert-Contains $settings $fragment "Managed Eternal Sonata cache identity is missing: $fragment"
