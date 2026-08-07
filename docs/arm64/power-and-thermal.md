@@ -635,3 +635,74 @@ would have meant inventing a number.
 Adding it required a stub `record()` in the profiler-disabled branch of the
 header, which previously stubbed only `profiled_busy_wait` — every existing
 caller went through that wrapper, and this is the first site that does not.
+
+## The wait profiler run: 17% of CPU time is spin, and 82% of that is GETLLAR
+
+Run on device with `-PrpcsxThorWaitProfiler=1` and
+`debug.rpcsx.thor.wait_profiler=v`, booting Eternal Sonata through
+`THOR_DEBUG_BOOT`, 110 s settle then a 90 s window. Rates computed from two
+timestamped reports 8.803 s apart rather than from cumulative totals, so the
+figures are a rate during steady gameplay and not an average that includes boot.
+
+Concurrent power probe over the same run: **4.818 cores busy, 8.536 W** (floor,
+USB attached).
+
+| site | spin time | share of spin |
+| --- | --- | --- |
+| `spu_getllar_retry` | `3.147 s` | **43.9%** |
+| `spu_getllar` | `2.767 s` | **38.6%** |
+| `vm_passive_lock` | `1.251 s` | 17.5% |
+| **`vm_writer_lock`** | **`0.000 s`** | **0.0%** |
+| everything else | ~0 | ~0 |
+
+**Headline: 7.165 core-seconds of spin in 42.41 core-seconds of busy CPU time —
+16.9%.** Roughly **0.81 of the 4.82 busy cores are spinning**, producing heat and
+no work. That is the first measured number this fork has had for the question the
+whole `WFE` argument rests on, and it was previously assumed rather than known.
+
+### What this settles
+
+**The `WFE` work targets the right loop.** `spu_getllar` plus
+`spu_getllar_retry` is **82.5% of all spin**. Everything else in the SPU set —
+`spu_dma_reservation`, `spu_accurate_store`, both `putunc` sites, the channel
+operations, `spu_eventstat` — recorded **zero calls**. The reservation wait is
+not merely the largest contributor, it is very nearly the only one.
+
+**Ledger item 3 is dead as a priority.** `vm_writer_lock` recorded **zero spin
+calls** across 5.9 million total waits. The contention located earlier in this
+work — `bits.bit_test_set(diff)` on the shared `g_range_lock_bits[1]`, on every
+PUTLLC — **never causes a thread to wait**. `writer_lock` always acquires on its
+first attempt in this workload.
+
+That must be read precisely. The profiler instruments `busy_wait` sites, so a
+zero means there is no *lock contention*: it does not measure the coherence cost
+of the atomic RMW itself, which still executes on every acquisition. But an
+uncontended atomic on a shared line is a cache-line transfer, not a wait, and the
+redesign's entire case was that eight cores were serialising on it. They are not.
+The remaining upside is bounded by the cost of one uncontended instruction, which
+is far too small to justify redesigning the hottest lock in the memory subsystem.
+**Closed, on evidence, rather than left open as "the highest-value ARM work
+left".**
+
+**The `lv2` sub-quantum sleep is cold for this title.** `lv2_yield` recorded zero
+calls. The x86-only `TPAUSE`/`MWAITX` path found in `kernel/cellos/src/lv2.cpp`
+is a real gap, and it does not fire in Eternal Sonata. Worth knowing before
+anyone spends effort on it; worth keeping the instrumentation for a title that
+does hit it.
+
+**`vm_passive_lock` is the surprise second place** at 17.5%, well ahead of every
+mutex site combined. It had not been considered at all. Whether that is
+addressable is a separate question, but it is now the obvious place to look after
+`GETLLAR`.
+
+### What it does not settle
+
+This is one title, in one scene, over nine seconds. `vm_writer_lock` could
+contend in a game with heavier cross-SPU atomic traffic, and the ledger entry
+should be re-checked rather than deleted if such a title ever runs here. The
+measurement is also of *requested* wait duration summed per site, which is what
+`busy_wait` spins for, not independently observed wall time.
+
+But the shape is unambiguous, and it inverts the priority order this document
+carried all day: the reservation **spin** is worth attacking and the reservation
+**lock** is not.
