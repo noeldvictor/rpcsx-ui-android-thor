@@ -334,3 +334,75 @@ benchmark chart.
 Pinned by `tools/test_thor_arm64_wfe_wait.ps1`, which checks the arm/check/park/
 clear order, that both build systems default it off, that the plain busy-wait
 fallback still exists, and that the x86 path was not touched.
+
+## An instrument that measures power without a fixed scene
+
+Every power question in this document had the same blocker: the only readouts
+were FPS, which cannot see power at all, and temperature, which lags and which
+the harness itself perturbs. `tools/thor_power_probe.ps1` closes that gap.
+
+It reads **cumulative** kernel counters — `cpufreq/stats/time_in_state` and
+`cpuidle/state*/time` — so a measurement of any length costs exactly **two adb
+round trips**. That is the property that matters. The FPS harness spawns a shell
+per sample and walks fifty `thermal_zone` entries each time, which this document
+records as being hot enough to trip the thermal guard on its own. An instrument
+whose cost does not scale with the window can watch a five-minute run for the
+price of a five-second one.
+
+Validated against `/proc/stat` over the same window rather than trusted:
+`cpuidle` reported 0.444 cores busy where `/proc/stat` reported 0.376, and the
+raw idle sum, 75.73 seconds across 8 cores in 10 seconds of wall time, agrees
+with both.
+
+### What it measures, and the two mistakes made building it
+
+| metric | meaning |
+| --- | --- |
+| `residency_mcycles` | cycles the core was *clocked* for. **Not work.** |
+| `busy_ratio` | fraction of wall time outside cpuidle. The cleanest WFE signal. |
+| `work_mcycles` | `residency * busy_ratio`, the honest estimate of retired cycles |
+| `mean_mhz` | frequency residency, which matters because power rises faster than linearly with clock |
+
+**`time_in_state` counts all wall time, including idle at the parked frequency.**
+It is frequency residency, not work. Reading it as work overstated an idle device
+by more than tenfold on this probe's first run. The jiffy unit was then verified
+on device rather than assumed: per-step deltas sum to 1001 over a 10 s window and
+the running total matches uptime in seconds times 100.
+
+**There is no measured USB input current on this device.** The first attempt at
+absolute watts computed `usb_in - battery_charge`, so that power could be read
+without unplugging. It returned a **negative wattage**, which is the tell.
+`usb/current_now` sat frozen at 447000 across three seconds while
+`battery/current_now` swung from -1130521 to -770160: it is the negotiated input
+limit, and the `ucsi` source node reports 0. So there is nothing to subtract, and
+the identity had no basis. Absolute power is available only from battery
+discharge; with the cable attached the battery figure is a **floor**, because the
+charger carries an unknown share. The clock-residency metrics do not have that
+problem and are the ones to use with USB attached.
+
+That is the same lesson as the `WFE` latency probe and the ESR `ISV` decode,
+for the third time: **when a probe returns a physically impossible number, the
+probe is what is broken.** Negative power, like a 10 ns `WFE`, is not a surprising
+result to be explained. It is a bug.
+
+### The first numbers
+
+Eternal Sonata installed, at rest, USB attached so the wattage is a floor:
+
+| | cores busy | power (floor) |
+| --- | --- | --- |
+| rpcsx force-stopped | `0.444` | `1.508 W` |
+| rpcsx running | `3.128` | `3.289 W` |
+| **attributable to rpcsx** | **`2.68`** | **`~1.78 W`** |
+
+This independently reproduces the "3 watts at the title screen" observation that
+prompted the work, and decomposes it for the first time. Note where the work sits:
+`1.956` of those busy cores are on the A710/A715 mid cluster. On a warm cache at a
+title screen that is not compilation, which points at the SPU reservation spin
+described above — the loop whose only backoff instruction, `YIELD`, does nothing
+on a non-SMT core.
+
+That makes this the instrument the `WFE` question always needed. The earlier
+experiment failed because its two arms sampled different cutscene content and its
+two readouts disagreed on the sign. `busy_ratio` does not care what is on screen:
+a parked core is parked.

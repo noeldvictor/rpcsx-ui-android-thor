@@ -46,8 +46,11 @@ $ErrorActionPreference = "Stop"
 #                      matters because dynamic power rises faster than
 #                      linearly with frequency.
 #
-# Absolute watts are deliberately not claimed. These are proxies, and their
-# value is in A/B deltas between two arms measured the same way.
+# Absolute watts are available only on battery. This device exposes no measured
+# USB input current - usb/current_now is the negotiated limit and sits frozen
+# under changing load - so while charging there is nothing to subtract and no
+# absolute figure. The clock-residency metrics above do not have that problem and
+# are the ones to use for an A/B with the cable attached.
 
 function Get-ThorPowerSnapshot {
     param([string]$Serial)
@@ -70,6 +73,9 @@ echo "BATT_UA=$(cat /sys/class/power_supply/battery/current_now 2>/dev/null)"
 echo "BATT_UV=$(cat /sys/class/power_supply/battery/voltage_now 2>/dev/null)"
 echo "BATT_ST=$(cat /sys/class/power_supply/battery/status 2>/dev/null)"
 echo "BATT_CC=$(cat /sys/class/power_supply/battery/charge_counter 2>/dev/null)"
+echo "USB_UA=$(cat /sys/class/power_supply/usb/current_now 2>/dev/null)"
+echo "USB_UV=$(cat /sys/class/power_supply/usb/voltage_now 2>/dev/null)"
+echo "USB_ON=$(cat /sys/class/power_supply/usb/online 2>/dev/null)"
 '@ -replace "`r`n", "`n"
 
     $raw = & adb @adbArgs shell $script 2>&1
@@ -91,6 +97,9 @@ echo "BATT_CC=$(cat /sys/class/power_supply/battery/charge_counter 2>/dev/null)"
         if ($text -match '^BATT_UV=(\d+)$') { $snapshot.battery.voltage_uv = [int64]$Matches[1]; continue }
         if ($text -match '^BATT_ST=(.+)$') { $snapshot.battery.status = $Matches[1].Trim(); continue }
         if ($text -match '^BATT_CC=(-?\d+)$') { $snapshot.battery.charge_counter = [int64]$Matches[1]; continue }
+        if ($text -match '^USB_UA=(-?\d+)$') { $snapshot.battery.usb_current_ua = [int64]$Matches[1]; continue }
+        if ($text -match '^USB_UV=(-?\d+)$') { $snapshot.battery.usb_voltage_uv = [int64]$Matches[1]; continue }
+        if ($text -match '^USB_ON=(\d+)$') { $snapshot.battery.usb_online = [int]$Matches[1]; continue }
 
         if ($text -match '^F=(\d+)\s+(\d+)\s+(\d+)$') {
             $cpu = $Matches[1]
@@ -225,19 +234,46 @@ function Get-ThorPowerDelta {
     $totalCycles = ($perCpu | Measure-Object work_mcycles -Sum).Sum
     $totalBusy = ($perCpu | Measure-Object busy_ratio -Sum).Sum
 
-    # Battery is reported but never used as the headline, because adb over USB
-    # charges the device and turns current_now into charge current. It is
-    # meaningful only when status is Discharging.
+    # Absolute system power, and the honest limits on it.
+    #
+    # The first version of this subtracted battery charge power from USB input
+    # power, to get system draw without unplugging. That was wrong, and the tell
+    # was a negative wattage. usb/current_now is not a measurement: it sat frozen
+    # at 447000 across a three second window while battery/current_now swung from
+    # -1130521 to -770160. It is the negotiated input current, and the ucsi
+    # source node reports 0. This device exposes no measured input current at
+    # all, so there is nothing to subtract and the identity has no basis.
+    #
+    # What is real is battery current, which does track load. So:
+    #
+    #   discharging  system power = |battery current| * battery voltage, exact
+    #                               when nothing is plugged in.
+    #   charging     the charger is supplying an unknown share of the load, so
+    #                               no absolute figure is derivable.
+    #
+    # Sign convention on this part, observed rather than assumed: negative
+    # current is discharge. A weak USB supply does not prevent discharge, and
+    # both were seen with status reading Charging, so the sign is trusted over
+    # the status string.
     $battery = [ordered]@{
-        status_before  = $Before.battery.status
-        status_after   = $After.battery.status
-        current_ua     = $After.battery.current_ua
-        voltage_uv     = $After.battery.voltage_uv
-        usable         = ($After.battery.status -eq "Discharging" -and $Before.battery.status -eq "Discharging")
+        status_after    = $After.battery.status
+        current_ua      = $After.battery.current_ua
+        voltage_uv      = $After.battery.voltage_uv
+        usb_online      = $After.battery.usb_online
     }
-    if ($battery.usable -and $After.battery.voltage_uv -and $After.battery.current_ua) {
-        $watts = [math]::Abs($After.battery.current_ua / 1e6 * $After.battery.voltage_uv / 1e6)
-        $battery.watts = [math]::Round($watts, 3)
+
+    $discharging = ($null -ne $After.battery.current_ua -and $After.battery.current_ua -lt 0)
+
+    if ($discharging -and $After.battery.voltage_uv) {
+        $watts = [math]::Abs(($After.battery.current_ua / 1e6) * ($After.battery.voltage_uv / 1e6))
+        $battery.system_watts = [math]::Round($watts, 3)
+        $battery.usable = $true
+        # Plugged in while discharging means the charger is carrying part of the
+        # load, so the battery figure is a floor rather than the total.
+        $battery.understated = ($After.battery.usb_online -eq 1)
+    } else {
+        $battery.usable = $false
+        $battery.note = "battery is charging; no measured input rail exists on this device, so system power is not derivable. Unplug USB and use wireless adb."
     }
 
     return [pscustomobject]@{
@@ -279,9 +315,13 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
     Write-Output ""
     if ($delta.battery.usable) {
-        Write-Output "battery           : $($delta.battery.watts) W (discharging, usable)"
+        if ($delta.battery.understated) {
+            Write-Output "system power      : $($delta.battery.system_watts) W from battery (FLOOR - USB attached is carrying part of the load)"
+        } else {
+            Write-Output "system power      : $($delta.battery.system_watts) W (on battery, exact)"
+        }
     } else {
-        Write-Output "battery           : not usable, status=$($delta.battery.status_after). Unplug USB and use wireless adb for absolute watts."
+        Write-Output "system power      : not derivable - $($delta.battery.note)"
     }
 
     $outDir = $OutputDirectory
