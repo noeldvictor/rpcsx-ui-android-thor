@@ -537,3 +537,74 @@ fixed — the codebase now looks genuinely clean of this class rather than merel
 unexamined. That is a different statement from "we looked and found nothing",
 because this time the search space was defined by the shape rather than by which
 files someone happened to open.
+
+## All three weak-memory shapes, swept mechanically
+
+This document's own advice is to grep for the *shape* rather than for an ARM
+path, because there is no ARM path to read: **a validated re-read, a
+double-check, a publish-then-flag**, and ask what TSO was providing for free.
+Every defect found in this codebase came from one of those three. They have now
+all been swept across the whole tree rather than encountered by accident.
+
+### 1. Publish-then-flag — 2 sites
+
+Signature: two adjacent relaxed stores to different atomics.
+
+| site | verdict |
+| --- | --- |
+| `SPUThread.cpp:802` | benign — descriptive fields in a GETLLAR diagnostic bucket, last-writer-wins, consumed by a stats dump |
+| `thor_rsx_auditor.h:154` | **real inversion, fixed** — flag stored before the data it guards, wrong on x86 too |
+
+Plus the two already fixed before the sweep: the semaphore fast cache, and the
+reservation seqlock fences.
+
+### 2. Validated re-read — 2 sites
+
+Signature: the same accessor loaded twice with work between, then compared.
+
+| site | verdict |
+| --- | --- |
+| `SPUThread.cpp:3767` (MFC DMA) | **already fixed** — carries `atomic_fence_acquire()` before the validating read |
+| `SPUThread.cpp:7421` | **safe by construction, and worth explaining** |
+
+The second one looks like the seqlock shape and is not. It checks the version
+*first* and reads the data second:
+
+```cpp
+if (!vm::check_addr(raddr) || rtime != vm::reservation_acquire(raddr))
+    set_lr = true;
+else if (!cmp_rdata(rdata, *resrv_mem))
+```
+
+The seqlock trap is a data read **sinking below** the validating counter read.
+Here the data read is already after it in program order, and
+`reservation_acquire` is an acquire load, which stops it moving **above**.
+Version-then-data is the safe ordering; data-then-version is the one needing a
+fence. **Two sites that pattern-match identically require opposite treatment, and
+the deciding factor is which of the two reads comes first.**
+
+### 3. Double-check — 0 hand-rolled instances
+
+Signature: test, take a lock, test again.
+
+The sweep found none, and the reason is structural rather than lucky. Lazy
+initialisation in this codebase is done with **function-local statics**,
+`static const auto x = []{ ... }()`, of which there are 413 across 25 files. C++11
+requires those to be thread-safe, and the compiler emits a guard variable with
+the acquire/release semantics already correct. There is no hand-rolled
+double-checked locking here to get wrong on a weak-memory machine.
+
+### What this closes
+
+The weak-memory dimension is now swept **by shape across the entire fork**, not
+by which files someone opened. Four defects total, all found and fixed: the SPU
+reservation seqlock, the MFC DMA read, the semaphore fast cache, and the RSX
+auditor inversion.
+
+That is a stronger statement than the ledger could previously make. Its earlier
+claim that `lv2` and the HLE modules were architecture-neutral rested on a grep
+across **two directories that do not exist in this fork**, and scanning the real
+one turned up both a live race and a second x86-only power path. The difference
+is not diligence, it is that a shape-defined search cannot silently cover
+nothing: if the pattern matches zero files, that is a fact about the pattern,
+which is checkable, rather than a fact about a path list, which is not.
