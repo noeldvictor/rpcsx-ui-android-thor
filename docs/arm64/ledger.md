@@ -466,3 +466,46 @@ algorithm rather than compensation.
 Worth recording as a negative result because the alternative is re-running the
 most productive heuristic in this document every time someone looks for work, and
 concluding from silence that they searched badly.
+
+## Plain `char` is unsigned here and signed on x86, and it does not matter
+
+A dimension this ledger never covered, and a classic x86-to-AArch64 divergence:
+**plain `char` has no fixed signedness**, and the platform defaults differ.
+Verified on the actual target rather than assumed — NDK clang for
+`aarch64-linux-android29` defines:
+
+    #define __CHAR_UNSIGNED__ 1
+
+and the build passes neither `-fsigned-char` nor `-funsigned-char`, so it takes
+that default. On x86_64 Linux and Windows plain `char` is **signed**. Code
+holding numeric data in a `char` and testing `c < 0`, or right-shifting it, gets
+different behaviour on the two hosts with no warning.
+
+**Swept, and the codebase is structurally immune.** How it spells 8-bit types,
+counting `Emu/`, `kernel/` and `rx/` and excluding vendored `3rdparty/`:
+
+| spelling | uses |
+| --- | --- |
+| `u8` | 2,928 |
+| plain `char` | 1,250 |
+| `s8` | 107 |
+| `signed char` (explicit) | 51 |
+| `unsigned char` (explicit) | 16 |
+
+`rx/types.hpp` defines `u8 = std::uint8_t` and `s8 = std::int8_t`, both of which
+have fixed signedness independent of the `char` default. Numeric byte data goes
+through those; plain `char` is used for text. A sweep for the failing shape — a
+plain `char` variable subsequently tested against `< 0` — matched nothing in
+`Emu/`, and the 51 `signed char` uses are explicit where signedness is wanted.
+
+The only plain-`char` sign-dependent code in the tree is inside
+`3rdparty/7zip`, which is vendored, builds on both hosts upstream, and is not
+emulator logic.
+
+**Recorded as a negative result because the reasoning generalises.** The codebase
+is not safe here by having audited `char` usage; it is safe because it adopted
+fixed-width typedefs everywhere numeric bytes appear, which makes the entire
+question unreachable. That is worth more than a fix: **a convention that removes a
+class of bug is stronger than a sweep that finds none this time**, and it is why
+this dimension needs no re-check when new code lands, provided the convention
+holds.
