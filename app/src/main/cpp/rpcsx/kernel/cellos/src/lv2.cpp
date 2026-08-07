@@ -76,6 +76,8 @@
 #endif
 #endif
 
+#include "util/thor_wait_profiler.h"
+
 extern std::string ppu_get_syscall_name(u64 code);
 
 namespace rsx {
@@ -2474,6 +2476,23 @@ bool lv2_obj::wait_timeout(u64 usec, ppu_thread *cpu, bool scale,
       else {
         // Try yielding. May cause long wake latency but helps weaker CPUs a lot
         // by alleviating resource pressure
+        //
+        // On AArch64 this is the *only* path, because the branch above is
+        // ARCH_X64-only. So every sub-quantum guest sleep - sys_timer_usleep and
+        // every mutex, condvar and semaphore timeout - becomes a sched_yield
+        // syscall loop at full clock, where x86 parks the core in a C-state for
+        // exactly the remaining time.
+        //
+        // There is no clean equivalent on this part. WFET would be it, but
+        // FEAT_WFxT is absent here (ID_AA64ISAR2_EL1 reads 0), and plain WFE
+        // cannot substitute because without a timeout its only fallback wake is
+        // the generic timer event stream at roughly 95us, which overshoots a
+        // sub-10us wait by an order of magnitude.
+        //
+        // Instrumented rather than guessed at: the profiler counts how often
+        // this fires and totals the microseconds spent here, so the cost is a
+        // measurement instead of an argument. See docs/arm64/power-and-thermal.md.
+        thor_wait::record(thor_wait::site::lv2_short_timeout_yield, remaining);
         std::this_thread::yield();
       }
     }

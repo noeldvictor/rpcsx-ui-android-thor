@@ -620,6 +620,18 @@ depends on how often this fires and on whether yielding to other emulator thread
 is worth more than the syscall costs, which is a measurement rather than an
 argument.
 
-`thor_wait_profiler` does not currently instrument this site. Adding one would
-make it answerable in the same run that answers the SPU spin question, and it is
-a strictly additive change.
+**Now instrumented**, so it is answerable in the same run as the SPU spin
+question. `thor_wait::site::lv2_short_timeout_yield` records every time AArch64
+takes this fallback, and its cycle column accumulates the **microseconds still to
+wait** rather than timer ticks, so it reads directly as "how much guest sleep is
+being spent spinning in the scheduler". The site appears in the core summary line
+as `lv2_yield=calls/us`.
+
+The unit differs from every other site in that table, which is deliberate and
+noted at the enum: the others wrap `busy_wait` and record the tick count they
+were asked for, while this one is not a busy-wait at all. Recording ticks here
+would have meant inventing a number.
+
+Adding it required a stub `record()` in the profiler-disabled branch of the
+header, which previously stubbed only `profiled_busy_wait` — every existing
+caller went through that wrapper, and this is the first site that does not.

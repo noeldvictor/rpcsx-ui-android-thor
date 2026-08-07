@@ -41,6 +41,12 @@ namespace thor_wait
 		mutex_exclusive,
 		mutex_upgrade,
 		mutex_unlock,
+		// Not a busy-wait. lv2_obj::wait_timeout falls back to a sched_yield
+		// loop for sub-quantum guest sleeps, where x86 uses TPAUSE or MWAITX to
+		// park the core. This site's cycle column therefore accumulates
+		// *microseconds still to wait*, not timer ticks, so it reads as "how
+		// much guest sleep is being spent spinning in the scheduler".
+		lv2_short_timeout_yield,
 		count
 	};
 
@@ -143,7 +149,7 @@ namespace thor_wait
 			"Thor wait profiler core total=%llu rsx_fifo=%llu/%llu vm_range=%llu/%llu "
 			"vm_passive=%llu/%llu vm_writer=%llu/%llu vm_res_lock=%llu/%llu vm_res_shared=%llu/%llu "
 			"cpu_slot=%llu/%llu cpu_suspend=%llu/%llu sema=%llu/%llu mutex_s=%llu/%llu mutex_x=%llu/%llu "
-			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu",
+			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us)",
 			static_cast<unsigned long long>(total),
 			static_cast<unsigned long long>(calls(site::rsx_fifo_cache_fill)),
 			static_cast<unsigned long long>(cycles(site::rsx_fifo_cache_fill)),
@@ -170,7 +176,9 @@ namespace thor_wait
 			static_cast<unsigned long long>(calls(site::mutex_upgrade)),
 			static_cast<unsigned long long>(cycles(site::mutex_upgrade)),
 			static_cast<unsigned long long>(calls(site::mutex_unlock)),
-			static_cast<unsigned long long>(cycles(site::mutex_unlock)));
+			static_cast<unsigned long long>(cycles(site::mutex_unlock)),
+			static_cast<unsigned long long>(calls(site::lv2_short_timeout_yield)),
+			static_cast<unsigned long long>(cycles(site::lv2_short_timeout_yield)));
 #else
 		(void)total;
 #endif
@@ -201,6 +209,12 @@ namespace thor_wait
 		rx::busy_wait(cycles);
 	}
 #else
+	// Sites that are not busy-waits call record() directly, so it needs a stub
+	// here as well or a profiler-off build fails to compile.
+	FORCE_INLINE void record(site, usz) noexcept
+	{
+	}
+
 	FORCE_INLINE void profiled_busy_wait(site, usz cycles = 3000) noexcept
 	{
 		rx::busy_wait(cycles);
