@@ -329,6 +329,16 @@ does not have, listed under the ledger. Full contract suite at the end: 92 pass,
 refusing to match a rebuilt APK against a recorded proof-run candidate, which is
 the behaviour it is supposed to have.
 
+**One measured result worth stating plainly, because it was observed and then
+underplayed.** During the control run, Eternal Sonata reached gameplay and read
+**29.99 fps** — the 30 fps cap — with CPU utilisation at PPU 12.7%, SPU 38.2%,
+RSX 4.3%. The emulator is running this title at full speed with every change in
+this document applied, and rendering correctly: characters, foliage, lighting and
+text all intact across several scenes. That is not a speed claim, since there is
+no before-figure to compare against, but it does establish that none of the SPU
+and PPU opcode rewrites, the LSE2 atomics, the seqlock fences or the i-cache
+changes broke a real workload.
+
 **And the caveat that outranks all of it.** Nothing here was measured against a
 running game. Every claim in this document is about correctness, instruction
 counts, or hardware capability. Whether any of it makes a title run faster is
@@ -857,6 +867,13 @@ the scene, not the change.**
 
 So the flag stays off. Not because it failed, but because nothing was learned
 about the thing it exists to improve.
+
+Savestates were tried as the fixed-scene fix and do not currently work from the
+debug-boot path: booting a `.SAVESTAT.zst` directly fails with "Disc directory
+not found. Savestate cannot be loaded", because that path bypasses the game-list
+registration a savestate needs to resolve its disc. Making that work is emulator
+plumbing rather than an ARM64 question, and it is the single thing standing
+between this fork and a repeatable A/B.
 
 For whoever runs it properly: the boot-into-cutscene route cannot work, because
 frame-capped and uncapped scenes are not comparable and the content is not
