@@ -94,8 +94,27 @@ but four decisions already made and recorded, each blocked on something this
 fork cannot do rather than on analysis:
 
 1. **`WFE` power-optimized wait** — implemented, default off, needs a thermometer.
-2. **RawSPU MMIO fault emulation** — needs an AArch64 load/store decoder, since
-   `ISV=0` here, and can only be exercised by a RawSPU title.
+2. **RawSPU MMIO fault emulation** — *the decoder half is now done.* `ISV=0` on
+   this device kills the hope of reading the access out of `ESR`, so a decoder is
+   required exactly as on x86. That decoder now exists as
+   `util/arm64_ls_decode.h`: a `constexpr` function returning operation,
+   register, width and sign-extension for the unsigned-immediate, unscaled and
+   register-offset forms, correctly rejecting the SIMD/FP encodings, `PRFM`, the
+   atomic and exclusive families, and the unallocated corners.
+
+   It is **verified at compile time against assembler ground truth** — fifteen
+   encodings produced by NDK clang and read back with `llvm-objdump`, plus two
+   negatives — and it is `#include`d from `Thread.cpp` so the build actually
+   compiles it. An unincluded header's `static_assert`s never fire, which would
+   have made it precisely the kind of gate this project has shipped before: green
+   because nothing looked at it.
+
+   **Still not called.** Wiring it into `handle_access_violation` needs a RawSPU
+   title to exercise, and a mistake inside a fault handler turns a recoverable
+   fault into a crash loop. What changed is that the part which *could* be
+   verified without hardware has been, so whoever integrates it is debugging one
+   thing rather than two — the same reasoning that fixed the branch-offset bug in
+   the PPU trampoline while leaving it disabled.
 3. **The range-lock bitmask.** *(Re-scoped twice; read the whole entry before
    acting on it.)* **First re-scope: the original premise was wrong.** Reservation locking is *already* per-address —
    `vm::reservation_lock` takes the 128-byte line's own word, and `g_reservations`

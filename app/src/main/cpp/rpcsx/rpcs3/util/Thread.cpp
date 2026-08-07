@@ -150,6 +150,23 @@ bool is_debugger_present()
 	return rx::isDebuggerPresent();
 }
 
+#if defined(ARCH_ARM64)
+// The AArch64 counterpart to decode_x64_reg_op below, for the RawSPU MMIO
+// emulation this handler does not yet do on ARM.
+//
+// Included here rather than left unreferenced so the build compiles it, which
+// is what runs its static_asserts: the decode is checked at compile time
+// against fifteen encodings produced by the assembler plus two negatives. An
+// unincluded header is never compiled and its assertions never fire, which
+// would make it exactly the kind of gate this project has shipped before -
+// green because nothing looked at it.
+//
+// Deliberately not yet called. Integration needs a RawSPU title to exercise it,
+// and a mistake inside a fault handler turns a recoverable fault into a crash
+// loop. See docs/arm64/ledger.md.
+#include "util/arm64_ls_decode.h"
+#endif
+
 #if defined(ARCH_X64)
 enum x64_reg_t : u32
 {
