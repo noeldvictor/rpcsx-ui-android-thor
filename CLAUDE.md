@@ -324,10 +324,30 @@ Two things that are worth knowing rather than acting on blindly:
   transaction. Every SPU atomic therefore contends on a single cache line across
   eight cores.
 
-  There is no ARM equivalent of TSX, so this cannot be ported; it would have to
-  be replaced with something ARM-shaped, such as finer-grained per-reservation
-  locking using LSE. That is a real design change with real risk, and it is the
-  highest-value ARM work left in this codebase.
+  **Armv8.5 does define transactional memory, FEAT_TME, and this chip does not
+  have it.** Decoded from the `ID_AA64ISAR0_EL1` captured on device,
+  `0x0021111110212120`: TME is bits [27:24], which read `0`. (Cross-check: bits
+  [23:20] read `2`, the FEAT_LSE field, matching what the probe reported.) So
+  the "port TSX to ARM transactions" idea is closed, not merely unexplored, and
+  nobody needs to re-investigate it on this hardware.
+
+  What remains is therefore a redesign rather than a port: something ARM-shaped,
+  such as finer-grained per-reservation locking using LSE. That is a real design
+  change with real risk, and it is the highest-value ARM work left here.
+
+  One part of the cost has already come down, though, and it is worth not
+  double-counting. The heavyweight path's own bookkeeping runs on 16-byte
+  atomics, and those no longer take a cache line exclusive merely to be read
+  (see the LSE2 section). The lock is still shared and still contended; it is
+  the *reads around it* that got cheaper.
+
+  Related and also closed: the HLE variants in `shared_mutex`
+  (`compare_exchange_hle_acq`, `fetch_add_hle_rel`) are x86 lock-elision
+  primitives, and they degrade correctly rather than silently. `s_hle_ack` and
+  `s_hle_rel` fall back to plain `__ATOMIC_SEQ_CST` when
+  `__ATOMIC_HLE_ACQUIRE`/`_RELEASE` are undefined, and clang defines neither on
+  aarch64 (verified with `-dM -E`). So those are ordinary seq_cst RMWs on ARM:
+  no elision, but no correctness gap and nothing to port.
 
 ## Where the wins actually were
 
