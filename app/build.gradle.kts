@@ -31,6 +31,15 @@ val rpcsxThorWaitProfiler =
         else -> false
     }
 
+// AArch64 answer to the x86 MONITORX/MWAITX GETLLAR wait: park the core with
+// WFE instead of spinning. Off by default; the case for it is power and
+// thermal behaviour, which this fork cannot measure.
+val rpcsxThorArm64WfeWait =
+    when (providers.gradleProperty("rpcsxThorArm64WfeWait").orNull ?: System.getenv("RPCSX_THOR_ARM64_WFE_WAIT_BUILD")) {
+        null, "", "0", "false", "off", "OFF" -> false
+        else -> true
+    }
+
 val rpcsxThorBusyWaitExperiment =
     when (providers.gradleProperty("rpcsxThorBusyWaitExperiment").orNull ?: System.getenv("RPCSX_THOR_BUSY_WAIT_EXPERIMENT_BUILD")) {
         "1", "true", "True", "TRUE", "on", "On", "ON" -> true
@@ -169,6 +178,7 @@ android {
                     "-DRPCSX_ANDROID_ARM_TUNE=$rpcsxAndroidArmTune",
                     "-DRPCSX_THOR_WAIT_PROFILER=${if (rpcsxThorWaitProfiler) "ON" else "OFF"}",
                     "-DRPCSX_THOR_BUSY_WAIT_EXPERIMENT=${if (rpcsxThorBusyWaitExperiment) "ON" else "OFF"}",
+                    "-DRPCSX_THOR_ARM64_WFE_WAIT=${if (rpcsxThorArm64WfeWait) "ON" else "OFF"}",
                     "-DRPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS=${if (rpcsxThorSpuReducedLoopDiagnostics) "ON" else "OFF"}",
                     "-DRPCSX_THOR_RSX_AUDITOR=${if (rpcsxThorRsxAuditor) "ON" else "OFF"}",
                     "-DRPCSX_THOR_RSX_EXPERIMENTS=${if (rpcsxThorRsxExperiments) "ON" else "OFF"}",

@@ -1423,6 +1423,53 @@ waitpkg_func static void __tpause(u32 cycles, u32 cstate)
 }
 #endif
 
+#if defined(ARCH_ARM64) && defined(RPCSX_THOR_ARM64_WFE_WAIT)
+// AArch64 counterpart of MONITORX/MWAITX above.
+//
+// LDXR arms the exclusive monitor on a cache line; WFE parks the core until
+// something clears that monitor, which a write to the line does. That is the
+// same "sleep until this line changes" primitive, with the operands in a
+// different order, and it has been in the base architecture since Armv8.0.
+// Armv8.7 WFET would add MWAITX's timeout, but this chip is Armv9.0 (~v8.5)
+// and is unlikely to have it, so the wait is bounded by the event stream
+// instead (see below).
+//
+// The ordering here is what makes it safe. Arm first, re-check second, park
+// third. Checking before arming would allow the writer to land between the
+// check and the WFE, and the wake it generated would already be gone: a lost
+// wakeup, and the thread sleeps until something unrelated pokes it.
+//
+// Even with the re-check, this relies on WFE having a wake source other than
+// the monitor. Linux/arm64 enables the generic timer event stream
+// (CONFIG_ARM_ARCH_TIMER_EVTSTREAM), which delivers a periodic event on the
+// order of tens of microseconds, so a WFE that misses its write still returns
+// promptly and the caller's retry loop re-checks. Without that event stream
+// this would be a hang, which is one reason it stays opt-in.
+template <typename T, typename... Args>
+static FORCE_INLINE void __arm64_monitor_wait(const void* cline, const Args&... args)
+{
+	u32 observed;
+
+	// Arm the monitor on the watched line. The loaded value is discarded; only
+	// the reservation it establishes matters.
+	__asm__ volatile("ldxr %w0, %1"
+		: "=r"(observed)
+		: "Q"(*static_cast<const u32*>(cline))
+		: "memory");
+
+	if (T::needs_wait(args...))
+	{
+		__asm__ volatile("wfe" ::: "memory");
+	}
+
+	// Drop the reservation either way. Leaving a stray exclusive monitor armed
+	// can make an unrelated STXR on this core fail spuriously.
+	__asm__ volatile("clrex" ::: "memory");
+
+	static_cast<void>(observed);
+}
+#endif
+
 namespace vm
 {
 	std::array<atomic_t<reservation_waiter_t>, 1024> g_resrv_waiters_count{};
@@ -5876,6 +5923,22 @@ bool spu_thread::process_mfc_cmd()
 										// Provide the first X64 cache line of the reservation to be tracked
 										__mwaitx<check_wait_t>(std::min<u32>(getllar_spin_count, 17) * 500, 0xf0, std::addressof(data), +rtime, vm::reservation_acquire(addr));
 									}
+								}
+								else
+#elif defined(ARCH_ARM64) && defined(RPCSX_THOR_ARM64_WFE_WAIT)
+								if (true)
+								{
+									struct check_wait_t
+									{
+										static FORCE_INLINE bool needs_wait(u64 rtime, const atomic_t<u64>& mem_rtime) noexcept
+										{
+											return rtime == mem_rtime;
+										}
+									};
+
+									// Watch the first cache line of the reservation, the same target the
+									// x86 path monitors. The writer that ends this wait writes here.
+									__arm64_monitor_wait<check_wait_t>(std::addressof(data), +rtime, vm::reservation_acquire(addr));
 								}
 								else
 #endif

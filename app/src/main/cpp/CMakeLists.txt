@@ -6,6 +6,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE on)
 option(RPCSX_BUILD_BUNDLED_CORE "Build the vendored RPCSX Android core into the APK" OFF)
 option(RPCSX_THOR_WAIT_PROFILER "Instrument Android busy-wait sites for Thor diagnostics" OFF)
 option(RPCSX_THOR_BUSY_WAIT_EXPERIMENT "Build the failed Android ARM64 busy-wait batching experiment" OFF)
+option(RPCSX_THOR_ARM64_WFE_WAIT "Park the core with WFE instead of spinning in the SPU GETLLAR wait (AArch64 answer to MONITORX/MWAITX)" OFF)
 option(RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS "Build Android SPU reduced-loop detect-only diagnostics" OFF)
 option(RPCSX_THOR_RSX_AUDITOR "Instrument Android Vulkan work for Thor diagnostics" OFF)
 option(RPCSX_THOR_RSX_EXPERIMENTS "Build experimental Android RSX fence, locality, and resolve behavior" OFF)
@@ -42,6 +43,17 @@ endif()
 
 if (RPCSX_THOR_BUSY_WAIT_EXPERIMENT)
 	add_compile_definitions(RPCSX_THOR_BUSY_WAIT_EXPERIMENT=1)
+endif()
+
+if (RPCSX_THOR_ARM64_WFE_WAIT)
+	# x86 parks the core in the GETLLAR wait with MONITORX/MWAITX, which sleeps
+	# until the watched cache line is written. AArch64 does the same with LDXR to
+	# arm the exclusive monitor and WFE to park. Off by default because the whole
+	# case for it is power and thermal behaviour, and this fork does not measure.
+	if (NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+		message(FATAL_ERROR "RPCSX_THOR_ARM64_WFE_WAIT is AArch64-only.")
+	endif()
+	add_compile_definitions(RPCSX_THOR_ARM64_WFE_WAIT=1)
 endif()
 
 if (RPCSX_THOR_SPU_REDUCED_LOOP_DIAGNOSTICS)
