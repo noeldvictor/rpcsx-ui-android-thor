@@ -724,3 +724,46 @@ you spell it. On A710 the *width of the writes* that produced a register changes
 what the next instruction costs. Prefer 64-bit lane writes when populating a
 vector that an ASIMD instruction will consume, and reserve `_mm_set_epi32`-shaped
 construction for values that go straight to memory.
+
+## What "use the non-writeback forms" actually costs, in pipes
+
+Section 4.3 tells you to write a copy with non-writeback `LDP`/`STP` and does not
+say why. The instruction tables do. Every writeback form is identical in latency
+and throughput to its immediate-offset twin and differs in exactly one way: it
+additionally occupies an **Integer pipe**, for the base-register update.
+
+Q-form, which is what a 128-bit vector copy uses:
+
+| form | latency | throughput | pipes |
+| --- | --- | --- | --- |
+| `LDP`/`LDNP` Q, immed offset | 6 | 3/2 | `L` |
+| `LDP` Q, immed post-index | 6 | 3/2 | **`L, I`** |
+| `LDP` Q, immed pre-index | 6 | 3/2 | **`L, I`** |
+| `STP`/`STNP` Q, immed offset | 2 | **1** | `L01, V01` |
+| `STP` Q, immed post-index | 2 | **1** | **`I, L01, V01`** |
+
+The same pattern holds for the general-purpose forms, `LDP` X-form going from `L`
+to `L, I` and `STP` from `L01, D` to `L01, D, I`.
+
+So the writeback saving of one `ADD` per iteration is not free: it converts an
+explicit integer instruction into an integer µOP attached to every access. For
+`mov_rdata`'s eight accesses that is eight integer µOPs added to a routine whose
+own address arithmetic is zero, since all four offsets are compile-time
+constants. Writing the offsets out is strictly better here, and Arm's advice and
+the tables agree.
+
+**Two further things fall out of these rows, both about `STP` Q-form.**
+
+Its **throughput is 1**, where the S-form and D-form both manage 2. So 32-byte
+stores issue one per cycle, and the four stores in a 128-byte copy are a 4-cycle
+floor that the loads, at 3/2, comfortably hide behind. The copy is store-bound,
+which is the right thing to know before trying to make it faster: shaving loads
+would achieve nothing.
+
+And `STNP` shares the row with `STP` at identical cost, which retires a question
+this document had left open. The non-temporal variant is not paying for its
+cache-bypass hint in latency, throughput or pipes; the earlier worry about
+`mov_rdata_nt` was only ever about the **D-register split** that a 16-byte
+non-temporal store lowers to, never about `STNP` itself. With 32-byte chunks,
+which is what that function uses, the paired form costs exactly what a plain
+`STP` costs.
