@@ -843,3 +843,45 @@ to 10 at a throughput between 2/9 and 2/7 per cycle, on two pipes, and also
 outside every forwarding region. Roughly thirty times the cost of `FMUL`. Any SPU
 reciprocal path that reaches a real divide rather than an estimate instruction is
 worth looking at for that reason alone.
+
+## The pipe map, which explains every restriction above
+
+Table 2-1 is the single most useful page in the X3 guide, because it says what
+each of the four vector pipes can *do*, and every `V01`/`V02`/`V13`/`V0` code in
+the instruction tables follows from it:
+
+| pipe | ASIMD shift | FP convert, ASIMD integer multiply, FP divide/sqrt | ASIMD ALU, ASIMD misc, FP add, FP multiply | store data |
+| --- | --- | --- | --- | --- |
+| FP/ASIMD-0 | — | **yes** | yes | yes |
+| FP/ASIMD-1 | **yes** | — | yes | yes |
+| FP/ASIMD-2 | — | **yes** | yes | — |
+| FP/ASIMD-3 | **yes** | — | yes | — |
+
+**The two specialisations are disjoint.** Shifts live on pipes 1 and 3, which is
+where `V13` comes from. Conversions, integer multiplies and divides live on pipes
+0 and 2, which is `V02`. Only the general work — ALU, miscellaneous, floating
+point add and multiply — reaches all four.
+
+Two practical consequences.
+
+**A loop made entirely of vector shifts is capped at half the machine**, at
+throughput 2 rather than 4, no matter how independent the work is. That applies
+directly to the SPU, which shifts constantly: the `ROTQBY` family, `inf_shl` and
+`inf_lshr` through `USHL`, and the `XSBH`/`XSHW`/`XSWD` sign-extends that the
+opcode audit records as `SHL` plus `SSHR`. That pair is two `V13` µOPs with a
+dependency between them, so it is not just two instructions, it is two
+instructions contending for two pipes. The audit called it "unavoidable", which
+remains true — NEON has no in-lane sign extend — but the cost is higher than the
+instruction count suggests.
+
+**Conversely, mixing shifts with conversions is free parallelism**, because the
+two classes cannot contend. A loop alternating `USHL` and `FCVTZS` can saturate
+all four pipes where either alone saturates two.
+
+**One caveat, because Table 2-1 will otherwise appear to contradict the
+instruction tables.** It lists "crypto µOPs" under *all four* pipes, yet the
+Cryptography table gives `BCAX` and `EOR3` as `V0`, one pipe. Both are correct:
+Table 2-1 is a coarse capability map for a whole instruction class, and different
+crypto instructions land on different pipes within it. **The per-instruction row
+is the authoritative one.** Do not use Table 2-1 to argue that a specific
+instruction has more pipes than its own row says.
