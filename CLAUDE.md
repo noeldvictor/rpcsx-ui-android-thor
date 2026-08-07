@@ -136,12 +136,19 @@ it.
 
 ## Two things that outrank everything else here
 
-**Nothing in these notes was measured against a running game.** Almost every
-claim is about correctness, instruction counts, or hardware capability. Whether
-any of it makes a title run faster is unknown, and the changes most likely to
-matter in practice were never about instruction selection at all: custom GPU
-drivers going from never-loading to working, and i-cache maintenance that a stale
-fetch would have turned into an unreproducible crash.
+**Most of these notes are still not measured against a running game.** The
+exception is the wait profiler, which has now been run on device during gameplay
+and gave the first hard numbers here: **16.9% of busy CPU time is spin, 82.5% of
+that in `GETLLAR`**, with `vm_passive_lock` a further 17.5%, and a normalized WFE
+A/B showing the park displacing 20% of the inner spin at eighteen times the noise
+floor.
+
+Everything else — every instruction-selection change in particular — is still
+argued from correctness, instruction counts or hardware capability, with no
+before-and-after. And the changes most likely to matter in practice were never
+about instruction selection at all: custom GPU drivers going from never-loading to
+working, and i-cache maintenance that a stale fetch would have turned into an
+unreproducible crash.
 
 **The recurring failure mode is a measurement that is correct and still supports
 the wrong decision.** It has happened at least four times: a junction temperature

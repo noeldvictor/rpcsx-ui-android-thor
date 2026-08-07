@@ -32,7 +32,7 @@ with porting. Symbol visibility needed no work either: the shipped core exports
 
 **The honest closing state.** The static search space is exhausted; what remains
 is not undiscovered code but four decisions blocked on capabilities this fork
-does not have, listed under the ledger. Full contract suite at the end: 92 pass,
+does not have, listed under the ledger. Full contract suite at the end: 96 pass,
 1 fail, and that failure is `test_thor_cool_title_candidate_artifact.ps1`
 refusing to match a rebuilt APK against a recorded proof-run candidate, which is
 the behaviour it is supposed to have.
@@ -47,13 +47,23 @@ no before-figure to compare against, but it does establish that none of the SPU
 and PPU opcode rewrites, the LSE2 atomics, the seqlock fences or the i-cache
 changes broke a real workload.
 
-**And the caveat that outranks all of it.** Nothing here was measured against a
-running game. Every claim in this document is about correctness, instruction
-counts, or hardware capability. Whether any of it makes a title run faster is
-unknown, and the changes most likely to matter in practice are the ones that
-were never about instruction selection at all: custom GPU drivers going from
-never-loading to working, and i-cache maintenance that a stale fetch would have
-turned into an unreproducible crash.
+**The caveat that used to outrank all of it, now partly lifted.** For most of
+this work nothing had been measured against a running game: every claim was about
+correctness, instruction counts, or hardware capability.
+
+That is no longer wholly true. The wait profiler has since been run on device
+during gameplay and produced the first real numbers here — **16.9% of busy CPU
+time is spin, 82.5% of it in `GETLLAR`, and `vm_passive_lock` a further 17.5%** —
+and a normalized WFE A/B showed the park displacing 20% of the inner spin at
+eighteen times the noise floor. See
+[`power-and-thermal.md`](power-and-thermal.md).
+
+What remains unmeasured is narrower and should be stated as such: **whether any
+of it makes a title run faster, or draw less power.** The instruction-selection
+work in particular still has no before-and-after. And the changes most likely to
+matter in practice are still the ones that were never about instruction selection
+at all: custom GPU drivers going from never-loading to working, and i-cache
+maintenance that a stale fetch would have turned into an unreproducible crash.
 
 ## The x86-block ledger: what is left, and why each one stays
 
