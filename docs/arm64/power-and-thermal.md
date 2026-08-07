@@ -429,3 +429,61 @@ That makes this the instrument the `WFE` question always needed. The earlier
 experiment failed because its two arms sampled different cutscene content and its
 two readouts disagreed on the sign. `busy_ratio` does not care what is on screen:
 a parked core is parked.
+
+## The WFE A/B, attempt two: better instrument, same verdict
+
+With a probe whose idle noise floor is 0.002 W, the `WFE` question looked
+settleable at last. It is not, and the reason is worth recording precisely,
+because it is not the reason that was expected.
+
+Both arms booted Eternal Sonata through `THOR_DEBUG_BOOT`, identical settle time
+of 100 s, identical 90 s measurement window:
+
+| | cores busy | power (floor, USB attached) |
+| --- | --- | --- |
+| `WFE` off (shipped default) | `4.974` | `6.901 W` |
+| `WFE` on | `5.024` | `4.905 W` |
+
+Read alone that is a 29% power reduction for identical CPU work, which would be a
+remarkable result. It is also internally contradictory: **`cores_busy` is
+unchanged, so the CPU is doing the same work at the same clocks, and there is no
+mechanism by which that draws two watts less.** When the two metrics disagree,
+neither is evidence.
+
+The control settles it. Three consecutive 60 s windows, **same build, same game
+session, nothing changed between them**:
+
+| window | power | cores busy |
+| --- | --- | --- |
+| 1 | `1.429 W` | `2.279` |
+| 2 | `5.712 W` | `4.304` |
+| 3 | not derivable | `2.286` |
+
+Within-arm spread is **4.3 W and 2.0 cores**. The entire between-arm difference
+fits inside it several times over. The A/B measured nothing.
+
+**So the blocker was never the instrument.** The earlier attempt failed because
+its two arms sampled different cutscene content and its two readouts disagreed on
+the sign. That diagnosis was right, and this attempt shows the problem is worse
+than "the arms differed": the workload varies by a factor of two *within a single
+arm*, minute to minute, because the title advances through its opening on its own
+schedule. No amount of instrument precision fixes a workload that will not hold
+still. A 0.002 W noise floor against a 4.3 W workload swing is a very sharp ruler
+held against a moving object.
+
+`RPCSX_THOR_ARM64_WFE_WAIT` therefore stays default off, for the third time and
+now for a well-understood reason. What it needs is not a better probe but a
+**reproducible workload**, and that is the savestate boot path this document
+already identifies as broken: booting a `.SAVESTAT.zst` directly fails with
+"Disc directory not found", because that path bypasses the game-list registration
+a savestate needs to resolve its disc. That is emulator plumbing, not an ARM64
+question, and it is now the single highest-value thing standing between this fork
+and any power measurement at all.
+
+A static in-game menu would also serve, if one can be reached deterministically.
+
+**The generalizable part.** Improving an instrument is satisfying and was the
+obvious move, and it was not the constraint. Before sharpening a measurement,
+check whether the thing being measured is stable enough for the precision you
+already had. The within-arm control that established this took three minutes and
+would have been worth running before either WFE experiment.
