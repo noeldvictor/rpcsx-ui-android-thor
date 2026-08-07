@@ -777,6 +777,55 @@ deleted. What is left:
 4. ~~Audit the other x86 compensations.~~ **Done; the sweep is closed.** See
    below for what the remaining subsystems turned up.
 
+## What the hot retry loops actually cost
+
+Read in depth, because "SPU is at 38% during a cutscene" is a power question and
+the answer is in these loops rather than in any opcode.
+
+The SPU `GETLLAR` wait is the hottest. One retry iteration is:
+
+    ntime = vm::reservation_acquire(addr)   // LDAR
+    mov_rdata(rdata, data)                  // 128-byte copy
+    atomic_fence_acquire()                  // DMB ISHLD
+    time0 = vm::reservation_acquire(addr)   // LDAR, validate
+    cmp_rdata(rdata, data)                  // 128-byte compare
+    busy_wait(300)                          // spin
+
+**The spin dominates everything else by two orders of magnitude.**
+`busy_wait(300)` counts 300 ticks of `CNTVCT_EL0`, which runs at **19.2 MHz** on
+this device, so it is **~15.6 microseconds**, not the fraction of a microsecond
+the same constant would mean against an x86 TSC. At ~2 GHz that is roughly
+31,000 cycles of a core held at full clock, running `mrs cntvct_el0` in a tight
+loop. The retry limit is 24, so a single contention event can burn on the order
+of **374 microseconds of core time** before the thread yields to the OS.
+
+And the spin body cannot save power, because `pause()` emits **`yield`** on
+AArch64, which is an SMT hint. On a non-SMT core it retires and does nothing:
+no clock drop, no park, no power reduction. x86's `PAUSE` at least idles the
+pipeline; `YIELD` here is closer to a `NOP`.
+
+So the SPU utilisation seen during quiet scenes is not work. It is threads
+spinning on `CNTVCT_EL0` waiting for a reservation, at full clock, in a loop
+whose only "backoff" instruction does nothing on this hardware.
+
+Checked and cleared while reading these loops, so the work is not repeated:
+
+- `thor_es_getllar_retry_spin_limit()` and `thor_es_getllar_retry_cycles()` call
+  `Emu.GetTitleID()`, a `std::string` comparison, on **every iteration**. That
+  would be serious in a hot loop, but those versions are inside
+  `RPCSX_THOR_ES_SPU_EXPERIMENTS`, which is off by default; the shipped build
+  compiles `constexpr` versions instead.
+- `get_tsc()` is a bare `mrs cntvct_el0` with no `ISB`, which is the cheap form.
+  Adding a barrier to "fix" its ordering would make the spin considerably worse.
+- The `atomic_fence_acquire()` added for the seqlock emits `dmb ishld`, a
+  load-load barrier, not a full `dmb ish`. It was a fair suspect for added spin
+  cost and is not one.
+
+This is the case for the `WFE` work in the next section, and it also explains why
+that work is hard to evaluate: the fix is not "spin more cheaply" but "stop
+spinning", and its benefit is power at constant frame rate, which no frame
+counter will show.
+
 ## The power-optimized wait, which ARM has and this fork does not use
 
 The most valuable unexploited hardware feature found in this sweep, and the one
