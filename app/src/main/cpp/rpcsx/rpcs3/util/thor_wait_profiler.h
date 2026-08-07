@@ -47,6 +47,13 @@ namespace thor_wait
 		// *microseconds still to wait*, not timer ticks, so it reads as "how
 		// much guest sleep is being spent spinning in the scheduler".
 		lv2_short_timeout_yield,
+		// Also not busy-waits. These count *entries* into a wait loop, recording 0
+		// cycles, so calls(site) gives the number of times the loop was entered.
+		// Dividing the matching busy-wait site's calls by this gives the mean number
+		// of backoff iterations per wait, which is what separates "the backoff
+		// overshoots a short hold" from "the lock is genuinely held a long time".
+		vm_passive_lock_enter,
+		vm_passive_lock_taken,
 		count
 	};
 
@@ -149,7 +156,7 @@ namespace thor_wait
 			"Thor wait profiler core total=%llu rsx_fifo=%llu/%llu vm_range=%llu/%llu "
 			"vm_passive=%llu/%llu vm_writer=%llu/%llu vm_res_lock=%llu/%llu vm_res_shared=%llu/%llu "
 			"cpu_slot=%llu/%llu cpu_suspend=%llu/%llu sema=%llu/%llu mutex_s=%llu/%llu mutex_x=%llu/%llu "
-			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us)",
+			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu",
 			static_cast<unsigned long long>(total),
 			static_cast<unsigned long long>(calls(site::rsx_fifo_cache_fill)),
 			static_cast<unsigned long long>(cycles(site::rsx_fifo_cache_fill)),
@@ -178,7 +185,9 @@ namespace thor_wait
 			static_cast<unsigned long long>(calls(site::mutex_unlock)),
 			static_cast<unsigned long long>(cycles(site::mutex_unlock)),
 			static_cast<unsigned long long>(calls(site::lv2_short_timeout_yield)),
-			static_cast<unsigned long long>(cycles(site::lv2_short_timeout_yield)));
+			static_cast<unsigned long long>(cycles(site::lv2_short_timeout_yield)),
+			static_cast<unsigned long long>(calls(site::vm_passive_lock_enter)),
+			static_cast<unsigned long long>(calls(site::vm_passive_lock_taken)));
 #else
 		(void)total;
 #endif

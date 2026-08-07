@@ -406,6 +406,19 @@ namespace vm
 
 		if (!ok || cpu.state & cpu_flag::memory)
 		{
+			// Count entries into the wait loop, and separately count the entries
+			// that actually had to back off at least once. busy_wait calls at the
+			// vm_passive_lock site divided by 'taken' gives the mean number of
+			// 10.42us backoff iterations per contended wait.
+			//
+			// That ratio is the question. If it is near 1, the 13.9 core-seconds
+			// this site burns is mostly a single backoff overshooting a hold that
+			// had already ended, and shortening the first iterations fixes it. If
+			// it is large, the lock is genuinely held long and only the range-lock
+			// bitmask redesign helps.
+			thor_wait::record(thor_wait::site::vm_passive_lock_enter, 0);
+			bool counted_wait = false;
+
 			for (u64 i = 0;; i++)
 			{
 				if (cpu.is_paused())
@@ -419,10 +432,38 @@ namespace vm
 					return;
 				}
 
+				if (!counted_wait)
+				{
+					counted_wait = true;
+					thor_wait::record(thor_wait::site::vm_passive_lock_taken, 0);
+				}
+
 				if (i < 100)
-					thor_wait::profiled_busy_wait(thor_wait::site::vm_passive_lock, 200);
+				{
+					// Graduated backoff. The flat 200-tick wait was 10.42us on
+					// this device's 19.2MHz timer, and measurement says that is
+					// roughly ten times longer than it needs to be: the mean
+					// contended wait here resolves in **1.24 iterations**, so the
+					// first backoff almost always overshoots a lock that has
+					// already been released. Of 61,980 loop entries in a 1.45s
+					// window, 41.2% had to back off at all and they consumed
+					// 31,636 iterations between them.
+					//
+					// This is deliberately an escalation rather than a smaller
+					// constant. Dividing every busy-wait in the emulator by a
+					// fixed factor is what produced a lock convoy and ~1 FPS
+					// before (see the note on busy_wait in rx/asm.hpp); the long
+					// tail still needs a long wait. Only the first iterations get
+					// shorter, so a wait that genuinely lasts still reaches the
+					// same 10.42us backoff by its fifth pass and the total budget
+					// before yielding is barely changed.
+					const usz cycles = i == 0 ? 20 : (i < 4 ? 50 : 200);
+					thor_wait::profiled_busy_wait(thor_wait::site::vm_passive_lock, cycles);
+				}
 				else
+				{
 					std::this_thread::yield();
+				}
 
 				if (cpu_flag::wait - cpu.state)
 				{

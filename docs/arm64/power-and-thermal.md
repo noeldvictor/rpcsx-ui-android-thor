@@ -804,3 +804,61 @@ confirmed to work and is quantified. What remains unmeasured is narrower and
 better defined — the power and latency consequences of parking, which need either
 a CPU-isolated power rail this device does not expose, or a fixed workload where
 absolute `cores_busy` becomes meaningful.
+
+## The passive_lock backoff was ten times too long, and measuring said so
+
+`vm_passive_lock` came out of the profiler run as the second-largest spin source
+in the emulator, 17.5% of all spin. The obvious explanation was the range-lock
+bitmask contention described in `memory-model.md`, and the obvious fix was the
+redesign — which is a change to the hottest lock in the memory subsystem.
+
+**One cheap measurement said it was neither.** Counting loop *entries* separately
+from *backoffs* gives the mean number of backoff iterations per contended wait:
+
+    passive_lock loop entries      61,980   (42,774/s)
+      of which had to back off     25,560   (41.2%)
+      backoff iterations           31,636
+
+    MEAN ITERATIONS PER CONTENDED WAIT: 1.24
+
+**1.24, not 10 or 50.** When `passive_lock` contends it almost always clears on
+the first re-check. The lock is released long before the wait expires, so the
+13.9 core-seconds this site burned was **overshoot, not contention duration** —
+a backoff-tuning problem wearing a lock-contention costume.
+
+`busy_wait(200)` is 200 ticks of a 19.2 MHz timer: **10.42 us**, against a hold
+that is evidently much shorter. Replaced with a ladder — 20 ticks on the first
+iteration, 50 up to the fourth, 200 thereafter — and re-measured:
+
+| | flat 200 | graduated | change |
+| --- | --- | --- | --- |
+| spin per contended wait | `247.5` ticks | `37.0` ticks | **-85.1%** |
+| cores spinning here | `0.227` | `0.072` | **-68.3%** |
+| loop entries per second | `42,774` | `54,545` | +27% |
+
+Roughly **0.155 of a core recovered**, about 3% of the ~4.8 busy cores, while the
+site processed 27% *more* traffic.
+
+**Why a ladder and not a smaller constant.** Dividing every busy-wait in the
+emulator by a fixed factor is exactly what produced a lock convoy and about 1 FPS
+before, recorded on `busy_wait` in `rx/asm.hpp`. The long tail still needs a long
+wait. Only the first iterations shorten, so a wait that genuinely lasts reaches
+the same 10.42 us backoff by its fifth pass and the budget before yielding is
+barely changed. The contract test defends the final tier specifically, because
+collapsing the ladder to its smallest value is the plausible-looking edit that
+brings the convoy back with no visible symptom.
+
+**Caveats.** Entries per second differed 27% between the arms, so the scenes were
+not identical and the absolute core figure carries that uncertainty. The
+robust number is spin per contended wait, which is normalised by the number of
+waits and moved 85%; that one is close to what the change mechanically predicts,
+which is the point. The contention rate also rose, 41.2% to 68.6%, which is
+expected: a shorter first wait re-checks sooner, so more entries are recorded as
+having backed off at least once. It is a property of where the counter sits, not
+a regression.
+
+**The transferable part.** The site looked like a lock-contention problem and the
+fix looked like a redesign. What separated them was one counter — entries beside
+backoffs — costing a single build. **Before attacking contention, measure how
+long the waiters actually wait.** A backoff tuned for a different timer frequency
+is far more likely than a genuine protocol problem, and vastly cheaper to fix.
