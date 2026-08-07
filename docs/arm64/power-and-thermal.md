@@ -556,3 +556,70 @@ What it should settle, in one run:
 That last one matters most. The optimization guides document no atomics at all,
 so the LSE item cannot be justified by reading; this profiler is the one
 available instrument that could justify or kill it.
+
+## A second power-optimized wait, in a subsystem the sweep never scanned
+
+The ledger records that `lv2`, the HLE modules, `Audio` and `Io` are
+architecture-neutral, on the strength of a grep for `ARCH_X64`, `_mm_`, `__m128`
+and `__asm__` that "matches **zero files**".
+
+**Two of those four paths do not exist in this fork.** There is no
+`Emu/Cell/lv2` and no `Emu/Cell/Modules`; the syscall layer lives in
+`kernel/cellos/`, 117 source files. `Audio` (23 files) and `Io` (73 files) are
+real and are genuinely clean, so half the claim held. The other half was a grep
+against nothing, reporting the answer it was hoping for.
+
+This is the same failure as the APK gate that defaulted to
+`app/build/outputs/apk/release/`, a variant nobody builds, and passed for months
+without inspecting an artifact. **A search that finds nothing and a search that
+searches nothing are indistinguishable in the output.** When a sweep reports zero
+hits, confirm the path exists before recording the result.
+
+Scanning `kernel/cellos/` properly returns one file, and what is in it matters.
+
+### `lv2_obj::wait_timeout` gives x86 a low-power sleep and ARM a spin
+
+`kernel/cellos/src/lv2.cpp` carries a second copy of the power-optimized wait
+that this document already describes for the SPU reservation path — in a
+different subsystem, on a different code path, and not previously noted.
+
+`lv2_obj::wait_timeout` is the guest thread sleep, reached by `sys_timer_usleep`
+and by every mutex, condvar and semaphore timeout. For waits **longer** than the
+host scheduler quantum it blocks properly on `thread_ctrl::wait_on`. For waits
+**shorter** than it, roughly 10 us on Linux, the tail is:
+
+```cpp
+#if defined(ARCH_X64)
+      else if (utils::has_appropriate_um_wait()) {
+        if (utils::has_waitpkg()) __tpause(us_in_tsc_clocks, 0x1);
+        else                      __mwaitx(us_in_tsc_clocks, 0xf0);
+      }
+#endif
+      else {
+        std::this_thread::yield();
+      }
+```
+
+x86 parks the core in a C-state for exactly the remaining time. **AArch64 falls
+into `std::this_thread::yield()`**, which is a `sched_yield` syscall, in a loop,
+until the deadline passes — kernel entry and exit per iteration, at full clock,
+producing heat rather than a wait.
+
+**And unlike the SPU case, there is no good ARM answer available on this part.**
+The natural equivalent is `WFET`, wait-for-event with a timeout, which is
+FEAT_WFxT — and `ID_AA64ISAR2_EL1` reads `0` on this device, so it is absent.
+Plain `WFE` cannot substitute: with no `WFET` the only fallback wake is the
+generic timer event stream, measured here at roughly **95 us**, which would
+overshoot a sub-10 us wait by an order of magnitude.
+
+So this is a real gap with no clean fix, which is worth stating rather than
+leaving as an implied TODO. The one cheap thing that has not been tried is
+replacing the `sched_yield` loop with a short `busy_wait`, trading syscall
+overhead for a spin — the SPU path already made that trade. Whether it wins
+depends on how often this fires and on whether yielding to other emulator threads
+is worth more than the syscall costs, which is a measurement rather than an
+argument.
+
+`thor_wait_profiler` does not currently instrument this site. Adding one would
+make it answerable in the same run that answers the SPU spin question, and it is
+a strictly additive change.
