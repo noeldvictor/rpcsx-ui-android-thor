@@ -422,3 +422,71 @@ find in the same family, after the reservation seqlock and the MFC DMA read:
 **every weak-memory defect in this codebase has been an ordering that TSO
 supplied for free, in code with no architecture-specific branch at all.** There
 is nothing to notice when reading; only the shape gives it away.
+
+## Correction: the range-lock bitmask does contend, on the reader side
+
+Earlier in this work the shared-bitmask question was closed on evidence, on the
+grounds that `vm_writer_lock` recorded **zero** spin calls across 5.9 million
+waits: `writer_lock` always acquires first try, so there is no contention to
+remove. **That conclusion was drawn from the wrong site.**
+
+The measured second-largest spin source in the whole emulator is
+`vm_passive_lock`, at **17.5% of all spin — 1.33 million calls, 13.9
+core-seconds**. Reading what it waits for closes the loop:
+
+```cpp
+void passive_lock(cpu_thread& cpu) {
+    ...
+    for (u64 i = 0;; i++) {
+        if (cpu.is_paused()) return;
+        if (!get_range_lock_bits(true)) [[likely]] return;   // proceed once the word is zero
+        if (i < 100) profiled_busy_wait(site::vm_passive_lock, 200);   // 10.42 us
+        else std::this_thread::yield();
+    }
+}
+```
+
+It spins while `g_range_lock_bits[1]` is nonzero. And the **shared** `writer_lock`
+path sets a bit in exactly that word:
+
+```cpp
+auto& bits = get_range_lock_bits(true);        // g_range_lock_bits[1]
+...
+range_lock->release(addr | u64{size} << 32 | flags);
+if (bits != umax && !bits.bit_test_set(u32(diff))) break;
+```
+
+and the destructor holds it for the lock's whole lifetime:
+
+```cpp
+writer_lock::~writer_lock() noexcept {
+    if (range_lock) {
+        g_range_lock_bits[1] &= ~(1ull << (range_lock - g_range_lock_set));
+```
+
+**So every PUTLLC that takes a `writer_lock` stalls every thread entering
+`passive_lock` for as long as it holds the lock.** The bit does not make the
+writer wait — which is why `vm_writer_lock` reads zero — it makes the readers
+wait, at 10.42 us per iteration, up to 100 iterations before yielding.
+
+Two lessons, and the second is the more useful.
+
+**The measurement was right and the inference was wrong.** `vm_writer_lock = 0`
+is a true fact that says only "the writer never blocks". Reading it as "this
+shared word is uncontended" required an assumption that was never checked: that
+the writer is the only party affected by the word it writes. The site that pays
+is on the other side of the protocol and has its own counter, which was sitting
+in the same log line reading 17.5%.
+
+**When a shared variable is suspected of contention, instrument every party that
+reads it, not just the one that writes it.** The first pass looked at
+`vm_writer_lock` and `vm_reservation_lock` because those are the names containing
+"lock". `passive_lock` is the one that waits on the result.
+
+**Status.** The bitmask redesign sketched earlier — have exclusive takers scan the
+64 per-thread slots instead of consulting a shared summary word — is **reopened,
+and now has a measured target**: 17.5% of all emulator spin, 13.9 core-seconds
+per 200 seconds of play. It remains a change to the hottest lock in the memory
+subsystem and still needs the correctness question answered (the `bits != umax`
+test also detects a held exclusive lock). But it is no longer theoretical, and it
+is no longer competing with `GETLLAR` for attention on a guess.
