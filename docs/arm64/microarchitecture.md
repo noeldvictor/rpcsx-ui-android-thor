@@ -518,3 +518,29 @@ concluding anything about what you searched for.** That is the same lesson as th
 empty-directory sweep in `ledger.md`, arriving from a different direction: a
 search that cannot match and a search that finds nothing produce identical
 output.
+
+### And the same for the reservation compare
+
+`cmp_rdata` had the same gap: rewritten from a serial accumulator to a tree,
+verified at the compiler, never checked in the shipped binary. Applying the same
+sequence scan — and deliberately *not* the aggregate counts, which cannot
+separate this function from the recompiler's own vector output:
+
+| shape | instances |
+| --- | --- |
+| tree: `>=6 eor .16b` + `>=4 orr .16b`, then `umaxv s, .4s` | **17** |
+| serial: `>=3 sub .8h`, then `addv h, .8h` | **0** |
+
+Seventeen inlined copies, and the old accumulator form **entirely absent**. That
+second number is the one that matters: it shows the rewrite replaced the previous
+shape rather than being added alongside it somewhere, which a count of the new
+form alone would not establish.
+
+The first attempt at this used aggregate opcode counts — `addv h` 27, `mla .8h`
+190, `cmeq .8h` 38 — and they say nothing, because the SPU recompiler emits all
+of those constantly for unrelated reasons. **A hot function inlined into a large
+binary is invisible to a census and obvious to a sequence match**, which is worth
+knowing before concluding from totals that a change did or did not land.
+
+Both hot-path rewrites are now verified at all three levels: contract test,
+compiler codegen, and disassembly of what shipped.
