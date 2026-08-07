@@ -54,6 +54,11 @@ namespace thor_wait
 		// overshoots a short hold" from "the lock is genuinely held a long time".
 		vm_passive_lock_enter,
 		vm_passive_lock_taken,
+		// One GETLLAR wait *episode*: recorded when getllar_spin_count goes
+		// 0 -> 1. calls(spu_getllar) divided by this is the mean number of
+		// 15.6us spins a single reservation wait actually needs, which is what
+		// decides between shortening the backoff and parking with WFE.
+		spu_getllar_episode,
 		count
 	};
 
@@ -156,7 +161,7 @@ namespace thor_wait
 			"Thor wait profiler core total=%llu rsx_fifo=%llu/%llu vm_range=%llu/%llu "
 			"vm_passive=%llu/%llu vm_writer=%llu/%llu vm_res_lock=%llu/%llu vm_res_shared=%llu/%llu "
 			"cpu_slot=%llu/%llu cpu_suspend=%llu/%llu sema=%llu/%llu mutex_s=%llu/%llu mutex_x=%llu/%llu "
-			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu",
+			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu getllar_episodes=%llu",
 			static_cast<unsigned long long>(total),
 			static_cast<unsigned long long>(calls(site::rsx_fifo_cache_fill)),
 			static_cast<unsigned long long>(cycles(site::rsx_fifo_cache_fill)),
@@ -187,7 +192,8 @@ namespace thor_wait
 			static_cast<unsigned long long>(calls(site::lv2_short_timeout_yield)),
 			static_cast<unsigned long long>(cycles(site::lv2_short_timeout_yield)),
 			static_cast<unsigned long long>(calls(site::vm_passive_lock_enter)),
-			static_cast<unsigned long long>(calls(site::vm_passive_lock_taken)));
+			static_cast<unsigned long long>(calls(site::vm_passive_lock_taken)),
+			static_cast<unsigned long long>(calls(site::spu_getllar_episode)));
 #else
 		(void)total;
 #endif

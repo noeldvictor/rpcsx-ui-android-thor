@@ -862,3 +862,50 @@ fix looked like a redesign. What separated them was one counter — entries besi
 backoffs — costing a single build. **Before attacking contention, measure how
 long the waiters actually wait.** A backoff tuned for a different timer frequency
 is far more likely than a genuine protocol problem, and vastly cheaper to fix.
+
+## The same fix did not transfer to GETLLAR, and the measurement said so
+
+`passive_lock` turned out to be a backoff-tuning problem rather than contention,
+and the obvious next move was to try the same thing on the far bigger target:
+`GETLLAR`, at 82.5% of all emulator spin.
+
+The evidence looked strong. Instrumenting GETLLAR wait **episodes** — one per
+`0 -> 1` transition of `getllar_spin_count` — against the busy-waits actually
+executed gave **0.834 spins per episode**, apparently an even shorter wait than
+`passive_lock`'s 1.24. It also seemed to explain the WFE result: if the mean
+episode is under one spin, the park at `getllar_spin_count >= 8` would almost
+never engage, which fits parking having displaced only 20%.
+
+A graduated ladder went in, keyed on `getllar_spin_count`, and measured as an
+**exact no-op**: 300.0 ticks per call, unchanged to the decimal.
+
+**The reasoning was wrong, and the tick count caught it.** This busy-wait is only
+reached once `getllar_busy_waiting_switch` is 1, and that switch is decided at
+`getllar_spin_count == 4`. Every call therefore sees a count of at least 4, a
+ladder keyed on that count can never select its short tiers, and the change could
+not have done anything.
+
+**The 0.834 figure conflates two populations.** Episodes count every wait that
+*starts*; only the minority surviving four iterations ever reach the spin. Spins
+per episode is not spins per *spinning* wait, and says nothing about whether 300
+ticks overshoots. The waits that reach this line have already demonstrated they
+are not short.
+
+Reverted, with the reasoning recorded at the site so the next person does not
+repeat it. Anything tried here has to be keyed on a counter that starts when the
+spin path starts.
+
+**Two things worth carrying.**
+
+A no-op is a *result*, and a cheap one. The change cost one build and one run, and
+"300.0 ticks per call, unchanged" is unambiguous in a way that a small
+improvement would not have been — had the ladder produced a 5% shift, it would
+have been tempting to keep it and never notice the denominator was wrong.
+**Instrument the thing you changed, not only the thing you hoped to improve.**
+
+And the more general one: **a fix that transfers from one site to another is a
+hypothesis, not a conclusion.** `passive_lock` and `GETLLAR` looked like the same
+shape at the level of "a busy-wait whose measured wait seems shorter than its
+backoff". They are not the same shape, because one spins immediately and the
+other spins only after a separate gate has already decided the wait is durable.
+The gate was visible in the source the whole time.

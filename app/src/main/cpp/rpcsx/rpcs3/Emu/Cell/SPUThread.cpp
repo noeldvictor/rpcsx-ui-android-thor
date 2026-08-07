@@ -5950,6 +5950,16 @@ bool spu_thread::process_mfc_cmd()
 									}
 								}
 
+								// Count one wait episode when the spin begins. The ratio of
+								// spu_getllar busy-waits to episodes is the mean number of
+								// 15.6us spins a reservation wait needs. Near 1 would mean the
+								// backoff overshoots, as it did in vm::passive_lock; large means
+								// the wait is genuinely long and parking is the right answer.
+								if (getllar_spin_count == 0)
+								{
+									thor_wait::record(thor_wait::site::spu_getllar_episode, 0);
+								}
+
 								getllar_spin_count = std::min<u32>(getllar_spin_count + 1, u16{umax});
 
 								if (getllar_busy_waiting_switch == umax && getllar_spin_count == 4)
@@ -6061,6 +6071,33 @@ bool spu_thread::process_mfc_cmd()
 								else
 #endif
 								{
+									// A graduated backoff was tried here and reverted, because
+									// the reasoning behind it was wrong and the measurement
+									// caught it.
+									//
+									// vm::passive_lock benefited from a ladder because its mean
+									// contended wait resolved in 1.24 iterations, so the first
+									// backoff overshot. Instrumenting GETLLAR wait *episodes* -
+									// one per 0->1 transition of getllar_spin_count - appeared
+									// to show an even shorter wait, 0.834 spins per episode,
+									// suggesting the same fix.
+									//
+									// It does not. This busy-wait is only reached once
+									// getllar_busy_waiting_switch is 1, and that switch is
+									// decided at getllar_spin_count == 4. So every call here
+									// necessarily sees a count of at least 4, a ladder keyed on
+									// that count can never select its short tiers, and the
+									// change measured as an exact no-op: 300.0 ticks per call,
+									// unchanged.
+									//
+									// The 0.834 figure conflates two populations. Episodes count
+									// every wait that starts; only the minority surviving four
+									// iterations ever reach this line. Spins per *episode* is
+									// therefore not spins per *spinning wait*, and says nothing
+									// about whether 300 ticks overshoots.
+									//
+									// Anything tried here must be keyed on a counter that starts
+									// when this path starts, not on getllar_spin_count.
 									thor_wait::profiled_busy_wait(thor_wait::site::spu_getllar, 300);
 								}
 
