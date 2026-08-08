@@ -335,6 +335,44 @@ It reports nothing, for two different reasons worth separating:
 The GETLLAR sweep therefore still needs a title in real gameplay, not merely a title
 that boots.
 
+## The third thread, and what it is waiting on
+
+The earlier profile stopped at "two threads pegged". Profiling again with the
+question *what is the other side of the reservation doing* gives a third:
+
+| thread | share | where |
+| --- | --- | --- |
+| `SPU[0x0000200]` | 47.5% | `GETLLAR` retry loop, slow-yield branch |
+| `rsx::thread` | 47.5% | `run_FIFO`, empty FIFO |
+| `PPU[0x1000004]` | 3.8% | **`rx::get_tsc()`, `rx/tsc.hpp:19`** |
+
+The PPU figure is small but its distribution is not: **96% of its samples land on
+one adjacent instruction pair**, `+2046af4`/`+2046af8`, both symbolising to the
+`mrs cntvct_el0` in `rx::get_tsc`. That is not a thread doing a little work. It is
+a thread polling the clock.
+
+So the PPU is in a **timed wait**, and — this is the part that matters — it is
+waiting on *time*, not on the SPU. It holds nothing. It is not the other end of
+the reservation.
+
+Which reframes the question. The shape is not "PPU holds a reservation the SPU
+wants". All three threads are waiting, one on a reservation, one on a clock, one
+on a FIFO, and none of them is the owner. Either the owner has exited, or the
+reservation was left in a locked state by a thread that is gone, or the wakeup
+that would release the SPU was lost.
+
+That also makes this a fifth instance of the pattern already catalogued in
+[`spin.md`](spin.md) — a wait implemented as a spin. The PPU's timed wait burning
+a TSC read loop is cheap here at 3.8%, but it is the same shape as the other four,
+and it means the PPU cannot notice a state change any faster than its poll
+interval.
+
+**Next diagnostic, and it is now well-posed:** find which wait the PPU is in, by
+walking the callers of `get_tsc` on that thread rather than the callees. Then
+establish who last touched the reservation address the SPU is stuck on — which
+needs the `RPCSX_THOR_ES_SPU_EXPERIMENTS` probe compiled in, since it logs the
+address, PC and retry count and is otherwise a `constexpr` stub on Android.
+
 ## What is still open
 
 **Is this a regression?** Not established. The repro costs ten seconds, so a bisect
