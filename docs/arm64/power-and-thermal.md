@@ -1276,3 +1276,37 @@ that the value is *untested*, not that it is wrong.
 
 Verified by mutation — weakening the range check so an out-of-range value would
 be accepted turns the test red, and restoring it turns it green.
+
+### The sweep is scripted, because the methodology is what kept failing
+
+`tools/thor_getllar_percent_sweep.ps1` runs the arms end to end. It is a script
+rather than a checklist because **none of the three failed experiments in this
+document failed for lack of care at the keyboard** — each failed on methodology
+that must be identical across arms and is easy to get subtly wrong by hand:
+
+- two WFE A/Bs compared **absolute** `cores_busy` across arms whose scenes
+  differed by a factor of two, and the two readouts disagreed on the sign;
+- a running-versus-stopped power comparison force-stopped **a package name that
+  does not exist**, so both arms were the same configuration;
+- a backoff comparison used windows that did not align with the profiler's own
+  report boundaries.
+
+Each of those is now a guard rather than a thing to remember:
+
+| failure | what the script does |
+| --- | --- |
+| absolute metrics across differing scenes | headline is `spu_getllar` ticks per `spu_getllar_retry` call — a ratio whose denominator the change provably does not touch |
+| a setting that silently did not apply | reads the property back and **throws** if it differs from what was set |
+| a wrong package name | fails if `pidof` is empty after boot |
+| unaligned windows | differences two profiler reports and uses **their** timestamps, not the wall clock |
+| profiler build not actually used | throws if no profiler line appears |
+| floor-only wattage reported as exact | warns when USB is attached, and tags the column |
+| the device left on a swept value | clears both properties at the end |
+
+It also prints the caveat with the result rather than leaving it to be recalled:
+the spin ratio is the robust number, a watts delta means nothing unless the
+device was unplugged, and **frame pacing has to be checked separately** — the
+risk of sleeping instead of spinning is latency, not throughput, and this sweep
+cannot see it.
+
+Parses clean; not yet run, because it needs the device.
