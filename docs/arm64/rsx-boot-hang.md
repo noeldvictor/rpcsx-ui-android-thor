@@ -707,6 +707,48 @@ by grepping paths that do not exist in this fork.
 the architecture guard and the reachability before writing it down, and carry a
 positive control into any instrument built on it.**
 
+### Found, and the reason four searches missed it
+
+Reading the preprocessor structure instead of grepping again:
+
+```
+219:  #if defined(ARCH_X64)
+397:  #else
+398:      static_cast<void>(cpu);
+399:  #endif /* ARCH_X64 */
+402:      reservation_shared_lock_internal(res);
+...
+409:      res += 127;
+```
+
+The generic branch is two lines, and the counter write is **`res += 127`, not
+128**. `reservation_shared_lock_internal` has already added 1 to take the lock, so
+`1 + 127 = 128` completes the increment *and* releases the lock in one store.
+
+That is why every search failed. The pattern searched for was `+ 128`, which exists
+only on the x86 and TSX paths; the path this device actually executes never writes
+that constant. Four instrument placements and three greps, all defeated by an
+off-by-one in the search term rather than by anything about the code.
+
+The verified ARM64-reachable writers, all past the `#endif` at 399:
+
+| site | note |
+| --- | --- |
+| `vm_reservation.h:409` | reservation op, void result |
+| `vm_reservation.h:424` | reservation op, non-void result |
+| `vm_reservation.h:521`, `:531` | light-op variants |
+| `vm.cpp:867` | |
+| `Cell/SPUThread.cpp:3947` | the generic counterpart of the `+= 128` at 3819, which is the TSX path |
+
+`SPUThread.cpp:3819` is therefore also x86-only, completing the correction: of the
+four sites the original grep produced, **three were unreachable on this hardware and
+the fourth was already watched.**
+
+**This is where the watch goes**, with the positive control carried in from the
+first build. And the general lesson, which cost more than the specific one: when a
+search for a constant comes back empty on a platform where the behaviour plainly
+occurs, suspect the constant before suspecting the behaviour.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
