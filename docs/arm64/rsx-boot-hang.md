@@ -987,6 +987,45 @@ That is a more direct line to "why did the producer stop" than watching the cons
 spin would have been. For the SPU side, the options remain recompiler-emitted
 instrumentation or the in-wait reporter that already works.
 
+### The producer, read out of its registers: it is waiting on the consumer
+
+`Hg` to each handler, then `g`, during a live deadlock (`tools/thor_gdb_probe.py`):
+
+```
+SpursHdlr0 (0x1000009)  r0=ffffffff00000000 r1=00000000d007fec0
+                        r2=0000000000cfbab0 r3=0000000004000200
+SpursHdlr1 (0x1000008)  r0=0000000000a3000c r1=00000000d0079d60
+                        r2=0000000000cfbab0 r3=0000000000000000
+busy-PPU   (0x1000004)  r0=0000000000000000 r1=00000000d004dec0
+                        r2=0000000000cb88d0 r3=0000000000000000
+```
+
+**`SpursHdlr0` holds `0x4000200` in r3**, and the boot log says:
+
+```
+sys_spu_thread_group_create(): Thread group "CellSpursKernelGroup" created (id=0x4000200)
+```
+
+r3 is the first argument in the PPC ABI, so the SPURS PPU handler is parked in a call
+**on the very SPU thread group it exists to feed** — a group join, an event-queue
+receive, or equivalent. Proven: the register holds the group id. Inferred, and
+strongly: it is blocked in a group call rather than merely holding a stale value,
+since r1 and r2 are a live stack pointer and TOC.
+
+Which closes the loop into a circular wait:
+
+- `CellSpursKernel0` (SPU) spins in `GETLLAR` at `pc=0x12b0` waiting for the PPU to
+  publish a workload descriptor.
+- `SpursHdlr0` (PPU) is parked on the SPU thread group, waiting for the SPU.
+- `SpursHdlr1` is idle with `r3=0`, and the one busy PPU is polling a clock.
+
+Nobody is going to move. The remaining question is which side is wrong: either the
+SPU should have found work already published, or the PPU should not be waiting on the
+group at this point in SPURS startup. **That is answerable by identifying the syscall
+`SpursHdlr0` is blocked in** — its LR and PC sit further into the `g` response than
+this probe decoded, and RPCS3's own `sys_spu`/`sys_event` logging will name it
+directly on the next run with those channels raised.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
