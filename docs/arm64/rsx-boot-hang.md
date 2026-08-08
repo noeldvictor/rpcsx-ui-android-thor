@@ -955,6 +955,38 @@ This is the first tool in the chain that observes the **guest** rather than the
 emulator, which is the right level: everything below it — reservation machinery,
 notifier, counters, memory ordering — has now been measured and cleared.
 
+### Connected, and the plan above needs amending: the stub is PPU-only
+
+Spoke the remote protocol to it directly during a live deadlock. It works, once the
+`+` acknowledgement is sent after each reply — without that the server answers
+`qSupported` and then stalls, which looks like a broken stub and is not:
+
+```
+-> qSupported    <= +$PacketSize=1200#f3
+-> ?             <= +$S05#b8                  (stopped, SIGTRAP)
+-> qfThreadInfo  <= +$m0000000001000000,...,000000000100000a l
+-> Hg0 / g       <= +$OK / full register dump
+```
+
+Eleven threads, `0x01000000` through `0x0100000a`. **Every one is a PPU thread.**
+The stalled `CellSpursKernel0` is SPU id `0x200` and does not appear, so
+**RPCSX's GDB server does not expose SPU threads** and cannot single-step
+`pc=0x12b0`. Step 3 of the plan above is not available through this route.
+
+What it *can* do is still worth having, and is arguably the better question anyway:
+those eleven PPU threads include `SpursHdlr0` (`0x1000009`) and `SpursHdlr1`
+(`0x1000008`), the two threads that feed SPURS work to the SPU. The deadlock is a
+producer that stopped; **the producer is a PPU thread, and the stub can read its
+registers and step it.** So:
+
+- `Hg` to `0x1000009`, then `g`, and see where `SpursHdlr0` is parked.
+- Same for `0x1000008`.
+- The one busy PPU (`0x1000004`, polling the clock) is also in range.
+
+That is a more direct line to "why did the producer stop" than watching the consumer
+spin would have been. For the SPU side, the options remain recompiler-emitted
+instrumentation or the in-wait reporter that already works.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
