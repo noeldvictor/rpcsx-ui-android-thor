@@ -1135,6 +1135,50 @@ what a correct SPURS handshake requires. This is the first point in the investig
 where the suspect list is short, entirely inside the emulator, and made of functions
 that can be read side by side with the PS3 documentation.
 
+### The complete deadlock, all four threads
+
+`Log: { sys_event: Trace, sys_lwmutex: Trace, sys_lwcond: Trace }`. The last
+SPURS-side call in the whole log:
+
+```
+·T 0:00:10.882 {PPU[0x1000000] main_thread [libsre: 0x00cd5e5c]}
+   sys_event_queue_receive(equeue_id=0x8d007d00, *0xd00204f0, timeout=0x0)
+```
+
+**`timeout=0` is an infinite wait**, and the main thread never returns from it. That
+is the missing producer — the thread that would submit a SPURS workload is parked
+inside `libsre` waiting for an event.
+
+| thread | state | verdict |
+| --- | --- | --- |
+| `main_thread` (`0x1000000`) | `sys_event_queue_receive(0x8d007d00, timeout=0)` in `libsre` | **the missing producer** |
+| `SpursHdlr0` (`0x1000009`) | `sys_spu_thread_group_join(0x4000200)` | correct — that is its job |
+| `CellSpursKernel0` (SPU) | `GETLLAR` spin at `pc=0x12b0` | correct — waiting for work |
+| `_gcm_intr_thread` (`0x1000004`) | VBlank `sys_event_queue_receive` loop, ~60 Hz | **normal**, and not a suspect |
+
+That last row corrects an earlier guess: `0x1000004` was described as "a PPU polling a
+clock" and treated as suspicious. It is `libgcm_sys`'s RSX interrupt thread doing
+exactly what it should, and emulation is still alive at `0:00:49` with VBlank events
+flowing — **only SPURS is stuck**, not the machine.
+
+So the cycle closes:
+
+```
+main_thread  --waits on event queue 0x8d007d00-->  (something that never sends)
+SPU kernel   --waits on workload descriptor----->  main_thread
+```
+
+The SPURS startup handshake requires the SPU kernel to signal readiness through an
+event port after `sys_spu_thread_group_start`, at which point the PPU submits work.
+The SPU never sends because it is already spinning for a descriptor; the PPU never
+writes the descriptor because it is waiting for the signal.
+
+**The question is now a two-sided one with a documented answer**: in the real SPURS
+protocol, which side moves first — and does this emulator deliver the SPU's readiness
+event to queue `0x8d007d00`? That is a specific claim about `sys_event_port_send` from
+SPU context, testable by grepping the trace for any send to that queue id, which this
+run shows there is none of.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
