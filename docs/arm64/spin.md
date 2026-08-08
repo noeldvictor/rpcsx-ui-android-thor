@@ -927,14 +927,20 @@ index would have been.
 ## The present path busy-spins too, on a 2017 desktop-driver workaround
 
 Chasing an anomaly left unexplained in the crash logs — `dequeueBuffer timed out:
-Connection timed out (-110)`, which appeared before the first freeze — found a
-spin loop in the RSX present path that nothing in this work had looked at.
+Connection timed out (-110)` — found a spin loop in the RSX present path that
+nothing in this work had looked at.
 
-**24,459 timeout messages in 655 ms**, from 20:34:44.757 to 20:34:45.412. That is
+**Precision about which occurrence, because the two got conflated once already.**
+Timeouts appeared twice in that session: a small number at 20:27:15, shortly
+before the first guest fault at 20:28:28, and then a storm of **24,459 messages
+in 655 ms** from 20:34:44.757 to 20:34:45.412, which falls *between* the two
+faults rather than before the first. The count below belongs to the storm. That is
 roughly **37,000 iterations per second**, which is not a stall waiting on
 something; it is a tight retry loop. It also flooded the log buffer hard enough
 to evict everything before it, so **the failure mode destroyed its own diagnostic
-context** — the reason the earlier freeze could not be traced further back.
+context** — the reason the earlier freeze could not be traced further back. That
+is not a one-off: re-reading the buffer later, the oldest surviving line was
+again the storm's first message, having evicted the 20:28 fault entirely.
 
 The loop is in `VKPresent.cpp`:
 
