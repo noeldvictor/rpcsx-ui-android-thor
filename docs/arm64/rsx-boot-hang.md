@@ -1336,6 +1336,58 @@ initialisation sequence specify at this point, and which side does the real hard
 unblock first? Everything measurable has been measured. The next step is reading the
 protocol, and the data to read it against is now in this file.
 
+### The protocol is in this repo, and it corrects the diagnosis again
+
+RPCS3 ships its own **HLE** SPURS in `ps3fw/cellSpurs.cpp`, written from the
+reverse-engineered protocol. This title runs SPURS LLE, but the HLE code is a
+reference for what the sequence is *supposed* to be — and it matches the observed
+threads exactly:
+
+```
+714:  ensure(sys_spu_thread_group_start(ppu, spurs->spuTG) == 0);
+716:  const s32 rc = sys_spu_thread_group_join(ppu, spurs->spuTG, ...);
+```
+
+That is `SpursHdlr0`, confirmed: start the group, then join it. Structurally correct.
+
+But the event-queue receive is somewhere else entirely — `cellSpurs.cpp:825`:
+
+```cpp
+void _spurs::event_helper_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
+{
+    while (true)
+    {
+        ensure(sys_event_queue_receive(ppu, spurs->eventQueue, vm::null, 0) == 0);
+        ...
+        if (event_src == SYS_SPU_THREAD_EVENT_EXCEPTION_KEY) { spurs->exception = 1; ... }
+    }
+}
+```
+
+**That receive is an event *helper* loop, not a startup handshake.** It is a service
+thread whose entire job is to block indefinitely waiting for SPU exceptions and
+similar events. Blocking there forever is its correct steady state.
+
+Which corrects the earlier diagnosis a second time. `main_thread` was called "the
+missing producer" on the strength of being parked in `sys_event_queue_receive`. It is
+not producing anything and was never going to — it is running libsre's equivalent of
+`event_helper_entry`, and that call is **supposed** never to return.
+
+So the tally of exonerated parties is now complete:
+
+| party | verdict |
+| --- | --- |
+| reservation machinery / notifier / ARM64 atomics | correct, measured three ways |
+| SPU kernel polling an empty workload area | correct |
+| `SpursHdlr0` in `sys_spu_thread_group_join` | correct, matches HLE reference line 716 |
+| `main_thread` in `sys_event_queue_receive` | correct — it is the event helper |
+
+**Nothing observed so far is misbehaving.** Which means the fault is in something not
+yet observed: whichever thread should have called the workload-submission path never
+did, and it is not any of the four threads examined. The next move is to find what the
+game's remaining PPU threads are doing — the GDB stub lists eleven, and only four have
+been accounted for.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
