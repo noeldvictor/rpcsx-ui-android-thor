@@ -6289,6 +6289,40 @@ bool spu_thread::process_mfc_cmd()
 							// search is for who should be writing it.
 							const u64 ntime_now = vm::reservation_acquire(addr);
 
+							// Dump the descriptor the kernel is rejecting.
+							//
+							// The SPU never signals the PPU, the PPU did write this
+							// line, and the reservation is clean - so the kernel is
+							// reading a value it does not accept. What it expects is
+							// a question about the SPURS structure layout, but the
+							// bytes themselves are just data and are worth capturing
+							// whether or not anyone can decode them yet.
+							//
+							// 128 bytes is one reservation line, printed as u64s in
+							// guest (big-endian) order so it can be read against a
+							// structure definition directly.
+							if (const auto* const p = vm::get_super_ptr<u8>(addr & -128))
+							{
+								u64 w[16]{};
+								std::memcpy(w, p, 128);
+
+								spu_log.error("GETLLAR descriptor 0x%x: "
+									"%016llx %016llx %016llx %016llx %016llx %016llx %016llx %016llx",
+									addr & -128,
+									static_cast<unsigned long long>(w[0]), static_cast<unsigned long long>(w[1]),
+									static_cast<unsigned long long>(w[2]), static_cast<unsigned long long>(w[3]),
+									static_cast<unsigned long long>(w[4]), static_cast<unsigned long long>(w[5]),
+									static_cast<unsigned long long>(w[6]), static_cast<unsigned long long>(w[7]));
+
+								spu_log.error("GETLLAR descriptor 0x%x +64: "
+									"%016llx %016llx %016llx %016llx %016llx %016llx %016llx %016llx",
+									(addr & -128) + 64,
+									static_cast<unsigned long long>(w[8]), static_cast<unsigned long long>(w[9]),
+									static_cast<unsigned long long>(w[10]), static_cast<unsigned long long>(w[11]),
+									static_cast<unsigned long long>(w[12]), static_cast<unsigned long long>(w[13]),
+									static_cast<unsigned long long>(w[14]), static_cast<unsigned long long>(w[15]));
+							}
+
 							// Neighbour lines, as a differential control.
 							//
 							// counter=4 was read as "four guest writes happened",

@@ -1297,6 +1297,45 @@ That is answerable by dumping the 128 bytes at `0x9d4d80` at the moment of the s
 and comparing against the SPURS descriptor layout. The stall reporter already runs at
 exactly that point and already has the address.
 
+### The descriptor, dumped: the polled half is all zero
+
+```
+0x9d4d80       0000000000000000 x8            <- the half the kernel reads
+0x9d4dc0 +64   0000000000000008 0000000000000000
+               0000000000000001 0000000000000000
+               0000000000000000 ffffffff00000000
+               ff01008000ff0080 0000000000000000
+```
+
+**The first 64 bytes are entirely zero; the second 64 carry real structure.** The
+`GETLLAR` targets `lsa=0x100` for `0x80` bytes, so the kernel pulls the whole line and
+reads a workload area that contains nothing.
+
+That corrects the previous section, which said the kernel "is reading a value it
+considers invalid". It is not. **It is reading zeros and correctly concluding there is
+no work to run** — which is precisely what a scheduler should do with an empty
+workload bitmap. The SPU is exonerated for the third time, alongside the reservation
+machinery and the notifier.
+
+So every participant is now individually correct and the system is still deadlocked:
+
+| party | doing | correct? |
+| --- | --- | --- |
+| SPU kernel | polling an empty workload area | **yes** |
+| `SpursHdlr0` | `sys_spu_thread_group_join` | **yes** |
+| `main_thread` | `sys_event_queue_receive`, waiting to be told the kernel is up | **yes**, if that is the protocol |
+| descriptor | zero in the polled half | consistent — nobody added a workload |
+
+Which isolates the fault to the **startup ordering**. On real hardware SPURS must be
+able to bootstrap from exactly this state: kernel running, no workloads yet. Something
+has to break the symmetry — the kernel signalling readiness without work, or the PPU
+proceeding without waiting. This emulator produces a state where neither happens.
+
+**The remaining question is documentary, not diagnostic:** what does the SPURS
+initialisation sequence specify at this point, and which side does the real hardware
+unblock first? Everything measurable has been measured. The next step is reading the
+protocol, and the data to read it against is now in this file.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
