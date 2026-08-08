@@ -675,20 +675,37 @@ through, and they bump the counter **directly** rather than by calling
 one watched the CAS that these bypass, the other watched a notifier that is only
 reached when a waiter is registered.
 
-So the next attempt is specified rather than guessed:
+**And that table is wrong, which is worth leaving visible.** Checking the two
+`vm_reservation.h` sites before instrumenting them:
 
-1. Put the watch at `vm_reservation.h:248` and `:262`, plus `SPUThread.cpp:3819`.
-2. **Carry the positive control with it from the first build.** The control is what
-   turned this from two meaningless silences into a definite answer, and every
-   placement so far has been wrong in a way that only silence would reveal.
-3. Log the writer's thread name and the new counter value. Four lines identify the
-   producer; the question then becomes why it stopped after four iterations, which
-   is SPURS scheduling and no longer anything to do with the ARM64 port.
+```
+219:  #if defined(ARCH_X64)
+220:      if (g_use_rtm)
+248:              res += 128;
+262:                  res += 128;
+399:  #endif /* ARCH_X64 */
+```
 
-Worth being explicit about the pattern, since it is the fifth instance in this
-project: **three separate instrument placements, three silences, and only the
-positive control could tell "nothing happened" from "I am not looking there".** The
-grep above took one command and would have avoided all three.
+Both live inside a 180-line `ARCH_X64` block, further gated on `g_use_rtm` — they
+are the **Intel TSX** fast path, `__asm__ volatile("xend;")` and all. On AArch64
+that code does not exist. The two sites singled out as "where the writes went" are
+compiled out of the binary entirely.
+
+So the corrected position is narrower than the table suggests: of the four
+increments a grep finds, `vm.cpp:198` is watched and silent, two are x86-only, and
+only `SPUThread.cpp:3819` remains a candidate — and its own architecture guard has
+not been checked either. **The ARM64 path is somewhere past `#endif` at line 399,
+and has not been found yet.**
+
+Which is the same mistake a third time in one evening, one layer up: a grep produced
+a list, and the list was called "specified rather than guessed" without checking the
+hits were reachable on this architecture. CLAUDE.md already records the identical
+failure from the audit ledger — `Emu/Cell/lv2` and `Emu/Cell/Modules` recorded clean
+by grepping paths that do not exist in this fork.
+
+**The rule this keeps demanding: a grep hit is a candidate, not a finding. Confirm
+the architecture guard and the reachability before writing it down, and carry a
+positive control into any instrument built on it.**
 
 ### The class of bug this belongs to
 
