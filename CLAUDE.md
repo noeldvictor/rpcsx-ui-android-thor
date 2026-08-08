@@ -150,6 +150,33 @@ The pattern across all five: the measurement was correct and the *inference* was
 not. When a number decides something, state what population it is over and what
 it excludes, before acting on it.
 
+## The one thing to run next, if you have the device
+
+**93% of all emulator spin is the SPU `GETLLAR` wait, and the emulator spins there
+because it is configured to, 100% of the time.**
+
+`SPU GETLLAR Busy Waiting Percentage` decides whether that wait spins or sleeps.
+Upstream defaults it to 100 — always spin — and no Thor profile overrides it,
+while the analogous `SPU Reservation Busy Waiting Percentage` is explicitly set
+to 0 for this device. The trade was considered once, applied to the smaller of
+the two sites, and never revisited for the larger.
+
+The alternative branch is a **real futex sleep**, woken by the actual reservation
+notifier with the timeout as a fallback — which is a better-shaped mechanism than
+the `WFE` park this fork spent three experiments on, because `WFE` cannot have a
+timeout without `FEAT_WFxT` and this chip lacks it.
+
+Every link is verified except the effect size:
+
+    ./gradlew assembleThortest -PrpcsxThorWaitProfiler=1
+    # unplug the Thor first, or the wattage is only a floor
+    .	ools	hor_getllar_percent_sweep.ps1
+
+Four arms, one command. It throws rather than guessing if the property did not
+take, the boot failed, or the profiler is absent, and it reports p95 frame time
+because the risk of sleeping is **latency**, which a capped frame rate hides.
+Detail in [`docs/arm64/power-and-thermal.md`](docs/arm64/power-and-thermal.md).
+
 ## Where the rest of this lives
 
 These notes outgrew a single file. The detail is split by topic; each document
