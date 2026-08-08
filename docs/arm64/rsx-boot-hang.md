@@ -280,6 +280,61 @@ which now exists. And the deadlock is a property of this title's SPURS and
 reservation usage rather than of the reservation code in general, which narrows the
 search considerably.
 
+**A warning about how that was nearly got wrong.** The first Odin Sphere run only
+proved the *cache build* progresses — the clock advanced because compilation logs.
+Resumed with a warm cache, it reaches real emulation, and then it looks exactly like
+the hang: five SPU threads and RSX all near 100%, and the last log line is
+`Cubeb: Stream started`, character for character the same line Eternal Sonata stops
+on. On that evidence it was written off as the same bug.
+
+It is not. A screenshot shows the FPS overlay reading **11.12** on a black loading
+screen, and two captures twenty seconds apart differ. It is running.
+
+The lesson is that **"the log stopped" is not a hang detector.** Its own caveat is
+three sections up in this document — the clock does not stop, only new *events* do —
+and normal gameplay produces no events for minutes at a time. The detector that works
+is the one CLAUDE.md already lists as a trap: FPS is only ever drawn, never logged, so
+a screenshot is the measurement. Two screenshots and the overlay separate "hung" from
+"slow" in ten seconds; the log cannot.
+
+## Two levers that were tried on it and did nothing
+
+**`debug.rpcsx.thor.getllar_busy_percent=0` does not touch this loop.** Setting it to
+0 and rebooting left both threads pegged at 100% and the wedge in the same place. That
+property feeds `evaluate_spin_optimization`, which decides whether a GETLLAR wait
+spins or sleeps; the loop that hangs is the *retry ladder* above it, which spins 24
+times and then yields unconditionally. They are different decision points, and the
+sweep lever does not reach this one.
+
+**`debug.rpcsx.thor.es_getllar=profile` logs nothing on Android.** The probe that
+would report the reservation address, PC and retry count is inside the block guarded
+at `SPUThread.cpp:382` by
+`#if !defined(ANDROID) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)`, so the device gets
+`constexpr` stubs and the property is inert. Arming it needs a build with that macro,
+and its output goes to **logcat**, not `RPCSX.log`.
+
+## The wait profiler is present and still silent
+
+A build with `-PrpcsxThorWaitProfiler=1 -PrpcsxThorDebuggable=1` is installed, and the
+profiler really is compiled in — `grep -a` finds `Thor wait profiler` twice in the
+shipped library plus `spu_getllar_retry`, `vm_passive_lock` and `vk_fence_poll`. Use
+`grep -a`, not `strings`, which has already produced one false negative here.
+
+It reports nothing, for two different reasons worth separating:
+
+- **On the hung title, it structurally cannot.** `record()` is only reached through
+  `profiled_busy_wait`, which the retry ladder calls for its first 24 iterations and
+  never again once it falls into the yield branch. A permanently stuck GETLLAR
+  contributes 24 samples and then goes quiet forever. The instrument cannot see the
+  state it would be most useful in.
+- **On the running title, the sites are barely hit.** Even at an interval of 5,000
+  calls, Odin Sphere on its loading screen does not reach the threshold, while
+  emitting 369 other `RPCS3`-tagged lines — so the tag and the build are fine, and
+  reservation traffic at that stage is simply near zero.
+
+The GETLLAR sweep therefore still needs a title in real gameplay, not merely a title
+that boots.
+
 ## What is still open
 
 **Is this a regression?** Not established. The repro costs ten seconds, so a bisect
