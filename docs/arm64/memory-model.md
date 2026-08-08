@@ -715,3 +715,53 @@ ordering that a Dekker-shaped protocol needs — and `vm::range_lock`, which doe
 need that, is built from seq_cst operations rather than an explicit acquire, so
 it is unaffected. **Knowing which of the two guarantees a site depends on is what
 turns that footnote from alarming into useful.**
+
+## The bitmask has three roles, and that changes the fix
+
+The candidate fix recorded above — "have exclusive takers scan the 64 per-thread
+slots instead of consulting a shared summary word" — was under-specified, and
+enumerating every use of `g_range_lock_bits[1]` shows why. It carries **three**
+distinct jobs:
+
+| role | consumer |
+| --- | --- |
+| **presence set**, iterated to find active slots | `for_all_range_locks` in `range_lock_internal` (`vm.cpp:202`) |
+| **exclusive-held sentinel** (`umax`) | `writer_lock`'s `bits != umax` test (`vm.cpp:545`) |
+| **cheap "is anything held?"** | `passive_lock` (`vm.cpp:396`, `:430`), `CPUThread.cpp:1144` |
+
+**The first role is the one that was missed, and it inverts the proposal.**
+`range_lock_internal` is the shared side of the Dekker protocol — the hot path,
+reached by ordinary guest memory access — and it feeds the bitmask to
+`for_all_range_locks` precisely so it visits only the slots actually held rather
+than all 64. Removing the bitmask to spare `writer_lock` one RMW would force that
+loop to scan 64 cache lines every iteration. **That trade is backwards: it moves
+cost from a rare writer onto a hot reader.**
+
+### The change that actually follows
+
+Splitting the sentinel out is better than removing the set, and it is a smaller
+change than what was proposed:
+
+- keep `g_range_lock_bits[1]` as a **presence set only**, so `for_all_range_locks`
+  keeps its sparse iteration and the hot reader is untouched;
+- move "an exclusive lock is held" to its **own word**;
+- have `passive_lock` wait on **that flag alone**.
+
+Today `passive_lock` spins whenever *any* shared `writer_lock` is held, because
+presence and exclusivity share one word and it cannot distinguish them. Waiting
+on a dedicated flag means it only spins when an exclusive lock is genuinely
+held — which is rare, since the exclusive path is memory reconfiguration rather
+than PUTLLC.
+
+That attacks `passive_lock`'s 17.5% **at its source** rather than shortening the
+backoff, and it leaves the sparse iteration and the writer's RMW alone. The RMW
+was never the expensive part: the profiler measured `vm_writer_lock` at zero
+spins.
+
+**Still not implemented, and now for a better-understood reason.** It is a
+protocol change to the hottest lock in the memory subsystem, the correctness
+argument has to cover the Dekker ordering between the new flag and the slot
+writes, and `passive_lock`'s backoff fix already removed 68% of the measured cost
+— so the remaining prize is smaller than the risk. Recorded because the previous
+entry pointed at a fix that would have made things worse, and a wrong plan
+written down is more dangerous than no plan.
