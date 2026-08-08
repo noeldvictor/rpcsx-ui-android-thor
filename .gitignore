@@ -20,3 +20,6 @@ debug-captures/
 iso/
 save-checkpoints/
 debug-saves/
+
+# Kotlin incremental-compilation scratch, regenerated every build
+.kotlin/
