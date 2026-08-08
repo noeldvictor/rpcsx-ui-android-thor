@@ -1580,3 +1580,22 @@ Two habits would have found it in minutes rather than across several sessions:
 
 An audit of all 625 files under `Emu/` and `util/` for `#if`/`#elif` ARM64
 branches containing only comments found this as the only one.
+
+### Scope of the regression
+
+`git log -S` dates it exactly. The `#elif defined(ARCH_ARM64) && defined(__clang__)`
+arrived with `772f8f92b`, `dbddfaf92` put the LDP/STP body in it, and
+**`b46198f0b` (2026-08-07 20:44) removed the body and left the branch** — the
+state that broke the copy. So the empty branch existed for roughly one day, and
+this fix explains hangs observed after that point.
+
+It does **not** retroactively explain everything in this file. The earlier
+Eternal Sonata boot deadlock predates `b46198f0b` and had some other cause; do
+not fold it into this one without re-measuring.
+
+Worth noting for its own sake: that revert was made *precautionarily*, to
+protect the most correctness-sensitive copy in the emulator from an unproven
+change — and it produced a far worse defect than the one it was guarding
+against. The lesson is not that the revert was wrong. It is that removing a
+function body is a code change like any other, and wants the same check that
+adding one does: a build, and a look at what the compiler says about it.

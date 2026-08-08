@@ -441,8 +441,8 @@ second. Re-run before concluding.
 
 ## Read the build warnings
 
-`mov_rdata` compiled to a function that copied nothing on every ARM64 build in
-this fork's history, because a reverted implementation left an empty
+`mov_rdata` compiled to a function that copied nothing on every ARM64 build from
+b46198f0b (2026-08-07) until b15d105a6, because that revert left an empty
 `#elif defined(ARCH_ARM64) && defined(__clang__)` branch behind. It is the copy
 every SPU reservation is validated against, and it cost several sessions of
 investigation across `docs/arm64/rsx-boot-hang.md`.
