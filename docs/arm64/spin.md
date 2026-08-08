@@ -985,3 +985,44 @@ investigation, two reservation-path changes were just reverted, and adding an
 untested change to the present path while the cause of a guest fault is unknown
 would make the next result unattributable. Recorded now, changed after the crash
 question is settled.
+
+### Why the Android branch reaches that spin, in numbers
+
+The ternary above only selects the platform timeout when the swapchain has more
+images than `VK_MAX_ASYNC_FRAMES`, so it is worth confirming Android takes it at
+all:
+
+    VK_MAX_ASYNC_FRAMES                 2
+    swapchain requests   max(minImageCount + 2, 3)  -> typically 3
+    3 > 2, so the platform branch applies
+
+Android therefore waits **1000 ns** before falling into the `timeout = 0` spin.
+Against a display:
+
+| | |
+| --- | --- |
+| Android acquire timeout | `0.001 ms` |
+| desktop acquire timeout | `100.000 ms` — **100,000x longer** |
+| one vsync interval at 60 Hz | `16.667 ms` |
+
+**Android's wait is 16,667 times shorter than a single frame interval.** A
+compositor paced to vsync cannot release a buffer inside a microsecond except by
+coincidence, so whenever no buffer is already free the code goes directly to the
+spin and stays there until one is — potentially a full frame.
+
+The asymmetry is the whole finding. Desktop's 100 ms is a **genuine blocking
+wait**: the driver parks the thread and no CPU is burned while the compositor
+does its work. Android's 1 us is effectively *do not wait*, which converts the
+same situation into a busy-spin.
+
+**Provenance: this is inherited, not a Thor decision.** Both the 1 us constant and
+the spin arrived with the vendored RPCSX core (`3bdb3223a`), so it is upstream
+code rather than something this fork chose — which is exactly the category the
+rest of this document keeps finding: a value that is correct on the hardware it
+was written for and wrong here, carried across unexamined.
+
+The fix is one constant, and it is the same trade taken everywhere else in this
+work: give Android a timeout long enough for the driver to block — a vsync period
+would do — so the wait is a sleep rather than a spin. Still not applied, for the
+reason recorded above: an unresolved crash investigation is the wrong moment to
+add an untested change to the present path.
