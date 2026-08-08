@@ -1179,6 +1179,48 @@ event to queue `0x8d007d00`? That is a specific claim about `sys_event_port_send
 SPU context, testable by grepping the trace for any send to that queue id, which this
 run shows there is none of.
 
+### Answered: the queue is connected to the SPU group and never receives anything
+
+Every reference to `0x8d007d00` in a full traced boot — exactly two:
+
+```
+·W {main_thread [libsre: 0x00ccb04c]}
+   sys_spu_thread_group_connect_event_all_threads(id=0x4000200, eq=0x8d007d00, req=0xffffffff...)
+·T {main_thread [libsre: 0x00cd5e5c]}
+   sys_event_queue_receive(equeue_id=0x8d007d00, timeout=0)
+```
+
+`main_thread` **connects the SPURS kernel SPU thread group to this queue** — with
+`req=0xffffffff…`, i.e. all event classes — and then blocks on it forever. **No send
+to that queue ever appears**, from the SPU or anywhere else.
+
+So the handshake is fully mapped, and the gap is exactly one edge:
+
+```
+SPU group 0x4000200  --connected to-->  queue 0x8d007d00  --received by-->  main_thread
+                     \______ the event that should traverse this never does ______/
+```
+
+That makes the remaining question a narrow one about **emulator** code, not guest
+code: SPURS kernels signal the PPU by writing the SPU's outbound interrupt mailbox
+(`SPU_WrOutIntrMbox`), which lv2 routes to whatever queue the group was connected to.
+Two candidates, and they are distinguishable:
+
+1. **The SPU never writes the mailbox**, because it is already spinning in `GETLLAR`
+   — in which case the guest is waiting on itself and the real fault is earlier, in
+   why the kernel entered its poll before signalling.
+2. **The SPU writes it and the emulator drops it** — a defect in the
+   `SPU_WrOutIntrMbox` channel handler or in the
+   `sys_spu_thread_group_connect_event_all_threads` routing.
+
+**Distinguishing them is one more trace**: log SPU channel writes, or add a counter to
+the `SPU_WrOutIntrMbox` handler, and see whether the SPU attempts a send at all. If it
+does, case 2 is the bug and it is entirely inside `SPUThread.cpp` plus the lv2 SPU
+group event path. If it does not, the fault is upstream of the poll.
+
+That is the smallest well-posed question this investigation has produced, and it is
+two files wide.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
