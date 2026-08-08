@@ -210,11 +210,18 @@ and `/proc/<tid>/syscall` is useless anyway for a thread that never blocks — i
    never the interesting number. Still worth timing where the volume *is* large:
    PKG install and runtime EDAT/SDAT streaming. See
    [`docs/arm64/aes.md`](docs/arm64/aes.md).
-3. **`SPULLVMRecompiler` and `PPUTranslator`.** The genuinely hot path, and the one
-   subsystem this session did not review. They emit IR rather than intrinsics, so the
-   question is *which lowering*, not *which intrinsic* — a different kind of review
-   than the sweep in [`x86-isms-sweep.md`](docs/arm64/x86-isms-sweep.md), and
-   [`codegen.md`](docs/arm64/codegen.md) is where it belongs.
+3. **`SPULLVMRecompiler` and `PPUTranslator`.** The genuinely hot path, barely
+   touched. One probe in so far, and it argues these are in good shape: saturating
+   arithmetic goes through `llvm::Intrinsic::sadd_sat`, which AArch64 selects as a
+   single `sqadd`/`uqadd` at **every** width — where x86 SSE has no 32-bit saturating
+   add at all and synthesises it from `pcmpgtd`. VMX's `VADDSWS` is therefore cheaper
+   here than on the architecture this emulator was written for.
+
+   The lesson generalises: the translators emit **IR, not per-ISA intrinsics**, so
+   the backend picks the encoding and there are no x86 intrinsics to find. The real
+   search is narrower — *which operations have no natural IR spelling, and did the
+   hand-written lowering pick well?* That is the `BCAX`/`SDOT`/`TBL`/`USHL` set, and
+   [`codegen.md`](docs/arm64/codegen.md) already tracks it.
 
 ## The one thing to run next, once it boots
 

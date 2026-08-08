@@ -93,6 +93,45 @@ dead LSE2 macro". The macro is not dead; this fork set it, which is exactly what
 `atomic.hpp:1049` says happened. Reading either line without checking the build
 would have led straight to re-fixing something already fixed.
 
+## The translators: a first look, and it argues the other way
+
+`PPUTranslator` and `SPULLVMRecompiler` are the hot path and the subsystem this
+sweep has barely touched. One probe into it, chosen because AltiVec is full of
+saturating arithmetic and saturation is where hand-written SIMD usually goes
+wrong.
+
+`PPUTranslator::VADDSBS` and friends call `add_sat`, and `llvm_add_sat` in
+`CPUTranslator.h:2226` resolves to `llvm::Intrinsic::sadd_sat` / `uadd_sat` — the
+LLVM intrinsic, not a hand-rolled compare-and-select. What the AArch64 backend
+does with that, verified rather than assumed:
+
+```
+sqadd v0.16b   uqadd v0.16b   sqadd v0.8h   sqadd v0.4s   sqsub v0.4s
+```
+
+One instruction at every width. Compiling the *same source* for x86-64 SSE:
+
+```
+paddsb   paddusb   paddsw   pcmpgtd; pcmpgtd; pcmpgtd ...
+```
+
+x86 has saturating add only at 8 and 16 bits. **At 32 bits it has no instruction
+at all** and synthesises the result from compares. VMX's `VADDSWS` and `VSUBSWS`
+are 32-bit saturating operations, so on this hardware they are *cheaper* than on
+the architecture the emulator was written for.
+
+That inverts the framing this document started from. It is also not luck: it
+follows from the translators emitting **IR rather than per-ISA intrinsics**, which
+lets the backend pick the best encoding for whatever it is targeting. The places
+this fork has had to intervene — `BCAX`, `SDOT`, `TBL`/`TBX`, `USHL` — are exactly
+the ones where no portable IR construct expresses the operation and a lowering had
+to be chosen by hand.
+
+So the review question for the translators is not "where are the x86 intrinsics",
+because there are none to find. It is "which operations have no natural IR spelling,
+and did the hand-written lowering pick well" — which is a much narrower search than
+the file count suggests, and it is what [`codegen.md`](codegen.md) already tracks.
+
 ## Method note
 
 Two of the checks in this pass came back "already handled" (`MFCR`, the
