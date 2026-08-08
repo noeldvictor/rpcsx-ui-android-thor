@@ -1127,3 +1127,27 @@ reservation changes were implicated in the guest fault.
 When that question resolves, this arrives with the sweep — one profiler build
 answers both what the GETLLAR percentage is worth and whether the fence poll
 deserves a fix.
+
+### Verifying the revert reached the device, before trusting the test
+
+"A fix that cannot reach the machine is not a fix" applies to reverts. If the old
+code were still installed, the crash test would prove nothing while looking like
+it proved something — the same failure as the APK gate that passed for months
+without inspecting an artefact.
+
+Checked against the library **pulled from the device**, not a local build output:
+
+| shape | found | expected |
+| --- | --- | --- |
+| `mov_rdata` interleaved LDP/STP ladder | **0** | 0 |
+| `cmp_rdata` XOR/OR tree | **0** | 0 |
+| `cmp_rdata` serial accumulator | **17** | more than 0 |
+
+The 17 is the useful number. Before the revert, the same scan found **17 tree
+instances and zero serial**; it now finds the exact inverse. Same call sites, old
+form restored, and the count matching to the instance means the revert is
+complete rather than partial — a mixed state, where some inlined copies reverted
+and others did not, would show up here as both counts nonzero.
+
+So the experiment is sound: whatever the device does next is attributable to code
+without those two rewrites in it.
