@@ -1198,3 +1198,46 @@ That makes the percentage sweep more interesting than a power tweak. If lowering
 it recovers a meaningful share of that 93%, it does so through a path with a real
 timeout and a real notifier, which is strictly the shape `WFE` was reaching for
 and could not achieve here.
+
+### The sleep is properly notified, so the lever is sound end to end
+
+The last thing that could have made the percentage worthless: if nothing woke the
+futex, every system wait would cost its full timeout and lowering the percentage
+would trade a spinning core for a stalled one. Traced, and it does not:
+
+```cpp
+if (auto wait_var = vm::reservation_notifier_begin_wait(addr, rtime))   // register
+{
+    cache_line_waiter_index = register_cache_line_waiter(addr);
+    utils::bless<atomic_t<u32>>(&wait_var->raw().wait_flag)
+        ->wait(1, atomic_wait_timeout{100'000});                        // sleep
+    vm::reservation_notifier_end_wait(*wait_var);                       // deregister
+}
+```
+
+and the writing side calls `reservation_notifier_notify(addr)` (`vm.cpp:132`). So
+a waiter registers against the specific reservation address, blocks, and is woken
+by whichever thread actually changes that reservation. **The 100 us timeout is a
+fallback, not the expected wake.** A second site at `:7520` follows the same
+pattern with a 200 us bound.
+
+That completes the chain, and every link of it was checkable without hardware:
+
+| link | verified |
+| --- | --- |
+| the percentage decides spin versus sleep | `busy_waiting_switch` reduces to `... < percent`, always true at 100 |
+| Thor leaves it at the upstream 100 | no override in `ThorPerformanceProfile` or `GameSettingsDatabase`, unlike the reservation knob which is explicitly 0 |
+| the alternative is a real sleep | `cpu_flag::wait` plus a futex wait, not a `sched_yield` loop |
+| the sleep is woken by the real event | `reservation_notifier_begin_wait` / `notify` / `end_wait` |
+| `GETLLAR` is worth attacking | 93% of remaining spin, derived from measured shares |
+
+**What is left is purely empirical and cannot be reasoned out:** how much power a
+lower percentage actually saves, and whether frame pacing suffers when a
+reservation handoff sleeps instead of spinning. Both are one sweep — 100 / 50 /
+25 / 0, reading `spu_getllar` counts from the wait profiler and exact system
+watts from `thor_power_probe.ps1` on an **unplugged** device.
+
+Recording the boundary explicitly, because "needs a measurement" has been used
+loosely in these notes and was wrong four times. Here it is precise: the
+mechanism is fully verified, the target is quantified, and the only unknown is
+the size of an effect and the cost of its side effect.
