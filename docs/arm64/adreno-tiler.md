@@ -99,6 +99,66 @@ Neither was examined as a bandwidth question. Both were treated as correctness o
 scheduling questions, because nothing in this repo had the tiler's cost model
 written down until now.
 
+## The second cost: the render pass is closed constantly
+
+`LOAD_OP_LOAD`/`STORE_OP_STORE` would be tolerable if a frame were a few long
+passes. It is not. `is_renderpass_open` — which in practice means "close the pass
+so I can do this" — appears across the backend:
+
+```
+  VKTexture.cpp        6      vkutils/barriers.cpp   4
+  VKGSRender.cpp       3      VKTextureCache.cpp     2
+  VKCompute.cpp        1      VKQueryPool.cpp        1
+  VKDraw.cpp           1      image_helpers.cpp      1
+```
+
+Every texture upload, blit, compute dispatch, occlusion query and image barrier
+can end the current pass. On a desktop GPU that is close to free. On a tiler each
+one is **a full resolve of colour and depth out to system memory**, and because
+the next draw re-opens with `LOAD_OP_LOAD`, **a full unresolve back in**.
+
+So the two findings multiply. The first says every pass pays maximum entry and
+exit cost; the second says passes are broken constantly.
+
+`vkutils/barriers.cpp:19` is the clearest case, and notably someone already knew:
+
+```cpp
+const bool breaks_renderpass = !preserve_renderpass && vk::is_renderpass_open(cmd);
+vk::thor::rsx_auditor::record_image_barrier(src_stage, dst_stage, breaks_renderpass);
+
+if (breaks_renderpass)
+{
+    vk::end_renderpass(cmd);
+}
+```
+
+There is a `preserve_renderpass` opt-out, so the cost was understood at least
+locally — the question nobody has asked is how often the opt-out is *not* taken.
+
+## The instrument already exists
+
+That second line is the important one. **This fork already has an auditor that
+counts render-pass-breaking barriers**, `vk::thor::rsx_auditor`, in
+`VK/vkutils/thor_rsx_auditor.h`. It is compiled out by default behind the
+`RPCSX_THOR_RSX_AUDITOR` CMake option, wired to a Gradle property in
+`app/build.gradle.kts`.
+
+So the measurement for everything above does not need to be built. It needs to be
+switched on:
+
+```
+./gradlew assembleThortest -PrpcsxThorRsxAuditor=1
+```
+
+That gives breaks-per-frame directly. Multiply by the attachment footprint —
+colour plus depth at the render target's resolution — and the bandwidth cost of
+the current design falls out arithmetically, the same way the AES question was
+settled by measuring 13.6 MB of firmware rather than timing a boot.
+
+Do that **before** touching `LOAD_OP_CLEAR`. If breaks-per-frame turns out to be
+small, the whole thing is another 35-millisecond finding and should be recorded as
+one.
+
 ## How to measure it before changing anything
 
 The trap this project keeps hitting is a correct measurement of the wrong
