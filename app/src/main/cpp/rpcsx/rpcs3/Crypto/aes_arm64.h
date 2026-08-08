@@ -43,6 +43,10 @@
 #include <stdint.h>
 #include <sys/auxv.h>
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 #ifndef HWCAP_AES
 #define HWCAP_AES (1 << 3)
 #endif
@@ -69,7 +73,37 @@ namespace rpcsx_aes_arm64
 		// bisecting the cipher.
 		return false;
 #else
-		static const bool value = (getauxval(AT_HWCAP) & HWCAP_AES) != 0;
+		static const bool value = []() noexcept
+		{
+			if ((getauxval(AT_HWCAP) & HWCAP_AES) == 0)
+			{
+				return false;
+			}
+
+#ifdef ANDROID
+			// Runtime off-switch, so an A/B costs two boots rather than two
+			// builds. The compile-time define above changes the CMake argument
+			// list and therefore forces a full native rebuild, which is the
+			// wrong instrument for measuring what this is worth at boot.
+			//
+			// Read once and cached: this is consulted per 16-byte block, and a
+			// property read per block would swamp the thing being measured -
+			// the same mistake as the FPS harness whose per-sample adb spawns
+			// tripped the thermal guard.
+			char prop[PROP_VALUE_MAX]{};
+			if (__system_property_get("debug.rpcsx.thor.aes_arm64", prop) > 0)
+			{
+				if (prop[0] == '0' || prop[0] == 'o' || prop[0] == 'O' ||
+					prop[0] == 'f' || prop[0] == 'F')
+				{
+					return false;
+				}
+			}
+#endif
+
+			return true;
+		}();
+
 		return value;
 #endif
 	}

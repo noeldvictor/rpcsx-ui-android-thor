@@ -157,6 +157,41 @@ What the numbers do establish is that this is not a marginal call. A 19x gap on
 the big cores is far outside anything that measurement noise, table warmth or
 scheduling could account for.
 
+## What it is worth at boot: not measurable on a warm boot
+
+`tools/thor_aes_boot_ab.ps1` toggles the path at runtime via
+`debug.rpcsx.thor.aes_arm64` — one build, two arms, alternating so thermal drift
+lands on both — and times boot to `Cubeb: Stream started`:
+
+```
+  hardware AES : mean   2.00 s   min 1.99   max 2.01
+  software AES : mean   1.98 s   min 1.97   max 1.99
+  delta        :  -0.01 s (-0.6%)   worst within-arm spread: 0.03 s
+```
+
+The delta is smaller than the spread inside a single arm. **On a warm boot, AES is
+not a measurable share of the time.** The 20x on the primitive is real and it is
+not where these two seconds go.
+
+That number needed checking before it could be believed, and the check is the
+point. Two seconds looked far too fast against the ~25 s the same marker took
+earlier, which is exactly the shape of a harness matching a stale log. It is not:
+the log's mtime is current, its content is from the run, and SPU Workers and the
+LLVM JIT are live in it. The earlier 25 s included PPU module compilation; with
+caches fully warm the title reaches audio init in about two seconds.
+
+**But note carefully what this does and does not cover.** A warm boot decrypts the
+EBOOT and the modules it loads — real AES work, and enough to say the change is
+not a regression. It does *not* cover the case the original argument was about: a
+**cold** first boot, which walks firmware PRX and every SPRX in the title. That is
+where the decryption volume actually is, and it has not been measured, because
+both titles on this device now have warm caches and Odin Sphere's cold path dies
+in [`ppu-compile-oom.md`](ppu-compile-oom.md) before finishing.
+
+So the honest status is: hardware AES is correct, is 19-22x faster at the
+primitive, costs nothing observable on a warm boot, and its value on a cold boot
+is still an open question. Quoting the 20x as a boot speedup would be wrong.
+
 ## Three related things checked in the same pass, all negative
 
 Recorded so they are not re-investigated.
