@@ -26,6 +26,18 @@
 
 LOG_CHANNEL(vm_log, "VM");
 
+// Reservation-watch output goes to logcat, not through an RPCS3 log channel.
+// vm_log emits nothing at all on this device - grep -c "} vm:" RPCSX.log is 0
+// while spu_log, RSX and sys_* appear in quantity - and that silently voided
+// five separate negative results before anyone checked the sink.
+// See docs/arm64/rsx-boot-hang.md.
+#ifdef ANDROID
+#include <android/log.h>
+#define RESV_WATCH_LOG(...) __android_log_print(ANDROID_LOG_ERROR, "RPCS3", __VA_ARGS__)
+#else
+#define RESV_WATCH_LOG(...) vm_log.error(__VA_ARGS__)
+#endif
+
 void ppu_remove_hle_instructions(u32 addr, u32 size);
 extern bool is_memory_compatible_for_copy_from_executable_optimization(u32 addr, u32 size);
 
@@ -169,7 +181,19 @@ namespace vm
 
 			if (n < 5)
 			{
-				vm_log.error("resv_watch CONTROL %u: notifier reached for 0x%x (watching 0x%x)",
+				// Straight to logcat, not through a vm_log channel.
+				//
+				// This watch was placed six times and produced six silences, and
+				// five conclusions were drawn from them before anyone checked the
+				// sink: `grep -c '} vm:' RPCSX.log` returns **0** on this device
+				// while spu_log, RSX, ppu_loader and sys_* all appear in quantity.
+				// Every one of those negatives was about the logger, not the code.
+				//
+				// __android_log_print cannot be silenced by an RPCS3 channel
+				// setting, and logcat has been readable throughout. An instrument
+				// whose whole purpose is to make silence meaningful must not be
+				// able to fail silently itself.
+				RESV_WATCH_LOG("resv_watch CONTROL %u: reached for 0x%x (watching 0x%x)",
 					n, raddr & -128, watch);
 			}
 		}
@@ -182,7 +206,7 @@ namespace vm
 		const u64 rtime = reservation_acquire(raddr);
 		const auto cpu = get_current_cpu_thread();
 
-		vm_log.error("resv_watch: 0x%x now counter=%llu (ntime=0x%llx) written by %s",
+		RESV_WATCH_LOG("resv_watch: 0x%x now counter=%llu (ntime=0x%llx) written by %s",
 			raddr & -128,
 			static_cast<unsigned long long>(rtime / 128),
 			static_cast<unsigned long long>(rtime),

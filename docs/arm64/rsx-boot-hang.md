@@ -810,6 +810,43 @@ sink is dead.
 change is made and a control line appears, **nothing in this section about writer
 locations should be treated as established.**
 
+### The first real negative, and it kills the premise
+
+The watch was rerouted to `__android_log_print` — logcat, which cannot be muted by
+an RPCS3 channel setting — and rerun. For the first time all three preconditions
+hold at once:
+
+| precondition | evidence |
+| --- | --- |
+| deadlock reproduced | stall line present |
+| sink works | **247 `RPCS3`-tagged logcat lines** in the same run |
+| instrument in binary | `resv_watch CONTROL` found by `grep -a` in the shipped `.so` |
+| property armed | `9d4d80` |
+| placement | all six ARM64-reachable `+= 127` completions |
+
+**Zero control lines.** `reservation_watch_note` is never called. None of the six
+counter-completion sites execute during this boot.
+
+That is finally a real negative, and it does not narrow the search — it invalidates
+the question. **The premise was that `counter=4` means four guest writes occurred.**
+With every completion path verified unreached, that no longer follows. The `0x200`
+in the reservation word has some other origin: initialisation, a shared or aliased
+slot, or a path that sets the word without going through the `+= 127`/`+= 128`
+completions at all.
+
+So the thing to check next is not *who wrote it* but *whether it was written*:
+
+- Read `reservation_acquire(0x9d4d80)` once at boot, before the SPURS group is
+  created, and see whether it is already `0x200`.
+- Confirm the slot is not aliased — that `reservation_acquire` maps distinct
+  128-byte lines to distinct words on this configuration.
+
+If the word is already `0x200` before the game touches it, then the SPU is polling a
+line that was **never written by anyone**, and the deadlock is that SPURS is waiting
+on a descriptor the emulator never populates — a different bug entirely from
+"a producer stopped after four iterations", and one that the last several hours of
+writer-hunting could not have found because there was no writer to hunt.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
