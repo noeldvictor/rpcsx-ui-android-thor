@@ -657,6 +657,39 @@ The instrument and its control stay in the tree. The control is the part worth
 keeping: it converted two meaningless silences into a definite answer about the
 instrument itself, which is what the previous four instances of this trap lacked.
 
+### Where the watch actually belongs, located
+
+The counter is a `u64` advanced in steps of 128. Grepping for that increment across
+the reservation code gives the complete set of writers:
+
+| site | what it is | watched? |
+| --- | --- | --- |
+| `Memory/vm.cpp:198` | the CAS in `try_reservation_update` | yes — never fires |
+| **`Memory/vm_reservation.h:248`** | `res += 128` in the reservation store template | **no** |
+| **`Memory/vm_reservation.h:262`** | `res += 128` in the reservation store template | **no** |
+| **`Cell/SPUThread.cpp:3819`** | `res += 128` on an SPU path | **no** |
+
+The two in `vm_reservation.h` are the templates that `PUTLLC` and `stwcx.` complete
+through, and they bump the counter **directly** rather than by calling
+`try_reservation_update`. That is why both watch placements missed all four writes:
+one watched the CAS that these bypass, the other watched a notifier that is only
+reached when a waiter is registered.
+
+So the next attempt is specified rather than guessed:
+
+1. Put the watch at `vm_reservation.h:248` and `:262`, plus `SPUThread.cpp:3819`.
+2. **Carry the positive control with it from the first build.** The control is what
+   turned this from two meaningless silences into a definite answer, and every
+   placement so far has been wrong in a way that only silence would reveal.
+3. Log the writer's thread name and the new counter value. Four lines identify the
+   producer; the question then becomes why it stopped after four iterations, which
+   is SPURS scheduling and no longer anything to do with the ARM64 port.
+
+Worth being explicit about the pattern, since it is the fifth instance in this
+project: **three separate instrument placements, three silences, and only the
+positive control could tell "nothing happened" from "I am not looking there".** The
+grep above took one command and would have avoided all three.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
