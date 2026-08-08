@@ -865,6 +865,7 @@ namespace vm
 				{
 					// Success, release the lock and progress
 					res += 127;
+					vm::reservation_watch_note(addr);
 				}
 				else
 				{

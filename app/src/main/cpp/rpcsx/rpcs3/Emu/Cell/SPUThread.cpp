@@ -3945,6 +3945,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 				range_lock->release(0);
 
 				res += 127;
+				vm::reservation_watch_note(eal);
 
 				// Release bits and notify
 				bits->atomic_op([&](u128& v)

@@ -777,6 +777,39 @@ That is five rounds of the same error in one evening. The instrument was never t
 hard part; knowing which lines this device executes was, and every shortcut around
 that question has cost a build and a device run.
 
+### And the sixth round invalidates the other five: the log channel is silent
+
+All six sites hooked, built clean, deadlock reproduced — still no control lines. At
+which point the one precondition never checked:
+
+```
+lines tagged "} vm:"   :  0
+lines tagged "} SPU:"  : 37
+channels present       :  ppu_loader 75, RSX 73, PPU 39, SPU 37,
+                          sys_prx 36, sys_fs 30, SYS 30, sys_spu 24
+```
+
+**`reservation_watch_note` logs through `vm_log`, and not one `vm_log` line appears
+in the entire file.** The stall reporter — the single instrument that has worked all
+evening — uses `spu_log`.
+
+So the placement may have been right for one or more of the last three attempts, and
+every negative drawn from them is void. Five silences were read as evidence about
+*where the code writes*; at least some of them were evidence about *which logger gets
+flushed*.
+
+This is the same failure a sixth time and the worst instance, because it invalidates
+the other five at once. The checklist that would have caught it is one line long:
+**before trusting an instrument's silence, confirm its output channel produces
+anything at all.** Verifying the string is in the binary (done), the property is set
+(done), and the code path executes (attempted five times) is all worthless if the
+sink is dead.
+
+**The fix is one word** — log through a channel known to reach the file. The
+`GETLLAR stalled` line proves `spu_log.error` arrives; `vm_log` does not. Until that
+change is made and a control line appears, **nothing in this section about writer
+locations should be treated as established.**
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer

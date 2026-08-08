@@ -116,6 +116,14 @@ false negative and cost hours once.
   already compensated.** Upstream's `busy_wait` scaling dropped Thor to ~1 FPS
   because every call site had already been retuned for the real `19.2 MHz`
   timer; two fixes for one problem multiply.
+- **Confirm an instrument's output channel produces anything before trusting its
+  silence.** `vm_log` writes **zero** lines to `RPCSX.log` on this device, while
+  `spu_log`, `ppu_loader`, `RSX`, `sys_*` all appear in quantity. A reservation watch
+  logging through `vm_log` was placed six times, produced six silences, and had five
+  conclusions drawn from it — all void, because the sink was dead. Checking that the
+  format string is in the `.so`, that the property is set, and that the code path
+  runs is worthless if nothing flushes. One `grep -c '} vm:'` would have caught it
+  before the first build.
 - **Every counter in this fork is incremented on completion, so none of them can see
   a hang.** The wait profiler records after `profiled_busy_wait`, the GETLLAR probe
   after its retry loop exits, the RSX auditor after a frame is presented. All three
