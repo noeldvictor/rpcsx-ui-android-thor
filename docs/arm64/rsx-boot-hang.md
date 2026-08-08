@@ -620,6 +620,43 @@ is not evidence about anything, and the session's recurring failure has been exa
 this shape: a search that finds nothing looking identical to a search that searches
 nothing, four times over.
 
+### Resolved by the positive control: the watch was in the wrong place
+
+The control logs the first five notifies of *any* address whenever a watch is
+armed, so a run can distinguish "the watched line is never notified" from "this
+hook is never reached". It produced **nothing**, with every precondition verified:
+
+| check | result |
+| --- | --- |
+| deadlock reproduced | yes, stall line present |
+| `debug.rpcsx.thor.resv_watch` | `9d4d80` |
+| property string in shipped `.so` | present — so the `#ifdef ANDROID` block compiled |
+| `debug.rpcsx.thor.rsx_auditor` in `.so` | absent — correct, this build omits that flag (working negative control) |
+
+So the property read is live, the value is set, and `reservation_watch_note` is
+called **zero times for any address across an entire boot**.
+
+That is the resolution: **`reservation_notifier_notify()` is essentially never
+called.** The notify sites are guarded on a waiter being registered, and the
+stalled SPU is in a *yield-spin*, not a notifier wait — it never registers, so
+nothing ever notifies. The hook could not have observed a write no matter how many
+occurred.
+
+Two corrections follow, and both are mine:
+
+1. **The earlier conclusion "the writer is an atomic store, not a notify" is
+   withdrawn.** It was drawn from the first silence, and that silence had the same
+   cause as this one — the hook is unreachable. It was never evidence about the
+   writer.
+2. **The watch belongs on the counter increment, not the notify.** The bump is
+   `res.compare_and_swap_test(rtime, rtime + 128)` in `try_reservation_update`,
+   plus the equivalent increments on the `PUTLLC` and `stwcx.` completion paths.
+   Those execute whether or not anyone is waiting.
+
+The instrument and its control stay in the tree. The control is the part worth
+keeping: it converted two meaningless silences into a definite answer about the
+instrument itself, which is what the previous four instances of this trap lacked.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer

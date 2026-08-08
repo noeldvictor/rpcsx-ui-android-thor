@@ -149,7 +149,32 @@ namespace vm
 	{
 		const u32 watch = reservation_watch_addr();
 
-		if (!watch || (raddr & -128) != watch) [[likely]]
+		if (!watch) [[likely]]
+		{
+			return;
+		}
+
+		// Positive control. A watch that has never been observed firing is not
+		// evidence about anything, and this instrument produced two silences that
+		// were read as findings before anyone checked it could speak at all.
+		//
+		// The first few notifies of ANY address are logged, so a run
+		// distinguishes "the watched line is never notified" from "this hook is
+		// never reached". Without it the two are indistinguishable, which is the
+		// same trap - a search that finds nothing looking like a search that
+		// searches nothing - that has now cost five times in this project.
+		if (static std::atomic<u32> control{0}; control.load(std::memory_order_relaxed) < 5)
+		{
+			const u32 n = control.fetch_add(1, std::memory_order_relaxed);
+
+			if (n < 5)
+			{
+				vm_log.error("resv_watch CONTROL %u: notifier reached for 0x%x (watching 0x%x)",
+					n, raddr & -128, watch);
+			}
+		}
+
+		if ((raddr & -128) != watch) [[likely]]
 		{
 			return;
 		}
