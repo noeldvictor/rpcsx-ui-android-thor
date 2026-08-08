@@ -135,6 +135,15 @@ false negative and cost hours once.
   already compensated.** Upstream's `busy_wait` scaling dropped Thor to ~1 FPS
   because every call site had already been retuned for the real `19.2 MHz`
   timer; two fixes for one problem multiply.
+- **`config.yml` cannot be restored with a device-side redirect, and the emulator
+  rewrites it on exit.** The file is `-rw-r-----` owned by the app, so `adb shell` is
+  in its group with **read only** — `cat backup > config.yml` reports success and
+  changes nothing. `adb push` works, because it replaces the file rather than writing
+  into it. And RPCSX re-serialises the config when it exits, so a setting changed for
+  one experiment survives into the next run and into the file itself. Raising a log
+  channel to Trace for a single boot and walking away leaves verbose logging on
+  permanently, which then slows every measurement after it. Restore with `adb push`
+  and **verify the byte count matches the backup**.
 - **Confirm an instrument's output channel produces anything before trusting its
   silence.** `vm_log` writes **zero** lines to `RPCSX.log` on this device, while
   `spu_log`, `ppu_loader`, `RSX`, `sys_*` all appear in quantity. A reservation watch
