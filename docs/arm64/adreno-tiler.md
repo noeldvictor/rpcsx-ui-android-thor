@@ -228,9 +228,46 @@ at pass-begin time, that the first operation will be a full-region clear of ever
 attachment — which is a restructuring of when the backend decides to open a pass,
 not a flag.
 
-Steps 1-3 without step 4 are dead code, so they are deliberately not committed.
-**The design is settled; the remaining work is a call-site restructuring and wants a
-session with room to verify rendering, not just compilation.**
+### Correction: step 4 is smaller than that, and the real blocker is elsewhere
+
+Reading `clear_surface` instead of assuming, `VKGSRender.cpp:1631`:
+
+```cpp
+if (!clear_descriptors.empty())
+{
+    begin_render_pass();
+    vkCmdClearAttachments(cmd, ::size32(clear_descriptors), clear_descriptors.data(), 1, &region);
+}
+```
+
+The two calls are **adjacent**. The call site already knows a clear is coming at the
+moment it opens the pass, so "restructuring when the backend decides to open a pass"
+was wrong — the information is right there. Roughly forty lines across three files,
+not a redesign.
+
+What reading it *does* surface is three preconditions, each of which silently
+produces wrong output if missed:
+
+1. **The pass must not already be open.** `begin_render_pass()` is a no-op when one
+   is; a pass already begun cannot retroactively acquire `LOAD_OP_CLEAR`.
+2. **`region` must cover the whole surface.** `vkCmdClearAttachments` honours a
+   scissor rect, `LOAD_OP_CLEAR` does not — it clears the entire attachment. A
+   partial clear converted to a load-op clear wipes pixels the guest kept.
+3. **`clear_descriptors` may name only some attachments.** Colour-only and
+   depth-only clears both occur, so the key needs a bit per attachment rather than
+   one flag — affordable, given 22 spare bits, but it is two bits and not one.
+
+**The blocker is verification, and it is not fatigue.** Each of those three failure
+modes produces a frame that is subtly wrong rather than obviously broken — a wiped
+region, a stale surface — and **there is currently no title on this device that
+renders a scene to check against.** Eternal Sonata deadlocks at 8.5 s; Odin Sphere
+reaches a black loading screen at 13 FPS. A rendering regression would be invisible
+in both.
+
+So this work is gated on the same thing the GETLLAR sweep is gated on: **a title that
+reaches a drawn scene.** That is the dependency to record, rather than a note about
+how tired the author was. Fix the deadlock or find a title that renders, and this
+becomes a contained forty-line change with three checkable preconditions.
 
 ## How to measure it before changing anything
 
