@@ -71,6 +71,55 @@ file by renaming intrinsics produces wrong output, which makes this a case for t
 equivalence-test treatment `tools/rdata_equiv.c` already established: NIST vectors
 plus a randomized differential run against the software path, mismatch count zero.
 
+## The primitive now exists and is validated on device
+
+`tools/aes_arm64_equiv.c` implements ARMv8 AES-128/192/256 block encrypt and
+decrypt and proves it on the Thor:
+
+```
+FIPS-197 known-answer tests:
+  AES-128 ok
+  AES-192 ok
+  AES-256 ok
+randomized round-trip:
+  600000 round-trips over 3 key sizes
+failures=0
+RESULT: ARMv8 AES matches FIPS-197 and inverts cleanly
+```
+
+Verified to be real hardware AES, not a fallback: `llvm-objdump` shows `aese`
+followed immediately by `aesmc`, and `aesd` followed by `aesimc`.
+
+**The first version of it was wrong, in the way that matters.** Encryption passed
+all three known-answer vectors on the first attempt; decryption failed all three.
+The bug was assuming the forward key schedule could simply be walked backwards.
+It cannot: the equivalent inverse cipher moves `AddRoundKey` to the far side of
+`InvMixColumns`, which is only legal because `InvMixColumns` is linear —
+
+```
+InvMixColumns(x XOR k) == InvMixColumns(x) XOR InvMixColumns(k)
+```
+
+— and that identity requires the *key* to be passed through `InvMixColumns` too.
+So the decryption schedule is the forward one reversed with `AESIMC` applied to
+the middle keys, first and last untouched. Which is precisely what PolarSSL's
+`aes_setkey_dec` builds with its `RT` tables and what `aesni_inverse_key` builds
+with `_mm_aesimc_si128` — the structure was in the x86 file all along.
+
+That asymmetry is the argument for having built this as a standalone binary
+first. A correct encrypt path with a broken decrypt path is the worst possible
+outcome to discover by booting a game: decryption is the side that runs on every
+SELF and SPRX, so the failure would have appeared as modules decrypting to
+garbage, far from the cause.
+
+## Still not measured
+
+No speedup figure is claimed, and deliberately so. An honest comparison has to be
+against PolarSSL's actual four-table implementation, not a naive byte-wise AES —
+benchmarking against a strawman would produce exactly the kind of inflated,
+confident number this project has repeatedly had to retract. The next step is to
+lift the real software path into the same harness and time both on device.
+
 ## Three related things checked in the same pass, all negative
 
 Recorded so they are not re-investigated.
