@@ -269,7 +269,7 @@ stands on its own and this file is the map.
 | [`docs/arm64/instruments.md`](docs/arm64/instruments.md) | The measuring tools, what each can and cannot answer, and the mistakes made building them. |
 | [`docs/arm64/thermal.md`](docs/arm64/thermal.md) | Junction versus package sensors, and the guard that compared a limit against the wrong one. |
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
-| [`docs/hardware/`](docs/hardware/) | Arm's Cortex-X3 and A710 optimization guides, vendored, plus how to read their tables. |
+| [`docs/hardware/`](docs/hardware/) | Vendored vendor docs: Arm's Cortex-X3, A715 and A710 optimization guides, plus Qualcomm's 200-page Adreno guide — and why the GPU one opens a review axis nothing here has started. |
 
 `AGENTS.md` is the operating contract. This file is the hardware knowledge behind
 it.

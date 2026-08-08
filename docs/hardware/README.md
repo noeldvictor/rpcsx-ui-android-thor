@@ -1,9 +1,39 @@
 # Hardware reference documents
 
-Arm's per-core Software Optimization Guides for the cores in the AYN Thor's
-Snapdragon 8 Gen 2 (`kalama`). These are Arm's **Non-Confidential** publications,
-redistributed here so the numbers this project relies on cannot silently change
-or disappear behind a documentation portal.
+Vendor documentation for the AYN Thor's Snapdragon 8 Gen 2 (`kalama`) — Arm's
+per-core Software Optimization Guides for the CPU, and Qualcomm's Adreno guide for
+the GPU. All are public publications, redistributed here so the numbers this
+project relies on cannot silently change or disappear behind a documentation
+portal.
+
+## The GPU one, and why it is a separate kind of document
+
+| file | pages | covers |
+| --- | --- | --- |
+| `qualcomm_adreno_game_developer_guide.pdf` | 200 | Adreno architecture, GMEM, binning, LRZ, FlexRender, Vulkan practice |
+
+The CPU guides answer "how many cycles". This one answers a question this project
+has not really asked yet: **the Adreno is a tile-based renderer and the RSX was
+not.**
+
+RPCS3's Vulkan backend was written against immediate-mode desktop GPUs, where a
+render target lives in VRAM and reading it back costs a transfer. On Adreno,
+rendering happens into on-chip **GMEM** a tile at a time, and anything that forces
+the tile to be resolved out — a mid-pass readback, a colour-buffer write, a
+texture cache miss on a render target — costs a full resolve plus a reload, not a
+transfer. The vocabulary to look for is in this document: GMEM, binning passes,
+LRZ (early depth rejection), and FlexRender (Adreno switching between binned and
+direct rendering).
+
+That matters here specifically because Eternal Sonata's profile sets
+`Write Color Buffers: true`, and [`../arm64/rsx-boot-hang.md`](../arm64/rsx-boot-hang.md)
+records RSX wedging immediately after three texture cache misses on render-target
+addresses. Neither has been examined through a tiler's cost model. **This is the
+GPU-side equivalent of the x86-habits review** in
+[`../arm64/x86-isms-sweep.md`](../arm64/x86-isms-sweep.md) — desktop-GPU
+assumptions that need rethinking for a mobile tiler — and it is unstarted.
+
+## The CPU guides
 
 | file | core | pages | covers |
 | --- | --- | --- | --- |
