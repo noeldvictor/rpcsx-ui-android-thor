@@ -14,7 +14,9 @@ The detail behind it is split by topic, because a single file had grown past
 - `docs/arm64/codegen.md` — the lowerings chosen here and the x86-habit audit
 - `docs/arm64/microarchitecture.md` — latency, throughput and pipe data from the guides
 - `docs/arm64/memory-model.md` — atomics, ordering, i-cache maintenance
-- `docs/arm64/power-and-thermal.md` — power, heat, and what has been measured
+- `docs/arm64/spin.md` — where the CPU time goes, and the one untested lever
+- `docs/arm64/instruments.md` — what each measuring tool can and cannot answer
+- `docs/arm64/thermal.md` — sensors and the thermal guard
 - `docs/arm64/ledger.md` — the audit ledger and open opportunities
 - `docs/hardware/` — Arm's vendored per-core optimization guides
 

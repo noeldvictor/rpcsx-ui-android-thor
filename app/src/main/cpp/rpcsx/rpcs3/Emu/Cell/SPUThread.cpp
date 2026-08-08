@@ -1329,61 +1329,28 @@ __forceinline
 	_mm_storeu_si128(reinterpret_cast<__m128i*>(_dst + 96), v2);
 	_mm_storeu_si128(reinterpret_cast<__m128i*>(_dst + 112), v3);
 #elif defined(ARCH_ARM64) && defined(__clang__)
-	// The Cortex-X3 Software Optimization Guide (docs/hardware/, section 4.3)
-	// prescribes an exact shape for a memory copy: unroll it, use the
-	// *non-writeback* forms of LDP and STP, interleave each load with its
-	// store, and align stores on a 32-byte boundary. This is the hottest copy
-	// in the emulator, run on every GETLLAR retry iteration, so it is worth
-	// matching that shape rather than trusting the fallback.
+	// An explicit LDP/STP form lived here and was reverted after a guest crash.
 	//
-	// std::memcpy did not match it. At -O2 for armv8.4-a, clang expanded the
-	// fixed 128-byte copy into 12 memory operations rather than 8, pairing only
-	// two of the four possible LDPs and leaving the rest as single LDR/STR.
-	// Worse, it emitted `stp q0, q1, [x0, #80]` and `stp q0, q1, [x0, #16]`.
-	// Against the 64-byte aligned rdata this actually runs on, offsets 80 and
-	// 16 are both 16 mod 32, so each of those 32-byte stores *crosses a 32-byte
-	// boundary* - which section 4.4 lists explicitly as a case that reduces
-	// bandwidth or adds latency on this core.
+	// It replaced this memcpy with four interleaved 16-byte chunk pairs, matching
+	// the Cortex-X3 guide's section 4.3 copy recipe: 8 memory operations instead
+	// of the 12 clang expands memcpy into, and no store crossing a 32-byte
+	// boundary. The shape was verified in the shipped binary.
 	//
-	// Writing the pairs out reproduces Arm's example instruction for
-	// instruction: four LDP/STP pairs at offsets 0, 32, 64 and 96, every store
-	// 32-byte aligned, no writeback, each load interleaved with its store.
-	// Eight operations instead of twelve, and no boundary crossings.
+	// Then Eternal Sonata faulted in combat on 0x3f80000c - a float bit pattern
+	// used as a pointer - and an earlier freeze faulted on 0x15. Both are the
+	// signature of reading corrupted data, and mov_rdata copies the 128 bytes a
+	// reservation is validated against.
 	//
-	// Written out rather than looped, for the same reason mov_rdata_nt below is:
-	// loop-idiom recognition rewrites a tidy copy loop straight back into
-	// memcpy, which would restore exactly the expansion this replaces.
+	// Reverted precautionarily, not because a defect was found. The benefit was
+	// an instruction count argued from latency tables and never measured, and the
+	// automated runs exercising it only reached the opening cutscene, so they
+	// could not have caught a fault that appears in gameplay. That is a bad trade
+	// against any doubt in the most correctness-sensitive copy in the emulator.
 	//
-	// Both operands are suitably aligned. spu_thread::rdata is alignas(64), and
-	// the guest side is a 128-byte reservation granule.
-	{
-		typedef unsigned char rdata_chunk_t __attribute__((vector_size(16)));
-		static_assert(sizeof(rdata_chunk_t) == 16, "reservation copy chunk must stay 16 bytes wide");
-		static_assert(sizeof(spu_rdata_t) == 128, "reservation data is eight 16-byte chunks");
-
-		const auto* src_chunks = reinterpret_cast<const rdata_chunk_t*>(_src);
-		auto* dst_chunks = reinterpret_cast<rdata_chunk_t*>(_dst);
-
-		const rdata_chunk_t a0 = src_chunks[0];
-		const rdata_chunk_t a1 = src_chunks[1];
-		dst_chunks[0] = a0;
-		dst_chunks[1] = a1;
-
-		const rdata_chunk_t b0 = src_chunks[2];
-		const rdata_chunk_t b1 = src_chunks[3];
-		dst_chunks[2] = b0;
-		dst_chunks[3] = b1;
-
-		const rdata_chunk_t c0 = src_chunks[4];
-		const rdata_chunk_t c1 = src_chunks[5];
-		dst_chunks[4] = c0;
-		dst_chunks[5] = c1;
-
-		const rdata_chunk_t d0 = src_chunks[6];
-		const rdata_chunk_t d1 = src_chunks[7];
-		dst_chunks[6] = d0;
-		dst_chunks[7] = d1;
-	}
+	// To re-land: bring the equivalence testing this fork used for VSUMSWS -
+	// millions of randomised 128-byte pairs compared against memcpy on device -
+	// rather than a contract test that only checks the source still has the
+	// intended shape.
 #else
 	std::memcpy(_dst, _src, 128);
 #endif

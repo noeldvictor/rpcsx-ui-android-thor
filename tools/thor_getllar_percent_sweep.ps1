@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 #     profiler's own report boundaries.
 #
 # Everything learned from those is encoded below rather than left to be
-# remembered. See docs/arm64/power-and-thermal.md.
+# remembered. See docs/arm64/instruments.md and docs/arm64/spin.md.
 #
 # WHAT IT MEASURES
 #

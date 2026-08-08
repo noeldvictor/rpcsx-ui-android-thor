@@ -56,7 +56,7 @@ during gameplay and produced the first real numbers here — **16.9% of busy CPU
 time is spin, 82.5% of it in `GETLLAR`, and `vm_passive_lock` a further 17.5%** —
 and a normalized WFE A/B showed the park displacing 20% of the inner spin at
 eighteen times the noise floor. See
-[`power-and-thermal.md`](power-and-thermal.md).
+[`spin.md`](spin.md).
 
 What remains unmeasured is narrower and should be stated as such: **whether any
 of it makes a title run faster, or draw less power.** The instruction-selection
@@ -401,7 +401,7 @@ Scanning `kernel/cellos/` properly returns one file with x86 markers,
 `src/lv2.cpp`, and it is not trivia: it holds a **second copy of the
 power-optimized wait**, giving x86 `TPAUSE`/`MWAITX` and AArch64 a
 `sched_yield` loop on every sub-quantum guest thread sleep. Written up in
-[`power-and-thermal.md`](power-and-thermal.md).
+[`spin.md`](spin.md).
 
 The lesson is the one the APK gate already taught and this repeated: **a search
 that finds nothing and a search that searches nothing produce identical output.**

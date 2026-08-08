@@ -62,7 +62,7 @@ foreach ($fragment in @(
 # deliberately: a cold PPU recompile took roughly ten minutes at 51-58 C with the
 # device's thermal guard sitting unused at 72 C, and the cap was set in three
 # places, two of which overwrote the third. The reasoning is in
-# docs/arm64/power-and-thermal.md.
+# docs/arm64/spin.md.
 #
 # The assertion is kept rather than deleted, because the value still needs
 # pinning - just at the value the profile is supposed to carry now. A test that

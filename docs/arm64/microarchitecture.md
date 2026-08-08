@@ -63,7 +63,7 @@ had already recorded without accounting for it.** `BCAX` replaces a dependent
 
 So the guide predicts a **2.00x latency win and a throughput loss**. Against the
 `bcax_bench` result recorded in
-[`power-and-thermal.md`](power-and-thermal.md), run before any of this was read:
+[`instruments.md`](instruments.md), run before any of this was read:
 
 | shape | predicted | X3 measured | A715 | A510 |
 | --- | --- | --- | --- | --- |
