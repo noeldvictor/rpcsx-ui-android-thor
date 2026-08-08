@@ -45,9 +45,17 @@ newer than v8.2 does **not**, even though the device has it: `lrcpc`, `flagm`,
 it is gated on the matching `utils::has_*()` and paired with an explicit
 negative for hosts without it, which is the pattern `+sha3`/`-sha3` follows.
 
-AOT code is built `-march=armv8.2-a -mtune=cortex-a715`. Atomics are real
+AOT code is built `-march=armv8.4-a -mtune=cortex-a715`. Atomics are real
 inline LSE, confirmed by zero `__aarch64_cas*` / `__aarch64_ldadd*` undefined
 symbols in the built objects, so there is no outline-atomics tax to remove.
+
+That baseline expands to `+complxnum +crc +dotprod +fp-armv8 +jsconv +lse +neon
++outline-atomics +pauth +ras +rcpc +rdm +v8.1a..v8.4a` — asked of the compiler,
+not read off the spec. What it does **not** include, on a chip that has all of
+them, is `+aes`, `+sha2`, `+sha3`, `+i8mm`, `+fullfp16` and `+bf16`. The one that
+currently costs something is `aes`: see [`docs/arm64/aes.md`](docs/arm64/aes.md),
+where the whole AES-NI file is `#if defined(__SSE2__)` and every SELF, SPRX and PKG
+decryption on this device runs four-table software AES instead.
 
 ## Feature to instruction to use-case
 
@@ -221,6 +229,7 @@ stands on its own and this file is the map.
 | [`docs/arm64/spin.md`](docs/arm64/spin.md) | Where the CPU time goes: 93% of spin is the `GETLLAR` wait, what was tried against it, and the one lever still untested. |
 | [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md) | The deterministic RSX hang that currently stops the game booting: the ten-second repro, what it is not, and why it needs a debuggable build. |
 | [`docs/arm64/ppu-compile-oom.md`](docs/arm64/ppu-compile-oom.md) | A second title dies in PPU precompile with a Scudo out-of-memory, and why the 1536 MB budget bounds concurrency rather than footprint. |
+| [`docs/arm64/aes.md`](docs/arm64/aes.md) | AES-NI is x86-gated, so every module decrypted at boot uses software AES on a chip with AES instructions — plus three related checks that came back negative. |
 | [`docs/arm64/instruments.md`](docs/arm64/instruments.md) | The measuring tools, what each can and cannot answer, and the mistakes made building them. |
 | [`docs/arm64/thermal.md`](docs/arm64/thermal.md) | Junction versus package sensors, and the guard that compared a limit against the wrong one. |
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
