@@ -1103,3 +1103,59 @@ investigated it.
 Worth separating clearly, because "the biggest remaining target has no known fix"
 is a different and more useful statement than "we need another measurement to
 know where to look".
+
+## The lever on 93% of spin is a config value nobody re-derived
+
+The previous section concluded that the remaining lever on `GETLLAR` is "not
+needing to wait", and called that a scheduling question outside this work's
+scope. That was wrong in the same way the other blockers were: it stopped one
+question short.
+
+The emulator does not spin on `GETLLAR` because it must. It spins because it is
+**configured to, 100% of the time**:
+
+| tunable | upstream default | Thor profile |
+| --- | --- | --- |
+| `SPU Reservation Busy Waiting Percentage` | 0 | explicitly **0**, and "Enabled: false" |
+| `SPU GETLLAR Busy Waiting Percentage` | **100** | **not overridden** |
+
+The percentage feeds `evaluate_spin_optimization`, whose decision reduces to:
+
+```cpp
+const u32 busy_waiting_switch = ((evaluate_time >> 8) % 100 + add_count < percent) ? 1 : 0;
+```
+
+At `percent == 100` that is true for every value the left side can take, so the
+adaptive policy runs its history analysis and is then told to busy-wait
+regardless. The alternative branch is a **system wait** — the thread sleeps
+instead of spinning.
+
+**The asymmetry is the finding.** Someone deliberately turned reservation
+busy-waiting off for this device, writing both the percentage and the enable flag
+into `ThorPerformanceProfile` and `GameSettingsDatabase`. The `GETLLAR` knob sits
+untouched at an upstream default, and `GETLLAR` is now **93% of all emulator
+spin** and 82.5% before the `passive_lock` fix. The trade was considered once,
+applied to the smaller of the two sites, and never revisited for the larger.
+
+**Why this is the right shape of lever for this device.** Spinning buys wake
+latency at the cost of burning a core; sleeping buys power at the cost of wake
+latency. The measured situation is that the title **already holds its 30 fps
+cap** with total CPU in the twenties to thirties of a percent, so latency
+headroom exists, while the machine is passively cooled and the whole fork is
+managed against heat. That is the exact case where trading some latency for power
+is favourable, and it is a **config change rather than a redesign of the hottest
+lock in the memory subsystem.**
+
+**What has to be measured before changing it, and it is now measurable.** Lower
+percentages mean more system waits, which have real wake cost — the reason this
+is not simply set to 0 on sight is that a reservation handoff that sleeps can
+lengthen the critical path between SPU threads, and frame pacing is what would
+suffer. The instruments to settle it exist: `spu_getllar` call counts and cycles
+from the wait profiler for the spin side, and `thor_power_probe.ps1` on an
+**unplugged** device for exact system watts. Sweep the percentage across, say,
+100 / 50 / 25 / 0 and read both.
+
+This is the first candidate in this document that is simultaneously large (93% of
+spin), cheap (a settings value), and untested. It is also, notably, not an ARM64
+instruction-selection question at all — it is an x86-era default that nobody
+re-derived for a passively cooled handheld.
