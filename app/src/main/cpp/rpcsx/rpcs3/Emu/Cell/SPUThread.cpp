@@ -6434,6 +6434,40 @@ bool spu_thread::process_mfc_cmd()
 									s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
 									s[8], s[9], s[10], s[11], s[12], s[13], s[14], s[15]);
 							}
+
+							// The two views of guest memory, against each other.
+							//
+							// Everything dumped above goes through vm::get_super_ptr. The retry loop
+							// does not: `data` is vm::_ref<spu_rdata_t>(addr) (bound at the top of
+							// this function), the guest-visible mapping. RPCS3 maps guest memory
+							// twice, and the reporter was comparing local store against the view the
+							// SPU never reads - so "ls != mem" was not yet evidence of anything.
+							//
+							// This is the comparison that means something. `data` is what the loop
+							// copies into rdata and what cmp_rdata re-checks, so:
+							//
+							//   data == super   the two mappings agree, and a stale local store is a
+							//                   real coherency problem in the reservation path.
+							//   data != super   the two mappings disagree, which is a much worse bug
+							//                   and explains the spin exactly: the SPU is reading a
+							//                   view where the workload was never published, so it
+							//                   cannot ever see the work and cmp_rdata cannot settle.
+							if (const auto* const superp = vm::get_super_ptr<u8>(addr & -128))
+							{
+								u64 dw[16]{};
+								std::memcpy(dw, &data, 128);
+
+								spu_log.error(
+									"GETLLAR guest-view 0x%x: %016llx %016llx %016llx %016llx "
+									"- guest==super:%d guest==ls:%d guest==snapshot:%d "
+									"- guest view is what the retry loop actually compares; super is what this reporter dumps.",
+									addr & -128,
+									static_cast<unsigned long long>(dw[0]), static_cast<unsigned long long>(dw[1]),
+									static_cast<unsigned long long>(dw[2]), static_cast<unsigned long long>(dw[3]),
+									std::memcmp(&data, superp, 128) == 0 ? 1 : 0,
+									std::memcmp(&data, &_ref<spu_rdata_t>(ch_mfc_cmd.lsa & 0x3ff80), 128) == 0 ? 1 : 0,
+									std::memcmp(&data, &rdata, 128) == 0 ? 1 : 0);
+							}
 						}
 					}
 
