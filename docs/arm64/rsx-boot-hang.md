@@ -1221,6 +1221,41 @@ group event path. If it does not, the fault is upstream of the poll.
 That is the smallest well-posed question this investigation has produced, and it is
 two files wide.
 
+### `SPU: Trace` does not answer it, and says why — plus one hard new fact
+
+`Log: { SPU: Trace }`, 36,927 lines. Two results, one useful and one a warning.
+
+**The useful one.** Exactly *one* DMAC line exists in the whole run:
+
+```
+·T 0:00:10.758 {SPU[0x0000200] CellSpursKernel0 [0x012b0]}
+   SPU: DMAC: (GETLLAR  #00 0x00100:0x009d4d80 0x80)
+```
+
+LSA `0x100`, EA `0x9d4d80`, 128 bytes — independently confirming every number in the
+stall report from a different code path. And it is the **only** MFC command the SPURS
+kernel ever issues. It makes one `GETLLAR` and never advances to another, which means
+it is stuck on its *first* memory operation after the kernel image starts. A kernel
+that has not completed its first `GETLLAR` has plainly not reached any later point at
+which it would signal readiness.
+
+**The warning.** `WrOutIntrMbox` appears zero times — and so does `get_ch_count`, and
+so does `set_ch_value`. **Channel operations are not logged at this level at all**, so
+the zero proves nothing about whether the SPU attempted a mailbox write. That is the
+seventh time in this investigation that an absence has looked like evidence, and it is
+recorded rather than acted on.
+
+So the two candidates stand undistinguished by *logging*, but the DMAC fact leans
+hard toward the first: the SPU is stuck at its first MFC command, so it is unlikely to
+have reached a signalling point. Confirming that needs a counter in the
+`SPU_WrOutIntrMbox` handler at `SPUThread.cpp:7748` — reported through a channel
+proven to reach the log, which on this device means `spu_log`, not `vm_log`.
+
+The handler itself is present and substantial, roughly two hundred lines with a
+raw-SPU branch and an HLE dispatch path, and notably it resets `last_getllar_addr` on
+entry — so whoever wrote it already knew the mailbox and `GETLLAR` state interact.
+That is the file to read next, with the SPURS startup protocol beside it.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
