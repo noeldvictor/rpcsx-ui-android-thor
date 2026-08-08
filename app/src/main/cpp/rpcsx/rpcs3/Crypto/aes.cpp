@@ -31,6 +31,7 @@
 
 #include "aes.h"
 #include "aesni.h"
+#include "aes_arm64.h"
 
 #include <algorithm>
 
@@ -665,6 +666,27 @@ int aes_crypt_ecb(aes_context* ctx,
 #if defined(__SSE2__) || defined(_M_X64)
 	if (aesni_supports(POLARSSL_AESNI_AES))
 		return (aesni_crypt_ecb(ctx, mode, input, output));
+#endif
+
+#if defined(__aarch64__)
+	// The AArch64 counterpart of the AES-NI branch above. It consumes ctx->rk
+	// unchanged for both directions, so neither key schedule is touched - see
+	// aes_arm64.h for why that is safe and how it is verified.
+	if (rpcsx_aes_arm64::supported())
+	{
+		const auto* const rk8 = reinterpret_cast<const uint8_t*>(ctx->rk);
+
+		if (mode == AES_ENCRYPT)
+		{
+			rpcsx_aes_arm64::encrypt_block(rk8, ctx->nr, input, output);
+		}
+		else
+		{
+			rpcsx_aes_arm64::decrypt_block(rk8, ctx->nr, input, output);
+		}
+
+		return 0;
+	}
 #endif
 
 	RK = ctx->rk;

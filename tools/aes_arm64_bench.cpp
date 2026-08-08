@@ -70,6 +70,9 @@ static int pin_to(int cpu)
 
 // ---------------------------------------------------------------- agreement --
 
+static unsigned long g_sched_layout_differs = 0;
+static unsigned long g_dec_sched_differs = 0;
+
 static unsigned check_agreement(void)
 {
     unsigned fails = 0;
@@ -107,6 +110,24 @@ static unsigned check_agreement(void)
 
             if (memcmp(arm_enc, soft_enc, 16) != 0) fails++;
             if (memcmp(arm_dec, soft_dec, 16) != 0) fails++;
+
+            // Does PolarSSL's forward schedule already have the byte layout
+            // AESE wants? If so the integration never touches aes_setkey_enc
+            // and just consumes ctx->rk directly, which is a much smaller
+            // change than rebuilding the schedule. Checked rather than assumed:
+            // both are correct AES so the round keys must agree in *value*, but
+            // agreeing in memory layout is a separate claim.
+            if (memcmp(rk, (const uint8_t *)ectx.rk, (size_t)(rounds + 1) * 16) != 0)
+            {
+                g_sched_layout_differs++;
+            }
+            // And the decrypt context: x86 rebuilds it with aesni_inverse_key
+            // rather than reusing the software inverse schedule, which suggests
+            // the two are not interchangeable. Verify that for ARM too.
+            if (memcmp(dk, (const uint8_t *)dctx.rk, (size_t)(rounds + 1) * 16) != 0)
+            {
+                g_dec_sched_differs++;
+            }
         }
     }
 
@@ -173,6 +194,10 @@ int main(void)
     printf("agreement with the shipped software AES (Crypto/aes.cpp):\n");
     const unsigned fails = check_agreement();
     printf("  60000 blocks over 3 key sizes, encrypt and decrypt: %u mismatches\n", fails);
+    printf("  forward schedule differs from PolarSSL enc ctx->rk: %lu / 60000\n",
+           g_sched_layout_differs);
+    printf("  decrypt schedule differs from PolarSSL dec ctx->rk: %lu / 60000\n",
+           g_dec_sched_differs);
     if (fails)
     {
         printf("RESULT: FAIL - implementations disagree, timings below would be meaningless\n");
