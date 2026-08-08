@@ -116,8 +116,14 @@ false negative and cost hours once.
   already compensated.** Upstream's `busy_wait` scaling dropped Thor to ~1 FPS
   because every call site had already been retuned for the real `19.2 MHz`
   timer; two fixes for one problem multiply.
+- **`grep -e 'a\|b'` through PowerShell into `adb shell` does not survive the trip.**
+  A search for the RSX auditor's output returned nothing and was briefly taken as
+  "the auditor never fired" — it had fired ten times. The alternation is mangled
+  somewhere between PowerShell, `adb`, and the device's `sh`. Use a single plain
+  pattern per invocation on device. This is the same failure as the entry below,
+  which is why it is now listed as four.
 - **A search that finds nothing and a search that searches nothing look
-  identical.** This has now cost three times. The third was a device experiment
+  identical.** This has now cost four times. The third was a device experiment
   labelled "shader cache cleared" that had cleared nothing: the `mv` failed because
   `files/cache/cache/` is `drwxr-s---` and denies the group write, while
   `config/custom_configs/` is `drwxrws---` and allows it. The `&&`-guarded success

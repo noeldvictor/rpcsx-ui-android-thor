@@ -135,6 +135,41 @@ if (breaks_renderpass)
 There is a `preserve_renderpass` opt-out, so the cost was understood at least
 locally — the question nobody has asked is how often the opt-out is *not* taken.
 
+## Measured: zero breaks on the workload available
+
+The section above is a hypothesis and the measurement does not support it. Recorded
+in place rather than deleted, because the reasoning was sound and the conclusion
+was still wrong.
+
+Auditor enabled, Odin Sphere booted, two consecutive 60-frame windows:
+
+```
+frames=60 rp_begin=60 rp_end=60 rp_break=0 rp_break(g/b/i/t)=0/0/0/0
+          barriers(g/b/i/t/all)=0/0/0/0/0 barrier_mb=0.00
+frames=60 rp_begin=62 rp_end=62 rp_break=0 ...
+```
+
+**Zero render-pass breaks. Zero image barriers. Roughly one render pass per
+frame.** The eight `is_renderpass_open` call sites are real, and on this workload
+none of them fire.
+
+The honest reading, with its limits stated: this is a black loading screen at
+13 FPS with an almost empty scene, so it is a *floor*, not a representative
+figure. A gameplay scene with texture streaming, occlusion queries and
+render-to-texture would exercise exactly the paths that are quiet here. What the
+measurement does establish is that "passes are broken constantly" was an
+assumption read off a call-site count, and call-site counts do not measure
+frequency.
+
+The first finding survives it and shrinks: at ~1 pass per frame, unconditional
+`LOAD_OP_LOAD`/`STORE_OP_STORE` costs one unresolve and one resolve of colour plus
+depth **per frame**, not per pass-break. That is still pure waste on a clear —
+but it is one surface pair a frame, and at 1080p that is on the order of 16 MB a
+frame rather than the hundreds the break hypothesis implied.
+
+**Do not act on this document until it has been re-run on a scene that draws
+something.** The whole point of the auditor is that it makes that cheap.
+
 ## The instrument already exists
 
 That second line is the important one. **This fork already has an auditor that
