@@ -1026,3 +1026,72 @@ work: give Android a timeout long enough for the driver to block — a vsync per
 would do — so the wait is a sleep rather than a spin. Still not applied, for the
 reason recorded above: an unresolved crash investigation is the wrong moment to
 add an untested change to the present path.
+
+## A fifth spin, and this one waits on the GPU
+
+Sweeping deliberately for the pattern — rather than stumbling on instances — found
+`vk::wait_for_fence`, whose **default is to poll**:
+
+```cpp
+VkResult wait_for_fence(fence* pFence, u64 timeout)   // timeout defaults to 0
+{
+    pFence->wait_flush();
+    if (timeout)
+    {
+        return vkWaitForFences(..., timeout * 1000ull);   // blocks in the driver
+    }
+    else
+    {
+        while (auto status = vkGetFenceStatus(...))       // polls
+        {
+        case VK_NOT_READY:
+            rx::pause();
+            continue;
+        }
+    }
+}
+```
+
+Two things make the polling branch worse here than it looks.
+
+**It waits on the GPU.** A fence signals when submitted work completes, which is a
+millisecond-scale event, not a microsecond one. Spinning across it is spinning for
+a very long time by CPU standards.
+
+**And `rx::pause()` does nothing on this core.** It emits `YIELD`, an SMT hint that
+retires without effect on a non-SMT core — no clock drop, no park, no power
+saving. So the backoff inside the poll is not a backoff at all; this is a bare
+retry loop at full clock.
+
+Three callers, and the split is instructive:
+
+| site | timeout | behaviour |
+| --- | --- | --- |
+| `VKTextureCache.cpp:1359` | `GENERAL_WAIT_TIMEOUT` | **blocks** — correct |
+| `VKPresent.cpp:199` | none | polls, but only on swapchain resize |
+| **`vkutils/commands.cpp:77`** | none | **polls, in `command_buffer::begin()`** |
+
+The third is the one that matters. `command_buffer::begin()` polls whenever the
+buffer it is about to reuse is still pending — that is, whenever the GPU has not
+yet finished the work submitted on it. With `VK_MAX_ASYNC_FRAMES` at 2 there are
+few buffers to cycle, so under any GPU-bound condition this is a CPU thread
+burning a core waiting for the GPU to catch up.
+
+**Not asserted as hot without measurement**, and the wait profiler does not
+instrument it, so its real cost here is unknown. What is certain is the shape: a
+blocking primitive was available, the call sites that pass a timeout get it, and
+the ones that omit the argument silently get a spin instead. **A default value
+that changes a wait into a poll is a bad default**, whatever its frequency.
+
+That makes five, all the same shape, none of them instruction selection:
+
+| site | spins because |
+| --- | --- |
+| `GETLLAR` | a percentage defaults to 100 |
+| `passive_lock` | a backoff was sized for a 3 GHz timer |
+| `lv2` sub-quantum sleep | x86 gets `TPAUSE`, AArch64 falls to `sched_yield` |
+| present acquire | 1 us timeout where desktop gets 100 ms |
+| **GPU fence wait** | **the timeout parameter defaults to zero** |
+
+Unchanged for now, for the reason the previous entries record: a crash
+investigation is open and untested changes would make its result unattributable.
