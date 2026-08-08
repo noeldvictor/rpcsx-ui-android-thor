@@ -6275,13 +6275,30 @@ bool spu_thread::process_mfc_cmd()
 						if (freq && elapsed > freq * 5)
 						{
 							getllar_stall_reported = true;
+
+							// ntime is the reservation word this loop keeps
+							// re-reading, and it splits the diagnosis in two.
+							// The loop's first exit check is
+							// `if (ntime & rsrv_unique_lock) continue;`, so a
+							// writer that acquired that lock and never released
+							// it spins every reader of the line forever. Print
+							// it: lock bit set means a leaked lock and the
+							// search is for writers of this address; clear means
+							// the reservation is simply never updated and the
+							// search is for who should be writing it.
+							const u64 ntime_now = vm::reservation_acquire(addr);
+
 							spu_log.error(
 								"GETLLAR stalled: addr=0x%x lsa=0x%x pc=0x%x retries=%u elapsed=%.1fs "
+								"ntime=0x%llx unique_lock=%u counter=%llu "
 								"- the reservation at this address is not settling. Nothing releases "
 								"this wait, so no completion-time counter will ever record it.",
 								addr, ch_mfc_cmd.lsa & 0x3ff80, pc,
 								static_cast<u32>(getllar_retry_count),
-								static_cast<double>(elapsed) / static_cast<double>(freq));
+								static_cast<double>(elapsed) / static_cast<double>(freq),
+								static_cast<unsigned long long>(ntime_now),
+								(ntime_now & vm::rsrv_unique_lock) ? 1u : 0u,
+								static_cast<unsigned long long>(ntime_now / 128));
 						}
 					}
 

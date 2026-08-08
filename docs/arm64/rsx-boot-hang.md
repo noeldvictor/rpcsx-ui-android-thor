@@ -479,6 +479,90 @@ is either a `SpursHdlr` PPU thread or another SPURS kernel instance that was nev
 created. Only one kernel SPU thread exists in this boot; whether that is correct for
 this title's SPURS configuration is the first thing to check.
 
+### The most likely mechanism, and how to falsify it in one line
+
+With the address known, the loop body reads differently. Its first exit check is:
+
+```cpp
+ntime = vm::reservation_acquire(addr);
+
+if (ntime & vm::rsrv_unique_lock)
+{
+    // There's an on-going reservation store, wait
+    continue;
+}
+```
+
+**A leaked `rsrv_unique_lock` on `0x9d4d80` produces exactly the observed
+behaviour**: `continue` forever, retries pinned at the spin limit, no exit, and
+nothing for a completion-time counter to record. The lock is taken by a writer
+performing a reservation store; if a writer is interrupted, exits, or takes an
+error path between acquiring and releasing it, every reader of that line spins
+permanently.
+
+That is a much sharper hypothesis than "the reservation does not settle", and it
+is cheap to falsify: the stall report already runs at the right moment, so add
+`ntime` to it. If the top bits show `rsrv_unique_lock` set, the bug is a leaked
+lock and the search narrows to writers of that line. If it is clear, the reservation
+is simply never being updated and the search moves to who should be writing it.
+
+One line in the report, one boot, and the two halves of the search separate. That
+is the next thing to do.
+
+### Answered: no leaked lock. The line is clean and simply never written again
+
+```
+GETLLAR stalled: addr=0x9d4d80 lsa=0x100 pc=0x12b0 retries=24 elapsed=5.0s
+                 ntime=0x200 unique_lock=0 counter=4
+```
+
+**`unique_lock=0` kills the leaked-lock hypothesis.** And `ntime = 0x200 = 512 =
+4 x 128` means the low seven bits are clear, so the reservation is neither locked
+nor mid-update. The loop passes both `continue` guards cleanly every time.
+
+What it is actually doing, then, is the plain GETLLAR polling semantic: re-read the
+line and wait for the **contents** to change. They never do. `counter=4` says the
+reservation generation has advanced exactly four times since boot and then stopped
+for good.
+
+So the fault is not in the reservation machinery at all — no lock is stuck, no
+update is lost, the line is readable and consistent. **Nobody writes it.** The SPURS
+kernel is waiting for a workload descriptor that the PPU side stops publishing after
+four updates.
+
+That relocates the bug out of `vm::reservation_*` and into the PPU-side SPURS
+handshake, and it is consistent with the thread picture: `SpursHdlr0` and
+`SpursHdlr1` exist but are not burning CPU, and the one busy PPU (`0x1000004`) is
+polling a clock rather than doing SPURS work. Everything is waiting; nothing is
+producing.
+
+**The question is now: what were those four writes, and what should have caused a
+fifth?** With `counter` in the report, a run that logs the first four writes to
+`0x9d4d80` — address-watch on the PPU store path, or a breakpoint in the SPURS
+syscall handlers — will say directly which side stopped.
+
+### The class of bug this belongs to
+
+Worth recording because it is already in the tree, commented out. In the newer
+rpcsx PPU interpreter, `rpcsx/cpu/cell/ppu/semantic/ppu.cpp:3496`:
+
+```cpp
+void SEMANTIC(STW)(PPUContext &context, Instruction inst) {
+  ...
+  // Insomniac engine v3 & v4 (newer R&C, Fuse, Resitance 3)
+  // if (value == 0xAAAAAAAA) [[unlikely]] {
+  //   vm::reservation_update(vm::cast(addr));
+  // }
+}
+```
+
+A plain `STW` used by guest code as an SPU wakeup, needing an explicit reservation
+bump because an ordinary store does not make one. This exact code is **not** the
+cause here — the shipped profile uses `ppu_decoder = llvm_legacy`, which runs
+`PPUTranslator` rather than this interpreter — but it documents the failure mode:
+*PPU signals through a plain store, SPU waits on a reservation, nothing connects
+them*. If the `ntime` check above comes back clear, this is the shape to look for.
+
 ## What is still open
 
 **Is this a regression?** Not established. The repro costs ten seconds, so a bisect
