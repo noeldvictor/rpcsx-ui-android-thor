@@ -260,6 +260,26 @@ Two instrument notes worth keeping:
   without root is `simpleperf record --app <package>`, which re-execs inside the
   app's own context.
 
+## It is one title, not the emulator
+
+Odin Sphere (`BLUS31601`) boots on the same build, from a cold cache, and shows none
+of the signature: the emulator clock advances continuously (`0:00:26` through
+`0:06:34` and onward), no thread is pegged, and `rsx::thread` sits at **3.8%** rather
+than 100%, working through `Compiling PPU Modules... module 49 of 93` with a live
+progress estimate.
+
+That last number is the interesting one. In the Eternal Sonata runs, RSX spins at
+100% on an empty FIFO *while the cache overlay is still up* — before the game is
+really rendering anything. Odin Sphere at the same stage leaves RSX essentially
+idle. So RSX's spin is not what an idle FIFO normally looks like on this build; it
+is specific to whatever state Eternal Sonata leaves the FIFO in.
+
+Two things follow. The emulator is not globally broken, so measurement and
+optimization work does not have to wait on this bug — it needs a title that runs,
+which now exists. And the deadlock is a property of this title's SPURS and
+reservation usage rather than of the reservation code in general, which narrows the
+search considerably.
+
 ## What is still open
 
 **Is this a regression?** Not established. The repro costs ten seconds, so a bisect
