@@ -1062,3 +1062,44 @@ This is the third time in this work that re-reading a self-declared blocker foun
 it partly self-inflicted: the RawSPU decoder was blocked on integration rather
 than on analysis, the range-lock fix was blocked on a proposal that was wrong
 rather than on risk, and this one was blocked on a cable.
+
+## The post-fix ranking is arithmetic, not a measurement
+
+This document has repeatedly deferred to "a fresh spin ranking, since
+`passive_lock` dropping 68% will have reshuffled the list". It will not reshuffle
+it, and the inputs to say so were already measured.
+
+Pre-fix shares: `GETLLAR` family 82.5%, `vm_passive_lock` 17.5%, everything else
+under 1%. The backoff ladder cut `vm_passive_lock` by 68.3% at that site and left
+the others untouched, so:
+
+| site | before | after | share of new total |
+| --- | --- | --- | --- |
+| `GETLLAR` family | 82.5% | 82.5% | **92.8%** |
+| `vm_passive_lock` | 17.5% | 5.5% | 6.2% |
+| mutex and rest | 0.9% | 0.9% | 1.0% |
+
+Total spin is now **88.2%** of what it was, and `GETLLAR` goes from 82.5% to
+**93%** of what remains. **The ranking does not change; it concentrates.** The
+only question a fresh ranking could have answered — what to attack next — was
+already answered by the numbers that produced it.
+
+**That closes the priority question and opens a harder one.** `GETLLAR` is the
+target and both obvious levers on it are spent:
+
+- the **backoff** is correctly sized — spins that reach it have already passed a
+  gate at `spin_count == 4`, so 300 ticks is not overshoot;
+- the **park** is correctly gated — break-even is depth 6.1 and the threshold is
+  8 — and structurally capped, because 95.5% of spins are shallower than the
+  95 us it costs to park at all without `FEAT_WFxT`.
+
+So the remaining lever on 93% of emulator spin is not *waiting more cheaply*. It
+is **not needing to wait**: reducing how often SPU threads collide on the same
+reservation line in the first place. That is a scheduling and workload question
+rather than an instruction-selection one, it is the first item in this document
+that ARM64 knowledge does not obviously help with, and nothing here has
+investigated it.
+
+Worth separating clearly, because "the biggest remaining target has no known fix"
+is a different and more useful statement than "we need another measurement to
+know where to look".
