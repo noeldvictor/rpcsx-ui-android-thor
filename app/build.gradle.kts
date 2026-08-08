@@ -190,6 +190,17 @@ android {
                     listOf("rpcsx-ui-jni") + adrenotoolsHooks
                 }
                 arguments += listOf(
+                    // Pin the native optimization level instead of letting AGP infer it.
+                    //
+                    // AGP picks CMAKE_BUILD_TYPE from the variant's `debuggable` flag:
+                    // debuggable -> Debug, otherwise RelWithDebInfo. That coupling made
+                    // -PrpcsxThorDebuggable=1 silently switch the emulator core from
+                    // "-O2 -g -DNDEBUG" to unoptimized-with-assertions, which is both a
+                    // measurement hazard and the reason each build tree reached ~11 GB.
+                    //
+                    // Debuggability is an APK manifest property. It has no business
+                    // deciding whether the SPU recompiler is optimized.
+                    "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
                     "-DRPCSX_BUILD_BUNDLED_CORE=${if (buildBundledRpcsxCore) "ON" else "OFF"}",
                     "-DRPCSX_ANDROID_ARM_ARCH=$rpcsxAndroidArmArch",
                     "-DRPCSX_ANDROID_ARM_TUNE=$rpcsxAndroidArmTune",
