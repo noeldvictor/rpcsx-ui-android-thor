@@ -41,12 +41,23 @@ assumptions that need rethinking for a mobile tiler — and it is unstarted.
 | `arm_cortex_a715_software_optimization_guide.pdf` | Cortex-A715 (2x mid) | 73 | same, for the newer mid pair |
 | `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 (2x mid) | 92 | same, for the older mid pair |
 
-Thor's full topology is 1x X3 + 2x A715 + 2x A710 + 3x A510, and the first three
-are now all covered. Only the A510 guide is missing, and those little cores are
-kept off hot emulator code by design — though note the AES measurement in
-[`../arm64/aes.md`](../arm64/aes.md), where the same instructions ran **8.8x
-slower** on an A510 than on the X3, because each A510 pair shares one vector unit.
-When something does land there, it lands hard.
+| `arm_cortex_a510_software_optimization_guide.pdf` | Cortex-A510 (3x little) | 71 | same, for the little cluster |
+
+Thor's full topology is 1x X3 + 2x A715 + 2x A710 + 3x A510, and **all four are now
+covered**.
+
+The A510 guide earns its place despite those cores being kept off hot emulator
+code, because it states the reason a measurement here came out the way it did.
+The AES benchmark in [`../arm64/aes.md`](../arm64/aes.md) found identical
+instructions running **8.8x slower** on an A510 than the X3, which was attributed
+to a shared vector unit. The guide says so in as many words:
+
+> Dual-core complexes share the L2 cache and VPU, while single-core complexes have
+> a dedicated L2 cache and VPU.
+
+So on Thor's three A510s, two of them are contending for one VPU. That is a
+primary-source confirmation of an inference, which is the cheapest kind of
+verification available and was not possible before this document was fetched.
 
 **Getting the A715 guide took Playwright**, and the method is worth keeping. Arm's
 documentation portal is a JavaScript application, so `curl` and any plain fetcher
