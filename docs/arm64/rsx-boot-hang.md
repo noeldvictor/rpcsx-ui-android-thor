@@ -1065,6 +1065,42 @@ around `0x00cc948c`** to name the call, or raise `sys_spu`/`sys_event` to Trace 
 read it off the next boot. Both are cheap, and either names the syscall whose
 emulation is not completing.
 
+### Named — and it corrects the framing
+
+`Log: { sys_spu: Trace }` in `config.yml`, one boot, no rebuild:
+
+```
+·T {PPU[0x1000009] SpursHdlr0 [libsre: 0x00cc9470]} sys_spu_thread_group_start(id=0x4000200)
+·! {PPU[0x1000009] SpursHdlr0 [libsre: 0x00cc9470]} SPU: Loaded SPU image: SPU-c551925d...
+·T {PPU[0x1000009] SpursHdlr0 [libsre: 0x00cc948c]} sys_spu_thread_group_join(id=0x4000200, ...)
+```
+
+`libsre: 0x00cc948c` is the exact PC decoded from the GDB register dump — two
+independent methods agreeing, which is the first time in this investigation that has
+happened.
+
+**And it means `SpursHdlr0` is not the missing producer.**
+`sys_spu_thread_group_join` blocks until the group terminates; that is what a handler
+thread is *for*. It starts the SPURS kernel group, loads the image, and joins. Nothing
+is wrong with it, and the earlier characterisation of "a producer that stopped after
+four updates" does not describe this thread.
+
+So the deadlock's shape changes again, and narrows:
+
+- `SpursHdlr0` — correctly blocked in `join`, waiting for the SPU group to end.
+- `CellSpursKernel0` — correctly spinning in `GETLLAR`, waiting for a workload.
+- **Neither is the bug.** Both are doing what SPURS designs them to do.
+
+The missing party is whoever should be *submitting a workload* — a game thread calling
+into the SPURS API (`cellSpursAddWorkload`, taskset creation, or similar). The four or
+five writes to the descriptor happened and then stopped, so submission started and did
+not continue.
+
+**Next, and now precisely scoped:** trace the `cellSpurs*` HLE calls rather than
+`sys_spu`, and find which game thread last called in and what it is doing now. The
+busy PPU polling a clock (`0x1000004`) is the obvious suspect and is reachable through
+the same GDB stub with the register-decode already working.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
