@@ -1022,3 +1022,43 @@ suggested at the start, and knowing its size is worth more than the flag.
 It stays default off. Not because nothing was learned, but because what was
 learned is that the ceiling is low and the remaining question — whether parking a
 genuinely deep wait saves measurable power — applies to under 5% of the spin.
+
+## "Needs hardware this device lacks" was two claims, and only one is true
+
+The watts question has been recorded here as blocked because the device exposes
+no CPU-isolated power rail. That is true, and it has been used to imply something
+false — that absolute power cannot be measured at all. Two separate claims got
+merged:
+
+**Attributing watts to the CPU specifically: genuinely not available.** There is
+no per-rail sensor separating CPU from GPU, display, memory and radio. So "the
+0.81 cores of spin were worth *N* watts" cannot be answered directly on this
+part, and a spin reduction cannot be converted into a wattage without assuming a
+model.
+
+**Measuring total system power: available, and exact.** `charge_counter` is
+cumulative in microamp-hours; differenced across a window it gives mean current,
+and the probe reports **0.002 W spread across four idle runs**. The only
+requirement is that the battery be *discharging*, because while charging the
+charger supplies an unknown share and the battery figure is a floor. The probe
+already distinguishes these, printing `on battery, exact` versus
+`FLOOR, USB attached`.
+
+**So the blocker is a USB cable, not a missing sensor.** Unplug the device and
+drive it over the wireless adb endpoint that is already configured
+(`192.168.1.33:5555`, alongside the USB serial `c3ca0370`), and system power
+becomes exact.
+
+That matters because it is the user's actual question. "I could have sworn we
+used a watt less this morning" is about **system draw**, which is measurable,
+not about CPU-attributed draw, which is not. Every reading in this document
+carrying a `FLOOR` tag — 6.9 W, 8.5 W, 10.5 W — is a floor solely because the
+cable was in.
+
+**Recorded as a correction to this document's own framing.** Saying "blocked on
+hardware" when the truth is "blocked on unplugging it" is the difference between
+an item nobody can act on and one that needs thirty seconds of physical access.
+This is the third time in this work that re-reading a self-declared blocker found
+it partly self-inflicted: the RawSPU decoder was blocked on integration rather
+than on analysis, the range-lock fix was blocked on a proposal that was wrong
+rather than on risk, and this one was blocked on a cable.
