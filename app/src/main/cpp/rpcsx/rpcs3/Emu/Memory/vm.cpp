@@ -143,6 +143,27 @@ namespace vm
 		return value;
 	}
 
+	// Called from reservation_notifier_notify, so it sees every completed
+	// reservation store regardless of which path performed it.
+	void reservation_watch_note(u32 raddr)
+	{
+		const u32 watch = reservation_watch_addr();
+
+		if (!watch || (raddr & -128) != watch) [[likely]]
+		{
+			return;
+		}
+
+		const u64 rtime = reservation_acquire(raddr);
+		const auto cpu = get_current_cpu_thread();
+
+		vm_log.error("resv_watch: 0x%x now counter=%llu (ntime=0x%llx) written by %s",
+			raddr & -128,
+			static_cast<unsigned long long>(rtime / 128),
+			static_cast<unsigned long long>(rtime),
+			cpu ? cpu->get_name().c_str() : "non-cpu thread");
+	}
+
 	std::pair<bool, u64> try_reservation_update(u32 addr)
 	{
 		// Update reservation info with new timestamp

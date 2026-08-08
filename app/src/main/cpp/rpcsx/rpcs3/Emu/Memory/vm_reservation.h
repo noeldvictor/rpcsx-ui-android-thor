@@ -98,8 +98,22 @@ namespace vm
 		return &waiter;
 	}
 
+	// Defined in vm.cpp. Logs a bump of the watched reservation line, if one is
+	// armed via debug.rpcsx.thor.resv_watch. Out of line so the header does not
+	// need the logging or cpu-thread headers.
+	//
+	// Hooked here rather than at the dozen individual call sites because every
+	// completed reservation store - PUTLLC, stwcx., and reservation_update alike
+	// - passes through this function. An earlier watch placed only in
+	// reservation_update() missed all four writes to the address the Eternal
+	// Sonata deadlock waits on, precisely because those writes were atomic
+	// stores. See docs/arm64/rsx-boot-hang.md.
+	void reservation_watch_note(u32 raddr);
+
 	static inline atomic_t<u32>* reservation_notifier_notify(u32 raddr, bool pospone = false)
 	{
+		reservation_watch_note(raddr);
+
 		const auto notifiers = reservation_notifier(raddr);
 
 		if (notifiers.first->load().wait_flag)

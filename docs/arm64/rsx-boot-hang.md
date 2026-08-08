@@ -578,6 +578,48 @@ for the second time**, by a different route. First the reservation word was clea
 and unlocked; now the writes that did happen went through the correct atomic path.
 Whatever is broken is above `vm::`, in what SPURS decides to do.
 
+### Moving the watch to the notifier changed nothing, and that is unresolved
+
+The watch was moved from `reservation_update()` into
+`reservation_notifier_notify()` — the function every completed reservation store
+was believed to pass through, whatever path performed it. Rebuilt, rearmed, boot
+reproduced. **Still zero hits.**
+
+Preconditions verified this time rather than assumed, because the previous silence
+was only meaningful *because* it had been predicted:
+
+| check | result |
+| --- | --- |
+| `debug.rpcsx.thor.resv_watch` | `9d4d80` |
+| process alive | yes |
+| log written | 989 lines |
+| deadlock reproduced | yes — stall line present, `counter=4` |
+| `resv_watch` in shipped `.so` | 3 occurrences (`grep -a`) |
+
+So the instrument is in the binary, armed, and the run did what it was supposed to
+do. And the counter still says four bumps happened.
+
+**Two explanations remain and this run cannot separate them:**
+
+1. **The reservation counter is incremented on a path that never notifies.** If
+   true, that is a finding in its own right and a more interesting one than the
+   original question — an SPU parked in a notifier wait on such an address would
+   never be woken. Ours survives only because it is in a yield-spin loop that
+   re-polls regardless.
+2. **The watch has a defect** — the property read, the `& -128` masking, the
+   comparison, or `vm_log.error` routing — that has not been found.
+
+Distinguishing them needs one thing that was not done: **arm the watch on an
+address known to be written constantly and confirm it fires at all.** Until a
+positive control passes, this instrument's silence proves nothing, and the earlier
+conclusion drawn from its silence — "the writer is an atomic store, not a notify" —
+rests on the same unverified assumption and should be treated as provisional too.
+
+That is the correct state to leave this in. A watch that has never been seen firing
+is not evidence about anything, and the session's recurring failure has been exactly
+this shape: a search that finds nothing looking identical to a search that searches
+nothing, four times over.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
