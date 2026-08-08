@@ -1026,6 +1026,45 @@ group at this point in SPURS startup. **That is answerable by identifying the sy
 this probe decoded, and RPCS3's own `sys_spu`/`sys_event` logging will name it
 directly on the next run with those channels raised.
 
+### Decoded: both producers are parked inside `libsre`
+
+The `g` response is 556 bytes; 32 GPRs and 32 FPRs account for 512, so the specials
+start at nybble 1024. Decoding that tail:
+
+| thread | first special (PC) | entry `func` from the boot log |
+| --- | --- | --- |
+| `SpursHdlr0` | **`0x00cc948c`** | `0xcc930c` |
+| `SpursHdlr1` | **`0x00ccb604`** | `0xccb504` |
+
+Both PCs sit a short distance inside their own entry functions, so the first special
+is the program counter and the values are live rather than stale. And `0x00cc948c`
+is **28 bytes past `0x00cc9470`** — the exact `libsre` offset the log records for the
+SPU image load:
+
+```
+{PPU[0x1000009] Thread (SpursHdlr0) [libsre: 0x00cc9470]} SPU: Loaded SPU image: SPU-c551925d...
+```
+
+So `SpursHdlr0` loaded the SPURS kernel image, advanced a handful of instructions,
+and stopped. It is parked in `libsre` immediately after handing the SPU its kernel —
+which is exactly where a handler would block waiting for that kernel to report
+readiness, and exactly the wait the SPU never satisfies because it is spinning on a
+descriptor nobody published.
+
+**The deadlock is now specified end to end in guest terms:**
+
+```
+SpursHdlr0  PPU  libsre 0x00cc948c   blocked, holding group 0x4000200 in r3
+                                     (28 bytes after loading the SPU kernel image)
+CellSpursKernel0  SPU  pc 0x12b0     spinning in GETLLAR on the workload descriptor
+                                     (same PC in Eternal Sonata and Folklore)
+```
+
+What remains is a single lookup rather than an investigation: **disassemble `libsre`
+around `0x00cc948c`** to name the call, or raise `sys_spu`/`sys_event` to Trace and
+read it off the next boot. Both are cheap, and either names the syscall whose
+emulation is not completing.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
