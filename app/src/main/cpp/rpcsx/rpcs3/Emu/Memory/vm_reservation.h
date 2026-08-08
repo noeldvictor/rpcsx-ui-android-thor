@@ -407,6 +407,7 @@ namespace vm
 				vm::writer_lock lock(addr);
 				std::invoke(op, *sptr);
 				res += 127;
+				reservation_watch_note(addr);
 			}
 
 			if constexpr (Ack)
@@ -422,6 +423,7 @@ namespace vm
 				if ((result = std::invoke(op, *sptr)))
 				{
 					res += 127;
+					reservation_watch_note(addr);
 				}
 				else
 				{
@@ -519,6 +521,7 @@ namespace vm
 		{
 			std::invoke(op, *sptr);
 			res += 127;
+			reservation_watch_note(addr);
 
 			if constexpr (Ack)
 			{
@@ -529,6 +532,7 @@ namespace vm
 		{
 			auto result = std::invoke(op, *sptr);
 			res += 127;
+			reservation_watch_note(addr);
 
 			if constexpr (Ack)
 			{

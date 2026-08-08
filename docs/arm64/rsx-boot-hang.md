@@ -749,6 +749,34 @@ first build. And the general lesson, which cost more than the specific one: when
 search for a constant comes back empty on a platform where the behaviour plainly
 occurs, suspect the constant before suspecting the behaviour.
 
+### The run that followed, and why its negative does not count
+
+Four of those sites were hooked — `vm_reservation.h:410, 426, 524, 535`, each
+immediately after its `res += 127` and all past the `#endif` at 399. Built clean,
+armed, deadlock reproduced. **No control lines, no hits.**
+
+Which would say those paths never execute — except the run does not support that,
+because **only four of the six identified sites were instrumented.** The insertion
+script targeted `vm_reservation.h` alone; `vm.cpp:867` and `Cell/SPUThread.cpp:3947`
+were on the verified list and were skipped. A negative from a partial instrument is
+not a negative.
+
+Also unchecked in the same pass: `res.release(...)`, `.store(...)` and
+`.fetch_add(...)` forms across the SPU and PPU reservation paths turned up exactly
+one hit, `vm_reservation.h:291`'s `res.fetch_add(1)` — the lock acquire, not a
+counter completion. So the write form is still not fully enumerated.
+
+**State to resume from, stated honestly:** the writer of `0x9d4d80` is still not
+identified. Five instrument placements have produced five silences, and of those,
+four are now explained (wrong path, wrong path, x86-only, x86-only) and the fifth —
+this one — is simply incomplete. The next attempt should hook **all six** sites in
+one build, not four, and should confirm the control fires before reading anything
+into a missing hit.
+
+That is five rounds of the same error in one evening. The instrument was never the
+hard part; knowing which lines this device executes was, and every shortcut around
+that question has cost a build and a device run.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
