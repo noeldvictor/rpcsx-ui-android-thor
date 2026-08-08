@@ -301,6 +301,32 @@ take, the boot failed, or the profiler is absent, and it reports p95 frame time
 because the risk of sleeping is **latency**, which a capped frame rate hides.
 Detail in [`docs/arm64/spin.md`](docs/arm64/spin.md).
 
+## ARM64 review coverage, so nobody re-sweeps clean ground
+
+What has actually been looked at for "x86 assumptions that need rethinking here",
+and what the answer was. **Four of five candidate wins evaporated under
+measurement**, which is the main result and the reason this table exists.
+
+| area | status | finding |
+| --- | --- | --- |
+| AES / `Crypto` | **fixed** | AES-NI was `#if __SSE2__`; ARMv8 AES now wired in, 19-22x on the primitive — but worth **~35 ms** of boot, because only 13.6 MB is decrypted |
+| Saturating arithmetic | clean | `llvm.sadd.sat` → one `SQADD` at every width; x86 has no 32-bit saturating add at all, so VMX is *cheaper* here |
+| Float↔int with scale | clean | `fptosi.sat(x * 2^n)` folds to a single fixed-point `FCVTZS` |
+| Acquire loads | clean | `cortex-a78` already emits `LDAPR`; `+rcpc` changes nothing |
+| 128-bit atomics | clean | LSE2 path live and verified in the build cache, not the `LDAXP`/`STLXP` loop |
+| Non-temporal stores | clean | `_mm_stream_si128` reaches a real `STNP` through the shim |
+| `MFCR`, PPU interpreter | clean | already `ARCH_X64`-guarded with an ARM64 fallback |
+| SPU interpreter | **cold** | unguarded `movemask`, but both decoders are LLVM — the interpreter is fallback-only |
+| Rosetta techniques | n/a | its central problem (x86 TSO) does not exist; PowerPC is weakly ordered and AArch64 is stronger |
+| **GPU render passes** | **open, measured** | unconditional `LOAD_OP_LOAD`/`STORE_OP_STORE`, `LOAD_OP_CLEAR` used zero times, ~16 MB/frame — the only unexploited win left |
+| SPU/PPU translator lowerings | **thin** | one probe (saturating arithmetic). The real question is *which ops have no natural IR spelling* — the `BCAX`/`SDOT`/`TBL`/`USHL` set in [`codegen.md`](docs/arm64/codegen.md) |
+| RSX vertex/texture paths | **unswept** | per-frame work, never examined instruction by instruction |
+
+The pattern worth carrying: the translators emit **IR, not per-ISA intrinsics**, so
+the backend picks the encoding and there are usually no x86 habits to find. Effort
+belongs where no portable IR construct exists, or where the *hardware model*
+differs — which is why the GPU tiler row is the one that is still open.
+
 ## Where the rest of this lives
 
 These notes outgrew a single file. The detail is split by topic; each document
