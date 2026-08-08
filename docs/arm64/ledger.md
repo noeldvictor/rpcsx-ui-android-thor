@@ -135,9 +135,12 @@ fork cannot do rather than on analysis:
    whole lifetime, and `vm_passive_lock` measured **17.5% of all emulator spin —
    1.33M calls, 13.9 core-seconds**.
 
-   So the redesign now has a **measured** target. It is still a change to the
-   hottest lock in the memory subsystem, and `bits != umax` doubles as the
-   exclusive-lock detector, so the correctness question is unanswered.
+   So the redesign had a **measured** target — and then the `passive_lock`
+   backoff fix removed 68.3% of it. **Closed as not worth doing**: what remains
+   is 1.05% of busy CPU, one twentieth of a core, against a protocol change to
+   the hottest lock with a silent failure mode and no way to measure the result.
+   The design is written up in [`memory-model.md`](memory-model.md) and kept for
+   a title that ever shows this site dominating again.
 4. **`mcpu` to an Armv9 model** — proven safe, benefit is scheduling quality only.
 
 And one correctness question found in passing that is not an ARM matter at all:

@@ -765,3 +765,45 @@ writes, and `passive_lock`'s backoff fix already removed 68% of the measured cos
 — so the remaining prize is smaller than the risk. Recorded because the previous
 entry pointed at a fix that would have made things worse, and a wrong plan
 written down is more dangerous than no plan.
+
+## Closing the bitmask redesign on cost, with the number
+
+This item has been carried as open through three re-scopes. It should now be
+**closed as not worth doing**, and the reason is arithmetic that was never run
+after the cheap fix landed.
+
+The redesign targets `passive_lock`'s spin. When it was proposed that site was
+**17.5% of all emulator spin**. Then the graduated backoff removed **68.3%** of
+it, which leaves:
+
+    passive_lock share of remaining spin      6.2%
+    spin as a share of busy CPU              16.9%
+    => passive_lock as a share of busy CPU    1.05%
+    => cores it represents                    0.050 of 4.82
+
+**One twentieth of a core.** Against that:
+
+- it is a protocol change to the hottest lock in the memory subsystem;
+- it requires a new Dekker edge between the exclusive flag and the per-thread
+  slot writes, which is the class of ordering bug this document elsewhere records
+  as surfacing "as a desync or hang long after the fact and never as a slow
+  frame";
+- and it is **unmeasurable in isolation** — the profiler cannot separate 1% of
+  busy CPU from run-to-run variation, so the change could not be validated even
+  after being made.
+
+That last point is decisive. A change that cannot be measured cannot be shown to
+have helped, and this one cannot be shown to be *safe* either, since its failure
+mode is silent. Making it would mean accepting unbounded risk for an unverifiable
+gain.
+
+**So: closed, not deferred.** Not because it is hard, and not because the device
+is unavailable — the analysis is complete and the design is written down two
+sections up, correct as far as static reading can establish. It is closed because
+the cheap fix already took the part of the prize that was worth having, and what
+remains does not clear the bar.
+
+Worth recording as a decision rather than leaving on the list, because an open
+item with a good write-up attached is an invitation. The next person should read
+this and *not* implement it — and the design above is preserved so that if a
+title ever shows `vm_passive_lock` dominating again, the work is already done.
