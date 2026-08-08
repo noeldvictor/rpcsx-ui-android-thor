@@ -1599,3 +1599,13 @@ change — and it produced a far worse defect than the one it was guarding
 against. The lesson is not that the revert was wrong. It is that removing a
 function body is a code change like any other, and wants the same check that
 adding one does: a build, and a look at what the compiler says about it.
+
+### Verified on two titles
+
+| title | before | after |
+| --- | --- | --- |
+| Folklore (BCUS98147) | never rendered a frame; `CellSpursKernel0` parked at `pc=0x12b0` forever | title screen, **60.01 FPS**, PPU 9.5% SPU 1.2% RSX 1.4% |
+| Eternal Sonata (BLUS30161) | — | opening cutscene, **30 FPS**, PPU 16.3% **SPU 47.1%** RSX 3.9% |
+
+Eternal Sonata's SPU figure is the more informative of the two: 47.1% is SPUs
+doing work, where a stalled reservation shows up as a spin that never retires.
