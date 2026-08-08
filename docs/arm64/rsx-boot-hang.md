@@ -884,6 +884,41 @@ To watch these writes you need one of:
 The last is probably cheapest and is the natural next move: the SPU code polling that
 line is Sony's SPURS kernel, its PC is known, and the emulator ships a GDB stub.
 
+### The GDB entry point, verified live during the hang
+
+Not assumed — checked while the deadlock was active:
+
+```
+config.yml            GDB Server: 127.0.0.1:2345
+/proc/net/tcp         0100007F:0929  ...  0A  ...  10158
+                      (127.0.0.1:2345, state 0A = LISTEN, uid = the app)
+```
+
+So the stub is up and accepting connections **while the SPU is stalled**, which is
+the only moment that matters. To reach it:
+
+```
+adb forward tcp:2345 tcp:2345
+<gdb-client> -ex "target remote :2345"
+```
+
+What to ask it, in order, since the surrounding facts are already pinned down:
+
+1. Which SPU thread the stub exposes as `CellSpursKernel0`, and confirm its PC is
+   `0x12b0` — matching the stall report, so the two views agree before anything is
+   inferred from either.
+2. Read local store around `lsa=0x100`, the buffer this `GETLLAR` targets. That is
+   the guest's own copy of the workload descriptor, and comparing it against main
+   memory at `0x9d4d80` says whether the SPU is seeing stale data or correct data
+   it considers unfinished.
+3. Step the kernel and watch which branch it takes out of the poll — SPURS spins on
+   a workload bitmap, so the failing predicate identifies which field never
+   changes.
+
+This is the first tool in the chain that observes the **guest** rather than the
+emulator, which is the right level: everything below it — reservation machinery,
+notifier, counters, memory ordering — has now been measured and cleared.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
