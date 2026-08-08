@@ -1503,3 +1503,80 @@ and which way they disagree decides which half of the emulator is at fault:
 `SPUThread.cpp` now prints `ls==mem`, `snapshot==mem` and `ls==snapshot` alongside
 the stall report. Both previous conclusions in this file were drawn from a single
 boot and neither survived a second one, so this one gets measured.
+
+## Resolved: `mov_rdata` copied nothing on ARM64
+
+The bug was in the emulator, one `#elif` away from the code every other
+investigation in this file circled. `SPUThread.cpp:1331`:
+
+```cpp
+#elif defined(ARCH_ARM64) && defined(__clang__)
+    // 22 lines of comment about a reverted LDP/STP implementation
+#else
+    std::memcpy(_dst, _src, 128);
+#endif
+```
+
+An earlier LDP/STP version was reverted after a guest crash, and the `#elif`
+was left behind holding nothing but its own postmortem. Every ARM64 + clang
+build since compiled `mov_rdata` into a function that copies nothing.
+
+**The compiler had been reporting it the entire time**, in a line that scrolls
+past on every build:
+
+```
+SPUThread.cpp:1301:25: warning: unused parameter '_dst'
+SPUThread.cpp:1301:50: warning: unused parameter '_src'
+```
+
+Unused parameters on the function whose only job is to write `_dst`.
+
+### How it produced this hang
+
+`mov_rdata` is the copy every reservation is validated against:
+
+```
+rdata never refreshed from memory
+  -> cmp_rdata(rdata, data) can never match
+  -> the GETLLAR retry loop can never settle
+  -> any SPU whose reservation line changed under it spins forever
+```
+
+Instrumenting all four `continue` paths in the retry loop settled it in one
+boot:
+
+```
+continue-path counts: unique_lock=0 tsx_unavailable=0 counter_moved=0
+                      unstable_copy=10093915
+```
+
+Ten million failures of the one comparison that depends on the copy, and zero
+on everything else.
+
+### The guest was innocent the whole way through
+
+Every party this file accused and then exonerated really was correct. Workload 0
+had `wklReadyCount1=1`, `min=1`, `max=1`, `wklCurrentContention=0` and
+`wklState1=02 RUNNABLE` — every gate in `spursKernel1SelectWorkload` passed. The
+SPU never acted on it because the emulator never handed it the bytes.
+
+**Result: Folklore boots to its title screen at 60.01 FPS**, PPU 9.5%, SPU 1.2%,
+RSX 1.4%. It had previously never rendered a frame.
+
+### What this cost, and the lesson
+
+This file contains three earlier conclusions that were wrong: a Vulkan fence
+hypothesis, "the writer is an atomic store, not a notify", and "the SPU reads
+zeros and is correctly concluding there is no work". Each was reasoned from
+static reading or a single boot. The bug was found by counting which branch
+actually executed.
+
+Two habits would have found it in minutes rather than across several sessions:
+
+* **Read the build warnings.** The compiler names this defect precisely and
+  says it on every build.
+* **When a loop will not exit, count its exits.** Four counters and one boot
+  beat every amount of reading the surrounding code.
+
+An audit of all 625 files under `Emu/` and `util/` for `#if`/`#elif` ARM64
+branches containing only comments found this as the only one.

@@ -438,3 +438,28 @@ was all zero in one run and had `wklReadyCount1[7] = 1` in the next — same tit
 same stall, same `pc=0x12b0`, opposite readings. Two conclusions in
 `docs/arm64/rsx-boot-hang.md` were drawn from single boots and neither survived a
 second. Re-run before concluding.
+
+## Read the build warnings
+
+`mov_rdata` compiled to a function that copied nothing on every ARM64 build in
+this fork's history, because a reverted implementation left an empty
+`#elif defined(ARCH_ARM64) && defined(__clang__)` branch behind. It is the copy
+every SPU reservation is validated against, and it cost several sessions of
+investigation across `docs/arm64/rsx-boot-hang.md`.
+
+The compiler reported it on every single build:
+
+    SPUThread.cpp:1301:25: warning: unused parameter '_dst'
+    SPUThread.cpp:1301:50: warning: unused parameter '_src'
+
+Unused parameters on a function whose only job is to write `_dst`. Nobody read
+it because the build prints hundreds of warnings.
+
+`./gradlew assembleThortest 2>&1 | grep -E "warning: unused (parameter|variable)"`
+is cheap. An unused parameter on a function that exists to write through it is
+not style: it means the body is gone.
+
+**And when a loop will not exit, count its exits.** Four counters on the four
+`continue` paths of the GETLLAR retry loop identified the failing comparison in
+a single boot — after three separate wrong conclusions had been reasoned out
+from static reading and single-boot dumps.
