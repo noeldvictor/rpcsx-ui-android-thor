@@ -116,6 +116,16 @@ false negative and cost hours once.
   already compensated.** Upstream's `busy_wait` scaling dropped Thor to ~1 FPS
   because every call site had already been retuned for the real `19.2 MHz`
   timer; two fixes for one problem multiply.
+- **Every counter in this fork is incremented on completion, so none of them can see
+  a hang.** The wait profiler records after `profiled_busy_wait`, the GETLLAR probe
+  after its retry loop exits, the RSX auditor after a frame is presented. All three
+  were armed against the Eternal Sonata deadlock and all three logged nothing, which
+  looks exactly like "this code never ran". They answer *how much did this cost*,
+  which is right for a spin and useless for a stall. Every fact in
+  [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md) came from sampling
+  (`simpleperf`) or state inspection (`/proc`, `top -H`, a screenshot) instead. Do
+  not add a fourth counter; what is missing is a record-on-entry slot a watchdog can
+  read while the wait is still happening.
 - **`grep -e 'a\|b'` through PowerShell into `adb shell` does not survive the trip.**
   A search for the RSX auditor's output returned nothing and was briefly taken as
   "the auditor never fired" — it had fired ten times. The alternation is mangled

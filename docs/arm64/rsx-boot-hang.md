@@ -392,11 +392,43 @@ on never finishes.
 That makes the SPU reservation the root and the other two threads consequences,
 and it means fixing the reservation fixes all three.
 
-**Next diagnostic:** establish who last touched the reservation address the SPU is
-stuck on. That needs the `RPCSX_THOR_ES_SPU_EXPERIMENTS` probe compiled in, since
-it logs the address, PC, LSA and retry count and is otherwise a `constexpr` stub on
-Android. Confirming the PPU caller wants a frame-pointer build or a breakpoint,
-and is worth less than the probe.
+### Every counter in this codebase is blind to a hang
+
+The plan was to compile in `RPCSX_THOR_ES_SPU_EXPERIMENTS` and read the reservation
+address off the probe. That was done — build clean, probe verified present in the
+shipped library (`grep -a` finds `Thor GETLLAR probe` twice), property armed,
+deadlock reproduced. **It logged nothing.**
+
+The reason is structural, not a misconfiguration. `record_thor_es_getllar` is
+called at `SPUThread.cpp:6311`, which is *after* the retry loop at 6212-6247 has
+exited. A GETLLAR that never completes never reaches the call.
+
+That is now three instruments with the same defect, which makes it a property of
+the codebase rather than an accident:
+
+| instrument | records at | sees a hang? |
+| --- | --- | --- |
+| wait profiler (`thor_wait::record`) | after `profiled_busy_wait`, so only the first 24 spins | no |
+| GETLLAR probe (`record_thor_es_getllar`) | after the retry loop exits | no |
+| RSX auditor (`on_frame_end`) | after a frame is presented | no |
+
+**Every counter here is incremented on completion.** They are built to answer "how
+much did this cost", which is the right question for a spin and the wrong one for a
+stall. A loop that never terminates contributes nothing to any of them, so the
+harder the hang, the quieter the instrumentation — and silence reads identically to
+"this code never ran".
+
+Which explains the shape of this whole investigation: three separate instrumentation
+attempts produced nothing, and every fact in this document came from **sampling**
+(`simpleperf`) or from **state inspection** (`/proc`, `top -H`, screenshots).
+
+**For the next person: do not add another counter.** To see this hang you need
+either a sampling profiler, or an instrument that records on *entry* and is cleared
+on exit — a "currently waiting on address X since timestamp T" slot per SPU, which
+a watchdog thread can read while the wait is still in progress. That is a genuinely
+different design from anything the fork currently has, and it is the missing piece.
+
+Confirming the PPU's caller wants a frame-pointer build and is worth less than that.
 
 ## What is still open
 
