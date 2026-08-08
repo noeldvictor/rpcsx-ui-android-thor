@@ -8,12 +8,31 @@ or disappear behind a documentation portal.
 | file | core | pages | covers |
 | --- | --- | --- | --- |
 | `arm_cortex_x3_software_optimization_guide.pdf` | Cortex-X3 (1x prime) | 66 | instruction latency, throughput, pipe assignment |
-| `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 (2x mid) | 92 | same, for the older mid cluster |
+| `arm_cortex_a715_software_optimization_guide.pdf` | Cortex-A715 (2x mid) | 73 | same, for the newer mid pair |
+| `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 (2x mid) | 92 | same, for the older mid pair |
 
-Thor's full topology is 1x X3 + 2x A715 + 2x A710 + 3x A510. The A715 and A510
-guides are not published on the mirrors reachable from here; A715 is the A710's
-successor and close enough for scheduling intuition, and the A510 little cores do
-not run hot emulator code by design.
+Thor's full topology is 1x X3 + 2x A715 + 2x A710 + 3x A510, and the first three
+are now all covered. Only the A510 guide is missing, and those little cores are
+kept off hot emulator code by design — though note the AES measurement in
+[`../arm64/aes.md`](../arm64/aes.md), where the same instructions ran **8.8x
+slower** on an A510 than on the X3, because each A510 pair shares one vector unit.
+When something does land there, it lands hard.
+
+**Getting the A715 guide took Playwright**, and the method is worth keeping. Arm's
+documentation portal is a JavaScript application, so `curl` and any plain fetcher
+receive an empty shell — an earlier pass concluded from that the guide "is not
+published on the mirrors reachable from here", which was wrong. Driving a real
+browser and watching network responses for
+`documentation-service.arm.com/static/...` produced the URL immediately:
+
+```
+https://documentation-service.arm.com/static/6419bb9a8df5201251be08c3?token=
+```
+
+`developer.arm.com/documentation/<DOC-ID>/latest/` 302s to `support.arm.com`, and
+`waitUntil: 'networkidle'` never fires on that portal — use `domcontentloaded`
+plus a fixed settle. The same recipe should retrieve the A510 guide and Qualcomm's
+Adreno material, neither of which has been tried.
 
 **How to read a table.** Every instruction row gives execution latency, execution
 throughput, and *utilized pipelines*. The pipeline symbol is the part that is

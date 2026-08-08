@@ -83,10 +83,21 @@ controls the silicon. What that leaves is unglamorous and specific:
   PPC condition bits into and out of NZCV. **It is unclear that this is reachable
   from LLVM IR at all**, since portable IR has no "set the flags" operation and the
   backend synthesises flags from `icmp`. Worth an experiment, not an assumption.
-- The SPU's `CFLTS`/`CFLTU` and VMX's `VCTSXS` convert float to int *with a scale
-  exponent and saturation*, which AArch64 does in one fixed-point `FCVTZS
-  v0.4s, v1.4s, #n`. Whether the current lowering reaches that instruction is
-  **not yet checked** and is the most concrete open item from this pass.
+- ~~The SPU's `CFLTS`/`CFLTU` scale-and-convert.~~ **Checked, and already optimal.**
+  `SPULLVMRecompiler.cpp:8714` has an ARM64 branch that emits
+  `fptosi_sat<s32[4]>(a)` and drops the x86 correction sequence entirely, with the
+  comment "on AArch64 the conversion already saturates, so let the hardware do it".
+  The remaining question was the *scale*: the path still emits an explicit
+  `a * 2^(173-i8)` multiply, and AArch64 can fold that into the convert. It does —
+  compiling exactly the IR the translator emits:
+
+  ```
+  fptosi.sat(x * 2^8)  ->  fcvtzs v0.4s, v0.4s, #8    ; one instruction
+  fptosi.sat(x)        ->  fcvtzs v0.4s, v0.4s
+  ```
+
+  The multiply, the constant, and the saturation all collapse into a single
+  fixed-point `FCVTZS`. Nothing to do.
 
 ## The pattern, again
 
