@@ -923,3 +923,65 @@ cause is elsewhere — which this test already makes the more likely reading. If
 stops recurring, then something about them matters that a functional equivalence
 test cannot see, and that is a far more interesting finding than a wrong lane
 index would have been.
+
+## The present path busy-spins too, on a 2017 desktop-driver workaround
+
+Chasing an anomaly left unexplained in the crash logs — `dequeueBuffer timed out:
+Connection timed out (-110)`, which appeared before the first freeze — found a
+spin loop in the RSX present path that nothing in this work had looked at.
+
+**24,459 timeout messages in 655 ms**, from 20:34:44.757 to 20:34:45.412. That is
+roughly **37,000 iterations per second**, which is not a stall waiting on
+something; it is a tight retry loop. It also flooded the log buffer hard enough
+to evict everything before it, so **the failure mode destroyed its own diagnostic
+context** — the reason the earlier freeze could not be traced further back.
+
+The loop is in `VKPresent.cpp`:
+
+```cpp
+u64 timeout = m_swapchain->get_swap_image_count() <= VK_MAX_ASYNC_FRAMES ? 0ull :
+#ifdef ANDROID
+                                                    1000ull       // 1 us
+#else
+                                                    100000000ull  // 100 ms
+#endif
+;
+while (VkResult status = m_swapchain->acquire_next_swapchain_image(..., timeout, ...))
+{
+    case VK_TIMEOUT:
+    case VK_NOT_READY:
+    {
+        // ... "Found on AMD Crimson 17.7.2" ...
+        // Whatever returned from status, this is now a spin
+        timeout = 0ull;
+        check_present_status();
+        continue;
+    }
+```
+
+Two things stack here.
+
+**Android already gets a timeout 100,000 times shorter than desktop** — 1 us
+against 100 ms — so it reaches the `VK_TIMEOUT` case far more readily.
+
+**And that case then sets the timeout to zero and spins.** The comment justifying
+it describes a fullscreen-switch quirk in *AMD Crimson 17.7.2*, a 2017 desktop
+driver. On Android the acquire goes through a `BufferQueue`, and a zero timeout
+turns "wait for a buffer" into "ask for a buffer as fast as the CPU allows",
+which is what produces 37,000 log lines a second and burns a core in the flip
+path.
+
+**This is the same shape as everything else in this document**, arrived at from a
+different direction: a wait implemented as a spin because a timeout was tuned for
+different hardware. `GETLLAR` spins because a percentage defaults to 100.
+`passive_lock` spun ten times too long because a backoff was sized for a 3 GHz
+timer. This spins because a workaround for a 2017 AMD desktop driver was left
+unconditional.
+
+**Deliberately not changed yet.** The obvious fix is to keep a small nonzero
+timeout on Android so the driver blocks instead of the emulator spinning — the
+same trade as everywhere else here. But this is the middle of an unresolved crash
+investigation, two reservation-path changes were just reverted, and adding an
+untested change to the present path while the cause of a guest fault is unknown
+would make the next result unattributable. Recorded now, changed after the crash
+question is settled.
