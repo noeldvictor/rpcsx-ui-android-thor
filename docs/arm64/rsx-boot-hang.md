@@ -847,6 +847,43 @@ on a descriptor the emulator never populates — a different bug entirely from
 "a producer stopped after four iterations", and one that the last several hours of
 writer-hunting could not have found because there was no writer to hunt.
 
+### Differential answer: the writes are real, and the writer is JIT-emitted code
+
+The neighbour lines settle it in one line of output:
+
+```
+GETLLAR stall neighbours: prev(0x9d4d00)=0  cur=4  next(0x9d4e00)=2
+```
+
+Three distinct values. The counters are **not** uniformly initialised and **not**
+aliased — one line untouched, one written four times, one written twice. So
+`counter=4` does mean four writes, and the premise stands after all.
+
+Which leaves a contradiction with a single clean resolution. The writes are real,
+and **none of the six C++ completion paths executed** (verified: working sink, 247
+logcat lines in the same run, instrument confirmed in the binary). So the writer is
+not C++ at all.
+
+**It is the recompiler's emitted code.** RPCS3's SPU JIT inlines the reservation
+store for `PUTLLC` rather than calling a helper — `SPULLVMRecompiler.cpp` builds the
+compare-and-swap into the generated block. Guest atomics therefore bump the
+reservation counter from JIT-generated machine code that no C++ hook can observe, by
+construction. That is why six placements across every C++ path produced six
+silences, and the last one was a true negative rather than another instrument fault.
+
+**This closes the writer question as far as source instrumentation can take it.**
+To watch these writes you need one of:
+
+- instrumentation emitted *by* the recompiler, gated the same way the JIT's other
+  debug paths are;
+- a hardware watchpoint on the line, which needs a debuggable build and either
+  `lldb` or a `ptrace` helper — the address is known and stable at `0x9d4d80`;
+- or the guest-side view: single-step the SPURS kernel at `pc=0x12b0` in RPCS3's own
+  GDB server, which the profile already shows running as a thread.
+
+The last is probably cheapest and is the natural next move: the SPU code polling that
+line is Sony's SPURS kernel, its PC is known, and the emulator ships a GDB stub.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer

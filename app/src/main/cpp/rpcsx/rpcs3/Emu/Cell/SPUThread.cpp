@@ -6289,6 +6289,31 @@ bool spu_thread::process_mfc_cmd()
 							// search is for who should be writing it.
 							const u64 ntime_now = vm::reservation_acquire(addr);
 
+							// Neighbour lines, as a differential control.
+							//
+							// counter=4 was read as "four guest writes happened",
+							// and every attempt to find those writers failed with
+							// all six completion paths verified unreached. So test
+							// the premise instead: SPURS uses this line and not the
+							// ones on either side of it. If the neighbours also read
+							// non-zero, the value is initialisation or slot aliasing
+							// and no write ever occurred. If they read zero, the
+							// four writes are real and arrive by a path still
+							// unfound.
+							//
+							// Uses spu_log, which is the one channel proven to reach
+							// RPCSX.log on this device - vm_log emits nothing, which
+							// silently voided five earlier negatives.
+							const u64 prev_line = vm::reservation_acquire(addr - 128);
+							const u64 next_line = vm::reservation_acquire(addr + 128);
+
+							spu_log.error(
+								"GETLLAR stall neighbours: prev(0x%x)=%llu cur=%llu next(0x%x)=%llu "
+								"- if the neighbours are non-zero too, counter is not a write count.",
+								addr - 128, static_cast<unsigned long long>(prev_line / 128),
+								static_cast<unsigned long long>(ntime_now / 128),
+								addr + 128, static_cast<unsigned long long>(next_line / 128));
+
 							spu_log.error(
 								"GETLLAR stalled: addr=0x%x lsa=0x%x pc=0x%x retries=%u elapsed=%.1fs "
 								"ntime=0x%llx unique_lock=%u counter=%llu "
