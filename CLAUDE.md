@@ -158,20 +158,28 @@ it excludes, before acting on it.
 ## First: the game does not currently boot
 
 Eternal Sonata hangs about eight and a half seconds into emulation, deterministically,
-with `rsx::thread` pegged at 100% and ~85% of that in the kernel. It never recovers.
-The screen keeps the last frame RSX presented — usually the SPU cache overlay — which
-makes it look like a stalled compile. It is not; nothing is being written to disk.
+and never recovers. The screen keeps the last frame RSX presented — usually the SPU
+cache overlay — which makes it look like a stalled compile. It is not; nothing is
+being written to disk.
 
-This **blocks the GETLLAR sweep below**, which needs the title to reach gameplay.
+`simpleperf` on a debuggable build puts **two** threads at exactly 100%: an SPU thread
+and `rsx::thread`, both reaching `sched_yield`. The SPU one is the real stall — it sits
+in the **`GETLLAR` reservation retry loop** (`SPUThread.cpp:6212`), past its 24-spin
+limit, in the slow-yield branch, waiting on a reservation that never settles. RSX is
+merely spinning on an **empty FIFO** behind it.
 
-The upside is the trade it offers: reproducing the open guest crash meant playing to a
-combat encounter, and reproducing this takes one command and ten seconds. Full write-up,
-including the six hypotheses ruled out and the two unbounded `sync.cpp` waits it is
-narrowed to, in [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md).
+The same site is the 93%-of-spin lever below. That makes this **the** thing to
+understand: a reservation path that both deadlocks at boot and produced the two earlier
+guest faults. It also blocks the GETLLAR sweep, which needs the title to reach gameplay.
 
-Answering it needs a **debuggable** build. The installed release build refuses `run-as`,
-the device has no root, so `/proc/<tid>/syscall` and `debuggerd -b` are both closed.
-`/proc/<tid>/stat` still works, and that is all it will give up.
+Reproducing it takes one command and ten seconds, against a combat encounter for the
+guest crash. Write-up, the six hypotheses ruled out, and the confident wrong answer that
+static reading produced first, in [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md);
+`tools/thor_diagnose_rsx_hang.ps1` gets back to it.
+
+Investigating it needs `-PrpcsxThorDebuggable=1`. The release build refuses `run-as`,
+and `/proc/<tid>/syscall` is useless anyway for a thread that never blocks — it reports
+`running` every time.
 
 ## The one thing to run next, once it boots
 

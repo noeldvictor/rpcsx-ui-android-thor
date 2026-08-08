@@ -19,12 +19,18 @@ What is actually happening:
 
 | observation | value |
 | --- | --- |
-| emulator clock | frozen, four runs, `0:00:08.31`–`0:00:08.54` |
+| last emulator log event | five runs, `0:00:08.31`–`0:00:08.54`, then nothing |
 | `rsx::thread` CPU | 100–107%, continuously, indefinitely |
+| `SPU[0x0000200]` CPU | 100%, the same, for the whole sample window |
 | thread state | `R` (running), `wchan=0` — not blocked |
 | system vs user time | `dSys/dUser = 5.8` — ~85% in the kernel |
 | forward progress | none in 18+ minutes; zero files written to the cache |
 | process health | alive; Performance Sensor still logs every 10 s, RAM flat |
+
+Note the first row carefully: the emulator's clock is **not** frozen — the
+Performance Sensor keeps timestamping every ten seconds. What stops is the
+appearance of any new *event*. Reading "the last non-PERF line stopped advancing"
+as "the clock stopped" would be a different and much more alarming claim.
 
 Process-wide CPU sat at 26.0% (2.08 of 8 cores) and did not vary. One core pegged,
 in the kernel, forever.
@@ -76,19 +82,102 @@ because it does not depend on RSX.
 `Cache miss ... This is gonna hurt` is `texture_cache_utils.h:1624`, in
 `on_miss()`. The path it leads into synchronises with the GPU.
 
-## The two unbounded waits it could be in
+## It is not RSX. RSX is the symptom.
 
-Both live in `Emu/RSX/VK/vkutils/sync.cpp`, and both have the same defect: when
-`timeout == 0` they poll forever with no upper bound at all.
+The name of this document is wrong and is kept only because the symptom is what
+you see first.
 
-`wait_for_fence` polls `vkGetFenceStatus` in a bare loop. `wait_for_event` is
-worse — the timeout check is *inside* `if (timeout)`, so passing zero does not
-mean "no timeout", it means the deadline branch is never even evaluated:
+Static reading of the code produced a confident and completely incorrect
+hypothesis, which is recorded here because it was wrong in an instructive way. The
+reasoning went: the wedge follows a texture cache miss; `on_miss` leads into
+`imp_flush`; `imp_flush` calls a GPU wait; `sync.cpp` has two waits that poll
+without any upper bound when `timeout == 0`; those are `vkGet*Status` ioctls, which
+would explain 85% kernel time. Three call sites take that zero default
+(`VKPresent.cpp:199`, `commands.cpp:77`, `VKGSRenderTypes.hpp:358`). Every step of
+that is true. The conclusion was still wrong.
+
+`simpleperf` on a debuggable build, 16,876 samples, none lost:
+
+| thread | share | samples |
+| --- | --- | --- |
+| `SPU[0x0000200]` | 47.48% | 8013 |
+| `rsx::thread` | 47.48% | 8013 |
+| `PPU[0x1000004]` | 3.80% | 641 |
+
+**Two threads pegged, not one**, at exactly 100% each for the full window. And the
+hot path in both is `sched_yield`, reached through `std::this_thread::yield` — not
+a `vkGet*Status` ioctl and not `rx::pause()`. The 85% kernel share was the
+scheduler, not the GPU driver.
+
+Symbolized against the unstripped library, the two stacks are:
+
+```
+SPU   exec_mfc_cmd<false>   SPULLVMRecompiler.cpp:4708
+      process_mfc_cmd       SPUThread.cpp:6212      <- the GETLLAR retry loop
+      operator()            SPUThread.cpp:6244      <- its slow-yield branch
+      check_state           CPUThread.cpp:976
+      std::this_thread::yield -> sched_yield
+
+RSX   cpu_task              RSXThread.cpp:903
+      on_task               RSXThread.cpp:1209
+      run_FIFO              RSXFIFO.cpp:675
+      read                  RSXFIFO.cpp:375
+```
+
+RSX is spinning on an **empty FIFO**. It is not stuck on the GPU; it is waiting for
+the guest to hand it commands that never arrive, because the guest is stalled
+behind the SPU. Every minute spent on `sync.cpp` was spent on a thread that was
+merely idle in an expensive way.
+
+## Where it actually stops
+
+`SPUThread.cpp:6212` is the `GETLLAR` reservation retry loop — the same site this
+project already measured as 93% of all emulator spin:
+
+```cpp
+for (u64 i = 0; i != umax; [&]()
+    {
+        ...
+        if (i < thor_es_getllar_retry_spin_limit()) [[likely]]
+        {
+            i++;
+            thor_wait::profiled_busy_wait(thor_wait::site::spu_getllar_retry, ...);
+        }
+        else
+        {
+            getllar_slow_yield = true;
+            state += cpu_flag::wait + cpu_flag::temp;
+            std::this_thread::yield();          // <- line 6244, where it lives now
+            static_cast<void>(check_state());
+        }
+    }())
+```
+
+The SPU has long since exhausted its spin limit — 24 by default — and is in the
+slow-yield branch permanently. The loop only exits when the reservation at `addr`
+becomes readable and stable. It never does.
+
+That means a reservation is taken and never released, or is being republished
+faster than this thread can ever observe it settled. This is a **guest-visible
+deadlock in the reservation path**, and it is worth noting that the reservation
+path is also where the two earlier guest faults appeared, and where the two
+reverted rewrites lived.
+
+Two adjacent Eternal-Sonata-specific hooks sit directly in this loop and were
+checked rather than assumed: `thor_es_getllar_skip_rsx_lock` (line 6207) is gated
+behind a non-default `getllar_mode` and returns false here, and
+`thor_es_getllar_retry_spin_limit` only changes 24 to 8. Neither is active in this
+configuration.
+
+## The unbounded GPU waits are still real, and still not this
+
+`sync.cpp`'s `wait_for_fence` polls with no upper bound when `timeout == 0`, and
+`wait_for_event` is worse — its deadline check sits *inside* `if (timeout)`, so
+passing zero does not mean "no timeout", it means the check is never evaluated:
 
 ```cpp
 if (timeout)
 {
-    const auto now = freq ? rx::get_tsc() : get_system_time();
     ...
     if ((now > start) && (now - start) > timeout)
     {
@@ -100,10 +189,9 @@ if (timeout)
 rx::pause();
 ```
 
-Both are `vkGet*Status` calls into the KGSL driver, which matches the 85% kernel
-share. Which of the two is the live one is **not yet established** — see the open
-question below. Saying "it is the fence poll" would be the inference this project
-has gotten wrong repeatedly.
+That is a genuine defect and worth fixing on its own merits. It is **not** the
+cause of this hang, and fixing it would not have moved this hang by one
+millisecond. Keeping those two facts apart is the whole point of the measurement.
 
 ## What was ruled out, and how
 
@@ -140,29 +228,45 @@ directory was listed afterwards. The run was still a valid fourth reproduction; 
 was simply not the experiment it was labelled as. Verify the precondition after the
 command, not before.
 
-## The open question, and the instrument that answers it
+## How to get here again
 
-**Is this a regression, and which of the two waits is it in?**
+`tools/thor_diagnose_rsx_hang.ps1` boots the title, waits for the hang, confirms
+the thread is actually spinning before attributing anything, and samples it.
 
-Neither is answerable with the build currently installed. It is a release build:
-`run-as` refuses it (`package not debuggable`), the device has no root, and so
-`/proc/<tid>/syscall` is `Permission denied` and `debuggerd -b` is unavailable.
-`/proc/<tid>/stat` *is* readable, which is where the user/system split above came
-from, and that is the limit of what this build will give up.
+It needs a **debuggable** build. On the release variant `run-as` refuses the
+package and `/proc/<tid>/syscall` is `Permission denied`, which is what made this
+unanswerable for the first several hours:
 
-What breaks it open is a debuggable build, at which point:
+```
+./gradlew assembleThortest -PrpcsxThorDebuggable=1
+```
 
-- `/proc/<tid>/syscall` names the exact syscall and its arguments, which separates
-  `vkGetFenceStatus` from `vkGetEventStatus` immediately;
-- `simpleperf` will sample the loop directly;
-- the wait profiler can go in the same build, so the GETLLAR percentage sweep and
-  this question get answered by one install.
+That property deliberately does not touch the CMake arguments, so it reuses the
+cached native objects — the build that produced the numbers above took 3m 46s with
+14 of 42 tasks executed. It also leaves the default off, because `thortest` is the
+*measurement* variant and `android:debuggable` changes ART's behaviour; a power or
+spin number taken from this build would be on the wrong footing.
 
-For the regression question, the repro is cheap enough that a bisect is now
-practical — which it was not when reproducing meant playing to a combat encounter.
+Two instrument notes worth keeping:
 
-Note that fixing the unbounded wait is **not** the same as fixing the hang. Giving
-these waits a real timeout converts an unrecoverable freeze into a logged error and
-a chance to recover, which is worth doing on its own merits. It does not explain
-why the GPU work never completes, and shipping it first would remove the symptom
-that makes the root cause findable.
+- **`/proc/<tid>/syscall` is useless for a thread that never blocks.** It returned
+  `running` on all ten samples. The kernel will not snapshot the registers of a
+  task currently on a CPU, so the one file that names a syscall directly is
+  structurally blind to exactly the case being investigated. `simpleperf` is the
+  instrument, not `/proc`.
+- **`perf_event_open` is blocked by default.** `security.perf_harden` must be set
+  to 0, and even then `perf_event_paranoid=1` refuses a cross-uid profile, so
+  `simpleperf record -t <tid>` fails with `Permission denied`. The form that works
+  without root is `simpleperf record --app <package>`, which re-execs inside the
+  app's own context.
+
+## What is still open
+
+**Is this a regression?** Not established. The repro costs ten seconds, so a bisect
+is now practical, which it was not when reproducing meant playing to a combat
+encounter.
+
+**Why does the reservation never settle?** That is the actual question now. The SPU
+is waiting on a reservation at a fixed address; something either holds it or
+republishes it forever. The next step is to instrument what the other side of that
+reservation is doing, rather than what this thread is doing while it waits.

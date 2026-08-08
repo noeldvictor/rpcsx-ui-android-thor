@@ -31,6 +31,23 @@ val rpcsxThorWaitProfiler =
         else -> false
     }
 
+// Make the thortest variant debuggable, so run-as, /proc/<tid>/syscall and
+// simpleperf become available on device.
+//
+// This is opt-in rather than the default because thortest is the *measurement*
+// variant, and android:debuggable changes ART's behaviour - it is the wrong
+// footing to take a power or spin number from. Diagnosis and measurement want
+// different builds.
+//
+// It deliberately does not touch the CMake arguments, so flipping it reuses the
+// cached native objects instead of forcing a full rebuild. The RSX boot hang
+// needs exactly this and nothing else: see docs/arm64/rsx-boot-hang.md.
+val rpcsxThorDebuggable =
+    when (providers.gradleProperty("rpcsxThorDebuggable").orNull ?: System.getenv("RPCSX_THOR_DEBUGGABLE_BUILD")) {
+        "1", "true", "True", "TRUE", "on", "On", "ON" -> true
+        else -> false
+    }
+
 // AArch64 answer to the x86 MONITORX/MWAITX GETLLAR wait: park the core with
 // WFE instead of spinning. Off by default; the case for it is power and
 // thermal behaviour, which this fork cannot measure.
@@ -233,7 +250,7 @@ android {
 
         create("thortest") {
             initWith(getByName("release"))
-            isDebuggable = false
+            isDebuggable = rpcsxThorDebuggable
             isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("debug")
