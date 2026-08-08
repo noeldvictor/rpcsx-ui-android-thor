@@ -367,11 +367,36 @@ a TSC read loop is cheap here at 3.8%, but it is the same shape as the other fou
 and it means the PPU cannot notice a state change any faster than its poll
 interval.
 
-**Next diagnostic, and it is now well-posed:** find which wait the PPU is in, by
-walking the callers of `get_tsc` on that thread rather than the callees. Then
-establish who last touched the reservation address the SPU is stuck on — which
-needs the `RPCSX_THOR_ES_SPU_EXPERIMENTS` probe compiled in, since it logs the
-address, PC and retry count and is otherwise a `constexpr` stub on Android.
+### Which wait, narrowed statically
+
+`rx::get_tsc()` has few callers, and only one class of them runs in a loop:
+
+| caller | file | shape |
+| --- | --- | --- |
+| `get_system_time()` | `kernel/cellos/src/sys_time.cpp:221` | **backs the guest `sys_time_get_system_time` syscall** |
+| `get_timebased_time()` | `kernel/cellos/src/sys_time.cpp:154` | backs the guest time-base read |
+| atomic-wait bookkeeping | `util/Thread.cpp:2261`, `2710`, `2723` | one stamp per wait, not a loop |
+| TSC calibration | `util/sysinfo.cpp:1114` | runs once at startup |
+
+The bookkeeping and calibration sites take a stamp, not a stream of them, so a
+thread sitting at 96% on the `mrs` almost certainly reaches it through
+`sys_time.cpp` — i.e. **the guest is polling the clock**.
+
+Stated as the leading candidate rather than a fact, because it has not been proven
+by walking the actual callers: the frame is inlined and the unwinder did not cross
+it. But if it holds, the PPU is a *victim* rather than a party to the deadlock —
+PS3 titles routinely wait for SPU completion by polling `sys_time_get_system_time`
+in a loop, which is exactly what a game would be doing while an SPU it is waiting
+on never finishes.
+
+That makes the SPU reservation the root and the other two threads consequences,
+and it means fixing the reservation fixes all three.
+
+**Next diagnostic:** establish who last touched the reservation address the SPU is
+stuck on. That needs the `RPCSX_THOR_ES_SPU_EXPERIMENTS` probe compiled in, since
+it logs the address, PC, LSA and retry count and is otherwise a `constexpr` stub on
+Android. Confirming the PPU caller wants a frame-pointer build or a breakpoint,
+and is worth less than the probe.
 
 ## What is still open
 
