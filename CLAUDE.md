@@ -64,6 +64,25 @@ See [`docs/arm64/aes.md`](docs/arm64/aes.md).
 
 What the translators already exploit, so nobody re-derives it:
 
+Pipe assignment for every one of these, read out of the vendored Cortex-X3 guide
+rather than assumed. The *pipes* column decides more than the latency does:
+
+| instruction | latency | throughput | pipes | note |
+| --- | --- | --- | --- | --- |
+| `SDOT`/`UDOT` | 3 (1) | 4 | **V** | all four pipes — the `SUMB`/`GB` choice is well placed |
+| `TBX` | 2 | 4 | **V** | all four |
+| `TBL` | 2 | 2 | `V01` | **half the throughput of `TBX`, and only two pipes** |
+| `TBL`, 3 table regs | 4 | 1 | `V01` | |
+| `CNT`, `UABD` | 2 | 4 | **V** | all four |
+| `USHL`/`SSHL` | 2 | 2 | `V13` | pipe-restricted; the one to watch |
+
+Two things fall out. **`TBX` beats `TBL` on this core** — four pipes against two,
+throughput 4 against 2 — so the `SHUFB` path emitting `TBX2`, recorded below as a
+correctness requirement, is also the faster form by a factor of two. And **`USHL` is
+the only lowering here stuck on a two-pipe group**; it is used for `inf_shl`/`inf_lshr`
+to dodge an LLVM poison-value pessimization, so it is load-bearing, but if a hot block
+is shift-heavy that `V13` restriction is where it will show.
+
 | feature | instruction | where |
 | --- | --- | --- |
 | `asimddp` | `SDOT`/`UDOT` | SPU `SUMB`; SPU `GB` bit-gather via a shift-and-sum constant |
