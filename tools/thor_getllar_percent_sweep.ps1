@@ -42,15 +42,6 @@ $ErrorActionPreference = "Stop"
 #   - the device UNPLUGGED, over wireless adb, or the wattage is only a floor
 #     because the charger supplies an unknown share.
 
-function Assert-ProfilerBuild {
-    param([string]$Serial)
-    $tmp = [System.IO.Path]::GetTempFileName()
-    & adb -s $Serial shell "run-as $script:Package true" 2>&1 | Out-Null
-    Remove-Item $tmp -ErrorAction SilentlyContinue
-    # The profiler's log line is the only reliable tell that the build has it.
-    # It appears once the first report fires, so this is checked after boot.
-}
-
 function Get-ProfilerSample {
     param([string]$Serial)
     $lines = & adb -s $Serial logcat -d -v time -t 4000 2>&1 |
@@ -129,6 +120,25 @@ foreach ($p in $Percent) {
     $dRCalls = $after.r_calls - $before.r_calls
     if ($dRCalls -le 0) { throw "No retry activity in arm $p; the denominator is zero." }
 
+    # Frame pacing. The risk of sleeping instead of spinning is latency, not
+    # throughput, and this sweep would otherwise be structurally blind to it:
+    # mean FPS stays pinned at the 30 fps cap even if pacing degrades badly.
+    # p95 frame time is what moves. Reuses measure_thor_fps.ps1, which reads
+    # SurfaceFlinger presentation timestamps rather than the emulator's own
+    # overlay, so it does not depend on reading a screenshot.
+    $fpsP95 = [double]::NaN
+    $fpsMean = [double]::NaN
+    try
+    {
+        $fpsOut = & (Join-Path $PSScriptRoot "measure_thor_fps.ps1") -Serial $serial -Package $Package -Seconds 12 -Label "getllar-pct-$p" 2>&1 | Out-String
+        if ($fpsOut -match 'frame_ms_p95\s*:\s*([0-9.]+)') { $fpsP95 = [double]$Matches[1] }
+        if ($fpsOut -match 'fps_mean\s*:\s*([0-9.]+)') { $fpsMean = [double]$Matches[1] }
+    }
+    catch
+    {
+        Write-Warning "Frame pacing sample failed for arm $p ($_). Spin and power figures below are unaffected, but a latency regression would go unseen."
+    }
+
     $cores = if ($probe -match 'cores busy \(avg\)\s*:\s*([0-9.]+)') { [double]$Matches[1] } else { [double]::NaN }
     $watts = if ($probe -match 'system power\s*:\s*([0-9.]+) W') { [double]$Matches[1] } else { [double]::NaN }
     $isFloor = $probe -match 'FLOOR'
@@ -140,10 +150,12 @@ foreach ($p in $Percent) {
         cores_busy     = $cores
         watts          = $watts
         watts_is_floor = $isFloor
+        fps_mean       = $fpsMean
+        frame_ms_p95   = $fpsP95
     }
 
-    Write-Output ("  ticks/retry {0}   spin cores {1}   cores busy {2}   watts {3}{4}" -f `
-        $results[-1].ticks_per_retry, $results[-1].spin_cores, $cores, $watts, $(if ($isFloor) { " (FLOOR)" } else { "" }))
+    Write-Output ("  ticks/retry {0}   spin cores {1}   cores busy {2}   watts {3}{4}   fps {5}   p95 {6} ms" -f `
+        $results[-1].ticks_per_retry, $results[-1].spin_cores, $cores, $watts, $(if ($isFloor) { " (FLOOR)" } else { "" }), $fpsMean, $fpsP95)
 }
 
 # Restore the shipped default rather than leaving the device on a swept value.
@@ -160,11 +172,13 @@ if ($base) {
     foreach ($r in $results | Where-Object { $_.percent -ne 100 }) {
         $dRatio = 100 * ($r.ticks_per_retry / $base.ticks_per_retry - 1)
         $dW = if ([double]::IsNaN($r.watts) -or [double]::IsNaN($base.watts)) { "n/a" } else { "{0:+0.000;-0.000} W" -f ($r.watts - $base.watts) }
-        Write-Output ("  {0,3}%  spin/retry {1,7:+0.0;-0.0}%   watts {2}" -f $r.percent, $dRatio, $dW)
+        $dP = if ([double]::IsNaN($r.frame_ms_p95) -or [double]::IsNaN($base.frame_ms_p95)) { "n/a" } else { "{0:+0.00;-0.00} ms" -f ($r.frame_ms_p95 - $base.frame_ms_p95) }
+        Write-Output ("  {0,3}%  spin/retry {1,7:+0.0;-0.0}%   watts {2,12}   p95 {3}" -f $r.percent, $dRatio, $dW, $dP)
     }
     Write-Output ""
     Write-Output "The spin ratio is the robust number; it held to 1.1% across control"
     Write-Output "windows that differed 59% in absolute spin. Treat a watts delta as"
-    Write-Output "meaningful only if the device was unplugged, and check frame pacing"
-    Write-Output "separately - the risk of sleeping is latency, not throughput."
+    Write-Output "meaningful only if the device was unplugged. p95 frame time is the"
+    Write-Output "regression to watch: mean FPS stays at the 30 cap even when pacing"
+    Write-Output "degrades, so a rising p95 with flat FPS is the failure mode here."
 }
