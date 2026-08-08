@@ -228,7 +228,7 @@ stands on its own and this file is the map.
 | --- | --- |
 | [`docs/arm64/codegen.md`](docs/arm64/codegen.md) | What this fork does: the lowerings chosen here, the missing movemask, the SPU opcode audit, and the x86-habit table that produced most of the real defects. |
 | [`docs/arm64/microarchitecture.md`](docs/arm64/microarchitecture.md) | What the hardware does: instruction latency, throughput and pipe assignment from the vendored per-core guides, the forwarding regions, and the chapter 4 rules. |
-| [`docs/arm64/memory-model.md`](docs/arm64/memory-model.md) | Atomics and ordering: the dead LSE2 macro, the reservation seqlock, RCsc versus RCpc, and instruction-cache maintenance. |
+| [`docs/arm64/memory-model.md`](docs/arm64/memory-model.md) | Atomics and ordering: the LSE2 128-bit path (no longer dead — see below), the reservation seqlock, RCsc versus RCpc, and instruction-cache maintenance. |
 | [`docs/arm64/spin.md`](docs/arm64/spin.md) | Where the CPU time goes: 93% of spin is the `GETLLAR` wait, what was tried against it, and the one lever still untested. |
 | [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md) | The deterministic RSX hang that currently stops the game booting: the ten-second repro, what it is not, and why it needs a debuggable build. |
 | [`docs/arm64/ppu-compile-oom.md`](docs/arm64/ppu-compile-oom.md) | A second title dies in PPU precompile with a Scudo out-of-memory, and why the 1536 MB budget bounds concurrency rather than footprint. |

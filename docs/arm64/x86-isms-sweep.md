@@ -57,6 +57,42 @@ The honest ranking of remaining x86-derived work, hot first:
 3. **`util/atomic.cpp`, `util/fence.hpp`** — small, but on every reservation.
 4. Interpreters — cold; leave them.
 
+## `util/atomic.cpp` and the LSE2 path: checked, and it is live
+
+Next on the ranked list, and it comes back clean — but only after checking, because
+two pieces of stale documentation pointed the other way.
+
+`atomic.cpp`'s `_mm_load_si128`/`_mm_store_si128` look like an unported x86-ism.
+They are inside `#ifdef _MSC_VER` and never reach clang at all.
+
+The real question is the 128-bit path in `atomic.hpp`, which is on **every**
+reservation read. Aligned 16-byte access is single-copy atomic only with
+FEAT_LSE2; without it the code falls back to an `LDAXP`/`STLXP` loop, and as the
+comment at `atomic.hpp:1051` puts it, that costs an exclusive monitor, a retry,
+and *write intent* — so a pure reader invalidates every other core's copy of the
+line. On the hottest 16-byte atomic in an emulator whose top spin site is a
+reservation loop, that would be a serious find.
+
+It is not live as a problem, because the fast path is enabled. Verified from the
+build rather than the source:
+
+```
+RPCSX_ANDROID_ARM_ARCH:STRING=armv8.4-a
+RPCSX_ANDROID_ARM_LSE2:BOOL=ON
+RPCSX_ANDROID_ARM_ARCH_SUPPORTED:INTERNAL=1
+```
+
+— identical across all three configured build directories. `CMakeLists.txt:122`
+defines `ARM_FEATURE_LSE2=1`, and refuses to do so on a baseline below Armv8.4-A
+rather than assuming it, which is the right shape: an aligned `LDP` that is not
+architecturally atomic would be a bug that only appears under contention.
+
+Two documentation corrections fall out. CLAUDE.md described the AOT baseline as
+`armv8.2-a` (it is `armv8.4-a`), and indexed `memory-model.md` as covering "the
+dead LSE2 macro". The macro is not dead; this fork set it, which is exactly what
+`atomic.hpp:1049` says happened. Reading either line without checking the build
+would have led straight to re-fixing something already fixed.
+
 ## Method note
 
 Two of the checks in this pass came back "already handled" (`MFCR`, the
