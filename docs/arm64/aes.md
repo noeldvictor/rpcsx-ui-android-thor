@@ -112,13 +112,50 @@ outcome to discover by booting a game: decryption is the side that runs on every
 SELF and SPRX, so the failure would have appeared as modules decrypting to
 garbage, far from the cause.
 
-## Still not measured
+## Measured, against the code it would replace
 
-No speedup figure is claimed, and deliberately so. An honest comparison has to be
-against PolarSSL's actual four-table implementation, not a naive byte-wise AES —
-benchmarking against a strawman would produce exactly the kind of inflated,
-confident number this project has repeatedly had to retract. The next step is to
-lift the real software path into the same harness and time both on device.
+`tools/aes_arm64_bench.cpp` compiles `Crypto/aes.cpp` **unmodified** into the
+harness, so the baseline is the four-table implementation that actually ships —
+not a reimplementation and not a textbook byte-wise AES, either of which would
+inflate the ratio.
+
+Correctness is settled before any timing, and against that same code: 60,000
+blocks over all three key sizes, encrypt and decrypt, **zero mismatches**. Matching
+FIPS-197 proves it is AES; matching `aes_crypt_ecb` byte for byte proves it is a
+drop-in for the function it would displace.
+
+AES-128 ECB, both implementations pinned to the same core:
+
+| core | op | software | ARMv8 AES | ratio |
+| --- | --- | --- | --- | --- |
+| Cortex-X3 | encrypt | 372.8 MB/s | 7277.7 MB/s | **19.5x** |
+| | decrypt | 371.5 MB/s | 7006.7 MB/s | **18.9x** |
+| A715/A710 | encrypt | 319.6 MB/s | 6976.0 MB/s | **21.8x** |
+| | decrypt | 317.5 MB/s | 6924.0 MB/s | **21.8x** |
+| Cortex-A510 | encrypt | 91.5 MB/s | 796.3 MB/s | **8.7x** |
+| | decrypt | 88.1 MB/s | 796.3 MB/s | **9.0x** |
+
+Decrypt is the column that matters: SELF and SPRX are decrypted and never
+encrypted.
+
+Pinning is not decoration. An earlier experiment in this project turned out to be
+measuring which cluster an arm landed on rather than the change under test, so
+both implementations are timed on the same core and every core is reported. The
+A510 result is its own reminder — 796 MB/s against the X3's 7007, a factor of 8.8
+on the *same* instructions, which is consistent with the A510 sharing one vector
+unit between each core pair. Work scheduled onto the little cluster does not get
+the same win.
+
+Two honest limits on these figures. They are ECB block throughput over a
+128 KB L2-resident buffer, so they are an upper bound on the primitive rather
+than a prediction of boot time — the real path adds CBC chaining, file I/O and
+per-module setup, and nothing here says what share of boot is AES. And the
+software number is what this build produces; a different compiler or a
+`POLARSSL_AES_ROM_TABLES` change would move it.
+
+What the numbers do establish is that this is not a marginal call. A 19x gap on
+the big cores is far outside anything that measurement noise, table warmth or
+scheduling could account for.
 
 ## Three related things checked in the same pass, all negative
 

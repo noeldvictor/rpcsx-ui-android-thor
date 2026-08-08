@@ -53,9 +53,12 @@ That baseline expands to `+complxnum +crc +dotprod +fp-armv8 +jsconv +lse +neon
 +outline-atomics +pauth +ras +rcpc +rdm +v8.1a..v8.4a` — asked of the compiler,
 not read off the spec. What it does **not** include, on a chip that has all of
 them, is `+aes`, `+sha2`, `+sha3`, `+i8mm`, `+fullfp16` and `+bf16`. The one that
-currently costs something is `aes`: see [`docs/arm64/aes.md`](docs/arm64/aes.md),
-where the whole AES-NI file is `#if defined(__SSE2__)` and every SELF, SPRX and PKG
-decryption on this device runs four-table software AES instead.
+currently costs something is `aes`: the whole AES-NI file is `#if defined(__SSE2__)`,
+so every SELF, SPRX and PKG decryption on this device runs four-table software AES.
+Measured on device against that exact code, ARMv8 AES decrypts **18.9x** faster on
+the X3 and **21.8x** on the A710/A715 (9.0x on an A510, which shares a vector unit
+per core pair), with zero mismatches over 60,000 blocks.
+See [`docs/arm64/aes.md`](docs/arm64/aes.md).
 
 ## Feature to instruction to use-case
 
