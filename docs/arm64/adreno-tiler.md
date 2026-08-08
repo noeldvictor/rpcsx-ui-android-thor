@@ -194,6 +194,44 @@ Do that **before** touching `LOAD_OP_CLEAR`. If breaks-per-frame turns out to be
 small, the whole thing is another 35-millisecond finding and should be recorded as
 one.
 
+## Feasibility of the `LOAD_OP_CLEAR` change, checked
+
+The worry was the render-pass cache: passes are keyed by a packed `u64`, and a
+load-op variant that aliased an existing entry would silently hand back a pass with
+the wrong ops. Checked rather than assumed — `renderpass_key_blob` in
+`VKRenderPass.cpp:66`:
+
+```cpp
+u64 color_format          : 8;
+u64 depth_format          : 8;
+u64 sample_count          : 6;
+u64 layout_blob           : 15;
+u64 input_attachments_mask: 5;
+```
+
+**42 bits of 64 used, 22 spare.** A `load_op_clear : 1` field costs nothing and
+cannot collide. The cache was not the obstacle.
+
+So the work splits cleanly, and only one part is hard:
+
+| step | difficulty |
+| --- | --- |
+| 1. add `load_op_clear : 1` to the key blob | trivial, 22 spare bits |
+| 2. plumb the flag through `get_renderpass_key` / `begin_render_pass` | mechanical |
+| 3. emit `VK_ATTACHMENT_LOAD_OP_CLEAR` in `create_renderpass` when set | mechanical, one branch at `VKRenderPass.cpp:276` |
+| 4. **decide at the call site that a clear is coming** | the actual work |
+
+Step 4 is the whole problem. Today the clear happens *inside* an already-open pass
+via `vkCmdClearAttachments` (`VKGSRender.cpp:1634`), and `LOAD_OP_CLEAR` has to be
+chosen *before* `vkCmdBeginRenderPass`. Converting one into the other means knowing,
+at pass-begin time, that the first operation will be a full-region clear of every
+attachment — which is a restructuring of when the backend decides to open a pass,
+not a flag.
+
+Steps 1-3 without step 4 are dead code, so they are deliberately not committed.
+**The design is settled; the remaining work is a call-site restructuring and wants a
+session with room to verify rendering, not just compilation.**
+
 ## How to measure it before changing anything
 
 The trap this project keeps hitting is a correct measurement of the wrong
