@@ -100,6 +100,49 @@ namespace vm
 	// Memory pages
 	std::array<memory_page, 0x100000000 / 4096> g_pages;
 
+	// Watch one reservation line and log every bump of its counter.
+	//
+	// The Eternal Sonata boot deadlock ends with CellSpursKernel0 polling
+	// 0x9d4d80 whose counter reached 4 and stopped - the line is clean, unlocked,
+	// and simply never written again (docs/arm64/rsx-boot-hang.md). Knowing *who*
+	// made those four bumps, and therefore what should have made a fifth, is the
+	// remaining question, and it cannot be answered by a counter that only
+	// reports totals.
+	//
+	// Set the address in hex, no 0x prefix needed either way:
+	//   adb shell setprop debug.rpcsx.thor.resv_watch 9d4d80
+	//
+	// Read once and cached. Zero means disabled, which is the default, so this
+	// costs one compare against a constant on a path that already does a CAS.
+	//
+	// NOTE ON COVERAGE, because a silent partial watch is worse than none: this
+	// sees bumps that go through reservation_update() only. PUTLLC and stwcx.
+	// complete their reservation stores on their own paths and increment the
+	// counter there. If a run with the watch armed logs nothing while the counter
+	// still advances, that is the answer rather than a broken watch - the writer
+	// is an atomic store, not a notify.
+	inline u32 reservation_watch_addr()
+	{
+		static const u32 value = []() -> u32
+		{
+#ifdef ANDROID
+			char prop[PROP_VALUE_MAX]{};
+			if (__system_property_get("debug.rpcsx.thor.resv_watch", prop) > 0)
+			{
+				char* end = nullptr;
+				const unsigned long parsed = std::strtoul(prop, &end, 16);
+				if (end != prop && parsed)
+				{
+					return static_cast<u32>(parsed & -128);
+				}
+			}
+#endif
+			return 0;
+		}();
+
+		return value;
+	}
+
 	std::pair<bool, u64> try_reservation_update(u32 addr)
 	{
 		// Update reservation info with new timestamp
@@ -129,6 +172,15 @@ namespace vm
 			{
 				if (ok)
 				{
+					if (const u32 watch = reservation_watch_addr();
+						watch && (addr & -128) == watch) [[unlikely]]
+					{
+						vm_log.error("resv_watch: 0x%x bumped to counter=%llu by %s",
+							addr & -128,
+							static_cast<unsigned long long>((rtime + 128) / 128),
+							cpu ? cpu->get_name().c_str() : "non-cpu thread");
+					}
+
 					reservation_notifier_notify(addr);
 				}
 

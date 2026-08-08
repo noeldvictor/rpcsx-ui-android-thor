@@ -541,6 +541,43 @@ fifth?** With `counter` in the report, a run that logs the first four writes to
 `0x9d4d80` — address-watch on the PPU store path, or a breakpoint in the SPURS
 syscall handlers — will say directly which side stopped.
 
+### The writer is an atomic store, not a notify
+
+`debug.rpcsx.thor.resv_watch=9d4d80` armed, boot reproduced, stall reported with
+`counter=4` as before — and **the watch logged nothing**.
+
+That is a result rather than a dead end, because the code comment said in advance
+what silence would mean:
+
+> If a run with the watch armed logs nothing while the counter still advances, that
+> is the answer rather than a broken watch — the writer is an atomic store, not a
+> notify.
+
+The watch sits in `reservation_update()`, the path taken when something wants to
+poke a reservation *without* performing a reservation store. `PUTLLC` and `stwcx.`
+complete their stores on their own paths and bump the counter there. Four bumps
+happened, none through `reservation_update`, so **all four writes to `0x9d4d80`
+were atomic reservation stores** — a guest `PUTLLC` from an SPU or `stwcx.` from
+the PPU.
+
+Which is what SPURS should look like. The workload descriptor is a lock-free
+structure updated with reservation stores by both sides; that is the whole point of
+`lwarx`/`stwcx.` and `GETLLAR`/`PUTLLC`. So nothing here is malformed — a
+legitimate writer performed four legitimate atomic updates and then stopped.
+
+**Next, and it is a two-line move:** the same watch belongs on the atomic store
+completion paths, where the counter is incremented directly. `SPUThread.cpp` and
+`PPUThread.cpp` between them hold about a dozen `reservation_notifier_notify` call
+sites, and the ones adjacent to a successful `PUTLLC`/`stwcx.` are where the four
+writes went through. Logging the writer's thread name and PC there names the
+producer, and then the question becomes why that producer stopped after four
+iterations — which is a question about SPURS scheduling, not about memory ordering.
+
+Worth stating plainly: **this rules out the emulator's reservation implementation
+for the second time**, by a different route. First the reservation word was clean
+and unlocked; now the writes that did happen went through the correct atomic path.
+Whatever is broken is above `vm::`, in what SPURS decides to do.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
