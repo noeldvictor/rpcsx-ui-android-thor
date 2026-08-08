@@ -881,3 +881,45 @@ risk of sleeping instead of spinning is latency, not throughput, and this sweep
 cannot see it.
 
 Parses clean; not yet run, because it needs the device.
+
+## The reverted reservation rewrites are functionally correct
+
+After Eternal Sonata faulted in combat on `0x3f80000c` — a float bit pattern used
+as a pointer — `mov_rdata` and `cmp_rdata` were reverted precautionarily, since
+both had been rewritten that day and both sit in the path the fault implicates.
+
+Precaution is not diagnosis, so the rewrites were then tested against the forms
+they replaced. `tools/rdata_equiv.c` builds standalone for the device, the same
+pattern as `bcax_bench.c`:
+
+| coverage | cases |
+| --- | --- |
+| every single-bit difference across the 128 bytes | 1,024 |
+| every single-byte difference, flipping the high bit | 128 |
+| all-zero, all-ones, and patterns that sum to the accumulator's success value | 4 |
+| randomised pairs, 75% of them near-misses with one byte perturbed | 4,000,000 |
+| **total** | **4,002,180** |
+
+**Zero mismatches**, on both functions.
+
+The comparison is three-way rather than two-way, which matters: each result is
+checked against the old implementation **and** against `memcmp`. Agreement
+between two implementations proves nothing if both are wrong, and the old
+`cmp_rdata` is itself a non-obvious construction — a multiply-accumulate over
+0/-1 masks whose success value is the constant 32.
+
+**What this establishes and what it does not.** The rewrites compute the same
+answers as the code they replaced, over a space that includes every single-bit
+perturbation. They are not wrong in the way a copy or compare is usually wrong.
+
+It does **not** test them as the emulator uses them: single-threaded, in
+isolation, and against a standalone build rather than the inlined forms in the
+shipped library. A defect in memory ordering, or one that only appears when
+several SPU threads race on the same reservation, would pass this cleanly.
+
+**So the sequence from here is the informative one.** The reverted build is
+installed. If the crash recurs without these changes, they are exonerated and the
+cause is elsewhere — which this test already makes the more likely reading. If it
+stops recurring, then something about them matters that a functional equivalence
+test cannot see, and that is a far more interesting finding than a wrong lane
+index would have been.
