@@ -263,6 +263,13 @@ and `/proc/<tid>/syscall` is useless anyway for a thread that never blocks — i
 
 ## The three things actually open
 
+0. **It is a SPURS defect, not one game.** Folklore stalls at the **same SPU PC
+   `0x12b0`** in `CellSpursKernel0`, same `lsa=0x100`, same 24-retry cap, on a
+   different reservation address. Both load Sony's SPURS kernel from `libsre`, so
+   this is one instruction in one firmware module failing identically in two
+   unrelated titles — two of the three tested. Fixing it is worth far more than one
+   boot, and it also unblocks the GPU tiler work, which needs a title that renders.
+
 1. **The Eternal Sonata deadlock**, above — now with an address and a culprit.
    `CellSpursKernel0` stalls on its workload reservation at **`0x9d4d80`**
    (`lsa=0x100`, `pc=0x12b0`, retries capped at 24), reported from inside the wait

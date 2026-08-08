@@ -260,7 +260,43 @@ Two instrument notes worth keeping:
   without root is `simpleperf record --app <package>`, which re-execs inside the
   app's own context.
 
-## It is one title, not the emulator
+## Correction: it is not one title. It is SPURS, at one instruction
+
+Folklore (`BCUS98147`), never booted before, stalls the same way — and the stall
+report makes the match exact:
+
+| | Eternal Sonata | Folklore |
+| --- | --- | --- |
+| thread | `CellSpursKernel0` | `CellSpursKernel0` |
+| **SPU PC** | **`0x12b0`** | **`0x12b0`** |
+| `lsa` | `0x100` | `0x100` |
+| retries | 24 (spin limit) | 24 |
+| reservation addr | `0x9d4d80` | `0x10a60c00` |
+| counter / neighbours | 4, (0, 2) | 5, (0, 2) |
+
+**The same SPU program counter in two unrelated games.** Both load Sony's SPURS
+kernel from `libsre`, so this is one instruction in one firmware module failing the
+same way against two different workload descriptors. The addresses differ because
+the games' memory layouts differ; everything about the *code* is identical.
+
+That retracts the earlier section below. "One title, not the emulator" was concluded
+from Odin Sphere running — but Odin Sphere only reaches a black loading screen, and
+on this evidence it may simply not have driven SPURS hard enough yet. Two of the
+three titles tested deadlock at the same instruction, which makes this a **general
+SPURS defect, not an Eternal Sonata quirk.**
+
+Three consequences worth stating:
+
+- **The repro is now broader and cheaper.** Any SPURS title reaching that code path
+  will do; no dependence on one game's cache state.
+- **The fix is worth more than one title's boot.** SPURS is the standard SPU task
+  scheduler; a defect here plausibly affects most of the library.
+- **It is still not an ARM64 question.** The stalled code is guest firmware, the
+  reservation word is clean, and the ARM64 atomics were measured correct. What
+  differs between a working PS3 and this emulator at `pc=0x12b0` is the next thing
+  to find, and the GDB stub is the tool for it.
+
+## Superseded: it is one title, not the emulator
 
 Odin Sphere (`BLUS31601`) boots on the same build, from a cold cache, and shows none
 of the signature: the emulator clock advances continuously (`0:00:26` through
