@@ -320,7 +320,7 @@ measurement**, which is the main result and the reason this table exists.
 | Rosetta techniques | n/a | its central problem (x86 TSO) does not exist; PowerPC is weakly ordered and AArch64 is stronger |
 | **GPU render passes** | **open, measured** | unconditional `LOAD_OP_LOAD`/`STORE_OP_STORE`, `LOAD_OP_CLEAR` used zero times, ~16 MB/frame — the only unexploited win left |
 | SPU/PPU translator lowerings | **thin** | one probe (saturating arithmetic). The real question is *which ops have no natural IR spelling* — the `BCAX`/`SDOT`/`TBL`/`USHL` set in [`codegen.md`](docs/arm64/codegen.md) |
-| RSX vertex/texture paths | **unswept** | per-frame work, never examined instruction by instruction |
+| RSX vertex/texture paths | clean | `RSXThread.cpp` has **no** x86 intrinsics; `ProgramStateCache.cpp` already byteswaps with `vrev16q_u8` (one `REV16` against x86's shift-or pair) and keeps its AVX-512 behind `ARCH_X64`; `buffer_stream.hpp` reaches a real `STNP` |
 
 The pattern worth carrying: the translators emit **IR, not per-ISA intrinsics**, so
 the backend picks the encoding and there are usually no x86 habits to find. Effort
