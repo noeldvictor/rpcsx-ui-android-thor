@@ -1159,3 +1159,42 @@ This is the first candidate in this document that is simultaneously large (93% o
 spin), cheap (a settings value), and untested. It is also, notably, not an ARM64
 instruction-selection question at all — it is an x86-era default that nobody
 re-derived for a passively cooled handheld.
+
+### The alternative branch is a real futex sleep, which changes the WFE verdict
+
+Before recommending a sweep of that percentage, the obvious check is whether the
+"system wait" branch is actually cheaper — `lv2_obj::wait_timeout` degenerates to
+a `sched_yield` loop on AArch64 for sub-quantum waits, so a config knob that
+merely relocates the spin would be worthless.
+
+It does not. When the switch is 0 the path is:
+
+```cpp
+state += cpu_flag::wait;
+utils::bless<atomic_t<u32>>(&wait_var->raw().wait_flag)->wait(1, atomic_wait_timeout{100'000});
+```
+
+A futex wait with a bounded timeout. **The thread blocks in the kernel and the
+core is released** — which is the entire thing spinning fails to do, and the
+reason a spinning core shows up as heat.
+
+**This partially reframes the WFE conclusion recorded above.** That analysis found
+parking structurally capped, because 95.5% of `GETLLAR` spins are shallower than
+the ~95 us it costs to wake from `WFE` with `FEAT_WFxT` absent. That reasoning is
+correct *about WFE*, and it does not transfer here, because the two mechanisms
+have different failure modes:
+
+| | wake on the real event | fallback if the event is missed |
+| --- | --- | --- |
+| `WFE` on this part | fast, but the monitor granule is 64 bytes against a 128-byte reservation | the generic timer event stream, **~95 us, unbounded by anything else** |
+| futex wait | fast, and it is woken by the actual reservation notifier | **its own timeout**, an explicit bound |
+
+So the emulator already contains a bounded-timeout sleep — precisely what `WFE`
+could not offer on hardware without `WFET` — and it is sitting behind a config
+value set to "always spin". **The mechanism WFE was written to provide already
+exists in a better form, one branch away.**
+
+That makes the percentage sweep more interesting than a power tweak. If lowering
+it recovers a meaningful share of that 93%, it does so through a path with a real
+timeout and a real notifier, which is strictly the shape `WFE` was reaching for
+and could not achieve here.
