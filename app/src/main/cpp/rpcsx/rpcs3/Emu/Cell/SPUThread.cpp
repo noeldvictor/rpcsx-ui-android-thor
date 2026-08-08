@@ -6359,6 +6359,47 @@ bool spu_thread::process_mfc_cmd()
 								static_cast<unsigned long long>(ntime_now),
 								(ntime_now & vm::rsrv_unique_lock) ? 1u : 0u,
 								static_cast<unsigned long long>(ntime_now / 128));
+
+							// What the SPU sees, versus what memory holds.
+							//
+							// Everything above reads current memory through get_super_ptr. The SPU
+							// program never reads that - it reads the copy GETLLAR left in local
+							// store, and compares it against the reservation snapshot in rdata. So
+							// the dump above can show a ready workload while the SPU is still
+							// looking at an older line.
+							//
+							// The two outcomes point at opposite halves of the emulator:
+							//
+							//   ls != mem  the SPU is spinning on a stale snapshot: a coherency
+							//              fault, and on ARM64 - weaker ordering than the x86 this
+							//              code was written for - a live possibility, not a
+							//              theoretical one.
+							//   ls == mem  the SPU holds the current value and declines to act on
+							//              it, putting the fault in guest-side scheduling instead.
+							//
+							// Measure it rather than reason about it. The previous two conclusions
+							// drawn here were each based on a single boot, and neither generalised.
+							if (const auto* const memp = vm::get_super_ptr<u8>(addr & -128))
+							{
+								const auto& lsbuf = _ref<spu_rdata_t>(ch_mfc_cmd.lsa & 0x3ff80);
+
+								const bool ls_eq_mem = std::memcmp(&lsbuf, memp, 128) == 0;
+								const bool snap_eq_mem = std::memcmp(&rdata, memp, 128) == 0;
+								const bool ls_eq_snap = std::memcmp(&lsbuf, &rdata, 128) == 0;
+
+								u64 lw[16]{};
+								std::memcpy(lw, &lsbuf, 128);
+
+								spu_log.error(
+									"GETLLAR LS 0x%x: %016llx %016llx %016llx %016llx "
+									"- ls==mem:%d snapshot==mem:%d ls==snapshot:%d "
+									"- if ls differs from mem the SPU polls a stale line (coherency); "
+									"if they agree it sees the truth and declines to schedule (guest logic).",
+									ch_mfc_cmd.lsa & 0x3ff80,
+									static_cast<unsigned long long>(lw[0]), static_cast<unsigned long long>(lw[1]),
+									static_cast<unsigned long long>(lw[2]), static_cast<unsigned long long>(lw[3]),
+									ls_eq_mem ? 1 : 0, snap_eq_mem ? 1 : 0, ls_eq_snap ? 1 : 0);
+							}
 						}
 					}
 

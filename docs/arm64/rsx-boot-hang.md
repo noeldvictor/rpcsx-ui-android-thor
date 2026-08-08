@@ -1420,3 +1420,86 @@ encounter.
 is waiting on a reservation at a fixed address; something either holds it or
 republishes it forever. The next step is to instrument what the other side of that
 reservation is doing, rather than what this thread is doing while it waits.
+
+## Full thread census, and the descriptor that was not zero
+
+Four threads had been examined by hand. The GDB stub knows about twelve, so this
+round enumerated all of them (`tools/thor_gdb_all_threads.py`) against a fresh
+Folklore boot that a watchdog independently confirmed stalled — log static for
+30 s with the process alive, and all eight cores at 0.0% *before* anything
+attached.
+
+Three properties of the stub, all learned by tripping over them:
+
+* it implements `qfThreadInfo` and **nothing else** — no `qThreadExtraInfo`, so
+  thread names cannot come from GDB. They come from `RPCSX.log`, which prints
+  `PPU[0x100000c] Thread (SpursHdlr0)`.
+* **connecting pauses emulation** (`Emulation is being paused... (mark=0)`).
+  Fine for state inspection, but it is not a live view.
+* **disconnecting kills the stub**: `Thread terminated due to fatal error: Tried
+  to read char, but no data was available` (`GDB.cpp:241`). One probe per boot.
+
+### Thread ids are not stable across boots
+
+`0x1000009` was `SpursHdlr0` in the earlier boot and is `LoadThreadMain` in this
+one. The original probe hardcoded that id-to-name mapping, which means any
+attribution made through it is only as good as the boot it was taken from. Ids
+are assigned in creation order; recover them from the log, never from memory.
+
+| tid | name | pc | |
+| --- | --- | --- | --- |
+| 0x1000000 | main_thread | 2a9ac0 | |
+| 0x1000001 | _cfg_evt_hndlr | 586bd4 | |
+| 0x1000002 | _gcm_intr_thread | 7f833c | |
+| 0x1000003 | FlipThreadMain | — | **absent: exited** |
+| 0x1000004 | thread_sys_cache | 15191c | |
+| 0x1000005-7 | _fs_aio_thread ×3 | 8df17c | all three identical, as they should be |
+| 0x1000008 | AioThread | 12161c | |
+| 0x1000009 | LoadThreadMain | — | **absent: exited** |
+| 0x100000a | LogoThreadMainFast | 1d9564 | |
+| 0x100000b | SpursHdlr1 | 81b604 | the event helper: blocks forever by design |
+| 0x100000c | SpursHdlr0 | 81948c | r3=0x4000100, the group join |
+
+The three `_fs_aio_thread`s sharing one pc is the check that the ordering
+assumption holds. `main_thread`'s last log line is at 0:00:06.913, in the middle
+of SPURS init, and the log then runs for two more minutes without it.
+
+### The descriptor is not all zero
+
+The previous boot's polled line was all zero, and this file concluded the SPU was
+"correctly concluding there is no work to run". **That does not generalise.**
+Same title, same `pc=0x12b0`, different boot:
+
+```
+descriptor 0x10a60c00:     0000000000000001 0000000000000000 x7
+descriptor 0x10a60c40 +64: 0000000000000001 0000000000000000 0000000000000001 0000000000000000
+                           0000000000000000 ffffffff00000000 ff01008000ff0000 0000000000000000
+```
+
+Decoded against `CellSpurs` (`ps3fw/include/rpcsx/fw/ps3/cellSpurs.h:665`), big-endian:
+
+| offset | field | value |
+| --- | --- | --- |
+| 0x00 | `wklReadyCount1[7]` | **1** |
+| 0x20 | `wklCurrentContention[7]` | **0** |
+| 0x40 | `wklMinContention[7]` | 1 |
+| 0x50 | `wklMaxContention[7]` | 1 |
+
+Workload 7 is ready, asks for one SPU, is allowed one, and has none. The SPU
+kernel re-reads that line and does not take the work.
+
+### The test that separates the two remaining explanations
+
+The dump above reads current memory through `get_super_ptr`. The SPU program does
+not read that — it reads what `GETLLAR` left in local store. Those can disagree,
+and which way they disagree decides which half of the emulator is at fault:
+
+* **ls != mem** — the SPU polls a stale line. A coherency fault, and on ARM64,
+  with weaker ordering than the x86 this code was written against, a live
+  possibility rather than a theoretical one.
+* **ls == mem** — the SPU holds the current value and declines to schedule. The
+  fault is guest-side.
+
+`SPUThread.cpp` now prints `ls==mem`, `snapshot==mem` and `ls==snapshot` alongside
+the stall report. Both previous conclusions in this file were drawn from a single
+boot and neither survived a second one, so this one gets measured.

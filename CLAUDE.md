@@ -329,7 +329,7 @@ Every link is verified except the effect size:
 
     ./gradlew assembleThortest -PrpcsxThorWaitProfiler=1
     # unplug the Thor first, or the wattage is only a floor
-    .	ools	hor_getllar_percent_sweep.ps1
+    ./tools/thor_getllar_percent_sweep.ps1
 
 Four arms, one command. It throws rather than guessing if the property did not
 take, the boot failed, or the profiler is absent, and it reports p95 frame time
@@ -411,3 +411,30 @@ cutscenes, and a BCAX microbenchmark whose chain forwarded within one region
 where the real code crosses two. In each case the number was real and the
 inference was not. When a result decides something, check that the thing measured
 is the thing that ships.
+
+## Traps found while enumerating guest threads
+
+**PPU thread ids are not stable across boots.** `0x1000009` was `SpursHdlr0` in one
+Folklore boot and `LoadThreadMain` in the next. Ids are handed out in creation
+order, so any tool that hardcodes an id-to-name map is only valid for the boot it
+was written against — and `tools/thor_gdb_probe.py` did exactly that. Recover names
+from `RPCSX.log`, which prints them as `PPU[0x100000c] Thread (SpursHdlr0)`.
+
+**The GDB stub implements `qfThreadInfo` and nothing else.** No `qThreadExtraInfo`,
+so it cannot tell you a thread name. Worse, it is single-shot in two ways:
+connecting **pauses emulation** (`Emulation is being paused... (mark=0)`), and
+disconnecting **kills the stub thread** (`GDB.cpp:241`, "Tried to read char, but no
+data was available"). Budget one probe per boot and collect everything in that one
+connection. `tools/thor_gdb_all_threads.py` does the full sweep.
+
+**Git Bash rewrites device paths.** `adb pull /sdcard/...` becomes
+`C:/Program Files/Git/sdcard/...` and fails with a confusing "failed to stat remote
+object" naming a local path. Prefix with `MSYS_NO_PATHCONV=1`. This is separate from
+the heredoc backslash problem that previously turned `.\tools\thor_x.ps1` into a
+line with two literal tabs in it.
+
+**A conclusion from one boot is a conclusion about one boot.** The SPURS descriptor
+was all zero in one run and had `wklReadyCount1[7] = 1` in the next — same title,
+same stall, same `pc=0x12b0`, opposite readings. Two conclusions in
+`docs/arm64/rsx-boot-hang.md` were drawn from single boots and neither survived a
+second. Re-run before concluding.
