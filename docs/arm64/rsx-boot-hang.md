@@ -1101,6 +1101,40 @@ not continue.
 busy PPU polling a clock (`0x1000004`) is the obvious suspect and is reachable through
 the same GDB stub with the register-decode already working.
 
+### That route is closed: SPURS here is LLE, not HLE
+
+`Log: { cellSpurs: Trace }`, one boot. Four lines, and **none of them is a function
+call**:
+
+```
+** Imported module 'cellSpurs' (ver=0x1, attr=0x9, ...)          ppu_loader
+** Exported module 'cellSpurs' (vnids=0x1c000002, vstubs=0x90034, ...)   x2
+```
+
+*Exported* is the operative word. The title supplies its own `cellSpurs`
+implementation out of `libsre`, so RPCS3's HLE module is bypassed and **there are no
+HLE SPURS calls to trace, by design.** That is consistent with everything else seen:
+the SPU kernel is Sony's real image, and both handler threads execute real `libsre`
+PPC code.
+
+So the whole SPURS stack — scheduler, workload submission, handler threads — is guest
+code running on the emulator's CPUs. The emulator's only involvement is the **lv2
+syscalls `libsre` calls into**, and those *are* HLE.
+
+**That redirects the search precisely, and narrows it a lot.** The bug must be in one
+of the lv2 primitives SPURS is built on:
+
+- `sys_event_queue_receive` / `sys_event_port_send` — the SPURS event path, already
+  visible in the boot log around the kernel group setup
+- `sys_lwmutex_*` / `sys_lwcond_*` — the lightweight primitives libsre uses for the
+  workload structures
+- `sys_spu_thread_group_*` — already traced; `start` and `join` both behaved
+
+Raise those channels rather than `cellSpurs`, and compare the call sequence against
+what a correct SPURS handshake requires. This is the first point in the investigation
+where the suspect list is short, entirely inside the emulator, and made of functions
+that can be read side by side with the PS3 documentation.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer
