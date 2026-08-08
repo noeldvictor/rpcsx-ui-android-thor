@@ -203,13 +203,13 @@ and `/proc/<tid>/syscall` is useless anyway for a thread that never blocks — i
 
 1. **The Eternal Sonata deadlock**, above. Ten-second repro, located, unattributed.
    The repro makes a bisect practical for the first time; that is the next move.
-2. **What hardware AES is worth on a *cold* boot.** Warm is measured and is a flat
-   nothing ([`docs/arm64/aes.md`](docs/arm64/aes.md)). Cold is where the decryption
-   volume is — firmware PRX plus every SPRX — and it is unmeasured because both
-   titles here now have warm caches and the one cold path tried died of
-   [`ppu-compile-oom.md`](docs/arm64/ppu-compile-oom.md). A never-booted title from
-   the SD card would answer it; `tools/thor_aes_boot_ab.ps1` already takes the
-   arguments.
+2. **~~What hardware AES is worth on a cold boot.~~ Closed: nothing.** The firmware
+   set is 144 files totalling **13.6 MB**, so at the measured rates the whole thing
+   is 36.6 ms of software AES against 1.9 ms of hardware — about 35 ms, against a
+   boot that takes minutes. The 19-22x is real and the volume is tiny; the ratio was
+   never the interesting number. Still worth timing where the volume *is* large:
+   PKG install and runtime EDAT/SDAT streaming. See
+   [`docs/arm64/aes.md`](docs/arm64/aes.md).
 3. **`SPULLVMRecompiler` and `PPUTranslator`.** The genuinely hot path, and the one
    subsystem this session did not review. They emit IR rather than intrinsics, so the
    question is *which lowering*, not *which intrinsic* — a different kind of review

@@ -180,17 +180,37 @@ the log's mtime is current, its content is from the run, and SPU Workers and the
 LLVM JIT are live in it. The earlier 25 s included PPU module compilation; with
 caches fully warm the title reaches audio init in about two seconds.
 
-**But note carefully what this does and does not cover.** A warm boot decrypts the
-EBOOT and the modules it loads — real AES work, and enough to say the change is
-not a regression. It does *not* cover the case the original argument was about: a
-**cold** first boot, which walks firmware PRX and every SPRX in the title. That is
-where the decryption volume actually is, and it has not been measured, because
-both titles on this device now have warm caches and Odin Sphere's cold path dies
-in [`ppu-compile-oom.md`](ppu-compile-oom.md) before finishing.
+**And the cold boot does not save it either.** That was the remaining defence —
+a cold first boot walks firmware PRX and every SPRX, so surely *that* is where the
+decryption volume is. It is, and the volume is small.
 
-So the honest status is: hardware AES is correct, is 19-22x faster at the
-primitive, costs nothing observable on a warm boot, and its value on a cold boot
-is still an open question. Quoting the 20x as a boot speedup would be wrong.
+The firmware set is a static quantity, so it does not need a ten-minute boot to
+measure:
+
+```
+/config/dev_flash/sys/external : 144 files, 13952 KB
+```
+
+**13.6 MB.** At the measured Cortex-X3 rates that is `13.6 / 371.5 = 36.6 ms`
+of software AES against `13.6 / 7006.7 = 1.9 ms` of hardware AES — about **35
+milliseconds saved** across the entire firmware set, against a cold boot that
+takes minutes. Adding a generous 50 MB of game SPRX on top reaches roughly 130 ms.
+
+So the question is closed, and the answer is no: **AES is not a meaningful share
+of boot time, warm or cold.** A 19-22x speedup on a few tens of megabytes is tens
+of milliseconds. The ratio was never the interesting number; the volume was, and
+nobody had looked at it.
+
+That is worth saying plainly because the 20x is exactly the kind of figure that
+gets quoted. The change is still right — it is correct, it is free, it removes
+8 KB of lookup tables from L1 on a machine that is short of it, and it is the
+difference between using the hardware and not. It is simply not a boot-time
+optimization, and this document would be misleading if it implied otherwise.
+
+Where the volume *could* justify it, and where it remains unmeasured: **PKG
+install**, which decrypts gigabytes rather than megabytes, and runtime EDAT/SDAT
+access for games that stream encrypted data. Those are the cases worth timing
+next, not boot.
 
 ## Three related things checked in the same pass, all negative
 
