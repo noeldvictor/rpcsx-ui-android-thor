@@ -6400,6 +6400,40 @@ bool spu_thread::process_mfc_cmd()
 									static_cast<unsigned long long>(lw[2]), static_cast<unsigned long long>(lw[3]),
 									ls_eq_mem ? 1 : 0, snap_eq_mem ? 1 : 0, ls_eq_snap ? 1 : 0);
 							}
+
+							// wklState1: the one selection gate that lives in memory and was
+							// not being dumped.
+							//
+							// spursKernel1SelectWorkload (ps3fw/cellSpursSpu.cpp:334) accepts a
+							// workload when:
+							//
+							//     runnable && ctxt->priority[i] != 0 && wklMaxContention[i] > contention[i]
+							//     && (wklFlag || wklSignal || (readyCount != 0 && requestCount > contention[i]))
+							//
+							// For the workload this title leaves stranded, every arithmetic term
+							// above is satisfiable from the first 128 bytes and every one of them
+							// passes. That leaves two gates untested: ctxt->priority, which is SPU
+							// local context and not visible from here, and `runnable`, which comes
+							// from wklState1 at offset 0x80 - one byte past the reservation line
+							// this reporter dumps.
+							//
+							// So dump the next line too. If the state byte for a workload with a
+							// non-zero ready count is not RUNNABLE(2), the workload was added but
+							// never marked runnable, and the fault is on the PPU side that should
+							// have marked it.
+							if (const auto* const st = vm::get_super_ptr<u8>((addr & -128) + 128))
+							{
+								u8 s[16]{};
+								std::memcpy(s, st, 16);
+
+								spu_log.error(
+									"GETLLAR wklState1 0x%x: "
+									"%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+									"- 2=RUNNABLE. A workload with readyCount>0 that is not RUNNABLE was added but never started.",
+									(addr & -128) + 128,
+									s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
+									s[8], s[9], s[10], s[11], s[12], s[13], s[14], s[15]);
+							}
 						}
 					}
 
