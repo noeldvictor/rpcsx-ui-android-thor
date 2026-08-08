@@ -91,6 +91,33 @@ two-instruction sequence that spreads across `V`. See the BCAX entry in
 Extracting text: `pypdf` works, a naive stream scrape does not, because the body
 uses font subsetting and only the cover page survives.
 
+## Qualcomm Snapdragon platform documents
+
+`qualcomm_snapdragon_opencl_optimization_guide.pdf` — *Snapdragon Mobile Platform
+OpenCL General Programming and Optimization*, 80-NB295-11 Rev. C, 116 pages.
+Fetched from `docs.qualcomm.com/bundle/publicresource/`.
+
+It is an **OpenCL** guide and this emulator uses Vulkan, so the API half does not
+transfer. The hardware half does, because it describes the part rather than the
+API:
+
+* Adreno cache line is **64 bytes** on most generations (p17-18) — worth holding
+  next to the 128-byte PS3 reservation line, which is two of them.
+* The GPU and CPU share physical memory. Zero-copy is not an optimization on this
+  part, it is the absence of a mistake: any path that stages through a separate
+  allocation is paying for a copy the hardware never needed (7.4, p57-58).
+* Coalescing, L1/L2 behaviour and burst sizes are properties of the memory system
+  and apply to Vulkan traffic just as much as to OpenCL kernels.
+
+**The SoC-level manual is not public.** The Snapdragon 8 Gen 2 / SM8550 *Hardware
+Register Description* is distributed to Qualcomm partners and HDK purchasers
+through Lantronix's technical portal; the data sheet (80-33265-1) surfaces only on
+Scribd behind a paywall. Neither is fetchable, and guessing at
+`docs.qualcomm.com` URLs is actively misleading — one guessed path returned
+**HTTP 200 with an HTML error page**, which `file` catches and a size check
+catches, but a bare `curl -o` does not. Verify every download with `file` and a
+`pypdf` page count before believing it.
+
 ## What is deliberately not here
 
 The **Arm Architecture Reference Manual for A-profile** (`aarch64.pdf`, roughly

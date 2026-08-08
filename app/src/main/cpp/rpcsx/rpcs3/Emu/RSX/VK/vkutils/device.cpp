@@ -1184,6 +1184,39 @@ namespace vk
 			(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
 			0);
 
+		// Dump every memory type, because "BAR" means something different here.
+		//
+		// On a discrete GPU, host-visible + device-local is the PCIe aperture:
+		// historically 256 MB, scarce enough that parking it for a specific use is
+		// reasonable, which is what the comment below does. This device reports
+		// 11441 MB of it, because Snapdragon is a unified memory architecture and
+		// every heap qualifies. The category is not an aperture here, it is the
+		// whole machine.
+		//
+		// Whether that is exploitable turns on one flag the total does not show:
+		// HOST_CACHED. An uncached host-visible write can lose badly to a cached
+		// staging buffer plus a DMA copy, so a direct-write upload path is only
+		// worth prototyping if some type is host-visible, device-local AND cached.
+		// Print the flags and let the device answer. See docs/arm64/uma-bar-heap.md.
+		for (u32 i = 0; i < memory_properties.memoryTypeCount; i++)
+		{
+			const auto& t = memory_properties.memoryTypes[i];
+			const VkFlags f = t.propertyFlags;
+
+			rsx_log.notice("Memory type %u: heap=%u flags=0x%x [%s%s%s%s%s] heap_size=%lluMB%s",
+				i, t.heapIndex, f,
+				(f & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ? "DEVICE_LOCAL " : "",
+				(f & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? "HOST_VISIBLE " : "",
+				(f & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) ? "HOST_COHERENT " : "",
+				(f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ? "HOST_CACHED " : "",
+				(f & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) ? "LAZY " : "",
+				static_cast<unsigned long long>(memory_properties.memoryHeaps[t.heapIndex].size >> 20),
+				((f & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
+				 (f & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+				 (f & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
+					? "  <- device-local, host-visible AND cached: direct upload is viable" : "");
+		}
+
 		if (host_coherent_types.empty())
 		{
 			rsx_log.warning("[Performance Warning] Could not identify a cached upload heap. Will fall back to uncached transport.");

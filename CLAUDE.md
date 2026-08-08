@@ -463,3 +463,31 @@ not style: it means the body is gone.
 `continue` paths of the GETLLAR retry loop identified the failing comparison in
 a single boot — after three separate wrong conclusions had been reasoned out
 from static reading and single-boot dumps.
+
+## The BAR heap is not an aperture on this device
+
+`Emu/RSX/VK/vkutils/device.cpp` collects memory that is host-visible *and*
+device-local into a "BAR heap" and parks it: `// BAR heap, currently parked for
+future use`. That is right for a discrete GPU, where those bits mean the PCIe
+aperture and historically 256 MB of it.
+
+Measured on the Thor — `VkPhysicalDeviceMemoryProperties`, dumped at
+`device.cpp:1186`:
+
+    type 0: DEVICE_LOCAL HOST_VISIBLE HOST_COHERENT              11441 MB
+    type 1: DEVICE_LOCAL HOST_VISIBLE HOST_COHERENT HOST_CACHED  11441 MB
+    type 2: DEVICE_LOCAL HOST_VISIBLE HOST_CACHED                11441 MB
+    type 3: DEVICE_LOCAL LAZILY_ALLOCATED                        11441 MB
+
+**One heap, every type device-local.** There is no separate VRAM here, so the
+staging copy on the way to "device-local" memory has a destination that is the
+same physical DRAM as its source. Type 1 is device-local, host-visible, coherent
+and cached at once, which is the combination a direct-write upload path needs.
+
+Type 3 (`DEVICE_LOCAL | LAZILY_ALLOCATED`, no host visibility) is Adreno's
+on-chip tile memory — the correct backing for transient depth/MSAA attachments
+that are never sampled outside their pass, and a direct pairing with the
+`LOAD_OP_CLEAR` work in `docs/arm64/adreno-tiler.md`.
+
+Feasibility is settled; the win is not measured. `docs/arm64/uma-bar-heap.md`
+records what still has to be shown before changing the upload path.
