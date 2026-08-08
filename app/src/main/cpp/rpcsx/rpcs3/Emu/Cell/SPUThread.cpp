@@ -6209,6 +6209,28 @@ bool spu_thread::process_mfc_cmd()
 
 		u64 getllar_retry_count = 0;
 		bool getllar_slow_yield = false;
+
+		// Report a GETLLAR that never comes back, from inside the wait.
+		//
+		// Every counter in this fork is incremented on completion - the wait
+		// profiler after profiled_busy_wait, record_thor_es_getllar after this
+		// loop exits, the RSX auditor after a frame is presented. That is the
+		// right shape for measuring a spin and useless for a stall: a loop that
+		// never terminates contributes to none of them, so the harder the hang
+		// the quieter the instrumentation, and silence looks exactly like code
+		// that never ran. Three instruments were armed against the Eternal
+		// Sonata boot deadlock and all three logged nothing, while every fact
+		// about it had to come from simpleperf and /proc.
+		//
+		// This one records from *inside*, so it survives the case it exists for.
+		// It costs one comparison per iteration of the yield branch, which
+		// already makes a syscall, and it fires at most once per wait.
+		//
+		// Not gated behind a debug macro on purpose. An SPU stuck on a
+		// reservation for seconds is a bug in every configuration, and the
+		// address is the one fact needed to chase it.
+		const u64 getllar_stall_tsc0 = rx::get_tsc();
+		bool getllar_stall_reported = false;
 		for (u64 i = 0; i != umax; [&]()
 			{
 				if (state & cpu_flag::pause)
@@ -6240,6 +6262,29 @@ bool spu_thread::process_mfc_cmd()
 				else
 				{
 					getllar_slow_yield = true;
+
+					if (!getllar_stall_reported) [[unlikely]]
+					{
+						// 5 s. Long enough that no legitimate reservation wait
+						// reaches it - the measured distribution puts 95.5% of
+						// GETLLAR waits under 8 spins - and short enough to fire
+						// well inside a boot.
+						const u64 freq = utils::get_tsc_freq();
+						const u64 elapsed = rx::get_tsc() - getllar_stall_tsc0;
+
+						if (freq && elapsed > freq * 5)
+						{
+							getllar_stall_reported = true;
+							spu_log.error(
+								"GETLLAR stalled: addr=0x%x lsa=0x%x pc=0x%x retries=%u elapsed=%.1fs "
+								"- the reservation at this address is not settling. Nothing releases "
+								"this wait, so no completion-time counter will ever record it.",
+								addr, ch_mfc_cmd.lsa & 0x3ff80, pc,
+								static_cast<u32>(getllar_retry_count),
+								static_cast<double>(elapsed) / static_cast<double>(freq));
+						}
+					}
+
 					state += cpu_flag::wait + cpu_flag::temp;
 					std::this_thread::yield();
 					static_cast<void>(check_state());

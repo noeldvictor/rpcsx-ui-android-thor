@@ -430,6 +430,55 @@ different design from anything the fork currently has, and it is the missing pie
 
 Confirming the PPU's caller wants a frame-pointer build and is worth less than that.
 
+## The address, and what is waiting on it
+
+The in-wait report fired on the first run:
+
+```
+·E 0:00:13.513 {SPU[0x0000200] Thread (CellSpursKernel0) [0x012b0]}
+   GETLLAR stalled: addr=0x9d4d80 lsa=0x100 pc=0x12b0 retries=24 elapsed=5.0s
+```
+
+**The stalled thread is `CellSpursKernel0`** — Sony's SPU task scheduler, not game
+code. `retries=24` is the spin limit exactly as predicted, confirming it entered the
+yield branch and stayed there.
+
+The surrounding boot log gives the rest:
+
+```
+sys_spu_thread_group_create(): "CellSpursKernelGroup" created (id=0x4000200)
+sys_spu_thread_initialize():   "CellSpursKernel0" created (id=0x200)
+_sys_ppu_thread_create():      "SpursHdlr1" (0x1000008), "SpursHdlr0" (0x1000009)
+Loaded SPU image: SPU-c551925d5640eb35b80dc1281f8509336eca9765   (by SpursHdlr0)
+```
+
+So the sequence is: the game brings up SPURS, one kernel SPU thread and two PPU
+handler threads are created, the kernel image loads — and then the kernel sits on
+its workload reservation at `0x9d4d80` forever. The SPURS kernel polls that word to
+find out whether there is work; nothing ever publishes it.
+
+**The spinning PPU is `0x1000004`, which is neither handler** (`0x1000008` /
+`0x1000009`). The two threads that would feed SPURS are not the ones burning CPU;
+they are simply not making progress either.
+
+### This title has hung on SPURS before
+
+CLAUDE.md's Eternal Sonata profile carries, verbatim:
+
+> Do not cap SPURS here; SPURS 4 caused a black-screen-alive load hang on Thor.
+
+and sets `Max SPURS Threads: 6`. So a SPURS-related, black-screen-with-live-process
+hang on this exact title on this exact device is **already recorded history**, and
+was previously worked around by not capping the thread count. The present hang has
+the same signature — process alive, screen frozen, no forward progress — and now has
+an address attached to it.
+
+That makes the next step concrete rather than exploratory: find who is supposed to
+write `0x9d4d80`. It is the SPURS workload descriptor in main memory, so the writer
+is either a `SpursHdlr` PPU thread or another SPURS kernel instance that was never
+created. Only one kernel SPU thread exists in this boot; whether that is correct for
+this title's SPURS configuration is the first thing to check.
+
 ## What is still open
 
 **Is this a regression?** Not established. The repro costs ten seconds, so a bisect

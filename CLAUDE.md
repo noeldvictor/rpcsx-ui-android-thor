@@ -236,8 +236,13 @@ and `/proc/<tid>/syscall` is useless anyway for a thread that never blocks — i
 
 ## The three things actually open
 
-1. **The Eternal Sonata deadlock**, above. Ten-second repro, located, unattributed.
-   The repro makes a bisect practical for the first time; that is the next move.
+1. **The Eternal Sonata deadlock**, above — now with an address and a culprit.
+   `CellSpursKernel0` stalls on its workload reservation at **`0x9d4d80`**
+   (`lsa=0x100`, `pc=0x12b0`, retries capped at 24), reported from inside the wait
+   because no completion-time counter can see it. SPURS has hung this title on this
+   device before — the profile still carries *"SPURS 4 caused a black-screen-alive
+   load hang on Thor"*. Next: find who is supposed to write `0x9d4d80`, and whether
+   one kernel SPU thread is correct for this title's SPURS configuration.
 2. **~~What hardware AES is worth on a cold boot.~~ Closed: nothing.** The firmware
    set is 144 files totalling **13.6 MB**, so at the measured rates the whole thing
    is 36.6 ms of software AES against 1.9 ms of hardware — about 35 ms, against a
