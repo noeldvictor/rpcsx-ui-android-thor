@@ -106,7 +106,12 @@ false negative and cost hours once.
   because every call site had already been retuned for the real `19.2 MHz`
   timer; two fixes for one problem multiply.
 - **A search that finds nothing and a search that searches nothing look
-  identical.** This has now cost twice. `tools/test_thor_arm64_apk.ps1` defaulted
+  identical.** This has now cost three times. The third was a device experiment
+  labelled "shader cache cleared" that had cleared nothing: the `mv` failed because
+  `files/cache/cache/` is `drwxr-s---` and denies the group write, while
+  `config/custom_configs/` is `drwxrws---` and allows it. The `&&`-guarded success
+  `echo` never printed and nobody looked. Confirm the postcondition after the
+  command, not the precondition before it. `tools/test_thor_arm64_apk.ps1` defaulted
   to `app/build/outputs/apk/release/`, a variant nobody builds, and passed for
   months while x86_64 shipped. Then the ledger recorded `lv2` and the HLE modules
   as architecture-neutral on a grep across `Emu/Cell/lv2` and `Emu/Cell/Modules`,
@@ -150,7 +155,25 @@ The pattern across all five: the measurement was correct and the *inference* was
 not. When a number decides something, state what population it is over and what
 it excludes, before acting on it.
 
-## The one thing to run next, if you have the device
+## First: the game does not currently boot
+
+Eternal Sonata hangs about eight and a half seconds into emulation, deterministically,
+with `rsx::thread` pegged at 100% and ~85% of that in the kernel. It never recovers.
+The screen keeps the last frame RSX presented — usually the SPU cache overlay — which
+makes it look like a stalled compile. It is not; nothing is being written to disk.
+
+This **blocks the GETLLAR sweep below**, which needs the title to reach gameplay.
+
+The upside is the trade it offers: reproducing the open guest crash meant playing to a
+combat encounter, and reproducing this takes one command and ten seconds. Full write-up,
+including the six hypotheses ruled out and the two unbounded `sync.cpp` waits it is
+narrowed to, in [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md).
+
+Answering it needs a **debuggable** build. The installed release build refuses `run-as`,
+the device has no root, so `/proc/<tid>/syscall` and `debuggerd -b` are both closed.
+`/proc/<tid>/stat` still works, and that is all it will give up.
+
+## The one thing to run next, once it boots
 
 **93% of all emulator spin is the SPU `GETLLAR` wait, and the emulator spins there
 because it is configured to, 100% of the time.**
@@ -188,6 +211,7 @@ stands on its own and this file is the map.
 | [`docs/arm64/microarchitecture.md`](docs/arm64/microarchitecture.md) | What the hardware does: instruction latency, throughput and pipe assignment from the vendored per-core guides, the forwarding regions, and the chapter 4 rules. |
 | [`docs/arm64/memory-model.md`](docs/arm64/memory-model.md) | Atomics and ordering: the dead LSE2 macro, the reservation seqlock, RCsc versus RCpc, and instruction-cache maintenance. |
 | [`docs/arm64/spin.md`](docs/arm64/spin.md) | Where the CPU time goes: 93% of spin is the `GETLLAR` wait, what was tried against it, and the one lever still untested. |
+| [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md) | The deterministic RSX hang that currently stops the game booting: the ten-second repro, what it is not, and why it needs a debuggable build. |
 | [`docs/arm64/instruments.md`](docs/arm64/instruments.md) | The measuring tools, what each can and cannot answer, and the mistakes made building them. |
 | [`docs/arm64/thermal.md`](docs/arm64/thermal.md) | Junction versus package sensors, and the guard that compared a limit against the wrong one. |
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
