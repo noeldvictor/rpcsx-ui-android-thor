@@ -1241,3 +1241,38 @@ Recording the boundary explicitly, because "needs a measurement" has been used
 loosely in these notes and was wrong four times. Here it is precise: the
 mechanism is fully verified, the target is quantified, and the only unknown is
 the size of an effect and the cost of its side effect.
+
+### Making the sweep cheap: a runtime override for the percentage
+
+One obstacle stood between "the lever is verified" and "the sweep is one
+command": `get_spu_wait_policy_for_runtime` is just `setting.observe()`, so the
+percentage comes from config with no runtime path. Sweeping four values would
+have meant **four full rebuilds**, because `config.yml` is not writable from a
+shell under scoped storage.
+
+Added `debug.rpcsx.thor.getllar_busy_percent`, following the convention already
+used for the wait profiler, the cache-worker affinity mask and the Eternal Sonata
+experiments:
+
+    adb shell setprop debug.rpcsx.thor.getllar_busy_percent 25
+
+Four boots instead of four builds, on a device whose availability is the scarce
+resource.
+
+**Inert by construction**, which the contract test enforces: an absent property
+returns the configured value, a malformed one does too rather than defaulting to
+something, and values above 100 are rejected — that last because the comparison
+it feeds is against a modulo-100 quantity, so a larger number would silently mean
+"always spin" while reading like a deliberate choice. It is read **once and
+cached**, since the call site is inside the GETLLAR retry path and a property
+read per iteration would perturb exactly the measurement it exists to enable —
+the same mistake as the FPS harness whose per-sample `adb` spawns tripped the
+thermal guard.
+
+The test also asserts that **no Thor profile pins the percentage**. Changing that
+default before measuring is the specific mistake worth preventing: it is a
+plausible-looking edit, it would look like applying a finding, and the finding is
+that the value is *untested*, not that it is wrong.
+
+Verified by mutation — weakening the range check so an out-of-range value would
+be accepted turns the test red, and restoring it turns it green.

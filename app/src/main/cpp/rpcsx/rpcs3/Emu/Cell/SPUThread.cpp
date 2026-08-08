@@ -1,4 +1,4 @@
-#include "rx/align.hpp"
+﻿#include "rx/align.hpp"
 #include "stdafx.h"
 #include "util/JIT.h"
 #include "util/date_time.h"
@@ -149,6 +149,57 @@ static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexc
 #else
 	return setting.get();
 #endif
+}
+
+// Runtime override for the GETLLAR busy-waiting percentage, so the one config
+// value that gates 93% of emulator spin can be swept without a rebuild.
+//
+// The percentage decides whether a GETLLAR wait spins or sleeps. Upstream
+// defaults it to 100, meaning always spin, and no Thor profile overrides it -
+// while the analogous reservation knob is explicitly set to 0 for this device.
+// Sweeping it is the outstanding measurement, and reading it only from config
+// would cost a full rebuild per arm because config.yml is not writable from a
+// shell under scoped storage.
+//
+// Debug-only and inert unless set: an absent or malformed property returns the
+// configured value unchanged, so this cannot alter shipped behaviour. Matches
+// the debug.rpcsx.thor.* convention already used for the wait profiler, the
+// cache-worker affinity mask and the Eternal Sonata experiments.
+//
+//   adb shell setprop debug.rpcsx.thor.getllar_busy_percent 25
+//
+// Read once and cached, because the call site is inside the GETLLAR retry path
+// and a property read per iteration would perturb the very thing being measured.
+static FORCE_INLINE u32 get_thor_getllar_busy_percent(u32 configured) noexcept
+{
+#ifdef ANDROID
+	static const int overridden = []() -> int
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.getllar_busy_percent", value) <= 0)
+		{
+			return -1;
+		}
+
+		char* end = nullptr;
+		const unsigned long parsed = std::strtoul(value, &end, 10);
+
+		if (end == value || *end || parsed > 100)
+		{
+			return -1;
+		}
+
+		return static_cast<int>(parsed);
+	}();
+
+	if (overridden >= 0)
+	{
+		return static_cast<u32>(overridden);
+	}
+#endif
+
+	return configured;
 }
 
 static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
@@ -2398,7 +2449,7 @@ void spu_thread::dump_regs(std::string& ret, std::any& /*custom_data*/) const
 			is_const = false;
 		}
 
-		fmt::append(ret, "%s%s ", spu_reg_name[i], is_const ? "©" : ":");
+		fmt::append(ret, "%s%s ", spu_reg_name[i], is_const ? "Â©" : ":");
 
 		if (auto [size, dst, src] = SPUDisAsm::try_get_insert_mask_info(r); size)
 		{
@@ -5971,7 +6022,7 @@ bool spu_thread::process_mfc_cmd()
 										auto& history = getllar_wait_time[(addr % SPU_LS_SIZE) / 128];
 
 										getllar_busy_waiting_switch =
-											evaluate_spin_optimization({history.data(), history.size()}, getllar_evaluate_time, get_spu_wait_policy_for_runtime(g_cfg.core.spu_getllar_busy_waiting_percentage));
+											evaluate_spin_optimization({history.data(), history.size()}, getllar_evaluate_time, get_thor_getllar_busy_percent(get_spu_wait_policy_for_runtime(g_cfg.core.spu_getllar_busy_waiting_percentage)));
 									}
 									else
 									{
