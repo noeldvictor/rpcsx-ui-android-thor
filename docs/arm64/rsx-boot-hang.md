@@ -1256,6 +1256,47 @@ raw-SPU branch and an HLE dispatch path, and notably it resets `last_getllar_add
 entry — so whoever wrote it already knew the mailbox and `GETLLAR` state interact.
 That is the file to read next, with the SPURS startup protocol beside it.
 
+### Answered: the SPU never signals. The event is not being dropped.
+
+A one-shot report was added at the top of the `SPU_WrOutIntrMbox` handler
+(`SPUThread.cpp:7748`), going through `spu_log` — the channel proven to reach the
+file — rather than counting, and rather than relying on channel tracing that does not
+exist.
+
+Result: **the line never appears, while the `GETLLAR` stall does.**
+
+Unlike the six silences before it, this negative is trustworthy, and the preconditions
+were checked before it was believed:
+
+| precondition | evidence |
+| --- | --- |
+| instrument in the shipped binary | `grep -a "first write by"` → 1 |
+| sink reaches the log | the `GETLLAR stalled` lines use `spu_log` and appear |
+| code path exercised | stall reproduced in the same run |
+
+**So candidate 2 is eliminated. The emulator is not dropping a mailbox event — the
+SPU never sends one.** The SPURS kernel issues exactly one `GETLLAR`, never advances
+to a second MFC command, and never signals the PPU.
+
+Which turns the question inside out one last time. The PPU *did* write the descriptor
+— `counter=4`, with neighbours at 0 and 2 proving those are real per-line writes. So
+the sequence is:
+
+1. `main_thread` sets up the descriptor and connects the SPU group to queue `0x8d007d00`.
+2. `main_thread` blocks on that queue, waiting for the kernel to report in.
+3. The kernel starts, issues one `GETLLAR` on the descriptor, and **does not accept
+   what it reads** — it spins instead of signalling.
+
+The descriptor was written and the SPU can read it, so this is no longer a
+delivery, ordering or coherence problem. **The kernel is reading a value it considers
+invalid.** The remaining question is what it expects there — a magic number, a
+version, a ready flag — and why the emulator's setup path leaves it different from
+what real hardware would.
+
+That is answerable by dumping the 128 bytes at `0x9d4d80` at the moment of the stall
+and comparing against the SPURS descriptor layout. The stall reporter already runs at
+exactly that point and already has the address.
+
 ### The class of bug this belongs to
 
 Worth recording because it is already in the tree, commented out. In the newer

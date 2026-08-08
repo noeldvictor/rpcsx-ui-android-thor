@@ -7747,6 +7747,27 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutIntrMbox:
 	{
+		// Does the SPU ever try to signal the PPU at all?
+		//
+		// The boot deadlock ends with main_thread blocked in
+		// sys_event_queue_receive on a queue connected to this SPU's thread
+		// group, and nothing ever sends to it. Two candidates: the SPU never
+		// writes this mailbox because it is stuck on its first GETLLAR, or it
+		// writes it and the routing drops the event. Logging is useless here -
+		// channel operations are not traced at any level, which made an earlier
+		// zero look like an answer when it was silence.
+		//
+		// So report the first write directly, through spu_log, which is the
+		// channel proven to reach RPCSX.log on this device. One line, once.
+		// If it never appears alongside a GETLLAR stall, the SPU is not
+		// signalling and the fault is upstream of the poll.
+		if (static atomic_t<bool> reported{false}; !reported.exchange(true)) [[unlikely]]
+		{
+			spu_log.error("SPU_WrOutIntrMbox: first write by %s at pc=0x%x, value=0x%x "
+						  "- the SPU does attempt to signal the PPU.",
+				get_name(), pc, value);
+		}
+
 		// Reset GETLLAR metadata
 		last_getllar_addr = umax;
 
