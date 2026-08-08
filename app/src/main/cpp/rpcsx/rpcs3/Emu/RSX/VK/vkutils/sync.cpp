@@ -10,6 +10,7 @@
 
 #include "util/sysinfo.hpp"
 #include "rx/asm.hpp"
+#include "util/thor_wait_profiler.h"
 
 namespace vk
 {
@@ -548,17 +549,35 @@ namespace vk
 		}
 		else
 		{
+			// Instrumented, not changed. This branch polls a GPU fence with
+			// rx::pause() as its only backoff, and that emits YIELD, which
+			// retires without effect on a non-SMT core - so it is a bare retry
+			// loop at full clock across a millisecond-scale event. Whether it is
+			// hot here was unknown, and asserting a cost without measuring it is
+			// the mistake this project has made repeatedly.
+			usz fence_spins = 0;
+
 			while (auto status = VK_GET_SYMBOL(vkGetFenceStatus)(*g_render_device, pFence->handle))
 			{
 				switch (status)
 				{
 				case VK_NOT_READY:
+					fence_spins++;
 					rx::pause();
 					continue;
 				default:
 					die_with_error(status);
 					return status;
 				}
+			}
+
+			// Only record waits that actually spun. Counting the ones that found
+			// the fence already signalled would bury the interesting cases in a
+			// mass of zero-iteration entries, which is the shape that made the
+			// GETLLAR episode counter unusable for tuning.
+			if (fence_spins)
+			{
+				thor_wait::record(thor_wait::site::vk_fence_poll, fence_spins);
 			}
 
 			return VK_SUCCESS;

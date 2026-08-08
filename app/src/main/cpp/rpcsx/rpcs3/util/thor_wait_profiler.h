@@ -73,6 +73,13 @@ namespace thor_wait
 		spu_getllar_depth_8_31,
 		spu_getllar_depth_32_127,
 		spu_getllar_depth_ge128,
+		// vk::wait_for_fence's polling branch, taken whenever a caller omits the
+		// timeout argument. Waits on a GPU fence, which is a millisecond-scale
+		// event, with rx::pause() as its only backoff - and that emits YIELD,
+		// which retires without effect on a non-SMT core. calls counts entries
+		// into the poll, cycles accumulates the iterations spent there, so
+		// cycles/calls is the mean depth of a GPU wait spun through.
+		vk_fence_poll,
 		count
 	};
 
@@ -175,7 +182,7 @@ namespace thor_wait
 			"Thor wait profiler core total=%llu rsx_fifo=%llu/%llu vm_range=%llu/%llu "
 			"vm_passive=%llu/%llu vm_writer=%llu/%llu vm_res_lock=%llu/%llu vm_res_shared=%llu/%llu "
 			"cpu_slot=%llu/%llu cpu_suspend=%llu/%llu sema=%llu/%llu mutex_s=%llu/%llu mutex_x=%llu/%llu "
-			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu getllar_episodes=%llu getllar_depth=%llu/%llu hist=%llu/%llu/%llu/%llu",
+			"mutex_up=%llu/%llu mutex_unlock=%llu/%llu lv2_yield=%llu/%llu(us) passive_enter=%llu passive_taken=%llu getllar_episodes=%llu getllar_depth=%llu/%llu hist=%llu/%llu/%llu/%llu vk_fence=%llu/%llu",
 			static_cast<unsigned long long>(total),
 			static_cast<unsigned long long>(calls(site::rsx_fifo_cache_fill)),
 			static_cast<unsigned long long>(cycles(site::rsx_fifo_cache_fill)),
@@ -213,7 +220,9 @@ namespace thor_wait
 			static_cast<unsigned long long>(calls(site::spu_getllar_depth_lt8)),
 			static_cast<unsigned long long>(calls(site::spu_getllar_depth_8_31)),
 			static_cast<unsigned long long>(calls(site::spu_getllar_depth_32_127)),
-			static_cast<unsigned long long>(calls(site::spu_getllar_depth_ge128)));
+			static_cast<unsigned long long>(calls(site::spu_getllar_depth_ge128)),
+			static_cast<unsigned long long>(calls(site::vk_fence_poll)),
+			static_cast<unsigned long long>(cycles(site::vk_fence_poll)));
 #else
 		(void)total;
 #endif

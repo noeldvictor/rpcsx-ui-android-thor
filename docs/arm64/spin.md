@@ -1095,3 +1095,35 @@ That makes five, all the same shape, none of them instruction selection:
 
 Unchanged for now, for the reason the previous entries record: a crash
 investigation is open and untested changes would make its result unattributable.
+
+### The GPU fence poll is now instrumented, so its cost stops being a guess
+
+Of the five spins, four have measured or derivable costs. The GPU fence poll was
+the exception — recorded as "not asserted as hot without measurement", which is
+honest but leaves the one open question about it unanswered.
+
+`thor_wait::site::vk_fence_poll` closes that. It counts entries into the polling
+branch and accumulates the iterations spent there, so `cycles/calls` is the mean
+number of times a GPU wait was spun through.
+
+Two details, both learned from earlier mistakes in this document:
+
+**Only waits that actually spun are recorded.** A fence that is already signalled
+takes zero iterations, and counting those would bury the interesting cases under
+a mass of zeros — exactly what made the `GETLLAR` episode counter unusable for
+tuning, where the denominator counted every wait that started rather than every
+wait that spun.
+
+**Instrumentation only; the behaviour is untouched.** The polling branch still
+polls. Adding the counter and changing the wait in one step would leave any
+subsequent measurement unattributable, and there is an open crash investigation
+that makes that worse.
+
+Built and verified in both configurations, profiler on and off. **Deliberately
+not installed**: the device is running the reverted build under test, and
+replacing it would destroy the one experiment that can say whether the reverted
+reservation changes were implicated in the guest fault.
+
+When that question resolves, this arrives with the sweep — one profiler build
+answers both what the GETLLAR percentage is worth and whether the fence poll
+deserves a fix.
