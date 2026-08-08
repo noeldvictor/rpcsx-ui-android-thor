@@ -1328,7 +1328,20 @@ __forceinline
 	_mm_storeu_si128(reinterpret_cast<__m128i*>(_dst + 80), v1);
 	_mm_storeu_si128(reinterpret_cast<__m128i*>(_dst + 96), v2);
 	_mm_storeu_si128(reinterpret_cast<__m128i*>(_dst + 112), v3);
-#elif defined(ARCH_ARM64) && defined(__clang__)
+#else
+	// The ARM64 branch above this line used to be a live #elif with nothing but
+	// these comments inside it. The LDP/STP body was reverted and the #elif was
+	// left behind, so on ARM64 + clang mov_rdata compiled to a function that
+	// copied nothing -- confirmed by the compiler itself, which warned that both
+	// _dst and _src were unused parameters.
+	//
+	// That is the copy every reservation is validated against. With it empty,
+	// rdata was never refreshed, cmp_rdata could never match, and any SPU whose
+	// GETLLAR line changed under it spun forever: measured at 10,093,915
+	// unstable-copy retries in one Folklore boot, with all three other continue
+	// paths at zero. See docs/arm64/rsx-boot-hang.md.
+	//
+	// Keep the history below, but never as a branch that can swallow the copy.
 	// An explicit LDP/STP form lived here and was reverted after a guest crash.
 	//
 	// It replaced this memcpy with four interleaved 16-byte chunk pairs, matching
@@ -1351,7 +1364,6 @@ __forceinline
 	// millions of randomised 128-byte pairs compared against memcpy on device -
 	// rather than a contract test that only checks the source still has the
 	// intended shape.
-#else
 	std::memcpy(_dst, _src, 128);
 #endif
 }
@@ -6211,6 +6223,17 @@ bool spu_thread::process_mfc_cmd()
 		u64 getllar_retry_count = 0;
 		bool getllar_slow_yield = false;
 
+		// Which continue path the retry loop takes.
+		//
+		// rdata is all zero after 24 retries while `data` holds the published
+		// workload, and the body copies data into rdata on every iteration. So
+		// mov_rdata is never reached: the body always turns back earlier. There
+		// are exactly four ways out. Count them rather than argue about which.
+		u32 getllar_cc_unique = 0; // ntime carried rsrv_unique_lock
+		u32 getllar_cc_tsx = 0;    // ntime & 127 set, and there is no TSX on ARM64
+		u32 getllar_cc_time0 = 0;  // counter moved across the copy
+		u32 getllar_cc_cmp = 0;    // copy did not read back stable
+
 		// Report a GETLLAR that never comes back, from inside the wait.
 		//
 		// Every counter in this fork is incremented on completion - the wait
@@ -6468,6 +6491,14 @@ bool spu_thread::process_mfc_cmd()
 									std::memcmp(&data, &_ref<spu_rdata_t>(ch_mfc_cmd.lsa & 0x3ff80), 128) == 0 ? 1 : 0,
 									std::memcmp(&data, &rdata, 128) == 0 ? 1 : 0);
 							}
+
+							spu_log.error(
+								"GETLLAR continue-path counts: unique_lock=%u tsx_unavailable=%u "
+								"counter_moved=%u unstable_copy=%u "
+								"- tsx_unavailable is the path that can never make progress: with g_use_rtm "
+								"false on ARM64 the `!g_use_rtm || ...` test short-circuits and the body turns "
+								"back before mov_rdata, so rdata is never refreshed.",
+								getllar_cc_unique, getllar_cc_tsx, getllar_cc_time0, getllar_cc_cmp);
 						}
 					}
 
@@ -6482,6 +6513,7 @@ bool spu_thread::process_mfc_cmd()
 			if (ntime & vm::rsrv_unique_lock)
 			{
 				// There's an on-going reservation store, wait
+				getllar_cc_unique++;
 				continue;
 			}
 
@@ -6493,6 +6525,7 @@ bool spu_thread::process_mfc_cmd()
 				if (!g_use_rtm || !spu_getllar_tx(addr, rdata, this, ntime & -128))
 				{
 					// See previous ntime check.
+					getllar_cc_tsx++;
 					continue;
 				}
 			}
@@ -6522,12 +6555,14 @@ bool spu_thread::process_mfc_cmd()
 				// Reservation data has been modified recently
 				if (time0 & vm::rsrv_unique_lock)
 					i += 12;
+				getllar_cc_time0++;
 				continue;
 			}
 
 			if (!cmp_rdata(rdata, data))
 			{
 				i += 2;
+				getllar_cc_cmp++;
 				continue;
 			}
 
