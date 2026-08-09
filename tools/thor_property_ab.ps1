@@ -83,6 +83,22 @@ foreach ($mode in $Modes) {
     $still = ((Invoke-Adb @("shell", "pidof $Package")) -join "").Trim()
     if (-not $still) { throw "emulator died during settle for mode '$mode'" }
 
+    # Void the arm if emulation was paused.
+    #
+    # A stray input opens the PS3 home menu, which pauses emulation. A paused
+    # emulator does almost no work, so the arm reports a low cycle count and a
+    # low core count and looks like a spectacular win. Three comparisons in this
+    # project were corrupted this way before the cause was found -- see
+    # docs/arm64/audit-ledger.md. The device sits on a desk and is shared with
+    # another session, so this is not rare.
+    $log = "/sdcard/Android/data/$Package/files/cache/RPCSX.log"
+    $paused = ((Invoke-Adb @("shell", "grep -c 'Emulation is being paused' $log")) -join "").Trim()
+    $menu = ((Invoke-Adb @("shell", "grep -c 'opened home menu' $log")) -join "").Trim()
+    if ($paused -ne "0" -or $menu -ne "0")
+    {
+        throw "arm '$mode' is void: emulation was paused (paused=$paused home_menu=$menu). Re-run without touching the device."
+    }
+
     # The probe reports through Write-Host, so nothing reaches the pipeline --
     # read the JSON it writes instead. Note it is UTF-8 *with BOM*, which
     # ConvertFrom-Json and python's plain utf-8 both choke on.
@@ -108,6 +124,19 @@ foreach ($mode in $Modes) {
     }
 
     $results += [pscustomobject]@{ mode = $mode; watts = $watts; cores = $cores; mcyc_per_s = [math]::Round($work / $secs, 1) }
+
+    # Cores-busy parity across arms is the cheap sanity check. If the arms are
+    # not doing comparable amounts of work they are not in comparable states,
+    # and the headline number is meaningless however precise it looks.
+    if ($results.Count -gt 1)
+    {
+        $spread = ($results | Measure-Object -Property cores -Maximum).Maximum - ($results | Measure-Object -Property cores -Minimum).Minimum
+        $mean = ($results | Measure-Object -Property cores -Average).Average
+        if ($mean -gt 0 -and ($spread / $mean) -gt 0.10)
+        {
+            Write-Host ("  WARNING: cores-busy differs by {0:P0} across arms -- the arms are probably in different states and this comparison is void." -f ($spread / $mean))
+        }
+    }
 }
 
 Invoke-Adb @("shell", "am force-stop $Package") | Out-Null
