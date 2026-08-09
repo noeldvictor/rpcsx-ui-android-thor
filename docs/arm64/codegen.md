@@ -922,3 +922,32 @@ any number. `tools/thor_property_ab.ps1` does **not** do this — its fixed
 cache-warm pass before being pointed at `Use LLVM CPU` again.
 
 Config restored to `cortex-a78`, property back to `0`, cache left warm.
+
+## One lead left, and it is not ready
+
+`bcax()` appears 4 times in `SPULLVMRecompiler.cpp`; `eor3()` appears **0**.
+
+That looks like a missed opportunity, and it has the best basis of anything left:
+the `no-sha3` A/B is the one *verified same-state* comparison this project has
+produced — both arms at ~5.3 cores busy — and it measured **BCAX in SHUFB worth
+5.6%**. So a SHA-3 three-input op in a hot lowering is demonstrably worth real
+percentage points here, unlike every pipe-table argument that preceded it.
+
+**It still is not ready to run**, by the checklist in `CLAUDE.md`:
+
+* Mechanism: clear — `EOR3` folds `a ^ b ^ c` into one instruction.
+* **Predicted magnitude: unknown**, and that is disqualifying. It depends
+  entirely on whether three-input XOR patterns actually arise in SPU opcode
+  lowering, and most SPU ops are two-input. `bcax` earns its place because
+  SHUFB genuinely needs `(a & ~c) ^ b`; there may simply be no natural `eor3`
+  shape, in which case zero uses is correct rather than a gap.
+* What bears on it in the repo: unexamined. The SPU opcode set and the existing
+  lowerings would answer it without any device time.
+
+So the next step is **reading, not measuring**: find whether any SPU lowering
+computes a three-way XOR, or a `(a ^ b) ^ c` chain that LLVM is not fusing. If
+one exists in a hot opcode, the 5.6% precedent makes it worth building. If none
+does, `eor3` being unused is the right answer and this closes.
+
+Doing it the other way round — build it, then measure, then discover the pattern
+never occurs — is how the previous twelve went.
