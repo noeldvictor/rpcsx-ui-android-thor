@@ -509,3 +509,36 @@ Both lowerings now build, selected at runtime:
 `ISB` should beat `YIELD`, and measurement showed a 23% regression because the
 surrounding code was tuned around the old behaviour. Predict from the manual,
 then measure — in that order, and do not skip the second step.
+
+### Measured: no difference, and the reason matters more than the result
+
+| lowering | Mcyc/s | cores busy | vs baseline |
+| --- | --- | --- | --- |
+| `mla` (default) | 5,956.0 | 2.225 | — |
+| `tree` (all-V) | 5,973.6 | 2.234 | **+0.3%** |
+
+0.3% is inside the noise this design resolves — the `pause` A/B put `yield`
+against `nop` at 2% and that was already borderline. **The pipe-assignment
+prediction did not translate into anything measurable.**
+
+The likely reason is not that the manual is wrong; it is that **the workload no
+longer exercises the function**. The 10,093,915 `cmp_rdata` calls that motivated
+this were counted while the emulator was *deadlocked* — the GETLLAR retry loop
+spinning forever on a line that could never match, because `mov_rdata` was
+copying nothing. With that fixed the loop settles in a handful of iterations,
+and `cmp_rdata` is no longer hot.
+
+So this is a correct measurement of the wrong population, which is the failure
+mode `adreno-tiler.md` records and this project keeps rediscovering. What it
+establishes is still worth having: **on the workload that now exists, the
+lowering does not matter**, so do not churn the hottest correctness-sensitive
+comparison in the emulator for a table entry.
+
+To settle it properly, count the calls first. `getllar_cc_cmp` in `SPUThread.cpp`
+already counts the retry path that invokes it, but only reports from the 5-second
+stall reporter, which no longer fires. A per-frame counter would answer whether
+`cmp_rdata` is hot enough for its lowering to be worth an argument at all —
+and if it is not, this whole section is an interesting note rather than an
+optimization.
+
+Default stays `mla`. Both paths remain switchable.

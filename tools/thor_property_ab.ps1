@@ -5,6 +5,8 @@ param(
     [string]$TitleId = "BCUS98147",
     [string]$GamePath = "/storage/2664-21DE/Roms/ps3/Folklore (USA) (En,Fr,De,Es,It).iso",
     [string[]]$Modes = @("yield", "isb", "nop"),
+    [string]$Property = "debug.rpcsx.thor.pause_mode",
+    [string]$Label = "pause",
     [int]$SettleSeconds = 150,
     [int]$ProbeSeconds = 60
 )
@@ -57,14 +59,14 @@ foreach ($mode in $Modes) {
     Write-Host "=== pause_mode = $mode ==="
 
     Invoke-Adb @("shell", "am force-stop $Package") | Out-Null
-    Invoke-Adb @("shell", "setprop debug.rpcsx.thor.pause_mode $mode") | Out-Null
+    Invoke-Adb @("shell", "setprop $Property $mode") | Out-Null
 
-    $readback = ((Invoke-Adb @("shell", "getprop debug.rpcsx.thor.pause_mode")) -join "").Trim()
+    $readback = ((Invoke-Adb @("shell", "getprop $Property")) -join "").Trim()
     if ($readback -ne $mode) { throw "property did not take: wanted '$mode', read '$readback'" }
 
     $intent = "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity " +
               "--es path '$GamePath' --es titleId $TitleId " +
-              "--es thorDebugBootRequestId pausemode-$mode " +
+              "--es thorDebugBootRequestId $Label-$mode " +
               "--ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true"
     Invoke-Adb @("shell", $intent) | Out-Null
 
@@ -84,9 +86,9 @@ foreach ($mode in $Modes) {
     # The probe reports through Write-Host, so nothing reaches the pipeline --
     # read the JSON it writes instead. Note it is UTF-8 *with BOM*, which
     # ConvertFrom-Json and python's plain utf-8 both choke on.
-    & $probe -Device $Device -DurationSeconds $ProbeSeconds -Label "pause-$mode" | Out-Host
+    & $probe -Device $Device -DurationSeconds $ProbeSeconds -Label "$Label-$mode" | Out-Host
 
-    $json = Get-ChildItem (Join-Path $PSScriptRoot "..\debug-captures") -Filter "power-*-pause-$mode.json" |
+    $json = Get-ChildItem (Join-Path $PSScriptRoot "..\debug-captures") -Filter "power-*-$Label-$mode.json" |
             Sort-Object LastWriteTime | Select-Object -Last 1
     if (-not $json) { throw "no probe output for mode '$mode'" }
     $d = (Get-Content $json.FullName -Raw -Encoding UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json
@@ -113,12 +115,12 @@ Invoke-Adb @("shell", "am force-stop $Package") | Out-Null
 Write-Host ""
 Write-Host "=== summary ==="
 $results | Format-Table -AutoSize
-$base = ($results | Where-Object { $_.mode -eq "yield" }).mcyc_per_s
+$base = ($results | Where-Object { $_.mode -eq $Modes[0] }).mcyc_per_s
 if ($base) {
     foreach ($r in $results) {
         $pct = 100.0 * ($r.mcyc_per_s - $base) / $base
         # watts may be NaN when the charger covered the load; never format it blind
-        Write-Host ("  {0,-6} {1,9:N1} Mcyc/s  {2,6:N3} cores  ({3,6:N1}% vs yield)" -f $r.mode, $r.mcyc_per_s, $r.cores, $pct)
+        Write-Host ("  {0,-6} {1,9:N1} Mcyc/s  {2,6:N3} cores  ({3,6:N1}% vs baseline)" -f $r.mode, $r.mcyc_per_s, $r.cores, $pct)
     }
 }
 Write-Host ""
