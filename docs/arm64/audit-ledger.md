@@ -313,3 +313,44 @@ and `opened home menu` in every arm, and void the comparison if either appears.
 That is cheaper than the screenshot check and catches the same class. A device
 being handled — or an overlay taking a stray tap — is enough to do it, and the
 Thor is shared with another session.
+
+## Upstream has ARM64 work we do not have
+
+Fetched `github.com/RPCS3/rpcs3` (the checkout in `rpcs3-upstream/` had drifted
+three weeks and carries this project's own commits, so it is not a clean
+mirror). Recent ARM64 commits on `origin/master`:
+
+| commit | subject | our fork |
+| --- | --- | --- |
+| `d25972e19` | JIT/AArch64: advertise `+i8mm` to the LLVM target machine | **have it** — 7 references in `JITLLVM.cpp`; we add it by hand |
+| `2d1be0918` | SPU LLVM: use **`TBL`** for AArch64 `ROTQBY` shuffles | **missing** |
+| `5e8ba021a` | SPU/ARM64: implement RawSPU MMIO on ARM | not checked |
+| `21d533675` | SPU LLVM: disable NaN ruling-out in Reduced Loop on ARM64 | not checked |
+| `6647c5a2b` | fallback unsupported database SPU decoder on ARM64 | not checked |
+| `2f2ac69d6` | SPU LLVM: idiomatic FSM implementation | not checked |
+
+`ROTQBY` in this fork (`SPULLVMRecompiler.cpp:6191`) still has only an
+`#if defined(ARCH_X64)` path using `vpermb`. Upstream adds
+`pshufb_for_x86_and_tbl_for_aarch64()` and routes AArch64 through **`TBL`** —
+69 lines added, 30 removed.
+
+**This is the best-evidenced remaining lead in the whole audit**, and unusually
+it did not come from a manual:
+
+* It is the same shape as the one thing that measured *positive* here — BCAX in
+  the SHUFB lowering, **+5.6%**, from the one verified same-state A/B.
+* `ROTQBY` is another hot SPU shuffle, in the same family as SHUFB.
+* `TBL` is `2 2 V` on A715 — full width, unlike the `V0`/`V1` traps that sank
+  most manual-derived ideas.
+* It is already written and tested by people targeting the same hardware, so the
+  hypothesis has an author who measured it.
+
+Predicted magnitude, as the checklist demands: **unknown but bounded by the BCAX
+precedent** — a single hot shuffle lowering moved 5.6%, so single digits is the
+plausible range, not tenths of a percent. That is enough to justify the work,
+which is the first time that sentence has been writable in this audit.
+
+**Do not cherry-pick blind.** This fork has diverged (`vpermb` paths, the Thor
+property gates, the `mov_rdata` fix). Port the ARM64 branch by hand, keep the
+x86 path untouched, and A/B on Eternal Sonata with the pause guard and
+cores-busy parity check now in `thor_property_ab.ps1`.
