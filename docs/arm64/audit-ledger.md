@@ -230,3 +230,54 @@ about the chip, never a conclusion about the code.** Before building anything,
 answer two questions the manual cannot — *is this code hot on this workload*, and
 *what is it competing with* — and then measure, because on this project the
 device has overruled the table nine times out of nine.
+
+## The harness is the problem, not only the hypotheses
+
+Asked why improvements keep failing. The honest answer is that **the A/B tool
+cannot resolve the effects being chased**, and I treated its output as
+measurement anyway.
+
+Every run this session, by verified state:
+
+| state | Mcyc/s |
+| --- | --- |
+| verified gameplay, 6 runs | 13,352 – 14,624 (**±5%**) |
+| still compiling PPU modules | 10,691 |
+| unverified arm, JIT A/B | 7,317 |
+
+**When both arms are demonstrably in the same place, the instrument is tight.**
+Every wild number has been a *phase mismatch*, never noise.
+
+`tools/thor_property_ab.ps1` settles for a fixed number of seconds and never
+checks where the program got to. Eternal Sonata does not reach a deterministic
+state in fixed time — it passes through PPU compilation, two splashes, a
+cutscene and a menu. So the tool reports precise-looking figures for **different
+programs**, and three large results have already been artifacts:
+
+* `cortex-a710` "−24%" — one arm was on the *"Compiling PPU Modules"* screen
+* `jit_cpu_native` "+92%" — one arm at 2.762 cores against a gameplay norm of 5.2
+* the same JIT question, twice, from the cache being keyed on the target CPU
+
+### What this does and does not invalidate
+
+**Stands:** the small refutations, because both arms were verified at ~5.2 cores
+— `cmp_rdata` 0.3%, GETLLAR busy-wait −2.9%, `LOAD_OP_CLEAR` 12.39→12.65%, BCAX
++5.6%. Same state, tight instrument, real answers.
+
+**Does not stand:** any large delta from this harness without a state check.
+
+### The fix, and it is a prerequisite for everything else
+
+Before any further optimisation work is worth doing, the harness needs:
+
+1. **A state gate, not a timer.** Wait for a specific log marker or a screenshot
+   match, and abort the arm if it is not reached — never settle blind.
+2. **Cores-busy as a sanity check.** Both arms within a few percent of the same
+   figure, or the comparison is void. This alone would have caught all three
+   artifacts.
+3. **A deterministic scene.** A save state loaded to a fixed point beats "boot
+   and wait", which is what makes the phase mismatch possible at all.
+
+Chasing 3-5% effects with a tool that silently compares different program phases
+is how twelve predictions get "refuted" and two artifacts get mistaken for wins.
+The instrument comes first.
