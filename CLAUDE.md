@@ -749,3 +749,37 @@ The installed APK was confirmed to be the instrumented one
 the top of `on_frame_end` to separate "not called" from "`enabled()` false" —
 which is the same technique that cracked `mov_rdata`, and should have been the
 first move rather than five rounds of reading.
+
+# The video's optimization list, checked against this fork
+
+Pulled from the source rather than from summaries: the chapter markers of
+*"PS3 emulation is fast on ARM now"* (`ytInitialPlayerResponse.videoDetails`,
+via `tools/` Playwright). This is the actual list of things it claims, so it is
+the actual list to check. Status is what was verified here, not what was assumed.
+
+| # | chapter | status in this fork |
+| --- | --- | --- |
+| 00:55 | Busy wait shenanigans | covered at length in [`spin.md`](docs/arm64/spin.md); 93% of spin is the GETLLAR wait |
+| 06:40 | **Don't use Yield in place of Pause!** | **was wrong here.** `rx::pause()` emitted `yield`, a nop on SMP. Now switchable via `debug.rpcsx.thor.pause_mode`; **unmeasured** |
+| 09:32 | What was LLVM doing on ARM? | JIT attrs logged and verified on device: `cpu=cortex-a78 +sha3,+dotprod,+i8mm,-sve,-sve2` |
+| 12:45 | How we optimized SHUFB | hand-written lowering already present — see [`codegen.md`](docs/arm64/codegen.md) (`TBL` set) |
+| 19:04 | The rest of the instructions | swept: `SQADD`, `URHADD`, `UABD`, fixed-point `FCVTZS` all clean from generic IR |
+| 29:46 | The most optimized way to compare data on ARM | `cmp_rdata`/`mov_rdata` — where the empty `#elif` was found; **re-examine the compare now that the copy is fixed** |
+| 38:55 | How to play wow optimally | n/a |
+| 39:28 | SVE are the *special* vector extensions | **does not apply to this device.** `has_sve()` reads `HWCAP_SVE`, and the Thor's HWCAP does not report it — the JIT log shows `-sve,-sve2` |
+| 47:50 | Optimizing RPCS3 with SVE | same: no SVE on this hardware, so both chapters are inapplicable here |
+| 54:24 | Optimizing via hardware wait instructions | `WFE` explored (three experiments, [`spin.md`](docs/arm64/spin.md)); `FEAT_WFxT` absent on this chip so `WFE` cannot carry a timeout |
+| 55:33 | Lightning round | the sweep table above covers this ground |
+
+Two things this changed. The pause/yield item was a **real defect sitting behind
+a TODO** in our own source, and it is the item the video names most explicitly.
+And the two SVE chapters — a fifth of the video — are inapplicable to this
+device, which is worth knowing before anyone spends a session on them.
+
+Get the chapter list this way rather than from news coverage; the summaries
+paraphrase and one of them is what led to the wrong idea that the manual was a
+Qualcomm document:
+
+```js
+await p.evaluate(() => window.ytInitialPlayerResponse.videoDetails.shortDescription)
+```
