@@ -153,6 +153,26 @@ Deliberately **not** vendored, on the same principle as the Product Brief: the
 documents a QCOM extension, and this device runs Mesa Turnip, which exposes no
 `VK_QCOM_*` extensions at all.
 
+### The Qualcomm Linux family was harvested and rejected
+
+For completeness, the whole public Qualcomm Linux bundle family was pulled with
+the downloader above and measured, not eyeballed — pages mentioning
+cache/interconnect/DDR/memory-map/register/cluster/DVFS, out of the first 120:
+
+| document | pages | hardware-ish pages |
+| --- | --- | --- |
+| Qualcomm Linux Kernel Guide (80-70018-3) | 156 | 13 / 120 |
+| Qualcomm Linux Boot Guide (80-70017-4) | 89 | 11 / 120 |
+| Qualcomm Linux Build Guide (80-70017-254) | 158 | 1 / 120 |
+| Qualcomm Linux Yocto Guide (80-70017-27) | 100 | 1 / 120 |
+| Qualcomm Linux Yocto Guide (80-70015-27) | 84 | 3 / 120 |
+
+They are BSP and build documentation. None of them describes the SoC. Not
+vendored, for the same reason as the Product Brief: a directory that looks
+complete is worse than one that is honest about its gap. `80-70022-3` (the
+159-page Kernel Guide) is kept because it is the one with genuine kernel-level
+platform content.
+
 ## The SoC manual: search exhausted, and the one thing that would unblock it
 
 Every avenue tried, so this is not repeated:
