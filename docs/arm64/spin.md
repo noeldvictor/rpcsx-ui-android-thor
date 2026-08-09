@@ -1193,3 +1193,41 @@ core rather than merely being suspected of it.
 that 93% of spin is the GETLLAR wait, so that is the workload to measure against,
 and `tools/thor_power_probe.ps1` is the instrument, since the question is power
 rather than frame time.
+
+### Measured: ISB is a 23% regression here, and YIELD really is a nop
+
+Three arms on Folklore at a steady workload, `tools/thor_pause_mode_ab.ps1`.
+The device was on the charger, so watts were not derivable for two of the three
+arms — the probe says so itself rather than reporting a wrong number. Clock
+residency is unaffected by USB, so cycles are the measure, and for "is this spin
+instruction wasting work" they are the more direct one anyway.
+
+| mode | cores busy | Mcyc / 50.5 s | vs `yield` |
+| --- | --- | --- | --- |
+| `yield` (baseline) | 2.197 | 296,245 | — |
+| `isb` (upstream) | 2.605 | 365,192 | **+23%** |
+| `nop` (control) | 2.236 | 301,858 | +2% |
+
+Two conclusions, and the second is the useful one.
+
+**`yield` ≈ `nop`, within 2%.** That is direct evidence that `YIELD` retires as a
+nop on this core rather than merely being suspected of it. The premise is
+confirmed on this hardware.
+
+**`isb` is 23% more work, not less.** Per-cluster, the X3 goes from 0.608 to a
+saturated 1.000 cores busy. This is exactly what the deferred comment predicted:
+the spin counts here were hand-tuned with a nearly-free instruction in the loop,
+so making each iteration genuinely expensive stretches every spin in wall-clock
+and the core stays busy longer. The instruction got "better" and the outcome got
+worse.
+
+**So do not take the swap.** The default stays `yield`. Upstream's ISB is right
+in principle and wrong as a drop-in here, and the honest conclusion is that the
+instruction cannot be changed without re-tuning `thor_es_getllar_retry_cycles`
+and the busy-wait batch sizes in the same change — which is the opposite of the
+"measure it on its own" advice that made this experiment possible, and a much
+larger piece of work.
+
+Caveats: one run per arm, no repeats, so ~2% differences are inside the noise
+this design can resolve; the 23% is not. The charger also means the `isb` arm's
+`0.479 W [FLOOR, USB attached]` is a floor, not a comparable figure.
