@@ -1,3 +1,6 @@
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
 #include "util/types.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -156,6 +159,26 @@ static std::string sanitize_android_arm64_llvm_cpu(std::string cpu)
 
 	if (!utils::has_sve() && android_arm64_cpu_enables_sve_by_default(cpu))
 	{
+		// Keep the real core name when asked.
+		//
+		// cortex-a78 is not a core in this device, and -mcpu selects the scheduling
+		// model for all JIT output. Verified off-device that the substitution is not
+		// load-bearing: cortex-a715+nosve yields "-sve -sve2" while keeping +dotprod
+		// and +i8mm, and this JIT already passes -sve,-sve2 in its feature string, so
+		// SVE is suppressed twice over. See docs/arm64/codegen.md.
+		//
+		// Off by default until the A/B says the scheduling model is worth anything --
+		// nine predictions of this shape have been refuted on this project.
+		{
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.jit_cpu_native", value);
+			if (length > 0 && value[0] != '0' && value[0] != 'n' && value[0] != 'f')
+			{
+				jit_log.warning("LLVM CPU '%s' kept; SVE suppressed by the feature string.", cpu);
+				return cpu;
+			}
+		}
+
 		jit_log.warning("LLVM CPU '%s' enables SVE in bundled LLVM, but Android HWCAP does not report SVE. Using cortex-a78 for Thor-safe JIT code.", cpu);
 		return "cortex-a78";
 	}

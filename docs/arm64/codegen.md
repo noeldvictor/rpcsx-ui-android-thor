@@ -680,3 +680,45 @@ decides. Nine predictions of this shape have been refuted. Put it behind a
 property, A/B it on Eternal Sonata with `tools/thor_property_ab.ps1`, and expect
 the histogram's answer: JIT output is dominated by loads, stores and branches,
 where a scheduling model matters less than it does for tight arithmetic.
+
+### Check 2 refuted the premise: that code path never runs
+
+The property-gated override was built, installed and enabled — and the log still
+said `cpu=cortex-a78`. Neither the original SVE warning nor the new one fired.
+
+**`sanitize_android_arm64_llvm_cpu()` never reaches its SVE branch.** The JIT
+gets `cortex-a78` from the hardcoded default at `JITLLVM.cpp:1492`, taken when
+`aarch64::get_cpu_name()` returns empty — which it does, because
+`/proc/cpuinfo` on this device exposes no `CPU part` line. The comment two lines
+below has said so all along: *"ARM CPU registers are not accessible from
+usermode."*
+
+So the preceding two sections analysed a downgrade that does not happen. The SVE
+substitution is real code and it is dead here. **This is checklist item 4 —
+establish reach before optimality — violated in the same session the checklist
+was written.** Reading a function and reasoning about its logic is not evidence
+that it runs.
+
+**But the real cause is fixable, and better than what was proposed.** MIDR *is*
+readable through sysfs:
+
+```
+/sys/devices/system/cpu/cpu0/regs/identification/midr_el1  0x00000000411fd461  part 0xd46  Cortex-A510
+/sys/devices/system/cpu/cpu5/regs/identification/midr_el1  0x00000000412fd470  part 0xd47  Cortex-A710
+/sys/devices/system/cpu/cpu7/regs/identification/midr_el1  0x00000000411fd4e0  part 0xd4e  Cortex-X3
+```
+
+Every core identifies itself precisely. `get_cpu_name()` returns empty only
+because it does not look here.
+
+The correct change is therefore **not** relaxing the SVE substitution but
+teaching CPU detection to read `midr_el1`, which also answers a question the
+substitution never could: **the cores differ per cluster.** A single `-mcpu` is
+wrong for a big.LITTLE target no matter which one is chosen — SPU threads are
+pinned to A710/A715 while RSX runs on the X3, and a JIT could reasonably pick
+its target per thread class.
+
+Sequence for whoever picks this up: read MIDR, map part numbers to LLVM CPU
+names, keep the `-sve,-sve2` feature negation (verified sufficient above), and
+only then A/B. The measurement remains the arbiter — this section has already
+been wrong once.
