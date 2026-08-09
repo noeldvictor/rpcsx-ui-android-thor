@@ -883,3 +883,42 @@ scheduling model is worth anything. A/B `Use LLVM CPU: cortex-a78` against
 `tools/thor_property_ab.ps1`. Ten predictions of this shape have been refuted
 here; this one is at least now *testable in minutes* rather than blocked behind
 a misunderstanding.
+
+### The 24% "win" was a loading screen. Read this before re-running it.
+
+The A/B was run and produced a spectacular result:
+
+```
+cortex-a78    14,072 Mcyc/s   5.348 cores   6.08 W floor
+cortex-a710   10,691 Mcyc/s   4.098 cores   2.57 W floor   (-24%)
+```
+
+**It is an artifact, and the evidence was already on disk.** The PPU module cache
+is keyed on the target CPU — the filenames say so:
+
+```
+files/cache/cache/ppu-.../v8-kusa-XMyLLR4WC3a88385h6wEAv-6P2gCr-cortex-a78.obj
+```
+
+Changing `Use LLVM CPU` invalidates **every cached module**. So the two arms ran
+different phases of the program: `cortex-a78` played from a warm cache, while
+`cortex-a710` was still in *"Compiling PPU Modules… file 78 of 78, module 39 of
+40"* — confirmed by screenshot at the same 150 s settle. Fewer cycles and less
+power because it was doing less, not because it was doing it better.
+
+A correct measurement of the wrong population, again, and the tenth time this
+project has been bitten by that specific shape.
+
+**How to run it properly.** Any A/B that changes the JIT target must warm the new
+cache first, because the settle time is not a constant across arms:
+
+1. set the target, boot, and wait for *"Compiling PPU Modules"* to disappear;
+2. force-stop, boot again on the now-warm cache;
+3. only then settle and probe.
+
+Confirm with a screenshot that both arms are in the same scene before believing
+any number. `tools/thor_property_ab.ps1` does **not** do this — its fixed
+`-SettleSeconds` is exactly what produced the false result, and it should grow a
+cache-warm pass before being pointed at `Use LLVM CPU` again.
+
+Config restored to `cortex-a78`, property back to `0`, cache left warm.
