@@ -187,6 +187,9 @@ Every avenue tried, so this is not repeated:
 | Scribd (SM8550 data sheet 80-33265-1) | paywalled |
 | Playwright download control | **works** — see the recipe above — but only for `publicresource` bundles |
 | Playwright enumeration of the catalog | `docs.qualcomm.com/` **redirects to `account.qualcomm.com` Sign In** |
+| QCS8550 (the IoT/robotics variant this device actually reports) | same silicon, but only Product Briefs are public |
+| SoM vendor datasheets (eInfochips Aikri QCS8550) | **403 from a real browser**, not just curl — their WAF blocks automated clients outright |
+| Qualcomm Linux bundle family (5 documents, harvested) | BSP and build guides; 1-13 hardware pages out of 120. Measured, then rejected |
 
 That last row is the answer. The catalog is behind a Qualcomm account; anonymous
 access reaches only the handful of bundles published under `publicresource`. The
