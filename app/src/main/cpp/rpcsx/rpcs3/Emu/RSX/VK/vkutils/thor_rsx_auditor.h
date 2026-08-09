@@ -872,11 +872,19 @@ namespace vk::thor::rsx_auditor
 		// called and every conclusion above is about dead code. If it appears, the
 		// fault is in enabled() or the interval and the next probe goes there.
 		{
-			static std::atomic<bool> announced{false};
-			if (!announced.exchange(true, std::memory_order_relaxed))
+			// The one-shot version proved on_frame_end runs with enabled=1 and
+			// interval=60, and no report still appeared. The only remaining way that
+			// happens is (frame % interval) never reaching 0 -- i.e. this runs far fewer
+			// times than once per presented frame. VKGSRender::flip() has several early
+			// returns ahead of queue_swap_request(), which would do exactly that.
+			//
+			// So count calls instead of announcing one: the first few, then sparsely.
+			static std::atomic<u64> calls{0};
+			const u64 call_no = calls.fetch_add(1, std::memory_order_relaxed) + 1;
+			if (call_no <= 5 || (call_no % 250) == 0)
 			{
-				rsx_log.error("Thor RSX Auditor: on_frame_end reached (enabled=%d interval=%u) "
-					"- one-shot, ahead of the enabled() gate.",
+				rsx_log.error("Thor RSX Auditor: on_frame_end call #%llu (enabled=%d interval=%u)",
+					static_cast<unsigned long long>(call_no),
 					detail::enabled() ? 1 : 0,
 					detail::g_report_interval.load(std::memory_order_relaxed));
 			}
