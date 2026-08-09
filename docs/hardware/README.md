@@ -153,6 +153,33 @@ Deliberately **not** vendored, on the same principle as the Product Brief: the
 documents a QCOM extension, and this device runs Mesa Turnip, which exposes no
 `VK_QCOM_*` extensions at all.
 
+## The SoC manual: search exhausted, and the one thing that would unblock it
+
+Every avenue tried, so this is not repeated:
+
+| attempt | result |
+| --- | --- |
+| direct CDN/bundle URLs | `403` with a JSON body |
+| bundle-number guessing (`80-70017-3`, `80-63442-50`, …) | `403` |
+| filename-pattern search | found the OpenCL guide and Game Developer Guide — **worked**, but only for docs already public |
+| archive.org full-text search | nothing but news posts and podcasts |
+| Lantronix (8 Gen 2 HDK vendor) | schematics and manuals only to purchasers, via their technical portal |
+| Scribd (SM8550 data sheet 80-33265-1) | paywalled |
+| Playwright download control | **works** — see the recipe above — but only for `publicresource` bundles |
+| Playwright enumeration of the catalog | `docs.qualcomm.com/` **redirects to `account.qualcomm.com` Sign In** |
+
+That last row is the answer. The catalog is behind a Qualcomm account; anonymous
+access reaches only the handful of bundles published under `publicresource`. The
+SM8550 *Hardware Register Description* is not one of them, and no amount of URL
+cleverness changes that — it is an authentication boundary, not an obscurity
+problem.
+
+**What would unblock it:** a Qualcomm account (free registration reaches more of
+the catalog; partner status reaches the register descriptions). The tooling is
+already written — `tools/qualcomm_docs_download.js` handles the cookie banner and
+the blob download, and adding a signed-in browser profile to it is a small
+change. If someone supplies credentials, the fetch is a one-liner away.
+
 # Snapdragon 8 Gen 2 coverage: what is here, block by block
 
 The device reports `ro.soc.model=QCS8550`, `ro.board.platform=kalama` — the
