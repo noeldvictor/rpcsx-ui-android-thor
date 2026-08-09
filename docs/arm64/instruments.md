@@ -339,3 +339,54 @@ investigated it.
 Worth separating clearly, because "the biggest remaining target has no known fix"
 is a different and more useful statement than "we need another measurement to
 know where to look".
+
+## Open: the RSX auditor's `enabled()` gate rejects while cached says enabled
+
+Unresolved after five instrumented boots. Written down in full because the
+evidence is self-contradictory and the next person should not re-derive it.
+
+**Symptom.** With `debug.rpcsx.thor.rsx_auditor=1` set before launch and Folklore
+holding 60 fps, the auditor emits nothing — including its own original
+`Thor RSX Auditor: frames=` report, so this is not something the staging or
+`LOAD_OP_CLEAR` counters introduced.
+
+**What was ruled out, each by measurement rather than reading:**
+
+* not compiled out — the `RPCSX_THOR_RSX_EXPERIMENTS` guard at 794 closes at 825;
+  `on_frame_end` is at 857
+* it *is* called — a one-shot probe fired immediately, and a counting probe
+  reached **~3,750 calls**
+* not a rare-call problem — 3,750 calls against `interval=60` should report ~60×
+* the interval gate is never reached — a probe inside its reject branch (923)
+  never fired
+* the `enabled()` gate at 893 is what rejects — its probe (902) fires every call
+* `rsx_log.warning` reaches the log; other RSX warnings appear in the same boot
+* the installed APK is the instrumented one (`lastUpdateTime` after the build)
+
+**The contradiction.** The probe at 902, inside `if (!enabled())`, prints:
+
+```
+on_frame_end call #1 (enabled=1 interval=60)
+ENABLED GATE REJECT #1 cached=2 poll=1
+```
+
+`cached=2` is the *enabled* value, and `enabled()` ends in `return cached == 2`.
+Worse, `poll=1` says only **one** `enabled()` call has happened this iteration,
+when the call probe on the line above makes one of its own — so the two
+observations cannot both be of the same state.
+
+**Next step, and it is not more reading.** Two candidates worth one probe each:
+
+1. `enabled()` takes its `poll_enabled_property()` path whenever
+   `(poll & 0xfff) == 0`, and **`poll` is the pre-increment value, so this is
+   true on the very first call**. If that re-read returns false the gate rejects
+   while a later `cached` read still shows 2. Log the return value of
+   `poll_enabled_property()` directly.
+2. These are `inline` variables in a header. If the header is compiled into more
+   than one shared object, each gets its own `g_cached_enabled` and
+   `g_property_poll_counter`, and probes in different objects would disagree
+   exactly like this. Log `&detail::g_cached_enabled` from both sites and
+   compare the addresses.
+
+Candidate 2 explains the `poll=1` anomaly and candidate 1 does not, so start
+there.

@@ -892,6 +892,19 @@ namespace vk::thor::rsx_auditor
 
 		if (!enabled())
 		{
+			// The call probe above reports enabled=1, yet nothing past this point ever
+			// runs. Log the raw cached state here so the two disagreeing observations
+			// can be compared directly instead of inferred.
+			static std::atomic<u64> offs{0};
+			const u64 o = offs.fetch_add(1, std::memory_order_relaxed) + 1;
+			if (o <= 3 || (o % 500) == 0)
+			{
+				rsx_log.error("Thor RSX Auditor: ENABLED GATE REJECT #%llu cached=%u poll=%llu",
+					static_cast<unsigned long long>(o),
+					detail::g_cached_enabled.load(std::memory_order_acquire),
+					static_cast<unsigned long long>(detail::g_property_poll_counter.load(std::memory_order_relaxed)));
+			}
+
 			return;
 		}
 
