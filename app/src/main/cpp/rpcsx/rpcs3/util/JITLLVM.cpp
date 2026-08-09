@@ -923,6 +923,7 @@ public:
 
 std::string jit_compiler::cpu(const std::string& _cpu)
 {
+	jit_log.error("Thor JIT CPU: cpu() entered with _cpu='%s'", _cpu.empty() ? "<empty>" : _cpu.c_str());
 	std::string m_cpu = _cpu;
 
 	if (m_cpu.empty())

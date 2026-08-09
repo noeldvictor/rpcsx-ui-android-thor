@@ -838,3 +838,48 @@ breakpoint on its callers. The value is passed in, so the origin is a caller, an
 nothing above this line in the file is relevant. Everything else in this section
 still holds — MIDR is readable, the part table is complete, `cortex-a715+nosve`
 keeps `+i8mm` — those were verified rather than reasoned.
+
+### Resolved for real: it was a config value, not code
+
+`config.yml` line 7:
+
+```
+Use LLVM CPU: cortex-a78
+```
+
+**The target was pinned in configuration.** Five code-reading guesses failed
+because the answer was never in the source. `jit_compiler::cpu()` receives
+`_cpu` from `g_cfg.core.llvm_cpu`, which is why every probe placed *inside* the
+detection logic stayed silent — that logic only runs when the config is empty.
+
+The probe that found it took one line at the function's *entry*:
+
+```
+Thor JIT CPU: cpu() entered with _cpu='cortex-a78'
+```
+
+With the config changed to `cortex-a710`, the rest of the chain became visible at
+once, and the SVE substitution turned out to be real and reachable after all —
+it simply never fired, because `cortex-a78` does not enable SVE:
+
+```
+config cortex-a710 -> cpu() -> "enables SVE in bundled LLVM ... Using cortex-a78"
+```
+
+With `debug.rpcsx.thor.jit_cpu_native=1` the substitution is bypassed and the
+target is what the hardware is:
+
+```
+LLVM AArch64 target: cpu=cortex-a710 attrs=+sha3,+dotprod,+i8mm,-sve,-sve2
+```
+
+`-sve,-sve2` intact, `+i8mm` present, scheduling model correct for the cluster
+SPU threads are pinned to. **No rebuild is needed to try this** — it is a config
+line plus a property.
+
+**Still unmeasured, and that is the only thing left:** whether the correct
+scheduling model is worth anything. A/B `Use LLVM CPU: cortex-a78` against
+`cortex-a710` + `jit_cpu_native=1` on Eternal Sonata with
+`tools/thor_property_ab.ps1`. Ten predictions of this shape have been refuted
+here; this one is at least now *testable in minutes* rather than blocked behind
+a misunderstanding.
