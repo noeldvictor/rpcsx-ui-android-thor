@@ -118,6 +118,41 @@ Scribd behind a paywall. Neither is fetchable, and guessing at
 catches, but a bare `curl -o` does not. Verify every download with `file` and a
 `pypdf` page count before believing it.
 
+## Downloading Qualcomm documents (this actually works now)
+
+`docs.qualcomm.com` serves most guides only through a JavaScript "Download"
+control that builds a **blob** — there is no static URL to curl, guessing bundle
+paths returns `403` with a JSON body, and one guessed path returned **HTTP 200
+with an HTML error page**. Playwright drives it:
+
+```
+node tools/qualcomm_docs_download.js <bundle-topics-url> <output-dir>
+```
+
+Two details make the difference, both found by failing first:
+
+* the OneTrust cookie banner intercepts the click — dismiss
+  `#onetrust-accept-btn-handler` before touching anything else, or the click
+  times out on an element that is visibly there;
+* the file arrives as a `blob:` download, not a navigation, so you must handle
+  Playwright's `download` event and `saveAs` it. Watching network responses for
+  `.pdf` never sees it.
+
+Enumerate what exists with the same approach against `docs.qualcomm.com/list`.
+That is how the OpenCL guide and the Kernel Guide below were found; neither was
+reachable by search alone.
+
+`qualcomm_linux_kernel_guide.pdf` — 80-70022-3 Rev. AB, 159 pages. Qualcomm's
+own kernel documentation for their Linux platforms. Vendored because it is
+substantive and Qualcomm-specific, with the caveat that it is written for driver
+and BSP authors; this project runs userspace on Android's stock drivers, so it
+is background rather than a working reference.
+
+Deliberately **not** vendored, on the same principle as the Product Brief: the
+`VK_QCOM_render_pass_transform` Developer Guide (80-PT676-1, 10 pages). It
+documents a QCOM extension, and this device runs Mesa Turnip, which exposes no
+`VK_QCOM_*` extensions at all.
+
 # Snapdragon 8 Gen 2 coverage: what is here, block by block
 
 The device reports `ro.soc.model=QCS8550`, `ro.board.platform=kalama` — the
