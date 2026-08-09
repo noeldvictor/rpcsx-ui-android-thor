@@ -869,3 +869,52 @@ And the two attribution traps that produced confident wrong answers:
 about the code. Answer the two questions the manual cannot — *is this hot* and
 *what is it competing with* — then measure on device. The device has overruled
 the table nine times out of nine.
+
+# Write the hypothesis down before touching the device
+
+Twelve optimisation attempts here were refuted or retracted. **Eleven had no
+predicted effect size.** That is the single cheapest thing to fix, and it costs
+nothing but a minute of thinking.
+
+Before any experiment, state four things. If any cannot be answered, the answer
+is not "run it and see" — it is that the experiment is not ready.
+
+1. **Mechanism.** What physically gets cheaper, in one sentence.
+2. **Predicted magnitude, as a number.** Not "faster" — a percentage or a
+   millisecond count, with the arithmetic. Most bad experiments die here: AES
+   interleaving is a real 4x on the primitive, and `aes.md` already measured the
+   total volume at 13.6 MB / ~35 ms of boot, so the prize is ~26 ms. Written
+   down, it is obviously not worth doing.
+3. **What already bears on this in the repo.** Almost every failure below was
+   answerable from something already present — a code comment, a filename, an
+   existing measurement — and was not looked at.
+4. **What result would falsify it**, and what confound would fake a win.
+
+## The twelve, and the prior that would have killed each
+
+| attempt | prior question | where the answer already was |
+| --- | --- | --- |
+| `ISB` for `YIELD` (+23%) | was surrounding code tuned around current behaviour? | **the comment at the site said the spin counts were hand-tuned with YIELD** |
+| `cmp_rdata` tree (0.3%) | still hot after the bug I just fixed? | the profile; the 10M calls were the deadlock |
+| UMA direct upload (8 KB/frame) | what is the byte volume? | one counter, no code change |
+| AES 4x interleave | how many bytes total? | `aes.md`: 13.6 MB, ~35 ms |
+| shift rewrite (identical) | read the adjacent table row | the same page |
+| `pause()` guard (no change) | is nearest-symbol valid for an `inline` function? | it never is |
+| `LOAD_OP_CLEAR` (no saving) | does Turnip already fold this? | Mesa is open source |
+| cortex-a710 ×2, jit A/B (artifacts) | does changing this invalidate a cache? | **the cache filename contains the CPU name** |
+| GETLLAR busy-wait (−2.9%) | 93% of *spin* — but how much of *total* is spin? | the profile |
+
+**Retrieval was not the problem.** The right manual row was found every time.
+RAG or embeddings over the manuals would have helped with exactly one of these —
+reading the X3 table for work that runs on A715 — and that is a routing rule
+("which core is this thread pinned to?"), not a search problem.
+
+## The two habits that produce fake wins
+
+* **A large result is a bug until proven otherwise.** Three "wins" of +24%, +92%
+  and −24% were all phase mismatches. Verified gameplay on this title sits at
+  13,352–14,624 Mcyc/s at ~5.2 cores busy; anything far outside that band is
+  measuring a different program state, not a faster one.
+* **Check cores-busy across arms before reading the headline number.** It caught
+  all three. If the arms differ by more than a few percent there, the comparison
+  is void regardless of what the summary says.
