@@ -808,3 +808,33 @@ The single `jit_log.error` that resolved it took one line and one boot, and
 would have been cheaper than any of the four. **When a question is "what does
 this code actually do at runtime", print it — the answer is never in the
 source, it is in the log.**
+
+### Fifth correction: `cpu()` receives the name, it does not choose it
+
+Wired MIDR detection into `jit_compiler::cpu()` at the `getHostCPUName()` site,
+built, installed, enabled — and neither the new log line nor a changed target
+appeared. The reason is one line above the edit:
+
+```cpp
+std::string jit_compiler::cpu(const std::string& _cpu)
+{
+    std::string m_cpu = _cpu;
+
+    if (m_cpu.empty())      // <- everything I patched lives in here
+```
+
+**`_cpu` arrives non-empty**, so the whole block — LLVM host detection, the
+`generic` fallback, the SVE substitution, and my addition — is skipped. The
+caller supplies `cortex-a78` directly. The edit was reverted; it was dead code.
+
+That is the fifth wrong answer in a row about this one path, and the pattern in
+them is identical: each time I found *a* plausible source, confirmed it read
+plausibly, and did not check whether control actually reaches it. The probe
+discipline was right and I kept applying it one level too shallow — printing
+inside the function I suspected instead of at the point the value is *consumed*.
+
+**Where to resume:** print `_cpu` at entry to `jit_compiler::cpu()`, or set a
+breakpoint on its callers. The value is passed in, so the origin is a caller, and
+nothing above this line in the file is relevant. Everything else in this section
+still holds — MIDR is readable, the part table is complete, `cortex-a715+nosve`
+keeps `+i8mm` — those were verified rather than reasoned.
