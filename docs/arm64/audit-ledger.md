@@ -15,6 +15,7 @@ Tried repeatedly this session. Four predictions derived that way, four refuted:
 | XOR/OR tree beats `MLA` in `cmp_rdata` | 0.3% | noise, no change |
 | UMA direct upload avoids staging copies | 8.5 KB/frame | negligible, closed |
 | shift-by-immediate beats shift-by-register | both `V13` | no difference, killed on paper |
+| removing the `static` guard from `pause()` helps | 5,954 vs 5,859 Mcyc/s | **no change** — inside the ~2% noise floor |
 
 The one that was killed on paper is the cheapest and the model to copy: read the
 exact table row *before* building anything.
@@ -28,6 +29,34 @@ instruction ideal":
 * the RSX auditor — `enabled()` is `constexpr false` on Android without
   `RPCSX_THOR_RSX_AUDITOR`, so its property could never work.
 * 1.88 W — a leaked emulator process at 210% CPU, found with `top`, not a manual.
+
+### The profile, and what it says the target really is
+
+First profile of the session (Eternal Sonata, 40,337 samples, none lost):
+
+```
+54.30%  unknown              JIT-generated SPU/PPU code, no symbols
+37.22%  librpcsx-android.so
+ 6.48%  [kernel.kallsyms]
+```
+
+**Over half the CPU is in JIT output.** Every audit above — inline assembly,
+sse2neon, intrinsic inventory, narrow-pipe sweep — covers the other 37%, and all
+of it came back clean. The manuals need applying to *what the recompilers emit*,
+which is the one thing not yet examined.
+
+A caution learned by falling for it: within the named 37%, ~31% of samples
+resolved to `get_thor_pause_mode`, an inline helper added earlier the same day.
+That looked like a hot-path regression — a function-local `static` in `pause()`
+costs a guard load and branch per call, and `pause()` sits in the spin where
+93% of spin time lives. The reasoning was sound and **the measurement refused
+it**: 5,954 Mcyc/s after removing it against 5,859 before, i.e. nothing.
+
+`get_thor_pause_mode` is `inline` and emitted into many translation units, so it
+becomes the *nearest preceding symbol* over large address spans in a
+partially-stripped binary. **Nearest-symbol attribution on an inline function is
+not evidence of heat.** The change was kept anyway — a finished A/B does not
+belong in a hot loop at runtime — but it is not a win and is not counted as one.
 
 ## Coverage so far
 
