@@ -459,3 +459,39 @@ sits at ~13% CPU, so neither frame time nor CPU load can show a GPU-side saving.
 The saving is an avoided unresolve — GMEM traffic — and the instrument for that
 is Adreno's performance counters, not FPS and not `thor_power_probe`. That
 measurement is the remaining step before this should be turned on by default.
+
+## Measured on the GPU: no saving. Keep it off.
+
+Frame time cannot see this — Folklore holds 60.01 fps with RSX at ~1.4% either
+way — so the measurement is GPU busy time from
+`/sys/class/kgsl/kgsl-3d0/gpubusy`, which reports a cumulative busy/total pair
+and resets on read. `tools/thor_gpu_busy_ab.sh` runs both arms.
+
+```
+loadop_clear=0   gpu_busy=12.39%   clock 615 MHz
+loadop_clear=1   gpu_busy=12.65%   clock 615 MHz
+```
+
+**No saving.** The clock is identical in both arms, so this is not devfreq
+absorbing a win, and the direction is very slightly the wrong way — well inside
+noise, but nowhere near the reduction an eliminated per-frame unresolve should
+produce.
+
+Two explanations, neither of which this measurement separates:
+
+* **Turnip may already do it.** A driver is free to notice that a render pass
+  begins with a full-surface `vkCmdClearAttachments` and fold it into the load op
+  itself. If Mesa already performs that transform, our version is redundant by
+  construction.
+* **The workload is too light.** A 2D title screen at 615 MHz on a GPU that is
+  87% idle has little unresolve traffic to remove. A dense 3D scene might.
+
+**Verdict: stays default-off.** It is correct, it applies to 100% of clears, and
+it buys nothing measurable here. Reopening it needs a heavier scene *and* a check
+of whether Turnip already folds the clear — in that order, because if the driver
+does it the scene will not matter.
+
+This is the sixth manual- or vendor-derived prediction in this effort to be
+refuted by measurement, and the pattern is now the most reliable finding in this
+document: **this emulator's ARM64 and GPU paths are already well matched to the
+hardware.** The wins have come from code that was broken, not code that was slow.
