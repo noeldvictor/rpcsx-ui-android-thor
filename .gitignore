@@ -23,3 +23,6 @@ debug-saves/
 
 # Kotlin incremental-compilation scratch, regenerated every build
 .kotlin/
+
+# Reassembled from the committed .partNN files; see docs/hardware/assemble_arm_arm.sh
+docs/hardware/arm_architecture_reference_manual_DDI0487M_c.pdf

@@ -491,3 +491,39 @@ that are never sampled outside their pass, and a direct pairing with the
 
 Feasibility is settled; the win is not measured. `docs/arm64/uma-bar-heap.md`
 records what still has to be shown before changing the upload path.
+
+## The manual the video was about, and the optimization it describes
+
+The video that set this project's direction is *"PS3 emulation is fast on ARM
+now"* (2026-08-04). The manual it refers to is **not** a Qualcomm chipset
+document — it is the **Arm Architecture Reference Manual**, which the RPCS3 team
+describe scouring *"every page"* of, *"over 17,000 pages"*. That page count
+identifies the issue exactly: **DDI 0487 M.c has 17,145 pages**. It is now
+vendored in `docs/hardware/` as three ~40 MB parts, rebuilt by
+`sh docs/hardware/assemble_arm_arm.sh` (SHA-256 checked). Split because 120 MB
+exceeds GitHub's hard 100 MB blob limit and **LFS is refused on this repo** —
+GitHub blocks LFS uploads to a public fork, as the objects bill to the upstream
+owner.
+
+Fetch the current issue from Arm's JSON index rather than guessing CDN paths:
+
+    curl -sS "https://documentation-service.arm.com/documentation/ddi0487/latest?lang=en&baseUrl=/documentation"
+
+`_links.resources[0].href` is a plain-`curl`-fetchable URL.
+
+**Its headline optimization is already in this fork.** The video's specific claim
+is Armv8 `SDOT`/`UDOT` used to speed up SPU emulation. Checked rather than
+assumed, after `mov_rdata` taught this project what an unchecked assumption
+costs:
+
+* `SPULLVMRecompiler.cpp` uses `sdot`/`udot` at a dozen sites.
+* They are gated on `m_use_dotprod` ← `utils::use_spu_dotprod()`
+  (`sysinfo.cpp:548`).
+* That reads `has_dotprod()`, which tests **`HWCAP_ASIMDDP`** — correct runtime
+  detection, not a compile-time guess.
+* The default feature mode is `native`, so it is **on**, with a runtime override
+  at `debug.rpcsx.thor.spu_arm_features` (`no-dotprod`, `no-i8mm`, `baseline`)
+  for A/B work.
+
+So there is nothing to port here — the useful follow-up is measuring what those
+modes are worth on this device, not implementing them.

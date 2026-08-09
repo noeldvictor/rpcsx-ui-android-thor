@@ -118,20 +118,60 @@ Scribd behind a paywall. Neither is fetchable, and guessing at
 catches, but a bare `curl -o` does not. Verify every download with `file` and a
 `pypdf` page count before believing it.
 
+## The Arm Architecture Reference Manual
+
+Issue **M.c**, **17,145 pages**, 120 MB, committed as three ~40 MB parts:
+
+    arm_architecture_reference_manual_DDI0487M_c.pdf.part00
+    arm_architecture_reference_manual_DDI0487M_c.pdf.part01
+    arm_architecture_reference_manual_DDI0487M_c.pdf.part02
+
+Rebuild it with `sh docs/hardware/assemble_arm_arm.sh`, which concatenates the
+parts and checks the SHA-256. The assembled PDF is gitignored.
+
+Split rather than stored whole because 120 MB is over GitHub's hard 100 MB
+per-blob limit, and **Git LFS is not available on this repo** — GitHub refuses
+LFS uploads to a public fork, since the objects would bill to the upstream
+owner:
+
+    batch response: @noeldvictor can not upload new objects to public fork
+
+Each part is also under the 50 MB warning threshold.
+
+This is the manual referenced in the video that set this project's direction
+("PS3 emulation is fast on ARM now"), where the RPCS3 team describe scouring
+*"every page of an ARM Architecture manual with over 17,000 pages"*. The page
+count identifies it exactly: **M.c has 17,145 pages**, the widely mirrored H.a
+has 11,530.
+
+An earlier revision of this README argued against vendoring it, on the grounds
+that it specifies semantics and encodings and contains no timing data. That
+reasoning is still correct and still worth heeding — **it remains the wrong
+reference for any question about speed**, and `CLAUDE.md` records an error
+already made by reasoning from it without checking the part (the ESR syndrome
+fields). It is here because it was asked for and because it is the source the
+upstream ARM64 work was done from, not because that caveat has been withdrawn.
+
+### Getting the current issue
+
+Do not guess CDN paths; every pattern tried returned 404, and one guessed
+Qualcomm path returned **HTTP 200 with an HTML error page**. Arm publishes a
+JSON index that names the current issue and its download URL:
+
+```
+curl -sS "https://documentation-service.arm.com/documentation/ddi0487/latest?lang=en&baseUrl=/documentation"
+```
+
+`_links.resources[0]` carries `name` (e.g. `DDI0487M_c_a-profile_architecture_reference_manual.pdf`)
+and `href` (a `documentation-service.arm.com/static/<id>?token=` URL that fetches
+with plain `curl`). This is simpler than the Playwright network-sniffing recipe
+below and should be tried first — Playwright is still how you *find* the endpoint
+when a portal changes, which is how this one was found.
+
+Always verify a download with `file` and a `pypdf` page count. A status code is
+not evidence.
+
 ## What is deliberately not here
 
-The **Arm Architecture Reference Manual for A-profile** (`aarch64.pdf`, roughly
-14,000 pages, 65.9 MB) is a different kind of document and is not vendored:
-
-    https://www.scs.stanford.edu/~zyedidia/docs/arm/aarch64.pdf
-
-It specifies instruction *semantics* and *encodings*. It contains **no timing
-data at all**, because timing is per-implementation and lives in the guides
-above. It is the correct reference for the RawSPU MMIO instruction decoder in
-`CLAUDE.md`'s ledger, which needs load/store encodings, and the wrong reference
-for any question about speed.
-
-`CLAUDE.md` records one error already made by reasoning from it without checking
-the part: the ESR syndrome fields, which the architecture defines and this
-silicon reports as zero for ordinary stage-1 faults. Fetch it for encodings when
-that work starts, keep it out of git, and do not consult it about performance.
+Nothing, currently. The Arm Architecture Reference Manual used to be listed here
+and is now vendored above under LFS.
