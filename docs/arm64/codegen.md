@@ -762,3 +762,49 @@ exactly what has been wrong three times in a row here.
 actually returns, next to what `sanitize_android_arm64_llvm_cpu()` does with it.
 One line, one boot, and it ends the speculation. Do that before touching
 anything.
+
+### Resolved: the JIT asks LLVM, not this project's own detection
+
+The probe settled it by *not* printing. `aarch64::get_cpu_name()` is never
+called on the JIT path at all. `JITLLVM.cpp:930`:
+
+```cpp
+m_cpu = llvm::sys::getHostCPUName().str();
+if (m_cpu == "generic") { ... m_cpu = fallback_cpu_detection(); }
+```
+
+**The JIT takes its target from LLVM's host detection**, which on AArch64 parses
+`/proc/cpuinfo` — the file this device does not populate with `CPU part`. So it
+returns `generic`, the fallback runs, and the result is `cortex-a78`.
+
+Meanwhile `AArch64Common.cpp` contains a working MIDR reader with a part table
+that already knows `0xd46` A510, `0xd47` A710, `0xd4d` A715 and `0xd4e` X3, and
+the app can read `midr_el1` (verified through `run-as`). **The project has
+correct CPU detection and the JIT never asks it.**
+
+So the fix is one line of plumbing rather than any of the three things the
+preceding sections proposed: have the JIT consult `aarch64::get_cpu_name()`
+before falling back. The SVE substitution then becomes reachable and relevant,
+and the verification above applies — `cortex-a715+nosve` keeps `+dotprod +i8mm`
+and drops `-sve -sve2`, and the JIT already passes those negations.
+
+Two caveats before anyone does it:
+
+* `get_cpu_name()` picks the **lowest** part present, which on this device is the
+  A510. Safe for correctness, wrong for scheduling. Selecting per thread class —
+  SPU is pinned to A710/A715, RSX to the X3 — is the better shape.
+* It is still unmeasured whether the scheduling model is worth anything. Ten
+  predictions of this kind have been refuted here.
+
+### What this thread cost, and what it teaches
+
+Four wrong answers in a row about one code path: it returns empty because of
+`/proc/cpuinfo` (wrong, it reads MIDR); the app cannot read MIDR (wrong,
+verified via `run-as`); the part table lacks Armv9 cores (wrong, all present);
+the SVE substitution downgrades it (wrong, never reached). Every one came from
+reading code and reasoning about it.
+
+The single `jit_log.error` that resolved it took one line and one boot, and
+would have been cheaper than any of the four. **When a question is "what does
+this code actually do at runtime", print it — the answer is never in the
+source, it is in the log.**

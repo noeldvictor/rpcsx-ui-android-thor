@@ -1510,6 +1510,7 @@ const char* fallback_cpu_detection()
 	static std::string s_result = []() -> std::string
 	{
 		std::string result = aarch64::get_cpu_name();
+		jit_log.error("Thor JIT CPU probe: get_cpu_name() returned '%s'", result.empty() ? "<empty>" : result.c_str());
 		if (result.empty())
 		{
 			return "cortex-a78";
