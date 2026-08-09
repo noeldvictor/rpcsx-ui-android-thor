@@ -708,11 +708,23 @@ distributes it to partners, and Lantronix states plainly that HDK schematics and
 manuals are available only to purchasers through their technical portal. The
 SM8550 data sheet (80-33265-1) surfaces only on Scribd behind a paywall.
 
-What is public and vendored instead: the Adreno Game Developer Guide (200 pp)
-and the Snapdragon Mobile Platform OpenCL guide (116 pp). The Snapdragon 8 Gen 2
-"Product Brief" is public but is two pages of marketing with no technical
-content, and was deliberately **not** vendored — padding `docs/hardware/` to
+What is public and vendored instead covers **every block of this chip**, which
+is the useful form of the question. `docs/hardware/README.md` carries the map;
+in short, the device reports `ro.soc.model=QCS8550` / `kalama`, and its
+Cortex-X3 (3187 MHz), A715/A710 (2803 MHz) and A510 (2016 MHz) clusters, its
+Armv9-A instruction set and its Adreno 740 each have a vendored document. The
+Arm core guides are not generic material here: those cores *are* the 8 Gen 2.
+
+Two things were found and deliberately **not** vendored. The Snapdragon 8 Gen 2
+Product Brief is public, and is two pages of marketing with no technical
+content. `docs.qualcomm.com` numbers briefs `87-*` and technical guides `80-*`,
+which is why both Qualcomm files here are `80-*`. Padding `docs/hardware/` to
 satisfy a checkbox is worse than recording that the real document is gated.
+
+The register description would not help much even if it were public: it
+documents SoC peripheral registers for driver authors, while this project writes
+userspace on top of Android's drivers and Mesa Turnip. Every finding so far came
+from instruction timing, instruction semantics or GPU behaviour.
 
 # Open: the RSX auditor emits nothing
 
