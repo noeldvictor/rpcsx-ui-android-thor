@@ -281,3 +281,35 @@ Before any further optimisation work is worth doing, the harness needs:
 Chasing 3-5% effects with a tool that silently compares different program phases
 is how twelve predictions get "refuted" and two artifacts get mistaken for wins.
 The instrument comes first.
+
+### The likely cause of the phase artifacts: the home menu pauses emulation
+
+The final JIT-target attempt aborted with *"emulator died during settle"* — the
+harness's own liveness check, after confirming adb was reachable, so a real
+death rather than a lost link. The log says what happened:
+
+```
+RSX: Friends list hidden in home menu. RPCN is not configured.
+SYS: Emulation is being paused... (mark=0)
+Input: opened home menu with result 0
+```
+
+**A stray input opened the PS3 home menu, which pauses emulation**, and the
+session ended from there. Not a codegen fault — an environment one.
+
+This is very likely the real mechanism behind the "phase mismatch" artifacts,
+and it is a better explanation than the one recorded above. A *paused* emulator
+does almost no work, which is precisely the signature seen:
+
+* `jit_cpu_native` arm at **2.762 cores** against a gameplay norm of 5.2
+* the `cortex-a710` arm reported as "still compiling" — plausibly paused instead
+
+Both were read as the program being at a different point in its run. Paused is
+simpler, fits the numbers better, and is invisible in cores-busy alone unless
+you know to look for it.
+
+**Add to the harness checklist:** grep the log for `Emulation is being paused`
+and `opened home menu` in every arm, and void the comparison if either appears.
+That is cheaper than the screenshot check and catches the same class. A device
+being handled — or an overlay taking a stray tap — is enough to do it, and the
+Thor is shared with another session.
