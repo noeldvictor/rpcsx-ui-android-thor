@@ -118,6 +118,47 @@ Scribd behind a paywall. Neither is fetchable, and guessing at
 catches, but a bare `curl -o` does not. Verify every download with `file` and a
 `pypdf` page count before believing it.
 
+# Snapdragon 8 Gen 2 coverage: what is here, block by block
+
+The device reports `ro.soc.model=QCS8550`, `ro.board.platform=kalama` — the
+Snapdragon 8 Gen 2. There is no single "chipset manual" for it in public
+circulation, so the question worth answering is not *"do we have the manual"* but
+*"is every block of this chip documented here"*. Measured cluster layout from the
+device, matching the power probe's three groups:
+
+| block | this device | document here |
+| --- | --- | --- |
+| Prime core | 1× Cortex-X3 @ 3187 MHz (`cpu7`) | `arm_cortex_x3_software_optimization_guide.pdf` |
+| Performance | 2× Cortex-A715 + 2× A710 @ 2803 MHz (`cpu3`–`cpu6`) | `arm_cortex_a715_…pdf`, `arm_cortex_a710_…pdf` |
+| Efficiency | 3× Cortex-A510 @ 2016 MHz (`cpu0`–`cpu2`) | `arm_cortex_a510_software_optimization_guide.pdf` |
+| Instruction set | Armv9-A | `arm_architecture_reference_manual_DDI0487M_c.pdf` (17,145 pp) |
+| GPU | Adreno 740 | `qualcomm_adreno_game_developer_guide.pdf` (200 pp) |
+| GPU compute / memory system | Adreno 740, UMA | `qualcomm_snapdragon_opencl_optimization_guide.pdf` (116 pp) |
+
+Every execution block the emulator touches is covered. The CPU guides are not
+generic Arm material — the X3, A715, A710 and A510 *are* this chip's cores.
+
+**What is genuinely missing, and why.** The SM8550 *Hardware Register
+Description* (the LM80-P0436 class of document) and the SM8550 data sheet
+(80-33265-1) are not public. Qualcomm ships the register description to
+partners; Lantronix, who sell the 8 Gen 2 HDK, state that schematics and manuals
+reach only purchasers through their technical portal. The data sheet appears
+only on Scribd behind a paywall. Both were searched for from several directions.
+
+**What was found, inspected and deliberately not vendored.** Qualcomm publishes
+Product Briefs under `docs.qualcomm.com/bundle/publicresource/87-*`, including
+one for the 8 Gen 2. It was downloaded and read: two pages of marketing copy with
+no technical content. Adding it would make this directory look more complete
+without making it more useful. The `87-*` numbers are briefs; the `80-*` numbers
+are the technical guides, which is why both Qualcomm documents here are `80-*`.
+
+**The register description would not help much anyway.** It documents SoC
+peripheral registers — clocks, interconnect, camera, modem — for people writing
+kernel drivers. This project writes a userspace emulator on top of Android's
+drivers and Mesa's Turnip. The questions it actually has are instruction timing
+(the Arm core guides), instruction semantics (the Arm ARM), and GPU behaviour
+(the Adreno guides). That is the material that has produced findings.
+
 ## The Arm Architecture Reference Manual
 
 Issue **M.c**, **17,145 pages**, 120 MB, committed as three ~40 MB parts:
