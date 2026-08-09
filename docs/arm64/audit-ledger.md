@@ -191,3 +191,41 @@ A row in a manual is a hypothesis. It earns a code change only after a
 measurement on this device, and the measurement has to be of a workload where
 the code is actually hot — `cmp_rdata` looked critical at 10 million calls, and
 those calls only existed because of a deadlock that has since been fixed.
+
+## Why nine predictions failed, and it is not the manuals
+
+Worth answering directly, because "the manual said so" kept being wrong.
+
+**The manuals were accurate every time the right row was read.** `YIELD` really
+is a nop on an SMP core — measured, `yield ≈ nop` within 2%. `MLA` really is
+`V0`. The chip really is UMA with no separate VRAM. The A510 really does share
+one VPU per complex. Not one chip-level fact has been contradicted by the device.
+
+The failures are all in the **inference from chip fact to code change**, and they
+come in four kinds:
+
+1. **Read one row, assumed the neighbour differed.** The shift rewrite: read
+   "shift by register `V13`" and assumed immediate shifts were wider. They are
+   also `V13`. Cost nothing because it was caught on paper — read the adjacent
+   rows before believing a contrast exists.
+2. **Wrong core's table.** The whole narrow-pipe sweep quoted Cortex-X3 while the
+   work runs on A715, where the same instructions are *narrower still*. A
+   big.LITTLE target has three answers to every timing question.
+3. **Inferred a remedy the manual never states.** This is the main one. A guide
+   says what an instruction costs *on the chip*. It does not say that replacing
+   it makes *this* code faster, because that depends on facts the manual cannot
+   know: whether the code is hot, what else contends for the pipe, and what was
+   tuned around the current form. `ISB` is the clean example — the manual was
+   right that `YIELD` does nothing, and the swap still cost **23%**, because the
+   spin counts were calibrated around a cheap instruction. BCAX is the same shape
+   inverted: `V0` throughput 1 is real, and it still wins by **5.6%** because it
+   replaces two operations.
+4. **Optimising before establishing reach.** `cmp_rdata` looked critical at
+   10,093,915 calls; those calls existed only because of a deadlock that was then
+   fixed.
+
+The practical rule this yields, and it is cheap: **a manual row is a hypothesis
+about the chip, never a conclusion about the code.** Before building anything,
+answer two questions the manual cannot — *is this code hot on this workload*, and
+*what is it competing with* — and then measure, because on this project the
+device has overruled the table nine times out of nine.
