@@ -1157,3 +1157,39 @@ and others did not, would show up here as both counts nonzero.
 
 So the experiment is sound: whatever the device does next is attributable to code
 without those two rewrites in it.
+
+## `pause()` emitted `YIELD`, which is a nop here
+
+The upstream ARM optimization work this project is following devotes a chapter to
+exactly this: *"Don't use Yield in place of Pause!"*
+
+`rx::pause()` in `rx/include/rx/asm.hpp` emitted `yield` on ARM64. `YIELD` is an
+SMT hint: on an SMP core with no sibling thread to hand the pipeline to, it
+retires as a nop. As a substitute for x86 `PAUSE` it does nothing but consume an
+issue slot. Upstream RPCS3 switched to `ISB`, which actually stalls the
+pipeline and is the closest AArch64 equivalent.
+
+The comment already in the file had identified this and deferred it:
+
+> Upstream switched this to `isb` because YIELD is an SMT hint and a no-op on
+> SMP cores. That is likely correct, but it changes the cost of every spin
+> iteration and this fork's spin counts were hand-tuned with YIELD in place.
+> **Reintroduce and measure it on its own, not bundled with other changes.**
+
+That deferral is right, and it asks for a switch rather than an edit — replacing
+the instruction outright would confound the instruction change with the tuning
+that was done around it. So `pause()` now selects at runtime:
+
+    debug.rpcsx.thor.pause_mode = yield   (default, unchanged)
+                                | isb     (upstream's choice)
+                                | nop     (control: neither hint nor stall)
+
+`nop` is there as a control. If `isb` and `nop` measure the same, the spin is not
+sensitive to the instruction at all and the whole question is moot; if `yield`
+and `nop` measure the same, that confirms `YIELD` is retiring as a nop on this
+core rather than merely being suspected of it.
+
+**Not yet measured** — the switch is built, the A/B is not run. `spin.md` records
+that 93% of spin is the GETLLAR wait, so that is the workload to measure against,
+and `tools/thor_power_probe.ps1` is the instrument, since the question is power
+rather than frame time.
