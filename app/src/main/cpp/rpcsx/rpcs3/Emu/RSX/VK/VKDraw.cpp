@@ -124,9 +124,11 @@ void VKGSRender::close_render_pass()
 	// life, or begin_render_pass() would see a different VkRenderPass, end this
 	// one early and discard the clear. Once the pass closes the next one must
 	// load again, so reset the key and drop the memoised pass with it.
-	if (vk::renderpass_key_has_color_clear(m_current_renderpass_key))
+	if (vk::renderpass_key_has_color_clear(m_current_renderpass_key) ||
+		vk::renderpass_key_has_depth_clear(m_current_renderpass_key))
 	{
 		m_current_renderpass_key = vk::renderpass_key_set_color_clear(m_current_renderpass_key, false);
+		m_current_renderpass_key = vk::renderpass_key_set_depth_clear(m_current_renderpass_key, false);
 		m_cached_renderpass = VK_NULL_HANDLE;
 	}
 }

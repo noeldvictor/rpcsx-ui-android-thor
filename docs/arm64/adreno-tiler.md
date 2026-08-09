@@ -428,3 +428,34 @@ plus its `stencilLoadOp`, and a clear value in the depth slot (which is the last
 attachment, so `clearValueCount` must grow to cover it). The infrastructure —
 key bit, load-op selection, clear-value plumbing, pass-close reset — is already
 in place and generalises; only the depth half is missing.
+
+## Depth folded too; the optimization now fires where it matters
+
+The colour-only version never ran in the scene that renders. Both halves are now
+folded:
+
+* second key bit `clear_depth` (`VKRenderPass.cpp`), so cleared and loaded passes
+  stay distinct cache entries for depth as well as colour;
+* the depth attachment's `loadOp` **and** `stencilLoadOp` honour it;
+* the clear-value array grows by one — attachment order is colours then depth, so
+  the depth value goes last and `clearValueCount` has to reach it;
+* `close_render_pass()` resets both bits.
+
+**Verified on device with `color=60 depth=60`,** i.e. the case that previously
+declined. Folklore renders its title screen at **60.01 FPS** with correct depth
+ordering — logo, cloud layers and particles all composited properly, no wiped
+region, no stale surface. Earlier splash screens render correctly too.
+
+Still gated behind `debug.rpcsx.thor.loadop_clear`, default off.
+
+### What is proven and what is not
+
+**Proven:** the conversion is correct on this hardware and driver, it applies to
+100% of clears in the measured workload, and it eliminates a full-surface
+`vkCmdClearAttachments` per frame in favour of a load op.
+
+**Not proven: that it is faster or cooler.** Folklore is capped at 60 FPS and
+sits at ~13% CPU, so neither frame time nor CPU load can show a GPU-side saving.
+The saving is an avoided unresolve — GMEM traffic — and the instrument for that
+is Adreno's performance counters, not FPS and not `thor_power_probe`. That
+measurement is the remaining step before this should be turned on by default.

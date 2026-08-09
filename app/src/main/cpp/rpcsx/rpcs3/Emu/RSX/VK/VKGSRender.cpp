@@ -1699,8 +1699,17 @@ void VKGSRender::clear_surface(u32 mask)
 		//   - the pass must not already be open (an open pass cannot acquire a load op)
 		//   - the clear must cover the whole surface, origin included
 		//   - colour only; a depth clear still needs vkCmdClearAttachments
+		// Depth is folded too. The first version required colour-only, and the
+		// measurement showed why that was worthless: the title screen clears
+		// colour alone (color=51 depth=0) but the rendered scene clears both
+		// (color=60 depth=60), so a colour-only fold never fired where it
+		// mattered. Folding one half while the other still needs a draw-time
+		// clear saves nothing, because the pass gets the clear regardless.
+		const bool has_depth_attachment = !!std::get<1>(m_rtts.m_bound_depth_stencil);
+		const bool fold_depth = clears_depth && has_depth_attachment;
+
 		if (thor_use_loadop_clear() && !pass_already_open && covers_surface &&
-			clears_color && !clears_depth && !m_draw_buffers.empty())
+			clears_color && !m_draw_buffers.empty() && (!clears_depth || fold_depth))
 		{
 			// The load op is baked into the VkRenderPass, so the key changes and the
 			// memoised pass must be dropped. The bit is cleared again in
@@ -1708,11 +1717,19 @@ void VKGSRender::clear_surface(u32 mask)
 			// begin_render_pass() see a different pass object, end this one
 			// immediately and throw the clear away.
 			m_current_renderpass_key = vk::renderpass_key_set_color_clear(m_current_renderpass_key, true);
+			if (fold_depth)
+			{
+				m_current_renderpass_key = vk::renderpass_key_set_depth_clear(m_current_renderpass_key, true);
+			}
 			m_cached_renderpass = VK_NULL_HANDLE;
 
-			// One entry per colour attachment; depth is the last attachment and keeps
-			// LOAD_OP_LOAD, so it needs no clear value.
+			// Attachment order is colours then depth, so the depth clear value has
+			// to sit at the end and clearValueCount has to reach it.
 			std::vector<VkClearValue> pass_clear_values(m_draw_buffers.size(), color_clear_values);
+			if (fold_depth)
+			{
+				pass_clear_values.push_back(depth_stencil_clear_values);
+			}
 
 			vk::begin_renderpass(
 				*m_current_command_buffer, get_render_pass(), m_draw_fbo->value,

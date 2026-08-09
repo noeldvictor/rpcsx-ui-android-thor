@@ -21,6 +21,8 @@ namespace vk
 	// the key because the load op is baked into the VkRenderPass object.
 	u64 renderpass_key_set_color_clear(u64 key, bool enable);
 	bool renderpass_key_has_color_clear(u64 key);
+	u64 renderpass_key_set_depth_clear(u64 key, bool enable);
+	bool renderpass_key_has_depth_clear(u64 key);
 
 	void begin_renderpass(VkDevice dev, const vk::command_buffer& cmd, u64 renderpass_key, VkFramebuffer target, const coordu& framebuffer_region);
 	// clear_values is non-null only when the caller folded a full-surface clear

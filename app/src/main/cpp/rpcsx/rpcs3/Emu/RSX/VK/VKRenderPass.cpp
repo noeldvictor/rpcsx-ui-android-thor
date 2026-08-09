@@ -82,6 +82,11 @@ namespace vk
 			// object, so a cleared pass and a loaded pass are different objects
 			// and must not share a cache entry. 22 bits were spare; this uses 1.
 			u64 clear_color : 1;
+
+			// Same for depth/stencil. Separate bit because the two are cleared
+			// independently -- the title screen clears colour alone, the rendered
+			// scene clears both, and only folding both is worth anything there.
+			u64 clear_depth : 1;
 		};
 
 		renderpass_key_blob(u64 encoded_) : encoded(encoded_)
@@ -227,6 +232,18 @@ namespace vk
 		return renderpass_key_blob(key).clear_color != 0;
 	}
 
+	u64 renderpass_key_set_depth_clear(u64 key, bool enable)
+	{
+		renderpass_key_blob blob(key);
+		blob.clear_depth = enable ? 1 : 0;
+		return blob.encoded;
+	}
+
+	bool renderpass_key_has_depth_clear(u64 key)
+	{
+		return renderpass_key_blob(key).clear_depth != 0;
+	}
+
 	u64 get_renderpass_key(VkFormat surface_format)
 	{
 		renderpass_key_blob key(0);
@@ -313,9 +330,9 @@ namespace vk
 			VkAttachmentDescription depth_attachment_description = {};
 			depth_attachment_description.format = depth_format;
 			depth_attachment_description.samples = samples;
-			depth_attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			depth_attachment_description.loadOp = key.clear_depth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			depth_attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			depth_attachment_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			depth_attachment_description.stencilLoadOp = key.clear_depth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			depth_attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 			depth_attachment_description.initialLayout = dsv_layout;
 			depth_attachment_description.finalLayout = dsv_layout;
