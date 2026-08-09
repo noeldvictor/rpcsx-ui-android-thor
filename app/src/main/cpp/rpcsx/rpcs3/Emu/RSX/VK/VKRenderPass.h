@@ -18,7 +18,9 @@ namespace vk
 	// Renderpass scope management helpers.
 	// NOTE: These are not thread safe by design.
 	void begin_renderpass(VkDevice dev, const vk::command_buffer& cmd, u64 renderpass_key, VkFramebuffer target, const coordu& framebuffer_region);
-	void begin_renderpass(const vk::command_buffer& cmd, VkRenderPass pass, VkFramebuffer target, const coordu& framebuffer_region);
+	// clear_values is non-null only when the caller folded a full-surface clear
+	// into the pass's load op; see the clear_color bit in VKRenderPass.cpp.
+	void begin_renderpass(const vk::command_buffer& cmd, VkRenderPass pass, VkFramebuffer target, const coordu& framebuffer_region, const VkClearValue* clear_values = nullptr, u32 clear_value_count = 0);
 	void end_renderpass(const vk::command_buffer& cmd);
 	bool is_renderpass_open(const vk::command_buffer& cmd);
 

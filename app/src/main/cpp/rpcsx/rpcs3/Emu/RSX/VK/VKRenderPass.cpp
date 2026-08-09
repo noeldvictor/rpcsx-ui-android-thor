@@ -70,6 +70,18 @@ namespace vk
 			u64 sample_count : 6;
 			u64 layout_blob : 15;
 			u64 input_attachments_mask : 5;
+
+			// Fold a full-surface colour clear into the pass's load op.
+			//
+			// On a tiler, LOAD_OP_LOAD makes the GPU unresolve the attachment
+			// from system memory into GMEM at the start of every pass, and a
+			// draw-time vkCmdClearAttachments then overwrites what was just
+			// fetched. LOAD_OP_CLEAR skips the fetch entirely.
+			//
+			// Part of the key because the load op is baked into the VkRenderPass
+			// object, so a cleared pass and a loaded pass are different objects
+			// and must not share a cache entry. 22 bits were spare; this uses 1.
+			u64 clear_color : 1;
 		};
 
 		renderpass_key_blob(u64 encoded_) : encoded(encoded_)
@@ -273,7 +285,7 @@ namespace vk
 			VkAttachmentDescription color_attachment_description = {};
 			color_attachment_description.format = color_format;
 			color_attachment_description.samples = samples;
-			color_attachment_description.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			color_attachment_description.loadOp = key.clear_color ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			color_attachment_description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 			color_attachment_description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			color_attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -343,7 +355,7 @@ namespace vk
 		g_renderpass_cache.clear();
 	}
 
-	void begin_renderpass(const vk::command_buffer& cmd, VkRenderPass pass, VkFramebuffer target, const coordu& framebuffer_region)
+	void begin_renderpass(const vk::command_buffer& cmd, VkRenderPass pass, VkFramebuffer target, const coordu& framebuffer_region, const VkClearValue* clear_values, u32 clear_value_count)
 	{
 		auto& renderpass_info = g_current_renderpass[cmd];
 		if (renderpass_info.pass == pass && renderpass_info.fbo == target)
@@ -364,6 +376,12 @@ namespace vk
 		rp_begin.renderArea.extent.width = framebuffer_region.width;
 		rp_begin.renderArea.extent.height = framebuffer_region.height;
 
+
+		// Only set when the caller folded a clear into the pass; a pass whose
+		// load op is LOAD ignores these, and one whose load op is CLEAR requires
+		// an entry per attachment.
+		rp_begin.clearValueCount = clear_value_count;
+		rp_begin.pClearValues = clear_values;
 		VK_GET_SYMBOL(vkCmdBeginRenderPass)(cmd, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
 		renderpass_info = {pass, target};
 		vk::thor::rsx_auditor::record_renderpass_begin();

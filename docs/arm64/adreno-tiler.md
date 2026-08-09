@@ -350,3 +350,42 @@ The change itself remains as scoped: ~40 lines across three files, at
 are adjacent, with 22 spare bits in `renderpass_key_blob` for the per-aspect
 flag. Folklore now renders a verifiable scene, so a rendering regression would
 be visible.
+
+## Infrastructure landed; the call site is the remaining step
+
+Two of the three pieces are in, with **no behaviour change** — the new key bit is
+never set, so every pass still gets `LOAD_OP_LOAD`:
+
+1. `renderpass_key_blob` gained `u64 clear_color : 1` (`VKRenderPass.cpp:84`).
+   It belongs in the key because the load op is baked into the `VkRenderPass`
+   object, so a cleared pass and a loaded pass are different objects and must not
+   share a cache entry. 22 bits were spare; this uses one.
+2. `VKRenderPass.cpp:288` honours it:
+   `loadOp = key.clear_color ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD`.
+3. `begin_renderpass` now takes `const VkClearValue*` and a count, defaulted to
+   `nullptr`/`0` so every existing caller is unchanged.
+
+### What is left, and why it was not rushed
+
+The call site at `VKGSRender.cpp:1631` has to set the bit on
+`m_current_renderpass_key`, and that key is **live state**, not a local:
+
+* `get_render_pass()` memoises into `m_cached_renderpass`, and
+  `begin_renderpass(dev, ...)` memoises again into `g_cached_renderpass_key`.
+  Both caches have to be invalidated when the bit flips, or the pass begun will
+  be the previously cached one with the wrong load op.
+* The bit must be cleared again for the *next* pass, or every subsequent pass
+  inherits `LOAD_OP_CLEAR` and silently discards the framebuffer.
+* A colour+depth clear can only fold the colour half, so
+  `vkCmdClearAttachments` still has to run for depth. The measurement says depth
+  clears did not occur in the sample (`color=51 depth=0`), but "did not occur in
+  60 frames" is not "cannot occur".
+
+**Pipeline compatibility is not a risk here** — Vulkan render pass compatibility
+explicitly ignores load and store ops, so pipelines built against the loading
+pass stay valid against the clearing one.
+
+Getting that state handling wrong produces a wiped or stale frame rather than a
+crash, which is the failure mode this file has warned about from the start. It
+wants an unhurried pass and a Folklore screenshot diff, not the tail end of a
+long session.
