@@ -82,6 +82,12 @@ namespace vk::thor::rsx_auditor
 		inline std::atomic<u64> g_detile_output_bytes{0};
 		inline std::atomic<u64> g_simple_uploads{0};
 		inline std::atomic<u64> g_simple_upload_bytes{0};
+		inline std::atomic<u64> g_clears_total{0};
+		inline std::atomic<u64> g_clears_pass_open{0};
+		inline std::atomic<u64> g_clears_partial{0};
+		inline std::atomic<u64> g_clears_eligible{0};
+		inline std::atomic<u64> g_clears_eligible_color{0};
+		inline std::atomic<u64> g_clears_eligible_depth{0};
 		inline std::atomic<u64> g_blit_source_resolve_fast{0};
 		inline std::atomic<u64> g_blit_source_resolve_verify{0};
 		inline std::atomic<u64> g_blit_source_resolve_reject{0};
@@ -729,6 +735,51 @@ namespace vk::thor::rsx_auditor
 		detail::add_bytes(detail::g_detile_output_bytes, output_bytes);
 	}
 
+	// Would a LOAD_OP_CLEAR conversion ever fire? Measure before changing.
+	//
+	// docs/arm64/adreno-tiler.md settles the design at roughly forty lines and
+	// names three preconditions, each of which silently renders a subtly wrong
+	// frame if missed: the pass must not already be open, the clear must cover
+	// the whole surface (vkCmdClearAttachments honours a scissor, LOAD_OP_CLEAR
+	// does not), and the attachments cleared must be tracked per aspect.
+	//
+	// All three are cheap to evaluate at the call site, so evaluate them and
+	// count. If eligible clears are rare the change is not worth its risk, and
+	// that is worth knowing before writing it rather than after.
+	inline void record_clear_surface(bool pass_already_open, bool full_frame, bool has_color, bool has_depth)
+	{
+		if (!enabled())
+		{
+			return;
+		}
+
+		detail::g_clears_total.fetch_add(1, std::memory_order_relaxed);
+
+		if (pass_already_open)
+		{
+			detail::g_clears_pass_open.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		if (!full_frame)
+		{
+			detail::g_clears_partial.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+
+		detail::g_clears_eligible.fetch_add(1, std::memory_order_relaxed);
+
+		if (has_color)
+		{
+			detail::g_clears_eligible_color.fetch_add(1, std::memory_order_relaxed);
+		}
+
+		if (has_depth)
+		{
+			detail::g_clears_eligible_depth.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
 	inline void record_simple_upload(VkDeviceSize bytes)
 	{
 		if (!enabled())
@@ -976,6 +1027,28 @@ namespace vk::thor::rsx_auditor
 				static_cast<unsigned long long>(heap_mib_frac),
 				static_cast<unsigned long long>(frames ? heap_mib / frames : heap_mib),
 				static_cast<unsigned long long>(frames ? (heap_mib % frames) * 100 / frames : 0));
+		}
+
+		{
+			const u64 clears_total = detail::take(detail::g_clears_total);
+			const u64 clears_pass_open = detail::take(detail::g_clears_pass_open);
+			const u64 clears_partial = detail::take(detail::g_clears_partial);
+			const u64 clears_eligible = detail::take(detail::g_clears_eligible);
+			const u64 clears_color = detail::take(detail::g_clears_eligible_color);
+			const u64 clears_depth = detail::take(detail::g_clears_eligible_depth);
+
+			rsx_log.warning(
+				"Thor RSX Clears: frames=%llu total=%llu eligible=%llu (color=%llu depth=%llu) "
+				"rejected(pass_open=%llu partial=%llu) per_frame=%llu.%02llu",
+				static_cast<unsigned long long>(frames),
+				static_cast<unsigned long long>(clears_total),
+				static_cast<unsigned long long>(clears_eligible),
+				static_cast<unsigned long long>(clears_color),
+				static_cast<unsigned long long>(clears_depth),
+				static_cast<unsigned long long>(clears_pass_open),
+				static_cast<unsigned long long>(clears_partial),
+				static_cast<unsigned long long>(frames ? clears_eligible / frames : clears_eligible),
+				static_cast<unsigned long long>(frames ? (clears_eligible % frames) * 100 / frames : 0));
 		}
 	}
 }

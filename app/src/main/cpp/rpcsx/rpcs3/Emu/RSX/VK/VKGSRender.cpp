@@ -1630,6 +1630,41 @@ void VKGSRender::clear_surface(u32 mask)
 
 	if (!clear_descriptors.empty())
 	{
+		// Measure whether a LOAD_OP_CLEAR conversion could ever apply here.
+		//
+		// This is the site docs/arm64/adreno-tiler.md identifies: begin_render_pass()
+		// and vkCmdClearAttachments are adjacent, so the pass is opened at a moment
+		// when the clear is already known. Converting it means folding the clear into
+		// the pass's load op instead of issuing a draw-time clear inside it, which on
+		// a tiler skips an unresolve.
+		//
+		// No behaviour change here on purpose. Each of the three preconditions fails
+		// into a subtly wrong frame rather than an obvious one, so establish how often
+		// they all hold before writing code that depends on them.
+		{
+			const bool pass_already_open = vk::is_renderpass_open(*m_current_command_buffer);
+			bool clears_color = false, clears_depth = false;
+
+			for (const auto& desc : clear_descriptors)
+			{
+				if (desc.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT)
+				{
+					clears_color = true;
+				}
+
+				if (desc.aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
+				{
+					clears_depth = true;
+				}
+			}
+
+			// full_frame compares extents only; require the origin too, because a
+			// full-sized rect at a non-zero offset is not the whole attachment.
+			const bool covers_surface = full_frame && region.rect.offset.x == 0 && region.rect.offset.y == 0;
+
+			vk::thor::rsx_auditor::record_clear_surface(pass_already_open, covers_surface, clears_color, clears_depth);
+		}
+
 		begin_render_pass();
 		VK_GET_SYMBOL(vkCmdClearAttachments)(*m_current_command_buffer, ::size32(clear_descriptors), clear_descriptors.data(), 1, &region);
 	}

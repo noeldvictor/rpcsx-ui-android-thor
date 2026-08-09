@@ -279,3 +279,40 @@ and immediately, independent of whatever else the frame is doing.
 
 Frame time on a title that is CPU-bound behind an SPU reservation loop would show
 nothing either way, and would be the wrong instrument entirely.
+
+## The blocker is lifted, and the instrument is in
+
+This file recorded the dependency plainly: *"this work is gated on a title that
+reaches a drawn scene. Fix the deadlock or find a title that renders, and this
+becomes a contained forty-line change with three checkable preconditions."*
+
+The deadlock is fixed. `mov_rdata` was compiling to a function that copied
+nothing on ARM64 (`docs/arm64/rsx-boot-hang.md`), and with that repaired
+**Folklore renders its title screen at 60.01 FPS** and Eternal Sonata reaches its
+opening cutscene. There is now a workload to verify a rendering change against.
+
+Rather than write the change first, the three preconditions are now **counted**
+at the exact site, with no behaviour change:
+
+```
+Thor RSX Clears: frames=N total=N eligible=N (color=N depth=N)
+                 rejected(pass_open=N partial=N) per_frame=N.NN
+```
+
+* `pass_open` — `vk::is_renderpass_open()` at the call site. A pass already begun
+  cannot retroactively acquire `LOAD_OP_CLEAR`.
+* `partial` — the existing `full_frame` check, **tightened**. It compares extents
+  only; a full-sized rect at a non-zero offset is not the whole attachment, so
+  the counter also requires `offset.x == 0 && offset.y == 0`.
+* `color` / `depth` — tracked separately, because colour-only and depth-only
+  clears both occur and the renderpass key needs a bit per aspect, not one flag.
+
+This is deliberately measurement-only. Each precondition fails into a *subtly*
+wrong frame — a wiped region, a stale surface — rather than an obvious one, and
+this file already contains one prediction of heavy traffic that measurement cut
+to ~1 pass per frame. If `eligible` turns out to be near zero, the forty lines
+are not worth their risk, and that is much cheaper to learn from a counter than
+from a rendering regression.
+
+**Not yet run** — no device access in the round that added it. One boot of
+Folklore answers it.
