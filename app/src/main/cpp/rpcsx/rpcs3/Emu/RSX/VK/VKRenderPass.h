@@ -17,6 +17,11 @@ namespace vk
 
 	// Renderpass scope management helpers.
 	// NOTE: These are not thread safe by design.
+	// Fold a full-surface colour clear into the pass load op. The bit is part of
+	// the key because the load op is baked into the VkRenderPass object.
+	u64 renderpass_key_set_color_clear(u64 key, bool enable);
+	bool renderpass_key_has_color_clear(u64 key);
+
 	void begin_renderpass(VkDevice dev, const vk::command_buffer& cmd, u64 renderpass_key, VkFramebuffer target, const coordu& framebuffer_region);
 	// clear_values is non-null only when the caller folded a full-surface clear
 	// into the pass's load op; see the clear_color bit in VKRenderPass.cpp.

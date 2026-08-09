@@ -389,3 +389,42 @@ Getting that state handling wrong produces a wiped or stale frame rather than a
 crash, which is the failure mode this file has warned about from the start. It
 wants an unhurried pass and a Folklore screenshot diff, not the tail end of a
 long session.
+
+## Call site landed, and the scene that matters clears depth too
+
+The fold is implemented and gated behind `debug.rpcsx.thor.loadop_clear`
+(default off). It sets `clear_color` on `m_current_renderpass_key`, drops the
+memoised `VkRenderPass`, begins the pass with clear values, and skips
+`vkCmdClearAttachments`. The bit is reset in `close_render_pass()` rather than
+straight after `begin` — restoring it early would make the next
+`begin_render_pass()` see a different pass object, end this one immediately and
+throw the clear away.
+
+**Correctness verified on device.** Folklore renders its Dolby splash and its
+full title screen at 60.01 FPS with the fold enabled — no wiped region, no stale
+surface, no artifacts.
+
+**But the eligibility number moved with the workload:**
+
+```
+title screen:  total=51 eligible=51 (color=51 depth=0)
+rendered scene: total=60 eligible=60 (color=60 depth=60)
+```
+
+Every clear in the actual scene clears **colour and depth together**, and the
+guard requires `clears_color && !clears_depth`, so the fold does not fire there
+at all. The earlier 51/51 was measured on a screen that happens to clear colour
+only.
+
+This is precisely the caveat recorded when that measurement was taken — *"did
+not occur in 60 frames is not cannot occur"* — and it is worth having been
+conservative about: folding colour while leaving a `vkCmdClearAttachments` for
+depth would have been correct but pointless, since the pass still gets a
+draw-time clear.
+
+**To capture the win, the depth attachment needs the same treatment**: a second
+key bit for `clear_depth`, `LOAD_OP_CLEAR` on the depth attachment description
+plus its `stencilLoadOp`, and a clear value in the depth slot (which is the last
+attachment, so `clearValueCount` must grow to cover it). The infrastructure —
+key bit, load-op selection, clear-value plumbing, pass-close reset — is already
+in place and generalises; only the depth half is missing.

@@ -1,3 +1,6 @@
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
 #include "stdafx.h"
 #include "../Overlays/overlay_compile_notification.h"
 #include "../Overlays/Shaders/shader_loading_dialog_native.h"
@@ -1379,6 +1382,28 @@ void VKGSRender::on_exit()
 	zcull_ctrl.release();
 }
 
+namespace
+{
+	// Off by default: this changes what the GPU does with attachment contents,
+	// and every way it can fail produces a subtly wrong frame rather than a
+	// crash. See docs/arm64/adreno-tiler.md.
+	bool thor_use_loadop_clear()
+	{
+#ifdef ANDROID
+		static const bool enabled = []
+		{
+			char value[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.loadop_clear", value);
+			return length > 0 && value[0] != '0' && value[0] != 'n' && value[0] != 'f';
+		}();
+
+		return enabled;
+#else
+		return false;
+#endif
+	}
+} // namespace
+
 void VKGSRender::clear_surface(u32 mask)
 {
 	if (skip_current_frame || swapchain_unavailable)
@@ -1641,29 +1666,62 @@ void VKGSRender::clear_surface(u32 mask)
 		// No behaviour change here on purpose. Each of the three preconditions fails
 		// into a subtly wrong frame rather than an obvious one, so establish how often
 		// they all hold before writing code that depends on them.
+		const bool pass_already_open = vk::is_renderpass_open(*m_current_command_buffer);
+		bool clears_color = false, clears_depth = false;
+
+		for (const auto& desc : clear_descriptors)
 		{
-			const bool pass_already_open = vk::is_renderpass_open(*m_current_command_buffer);
-			bool clears_color = false, clears_depth = false;
-
-			for (const auto& desc : clear_descriptors)
+			if (desc.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT)
 			{
-				if (desc.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT)
-				{
-					clears_color = true;
-				}
-
-				if (desc.aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
-				{
-					clears_depth = true;
-				}
+				clears_color = true;
 			}
 
-			// full_frame compares extents only; require the origin too, because a
-			// full-sized rect at a non-zero offset is not the whole attachment.
-			const bool covers_surface = full_frame && region.rect.offset.x == 0 && region.rect.offset.y == 0;
-
-			vk::thor::rsx_auditor::record_clear_surface(pass_already_open, covers_surface, clears_color, clears_depth);
+			if (desc.aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
+			{
+				clears_depth = true;
+			}
 		}
+
+		// full_frame compares extents only; require the origin too, because a
+		// full-sized rect at a non-zero offset is not the whole attachment.
+		const bool covers_surface = full_frame && region.rect.offset.x == 0 && region.rect.offset.y == 0;
+
+		vk::thor::rsx_auditor::record_clear_surface(pass_already_open, covers_surface, clears_color, clears_depth);
+
+		// Fold the clear into the pass load op when it is safe.
+		//
+		// Measured 51/51 clears eligible on Eternal Sonata, and on a tiler this is
+		// the difference between unresolving the attachment from system memory and
+		// not touching it at all. Off by default; set debug.rpcsx.thor.loadop_clear
+		// to enable, so a rendering regression cannot ship silently.
+		//
+		// Preconditions, all three required, all three counted above:
+		//   - the pass must not already be open (an open pass cannot acquire a load op)
+		//   - the clear must cover the whole surface, origin included
+		//   - colour only; a depth clear still needs vkCmdClearAttachments
+		if (thor_use_loadop_clear() && !pass_already_open && covers_surface &&
+			clears_color && !clears_depth && !m_draw_buffers.empty())
+		{
+			// The load op is baked into the VkRenderPass, so the key changes and the
+			// memoised pass must be dropped. The bit is cleared again in
+			// close_render_pass(), not here: restoring it now would make the next
+			// begin_render_pass() see a different pass object, end this one
+			// immediately and throw the clear away.
+			m_current_renderpass_key = vk::renderpass_key_set_color_clear(m_current_renderpass_key, true);
+			m_cached_renderpass = VK_NULL_HANDLE;
+
+			// One entry per colour attachment; depth is the last attachment and keeps
+			// LOAD_OP_LOAD, so it needs no clear value.
+			std::vector<VkClearValue> pass_clear_values(m_draw_buffers.size(), color_clear_values);
+
+			vk::begin_renderpass(
+				*m_current_command_buffer, get_render_pass(), m_draw_fbo->value,
+				{positionu{0u, 0u}, sizeu{m_draw_fbo->width(), m_draw_fbo->height()}},
+				pass_clear_values.data(), ::size32(pass_clear_values));
+
+			return;
+		}
+
 
 		begin_render_pass();
 		VK_GET_SYMBOL(vkCmdClearAttachments)(*m_current_command_buffer, ::size32(clear_descriptors), clear_descriptors.data(), 1, &region);

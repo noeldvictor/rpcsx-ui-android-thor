@@ -116,6 +116,19 @@ void VKGSRender::begin_render_pass()
 void VKGSRender::close_render_pass()
 {
 	vk::end_renderpass(*m_current_command_buffer);
+
+	// Drop a folded colour clear once its pass is over.
+	//
+	// The bit is set in clear_surface and deliberately survives until here: the
+	// pass begun with LOAD_OP_CLEAR must stay the pass in effect for its whole
+	// life, or begin_render_pass() would see a different VkRenderPass, end this
+	// one early and discard the clear. Once the pass closes the next one must
+	// load again, so reset the key and drop the memoised pass with it.
+	if (vk::renderpass_key_has_color_clear(m_current_renderpass_key))
+	{
+		m_current_renderpass_key = vk::renderpass_key_set_color_clear(m_current_renderpass_key, false);
+		m_cached_renderpass = VK_NULL_HANDLE;
+	}
 }
 
 VkRenderPass VKGSRender::get_render_pass()

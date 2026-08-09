@@ -215,6 +215,18 @@ namespace vk
 		return key.encoded;
 	}
 
+	u64 renderpass_key_set_color_clear(u64 key, bool enable)
+	{
+		renderpass_key_blob blob(key);
+		blob.clear_color = enable ? 1 : 0;
+		return blob.encoded;
+	}
+
+	bool renderpass_key_has_color_clear(u64 key)
+	{
+		return renderpass_key_blob(key).clear_color != 0;
+	}
+
 	u64 get_renderpass_key(VkFormat surface_format)
 	{
 		renderpass_key_blob key(0);
