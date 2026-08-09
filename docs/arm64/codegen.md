@@ -464,3 +464,48 @@ you spell it. On A710 the *width of the writes* that produced a register changes
 what the next instruction costs. Prefer 64-bit lane writes when populating a
 vector that an ASIMD instruction will consume, and reserve `_mm_set_epi32`-shaped
 construction for values that go straight to memory.
+
+## `cmp_rdata`: the clever lowering may be the slow one
+
+The upstream ARM work devotes a chapter to *"the most optimized way to compare
+data on ARM"*, and this is our version of that comparison. It is also the
+function sitting immediately beside the `mov_rdata` that turned out to be
+compiling to nothing, so it deserved a second look.
+
+The ARM64 path in `SPUThread.cpp` is genuinely clever. `vceqq_u16` yields `-1`
+per equal lane, `vmlaq_s16` multiplies two such masks — giving `1` only where
+both halves matched — and accumulates; `vaddvq_s16(hits) == 32` then tests all
+32 lanes at once. Eight `CMEQ`, four `MLA`, one `ADDV`: three instructions
+shorter than an XOR/OR tree.
+
+**Instruction count is the wrong thing to count.** From the Cortex-X3 guide
+(`docs/hardware/`, p26):
+
+| operation | latency | throughput | pipes |
+| --- | --- | --- | --- |
+| `CMEQ`, `CMGE`, … | 2 | 4 | **V** — all four |
+| `AND`, `EOR`, `ORR`, … | 2 | 4 | **V** — all four |
+| **`MLA`, `MLS`** | **4 (1)** | **2** | **V02** — two only |
+| `ADDV` (8H) | 4 | 2 | V13 |
+
+The four `MLA`s issue on **half** the vector pipes at **half** the throughput,
+and they are **serially dependent** through `hits`, so the chain cannot overlap
+with itself. The XOR/OR tree is all-V, full throughput, and log-depth.
+
+`docs/hardware/README.md` states this trap in as many words:
+
+> An instruction that saves an operation but lands on `V0` can still lose to a
+> two-instruction sequence that spreads across `V`.
+
+This is that case, in the hottest comparison in the emulator — the GETLLAR retry
+loop called `cmp_rdata` **10,093,915 times in one Folklore boot**.
+
+Both lowerings now build, selected at runtime:
+
+    debug.rpcsx.thor.cmp_rdata = <unset>   MLA form (default, unchanged)
+                               | tree      XOR/OR tree, all-V
+
+**Not measured yet.** The table says the tree should win; the table also said
+`ISB` should beat `YIELD`, and measurement showed a 23% regression because the
+surrounding code was tuned around the old behaviour. Predict from the manual,
+then measure — in that order, and do not skip the second step.

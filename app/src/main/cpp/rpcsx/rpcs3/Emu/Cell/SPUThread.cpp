@@ -1180,6 +1180,38 @@ __forceinline
 	const auto lhs = reinterpret_cast<const v128*>(_lhs);
 	const auto rhs = reinterpret_cast<const v128*>(_rhs);
 #if defined(ARCH_ARM64)
+	// Pipe assignment says the clever version may be the slow one.
+	//
+	// From the Cortex-X3 Software Optimization Guide (docs/hardware/, p26):
+	//
+	//     CMEQ, CMGE, ...          2   4   V     all four vector pipes
+	//     AND, BIC, EOR, ORR, ...  2   4   V     all four vector pipes
+	//     MLA, MLS                 4(1) 2  V02   two pipes only
+	//     ADDV (8H)                4   2   V13
+	//
+	// The MLA form below is three instructions shorter than an XOR/OR tree, and
+	// that is the wrong thing to count. Its four MLAs issue on **half** the
+	// vector pipes at half the throughput, and they are **serially dependent**
+	// through `hits`, so the chain cannot overlap with itself. The XOR/OR tree
+	// is all-V, full throughput, and log-depth.
+	//
+	// docs/hardware/README.md states this trap directly: "An instruction that
+	// saves an operation but lands on V0 can still lose to a two-instruction
+	// sequence that spreads across V."
+	//
+	// cmp_rdata is the hottest comparison in the emulator -- the GETLLAR retry
+	// loop called it 10,093,915 times in a single Folklore boot -- so it is
+	// worth knowing which is actually faster here rather than which is cleverer.
+	// Default is unchanged; set debug.rpcsx.thor.cmp_rdata to `tree` to A/B.
+	if (!rx::thor_cmp_rdata_use_mla()) [[unlikely]]
+	{
+		const v128 a = (lhs[0] ^ rhs[0]) | (lhs[1] ^ rhs[1]);
+		const v128 b = (lhs[2] ^ rhs[2]) | (lhs[3] ^ rhs[3]);
+		const v128 c = (lhs[4] ^ rhs[4]) | (lhs[5] ^ rhs[5]);
+		const v128 d = (lhs[6] ^ rhs[6]) | (lhs[7] ^ rhs[7]);
+		return gv_testz((a | b) | (c | d));
+	}
+
 	int16x8_t hits = vdupq_n_s16(0);
 	hits = cmp16_pair_accum_arm64(hits, lhs[0], rhs[0], lhs[1], rhs[1]);
 	hits = cmp16_pair_accum_arm64(hits, lhs[2], rhs[2], lhs[3], rhs[3]);
