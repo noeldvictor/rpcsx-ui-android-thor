@@ -136,3 +136,60 @@ three earlier fake wins.
 Measured: the profile, the mechanism, the eight sites. **Not** measured: that
 changing it helps. The next step is one A/B behind a property, with p95 frame time
 and per-cluster cores-busy in both arms.
+
+---
+
+# Measured on device: the spin costs 67% of emulator CPU and buys nothing
+
+The prediction above was ~1.15 cores of waste. Measured, on Folklore's title
+screen, with the spin budget behind `debug.rpcsx.thor.lv2_spin`:
+
+| `lv2_spin` | emulator CPU (cores) | frame rate |
+| --- | --- | --- |
+| **50** (default) | **1.200, 1.201, 1.196** | 62.5 |
+| 16 | 0.694 | 62.5 |
+| 1 | 0.419 | 62.5 |
+| **0** | **0.390, 0.387** | 62.5 |
+
+**A 67.6% reduction in emulator CPU time — 0.81 cores freed — at an identical
+frame rate.** The three baseline arms and the two zero arms were taken in two
+independent alternating runs and agree to within 0.005 cores, so the effect is
+roughly 160 times the run-to-run spread.
+
+**Metric.** `utime+stime` from `/proc/<pid>/stat` over a fixed 40 s window, after
+a 90 s settle. This was chosen over system power for two reasons. The other Claude
+session's Xenia was intermittently running on the same device, and system power
+cannot tell whose watts it is measuring, while our own process's CPU time can.
+And it is immune to the confound the prediction called out: **if the win were
+threads migrating to A510s, CPU time would stay flat or rise — the same seconds
+on slower cores — not fall by two thirds.** Battery current was logged and is
+unusable, as expected with USB attached; it reads charge current, not draw.
+
+**Parity.** Frame rate is derived from the auditor's `on_frame_end call #N` line,
+quantised to 6.25 fps by its 250-frame cadence. Every arm reported above sat at
+exactly 62.5. One arm did not and is **excluded as void**: `lv2_spin=4` returned
+1.207 cores at **50.0 fps**, breaking monotonicity in both columns at once, which
+is the signature of an arm still settling rather than a real reading. It is listed
+here rather than dropped silently.
+
+## What this does and does not establish
+
+Established: on this title and this scene, 1.3 ms of pre-sleep spinning in the
+lv2 wait layer costs two thirds of the emulator's CPU and returns no frame rate.
+The curve is monotone and most of the win is already there by `lv2_spin=16`.
+
+Not established, and the reason **the default is still 50**:
+
+* **One title, one scene.** Folklore's title screen is not sync-heavy. The spin
+  exists to catch signals that arrive quickly, and a scene with heavy PPU/SPU
+  handoff is exactly where removing it could cost latency.
+* **Frame rate is not frame pacing.** The parity check is quantised to 6.25 fps
+  and a capped 60 fps hides p95 stutter by construction. A latency regression
+  would not show in this table.
+* **Power is inferred, not measured.** 0.81 cores at the ~0.9 W/core rate from the
+  leaked-process measurement is ~0.7 W, but that rate came from a different
+  workload and USB was attached throughout.
+
+What would justify flipping the default: the same sweep on a second title and on a
+gameplay scene rather than a title screen, reporting **p95 frame time**, on
+battery with the second screen for real watts.
