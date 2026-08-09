@@ -454,3 +454,46 @@ frequency. **Grep the whole translation unit for a distinctive constant or
 comment string; never conclude absence from a window.** The FSM markers that
 settled it were `build<u32[4]>(1, 2, 4, 8)` and the upstream LLVM issue number,
 both unique enough to be conclusive in one command.
+
+---
+
+# The sweep's own verdict, overturned by one profile
+
+This ledger's central claim was that *sweeping the manual for slow instructions
+does not work here* — twelve predictions derived that way, twelve refuted — and
+that the instruction-level ARM64 code is clean. **The first half stands. The
+second half was true and beside the point.**
+
+A symbolized profile of a healthy 60.01 fps run (31,657 samples, 0 lost, verified
+free of the home-menu pause, symbolized by matching build ID) puts **73.9% of all
+CPU cycles in two lv2 wait syscalls**, spinning rather than sleeping:
+`50 × rx::busy_wait(500)`, which on a 19.2 MHz generic timer is **1.3 ms** of
+`YIELD` — a nop on this core. Eight identical sites across the guest
+synchronization layer. Full account in
+[`lv2-ppu-spin.md`](lv2-ppu-spin.md).
+
+Three corrections to how this ledger has been reasoning:
+
+1. **"Establish reach before optimality" was the right rule, applied to the wrong
+   unit.** It was used to ask *is this instruction hot*. It should have been used
+   to ask *where does the time go at all*. Every instruction the sweep examined
+   was reachable and well-formed; the waste was in a wait's **duration**, which no
+   instruction table can show and no amount of manual reading would have found.
+
+2. **The counters could not have found it, and their silence was read as absence.**
+   "93% of spin is GETLLAR" comes from the wait profiler, which instruments SPU
+   sites and no PPU sites. These eight were invisible to it by construction. The
+   ledger already names this failure twice — *a search that finds nothing and a
+   search that searches nothing look identical* — and it recurred at the level of
+   an entire instrument rather than a single grep.
+
+3. **A sampling profiler was available the whole time.** What blocked it was
+   never the tool: it was a stale build ID, an unsymbolized library, and runs
+   corrupted by a pause nobody had noticed. Each of those was a half-hour problem
+   treated as a dead end. **Getting the profile working should have been the first
+   task of the audit, not the last.**
+
+The manual-derived work was not wasted — it confirmed the lowerings, closed
+sse2neon, and found the empty `mov_rdata` branch. But the ratio is stark: twelve
+refuted predictions from the manuals, and one profile that located three quarters
+of all cycles in an afternoon.

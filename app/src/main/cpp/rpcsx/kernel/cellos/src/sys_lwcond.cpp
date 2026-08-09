@@ -10,6 +10,8 @@
 
 #include "rx/asm.hpp"
 
+#include "cellos/thor_ppu_wait.h"
+
 LOG_CHANNEL(sys_lwcond);
 
 lv2_lwcond::lv2_lwcond(utils::serial &ar)
@@ -489,7 +491,8 @@ error_code _sys_lwcond_queue_wait(ppu_thread &ppu, u32 lwcond_id,
       break;
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 50; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 

@@ -14,6 +14,8 @@
 
 #include "rx/asm.hpp"
 
+#include "cellos/thor_ppu_wait.h"
+
 LOG_CHANNEL(sys_event);
 
 lv2_event_queue::lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name,
@@ -473,7 +475,8 @@ error_code sys_event_queue_receive(ppu_thread &ppu, u32 equeue_id,
       break;
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 50; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 

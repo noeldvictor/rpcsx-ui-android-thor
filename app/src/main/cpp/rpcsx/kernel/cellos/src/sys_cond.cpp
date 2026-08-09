@@ -11,6 +11,8 @@
 
 #include "rx/asm.hpp"
 
+#include "cellos/thor_ppu_wait.h"
+
 LOG_CHANNEL(sys_cond);
 
 lv2_cond::lv2_cond(utils::serial &ar) noexcept
@@ -453,7 +455,8 @@ error_code sys_cond_wait(ppu_thread &ppu, u32 cond_id, u64 timeout) {
       return {};
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 50; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 

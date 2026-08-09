@@ -14,6 +14,8 @@
 
 #include "rx/asm.hpp"
 
+#include "cellos/thor_ppu_wait.h"
+
 #include <array>
 #include <atomic>
 #include <charconv>
@@ -1538,7 +1540,8 @@ error_code sys_semaphore_wait(ppu_thread &ppu, u32 sem_id, u64 timeout) {
       break;
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 50; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 

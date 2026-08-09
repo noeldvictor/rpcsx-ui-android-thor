@@ -9,6 +9,8 @@
 
 #include "rx/asm.hpp"
 
+#include "cellos/thor_ppu_wait.h"
+
 LOG_CHANNEL(sys_rwlock);
 
 lv2_rwlock::lv2_rwlock(utils::serial &ar) : protocol(ar), key(ar), name(ar) {
@@ -150,7 +152,8 @@ error_code sys_rwlock_rlock(ppu_thread &ppu, u32 rw_lock_id, u64 timeout) {
       break;
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 50; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 
@@ -354,7 +357,8 @@ error_code sys_rwlock_wlock(ppu_thread &ppu, u32 rw_lock_id, u64 timeout) {
       break;
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 50; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 
