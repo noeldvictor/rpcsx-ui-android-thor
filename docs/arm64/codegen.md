@@ -722,3 +722,43 @@ Sequence for whoever picks this up: read MIDR, map part numbers to LLVM CPU
 names, keep the `-sve,-sve2` feature negation (verified sufficient above), and
 only then A/B. The measurement remains the arbiter — this section has already
 been wrong once.
+
+### Corrected again: MIDR detection is not blocked, and it targets the weakest core
+
+The previous section said `get_cpu_name()` returns empty because
+`/proc/cpuinfo` has no `CPU part`. That was wrong twice over, and the checks are
+cheap enough that there was no excuse:
+
+* **`get_cpu_name()` does not use `/proc/cpuinfo`.** It reads
+  `midr_el1` per core already (`AArch64Common.cpp:259`).
+* **The app can read it.** Verified through `run-as net.rpcsx.easy`, not just an
+  adb shell — the file is `-r--r--r--`, world readable, and returns
+  `0x00000000411fd4e0` for cpu7. My earlier sysfs check was run as *shell*, which
+  proves nothing about the app; that is the "positive control on the wrong
+  channel" trap this project has now hit three times.
+* **The part table already knows these cores**: `0xd46` A510, `0xd47` A710,
+  `0xd4d` A715, `0xd4e` X3 are all present.
+
+So detection has every input it needs. What it then does is the interesting part:
+
+```cpp
+const cpu_entry_t* lowest_part_info = nullptr;
+for (const auto& [midr, count] : core_layout)   // ordered by MIDR
+```
+
+**It selects the *lowest* part number present — the weakest core.** On this
+device that is the Cortex-A510. That is a defensible conservative choice for
+correctness (never emit an instruction some core lacks), and it is the wrong
+choice for scheduling, because the mid cluster does the most work and the little
+cores the least.
+
+**Still unexplained:** the log reports `cpu=cortex-a78`, and neither the SVE
+warning nor the added one fires. If detection returned `cortex-a510`, one of
+those paths should be visible. Something between `get_cpu_name()` and the
+reported target is not doing what reading it suggests — and *reading it* is
+exactly what has been wrong three times in a row here.
+
+**Next step is a print, not an argument:** log the value `get_cpu_name()`
+actually returns, next to what `sanitize_android_arm64_llvm_cpu()` does with it.
+One line, one boot, and it ends the speculation. Do that before touching
+anything.
