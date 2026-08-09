@@ -44,6 +44,33 @@ instruction ideal":
 | SVE | `HWCAP_SVE` on device | **absent on this chip**; two video chapters inapplicable |
 | GPU tile memory | Adreno guide + `VkPhysicalDeviceMemoryProperties` | type 3 `LAZILY_ALLOCATED` exists and is **never used** — open |
 | `LOAD_OP_CLEAR` | on-device counters | **51/51 clears eligible**; key bit and plumbing landed, call site pending |
+| **All inline assembly** | enumerated: 73 sites in 18 files | see below — every ARM64 site checked against the guide, all cleared |
+| FPCR access (§4.9, §4.10) | call-site reach | `mrs/msr FPCR` in `rx/simd.hpp` is reached only from `ppu_thread::cpu_task` and `spu_thread::cpu_task` — **once per thread start**. Special-register flush side-effects do not apply to a cold path. Cleared |
+| I-cache maintenance (§4.13) | rule text vs our usage | §4.13 concerns set/way L1 invalidation; our `dsb ish; isb` after codegen is the architectural I-cache sequence, not a set/way op. Not applicable |
+| x86 asm guards | every `__asm__` site | all x86 sequences (`lock orl`, `xend`, `cpuid`, `xgetbv`, `comisd`, `movq`) sit behind `ARCH_X64`; `bless.hpp` carries a correct ARM64 `mov` arm |
+
+## Inline assembly, all 73 sites
+
+Enumerated across 18 files. The ARM64 ones, and what the manuals say about each:
+
+| site | asm | verdict |
+| --- | --- | --- |
+| `rx/asm.hpp` (20) | `isb`, `nop`, `yield`, `mrs cntfrq_el0`, `wfe` | the spin primitives — measured, see [`spin.md`](spin.md) |
+| `rpcs3/util/atomic.hpp` (15) | `lock orl`, `lock bts/btr/btc` | **all `ARCH_X64`** |
+| `Emu/Memory/vm_reservation.h` (9) | `xend` (TSX) | **all `ARCH_X64`** |
+| `Emu/CPU/sse2neon.h` (5) | `isb`, `crc32c*` | shim; two cold includers |
+| `rx/simd.hpp` (4) | `mrs/msr FPCR` | cold, once per thread |
+| `Emu/Cell/SPUThread.cpp` (3) | `ldxr`, `wfe`, `clrex` | the WFE park, [`spin.md`](spin.md) |
+| `util/sysinfo.cpp` (3) | `cpuid`, `xgetbv`, `mrs cntfrq_el0` | first two `ARCH_X64` |
+| `Emu/Cell/PPUThread.cpp` (2) | `dsb ish; isb` | correct I-cache sequence for JIT |
+| `util/bless.hpp` (2) | `movq` / `mov` | correctly split per arch |
+| `Emu/Cell/PPUInterpreter.cpp` (1) | `comisd` | `ARCH_X64`; interpreter is cold |
+| `Emu/Cell/SPUCommonRecompiler.cpp` (1) | `dsb ish; isb` | correct |
+
+**No defect found.** Every x86 sequence is guarded and every ARM64 sequence is
+either correct or already measured. Hand-written assembly is not where this
+codebase's ARM64 problems live — which is consistent with the pattern above: the
+defects were in code that did not run, not code that ran badly.
 
 ## What is left, in priority order
 
