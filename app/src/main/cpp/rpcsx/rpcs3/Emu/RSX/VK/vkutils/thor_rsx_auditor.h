@@ -881,17 +881,21 @@ namespace vk::thor::rsx_auditor
 			// So count calls instead of announcing one: the first few, then sparsely.
 			static std::atomic<u64> calls{0};
 			const u64 call_no = calls.fetch_add(1, std::memory_order_relaxed) + 1;
+			const bool en_probe = detail::enabled();
+			const u64 poll_probe = detail::g_property_poll_counter.load(std::memory_order_relaxed);
 			if (call_no <= 5 || (call_no % 250) == 0)
 			{
-				rsx_log.error("Thor RSX Auditor: on_frame_end call #%llu (enabled=%d interval=%u) cached@%p",
+				rsx_log.error("Thor RSX Auditor: on_frame_end call #%llu (enabled=%d interval=%u) cached@%p poll_here=%llu",
 					static_cast<unsigned long long>(call_no),
-					detail::enabled() ? 1 : 0,
+					en_probe ? 1 : 0,
 					detail::g_report_interval.load(std::memory_order_relaxed),
-					static_cast<const void*>(&detail::g_cached_enabled));
+					static_cast<const void*>(&detail::g_cached_enabled),
+					static_cast<unsigned long long>(poll_probe));
 			}
 		}
 
-		if (!enabled())
+		const bool en_gate = enabled();
+		if (!en_gate)
 		{
 			// The call probe above reports enabled=1, yet nothing past this point ever
 			// runs. Log the raw cached state here so the two disagreeing observations
@@ -900,11 +904,12 @@ namespace vk::thor::rsx_auditor
 			const u64 o = offs.fetch_add(1, std::memory_order_relaxed) + 1;
 			if (o <= 3 || (o % 500) == 0)
 			{
-				rsx_log.error("Thor RSX Auditor: ENABLED GATE REJECT #%llu cached=%u poll=%llu cached@%p",
+				rsx_log.error("Thor RSX Auditor: ENABLED GATE REJECT #%llu cached=%u poll=%llu cached@%p en_gate=%d",
 					static_cast<unsigned long long>(o),
 					detail::g_cached_enabled.load(std::memory_order_acquire),
 					static_cast<unsigned long long>(detail::g_property_poll_counter.load(std::memory_order_relaxed)),
-					static_cast<const void*>(&detail::g_cached_enabled));
+					static_cast<const void*>(&detail::g_cached_enabled),
+					en_gate ? 1 : 0);
 			}
 
 			return;

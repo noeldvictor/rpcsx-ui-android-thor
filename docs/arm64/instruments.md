@@ -422,5 +422,51 @@ I believe it is despite the line numbers agreeing. The next probe should print
 into a local *before* the branch, so the branch condition and the printed value
 are provably the same evaluation rather than two separate calls.
 
-Until then the staging and `LOAD_OP_CLEAR` counters stay unmeasured. Both are
-built and correct; only their reporting hook is blocked.
+### Solved: there are two `enabled()` functions
+
+Hoisting both calls into locals so the branch and the print share one
+evaluation gave it away immediately:
+
+```
+call #1    (enabled=1 interval=60) cached@...358 poll_here=1
+REJECT #1  cached=2 poll=1         cached@...358 en_gate=0
+```
+
+`poll_here=1` after the probe's call, and `poll` still **1** after the gate's —
+the gate's call never touched the counter. Two different functions:
+
+```cpp
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
+    FORCE_INLINE bool enabled() { return detail::enabled(); }
+#else
+    // remove the default-off recorder's atomic/property polling from Android
+    FORCE_INLINE constexpr bool enabled() noexcept { return false; }
+#endif
+```
+
+**On Android without `RPCSX_THOR_RSX_EXPERIMENTS`, `enabled()` is
+`constexpr false`.** My probes called `detail::enabled()` — the real one, which
+reads the property and returns true. Every gate in the file calls the
+*unqualified* `enabled()`, which the preprocessor had already reduced to `false`.
+
+So `debug.rpcsx.thor.rsx_auditor` could never have worked in a normal build, and
+the whole investigation was chasing a runtime explanation for a compile-time
+fact.
+
+**What made this expensive.** I did check whether `on_frame_end` sat inside the
+`RPCSX_THOR_RSX_EXPERIMENTS` guard — it does not, and I recorded that as
+"not compiled out" and moved on. I never checked the guard on the *function it
+calls*. Verifying that a function is compiled in says nothing about the
+predicates inside it.
+
+The general form, and it is the same shape as `mov_rdata`: **a preprocessor
+guard can neutralise code without removing it.** `mov_rdata` had a body deleted
+and the `#elif` left behind; here a predicate is `constexpr false` on this
+platform. Both look like ordinary code and neither shows up as absent.
+
+**The build flag is the fix**, not a code change:
+
+    ./gradlew assembleThortest -PrpcsxThorRsxExperiments=1
+
+which sets `-DRPCSX_THOR_RSX_EXPERIMENTS=ON` (`app/build.gradle.kts:212`). Note
+this is a different CMake configuration, so it builds its own `.cxx` tree.
