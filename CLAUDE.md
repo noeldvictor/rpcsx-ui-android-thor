@@ -3,23 +3,33 @@
 Technical notes for making this emulator fast on Thor. `AGENTS.md` is the
 operating contract; this file is the hardware knowledge behind it.
 
-## Read this first: 74% of cycles are a nop-spin, and a profile found it
+## Read this first: the lv2 waits spin instead of sleeping, and a profile found it
 
 A symbolized profile of a healthy 60 fps run — 31,657 samples, 0 lost, no pause —
-puts **73.9% of all CPU cycles inside two lv2 wait syscalls**,
+puts **73.9% of cycles inside two lv2 wait syscalls**. Read that number with its
+workload attached: it is **Folklore's title screen**, where the emulator is mostly
+waiting. Under Eternal Sonata gameplay the same change is worth 4.5%, not 67%. The
+spin is pure waste on both — no arm ever lost frame rate — but the size of the
+prize tracks how idle the scene is. The two hot functions are
 `sys_event_queue_receive` (47.8%) and `_sys_lwcond_queue_wait` (26.1%), as *self*
 time that never reaches `atomic_wait_engine::wait`. They are spinning, not
 sleeping: `50 × rx::busy_wait(500)`, which on a **19.2 MHz** generic timer is
 **1.3 ms** of `YIELD` — a nop on this SMP core. The identical loop is at
 **eight sites** across the guest synchronization layer.
 
-**Measured, not just predicted.** With the budget behind
-`debug.rpcsx.thor.lv2_spin`, Folklore's title screen goes from **1.200 cores to
-0.390** — a **67.6% cut in emulator CPU, 0.81 cores freed — at an identical frame
-rate.** Two independent alternating runs agree to within 0.005 cores. The default
-is still `50`, because this is one title and one non-sync-heavy scene and the
-parity check cannot see p95 stutter; what would justify flipping it is written
-down. Full account in
+**Measured, not just predicted**, with the budget behind
+`debug.rpcsx.thor.lv2_spin`:
+
+| workload | default (50) | no spin (0) | saving |
+| --- | --- | --- | --- |
+| Folklore, title screen | 1.200 cores | 0.390 | **67.6%** |
+| Eternal Sonata, gameplay | 3.193 | 3.049 | **4.5%** |
+
+Frame rate unchanged in every arm of both. The Folklore result is 160× its
+run-to-run spread; the Eternal Sonata result is only about 2×, so it is
+suggestive rather than settled. The default is still `50` — the gameplay evidence
+is weak and the fps parity check is quantised too coarsely to see p95 stutter.
+Full account in
 [`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md).
 
 Two lessons outrank the finding itself:
