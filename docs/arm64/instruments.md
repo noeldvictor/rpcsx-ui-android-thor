@@ -482,3 +482,42 @@ still logged `en_gate=0` — which is what caught it.
 
 That is the third time in this investigation that reading a nearby line instead
 of the exact line produced a confident wrong answer.
+
+## Systematic: the home menu opens ~12 s into every boot and pauses emulation
+
+Not a stray tap. It reproduces at the same point every launch:
+
+```
+0:00:11.911  rpcn: Loading RPCN config
+0:00:11.912  RSX: Friends list hidden in home menu. RPCN is not configured.
+0:00:11.916  {Overlay Input Thread} SetIntercepted: pads=1, keyboards=1, mice=1
+0:00:11.916  SYS: Emulation is being paused... (mark=0)
+0:00:11.916  Input: opened home menu with result 0
+```
+
+An input event reaches the overlay ~12 s after launch, opens the PS3 home menu,
+and **pauses emulation**. `getevent -p` shows an `Odin Controller` and an
+`ODIN Station Virtual Mouse` attached, so the likely source is a controller
+button — or the overlay's input loop interpreting one — rather than the device
+being touched.
+
+**This has been corrupting measurements all along.** A paused emulator does
+almost no work, which is exactly the signature behind:
+
+* a profile that captured **627 samples in 25 s** instead of the ~40,000 a busy
+  run produces
+* the `jit_cpu_native` arm at **2.762 cores** against a 5.2 gameplay norm
+* the `cortex-a710` arm previously written off as "still compiling"
+
+All three were read as phase mismatches. They were pauses.
+
+**Why it matters beyond measurement:** if the home menu opens twelve seconds into
+every launch, it does so for a person playing, not just for a benchmark. That is
+a functional bug worth chasing on its own, and it is upstream of any performance
+work — no A/B on this device is trustworthy until it is fixed or suppressed.
+
+**Next step:** `getevent -l` during the first 15 s of a boot will name the exact
+event and device. If it is a controller button, the fix is in the input mapping;
+if it is the overlay's `run_input_loop` interpreting an empty or spurious event,
+it is in `SetIntercepted`. The harness already refuses arms where this appears
+(`tools/thor_property_ab.ps1`), but refusing is not the same as fixing.
