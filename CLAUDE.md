@@ -829,3 +829,43 @@ fault. Folklore at ~2.2 cores is less than half that load.
 If a spike appears with nothing obviously running, check `top` before anything
 else: a leaked `net.rpcsx.easy` at 210% CPU accounted for 1.88 W once already,
 and `pidof` did not report it after `am force-stop`.
+
+# Before acting on anything a manual says
+
+Nine manual-derived predictions were measured on this project and **nine were
+refuted**. The manuals were right every time; the reasoning on top of them was
+not. Full analysis in [`docs/arm64/audit-ledger.md`](docs/arm64/audit-ledger.md).
+The four failure modes, as a checklist to run before writing code:
+
+1. **Did I read the adjacent rows?** The shift rewrite assumed immediate shifts
+   were wider than register shifts. Both are `V13`. One extra row would have
+   killed it before any work.
+2. **Am I reading the right core?** This is big.LITTLE with three guides. The
+   whole narrow-pipe sweep quoted Cortex-X3 while the code runs on A715, where
+   the same instructions are narrower still. Check where the thread is pinned
+   (`config.yml` Affinity) before picking a guide.
+3. **Is the manual actually recommending this, or am I inferring it?** A guide
+   states what an instruction costs on the chip. It cannot know whether the code
+   is hot, what contends for the pipe, or what was tuned around the current form.
+   `ISB`: the manual was right that `YIELD` is a nop, and the swap still cost
+   **23%** because the spin counts were calibrated around a cheap instruction.
+   `BCAX`: `V0` throughput 1 is real and it still **wins by 5.6%** because it
+   replaces two operations.
+4. **Have I established reach before optimality?** `cmp_rdata` looked critical at
+   10,093,915 calls; those calls existed only because of a deadlock later fixed.
+   Ask "does this run, and how often, on the workload that matters" first.
+
+And the two attribution traps that produced confident wrong answers:
+
+* **Nearest-symbol attribution is not heat.** An `inline` function emitted into
+  many translation units becomes the nearest preceding symbol over large address
+  ranges in a partly-stripped binary. ~31% of samples "in"
+  `get_thor_pause_mode` were an artifact.
+* **A histogram of a JIT dump counts what was compiled, not what runs.** 3,946
+  `ldsetal` in one module looked alarming; they are one per function entry, on a
+  path guarded by a likely-branch.
+
+**The rule:** a manual row is a hypothesis about the chip, never a conclusion
+about the code. Answer the two questions the manual cannot — *is this hot* and
+*what is it competing with* — then measure on device. The device has overruled
+the table nine times out of nine.
