@@ -14,7 +14,8 @@ void shared_mutex::impl_lock_shared(unsigned val) {
     return;
   }
 
-  for (int i = 0; i < 10; i++) {
+  const unsigned thor_spin_iters = thor_host_mutex_spin_iters();
+  for (unsigned i = 0; i < thor_spin_iters; i++) {
     if (try_lock_shared()) {
       return;
     }
@@ -90,7 +91,8 @@ void shared_mutex::impl_lock(unsigned val) {
     return;
   }
 
-  for (int i = 0; i < 10; i++) {
+  const unsigned thor_spin_iters = thor_host_mutex_spin_iters();
+  for (unsigned i = 0; i < thor_spin_iters; i++) {
     busy_wait();
 
     unsigned old = m_value;
@@ -128,7 +130,8 @@ void shared_mutex::impl_unlock(unsigned old) {
   }
 }
 void shared_mutex::impl_lock_upgrade() {
-  for (int i = 0; i < 10; i++) {
+  const unsigned thor_spin_iters = thor_host_mutex_spin_iters();
+  for (unsigned i = 0; i < thor_spin_iters; i++) {
     busy_wait();
 
     if (try_lock_upgrade()) {

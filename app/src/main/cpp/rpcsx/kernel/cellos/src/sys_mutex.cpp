@@ -7,6 +7,8 @@
 
 #include "rx/asm.hpp"
 
+#include "cellos/thor_ppu_wait.h"
+
 #include "sys_mutex.h"
 
 LOG_CHANNEL(sys_mutex);
@@ -211,7 +213,8 @@ error_code sys_mutex_lock(ppu_thread &ppu, u32 mutex_id, u64 timeout) {
       break;
     }
 
-    for (usz i = 0; cpu_flag::signal - ppu.state && i < 40; i++) {
+    const usz thor_spin_iters = thor::ppu_spin_iters();
+    for (usz i = 0; cpu_flag::signal - ppu.state && i < thor_spin_iters; i++) {
       rx::busy_wait(500);
     }
 

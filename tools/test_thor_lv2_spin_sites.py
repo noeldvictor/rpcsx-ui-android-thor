@@ -10,7 +10,9 @@ Four things are asserted, each because getting it wrong is silent:
 
 1. **Every site reads the budget.** Eight loops, one missed, no symptom except a
    measurement that says the change did less than it should.
-2. **No site still hardcodes `i < 50`.** The literal is what we are replacing.
+2. **No site still hardcodes any literal bound.** Matched by shape, not by the
+   number: the first pass grepped for `i < 50`, fixed the eight sites that used
+   it, and missed `sys_mutex.cpp`, which spelled the same loop `i < 40`.
 3. **The default is 0.** It was 50 while the change was an experiment. It is 0
    now that four alternating gameplay arms showed p50/p95/p99 frame time within
    0.02 ms of the spinning build -- so this assertion pins the shipped decision,
@@ -38,14 +40,21 @@ SITES = {
     'sys_event_flag.cpp': 1,
     'sys_lwcond.cpp': 1,
     'sys_lwmutex.cpp': 1,
+    'sys_mutex.cpp': 1,
     'sys_rwlock.cpp': 2,
     'sys_semaphore.cpp': 1,
 }
 
 LOOP = re.compile(
     r'for \(usz i = 0; cpu_flag::signal - ppu\.state && i < thor_spin_iters; i\+\+\)')
+# Match the SHAPE, with any literal -- not `i < 50`. The first version of this
+# check hardcoded 50, and the sweep that fed it grepped for 50 too. Eight sites
+# matched and were fixed; `sys_mutex.cpp` used `i < 40` and was silently missed,
+# in the single most fundamental guest mutex. Same failure this repo keeps
+# recording: a search for the wrong literal and a search that finds nothing look
+# identical. The constant was never the invariant; the loop is.
 HARDCODED = re.compile(
-    r'for \(usz i = 0; cpu_flag::signal - ppu\.state && i < 50; i\+\+\)')
+    r'for \(usz i = 0; cpu_flag::signal - ppu\.state && i < \d+; i\+\+\)')
 HOIST = re.compile(r'const usz thor_spin_iters = thor::ppu_spin_iters\(\);')
 
 
@@ -83,7 +92,8 @@ def main():
             failures.append(
                 f'{name}: {loops} gated loop(s), expected {expected}')
         if stale:
-            failures.append(f'{name}: {stale} loop(s) still hardcode i < 50')
+            failures.append(
+                f'{name}: {stale} loop(s) still hardcode a literal bound')
         if hoists != expected:
             failures.append(
                 f'{name}: {hoists} hoisted read(s), expected {expected} '
