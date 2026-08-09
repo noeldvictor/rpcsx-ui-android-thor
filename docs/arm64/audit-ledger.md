@@ -354,3 +354,39 @@ which is the first time that sentence has been writable in this audit.
 property gates, the `mov_rdata` fix). Port the ARM64 branch by hand, keep the
 x86 path untouched, and A/B on Eternal Sonata with the pause guard and
 cores-busy parity check now in `thor_property_ab.ps1`.
+
+### Correction: we already have the ROTQBY/TBL work
+
+The section above says `2d1be0918` is missing from this fork. **It is not.**
+
+```
+auto pshufb_for_x86_and_tbl_for_aarch64   1 definition
+                                         16 call sites
+rotqby_zero_base                          4 references
+SPULLVMRecompiler.cpp:5960                return tbl(std::forward<T>(a), ...)
+```
+
+The helper, the split zero-bases and the AArch64 `tbl` arm are all present, at
+**16 call sites** — more than upstream's own diff touches.
+
+The error was mine and it is the same one as always: I grepped a 25-line window
+around `ROTQBY` at 6191, saw `#if defined(ARCH_X64)` and `vpermb`, and read the
+absence of `tbl` *in those 25 lines* as absence from the function. The calls are
+at 6218 and 6231, just past the window.
+
+**Two things follow.**
+
+First, this fork tracks upstream far more closely than the earlier section
+assumed, so the other four ARM64 commits (`5e8ba021a` RawSPU MMIO, `21d533675`
+NaN ruling-out, `6647c5a2b` decoder fallback, `2f2ac69d6` FSM) must each be
+checked the same way — by grepping for their *introduced symbols across the whole
+file*, not by reading a window. `d25972e19` (`+i8mm`) was checked correctly that
+way and was likewise already present.
+
+Second, and worth more than the finding: **a narrow grep window is the same
+mistake as nearest-symbol attribution and a JIT-dump histogram.** All three read
+a partial view as a complete one. The fix is the same in each case — search the
+whole unit for the symbol, then confirm by count.
+
+This nearly cost a port of code we already have, into a hot shuffle lowering
+where a zero-base error renders silently wrong pixels.
