@@ -542,3 +542,52 @@ and if it is not, this whole section is an interesting note rather than an
 optimization.
 
 Default stays `mla`. Both paths remain switchable.
+
+## SHUFB uses BCAX, which is single-pipe on the cluster SPU runs on
+
+The first hot-path narrow-pipe candidate this audit has turned up, and it only
+appeared after the core-guide mix-up was corrected.
+
+`SPULLVMRecompiler.cpp` emits `bcax()` in three places, two of which are the
+**SHUFB** lowering:
+
+```cpp
+7237:  set_vr(op.rt4, tbl2(a, b, bcax(splat<u8[16]>(0x0f), c, splat<u8[16]>(0x60))));
+7248:  set_vr(op.rt4, tbx2(x, a, b, bcax(splat<u8[16]>(0x0f), c, splat<u8[16]>(0x60))));
+6419:  set_vr(op.rt, bcax(get_vr<u32[4]>(op.ra), splat<u32[4]>(0xffffffff), get_vr<u32[4]>(op.rb)));  // NOR
+```
+
+`BCAX` computes `(a AND NOT c) XOR b` in one instruction instead of `BIC` + `EOR`.
+Fewer instructions, which is the reason it is there. But on **A715**:
+
+```
+Crypto SHA3 ops   BCAX, EOR3, RAX1, XAR    2   1   V0
+AND/BIC/EOR/ORR                            2   2   V
+```
+
+**`BCAX` is throughput 1 on a single pipe; the two-instruction form is
+throughput 2 across all four.** Best case they tie at one result per cycle, and
+`BCAX` loses whenever `V0` is contended — which on A715 also carries `MLA`,
+16-bit `SDOT` and `SCVTF`.
+
+This is the exact shape `docs/hardware/README.md` warns about: *an instruction
+that saves an operation but lands on V0 can still lose to a two-instruction
+sequence that spreads across V.*
+
+It matters here specifically because **SPU threads are pinned to `cpu5`/`cpu6`**,
+both in the A710/A715 cluster, and SHUFB is among the hottest SPU instructions —
+the upstream ARM work gives it its own chapter.
+
+### The experiment, which is already wired
+
+`CPUTranslator.h` has `m_use_sha3`, and `bcax()` "falls back to the arithmetic
+form without SHA-3" (comment at `SPULLVMRecompiler.cpp:7247`). The device log
+confirms `sha3=true` is active. So the A/B needs no new code, only a way to turn
+SHA-3 off independently: the existing `debug.rpcsx.thor.spu_arm_features` modes
+are `native`, `no-dotprod`, `no-i8mm` and `baseline`, and **`baseline` disables
+dotprod and i8mm too**, which would confound the result.
+
+Adding a `no-sha3` mode alongside the existing two is a few lines in
+`sysinfo.cpp`, and then `tools/thor_property_ab.ps1` can measure it against
+Eternal Sonata, the SPU-heavy title. **Unmeasured** — and on this project's
+record, the table says one thing and the device decides.
