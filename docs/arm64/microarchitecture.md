@@ -653,3 +653,49 @@ because it is the fastest one is a mistake: **for anything running on the mid
 cluster, the A715 and A710 guides are the applicable tables**, and they are
 consistently more restrictive. The X3 is the right reference only for work
 pinned to `cpu7`.
+
+## The A510 shares one vector unit between cores, which constrains "move it to the little cores"
+
+Third core, third guide. The A510 tables are slower than both big cores — logical
+ops are latency 3 (against 2), and the throughput column reads `2,1`, meaning
+**Q-form (128-bit) NEON is throughput 1**:
+
+| operation | A510 | latency | thr (D,Q) | pipe |
+| --- | --- | --- | --- | --- |
+| `CMEQ`, `AND`/`EOR`/`ORR` | | 3 | 2,1 | VALU |
+| `MLA`, `MLS` | | 4 | 2,1 | VMAC |
+| `SDOT`/`UDOT` 8-bit | | 4 | 2,1 | VMAC |
+| `SSHL`, `USHL` | | 3 | 2,1 | VALU |
+
+But the structural fact matters more than any row. §4.11, verbatim:
+
+> The Cortex-A510 core shares a VPU between all Cortex-A510 cores in a complex.
+> The VPU is used to execute ASIMD, FP, Neon, and SVE instructions. Instructions
+> being executed on VPU pipelines by one core may reduce performance of the
+> instructions executed on the VPU by the other core.
+
+**One vector unit per complex, not per core.** Two NEON-heavy threads on a paired
+A510 complex contend for a single VPU, and SPU emulation is exactly NEON-heavy.
+
+### This is fine today, and it is a trap for tomorrow
+
+Affinity on this device (`config.yml`, and `thread_ctrl::get_affinity_mask`
+honours it per core on Android):
+
+```
+CPU0-3: General     CPU4: PPU     CPU5,6: SPU     CPU7: RSX
+```
+
+`cpu0`–`cpu2` are the A510s and **no SPU thread is pinned there** — SPU runs on
+`cpu5`/`cpu6` in the mid cluster. The shared VPU costs us nothing at present.
+
+The reason to write it down is that "move the SPU threads onto the efficiency
+cores to run cooler" is an obvious next idea, and on this core it is a trap: two
+SPU threads landing on one A510 complex would share a single VPU *and* run
+128-bit NEON at throughput 1, on a cluster clocked at 2016 MHz against the mid
+cluster's 2707 MHz. Cooler per core, far slower per thread, and quite possibly
+worse energy per frame.
+
+If that experiment is ever run, pin the SPU threads to **different complexes**
+and measure energy per frame rather than watts — a slower core drawing less
+power for longer is not a saving.
