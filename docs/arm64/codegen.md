@@ -641,3 +641,42 @@ one this project keeps skipping:
 This is the largest remaining lever precisely because it applies to all JIT
 output at once, and for the same reason it is the one most likely to be a
 regression if taken on faith.
+
+### Check 1 passed: the downgrade is not load-bearing
+
+Verified off-device with the NDK clang that ships with this build, so no device
+time and no rebuild:
+
+```
+$ clang --target=aarch64-linux-android29 -mcpu=<cpu> -### -c x.c
+cortex-a78                +dotprod
+cortex-a715               +dotprod +i8mm +sve +sve2
+cortex-x3                 +dotprod +i8mm +sve +sve2
+cortex-a715+nosve         +dotprod +i8mm -sve -sve2
+```
+
+Two results, and the second was not expected.
+
+**The premise of the downgrade is real** — `cortex-a715` and `cortex-x3` do
+enable `+sve +sve2` by default in this LLVM, exactly as the warning in
+`sanitize_android_arm64_llvm_cpu()` says.
+
+**And an explicit negation overrides it.** `cortex-a715+nosve` yields
+`-sve -sve2` while keeping `+dotprod +i8mm`. The JIT already passes
+`-sve,-sve2` in its feature string, so the SVE hazard is handled *twice*, and
+the fallback to `cortex-a78` is not load-bearing.
+
+It also costs more than the scheduling model. `cortex-a78` supplies only
+`+dotprod`; **`+i8mm` is not among its defaults.** The JIT survives that by
+re-adding i8mm explicitly, which is why `use_spu_i8mm()` works at all — but it
+means the downgrade is discarding CPU defaults and hand-patching them back.
+
+So the change is: let `sanitize_android_arm64_llvm_cpu()` keep the real CPU name
+when the caller guarantees `-sve,-sve2` in the feature string, rather than
+substituting a core the device does not contain.
+
+**Check 2 — does it measurably help — is still open**, and it is the one that
+decides. Nine predictions of this shape have been refuted. Put it behind a
+property, A/B it on Eternal Sonata with `tools/thor_property_ab.ps1`, and expect
+the histogram's answer: JIT output is dominated by loads, stores and branches,
+where a scheduling model matters less than it does for tight arithmetic.
