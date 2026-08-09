@@ -58,6 +58,47 @@ partially-stripped binary. **Nearest-symbol attribution on an inline function is
 not evidence of heat.** The change was kept anyway — a finished A/B does not
 belong in a hot loop at runtime — but it is not a win and is not counted as one.
 
+## Auditing the JIT output, which is where the time is
+
+The recompiler caches its compiled modules as ELF objects on device, under
+`files/cache/cache/ppu-*/*.obj`. That makes the 54% auditable: pull one and
+disassemble it. (`Save LLVM logs: true` in `config.yml` produces them; remember
+`adb push` to write that file and restore it afterwards — the mode is
+`-rw-r-----` and a shell redirect silently does nothing.)
+
+Instruction histogram of one PPU module (979 KB of compiled code):
+
+```
+20767 mov     18593 ldr     14486 add     12982 str      8937 ret
+ 8163 bl       6382 nop      5116 rev      4217 brk      3947 cbnz
+ 3946 ldsetal  3577 strb     2595 cset     2460 stp      1586 and
+```
+
+Two entries worth checking, and both came back clean:
+
+* **`rev` (5,116)** — byte swapping for a big-endian guest. `REV` is the correct
+  instruction and it is `V`-pipe; nothing to improve.
+* **`ldsetal` (3,946)** — an LSE atomic OR with *acquire-release*, the strongest
+  ordering, and an alarming count for one module. It comes from
+  `PPUTranslator.cpp:263`, raising `cpu_flag::wait`.
+
+**`ldsetal` is on the cold path.** The emitted shape is:
+
+```cpp
+const auto vstate = m_ir->CreateLoad(..., ptr, true);
+m_ir->CreateCondBr(m_ir->CreateIsNull(vstate), body, vcheck, m_md_likely);
+m_ir->SetInsertPoint(vcheck);   // the atomic is here
+```
+
+The fast path is `state == 0 → body`, marked likely. The atomic executes only
+when the thread has a pending flag. Those 3,946 are one per function entry —
+**static occurrences, not executions**.
+
+That is the same error as reading nearest-symbol attribution as heat, in a new
+disguise: **a histogram of a JIT dump is a count of what was compiled, not of
+what runs.** Weakening that ordering would have been a correctness risk taken
+for no gain.
+
 ## Coverage so far
 
 | area | how checked | result |
