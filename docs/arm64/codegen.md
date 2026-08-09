@@ -951,3 +951,19 @@ does, `eor3` being unused is the right answer and this closes.
 
 Doing it the other way round — build it, then measure, then discover the pattern
 never occurs — is how the previous twelve went.
+
+### Closed by reading, for the cost of one grep
+
+There are **no three-way XOR chains** in `SPULLVMRecompiler.cpp` — a search for
+`^ ... ^` within a single expression returns nothing. So `eor3()` having zero
+uses is **correct, not a gap**: no SPU lowering computes `a ^ b ^ c`, so there is
+nothing for the instruction to fold. `bcax()` earns its four uses because SHUFB
+genuinely needs `(a & ~c) ^ b`.
+
+This is the checklist working. The lead had a real precedent behind it — the
+measured 5.6% from BCAX — and it still died on a question answerable without a
+build, a boot, or a minute of device time. Run in the usual order it would have
+been a thirteenth refutation, costing two rebuilds and twenty minutes of Thor
+time to discover the pattern never occurs.
+
+**No open optimisation leads remain in the SPU lowerings.**
