@@ -137,6 +137,9 @@ codegen pattern rather than sprawling branch soup. Nothing to fix.
 | `LOAD_OP_CLEAR` | GPU busy A/B on device | implemented incl. depth, verified correct, **12.39% -> 12.65% GPU busy: no saving**. Default off |
 | JIT output, instruction mix | disassembled a cached PPU module | `rev` correct; `ldsetal` is cold-path (static count, not executions) |
 | JIT output, branch density (§4.8) | 124,556 instructions | 2.12% of regions marginally over, max 5. Compliant |
+| SPU JIT lowering: BCAX in SHUFB | A715 tables + on-device A/B | `V0` thr 1 looked wrong; **measured 5.6% better than BIC+EOR**. Existing code correct, `no-sha3` mode added to re-ask |
+| PPU translator ARM64 lowerings | 14 `ARCH_ARM64` sites read | already ARM64-aware: vector byteswap avoids GPR↔SIMD transfers, `VMAXFP`/`VMINFP` use native `fmax`/`fmin`, `VPERM` uses `TBL` (`2 2 V`). Clean |
+| All three core guides | X3, A715, A510 cross-checked | X3 was the wrong reference for mid-cluster work; A510 shares one VPU per complex |
 | **All inline assembly** | enumerated: 73 sites in 18 files | see below — every ARM64 site checked against the guide, all cleared |
 | FPCR access (§4.9, §4.10) | call-site reach | `mrs/msr FPCR` in `rx/simd.hpp` is reached only from `ppu_thread::cpu_task` and `spu_thread::cpu_task` — **once per thread start**. Special-register flush side-effects do not apply to a cold path. Cleared |
 | I-cache maintenance (§4.13) | rule text vs our usage | §4.13 concerns set/way L1 invalidation; our `dsb ish; isb` after codegen is the architectural I-cache sequence, not a set/way op. Not applicable |
