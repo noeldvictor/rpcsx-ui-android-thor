@@ -591,3 +591,53 @@ Adding a `no-sha3` mode alongside the existing two is a few lines in
 `sysinfo.cpp`, and then `tools/thor_property_ab.ps1` can measure it against
 Eternal Sonata, the SPU-heavy title. **Unmeasured** — and on this project's
 record, the table says one thing and the device decides.
+
+## The JIT is scheduled for a core this device does not have
+
+`JITLLVM.cpp` picks the LLVM `-mcpu` for JIT'd code, and on Android it runs the
+detected name through `sanitize_android_arm64_llvm_cpu()`:
+
+```cpp
+if (!utils::has_sve() && android_arm64_cpu_enables_sve_by_default(cpu))
+{
+    jit_log.warning("LLVM CPU '%s' enables SVE in bundled LLVM, but Android HWCAP "
+                    "does not report SVE. Using cortex-a78 for Thor-safe JIT code.", cpu);
+    return "cortex-a78";
+}
+```
+
+The Thor's cores are Armv9 — Cortex-X3 and A715/A710 — so LLVM enables SVE for
+them by default, HWCAP reports no SVE, and every one is downgraded to
+**`cortex-a78`**. The device log confirms it: `cpu=cortex-a78`.
+
+**`cortex-a78` is not a core in this device.** It is Armv8.2, one generation
+back, with a different pipeline layout — and `-mcpu` selects LLVM's *scheduling
+model*, so instruction selection and ordering for **all** JIT output are tuned
+for the wrong microarchitecture. The profile puts 54% of cycles in that output.
+
+The SVE avoidance is sound; the remedy may be heavier than needed. The same
+target string already carries **explicit `-sve,-sve2`** in its feature list
+(`attrs=+sha3,+dotprod,+i8mm,-sve,-sve2`), and in LLVM the feature string is
+applied after the CPU's defaults. If that override is reliable, `cortex-a715`
+plus `-sve,-sve2` would give the correct scheduling model with no SVE codegen,
+and the downgrade is paying a real cost to solve an already-solved problem.
+
+### Why this is not yet a change
+
+Two things have to be established first, in this order, and the second is the
+one this project keeps skipping:
+
+1. **Does `-sve` in the feature string actually suppress SVE for
+   `-mcpu=cortex-a715`?** Verifiable off-device: compile a vector-heavy function
+   both ways and check the disassembly for `z` registers. If any appear, the
+   downgrade is load-bearing and this ends here.
+2. **Does the correct scheduling model measurably help?** A/B with
+   `tools/thor_property_ab.ps1` on Eternal Sonata. Per the checklist in
+   `CLAUDE.md`, "the model is wrong" is a fact about the compiler, not a
+   prediction about this code — nine such predictions have been refuted, and the
+   scheduling model may matter less than it sounds for code dominated by loads,
+   stores and branches, which the instruction histogram shows it is.
+
+This is the largest remaining lever precisely because it applies to all JIT
+output at once, and for the same reason it is the one most likely to be a
+regression if taken on faith.
