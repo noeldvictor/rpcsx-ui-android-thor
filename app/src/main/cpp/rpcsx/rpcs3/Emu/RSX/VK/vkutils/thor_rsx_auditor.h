@@ -883,10 +883,11 @@ namespace vk::thor::rsx_auditor
 			const u64 call_no = calls.fetch_add(1, std::memory_order_relaxed) + 1;
 			if (call_no <= 5 || (call_no % 250) == 0)
 			{
-				rsx_log.error("Thor RSX Auditor: on_frame_end call #%llu (enabled=%d interval=%u)",
+				rsx_log.error("Thor RSX Auditor: on_frame_end call #%llu (enabled=%d interval=%u) cached@%p",
 					static_cast<unsigned long long>(call_no),
 					detail::enabled() ? 1 : 0,
-					detail::g_report_interval.load(std::memory_order_relaxed));
+					detail::g_report_interval.load(std::memory_order_relaxed),
+					static_cast<const void*>(&detail::g_cached_enabled));
 			}
 		}
 
@@ -899,10 +900,11 @@ namespace vk::thor::rsx_auditor
 			const u64 o = offs.fetch_add(1, std::memory_order_relaxed) + 1;
 			if (o <= 3 || (o % 500) == 0)
 			{
-				rsx_log.error("Thor RSX Auditor: ENABLED GATE REJECT #%llu cached=%u poll=%llu",
+				rsx_log.error("Thor RSX Auditor: ENABLED GATE REJECT #%llu cached=%u poll=%llu cached@%p",
 					static_cast<unsigned long long>(o),
 					detail::g_cached_enabled.load(std::memory_order_acquire),
-					static_cast<unsigned long long>(detail::g_property_poll_counter.load(std::memory_order_relaxed)));
+					static_cast<unsigned long long>(detail::g_property_poll_counter.load(std::memory_order_relaxed)),
+					static_cast<const void*>(&detail::g_cached_enabled));
 			}
 
 			return;

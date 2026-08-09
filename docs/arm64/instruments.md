@@ -390,3 +390,37 @@ observations cannot both be of the same state.
 
 Candidate 2 explains the `poll=1` anomaly and candidate 1 does not, so start
 there.
+
+### Candidate 2 is refuted, and the puzzle got sharper
+
+Logging `&detail::g_cached_enabled` from both sites:
+
+```
+on_frame_end call #1 (enabled=1 interval=60)      cached@00000075e1fe9350
+ENABLED GATE REJECT #1 cached=2 poll=1            cached@00000075e1fe9350
+```
+
+**Same address.** One instance, not duplicated inline state across shared
+objects. Candidate 2 is dead.
+
+The poll counter now says something sharper. `poll` is read after the gate's
+`enabled()` call, and it reads **1** on the first iteration and **2** on the
+second — exactly **one** `enabled()` call per `on_frame_end`, when the source
+plainly contains two (the call probe's, then the gate's). Each call does an
+unconditional `fetch_add`, so two calls cannot produce one increment.
+
+So all three of these hold simultaneously and cannot:
+
+1. `cached == 2`, and `enabled()` ends in `return cached == 2`
+2. the `!enabled()` branch is the one executing
+3. only one of the two written `enabled()` calls is incrementing the counter
+
+Point 3 is the thread to pull. An `fetch_add` cannot be elided, so either one
+call is not the function I think it is, or one of the two log sites is not where
+I believe it is despite the line numbers agreeing. The next probe should print
+`&calls` and `&offs` — the two probe-local statics — alongside a value captured
+into a local *before* the branch, so the branch condition and the printed value
+are provably the same evaluation rather than two separate calls.
+
+Until then the staging and `LOAD_OP_CLEAR` counters stay unmeasured. Both are
+built and correct; only their reporting hook is blocked.
