@@ -899,8 +899,26 @@ namespace vk::thor::rsx_auditor
 		const u32 interval = detail::g_report_interval.load(std::memory_order_relaxed);
 		if (interval == 0 || (frame % interval) != 0)
 		{
+			// Print the values the gate is actually deciding on. enabled() and the
+			// interval both read correctly from before the gate, so if this shows
+			// frame advancing normally against interval 60 the arithmetic cannot be
+			// what rejects it -- and the shared inline state is the next suspect.
+			static std::atomic<u64> rejects{0};
+			const u64 r = rejects.fetch_add(1, std::memory_order_relaxed) + 1;
+			if (r <= 3 || (r % 250) == 0)
+			{
+				rsx_log.error("Thor RSX Auditor: GATE REJECT #%llu frame=%llu interval=%u mod=%llu",
+					static_cast<unsigned long long>(r),
+					static_cast<unsigned long long>(frame), interval,
+					static_cast<unsigned long long>(interval ? frame % interval : 0));
+			}
+
 			return;
 		}
+
+		// Bisection: did execution get past the interval gate at all?
+		// Static reading has been wrong about this function four times running.
+		rsx_log.error("Thor RSX Auditor: PASSED GATE");
 
 		const u64 previous_frame = detail::g_last_report_frame.exchange(frame, std::memory_order_relaxed);
 		const u64 frames = previous_frame ? frame - previous_frame : frame;
