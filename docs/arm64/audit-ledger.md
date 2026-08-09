@@ -390,3 +390,36 @@ whole unit for the symbol, then confirm by count.
 
 This nearly cost a port of code we already have, into a hot shuffle lowering
 where a zero-base error renders silently wrong pixels.
+
+### Checked properly this time: one real gap, and it is functionality
+
+Re-checked the remaining upstream ARM64 commits by grepping their *introduced
+symbols across the whole tree*, which is the method that should have been used
+from the start:
+
+| commit | symbol searched | in this fork |
+| --- | --- | --- |
+| `d25972e19` `+i8mm` to target machine | `i8mm` | **present** (7 refs) |
+| `2d1be0918` `TBL` for `ROTQBY` | `pshufb_for_x86_and_tbl_for_aarch64` | **present** (16 call sites) |
+| `6647c5a2b` SPU decoder fallback | — | present-ish, weak signal |
+| `21d533675` NaN ruling-out, Reduced Loop | `Reduced Loop` | 71 refs, guard not separately confirmed |
+| `2f2ac69d6` idiomatic FSM | `zshuffle` in `FSM` | 0 — possibly missing, weak signal |
+| **`5e8ba021a` RawSPU MMIO on ARM** | **`decode_a64_mem_inst`** | **absent** |
+
+**`5e8ba021a` is a genuine gap.** Upstream implements RawSPU MMIO on ARM, which
+needs an AArch64 load/store instruction decoder to emulate MMIO faults — the
+guest traps on an access and the handler has to decode the faulting instruction
+to know what was being read or written.
+
+Two things make this the right thing to note last.
+
+It is **functionality, not performance**. RawSPU MMIO makes titles that use raw
+SPUs work; it will not make anything faster or cooler. So it does not satisfy
+the optimisation half of this effort, and pretending otherwise would be the
+thirteenth false claim.
+
+And it is **exactly the item this project predicted would need the Arm ARM**.
+`CLAUDE.md`'s ledger lists the RawSPU MMIO decoder as the one open task requiring
+DDI 0487 for load/store encodings, which is why the manual is vendored at all.
+Upstream has now written it. Reading their decoder against the manual is a far
+better use of those 17,145 pages than any of the twelve timing hypotheses were.
