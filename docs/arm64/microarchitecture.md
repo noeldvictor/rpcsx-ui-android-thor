@@ -544,3 +544,65 @@ knowing before concluding from totals that a change did or did not land.
 
 Both hot-path rewrites are now verified at all three levels: contract test,
 compiler codegen, and disassembly of what shipped.
+
+## Narrow-pipe sweep of the X3 tables, and what it rules out
+
+Extracted every ASIMD row in the Cortex-X3 guide whose *utilized pipelines*
+column is narrower than `V` (all four), because that column is the one that
+decides throughput and it is easy to miss. Results that touch code here:
+
+| operation | latency | throughput | pipes | bearing on this fork |
+| --- | --- | --- | --- | --- |
+| `MLA`, `MLS` | 4 (1) | 2 | **V02** | the `cmp_rdata` lowering — measured, 0.3%, see [`codegen.md`](codegen.md) |
+| `SSHL`, `USHL` (shift by register) | 2 | 2 | **V13** | SPU shifts |
+| `SHL`, `USHR`, `SSHR` (shift by immediate) | 2 | 2 | **V13** | SPU shifts |
+| `SLI`, `SRI` | 2 | 2 | V13 | — |
+| `SDOT`/`UDOT` **16-bit** | 4 (1) | 2 | V02 | we use the 8-bit form |
+| `SDOT`/`UDOT` **8-bit** | 3 (1) | **4** | **V** | the form the SPU JIT emits — full width, nothing to fix |
+| `SCVTF`, `UCVTF` (32b) | 4 | 1 | V02 | float conversion |
+| `CMEQ`, `EOR`, `ORR`, `AND` | 2 | 4 | **V** | the wide ones |
+
+**A lead this rules out.** Register shifts sit on two pipes, which looked like an
+argument for rewriting SPU shift-by-register into shift-by-immediate where the
+amount is known. It is not: **immediate shifts are `2 2 V13` as well**. Every
+ASIMD shift on this core is half-throughput, so converting between shift forms
+buys exactly nothing.
+
+The useful form of that fact is different: for shift-heavy SPU code the win is
+*fewer shifts*, not different ones — and a shift replaced by a logical op or an
+add moves work from two pipes to four.
+
+## `AESE`/`AESMC` want four blocks interleaved, and we issue one
+
+Section 4.6, verbatim:
+
+> Cortex-X3 core can issue four AESE/AESMC/AESD/AESIMC instruction every cycle
+> (fully pipelined) with an execution latency of two cycles. This means
+> encryption or decryption for at least four data chunks should be interleaved
+> for maximum performance
+
+`Crypto/aes_arm64.h` encrypts **one** block per call, as a serial
+`AESE → AESMC → AESE → …` chain. Each link waits the full 2-cycle latency on the
+previous one, so the unit runs at roughly a quarter of its issue rate — latency
+bound where it could be throughput bound.
+
+**Worth knowing, not worth doing yet.** [`aes.md`](aes.md) measured the total
+volume: the firmware decrypted at boot is 13.6 MB, about 35 ms of AES. A 4x on a
+35 ms boot cost is ~26 ms, and the CBC mode used for most of it is serial across
+blocks anyway — only genuinely parallel call sites could interleave. Recorded so
+that if AES ever appears in a profile, the fix is already specified.
+
+## Untested lead: spill GPRs to vector registers (4.2)
+
+> Register transfers between general-purpose registers (GPR) and ASIMD registers
+> (VPR) are lower latency than reads and writes to the cache hierarchy, thus it
+> is recommended that GPR registers be filled/spilled to the VPR rather to
+> memory, when possible.
+
+This is aimed squarely at code like a JIT under register pressure, which the SPU
+recompiler always is. Whether LLVM's AArch64 backend can be told to do it was not
+established — the bundled LLVM headers are not unpacked in the build tree, so
+there was nothing to grep. The next step is to check the LLVM version in use for
+a subtarget feature or codegen flag covering GPR-to-FPR spilling, and if one
+exists, A/B it with `tools/thor_property_ab.ps1` against Eternal Sonata, which
+is the SPU-heavy title (SPU 47.1%).
