@@ -11,6 +11,7 @@
 
 #ifdef ANDROID
 #include <sys/system_properties.h>
+#include "../../Common/ring_buffer_helper.h"
 #endif
 
 namespace vk::thor::rsx_auditor
@@ -950,5 +951,31 @@ namespace vk::thor::rsx_auditor
 			static_cast<unsigned long long>(blit_source_reject_by_reason[2]),
 			static_cast<unsigned long long>(blit_source_reject_by_reason[3]),
 			static_cast<unsigned long long>(blit_source_reject_by_reason[4]));
+
+		// Staging traffic, reported separately rather than threaded into the
+		// format string above -- that call already carries dozens of positional
+		// arguments and a miscount there is silent.
+		//
+		// alloc_mb is the volume that a direct-write upload path would stop
+		// copying on this device, where the staging heap and the "device-local"
+		// destination are the same physical DRAM (docs/arm64/uma-bar-heap.md).
+		// Feasibility is already established; this is the number that says
+		// whether acting on it is worth anything.
+		{
+			const u64 heap_allocs = rsx_heap_stats::take(rsx_heap_stats::g_alloc_count);
+			const u64 heap_bytes = rsx_heap_stats::take(rsx_heap_stats::g_alloc_bytes);
+
+			u64 heap_mib = 0, heap_mib_frac = 0;
+			detail::split_mib_x100(heap_bytes, heap_mib, heap_mib_frac);
+
+			rsx_log.warning(
+				"Thor RSX Staging: frames=%llu heap_allocs=%llu alloc_mb=%llu.%02llu per_frame_mb=%llu.%02llu",
+				static_cast<unsigned long long>(frames),
+				static_cast<unsigned long long>(heap_allocs),
+				static_cast<unsigned long long>(heap_mib),
+				static_cast<unsigned long long>(heap_mib_frac),
+				static_cast<unsigned long long>(frames ? heap_mib / frames : heap_mib),
+				static_cast<unsigned long long>(frames ? (heap_mib % frames) * 100 / frames : 0));
+		}
 	}
 }

@@ -4,6 +4,33 @@
 #include "rx/asm.hpp"
 #include "rx/align.hpp"
 
+#include <atomic>
+
+/**
+ * Staging traffic, counted at the one place every upload passes through.
+ *
+ * The Vulkan backend copies out of these heaps in twenty different places
+ * (vkCmdCopyBufferToImage / vkCmdCopyBuffer), so instrumenting the copies would
+ * mean twenty edits and twenty chances to miss one. Every byte that reaches
+ * those copies was allocated here first, so count it here: one site, no gaps.
+ *
+ * This measures the volume a direct-write upload path would stop copying. On
+ * this device that copy's destination is the same physical DRAM as its source
+ * (docs/arm64/uma-bar-heap.md), but "the copy is unnecessary" and "removing it
+ * is worth doing" are different claims and only this number separates them.
+ */
+namespace rsx_heap_stats
+{
+	inline std::atomic<u64> g_alloc_bytes{0};
+	inline std::atomic<u64> g_alloc_count{0};
+
+	inline u64 take(std::atomic<u64>& c)
+	{
+		return c.exchange(0, std::memory_order_relaxed);
+	}
+} // namespace rsx_heap_stats
+
+
 /**
  * Ring buffer memory helper :
  * There are 2 "pointers" (offset inside a memory buffer to be provided by class derivative)
@@ -97,6 +124,9 @@ public:
 
 		const usz block_length = (aligned_put_pos - m_put_pos) + alloc_size;
 		m_current_allocated_size += block_length;
+
+		rsx_heap_stats::g_alloc_bytes.fetch_add(alloc_size, std::memory_order_relaxed);
+		rsx_heap_stats::g_alloc_count.fetch_add(1, std::memory_order_relaxed);
 		m_largest_allocated_pool = std::max(m_largest_allocated_pool, block_length);
 
 		if (aligned_put_pos + alloc_size < m_size)
