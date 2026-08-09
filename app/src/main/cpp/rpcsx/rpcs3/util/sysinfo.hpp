@@ -62,6 +62,9 @@ namespace utils
 		native,
 		no_i8mm,
 		no_dotprod,
+		// Disables SHA-3 alone, so the BCAX-in-SHUFB question can be measured
+		// without also losing dotprod and i8mm the way baseline does.
+		no_sha3,
 		baseline,
 	};
 
@@ -78,6 +81,7 @@ namespace utils
 	const char* get_arm64_spu_feature_mode_name() noexcept;
 
 	bool use_spu_dotprod() noexcept;
+	bool use_spu_sha3() noexcept;
 
 	bool use_spu_i8mm() noexcept;
 

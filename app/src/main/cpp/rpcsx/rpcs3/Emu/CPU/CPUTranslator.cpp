@@ -238,7 +238,7 @@ void cpu_translator::initialize(llvm::LLVMContext& context, llvm::ExecutionEngin
 	m_use_i8mm = utils::use_spu_i8mm();
 	// SHA-3 brings BCAX and EOR3, which are plain bitwise ops despite living in
 	// the cryptography extension. Thor's Snapdragon 8 Gen 2 reports sha3.
-	m_use_sha3 = utils::has_sha3();
+	m_use_sha3 = utils::use_spu_sha3();
 
 #ifdef __ANDROID__
 	// Feature selection is process-stable. Report it once instead of once per translator.

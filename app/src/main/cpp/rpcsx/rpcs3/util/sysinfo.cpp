@@ -518,6 +518,11 @@ utils::arm64_spu_feature_mode utils::get_arm64_spu_feature_mode() noexcept
 			return arm64_spu_feature_mode::no_i8mm;
 		}
 
+		if (value == "no-sha3" || value == "no_sha3" || value == "nosha3")
+		{
+			return arm64_spu_feature_mode::no_sha3;
+		}
+
 		if (value == "no-dotprod" || value == "no_dotprod" || value == "nodotprod")
 		{
 			return arm64_spu_feature_mode::no_dotprod;
@@ -540,6 +545,7 @@ const char* utils::get_arm64_spu_feature_mode_name() noexcept
 	{
 	case arm64_spu_feature_mode::no_i8mm: return "no-i8mm";
 	case arm64_spu_feature_mode::no_dotprod: return "no-dotprod";
+	case arm64_spu_feature_mode::no_sha3: return "no-sha3";
 	case arm64_spu_feature_mode::baseline: return "baseline";
 	default: return "native";
 	}
@@ -549,6 +555,16 @@ bool utils::use_spu_dotprod() noexcept
 {
 	const arm64_spu_feature_mode mode = get_arm64_spu_feature_mode();
 	return has_dotprod() && mode != arm64_spu_feature_mode::no_dotprod && mode != arm64_spu_feature_mode::baseline;
+}
+
+bool utils::use_spu_sha3() noexcept
+{
+	// BCAX is emitted in the SHUFB lowering, and on A715 -- the cluster SPU
+	// threads are pinned to -- it is V0 throughput 1, against BIC+EOR at
+	// throughput 2 across all four V pipes. Disabling SHA-3 alone makes bcax()
+	// fall back to the arithmetic form so the two can be compared.
+	const arm64_spu_feature_mode mode = get_arm64_spu_feature_mode();
+	return has_sha3() && mode != arm64_spu_feature_mode::no_sha3 && mode != arm64_spu_feature_mode::baseline;
 }
 
 bool utils::use_spu_i8mm() noexcept

@@ -803,3 +803,29 @@ Qualcomm document:
 ```js
 await p.evaluate(() => window.ytInitialPlayerResponse.videoDetails.shortDescription)
 ```
+
+# Measuring power on the Thor's second screen
+
+The AYN Thor has a secondary display that can show live power draw. That is the
+instrument to trust for "is this cooler", because `tools/thor_power_probe.ps1`
+degrades badly when USB is attached: adb over USB charges the device, so
+`power_supply/battery/current_now` reports charge current rather than system
+draw and the probe reports a **FLOOR**, not a figure. Wireless adb plus the
+second screen gives a real number.
+
+Reference loads measured this session, so a reading has something to sit against:
+
+| workload | cores busy | probe reading |
+| --- | --- | --- |
+| idle, emulator stopped | 0.68 of 8 | **1.60 W** (on battery, exact) |
+| idle with a leaked emulator process | 3.27 | **3.48 W** |
+| Folklore, title screen, 60 fps | 2.23 | not derivable (charging) |
+| **Eternal Sonata, gameplay** | **5.26** | 5.5 W floor, USB attached |
+
+Eternal Sonata is the heavy one — 5.26 of 8 cores busy, with 3.18 of those on the
+A710/A715 cluster — and a **9 W spike at the wall during it is expected**, not a
+fault. Folklore at ~2.2 cores is less than half that load.
+
+If a spike appears with nothing obviously running, check `top` before anything
+else: a leaked `net.rpcsx.easy` at 210% CPU accounted for 1.88 W once already,
+and `pidof` did not report it after `am force-stop`.
