@@ -606,3 +606,50 @@ there was nothing to grep. The next step is to check the LLVM version in use for
 a subtarget feature or codegen flag covering GPR-to-FPR spilling, and if one
 exists, A/B it with `tools/thor_property_ab.ps1` against Eternal Sonata, which
 is the SPU-heavy title (SPU 47.1%).
+
+## The audit used the wrong core's tables
+
+Everything above was read out of the **Cortex-X3** guide. The X3 is one core of
+eight, and `thor_power_probe.ps1` consistently shows it doing the *least* work of
+the three clusters on this workload:
+
+```
+A510       3 cores   0.54 cores busy   2016 MHz
+A710/A715  4 cores   1.06 cores busy   2707 MHz   <- most loaded
+X3         1 core    0.62 cores busy   3187 MHz
+```
+
+The A715 tables are not the same, and they are **tighter** on precisely the
+instructions this audit examined:
+
+| operation | X3 | A715 |
+| --- | --- | --- |
+| `CMEQ` | 2, thr 4, `V` | 2, thr **2**, `V` |
+| `AND`/`EOR`/`ORR` | 2, thr 4, `V` | 2, thr **2**, `V` |
+| **`MLA`, `MLS`** | 4(1), thr 2, `V02` | 4(1), thr **1**, **`V0`** |
+| **`SSHL`, `USHL`** | 2, thr 2, `V13` | 2, thr **1**, **`V1`** |
+| `SDOT`/`UDOT` 8-bit | 3(1), thr 4, `V` | 3(1), thr **2**, `V` |
+| `ADDV` 8H | 4, thr 2, `V13` | **5**, thr 1, `V1`,`V` |
+
+**`MLA` is a single-pipe, throughput-1 instruction on A715.** The `cmp_rdata`
+analysis in [`codegen.md`](codegen.md) concluded it was narrow at `V02`; on the
+cluster that actually runs the code it is narrower still, and the four-deep
+serial accumulator chain costs more than the X3 numbers implied.
+
+Shifts are the same story: half-throughput on X3, **quarter**-throughput on
+A715, on one pipe.
+
+### What this does and does not change
+
+It does **not** overturn any conclusion, because every one of them was settled by
+measurement rather than by the table — `cmp_rdata` measured 0.3%, the shift
+rewrite was refuted on paper by both cores agreeing that immediate and register
+forms share a pipe class. Being wrong about the magnitude did not change the
+verdict.
+
+It **does** change how to read these documents. This project is a big.LITTLE
+target and the vendored guides describe three different cores. Quoting the X3
+because it is the fastest one is a mistake: **for anything running on the mid
+cluster, the A715 and A710 guides are the applicable tables**, and they are
+consistently more restrictive. The X3 is the right reference only for work
+pinned to `cpu7`.
