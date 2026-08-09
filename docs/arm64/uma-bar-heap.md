@@ -102,3 +102,25 @@ decides the value rather than the feasibility:
    mistake by optimizing a path before knowing its size.
 2. Prototype the upload heap on type 1 and A/B it against the current staging
    path on a title that renders — Folklore now does.
+
+## Measured, and it settles the question: not worth doing
+
+```
+Thor RSX Staging: frames=60 heap_allocs=660 alloc_mb=0.50 per_frame_mb=0.00
+```
+
+**0.5 MB across 60 frames — about 8.5 KB per frame**, over 660 allocations.
+
+That is the entire volume a direct-write upload path would stop copying. The
+feasibility argument was sound: one heap, every type device-local, type 1
+host-visible *and* cached, so the staging copy's destination is genuinely its own
+source. None of that matters at 8 KB a frame.
+
+**Closing this.** The precondition is proven and the payoff is negligible, which
+is the same shape as the AES work: a real inefficiency, correctly identified,
+worth nothing once measured. Do not reopen it without a workload that shows a
+materially larger figure here first.
+
+Caveat worth stating: measured on Folklore's title and prologue screens, which
+are light. A dense 3D scene will upload more. The number to beat is in this file
+— re-measure before arguing from the architecture again.

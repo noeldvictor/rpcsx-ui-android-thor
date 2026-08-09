@@ -316,3 +316,37 @@ from a rendering regression.
 
 **Not yet run** — no device access in the round that added it. One boot of
 Folklore answers it.
+
+## Measured: every clear is eligible
+
+```
+Thor RSX Clears: frames=60 total=51 eligible=51 (color=51 depth=0)
+                 rejected(pass_open=0 partial=0) per_frame=0.85
+```
+
+**51 of 51.** Every clear in the sample passes all three preconditions this file
+spent a section deriving:
+
+* `pass_open = 0` — the render pass was never already open at the call site
+* `partial = 0` — every clear covered the whole surface, origin included
+* all 51 are **colour**; no depth clears appeared in this sample
+
+So the `LOAD_OP_CLEAR` conversion would fire on **every** clear, not on some
+awkward subset, and the per-attachment bit the key needs only has to handle the
+colour case on this workload.
+
+This is the opposite result from the staging measurement taken in the same boot,
+which found the UMA upload path worth ~8 KB/frame and killed it. Same
+instrument, same run: one idea dead, one green.
+
+**What is still not established** is the size of the win — 0.85 clears/frame is
+the *rate*, not the bandwidth saved. The saving per converted clear is one
+unresolve of the colour attachment, and this file's earlier estimate of
+~16 MB/frame of pass traffic is the figure to check it against. Adreno's
+counters are the instrument, per the section above; frame time is not.
+
+The change itself remains as scoped: ~40 lines across three files, at
+`VKGSRender.cpp:1631` where `begin_render_pass()` and `vkCmdClearAttachments`
+are adjacent, with 22 spare bits in `renderpass_key_blob` for the per-aspect
+flag. Folklore now renders a verifiable scene, so a rendering regression would
+be visible.
