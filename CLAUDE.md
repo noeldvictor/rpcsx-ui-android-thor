@@ -551,3 +551,52 @@ worth trusting.
 
 Run it after any revert that removes a function body. That is precisely how the
 original was introduced.
+
+## Wireless adb, and "the process died" when it did not
+
+The Thor answers on both a USB serial and `192.168.1.33:5555`. The USB serial
+disappears without warning, and `adb devices` then lists only the network one —
+so a script pinned to the USB serial fails with `device 'c3ca0370' not found`
+rather than falling back. Reconnect with `adb connect 192.168.1.33:5555`.
+
+Over Wi-Fi the link drops mid-run. That breaks the obvious liveness check:
+
+```sh
+alive=$(adb -s $S shell "pidof net.rpcsx.easy")
+if [ -z "$alive" ]; then echo "DIED"; fi      # wrong
+```
+
+An unreachable device returns empty exactly like a dead process. A watcher
+written this way reported `DIED` while the emulator was still running and had
+been for two minutes. Probe reachability separately before believing an empty
+`pidof`:
+
+```sh
+ok=$(adb -s $S shell "echo ok" 2>/dev/null | tr -d '\r ')
+[ "$ok" != "ok" ] && echo "adb unreachable, liveness unknown"
+```
+
+The general shape is the one this project keeps rediscovering: **a negative
+result from a channel you have not proved is working is not a negative result.**
+Same class as `vm_log` emitting nothing and the `grep 'a\|b'` alternation.
+
+## Confirmed on device: the dotprod path is live
+
+Not inferred from source — logged by `CPUTranslator.cpp:248` on the Thor:
+
+    LLVM: AArch64 SPU fast paths: mode=native, dotprod=true, i8mm=true, sha3=true
+    JIT: LLVM AArch64 target: cpu=cortex-a78 attrs=+sha3,+dotprod,+i8mm,-sve,-sve2
+
+So the video's SDOT/UDOT work is active here, and any A/B against it only needs
+the `debug.rpcsx.thor.spu_arm_features` property, not a rebuild.
+
+## Do not put `head -N` on a grep you are about to reason from
+
+Searching for `on_frame_end` call sites with `| head -5` returned five hits from
+`texture_cache.h`, none of them the auditor, and the conclusion drawn was "the
+auditor is never called". It is called, at `VKPresent.cpp:286` — the line was
+just past the cut.
+
+`head` on an exploratory grep is fine. `head` on a grep whose *absence* of a
+result you intend to treat as evidence is the same mistake as the alternation
+grep, in a new costume. Count first (`grep -c`), then page.
