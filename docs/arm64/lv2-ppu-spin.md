@@ -241,3 +241,71 @@ that guards latency across every lv2 primitive needs better than that. What is
 worth doing next is the sweep on gameplay with **frame-time percentiles** rather
 than a frame counter, and on battery with the second screen so the power claim
 stops being inferred.
+
+---
+
+# Frame-time percentiles settle it, and the default is now 0
+
+The previous section kept the default at 50 because the frame counter was
+quantised to 6.25 fps and could not see p95 stutter. That was a real objection with
+a cheap answer: `dumpsys SurfaceFlinger --latency` on the app's BLAST layer returns
+per-frame present timestamps, so the whole distribution is available with no
+rebuild and no instrumentation.
+
+Eternal Sonata, gameplay, four arms in **both orders** to cancel drift, ~750 frame
+intervals each:
+
+| order | `lv2_spin` | n | p50 | p95 | p99 | worst | CPU |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| run 1 | 50 | 753 | 33.73 ms | 50.60 | 50.61 | 67.5 | 2.391 |
+| run 1 | 0 | 752 | 33.74 ms | 50.61 | 50.62 | 50.6 | 2.291 |
+| run 2 | 0 | 753 | 33.74 ms | 50.60 | 50.62 | 67.5 | 2.203 |
+| run 2 | 50 | 752 | 33.73 ms | 50.60 | 50.61 | 67.5 | 2.375 |
+
+**p50, p95 and p99 agree across all four arms to within 0.02 ms.** Removing the
+spin costs nothing at any percentile, not just on average. CPU is lower in every
+pairing — 2.383 mean spinning against 2.247 not spinning, 5.7% — and combined with
+the earlier gameplay run that is **four baseline arms and four zero arms, with
+every baseline higher than the zero arm taken in the same run.**
+
+The layer to query is the BLAST one:
+
+```sh
+adb shell dumpsys SurfaceFlinger --list | grep BLAST | grep RPCSXActivity
+adb shell dumpsys SurfaceFlinger --latency '<that layer>'
+```
+
+`SurfaceView[...]#N` without `(BLAST)` returns all-zero rows, and the layer's
+numeric suffix changes every boot, so resolve it per arm rather than hardcoding it.
+This is a better frame instrument than anything else in this repo — it needs no
+build flag, no property and no code, and it reports the distribution rather than a
+mean. It should have been the first thing reached for.
+
+## Decision
+
+**Default flipped from 50 to 0.** `debug.rpcsx.thor.lv2_spin=50` restores upstream
+behaviour instantly if a title ever needs it.
+
+The case: no measured latency cost at any percentile on the heavy title, in both
+arm orders; consistently lower CPU on both titles tested; and the mechanism is
+understood rather than empirical — a 1.3 ms nop-spin in front of a futex sleep that
+already works. Shipping the configuration that was actually measured, rather than a
+hedge value that was not, is the point: `lv2_spin=4` was never measured cleanly, so
+it would have been a guess dressed as caution.
+
+What is still not measured: titles beyond these two, and watts. The power claim
+remains inferred from cores freed, because USB stayed attached throughout and
+`current_now` reports charge current. That needs the second screen on battery.
+
+## Shipped default verified on device
+
+Not inferred from the source change — measured with the property **unset**, which
+is the path a user gets, against an explicit `50` on the same build:
+
+| `debug.rpcsx.thor.lv2_spin` | n | p50 | p95 | p99 | CPU |
+| --- | --- | --- | --- | --- | --- |
+| unset (shipped default) | 750 | 33.72 ms | 50.59 | 50.60 | **2.294 cores** |
+| `50` (upstream behaviour) | 751 | 33.73 ms | 50.60 | 50.61 | 2.443 cores |
+
+**6.1% less CPU on gameplay with frame-time percentiles matching to 0.01 ms.** The
+default path is the measured path, and the escape hatch works.

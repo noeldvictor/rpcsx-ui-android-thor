@@ -23,9 +23,13 @@
 // question is how much spinning is worth doing first, and that is a latency
 // trade the device has to answer, so it is a property rather than an edit.
 //
-//   debug.rpcsx.thor.lv2_spin = <iterations>   (default 50, unchanged)
+//   debug.rpcsx.thor.lv2_spin = <iterations>   (default 0)
 //
-// 0 disables the spin entirely and sleeps immediately. Read the value once per
+// The default is 0 -- no spin, sleep immediately -- because that is what was
+// measured. Set it to 50 to restore upstream's behaviour. On Eternal Sonata
+// gameplay, four alternating arms of ~750 frames each put p50/p95/p99 frame time
+// within 0.02 ms of the spinning build while using 4-6% less CPU; on a light
+// scene the saving is 68%. Full data in docs/arm64/lv2-ppu-spin.md. Read the value once per
 // wait, never inside the loop: a function-local static costs a guard-variable
 // acquire load on every call, and putting one in a hot spin is a mistake this
 // fork has already made once (see the pause() comment in rx/asm.hpp).
@@ -48,14 +52,14 @@ inline std::size_t ppu_spin_iters() {
     const char *v = std::getenv("RPCSX_THOR_LV2_SPIN");
 #endif
     if (!v || v[0] < '0' || v[0] > '9') {
-      return 50;
+      return 0;
     }
 
     std::size_t parsed = 0;
     for (const char *p = v; *p >= '0' && *p <= '9'; p++) {
       parsed = parsed * 10 + static_cast<std::size_t>(*p - '0');
       if (parsed > 100000) {
-        return 50;
+        return 0;
       }
     }
 

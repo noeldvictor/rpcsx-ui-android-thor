@@ -549,3 +549,40 @@ surface *destroy* but the create branch only calls `Emu.Resume()` — it never c
 the menu. Backgrounding and returning therefore resumes the game with the home menu
 overlay still up and input still intercepted, and the PS button cannot dismiss it
 because `m_home_menu_open` is already `true`.
+
+## The frame instrument that was here all along: SurfaceFlinger latency
+
+This repo spent a long time asserting that **FPS is only drawn, never logged**, and
+built gates around screenshots and a frame counter because of it. That was true of
+the emulator's own overlay and false of the platform. Android hands out per-frame
+present timestamps for any layer:
+
+```sh
+adb shell dumpsys SurfaceFlinger --list | grep BLAST | grep RPCSXActivity
+adb shell dumpsys SurfaceFlinger --latency '<that layer>'
+```
+
+Each call returns up to 128 rows of `desiredPresent actualPresent frameReady` in
+nanoseconds. Differencing column two gives the frame-interval distribution, so
+**p50/p95/p99 are available with no build flag, no property, no instrumentation and
+no rebuild**. Poll it every 5 s and union the rows to cover a longer window; the
+rows overlap, so deduplicate on the timestamp rather than concatenating.
+
+Two traps, both hit on the first attempt:
+
+* **Query the `(BLAST)` layer.** `SurfaceView[net.rpcsx.easy/...]#N` without
+  `(BLAST)` exists, accepts the command, and returns nothing but `0 0 0` rows —
+  a silent empty result, the exact failure mode this file keeps cataloguing.
+* **The layer's numeric suffix changes every boot.** Resolve it per arm. A
+  hardcoded `#13719` will match nothing on the next launch and, again, return
+  zero rows rather than an error.
+
+Why it matters more than the counter it replaces: a frame counter derived from a
+log line that fires every 250 frames is quantised to 6.25 fps over a 40 s window,
+which is enough to check two arms are in the same state and nowhere near enough to
+see a latency regression. **A capped 60 fps hides stutter by construction** — the
+mean is pinned by the cap and only the tail moves. Every A/B here that could plausibly
+trade latency for throughput should report percentiles from this source. The lv2
+spin decision in [`lv2-ppu-spin.md`](lv2-ppu-spin.md) turned on exactly that: the
+frame counter said "unchanged" and could not have said anything else, while the
+percentiles said unchanged to within 0.02 ms across four arms and actually meant it.

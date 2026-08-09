@@ -11,8 +11,10 @@ Four things are asserted, each because getting it wrong is silent:
 1. **Every site reads the budget.** Eight loops, one missed, no symptom except a
    measurement that says the change did less than it should.
 2. **No site still hardcodes `i < 50`.** The literal is what we are replacing.
-3. **The default is 50.** A property-gated experiment that changes behaviour with
-   the property unset is not an experiment, it is a shipped change.
+3. **The default is 0.** It was 50 while the change was an experiment. It is 0
+   now that four alternating gameplay arms showed p50/p95/p99 frame time within
+   0.02 ms of the spinning build -- so this assertion pins the shipped decision,
+   not the experimental one.
 4. **The read is hoisted out of the loop.** `ppu_spin_iters()` holds a
    function-local static, which costs a guard-variable acquire load on every
    call. Putting one *inside* a spin is a mistake this fork already made once,
@@ -59,8 +61,8 @@ def main():
         return 1
 
     header = read(HEADER)
-    if 'return 50;' not in header:
-        failures.append(f'{HEADER}: default spin budget is not 50')
+    if 'return 0;' not in header:
+        failures.append(f'{HEADER}: default spin budget is not 0')
     if 'debug.rpcsx.thor.lv2_spin' not in header:
         failures.append(f'{HEADER}: property name missing')
 

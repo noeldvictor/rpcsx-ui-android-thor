@@ -25,11 +25,13 @@ sleeping: `50 × rx::busy_wait(500)`, which on a **19.2 MHz** generic timer is
 | Folklore, title screen | 1.200 cores | 0.390 | **67.6%** |
 | Eternal Sonata, gameplay | 3.193 | 3.049 | **4.5%** |
 
-Frame rate unchanged in every arm of both. The Folklore result is 160× its
-run-to-run spread; the Eternal Sonata result is only about 2×, so it is
-suggestive rather than settled. The default is still `50` — the gameplay evidence
-is weak and the fps parity check is quantised too coarsely to see p95 stutter.
-Full account in
+Then frame-time percentiles from `dumpsys SurfaceFlinger --latency` on the BLAST
+layer — four gameplay arms in both orders, ~750 frame intervals each — put
+**p50/p95/p99 within 0.02 ms across every arm**, with CPU lower in every pairing.
+No latency cost at any percentile.
+
+**So the default is now `0`.** `debug.rpcsx.thor.lv2_spin=50` restores upstream
+behaviour. Full account in
 [`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md).
 
 Two lessons outrank the finding itself:
@@ -429,7 +431,7 @@ stands on its own and this file is the map.
 | [`docs/arm64/x86-isms-sweep.md`](docs/arm64/x86-isms-sweep.md) | Every remaining `_mm_*` site outside 3rdparty, asked "is this executed?" before "is this optimal?" — and why the interpreters, which look like the biggest target, are not. |
 | [`docs/arm64/rosetta-lessons.md`](docs/arm64/rosetta-lessons.md) | What Rosetta 2 does and why its central problem — x86's TSO — does not exist here, plus the four techniques it is famous for that this codebase already has. |
 | [`docs/arm64/adreno-tiler.md`](docs/arm64/adreno-tiler.md) | **The one place the code is still written for the wrong hardware.** Every render pass unresolves and resolves both attachments, and `LOAD_OP_CLEAR` is used zero times. |
-| [`docs/arm64/instruments.md`](docs/arm64/instruments.md) | The measuring tools, what each can and cannot answer, and the mistakes made building them. |
+| [`docs/arm64/instruments.md`](docs/arm64/instruments.md) | The measuring tools, what each can and cannot answer, and the mistakes made building them. **Frame timing: `dumpsys SurfaceFlinger --latency` on the `(BLAST)` layer gives per-frame present timestamps — a real distribution, no build flag, no code.** |
 | [`docs/arm64/thermal.md`](docs/arm64/thermal.md) | Junction versus package sensors, and the guard that compared a limit against the wrong one. |
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
 | [`docs/hardware/`](docs/hardware/) | Vendored vendor docs: Arm's Cortex-X3, A715 and A710 optimization guides, plus Qualcomm's 200-page Adreno guide — and why the GPU one opens a review axis nothing here has started. |
