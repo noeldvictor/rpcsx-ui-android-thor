@@ -436,7 +436,7 @@ REJECT #1  cached=2 poll=1         cached@...358 en_gate=0
 the gate's call never touched the counter. Two different functions:
 
 ```cpp
-#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_EXPERIMENTS)
+#if !defined(ANDROID) || defined(RPCSX_THOR_RSX_AUDITOR)
     FORCE_INLINE bool enabled() { return detail::enabled(); }
 #else
     // remove the default-off recorder's atomic/property polling from Android
@@ -444,8 +444,8 @@ the gate's call never touched the counter. Two different functions:
 #endif
 ```
 
-**On Android without `RPCSX_THOR_RSX_EXPERIMENTS`, `enabled()` is
-`constexpr false`.** My probes called `detail::enabled()` — the real one, which
+**On Android without `RPCSX_THOR_RSX_AUDITOR`, `enabled()` is `constexpr
+false`.** My probes called `detail::enabled()` — the real one, which
 reads the property and returns true. Every gate in the file calls the
 *unqualified* `enabled()`, which the preprocessor had already reduced to `false`.
 
@@ -466,7 +466,19 @@ platform. Both look like ordinary code and neither shows up as absent.
 
 **The build flag is the fix**, not a code change:
 
-    ./gradlew assembleThortest -PrpcsxThorRsxExperiments=1
+    ./gradlew assembleThortest -PrpcsxThorRsxAuditor=1
 
-which sets `-DRPCSX_THOR_RSX_EXPERIMENTS=ON` (`app/build.gradle.kts:212`). Note
-this is a different CMake configuration, so it builds its own `.cxx` tree.
+which sets `-DRPCSX_THOR_RSX_AUDITOR=ON` (`app/build.gradle.kts:211`). This is a
+different CMake configuration, so it builds its own `.cxx` tree — budget ~14
+minutes and ~8 GB.
+
+**Correction, and it cost a whole build cycle.** The first attempt used
+`-PrpcsxThorRsxExperiments=1`, because I read the guard off the *neighbouring*
+`#if`s at lines 467 and 794, which really are `RPCSX_THOR_RSX_EXPERIMENTS`, and
+assumed the one on `enabled()` matched. It does not: there are two independent
+options, `RPCSX_THOR_RSX_AUDITOR` and `RPCSX_THOR_RSX_EXPERIMENTS`, and the
+recorder is behind the first. The experiments build compiled, installed, and
+still logged `en_gate=0` — which is what caught it.
+
+That is the third time in this investigation that reading a nearby line instead
+of the exact line produced a confident wrong answer.
