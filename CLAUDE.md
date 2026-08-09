@@ -672,3 +672,68 @@ showing it had started *after* the force-stop. It respawns. After killing it:
 **1.88 W, entirely a leaked emulator process.** Check `top` before trusting
 `pidof` after a force-stop, and check power against a known-idle baseline rather
 than against memory of yesterday.
+
+# Shared device protocol
+
+**The Thor is shared with another Claude session testing Xbox 360 emulation**
+(`jp.xenia.emulator.github.debug`). Both agents install, launch and kill apps on
+the same hardware.
+
+Rules, learned by breaking them:
+
+1. **Close the emulator before you start and after you finish.** Not only after.
+   A previous session's emulator left running is indistinguishable from your own
+   until you check the pid, and it costs real power — a leaked `net.rpcsx.easy`
+   was measured at **210% CPU and 1.88 W** while nothing was on screen.
+2. **Never force-stop the other session's package.** Xenia is not ours. Check
+   what is running before assuming a busy device is your fault.
+3. `pidof` is not sufficient after `am force-stop`. The process can respawn on
+   its own, and an unreachable adb returns empty exactly like a dead process.
+   Confirm with `top -b -n 2 -d 2` (a single `-n 1` sample reports every row as
+   0.0% because there is no delta to compute).
+4. Battery is shared too. Check the level before starting a long run.
+
+# The manual question, settled
+
+The goal text asks for "a snapdragon gen 8 chipset manual that was huge" from
+the video. **That manual is the Arm Architecture Reference Manual, not a
+Qualcomm document.** The video ("PS3 emulation is fast on ARM now") describes
+scouring *"every page of an ARM Architecture manual with over 17,000 pages"*,
+and the page count identifies the issue exactly: **DDI 0487M.c is 17,145
+pages**. It is vendored, split into three parts.
+
+The Snapdragon SoC-level manual — the SM8550 *Hardware Register Description* —
+**is not public**, confirmed from two independent directions: Qualcomm
+distributes it to partners, and Lantronix states plainly that HDK schematics and
+manuals are available only to purchasers through their technical portal. The
+SM8550 data sheet (80-33265-1) surfaces only on Scribd behind a paywall.
+
+What is public and vendored instead: the Adreno Game Developer Guide (200 pp)
+and the Snapdragon Mobile Platform OpenCL guide (116 pp). The Snapdragon 8 Gen 2
+"Product Brief" is public but is two pages of marketing with no technical
+content, and was deliberately **not** vendored — padding `docs/hardware/` to
+satisfy a checkbox is worse than recording that the real document is gated.
+
+# Open: the RSX auditor emits nothing
+
+Unresolved, and worth writing down so the next session does not re-derive it.
+With `debug.rpcsx.thor.rsx_auditor=1` set before launch and Folklore rendering
+at 60 FPS, the auditor produces **zero** lines. Everything checked so far says
+it should work:
+
+* `on_frame_end` is at `thor_rsx_auditor.h:857`; the
+  `RPCSX_THOR_RSX_EXPERIMENTS` guard at 794 closes at 825, so it is **not**
+  compiled out.
+* It is called from `VKPresent.cpp:286`, inside `advance_queued_frames()`,
+  reached from `queue_swap_request()` at `VKPresent.cpp:1003`.
+* The `skip_frame || swapchain_unavailable` mini-flip path that bypasses it
+  early-returns at `VKPresent.cpp:588` and does not apply while rendering.
+* `looks_disabled("1")` is false and `parse_interval("1")` yields 60, so the
+  property is enabled with a 60-frame interval.
+* Other `rsx_log.warning` output does reach the log, so the channel works.
+
+The installed APK was confirmed to be the instrumented one
+(`lastUpdateTime` after the build). Next step is a one-shot unconditional log at
+the top of `on_frame_end` to separate "not called" from "`enabled()` false" —
+which is the same technique that cracked `mov_rdata`, and should have been the
+first move rather than five rounds of reading.
