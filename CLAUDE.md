@@ -600,3 +600,75 @@ just past the cut.
 `head` on an exploratory grep is fine. `head` on a grep whose *absence* of a
 result you intend to treat as evidence is the same mistake as the alternation
 grep, in a new costume. Count first (`grep -c`), then page.
+
+# Use the manuals
+
+They are vendored in `docs/hardware/` for a reason. Reasoning from memory about
+what a chip does, when a 17,145-page manual describing it is sitting in the
+repo, has produced wrong answers in this project more than once. Open them.
+
+**But route the question to the right one.** Measured by counting pages that
+mention power/energy/watt:
+
+| document | pages | covers | does *not* cover |
+| --- | --- | --- | --- |
+| Arm ARM (DDI 0487M.c) | 17,145 | instruction semantics, encodings, system registers | timing, power — none at all |
+| Cortex X3/A715/A710/A510 guides | 71-73 each | latency, throughput, **pipe assignment** | power (2 of 73 pages mention it) |
+| Adreno Game Developer Guide | 200 | GPU architecture, GMEM, UBWC, **power** (28/200 pages) | CPU anything |
+| Snapdragon OpenCL guide | 116 | memory hierarchy, cache line, zero-copy, **power** (24/116) | the Vulkan API surface |
+
+The Arm core guides are timing documents. For a *power* question the Qualcomm
+documents are the ones with content, which is the opposite of what I assumed.
+
+## The Adreno guide assumes a driver we are not running
+
+`Thor Vulkan Feature Doctor: gpu='Turnip Adreno (TM) 740'`
+
+**Turnip** is Mesa's open-source Adreno driver, not Qualcomm's. Every proprietary
+extension the Adreno guide recommends is absent on this device:
+
+    extension: [missing] VK_QCOM_tile_memory_heap
+    extension: [missing] VK_QCOM_tile_shading
+    extension: [missing] VK_QCOM_tile_properties
+    extension: [missing] VK_QCOM_elapsed_timer_query
+    extension: [missing] VK_QCOM_queue_perf_hint
+
+So read that guide for **what the hardware does** and discount its API advice.
+`VK_QCOM_tile_memory_heap`, which it recommends for exactly the reason we care
+about — *"replacing comparatively power-hungry memory bus traffic with cheaper
+GMEM operations"* — cannot be used here.
+
+## Tile memory is available anyway, and unused
+
+The portable route to GMEM is core Vulkan, not a QCOM extension:
+`VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT` backed by a
+`VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT` memory type. This device offers one:
+
+    type 3: DEVICE_LOCAL LAZILY_ALLOCATED   11441 MB
+
+and the emulator **never uses either flag** — the only occurrence of
+`LAZILY_ALLOCATED` in the whole VK backend is the diagnostic that printed that
+line. Every depth and MSAA attachment is therefore backed by real DRAM even when
+it is never sampled outside its pass and never needed to leave the tile.
+
+That is an unexploited hardware capability, it is reachable without the missing
+extensions, and the vendor documents it as a power win. It pairs with the
+`LOAD_OP_CLEAR` work in [`docs/arm64/adreno-tiler.md`](docs/arm64/adreno-tiler.md).
+
+## A stale process cost 1.9 W
+
+The user reported the device drawing 1-2 W more than the day before.
+`tools/thor_power_probe.ps1` with the emulator supposedly stopped:
+
+    system power   : 3.481 W    cores busy (avg) : 3.27 of 8
+      A710/A715    : 2.216 cores busy at 2803 MHz
+
+`pidof net.rpcsx.easy` returned empty immediately after `am force-stop`, and a
+`net.rpcsx.easy` process was nonetheless alive at **210% CPU** with `ETIME`
+showing it had started *after* the force-stop. It respawns. After killing it:
+
+    system power   : 1.598 W    cores busy (avg) : 0.676 of 8
+
+**1.88 W, entirely a leaked emulator process.** Check `top` before trusting
+`pidof` after a force-stop, and check power against a known-idle baseline rather
+than against memory of yesterday.
