@@ -172,3 +172,38 @@ requiring the absence of any ARM64 `#el*` line before counting the block.
 twelve refuted predictions, the complete upstream ARM64 diff, the inline-assembly
 audit, and now the fallback-quality sweep. The x86-to-ARM64 surface in this
 codebase is clean.
+
+## Re-checked again: runtime x86 feature dispatch
+
+A fifth shape, and the last one I can think of that the previous sweeps could not
+see. All of them look at **compile-time** structure. This looks for **runtime**
+dispatch: code calling `utils::has_avx()` / `has_ssse3()` / `has_rtm()`, which
+return false on ARM64 and route execution to a fallback with no `#ifdef` anywhere
+in sight.
+
+Every call site outside `sysinfo.cpp`:
+
+| site | verdict |
+| --- | --- |
+| `SPUASMJITRecompiler.cpp` (8 sites) | the **x86 asmjit** SPU backend — emits `x86::` operands, never built for ARM64 |
+| `PPUThread.cpp:95, 374, 381` | inside an x86 asmjit builder (`x86::rbx`, `vzeroupper`) — same |
+| `PPUInterpreter.cpp:1998` (`has_ssse3`) | the interpreter, which this document already establishes is **cold**: both decoders are LLVM |
+| `g_use_rtm` | TSX; false on ARM64 by construction, and the ARM64 path is the non-TSX one that is always taken |
+
+**No runtime x86 dispatch reaches ARM64 execution.** The checks all live in code
+that either is not compiled for this target or is not executed on it.
+
+That is five independent shapes now, none of which found anything:
+
+1. arch branches containing no code (`tools/check_empty_arch_branches.py`)
+2. x86 fast paths with a looping fallback
+3. x86 fast paths with an unrolled-scalar fallback
+4. hand-written assembly, all 73 sites
+5. runtime x86 feature dispatch
+
+Plus the upstream ARM64 diff, which this fork already matches on every
+performance commit.
+
+The x86-to-ARM64 conversion in this codebase is done. What remains is not
+translation debt — it is ordinary optimisation of code that is already native,
+and twelve measured attempts say the easy wins there are gone too.
