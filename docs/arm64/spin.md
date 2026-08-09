@@ -1264,3 +1264,35 @@ tool reports p95 frame time for that reason — a capped frame rate hides mean
 regressions. Measure energy per frame and p95 together, on a title that reaches
 gameplay, and mind that changing the JIT target invalidates the PPU cache (see
 `codegen.md`) so it must not be varied in the same run.
+
+### Measured, and it refutes the section above
+
+The GETLLAR busy-wait percentage was swept on Eternal Sonata:
+
+```
+100%   13,745 Mcyc/s   5.223 cores busy
+ 10%   13,352 Mcyc/s   5.037 cores busy   (-2.9%)
+```
+
+**−2.9% is the noise floor here.** Cutting the spin to a tenth barely moves the
+load, so **busy-waiting is not what draws the power on that screen.** The
+preceding section's explanation is wrong and is left standing only because the
+reasoning behind it — 93% of spin is GETLLAR, and the setting really is 100 —
+was sound and still produced the wrong answer.
+
+What the numbers actually say: the cores stay at ~5.0–5.2 busy in both arms, so
+the work is **real emulation**, not spinning. A PS3 title screen is not simple
+from the emulator's side — the game keeps its SPU workload running behind it, and
+the overlay reported SPU at 47.1% on this title. The 4 W is the cost of
+emulating that, not of waiting for it.
+
+Two notes on the measurement itself. The reported power (13.9 W and 14.7 W) is a
+**FLOOR with USB attached** and moved *upward* as work went down, which is a
+charging artifact and not a reading — on-battery or the Thor's second screen is
+required for real watts. And the `-2.9%` direction is toward *less* work at *less*
+spin, which is at least self-consistent; it is simply too small to act on.
+
+**Twelfth prediction, twelfth refutation.** The one that hurts is that this was
+argued from a measured 93% figure and a confirmed config value, and was still
+wrong — because "93% of spin is GETLLAR" says nothing about how much of the
+*total* is spin.
