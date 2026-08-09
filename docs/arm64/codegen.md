@@ -967,3 +967,63 @@ been a thirteenth refutation, costing two rebuilds and twenty minutes of Thor
 time to discover the pattern never occurs.
 
 **No open optimisation leads remain in the SPU lowerings.**
+
+## Porting upstream's ROTQBY/TBL change: the crux is the zeroing rule
+
+Upstream `2d1be0918` is the best-evidenced lead left (see `audit-ledger.md`).
+Having read it, the port is **semantic, not mechanical**, and the reason is one
+difference between the two shuffle instructions:
+
+* **x86 `pshufb`** zeroes a destination lane when the index byte has its **high
+  bit set** (≥ 128).
+* **AArch64 `TBL`** zeroes a lane when the index is **out of table range**
+  (≥ 16).
+
+So the constants cannot be shared. Upstream splits them:
+
+```cpp
+static auto rotqby_zero_base()
+{
+#ifdef ARCH_ARM64
+    return rotqby_forward_base();                       // 0..15
+#else
+    return build<u8[16]>(112, 113, ..., 127);           // high bit set
+#endif
+}
+```
+
+and routes the shuffle through a helper:
+
+```cpp
+template <typename T, typename U>
+auto pshufb_for_x86_and_tbl_for_aarch64(T&& a, U&& b)
+{
+#ifdef ARCH_ARM64
+    return tbl(std::forward<T>(a), std::forward<U>(b));
+#else
+    return pshufb(std::forward<T>(a), std::forward<U>(b));
+#endif
+}
+```
+
+**Getting the zero base wrong produces silently wrong pixels, not a crash** —
+the same failure mode that made the `LOAD_OP_CLEAR` work slow and careful. This
+fork has also diverged here: `ROTQBY` at `SPULLVMRecompiler.cpp:6191` uses
+`vpermb` under `#if defined(ARCH_X64)`, which upstream's diff does not touch, so
+a cherry-pick will not apply.
+
+### Execution plan
+
+1. Add the four base helpers and `pshufb_for_x86_and_tbl_for_aarch64`, keeping
+   this fork's `vpermb` path untouched under `ARCH_X64`.
+2. Convert `ROTQBY`, `ROTQBYBI` and `ROTQBYI` (6191, 5972, 6372) one at a time.
+3. Verify **correctness before speed**: Folklore's title screen exercises SPU
+   shuffles heavily and any zero-base error will show as corrupted output.
+   Screenshot-compare against the known-good capture.
+4. Only then A/B on Eternal Sonata, with the pause guard and cores-busy parity
+   check now in `tools/thor_property_ab.ps1`.
+
+Predicted magnitude: **single digits**, bounded by the BCAX-in-SHUFB result of
++5.6% — the only verified same-state positive this project has produced, and the
+closest analogue (another hot SPU shuffle, and `TBL` is `2 2 V` on A715, full
+width).
