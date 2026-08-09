@@ -1231,3 +1231,36 @@ larger piece of work.
 Caveats: one run per arm, no repeats, so ~2% differences are inside the noise
 this design can resolve; the 23% is not. The charger also means the `isb` arm's
 `0.479 W [FLOOR, USB attached]` is a floor, not a comparable figure.
+
+## Why a simple title screen draws ~4 W
+
+Asked directly, and the answer was already in the settings dump:
+
+```
+SPU Reservation Busy Waiting Percentage:   0
+SPU GETLLAR Busy Waiting Percentage:     100
+```
+
+**GETLLAR waits busy-spin 100% of the time.** This file measures 93% of all spin
+as the GETLLAR wait, so on a screen where the SPUs have little real work the
+threads still spin at full clock, producing nothing.
+
+Measured on Eternal Sonata's early screens: **5.26 of 8 cores busy**, 3.18 of
+them on the A710/A715 cluster at 2707 MHz, with the probe reporting a 5.5 W floor
+and roughly 9 W observed at the wall. Folklore's title screen at ~2.2 cores is
+less than half that. The load does not come from rendering — RSX sits at 1-3%.
+
+This is the strongest remaining *cooler* lever, and unlike everything the manual
+sweep produced it is not a hypothesis about instruction selection: it is a
+percentage in the config, changeable without a rebuild, and
+`tools/thor_getllar_percent_sweep.ps1` was written for exactly this sweep. It was
+previously blocked on "no title reaches gameplay", which the `mov_rdata` fix
+removed.
+
+**What has to be measured, not assumed:** lowering the percentage trades power
+for latency. A reservation that would have been caught by a spin now waits for a
+futex wake, and the cost lands on frame pacing rather than throughput. The sweep
+tool reports p95 frame time for that reason — a capped frame rate hides mean
+regressions. Measure energy per frame and p95 together, on a title that reaches
+gameplay, and mind that changing the JIT target invalidates the PPU cache (see
+`codegen.md`) so it must not be varied in the same run.
