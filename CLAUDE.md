@@ -601,6 +601,26 @@ just past the cut.
 result you intend to treat as evidence is the same mistake as the alternation
 grep, in a new costume. Count first (`grep -c`), then page.
 
+
+# The audit ledger
+
+[`docs/arm64/audit-ledger.md`](docs/arm64/audit-ledger.md) tracks the
+codebase-vs-manuals sweep: what has been checked, by what method, and what is
+left in priority order. Read it before starting another pass, so the sweep is
+resumed rather than restarted.
+
+Its central finding is about method. **Sweeping the manual for slow instructions
+and hunting for them does not work here** — four predictions derived that way,
+four refuted by measurement (`ISB` +23%, `cmp_rdata` 0.3%, UMA upload 8.5
+KB/frame, shift-form rewrite identical). **Establishing reach first does work** —
+every real defect came from asking whether code runs at all and with what:
+`mov_rdata` compiled to nothing, the auditor's `enabled()` is `constexpr false`,
+1.88 W was a leaked process.
+
+sse2neon is closed as a concern: `Emu/CPU/sse2neon.h` has exactly **two**
+includers, `SPUInterpreter.cpp` (cold, both decoders are LLVM) and
+`ProgramStateCache.cpp` (already `vrev16q_u8`).
+
 # Use the manuals
 
 They are vendored in `docs/hardware/` for a reason. Reasoning from memory about
