@@ -856,6 +856,32 @@ namespace vk::thor::rsx_auditor
 
 	inline void on_frame_end()
 	{
+		// One-shot proof of life, deliberately ahead of the enabled() gate.
+		//
+		// With debug.rpcsx.thor.rsx_auditor=1 set before launch and Folklore holding
+		// 60 fps, this auditor emitted nothing at all. Five rounds of reading
+		// established that on_frame_end is not compiled out, that it is reached from
+		// VKPresent.cpp via queue_swap_request, that the bypass path does not apply
+		// while rendering, that the property parses as enabled with a 60-frame
+		// interval, and that other rsx_log warnings do reach the log. All of which
+		// says it should work, and it does not.
+		//
+		// Counting which branch actually executes is what settled mov_rdata after the
+		// same amount of fruitless reading, so: log once, unconditionally, before any
+		// gate can suppress it. If this line never appears the function is not being
+		// called and every conclusion above is about dead code. If it appears, the
+		// fault is in enabled() or the interval and the next probe goes there.
+		{
+			static std::atomic<bool> announced{false};
+			if (!announced.exchange(true, std::memory_order_relaxed))
+			{
+				rsx_log.error("Thor RSX Auditor: on_frame_end reached (enabled=%d interval=%u) "
+					"- one-shot, ahead of the enabled() gate.",
+					detail::enabled() ? 1 : 0,
+					detail::g_report_interval.load(std::memory_order_relaxed));
+			}
+		}
+
 		if (!enabled())
 		{
 			return;
