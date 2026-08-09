@@ -423,3 +423,34 @@ And it is **exactly the item this project predicted would need the Arm ARM**.
 DDI 0487 for load/store encodings, which is why the manual is vendored at all.
 Upstream has now written it. Reading their decoder against the manual is a far
 better use of those 17,145 pages than any of the twelve timing hypotheses were.
+
+### Upstream ARM64 check, completed
+
+Final state of the comparison against `origin/master`, each verified by grepping
+the introduced symbol across the whole file:
+
+| upstream commit | marker searched | this fork |
+| --- | --- | --- |
+| `d25972e19` `+i8mm` to target machine | `i8mm` | **present** (7) |
+| `2d1be0918` `TBL` for `ROTQBY` | `pshufb_for_x86_and_tbl_for_aarch64` | **present** (16 call sites) |
+| `2f2ac69d6` idiomatic FSM for ARM64 | `build<u32[4]>(1, 2, 4, 8)`, issue `200325` | **present** |
+| `6647c5a2b` SPU decoder fallback | — | present-ish |
+| `21d533675` NaN ruling-out, Reduced Loop | — | not separately confirmed |
+| `5e8ba021a` RawSPU MMIO on ARM | `decode_a64_mem_inst` | **absent** |
+
+**This fork is current with upstream's ARM64 *performance* work.** The only
+confirmed gap, RawSPU MMIO, is functionality — it makes raw-SPU titles run and
+will not make anything faster or cooler.
+
+That is a third independent line of evidence for the same conclusion the twelve
+refuted predictions reached: the ARM64 side of this emulator is in good shape,
+and it is not where speed is currently being lost.
+
+**Method note, third occurrence.** Both the ROTQBY and FSM checks initially read
+as "missing" because a ~12-line window after the function signature did not
+contain the ARM64 branch — it sits further down in both. Same error as
+nearest-symbol attribution and as reading a JIT-dump histogram as execution
+frequency. **Grep the whole translation unit for a distinctive constant or
+comment string; never conclude absence from a window.** The FSM markers that
+settled it were `build<u32[4]>(1, 2, 4, 8)` and the upstream LLVM issue number,
+both unique enough to be conclusive in one command.
