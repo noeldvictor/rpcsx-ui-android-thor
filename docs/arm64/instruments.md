@@ -483,9 +483,14 @@ still logged `en_gate=0` — which is what caught it.
 That is the third time in this investigation that reading a nearby line instead
 of the exact line produced a confident wrong answer.
 
-## Systematic: the home menu opens ~12 s into every boot and pauses emulation
+## The home menu sometimes opens ~12 s into a boot and pauses emulation
 
-Not a stray tap. It reproduces at the same point every launch:
+**Corrected: this does not happen on every launch.** It was written up that way
+after three occurrences in a row; two clean boots immediately afterwards did not
+reproduce it, and both produced valid profiles. The trigger is still unidentified,
+so treat it as intermittent and check for it rather than expecting it.
+
+What it looks like when it does happen:
 
 ```
 0:00:11.911  rpcn: Loading RPCN config
@@ -516,8 +521,31 @@ every launch, it does so for a person playing, not just for a benchmark. That is
 a functional bug worth chasing on its own, and it is upstream of any performance
 work — no A/B on this device is trustworthy until it is fixed or suppressed.
 
-**Next step:** `getevent -l` during the first 15 s of a boot will name the exact
-event and device. If it is a controller button, the fix is in the input mapping;
-if it is the overlay's `run_input_loop` interpreting an empty or spurious event,
-it is in `SetIntercepted`. The harness already refuses arms where this appears
-(`tools/thor_property_ab.ps1`), but refusing is not the same as fixing.
+**Ruled out: a hardware key.** `getevent -lt` across a full 30 s boot captured
+**zero input events** — only the eleven device-enumeration lines. No `KEY_BACK`, no
+`BTN_MODE`, no PS button. Nothing physical was pressed, and the Odin Controller and
+its virtual mouse emitted nothing.
+
+That leaves three code paths, now mapped:
+
+1. `_rpcsx_surfaceEvent(event=2)` — surface destroyed — at
+   `rpcsx-android.cpp:2523` calls `open_home_menu()` and then `Emu.Pause()`. This
+   one already logs (`ANDROID: surface event <ptr>, 2`), and in the clean boots
+   only events `0` and `1` appeared, at t=0.6 s.
+2. The PS button in the pad data, `rpcsx-android.cpp:2236`.
+3. `handleOsdBack()` in `RPCSXActivity.kt`, reached from `onKeyDown` for
+   `KEYCODE_BACK` or `KEYCODE_BUTTON_MODE`, or from `onBackPressed()`.
+
+Path 3 logged nothing at all, which is why the trigger could not be identified from
+the logs on hand; it now logs its reason, the originating device name and the input
+source, and `_rpcsx_openHomeMenu` logs the JNI hop. With those in place one
+occurrence names the culprit.
+
+A fourth path is dead: `pad::g_home_menu_requested` is read at `pad_thread.cpp:472`
+and **never written anywhere in the tree**, so it can never fire.
+
+Worth fixing regardless of the trigger: `_rpcsx_surfaceEvent` opens the home menu on
+surface *destroy* but the create branch only calls `Emu.Resume()` — it never closes
+the menu. Backgrounding and returning therefore resumes the game with the home menu
+overlay still up and input still intercepted, and the PS button cannot dismiss it
+because `m_home_menu_open` is already `true`.

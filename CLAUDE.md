@@ -3,6 +3,29 @@
 Technical notes for making this emulator fast on Thor. `AGENTS.md` is the
 operating contract; this file is the hardware knowledge behind it.
 
+## Read this first: 74% of cycles are a nop-spin, and a profile found it
+
+A symbolized profile of a healthy 60 fps run — 31,657 samples, 0 lost, no pause —
+puts **73.9% of all CPU cycles inside two lv2 wait syscalls**,
+`sys_event_queue_receive` (47.8%) and `_sys_lwcond_queue_wait` (26.1%), as *self*
+time that never reaches `atomic_wait_engine::wait`. They are spinning, not
+sleeping: `50 × rx::busy_wait(500)`, which on a **19.2 MHz** generic timer is
+**1.3 ms** of `YIELD` — a nop on this SMP core. The identical loop is at
+**eight sites** across the guest synchronization layer. Full write-up, the
+arithmetic for a predicted ~1 W saving, and the confound to check, in
+[`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md).
+
+Two lessons outrank the finding itself:
+
+* **Nothing in a year of manual sweeps found this, and one profile did.** Twelve
+  manual-derived predictions were refuted; the audit concluded "the ARM64 code is
+  clean", and at instruction level it is. The waste was never in instruction
+  selection — it was in how long a wait waits. Get the profile first.
+* **"93% of spin is GETLLAR" was a share of the instrumented sites only.** The wait
+  profiler counts SPU sites and no PPU sites, so these eight could not appear and
+  their absence read as evidence. Same failure the ledger lists twice: a search that
+  finds nothing and a search that searches nothing look identical.
+
 ## The machine
 
 Ayn Thor, Snapdragon 8 Gen 2 (`kalama`), 8 cores in a 1+2+2+3 layout:
@@ -380,7 +403,8 @@ stands on its own and this file is the map.
 | [`docs/arm64/codegen.md`](docs/arm64/codegen.md) | What this fork does: the lowerings chosen here, the missing movemask, the SPU opcode audit, and the x86-habit table that produced most of the real defects. |
 | [`docs/arm64/microarchitecture.md`](docs/arm64/microarchitecture.md) | What the hardware does: instruction latency, throughput and pipe assignment from the vendored per-core guides, the forwarding regions, and the chapter 4 rules. |
 | [`docs/arm64/memory-model.md`](docs/arm64/memory-model.md) | Atomics and ordering: the LSE2 128-bit path (no longer dead — see below), the reservation seqlock, RCsc versus RCpc, and instruction-cache maintenance. |
-| [`docs/arm64/spin.md`](docs/arm64/spin.md) | Where the CPU time goes: 93% of spin is the `GETLLAR` wait, what was tried against it, and the one lever still untested. |
+| [`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md) | **The largest finding here, and the only one from a real profile.** 73.9% of all cycles are a nop-spin in two lv2 wait syscalls; the same loop appears at eight sites across the guest sync layer. |
+| [`docs/arm64/spin.md`](docs/arm64/spin.md) | Where the CPU time goes *on the SPU side*: 93% of instrumented spin is the `GETLLAR` wait. Read `lv2-ppu-spin.md` first — that 93% is a share of the sites the wait profiler counts, and it counts no PPU sites. |
 | [`docs/arm64/rsx-boot-hang.md`](docs/arm64/rsx-boot-hang.md) | **Resolved.** The boot hang, three wrong diagnoses, and the empty `mov_rdata` branch behind it. Folklore now reaches its title screen at 60.01 FPS. |
 | [`docs/arm64/uma-bar-heap.md`](docs/arm64/uma-bar-heap.md) | Snapdragon is UMA, so the "BAR heap" the Vulkan backend parks as scarce is all 11.4 GB of it. What is measured and what is not. |
 | [`docs/arm64/ppu-compile-oom.md`](docs/arm64/ppu-compile-oom.md) | A second title dies in PPU precompile with a Scudo out-of-memory, and why the 1536 MB budget bounds concurrency rather than footprint. |

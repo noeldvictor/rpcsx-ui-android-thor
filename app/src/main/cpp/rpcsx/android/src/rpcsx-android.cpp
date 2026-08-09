@@ -2431,6 +2431,10 @@ extern "C" void _rpcsx_kill() { Emu.Kill(); }
 extern "C" void _rpcsx_resume() { Emu.Resume(); }
 
 extern "C" void _rpcsx_openHomeMenu() {
+  // Named so a log can tell this apart from the other two ways the menu opens:
+  // the PS button in the pad data, and a surface-destroy event. The third is the
+  // only one that used to leave a trace.
+  rpcsx_android.warning("home menu requested over JNI");
   if (auto padThread = pad::get_pad_thread(true)) {
     padThread->open_home_menu();
   }

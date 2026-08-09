@@ -303,8 +303,13 @@ class RPCSXActivity : Activity() {
         activeSelectStickHotkey = SelectStickHotkey.None
     }
 
-    private fun handleOsdBack() {
+    // `reason` exists because the home menu was observed opening ~12 s into a boot
+    // that nobody was touching, and there was no way to tell which of the three
+    // entry points fired -- this one, the PS button in the pad data, or a surface
+    // destroy. Only the surface path logged anything. See docs/arm64/instruments.md.
+    private fun handleOsdBack(reason: String) {
         val state = RPCSX.getState()
+        Log.i("RPCSX HomeMenu", "OSD back from $reason, state=$state, likelyOpen=$homeMenuLikelyOpen")
         if (homeMenuLikelyOpen || homeMenuThread?.isAlive == true || state == EmulatorState.Paused) {
             sendNativeMenuBackPress()
             return
@@ -446,13 +451,16 @@ class RPCSXActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        handleOsdBack()
+        handleOsdBack("onBackPressed")
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (isOsdKey(keyCode)) {
             if (event?.repeatCount == 0) {
-                handleOsdBack()
+                val name = if (keyCode == KeyEvent.KEYCODE_BACK) "BACK" else "BUTTON_MODE"
+                val from = event?.device?.name ?: "unknown device"
+                val src = event?.source ?: 0
+                handleOsdBack("$name key from '$from' (source=0x${src.toString(16)})")
             }
             return true
         }
