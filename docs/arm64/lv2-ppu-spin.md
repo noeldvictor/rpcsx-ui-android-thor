@@ -193,3 +193,51 @@ Not established, and the reason **the default is still 50**:
 What would justify flipping the default: the same sweep on a second title and on a
 gameplay scene rather than a title screen, reporting **p95 frame time**, on
 battery with the second screen for real watts.
+
+---
+
+# Second title: the win collapses under load, and the headline was over-claimed
+
+Eternal Sonata, gameplay, same harness, same alternating design:
+
+| `lv2_spin` | emulator CPU (cores) | frame rate |
+| --- | --- | --- |
+| 50 (default) | 3.230, 3.155 | 31.2, 25.0 |
+| 0 | 3.010, 3.087 | 31.2, 31.2 |
+
+Baseline mean **3.193**, zero mean **3.049** — a **4.5% reduction, 0.14 cores**,
+against a within-arm spread of ~0.076. The delta is about twice the spread, which
+is suggestive and not decisive. Frame rate is unchanged, except one baseline arm
+that read 25.0 where every other arm read 31.2; its CPU was in line with the other
+baseline, so it is reported rather than dropped.
+
+**This corrects the framing of everything above.** The profile that started this
+was taken on Folklore's *title screen*, and 73.9% of cycles were in lv2 waits
+because on that workload the emulator is mostly waiting. Under real gameplay load
+the same threads have actual work to do, they enter those waits far less, and the
+spin falls from two thirds of CPU to a twentieth of it.
+
+So the honest summary is:
+
+* The spin is **always pure waste** — no arm on either title lost frame rate by
+  removing it, on any run.
+* **How much waste depends entirely on how idle the workload is.** Light scene:
+  0.81 cores. Gameplay: 0.14 cores.
+* **"74% of all cycles" is true of a title screen, not of the emulator.** Quoting
+  it without the workload attached is exactly the error this project's ledger
+  keeps recording — a measurement that is correct over a population narrower than
+  the claim built on it.
+
+Which does not make it worthless. 0.14 cores is free, and menus, title screens,
+loading and 2D titles are a real share of hand-held play, where the saving is the
+large one and battery is the thing the user notices. But it is not a 67% win for
+the emulator, and this document said so for one commit.
+
+## Where that leaves the default
+
+Still `50`. The gameplay evidence is weak (2x spread), the fps parity check is
+quantised too coarsely to see p95 stutter, and the case for changing a default
+that guards latency across every lv2 primitive needs better than that. What is
+worth doing next is the sweep on gameplay with **frame-time percentiles** rather
+than a frame counter, and on battery with the second screen so the power claim
+stops being inferred.

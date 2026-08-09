@@ -11,8 +11,15 @@ puts **73.9% of all CPU cycles inside two lv2 wait syscalls**,
 time that never reaches `atomic_wait_engine::wait`. They are spinning, not
 sleeping: `50 × rx::busy_wait(500)`, which on a **19.2 MHz** generic timer is
 **1.3 ms** of `YIELD` — a nop on this SMP core. The identical loop is at
-**eight sites** across the guest synchronization layer. Full write-up, the
-arithmetic for a predicted ~1 W saving, and the confound to check, in
+**eight sites** across the guest synchronization layer.
+
+**Measured, not just predicted.** With the budget behind
+`debug.rpcsx.thor.lv2_spin`, Folklore's title screen goes from **1.200 cores to
+0.390** — a **67.6% cut in emulator CPU, 0.81 cores freed — at an identical frame
+rate.** Two independent alternating runs agree to within 0.005 cores. The default
+is still `50`, because this is one title and one non-sync-heavy scene and the
+parity check cannot see p95 stutter; what would justify flipping it is written
+down. Full account in
 [`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md).
 
 Two lessons outrank the finding itself:
