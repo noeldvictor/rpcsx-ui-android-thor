@@ -99,6 +99,27 @@ disguise: **a histogram of a JIT dump is a count of what was compiled, not of
 what runs.** Weakening that ordering would have been a correctness risk taken
 for no gain.
 
+### JIT output vs rule 4.8, branch density
+
+§4.8 is one of the few manual rules aimed squarely at *generated* code:
+
+> avoid placing more than four branch instructions within an aligned 32-byte
+> instruction memory region
+
+PPU JIT output is branch-heavy by nature (`bl` 8163, `ret` 8937, `cbnz` 3947),
+so this was a plausible violation. Measured over 124,556 disassembled
+instructions:
+
+```
+32-byte regions containing code           15570
+regions with >4 branches (violates 4.8)     330   (2.12%)
+branches per region   1:4426  2:6206  3:1089  4:239  5:330
+```
+
+**Compliant.** 2.12% marginal violations, and the distribution stops dead at
+five — not one region has six or more, which points at a single repeated
+codegen pattern rather than sprawling branch soup. Nothing to fix.
+
 ## Coverage so far
 
 | area | how checked | result |
@@ -113,7 +134,9 @@ for no gain.
 | SDOT/UDOT | source + device log | present, `HWCAP_ASIMDDP`-gated, **on** |
 | SVE | `HWCAP_SVE` on device | **absent on this chip**; two video chapters inapplicable |
 | GPU tile memory | Adreno guide + `VkPhysicalDeviceMemoryProperties` | type 3 `LAZILY_ALLOCATED` exists and is **never used** — open |
-| `LOAD_OP_CLEAR` | on-device counters | **51/51 clears eligible**; key bit and plumbing landed, call site pending |
+| `LOAD_OP_CLEAR` | GPU busy A/B on device | implemented incl. depth, verified correct, **12.39% -> 12.65% GPU busy: no saving**. Default off |
+| JIT output, instruction mix | disassembled a cached PPU module | `rev` correct; `ldsetal` is cold-path (static count, not executions) |
+| JIT output, branch density (§4.8) | 124,556 instructions | 2.12% of regions marginally over, max 5. Compliant |
 | **All inline assembly** | enumerated: 73 sites in 18 files | see below — every ARM64 site checked against the guide, all cleared |
 | FPCR access (§4.9, §4.10) | call-site reach | `mrs/msr FPCR` in `rx/simd.hpp` is reached only from `ppu_thread::cpu_task` and `spu_thread::cpu_task` — **once per thread start**. Special-register flush side-effects do not apply to a cold path. Cleared |
 | I-cache maintenance (§4.13) | rule text vs our usage | §4.13 concerns set/way L1 invalidation; our `dsb ish; isb` after codegen is the architectural I-cache sequence, not a set/way op. Not applicable |
