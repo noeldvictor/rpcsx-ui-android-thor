@@ -139,3 +139,36 @@ non-temporal stores) and one came back "cold" (the SPU interpreter). Only AES wa
 both live and unexploited. That ratio is the argument for asking *is this
 executed* before asking *is this optimal* — the reverse order produces a long
 list of correct, useless changes.
+
+## Re-checked: x86 fast path with a slow ARM fallback
+
+Asked directly whether the conclusion was safe, so this sweep looked for a shape
+the earlier passes could not see. `tools/check_empty_arch_branches.py` finds
+blocks with **no** ARM64 code. It cannot find the more likely failure: an
+`ARCH_X64` fast path where ARM64 quietly lands on a generic fallback that
+happens to be slow.
+
+Two queries over the whole native tree, excluding `3rdparty` and `llvm`:
+
+| query | result |
+| --- | --- |
+| `ARCH_X64` blocks with an `#else` and **no ARM64 branch** | **52** |
+| ...whose fallback contains a **loop** | **0** |
+| ...whose fallback is **unrolled scalar** (≥4 `._u32[N]`-style accesses) | **0** |
+
+**None of the 52 falls back to scalar code.** They fall back to portable v128
+expressions, which is the pattern `codegen.md` already documents — the
+translators emit IR and the backend chooses the encoding, so there is no x86
+habit to strip.
+
+One false positive is worth recording, because it nearly became a finding.
+`rx/simd.hpp:1969` (`gv_rol16`) flagged on the first attempt as "x86 fast path,
+looping fallback". It is not: it has a proper `#elif defined(ARCH_ARM64)` NEON
+branch, and the loop is the generic `#else` for architectures that are neither.
+The detector had treated `#elif ARCH_ARM64` as part of the x86 section. Fixed by
+requiring the absence of any ARM64 `#el*` line before counting the block.
+
+**This is the fourth independent line of evidence** for the same conclusion:
+twelve refuted predictions, the complete upstream ARM64 diff, the inline-assembly
+audit, and now the fallback-quality sweep. The x86-to-ARM64 surface in this
+codebase is clean.
