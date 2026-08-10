@@ -453,3 +453,53 @@ mattered was "is this code doing anything".
 
 All three are latency-critical, so p95 frame time decides each, and
 `dumpsys SurfaceFlinger --latency` measures that reliably now.
+
+---
+
+# Handover: the fix for the 20% loop may already exist and be missing this block
+
+Before writing any codegen, one thing has to be checked, because it would change
+the whole approach.
+
+**The recompiler already turns channel-poll loops into blocking waits.**
+`SPULLVMRecompiler.cpp:4534` handles `inst_attr::rchcnt_loop` by emitting
+`wait_rchcnt(...)` / `wait_spu_inbox` — real blocking waits — instead of a poll,
+for `SPU_WrOutMbox`, `SPU_WrOutIntrMbox`, `SPU_RdSigNotify1/2` and `SPU_RdInMbox`.
+That attribute is produced by a large, careful analysis in
+`SPUCommonRecompiler.cpp` (`rchcnt_loop_t`, ~15 rejection causes, applied at
+`:8477`).
+
+So the mechanism that fixes exactly this class of spin **is present and live**.
+The hot block at `0xcc4` is not getting it. Two possibilities, and they lead to
+very different work:
+
+1. **The pattern matcher rejected it.** There is a diagnostic for precisely this,
+   already in the tree: `spu_pattern_diagnostics_enabled()` logs
+   `"Channel Loop Pattern Detected!"` on success and `"Channel loop error!"` on
+   failure, with `read_pc`, `branch_pc` and the function hash. If `0xcc4` shows up
+   as a rejected candidate, the fix is in the matcher — far smaller and safer than
+   new codegen.
+2. **It is not a channel poll at all**, in which case it is a different wait
+   (a `state` poll with an empty body) and needs its own handling.
+
+**Run the diagnostic before writing anything.** This project's own record is that
+the expensive mistakes came from building before establishing reach — and it has
+now twice found the needed mechanism already present and simply not reached
+(`mov_rdata`'s empty branch, `jit_announce`'s `#if 0`). A third instance is more
+likely than not.
+
+## What is done and what is not
+
+Done and shipped: the lv2 spin default, the `busy_wait` inventory, the JIT perf
+map, the emitted-code audit, and the profiles that located all of it.
+
+**Not done, and deliberately not started:** the three fixes above — the SPU JIT
+spin park (~20%), the MFC reservation wait (~7%), and `vm::writer_lock` (6.2%).
+Each is a real change to a latency-critical path, each needs its own A/B with p95
+frame time, and starting three of them at once is how unverified changes get
+shipped. They are fully specified here: mechanism, measured size, predicted
+magnitude, falsification, and the confound to check.
+
+The one on `vm::writer_lock` should begin by questioning **lock granularity**, not
+wait shape — six SPU threads contending on one range-lock bitmap is a design
+signal, and making the wait cheaper would hide it rather than fix it.
