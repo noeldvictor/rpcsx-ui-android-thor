@@ -503,3 +503,31 @@ magnitude, falsification, and the confound to check.
 The one on `vm::writer_lock` should begin by questioning **lock granularity**, not
 wait shape — six SPU threads contending on one range-lock bitmap is a design
 signal, and making the wait cheaper would hide it rather than fix it.
+
+## Diagnostic run: `0xcc4` is not a channel poll
+
+`spu_pattern_diagnostics_enabled()` is gated on `g_cfg.core.spu_debug` on Android,
+so this needed a `config.yml` edit rather than a property. Enabled, booted Eternal
+Sonata, restored the config and verified the byte count matched (8012) — the file
+is rewritten on exit, and leaving `SPU Debug: true` would have slowed every
+subsequent run.
+
+Result:
+
+```
+Channel Loop Pattern Detected! (read_pc=0xa7c, branch_pc=0xa80, branch_target=0xa7c)
+detected: 1     errors: 0     mentions of 0xcc4: 0
+```
+
+**One pattern detected, no rejections, and `0xcc4` never appears.** So the hot
+block was never a channel-loop candidate — it is not a `RDCH`/`RCHCNT` poll, and
+the matcher has not rejected it either. Possibility 1 is eliminated: **there is no
+matcher tweak that covers this.**
+
+That settles the shape of the work. The `0xcc4` loop waits on `spu_thread::state`
+with an empty body, which is a different idiom from a channel poll, and it needs
+its own handling — a real codegen change, as originally feared, not a cheap fix.
+
+Worth noting the cost of *not* checking: the existing `rchcnt_loop` machinery is
+elaborate enough that assuming it applied would have sent a session into the
+matcher for nothing. One boot and no build ruled it out.
