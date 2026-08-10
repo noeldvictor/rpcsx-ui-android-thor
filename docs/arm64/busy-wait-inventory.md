@@ -303,3 +303,37 @@ Eternal Sonata's ~1.4-core noise floor means it needs repeats or a quieter title
 This is the clearest "x86 paradigm poorly ported" found since `mov_rdata`: not a
 wrong instruction, but a **tuning constant whose justification does not exist on
 this architecture**, sitting on the hottest named path in the emulator.
+
+## The movsb sweep: null, and I tested the wrong direction first
+
+| `movsb_threshold` | n | p50 | p95 | p99 | CPU |
+| --- | --- | --- | --- | --- | --- |
+| 1024 (default) | 750 | 33.72 | 33.73 | 50.58 | 3.958 |
+| 0 (always memcpy) | 750 | 33.71 | 33.72 | 50.57 | 3.967 |
+| 1000000 (never memcpy) | **251** | 33.71 | 33.72 | 50.56 | **VOID — process died mid-window** |
+
+**The first two arms are identical** — 0.009 cores apart, far inside Eternal
+Sonata's ~1.4-core noise floor, percentiles matching to 0.01 ms.
+
+**And they could not have differed.** The comment at the site says the hot jobs
+"pound 16 KB transfers", and 16 KB is already **above** 1024 — so both arms sent
+the hot traffic through `memcpy` regardless. Lowering the threshold to 0 only
+changes transfers **below** 1024 bytes. I swept the direction that cannot move the
+hot path, which is a design error in the experiment, not a result about the code.
+
+The informative arm is the opposite one — a threshold so large that the 16 KB
+transfers are forced through the naive v128 loop. That arm **voided**: the process
+died partway through the window (`/proc/<pid>/stat` gone, 251 frame intervals
+instead of 750, a nonsensical negative CPU delta from differencing against a dead
+process).
+
+**Unattributed.** Forcing 16 KB through the hand-written loop may have destabilised
+it, or the death may be unrelated — this title has known issues and nothing in the
+log was captured before the process went. One void arm is not evidence of a crash
+*cause*, and it will not be written up as one.
+
+**Where this leaves the finding.** The code observation stands and is unchanged:
+the threshold is a runtime-detected x86 ERMSB crossover replaced by a hardcoded
+1024 on a chip with no ERMSB and no `rep movsb`. What is *not* established is that
+it costs anything. The one sweep that could show that has not produced a valid
+arm, and it needs a rerun with logcat captured so the death is diagnosable.
