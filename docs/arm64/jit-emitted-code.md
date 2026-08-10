@@ -586,3 +586,65 @@ than remains in this session, and a half-written codegen change to the SPU
 recompiler is precisely the thing this repo has the most scar tissue about. The
 same applies to the MFC reservation wait, whose sites are already named at
 `SPUThread.cpp:5268`, `:5285` and `:3709`.
+
+---
+
+# Six SPU threads are pinned to two cores
+
+The gameplay profile shows **six concurrent SPU threads** — `SPU[0x0000100]`,
+`[0x0000200]`, `[0x1000100]`, `[0x2000100]`, `[0x3000100]`, `[0x4000100]` — which
+matches `Max SPURS Threads: 6` in the profile config.
+
+The affinity in that same config:
+
+```
+CPU0: General   CPU1: General   CPU2: General   CPU3: General
+CPU4: PPU
+CPU5: SPU       CPU6: SPU
+CPU7: RSX
+```
+
+**Six SPU threads, two cores.** A 3:1 oversubscription, and CPU5/CPU6 are the
+A710 pair at 2707 MHz — not the X3, which is handed to RSX while
+`Multithreaded RSX: false` and the entire Turnip driver measures 2.23% of CPU.
+
+## This reframes all three spin findings
+
+Spinning is wasteful on an idle core. **On an oversubscribed core it is
+actively serialising.** A thread spinning 1.04 ms in `vm::writer_lock` while
+occupying one of only two SPU cores may be denying the core to the very thread
+that would release the lock — a textbook convoy. The same applies to the 390 µs
+MFC spin and to the `0xcc4` loop that burns a core doing nothing.
+
+That would explain, without any of the codegen work, why `sched_yield` is a third
+of `process_mfc_cmd` and why all six threads pile into `vm::writer_lock`
+simultaneously: they are not just contending for a lock, they are contending for
+**two cores**.
+
+**This is testable without writing any code**, which makes it the cheapest
+outstanding experiment by a wide margin. Change `Affinity` to give SPU more cores
+(CPU3–CPU6, or include CPU7 given RSX is single-threaded and cheap) and re-run the
+same p95 + CPU harness.
+
+## And `SPU loop detection: false`
+
+The same config carries `SPU loop detection: false`. Upstream uses that setting to
+recognise SPU idle loops and yield instead of spinning — which is, on the face of
+it, aimed at exactly the `0xcc4` behaviour. It has never been tried here.
+
+Two config-only experiments, both zero-build:
+
+| change | hypothesis |
+| --- | --- |
+| `Affinity` SPU → CPU3–6 (or +CPU7) | the spins are convoying on 2 cores, not merely wasting them |
+| `SPU loop detection: true` | the 20% self-loop is already handled upstream by a setting we have off |
+
+**Both must be run the same way as everything else here:** p95 frame time from
+`dumpsys SurfaceFlinger --latency`, CPU from `/proc/<pid>/stat`, alternating arms,
+and `config.yml` restored with a verified byte count afterwards — it is rewritten
+on exit.
+
+Neither is measured yet. They are recorded here because they cost one boot each
+and could make a codegen change unnecessary, which is the order this project keeps
+learning to work in: establish what is reachable and configurable before writing
+anything.
