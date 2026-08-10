@@ -370,3 +370,35 @@ where the crossover would actually bite. The property stays for that case.
 The measurement also earns its keep as a negative control: it proves the threshold
 is live, the property reaches the code, and the DMA path is genuinely sensitive to
 copy implementation — so a future change there will be visible.
+
+## CORRECTION: our 1024 is not a transplanted x86 bug — it is an improvement over upstream
+
+A diff of ARMSX3 against **upstream RPCS3** (both trees downloaded and compared,
+so absences are verified) shows what upstream actually does on non-x86:
+
+```cpp
+#else
+#define s_rep_movsb_threshold umax
+#define __movsb std::memcpy
+#endif
+```
+
+**`umax`.** The macro shadows the x86 declaration, so `if (size > s_rep_movsb_threshold)`
+is never true, the `__movsb` branch is dead, and every transfer — including the
+16 KB ones — falls through to the hand-written v128 loop. ARMSX3 inherits this
+unchanged.
+
+Our fork uses `1024u`, so we *do* reach `std::memcpy` above 1 KB.
+
+**Measured today, that is worth 13.8%.** The never-memcpy arm — which is exactly
+upstream's configuration — cost **4.511 cores against 3.958/3.967**. So the
+section above had the polarity backwards: the `1024` is not an x86 constant
+transplanted carelessly, it is a **deliberate Thor-specific improvement over
+upstream, and it is worth ~0.55 cores.** The sweep that looked like a null result
+was actually confirming a win that had already been taken.
+
+What survives from the original analysis: the *reasoning* about why bionic's
+`memcpy` beats a 16-byte-at-a-time loop on a 64-byte line was right, and the
+number now proves it. What was wrong was assuming an unfamiliar constant must be
+a mis-port. **Check what upstream does before calling a divergence a defect** —
+the divergence was the fix.
