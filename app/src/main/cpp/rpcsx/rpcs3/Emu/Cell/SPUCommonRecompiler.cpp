@@ -2555,6 +2555,27 @@ spu_function_t spu_runtime::rebuild_ubertrampoline(u32 id_inst)
 		std::string fname;
 		fmt::append(fname, "__ub%u", m_flat_list.size());
 		jit_announce(wxptr, raw - wxptr, fname);
+
+		// Make the new code visible to instruction fetch before any core can
+		// branch into it.
+		//
+		// This function writes AArch64 instructions through a data mapping. The
+		// compare-and-swap below publishes the pointer. Another core can then
+		// branch into the code immediately. CTR_EL0.DIC reads 0 on this chip, so
+		// the hardware does not keep the data and instruction caches coherent.
+		// The write can sit in the data cache while instruction fetch reads a
+		// stale line.
+		//
+		// The three sibling patch sites in this file already do this. See
+		// :2702, :2782 and :2935. This site did not, in our tree and in upstream
+		// RPCS3. ARMSX3 found it first and flushes here.
+		//
+		// jit_announce does not cover it. That function writes one line to a perf
+		// map, and it is off by default.
+		//
+		// The failure is silent, intermittent and hard to reproduce, which is the
+		// shape of the mov_rdata defect.
+		__builtin___clear_cache(reinterpret_cast<char*>(wxptr), reinterpret_cast<char*>(raw));
 	}
 
 	if (auto _old = stuff_it->trampoline.compare_and_swap(nullptr, result))

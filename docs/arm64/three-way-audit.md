@@ -372,3 +372,39 @@ advertised, LLVM forms `EOR3` from `a ^ b ^ c` by itself.
    the profile measures at 4.49%.
 4. **Leave item 5 alone for now.** The redesign is larger than one line, and a
    port must use 64, not 128.
+
+---
+
+# Fixed: the ubertrampoline now flushes the instruction cache
+
+Finding 1 is fixed in `Emu/Cell/SPUCommonRecompiler.cpp`. The function writes
+AArch64 instructions through a data mapping. It then publishes the pointer with a
+compare-and-swap. Another core can branch into the code at once.
+
+`CTR_EL0.DIC` reads 0 on this chip. The hardware therefore does not keep the data
+cache and the instruction cache coherent. The new code can sit in the data cache
+while instruction fetch reads a stale line.
+
+The fix adds one call before the compare-and-swap:
+
+```cpp
+__builtin___clear_cache(reinterpret_cast<char*>(wxptr), reinterpret_cast<char*>(raw));
+```
+
+The same file already does this at three other patch sites. This site did not.
+Our tree and upstream RPCS3 both miss it. ARMSX3 found it first.
+
+**Not measured, and it cannot be.** This defect is silent and intermittent. A
+stale instruction fetch produces a wrong branch, not a log line. The argument is
+the architecture, not a benchmark:
+
+* The chip reports `DIC=0`, so software must invalidate.
+* Three sibling sites in the same file already invalidate.
+* A sibling fork invalidates here.
+
+The build passes with no errors and no new warnings. The device was not touched.
+
+**What a test cannot check.** A grep can confirm the call is present. A grep
+cannot confirm that every future write to executable memory adds one. The class
+is the same as `mov_rdata`: correct code, one missing line, and no symptom until
+a rare timing window opens.
