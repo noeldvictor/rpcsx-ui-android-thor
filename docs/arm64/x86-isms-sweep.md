@@ -207,3 +207,54 @@ performance commit.
 The x86-to-ARM64 conversion in this codebase is done. What remains is not
 translation debt — it is ordinary optimisation of code that is already native,
 and twelve measured attempts say the easy wins there are gone too.
+
+---
+
+# BufferUtils.cpp: a file the earlier sweep never opened
+
+The ledger records "RSX vertex/texture paths — **clean**", on the strength of
+`RSXThread.cpp` having no x86 intrinsics and `ProgramStateCache.cpp` already using
+`vrev16q_u8`. **That sweep never looked at `Emu/RSX/Common/BufferUtils.cpp`**,
+which is where vertex and index streaming actually happens.
+
+Counted:
+
+| | |
+| --- | --- |
+| x86 feature gates (`has_ssse3` / `sse41` / `avx2` / `avx512`) | **11** |
+| ARM64 / NEON references (`ARCH_ARM64`, `vrev`, `vld1`, `uint8x16`, …) | **0** |
+| generic `v128` / `gv_` uses | 3 |
+
+So on AArch64 every gate is false and the file takes scalar fallbacks for vertex
+attribute streaming, index expansion, and the big-endian→little-endian swap that
+every PS3 vertex buffer needs. On x86 the same work is AVX2/SSSE3.
+
+**It is reached, and the profile names the fallback outright:**
+
+```
+0.06%  upload_untouched<unsigned short>
+0.04%  rsx::draw_command_processor::analyse_inputs_interleaved
+0.03%  fill_vertex_layout_state
+0.03%  VKGSRender::upload_vertex_data
+0.02%  copy_data_swap_u32_naive<false>      <-- the scalar byte-swap
+```
+
+`copy_data_swap_u32_naive` is the unaccelerated path, executing, with "naive" in
+its own symbol name.
+
+## But it is ~0.2% of gameplay, and that decides it
+
+The whole vertex cluster sums to roughly **0.2%**. A perfect NEON port of all 11
+sites cannot return more than that on this title, so by the ledger's own magnitude
+test **it is not worth doing** on this evidence.
+
+Recorded anyway, for two reasons. First, it corrects a "clean" verdict that was
+reached by sweeping two files and generalising to a subsystem — the file with all
+the intrinsics in it was never opened. Second, **this title is a JRPG**: vertex
+streaming volume is workload-dependent in a way SPU emulation is not, and a
+racing or action title could plausibly move this by an order of magnitude. The
+reach test should be re-run per title rather than assumed to transfer.
+
+The NEON work itself is unremarkable if it is ever justified: `vrev32q_u8` for the
+u32 swap, `vrev16q_u8` for u16 — the same instruction `ProgramStateCache.cpp`
+already uses one directory away.
