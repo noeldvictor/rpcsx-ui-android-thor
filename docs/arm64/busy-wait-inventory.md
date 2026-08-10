@@ -258,3 +258,48 @@ That distinction is worth more than either number, because it says where to look
 next: **not at spin loops, but at waits whose expected wait is long.** Grepping for
 `busy_wait` finds the mechanism; only knowing what is being waited *for* predicts
 whether the spin pays.
+
+---
+
+# An x86 constant transplanted onto the hot DMA path
+
+`SPUThread.cpp` selects between a hand-written v128 copy loop and `__movsb` at
+**six sites**, all inside the DMA path that `process_mfc_cmd` — 20% of gameplay —
+runs:
+
+```cpp
+#if x86:   static const u32 s_rep_movsb_threshold = utils::get_rep_movsb_threshold();
+#else:     #define s_rep_movsb_threshold 1024u
+           #define __movsb std::memcpy
+```
+
+On x86 that threshold is **runtime-detected**: the ERMSB crossover, the size above
+which `rep movsb` microcode beats a SIMD loop. It is a property of the host CPU
+and the code asks the CPU for it.
+
+On ARM64 it became **a hardcoded 1024**, and `__movsb` is not `rep movsb` at all —
+it is bionic's `memcpy`. So the branch now reads "below 1024 bytes, prefer a naive
+16-byte-at-a-time v128 loop over hand-tuned AArch64 `memcpy`", and the number
+justifying that came from a different instruction on a different architecture.
+
+**Why the crossover is probably much lower here.** bionic's AArch64 `memcpy` uses
+`ldp`/`stp` pairs and switches to non-temporal stores for large sizes. The
+fallback moves 16 bytes per iteration. On a 64-byte cache line — `CWG=64`,
+measured from `CTR_EL0`, not assumed — the v128 loop issues four stores per line
+where `stp q` issues two. There is no ERMSB to wait for, so the reason the x86
+threshold is high does not exist.
+
+Now switchable, **default unchanged at 1024**:
+
+```
+debug.rpcsx.thor.movsb_threshold = <bytes>     # 0 = always memcpy
+```
+
+**Unmeasured.** One sweep arm was voided by a failed layer lookup and the other
+produced 3.947 cores with nothing to compare it against, so no result is claimed.
+The sweep wants `0`, `1024` and a very large value (never memcpy) on gameplay, and
+Eternal Sonata's ~1.4-core noise floor means it needs repeats or a quieter title.
+
+This is the clearest "x86 paradigm poorly ported" found since `mov_rdata`: not a
+wrong instruction, but a **tuning constant whose justification does not exist on
+this architecture**, sitting on the hottest named path in the emulator.

@@ -1106,8 +1106,57 @@ static FORCE_INLINE void __movsb(unsigned char* Dst, const unsigned char* Src, s
 #else
 // On non-x64 targets __movsb aliases libc memcpy. The hand-written v128 loop is
 // fine for tiny DMAs, but Eternal Sonata's hot SPU jobs pound 16 KB transfers.
-#define s_rep_movsb_threshold 1024u
+//
+// The 1024 was an x86 constant transplanted. On x86 this threshold comes from
+// utils::get_rep_movsb_threshold(), a *runtime-detected* ERMSB crossover -- the
+// size above which `rep movsb` microcode beats a SIMD loop. There is no ERMSB
+// here and no `rep movsb`; __movsb is bionic's memcpy, which is hand-tuned
+// AArch64 using ldp/stp pairs and non-temporal stores for large sizes, while the
+// fallback is a naive 16-byte-at-a-time v128 loop. On a 64-byte cache line
+// (CWG=64, measured via CTR_EL0) that loop issues four stores per line where
+// `stp q` issues two, so the real crossover on this chip is very likely far below
+// 1024 -- possibly memcpy should win at almost every size.
+//
+// Six call sites branch on it, all on the DMA path inside process_mfc_cmd, which
+// the gameplay profile puts at 20% of all cycles. Made switchable so the sweep is
+// one property rather than six rebuilds. Default unchanged at 1024.
+//
+//   debug.rpcsx.thor.movsb_threshold = <bytes>   (default 1024)
 #define __movsb std::memcpy
+
+static u32 thor_rep_movsb_threshold()
+{
+	static const u32 value = []() -> u32
+	{
+#if defined(__ANDROID__)
+		char buf[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.movsb_threshold", buf);
+		const char* v = length > 0 ? buf : std::getenv("RPCSX_THOR_MOVSB_THRESHOLD");
+#else
+		const char* v = std::getenv("RPCSX_THOR_MOVSB_THRESHOLD");
+#endif
+		if (!v || v[0] < '0' || v[0] > '9')
+		{
+			return 1024u;
+		}
+
+		u32 parsed = 0;
+		for (const char* c = v; *c >= '0' && *c <= '9'; c++)
+		{
+			parsed = parsed * 10 + static_cast<u32>(*c - '0');
+			if (parsed > 1u << 20)
+			{
+				return 1024u;
+			}
+		}
+
+		return parsed;
+	}();
+
+	return value;
+}
+
+#define s_rep_movsb_threshold thor_rep_movsb_threshold()
 #endif
 
 #if defined(ARCH_X64)
