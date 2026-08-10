@@ -133,3 +133,87 @@ The 10.1% spill figure, the 3.66% `rev64` figure and the `TBL` count are all rea
 and all unweighted. **The next step for any of them is a gameplay profile with
 symbols**, which would say which of these 4,740 functions are hot — and that is
 the one instrument this project still does not have.
+
+---
+
+# The gameplay profile, and what it says about all of the above
+
+Eternal Sonata, gameplay, 150 s settle, **119,662 samples, 0 lost, 0 pauses**,
+symbolized against the matching unstripped library by build ID. This is the
+instrument the whole audit was missing.
+
+**Where gameplay cycles go, by shared object:**
+
+| | share |
+| --- | --- |
+| **`unknown` (JIT-generated code)** | **47.88%** |
+| `librpcsx-android.so` | 34.65% |
+| kernel | 11.80% |
+| `libc` | 2.95% |
+| Turnip (`libvulkan_freedreno`) | 2.23% |
+
+**Almost half of gameplay CPU is in code the JIT emits at runtime**, in anonymous
+executable mappings that no symbolizer can name. That single line justifies the
+static audit above: a disassembly of the native cache is the *only* lens on 48%
+of the workload, and it is now pointed at the right body of code even though it
+is unweighted.
+
+**Top named symbols:**
+
+| symbol | share |
+| --- | --- |
+| `spu_thread::process_mfc_cmd()` | **20.13%** |
+| `unknown[+7557176b20]` | 15.51% |
+| kernel | 7.67% |
+| `vm::writer_lock::writer_lock(...)` | 4.49% |
+| `unknown[+7557176b24]` | 3.24% |
+| `memcpy_opt` | 2.03% |
+| `vk::wait_for_event` | 1.82% |
+| `vm::passive_lock(cpu_thread&)` | 1.73% |
+
+## Three things this settles
+
+**1. The lv2 waits are gone.** `sys_event_queue_receive` and
+`_sys_lwcond_queue_wait` were **73.9% of the title screen** and do not reach 1%
+here. The workload-dependence recorded in `lv2-ppu-spin.md` is now measured from
+both ends rather than inferred from a CPU delta, and it is the strongest possible
+warning against quoting that 73.9% without its scene.
+
+**2. `spu_thread::process_mfc_cmd()` is the biggest named function in the
+emulator, at 20.13%** — roughly 58% of all time inside the library. It is the SPU
+DMA command path. **This project has never looked at it.** Every session so far
+went to reservations, spin loops, instruction lowerings and the GPU; the largest
+named consumer under real load was never on the list, because the list was built
+from code reading and counters rather than from a profile.
+
+**3. `vm::writer_lock` 4.49% + `vm::passive_lock` 1.73% = 6.2% in vm range
+locking** — larger than everything the `busy_wait` inventory identified as
+actionable, and consistent with the earlier wait-profiler note that
+`vm_passive_lock` was 17.5% of *spin*.
+
+## One observation deliberately not interpreted
+
+`unknown[+7557176b20]` at **15.51%** and `unknown[+7557176b24]` at 3.24% are two
+addresses **four bytes apart** — a single instruction pair holding 18.75% of all
+gameplay cycles. That is either a very hot two-instruction loop in JIT code or a
+sampling artifact concentrating skid on one PC.
+
+It is not diagnosed here, because this repo has an explicit record of what
+confident address attribution costs: ~31% of samples were once attributed to
+`get_thor_pause_mode` purely because it was the nearest preceding symbol in a
+partly-stripped binary. An unnamed address in an anonymous JIT mapping deserves
+more suspicion, not less. Identifying it needs the JIT to emit a symbol map
+(`perf-<pid>.map`), which it does not currently do.
+
+## What the next session should do
+
+In order, and each now justified by a number rather than a hunch:
+
+1. **`process_mfc_cmd`** — 20.13%, never examined.
+2. **A JIT symbol map** — 48% of the workload is unnameable until one exists;
+   everything about JIT codegen is guesswork until then, including the two hot
+   addresses above and whether the 10.1% spill figure lands in hot blocks.
+3. **vm range locking** — 6.2%, and a spin site already measured at 17.5% of spin.
+
+And the general rule this profile earns: **the title screen and gameplay share
+almost no hot code.** Any conclusion here must name its workload.
