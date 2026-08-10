@@ -908,6 +908,44 @@ If a spike appears with nothing obviously running, check `top` before anything
 else: a leaked `net.rpcsx.easy` at 210% CPU accounted for 1.88 W once already,
 and `pidof` did not report it after `am force-stop`.
 
+# Where this stands, and the one thing left to build
+
+Everything cheap has been tried. The scoreboard:
+
+| lead | outcome |
+| --- | --- |
+| lv2 wait spin | **fixed and shipped** — default `lv2_spin=0`, 67.6% CPU cut on a light scene, no latency cost at any percentile |
+| `host_mutex_spin` | measured 2.2% on Folklore, ~1% of the lv2 win — **default left at 10** |
+| `SPU loop detection: true` | **null** — and consistent with the profile, since the hot loop polls `state`, not a channel |
+| SPU affinity widening | **null, and the config block is inert** — see the retraction below |
+| `PMULL` for texture swizzle | correct technique, **cold** — `calculate_z_index` absent from the profile at any threshold |
+| exclusive monitor as reservation | **half-viable** — `ERG=64` measured, PS3 needs 128 |
+| ARM TME, SVE | **absent from this chip** |
+
+**What remains is the SPU self-loop park, and there is no shortcut left to it.**
+Roughly 20% of gameplay CPU sits in two instructions — `ldr w8,[x19,#0x14]` /
+`cbz w8, .-4` — that spin on `spu_thread::state` with no pause, no yield and no
+backoff.
+
+Everything needed to build it is now known:
+
+* **Site:** `SPULLVMRecompiler.cpp:9874`, `BR`, which has no case for
+  `target == m_pos`. Detection needs no dataflow analysis.
+* **API:** `thread_ctrl::wait_on(state, old, timeout_ns)`, with precedent in the
+  same file at `SPUThread.cpp:7907`.
+* **Emitting the call:** the `call("name", +lambda, m_thread, ...)` helper, as
+  `wait_spu_inbox` does at `SPULLVMRecompiler.cpp:4558`.
+* **Hazards, both unresolved:** every writer of `state` must notify or the thread
+  sleeps to the timeout, which is why the timeout is mandatory; and `BR`-to-self
+  is also what a guest deadlock looks like, so parking makes a hang silent —
+  keep a counter or log at the park.
+* **Gate:** `debug.rpcsx.thor.spu_selfloop_park`, default off, A/B'd with p95 from
+  `dumpsys SurfaceFlinger --latency`.
+
+Two smaller items also remain unmeasured and need no recompiler work: **non-
+temporal large DMA** (`LDNP`/`STNP` for the 16 KB transfers) and the **MFC
+prefetch oracle**. Both aim at `process_mfc_cmd`, 20% of gameplay.
+
 # Novel hardware acceleration: what is viable, measured on device
 
 Measured, not assumed — `mrs ctr_el0` from a static binary on the Thor:
