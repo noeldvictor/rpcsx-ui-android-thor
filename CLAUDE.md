@@ -728,9 +728,13 @@ extension the Adreno guide recommends is absent on this device:
     extension: [missing] VK_QCOM_queue_perf_hint
 
 So read that guide for **what the hardware does** and discount its API advice.
-`VK_QCOM_tile_memory_heap`, which it recommends for exactly the reason we care
-about — *"replacing comparatively power-hungry memory bus traffic with cheaper
-GMEM operations"* — cannot be used here.
+
+**And `VK_QCOM_tile_memory_heap` is closed for a better reason than the driver:
+it requires Adreno 840 or newer, and this is an Adreno 740.** Explicit GMEM
+allocation is therefore unobtainable on this device by *any* driver — not another
+Turnip build, not Qualcomm's proprietary one. Do not go looking; there is nothing
+to find. Implicit GMEM already works (Turnip bins and tiles on A6xx/A7xx/A8xx),
+and the portable substitute below needs no extension at all.
 
 ## Tile memory is available anyway, and unused
 
@@ -903,6 +907,56 @@ fault. Folklore at ~2.2 cores is less than half that load.
 If a spike appears with nothing obviously running, check `top` before anything
 else: a leaked `net.rpcsx.easy` at 210% CPU accounted for 1.88 W once already,
 and `pidof` did not report it after `am force-stop`.
+
+# Every wait in this emulator spins, and only one of them parks
+
+Four layers, found independently from two profiles, all the same shape:
+
+| layer | bounded spin | fallback | share of gameplay |
+| --- | --- | --- | --- |
+| lv2 syscalls | 50 × 26 µs = **1.3 ms** | futex — a real sleep | 73.9% of a title screen, ~0 in gameplay — **fixed** |
+| SPU JIT self-loop | none — bare `ldr`/`cbz` | **none** | **~20%** |
+| SPU MFC reservation | 15 × 26 µs = **390 µs** | `sched_yield` forever | ~7% |
+| `vm::writer_lock` | 100 × 10.4 µs = **1.04 ms** | `sched_yield` forever | 6.2%, six threads at once |
+
+Only the first had a real sleep underneath, and it is the only one that was
+fixable cheaply. The rest end in nothing or an unbounded `sched_yield`, which does
+not sleep — it re-queues, keeps the thread runnable, and holds the cluster at a
+high operating point regardless of work retired. **Roughly a third of gameplay CPU
+is threads waiting, at full issue rate, for something that has not happened yet.**
+
+Detail, insertion points and hazards in
+[`docs/arm64/jit-emitted-code.md`](docs/arm64/jit-emitted-code.md). The SPU
+self-loop site is exact: `SPULLVMRecompiler.cpp:9874`, `BR`, which has no case for
+`target == m_pos`.
+
+# Two config-only experiments outrank all of that
+
+**Six SPU threads are pinned to two cores.** The gameplay profile shows six
+concurrent SPU threads (matching `Max SPURS Threads: 6`) and the affinity gives
+them `CPU5` and `CPU6` only — the A710 pair — while `CPU7`, the X3, goes to RSX
+with `Multithreaded RSX: false` and the entire Turnip driver measuring 2.23% of
+CPU.
+
+That reframes every spin above. **Spinning wastes an idle core; on an
+oversubscribed core it serialises.** A thread spinning 1.04 ms in
+`vm::writer_lock` while holding one of only two SPU cores may be denying the core
+to the thread that would release the lock.
+
+The same config carries **`SPU loop detection: false`**, upstream's setting for
+recognising SPU idle loops and yielding rather than spinning — aimed squarely at
+the `0xcc4` behaviour, and never tried here.
+
+| change | hypothesis | cost |
+| --- | --- | --- |
+| `Affinity` SPU → CPU3–6, or include CPU7 | the spins are convoying on two cores, not merely wasting them | one boot |
+| `SPU loop detection: true` | the 20% self-loop is already handled by a setting we have off | one boot |
+
+**Either could make the codegen work unnecessary.** Run these before writing
+anything — it is the order this project keeps relearning. Standard harness: p95
+from `dumpsys SurfaceFlinger --latency`, CPU from `/proc/<pid>/stat`, alternating
+arms, and `config.yml` restored afterwards with a **verified byte count**, because
+it is rewritten on exit.
 
 # Grep the shipped `.so` for the property before every property A/B
 
