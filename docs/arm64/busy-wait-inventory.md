@@ -337,3 +337,36 @@ the threshold is a runtime-detected x86 ERMSB crossover replaced by a hardcoded
 1024 on a chip with no ERMSB and no `rep movsb`. What is *not* established is that
 it costs anything. The one sweep that could show that has not produced a valid
 arm, and it needs a rerun with logcat captured so the death is diagnosable.
+
+## Resolved: the 1024 is harmless, and memcpy is measurably the right call
+
+Rerun of the void arm, with liveness checked throughout: **the process survived all
+180 s and kept rendering (frame #5250), so the earlier death was unrelated to the
+setting.** No crash, no fatal, nothing in logcat. That stability worry is withdrawn.
+
+Then the arm that answers it:
+
+| `movsb_threshold` | CPU | meaning |
+| --- | --- | --- |
+| 1024 (default) | 3.958, 3.967 | 16 KB transfers go through `memcpy` |
+| 0 | 3.967 | identical — only affects transfers under 1024 |
+| **1000000 (never memcpy)** | **4.511** | 16 KB forced through the v128 loop |
+
+**+0.55 cores, +13.8%**, well outside the 3.94–4.03 band every other Eternal Sonata
+arm today landed in.
+
+So the naive 16-byte-at-a-time loop **is** materially worse than bionic's `memcpy`
+for these transfers — the microarchitectural reasoning was right. But the
+conclusion is the opposite of the worry that prompted it: **the hot path already
+takes `memcpy`, because 16 KB is far above 1024.** The transplanted x86 constant is
+harmless here, not because 1024 is the correct crossover, but because it is low
+enough that everything that matters clears it.
+
+**Closed.** The code observation stands — a runtime-detected ERMSB crossover became
+a hardcoded constant on a chip with no ERMSB — and it costs nothing on this
+workload. Worth revisiting only for a title whose DMA sizes cluster near 1024,
+where the crossover would actually bite. The property stays for that case.
+
+The measurement also earns its keep as a negative control: it proves the threshold
+is live, the property reaches the code, and the DMA path is genuinely sensitive to
+copy implementation — so a future change there will be visible.
