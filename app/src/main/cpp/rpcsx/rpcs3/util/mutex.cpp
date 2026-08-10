@@ -13,7 +13,8 @@ void shared_mutex::imp_lock_shared(u32 val)
 		return;
 	}
 
-	for (int i = 0; i < 10; i++)
+	const u32 thor_spin_iters = rx::thor_host_mutex_spin_iters();
+	for (u32 i = 0; i < thor_spin_iters; i++)
 	{
 		if (try_lock_shared())
 		{
@@ -95,7 +96,8 @@ void shared_mutex::imp_lock(u32 val)
 		return;
 	}
 
-	for (int i = 0; i < 10; i++)
+	const u32 thor_spin_iters = rx::thor_host_mutex_spin_iters();
+	for (u32 i = 0; i < thor_spin_iters; i++)
 	{
 		thor_wait::profiled_busy_wait(thor_wait::site::mutex_exclusive);
 
@@ -137,7 +139,8 @@ void shared_mutex::imp_unlock(u32 old)
 
 void shared_mutex::imp_lock_upgrade()
 {
-	for (int i = 0; i < 10; i++)
+	const u32 thor_spin_iters = rx::thor_host_mutex_spin_iters();
+	for (u32 i = 0; i < thor_spin_iters; i++)
 	{
 		thor_wait::profiled_busy_wait(thor_wait::site::mutex_upgrade);
 

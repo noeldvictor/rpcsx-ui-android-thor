@@ -121,3 +121,87 @@ guest mutex there is. It is gated now, and
 than the number, so the same near-miss cannot recur. Grepping for a constant when
 the invariant is a structure is the same mistake as grepping a channel that emits
 nothing: both return a confident, wrong, empty answer.
+
+---
+
+# Correction: the file I gated was not the one that runs
+
+`rx/src/SharedMutex.cpp` is **not linked into the emulator.** `rx` is added with
+`EXCLUDE_FROM_ALL` (`rpcsx/CMakeLists.txt:255`), and the `shared_mutex` the
+profile saw is a **second implementation** at `rpcs3/util/mutex.cpp`. The gate
+went into the dead copy, was reverted, and now sits on the live one.
+
+The substance of the finding survives — `util/mutex.cpp` has the same three
+acquire loops, ten iterations each, in front of the same `m_value.wait()` futex —
+but it is reached through the wait profiler rather than a bare call:
+
+```cpp
+thor_wait::profiled_busy_wait(thor_wait::site::mutex_shared);   // cycles = 3000
+```
+
+`profiled_busy_wait(site, usz cycles = 3000)` defaults to 3000, so each is still
+**156 µs**, ten of them still **1.56 ms**. A fourth loop, `imp_lock_unlock`, runs
+30 iterations at 1500 cycles — **2.34 ms** — and is left alone: it polls for the
+waiter count to drop rather than trying to acquire.
+
+**How the inventory missed it.** The sweep regex was `busy_wait\((\d*)\)` — it
+required the argument to be digits or empty. Every `profiled_busy_wait(site)` call
+has a non-numeric first argument, so **the entire profiled call-site family was
+silently excluded**, which is most of the spin sites in the emulator. That is the
+third time in this one piece of work that a pattern written around a literal
+missed the sites that spell it differently: `i < 50` missed `i < 40`, `-DANDROID`
+missed the `rx` target, and now a numeric-argument regex missed every profiled
+site. **When the invariant is a structure, do not match on its arguments.**
+
+## The experiment ran, and the answer is "not resolvable"
+
+| run | `host_mutex_spin` | p50 | p95 | p99 | CPU |
+| --- | --- | --- | --- | --- | --- |
+| A (invalid — see below) | 10 | 33.72 | 50.59 | 50.60 | 3.737 |
+| A (invalid) | 0 | 33.72 | 50.59 | 50.60 | 2.366 |
+| B | 10 | 33.73 | 33.74 | 50.60 | 3.096 |
+| B | 0 | 33.73 | 33.74 | 50.59 | **3.953** |
+
+**Run A is void and is the most useful measurement of the day.** Its `adb install`
+failed with `device offline` — caught by grepping the on-device `.so` for the
+property string, which returned 0 — so **both arms ran identical code with the
+property doing nothing.** They differed by **1.37 cores, 58%.**
+
+That is the noise floor for a CPU measurement on Eternal Sonata across boots, and
+it is enormous. Run B, on the correctly installed build, then put `spin=0` *worse*
+by 0.86 cores — the opposite direction from run A. Two runs, opposite signs, both
+inside a 1.4-core spread.
+
+**Conclusion: `host_mutex_spin` has no effect this method can resolve on this
+title.** Default stays at 10. Not "no effect" — *not resolvable*, which is a
+different and honest claim.
+
+## What this costs the earlier gameplay result
+
+The lv2 numbers on Eternal Sonata — 3.230/3.155 against 3.010/3.087, and
+2.391/2.375 against 2.291/2.203, reported as "4.5%" and "6.1%" — are deltas of
+about **0.14 cores against a between-boot spread of 1.37**. They are an order of
+magnitude below the noise floor and are hereby **downgraded from measured to not
+established.** Four of four within-run pairings favoured the change, which is a
+sign test at p=0.06: suggestive, not significant.
+
+**The decision to default `lv2_spin` to 0 still stands, on the other two legs:**
+
+* **Folklore is reproducible where Eternal Sonata is not** — three baseline arms
+  at 1.196, 1.200, 1.201 and two zero arms at 0.387, 0.390. A 0.81-core effect
+  against a 0.005 spread. That result is untouched by any of this.
+* **Frame-time percentiles were stable in every arm of every run**, including the
+  void one, and never moved with the property. The no-latency-cost finding is the
+  strongest thing here, because percentiles proved insensitive to exactly the
+  boot-to-boot variation that wrecks the CPU numbers.
+
+## The method rule this buys
+
+**A CPU-time A/B on Eternal Sonata needs a paired design and repeats, or it needs
+a different title.** One pair of arms cannot see anything below ~1.4 cores there.
+Folklore's title screen resolves 0.005. Frame-time percentiles from SurfaceFlinger
+resolve 0.01 ms on both.
+
+And: **grep the shipped `.so` for the property string before every property A/B.**
+It cost one command and caught an install that reported failure in a line that
+scrolled past, which would otherwise have been written up as a 37% win.
