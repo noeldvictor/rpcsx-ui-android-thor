@@ -12,41 +12,102 @@
 
 #ifdef __linux__
 #include <unistd.h>
+#include <cstdlib>
+#include <mutex>
 #define CAN_OVERCOMMIT
+#endif
+
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
 #endif
 
 LOG_CHANNEL(jit_log, "JIT");
 
+// Emit a perf symbol map for JIT-generated code.
+//
+// A gameplay profile put **47.88% of all cycles in `unknown`** -- the anonymous
+// executable mappings the recompilers emit into. No symbolizer can name any of
+// it, so nearly half the workload was invisible, including two adjacent
+// addresses holding 18.75% between them. See docs/arm64/jit-emitted-code.md.
+//
+// The mechanism for fixing that was already here and disabled behind `#if 0`,
+// with `jit_announce` wired up at both call sites (JITLLVM.cpp for LLVM output,
+// JIT.h for asmjit). Two things had to change to make it usable on Android:
+//
+//   * **The path.** `/tmp` does not exist here, and an app cannot write
+//     `/data/local/tmp` -- that is owned by shell. `fs::get_cache_dir()` is
+//     app-writable and already used for the SPU caches. Copy the file to
+//     /data/local/tmp/perf-<pid>.map with `adb shell cp` afterwards, which shell
+//     *can* do, and simpleperf picks it up by that name.
+//   * **The lifetime.** The original deleted the map in its destructor. That is
+//     right for a live `perf record` attached to the process and exactly wrong
+//     for the workflow here, where the file is read after the run.
+//
+// Off by default and gated at runtime, because it writes a line per compiled
+// function and there are thousands. Enable with:
+//
+//   setprop debug.rpcsx.thor.jit_perf_map 1
+//
+// A mutex guards the write: jit_announce is called from every compiler thread,
+// and interleaved partial lines would corrupt the map. The disabled original had
+// no lock, which is survivable for dead code and not for live code.
+#if defined(__linux__)
+static bool jit_perf_map_enabled()
+{
+	static const bool enabled = []
+	{
+#if defined(__ANDROID__)
+		char value[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.jit_perf_map", value);
+		const char* v = length > 0 ? value : std::getenv("RPCSX_THOR_JIT_PERF_MAP");
+#else
+		const char* v = std::getenv("RPCSX_THOR_JIT_PERF_MAP");
+#endif
+		return v && (v[0] == '1' || v[0] == 'y' || v[0] == 'Y');
+	}();
+
+	return enabled;
+}
+#endif
+
 void jit_announce(uptr func, usz size, std::string_view name)
 {
-#ifdef __linux__
-#if 0
-	static const struct tmp_perf_map
+#if defined(__linux__)
+	if (jit_perf_map_enabled() && size && !name.empty())
 	{
-		std::string name{fmt::format("/tmp/perf-%d.map", getpid())};
-		fs::file data{name, fs::rewrite + fs::append};
+		static std::mutex s_map_mutex;
+		static fs::file s_map;
 
-		tmp_perf_map() = default;
-		tmp_perf_map(const tmp_perf_map&) = delete;
-		tmp_perf_map& operator=(const tmp_perf_map&) = delete;
+		std::lock_guard lock(s_map_mutex);
 
-		~tmp_perf_map()
+		// Open lazily and keep retrying, because the first jit_announce lands
+		// *before* fs::get_cache_dir() is populated. Opening on first call put the
+		// map at a bare "perf-<pid>.map" relative to the process CWD, which for an
+		// Android app is "/" and is not writable. The log line printed a path with
+		// no directory in it, which is what gave it away -- so log the resolved
+		// path and whether the open succeeded, not just the intent.
+		//
+		// Blocks compiled before the cache dir exists are lost. Those are
+		// boot-time precompiles; the SPU blocks that matter compile well after.
+		if (!s_map)
 		{
-			fs::remove_file(name);
+			const std::string& dir = fs::get_cache_dir();
+
+			if (dir.empty())
+			{
+				return;
+			}
+
+			const std::string path = fmt::format("%sperf-%d.map", dir, getpid());
+			s_map.open(path, fs::rewrite + fs::append);
+			jit_log.warning("JIT perf map: %s (%s)", path, s_map ? "open" : "FAILED TO OPEN");
 		}
-	} s_map;
 
-	if (size && name.size())
-	{
-		s_map.data.write(fmt::format("%x %x %s\n", func, size, name));
+		if (s_map)
+		{
+			s_map.write(fmt::format("%x %x %s\n", func, size, name));
+		}
 	}
-
-	if (!func && !size && !name.size())
-	{
-		fs::remove_file(s_map.name);
-		return;
-	}
-#endif
 #endif
 
 	if (!size)

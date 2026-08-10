@@ -217,3 +217,88 @@ In order, and each now justified by a number rather than a hunch:
 
 And the general rule this profile earns: **the title screen and gameplay share
 almost no hot code.** Any conclusion here must name its workload.
+
+---
+
+# The 18.75% is one two-instruction spin loop, and now it has a name
+
+The JIT symbol map exists now, so the unnamed hot addresses could be resolved.
+
+**The mechanism was already in the tree and disabled.** `jit_announce()` is called
+from both recompiler paths (`JITLLVM.cpp:352`, `JIT.h:492`) and its body was
+`#ifdef __linux__` wrapped around `#if 0`. Two changes made it usable here, behind
+`debug.rpcsx.thor.jit_perf_map` (off by default — it writes a line per compiled
+function, and this run produced **174,453** of them):
+
+* **Path.** `/tmp` does not exist on Android and an app cannot write
+  `/data/local/tmp`, which is shell-owned. It writes to `fs::get_cache_dir()`
+  instead, and shell copies it to `/data/local/tmp/perf-<pid>.map` afterwards.
+* **Lifetime.** The original deleted the map in its destructor — right for a live
+  `perf record`, exactly wrong when the file is read after the run.
+
+One bug worth keeping: opening the file on first call produced a bare
+`perf-<pid>.map` with **no directory**, because `fs::get_cache_dir()` is still
+empty that early in boot and the app's CWD is `/`. The log line printed the path
+with nothing in front of it, which is the only reason it was caught. It now opens
+lazily and retries until the cache dir exists, and logs whether the open
+*succeeded* rather than that it was attempted.
+
+## The resolution
+
+120,782 samples, 0 lost. The two hot addresses fall inside a single symbol:
+
+```
+7555f76c40 -> INSIDE __spu-cx00cc4   (start 7555f76c20, size 0x40, offset +0x20)
+7555f76c44 -> INSIDE __spu-cx00cc4   (offset +0x24)
+```
+
+**A 64-byte SPU block.** Disassembling it from the cache, offsets +0x20 and +0x24
+are these two instructions:
+
+```
+80:  ldr  w8, [x19, #0x14]     ; spu_thread::state
+84:  cbz  w8, 0x80             ; if zero, branch back to 0x80
+88:  ...                       ; else: save pc, call spu_test_state, b 0x80
+```
+
+**An unconditional two-instruction spin on `spu_thread::state`, with no `pause`,
+no `yield`, no `WFE`, and no backoff of any kind** — a load and a branch, issuing
+at full rate. Roughly **20% of all gameplay CPU** (16.49% + 3.34%) is these two
+instructions.
+
+The guest SPU program at `0xcc4` is itself a wait loop with an empty body, so
+`check_state()` (`SPULLVMRecompiler.cpp:1124`) is all that survives optimisation:
+its `state == 0` fast path becomes the back-edge, and LLVM correctly reduces the
+whole guest loop to a poll. The recompiler is not doing anything wrong. It is
+faithfully reproducing a guest busy-wait, on a host that has a much better
+instruction for the job.
+
+## Why this is the largest lead in the project
+
+It is the same defect as the lv2 waits — a spin in front of something that arrives
+much later — but this one **survives into gameplay**, which is exactly where the
+lv2 finding evaporated. And it is a better WFE candidate than anything examined so
+far: the loop waits on **one word in memory, written by another thread**, which is
+precisely what `LDAXR` + `WFE` is for. `rx::spin_on_cacheline_once()` in
+`rx/asm.hpp` already implements that sequence and is already used elsewhere here.
+
+**Predicted magnitude:** up to ~20% of gameplay CPU and a proportional power
+saving, with no frame-rate cost, because the thread is doing no work while it
+spins. That is an order of magnitude larger than anything else found.
+
+**What would falsify it:** if `state` changes often enough that the loop is a
+short poll rather than a park, WFE adds wakeup latency for no saving — the sample
+distribution argues against that (the samples sit almost entirely on the two spin
+instructions and not on the `spu_test_state` path below them, so the loop rarely
+exits), but that is an inference, not a measurement.
+
+**Not attempted here.** It is a codegen change to `check_state`, the recompiler
+would need to know the loop body is empty, and the correct shape is not obvious.
+It deserves its own session with the profile re-run either side.
+
+## One correction
+
+The static audit above says "the native cache for Folklore". It is **Eternal
+Sonata** — `BLUS30161` is Eternal Sonata's title ID, not Folklore's, which is
+`BCUS98147`. The disassembly and the gameplay profile are therefore the same
+title, which makes them directly comparable; the label was wrong, not the data.
