@@ -1296,3 +1296,73 @@ spin, which is at least self-consistent; it is simply too small to act on.
 argued from a measured 93% figure and a confirmed config value, and was still
 wrong — because "93% of spin is GETLLAR" says nothing about how much of the
 *total* is spin.
+
+---
+
+# The power-efficient wait was ported everywhere except ARM
+
+This is not a missing idea. It is a **half-finished port**, and the unfinished half
+is the architecture we ship on.
+
+`SPUThread.cpp:6085`, inside the GETLLAR spin — the site this document measures as
+93% of instrumented spin:
+
+```cpp
+if (utils::has_um_wait())
+{
+    if (utils::has_waitpkg())
+    {
+        __tpause(std::min<u32>(getllar_spin_count, 10) * 500, 0x1);
+    }
+    ...
+}
+```
+
+`TPAUSE` is x86's **power-efficient timed wait**: it puts the core into a C-state
+until a deadline instead of burning issue slots. Upstream built real infrastructure
+around it — `utils::has_waitpkg()` (Intel UMONITOR/UMWAIT/TPAUSE),
+`utils::has_waitx()` (AMD MWAITX), `utils::has_um_wait()`, and
+`utils::has_appropriate_um_wait()`, which even filters by thread count because
+"user mode waits may be unfriendly to low thread CPUs".
+
+**On AArch64 every one of those returns false**, so the whole path is dead code and
+execution falls through to an ordinary spin.
+
+## AArch64 has the same capability and it is unused
+
+`WFE` is the direct equivalent: it parks the core in a low-power state until the
+exclusive monitor is cleared or an event arrives. Two facts already established
+here make it usable:
+
+* **`FEAT_WFxT` is absent**, so `WFE` cannot carry an explicit timeout — but
+  AArch64's periodic **event stream** wakes it anyway, which is exactly what the
+  comment on `rx::spin_on_cacheline_once()` in `rx/asm.hpp` already says.
+* **`ERG = 64` bytes**, measured from `CTR_EL0`. A monitor armed with `LDXR` covers
+  64 bytes, so it is a valid wake source for a reservation line even though it
+  cannot cover all 128.
+
+And `rx::spin_on_cacheline_once()` **already implements `LDAXR` + `WFE` + `CLREX`**
+and is used elsewhere in this fork. The primitive exists; the hook exists; they
+have never been connected.
+
+## Why this reframes the whole spin story
+
+Four spin sites were found by profiling and each was treated as its own defect. This
+says they share one cause: **upstream's design is "spin briefly, then use the CPU's
+power-efficient wait instruction", and on this architecture the second half was
+never written.** That is why every AArch64 wait here ends in either nothing or an
+unbounded `sched_yield` — the branch that would have parked the core is
+unreachable.
+
+It also predicts where else to look: **any site guarded by `has_um_wait()` or
+`has_waitpkg()` is a site with a missing ARM implementation**, and that is a
+mechanical grep rather than a search for insight.
+
+## What to build
+
+An `ARCH_ARM64` arm alongside the `waitpkg` one, calling the existing
+`spin_on_cacheline_once()` against the reservation line. Gate it, default off, and
+A/B on p95 frame time — the risk is wake latency, not throughput.
+
+**Not implemented.** Recorded because it changes the shape of the remaining work
+from "add WFE in four places" to "finish a port that upstream already designed".
