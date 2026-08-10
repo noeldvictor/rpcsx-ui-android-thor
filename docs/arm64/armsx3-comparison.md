@@ -20,7 +20,8 @@ against a local snapshot, not a failed path lookup.
 | `pause()` on AArch64 | `isb` (inherited) | `yield`, chosen after measuring `isb` at **+23%** here |
 | WFE parking | exists in `util/asm.hpp` (upstream), wired to **4 GPU call sites only** | wired into the GETLLAR wait via `__arm64_monitor_wait` |
 | DMA copy threshold | upstream `umax` → memcpy branch **dead** | `1024` → **13.8% faster** (measured) |
-| `BufferUtils.cpp` NEON | **`copy_data_swap_u32_neon`, theirs** | 11 x86 gates, **0 NEON** |
+| SPU checksum `UABA` collision | **fixed** — pairs sum | **fixed 2026-08-10, was present** (inherited from upstream) |
+| `BufferUtils.cpp` NEON | `copy_data_swap_u32_neon`, theirs | **ported 2026-08-10**, unmeasured |
 | ARM AES | none anywhere | wired, 19–22x on the primitive |
 | LLVM JIT CPU | host-detected (was pinned to `cortex-a34`) | pinned `cortex-a78` |
 | big.LITTLE affinity | `cpu_capacity` sysfs + `thread_scheduler_mode::alt` | affinity table **inert** under OS scheduler mode |
@@ -41,6 +42,73 @@ correction in [`busy-wait-inventory.md`](busy-wait-inventory.md). Upstream's
 
 **ARM AES.** They have none; `vaese` and `__ARM_FEATURE_AES` appear nowhere in
 their `Crypto/`.
+
+## The one correctness bug in the diff, and we had it
+
+**The ARM64 SPU block-verification checksum folded pairs of vectors with `UABD`,
+and an absolute difference is not injective.** This is not an ARMSX3 defect they
+introduced — it is **upstream RPCS3 master**, which every ARM64 fork inherited,
+and ARMSX3 is so far the only one that has fixed it. Verified by fetching all
+three copies of `SPULLVMRecompiler.cpp` rather than by reading one:
+
+| tree | `aarch64_neon_uabd` in the checksum | pair lanes |
+| --- | --- | --- |
+| `RPCS3/rpcs3` master | 4 call sites (2010–2160) | `\|a - b\|` |
+| ours, before this change | 4 call sites (1987–2059) | `\|a - b\|` |
+| ARMSX3 | **none** | `a + b` |
+
+### What the code actually computed
+
+The ARM path checksums **96 bytes — 24 words — per step into 16 accumulator
+lanes**, in four NEON vectors:
+
+```
+vls[0]          -> checksum[0..3]   += words[0..3]         (add)
+vls[1], vls[2]  -> checksum[4..7]   += |words[4..7]  - words[8..11]|    (UABA)
+vls[3]          -> checksum[8..11]  += words[12..15]       (add)
+vls[4], vls[5]  -> checksum[12..15] += |words[16..19] - words[20..23]|  (UABA)
+```
+
+The host side at `SPULLVMRecompiler.cpp:1937/1939` computed the same absolute
+difference in C++ so the two would agree, then the emitted code XORs the runtime
+accumulators against those constants, ORs the lanes and branches on non-zero.
+So it **is** an equality test — but of a *checksum*, not of the data. Half the
+words in every block reached that comparison only through `|a - b|`.
+
+That distinguishes it from the other absolute-difference instructions in the
+emitted code. `docs/arm64/jit-emitted-code.md` counts `uaba` 4,503 times and
+`uabd` 910 times; the 910 include SPU `ABSDB`, which is a genuine
+absolute-difference *opcode* and correct. The 4,503 `uaba` are this checksum.
+The `< 192` byte path in the same function (`SPULLVMRecompiler.cpp:2101` onward)
+is the other shape — `icmp eq` against constants, reduced through `udot` — and
+is exact. Reading only that branch is how "the ARM64 code is clean" survives.
+
+### Why the collision class is reachable
+
+`|a - b|` is unchanged when the **same constant is added to both** sources, and
+unchanged when the two are **swapped**. Summation is invariant only under an
+anti-correlated change (`a + Δ`, `b − Δ`), which real code does not produce by
+accident. The uniform-delta case does: SPU job managers stream near-identical
+job binaries through the *same* local-store addresses, and a relocation that
+shifts two paired words by the same amount is exactly the invariant. When it
+collides, verification passes and **one job's cached compiled block runs against
+another job's code**.
+
+Both forms remain lossy — the x86 path sums many words into one lane too, and
+that is the design. The point is that the `UABD` form adds a structured
+collision class on top, for the sake of one ALU op per pair.
+
+### The fix
+
+Ours now matches ARMSX3: `checksum[4 + i] += words[4 + i] + words[8 + i]`, and
+the four emitted `aarch64_neon_uabd` calls become `CreateAdd`. Cost is **two
+extra ALU ops per 96-byte block** (the `UABA` accumulate becomes `ADD` + `ADD`);
+`uaba` should disappear from a re-disassembled SPU cache and the object-cache key
+invalidates the old objects by construction, so that count is the cheap way to
+confirm the change reached the device.
+
+**Not measured.** No device run was made for this change. It is argued from the
+algebra and from three-way source agreement, not from a boot.
 
 ## Where they are ahead, and it is worth taking
 
@@ -77,8 +145,28 @@ that makes it live.
 
 ## What to do with this
 
-1. **Port `copy_data_swap_u32_neon`.** Small, self-contained, already written and
-   working in a sibling fork. Re-check reach on a vertex-heavy title first.
+0. **~~Take the `UABD` checksum fix.~~ Done, 2026-08-10.** It was the only
+   correctness item in the whole diff and it outranked everything else here.
+1. **~~Port `copy_data_swap_u32_neon`.~~ Done, 2026-08-10, and UNMEASURED.**
+   `BufferUtils.cpp` now has `copy_data_swap_u32_neon` in the anonymous namespace
+   under `#if defined(ARCH_ARM64)`, dispatched by an `#elif defined(ARCH_ARM64)`
+   arm on the `DECLARE` block. Same kernel as theirs — `vrev32q_u8` over
+   `vld1q_u32`, compare accumulating with `veorq_u32`/`vorrq_u32` and reducing once
+   through `vmaxvq_u32` — with a scalar tail, which `count` carrying no
+   multiple-of-four guarantee makes a correctness requirement rather than an
+   optimization. Two deliberate differences from their file: it takes
+   `<arm_neon.h>` directly rather than pulling in `Emu/CPU/sse2neon.h` (this fork
+   keeps that header down to its two existing includers, see
+   [`codegen.md`](codegen.md)), and it does not need their
+   `-Wstrict-aliasing` suppression, which existed for sse2neon.
+
+   **What is claimed and what is not.** Claimed: the ARM64 path is no longer a
+   scalar loop behind a non-inlinable function pointer with LTO off. Not claimed:
+   any frame-rate or CPU number. Their headline is Sonic '06 on the same silicon
+   and it is *theirs*; our own gameplay profile puts the entire vertex/buffer
+   cluster near **0.2%**, so the honest expectation here is small. Nothing was run
+   on device. Re-check reach on a vertex-heavy title before spending a measurement
+   slot on it.
 2. **Re-run the affinity experiment under `thread_scheduler_mode::alt`.** The null
    result here is void — it tested an inert setting. Verify with
    `Cpus_allowed_list` that placement actually changed before measuring anything.

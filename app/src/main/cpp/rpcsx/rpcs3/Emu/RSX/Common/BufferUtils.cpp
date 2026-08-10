@@ -6,6 +6,12 @@
 #include "util/v128.hpp"
 #include "util/simd.hpp"
 
+#if defined(ARCH_ARM64)
+// Also reached transitively through util/simd.hpp; named here because copy_data_swap_u32_neon
+// below depends on it directly.
+#include <arm_neon.h>
+#endif
+
 #if !defined(_MSC_VER)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -90,6 +96,72 @@ namespace
 		}
 	}
 
+#if defined(ARCH_ARM64)
+	// Four u32 per iteration instead of one.
+	//
+	// The SIMD forms of these two are assembled by asmjit under ARCH_X64 only, so every ARM64
+	// build fell through to the scalar loop above. That is worse than the scalar arithmetic
+	// alone suggests: the loop is reached through a function pointer (`DECLARE`d below), which
+	// cannot be inlined, and LTO is off, so no later pass recovers it.
+	//
+	// vrev32q_u8 reverses the bytes within each 32-bit lane, which is exactly the per-element
+	// swap the scalar path performs. The compare variant accumulates inequality with
+	// veorq_u32/vorrq_u32 and reduces once through vmaxvq_u32 at the end, so it answers "did
+	// anything actually change" without branching per element. Results are identical to the
+	// scalar path for non-overlapping buffers; for overlapping ones this vectorizes in the same
+	// way the x86 path already does, which processes 4, 8 or 16 elements at a time.
+	//
+	// UNMEASURED on this device. Ported from ARMSX3 (they report it against Sonic '06 on the
+	// same silicon; that number is theirs, not ours). Our own gameplay profile puts the whole
+	// vertex/buffer cluster at roughly 0.2%, so the expected win here is small and the reason
+	// to take it is that the ARM64 path was scalar-through-a-function-pointer, not a projected
+	// frame-rate gain. See docs/arm64/armsx3-comparison.md.
+	template <bool Compare>
+	auto copy_data_swap_u32_neon(u32* dst, const u32* src, u32 count)
+	{
+		u32 result = 0;
+		u32 i = 0;
+
+		uint32x4_t diff = vdupq_n_u32(0);
+
+		for (; i + 4 <= count; i += 4)
+		{
+			const uint32x4_t data = vreinterpretq_u32_u8(vrev32q_u8(vreinterpretq_u8_u32(vld1q_u32(src + i))));
+
+			if constexpr (Compare)
+			{
+				diff = vorrq_u32(diff, veorq_u32(data, vld1q_u32(dst + i)));
+			}
+
+			vst1q_u32(dst + i, data);
+		}
+
+		if constexpr (Compare)
+		{
+			result |= vmaxvq_u32(diff);
+		}
+
+		// Tail. `count` is a caller-supplied word count with no multiple-of-four guarantee, so
+		// this is required for correctness, not only for the last partial vector.
+		for (; i < count; i++)
+		{
+			const u32 data = stx::se_storage<u32>::swap(src[i]);
+
+			if constexpr (Compare)
+			{
+				result |= data ^ dst[i];
+			}
+
+			dst[i] = data;
+		}
+
+		if constexpr (Compare)
+		{
+			return static_cast<bool>(result);
+		}
+	}
+#endif
+
 #if defined(ARCH_X64)
 	template <bool Compare>
 	void build_copy_data_swap_u32(asmjit::simd_builder& c, native_args& args)
@@ -172,6 +244,9 @@ namespace
 #if defined(ARCH_X64)
 DECLARE(copy_data_swap_u32) = build_function_asm<void (*)(u32*, const u32*, u32), asmjit::simd_builder>("copy_data_swap_u32", &build_copy_data_swap_u32<false>);
 DECLARE(copy_data_swap_u32_cmp) = build_function_asm<bool (*)(u32*, const u32*, u32), asmjit::simd_builder>("copy_data_swap_u32_cmp", &build_copy_data_swap_u32<true>);
+#elif defined(ARCH_ARM64)
+DECLARE(copy_data_swap_u32) = copy_data_swap_u32_neon<false>;
+DECLARE(copy_data_swap_u32_cmp) = copy_data_swap_u32_neon<true>;
 #else
 DECLARE(copy_data_swap_u32) = copy_data_swap_u32_naive<false>;
 DECLARE(copy_data_swap_u32_cmp) = copy_data_swap_u32_naive<true>;

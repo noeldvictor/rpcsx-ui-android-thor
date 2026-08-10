@@ -520,8 +520,16 @@ Thor predictions.
   All four items are present in the vendored core:
   1. SPU cache lookup checksum/compare: present, and ahead of the plain
      upstream commit. The vendored path has both the unrolled
-     `checksum_parts` / `aarch64_neon_uabd` form and the rolled `acc_phi`
-     loop, matching upstream `origin/master` rather than `35f65c224` alone.
+     `checksum_parts` form and the rolled `acc_phi` loop, matching upstream
+     `origin/master` rather than `35f65c224` alone.
+     **Corrected 2026-08-10:** the pair lanes used `aarch64_neon_uabd`, and
+     `|a - b|` is not injective, so blocks differing by a uniform delta across
+     a pair checksummed identically and the verifier could select the wrong
+     cached block. They now sum. Upstream RPCS3 master still has the `UABD`
+     form; the fix is ARMSX3's. This item had been audited twice as "present
+     and ahead" because both audits compared *against upstream* and asked
+     whether the code matched, never whether the operation was right.
+     See `docs/arm64/armsx3-comparison.md`.
   2. `FCGT` inline-asm `bsl` selection: present and byte-identical to upstream
      inside `#if defined(ARCH_ARM64)`. The surrounding function still uses this
      fork's older `register_intrinsic` / `std::bitset` shape; that difference is

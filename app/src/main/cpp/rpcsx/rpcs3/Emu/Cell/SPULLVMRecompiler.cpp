@@ -1929,14 +1929,31 @@ public:
 				llvm::Value* checksum_parts[4] = {acc_init, acc_init, acc_init, acc_init};
 				u32 checksum[16] = {0};
 
+				// 96 bytes per ARM checksum step, six NEON vectors:
+				//   vls[0]         -> add
+				//   vls[1], vls[2] -> add, then add (was UABA: one absolute-difference accumulate)
+				//   vls[3]         -> add
+				//   vls[4], vls[5] -> add, then add (was UABA)
+				//
+				// The pair lanes SUM, they do not take an absolute difference. |a - b| is not
+				// injective in a way that matters here: adding the same constant to both source
+				// vectors leaves it completely unchanged, so two code blocks that differ by a
+				// uniform delta across a pair checksum identically and the verifier accepts the
+				// wrong cached block. That shape is not hypothetical for SPU code -- job managers
+				// stream near-identical job binaries through the same local-store addresses, and a
+				// relocation that shifts two paired words by the same amount is exactly the
+				// invariant case. The x86 path above sums every word into its own accumulator lane
+				// and has no such class; summing here restores equivalent collision resistance for
+				// two extra ALU ops per 96-byte block. Fix taken from ARMSX3; upstream RPCS3 master
+				// still emits the UABA form.
 				const auto update_checksum = [&](const u32* words)
 				{
 					for (u32 i = 0; i < 4; i++)
 					{
 						checksum[i] += words[i];
-						checksum[4 + i] += words[4 + i] > words[8 + i] ? words[4 + i] - words[8 + i] : words[8 + i] - words[4 + i];
+						checksum[4 + i] += words[4 + i] + words[8 + i];
 						checksum[8 + i] += words[12 + i];
-						checksum[12 + i] += words[16 + i] > words[20 + i] ? words[16 + i] - words[20 + i] : words[20 + i] - words[16 + i];
+						checksum[12 + i] += words[16 + i] + words[20 + i];
 					}
 				};
 
@@ -1984,9 +2001,9 @@ public:
 						}
 
 						next_acc[0] = m_ir->CreateAdd(next_acc[0], vls[0]);
-						next_acc[1] = m_ir->CreateAdd(next_acc[1], m_ir->CreateCall(get_intrinsic<u32[4]>(llvm::Intrinsic::aarch64_neon_uabd), {vls[1], vls[2]}));
+						next_acc[1] = m_ir->CreateAdd(next_acc[1], m_ir->CreateAdd(vls[1], vls[2]));
 						next_acc[2] = m_ir->CreateAdd(next_acc[2], vls[3]);
-						next_acc[3] = m_ir->CreateAdd(next_acc[3], m_ir->CreateCall(get_intrinsic<u32[4]>(llvm::Intrinsic::aarch64_neon_uabd), {vls[4], vls[5]}));
+						next_acc[3] = m_ir->CreateAdd(next_acc[3], m_ir->CreateAdd(vls[4], vls[5]));
 					}
 
 					const auto next_offset = m_ir->CreateAdd(offset, m_ir->getInt32(checksum_loop_size));
@@ -2054,9 +2071,9 @@ public:
 					}
 
 					checksum_parts[0] = m_ir->CreateAdd(checksum_parts[0], vls[0]);
-					checksum_parts[1] = m_ir->CreateAdd(checksum_parts[1], m_ir->CreateCall(get_intrinsic<u32[4]>(llvm::Intrinsic::aarch64_neon_uabd), {vls[1], vls[2]}));
+					checksum_parts[1] = m_ir->CreateAdd(checksum_parts[1], m_ir->CreateAdd(vls[1], vls[2]));
 					checksum_parts[2] = m_ir->CreateAdd(checksum_parts[2], vls[3]);
-					checksum_parts[3] = m_ir->CreateAdd(checksum_parts[3], m_ir->CreateCall(get_intrinsic<u32[4]>(llvm::Intrinsic::aarch64_neon_uabd), {vls[4], vls[5]}));
+					checksum_parts[3] = m_ir->CreateAdd(checksum_parts[3], m_ir->CreateAdd(vls[4], vls[5]));
 
 					update_checksum(words);
 

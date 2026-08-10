@@ -42,7 +42,7 @@ X3 figures for every instruction this fork's codegen work actually selected:
 | `UMAXP`/`UMAX`/`UMIN` | 2 | 4 | `V` | `scan16_rdata` |
 | `UMAXV`/`UMINV` (reduce) | 2 | 2 | `V13` | reduction toolkit |
 | `CNT`/`CLZ`/`CLS` | 2 | 4 | `V` | `CNTB`, `CLZ` |
-| `UABD` | 2 | 4 | `V` | `ABSDB`, block checksum |
+| `UABD` | 2 | 4 | `V` | `ABSDB` (the block checksum no longer uses it — not injective) |
 | `XTN` | 2 | 4 | `V` | plain narrow |
 | **`SQXTN`/`UQXTN`** | **4** | **2** | **`V13`** | `VSUMSWS`, `VPKUHUS` |
 | `TBL`, 1-2 table regs | 2 | 2 | `V01` | `VPERM` |

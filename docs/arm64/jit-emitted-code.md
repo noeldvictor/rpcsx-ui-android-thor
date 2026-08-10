@@ -21,10 +21,10 @@ the instruction total before reading any count is what caught it.
 | `udot` | **1,661** | the video's headline optimization, in the emitted code |
 | `sdot` | 31 | |
 | `tbl` | 5,916 | all but one are the **1-table** form |
-| `uaba` | 4,503 | |
+| `uaba` | 4,503 | the SPU checksum — **and a correctness bug**, see below |
 | `addv` | 2,031 | |
 | `tbx` | 1,455 | 812 two-table (`TBX2`, the `SHUFB` path) + 643 one-table |
-| `uabd` | 910 | |
+| `uabd` | 910 | mostly SPU `ABSDB`, which is a real absolute-difference opcode |
 | `bcax` | 327 | |
 | `ummla` / `smmla` | 17 / 13 | i8mm, live but rare |
 | `cnt` | 6 | |
@@ -96,9 +96,29 @@ A representative block, chosen by reading rather than by metric:
 ```
 
 Paired loads, a dedicated absolute-difference-accumulate, no redundant moves
-between them. This is what the SPU checksum path is supposed to look like, and it
-is what the manual-driven audit predicted. That audit was right about instruction
-selection; it was looking at the wrong question.
+between them. This is what the manual-driven audit predicted, and at the level of
+instruction selection it is right.
+
+### And that block was wrong, which is the point
+
+**Superseded 2026-08-10.** Those `uabd`/`uaba` are the SPU **block-verification
+checksum**, and an absolute difference is not injective: `|a - b|` is unchanged
+when the same constant is added to both operands. Half the words of every 96-byte
+checksum block reached the verification comparison only through that fold, so two
+code blocks differing by a uniform delta across a pair verified as identical and
+the wrong cached block could be selected. It came from upstream RPCS3 master; the
+fix — sum the pairs instead — is taken from ARMSX3 and is written up in
+[`armsx3-comparison.md`](armsx3-comparison.md).
+
+**This page had the evidence and drew the wrong conclusion from it.** The
+disassembly is accurate, the instruction is the right one *for the operation
+written*, and the audit that produced this section asked "is this the cheapest
+encoding" and never "is this operation the correct one". That is the same failure
+this repo has now recorded five times in
+[`CLAUDE.md`](../../CLAUDE.md): the measurement was correct and the inference was
+not. `uaba` should now be **zero** in a freshly disassembled cache — the object
+cache key covers the optimized IR, so the old objects invalidate themselves, and
+that count is the cheapest confirmation the change reached the device.
 
 ## Two candidates, and why only one is worth costing
 
