@@ -531,3 +531,58 @@ its own handling — a real codegen change, as originally feared, not a cheap fi
 Worth noting the cost of *not* checking: the existing `rchcnt_loop` machinery is
 elaborate enough that assuming it applied would have sent a session into the
 matcher for nothing. One boot and no build ruled it out.
+
+## The insertion point, located
+
+`SPULLVMRecompiler.cpp:9874`, `BR`:
+
+```cpp
+const u32 target = spu_branch_target(m_pos, op.i16);
+
+if (target != m_pos + 4)
+{
+    m_block->block_end = m_ir->GetInsertBlock();
+    m_ir->CreateBr(add_block(target));
+}
+```
+
+There is **no case for `target == m_pos`** — a branch to itself. That is exactly
+the `0xcc4` block: the guest pc never changes (the emitted code computes
+`w20 = pc & 0x3fffc` once, outside the loop), so it is an unconditional infinite
+loop whose only body is the `check_state` LLVM leaves behind.
+
+So the change is narrow and its trigger is trivially detectable — `target ==
+m_pos` in `BR`, no dataflow analysis needed, unlike the `rchcnt_loop` matcher.
+
+**Design.** Emit a call to a blocking helper instead of the back-edge:
+
+```cpp
+// guest is in an unconditional self-loop; nothing can change except state
+static void spu_wait_state(spu_thread* _spu)
+{
+    while (!_spu->state)
+        thread_ctrl::wait_on(_spu->state, 0, timeout_ns);
+}
+```
+
+**Two hazards that decide whether this is safe, and neither is settled:**
+
+1. **Every writer of `state` must notify.** If any path sets a `cpu_flag` without
+   a notify, the thread sleeps until the timeout instead of waking promptly. A
+   bounded timeout makes that a latency bug rather than a hang, which is why the
+   timeout is not optional.
+2. **`BR` to self is also how a guest deadlock looks.** Today it burns a core and
+   is visible in a profile; parked, it becomes silent. That is better behaviour and
+   worse diagnostics, and this project has spent whole sessions on hangs. Whatever
+   ships should keep a counter or a log at the park.
+
+**Gate it** (`debug.rpcsx.thor.spu_selfloop_park`), default off, and A/B with p95
+frame time either side — the park changes wakeup latency for any SPU thread that
+uses a self-loop as a short wait rather than a long one.
+
+**Not implemented.** The analysis is done and the site is exact, but writing this,
+proving `state` notification is complete, building and running the A/B is more
+than remains in this session, and a half-written codegen change to the SPU
+recompiler is precisely the thing this repo has the most scar tissue about. The
+same applies to the MFC reservation wait, whose sites are already named at
+`SPUThread.cpp:5268`, `:5285` and `:3709`.
