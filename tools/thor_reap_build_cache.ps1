@@ -50,9 +50,24 @@ if (-not (Test-Path $cxxRoot)) {
 
 $reclaim = 0
 foreach ($buildType in Get-ChildItem $cxxRoot -Directory -ErrorAction SilentlyContinue) {
+    # Rank by the newest object file inside the tree, NOT by the tree directory's
+    # own LastWriteTime. Those two disagree, and they disagreed in the dangerous
+    # direction: measured here, 2v3i5c1h had the OLDEST directory stamp (08-08
+    # 11:50) and the NEWEST objects (08-09 20:02) -- it was the active tree -- while
+    # 6m3j1g1n had the newest directory stamp and objects six hours staler. Sorting
+    # on the directory would have marked the tree in use STALE and deleted it,
+    # costing a full native rebuild. A directory's mtime only changes when an entry
+    # is added or removed from it; ninja overwrites existing .o files in place, so
+    # a busy incremental tree can keep a very old directory stamp indefinitely.
     $trees = @(Get-ChildItem $buildType.FullName -Directory -ErrorAction SilentlyContinue |
         Where-Object { (Get-ChildItem $_.FullName -Directory -ErrorAction SilentlyContinue).Count -gt 0 } |
-        Sort-Object LastWriteTime -Descending)
+        ForEach-Object {
+            $newest = (Get-ChildItem $_.FullName -Recurse -File -Filter *.o -ErrorAction SilentlyContinue |
+                Measure-Object LastWriteTime -Maximum).Maximum
+            if (-not $newest) { $newest = $_.LastWriteTime }
+            $_ | Add-Member -NotePropertyName NewestObject -NotePropertyValue $newest -Force -PassThru
+        } |
+        Sort-Object NewestObject -Descending)
 
     if ($trees.Count -eq 0) { continue }
 
@@ -64,7 +79,7 @@ foreach ($buildType in Get-ChildItem $cxxRoot -Directory -ErrorAction SilentlyCo
         # which is what an incremental rebuild will want to reuse.
         $stale = $i -ge $Keep
         $mark = if ($stale) { "STALE" } else { "keep " }
-        Write-Output ("  {0} {1,-14} {2,7:N1} GB  {3}" -f $mark, $t.Name, ($sz / 1GB), $t.LastWriteTime.ToString('MM-dd HH:mm'))
+        Write-Output ("  {0} {1,-14} {2,7:N1} GB  newest object {3}" -f $mark, $t.Name, ($sz / 1GB), $t.NewestObject.ToString('MM-dd HH:mm'))
 
         if ($stale) {
             $reclaim += $sz
