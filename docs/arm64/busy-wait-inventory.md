@@ -205,3 +205,56 @@ resolve 0.01 ms on both.
 And: **grep the shipped `.so` for the property string before every property A/B.**
 It cost one command and caught an install that reported failure in a line that
 scrolled past, which would otherwise have been written up as a 37% win.
+
+---
+
+# Re-run on Folklore: real, reproducible, and 100× too small to act on
+
+The Eternal Sonata attempt failed on the title, not the hypothesis. Folklore
+resolves 0.005 cores where Eternal Sonata cannot see 1.4, so the experiment was
+repeated there. Property presence in the shipped `.so` checked first (returned 1).
+
+| `host_mutex_spin` | arms | CPU | p50 / p95 / p99 |
+| --- | --- | --- | --- |
+| 10 (default) | 3 | 0.377, 0.377, 0.378 | 16.87 / 16.87 / 16.87 ms |
+| 0 | 2 | 0.370, 0.368 | 16.87 / 16.87 / 16.87 ms |
+
+**0.0083 cores, 2.2%, against a within-arm spread of 0.001–0.002.** So the effect
+is four to eight times the noise — real — and frame time does not move at any
+percentile.
+
+One arm read **1.008 cores with p95 33.74 ms** and is excluded: its frame time
+doubled, so it was in a different state. It was not dismissed on that basis alone
+— a three-fold CPU reading deserved a check rather than a rule — so two further
+`spin=10` arms were run, which came back at 0.377 and 0.378. The outlier was a
+scene artifact, not a `spin=10` pathology.
+
+## Default stays at 10
+
+A 2.2% saving with no latency cost is real and it is **roughly one percent of the
+lv2 win** — 0.008 cores against 0.81. Set against that:
+
+* On Eternal Sonata the direction was **opposite** (`spin=0` worse by 0.86 cores)
+  and unresolvable. There is no gameplay evidence of benefit, and weak evidence of
+  harm.
+* A host mutex guards short critical sections, which is the case where spinning
+  is most likely to be correct. The lv2 waits were waiting on guest events
+  milliseconds away; these are not the same thing.
+
+Flipping a latency-guarding default for 0.008 cores on one light scene, against a
+contrary gameplay reading, is not a trade worth making. The property stays for
+anyone who wants it.
+
+## The asymmetry is the actual finding
+
+Same shape, same 156 µs unit, same futex underneath — and 0.81 cores at the lv2
+layer against 0.008 here, a factor of a hundred. **Spinning is not the defect; the
+lv2 waits were.** They spin in front of events that arrive milliseconds later, so
+the spin almost never wins its race and the whole 1.3 ms is burned. `shared_mutex`
+spins in front of critical sections short enough that it usually wins, which is
+what a spin is for.
+
+That distinction is worth more than either number, because it says where to look
+next: **not at spin loops, but at waits whose expected wait is long.** Grepping for
+`busy_wait` finds the mechanism; only knowing what is being waited *for* predicts
+whether the spin pays.
