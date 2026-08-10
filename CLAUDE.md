@@ -908,6 +908,66 @@ If a spike appears with nothing obviously running, check `top` before anything
 else: a leaked `net.rpcsx.easy` at 210% CPU accounted for 1.88 W once already,
 and `pidof` did not report it after `am force-stop`.
 
+# Novel hardware acceleration: what is viable, measured on device
+
+Measured, not assumed — `mrs ctr_el0` from a static binary on the Thor:
+
+```
+CTR_EL0 = 0x000000049444c004
+ERG      = 64 bytes   (exclusive reservation granule)
+CWG      = 64 bytes   (cache writeback granule)
+DminLine = 64 bytes   IminLine = 64 bytes
+```
+
+**The exclusive monitor cannot serve as a PS3 reservation.** The idea was
+attractive: `GETLLAR`/`PUTLLC` is load-linked / store-conditional over a 128-byte
+line, which is *exactly* what ARM's monitor does natively, while x86 has no LL/SC
+at all and forces the seqlock + `mov_rdata` + `cmp_rdata` emulation this fork
+carries. It is the one place where AArch64 is structurally **better** suited to the
+PS3 than the architecture the emulator was written for.
+
+**ERG is 64 bytes and there is one monitor per core, so it covers half a
+reservation.** What survives:
+
+* **A wake source.** `WFE` wakes on monitor loss, so `LDXR` + `WFE` is an
+  event-driven wait on half the line — strictly better than the spin that is there
+  now, with a timeout covering the other half.
+* **A fast negative check.** Monitor lost means something in that 64 bytes
+  changed, so the reservation is definitely broken and the 128-byte compare can be
+  skipped entirely on that path.
+
+What does not survive: replacing the compare outright. Written down with the
+number so the idea is not re-derived a fourth time.
+
+## Two more, and one correction
+
+**The MFC command queue is a free prefetch oracle.** Emulators rarely prefetch
+because real hardware does not need to, but the SPU's MFC queue *lists the
+addresses the guest is about to touch*. `PRFM` the destination of DMA *n+1* while
+transfer *n* runs. Unmeasured, and it aims at `process_mfc_cmd`, which is 20% of
+gameplay.
+
+**Large DMA should be non-temporal.** The comment at `SPUThread.cpp:1108` says
+Eternal Sonata "pounds 16 KB transfers", and the bulk path is plain
+`std::memcpy`. A 16 KB copy evicts most of L1 and much of L2 — including the
+working set of the other five SPU threads sharing those two cores. `LDNP`/`STNP`
+and `PRFM PSTL1STRM` exist for this, and `buffer_stream.hpp` already reaches a
+real `STNP` elsewhere.
+
+**Correction to the affinity advice: not the A510s.** They share one vector unit
+per *pair*, which this repo already measured as AES at 18.9x on X3 against **9.0x**
+on an A510. SPU emulation is vector-heavy, so A510s are the worst home for it.
+Widen SPU affinity toward CPU3 (A715) and CPU7 (X3, currently running a
+single-threaded RSX that costs 2.23%) — never CPU0–2.
+
+## Confirmed dead, so nobody re-derives them
+
+**ARM TME** would make `PUTLLC` a native transaction; it is not in this chip's
+feature list. **SVE** is the natural fix for 128 SPU registers spilling onto 32
+(10.1% of emitted JIT instructions are spills); this chip does not have it and
+upstream's two SVE commits must never be ported. Both are the architecturally
+right answer and both are unavailable.
+
 # Every wait in this emulator spins, and only one of them parks
 
 Four layers, found independently from two profiles, all the same shape:
