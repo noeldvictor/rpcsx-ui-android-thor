@@ -2,8 +2,13 @@
 
 Every previous statement in this repo about JIT codegen came from reading
 `SPULLVMRecompiler.cpp`. This is the first audit of the **machine code it
-produces**: the whole on-device native cache for Folklore, pulled and
-disassembled — **1,185 objects, 4,740 functions, 509,468 instructions.**
+produces**: the whole on-device native cache, pulled and disassembled —
+**1,185 objects, 4,740 functions, 509,468 instructions.**
+
+*(This page originally said the corpus was Folklore's. It is **BLUS30161**,
+Eternal Sonata — the path below is the one it was pulled from, and re-pulling
+that exact directory on 2026-08-10 reproduced 1,185 objects and all five counts
+in the table below to the instruction.)*
 
 ```sh
 adb pull .../cache/BLUS30161/ppu-*/spu-native-v2
@@ -21,10 +26,10 @@ the instruction total before reading any count is what caught it.
 | `udot` | **1,661** | the video's headline optimization, in the emitted code |
 | `sdot` | 31 | |
 | `tbl` | 5,916 | all but one are the **1-table** form |
-| `uaba` | 4,503 | the SPU checksum — **and a correctness bug**, see below |
+| `uaba` | 4,503 | the SPU checksum — **and a correctness bug**, see below. **Now 0** |
 | `addv` | 2,031 | |
 | `tbx` | 1,455 | 812 two-table (`TBX2`, the `SHUFB` path) + 643 one-table |
-| `uabd` | 910 | mostly SPU `ABSDB`, which is a real absolute-difference opcode |
+| `uabd` | 910 | assumed to be mostly SPU `ABSDB`. It was not — **now 0 as well** |
 | `bcax` | 327 | |
 | `ummla` / `smmla` | 17 / 13 | i8mm, live but rare |
 | `cnt` | 6 | |
@@ -119,6 +124,91 @@ this repo has now recorded five times in
 not. `uaba` should now be **zero** in a freshly disassembled cache — the object
 cache key covers the optimized IR, so the old objects invalidate themselves, and
 that count is the cheapest confirmation the change reached the device.
+
+## Confirmed on device, 2026-08-10
+
+The fix from `8c9ce1640` was built debuggable, installed, and the SPU native
+object cache for `BLUS30161` was cleared and regenerated from a cold boot. Both
+caches were disassembled by the same command on the same host, the old one first
+so the pipeline had a known answer to reproduce before it was trusted:
+
+| | old cache (pre-fix) | new cache (post-fix) |
+| --- | --- | --- |
+| objects | 1,185 | 1,188 |
+| **total instructions** | **509,468** | **509,424** |
+| `uaba` | **4,503** | **0** |
+| `uabd` | **910** | **0** |
+| `add` | 45,719 | 55,306 |
+| `udot` | 1,661 | 1,673 |
+| `tbx` | 1,455 | 1,425 |
+| `fabd` / `fabs` / `abs` | 18 / 63 / 8 | 16 / 63 / 8 |
+
+**Read the total first.** 509,424 is non-zero and within 0.01% of the pre-fix
+corpus, so the two zeros below it are real zeros and not the `xargs`-less silent
+failure this page opens with. The old-cache column reproduced the published
+counts exactly, which is what licenses reading the new one.
+
+**The `add` column is the fix, visible as arithmetic.** 5,413 absolute-difference
+instructions disappeared and `add` rose by 9,587 — the `UABA` accumulate becoming
+`ADD` + `ADD`, minus what LLVM folded elsewhere. That is the predicted shape and
+the predicted direction, and no other mnemonic moved materially.
+
+**`uabd` was expected to survive and did not.** The prediction was that SPU
+`ABSDB` would keep it non-zero, since `ABSDB` is a legitimate absolute-difference
+opcode with a one-instruction lowering. It went to zero too: all 5,413 were the
+checksum, and this title's SPU code never issues `ABSDB`. The `fabd`/`fabs`/`abs`
+rows are unrelated float and scalar forms and are unchanged, which is the control
+on that claim.
+
+### The two traps this run hit
+
+**`debug.rpcsx.thor.spu_native_object_cache` defaults to off.**
+`spu_native_object_cache_enabled()` (`SPUCommonRecompiler.cpp:307`) requires the
+property *and* `Emu.GetTitleID() == "BLUS30161"`, and with the property unset it
+returns false. The first boot after clearing the cache therefore recompiled all
+1,188 programs and wrote **nothing**, leaving a directory that looks exactly like
+a boot that never got as far as the SPU runtime. `SPU Runtime: Built 1188
+functions.` in `RPCSX.log` is what separates the two. Set the property before the
+boot you intend to pull.
+
+**The cache directory denies group write, and `run-as` is the way through.**
+`files/cache/cache/` is now `drwxrws---` and does allow it, but everything below
+it — `BLUS30161/`, `ppu-*/`, `spu-native-v2/` — is `drwxr-s---`, so `adb shell`
+as `shell` cannot unlink an object even though it is in `ext_data_rw`. On a
+debuggable build `run-as net.rpcsx.easy` runs as the owning uid and clears it. The
+postcondition is a re-`ls` showing **0** entries; the exit status of the `rm` is
+not evidence.
+
+### And the title still runs on it
+
+A wrong checksum fails safe rather than loudly: cached blocks stop validating and
+recompile forever, which reads as slowness, not as a crash. Three things were
+checked for that, over two boots on the fixed build:
+
+* **Frames advance.** `Thor RSX Auditor: on_frame_end call #N` reached **#11,250**
+  on the second boot; the last measured window was **1,000 frames in 38.4 s**. The
+  overlay read `FPS : 30.00` at the title menu and `26.7–30.0` in the field,
+  against a 30 FPS frame limit.
+* **CPU is normal.** `utime+stime` from `/proc/<pid>/stat` over 35 s:
+  **0.913 cores** at the title menu and **3.252 / 3.319 cores** on rendered
+  in-game scenes. The gameplay figures sit beside the 3.193 cores this repo
+  already records for Eternal Sonata gameplay. They are *not* a matched A/B — the
+  scene is New Game's opening field, not the saved route the 3.94–4.03 band came
+  from — and Eternal Sonata cannot resolve anything below ~1.4 cores anyway. They
+  are here to exclude a runaway, and they do.
+* **Nothing is recompiling.** The object count held at **1,188 across the whole
+  35 s window**. `RPCSX.log` has zero hits for `verification`, `checksum`,
+  `Access violation`, `Fatal`, `home menu`, `being paused` or `unknown draw`, on
+  either boot.
+
+### What this run does not establish
+
+The changed IR is exercised, the emitted instruction is confirmed, and the title
+boots and renders on it. **Nothing here shows the collision was ever hit in
+practice**, and nothing here is a speed measurement — the two extra ALU ops per
+96-byte block were not isolated, and could not be against this title's noise
+floor. The `copy_data_swap_u32_neon` half of the same commit is still unmeasured;
+this run does not touch it.
 
 ## Two candidates, and why only one is worth costing
 

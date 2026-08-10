@@ -160,7 +160,7 @@ is shift-heavy that `V13` restriction is where it will show.
 | `i8mm` | `SMMLA`/`UMMLA` | SPU multiply widening |
 | `sha3` | `BCAX` | SPU `EQV`, and both `SHUFB` selector paths |
 | — | `TBL`/`TBX`, `TBL2`/`TBX2` | SPU `SHUFB`, `ROTQBY` family, PPU `VPERM` |
-| — | `UABD` | SPU `ABSDB` only. **Removed from the block-verification checksum** — `\|a - b\|` is not injective and the checksum decides block identity; see [`armsx3-comparison.md`](docs/arm64/armsx3-comparison.md) |
+| — | `UABD` | SPU `ABSDB` only in principle. **Removed from the block-verification checksum** — `\|a - b\|` is not injective and the checksum decides block identity; see [`armsx3-comparison.md`](docs/arm64/armsx3-comparison.md). After the fix the on-device cache contains **zero** `uabd`, so Eternal Sonata never issues `ABSDB` |
 | — | `USHL` | `inf_shl`/`inf_lshr`, dodging an LLVM poison-value pessimization |
 | — | `CNT` | SPU `CNTB` via `ctpop` |
 | — | `ADDV`/`ADDP` | SPU reductions |
@@ -182,6 +182,19 @@ Three levels, cheapest first:
    `.../BLUS30161/ppu-*/spu-native-v2`, and disassemble with NDK
    `llvm-objdump`. Count the instruction you expect **and** the sequence it was
    meant to replace.
+
+   **Set `debug.rpcsx.thor.spu_native_object_cache=1` before that boot.** It is
+   **off by default** — `spu_native_object_cache_enabled()`
+   (`SPUCommonRecompiler.cpp:307`) needs the property *and* title `BLUS30161` —
+   so a boot without it recompiles every program and writes **nothing**. An empty
+   `spu-native-v2` then looks exactly like a boot that never reached the SPU
+   runtime. `SPU Runtime: Built 1188 functions.` in `RPCSX.log` tells the two
+   apart. Cost one full boot on 2026-08-10.
+
+   And disassemble the **old** cache first, before clearing it. Reproducing a
+   published count on the pre-change corpus is what proves the pipeline works;
+   the `xargs -n 40` failure below returns zero for every mnemonic and reads as a
+   perfect result.
 
 When counting, match two-source `tbx v.16b, { v.16b, v.16b }` as well as
 two-source `tbl`. Our `SHUFB` path emits `TBX2`; a `tbl`-only sweep reads as a
@@ -242,10 +255,15 @@ false negative and cost hours once.
 - **A search that finds nothing and a search that searches nothing look
   identical.** This has now cost four times. The third was a device experiment
   labelled "shader cache cleared" that had cleared nothing: the `mv` failed because
-  `files/cache/cache/` is `drwxr-s---` and denies the group write, while
+  the cache tree is `drwxr-s---` and denies the group write, while
   `config/custom_configs/` is `drwxrws---` and allows it. The `&&`-guarded success
   `echo` never printed and nobody looked. Confirm the postcondition after the
-  command, not the precondition before it. `tools/test_thor_arm64_apk.ps1` defaulted
+  command, not the precondition before it. **Re-measured 2026-08-10:**
+  `files/cache/cache/` itself is now `drwxrws---`, but every level below it —
+  `BLUS30161/`, `ppu-*/`, `spu-native-v2/` — is still `drwxr-s---`, so `shell`
+  cannot unlink an object there despite being in `ext_data_rw`. On a debuggable
+  build `run-as net.rpcsx.easy` runs as the owning uid and clears it; the proof is
+  a re-`ls` reading **0**, never the `rm`'s exit status. `tools/test_thor_arm64_apk.ps1` defaulted
   to `app/build/outputs/apk/release/`, a variant nobody builds, and passed for
   months while x86_64 shipped. Then the ledger recorded `lv2` and the HLE modules
   as architecture-neutral on a grep across `Emu/Cell/lv2` and `Emu/Cell/Modules`,
@@ -434,7 +452,7 @@ something was broken mattered more than optimizing anything.
 | **UMA / BAR heap** | **open, measured** | `device.cpp` parks host-visible+device-local memory as a scarce PCIe aperture. Here it is 11441 MB — one heap, every type device-local, type 1 also `HOST_CACHED`. The staging copy's destination is its own source. Volume counter added, unrun |
 | SDOT/UDOT | clean | the video's headline optimization is already here: `sdot`/`udot` at a dozen sites in `SPULLVMRecompiler.cpp`, gated on `HWCAP_ASIMDDP`, default **on**, with a `debug.rpcsx.thor.spu_arm_features` override |
 | SPU/PPU translator lowerings | clean so far, 3 probes | saturating arithmetic → `SQADD` at every width; SPU `AVGB` → a single **`URHADD`**; SPU `ABSDB` → a single **`UABD`**. All from *generic IR* with no ARM-specific code. The remaining question is only the ops with **no** IR spelling — the `BCAX`/`SDOT`/`TBL`/`USHL` set in [`codegen.md`](docs/arm64/codegen.md), which already have hand-written lowerings |
-| **SPU block-verification checksum** | **fixed** | the ARM64 path folded half of every 96-byte block through `UABD`, and `\|a - b\|` is not injective — a uniform delta across a pair collides, so the verifier could accept the wrong cached block. Inherited from **upstream RPCS3 master**; fix (sum the pairs) taken from ARMSX3. `uaba` was 4,503 in the disassembled cache and should now be zero |
+| **SPU block-verification checksum** | **fixed, confirmed on device** | the ARM64 path folded half of every 96-byte block through `UABD`, and `\|a - b\|` is not injective — a uniform delta across a pair collides, so the verifier could accept the wrong cached block. Inherited from **upstream RPCS3 master**; fix (sum the pairs) taken from ARMSX3. Cleared cache, cold boot, re-disassembled 2026-08-10: `uaba` **4,503 → 0** and `uabd` **910 → 0** of **509,424** instructions, `add` +9,587. Title boots and holds 30 FPS |
 | `BufferUtils.cpp` | **ported, unmeasured** | `copy_data_swap_u32` had 11 x86 gates and no ARM64 form, so it fell through to a scalar loop behind a non-inlinable function pointer with LTO off. `copy_data_swap_u32_neon` ported from ARMSX3. **No device measurement**; our profile puts the whole vertex/buffer cluster near 0.2% |
 | RSX vertex/texture paths | clean | `RSXThread.cpp` has **no** x86 intrinsics; `ProgramStateCache.cpp` already byteswaps with `vrev16q_u8` (one `REV16` against x86's shift-or pair) and keeps its AVX-512 behind `ARCH_X64`; `buffer_stream.hpp` reaches a real `STNP` |
 

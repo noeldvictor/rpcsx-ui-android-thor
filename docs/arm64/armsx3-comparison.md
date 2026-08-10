@@ -77,8 +77,9 @@ words in every block reached that comparison only through `|a - b|`.
 
 That distinguishes it from the other absolute-difference instructions in the
 emitted code. `docs/arm64/jit-emitted-code.md` counts `uaba` 4,503 times and
-`uabd` 910 times; the 910 include SPU `ABSDB`, which is a genuine
-absolute-difference *opcode* and correct. The 4,503 `uaba` are this checksum.
+`uabd` 910 times; the 910 were assumed to include SPU `ABSDB`, which is a genuine
+absolute-difference *opcode* and correct. **Both counts went to zero after the
+fix**, so all 5,413 were this checksum and `ABSDB` never fires in this title.
 The `< 192` byte path in the same function (`SPULLVMRecompiler.cpp:2101` onward)
 is the other shape — `icmp eq` against constants, reduced through `udot` — and
 is exact. Reading only that branch is how "the ARM64 code is clean" survives.
@@ -107,8 +108,16 @@ extra ALU ops per 96-byte block** (the `UABA` accumulate becomes `ADD` + `ADD`);
 invalidates the old objects by construction, so that count is the cheap way to
 confirm the change reached the device.
 
-**Not measured.** No device run was made for this change. It is argued from the
-algebra and from three-way source agreement, not from a boot.
+**Confirmed on device 2026-08-10.** The cache was cleared, Eternal Sonata was
+booted from cold, and the regenerated `spu-native-v2` disassembles to **`uaba` 0
+and `uabd` 0 out of 509,424 instructions**, against **4,503 and 910 out of
+509,468** in the cache that this same pipeline read immediately before. Details,
+including the `add` count that absorbs them, in
+[`jit-emitted-code.md`](jit-emitted-code.md).
+
+The one thing that reading predicted wrong: `uabd` was expected to survive as SPU
+`ABSDB`, and it did not. All 5,413 absolute-difference instructions in this
+title's cache were the checksum.
 
 ## Where they are ahead, and it is worth taking
 

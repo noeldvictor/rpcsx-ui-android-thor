@@ -530,6 +530,15 @@ Thor predictions.
      and ahead" because both audits compared *against upstream* and asked
      whether the code matched, never whether the operation was right.
      See `docs/arm64/armsx3-comparison.md`.
+     **Confirmed on device 2026-08-10.** Cleared `spu-native-v2` for BLUS30161,
+     cold boot, re-disassembled: `uaba` `4,503 -> 0` and `uabd` `910 -> 0` out of
+     `509,424` instructions, with `add` up `9,587`. The title boots, renders and
+     holds 30 FPS at `3.25-3.32` cores with zero verification, fatal or
+     cache-rejection rows. No speed claim; the two extra ALU ops per block were
+     not isolated and `copy_data_swap_u32_neon` remains unmeasured.
+     `debug.rpcsx.thor.spu_native_object_cache=1` must be set before the boot you
+     intend to pull, and the cache tree needs `run-as net.rpcsx.easy` to clear.
+     Full account in `docs/arm64/jit-emitted-code.md`.
   2. `FCGT` inline-asm `bsl` selection: present and byte-identical to upstream
      inside `#if defined(ARCH_ARM64)`. The surrounding function still uses this
      fork's older `register_intrinsic` / `std::bitset` shape; that difference is
