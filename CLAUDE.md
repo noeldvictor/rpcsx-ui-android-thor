@@ -22,8 +22,14 @@ sleeping: `50 × rx::busy_wait(500)`, which on a **19.2 MHz** generic timer is
 
 | workload | default (50) | no spin (0) | saving |
 | --- | --- | --- | --- |
-| Folklore, title screen | 1.200 cores | 0.390 | **67.6%** |
-| Eternal Sonata, gameplay | 3.193 | 3.049 | **4.5%** |
+| Folklore, title screen | 1.200 cores | 0.390 | **67.6%** (spread 0.005) |
+| Eternal Sonata, gameplay | 3.193 | 3.049 | **not established** — see below |
+
+**Eternal Sonata CPU cannot resolve anything below ~1.4 cores.** Two arms running
+*identical code* (a failed install, caught by grepping the on-device `.so`)
+differed by **1.37 cores, 58%**. Every gameplay CPU delta reported here is an
+order of magnitude under that, so the gameplay saving is downgraded to not
+established. Folklore resolves 0.005 cores and is the title to A/B on.
 
 Then frame-time percentiles from `dumpsys SurfaceFlinger --latency` on the BLAST
 layer — four gameplay arms in both orders, ~750 frame intervals each — put
@@ -873,6 +879,31 @@ fault. Folklore at ~2.2 cores is less than half that load.
 If a spike appears with nothing obviously running, check `top` before anything
 else: a leaked `net.rpcsx.easy` at 210% CPU accounted for 1.88 W once already,
 and `pidof` did not report it after `am force-stop`.
+
+# Grep the shipped `.so` for the property before every property A/B
+
+One command, before the arms run:
+
+```sh
+P=$(adb shell pm path net.rpcsx.easy | sed 's/package://;s/base.apk//')
+adb shell "grep -ac 'debug.rpcsx.thor.<name>' ${P}lib/arm64/librpcsx-android.so"
+```
+
+It has already caught three distinct silent no-ops in one session, each of which
+would have produced a confident number from two identical arms:
+
+1. **An `adb install` that printed `device offline`** and scrolled past. Both arms
+   ran the old build; they differed by **1.37 cores, 58%**, purely from
+   between-boot variance. Written up unchecked, that is a 37% win.
+2. **A gate on `defined(ARCH_ARM64) && defined(ANDROID)` in `rx/asm.hpp`** —
+   correct for the rpcs3 translation units that use the neighbouring helpers, and
+   silently false for `rx`'s own, which folded the function to a constant.
+3. **A gate applied to `rx/src/SharedMutex.cpp`**, which is `EXCLUDE_FROM_ALL` and
+   not linked at all; the live `shared_mutex` is `rpcs3/util/mutex.cpp`.
+
+All three compile, link, run, and change nothing. The string in the binary is the
+cheapest proof that the code you edited is the code that executes — the same rule
+this file already states for the version banner, applied to properties.
 
 # Before acting on anything a manual says
 
