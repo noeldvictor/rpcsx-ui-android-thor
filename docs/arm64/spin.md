@@ -1366,3 +1366,45 @@ A/B on p95 frame time — the risk is wake latency, not throughput.
 
 **Not implemented.** Recorded because it changes the shape of the remaining work
 from "add WFE in four places" to "finish a port that upstream already designed".
+
+## CORRECTION: the ARM half of that port exists, and I missed it
+
+The section above concluded that upstream's "spin briefly, then park" design "was
+never written" for AArch64. **That is wrong at the GETLLAR site**, which is the one
+site the section pointed at.
+
+Twenty lines below the `#if defined(ARCH_X64)` block I quoted, before its
+`#endif`, this fork already has:
+
+```cpp
+// Watch the first cache line of the reservation, the same target the
+// x86 path monitors. The writer that ends this wait writes here.
+__arm64_monitor_wait<check_wait_t>(std::addressof(data), +rtime, vm::reservation_acquire(addr));
+```
+
+and `__arm64_monitor_wait` at `SPUThread.cpp:1616` is a complete `LDXR` + `WFE` +
+`CLREX` park, with a comment noting it stays **opt-in** precisely because a missed
+wakeup would be a hang.
+
+**How I got it wrong:** I grepped the `#if defined(ARCH_X64)` guard, read the
+`__tpause` call under it, and concluded from the guard alone that ARM had no arm —
+without reading to the `#endif`. The ARM branch was inside the same conditional,
+past my grep window. This is the *exact* mistake this repo already records twice —
+a `head`-truncated grep treated as evidence of absence, and `on_frame_end` "never
+called" because the real call site was one line past the cut.
+
+**What survives the correction:**
+
+* `utils::has_um_wait()`, `has_waitpkg()` and `has_waitx()` genuinely do return
+  false on AArch64, so the x86 arm is dead here — that part was right.
+* The **other** wait sites still do not park: the MFC reservation loops
+  (`SPUThread.cpp:5268`, `:5285`, `:3709`) end in unbounded `sched_yield`,
+  `vm::writer_lock` ends in unbounded `sched_yield`, and the SPU JIT self-loop has
+  no wait at all.
+* `__arm64_monitor_wait` being present and proven is **better** news than the
+  original claim: the primitive is not hypothetical, it is written, reviewed and
+  opt-in in this tree. Wiring the remaining sites to it is reuse, not new work.
+
+**What is now actually unknown:** whether the GETLLAR park is enabled by default,
+and what it is worth when it is. That is a measurement, and it should have been the
+first question rather than a claim about missing code.
