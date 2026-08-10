@@ -3,6 +3,51 @@
 Technical notes for making this emulator fast on Thor. `AGENTS.md` is the
 operating contract; this file is the hardware knowledge behind it.
 
+# Write all documentation in ASD-STE100
+
+Use Simplified Technical English (ASD-STE100) for all new documentation and all
+commit messages. Write the rules into new text. Do not rewrite old text only to
+change its style.
+
+## The rules that apply here
+
+1. **Write short sentences.** Use a maximum of 25 words in a descriptive
+   sentence. Use a maximum of 20 words in an instruction.
+2. **Write one instruction in one sentence.** Do not put two commands together.
+3. **Use the active voice.** Write "the JIT emits a spin loop". Do not write "a
+   spin loop is emitted".
+4. **Use one word for one meaning.** If you call it a "park", call it a "park"
+   every time. Do not also call it a "sleep", a "wait", or a "block".
+5. **Use simple tenses.** Use the present, the past, or the future. Do not use
+   the perfect tenses.
+6. **Keep noun clusters to three words.** Write "the cache for SPU objects". Do
+   not write "the SPU native object cache key".
+7. **Write a maximum of six sentences in a paragraph.**
+8. **Use articles.** Write "the profile shows". Do not write "profile shows".
+9. **Do not use synonyms for effect.** Repeat the noun.
+
+## What does not change
+
+STE controls the language. It does not control the content. These rules stay:
+
+* Give the number, and give the workload with it.
+* Say what you measured. Say what you did not measure.
+* Record a retraction in the same file as the claim.
+* Quote the file and the line.
+
+STE makes these easier, not harder. A short sentence in the active voice cannot
+hide a weak claim behind a long clause.
+
+## The tension, stated plainly
+
+Much of the older text in `docs/arm64/` is discursive. It explains why an
+inference failed. STE permits this, but STE needs more sentences to do it. Accept
+the extra sentences. Do not compress the reasoning to save words.
+
+**Do not convert the old documents in one pass.** A large rewrite of correct text
+creates risk and gives no gain. Convert a document when you change it for another
+reason.
+
 ## Read this first: the lv2 waits spin instead of sleeping, and a profile found it
 
 A symbolized profile of a healthy 60 fps run — 31,657 samples, 0 lost, no pause —

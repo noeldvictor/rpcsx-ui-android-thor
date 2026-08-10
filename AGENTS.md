@@ -2822,3 +2822,12 @@ Thor predictions.
   host-verified `stackable-cpu-pressure`, not measured speed or thermal
   credit. Ledger:
   `debug-experiments/20260724-thor-spu-wait-policy-relaxed-reads.md`.
+
+## Write documentation in ASD-STE100
+
+Use Simplified Technical English for new documentation and for commit messages.
+Write short sentences. Use the active voice. Use one word for one meaning. Keep
+noun clusters to three words. The full rules are in `CLAUDE.md`.
+
+Do not rewrite old documents only to change their style. Convert a document when
+you change it for another reason.
