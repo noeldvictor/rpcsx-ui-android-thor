@@ -992,31 +992,38 @@ self-loop site is exact: `SPULLVMRecompiler.cpp:9874`, `BR`, which has no case f
 
 # Two config-only experiments outrank all of that
 
-**Six SPU threads are pinned to two cores.** The gameplay profile shows six
-concurrent SPU threads (matching `Max SPURS Threads: 6`) and the affinity gives
-them `CPU5` and `CPU6` only — the A710 pair — while `CPU7`, the X3, goes to RSX
-with `Multithreaded RSX: false` and the entire Turnip driver measuring 2.23% of
-CPU.
+**RETRACTED: SPU threads are not pinned to two cores.** This section claimed the
+`Affinity` block in `config.yml` (`CPU5: SPU`, `CPU6: SPU`) meant six SPU threads
+shared two cores, and built an oversubscription argument on it. **Measured on
+device, every emulator thread reports `Cpus_allowed_list: 0-7`** — all eight
+cores. PPU threads are unrestricted despite `CPU4: PPU`, which proves the table is
+not applied at all under `Thread Scheduler Mode: Operating System`. The Linux
+scheduler places these threads; the config block is inert.
 
-That reframes every spin above. **Spinning wastes an idle core; on an
-oversubscribed core it serialises.** A thread spinning 1.04 ms in
-`vm::writer_lock` while holding one of only two SPU cores may be denying the core
-to the thread that would release the lock.
+The error is the one this file warns about more than any other: **a config value
+was read and assumed to take effect.** One `grep Cpus_allowed_list
+/proc/<pid>/task/*/status` would have caught it before the claim was written, and
+it is the same class as trusting the version banner or a property that never
+reaches the binary.
 
-The same config carries **`SPU loop detection: false`**, upstream's setting for
-recognising SPU idle loops and yielding rather than spinning — aimed squarely at
-the `0xcc4` behaviour, and never tried here.
+Both experiments built on it came back null, as they had to:
 
-| change | hypothesis | cost |
-| --- | --- | --- |
-| `Affinity` SPU → CPU3–6, or include CPU7 | the spins are convoying on two cores, not merely wasting them | one boot |
-| `SPU loop detection: true` | the 20% self-loop is already handled by a setting we have off | one boot |
+| change | result |
+| --- | --- |
+| `Affinity` SPU → CPU3 as well (2 cores → 3) | 3.944 vs 3.946 cores — **identical**, and inert anyway |
+| `SPU loop detection: true` | 4.029 vs 3.949 cores, frame times unchanged — no effect, and deep inside Eternal Sonata's ~1.4-core noise floor |
 
-**Either could make the codegen work unnecessary.** Run these before writing
-anything — it is the order this project keeps relearning. Standard harness: p95
-from `dumpsys SurfaceFlinger --latency`, CPU from `/proc/<pid>/stat`, alternating
-arms, and `config.yml` restored afterwards with a **verified byte count**, because
-it is rewritten on exit.
+`SPU loop detection` failing to help is independently consistent with the profile:
+the hot `0xcc4` loop polls `spu_thread::state`, not a channel, and that setting
+targets channel/idle loops.
+
+**What survives.** Thread placement is still worth investigating, but through the
+**scheduler**, not this config block — and any future attempt must verify with
+`Cpus_allowed_list` that the change actually landed. If affinity is ever forced,
+avoid CPU0–2: the A510s share one vector unit per *pair*, measured here as 9.0x
+against the X3's 18.9x on AES, and SPU emulation is vector-heavy.
+
+The codegen work is therefore **not** obviated. Both cheap escapes are closed.
 
 # Grep the shipped `.so` for the property before every property A/B
 
