@@ -1027,3 +1027,63 @@ Predicted magnitude: **single digits**, bounded by the BCAX-in-SHUFB result of
 +5.6% — the only verified same-state positive this project has produced, and the
 closest analogue (another hot SPU shuffle, and `TBL` is `2 2 V` on A715, full
 width).
+
+---
+
+# Repurposing crypto and special-function hardware: the map
+
+Emulators do reuse crypto units for non-crypto work, and it is worth knowing
+which of those tricks this fork already exploits before re-deriving them. Status
+is from **emitted machine code** (`jit-emitted-code.md`), not from source.
+
+| technique | classic non-crypto use | status here |
+| --- | --- | --- |
+| SHA-3 `BCAX` / `EOR3` | 3-input bitwise in one op | **exploited** — 327 `bcax`, SPU `EQV` and both `SHUFB` selector paths |
+| `SDOT`/`UDOT` (dotprod) | bit-gather, horizontal sums | **exploited** — 1,661 `udot`, SPU `GB` and `SUMB` |
+| `TBL`/`TBX` | universal permute | **exploited** — 5,916 + 1,455 |
+| i8mm `SMMLA`/`UMMLA` | widening multiply | live but rare (17 / 13) |
+| **`PMULL`** (carry-less multiply) | **bit interleave / Morton**, CRC, GF(2) | **unused — and cold here, see below** |
+| AES rounds | fast hash / mixing primitive | unused; candidate sites are compile-time |
+| `CRC32` | hashing | unused outside `sse2neon.h`; nothing hot computes CRCs |
+| `FJCVTZS` | x86 float→int semantics | not applicable to PPC/SPU |
+| **`WFE`** | **park a spin on a cacheline** | **unused, and the only one with a measured payoff** |
+
+## `PMULL` for texture swizzle: correct, elegant, and pointed at cold code
+
+`rsx_utils.h:313`, `calculate_z_index`, is the PS3 texture swizzle — Morton
+encoding — written as a **bit-at-a-time loop with branches**, one iteration per
+bit, per texel:
+
+```cpp
+do {
+    if (log2_width)  { offset |= (x & 1) << shift_count++; x >>= 1; log2_width--; }
+    ...
+} while (x | y | z);
+```
+
+Carry-less squaring spreads a value's bits with zeros between them, so the 2D case
+collapses to `pmull(x,x) | (pmull(y,y) << 1)` — **two instructions instead of a
+variable-length branchy loop.** `pmull` is present on this chip and unused.
+
+**And it does not appear in the gameplay profile at any threshold.** The hottest
+texture symbol is `VKGSRender::load_texture_env()` at **0.11%**; `calculate_z_index`
+is absent entirely. On Eternal Sonata the swizzle path is cold, so this would
+optimise something that is not running.
+
+Recorded rather than done, and recorded *with* the profile result, because the
+idea is attractive enough that it will be proposed again. It may be worth
+revisiting on a title that streams swizzled textures — but the reach test has to
+pass first, on that title.
+
+## The pattern across the whole table
+
+**This fork already found the repurposed-crypto win that was hot** — `BCAX` for
+`SHUFB`/`EQV`. Every remaining entry is a genuine technique aimed at code that
+does not run on the measured workload.
+
+That is the same shape as the twelve refuted manual predictions: the instruction
+reasoning was sound each time and the target was not executing. The one unexploited
+capability with a *measured* payoff is not a SIMD or crypto unit at all — it is
+**`WFE`**, sitting unused in front of four spin sites that hold roughly a third of
+gameplay CPU, with `rx::spin_on_cacheline_once()` already implementing
+`LDAXR`+`WFE` and used by none of them.
