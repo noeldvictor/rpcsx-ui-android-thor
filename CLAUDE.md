@@ -40,6 +40,29 @@ No latency cost at any percentile.
 behaviour. Full account in
 [`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md).
 
+## And where gameplay time actually goes
+
+A second profile — Eternal Sonata gameplay, **119,662 samples, 0 lost, 0 pauses** —
+shares almost no hot code with the title screen above:
+
+| | share |
+| --- | --- |
+| **JIT-generated code (unnamed)** | **47.88%** |
+| `librpcsx-android.so` | 34.65% |
+| kernel | 11.80% |
+
+| top named symbol | share |
+| --- | --- |
+| `spu_thread::process_mfc_cmd()` | **20.13%** |
+| `vm::writer_lock` | 4.49% |
+| `vm::passive_lock` | 1.73% |
+
+**Almost half of gameplay is code no symbolizer can name**, and the biggest named
+function is the SPU DMA path, which this project had never looked at. The lv2
+waits that were 73.9% of the title screen do not reach 1% here. Details and the
+static disassembly of the JIT cache in
+[`docs/arm64/jit-emitted-code.md`](docs/arm64/jit-emitted-code.md).
+
 Two lessons outrank the finding itself:
 
 * **Nothing in a year of manual sweeps found this, and one profile did.** Twelve
