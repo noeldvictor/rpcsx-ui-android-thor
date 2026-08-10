@@ -302,3 +302,78 @@ The static audit above says "the native cache for Folklore". It is **Eternal
 Sonata** — `BLUS30161` is Eternal Sonata's title ID, not Folklore's, which is
 `BCUS98147`. The disassembly and the gameplay profile are therefore the same
 title, which makes them directly comparable; the label was wrong, not the data.
+
+---
+
+# `process_mfc_cmd` is 20% of gameplay, and half of it is `sched_yield`
+
+The biggest named function in the emulator, never examined by this project.
+Breaking its subtree down from the same profile (23,412 samples in it alone):
+
+```
+33.53% children / 20.46% self   spu_thread::process_mfc_cmd()   [SPU thread 0x3000100]
+  |--17.39%-- sched_yield
+  |            --93.81%-- [kernel scheduler]
+  |--16.91%-- spu_thread::do_putllc(spu_mfc_cmd const&)
+```
+
+**Roughly a third of it is `sched_yield`, and 94% of that cost is inside the
+kernel** — this is a syscall storm, not user-space work. The other third is
+`do_putllc`, the SPU reservation *write*. Together they say the hot path is
+**reservation contention**, resolved by yielding to the OS.
+
+## The shape, at every reservation site
+
+`SPUThread.cpp:5268` and `:5285` (PUTLLUC), `:3709` (DMA reservation), and
+siblings all share it:
+
+```cpp
+else if (k < 15) { thor_wait::profiled_busy_wait(site, 500); }  // 15 x 26 us = 390 us
+else             { std::this_thread::yield(); }                 // then forever
+```
+
+A bounded spin — ~390 µs on this chip's 19.2 MHz timer — followed by an
+**unbounded `std::this_thread::yield()` loop with no sleep and no backoff.** Once
+the retry count is exceeded the thread calls `sched_yield` on every iteration for
+as long as contention lasts.
+
+Three costs, all of which the profile shows:
+
+* **A syscall per iteration.** 94% of the measured `sched_yield` cost is kernel
+  time, not the call itself.
+* **The thread stays runnable.** `sched_yield` does not sleep — it re-queues. The
+  scheduler keeps the thread resident and the cluster clocked up, which is the
+  opposite of what is wanted on a handheld.
+* **No notifier.** Nothing wakes this thread when the reservation actually
+  clears; it discovers it by asking again.
+
+## Why this is the same defect in a third costume
+
+This project has now found the identical shape three times, at three layers:
+
+| layer | wait | share |
+| --- | --- | --- |
+| lv2 syscalls | 50 x `busy_wait(500)` then futex | 73.9% of a title screen, ~0 in gameplay |
+| SPU JIT | `ldr`/`cbz` with no pause at all | ~20% of gameplay |
+| SPU MFC | 15 x `busy_wait(500)` then `sched_yield` forever | ~7% of gameplay |
+
+Each spins in front of something that arrives much later. The lv2 one was fixed
+because it had a working futex underneath it. **This one has no sleep to fall
+through to at all** — the fallback is an unbounded yield, which is a spin wearing
+a syscall.
+
+## Not changed, and what it would take
+
+Unmeasured, and the fix is not a one-line swap. A correct version needs a real
+wait with a notifier on the reservation address — the machinery
+`vm::reservation_notifier` already provides and the lv2 path already uses. The
+falsification is the same as always: reservation waits are latency-critical, so
+p95 frame time decides it, and `dumpsys SurfaceFlinger --latency` now measures
+that reliably.
+
+**Predicted magnitude:** `sched_yield` is 17.39% of a function that is 20.13% of
+gameplay, so ~3.5% of all cycles are in the syscall path, plus its share of the
+11.80% total kernel time. Smaller than the SPU spin loop above, larger than
+anything the `busy_wait` inventory found, and it is **power-shaped rather than
+throughput-shaped**: a thread kept runnable holds the cluster at a high operating
+point whether or not it retires useful work.
