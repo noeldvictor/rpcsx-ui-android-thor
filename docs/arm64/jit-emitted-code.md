@@ -377,3 +377,79 @@ gameplay, so ~3.5% of all cycles are in the syscall path, plus its share of the
 anything the `busy_wait` inventory found, and it is **power-shaped rather than
 throughput-shaped**: a thread kept runnable holds the cluster at a high operating
 point whether or not it retires useful work.
+
+---
+
+# `vm::writer_lock`: six threads, 1.04 ms each, then yield forever
+
+`vm::writer_lock` is 4.49% of total gameplay cycles, but the per-thread view is
+what matters: **six SPU threads are inside it at once**, each spending 15–19% of
+its own time there, and **~95% of that is self time** — spinning in acquisition,
+not in callees.
+
+```
+19.20% children / 18.21% self   SPU[0x3000100]
+18.69% / 17.44%                 SPU[0x1000100]
+17.77% / 17.56%                 SPU[0x4000100]
+16.91% / 16.50%                 SPU[0x0000100]
+15.97% / 14.96%                 SPU[0x0000200]
+15.90% / 15.34%                 SPU[0x2000100]
+```
+
+`vm.cpp:698`:
+
+```cpp
+if (i < 100) { ...prefetch...; profiled_busy_wait(vm_writer_lock, 200); }
+else         { std::this_thread::yield(); }
+```
+
+**100 iterations at 200 ticks — 10.4 µs each, 1.04 ms total — then an unbounded
+yield loop.** Six threads doing that simultaneously against one range-lock bitmap
+is real contention, not a rare slow path.
+
+# The synthesis: every wait in this emulator spins, and none of them park
+
+Four layers, found independently, all the same shape:
+
+| layer | bounded spin | fallback | share of gameplay |
+| --- | --- | --- | --- |
+| lv2 syscalls | 50 x 26 µs = **1.3 ms** | futex (a real sleep) | 73.9% of a title screen, ~0 in gameplay — **fixed** |
+| SPU JIT wait | none — bare `ldr`/`cbz` | **none** | **~20%** |
+| SPU MFC reservation | 15 x 26 µs = **390 µs** | `sched_yield` forever | ~7% |
+| `vm::writer_lock` | 100 x 10.4 µs = **1.04 ms** | `sched_yield` forever | 6.2%, six threads |
+
+**Only one of the four has a real sleep underneath it, and that is the one that
+was fixable.** The other three end in either nothing or an unbounded
+`sched_yield`, which does not sleep — it re-queues, keeps the thread runnable, and
+holds the cluster at a high operating point regardless of whether any work is
+retired. On a plugged-in desktop that is close to free. On a handheld it is the
+dominant power behaviour.
+
+That is the answer to "why is this emulator hot" at a level no instruction table
+could reach: **roughly a third of gameplay CPU is threads waiting, at full issue
+rate, for something that has not happened yet.**
+
+## Why the manual sweep could never have found this
+
+Twelve predictions from the vendored manuals, twelve refuted. The manuals describe
+what an instruction costs. Every finding above is about **how long a wait waits**
+and **what it does while waiting** — neither of which is an instruction property,
+and both of which are invisible to any amount of reading. Two profiles, a title
+screen and a gameplay scene, found all four.
+
+The instruction-level audit was not wasted: it confirmed the lowerings, closed
+sse2neon, and turned up the empty `mov_rdata` branch that made two titles
+unbootable. But it answered "is this code well-formed" when the question that
+mattered was "is this code doing anything".
+
+## Order of attack, by measured size
+
+1. **SPU JIT spin, ~20%** — no pause at all, and the cleanest `WFE` candidate in
+   the codebase. Needs a codegen change in `check_state`.
+2. **SPU MFC reservation, ~7%** — needs a real wait on the reservation notifier
+   `vm::` already provides.
+3. **`vm::writer_lock`, 6.2%** — same, and the six-way contention suggests the
+   lock granularity is worth questioning before the wait shape is.
+
+All three are latency-critical, so p95 frame time decides each, and
+`dumpsys SurfaceFlinger --latency` measures that reliably now.
