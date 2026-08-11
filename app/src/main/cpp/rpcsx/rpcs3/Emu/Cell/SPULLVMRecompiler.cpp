@@ -14,6 +14,7 @@
 #include "SPUThread.h"
 #include "SPUAnalyser.h"
 #include "SPUInterpreter.h"
+#include "thor_spu_branch_extract.h"
 #include <algorithm>
 #include <thread>
 
@@ -91,6 +92,13 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Startup-only exact native-object cache. Runtime compilation keeps the
 	// original uncached path so gameplay misses never add disk I/O.
 	const bool m_use_native_object_cache;
+
+	// Which spelling the eight SPU branch lowerings use for the guarded fast
+	// path. The read happens once per recompiler, not once per compiled branch.
+	// The accessor holds a function-local static, and a static costs a
+	// guard-variable acquire load on every call. The default is false, so the
+	// movemask stays. See thor_spu_branch_extract.h.
+	const bool m_thor_spu_branch_extract = thor::spu_branch_extract();
 
 	// Interpreter table size power
 	const u8 m_interp_magn;
@@ -9352,8 +9360,12 @@ public:
 
 					if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
 					{
-						const auto a = get_vr<s8[16]>(op.rt);
-						const auto cond = eval(bitcast<s16>(trunc<bool[16]>(a)) >= 0);
+						// The sext guard above forces every lane to all-zeros or all-ones,
+						// so word 3 is zero exactly when the movemask sign bit is zero.
+						// thor_spu_branch_extract.h explains the two spellings.
+						const auto cond = m_thor_spu_branch_extract
+							? eval(extract(get_vr(op.rt), 3) == 0)
+							: eval(bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) >= 0);
 						const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
 						const auto target = add_block_indirect(op, addr);
 						m_ir->CreateCondBr(cond.value, target, add_block_next());
@@ -9413,8 +9425,12 @@ public:
 
 					if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
 					{
-						const auto a = get_vr<s8[16]>(op.rt);
-						const auto cond = eval(bitcast<s16>(trunc<bool[16]>(a)) < 0);
+						// The sext guard above forces every lane to all-zeros or all-ones,
+						// so word 3 is zero exactly when the movemask sign bit is zero.
+						// thor_spu_branch_extract.h explains the two spellings.
+						const auto cond = m_thor_spu_branch_extract
+							? eval(extract(get_vr(op.rt), 3) != 0)
+							: eval(bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) < 0);
 						const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
 						const auto target = add_block_indirect(op, addr);
 						m_ir->CreateCondBr(cond.value, target, add_block_next());
@@ -9445,8 +9461,12 @@ public:
 
 					if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
 					{
-						const auto a = get_vr<s8[16]>(op.rt);
-						const auto cond = eval((bitcast<s16>(trunc<bool[16]>(a)) & 0x3000) == 0);
+						// The sext guard above forces every lane to all-zeros or all-ones,
+						// so halfword 6 is zero exactly when mask bits 12 and 13 are zero.
+						// thor_spu_branch_extract.h explains the two spellings.
+						const auto cond = m_thor_spu_branch_extract
+							? eval(extract(get_vr<u16[8]>(op.rt), 6) == 0)
+							: eval((bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) & 0x3000) == 0);
 						const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
 						const auto target = add_block_indirect(op, addr);
 						m_ir->CreateCondBr(cond.value, target, add_block_next());
@@ -9477,8 +9497,12 @@ public:
 
 					if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
 					{
-						const auto a = get_vr<s8[16]>(op.rt);
-						const auto cond = eval((bitcast<s16>(trunc<bool[16]>(a)) & 0x3000) != 0);
+						// The sext guard above forces every lane to all-zeros or all-ones,
+						// so halfword 6 is zero exactly when mask bits 12 and 13 are zero.
+						// thor_spu_branch_extract.h explains the two spellings.
+						const auto cond = m_thor_spu_branch_extract
+							? eval(extract(get_vr<u16[8]>(op.rt), 6) != 0)
+							: eval((bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) & 0x3000) != 0);
 						const auto addr = eval(extract(get_vr(op.ra), 3) & 0x3fffc);
 						const auto target = add_block_indirect(op, addr);
 						m_ir->CreateCondBr(cond.value, target, add_block_next());
@@ -9680,8 +9704,12 @@ public:
 						if (target != m_pos + 4)
 						{
 							m_block->block_end = m_ir->GetInsertBlock();
-							const auto a = get_vr<s8[16]>(op.rt);
-							const auto cond = eval(bitcast<s16>(trunc<bool[16]>(a)) >= 0);
+							// The sext guard above forces every lane to all-zeros or all-ones,
+							// so word 3 is zero exactly when the movemask sign bit is zero.
+							// thor_spu_branch_extract.h explains the two spellings.
+							const auto cond = m_thor_spu_branch_extract
+								? eval(extract(get_vr(op.rt), 3) == 0)
+								: eval(bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) >= 0);
 							m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
 							return true;
 						}
@@ -9755,8 +9783,12 @@ public:
 						if (target != m_pos + 4)
 						{
 							m_block->block_end = m_ir->GetInsertBlock();
-							const auto a = get_vr<s8[16]>(op.rt);
-							const auto cond = eval(bitcast<s16>(trunc<bool[16]>(a)) < 0);
+							// The sext guard above forces every lane to all-zeros or all-ones,
+							// so word 3 is zero exactly when the movemask sign bit is zero.
+							// thor_spu_branch_extract.h explains the two spellings.
+							const auto cond = m_thor_spu_branch_extract
+								? eval(extract(get_vr(op.rt), 3) != 0)
+								: eval(bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) < 0);
 							m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
 							return true;
 						}
@@ -9799,8 +9831,12 @@ public:
 						if (target != m_pos + 4)
 						{
 							m_block->block_end = m_ir->GetInsertBlock();
-							const auto a = get_vr<s8[16]>(op.rt);
-							const auto cond = eval((bitcast<s16>(trunc<bool[16]>(a)) & 0x3000) == 0);
+							// The sext guard above forces every lane to all-zeros or all-ones,
+							// so halfword 6 is zero exactly when mask bits 12 and 13 are zero.
+							// thor_spu_branch_extract.h explains the two spellings.
+							const auto cond = m_thor_spu_branch_extract
+								? eval(extract(get_vr<u16[8]>(op.rt), 6) == 0)
+								: eval((bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) & 0x3000) == 0);
 							m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
 							return true;
 						}
@@ -9843,8 +9879,12 @@ public:
 						if (target != m_pos + 4)
 						{
 							m_block->block_end = m_ir->GetInsertBlock();
-							const auto a = get_vr<s8[16]>(op.rt);
-							const auto cond = eval((bitcast<s16>(trunc<bool[16]>(a)) & 0x3000) != 0);
+							// The sext guard above forces every lane to all-zeros or all-ones,
+							// so halfword 6 is zero exactly when mask bits 12 and 13 are zero.
+							// thor_spu_branch_extract.h explains the two spellings.
+							const auto cond = m_thor_spu_branch_extract
+								? eval(extract(get_vr<u16[8]>(op.rt), 6) != 0)
+								: eval((bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) & 0x3000) != 0);
 							m_ir->CreateCondBr(cond.value, add_block(target), add_block(m_pos + 4));
 							return true;
 						}

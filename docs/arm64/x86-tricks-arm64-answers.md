@@ -638,3 +638,197 @@ is the same artifact the run above pulls.
   come from the vendored guides, not from the device.
 * **Not established:** what fraction of gameplay time the sequence holds, and how
   many of the 1,402 sites are these eight opcodes.
+
+---
+
+# The change is implemented, behind a gate, and the gate is off
+
+This section records what the code does now. **It records no measurement.** No
+agent has run the A/B on the device. The default is `0`, so a normal build emits
+the movemask and nothing changes.
+
+## The gate
+
+`app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/thor_spu_branch_extract.h` holds one
+runtime gate:
+
+    debug.rpcsx.thor.spu_branch_extract = 1     (default 0)
+
+`thor::spu_branch_extract()` reads the property into a function-local static. The
+helper also accepts the environment variable `RPCSX_THOR_SPU_BRANCH_EXTRACT`, for
+a host run. An absent value gives `false`.
+
+The `#if` guard is `__aarch64__`, which the compiler predefines. It cannot go
+missing from one CMake target, unlike `ANDROID`. On any other architecture the
+helper is a constant `false`, because the movemask is the correct x86 form.
+`thor_host_mutex_spin_iters` lost its property branch to a missing `-DANDROID`
+once, and the A/B would have reported no effect with both arms identical.
+
+## The read is hoisted
+
+`spu_llvm_recompiler` copies the result into `m_thor_spu_branch_extract` at
+construction (`SPULLVMRecompiler.cpp:101`). The eight opcode handlers read the
+member. They never call the accessor.
+
+A function-local static costs a guard-variable acquire load on every call. The
+handlers run once per compiled branch, inside the compile loop. This fork already
+put a static in a hot path once, with `get_thor_pause_mode`; the comment on
+`pause()` in `rx/asm.hpp` records what that cost.
+
+## The eight sites
+
+Each site selects between the two spellings **inside** the guarded block:
+
+```cpp
+const auto cond = m_thor_spu_branch_extract
+    ? eval(extract(get_vr(op.rt), 3) == 0)
+    : eval(bitcast<s16>(trunc<bool[16]>(get_vr<s8[16]>(op.rt))) >= 0);
+```
+
+The movemask arm is the code that was there before. It is unchanged.
+
+| opcode | guard line | gate line | extract arm | movemask arm |
+| --- | --- | --- | --- | --- |
+| `BIZ` | 9361 | 9366 | `extract(get_vr(op.rt), 3) == 0` | `... >= 0` |
+| `BINZ` | 9426 | 9431 | `extract(get_vr(op.rt), 3) != 0` | `... < 0` |
+| `BIHZ` | 9462 | 9467 | `extract(get_vr<u16[8]>(op.rt), 6) == 0` | `... & 0x3000) == 0` |
+| `BIHNZ` | 9498 | 9503 | `extract(get_vr<u16[8]>(op.rt), 6) != 0` | `... & 0x3000) != 0` |
+| `BRZ` | 9702 | 9710 | `extract(get_vr(op.rt), 3) == 0` | `... >= 0` |
+| `BRNZ` | 9781 | 9789 | `extract(get_vr(op.rt), 3) != 0` | `... < 0` |
+| `BRHZ` | 9829 | 9837 | `extract(get_vr<u16[8]>(op.rt), 6) == 0` | `... & 0x3000) == 0` |
+| `BRHNZ` | 9877 | 9885 | `extract(get_vr<u16[8]>(op.rt), 6) != 0` | `... & 0x3000) != 0` |
+
+## The guard holds at all eight sites, and I checked before I changed them
+
+The equivalence of the two spellings depends on the `sext` guard. A site that
+reaches the lane extract without the guard is a **wrong** branch. A faster and
+wrong branch lowering is the worst result available here.
+
+Every one of the eight sits inside
+`if (auto [ok, x] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)`.
+`llvm_sext::match` (`CPUTranslator.h:2001`) accepts the register value only when
+it is an `llvm::Instruction::SExt` cast, when the destination type is exactly
+`VT`, and when the source matches `bool[N]`. A sign extension from `i1` writes
+all-zeros or all-ones into every lane, by definition. So no gated site can see a
+mixed lane.
+
+| opcode | `match_vr` types the guard admits | fallback the extract arm copies |
+| --- | --- | --- |
+| `BIZ`, `BINZ`, `BRZ`, `BRNZ` | `s32[4]`, `s64[2]` | `extract(get_vr(op.rt), 3)` |
+| `BIHZ`, `BIHNZ`, `BRHZ`, `BRHNZ` | `s8[16]`, `s16[8]`, `s32[4]`, `s64[2]` | `extract(get_vr<u16[8]>(op.rt), 6)` |
+
+Two further checks came back clean:
+
+* **The interpreter path cannot reach the gate.** `match_vr` returns an empty
+  match when `m_block` is null, and `m_block` is null under `m_interp_magn`. So
+  the interpreter builder keeps the fallback it always used.
+* **The extract arm is the fallback each function already carries**, not new
+  arithmetic. `BIZ` falls through to `extract(get_vr(op.rt), 3) == 0` at
+  `:9381`, and `BIHZ` to `extract(get_vr<u16[8]>(op.rt), 6) == 0` at `:9482`.
+
+**I changed all eight. I left none on the movemask path.**
+
+One movemask remains in the file and it is not a branch. `GBB`'s portable
+fallback at `:5881` writes the mask into a register as a value. The gate does not
+touch it.
+
+## The source contract test, and the proof it can fail
+
+`tools/test_thor_spu_branch_extract.py` asserts four things: the gate exists, the
+default is `0`, all eight sites are gated with the correct lane and polarity, and
+the property read is hoisted into the member. It also asserts that the `sext`
+guard sits above every gated site, and that no movemask branch predicate escapes
+the gate.
+
+A check nobody has shown can catch anything is not trusted here. I rebuilt five
+regressions on a scratch copy of the two files. The test exits `1` on every one,
+and exits `0` again after the restore:
+
+| regression | what the test reported |
+| --- | --- |
+| `BRHNZ` loses its gate | `BRHNZ has 0 gated branch lowering(s)`, plus an ungated movemask |
+| the default flips to on | `an absent property does not default to off` |
+| one site calls the accessor | `2 call(s) to thor::spu_branch_extract(), expected 1` |
+| `BIHZ` loses the `sext` guard | `reaches the lane extract with no sext guard above it` |
+| `BRHZ` extracts lane 7 | `extract arm is ... 7) == 0, expected ... 6) == 0` |
+
+## The gate reaches the shipped library
+
+This fork has shipped three gates that compiled, linked and did nothing. So the
+build was checked against the binary, not against the source.
+
+`./gradlew assembleThortest -PrpcsxThorDebuggable=1` gives **0 errors**, and 0
+`unused parameter` or `unused variable` warnings. Then, in the stripped
+`librpcsx-android.so` that the APK packages:
+
+| check | result |
+| --- | --- |
+| `debug.rpcsx.thor.spu_branch_extract` in the stripped `.so` | **1** |
+| the same string inside `lib/arm64-v8a/` of the APK | **1** |
+| `RPCSX_THOR_SPU_BRANCH_EXTRACT` in the stripped `.so` | 1 |
+| `debug.rpcsx.thor.lv2_spin`, a control that works | 1 |
+
+The string alone proves little, so the code was read as well. `llvm-nm` on the
+unstripped library finds `thor::spu_branch_extract()::enabled`, its guard
+variable, and the lambda. `llvm-objdump` on the lambda shows an `adrp`/`add` to
+`0x15c9a8`, a `bl __system_property_get`, and a `getenv` fallback. The two
+addresses hold `debug.rpcsx.thor.spu_branch_extract` and
+`RPCSX_THOR_SPU_BRANCH_EXTRACT`. So the property read is real.
+
+## How to measure it
+
+The device is shared. Do not run this while another session holds the Thor.
+
+The A/B needs a cache clear, because the SPU native object cache key hashes the
+optimized IR. A cached object from the movemask arm stays valid until you clear
+it. `adb shell` **cannot** unlink under `files/cache/cache/`: that directory is
+`drwxrws---`, but `BLUS30161/`, `ppu-*/` and `spu-native-v2/` below it are
+`drwxr-s---`. Use `run-as`, which needs a debuggable build.
+
+1. Disassemble the **old** cache first, before you clear it. Reproduce the
+   published `addv h` count of 1,402 on the pre-change corpus. That step proves
+   the pipeline works. A broken pipeline returns zero for every mnemonic and
+   reads as a perfect result.
+2. Set `debug.rpcsx.thor.spu_native_object_cache=1`. The cache is off by default,
+   and a boot without it writes nothing.
+3. Clear the cache with
+   `adb shell run-as net.rpcsx.easy rm -rf files/cache/cache/BLUS30161`.
+4. Confirm the clear with a re-`ls` that reads **0**. Never trust the exit status
+   of the `rm`.
+5. Boot the title with the property at `0`. Record `p95` frame time from
+   `dumpsys SurfaceFlinger --latency` on the `(BLAST)` layer. Record CPU.
+6. Repeat step 3, step 4 and step 5 with
+   `debug.rpcsx.thor.spu_branch_extract=1`.
+7. Pull `spu-native-v2` from both boots. Disassemble both with NDK
+   `llvm-objdump`. Count `addv h, v.8h` fed by a `zip1` in both.
+
+The counts decide whether the change landed. The `addv h` count must fall in the
+second arm, and the `umov w, v.s[3]` count must rise. `SPU Runtime: Built 1188
+functions.` in `RPCSX.log` tells a real boot from a boot that never reached the
+SPU runtime.
+
+Alternate the arms and repeat them. A conclusion from one boot is a conclusion
+about one boot.
+
+**Two cautions on the frame-time and CPU arms.** Eternal Sonata CPU cannot
+resolve anything below about 1.4 cores, so a small CPU delta means nothing on
+that title. And `-PrpcsxThorDebuggable=1` only changes the APK manifest now;
+`build.gradle.kts` pins `-DCMAKE_BUILD_TYPE=RelWithDebInfo`, so the native
+optimization level matches a release build.
+
+## The reach question is still open, and it is bigger than a rounding error
+
+**Only 786 of the 1,402 `addv h`←`zip1` sites are attributable to these eight
+opcodes.** 748 carry a `tbnz`/`tbz` on bit `#0xf`, and 38 carry a
+`tst w, #0x3000`. The other **616 are unexplained**.
+
+So the gate can improve at most 786 sites, until somebody attributes the
+remaining 616. Whatever emits those 616 is a different lowering, and this gate
+does not reach it. The disassembly in step 7 above is the artifact that closes
+the gap: classify every unattributed `addv h` by the instruction that follows the
+`fmov`.
+
+And the site count weighs compiled bytes, not execution. This repo holds the
+proof that the two differ by orders of magnitude: two instructions in one 64-byte
+SPU block hold about 20% of gameplay cycles, and they are 0.0004% of the corpus.
+A compiled-byte share bounds nothing in either direction.
