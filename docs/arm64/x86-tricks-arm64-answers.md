@@ -406,6 +406,10 @@ through to the `extract(..., 3)` path it already has.
 compiled code.** No speed figure is given, and none should be, until the profile
 weights it.
 
+**Correction, from the compiler check below: the count is 6, not 4.** The
+compiled sequence is 8 instructions and the lane extract is 2. The halfword pair
+is 9 against 2. The section below gives both sequences.
+
 ## What this document does not establish
 
 * **Nothing here is measured on the device.** Every count comes from the
@@ -417,3 +421,220 @@ weights it.
   the instruction that defines each source register. It cannot follow a value
   across a basic block. The control is the `addv s, v.4s` count of 615, which is
   one per verification site and agrees with 1,664 divided by 2.7 pairs per site.
+
+---
+
+# The candidate passes check 1: LLVM keeps the lane extract
+
+The section above lists two checks that must pass before anybody writes code.
+This section answers check 1 and it does not change the recompiler. It also
+answers the semantics question, which outranks the instruction count.
+
+**Verdict: the candidate is ALIVE.** LLVM does not fold the lane extract back
+into a movemask. The two spellings compute the same predicate for every input
+the guard permits. The reach is still unknown, and check 2 stays open.
+
+## What I compiled, and with what
+
+I wrote the two spellings as LLVM IR. I copied the shape from
+`SPULLVMRecompiler.cpp`: `BIZ` at `:9356`, `BINZ` at `:9417`, `BIHZ` at `:9449`,
+`BRZ` at `:9684`. The guard is
+`match_expr(c, sext<VT>(match<bool[N]>()))`, so the register holds a
+sign-extended lane mask. The IR therefore holds the producer, which is an `icmp`
+and a `sext`. The IR also stores the register, because the block end writes every
+SPU register back to the state.
+
+Two toolchains compiled the same file:
+
+| toolchain | clang | why |
+| --- | --- | --- |
+| NDK `28.2.13676358` | 19.0.1 | nearest to the LLVM the JIT links |
+| NDK `29.0.14206865` | 21.0.0 | the current NDK |
+
+The JIT links LLVM **19.1.7** — `3rdparty/llvm/llvm`, commit `cd708029e0b2`.
+The target flags are
+`-target aarch64-linux-android21 -mcpu=cortex-a78+sha3+dotprod+i8mm`, which is
+the JIT line `cpu=cortex-a78 attrs=+sha3,+dotprod,+i8mm,-sve,-sve2`.
+`cortex-a78` carries no SVE, so the two negatives add nothing.
+
+**The JIT runs no InstCombine.** Its pipeline is EarlyCSE, SimplifyCFG, DSE,
+LICM and ADCE (`SPULLVMRecompiler.cpp:3547-3553`), plus the fork's own transform
+passes (`CPUTranslator.cpp:592`). The codegen level is `Aggressive`
+(`util/JITLLVM.cpp:1163`). So each file compiled twice: once at full `-O3`, and
+once with `-Xclang -disable-llvm-passes`, which keeps codegen at `-O3` and
+removes the IR pipeline. The second run is the faithful one.
+
+## The two sequences, read from the assembly
+
+All four combinations — two clang versions by two pipelines — give the same two
+sequences. The `cmgt` and the `str q0` belong to the producer and to the
+register write, so both forms carry them.
+
+**The movemask spelling, which the recompiler emits today:**
+
+```
+adrp   x8, .LCPI0_0
+cmgt   v0.4s, v0.4s, v1.4s          ; the producer
+ldr    q1, [x8, :lo12:.LCPI0_0]     ; the weight vector 01 02 04 08 ... 80
+str    q0, [x0]                     ; the register write
+and    v0.16b, v0.16b, v1.16b
+ext    v1.16b, v0.16b, v0.16b, #8
+zip1   v0.16b, v0.16b, v1.16b
+addv   h0, v0.8h
+fmov   w8, s0
+tbnz   w8, #15, .LBB0_2
+```
+
+**The lane-extract spelling, which the same function already carries as its
+fallback:**
+
+```
+cmgt   v0.4s, v0.4s, v1.4s          ; the producer
+mov    w8, v0.s[3]                  ; the UMOV alias
+str    q0, [x0]                     ; the register write
+cbz    w8, .LBB1_2
+```
+
+Count the work that belongs to the branch, and leave out the producer and the
+register write:
+
+| form | instructions | which |
+| --- | --- | --- |
+| movemask, word | **8** | `adrp`, `ldr q`, `and`, `ext`, `zip1`, `addv`, `fmov`, `tbnz` |
+| lane extract, word | **2** | `umov`, `cbz` |
+| movemask, halfword | **9** | the same, then `tst w, #0x3000` and `b.eq` |
+| lane extract, halfword | **2** | `umov w, v.h[6]`, `cbz` |
+
+The published disassembly starts at `ldr q2, [x9]`, so the on-device cache
+shares the `adrp` between sites. The saving is therefore **6 instructions** for
+the word pair and **7** for the halfword pair, or 5 and 6 if the `adrp` stays.
+
+`ext` + `zip1` builds the mask because `trunc<bool[16]>` reads **bit 0** of each
+byte, not bit 7. LLVM never selects the `SHRN` trick here.
+
+## The 64-bit and halfword variants behave the same way
+
+`VT` can be `s64[2]`, and `BIHZ` also accepts `s8[16]` and `s16[8]`. Every one
+gives the same movemask sequence. The halfword form keeps `tst w, #0x3000` at
+every lane width, so LLVM does not reduce the two-bit test to one bit even when
+the producer makes the two bits equal.
+
+## One case where the lane extract costs 3, not 2
+
+At full `-O3`, and only when the SPU register is dead after the branch, LLVM
+folds `extract(sext(cmp), 3)` into `xtn v0.4h, v0.4s` plus `umov w8, v0.h[3]`
+plus `tbz w8, #0`. That is 3 instructions, still against 8. InstCombine performs
+that fold, and the JIT does not run InstCombine, so the JIT gets 2.
+
+## The hardware rows, for A715 and A710
+
+`config.yml` puts the SPU threads on `CPU5` and `CPU6`, which are the A710 and
+A715 cluster. The rows come from the vendored guides in
+[`docs/hardware/`](../hardware/).
+
+| instruction | A715 lat | A715 thr | A715 pipes | A710 lat | A710 thr | A710 pipes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `LDR` vector, unsigned immed | 6 | 3 | `L` | 6 | 3 | `L` |
+| `AND` vector | 2 | 2 | `V` | 2 | 2 | `V` |
+| `EXT` | 2 | 2 | `V` | 2 | 2 | `V` |
+| `ZIP1` | 2 | 2 | `V` | 2 | 2 | `V` |
+| **`ADDV` 8B/8H** | **5** | **1** | **`V1`, `V`** | **4** | **1** | **`V1`, `V`** |
+| **`FMOV`, vec to gen reg** | **4** | **2** | `V` | **2** | **1** | `V` |
+| `UMOV`/`SMOV`, element to gen reg | 2 | 1 | `V` | 2 | 1 | `V` |
+
+The two cores disagree on two rows. A715 pays 5 for `ADDV` 8H and 4 for `FMOV`;
+A710 pays 4 and 2. The A715 table earlier in this document gives the A715
+numbers, and they stand.
+
+The dependency chain from the producer to the branch is the number that moves
+most. The movemask form chains `and` 2, `ext` 2, `zip1` 2, `addv` 5, `fmov` 4,
+which is **15 cycles on A715** and 12 on A710. The lane-extract form chains one
+`umov`, which is **2 cycles** on both. `ADDV` also sits on `V1`, the pipe that
+carries every vector shift, and `UMOV` runs on all `V` pipes.
+
+## The semantics: the two spellings agree, and the guard is why
+
+`trunc<bool[16]>` reads bit 0 of each byte. `bitcast<s16>` then puts byte *i* at
+bit *i*, because AArch64 is little-endian. Byte 15 holds the top byte of word 3,
+so bit 15 of the mask is bit 24 of the preferred slot. The guard forces every
+lane to `0x00...0` or `0xff...f`, so bit 24 of word 3 is zero exactly when word 3
+is zero. `extract(get_vr(op.rt), 3) == 0` reads word 3, because `get_vr` defaults
+to `u32[4]` (`SPULLVMRecompiler.cpp:799`).
+
+I did not stop at the argument. I compiled the four predicates as LLVM IR and ran
+them on the host, which is also little-endian:
+
+| population | patterns | mismatches |
+| --- | --- | --- |
+| word forms, every lane 0 or -1 | 16, exhaustive | **0** |
+| halfword forms, every byte 0 or -1 | 65,536, exhaustive | **0** |
+| word forms, arbitrary bytes | 200,000 random | 100,127 |
+| halfword forms, arbitrary bytes | 200,000 random | 50,227 |
+
+**The two spellings are equivalent for every input the guard permits, and for
+nothing else.** The last two rows matter as much as the first two. They show the
+`sext` guard is load-bearing, so a change must keep the guard or must delete the
+fast path and fall through. The eight fallbacks already carry the correct
+predicate: `extract(get_vr(op.rt), 3)` for the four word opcodes, and
+`extract(get_vr<u16[8]>(op.rt), 6)` for the four halfword opcodes.
+
+## Check 2 is open, and no artifact in this repo can close it
+
+The 1,402 count weighs compiled bytes. It says nothing about execution. This repo
+holds the proof that the two differ by orders of magnitude: **two instructions in
+one 64-byte SPU block are about 20% of gameplay cycles**, and those two
+instructions are 0.0004% of the corpus
+([`jit-emitted-code.md`](jit-emitted-code.md)). A compiled-byte share therefore
+bounds nothing in either direction.
+
+No profile artifact is stored in this repo. `debug-profiles/` holds emulator
+configuration, not samples. `debug-captures/` holds power JSON and wait-profiler
+lines. So no existing file can weight this candidate.
+
+One published number does bound it from one side. The symbolized gameplay
+profile — 120,782 samples — resolved the largest JIT cost to `__spu-cx00cc4`, a
+poll loop with no branch lowering in it. It holds about 20% of gameplay cycles,
+and this change cannot touch it. An earlier gameplay profile — 119,662 samples,
+a different run — puts all JIT code at 47.88%. The candidate competes for what
+is left, and the two profiles are not the same run.
+
+**The run that would weight it.** One boot, on the same title and the same
+gameplay scene as the corpus:
+
+1. Set `debug.rpcsx.thor.jit_perf_map=1` and
+   `debug.rpcsx.thor.spu_native_object_cache=1` before the boot.
+2. Record with `simpleperf` for the same duration as the 120,782-sample profile.
+3. Pull `perf-<pid>.map` and pull the `spu-native-v2` cache from the same boot.
+4. Disassemble the cache and record the offset of every `addv h, v.8h` that a
+   `zip1` feeds.
+5. Join the sample addresses to `(symbol, offset)` through the map, and sum the
+   samples that land on those 7-instruction runs.
+
+The result is the honest weight: the share of gameplay cycles that the sequence
+holds. Do not run this on a device another session is using.
+
+## An attribution gap that must close first
+
+The section above counts 1,402 `addv h, v.8h` fed by a `zip1`. Only **786** of
+them carry a terminator these eight opcodes produce: 748 `tbnz`/`tbz` on bit
+`#0xf`, and 38 `tst w, #0x3000`. The other **616** are not attributed.
+
+I tested the obvious explanation and it failed. A halfword site whose producer
+has 16-bit or wider lanes makes mask bits 12 and 13 equal, so LLVM could test one
+bit. It does not: every lane width still emits `tst w, #0x3000`.
+
+So the 1.1% figure covers at most 786 confirmed sites until somebody attributes
+the other 616. This is the same failure this document already records once: the
+count was right and the attribution was not. The disassembly needed to close it
+is the same artifact the run above pulls.
+
+## What this section establishes, and what it does not
+
+* **Compiled and read:** both assembly sequences, at two clang versions and two
+  pipelines, at the JIT's target.
+* **Compiled and run:** the equivalence of the two predicates, exhaustively over
+  the guarded population.
+* **Reasoned, not measured:** the cycle counts of the two dependency chains. They
+  come from the vendored guides, not from the device.
+* **Not established:** what fraction of gameplay time the sequence holds, and how
+  many of the 1,402 sites are these eight opcodes.
