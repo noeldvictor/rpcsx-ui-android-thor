@@ -1039,7 +1039,7 @@ is from **emitted machine code** (`jit-emitted-code.md`), not from source.
 | technique | classic non-crypto use | status here |
 | --- | --- | --- |
 | SHA-3 `BCAX` / `EOR3` | 3-input bitwise in one op | **exploited** — 327 `bcax`, SPU `EQV` and both `SHUFB` selector paths |
-| `SDOT`/`UDOT` (dotprod) | bit-gather, horizontal sums | **exploited** — 1,661 `udot`, SPU `GB` and `SUMB` |
+| `SDOT`/`UDOT` (dotprod) | bit-gather, horizontal sums | **exploited, but check the attribution** — 1,664 of the 1,673 `udot` are the block-verification accumulate. `SUMB` emits 9, `GB` emits 31 `sdot`. See [`x86-tricks-arm64-answers.md`](x86-tricks-arm64-answers.md) |
 | `TBL`/`TBX` | universal permute | **exploited** — 5,916 + 1,455 |
 | i8mm `SMMLA`/`UMMLA` | widening multiply | live but rare (17 / 13) |
 | **`PMULL`** (carry-less multiply) | **bit interleave / Morton**, CRC, GF(2) | **unused — and cold here, see below** |

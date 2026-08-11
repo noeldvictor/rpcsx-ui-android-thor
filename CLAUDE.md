@@ -194,15 +194,20 @@ rather than assumed. The *pipes* column decides more than the latency does:
 
 Two things fall out. **`TBX` beats `TBL` on this core** — four pipes against two,
 throughput 4 against 2 — so the `SHUFB` path emitting `TBX2`, recorded below as a
-correctness requirement, is also the faster form by a factor of two. And **`USHL` is
+correctness requirement, is also the faster form by a factor of two.
+**Corrected: that row is X3 only, and it inverts on the cluster SPU runs on.** On
+A715 and A710, `TBL` with 1 or 2 tables is latency 2 at throughput 2 on all `V`
+pipes, and 2-table `TBX` is latency 4 at throughput 1. So `TBX2` in `SHUFB`
+stays for correctness and is the *slower* form on `CPU5`/`CPU6`. See
+[`x86-tricks-arm64-answers.md`](docs/arm64/x86-tricks-arm64-answers.md). And **`USHL` is
 the only lowering here stuck on a two-pipe group**; it is used for `inf_shl`/`inf_lshr`
 to dodge an LLVM poison-value pessimization, so it is load-bearing, but if a hot block
 is shift-heavy that `V13` restriction is where it will show.
 
 | feature | instruction | where |
 | --- | --- | --- |
-| `asimddp` | `SDOT`/`UDOT` | SPU `SUMB`; SPU `GB` bit-gather via a shift-and-sum constant |
-| `i8mm` | `SMMLA`/`UMMLA` | SPU multiply widening |
+| `asimddp` | `SDOT`/`UDOT` | SPU `SUMB` (9 emitted); SPU `GB` bit-gather via a shift-and-sum constant (31 `sdot`); **and the block-verification accumulate, which is 1,664 of the 1,673 `udot`** |
+| `i8mm` | `SMMLA`/`UMMLA` | SPU `GBH`/`GBB` bit-gather, 26 emitted |
 | `sha3` | `BCAX` | SPU `EQV`, and both `SHUFB` selector paths |
 | — | `TBL`/`TBX`, `TBL2`/`TBX2` | SPU `SHUFB`, `ROTQBY` family, PPU `VPERM` |
 | — | `UABD` | SPU `ABSDB` only in principle. **Removed from the block-verification checksum** — `\|a - b\|` is not injective and the checksum decides block identity; see [`armsx3-comparison.md`](docs/arm64/armsx3-comparison.md). After the fix the on-device cache contains **zero** `uabd`, so Eternal Sonata never issues `ABSDB` |
@@ -514,10 +519,11 @@ stands on its own and this file is the map.
 | document | what is in it |
 | --- | --- |
 | [`docs/arm64/codegen.md`](docs/arm64/codegen.md) | What this fork does: the lowerings chosen here, the missing movemask, the SPU opcode audit, and the x86-habit table that produced most of the real defects. |
+| [`docs/arm64/x86-tricks-arm64-answers.md`](docs/arm64/x86-tricks-arm64-answers.md) | **The seven x86 instructions RPCS3 abuses for SPU work, answered for AArch64.** None of the seven is a candidate; together they are 0.04% of emitted code. It corrects two claims in this file: **1,664 of the 1,673 `udot` are the block-verification accumulate, not `SUMB` or `GB`**, and **`TBX` does not beat `TBL` on A715/A710**. The real candidate it found is the SPU branch lowering, which builds a 16-bit movemask at 1,402 sites to test one bit. |
 | [`docs/arm64/microarchitecture.md`](docs/arm64/microarchitecture.md) | What the hardware does: instruction latency, throughput and pipe assignment from the vendored per-core guides, the forwarding regions, and the chapter 4 rules. |
 | [`docs/arm64/memory-model.md`](docs/arm64/memory-model.md) | Atomics and ordering: the LSE2 128-bit path (no longer dead — see below), the reservation seqlock, RCsc versus RCpc, and instruction-cache maintenance. |
 | [`docs/arm64/lv2-ppu-spin.md`](docs/arm64/lv2-ppu-spin.md) | **The largest finding here, and the only one from a real profile.** 73.9% of all cycles are a nop-spin in two lv2 wait syscalls; the same loop appears at eight sites across the guest sync layer. |
-| [`docs/arm64/jit-emitted-code.md`](docs/arm64/jit-emitted-code.md) | **What the SPU JIT actually emits**, disassembled from the on-device cache: 1,185 objects, 509,468 instructions. `udot` at 1,661 confirms the video's optimization is taken, not merely enabled. The largest visible cost is stack traffic — `sp` is the second hottest base register, 10.1% of all instructions. |
+| [`docs/arm64/jit-emitted-code.md`](docs/arm64/jit-emitted-code.md) | **What the SPU JIT actually emits**, disassembled from the on-device cache: 1,185 objects, 509,468 instructions. `udot` at 1,661 was read as proof the video's optimization is taken. **Corrected:** 1,664 of the 1,673 post-fix `udot` are the **block-verification accumulate**; `SUMB` emits **9**. The largest visible cost is stack traffic — `sp` is the second hottest base register, 10.1% of all instructions. |
 | [`docs/arm64/armsx3-comparison.md`](docs/arm64/armsx3-comparison.md) | **ARMSX3 diffed against upstream RPCS3**, so their work is separated from what they inherited. **The one correctness item in the diff was ours too** — the SPU checksum's non-injective `UABD` fold, inherited from upstream master, now fixed here. Their NEON `copy_data_swap_u32` is ported (unmeasured). They do not touch the wait/spin problem at all; we hold a measured 13.8% on the DMA threshold and have ARM AES they lack. Two of their changes still challenge our config: they un-pinned the JIT CPU, and their affinity actually applies because they enable `thread_scheduler_mode::alt`. |
 | [`docs/arm64/three-way-audit.md`](docs/arm64/three-way-audit.md) | **The second pass of the three-way method**, over the six files the gameplay profile makes hot. One correctness item: the SPU **ubertrampoline** reaches other cores with **no instruction cache maintenance** in our tree and in upstream, and ARMSX3 flushes it. Two defects live in the other two trees and are already fixed here: PPU `FCTIW`/`FCTID` and SPU `CFLTS`/`CFLTU` apply an **x86 saturation correction on AArch64**, which turns a correct value into the wrong one. No second non-injective fold exists, and no dead ARM branch exists in the hot files. |
 | [`docs/arm64/busy-wait-inventory.md`](docs/arm64/busy-wait-inventory.md) | **Every `busy_wait` site with its real duration in µs**, computable statically because `get_tsc` is `cntvct_el0` at 19.2 MHz. Six sites pass no argument and so took the x86 default of 3000 — 156 µs each — and could not have been part of the hand-retune. `shared_mutex` spins **1.56 ms** in front of a working futex. |

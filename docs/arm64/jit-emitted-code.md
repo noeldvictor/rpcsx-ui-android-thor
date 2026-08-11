@@ -40,6 +40,16 @@ CLAUDE.md said the SDOT/UDOT work was "already here", citing call sites, the
 `HWCAP_ASIMDDP` gate and a log line reading `dotprod=true`. All of that proves the
 path is *enabled*. This proves it is *taken*.
 
+**Corrected: the instruction is taken, and the operation is not the one the video
+describes.** Each `udot` was classified by the instruction that defines its two
+sources. **1,664 of the 1,673 post-fix `udot` are the block-verification
+accumulate** at `SPULLVMRecompiler.cpp:2172`, which pairs two `cmeq` masks and is
+not an SPU opcode. SPU `SUMB` emits **9**; SPU `GB` emits 31 `sdot`; `GBH` and
+`GBB` emit 26 `smmla`/`ummla`. The control is the 615 `addv s, v.4s`, one per
+verification site. This page asked "is the instruction present" and never "which
+lowering emitted it". Full account in
+[`x86-tricks-arm64-answers.md`](x86-tricks-arm64-answers.md).
+
 **The zeros are not defects.** `urhadd` (SPU `AVGB`) and `sqadd`/`uqadd`
 (saturating arithmetic) are recorded elsewhere as clean lowerings, and they are —
 they simply never fire, because this title's SPU code does not use those opcodes.
