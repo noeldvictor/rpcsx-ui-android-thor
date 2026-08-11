@@ -43,9 +43,23 @@ namespace vm
 		u8 waiters_index = 0;
 	};
 
-	static inline std::pair<atomic_t<reservation_waiter_t>*, atomic_t<reservation_waiter_t>*> reservation_notifier(u32 raddr)
+	// One cache line for each waiter slot.
+	//
+	// Upstream RPCS3 pads this array to 128 bytes for each entry. This chip has a
+	// 64-byte cache line and a 64-byte CWG, both read from CTR_EL0, so 64 is the
+	// right value here. The 128 is an x86 choice, because Intel pairs two 64-byte
+	// lines in its adjacent-line prefetch.
+	//
+	// Without the padding eight slots share one line. reservation_notifier hands
+	// out eight slots for each address group, and the notifier writes the index
+	// in slot 0 of the group, so every waiter in the group loses its line each
+	// time. The measured gameplay profile puts six SPU threads in vm::writer_lock
+	// at the same time, which is the traffic this padding separates.
+	constexpr usz reservation_waiter_align = 64;
+
+	static inline std::pair<atomic_t<reservation_waiter_t, reservation_waiter_align>*, atomic_t<reservation_waiter_t, reservation_waiter_align>*> reservation_notifier(u32 raddr)
 	{
-		extern std::array<atomic_t<reservation_waiter_t>, 1024> g_resrv_waiters_count;
+		extern std::array<atomic_t<reservation_waiter_t, reservation_waiter_align>, 1024> g_resrv_waiters_count;
 
 		// Storage efficient method to distinguish different nearby addresses (which are likely)
 		constexpr u32 wait_vars_for_each = 8;
@@ -68,7 +82,7 @@ namespace vm
 		return reservation_notifier(raddr).first->load().waiters_count;
 	}
 
-	static inline void reservation_notifier_end_wait(atomic_t<reservation_waiter_t>& waiter)
+	static inline void reservation_notifier_end_wait(atomic_t<reservation_waiter_t, reservation_waiter_align>& waiter)
 	{
 		waiter.atomic_op([](reservation_waiter_t& value)
 			{
@@ -79,9 +93,9 @@ namespace vm
 			});
 	}
 
-	static inline atomic_t<reservation_waiter_t>* reservation_notifier_begin_wait(u32 raddr, u64 rtime)
+	static inline atomic_t<reservation_waiter_t, reservation_waiter_align>* reservation_notifier_begin_wait(u32 raddr, u64 rtime)
 	{
-		atomic_t<reservation_waiter_t>& waiter = *reservation_notifier(raddr).first;
+		atomic_t<reservation_waiter_t, reservation_waiter_align>& waiter = *reservation_notifier(raddr).first;
 
 		waiter.atomic_op([](reservation_waiter_t& value)
 			{

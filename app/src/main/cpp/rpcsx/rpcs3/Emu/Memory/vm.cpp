@@ -486,6 +486,13 @@ namespace vm
 		{
 			to_clear = for_all_range_locks(to_clear, [&](u32 addr2, u32 size2)
 				{
+					// Drop the range lock flag bits before the size is used as a size.
+					// spu_thread::reservation_check now stamps its slot with
+					// vm::range_readable, which would otherwise read as a 1 GiB range
+					// here, and which can wrap the end address in high memory.
+					// range_lock_internal already strips the flags the same way.
+					size2 = (size2 << range_bits) >> range_bits;
+
 					if (range.overlaps(utils::address_range::start_length(addr2, size2))) [[unlikely]]
 					{
 						return 1;
@@ -750,6 +757,20 @@ namespace vm
 			{
 				to_clear = for_all_range_locks(to_clear & ~get_range_lock_bits(true), [&](u64 addr2, u32 size2)
 					{
+						// Upstream RPCS3 1250e428a. Skip a range lock that only marks
+						// its range readable. spu_thread::reservation_check stamps its
+						// slot with vm::range_readable, and such a reader never writes,
+						// so this writer does not need to wait for it.
+						//
+						// The flag bits sit in the top three bits of the u64 lock word,
+						// which is the top three bits of size2 after the shift.
+						constexpr u32 range_size_loc = vm::range_pos - 32;
+
+						if ((size2 >> range_size_loc) == (vm::range_readable >> vm::range_pos))
+						{
+							return 0;
+						}
+
 						// Split and check every 64K page separately
 						for (u64 hi = addr2 >> 16, max = (addr2 + size2 - 1) >> 16; hi <= max; hi++)
 						{

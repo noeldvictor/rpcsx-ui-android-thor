@@ -1639,7 +1639,9 @@ static FORCE_INLINE void __arm64_monitor_wait(const void* cline, const Args&... 
 
 namespace vm
 {
-	std::array<atomic_t<reservation_waiter_t>, 1024> g_resrv_waiters_count{};
+	// 1024 slots at 64 bytes for each slot: 65,536 bytes, up from 8,192.
+	// See the comment on reservation_waiter_align in vm_reservation.h.
+	std::array<atomic_t<reservation_waiter_t, reservation_waiter_align>, 1024> g_resrv_waiters_count{};
 }
 
 void do_cell_atomic_128_store(u32 addr, const void* to_write);
@@ -7065,7 +7067,10 @@ bool spu_thread::reservation_check(u32 addr, const decltype(rdata)& data) const
 
 	// Ensure data is allocated (HACK: would raise LR event if not)
 	// Set range_lock first optimistically
-	range_lock->store(u64{128} << 32 | addr);
+	//
+	// Upstream RPCS3 1250e428a: mark the slot readable. This reader never
+	// writes, so vm::writer_lock skips it during its range scan.
+	range_lock->store(u64{128} << 32 | addr | vm::range_readable);
 
 	u64 lock_val = *std::prev(std::end(vm::g_range_lock_set));
 	u64 old_lock = 0;
@@ -7146,7 +7151,10 @@ bool spu_thread::reservation_check(u32 addr, u32 hash, atomic_t<u64, 64>* range_
 
 	// Ensure data is allocated (HACK: would raise LR event if not)
 	// Set range_lock first optimistically
-	range_lock->store(u64{128} << 32 | addr);
+	//
+	// Upstream RPCS3 1250e428a: mark the slot readable. This reader never
+	// writes, so vm::writer_lock skips it during its range scan.
+	range_lock->store(u64{128} << 32 | addr | vm::range_readable);
 
 	u64 lock_val = *std::prev(std::end(vm::g_range_lock_set));
 	u64 old_lock = 0;
