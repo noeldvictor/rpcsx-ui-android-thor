@@ -213,9 +213,24 @@ if (-not $logLines -or $logLines -eq "0") {
 
 $ppuThreads = ((Invoke-Adb @("shell", "grep -c 'PPU\[0x' $log")) -join "").Trim()
 if ($ppuThreads -eq "0" -or -not $ppuThreads) {
+    # Tell a boot that is still working from a boot that is not happening.
+    #
+    # A cold cache means a full PPU precompile, and on this device that is long:
+    # measured 2026-08-13, Folklore's first `PPU[0x` line arrives at **0:27:01**.
+    # A settle window shorter than that ends while the boot is perfectly healthy.
+    # The first version of this check called that a failed boot, which would have
+    # voided every cold run. Precompile activity is the evidence that separates
+    # the two.
+    $workers = ((Invoke-Adb @("shell", "grep -c 'PPUW\.' $log")) -join "").Trim()
+
     Write-Host "--- last 25 log lines, for the diagnosis ---"
     Write-Host (((Invoke-Adb @("shell", "tail -25 $log")) -join "`n"))
-    throw "arm is void: no PPU thread lines in a $logLines line log, so the title never started. The process being alive is not the same as the game running."
+
+    if ($workers -ne "0" -and $workers) {
+        throw "arm is void, and the window was too short: the boot is still in PPU precompile ($workers worker lines, $logLines log lines) and has not reached emulation. Raise -SettleSeconds past the precompile, or run against a warm PPU cache."
+    }
+
+    throw "arm is void: no PPU thread lines and no precompile activity in a $logLines line log, so the title never started."
 }
 
 Write-Host "boot confirmed: $ppuThreads PPU thread lines in a $logLines line log"

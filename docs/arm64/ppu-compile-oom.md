@@ -139,6 +139,30 @@ compile parallelism, so a cold precompile takes longer. The argument for it is t
 a run which finishes beats a run which aborts. `Max LLVM Compile Threads` still
 overrides it.
 
+## First observation on device, 2026-08-13: the budget is live and chose 4
+
+A cold Folklore boot with the title cache parked ran **four** PPU compile
+workers, `PPUW.1.1` through `PPUW.1.4`, with `Max LLVM Compile Threads: 0` in the
+config, which means the automatic path. Before this change that path returned the
+thread count, which is **8** on this device. So the budget applies, and it is not
+the core count.
+
+Four is consistent with the arithmetic at the memory the device actually had:
+`(avail - 2 GB) / 1.5 GB = 4` needs about 8 GB available, and the other session's
+emulator was resident for this boot. A reading taken while the device was quiet
+gave `MemAvailable` of 10.3 GB, which predicts 5. **Neither number is a
+measurement of the fix's value** — they only show the code runs and the count
+moved off the core count.
+
+The same boot reproduced the oversized-module case this document is about:
+
+```
+PPU: LLVM: reporting used memory 1677524992 (free/total: 0/1610612736)
+```
+
+That is the request being larger than the whole budget, admitted as a sole user,
+exactly as the `value == m_total` arm describes above. It did not abort.
+
 **What to measure, and it needs Odin Sphere rather than a synthetic clear.** Boot
 `BLUS31601` cold and record two things: whether it passes module 60 of 93, and the
 worker count the allocator chose. The second is the one to check first, because a
