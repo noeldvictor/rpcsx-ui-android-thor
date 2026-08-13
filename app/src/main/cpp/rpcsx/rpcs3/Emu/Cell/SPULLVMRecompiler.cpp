@@ -15,6 +15,7 @@
 #include "SPUAnalyser.h"
 #include "SPUInterpreter.h"
 #include "thor_spu_branch_extract.h"
+#include "thor_spu_compile_claim.h"
 #include <algorithm>
 #include <thread>
 
@@ -1651,7 +1652,12 @@ public:
 		// of the trampoline. ARMSX3 measured up to five concurrent compilations of one
 		// item, and about two thirds of all cold compilation work as duplicates. It
 		// stopped SPURS bring-up on each cold boot of one title.
-		if (add_loc->llvm_compile_state.compare_and_swap(0, 1) != 0)
+		// debug.rpcsx.thor.spu_compile_claim = 0 restores the behaviour before this
+		// change, where each thread compiles the same item. It makes both arms
+		// measurable from one APK. See thor_spu_compile_claim.h.
+		const bool claim_enabled = thor::spu_compile_claim();
+
+		if (claim_enabled && add_loc->llvm_compile_state.compare_and_swap(0, 1) != 0)
 		{
 			// The sleep is bounded, and the loop leaves when this thread is aborting.
 			// The guard below releases the waiters on each ordinary exit of the owner.
@@ -1694,7 +1700,7 @@ public:
 					item->compiled.notify_all();
 				}
 			}
-		} claim_guard{add_loc};
+		} claim_guard{claim_enabled ? add_loc : nullptr};
 
 		bool add_to_file = false;
 
@@ -3760,8 +3766,11 @@ public:
 
 		// The function is published. Mark the compilation complete and release the
 		// threads that wait for the claim.
-		add_loc->llvm_compile_state.release(2);
-		add_loc->llvm_compile_state.notify_all();
+		if (claim_enabled)
+		{
+			add_loc->llvm_compile_state.release(2);
+			add_loc->llvm_compile_state.notify_all();
+		}
 
 		if (g_cfg.core.spu_debug)
 		{
