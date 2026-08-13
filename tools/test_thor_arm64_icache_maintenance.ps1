@@ -33,12 +33,24 @@ function Get-Code([string]$rel) {
     return ($raw -split "`n" | Where-Object { $_.Trim() -notmatch '^\s*//' }) -join "`n"
 }
 
+# JITASM.cpp joined this list on 2026-08-13, and it is the reason the list matters.
+# The test passed for weeks while that file still held the reversed bare pair,
+# because the test never read it. ARMSX3 found the two sites in it: their commit
+# c2b5f0c40. This is the failure this repo records more than any other, which is that
+# a search that finds nothing and a search that searches nothing look the same.
 $sources = @(
     "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/PPUThread.cpp",
     "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp",
     "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp",
+    "app/src/main/cpp/rpcsx/rpcs3/util/JITASM.cpp",
     "app/src/main/cpp/rpcsx/rpcs3/util/JITLLVM.cpp"
 )
+
+foreach ($rel in $sources) {
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $rel))) {
+        throw "$rel does not exist, so scanning it proves nothing. Fix the path before trusting a pass."
+    }
+}
 
 foreach ($rel in $sources) {
     $code = Get-Code $rel
@@ -92,4 +104,21 @@ if ($finalizers -lt 2) {
     throw "Expected both MemoryManager finalizeMemory overrides to flush; found $finalizers."
 }
 
-Write-Output "Thor ARM64 i-cache contract passed: no reversed bare barriers, remaining pairs are volatile DSB-then-ISB with a memory clobber, known ranges use __builtin___clear_cache, and both MCJIT memory managers flush code sections."
+# asmjit output is copied into executable memory by jit_runtime_base::_add, and
+# jit_runtime::finalize rewrites an executable snapshot in place when the emulator
+# restarts. Both are reached on ARM64: build_function_asm makes ppu_gateway
+# (PPUThread.cpp), tr_dispatch (SPUCommonRecompiler.cpp) and the thread entry
+# (Thread.cpp) through this runtime.
+$jitasm = Get-Code "app/src/main/cpp/rpcsx/rpcs3/util/JITASM.cpp"
+$asmClears = ([regex]::Matches($jitasm, '__builtin___clear_cache')).Count
+if ($asmClears -lt 2) {
+    throw "Expected jit_runtime_base::_add and jit_runtime::finalize to invalidate the code they write; found $asmClears __builtin___clear_cache call(s) in JITASM.cpp."
+}
+if ($jitasm -notmatch '__builtin___clear_cache\(reinterpret_cast<char\*>\(p\), reinterpret_cast<char\*>\(p\) \+ codeSize\)') {
+    throw "jit_runtime_base::_add no longer invalidates exactly the range it copied."
+}
+if ($jitasm -notmatch '__builtin___clear_cache\(reinterpret_cast<char\*>\(code_ptr\), reinterpret_cast<char\*>\(code_ptr\) \+ s_code_init\.size\(\)\)') {
+    throw "jit_runtime::finalize no longer invalidates the restored code snapshot."
+}
+
+Write-Output "Thor ARM64 i-cache contract passed: no reversed bare barriers, remaining pairs are volatile DSB-then-ISB with a memory clobber, known ranges use __builtin___clear_cache, both MCJIT memory managers flush code sections, and both asmjit publication sites in JITASM.cpp invalidate what they wrote."

@@ -5128,7 +5128,40 @@ struct jit_core_allocator
 
 	static s16 limit()
 	{
-		return static_cast<s16>(std::min<s32>(0x7fff, utils::get_thread_count()));
+		const s32 by_cores = std::min<s32>(0x7fff, utils::get_thread_count());
+
+#ifdef ANDROID
+		// Budget the automatic worker count against the memory the OS has now.
+		//
+		// The precompile memory budget bounds concurrency, not peak footprint: a
+		// module whose estimate is larger than the whole budget still runs, as a sole
+		// user. See docs/arm64/ppu-compile-oom.md. Scudo refused a 4 KB map inside
+		// RuntimeDyld relocation processing on this device, with every core running a
+		// worker.
+		//
+		// Total memory is the wrong number on a phone that also holds everything else
+		// the user runs. MemAvailable is the kernel's own estimate of what it can give
+		// out without swapping.
+		//
+		// ARMSX3 reserves 2 GB for the emulator and 1.5 GB for each worker. One large
+		// PPU module can take more than a gigabyte through MCJIT and relocation
+		// processing. The reading also comes before the emulator maps the PS3 address
+		// space, so part of what it counts is already spoken for. A user who wants
+		// more workers can still set Max LLVM Compile Threads, which this does not cap.
+		if (const auto [total_mem, used_mem] = utils::get_memory_usage(); total_mem > used_mem)
+		{
+			constexpr u64 emulator_reserve = 2048ull * 1024 * 1024;
+			constexpr u64 per_worker = 1536ull * 1024 * 1024;
+
+			const u64 avail_mem = total_mem - used_mem;
+			const u64 spare = avail_mem > emulator_reserve ? avail_mem - emulator_reserve : 0;
+			const s32 by_memory = static_cast<s32>(spare / per_worker);
+
+			return static_cast<s16>(std::max<s32>(1, std::min<s32>(by_cores, by_memory)));
+		}
+#endif
+
+		return static_cast<s16>(by_cores);
 	}
 };
 

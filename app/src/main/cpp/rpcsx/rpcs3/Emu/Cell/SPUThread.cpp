@@ -202,6 +202,50 @@ static FORCE_INLINE u32 get_thor_getllar_busy_percent(u32 configured) noexcept
 	return configured;
 }
 
+// How many times the GETLLAR out-buffer check can give the same "not a loop" answer
+// at one site before the spin detector stops believing it. See the call site in
+// process_mfc_cmd for what the answer costs when it is wrong.
+//
+// The default of 32 is the value ARMSX3 measured on Spider-Man: Web of Shadows. It
+// is unmeasured on this device and on this fork's titles.
+//
+//   adb shell setprop debug.rpcsx.thor.getllar_outbuf_cap 0     # never stop believing it
+//
+// Read once and cached, because the call site is in the GETLLAR retry path.
+static FORCE_INLINE u32 get_thor_getllar_outbuf_cap() noexcept
+{
+	constexpr u32 default_cap = 32;
+
+#ifdef ANDROID
+	static const int overridden = []() -> int
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.getllar_outbuf_cap", value) <= 0)
+		{
+			return -1;
+		}
+
+		char* end = nullptr;
+		const unsigned long parsed = std::strtoul(value, &end, 10);
+
+		if (end == value || *end || parsed > 0xffff)
+		{
+			return -1;
+		}
+
+		return static_cast<int>(parsed);
+	}();
+
+	if (overridden >= 0)
+	{
+		return static_cast<u32>(overridden);
+	}
+#endif
+
+	return default_cap;
+}
+
 static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
 {
 #ifdef ANDROID
@@ -6000,6 +6044,7 @@ bool spu_thread::process_mfc_cmd()
 									// Seemingly not
 									getllar_busy_waiting_switch = umax;
 									getllar_spin_count = 0;
+									getllar_outbuf_hits = 0;
 									return true;
 								}
 
@@ -6007,15 +6052,59 @@ bool spu_thread::process_mfc_cmd()
 								{
 									getllar_busy_waiting_switch = umax;
 									getllar_spin_count = 0;
+									getllar_outbuf_hits = 0;
 									return true;
 								}
 
+								// Check if LSA points to an OUT buffer on the stack from a caller - unlikely to be a loop
 								if (last_getllar_lsa >= SPU_LS_SIZE - 0x10000 && last_getllar_lsa > last_getllar_gpr1)
 								{
-									auto cs = dump_callstack_list();
+									// Keep the answer, because deriving it costs much more than it
+									// decides. dump_callstack_list walks the whole stack and calls
+									// is_exec_code for each candidate, which allocates a vector<bool>
+									// and scans for branch targets. ARMSX3 profiled that call at 19.6%
+									// of all process CPU on a title that spins on GETLLAR with an LSA
+									// in the top 64K of local store.
+									//
+									// Only the innermost frame is used. That frame is a function of pc,
+									// the stack pointer and the link register, so recompute it only
+									// when one of the three moves. A stale answer across an unrelated
+									// local store write is acceptable, because this decides only
+									// whether the address looks like a caller's OUT buffer.
+									const u32 cs_sp = gpr[1]._u32[3];
+									const u32 cs_lr = gpr[0]._u32[3];
 
-									if (!cs.empty() && last_getllar_lsa > cs[0].second)
+									if (getllar_cs_pc != pc || getllar_cs_sp != cs_sp || getllar_cs_lr != cs_lr)
 									{
+										getllar_cs_pc = pc;
+										getllar_cs_sp = cs_sp;
+										getllar_cs_lr = cs_lr;
+
+										const auto cs = dump_callstack_list();
+										getllar_cs_first = cs.empty() ? umax : cs[0].second;
+									}
+
+									// Stop believing the answer when repetition contradicts it.
+									//
+									// "Not a loop" is not free. It resets the spin count and it leaves
+									// the switch at umax. The caller then skips busy_wait, skips the
+									// sleep path, and returns at once, so the SPU runs GETLLAR again at
+									// full rate with no backoff. The spin count never reaches 4, so the
+									// spin optimisation is never evaluated, and the 400 ms fallback that
+									// forces a sleep is never reached. One SPU in that state holds a
+									// core at full issue rate.
+									//
+									// The same site with the same stack, this many times, is itself the
+									// evidence that it is a loop. Give it back to the normal spin
+									// detection and let that choose between a busy-wait and a sleep. Any
+									// real change of site or stack resets the count above, so a genuine
+									// OUT buffer keeps the original treatment.
+									const u32 outbuf_cap = get_thor_getllar_outbuf_cap();
+
+									if (getllar_cs_first != umax && last_getllar_lsa > getllar_cs_first &&
+										(outbuf_cap == 0 || getllar_outbuf_hits < outbuf_cap))
+									{
+										getllar_outbuf_hits++;
 										getllar_busy_waiting_switch = umax;
 										getllar_spin_count = 0;
 										return true;

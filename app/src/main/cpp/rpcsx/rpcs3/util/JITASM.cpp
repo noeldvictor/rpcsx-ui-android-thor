@@ -308,6 +308,17 @@ void* jit_runtime_base::_add(asmjit::CodeHolder* code, usz align) noexcept
 		}
 	}
 
+#if defined(ARCH_ARM64)
+	// Publish the copied code to instruction fetch.
+	//
+	// This function copies asmjit output into executable memory. Nothing did cache
+	// maintenance for it. Another core can fetch stale instructions for the range.
+	// AArch64 instruction caches are not coherent with the data caches, and this
+	// device reports CTR_EL0.DIC=0. The build reaches this path on ARM64 through
+	// build_function_asm, which makes ppu_gateway and the SPU dispatch trampoline.
+	__builtin___clear_cache(reinterpret_cast<char*>(p), reinterpret_cast<char*>(p) + codeSize);
+#endif
+
 	return p;
 }
 
@@ -384,16 +395,25 @@ void jit_runtime::finalize() noexcept
 	s_data_pos = 0;
 
 	// Restore code/data snapshot
-	std::memcpy(alloc(s_code_init.size(), 1, true), s_code_init.data(), s_code_init.size());
+	u8* const code_ptr = alloc(s_code_init.size(), 1, true);
+	std::memcpy(code_ptr, s_code_init.data(), s_code_init.size());
 	std::memcpy(alloc(s_data_init.size(), 1, false), s_data_init.data(), s_data_init.size());
 
 #ifdef __APPLE__
 	pthread_jit_write_protect_np(true);
 #endif
 #ifdef ARCH_ARM64
-	// Flush all cache lines after potentially writing executable code
-	asm("ISB");
-	asm("DSB ISH");
+	// Publish the restored code to instruction fetch.
+	//
+	// The emulator rewrites executable code in place here when it restarts. The
+	// previous sequence was asm("ISB"); asm("DSB ISH"). It did no cache maintenance,
+	// it had the two barriers in the opposite of the required order, and neither was
+	// asm volatile with a memory clobber. This is the same defect as the SPU branch
+	// sites in SPUCommonRecompiler.cpp, and it gets the same fix.
+	if (code_ptr && !s_code_init.empty())
+	{
+		__builtin___clear_cache(reinterpret_cast<char*>(code_ptr), reinterpret_cast<char*>(code_ptr) + s_code_init.size());
+	}
 #endif
 }
 

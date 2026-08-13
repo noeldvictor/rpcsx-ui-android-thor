@@ -114,3 +114,34 @@ should be repeated on one before any number here is treated as a threshold.
 - If it is real growth, the lever is the estimate at `PPUThread.cpp:7095` or the
   worker count, not the 1536 MB cap — raising a cap that admits oversized modules
   anyway will not change the outcome.
+
+## The worker count lever is now taken, 2026-08-13
+
+`jit_core_allocator::limit()` was upstream's: the thread count, and nothing else.
+**Eight LLVM workers on this device, with no reference to memory at all.** The
+budget above bounds concurrent *estimates*; it never bounded the number of workers
+that the estimates come from.
+
+ARMSX3 hit the same Scudo failure on two titles and fixed it twice, in `903220790`
+and `e7606bda0`. Their second set of numbers is now here: reserve 2 GB for the
+emulator, then 1.5 GB for each worker, measured against `MemAvailable` instead of
+installed memory. Two differences from their patch. It reuses
+`utils::get_memory_usage()`, which already reads `MemAvailable` in this tree. And it
+is `#ifdef ANDROID`, so the Windows build keeps the upstream count.
+
+Their reasoning, which is worth keeping: total memory is the wrong number on a phone
+that also holds everything else the user runs, one large PPU module can take more
+than a gigabyte through MCJIT and relocation processing, and the reading happens
+before the emulator maps the PS3 address space.
+
+**This is unmeasured here, and it is a trade, not a win.** It lowers the default
+compile parallelism, so a cold precompile takes longer. The argument for it is that
+a run which finishes beats a run which aborts. `Max LLVM Compile Threads` still
+overrides it.
+
+**What to measure, and it needs Odin Sphere rather than a synthetic clear.** Boot
+`BLUS31601` cold and record two things: whether it passes module 60 of 93, and the
+worker count the allocator chose. The second is the one to check first, because a
+device with plenty free will still choose several workers and will not test the
+change at all. That is this repo's own rule about proving that the arm you think you
+are running is the arm that runs.

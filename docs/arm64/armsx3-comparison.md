@@ -5,6 +5,12 @@ Android from the ARMSX2 team, public since ~2026-08-09, advertising "ARM64-focus
 optimizations". Same lineage as this fork, same target silicon — their Skate 3
 figure of ~20–30 fps is on a Snapdragon 8 Gen 2, the Thor's exact chip.
 
+> **Read the second pass first.** This document has two dated parts. The part below
+> compares their tree of 2026-08-10. [The second pass](#second-pass-2026-08-13)
+> compares their tree of 2026-08-12, and **it retracts two claims made here**: they
+> reverted the thread scheduler mode and the GETLLAR busy-wait percentage that this
+> page cites as their advantage. Their own measurements caused both reverts.
+
 **Method matters here.** The comparison downloaded the ARMSX3 tree *and* upstream
 `RPCS3/rpcs3` master and diffed them: **only 133 files differ.** That diff is what
 separates what ARMSX3 wrote from what they inherited, and without it every
@@ -143,6 +149,15 @@ A715 or an A710. The earlier `jit_cpu_native` A/B here was discarded as a phase
 mismatch, so this is **genuinely unmeasured**, and the right experiment is an
 explicit `-mcpu` per cluster with SVE forced off, not blind host detection.
 
+**RETRACTED 2026-08-13: their affinity no longer applies, because they removed it.**
+Commit `5f346b5e2` (2026-08-11) puts the thread scheduler back to the operating
+system. They read the masks that the threads carry, and they found that the
+big.LITTLE mask held **six SPU threads on four cores**, where Android grants all
+eight. Their note says the one-thread-per-core reasoning "breaks down at six". The
+paragraph below therefore does not describe their tree any more, and the
+demonstration that it claims does not exist. What survives is the rule this fork
+already has: confirm the placement with `Cpus_allowed_list` before you measure.
+
 **Their affinity actually applies.** They read `/sys/devices/system/cpu/cpuN/cpu_capacity`,
 add an `arm_big_little` arrangement, pin SPU/RSX to cores within 25% of peak
 capacity, and — crucially — enable `thread_scheduler_mode::alt` on Android,
@@ -193,3 +208,251 @@ thread placement, compile deduplication and one NEON kernel; ours is in the wait
 paths, AES and the DMA copy.** The two barely overlap, which means most of each
 side's work is portable to the other — and it also means neither project has yet
 touched the SPU self-loop that this fork measures at ~20% of gameplay CPU.
+
+# Second pass, 2026-08-13
+
+Their tree moved a long way in three days. This pass reads their master at
+`e10f846` (2026-08-12) instead of their tree of 2026-08-10.
+
+## The method changed, and it is better
+
+The first pass diffed their tree against `RPCS3/rpcs3` **master** and counted 133
+different files. That number mixes their work with the drift between two different
+base commits. This pass adds their repository as a remote of the local
+`rpcs3-upstream` checkout and asks Git for the fork point:
+
+```sh
+git remote add armsx3 https://github.com/ARMSX2/ARMSX3.git
+git fetch --no-tags --no-recurse-submodules armsx3 master
+git merge-base armsx3/master origin/master   # 652cf60bf, 2026-08-04
+git log --no-merges 652cf60bf..armsx3/master
+```
+
+**210 commits, and every one of them is theirs.** Nothing is attributed by
+guesswork, and the commit message says why each change exists. The first pass had
+to infer intent from a file diff. Use the fork point from now on.
+
+About 120 of the 210 commits are later than the first pass. Most are their Android
+UI, their Vulkan loader and their save-state work, which this fork cannot use,
+because RPCSX supplies that layer here.
+
+## They retracted two of the things the first pass envied
+
+Both retractions come from their own measurements, and both delete an advantage
+that the scoreboard above gives them.
+
+| their commit | date | what it undoes |
+| --- | --- | --- |
+| `5f346b5e2` | 2026-08-11 | The thread scheduler goes back to `Operating System`. The big.LITTLE mask held six SPU threads on four cores. |
+| `cb3670e2d` | 2026-08-11 | The GETLLAR busy-wait percentage goes back to upstream's 100. They had used 20. |
+
+The second one carries a result worth keeping. They tested 100 against 20 in game
+and measured **no difference**, with 34% of eight cores busy and five cores idle.
+Their reading is that the wait is not on the critical path, so the way it waits does
+not matter. **That is their machine and their title, not ours.** This fork measures
+GETLLAR as 82.5% of instrumented spin, and the sweep in [`spin.md`](spin.md) is
+still the experiment to run here. Their null result is a warning about the size of
+the prize, not a substitute for the measurement.
+
+## What this pass took
+
+| # | their commit | what it is | state here |
+| --- | --- | --- | --- |
+| 1 | `1847433eb` | Serialize the LLVM compilation of identical SPU programs | **ported** |
+| 2 | `c2b5f0c40` | Instruction cache maintenance for the JIT | **partly ported**, two sites remained |
+| 3 | `88f416288`, `e8c499056`, `ba5e4ebd6` | The GETLLAR out-buffer check: memoise it, then stop believing it | **ported** |
+| 4 | `903220790`, `e7606bda0` | Budget the PPU compile workers against free memory | **ported, adapted** |
+| 5 | `2df75aa60` | NEON for the primitive-restart index upload | **rejected: we already emit it** |
+| 6 | `20aebe951` | Accurate SPU DMA plus Accurate Cache Line Stores livelock | **not applicable** |
+
+### 1. The same SPU program compiled by five threads at once
+
+`spu_runtime::add_empty()` gives back an existing item when the caller registers an
+identical program, and it does not say that it did not insert. The entry-point check
+in `spu_llvm_recompiler::compile()` then passes, because the entry point is also
+the same. Each thread that arrives compiles the same program again, with its own
+LLVM instance. The threads race the publication of `compiled` and the rebuild of the
+ubertrampoline.
+
+**Their symptom has the shape of the stall this fork already resolved.** They report
+SPURS kernels parked on **zeroed workload state**, the PPU main thread blocked
+forever in `sys_event_queue_receive` on a queue that no SPU will signal, and the
+title never reaching the menu. This fork reported `CellSpursKernel0` parked at
+`pc=0x12b0` in two unrelated titles. **That one is closed**, and the cause was the
+empty `mov_rdata` branch, not a compile race: see the resolution and the two-title
+verification at the end of [`rsx-boot-hang.md`](rsx-boot-hang.md).
+
+**So do not read this port as a fix for an open bug here.** It removes a real race
+that our tree still has, in the same shape as theirs. It is not evidence about
+`pc=0x12b0`, which has a different and proven cause.
+
+What the port is worth here is cold-boot work. They measured up to five concurrent
+compilations of one item, about 790 collisions per boot, and **about two thirds of
+all cold compilation work as duplicates**, with cold-boot SPU compilation falling
+from about 12,900 blocks to 3,900. Their bug only appears on a cold cache, because a
+cached program is compiled before SPU execution starts. That fits this fork:
+`spu_native_object_cache_enabled()` is **off by default**, so nearly every boot here
+is a cold boot.
+
+The port keeps their design. `spu_item` gets `llvm_compile_state`, the first
+compiler claims the item, and later arrivals wait and take the published result. A
+scope guard marks the item failed on each early exit, so no waiter is stranded. The
+wait for a relocated duplicate now also reads the failure state, with a bounded
+timeout, because `spu_fast` can publish that result without touching the LLVM state.
+
+**Nothing here is measured on this device.** Predicted: fewer SPU blocks compiled on
+a cold boot, and a shorter first boot. **What falsifies it:** a cold boot whose
+`SPU Runtime: Built N functions.` line does not fall. That line is already the way
+this fork tells a real cold boot from a boot that wrote nothing, so the measurement
+costs one boot and no new instrument.
+
+### 2. Instruction cache maintenance: we had four of the six sites
+
+The audit in [`three-way-audit.md`](three-way-audit.md) found the SPU ubertrampoline
+and fixed it. The LLVM memory managers were already fixed here, and with a better
+primitive than theirs: `__builtin___clear_cache` reads `CTR_EL0` and skips the
+maintenance on cores that advertise IDC and DIC, where `asmjit::VirtMem::
+flushInstructionCache` does not.
+
+Their commit found **two sites that this fork still had**, both in
+`rpcs3/util/JITASM.cpp`:
+
+* `jit_runtime_base::_add()` copies asmjit output into executable memory and did
+  **no** cache maintenance.
+* `jit_runtime::finalize()` rewrites an executable snapshot in place when the
+  emulator restarts. It had the `asm("ISB"); asm("DSB ISH")` pair, which cleans
+  nothing, orders the two barriers the wrong way round, and is not `asm volatile`
+  with a memory clobber.
+
+**Both are reachable on ARM64.** `build_function_asm` reaches `_add` for
+`ppu_gateway` (`PPUThread.cpp:317`), for `tr_dispatch` (`SPUCommonRecompiler.cpp:525`)
+and for the thread entry in `Thread.cpp:2436`. The check matters, because this
+codebase has recorded a search that searched nothing four times.
+
+Neither site is a measurement. A missing i-cache flush shows up as an
+unreproducible crash, never as a number.
+
+### 3. The GETLLAR out-buffer check cost more than it decided
+
+The spin detector asks whether the LSA points at a caller's OUT buffer, which is
+"unlikely to be a loop". It answered with `dump_callstack_list()`, which walks the
+whole stack and calls `is_exec_code` for each candidate, and that allocates a
+`vector<bool>` and scans for branch targets. **They profiled that call at 19.6% of
+all process CPU** on a title whose SPU code spins on GETLLAR with an LSA in the top
+64K of local store.
+
+Two changes, both taken:
+
+* **Memoise it.** Only the innermost frame is used, and it is a function of `pc`,
+  the stack pointer and the link register. Recompute it only when one of the three
+  moves. Their first attempt keyed on `getllar_spin_count`, which several other
+  paths reset, so the callstack was still rebuilt constantly; the key must be the
+  values that the answer depends on.
+* **Stop believing the verdict.** "Not a loop" resets the spin count and leaves the
+  switch at `umax`. The caller then skips `busy_wait`, skips the sleep path, and
+  returns at once, so the SPU runs GETLLAR again at full rate **with no backoff at
+  all**. The spin count never reaches 4, so the spin optimisation is never
+  evaluated, and the 400 ms fallback that forces a sleep is never reached. The same
+  site with the same stack, 32 times, is itself the evidence that it is a loop.
+
+**The cap is gated here, and their default is kept.**
+`debug.rpcsx.thor.getllar_outbuf_cap` sets the count; `0` restores the current
+behaviour, which never stops believing the verdict. The value 32 is theirs, measured
+on their title. **Whether either change reaches anything on this device is
+unmeasured.** The check only costs something when the LSA sits in the top 64K of
+local store, and no profile here has named `dump_callstack_list`. The cheap first
+test is a wait-profiler boot with the cap at `0` and at `32`.
+
+### 4. The PPU compile workers had no memory budget at all
+
+[`ppu-compile-oom.md`](ppu-compile-oom.md) records Odin Sphere dying in PPU
+precompile with `Scudo ERROR: internal map failure (NO MEMORY)` inside RuntimeDyld
+relocation processing. Its "Next" section names the worker count as one of the two
+levers. `jit_core_allocator::limit()` here was upstream's: the thread count, and
+nothing else. **Eight LLVM workers, with no reference to memory.**
+
+They hit the same allocator failure twice, on two titles, and fixed it twice. The
+port takes their second set of numbers: reserve 2 GB for the emulator, then 1.5 GB
+for each worker, against `MemAvailable` rather than installed memory. A single large
+PPU module can take more than a gigabyte through MCJIT, and the reading is taken
+before the emulator maps the PS3 address space.
+
+Two deliberate differences from their patch. It reuses `utils::get_memory_usage()`,
+which already parses `MemAvailable` in this tree, instead of adding their
+`utils::get_avail_memory`. And it is `#ifdef ANDROID`, so the Windows build keeps
+the upstream count.
+
+**This lowers the default compile parallelism on this device**, which makes a cold
+precompile slower. That is the intended trade: the run that finishes beats the run
+that aborts. `Max LLVM Compile Threads` still overrides it.
+
+### 5. Rejected, because this fork already emits that code
+
+`2df75aa60` hand-writes NEON for the primitive-restart index upload. Their commit
+message says clang cannot vectorize the loop, because the min and max updates are
+conditional on the restart compare.
+
+**That is true of the upstream shape and false of ours.** This fork already rewrote
+`primitive_restart_impl::upload_untouched_naive` branch-free, so that the reductions
+take a neutral value for restart entries and stop carrying a conditional side
+effect. Verified rather than trusted, by compiling both shapes at the target this
+build uses:
+
+```sh
+clang++ --target=aarch64-linux-android24 -O2 -march=armv8.4-a -mtune=cortex-a715 -S
+```
+
+| shape | emitted |
+| --- | --- |
+| ours, branch-free | `rev16`, `cmeq`, `orr`, `bic`, `umin`, `umax`, `uminv`, `umaxv` |
+| upstream's, conditional | four `csel`, **no vector instruction** |
+
+Our loop compiles to **the same lane algebra that their intrinsics spell by hand**,
+and clang unrolls it to two `q` registers for each iteration, so it reads 16 `u16`
+where their kernel reads 8. Porting their intrinsics would replace a wider kernel
+with a narrower one and would arch-gate a file that does not need it.
+
+This is the "check whether this fork already compensated" rule paying for itself,
+and it is the second time this exact rule has applied to their tree.
+
+### 6. Not applicable
+
+`20aebe951` fixes a livelock from Accurate SPU DMA and Accurate Cache Line Stores
+being on together. The defect was in their own Kotlin defaults. Both settings are
+`false` in `Emu/system_config.h` here, as they are upstream.
+
+## What is still theirs and still open
+
+Read, and not acted on in this pass:
+
+* **`431b6d092`, `954337866`, `8c707648c`, `38424a59b`** — a module that LLVM
+  cannot compile falls back to the interpreter, and a recovered LLVM fatal error no
+  longer wedges the SPU JIT. Their note is that bionic does not unwind C++ frames on
+  `pthread_exit`, so the MCJIT lock stays held by a thread that no longer exists.
+  This fork runs `run_recoverable_llvm` as well. Worth a read before the next boot
+  failure that looks like a hang in compilation.
+* **`703d98ae9`, `fa97d01b0`, `cf2481fc1`** — conditional rendering is turned off on
+  Turnip as well as on Adreno, and open occlusion queries are closed before the
+  render pass ends. **This device runs Turnip.** These belong with the render-pass
+  work in [`adreno-tiler.md`](adreno-tiler.md).
+* **`42e3d3b26`, then `6e15b1694` which reverts it** — they cleared at pass begin
+  instead of reading the framebuffer back, and then they took it out again. The
+  `LOAD_OP_CLEAR` item in [`adreno-tiler.md`](adreno-tiler.md) should read both
+  commits before spending a device slot.
+* **`0b5a43c60`** — a stuck `vm::writer_lock` reports who it waits on. This fork
+  measures `writer_lock` plus `passive_lock` at 6.2% of gameplay.
+* **`ccbcbce36`, `5636c9f3f`, `1c371cfad`** — FIFO fetched in 4 KB blocks, and the
+  per-packet costs taken out of the FIFO loop. Their profile puts 82.5% of their RSX
+  thread in FIFO decode. **Ours does not**, so read the profile here before porting
+  any of it.
+
+## The honest summary of the second pass
+
+Their tree is now mostly an Android application, a Vulkan loader and a GPU profiler,
+and this fork can use almost none of that. The overlap is where it was: the SPU, the
+JIT and the memory budget.
+
+**The most valuable thing in this pass is not code.** It is that they measured, and
+then reverted, both configuration changes that the first pass held up as their
+advantage. A comparison against a moving fork has a shelf life of about three days.
+

@@ -108,6 +108,23 @@ public:
 	atomic_t<u8> cached = false;
 	atomic_t<u8> logged = false;
 
+	// The owner of the LLVM compilation of this item.
+	//
+	// add_empty() gives back an existing item when the caller registers an identical
+	// program. The entry-point check in spu_llvm_recompiler::compile() then passes,
+	// because the entry point is also identical. Without this state, each SPU thread
+	// that reaches the same uncached program compiles it again with its own LLVM
+	// instance. The threads race the publication of `compiled` and the rebuild of the
+	// ubertrampoline.
+	//
+	// 0 = unclaimed, 1 = compiling, 2 = complete, 3 = failed. The first compiler
+	// changes 0 to 1. Later arrivals wait while the state is 1. Then they read
+	// `compiled`, or they get null after a failure. A pre-inserted spu_fast item stays
+	// claimable, which keeps the asynchronous replacement path on x86-64.
+	//
+	// The type is u32, because the atomic wait and notify operations need 32 bits.
+	atomic_t<u32> llvm_compile_state = 0;
+
 	spu_item(spu_program&& data)
 		: data(std::move(data))
 	{

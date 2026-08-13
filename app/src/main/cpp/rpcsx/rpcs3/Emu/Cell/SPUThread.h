@@ -844,6 +844,22 @@ public:
 	u32 last_getllar_addr = umax;
 	u32 last_getllar_lsa = umax;
 	u32 getllar_spin_count = 0;
+
+	// The memo for the out-buffer check in the GETLLAR spin detector.
+	//
+	// That check needs only the innermost frame. It got the frame from
+	// dump_callstack_list, which walks the whole stack and runs a code-flow scan for
+	// each candidate. The answer is a function of pc, the stack pointer and the link
+	// register, so the check computes it again only when one of the three moves.
+	u32 getllar_cs_pc = umax;
+	u32 getllar_cs_sp = umax;
+	u32 getllar_cs_lr = umax;
+	u32 getllar_cs_first = umax;
+
+	// How many times the out-buffer check gave the same "not a loop" answer at this
+	// site. Repetition contradicts the answer. See the comment at the check.
+	u32 getllar_outbuf_hits = 0;
+
 	u32 getllar_busy_waiting_switch = umax; // umax means the test needs evaluation, otherwise it's a boolean
 	u64 getllar_evaluate_time = 0;
 

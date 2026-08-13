@@ -1624,14 +1624,77 @@ public:
 
 		if (func.entry_point != start0)
 		{
-			// Wait for the duplicate
+			// Wait for the duplicate.
+			//
+			// Either the LLVM owner of this item or spu_fast publishes the result, so
+			// this loop waits on `compiled` itself. It also reads the LLVM state, so an
+			// owner that stops early cannot strand these waiters. The timeout bounds the
+			// window between the state read and the sleep, because the two words are
+			// different atomics.
 			while (!add_loc->compiled)
 			{
-				add_loc->compiled.wait(nullptr);
+				if (add_loc->llvm_compile_state == 3 || thread_ctrl::state() == thread_state::aborting)
+				{
+					return nullptr;
+				}
+
+				add_loc->compiled.wait(nullptr, atomic_wait_timeout{10'000'000});
 			}
 
 			return add_loc->compiled;
 		}
+
+		// Claim the LLVM compilation of this item. See llvm_compile_state in spu_item.
+		//
+		// Late arrivals wait for the owner. They do not compile the same program again.
+		// The duplicate compilation raced the publication of `compiled` and the rebuild
+		// of the trampoline. ARMSX3 measured up to five concurrent compilations of one
+		// item, and about two thirds of all cold compilation work as duplicates. It
+		// stopped SPURS bring-up on each cold boot of one title.
+		if (add_loc->llvm_compile_state.compare_and_swap(0, 1) != 0)
+		{
+			// The sleep is bounded, and the loop leaves when this thread is aborting.
+			// The guard below releases the waiters on each ordinary exit of the owner.
+			// A guard cannot run for an owner that leaves without unwinding, which
+			// bionic does for pthread_exit, so do not make this wait unbounded.
+			while (add_loc->llvm_compile_state == 1)
+			{
+				if (thread_ctrl::state() == thread_state::aborting)
+				{
+					return nullptr;
+				}
+
+				add_loc->llvm_compile_state.wait(1, atomic_wait_timeout{10'000'000});
+			}
+
+			if (add_loc->llvm_compile_state == 2)
+			{
+				return add_loc->compiled;
+			}
+
+			// The owner failed. The emulator stops, or the trampoline rebuild failed.
+			return nullptr;
+		}
+
+		// Release the waiters on each exit path. A return that keeps the state at
+		// "compiling" is a failure, and it must not strand them.
+		struct claim_guard_t
+		{
+			spu_item* item;
+
+			~claim_guard_t()
+			{
+				if (item && item->llvm_compile_state == 1)
+				{
+					item->llvm_compile_state.release(3);
+					item->llvm_compile_state.notify_all();
+
+					// Also wake the threads that sleep on `compiled` in the branch above.
+					// They read the failure state when they wake.
+					item->compiled.notify_all();
+				}
+			}
+		} claim_guard{add_loc};
 
 		bool add_to_file = false;
 
@@ -3694,6 +3757,11 @@ public:
 		}
 
 		add_loc->compiled.notify_all();
+
+		// The function is published. Mark the compilation complete and release the
+		// threads that wait for the claim.
+		add_loc->llvm_compile_state.release(2);
+		add_loc->llvm_compile_state.notify_all();
 
 		if (g_cfg.core.spu_debug)
 		{
