@@ -9,7 +9,8 @@ param(
     [int]$SettleSeconds = 240,
     [double]$MaxPreflightC = 45.0,
     [int]$CooldownSeconds = 420,
-    [double]$MaxForeignCpu = 20.0
+    [double]$MaxForeignCpu = 20.0,
+    [switch]$ParkCache
 )
 
 $ErrorActionPreference = "Stop"
@@ -140,14 +141,29 @@ while ($true) {
     $pre = Get-MaxCpuTempC
 }
 
-# Park the title cache so the boot is genuinely cold, and prove it is gone.
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-if (((Invoke-Adb @("shell", "ls -d $cacheRoot/$TitleId 2>/dev/null")) -join "").Trim()) {
-    Invoke-Adb @("shell", "mv $cacheRoot/$TitleId $cacheRoot/$TitleId.parked-$stamp") | Out-Null
+# How the boot is made cold for SPU, and why parking is not the default.
+#
+# Parking the title cache drops the PPU object cache with it, and a cold PPU
+# precompile on this device costs about 27 minutes before the first PPU thread
+# even exists. Two arms of that is over an hour of exclusive device time on a
+# machine shared with another session.
+#
+# `SPU Cache: false` in config.yml is the cheaper lever and a better-shaped one.
+# It gates SPU precompilation and the cache write, so every boot compiles SPU
+# programs on demand during execution, which is the exact condition the compile
+# claim is about, while the PPU objects stay warm. Verify it took by reading the
+# effective value out of RPCSX.log below; the config dump prints it.
+if ($ParkCache) {
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    if (((Invoke-Adb @("shell", "ls -d $cacheRoot/$TitleId 2>/dev/null")) -join "").Trim()) {
+        Invoke-Adb @("shell", "mv $cacheRoot/$TitleId $cacheRoot/$TitleId.parked-$stamp") | Out-Null
+    }
+    $still = ((Invoke-Adb @("shell", "ls -d $cacheRoot/$TitleId 2>/dev/null")) -join "").Trim()
+    if ($still) { throw "the cache for $TitleId is still present, so this boot would be warm and would measure nothing" }
+    Write-Host "cache parked; PPU and SPU are both cold, expect a long precompile"
+} else {
+    Write-Host "cache kept warm; SPU coldness must come from 'SPU Cache: false'"
 }
-$still = ((Invoke-Adb @("shell", "ls -d $cacheRoot/$TitleId 2>/dev/null")) -join "").Trim()
-if ($still) { throw "the cache for $TitleId is still present, so this boot would be warm and would measure nothing" }
-Write-Host "cache parked; boot is cold"
 
 Invoke-Adb @("shell", "setprop debug.rpcsx.thor.spu_compile_claim $Claim") | Out-Null
 $readback = ((Invoke-Adb @("shell", "getprop debug.rpcsx.thor.spu_compile_claim")) -join "").Trim()
@@ -234,6 +250,23 @@ if ($ppuThreads -eq "0" -or -not $ppuThreads) {
 }
 
 Write-Host "boot confirmed: $ppuThreads PPU thread lines in a $logLines line log"
+
+# Read the effective SPU Cache value out of the boot's own config dump.
+#
+# Without this the arm assumes the pushed config.yml is what the emulator used.
+# The emulator rewrites that file when it exits, a per-title custom config can
+# override it, and the launch intent can replace the custom profile. The log is
+# the only thing that says what the run actually had.
+$spuCacheLine = ((Invoke-Adb @("shell", "grep -m1 'SPU Cache' $log")) -join "").Trim()
+if (-not $spuCacheLine) {
+    throw "arm is void, and the instrument is at fault: the boot log has no 'SPU Cache' line, so the effective setting cannot be read"
+}
+
+Write-Host "effective setting: $spuCacheLine"
+
+if (-not $ParkCache -and $spuCacheLine -notmatch 'false') {
+    throw "arm is void: SPU Cache is not false and the cache was not parked, so SPU programs came from the cache and this measures nothing. Read: '$spuCacheLine'"
+}
 
 $built = ((Invoke-Adb @("shell", "grep 'SPU Runtime: Built' $log")) -join "`n").Trim()
 
