@@ -528,6 +528,118 @@ static int mode_wait(int cpu, int waker_cpu)
 	return 0;
 }
 
+// What the SHUFB table lookups actually cost, per cluster.
+//
+// `shufb` is the most common operation in this title's compiled SPU corpus:
+// 5,794 of them, against 2,203 `fm` and 399 `fi`. The lowering emits `TBX2`,
+// which `codegen.md` keeps for correctness.
+//
+// The claim to test is in CLAUDE.md and it comes from the vendor guides, not from
+// this device: `TBX` beats `TBL` on the Cortex-X3 at four pipes against two, and
+// **that inverts on the A715 and A710**, where SPU threads actually run. Nine of
+// nine manual predictions in the ledger were refuted by measurement, so measure.
+//
+// Throughput uses independent chains; latency feeds each result into the next
+// index vector, so the dependency is real and the number is not throughput in
+// disguise.
+static int mode_shufb(int cpu)
+{
+	const u64 hz = tsc_hz();
+	if (!pin_to(cpu))
+	{
+		std::printf("error=cannot_pin cpu=%d\n", cpu);
+		return 1;
+	}
+
+	std::printf("mode=shufb cpu=%d timer_hz=%llu\n", cpu, (unsigned long long)hz);
+
+	alignas(16) u8 tbl_a[16], tbl_b[16], idx[16];
+	for (int i = 0; i < 16; i++)
+	{
+		tbl_a[i] = u8(i * 3 + 1);
+		tbl_b[i] = u8(i * 7 + 2);
+		idx[i] = u8((i * 5) & 15);
+	}
+
+	const size_t iters = 2000000;
+
+#define BENCH_TP(NAME, INSN)                                                              \
+	{                                                                                     \
+		u64 t0 = tsc();                                                                   \
+		__asm__ __volatile__(                                                             \
+			"ld1 {v0.16b}, [%[a]]\n\t"                                                    \
+			"ld1 {v1.16b}, [%[b]]\n\t"                                                    \
+			"ld1 {v2.16b}, [%[i]]\n\t"                                                    \
+			"mov v3.16b, v2.16b\n\t"                                                      \
+			"mov v4.16b, v2.16b\n\t"                                                      \
+			"mov v5.16b, v2.16b\n\t"                                                      \
+			"mov x9, %[n]\n\t"                                                            \
+			"1:\n\t" INSN                                                                 \
+			"subs x9, x9, #1\n\t"                                                         \
+			"b.ne 1b\n\t" ::[a] "r"(tbl_a),                                               \
+			[b] "r"(tbl_b), [i] "r"(idx), [n] "r"(iters)                                  \
+			: "v0", "v1", "v2", "v3", "v4", "v5", "x9", "cc", "memory");                  \
+		u64 t1 = tsc();                                                                   \
+		std::printf("shufb cpu=%d test=%s ns_per_op=%.3f\n", cpu, NAME,                   \
+			ticks_to_ns(t1 - t0, hz) / double(iters * 4));                                 \
+	}
+
+	// Four independent ops per iteration, so this reports throughput.
+	BENCH_TP("tbl1_tp",
+		"tbl v6.16b, {v0.16b}, v2.16b\n\t"
+		"tbl v7.16b, {v0.16b}, v3.16b\n\t"
+		"tbl v16.16b, {v0.16b}, v4.16b\n\t"
+		"tbl v17.16b, {v0.16b}, v5.16b\n\t")
+
+	BENCH_TP("tbl2_tp",
+		"tbl v6.16b, {v0.16b, v1.16b}, v2.16b\n\t"
+		"tbl v7.16b, {v0.16b, v1.16b}, v3.16b\n\t"
+		"tbl v16.16b, {v0.16b, v1.16b}, v4.16b\n\t"
+		"tbl v17.16b, {v0.16b, v1.16b}, v5.16b\n\t")
+
+	BENCH_TP("tbx1_tp",
+		"tbx v6.16b, {v0.16b}, v2.16b\n\t"
+		"tbx v7.16b, {v0.16b}, v3.16b\n\t"
+		"tbx v16.16b, {v0.16b}, v4.16b\n\t"
+		"tbx v17.16b, {v0.16b}, v5.16b\n\t")
+
+	BENCH_TP("tbx2_tp",
+		"tbx v6.16b, {v0.16b, v1.16b}, v2.16b\n\t"
+		"tbx v7.16b, {v0.16b, v1.16b}, v3.16b\n\t"
+		"tbx v16.16b, {v0.16b, v1.16b}, v4.16b\n\t"
+		"tbx v17.16b, {v0.16b, v1.16b}, v5.16b\n\t")
+
+#undef BENCH_TP
+
+	// Latency: each result becomes the next index, so the chain is serial.
+#define BENCH_LAT(NAME, INSN)                                                             \
+	{                                                                                     \
+		u64 t0 = tsc();                                                                   \
+		__asm__ __volatile__(                                                             \
+			"ld1 {v0.16b}, [%[a]]\n\t"                                                    \
+			"ld1 {v1.16b}, [%[b]]\n\t"                                                    \
+			"ld1 {v2.16b}, [%[i]]\n\t"                                                    \
+			"movi v18.16b, #15\n\t"                                                       \
+			"mov x9, %[n]\n\t"                                                            \
+			"1:\n\t" INSN                                                                 \
+			"and v2.16b, v2.16b, v18.16b\n\t"                                             \
+			"subs x9, x9, #1\n\t"                                                         \
+			"b.ne 1b\n\t" ::[a] "r"(tbl_a),                                               \
+			[b] "r"(tbl_b), [i] "r"(idx), [n] "r"(iters)                                  \
+			: "v0", "v1", "v2", "v18", "x9", "cc", "memory");                             \
+		u64 t1 = tsc();                                                                   \
+		std::printf("shufb cpu=%d test=%s ns_per_op=%.3f\n", cpu, NAME,                   \
+			ticks_to_ns(t1 - t0, hz) / double(iters));                                     \
+	}
+
+	BENCH_LAT("tbl2_lat", "tbl v2.16b, {v0.16b, v1.16b}, v2.16b\n\t")
+	BENCH_LAT("tbx2_lat", "tbx v2.16b, {v0.16b, v1.16b}, v2.16b\n\t")
+
+#undef BENCH_LAT
+
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	const std::string mode = argc > 1 ? argv[1] : "topology";
@@ -540,6 +652,7 @@ int main(int argc, char** argv)
 	if (mode == "hierarchy") return mode_hierarchy(cpu);
 	if (mode == "memcpy") return mode_memcpy(cpu, other);
 	if (mode == "wait") return mode_wait(cpu, other);
+	if (mode == "shufb") return mode_shufb(cpu);
 
 	std::printf("error=unknown_mode mode=%s\n", mode.c_str());
 	return 2;
