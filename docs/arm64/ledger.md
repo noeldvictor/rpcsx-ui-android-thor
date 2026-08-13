@@ -709,3 +709,62 @@ So the suite is clean on the one failure mode it is known to have had. Worth the
 five minutes because the alternative is trusting a green run from ninety-seven
 tests, a number that is reassuring precisely in proportion to how little it means
 if some of them cannot fail.
+
+# Prepared, not landed: upstream's `vm::writer_lock` fix on PPU
+
+Upstream RPCS3 `d7ed328f4` (2026-08-01), "Fix vm::writer_lock deadlock-inducing
+usage on PPU". `vm::writer_lock` plus `vm::passive_lock` are **6.2% of gameplay
+CPU** here, and this touches SPURS, which has stalled two titles on this device.
+The analysis is finished. The change is **not applied**, and this section says
+what it would take, so the next session does not repeat the reading.
+
+## What the change does
+
+`vm::writer_lock` stops managing `cpu_flag::wait` and `cpu_flag::memory` itself.
+The caller must set `cpu_flag::wait` first. Upstream states the reason in the
+code: managing it inside the lock means calling `cpu_thread::check_state()`,
+which is not always suitable where `writer_lock` is used.
+
+It also deletes `passive_unlock`, makes `temporary_unlock` clear `g_tls_locked`,
+and adds a guard that **throws** when a PPU thread takes the lock while holding a
+passive lock without `cpu_flag::wait`.
+
+## What is already true here
+
+* **Our constructor is upstream's pre-change form, line for line.** `vm.cpp:650`
+  through `:668` match. The local additions to this file (the config-gated
+  `busy_wait` head start, `profiled_busy_wait`, the range-flag strip) are all
+  **below** that block and the port does not touch them.
+* **`passive_unlock` is dead code here.** One declaration at `vm_locking.h:86`,
+  one definition at `vm.cpp:605`, and **no callers anywhere**. Deleting it costs
+  nothing.
+* **`cellSpurs.cpp` exists, at `ps3fw/cellSpurs.cpp`.** Upstream patches nine
+  functions in it. The path differs; the file does not. A path lookup against the
+  upstream layout returns nothing and reads like the file is absent, which is the
+  trap this project has recorded four times.
+* **Our direct `vm::writer_lock` sites are ten**, and three of them are ours
+  rather than upstream's: `kernel/cellos/src/sys_rsx.cpp` at 412, 472 and 748,
+  `sys_memory.cpp:242`, `lv2.cpp:2536`, `sys_dbg.cpp` at 34 and 76,
+  `PPUThread.cpp:2593`, `SPUThread.cpp:3385`, and `vm_reservation.h` at 421 and
+  435.
+
+## Why it is not applied
+
+**The guard throws, and this device cannot be tested against right now.** The
+throw fires only for a PPU thread that holds a passive lock without
+`cpu_flag::wait`, which is narrower than it first looks. But the sites that
+decide it include the five lv2 and RSX syscalls above, which upstream does not
+have, and whether those already carry `cpu_flag::wait` on entry is **unverified**.
+Landing it blind converts an unverified assumption into a runtime exception in
+SPURS, which is the subsystem that has cost this project the most.
+
+## What to do, in order
+
+1. Confirm whether the five local syscall sites hold a passive lock and whether
+   they already set `cpu_flag::wait`. Read `lv2.cpp` and `sys_rsx.cpp` first;
+   this is the only unknown.
+2. Port the `vm.cpp` and `vm_locking.h` half, which is mechanical.
+3. Map upstream's nine `cellSpurs.cpp` functions onto `ps3fw/cellSpurs.cpp` by
+   name, and add `ppu.state += cpu_flag::wait` at each.
+4. Boot Folklore and Eternal Sonata cold. The failure is loud, so a boot that
+   reaches gameplay is the test.
