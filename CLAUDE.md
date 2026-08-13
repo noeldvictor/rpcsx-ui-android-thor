@@ -1100,6 +1100,27 @@ addresses the guest is about to touch*. `PRFM` the destination of DMA *n+1* whil
 transfer *n* runs. Unmeasured, and it aims at `process_mfc_cmd`, which is 20% of
 gameplay.
 
+**BUILT 2026-08-13, default off, and unmeasured**, as
+`debug.rpcsx.thor.dma_nontemporal = <bytes>`, the size at which the pair loop
+takes over. `__movsb` on ARM64 now routes through `thor_dma_copy`, so one gate
+covers all six DMA call sites. Whole 64-byte blocks go through `LDNP`/`STNP`; the
+remainder goes to `memcpy`, so the tail cannot be got wrong.
+
+**And the premise was checked, because it was wrong.** The comment in
+`SPUThread.cpp` claimed bionic's memcpy "uses ldp/stp pairs and non-temporal
+stores for large sizes". Read out of the device's own libc: `memcpy` is an ifunc
+choosing `memmove_generic` or `memcpy_opt`, and **neither contains `stnp`, `ldnp`
+or `prfm`**. `stnp` and `ldnp` appear **zero** times in the entire library, across
+146,002 disassembled lines in which `ldp` appears 4,439 times and `prfm` 10 — that
+last count is what makes the zero mean something. So nothing downstream was
+mitigating the eviction, and the item below is real rather than already-solved.
+
+Verified two ways, because AArch64 code cannot run on this host: the target build
+emits exactly `ldnp q0,q1 / ldnp q2,q3 / stnp q0,q1 / stnp q2,q3 / add / add /
+subs / b.ne`, and a model of the block-and-tail arithmetic matches `memcpy` over
+3,072 cases spanning every residue mod 64 at three start offsets, including the
+16 KB size the SPU jobs use.
+
 **Large DMA should be non-temporal.** The comment at `SPUThread.cpp:1108` says
 Eternal Sonata "pounds 16 KB transfers", and the bulk path is plain
 `std::memcpy`. A 16 KB copy evicts most of L1 and much of L2 — including the

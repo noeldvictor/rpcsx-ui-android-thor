@@ -1151,6 +1151,21 @@ static FORCE_INLINE void __movsb(unsigned char* Dst, const unsigned char* Src, s
 // On non-x64 targets __movsb aliases libc memcpy. The hand-written v128 loop is
 // fine for tiny DMAs, but Eternal Sonata's hot SPU jobs pound 16 KB transfers.
 //
+// CORRECTED 2026-08-13: bionic's memcpy uses **no** non-temporal stores, at any
+// size. The claim below that it "uses ldp/stp pairs and non-temporal stores for
+// large sizes" is right about the pairs and wrong about the stores. Read out of
+// the device's own libc rather than assumed: `memcpy` at `0xbe4d0` is an ifunc
+// that selects `memmove_generic` (0x4e1a0, 44 instructions) or `memcpy_opt`
+// (0x4e540, 80 instructions), and **neither contains `stnp`, `ldnp` or `prfm`**.
+// `stnp` and `ldnp` appear **zero** times in the whole library, over 146,002
+// disassembled lines, in which `ldp` appears 4,439 times and `prfm` 10 times, so
+// the search does find rare mnemonics. That last count is the point: a zero from
+// a search that finds nothing else would prove nothing.
+//
+// So a 16 KB SPU DMA does evict L1 and much of L2, which is what the
+// non-temporal item in CLAUDE.md feared, and nothing downstream prevents it.
+// `debug.rpcsx.thor.dma_nontemporal` addresses it and is off by default.
+//
 // The 1024 was an x86 constant transplanted. On x86 this threshold comes from
 // utils::get_rep_movsb_threshold(), a *runtime-detected* ERMSB crossover -- the
 // size above which `rep movsb` microcode beats a SIMD loop. There is no ERMSB
@@ -1166,7 +1181,103 @@ static FORCE_INLINE void __movsb(unsigned char* Dst, const unsigned char* Src, s
 // one property rather than six rebuilds. Default unchanged at 1024.
 //
 //   debug.rpcsx.thor.movsb_threshold = <bytes>   (default 1024)
+// Copy a large SPU DMA without keeping it in the caches.
+//
+// Eternal Sonata's hot SPU jobs pound 16 KB transfers, and the gameplay profile
+// puts process_mfc_cmd at 20% of all cycles. A 16 KB copy through memcpy walks
+// every line of L1 and much of L2, and it evicts the working set of the other
+// five SPU threads that share those two cores. The guest reads the destination
+// from local store afterwards, not from this mapping, so the copy has no reuse
+// to protect.
+//
+// `LDNP`/`STNP` are the non-temporal pair forms. They are ordinary coherent
+// accesses with a hint that the line has no reuse, so this is a cache policy
+// change and not a correctness one.
+//
+//   debug.rpcsx.thor.dma_nontemporal = <bytes>   (default 0, which is off)
+//
+// The value is the size at which the non-temporal path takes over. **The default
+// is 0 and the change is unmeasured.** Only whole 64-byte blocks go through the
+// pair loop; the remainder goes to memcpy, so the tail cannot be got wrong.
+#if defined(ARCH_ARM64)
+static FORCE_INLINE void thor_copy_nontemporal(void* dst, const void* src, usz size) noexcept
+{
+	auto d = static_cast<u8*>(dst);
+	auto s = static_cast<const u8*>(src);
+
+	if (usz blocks = size & ~usz{63})
+	{
+		__asm__ __volatile__(
+			"1:\n\t"
+			"ldnp q0, q1, [%[s]]\n\t"
+			"ldnp q2, q3, [%[s], #32]\n\t"
+			"stnp q0, q1, [%[d]]\n\t"
+			"stnp q2, q3, [%[d], #32]\n\t"
+			"add %[s], %[s], #64\n\t"
+			"add %[d], %[d], #64\n\t"
+			"subs %[n], %[n], #64\n\t"
+			"b.ne 1b\n\t"
+			: [s] "+r"(s), [d] "+r"(d), [n] "+r"(blocks)
+			:
+			: "v0", "v1", "v2", "v3", "memory", "cc");
+	}
+
+	if (const usz tail = size & 63)
+	{
+		std::memcpy(d, s, tail);
+	}
+}
+
+static usz thor_dma_nontemporal_bytes() noexcept
+{
+	static const usz value = []() -> usz
+	{
+#if defined(__ANDROID__)
+		char buf[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.dma_nontemporal", buf);
+		const char* v = length > 0 ? buf : std::getenv("RPCSX_THOR_DMA_NONTEMPORAL");
+#else
+		const char* v = std::getenv("RPCSX_THOR_DMA_NONTEMPORAL");
+#endif
+		if (!v || v[0] < '0' || v[0] > '9')
+		{
+			return 0;
+		}
+
+		usz parsed = 0;
+
+		for (const char* c = v; *c >= '0' && *c <= '9'; c++)
+		{
+			parsed = parsed * 10 + static_cast<usz>(*c - '0');
+
+			if (parsed > (usz{1} << 24))
+			{
+				return 0;
+			}
+		}
+
+		// Below one cache line there is nothing for the pair loop to do.
+		return parsed < 64 ? 0 : parsed;
+	}();
+
+	return value;
+}
+
+static FORCE_INLINE void thor_dma_copy(void* dst, const void* src, usz size) noexcept
+{
+	if (const usz nt = thor_dma_nontemporal_bytes(); nt && size >= nt)
+	{
+		thor_copy_nontemporal(dst, src, size);
+		return;
+	}
+
+	std::memcpy(dst, src, size);
+}
+
+#define __movsb thor_dma_copy
+#else
 #define __movsb std::memcpy
+#endif
 
 static u32 thor_rep_movsb_threshold()
 {
