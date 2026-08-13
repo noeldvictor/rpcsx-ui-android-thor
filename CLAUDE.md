@@ -250,6 +250,46 @@ When counting, match two-source `tbx v.16b, { v.16b, v.16b }` as well as
 two-source `tbl`. Our `SHUFB` path emits `TBX2`; a `tbl`-only sweep reads as a
 false negative and cost hours once.
 
+## Test an acceleration theory outside the app first
+
+**Build the theory as a bespoke program, not as a change to the emulator.** The
+in-app loop costs about forty minutes for one arm: a native build, an install, a
+cooldown to 45 C, a boot, and a settle window. The out-of-app loop costs seconds
+to minutes. Use the slow loop to confirm a result on the real workload, never to
+find out whether an idea is worth having.
+
+Four checks on 2026-08-13 took minutes each and each one decided something:
+
+| question | what answered it | outcome |
+| --- | --- | --- |
+| Does our restart-index loop need ARMSX3's NEON? | `clang -S` at the JIT's target, both shapes | **No.** Ours already emits their lane algebra, unrolled twice as wide |
+| Does bionic's memcpy go non-temporal for large copies? | `llvm-objdump` over the device's own libc | **No.** `stnp` appears zero times in 146,002 lines |
+| Is upstream's FI rewrite bit-identical on our clamp path? | a u32 lane model, 2,005,369 pairs | **Yes.** Zero mismatches, so it was safe to take |
+| Is the non-temporal copy's block-and-tail arithmetic right? | a model diffed against `memcpy`, 3,072 cases | **Yes**, and the codegen was read separately |
+
+Three shapes, cheapest first:
+
+1. **Read the codegen.** Feed the construct to NDK clang at the target the JIT
+   uses and read the assembly. Answers "what does this compile to", which is most
+   of what an instruction-selection theory claims.
+2. **Model it.** Reimplement both forms as integer functions and diff them over
+   the input space. Answers "are these the same", which is what a rewrite of
+   correctness-sensitive code has to prove before it ships.
+3. **Run it on the device, outside the emulator.** A static AArch64 binary pushed
+   to `/data/local/tmp` and run over `adb`, timed with `cntvct_el0` at 19.2 MHz.
+   This repo already did this twice: `CTR_EL0` was read that way, and the AES
+   numbers (18.9x on the X3, 9.0x on an A510) came from a kernel run against the
+   emulator's own code. No APK, no boot, no thermal gate for a short run.
+
+**And the limits, because this project has been fooled by its own microbenchmarks.**
+A bespoke program answers *what does this cost in isolation*. It cannot answer
+*is this hot* or *what does it compete with*, and those are what decided nine of
+the nine refuted predictions in the ledger. The `BCAX` benchmark is the specific
+warning: its chain forwarded inside one region where the real code crosses two, so
+the number was real and the inference was wrong. Establish reach first — the
+[`fi` count of 399 against 5,794 `shufb`](docs/arm64/codegen.md) came out of the
+on-device SPU cache, not out of a benchmark — then bench, then confirm in the app.
+
 ## Traps that have already cost time
 
 - **The thermal guard trips on a launch transient.** Launch reads `56.6 C` at
