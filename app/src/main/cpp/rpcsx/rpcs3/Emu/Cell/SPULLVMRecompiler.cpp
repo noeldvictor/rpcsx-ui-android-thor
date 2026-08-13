@@ -16,6 +16,7 @@
 #include "SPUInterpreter.h"
 #include "thor_spu_branch_extract.h"
 #include "thor_spu_compile_claim.h"
+#include "thor_spu_selfloop_park.h"
 #include <algorithm>
 #include <thread>
 
@@ -100,6 +101,11 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// guard-variable acquire load on every call. The default is false, so the
 	// movemask stays. See thor_spu_branch_extract.h.
 	const bool m_thor_spu_branch_extract = thor::spu_branch_extract();
+
+	// Read once, out of the compile loop, for the same reason as the line above.
+	// The emitted IR differs, so the SPU object cache key changes with it and
+	// stale objects invalidate by construction.
+	const u64 m_thor_spu_selfloop_park_us = thor::spu_selfloop_park_us();
 
 	// Interpreter table size power
 	const u8 m_interp_magn;
@@ -10017,6 +10023,42 @@ public:
 		}
 
 		const u32 target = spu_branch_target(m_pos, op.i16);
+
+		// A branch to itself is an idle loop, so park instead of spinning on it.
+		//
+		// The loop body is empty, so nothing inside it can end the loop. The only
+		// exit is cpu_thread::state, which check_state polls at the top of the
+		// chunk and which something outside this thread writes. Until then the
+		// thread runs `ldr`/`cbz` at full issue rate on a core, and a gameplay
+		// profile puts about 20% of all CPU in exactly those two instructions.
+		//
+		// Off by default. See thor_spu_selfloop_park.h for the timeout, for why
+		// the timeout is not optional, and for the record the park leaves so that
+		// a guest deadlock does not become a quiet sleeping thread.
+		if (target == m_pos && m_thor_spu_selfloop_park_us)
+		{
+			auto park = [](spu_thread* _spu, u32 pc)
+			{
+				const auto old = +_spu->state;
+
+				if (old)
+				{
+					// Already something to do. check_state handles it.
+					return;
+				}
+
+				// Record before the wait, never after it. A counter written after
+				// the wait cannot see a park that is still happening.
+				thor::g_spu_selfloop_park.last_pc.release(pc);
+				thor::g_spu_selfloop_park.entries++;
+
+				thread_ctrl::wait_on(_spu->state, old, thor::spu_selfloop_park_us());
+
+				thor::g_spu_selfloop_park.exits++;
+			};
+
+			call("spu_selfloop_park", +park, m_thread, m_ir->getInt32(m_pos));
+		}
 
 		if (target != m_pos + 4)
 		{

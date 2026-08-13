@@ -352,6 +352,18 @@ false negative and cost hours once.
   round where the question "did the change reach the device?" mattered enough to get
   its own commit, so verify with something the new code *does* — a property it reads,
   a symbol `grep -a` finds in the shipped `.so` — never the banner.
+- **The vendored core is far newer than its version string says, so do not date it
+  from `rpcs3_version.cpp`.** That file reads `0, 0, 36`, and upstream bumped 0.0.36
+  on **2025-03-30**. Counting upstream commits from that bump gives "523 commits and
+  16 months behind" for the CPU core and RSX, and **that number is wrong**. Checked
+  by content instead: upstream's ARM64 change `21d533675` (2026-07-06) is present in
+  `SPURecompiler.h:392`, as are `61a260482` (readcyclecounter, 2026-05-14) and
+  `320e8d634` (the FCGT/BSL workaround, 2026-05-12). The base carries upstream work
+  through **at least 2026-07-06**. This is the version-banner trap above in a second
+  costume: date the tree by finding a known commit's code in it, never by a
+  constant. And note our direct upstream `RPCSX/rpcsx` is nearly dormant — its
+  master's newest commit is **2026-06-06** — so this fork is *ahead* of RPCSX on
+  rpcs3 content and takes rpcs3 changes directly.
 - **`TBL2`/`TBX2` need a retry owner.** They can trip the AArch64 register
   scavenger. The SPU block compiler has `compile_spu_llvm_with_retry`; the SPU
   interpreter builder deliberately does not, and stays on the plain path.
@@ -870,6 +882,18 @@ Rules, learned by breaking them:
    Confirm with `top -b -n 2 -d 2` (a single `-n 1` sample reports every row as
    0.0% because there is no delta to compute).
 4. Battery is shared too. Check the level before starting a long run.
+5. **Read the temperature before an arm, and treat a hot device as somebody else's
+   run until proved otherwise.** On 2026-08-13 a harness waited to start and watched
+   the cores go **47 C to 95 C** without ever launching the emulator. The other
+   session had taken the device: Xenia sat at **174-211% CPU**, relaunching on a
+   cycle, its memory climbing to 1.0 GB. Any arm taken then measures throttling and
+   contention. `tools/thor_spu_compile_claim_ab.ps1` now refuses on both counts, and
+   `tools/thor_wait_then_compile_claim_ab.ps1` waits for the device instead of
+   competing for it. **Do not force-stop their package**, and do not lower the
+   thermal gate to make a run start.
+6. **Installing an APK is itself a heat source.** The same device read 38.5 C before
+   an install and 50.2 C right after it. That is a transient, like the launch spike
+   in `thermal.md`. Poll for the cooldown; do not conclude the device is hot.
 
 # The manual question, settled
 
@@ -998,9 +1022,20 @@ Everything cheap has been tried. The scoreboard:
 | `host_mutex_spin` | measured 2.2% on Folklore, ~1% of the lv2 win — **default left at 10** |
 | `SPU loop detection: true` | **null** — and consistent with the profile, since the hot loop polls `state`, not a channel |
 | SPU affinity widening | **null, and the config block is inert** — see the retraction below |
+| ARMSX3 second pass, 2026-08-13 | **four ported, none measured** — the same-item SPU compile claim, two JIT i-cache sites, the GETLLAR out-buffer memo and cap, and a memory budget for the PPU compile workers. The APK is installed and the device was then taken by the other session. See [`armsx3-comparison.md`](docs/arm64/armsx3-comparison.md) |
 | `PMULL` for texture swizzle | correct technique, **cold** — `calculate_z_index` absent from the profile at any threshold |
 | exclusive monitor as reservation | **half-viable** — `ERG=64` measured, PS3 needs 128 |
 | ARM TME, SVE | **absent from this chip** |
+
+**BUILT 2026-08-13, default off, and unmeasured.** `debug.rpcsx.thor.spu_selfloop_park`
+takes the timeout in microseconds; `0`, the default, keeps the spin. `BR` now has a
+case for `target == m_pos` and calls `spu_selfloop_park`, which parks on `state`
+with that timeout. The record is written **on entry** — `entries`, `last_pc`, then
+`exits` — so a watchdog reading `entries - exits > 0` sees a park while it is
+happening. That is the record-on-entry slot this file asks for below, and it exists
+because parking turns a burning core into a quiet sleeping thread, which is what a
+guest deadlock would then look like. See `Emu/Cell/thor_spu_selfloop_park.h`. The
+paragraph below is the design it was built from, and it still describes the problem.
 
 **What remains is the SPU self-loop park, and there is no shortcut left to it.**
 Roughly 20% of gameplay CPU sits in two instructions — `ldr w8,[x19,#0x14]` /

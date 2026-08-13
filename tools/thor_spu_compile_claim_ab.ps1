@@ -8,7 +8,8 @@ param(
     [string]$Claim = "1",
     [int]$SettleSeconds = 240,
     [double]$MaxPreflightC = 45.0,
-    [int]$CooldownSeconds = 420
+    [int]$CooldownSeconds = 420,
+    [double]$MaxForeignCpu = 20.0
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +47,32 @@ function Assert-Reachable {
     if ($ok -ne "ok") { throw "device $Device unreachable" }
 }
 
+function Get-ForeignEmulatorCpu {
+    # The Thor is shared with another session that tests Xbox 360 emulation. Never
+    # force-stop that package. Do measure whether it is running, because an arm
+    # that shares the machine with a process holding two cores measures contention
+    # and thermal throttling, not the change under test.
+    $rows = (Invoke-Adb @("shell", "top -b -n 2 -d 2 | grep xenia | grep -v logcat | grep -v grep")) -join "`n"
+    $max = 0.0
+    foreach ($line in ($rows -split "`n")) {
+        # %CPU is the column before %MEM in this build's top output.
+        if ($line -match '\s(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?\s+\d+:\d+\.\d+\s') {
+            $v = [double]$matches[1]
+            if ($v -gt $max) { $max = $v }
+        }
+    }
+    return $max
+}
+
+function Assert-Uncontended {
+    param([string]$When)
+    $foreign = Get-ForeignEmulatorCpu
+    if ($foreign -gt $MaxForeignCpu) {
+        throw ("arm is void: the other session's emulator is at {0:N0}% CPU $When. Do not force-stop it; re-run when the device is free." -f $foreign)
+    }
+    Write-Host ("foreign emulator CPU $When : {0:N0}%" -f $foreign)
+}
+
 function Get-MaxCpuTempC {
     # Read the per-core sensors, not the package one. thermal.md records a guard
     # that compared a junction reading against a package-shaped limit.
@@ -73,37 +100,44 @@ Write-Host "property present in installed .so ($hits match(es))"
 
 Invoke-Adb @("shell", "am force-stop $Package") | Out-Null
 
+Assert-Uncontended "before the run"
+
 # Wait for the device to cool, and read it more than once.
 #
 # Installing an APK heats this device: 38.5 C before an install read 50.2 C right
 # after it. thermal.md records the same shape at launch, where t=4s reads 56.6 C
 # and t=10s reads 46.6 C. A single hot reading is a transient, not a state, so
 # poll instead of refusing at once. Refuse only if it never cools.
+# Require several consecutive cool readings, not one.
+#
+# A single cool sample is not a cool device. The other session cycles its
+# emulator, so the temperature oscillates: one run here read 43.7 C, then 49.8 C
+# fifteen seconds later, with the foreign process reading 0% in the gap between
+# its own launches. Three readings in a row under the limit is the cheapest test
+# that tells a settled device from a trough.
+$stableNeeded = 3
+$stable = 0
 $pre = Get-MaxCpuTempC
-Write-Host ("preflight max cpu-1-* = {0:N1} C" -f $pre)
+Write-Host ("preflight max cpu-1-* = {0:N1} C, want {1} readings under {2:N1} C" -f $pre, $stableNeeded, $MaxPreflightC)
 
-if ($pre -gt $MaxPreflightC) {
-    Write-Host ("waiting for cooldown to {0:N1} C, up to {1}s" -f $MaxPreflightC, $CooldownSeconds)
-    $coolBy = (Get-Date).AddSeconds($CooldownSeconds)
-    while ((Get-Date) -lt $coolBy) {
-        Start-Sleep -Seconds 15
-        $pre = Get-MaxCpuTempC
-        Write-Host ("  {0:N1} C" -f $pre)
-        if ($pre -le $MaxPreflightC) { break }
+$coolBy = (Get-Date).AddSeconds($CooldownSeconds)
+while ($true) {
+    if ($pre -le $MaxPreflightC) {
+        $stable++
+        Write-Host ("  {0:N1} C  ({1}/{2})" -f $pre, $stable, $stableNeeded)
+    } else {
+        if ($stable -gt 0) { Write-Host ("  {0:N1} C  (warmed again, restarting the count)" -f $pre) }
+        else { Write-Host ("  {0:N1} C" -f $pre) }
+        $stable = 0
     }
-}
 
-if ($pre -gt $MaxPreflightC) {
-    throw ("device did not cool below {0:N1} C within {1}s; last read {2:N1} C" -f $MaxPreflightC, $CooldownSeconds, $pre)
-}
+    if ($stable -ge $stableNeeded) { break }
+    if ((Get-Date) -ge $coolBy) {
+        throw ("device never held below {0:N1} C for {1} readings within {2}s; last read {3:N1} C" -f $MaxPreflightC, $stableNeeded, $CooldownSeconds, $pre)
+    }
 
-# Two readings under the limit, because the guard that force-stopped fifteen runs
-# confirmed on an immediate re-read and still caught a spike.
-Start-Sleep -Seconds 5
-$pre2 = Get-MaxCpuTempC
-Write-Host ("confirmed {0:N1} C" -f $pre2)
-if ($pre2 -gt $MaxPreflightC) {
-    throw ("device warmed again on re-read: {0:N1} C" -f $pre2)
+    Start-Sleep -Seconds 15
+    $pre = Get-MaxCpuTempC
 }
 
 # Park the title cache so the boot is genuinely cold, and prove it is gone.
@@ -153,6 +187,9 @@ if (-not $still) { throw "emulator died during settle" }
 # pauses emulation and makes an arm look spectacular.
 $paused = ((Invoke-Adb @("shell", "grep -c 'Emulation is being paused' $log")) -join "").Trim()
 if ($paused -ne "0") { throw "arm is void: emulation was paused ($paused). Re-run without touching the device." }
+
+# The other session can start at any point during the settle, so check again.
+Assert-Uncontended "after the run"
 
 $built = ((Invoke-Adb @("shell", "grep 'SPU Runtime: Built' $log")) -join "`n").Trim()
 
