@@ -192,11 +192,25 @@ it costs the threads that lose their lines.
 
 ## What to do next
 
-1. **Ask whether the app can pin where a shell process cannot.** Everything about
-   placement depends on it, and CPU7 is currently unpinnable.
-2. **Count how many `SHUFB` sites could use `TBL2`.** The instruction is 2x
-   cheaper and the corpus has 5,794 of them. Reach is the open question, not cost.
+1. ~~**Ask whether the app can pin where a shell process cannot.**~~ **Answered
+   the same day, and the premise was wrong.** It is `core_ctl` pausing an idle
+   core, not a permission boundary; load the machine and the pin succeeds. See the
+   correction above.
+2. **The `SHUFB` fallback now has a replacement to measure, not just a cost.**
+   `TBX2(x, a, b, idx)` and `TBL2(a, b, idx) | x` were proved identical over all
+   256 selector bytes, for both index forms. It ships behind
+   `debug.rpcsx.thor.shufb_tbl2_or`, **default 0**, because trading one `TBX2` for
+   a `TBL2` plus an `ORR` only wins if the `ORR` costs less than the 0.199 ns that
+   `TBX2` adds. `thor_bench shufb` times both full sequences as
+   `seq_tbx2_current` and `seq_tbl2_orr_candidate`. **Run those two first.**
 3. **Set the self-loop park timeout from the 10 us wake cost**, then measure how
-   often it parks in a real title.
-4. **Measure the eviction, not the copy**, if the non-temporal path is to be
-   judged: run a co-runner whose own throughput is the metric.
+   often it parks in a real title. A timeout near the wake cost pays the syscall
+   repeatedly for nothing.
+4. **`thor_bench evict` now measures the eviction rather than the copy.** A victim
+   thread's pointer-chase rate is the metric, across three arms: alone, beside
+   `memcpy`, beside `LDNP`/`STNP`, at a 256 KB working set and a 4 MB one. If the
+   non-temporal hint is worth anything to neighbours, the third arm retains more
+   of the baseline. **Unrun.**
+5. **Reach, for both candidates.** 5,794 `SHUFB` and 399 `FI` are compiled sites,
+   not executions, and `TBX2` is only the fallback path rather than every `SHUFB`.
+   Nothing here says how often either runs.
