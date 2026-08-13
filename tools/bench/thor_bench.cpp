@@ -17,6 +17,7 @@
 //   thor_bench hierarchy    load-to-use latency and streaming bandwidth by size
 //   thor_bench memcpy       memcpy against the LDNP/STNP loop, with and without a thrasher
 //   thor_bench wait         what a wait costs: spin, yield, WFE, futex
+//   thor_bench evict        what a 16 KB copy costs the *neighbour*, memcpy against LDNP/STNP
 
 #include <atomic>
 #include <cstdint>
@@ -452,6 +453,153 @@ static int mode_memcpy(int cpu, int thrash_cpu)
 	return 0;
 }
 
+// Measure the eviction, not the copy.
+//
+// bench-results.md records the gap this closes. The memcpy mode times the copy
+// and found the non-temporal loop only 3.1% faster at 16 KB, but the theory
+// behind the change was never about copy throughput: it was that a 16 KB DMA
+// evicts the working set of the other SPU threads. The hierarchy run says that
+// is plausible, because latency leaves the 1.43 ns L1 level at exactly 32 KB and
+// a 16 KB transfer touches 32 KB across source and destination.
+//
+// So here the metric is the **victim's** rate, not the copier's. A victim thread
+// walks a working set on one core while a copier hammers 16 KB transfers on
+// another. Three arms: victim alone, victim beside memcpy, victim beside
+// LDNP/STNP. If the non-temporal hint is worth anything to neighbours, the third
+// arm loses less than the second.
+//
+// The victim's working set is a parameter because the answer depends on where it
+// lives. A set inside its own L1 is private and should be untouched; a set in
+// the shared last level is where copy traffic can reach it.
+struct victim_t
+{
+	pthread_t th{};
+	int cpu = 0;
+	size_t bytes = 0;
+	std::atomic<bool> go{false};
+	std::atomic<bool> stop{false};
+	std::atomic<u64> laps{0};
+
+	static void* run(void* arg)
+	{
+		auto* self = static_cast<victim_t*>(arg);
+		pin_to(self->cpu);
+
+		const size_t lines = self->bytes / 64;
+		std::vector<u8> buf(self->bytes + 64);
+		auto base = reinterpret_cast<u8*>((reinterpret_cast<uintptr_t>(buf.data()) + 63) & ~uintptr_t{63});
+
+		std::vector<size_t> order(lines);
+		for (size_t i = 0; i < lines; i++)
+		{
+			order[i] = i;
+		}
+		u64 s = 0x9e3779b97f4a7c15ull;
+		for (size_t i = lines - 1; i > 0; i--)
+		{
+			s ^= s << 13;
+			s ^= s >> 7;
+			s ^= s << 17;
+			std::swap(order[i], order[s % (i + 1)]);
+		}
+		for (size_t i = 0; i < lines; i++)
+		{
+			*reinterpret_cast<void**>(base + order[i] * 64) = base + order[(i + 1) % lines] * 64;
+		}
+
+		while (!self->go.load(std::memory_order_acquire))
+		{
+		}
+
+		void* p = base;
+		while (!self->stop.load(std::memory_order_relaxed))
+		{
+			for (size_t i = 0; i < lines; i++)
+			{
+				p = *reinterpret_cast<void**>(p);
+			}
+			self->laps.fetch_add(1, std::memory_order_relaxed);
+		}
+
+		__asm__ __volatile__("" ::"r"(p) : "memory");
+		return nullptr;
+	}
+};
+
+static int mode_evict(int victim_cpu, int copier_cpu)
+{
+	const u64 hz = tsc_hz();
+	std::printf("mode=evict victim_cpu=%d copier_cpu=%d timer_hz=%llu\n", victim_cpu, copier_cpu, (unsigned long long)hz);
+
+	if (!pin_to(copier_cpu))
+	{
+		std::printf("error=cannot_pin cpu=%d\n", copier_cpu);
+		return 1;
+	}
+
+	// 256 KB sits in L2; 4 MB is out at the shared level, where copy traffic can
+	// reach it. Run both, because which one moves says where the damage lands.
+	for (size_t victim_bytes : {size_t(256u << 10), size_t(4u << 20)})
+	{
+		double baseline = 0;
+
+		for (int arm = 0; arm < 3; arm++)
+		{
+			victim_t v;
+			v.cpu = victim_cpu;
+			v.bytes = victim_bytes;
+			pthread_create(&v.th, nullptr, &victim_t::run, &v);
+
+			struct timespec settle{0, 300 * 1000 * 1000};
+			nanosleep(&settle, nullptr);
+
+			std::vector<u8> src(16u << 10), dst(16u << 10);
+			std::memset(src.data(), 0x5a, src.size());
+
+			v.laps.store(0, std::memory_order_relaxed);
+			v.go.store(true, std::memory_order_release);
+
+			const u64 t0 = tsc();
+			const u64 window = hz;  // one second of generic timer ticks
+			u64 copies = 0;
+
+			while (tsc() - t0 < window)
+			{
+				for (int i = 0; i < 64; i++)
+				{
+					if (arm == 1)
+					{
+						std::memcpy(dst.data(), src.data(), src.size());
+					}
+					else if (arm == 2)
+					{
+						copy_nontemporal(dst.data(), src.data(), src.size());
+					}
+					copies++;
+				}
+			}
+
+			const u64 elapsed = tsc() - t0;
+			const u64 laps = v.laps.load(std::memory_order_relaxed);
+			v.stop.store(true, std::memory_order_release);
+			pthread_join(v.th, nullptr);
+
+			const double lap_rate = double(laps) / (ticks_to_ns(elapsed, hz) / 1e9);
+			if (arm == 0)
+			{
+				baseline = lap_rate;
+			}
+
+			const char* name = arm == 0 ? "victim_alone" : (arm == 1 ? "victim_with_memcpy" : "victim_with_nt");
+			std::printf("evict victim_bytes=%zu arm=%s laps_per_s=%.1f retained=%.3f copies=%llu\n",
+				victim_bytes, name, lap_rate, baseline > 0 ? lap_rate / baseline : 0.0,
+				(unsigned long long)(arm == 0 ? 0 : copies));
+		}
+	}
+
+	return 0;
+}
+
 // What a wait costs, and what it costs to be woken.
 //
 // This is the question behind the SPU self-loop park and the GETLLAR busy-wait
@@ -833,6 +981,7 @@ int main(int argc, char** argv)
 	if (mode == "memcpy") return mode_memcpy(cpu, other);
 	if (mode == "wait") return mode_wait(cpu, other);
 	if (mode == "shufb") return mode_shufb(cpu);
+	if (mode == "evict") return mode_evict(cpu, other);
 
 	std::printf("error=unknown_mode mode=%s\n", mode.c_str());
 	return 2;
