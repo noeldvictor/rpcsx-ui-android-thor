@@ -16,6 +16,7 @@
 #include "SPUInterpreter.h"
 #include "thor_spu_branch_extract.h"
 #include "thor_spu_compile_claim.h"
+#include "thor_shufb_tbl2_or.h"
 #include "thor_spu_selfloop_park.h"
 #include <algorithm>
 #include <thread>
@@ -106,6 +107,9 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// The emitted IR differs, so the SPU object cache key changes with it and
 	// stale objects invalidate by construction.
 	const u64 m_thor_spu_selfloop_park_us = thor::spu_selfloop_park_us();
+
+	// Read once, out of the compile loop, like the two gates above.
+	const bool m_thor_shufb_tbl2_or = thor::shufb_tbl2_or();
 
 	// Interpreter table size power
 	const u8 m_interp_magn;
@@ -7334,7 +7338,18 @@ public:
 				}
 
 				const auto x = tbl(zero_lut, (c >> 4));
-				set_vr(op.rt4, tbx2(x, as, bs, eval(c & 0x9f)));
+				const auto idx = eval(c & 0x9f);
+
+				// TBX2 costs 2.1x TBL2 here, and x is zero exactly where the
+				// index is in range, so an OR does the same job. Exhaustive over
+				// all 256 selector bytes. See thor_shufb_tbl2_or.h.
+				if (m_thor_shufb_tbl2_or)
+				{
+					set_vr(op.rt4, eval(tbl2(as, bs, idx) | x));
+					return;
+				}
+
+				set_vr(op.rt4, tbx2(x, as, bs, idx));
 				return;
 			}
 		}
@@ -7353,7 +7368,18 @@ public:
 			// BCAX(0x0f, c, 0x60) is 0x0f ^ (c & ~0x60), which is the selector
 			// this path wants, in one instruction rather than a BIC plus an EOR.
 			// bcax() falls back to the arithmetic form without SHA-3.
-			set_vr(op.rt4, tbx2(x, a, b, bcax(splat<u8[16]>(0x0f), c, splat<u8[16]>(0x60))));
+			const auto idx = bcax(splat<u8[16]>(0x0f), c, splat<u8[16]>(0x60));
+
+			// Same replacement as the byteswapped site above. The index here is
+			// (c & 0x9f) ^ 0x0f, and the equivalence was checked over all 256
+			// selector bytes for that form too.
+			if (m_thor_shufb_tbl2_or)
+			{
+				set_vr(op.rt4, eval(tbl2(a, b, idx) | x));
+				return;
+			}
+
+			set_vr(op.rt4, tbx2(x, a, b, idx));
 			return;
 		}
 #else
