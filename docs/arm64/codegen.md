@@ -1040,7 +1040,7 @@ is from **emitted machine code** (`jit-emitted-code.md`), not from source.
 | --- | --- | --- |
 | SHA-3 `BCAX` / `EOR3` | 3-input bitwise in one op | **exploited** — 327 `bcax`, SPU `EQV` and both `SHUFB` selector paths |
 | `SDOT`/`UDOT` (dotprod) | bit-gather, horizontal sums | **exploited, but check the attribution** — 1,664 of the 1,673 `udot` are the block-verification accumulate. `SUMB` emits 9, `GB` emits 31 `sdot`. See [`x86-tricks-arm64-answers.md`](x86-tricks-arm64-answers.md) |
-| `TBL`/`TBX` | universal permute | **exploited** — 5,916 + 1,455 |
+| `TBL`/`TBX` | universal permute | **exploited** — 5,916 + 1,455. **But the two-table forms are not equal: `TBX2` costs 2.1x the throughput of `TBL2` on the A715 and A710**, measured 0.377 against 0.178 ns. A single table is free for `TBL` on the big cores and triples the cost on an A510. See [`bench-results.md`](bench-results.md), and the `TBL2`-and-`OR` replacement below |
 | i8mm `SMMLA`/`UMMLA` | widening multiply | live but rare (17 / 13) |
 | **`PMULL`** (carry-less multiply) | **bit interleave / Morton**, CRC, GF(2) | **unused — and cold here, see below** |
 | AES rounds | fast hash / mixing primitive | unused; candidate sites are compile-time |
@@ -1087,3 +1087,58 @@ capability with a *measured* payoff is not a SIMD or crypto unit at all — it i
 **`WFE`**, sitting unused in front of four spin sites that hold roughly a third of
 gameplay CPU, with `rx::spin_on_cacheline_once()` already implementing
 `LDAXR`+`WFE` and used by none of them.
+
+# The SHUFB fallback pays 2x for a TBX2 it may not need
+
+`shufb` is the most common operation in this title's compiled SPU corpus:
+**5,794**, against 2,203 `fm` and 399 `fi`, counted out of the on-device cache.
+
+Measured on the device, `ns_per_op` over four independent chains:
+
+| form | A715 (cpu3) | A710 (cpu6) | A510 (cpu0) |
+| --- | --- | --- | --- |
+| `tbl1` | 0.179 | 0.179 | 0.503 |
+| `tbl2` | **0.178** | **0.183** | 1.300 |
+| `tbx1` | 0.186 | 0.178 | 1.255 |
+| `tbx2` | **0.377** | **0.388** | 2.517 |
+
+Two things follow. **A single-table `TBX` is free** — 0.186 against 0.179 — so
+every single-source path this file already prefers is fine as it stands. And
+**the two-table `TBX2` costs 2.1x its `TBL2` equivalent** on both clusters the
+SPU threads run on. The A510 behaves differently again: there a second table
+*triples* the `TBL` cost rather than costing nothing.
+
+## Where it is paid, and the replacement
+
+Only on the path that is not `perm_only`, where the selector may hold the
+constant-generating bytes:
+
+```cpp
+const auto x = tbl(zero_lut, (c >> 4));   // 0x00 / 0xff / 0x80 constants
+set_vr(op.rt4, tbx2(x, a, b, idx));       // out-of-range lanes keep x
+```
+
+`zero_lut` is twelve zero bytes then `ff, ff, 80, 80`. So **`x` is zero exactly
+where the selector is in range**, and `TBL2` writes zero exactly where the index
+is out of range. The two are complementary, and the fallback becomes an OR:
+
+```cpp
+set_vr(op.rt4, eval(tbl2(a, b, idx) | x));
+```
+
+**The equivalence is exhaustive.** A selector byte has 256 values, and both index
+forms this affects were checked over all of them: `c & 0x9f` at the byteswapped
+site, and `(c & 0x9f) ^ 0x0f` at the other, which is what `BCAX(0x0f, c, 0x60)`
+computes — an identity checked over the same 256 values. Zero mismatches, with
+both invariants holding: an in-range index implies `x` is zero, and a nonzero `x`
+implies the index is out of range.
+
+**What is not established is that it is faster.** It trades one `TBX2` for one
+`TBL2` plus an `ORR`, and `TBX2` costs only **0.199 ns** more than `TBL2`, so the
+`ORR` has to come in under that. `thor_bench shufb` times both full sequences as
+`seq_tbx2_current` and `seq_tbl2_orr_candidate`; the device disconnected before
+they ran. `debug.rpcsx.thor.shufb_tbl2_or` is therefore **0 by default**.
+
+And the count is of compiled sites, not of executions. 5,794 says the operation
+is everywhere in the corpus; it does not say how often this particular fallback
+path is the one taken. Both questions need the device.

@@ -4,8 +4,12 @@ param(
     [string]$Package = "net.rpcsx.easy",
     [ValidateSet("all", "topology", "hierarchy", "memcpy", "wait")]
     [string]$Mode = "all",
-    [int[]]$Cpus = @(7, 5, 0),
-    [int]$OtherCpu = 6,
+    # 3 is an A715, 6 an A710, 0 an A510. CPU7 (X3) and CPU5 are reachable too,
+    # but only once something has loaded the machine: core_ctl pauses them when
+    # idle and an affinity request naming only a paused core is refused. The
+    # binary loads the machine itself before it gives up on a pin.
+    [int[]]$Cpus = @(3, 6, 0),
+    [int]$OtherCpu = 4,
     [double]$MaxPreflightC = 55.0,
     [string]$OutDir = ""
 )
@@ -27,7 +31,22 @@ if (-not (Test-Path $local)) { throw "no binary at $local; run build_thor_bench.
 
 function Invoke-Adb {
     param([string[]]$AdbArgs)
-    & adb -s $Device @AdbArgs 2>&1
+    # adb writes ordinary progress to stderr -- "1 file pushed" among it -- and
+    # under ErrorActionPreference Stop that merged stream is a terminating error.
+    # The first run of this script died on a push that had in fact succeeded.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & adb -s $Device @AdbArgs 2>&1 }
+    finally { $ErrorActionPreference = $prev }
+}
+
+function Assert-Adb {
+    # The USB serial on this device disappears without warning, and an
+    # unreachable device returns empty exactly like a quiet one.
+    $ok = ((Invoke-Adb @("shell", "echo ok")) -join "") -replace '\s', ''
+    if ($ok -ne "ok") {
+        throw "device $Device is not answering. It may need `adb reconnect`, a replug, or an Allow USB debugging tap."
+    }
 }
 
 $ok = ((Invoke-Adb @("shell", "echo ok")) -join "") -replace '\s', ''
@@ -77,8 +96,14 @@ function Run-Mode {
     param([string]$M, [int]$Cpu, [int]$Other)
     Write-Host ""
     Write-Host "--- $M cpu=$Cpu other=$Other ---"
+    Assert-Adb
     $out = (Invoke-Adb @("shell", "$remote $M $Cpu $Other")) -join "`n"
     Write-Host $out
+
+    # A mode that printed nothing usable is not a quiet result.
+    if ($out -notmatch 'mode=') {
+        throw "mode '$M' produced no result line. Output was: $out"
+    }
     $script:lines += ""
     $script:lines += "## $M cpu=$Cpu other=$Other"
     $script:lines += $out
