@@ -470,6 +470,35 @@ static int mode_wait(int cpu, int waker_cpu)
 		std::printf("wait shape=load ns=%.2f\n", ticks_to_ns(t1 - t0, hz) / double(iters));
 	}
 
+	// 1b. WFE, which needs the exclusive monitor armed by an LDXR first.
+	//
+	// This is the park mechanism this project tried three times. The monitor is
+	// per core and its granule is 64 bytes here, read from CTR_EL0, so it covers
+	// half a 128-byte PS3 reservation. `FEAT_WFxT` is absent on this chip, so WFE
+	// cannot carry a timeout, which is the reason the futex path exists at all.
+	// Measure what one armed WFE costs when nothing wakes it: a WFE that returns
+	// immediately is a nop with extra steps, and that is worth knowing before any
+	// park is built on it.
+	{
+		const size_t iters = 200000;
+		std::atomic<u32> monitor{0};
+
+		u64 t0 = tsc();
+		for (size_t i = 0; i < iters; i++)
+		{
+			u32 seen;
+			__asm__ __volatile__(
+				"ldxr %w[v], [%[p]]\n\t"
+				"wfe\n\t"
+				: [v] "=&r"(seen)
+				: [p] "r"(&monitor)
+				: "memory");
+			(void)seen;
+		}
+		u64 t1 = tsc();
+		std::printf("wait shape=wfe_armed ns=%.2f\n", ticks_to_ns(t1 - t0, hz) / double(iters));
+	}
+
 	// 2. Wake latency: how long after the writer stores does the waiter observe
 	//    it. Run for a spin and for a futex, at several delays, because the park's
 	//    whole risk is latency.
