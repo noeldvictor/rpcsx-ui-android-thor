@@ -63,7 +63,86 @@ static double ticks_to_ns(u64 ticks, u64 hz)
 
 // ---------------------------------------------------------------- affinity
 
+// Wake the cores that core_ctl has paused, so a pin to them can succeed.
+//
+// Measured 2026-08-13: on an idle device, sched_setaffinity to CPU5 or CPU7
+// fails with EINVAL, while CPU3 and CPU6 succeed. Both cores read online=1,
+// every cpuset including top-app lists 0-7, and the process's own
+// Cpus_allowed_list reads 0-7. Under load the same pins succeed.
+//
+// That is Qualcomm core_ctl pausing a core: it stays online but leaves the
+// scheduler's active mask, and an affinity request naming only paused CPUs is
+// rejected. **A light benchmark cannot measure the prime core**, because it is
+// not heavy enough to bring it back, and the failure looks like a permission
+// problem rather than an idle one.
+struct core_waker
+{
+	std::atomic<bool> stop{false};
+	std::vector<pthread_t> threads;
+
+	static void* spin(void* arg)
+	{
+		auto* self = static_cast<core_waker*>(arg);
+		volatile u64 x = 0;
+		while (!self->stop.load(std::memory_order_relaxed))
+		{
+			for (int i = 0; i < 100000; i++)
+			{
+				x += i;
+			}
+		}
+		(void)x;
+		return nullptr;
+	}
+
+	void start(int n)
+	{
+		threads.resize(size_t(n));
+		for (int i = 0; i < n; i++)
+		{
+			pthread_create(&threads[size_t(i)], nullptr, &core_waker::spin, this);
+		}
+	}
+
+	void join()
+	{
+		stop.store(true);
+		for (pthread_t t : threads)
+		{
+			pthread_join(t, nullptr);
+		}
+		threads.clear();
+	}
+};
+
+static bool pin_to_raw(int cpu);
+
+// Try the pin; if the core is paused, load the machine and try again.
 static bool pin_to(int cpu)
+{
+	if (pin_to_raw(cpu))
+	{
+		return true;
+	}
+
+	core_waker waker;
+	waker.start(int(sysconf(_SC_NPROCESSORS_CONF)));
+
+	bool ok = false;
+	for (int attempt = 0; attempt < 50 && !ok; attempt++)
+	{
+		struct timespec ts{0, 100 * 1000 * 1000};
+		nanosleep(&ts, nullptr);
+		ok = pin_to_raw(cpu);
+	}
+
+	waker.join();
+
+	// Confirm the pin survived the load going away.
+	return ok && pin_to_raw(cpu);
+}
+
+static bool pin_to_raw(int cpu)
 {
 	cpu_set_t set;
 	CPU_ZERO(&set);
@@ -665,6 +744,78 @@ static int mode_shufb(int cpu)
 	BENCH_LAT("tbx2_lat", "tbx v2.16b, {v0.16b, v1.16b}, v2.16b\n\t")
 
 #undef BENCH_LAT
+
+	// The candidate rewrite for the SHUFB path that is not perm_only.
+	//
+	// SPULLVMRecompiler.cpp emits, for a selector that may contain the
+	// constant-generating bytes:
+	//
+	//     x = tbl(zero_lut, c >> 4)        // 0x00 where the selector is in range
+	//     r = tbx2(x, a, b, c & 0x9f)      // out-of-range lanes keep x
+	//
+	// `zero_lut` is twelve zero bytes then ff, ff, 80, 80, so **x is zero exactly
+	// where the index is in range**, and TBL2 writes zero exactly where the index
+	// is out of range. So the fallback can be an OR instead:
+	//
+	//     r = tbl2(a, b, c & 0x9f) | x
+	//
+	// TBX2 costs 2.1x TBL2 on this cluster. Whether trading it for TBL2 plus an
+	// ORR actually wins depends on what the ORR costs, and that is measured here
+	// rather than assumed. Four independent sequences per iteration.
+	{
+		const size_t seq_iters = 2000000;
+
+#define BENCH_SEQ(NAME, BODY)                                                             \
+	{                                                                                     \
+		u64 t0 = tsc();                                                                   \
+		__asm__ __volatile__(                                                             \
+			"ld1 {v0.16b}, [%[a]]\n\t"                                                    \
+			"ld1 {v1.16b}, [%[b]]\n\t"                                                    \
+			"ld1 {v2.16b}, [%[i]]\n\t"                                                    \
+			"movi v20.16b, #0\n\t"                                                        \
+			"mov v3.16b, v2.16b\n\t"                                                      \
+			"mov v4.16b, v2.16b\n\t"                                                      \
+			"mov v5.16b, v2.16b\n\t"                                                      \
+			"mov x9, %[n]\n\t"                                                            \
+			"1:\n\t" BODY                                                                 \
+			"subs x9, x9, #1\n\t"                                                         \
+			"b.ne 1b\n\t" ::[a] "r"(tbl_a),                                               \
+			[b] "r"(tbl_b), [i] "r"(idx), [n] "r"(seq_iters)                              \
+			: "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v16", "v17", "v18", "v19", \
+			  "v20", "v21", "v22", "v23", "x9", "cc", "memory");                          \
+		u64 t1 = tsc();                                                                   \
+		std::printf("shufb cpu=%d test=%s ns_per_shufb=%.3f\n", cpu, NAME,                \
+			ticks_to_ns(t1 - t0, hz) / double(seq_iters * 4));                             \
+	}
+
+		// What ships today: build the constants, then TBX2 merges them.
+		BENCH_SEQ("seq_tbx2_current",
+			"tbl v6.16b, {v20.16b}, v2.16b\n\t"
+			"tbx v6.16b, {v0.16b, v1.16b}, v2.16b\n\t"
+			"tbl v7.16b, {v20.16b}, v3.16b\n\t"
+			"tbx v7.16b, {v0.16b, v1.16b}, v3.16b\n\t"
+			"tbl v16.16b, {v20.16b}, v4.16b\n\t"
+			"tbx v16.16b, {v0.16b, v1.16b}, v4.16b\n\t"
+			"tbl v17.16b, {v20.16b}, v5.16b\n\t"
+			"tbx v17.16b, {v0.16b, v1.16b}, v5.16b\n\t")
+
+		// The candidate: TBL2 zeroes the out-of-range lanes, so OR the constants in.
+		BENCH_SEQ("seq_tbl2_orr_candidate",
+			"tbl v6.16b, {v20.16b}, v2.16b\n\t"
+			"tbl v18.16b, {v0.16b, v1.16b}, v2.16b\n\t"
+			"orr v6.16b, v6.16b, v18.16b\n\t"
+			"tbl v7.16b, {v20.16b}, v3.16b\n\t"
+			"tbl v19.16b, {v0.16b, v1.16b}, v3.16b\n\t"
+			"orr v7.16b, v7.16b, v19.16b\n\t"
+			"tbl v16.16b, {v20.16b}, v4.16b\n\t"
+			"tbl v21.16b, {v0.16b, v1.16b}, v4.16b\n\t"
+			"orr v16.16b, v16.16b, v21.16b\n\t"
+			"tbl v17.16b, {v20.16b}, v5.16b\n\t"
+			"tbl v22.16b, {v0.16b, v1.16b}, v5.16b\n\t"
+			"orr v17.16b, v17.16b, v22.16b\n\t")
+
+#undef BENCH_SEQ
+	}
 
 	return 0;
 }

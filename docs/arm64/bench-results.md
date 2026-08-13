@@ -25,18 +25,41 @@ nine manual predictions refuted on exactly that gap.
 `CTR_EL0 = 0x49444c004` on every core that could be pinned, which matches the
 ERG and CWG of 64 bytes already recorded.
 
-**CPU5 and CPU7 refuse an exclusive affinity, and it is not this program's bug.**
-`taskset 0x20` and `taskset 0x80` both fail with `Invalid argument`, while
-`taskset 0x8` and `taskset 0x40` succeed and report `Cpus_allowed_list: 3` and
-`6`. Both cores are online, `/sys/devices/system/cpu/online` reads `0-7`, and the
-process's own `Cpus_allowed_list` reads `0-7`. Deterministic over three runs.
+**CPU5 and CPU7 refuse an exclusive affinity *when the device is idle*, and it is
+not this program's bug.** `taskset 0x20` and `taskset 0x80` both fail with
+`Invalid argument`, while `taskset 0x8` and `taskset 0x40` succeed and report
+`Cpus_allowed_list: 3` and `6`. Both cores are online, `/sys/devices/system/cpu/online`
+reads `0-7`, and the process's own `Cpus_allowed_list` reads `0-7`. Deterministic
+over three runs.
 
-**So CLAUDE.md's advice to "widen SPU affinity toward CPU3 (A715) and CPU7 (X3)"
-cannot be carried out as written**, at least from a shell process: nothing can be
-pinned to the X3 alone. Whether the app's own cgroup is allowed what a shell
-process is not remains **untested**, and it is the next thing to check before any
-placement work. The prime core being unpinnable would also explain why placement
-experiments here have come back null.
+### CORRECTED, same day: it is idleness, not permission
+
+The first reading of this was that the X3 could not be targeted, and that
+CLAUDE.md's advice to widen SPU affinity toward CPU7 could not be carried out.
+**That was wrong.** The cause is Qualcomm `core_ctl` **pausing** a core: it stays
+online but leaves the scheduler's active mask, and an affinity request naming
+only paused CPUs is rejected.
+
+Shown by loading the machine and repeating the identical command:
+
+| state | `taskset 0x20` (CPU5) | `taskset 0x80` (CPU7) |
+| --- | --- | --- |
+| idle | `Invalid argument` | `Invalid argument` |
+| eight busy loops running | **`Cpus_allowed_list: 5`** | **`Cpus_allowed_list: 7`** |
+
+No cpuset explains it either: `top-app` is `cpus=[0-7]`, and so are `foreground`,
+`restricted`, `camera-daemon` and the root set. Only `background`,
+`system-background` (`0-2`) and `audio-app` (`1-2`) are narrower, and none of them
+is what the emulator runs in.
+
+**So the placement advice stands.** During emulation the machine is loaded, every
+core is unpaused, and CPU7 is targetable.
+
+**The methodological trap is the real finding: a light benchmark cannot measure
+the prime core.** The benchmark is not heavy enough to bring the core back, the
+pin fails, and the failure looks like a permission problem rather than an idle
+one. `pin_to()` now loads the machine, retries, and re-checks that the pin
+survives the load going away.
 
 ## SHUFB: our lowering uses the slower instruction, and it costs 2x
 
