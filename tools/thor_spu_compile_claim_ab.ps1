@@ -191,6 +191,35 @@ if ($paused -ne "0") { throw "arm is void: emulation was paused ($paused). Re-ru
 # The other session can start at any point during the settle, so check again.
 Assert-Uncontended "after the run"
 
+# Prove the title actually started, because a live process is not a booted game.
+#
+# This check exists because its absence produced a confident wrong number on
+# 2026-08-13. An arm reported "ok" with 14.6 CPU-seconds over a 254 second
+# window, which is 5.7% of one core for what was supposed to be a cold-cache
+# boot with a full PPU precompile. PPU workers read 0 and the log had no SPU
+# Runtime line. The process was alive, nothing was paused, and the device was
+# uncontended, so every check the harness had came back clean. The emulator had
+# not booted the title at all, which AGENTS.md already records as
+# launcher-ui-instead-of-title.
+#
+# Read the line count first. A log that is missing or nearly empty means the
+# instrument failed, and that is a different fault from a title that did not
+# start. Reporting them as one is how a search that searches nothing reads as a
+# search that finds nothing.
+$logLines = ((Invoke-Adb @("shell", "wc -l < $log 2>/dev/null")) -join "").Trim()
+if (-not $logLines -or $logLines -eq "0") {
+    throw "arm is void, and the instrument is at fault: $log is missing or empty, so nothing can be said about the boot"
+}
+
+$ppuThreads = ((Invoke-Adb @("shell", "grep -c 'PPU\[0x' $log")) -join "").Trim()
+if ($ppuThreads -eq "0" -or -not $ppuThreads) {
+    Write-Host "--- last 25 log lines, for the diagnosis ---"
+    Write-Host (((Invoke-Adb @("shell", "tail -25 $log")) -join "`n"))
+    throw "arm is void: no PPU thread lines in a $logLines line log, so the title never started. The process being alive is not the same as the game running."
+}
+
+Write-Host "boot confirmed: $ppuThreads PPU thread lines in a $logLines line log"
+
 $built = ((Invoke-Adb @("shell", "grep 'SPU Runtime: Built' $log")) -join "`n").Trim()
 
 # Process CPU time since launch, which is the metric that can actually see this.

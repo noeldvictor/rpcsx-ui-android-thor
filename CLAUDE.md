@@ -352,6 +352,18 @@ false negative and cost hours once.
   round where the question "did the change reach the device?" mattered enough to get
   its own commit, so verify with something the new code *does* — a property it reads,
   a symbol `grep -a` finds in the shipped `.so` — never the banner.
+- **A live process is not a booted game, and a harness that does not check will
+  report a number for a run that never happened.** On 2026-08-13 an A/B arm
+  reported `ok` with **14.6 CPU-seconds over a 254 second window** — 5.7% of one
+  core, for what was supposed to be a cold-cache boot with a full PPU precompile.
+  PPU workers read **0** and the log had no `SPU Runtime` line. Every check the
+  harness had came back clean: the pid was alive, nothing was paused, the device
+  was uncontended and cool. The title had never started, which this repo already
+  records as `launcher-ui-instead-of-title`. `tools/thor_spu_compile_claim_ab.ps1`
+  now counts `PPU[0x` lines in `RPCSX.log` and refuses the arm without them —
+  **and reads the log's line count first**, so "the log is empty" is reported as
+  an instrument fault rather than as a failed boot. Add that check to any new
+  harness before its first number is believed.
 - **The vendored core is far newer than its version string says, so do not date it
   from `rpcs3_version.cpp`.** That file reads `0, 0, 36`, and upstream bumped 0.0.36
   on **2025-03-30**. Counting upstream commits from that bump gives "523 commits and
