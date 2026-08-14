@@ -234,6 +234,46 @@ So `debug.rpcsx.thor.dma_nontemporal` keeps its default of 0. What survives is t
 3.1% on the copy itself, which is small and real, and an untested hypothesis about
 same-core tenancy.
 
+## The SPU self-loop park makes it worse, on a real title, reproducibly
+
+This is the item CLAUDE.md calls "the one thing left to build", worth about 20% of
+gameplay CPU. It was measured on Folklore, booted to its title screen from a warm
+PPU cache, letting the run settle 20 seconds after the first frame and then
+sampling a 60-second window. CPU is `utime + stime` from `/proc/<pid>/stat`;
+frames come from the RSX auditor's own `on_frame_end call #N` counter, so both
+numbers are the emulator's, not a sampler's.
+
+| `debug.rpcsx.thor.spu_selfloop_park` | cores | frames in 60 s | fps |
+| --- | --- | --- | --- |
+| **0 (spin, the default)** | **0.278** | 3,500 | **58.3** |
+| 0, repeat | 0.283 | 3,500 | 58.3 |
+| **100 us** | **1.135** | 3,000 | **50.0** |
+| 100 us, repeat | 1.136 | 3,000 | 50.0 |
+| 1000 us | 1.135 | 3,000 | 50.0 |
+
+**The park costs four times the CPU and 14% of the frame rate.** Both arms repeat
+to within 0.3%, and raising the timeout tenfold changes nothing, so the cost is
+per-entry rather than per-wait. The `BR`-to-self blocks are evidently entered far
+more often than "an idle loop" suggests, and each entry now pays a futex syscall
+where it used to pay the 0.36 ns that a `yield` costs on this core.
+
+**So the gate stays 0, and the design is wrong rather than the timeout.** A park
+that is entered this often cannot be made to pay by tuning how long it sleeps. If
+this is revisited, the question to answer first is how often that site is reached
+per frame — the counters in `thor_spu_selfloop_park.h` are written on entry
+precisely so that can be read.
+
+### And the first two readings of this were both wrong
+
+The first pair sampled too early, before SPU compilation had finished: 1.134
+cores for the spin arm and 0.031 for the park arm, which reads as a **97%
+saving**. It was written up as one here for a few minutes. The settled method,
+which waits for frames and then lets the run stabilise, inverts the sign entirely.
+
+Neither reading was noise in the arms; both were noise in *when* the arms were
+sampled. `frames in 60 s` is what caught it, because a CPU number alone cannot
+tell a thread that stopped spinning from an emulator that stopped working.
+
 ## The memory hierarchy, so future theories have numbers
 
 A710 (cpu6), shuffled pointer chase, so the prefetcher cannot flatter it:
