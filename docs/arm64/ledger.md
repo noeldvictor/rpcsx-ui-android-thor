@@ -881,3 +881,42 @@ rather than patch this one.** The rewrite's advantage over upstream is nowhere
 recorded, and its cost is a documented 5-7% switched off. Upstream's version also
 brings the completability verification and the three April fixes as a set, instead
 of the partial adaptation here.
+
+
+## Scoping the analyzer replacement, 2026-08-14
+
+Measured before starting, because "replace the rewrite with upstream's analyzer"
+turned out to mean something larger than a swap.
+
+**What is already shared.** `reg_state_t` is **identical** in both trees, 69 lines,
+no member missing and none added; the only difference is the RPCSX type rename
+`bs_t<vf>` to `rx::EnumBitSet<vf>`. Our `reduced_loop_t` carries upstream names
+including `expected_sup_conds` and `discard()`. `spu_itype_t` exists here at
+`SPUAnalyser.h:335`. So the divergence is narrower than "the fork rewrote the
+analyzer" suggested.
+
+**What is missing.** `origin_t`, the register-origin tracker the refusals read, is
+**absent here**: `origin_t`, `is_loop_dictator`, `find_reg`, `is_reg_null` and
+`mod1_type` are all zero in our header, which accounts for most of the 906 against
+594 line gap. As a data structure it is a self-contained **284 lines** depending
+only on `spu_itype_t`, `umax` and a bit set.
+
+**What makes it a project rather than a patch.** The code that *populates*
+`origin_t` during analysis spans about **1,065 lines across 11 regions**, between
+lines 5,203 and 8,835 of upstream's `SPUCommonRecompiler.cpp`, interleaved through
+an `analyse()` this fork has also modified. Lifting the struct without that code
+gives a tracker that nothing fills in, whereupon the refusals read an empty model
+and refuse nothing — which would look correct and behave exactly like the current
+rewrite.
+
+**So this is a controlled three-way re-sync of `analyse()`, not a port**, with the
+fork's own analyzer changes reconciled deliberately, followed by BLUS30161
+correctness testing: the recorded failure is state corruption at a fixed SPU PC
+rather than a crash, so a successful boot proves nothing.
+
+**Not started, deliberately.** A partially ported analyzer that compiles and
+mis-refuses is the exact silent-corruption risk this thread is about, and it would
+be indistinguishable from success until a title quietly broke.
+
+`tools/diff_reg_state.py` prints the model comparison behind the first half of
+this.
