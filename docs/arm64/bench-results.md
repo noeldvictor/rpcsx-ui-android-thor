@@ -307,7 +307,35 @@ Neither reading was noise in the arms; both were noise in *when* the arms were
 sampled. `frames in 60 s` is what caught it, because a CPU number alone cannot
 tell a thread that stopped spinning from an emulator that stopped working.
 
-## A measured improvement: the SPU branch lane extract, now on by default
+## RETRACTED 2026-08-14: the branch-extract improvement does not hold
+
+The section below reported about 2.8% less CPU and the default was flipped on for
+a day. **A control run the next day, on the rebuilt binary in one session, put the
+two settings on top of each other:**
+
+| setting | ticks |
+| --- | --- |
+| `spu_branch_extract=1` | 1859, 1809 |
+| `spu_branch_extract=0` | 1841, 1823 |
+
+Overlapping, and the sign flips between the pairs. **The run-to-run spread for a
+single fixed setting is about +-50 ticks**, which is the same size as the effect
+that was claimed, so the earlier non-overlap across three and four samples was
+luck rather than signal.
+
+The default is back to **0** and the contract test's assertion with it.
+
+**The phase gate solved one confound and hid another.** Fixing the frame count to
+3,500 removed the scene-phase problem that voided the park measurement, and the
+remaining scatter at a fixed phase is still several percent. Anything of that size
+needs many more samples per arm, or a normaliser the change provably cannot touch
+— the `spu_getllar_retry` denominator in `lv2-ppu-spin.md` is the shape that
+worked before, taking a 59% spread down to 1.1%.
+
+**Nothing measured on this device today made the emulator faster.** That is the
+honest state.
+
+## The original claim, kept for the record: the SPU branch lane extract
 
 This is the only change tried on this device today that made the emulator
 **faster**, and it is the one that removes work rather than trading a spin for a

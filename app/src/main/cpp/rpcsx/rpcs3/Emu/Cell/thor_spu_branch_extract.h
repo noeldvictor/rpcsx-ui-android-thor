@@ -23,27 +23,27 @@
 // arbitrary bytes the two predicates differ on about half of the inputs. So the
 // guard is load-bearing. Do not move either spelling out of the guarded block.
 //
-//   debug.rpcsx.thor.spu_branch_extract = 0   (default 1)
+//   debug.rpcsx.thor.spu_branch_extract = 1   (default 0)
 //
-// **MEASURED 2026-08-13, and the default is now 1.** Folklore, booted to its
-// title screen, sampling a 60-second window 20 seconds after the first frame, and
-// **accepting only windows of 3,500 frames** so both arms describe the same scene
-// phase. That gate is not optional here: without it the same configuration gives
-// 185 ticks over 1,750 frames and 1,720 over 3,500, because the title screen has
-// an attract movie and a menu and a boot lands in whichever.
+// **RETRACTED 2026-08-14: the default went to 1 on a measurement that does not
+// hold, and is back to 0.** The first A/B looked clean — extract=0 at 1702, 1701,
+// 1690 ticks against extract=1 at 1685, 1642, 1624, 1647, phase-gated to
+// 3,500-frame windows, ranges not overlapping, two batches in opposite orders.
+// That reads as about 2.8% less CPU.
 //
-//   extract=0   1702, 1701, 1690 ticks      mean 1697.7
-//   extract=1   1685, 1642, 1624, 1647      mean 1649.5
+// A control run the next day, same binary and same session, killed it:
 //
-// **About 2.8% less CPU at an identical frame count**, with the two ranges not
-// overlapping, across two batches run in opposite orders. Six accepted runs, all
-// at exactly 3,500 frames.
+//   extract=1   1859, 1809
+//   extract=0   1841, 1823
 //
-// That is a small number and it is a real one. The mechanism matches: eight
-// instructions become two at 1,402 sites, and this is one of the few changes
-// tried on this device that **removes** work rather than trading spin for a
-// syscall. The ones that traded, the SPU self-loop park and a GETLLAR busy-wait
-// of 0, both measured worse.
+// **Overlapping, with the sign flipping between the pairs.** The run-to-run
+// spread for one fixed setting is about +-50 ticks, which is the same size as the
+// effect claimed. The earlier non-overlap was luck across three and four samples.
+//
+// The phase gate fixed the frame-count confound and did not fix this one. To
+// resolve an effect of a few percent here needs many more samples per arm, or a
+// normaliser the change provably cannot touch, in the shape of the
+// `spu_getllar_retry` denominator in lv2-ppu-spin.md.
 //
 // Set the property to 0 to get the movemask back. docs/arm64/bench-results.md
 // holds the method, and docs/arm64/x86-tricks-arm64-answers.md the equivalence
@@ -80,13 +80,11 @@ inline bool spu_branch_extract() {
     const char *v = std::getenv("RPCSX_THOR_SPU_BRANCH_EXTRACT");
 #endif
     if (!v) {
-      return true;
+      return false;
     }
 
-    // Only an explicit off turns it off. An unset or malformed value keeps the
-    // measured form, so a typo cannot quietly restore the movemask.
-    return !(v[0] == '0' || v[0] == 'n' || v[0] == 'N' || v[0] == 'f' ||
-             v[0] == 'F');
+    return v[0] == '1' || v[0] == 'y' || v[0] == 'Y' || v[0] == 't' ||
+           v[0] == 'T';
   }();
 
   return enabled;

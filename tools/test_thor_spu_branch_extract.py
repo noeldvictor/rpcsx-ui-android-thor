@@ -13,13 +13,13 @@ holds the compiled assembly for both spellings.
 
 Four properties are asserted, and each one is silent when it breaks.
 
-1. **The gate exists and the default is on, and only an explicit `0` turns it
-   off.** It was off while the change was unmeasured. It was measured on
-   2026-08-13 -- Folklore, phase-gated to 3,500-frame windows, seven accepted runs
-   across two batches run in opposite orders -- at **about 2.8% less CPU for an
-   identical frame count**, with the two ranges not overlapping. See
-   `docs/arm64/bench-results.md`. The assertion is inverted rather than deleted,
-   so a silent flip back to the movemask still fails here.
+1. **The gate exists and the default is off.** It was flipped to on for a day on
+   an A/B that measured about 2.8% less CPU, and flipped back when a control run
+   in the same session put the two settings on top of each other with the sign
+   changing between pairs. The run-to-run spread for one fixed setting is the same
+   size as the effect that was claimed. Until that is resolved the default stays
+   off, because a default that flips on changes the codegen of every SPU branch on
+   the device. See `docs/arm64/bench-results.md`.
 2. **All eight sites are gated.** The same failure shape as the lv2 spin sweep:
    a change that reaches seven of eight sites gives a measurement that says the
    change did less than it should. Nothing else reports it.
@@ -116,15 +116,15 @@ def check_header(failures):
     if '__system_property_get' not in header:
         failures.append(f'{HEADER}: the header never reads an Android property')
 
-    # The default must be on, and only an explicit off may turn it off. The
-    # measurement behind that is in docs/arm64/bench-results.md. The non-AArch64
-    # stub stays a constant false, because the movemask is the correct x86 form
-    # and the gate is compile-time off there.
-    if 'if (!v) {\n      return true;\n    }' not in header:
-        failures.append(f'{HEADER}: an absent property does not default to on')
+    # The default must be off. It was on for a day, on an A/B that a control run
+    # then put on top of itself; see the retraction in the header and in
+    # docs/arm64/bench-results.md. Both the property path and the non-AArch64 stub
+    # return false, and no path may return true without a value.
+    if 'if (!v) {\n      return false;\n    }' not in header:
+        failures.append(f'{HEADER}: an absent property does not default to off')
 
-    if "v[0] == '0'" not in header:
-        failures.append(f'{HEADER}: an explicit 0 no longer turns the gate off')
+    if re.search(r'return\s+true\s*;', header):
+        failures.append(f'{HEADER}: a path returns true unconditionally')
 
     if 'inline bool spu_branch_extract() { return false; }' not in header:
         failures.append(f'{HEADER}: the non-AArch64 stub is not a constant false')
