@@ -920,3 +920,49 @@ be indistinguishable from success until a title quietly broke.
 
 `tools/diff_reg_state.py` prints the model comparison behind the first half of
 this.
+
+
+### CORRECTED, and the re-sync is tractable
+
+Two things above are wrong, and the second one changes the plan.
+
+**It was never a rewrite. It is a partial back-port.** The nearest upstream
+revision to our `SPURecompiler.h` is `daa53c8642` (2026-02-24), and **that
+revision has no reduced-loop machinery at all**: `origin_t`, `reduced_loop_t` and
+`is_predictable_loop_dictator` are all zero in it. Upstream added the whole
+feature after February. Our tree nonetheless has `reduced_loop_t`. So this fork
+took the *transform* onto a February base and left the *safety model* behind,
+which is exactly why it corrupted BLUS30161 and got switched off.
+`tools/find_upstream_base.py` finds that base by content, since the version
+constant is useless for dating this tree.
+
+**And the 1,065-line estimate was an artifact of line endings.** Our working tree
+is CRLF and upstream's blobs are LF, so every line compared as different. That is
+what produced one file-spanning conflict and duplicate `reg_state_t` and
+`reduced_loop_t` in a first attempt.
+
+Normalise with `tr -d ''` and a three-way merge against that base gives:
+
+| file | ours | base | upstream | conflicts |
+| --- | --- | --- | --- | --- |
+| `SPURecompiler.h` | 594 | 459 | 906 | **10** |
+| `SPUCommonRecompiler.cpp` | 9,701 | 8,559 | 10,024 | **27** |
+
+**37 conflicts, and the merged `.cpp` carries all 36 `break_reduced_loop_pattern`
+refusals.** Most header conflicts are trivial: RPCSX include paths (`util/File.h`
+against `Utilities/File.h`), `m_regmod` sized `0x10000` against `SPU_LS_SIZE / 4`
+which is the same number, and fork-local declarations such as
+`spu_reduced_loop_unroll_factor`. One conflict is the prize, 340 lines carrying
+`origin_t`.
+
+**The two that need judgement are the pattern API.** The fork changed
+`add_pattern` to `(bool fill_all, inst_attr, u32 start, u32 end, ...)` with a
+`utils::address_range range` member, and upstream changed the same call to
+`(inst_attr, u32 start, u64 info, ...)` with a `u64 info` member. Those are
+independent redesigns of the same interface, used by patterns beyond the reduced
+loop, so neither side can simply win.
+
+**Still to be done after the merge resolves:** it must compile, this fork's SPU
+work must be shown to survive it, and BLUS30161 must be tested for the corruption
+the emitter was disabled for. The line-ending normalisation must not be committed
+as a whitespace change across the whole file.
