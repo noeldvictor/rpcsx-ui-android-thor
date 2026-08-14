@@ -807,3 +807,42 @@ Worth recording as a decision rather than leaving on the list, because an open
 item with a good write-up attached is an invitation. The next person should read
 this and *not* implement it — and the design above is preserved so that if a
 title ever shows `vm_passive_lock` dominating again, the work is already done.
+
+
+# What the Arm ARM actually says about LDNP/STNP
+
+Read 2026-08-14 out of DDI 0487M.c, section C3.2.14.5, with
+`tools/search_arm_manual.py "Load/store SIMD and floating-point non-temporal pair"`.
+The manual is 17,145 pages, which is why it gets quoted second-hand; that script
+makes it greppable.
+
+**It is a hint, and nothing more.**
+
+> "The load/store non-temporal pair instructions provide a hint to the memory
+> system that an access is non-temporal or streaming, and unlikely to be repeated
+> in the near future. This means that data caching is **not required**."
+
+Not "must not be cached". An implementation is free to ignore it. That is a clean
+explanation for the measured result in [`bench-results.md`](bench-results.md),
+where the non-temporal copy gained 3.1% on the copy itself and cost a cross-core
+neighbour nothing measurable: if the A710 does not act on the hint, there is no
+eviction to avoid and the numbers are exactly what one would expect.
+
+**And LDNP relaxes an ordering rule that LDP obeys.**
+
+> "there is an exception to the usual memory ordering rules. If an address
+> dependency exists between two memory reads, and a load non-temporal pair
+> instruction generated the second read, then in the absence of any other barrier
+> mechanism to achieve order, those memory accesses can be observed in any order
+> by the other observers within the shareability domain."
+
+So address dependency, which normally orders two reads on AArch64 without a
+barrier, **does not order them through an LDNP**. A bulk copy is safe only where
+its consumer synchronises through a barrier or an acquire, not by pointer chasing
+through the copied data. `thor_dma_copy` feeds the SPU MFC path, which signals
+completion separately, so this is not a live defect — and it is a reason to keep
+`debug.rpcsx.thor.dma_nontemporal` off by default beyond the missing speed case.
+
+**The general lesson matches the ledger's.** A manual row is a hypothesis about
+the chip. Here the manual explains a null that had already been measured, which is
+the right order: measure, then read the manual to find out why.

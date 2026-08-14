@@ -794,9 +794,21 @@ The analyzer here is **a fork rewrite, not upstream's code**:
 | **`break_reduced_loop_pattern`** | **36** | **0** |
 
 `break_reduced_loop_pattern` is upstream's refusal path: the analyzer declines to
-transform a loop it cannot prove safe, discarding the pattern. **Upstream calls it
-at 36 sites. This fork calls it nowhere.** The rewrite kept the transform and
-dropped the bail-outs, so it accepts loop shapes upstream explicitly rejects.
+transform a loop it cannot prove safe, discarding the pattern. Upstream calls it at
+**34 sites across 25 distinct reasons**, listed by
+`tools/compare_reduced_loop_guards.py`.
+
+**CORRECTED: this fork does refuse, by a different mechanism.** The first reading
+of this said it "calls it nowhere" and concluded the fork refuses nothing. That was
+a name search again, the same error as `needs_runtime_verify`, made twice in one
+hour. `make_reduced_loop_pattern` returns `std::optional` and has **15 `return {}`
+paths** in its 303 lines, with **32 more** in the candidate scan.
+
+So the open question is not whether the fork refuses. It is **whether its refusals
+cover the same 25 conditions**, which include an infinite or single-time loop, a
+non-predictable loop dictator, a missing loop argument, a register modified more
+than once, and several register-aliasing cases. That comparison is the work, and
+it has to be done by behaviour rather than by identifier.
 
 That is a far better explanation for "U2 and U4 both corrupt BLUS30161 at the same
 SPU PC" than anything in upstream's emitter, and it means **the feature was
