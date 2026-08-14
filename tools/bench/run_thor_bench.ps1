@@ -2,7 +2,7 @@
 param(
     [string]$Device = "c3ca0370",
     [string]$Package = "net.rpcsx.easy",
-    [ValidateSet("all", "topology", "hierarchy", "memcpy", "wait")]
+    [ValidateSet("all", "topology", "hierarchy", "memcpy", "wait", "shufb", "evict", "decide")]
     [string]$Mode = "all",
     # 3 is an A715, 6 an A710, 0 an A510. CPU7 (X3) and CPU5 are reachable too,
     # but only once something has loaded the machine: core_ctl pauses them when
@@ -109,9 +109,22 @@ function Run-Mode {
     $script:lines += $out
 }
 
+# "decide" is the short run: the two experiments that settle a pending change,
+# on the two clusters the SPU threads use. Everything else is background.
+#
+#   shufb  seq_tbx2_current against seq_tbl2_orr_candidate, which decides
+#          debug.rpcsx.thor.shufb_tbl2_or
+#   evict  the victim's rate beside memcpy and beside LDNP/STNP, which decides
+#          whether debug.rpcsx.thor.dma_nontemporal is worth anything
+$decide = $Mode -eq "decide"
+
 if ($Mode -eq "all" -or $Mode -eq "topology") { Run-Mode "topology" 0 0 }
 
 foreach ($cpu in $Cpus) {
+    if ($decide -and $cpu -eq 0) { continue }   # the A510s are not where SPU runs
+
+    if ($Mode -eq "all" -or $Mode -eq "shufb" -or $decide) { Run-Mode "shufb" $cpu $OtherCpu }
+    if ($Mode -eq "all" -or $Mode -eq "evict" -or $decide) { Run-Mode "evict" $cpu $OtherCpu }
     if ($Mode -eq "all" -or $Mode -eq "hierarchy") { Run-Mode "hierarchy" $cpu $OtherCpu }
     if ($Mode -eq "all" -or $Mode -eq "memcpy") { Run-Mode "memcpy" $cpu $OtherCpu }
     if ($Mode -eq "all" -or $Mode -eq "wait") { Run-Mode "wait" $cpu $OtherCpu }
