@@ -699,3 +699,58 @@ worse energy per frame.
 If that experiment is ever run, pin the SPU threads to **different complexes**
 and measure energy per frame rather than watts — a slower core drawing less
 power for longer is not a saving.
+
+# What chapter 4 of the A715 guide says about our two biggest static costs
+
+Read 2026-08-14 out of `docs/hardware/arm_cortex_a715_software_optimization_guide.pdf`
+(`pdftotext -layout`; the Read tool cannot render these without poppler).
+
+## 4.2, register spills: real advice, and **not actionable here**
+
+> "Register transfers between general-purpose registers (GPR) and ASIMD registers
+> (VPR) are lower latency than reads and writes to the cache hierarchy, thus it is
+> recommended that GPR registers be filled/spilled to the VPR rather to memory,
+> when possible."
+
+That aims squarely at the largest statically visible cost in
+[`jit-emitted-code.md`](jit-emitted-code.md): `sp` is the second hottest base
+register and its 51,474 accesses are 10.1% of every instruction the JIT emits.
+
+**It still does not give us a lever, for two reasons.**
+
+First, reach. Of those 51,474, **21,706 are 128-bit `q` spills** — already vector,
+with nowhere better to go, because there is no larger register file to spill a V
+register into. Only the 12,777 scalar accesses are candidates, about 2.5% of
+emitted instructions, and the 16,981 paired ones are a mix.
+
+Second, and decisive: **we do not choose where spills go.** The recompiler emits
+IR and LLVM's register allocator decides placement. "Spill this GPR to a spare V
+register" is an allocator policy, not something expressible from the IR we hand
+over, and the SPU JIT is already using the vector file hard for 128 SPU registers.
+
+So this is a guide row that is true, aimed at a cost that is real, and still not a
+change we can make. Recorded so nobody re-derives it as an opportunity. It would
+become one only through an LLVM backend or target-feature change.
+
+## 4.3, memory routines: the one row that does apply
+
+> "Unroll the loop to include multiple load and store operations per iteration,
+> minimizing the overheads of looping. Align stores on 32B boundary wherever
+> possible. Use non-writeback forms of LDP and STP instructions interleaving them."
+
+`thor_copy_nontemporal` in `SPUThread.cpp` already follows the third point: it uses
+non-writeback `LDNP`/`STNP` with a separate `add`, rather than post-increment
+forms. It does 64 bytes per iteration and does not align stores.
+
+Both remaining points are testable with `thor_bench memcpy`, which already times
+that exact kernel. **Whether it is worth doing is a different question**, because
+the eviction the non-temporal path was built for measured as nothing across cores,
+and the copy itself gained only 3.1%. Improving a kernel whose benefit is
+unestablished is not the next thing to do.
+
+## And what is not in either guide
+
+Neither the A715 nor the A710 document mentions a **loop buffer** or a micro-op
+cache. So there is no fetch-side argument against unrolling on these cores, which
+is worth knowing before judging upstream's Reduced Loop, where the emitter's whole
+shape is about how many iterations to emit.
