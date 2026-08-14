@@ -290,6 +290,55 @@ the number was real and the inference was wrong. Establish reach first — the
 [`fi` count of 399 against 5,794 `shufb`](docs/arm64/codegen.md) came out of the
 on-device SPU cache, not out of a benchmark — then bench, then confirm in the app.
 
+## Put the command in a script, not in the shell
+
+**Run tools, not long inline commands.** A measurement typed straight into the
+shell cannot be re-run, cannot be reviewed, and cannot be fixed once it is wrong;
+the same twenty lines get retyped with one value changed and nobody can say later
+which arm used which. Every A/B on 2026-08-13 was inlined that way, and two of the
+results were retracted.
+
+Anything with a loop, a retry, or more than about three commands belongs in
+`tools/`, where it can carry its own refusals. The scripts here already refuse on
+the things that have gone wrong before: an absent property, a device that answers
+empty because it is unreachable, an arm that samples the wrong scene, a mode that
+prints nothing.
+
+`tools/thor_phase_gated_ab.sh` is the current A/B runner:
+
+    tools/thor_phase_gated_ab.sh debug.rpcsx.thor.spu_branch_extract 0 1 3
+
+It interleaves the arms, proves the property is in the shipped `.so`, waits for
+frames rather than a fixed time, accepts an arm only when its frame count lands in
+the band, and prints both temperatures.
+
+## The phase gate, and the scatter it does not fix
+
+**A title screen is not one workload.** Folklore has an attract movie and a menu,
+and a boot lands in whichever. The identical configuration, launched twice, gave
+**185 ticks over 1,750 frames** and **1,720 over 3,500**. Ticks per frame does not
+rescue it: 0.106 against 0.491. Accepting only 3,500-frame windows pins the scene.
+
+**And that is not enough.** Inside the band the spread for one fixed setting is
+about **50 ticks**, several percent. Two results were claimed and retracted on this
+basis within a day:
+
+* the SPU self-loop park, reported as a 14% frame-rate regression, then withdrawn
+  when a control pair with identical settings disagreed with itself;
+* the SPU branch lane extract, reported as 2.8% less CPU and briefly made the
+  default, then withdrawn when a control run put the two settings level with the
+  sign flipping between pairs.
+
+So: **read ranges, not means**; interleave arms rather than grouping them, because
+the device drifted 12% for identical work as it warmed from 30 C to 68 C over a
+session; and treat anything under about 5% as unresolved until there are many more
+samples per arm, or a normaliser the change provably cannot touch — the
+`spu_getllar_retry` denominator in `lv2-ppu-spin.md` took a 59% spread to 1.1%.
+
+**Measure frames alongside CPU, always.** A CPU number on its own cannot tell a
+thread that stopped spinning from an emulator that stopped working. That is what
+caught the park's first reading, which looked like a 97% saving.
+
 ## Traps that have already cost time
 
 - **The thermal guard trips on a launch transient.** Launch reads `56.6 C` at
