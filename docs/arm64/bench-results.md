@@ -234,6 +234,39 @@ So `debug.rpcsx.thor.dma_nontemporal` keeps its default of 0. What survives is t
 3.1% on the copy itself, which is small and real, and an untested hypothesis about
 same-core tenancy.
 
+## RETRACTED: the park measurement below is void, and so is every arm on this scene
+
+**A control run destroys it.** The same configuration, launched twice in a row
+with nothing changed between them:
+
+| run | ticks | frames | fps | ticks per frame |
+| --- | --- | --- | --- | --- |
+| control A | **185** | 1,750 | 29.2 | 0.106 |
+| control B | **1,720** | 3,500 | 58.3 | 0.491 |
+
+Nine times the CPU and twice the frames, from an identical config. Normalising to
+ticks per frame does not save it either: 0.106 against 0.491 is still 4.6x.
+
+Folklore's title screen is **not a stable workload**. It has phases — an attract
+movie and a menu are not the same load — and a boot lands in whichever one it
+lands in. Every arm below sampled a phase, not a setting.
+
+**So the 14% frame-rate regression attributed to the park is withdrawn.** The
+pairs that looked reproducible to 0.3% were two arms happening to catch the same
+phase. The tell was there and was misread: the frame counts came in three
+distinct clusters — 1,750, 3,000 and 3,500 — which is a workload changing, not a
+setting changing.
+
+The same voids the `movsb_threshold` arm run beside it, which landed on 6,817
+ticks and 3,000 frames, indistinguishable from the park arms and for the same
+reason.
+
+**What a usable version of this needs**, before any arm on a title is believed
+again: a scene whose content is fixed for the whole window, or a normaliser the
+change provably cannot touch — the approach `lv2-ppu-spin.md` used when it
+divided by `spu_getllar_retry` and took a 59% spread down to 1.1%. A control pair
+with identical settings must be run first, and it must agree with itself.
+
 ## The SPU self-loop park makes it worse, on a real title, reproducibly
 
 This is the item CLAUDE.md calls "the one thing left to build", worth about 20% of
