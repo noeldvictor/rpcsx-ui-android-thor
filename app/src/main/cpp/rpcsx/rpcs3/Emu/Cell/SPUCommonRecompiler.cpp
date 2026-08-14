@@ -232,7 +232,47 @@ static bool spu_reduced_loop_emit_enabled() noexcept
 {
 #ifdef ANDROID
 	// Fresh-cache U2 and U4 runs both corrupt BLUS30161 at the same SPU PC.
-	return false;
+	//
+	// **This switches off upstream's Reduced Loop entirely on Android**, because
+	// `emit_reduced_loops` gates whether the analyzer records the pattern at all.
+	// Upstream calls that work its Cell breakthrough and measured 5-7% average FPS
+	// on Twisted Metal, one of the most SPU-heavy titles, between v0.0.40-19096 and
+	// v0.0.40-19151. So this `return false` is the most expensive line in the file
+	// if the corruption it guards against has since been fixed.
+	//
+	// **It may well have been.** Upstream shipped three correctness fixes for
+	// reduced loops immediately after: `a03a78dbd` verifies the loop can actually
+	// complete rather than spinning forever, `02eb54920` fixes register updates in
+	// the second block, and `13de8233b` fixes the analyzer's register origin. Our
+	// base carries the second and third — `loop_may_update` and
+	// `reduced_loop_restore_regs` are here — but **not the whole of the first**:
+	// `no_change_bits` and `cond_verify` are present while
+	// `is_cond_need_runtime_verify` and the pattern-30 discard are not. So the
+	// completability check here is not upstream's final form.
+	//
+	// Made switchable so the question can be asked rather than assumed. The
+	// default stays off, which is the behaviour this file has had.
+	//
+	//   debug.rpcsx.thor.spu_reduced_loop_emit = 1   (default 0)
+	//
+	// **Test correctness before speed.** The recorded failure is state corruption
+	// in BLUS30161 at a fixed SPU PC, not a crash, so a run that boots proves
+	// nothing on its own; compare against a known-good save or the same scene.
+	// Only then measure, and read the retraction in bench-results.md first, because
+	// the in-app method here cannot yet resolve a few percent.
+	static const bool enabled = []() noexcept
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_reduced_loop_emit", value) <= 0)
+		{
+			return false;
+		}
+
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+	}();
+
+	return enabled;
 #else
 	const char* value = std::getenv("RPCSX_SPU_REDUCED_LOOP_EMIT");
 
