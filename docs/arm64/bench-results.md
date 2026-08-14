@@ -432,3 +432,51 @@ it costs the threads that lose their lines.
 5. **Reach, for both candidates.** 5,794 `SHUFB` and 399 `FI` are compiled sites,
    not executions, and `TBX2` is only the fallback path rather than every `SHUFB`.
    Nothing here says how often either runs.
+
+
+# The RSX FIFO park: more CPU time, and the metric is the wrong one
+
+Measured 2026-08-14 with `tools/thor_phase_gated_ab.sh`, three repeats
+interleaved, every accepted window at 3,450-3,550 frames, 50.2 C rising to 60.2 C
+across the run.
+
+| `debug.rpcsx.thor.rsx_fifo_park` | ticks over 60 s |
+| --- | --- |
+| 0, `std::this_thread::yield()` | 1,828 / 1,800 |
+| **1, eight `pause()` then `sevl;wfe;wfe`** | **2,116 / 1,984 / 1,972** |
+
+The ranges do not overlap, the frame counts are equal by construction, and the
+park costs about **9% more CPU time**. Six windows were rejected for landing in
+the wrong scene phase, at 500, 2,750 and 1,750 frames, which is the gate working.
+
+## Why this does not settle it
+
+**`WFE` suspends the core, not the task.** The Arm ARM files it under "Mechanisms
+for entering a low-power state" for the PE. Linux accounts `utime` and `stime` by
+which task is current, and a thread parked in `WFE` never stops being current. So
+the time it spends parked is billed to it exactly as though it were issuing
+instructions.
+
+`std::this_thread::yield()` is the opposite: `sched_yield` puts the task at the
+back of the runqueue, so time can pass without being billed to it.
+
+**So this metric is biased against `WFE` by construction**, and a 9% rise in CPU
+time is what a working park looks like under it, as much as a broken one. The
+instrument cannot separate "burning issue slots" from "parked in a low-power
+state", which is the entire distinction the change is about.
+
+## What would settle it
+
+Power, not CPU time. `thermal.md` and `instruments.md` already say the power probe
+needs **wireless adb**, because USB charging makes
+`power_supply/battery/current_now` report charge current and the probe returns a
+floor rather than a figure. That run has not been done.
+
+Until then the gate stays **0**, on the honest grounds that nothing has shown it
+helps — not on the grounds that it has been shown to hurt.
+
+**The wider lesson for this file:** every park measured here so far was judged by
+CPU time, and for a futex park that is fair, because a sleeping task really does
+stop being billed. For a `WFE` park it is not. The SPU self-loop park's numbers
+have the same problem in principle, though its retraction rests on the scene-phase
+control rather than on this.
