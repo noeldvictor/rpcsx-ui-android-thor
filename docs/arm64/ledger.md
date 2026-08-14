@@ -941,7 +941,8 @@ is CRLF and upstream's blobs are LF, so every line compared as different. That i
 what produced one file-spanning conflict and duplicate `reg_state_t` and
 `reduced_loop_t` in a first attempt.
 
-Normalise with `tr -d ''` and a three-way merge against that base gives:
+Normalise with `tr -d '
+'` and a three-way merge against that base gives:
 
 | file | ours | base | upstream | conflicts |
 | --- | --- | --- | --- | --- |
@@ -966,3 +967,60 @@ loop, so neither side can simply win.
 work must be shown to survive it, and BLUS30161 must be tested for the corruption
 the emitter was disabled for. The line-ending normalisation must not be committed
 as a whitespace change across the whole file.
+
+
+### The re-sync recipe, so it regenerates deterministically
+
+Every step is scripted, so the resolution below is the artifact rather than a
+patch file. Re-running these commands reproduces the same result.
+
+```sh
+# 1. Find the base by content. The version constant is useless for dating this tree.
+python tools/find_upstream_base.py rpcs3/Emu/Cell/SPURecompiler.h --since 2025-06-01
+#    -> daa53c8642 (2026-02-24)
+
+# 2. Normalise line endings. Ours is CRLF, upstream's blobs are LF; without this
+#    every line differs and the merge collapses into one whole-file conflict.
+U=../rpcs3-upstream
+git -C $U show daa53c8642:PATH | tr -d '' > base
+git -C $U show origin/master:PATH | tr -d '' > theirs
+tr -d '' < app/src/main/cpp/rpcsx/PATH > ours
+
+# 3. Three-way merge, then resolve by index with tools/merge_helper.py.
+git merge-file -p ours base theirs > merged
+```
+
+**Header, `SPURecompiler.h`, 10 conflicts.** Take **ours** for 1 and 2, the RPCSX
+include paths and the fork declarations. Take **theirs** for 3 to 10, which brings
+`origin_t`, `is_predictable_loop_dictator` and `is_reg_null`. Then **restore two
+initialisers by hand**: upstream writes `compare_direction cond_val_compare{}` and
+`val_compare{}`, and `{}` is `CMP_SLESS` here rather than `CMP_UNKNOWN`, which the
+analyzer refuses on. Result: 969 lines, no conflicts.
+
+**Analyzer, `SPUCommonRecompiler.cpp`, 27 conflicts.** Take **ours** for 1, 3, 4,
+6, 7, 8, 9, 10, 11, 12, 15, 16, 25, 26 — the fork's diagnostics helper, the
+`compile_spu_llvm_with_retry` TBL2 retry, the Android blocks, the compile budget,
+and a typo this fork already fixed. Take **theirs** for 2, 5, 13, 14, 17, 18, 19,
+20, 21, 22, 23, 24, 27, which brings the analyzer, all 36
+`break_reduced_loop_pattern` refusals, and the `add_pattern` implementation that
+matches the header.
+
+### What still blocks it, and it is not the conflicts
+
+**The merge leaves the file inconsistent, because the fork's implementation is not
+all inside the conflicts.** After resolving, `reduced_loop_candidate_t` is gone
+with conflict 19 while `inspect_reduced_loop_candidate` still refers to it, and
+the fork's scan still calls a `make_reduced_loop_pattern` that no longer exists.
+Those references sit in regions upstream never touched, so git merged them cleanly
+as ours.
+
+The residue is 16 references in four clusters, spread across roughly 3,615 lines
+that are interleaved with code which must be kept. Removing it is hand surgery,
+and the only honest check on it is a compiler.
+
+**So the remaining work, in order:** excise the fork's reduced-loop scan and its
+candidate inspector; compile `SPUCommonRecompiler.cpp` and `SPULLVMRecompiler.cpp`
+against the new header; confirm this fork's SPU work still builds, particularly
+the TBL2 retry and the Thor gates; then boot `BLUS30161` and compare a fixed scene
+against a known-good run, because the failure this is all about is state
+corruption at a fixed SPU PC rather than a crash.
