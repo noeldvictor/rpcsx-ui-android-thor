@@ -340,6 +340,28 @@ orders, 0-first and then 1-first, so it is not drift.
 says nothing about a scene where the SPU branch sites are hit at a different rate.
 It is one title, one scene, seven accepted runs.
 
+## Non-temporal DMA in the emulator: no effect, and a thermal lesson
+
+Screened on top of the branch-extract baseline, same phase gate:
+
+| order | `dma_nontemporal=0` | `dma_nontemporal=16384` |
+| --- | --- | --- |
+| base first | 1,846 | 1,814 |
+| reversed | 1,824 | 1,831 |
+
+The sign flips with the order, so **no effect is established**, which agrees with
+the bench: 3.1% on the copy itself and no measurable cost to a neighbour.
+
+**The absolute level is the more useful finding.** These runs sit at 1,814 to
+1,846 ticks where the branch-extract batches an hour earlier sat at 1,624 to
+1,702, about 12% higher for the same work. The device had climbed to **68 C**
+after a long series of boots, against **30 C** when the bench ran.
+
+So the tick count is only comparable **within a batch measured close together**.
+The branch-extract result survives that rule, because its arms were interleaved
+and its two ranges did not overlap. Any comparison across batches does not.
+Record the temperature with the arm, and interleave rather than grouping.
+
 ## The memory hierarchy, so future theories have numbers
 
 A710 (cpu6), shuffled pointer chase, so the prefetcher cannot flatter it:
