@@ -172,6 +172,68 @@ set of the other five SPU threads. This benchmark measures the copy, not the
 damage to the neighbours, so **the eviction benefit is still unmeasured**. What
 the table does say is that nobody should expect the copy itself to be worth much.
 
+## Both candidates were measured, and both came back null
+
+Run later the same day, once the device came back. **Neither prepared change is
+justified by its own experiment**, and one of them refutes an arithmetic
+prediction made here from the isolated instruction costs above.
+
+### SHUFB: TBL2 plus an OR is not faster than TBX2
+
+The full sequences, `ns_per_shufb`, four independent chains:
+
+| | `seq_tbx2_current` | `seq_tbl2_orr_candidate` |
+| --- | --- | --- |
+| A715 (cpu3) | 0.555 | **0.555** |
+| A710 (cpu6) | 0.556 | **0.560** |
+| A715, repeat | 0.559 | **0.555** |
+
+**Identical, twice, in both directions of the noise.** And this ran in the same
+invocation that measured `tbl2_tp` at 0.185 and `tbx2_tp` at 0.371, so the 2x gap
+between the instructions is real *in the same run* that shows the sequence does
+not care.
+
+The prediction here was about 20% faster, from 0.179 + 0.377 against
+0.179 + 0.178 + an ORR assumed to cost about 0.089. **That was wrong**, and it is
+the `BCAX` failure again in a new costume: an isolated instruction cost that does
+not survive being put in a sequence. Whatever the sequence is limited by, it is
+not the TBX2's second table.
+
+`debug.rpcsx.thor.shufb_tbl2_or` therefore stays **0**, and it should stay 0. The
+equivalence proof remains valid and worth keeping; the reason to use it does not
+exist.
+
+### Non-temporal DMA: no measurable cost to a neighbour, so nothing to recover
+
+The victim's retained rate at a 256 KB working set, one core copying 16 KB
+repeatedly while another walks the set:
+
+| run | victim / copier | beside `memcpy` | beside `LDNP`/`STNP` |
+| --- | --- | --- | --- |
+| first | 3 / 6 | **0.875** | 0.977 |
+| reversed | 6 / 3 | 1.007 | 1.010 |
+| repeat 1 | 3 / 6 | 0.994 | 0.999 |
+| repeat 2 | 3 / 6 | 1.000 | 1.003 |
+
+**The 0.875 did not reproduce.** It was written up here as a 10-point win before
+the repeat was run, and three subsequent runs — one with the cores reversed and
+two in the original orientation — put `memcpy` at 0.994 to 1.007. So `memcpy`
+costs a cross-core neighbour nothing measurable, and the non-temporal copy has no
+eviction to recover.
+
+At a 4 MB working set the non-temporal arm was slightly **worse**, 0.946 against
+0.960, which is the same size of wobble.
+
+**What this does not test, and it is the case that matters.** The theory is about
+six SPU threads sharing *fewer cores than there are threads*. This benchmark puts
+the copier and the victim on **different** cores, which have private L1 and L2, so
+only the shared level is exposed. Same-core contention, where a 16 KB copy really
+does evict a co-tenant's lines out of the same L1, is **not measured here**.
+
+So `debug.rpcsx.thor.dma_nontemporal` keeps its default of 0. What survives is the
+3.1% on the copy itself, which is small and real, and an untested hypothesis about
+same-core tenancy.
+
 ## The memory hierarchy, so future theories have numbers
 
 A710 (cpu6), shuffled pointer chase, so the prefetcher cannot flatter it:
