@@ -16,6 +16,42 @@
 #include <thread>
 #include <bitset>
 
+#if defined(ARCH_ARM64)
+#if defined(ANDROID)
+#include <sys/system_properties.h>
+#endif
+
+namespace
+{
+	// Whether an idle FIFO parks on the event stream instead of re-queueing.
+	// See the call site for why the pre-spin matters and why this must not be
+	// copied to a multi-thread wait.
+	bool thor_rsx_fifo_park_enabled() noexcept
+	{
+		static const bool enabled = []() noexcept
+		{
+#if defined(ANDROID)
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.rsx_fifo_park", value) <= 0)
+			{
+				return false;
+			}
+
+			return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+#else
+			return false;
+#endif
+		}();
+
+		return enabled;
+	}
+
+	// Spins burned in the current idle episode. Only the RSX thread reaches this.
+	thread_local u32 s_thor_fifo_idle_spins = 0;
+}
+#endif
+
 using spu_rdata_t = std::byte[128];
 
 extern void mov_rdata(spu_rdata_t& _dst, const spu_rdata_t& _src);
@@ -669,9 +705,55 @@ namespace rsx
 				{
 					performance_counters.FIFO_idle_timestamp = get_system_time();
 					performance_counters.state = FIFO::state::empty;
+#if defined(ARCH_ARM64)
+					// A fresh idle episode gets its own hot spin, so a PUT that lands
+					// quickly after a busy period is still caught without wake latency.
+					s_thor_fifo_idle_spins = 0;
+#endif
 				}
 				else
 				{
+					// The RSX thread does not park here, it re-queues.
+					//
+					// std::this_thread::yield() keeps the thread runnable, and on this core
+					// the underlying YIELD measures 0.36 ns, the same as a NOP. So an empty
+					// ring is spun on at full issue rate while the guest has published
+					// nothing. See docs/arm64/bench-results.md.
+					//
+					// wait_for_event() parks with no syscall, which matters here: every park
+					// measured on this device that traded a spin for a syscall came out
+					// worse. The architected event stream bounds the park to about 100 us,
+					// so the RSX stays on the frame's dependency chain rather than sleeping
+					// through work.
+					//
+					// The pre-spin is not optional. ARMSX3 records that ouroboros420/rpcsx
+					// parked bare here (e31ef44ef) and had to revert it (832c23078) when the
+					// wake latency cost frame-time smoothness. A PUT landing within
+					// microseconds is still caught by the spin; only sustained idle parks.
+					//
+					// One thread parks here, which is the weakest case for the event
+					// stream's wake-everything stampede that Arm warns about. Do not copy
+					// this to a site where several threads would park on the same stream.
+					//
+					//   debug.rpcsx.thor.rsx_fifo_park = 1   (default 0)
+					//
+					// Off by default, and unmeasured on this device.
+#if defined(ARCH_ARM64)
+					if (thor_rsx_fifo_park_enabled())
+					{
+						if (s_thor_fifo_idle_spins < 8)
+						{
+							s_thor_fifo_idle_spins++;
+							rx::pause();
+						}
+						else
+						{
+							rx::wait_for_event();
+						}
+
+						return;
+					}
+#endif
 					std::this_thread::yield();
 				}
 
