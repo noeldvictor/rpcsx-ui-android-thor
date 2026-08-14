@@ -307,6 +307,39 @@ Neither reading was noise in the arms; both were noise in *when* the arms were
 sampled. `frames in 60 s` is what caught it, because a CPU number alone cannot
 tell a thread that stopped spinning from an emulator that stopped working.
 
+## A measured improvement: the SPU branch lane extract, now on by default
+
+This is the only change tried on this device today that made the emulator
+**faster**, and it is the one that removes work rather than trading a spin for a
+syscall.
+
+The eight SPU branch lowerings collapse a 16-byte register to a 16-bit movemask
+and test one bit. AArch64 has no movemask, so LLVM builds one in eight
+instructions where the direct lane extract takes two. `codegen.md` and
+`x86-tricks-arm64-answers.md` carry the equivalence work; what was missing was
+any number.
+
+Method, and the gate is the point. Folklore booted to its title screen, a
+60-second window sampled 20 seconds after the first frame, **accepting only
+windows of 3,500 frames** so both arms describe the same phase. Without that gate
+the identical configuration gives 185 ticks over 1,750 frames and 1,720 over
+3,500.
+
+| `debug.rpcsx.thor.spu_branch_extract` | ticks over 60 s at 3,500 frames |
+| --- | --- |
+| 0, the movemask | 1702, 1701, 1690 |
+| **1, the lane extract** | **1685, 1642, 1624, 1647** |
+
+Means of 1697.7 against 1649.5, so **about 2.8% less CPU at an identical frame
+count**. The ranges do not overlap, and the two batches were run in opposite
+orders, 0-first and then 1-first, so it is not drift.
+
+**The default is now 1.** Only an explicit `0` restores the movemask.
+
+**What this is not.** 2.8% on a title screen is not 2.8% on gameplay, and this
+says nothing about a scene where the SPU branch sites are hit at a different rate.
+It is one title, one scene, seven accepted runs.
+
 ## The memory hierarchy, so future theories have numbers
 
 A710 (cpu6), shuffled pointer chase, so the prefetcher cannot flatter it:
