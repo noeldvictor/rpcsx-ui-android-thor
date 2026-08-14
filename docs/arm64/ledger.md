@@ -768,3 +768,59 @@ SPURS, which is the subsystem that has cost this project the most.
    name, and add `ppu.state += cpu_flag::wait` at each.
 4. Boot Folklore and Eternal Sonata cold. The failure is loud, so a boot that
    reaches gameplay is the test.
+
+# The Reduced Loop is off on Android, and the reason is ours, not upstream's
+
+Found 2026-08-14 while researching what upstream has that this fork does not.
+
+Upstream calls the Reduced Loop work its Cell breakthrough and measured **5-7%
+average FPS on Twisted Metal**, one of the most SPU-heavy titles, between
+`v0.0.40-19096` and `v0.0.40-19151`. It benefits every game, not a showcase few.
+
+**It is entirely absent from Android builds here.**
+`spu_reduced_loop_emit_enabled()` returned a compile-time `false` on Android, and
+it gates `emit_reduced_loops`, which decides whether the analyzer records the
+pattern at all. The comment gives the reason: *"Fresh-cache U2 and U4 runs both
+corrupt BLUS30161 at the same SPU PC."*
+
+## The corruption is very likely ours
+
+The analyzer here is **a fork rewrite, not upstream's code**:
+
+| symbol | upstream | this fork |
+| --- | --- | --- |
+| `reduced_loop_candidate_t` | 0 | present |
+| `make_reduced_loop_pattern` | 0 | present |
+| **`break_reduced_loop_pattern`** | **36** | **0** |
+
+`break_reduced_loop_pattern` is upstream's refusal path: the analyzer declines to
+transform a loop it cannot prove safe, discarding the pattern. **Upstream calls it
+at 36 sites. This fork calls it nowhere.** The rewrite kept the transform and
+dropped the bail-outs, so it accepts loop shapes upstream explicitly rejects.
+
+That is a far better explanation for "U2 and U4 both corrupt BLUS30161 at the same
+SPU PC" than anything in upstream's emitter, and it means **the feature was
+disabled for a defect this fork introduced**.
+
+Two things that are present and were nearly recorded as missing, because the names
+differ: upstream's completability check is here as `needs_runtime_verify` rather
+than `is_cond_need_runtime_verify`, with the same `no_change_bits` and
+`cond_verify` arithmetic; and the `discard()` machinery exists, at 27 sites. Check
+by behaviour, not by identifier.
+
+## What to do
+
+1. **Do not just switch the gate on.** `debug.rpcsx.thor.spu_reduced_loop_emit`
+   now makes that possible, default off, but the analyzer that would run is the
+   one without the guards.
+2. **Diff our analyzer against upstream's and restore the 36 refusals**, or
+   replace the rewrite with upstream's analyzer outright. The second is likely
+   cleaner: the rewrite's value over upstream is unrecorded, and its cost is a
+   disabled 5-7%.
+3. **Then test correctness on `BLUS30161`**, which is where the corruption was
+   seen. It is state corruption at a fixed SPU PC and not a crash, so a boot that
+   reaches gameplay proves nothing; compare the same scene.
+4. **Only then measure**, and read the retraction in
+   [`bench-results.md`](bench-results.md) first: the in-app method cannot yet
+   resolve a few percent, and 5-7% would need the phase gate plus many more
+   samples per arm than were used today.
