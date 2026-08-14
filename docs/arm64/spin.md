@@ -1408,3 +1408,73 @@ called" because the real call site was one line past the cut.
 **What is now actually unknown:** whether the GETLLAR park is enabled by default,
 and what it is worth when it is. That is a measurement, and it should have been the
 first question rather than a claim about missing code.
+
+
+# ARMSX3 0.7, and whatcookie's "what didn't make the cut", reviewed 2026-08-14
+
+## ARMSX3 0.7 ports from two forks this project had not looked at
+
+`c4b45eee2` credits **`ouroboros420/rpcsx`** and **`rfandango/rpcsx`**. Between
+them: a persistent SPU object cache design, GPU turbo with power and thermal
+handling, RAM and VRAM budgeting, the **Turnip ZCULL deadlock fix**, and **ARM64
+SPU checksum handling**. This fork runs Turnip and has its own SPU checksum fix and
+its own `spu-native-v2` object cache, so all three are worth a three-way read.
+
+## Their FIFO idle wait, and why it is shaped the way it is
+
+`rpcs3/util/asm.hpp` gains `wait_for_event()`:
+
+```cpp
+__asm__ volatile("sevl
+	wfe
+	wfe" ::: "memory");
+```
+
+`SEVL` sets the local event so the **first** `WFE` consumes it and the **second**
+genuinely parks, rather than returning at once on a stale event. It takes no
+exclusive monitor and **no syscall**, which is the interesting part: every park
+measured here that traded a spin for a *syscall* lost.
+
+The call site, `RSXFIFO.cpp`, spins `pause()` eight times before parking, and the
+comment says why: **`ouroboros420/rpcsx` parked bare there (`e31ef44ef`) and had to
+revert it (`832c23078`) when the wake latency cost frame-time smoothness.**
+
+Ours is a bare `std::this_thread::yield()` at `RSXFIFO.cpp:675`, and `yield`
+measured **0.36 ns** here, identical to a `nop` — it does not park at all.
+
+## The caveat that whatcookie supplies, and it is load-bearing
+
+<https://whatcookie.github.io/posts/rpcs3-on-arm64-what-didnt-make-the-cut/>
+
+* **The architected event stream fires about every 100 us on Linux and Android**,
+  against about 1 us on Apple. Our own measurement agrees: an armed `WFE` parked
+  for **72,024 ns**. So a `WFE` park is a coarse ~100 us instrument on this device.
+* **It wakes every waiting core at once.** The author quotes Arm directly: the
+  periodic event stream "wakes up all processors waiting in WFE at the same time
+  which would amplify contention." A **stampede**. One RSX thread parking is a
+  weak case for that; six SPU threads parking on the same event stream is exactly
+  the case Arm warns about, which is a further argument against the SPU-side park
+  that already measured badly.
+* **`WFET` is unavailable**, matching `FEAT_WFxT` being absent here, so a `WFE`
+  park cannot carry its own timeout.
+* **SVE is worse than it looks even where it exists**: `TBL` is "not naturally
+  vector length agnostic", and the length-agnostic forms arrived in SVE2.1 on
+  hardware that only implements 128-bit vectors. Another reason the two upstream
+  SVE commits stay unported beyond this chip simply lacking SVE.
+* **32 vector registers are the ARM64 advantage** for SPU work, rated above AVX2.
+  Worth holding next to the 10.1% spill traffic here: the spilling is the cost of
+  128 SPU registers, not a shortage this fork can fix.
+* **Thermal drift corrupts benchmarking**, and the author hit it across seasons.
+  This project hit the same thing inside one session: 12% for identical work as
+  the device went from 30 C to 68 C.
+
+## What this makes worth trying, and in what order
+
+1. **The FIFO idle park is the one to take.** It targets a thread that currently
+   does not park at all, it costs no syscall, the pre-spin that another fork had
+   to learn the hard way is already in the design, and a single parking thread is
+   the weakest case for the stampede.
+2. **Not the SPU-side park.** The self-loop park measured worse, and the stampede
+   warning applies to six threads waiting on one event stream.
+3. Read the Turnip ZCULL deadlock fix and the two SPU items from the other forks
+   against ours before porting anything from them.
