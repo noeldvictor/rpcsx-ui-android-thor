@@ -6837,13 +6837,35 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				thor_es_dispatch_provenance_v6,
 				uses_hardware_ftz,
 
-				bitset_last = uses_hardware_ftz,
+				// Cache identity for ARM64 PPU codegen.
+				//
+				// The key is otherwise the executable's SHA-1 plus these settings, and
+				// nothing in it names the build. So a change to what the ARM64 PPU
+				// translator emits silently reuses objects compiled by the previous
+				// version, and the change looks like it did nothing.
+				//
+				// **That is not hypothetical.** ARMSX3 hit it with the same class of
+				// change, their `87ccdb851`: their FCTIW/FCTID saturation fix appeared to
+				// do nothing because the title reloaded its old objects and never
+				// recompiled. This fork carries that same fix, and had no bit for it.
+				//
+				// Add a new value (`arm64_codegen_v2`, ...) and set that instead whenever
+				// ARM64 PPU codegen changes. Never re-toggle an old one: that collides
+				// with hashes already on disk from an earlier build.
+				arm64_codegen_v1,
+
+				bitset_last = arm64_codegen_v1,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 			settings += ppu_settings::platform_bit;
+#endif
+#if defined(ARCH_ARM64)
+			// See arm64_codegen_v1: without this the PPU object cache cannot tell an
+			// ARM64 codegen change from no change at all.
+			settings += ppu_settings::arm64_codegen_v1;
 #endif
 			if (g_cfg.core.use_accurate_dfma)
 				settings += ppu_settings::accurate_dfma;
