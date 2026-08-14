@@ -836,3 +836,48 @@ by behaviour, not by identifier.
    [`bench-results.md`](bench-results.md) first: the in-app method cannot yet
    resolve a few percent, and 5-7% would need the phase gate plus many more
    samples per arm than were used today.
+
+
+## The two refusal sets, compared 2026-08-14
+
+`tools/compare_reduced_loop_guards.py` prints both. The shapes are not
+comparable in kind.
+
+**This fork refuses 15 times, and every one is structural** — it declines when it
+cannot *parse* the pattern: `!maybe_op` when an opcode will not decode, a `pc`
+outside the program, `branch_pc == SPU_LS_SIZE` or `compare_pc == SPU_LS_SIZE`
+when a search found nothing, `cond_val_compare == CMP_UNKNOWN`,
+`increment_op.ra != counter_reg`, `found == m_bbs.end()`.
+
+**Upstream refuses 34 times across 25 ids, and most are semantic** — it declines
+when it *can* parse the loop but cannot prove the transform safe:
+
+| upstream refuses | counterpart here |
+| --- | --- |
+| "Infinite or single-time loop" (ids 3, 18) | **none** |
+| "Stop on special instructions" (id 19, three sites) | **none** |
+| `is_predictable_loop_dictator` (ids 4, 7) and `is_non_predictable_loop_dictator` (id 13, three sites) | **none** |
+| `reg->modified >= 2` (id 22) | **none** |
+| `is_reg_null(incr_arg_reg)` and `is_reg_null(loop_arg_reg)` (ids 26, 27) | **none** |
+| the `reg_index` aliasing case marked "Unimplemented" (id 30) | **none** |
+| `!is_two_block_loop \|\| !has_cond_state` (id 20) | partial: the field exists |
+| `expected_sup_conds` (id 50) | `supplemental_conditions != 0` |
+
+**So the fork validates the shape of a loop and not the safety of transforming
+it.** A loop that parses cleanly, runs once or never terminates, writes a register
+twice, or aliases its increment and loop arguments is accepted here and refused
+upstream. That is exactly the shape of failure recorded when the emitter was
+disabled: not a crash, but **state corruption at a fixed SPU PC**.
+
+### What this changes about the plan
+
+Patching ten semantic guards into a differently-structured analyzer means
+reimplementing upstream's dataflow reasoning — `is_predictable_loop_dictator` and
+`reg->modified` are properties of upstream's register-origin model, which this
+rewrite does not carry.
+
+**So the recommendation firms up: replace the rewrite with upstream's analyzer
+rather than patch this one.** The rewrite's advantage over upstream is nowhere
+recorded, and its cost is a documented 5-7% switched off. Upstream's version also
+brings the completability verification and the three April fixes as a set, instead
+of the partial adaptation here.
