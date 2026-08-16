@@ -133,8 +133,10 @@ rendering, so it stays comparatively stable.
 
 ## Cheats
 
-The app ships with a cheat database (`2501` Aldos/Artemis entries and `28`
-RPCS3-ready patch entries), so matching cheats appear without any network fetch.
+The app ships with a cheat database (`2501` Aldos/Artemis entries and `1458`
+RPCS3-ready patch entries across `184` games), so matching cheats appear without
+any network fetch. Every RPCS3-ready entry is validated at build time against the
+real patch-type table, so a malformed op cannot reach the emulator unnoticed.
 
 **Offline single-player only.** This will not help with DRM, anti-cheat, or
 anything online, and that is deliberate.

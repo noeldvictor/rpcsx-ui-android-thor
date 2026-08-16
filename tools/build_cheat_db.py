@@ -15,6 +15,11 @@ LOAD_RE = re.compile(r"-\s*\[\s*load\s*,\s*\*([A-Za-z0-9_]+)\s*\]")
 FIXED_WRITE_RE = re.compile(r"^0\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]+)(?:\s+.*)?$")
 SERIAL_WRITE_RE = re.compile(r"^4\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]+)(?:\s+.*)?$")
 MAX_STATIC_OPS_PER_CHEAT = 4096
+
+# Collected by add_chidreams() and reported by write_db(). Kept as a module
+# global so a validation regression in the upstream collection is visible in
+# the build output, not only in a database column nobody reads.
+VALIDATION_FAILURES = []
 IGNORED_PATCH_KEYS = {
     "Games",
     "Author",
@@ -37,6 +42,120 @@ def yaml_key(value):
 
 def safe_asset_name(value):
     return re.sub(r"[^A-Za-z0-9._/ -]", "_", value).strip()
+
+
+# ---------------------------------------------------------------------------
+#  RPCS3 patch-op validation
+#
+#  The type table and the range rules come from ARTEMIS RPCS3 Cheat Manager
+#  (https://github.com/chidreams/ARTEMIS-RPCS3-Cheat-Manager), src/cheat_manager.py,
+#  MIT License, Copyright (c) 2026 Chidreams. Adapted here to work on the
+#  (type, address, value) tuples this file already parses, rather than on raw
+#  YAML lines.
+#
+#  Why this exists: patch_op_line() below reformats an op and checks nothing, so
+#  before this, any type string the upstream collection shipped went into the
+#  bundled database verbatim and reached the emulator unexamined. add_chidreams()
+#  additionally marked every entry risk="safe" by assertion, not by inspection.
+# ---------------------------------------------------------------------------
+INT_TYPES = {
+    "byte": 1,
+    "le16": 2, "be16": 2,
+    "le32": 4, "be32": 4, "bd32": 4,
+    "le64": 8, "be64": 8, "bd64": 8,
+    "jump": 8, "jump_link": 8, "alloc": 8, "code_alloc": 8,
+}
+FLOAT_TYPES = {"bef32", "lef32", "bef64", "lef64"}
+STRING_TYPES = {"utf8", "cutf8", "c_utf8"}
+SPECIAL_TYPES = {"load"}
+FILE_TYPES = {"move_file", "hide_file"}
+MISC_TYPES = {"bpex"}
+ALL_PATCH_TYPES = (set(INT_TYPES) | FLOAT_TYPES | STRING_TYPES
+                   | SPECIAL_TYPES | FILE_TYPES | MISC_TYPES)
+
+
+def _parse_int(tok):
+    tok = tok.strip()
+    neg = tok.startswith("-")
+    if neg:
+        tok = tok[1:].strip()
+    val = int(tok, 0)
+    return -val if neg else val
+
+
+def _is_quoted(tok):
+    tok = tok.strip()
+    return len(tok) >= 2 and tok[0] in "\"'" and tok[-1] == tok[0]
+
+
+def validate_patch_op(op):
+    """Return (ok, reason) for one (type, address, value) tuple.
+
+    An unknown type is reported rather than passed through. That is the only
+    tripwire this pipeline has for the upstream collection changing format.
+    """
+    try:
+        patch_type, address, value = (part.strip() for part in op)
+    except (TypeError, ValueError):
+        return False, "op is not a 3-part [ type, address, value ]"
+
+    if patch_type not in ALL_PATCH_TYPES:
+        return False, f"unknown type '{patch_type}'"
+
+    if patch_type in SPECIAL_TYPES:
+        if not address.lstrip().startswith("*"):
+            return False, "load needs an anchor reference (*name)"
+        return True, ""
+
+    if patch_type in FILE_TYPES:
+        return True, ""
+
+    try:
+        offset = _parse_int(address)
+    except (ValueError, TypeError):
+        return False, f"address '{address}' is not a valid hex/int (use 0x...)"
+    if offset < 0:
+        return False, "address must be >= 0"
+
+    if patch_type in INT_TYPES:
+        try:
+            parsed = _parse_int(value)
+        except (ValueError, TypeError):
+            return False, f"value '{value}' is not a valid hex/int (use 0x...)"
+        width = INT_TYPES[patch_type]
+        bits = width * 8
+        if not (-(1 << (bits - 1)) <= parsed <= (1 << bits) - 1):
+            return False, f"value out of range for {patch_type} ({width}-byte)"
+        return True, ""
+
+    if patch_type in FLOAT_TYPES:
+        if _is_quoted(value):
+            return True, ""
+        try:
+            float(value)
+        except ValueError:
+            return False, f"value '{value}' is not a valid float"
+        return True, ""
+
+    if patch_type in STRING_TYPES:
+        if not _is_quoted(value):
+            return False, f"{patch_type} value must be a quoted string"
+        return True, ""
+
+    if patch_type in MISC_TYPES:
+        return True, ""
+
+    return False, f"unhandled type '{patch_type}'"
+
+
+def validate_patch_ops(ops):
+    """Return a list of (index, reason) for every op that fails."""
+    failures = []
+    for index, op in enumerate(ops):
+        ok, reason = validate_patch_op(op)
+        if not ok:
+            failures.append((index, reason))
+    return failures
 
 
 def patch_op_line(op):
@@ -559,6 +678,16 @@ def add_chidreams(conn, assets_dir):
         for patch in collect_chidreams_blocks(text):
             game_id = upsert_game(conn, patch["title_id"], patch["title"], patch["version"])
             file_name = f"{patch['title']} {patch['title_id']} {patch['version']} - {patch['description']}"
+
+            # Inspect the ops instead of asserting they are safe. A patch that
+            # fails here is still recorded, so the app can show it and explain
+            # why it is unselectable, rather than silently dropping it.
+            failures = validate_patch_ops(patch["ops"])
+            if failures:
+                VALIDATION_FAILURES.append(
+                    (rel_asset, patch["title_id"], patch["description"], failures)
+                )
+
             entry = {
                 "title": patch["description"],
                 "fileName": file_name,
@@ -566,17 +695,24 @@ def add_chidreams(conn, assets_dir):
                 "sourceName": "Chidreams RPCS3 imported_patch.yml",
                 "size": f"{len(patch['ops'])} patch ops",
                 "convertibleCount": 1,
-                "riskyCount": 0,
+                "riskyCount": len(failures),
             }
             group_id = insert_group(conn, game_id, source_id, entry, "rpcs3_patch")
             insert_group_title_ids(conn, group_id, [patch["title_id"]])
+            notes = patch["notes"]
+            if failures:
+                first = failures[0]
+                notes = (f"{notes}\n" if notes else "") + (
+                    f"Validation: {len(failures)} of {len(patch['ops'])} ops failed; "
+                    f"first at op {first[0]}: {first[1]}"
+                )
             cheat_id = insert_cheat(
                 conn,
                 group_id,
                 patch["description"],
                 author=patch["author"],
-                notes=patch["notes"],
-                risk="safe",
+                notes=notes,
+                risk="mixed" if failures else "safe",
             )
             conn.execute(
                 """
@@ -622,6 +758,25 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     aldos_count, chidreams_count = write_db(assets_dir, output)
     print(f"Wrote {output} with {aldos_count} Aldos groups and {chidreams_count} Chidreams patches")
+
+    # Report validation before anything else reads the database. A silent pass
+    # and a pass that validated nothing look identical otherwise.
+    bad_ops = sum(len(f[3]) for f in VALIDATION_FAILURES)
+    print(f"Validation: {len(VALIDATION_FAILURES)} of {chidreams_count} "
+          f"Chidreams patches carry a failing op ({bad_ops} ops total)")
+    unknown = sorted({
+        reason for _, _, _, failures in VALIDATION_FAILURES
+        for _, reason in failures if reason.startswith("unknown type")
+    })
+    if unknown:
+        print("  UNKNOWN TYPES - the upstream format may have moved:")
+        for reason in unknown:
+            print(f"    {reason}")
+    for asset, title_id, description, failures in VALIDATION_FAILURES[:20]:
+        index, reason = failures[0]
+        print(f"  {title_id} {description[:48]!r}: op {index}: {reason}  [{asset}]")
+    if len(VALIDATION_FAILURES) > 20:
+        print(f"  ... and {len(VALIDATION_FAILURES) - 20} more")
 
 
 if __name__ == "__main__":
