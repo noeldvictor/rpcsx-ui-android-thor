@@ -16,9 +16,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.rpcsx.Game
 import net.rpcsx.R
+import net.rpcsx.SaveStateSlots
 import net.rpcsx.cheats.CheatEntry
 import net.rpcsx.cheats.CheatRepository
 import net.rpcsx.cheats.CheatSelectionRepository
@@ -251,6 +254,10 @@ fun GameDetailScreen(
             }
 
             item {
+                SaveStateSlotsCard(titleId = GameIdentity.primaryTitleId(game))
+            }
+
+            item {
                 Button(onClick = navigateToTrim, modifier = Modifier.fillMaxWidth()) {
                     Icon(painter = painterResource(id = R.drawable.tune), contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -272,6 +279,111 @@ fun GameDetailScreen(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Most cheats are saved before launch and take effect the next time you start the game.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The eight archived save states for this title, with a way back to one.
+ *
+ * "Restore" does not load anything by itself. It makes the chosen slot the save
+ * state the core will pick, because loadState() always takes the newest one and
+ * accepts no argument. The user then loads it in game. The footer says so,
+ * because a Restore button that appears to do nothing is worse than no button.
+ */
+@Composable
+private fun SaveStateSlotsCard(titleId: String?) {
+    val scope = rememberCoroutineScope()
+    var slots by remember(titleId) { mutableStateOf(emptyList<SaveStateSlots.Slot>()) }
+    var message by remember(titleId) { mutableStateOf<String?>(null) }
+
+    suspend fun refresh() {
+        slots = if (titleId.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.IO) { SaveStateSlots.listSlots(titleId) }
+        }
+    }
+
+    LaunchedEffect(titleId) { refresh() }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Save states", style = MaterialTheme.typography.titleMedium)
+
+            when {
+                titleId.isNullOrEmpty() -> Text(
+                    "No title ID detected, so save states cannot be listed.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                slots.isEmpty() -> Text(
+                    "No save states yet. Save in game with Select + right stick down. " +
+                        "The last ${SaveStateSlots.SLOT_COUNT} are kept.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                else -> slots.forEach { slot ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Slot ${slot.index}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                "${slot.label}  ${slot.sizeLabel}",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    SaveStateSlots.restoreSlot(titleId, slot.index)
+                                }
+                                message = result.fold(
+                                    onSuccess = {
+                                        "Slot ${slot.index} is now the one that loads. " +
+                                            "Load it in game with Select + right stick up."
+                                    },
+                                    onFailure = { "Restore failed: ${it.message}" }
+                                )
+                                refresh()
+                            }
+                        }) { Text("Restore") }
+
+                        TextButton(onClick = {
+                            scope.launch {
+                                val deleted = withContext(Dispatchers.IO) {
+                                    SaveStateSlots.deleteSlot(titleId, slot.index)
+                                }
+                                message = if (deleted) {
+                                    "Slot ${slot.index} deleted."
+                                } else {
+                                    "Slot ${slot.index} could not be deleted."
+                                }
+                                refresh()
+                            }
+                        }) { Text("Delete") }
+                    }
+                }
+            }
+
+            message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+
+            if (!titleId.isNullOrEmpty() && slots.isNotEmpty()) {
+                Text(
+                    "Restore only chooses which save state loads next. It does not load it.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
