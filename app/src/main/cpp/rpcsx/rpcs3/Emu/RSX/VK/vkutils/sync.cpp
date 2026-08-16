@@ -555,6 +555,17 @@ namespace vk
 			// loop at full clock across a millisecond-scale event. Whether it is
 			// hot here was unknown, and asserting a cost without measuring it is
 			// the mistake this project has made repeatedly.
+			//
+			// Blocking is CORRECT here: timeout == 0 means wait indefinitely, so
+			// this site is not the Adreno defect fixed in VKGSRenderTypes.hpp.
+			//
+			// But do not read the counter below as evidence. On Adreno
+			// vkGetFenceStatus blocks until the fence signals rather than
+			// answering VK_NOT_READY, so the loop body never runs, fence_spins
+			// stays 0, and vk_fence_poll records NOTHING however long this waits.
+			// A zero from that counter means "the driver blocked for us", never
+			// "this wait was cheap". Same class as the counters that log on
+			// completion and so cannot see a stall.
 			usz fence_spins = 0;
 
 			while (auto status = VK_GET_SYMBOL(vkGetFenceStatus)(*g_render_device, pFence->handle))

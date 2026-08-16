@@ -90,7 +90,17 @@ namespace vk
 				return false;
 			}
 
-			if (VK_GET_SYMBOL(vkGetFenceStatus)(pool->get_owner(), m_submit_fence->handle) == VK_SUCCESS)
+			// Ask with vkWaitForFences and a zero timeout, never with
+			// vkGetFenceStatus. On Adreno vkGetFenceStatus blocks until the fence
+			// signals instead of answering VK_NOT_READY, so this function - which
+			// every caller treats as a cheap non-blocking question - becomes a full
+			// GPU sync. ARMSX3 measured this exact site at 14.6 ms a frame, 1.32
+			// calls a frame at about 11 ms each, and the frame went 44.5 ms to
+			// 36.6 ms when they stopped asking that way (their 0909f77a9).
+			// vkWaitForFences with timeout 0 is specified to return VK_TIMEOUT
+			// without waiting, so it answers the question this code is asking.
+			// UNMEASURED HERE. The number above is theirs, on their device.
+			if (VK_GET_SYMBOL(vkWaitForFences)(pool->get_owner(), 1, &m_submit_fence->handle, VK_TRUE, 0) == VK_SUCCESS)
 			{
 				lock.upgrade();
 
