@@ -279,7 +279,31 @@ class RPCSXActivity : Activity() {
     }
 
     private fun triggerSaveState() {
+        val titleId = runningTitleId
+        // Read the clock BEFORE the request, so the archive can tell the new
+        // savestate from the one that was already there. Archiving the previous
+        // one would report success and silently keep the old scene.
+        val requestedAt = System.currentTimeMillis()
+
         runNativeHotkey("SaveState") { RPCSX.instance.saveState() }
+
+        if (titleId.isNullOrEmpty()) {
+            return
+        }
+
+        // saveState() returns when the request is accepted, not when the file
+        // exists - the core kills and restarts the emulator to write one. So the
+        // archive waits off the main thread. A save that never lands just times
+        // out and logs; it cannot block the UI or the emulator.
+        thread(name = "RPCSX-SaveStateSlot") {
+            if (SaveStateSlots.awaitNewSavestate(titleId, requestedAt) == null) {
+                return@thread
+            }
+            val slot = SaveStateSlots.nextArchiveSlot(titleId)
+            SaveStateSlots.archiveNewest(titleId, slot)
+                .onSuccess { Log.i("RPCSX Hotkeys", "savestate archived to slot ${it.index}") }
+                .onFailure { Log.w("RPCSX Hotkeys", "savestate archive failed", it) }
+        }
     }
 
     private fun triggerLoadState() {
