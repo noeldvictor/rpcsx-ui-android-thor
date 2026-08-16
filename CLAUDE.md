@@ -873,6 +873,122 @@ result you intend to treat as evidence is the same mistake as the alternation
 grep, in a new costume. Count first (`grep -c`), then page.
 
 
+# ARMSX3 0.8 and upstream RPCS3, third pass, 2026-08-16
+
+ARMSX3 is at `62d8208c7`, release **0.8** of 2026-08-15. That is **27 commits**
+after `e10f846`, which the second pass in
+[`armsx3-comparison.md`](docs/arm64/armsx3-comparison.md) used. Upstream RPCS3 is
+at `ffc50905a`.
+
+**Nothing below is ported, and nothing below is measured on the device.** Each
+item says what was checked and how.
+
+## The `cortex-a78` pin now has a second reason
+
+ARMSX3 vendored an LLVM patch, `3rdparty/llvm/armsx3-aarch64-ghc-emergency-spill.patch`
+(`b5a715adc`). AArch64 `determineCalleeSaves` returns early for
+`CallingConv::GHC`, so a GHC function never gets a scavenging frame index. That
+is safe only while GHC functions have no frame. When the allocator spills, the
+function gets real stack objects, `eliminateFrameIndex` needs a scratch register
+to build an offset, and GHC has reserved nearly every GPR. LLVM then aborts the
+whole module with `Cannot scavenge register without an emergency spill slot`.
+The PPU recompiler emits `ghccc` for every guest function, so one bad function
+costs the module, and its functions fall back to an interpreter loop.
+
+Their note records the trigger set exactly. It needs `ghccc`, **and** `-O2`,
+**and** a scheduling model that pushes pressure over the line. It reproduces on
+`cortex-x1`, `cortex-x2`, `cortex-x3` and `cortex-a55`. It does **not** reproduce
+on `cortex-a76`, `cortex-a78` or `generic`.
+
+**This fork pins `cpu=cortex-a78`, so it is on the safe side of that list.** The
+pin now carries two load-bearing reasons: SVE codegen, recorded above, and this.
+Anyone who changes the LLVM CPU name inherits both. Do not port the patch while
+the target stays `cortex-a78`; do read this row before changing the target.
+
+## The event stream already bounds `WFE` here, and nothing checks it
+
+`rx::wait_for_event()` at `rx/include/rx/asm.hpp:474` emits `sevl / wfe / wfe`,
+and the comment above it records a **measured park of 72,024 ns** set by the
+architected event stream at about 100 µs. So the video table's `FEAT_WFxT` row is
+correct about a *programmable per-wait timeout* and wrong if anybody reads it as
+"`WFE` cannot be bounded here". The event stream is the bound, and this fork
+measured it.
+
+**The premise is unchecked.** `rx/asm.hpp` states that Linux and Android arm the
+stream. `HWCAP_EVTSTRM` appears **nowhere** in `rpcs3/util/sysinfo.cpp`, whose
+`getauxval` family covers `ASIMD`, `SHA3`, `ASIMDDP`, `I8MM`, `SVE` and `SVE2`.
+ARMSX3 added `utils::has_wfe_event_stream()` for exactly this (`5ef731c9e`), and
+records that the stream is a kernel property and not an architectural guarantee.
+On Thor the stream is on — `evtstrm` is in the cpuinfo list in "The machine" — so
+the premise holds on this device, and it is untested on any other.
+
+And the fork does not depend on the stream today. The one call site,
+`RSXFIFO.cpp:751`, sits behind `thor_rsx_fifo_park_enabled()`
+(`debug.rpcsx.thor.rsx_fifo_park`), which is **default 0 and unmeasured**.
+
+## ARMSX3 hardened the RSX semaphore wait; ours is still the plain spin
+
+The site is `nv406e::semaphore_acquire`. Ours calls
+`rx::spin_on_cacheline_once(sema, sema.load(), 100)` at `nv406e.cpp:94`. Theirs
+spins 500 iterations, then falls back to `wait_for_event()` (`002a9b274`,
+hardened twice afterwards at `5ef731c9e` and `b29810d1a`).
+
+**Check the premise before porting this.** Their stated cause is **Oryon**, the
+Snapdragon 8 Elite class, where `WFE` returns immediately while the exclusive
+monitor is armed. The armed wait degrades to a spin there at tens of millions of
+iterations per second. **This device is 8 Gen 2, not Oryon**, and `asm.hpp:461`
+already measures an armed `WFE` parking for 72 µs on it. The defect they fixed
+may not exist on this chip.
+
+This is the `busy_wait` trap in a new costume: a fix aimed at another core class,
+taken without asking whether this core has the problem. Two fixes for one problem
+multiply, and that one dropped Thor to about 1 FPS.
+
+## Two upstream ARM64 commits are absent, checked by content
+
+Dated by finding the code, never by `rpcs3_version.cpp`:
+
+| commit | date | what it adds | evidence it is absent |
+| --- | --- | --- | --- |
+| `5e8ba021a` | 2026-07-26 | SPU/ARM64 RawSPU MMIO, 403 lines: `GPR(context, index)` accessors and `decode_a64_mem_inst` | our `rpcs3/util/Thread.cpp:1215-1227` defines `RIP` only, and has no `GPR` macro |
+| `d7ed328f4` | 2026-08-01 | `vm::writer_lock` deadlock fix: sets `cpu_flag::wait` across the `hack_alloc` recovery paths | our `hack_alloc` at `Thread.cpp:1481` has no `added_flag` |
+
+The file is the right one in both cases: it holds `handle_access_violation` at
+1237 and `hack_alloc` at 1481. `vm::writer_lock` is **4.49%** of the gameplay
+profile and one of the four spin layers, so the second row is worth reading.
+
+**Already present, so nobody re-ports it:** `b35e4434a`, "SPU LLVM: Add
+`spu_thread::state` check in Reduced Loop", is at `SPULLVMRecompiler.cpp:2779-2783`.
+It is adapted to the RPCSX `spu_ptr<u32>(OFFSET_OF(...))` idiom, which is why a
+search for upstream's exact text misses it.
+
+## One of the three-way audit's defects is now closed on their side
+
+[`three-way-audit.md`](docs/arm64/three-way-audit.md) records the x86
+float-to-int saturation correction, applied on AArch64, as a defect that lives in
+the other two trees and is fixed here. ARMSX3 fixed the PPU half on 2026-08-13
+(`87ccdb851`). Nothing to port. Narrow that row to upstream RPCS3.
+
+## Do not port 0.7-era renderer work
+
+ARMSX3 shipped a new renderer in 0.7 and reverted it in 0.7.1 on the same day
+(`4797ad8a9`, `8ee20d91d`). They then returned to the 0.6 path and kept only the
+FIFO idle fix and ADPF (`0819f1ef1`). Read that sequence before taking any VK
+commit from the 0.7 range.
+
+## Read but not yet examined
+
+Listed so the next pass resumes rather than restarts:
+
+* `dbbb6fbde` — VK extended dynamic state, to collapse pipeline permutations.
+* `b82432c79` — native fp16 on Adreno drivers that accept it. It **deletes** 203
+  lines of `device.cpp`.
+* `d069a55ac` and `614bf8b71` — a lost surface becomes recoverable, and Android
+  re-delivers the Surface. These aim at the README's "launching a second game
+  after closing the first can fail".
+* `cce09dbb3` — SPU recovers from a failed analysis, and the log floods stop.
+* `7f54855b7` — an lv2/vm read-only unlink lockup, and three log floods.
+
 # The audit ledger
 
 [`docs/arm64/audit-ledger.md`](docs/arm64/audit-ledger.md) tracks the
@@ -1075,7 +1191,7 @@ the actual list to check. Status is what was verified here, not what was assumed
 | 38:55 | How to play wow optimally | n/a |
 | 39:28 | SVE are the *special* vector extensions | **does not apply to this device.** `has_sve()` reads `HWCAP_SVE`, and the Thor's HWCAP does not report it — the JIT log shows `-sve,-sve2` |
 | 47:50 | Optimizing RPCS3 with SVE | same: no SVE on this hardware, so both chapters are inapplicable here |
-| 54:24 | Optimizing via hardware wait instructions | `WFE` explored (three experiments, [`spin.md`](docs/arm64/spin.md)); `FEAT_WFxT` absent on this chip so `WFE` cannot carry a timeout |
+| 54:24 | Optimizing via hardware wait instructions | `WFE` explored (three experiments, [`spin.md`](docs/arm64/spin.md)); `FEAT_WFxT` absent on this chip so `WFE` cannot carry a *programmable per-wait* timeout. **It is still bounded**: `rx/asm.hpp:474` measures an armed `WFE` parking **72,024 ns**, set by the architected event stream. See the third ARMSX3 pass below |
 | 55:33 | Lightning round | the sweep table above covers this ground |
 
 Two things this changed. The pause/yield item was a **real defect sitting behind
@@ -1128,6 +1244,7 @@ Everything cheap has been tried. The scoreboard:
 | `SPU loop detection: true` | **null** — and consistent with the profile, since the hot loop polls `state`, not a channel |
 | SPU affinity widening | **null, and the config block is inert** — see the retraction below |
 | ARMSX3 second pass, 2026-08-13 | **four ported, none measured** — the same-item SPU compile claim, two JIT i-cache sites, the GETLLAR out-buffer memo and cap, and a memory budget for the PPU compile workers. The APK is installed and the device was then taken by the other session. See [`armsx3-comparison.md`](docs/arm64/armsx3-comparison.md) |
+| ARMSX3 third pass, 2026-08-16 | **read, none ported** — 27 commits to release 0.8. The `cortex-a78` pin dodges their LLVM GHC scavenger defect; their RSX semaphore fallback targets Oryon, not 8 Gen 2; two upstream ARM64 commits confirmed absent here. Section above |
 | `PMULL` for texture swizzle | correct technique, **cold** — `calculate_z_index` absent from the profile at any threshold |
 | exclusive monitor as reservation | **half-viable** — `ERG=64` measured, PS3 needs 128 |
 | ARM TME, SVE | **absent from this chip** |
