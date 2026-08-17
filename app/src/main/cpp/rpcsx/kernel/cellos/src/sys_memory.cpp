@@ -89,7 +89,13 @@ error_code sys_memory_allocate(cpu_thread &cpu, u64 size, u64 flags,
                                vm::ptr<u32> alloc_addr) {
   cpu.state += cpu_flag::wait;
 
-  sys_memory.warning(
+  // Trace, not warning. A successful allocation is routine, and engines that
+  // allocate in a loop do it tens of thousands of times: measured on Transformers
+  // (BLUS30357) during its Unreal Engine 3 HD-cache install, this single line was
+  // 73,193 of the 306,836 RPCS3 lines in one logcat buffer. On Android a log line
+  // is a syscall plus IPC, so at that rate the logging costs more than the work it
+  // describes. Raise the sys_memory channel to Trace to get them back.
+  sys_memory.trace(
       "sys_memory_allocate(size=0x%x, flags=0x%llx, alloc_addr=*0x%x)", size,
       flags, alloc_addr);
 

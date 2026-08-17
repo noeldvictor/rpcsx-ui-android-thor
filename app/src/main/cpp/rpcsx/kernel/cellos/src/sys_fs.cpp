@@ -992,9 +992,12 @@ error_code sys_fs_open(ppu_thread &ppu, vm::cptr<char> path, s32 flags,
   ppu.state += cpu_flag::wait;
   lv2_obj::sleep(ppu);
 
-  sys_fs.warning("sys_fs_open(path=%s, flags=%#o, fd=*0x%x, mode=%#o, "
-                 "arg=*0x%x, size=0x%llx)",
-                 path, flags, fd, mode, arg, size);
+  // Trace, not warning. Same reason as sys_fs_stat: 8,203 lines of one 306,836
+  // line buffer during Transformers' HD-cache install, and this one is paired with
+  // a second line on success below.
+  sys_fs.trace("sys_fs_open(path=%s, flags=%#o, fd=*0x%x, mode=%#o, "
+               "arg=*0x%x, size=0x%llx)",
+               path, flags, fd, mode, arg, size);
 
   const auto [path_error, vpath] = translate_to_str(path);
 
@@ -1029,7 +1032,8 @@ error_code sys_fs_open(ppu_thread &ppu, vm::cptr<char> path, s32 flags,
 
             result = stx::make_shared<lv2_file>(ppath, std::move(file), mode,
                                                 flags, real, type);
-            sys_fs.warning("sys_fs_open(): fd=%u, %s", idm::last_id(), *result);
+            // Pairs with the open above; same reasoning.
+  sys_fs.trace("sys_fs_open(): fd=%u, %s", idm::last_id(), *result);
             return result;
           })) {
     ppu.check_state();
@@ -1429,7 +1433,10 @@ error_code sys_fs_stat(ppu_thread &ppu, vm::cptr<char> path,
   ppu.state += cpu_flag::wait;
   lv2_obj::sleep(ppu);
 
-  sys_fs.warning("sys_fs_stat(path=%s, sb=*0x%x)", path, sb);
+  // Trace, not warning. Engines probe for files in tight loops - Unreal Engine 3's
+  // HD-cache install stats every cooked asset before writing it - and this was
+  // 29,295 lines of one 306,836 line buffer on Transformers (BLUS30357).
+  sys_fs.trace("sys_fs_stat(path=%s, sb=*0x%x)", path, sb);
 
   const auto [path_error, vpath] = translate_to_str(path);
 
@@ -1741,7 +1748,9 @@ error_code sys_fs_unlink(ppu_thread &ppu, vm::cptr<char> path) {
   ppu.state += cpu_flag::wait;
   lv2_obj::sleep(ppu);
 
-  sys_fs.warning("sys_fs_unlink(path=%s)", path);
+  // Trace, not warning. UE3's cache install deletes each stale asset before
+  // rewriting it: 4,122 lines of one 306,836 line buffer on Transformers.
+  sys_fs.trace("sys_fs_unlink(path=%s)", path);
 
   const auto [path_error, vpath] = translate_to_str(path);
 

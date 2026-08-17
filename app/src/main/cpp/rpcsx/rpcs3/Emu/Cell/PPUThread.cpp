@@ -294,6 +294,47 @@ static u64 ppu_compile_memory_budget(u64 fraction_divisor)
 	const u64 total = utils::get_total_memory();
 #ifdef ANDROID
 	static_cast<void>(fraction_divisor);
+
+	// This budget bounds CONCURRENCY, not footprint. Each module asks for
+	// total_fn_size * 16384 up front, so when one module's estimate is as large as
+	// the whole budget, exactly one module compiles at a time and the other seven
+	// cores idle.
+	//
+	// Observed 2026-08-17 on BLUS30357 (Transformers). Its EBOOT.BIN modules
+	// estimate at 1,677,721,600 bytes against a 1536 MB budget - the estimate is
+	// LARGER than the budget - so precompile ran fully serialized at ~103% CPU, one
+	// module every five seconds, on a device reporting 11.4 GB free of 15.6 GB.
+	//
+	// The cap is not arbitrary: docs/arm64/ppu-compile-oom.md records a title dying
+	// in precompile with a Scudo out-of-memory, and raising this is what risks that
+	// again. So the default is unchanged and the override is opt-in.
+	//
+	//   debug.rpcsx.thor.ppu_budget_mb = <MB>   (default 0 = the formula below)
+	//
+	// A value above total/2 is refused rather than honoured, because pricing the
+	// compile stage into swap is slower than serializing it.
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.ppu_budget_mb", value) > 0)
+		{
+			if (const u64 mb = std::strtoull(value, nullptr, 10); mb != 0)
+			{
+				const u64 requested = mb << 20;
+				const u64 ceiling = total / 2;
+
+				if (requested > ceiling)
+				{
+					ppu_log.error("PPU compile budget override of %u MB refused: above half of total memory (%u MB). Using %u MB.",
+						static_cast<u32>(mb), static_cast<u32>(total >> 20), static_cast<u32>(ceiling >> 20));
+					return ceiling;
+				}
+
+				return requested;
+			}
+		}
+	}
+
 	return std::min<u64>(total / 6, u64{1536} << 20);
 #else
 	return rx::aligned_div<u64>(total, fraction_divisor);
@@ -5627,7 +5668,9 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 
 	const u64 ppu_compile_budget = ppu_compile_memory_budget(3);
 	concurent_memory_limit memory_limit(ppu_compile_budget);
-	ppu_log.always()("PPU precompile memory budget: %u MB (total %u MB)",
+	// .error(), not .always(): always() does not reach logcat on this device, which
+	// is why this line has never appeared in a capture. See CLAUDE.md.
+	ppu_log.error("PPU precompile memory budget: %u MB (total %u MB)",
 		static_cast<u32>(ppu_compile_budget >> 20),
 		static_cast<u32>(utils::get_total_memory() >> 20));
 
@@ -7388,7 +7431,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	// This is the single-module path taken when a game boots, and it is the one
 	// that aborted on 2026-08-05. It previously allowed total/2.
 	const u64 budget = ppu_compile_memory_budget(2);
-	ppu_log.always()("PPU module compile memory budget: %u MB (total %u MB)",
+	// .error() for the same reason as the precompile budget line above.
+	ppu_log.error("PPU module compile memory budget: %u MB (total %u MB)",
 		static_cast<u32>(budget >> 20),
 		static_cast<u32>(utils::get_total_memory() >> 20));
 	concurent_memory_limit memory_limit(budget);
