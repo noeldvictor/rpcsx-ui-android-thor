@@ -1457,6 +1457,7 @@ namespace rsx
 		const auto gcm_format = format & ~(CELL_GCM_TEXTURE_LN | CELL_GCM_TEXTURE_UN);
 		const bool packed = !(format & CELL_GCM_TEXTURE_LN);
 		const auto texel_rows_per_line = get_format_texel_rows_per_line(gcm_format);
+		const bool has_border = !!border;
 
 		if (!pitch && !packed)
 		{
@@ -1467,7 +1468,7 @@ namespace rsx
 					width, height, format, gcm_format);
 			}
 
-			pitch = get_format_packed_pitch(gcm_format, width, !!border, packed);
+			pitch = get_format_packed_pitch(gcm_format, width, has_border, packed);
 		}
 
 		u32 size = 0;
@@ -1478,10 +1479,21 @@ namespace rsx
 			for (u32 layer = 0; layer < layers; ++layer)
 			{
 				u32 mip_height = internal_height;
+				u32 mip_depth = depth;
+
 				for (u32 mipmap = 0; mipmap < mipmaps && mip_height > 0; ++mipmap)
 				{
-					size += pitch * mip_height * depth;
+					// Depth shrinks with every mip level too - a 3D texture's slice
+					// count halves like its width and height. Using the base depth for
+					// every level overstates the size of a mipmapped 3D texture.
+					// Upstream 26782525f.
+					//
+					// A border adds one texel on each side of the rows. Upstream
+					// 5e2d0eb76.
+					const auto padded_h = has_border ? (mip_height + 2u) : mip_height;
+					size += pitch * padded_h * mip_depth;
 					mip_height = std::max(mip_height / 2u, 1u);
+					mip_depth = std::max(mip_depth / 2u, 1u);
 				}
 			}
 		}
@@ -1497,11 +1509,20 @@ namespace rsx
 			{
 				u32 mip_height = internal_height;
 				u32 mip_width = internal_width;
+				u32 mip_depth = depth;
+
 				for (u32 mipmap = 0; mipmap < mipmaps && mip_height > 0; ++mipmap)
 				{
-					size += (mip_width * bytes_per_block * mip_height * depth);
+					// Same two corrections as the unpacked path above: depth shrinks per
+					// mip level (26782525f), and a border pads each dimension out to the
+					// next power of two (5e2d0eb76).
+					const auto padded_w = has_border ? rsx::next_pow2(mip_width + 8u) : mip_width;
+					const auto padded_h = has_border ? rsx::next_pow2(mip_height + 8u) : mip_height;
+					size += (padded_w * bytes_per_block * padded_h * mip_depth);
+
 					mip_height = std::max(mip_height / 2u, 1u);
 					mip_width = std::max(mip_width / 2u, 1u);
+					mip_depth = std::max(mip_depth / 2u, 1u);
 				}
 			}
 		}
