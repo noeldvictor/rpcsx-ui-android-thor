@@ -1,6 +1,9 @@
 #ifdef ANDROID
 #include <sys/system_properties.h>
 #endif
+
+#include <utility>
+
 #include "util/types.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -174,12 +177,27 @@ static std::string sanitize_android_arm64_llvm_cpu(std::string cpu)
 			const int length = __system_property_get("debug.rpcsx.thor.jit_cpu_native", value);
 			if (length > 0 && value[0] != '0' && value[0] != 'n' && value[0] != 'f')
 			{
-				jit_log.warning("LLVM CPU '%s' kept; SVE suppressed by the feature string.", cpu);
+				// Once. This runs per JIT compile, and the answer cannot change
+				// within a session: it depends on HWCAP and one property, both read
+				// once. Measured on device 2026-08-17, this line and the one below
+				// were 136 of the 608 RPCS3 lines in the logcat buffer - 22% of the
+				// window - which pushes out the lines somebody is actually reading.
+				static bool s_logged_native = false;
+				if (!std::exchange(s_logged_native, true))
+				{
+					jit_log.warning("LLVM CPU '%s' kept; SVE suppressed by the feature string.", cpu);
+				}
+
 				return cpu;
 			}
 		}
 
-		jit_log.warning("LLVM CPU '%s' enables SVE in bundled LLVM, but Android HWCAP does not report SVE. Using cortex-a78 for Thor-safe JIT code.", cpu);
+		static bool s_logged_substitution = false;
+		if (!std::exchange(s_logged_substitution, true))
+		{
+			jit_log.warning("LLVM CPU '%s' enables SVE in bundled LLVM, but Android HWCAP does not report SVE. Using cortex-a78 for Thor-safe JIT code.", cpu);
+		}
+
 		return "cortex-a78";
 	}
 
@@ -923,7 +941,15 @@ public:
 
 std::string jit_compiler::cpu(const std::string& _cpu)
 {
-	jit_log.error("Thor JIT CPU: cpu() entered with _cpu='%s'", _cpu.empty() ? "<empty>" : _cpu.c_str());
+	// Once, and demoted from error. This is diagnostic, not a fault, and it ran on
+	// every JIT compile: 68 identical error-level lines in one short capture. The
+	// argument cannot vary usefully either - it is the configured CPU name.
+	static bool s_logged_entry = false;
+	if (!std::exchange(s_logged_entry, true))
+	{
+		jit_log.notice("Thor JIT CPU: cpu() entered with _cpu='%s'", _cpu.empty() ? "<empty>" : _cpu.c_str());
+	}
+
 	std::string m_cpu = _cpu;
 
 	if (m_cpu.empty())
