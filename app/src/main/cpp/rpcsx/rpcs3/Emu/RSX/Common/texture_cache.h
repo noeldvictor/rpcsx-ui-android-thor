@@ -7,6 +7,10 @@
 #include "texture_cache_predictor.h"
 #include "texture_cache_helpers.h"
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 #include <unordered_map>
 
 #define RSX_GCM_FORMAT_IGNORED 0
@@ -462,6 +466,43 @@ namespace rsx
 		atomic_t<u32> m_texture_upload_calls_this_frame = {0};
 		atomic_t<u32> m_texture_upload_misses_this_frame = {0};
 		atomic_t<u32> m_texture_copies_ellided_this_frame = {0};
+
+		// Reach probe for the upstream 3D-mipmap texture series (2026-08-14..17).
+		//
+		// That series' performance half - host-side mipmap scanning for 3D textures,
+		// and the fast path it enables - only ever runs for a texture that is BOTH 3D
+		// AND mipmapped. Porting it here is a cross-cutting refactor of the texture
+		// cache's virtual interface, not a merge, so it is worth knowing whether the
+		// titles in play reach that path at all before paying for it. This repo's own
+		// rule: establish reach before optimality.
+		//
+		// CUMULATIVE, not per frame, and deliberately so. If a title uploads its only
+		// mipmapped 3D texture once during a load screen, a per-frame counter sampled
+		// on an interval reports zero forever and reads exactly like "never happens".
+		// These only ever climb.
+		//
+		//   debug.rpcsx.thor.tex3d_reach = 1   (default 0, costs nothing when unset)
+		atomic_t<u64> m_thor_uploads_total = {0};
+		atomic_t<u64> m_thor_uploads_3d = {0};
+		atomic_t<u64> m_thor_uploads_3d_mipmapped = {0};
+		atomic_t<u64> m_thor_uploads_cubemap_mipmapped = {0};
+		atomic_t<u32> m_thor_reach_frames = {0};
+
+		static bool thor_tex3d_reach_enabled()
+		{
+			static const bool value = []()
+			{
+#ifdef ANDROID
+				char buffer[PROP_VALUE_MAX]{};
+				const int length = __system_property_get("debug.rpcsx.thor.tex3d_reach", buffer);
+				return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
+#else
+				return false;
+#endif
+			}();
+
+			return value;
+		}
 		static const u32 m_predict_max_flushes_per_frame = 50; // Above this number the predictions are disabled
 
 		// Invalidation
@@ -2251,6 +2292,30 @@ namespace rsx
 			const bool is_unnormalized = !!(tex.format() & CELL_GCM_TEXTURE_UN);
 			auto extended_dimension = tex.get_extended_texture_dimension();
 
+			// Reach probe. See the counters' declaration for why this exists and why
+			// it is cumulative. Counted here because this is the one place that knows
+			// both the dimension and the real mip count for every sampled texture.
+			if (thor_tex3d_reach_enabled()) [[unlikely]]
+			{
+				m_thor_uploads_total++;
+
+				if (extended_dimension == rsx::texture_dimension_extended::texture_dimension_3d)
+				{
+					m_thor_uploads_3d++;
+
+					if (attributes.mipmaps > 1)
+					{
+						m_thor_uploads_3d_mipmapped++;
+					}
+				}
+				else if (extended_dimension == rsx::texture_dimension_extended::texture_dimension_cubemap && attributes.mipmaps > 1)
+				{
+					// The series also touches cubemap_unwrap's mip handling, so this
+					// arm decides whether that half has reach even if 3D does not.
+					m_thor_uploads_cubemap_mipmapped++;
+				}
+			}
+
 			options.is_compressed_format = helpers::is_compressed_gcm_format(attributes.gcm_format);
 
 			u32 tex_size = 0, required_surface_height = 1;
@@ -3554,6 +3619,27 @@ namespace rsx
 			m_texture_upload_calls_this_frame.store(0u);
 			m_texture_upload_misses_this_frame.store(0u);
 			m_texture_copies_ellided_this_frame.store(0u);
+
+			// Report the reach probe. Every 300 frames is often enough to see it
+			// climb and rare enough not to flood the log, and the counters are
+			// cumulative so nothing is lost between reports.
+			//
+			// Always prints the totals, including the zeros. A line that says
+			// "3d=0 3d_mipmapped=0" is the RESULT - it is what says the upstream
+			// series has no reach here - and it must be distinguishable from the
+			// probe never having run, which is why total= is printed beside it.
+			if (thor_tex3d_reach_enabled()) [[unlikely]]
+			{
+				if ((++m_thor_reach_frames % 300u) == 0u)
+				{
+					rsx_log.always()("Thor 3D texture reach: total=%llu 3d=%llu 3d_mipmapped=%llu cubemap_mipmapped=%llu over %u frames",
+						m_thor_uploads_total.load(),
+						m_thor_uploads_3d.load(),
+						m_thor_uploads_3d_mipmapped.load(),
+						m_thor_uploads_cubemap_mipmapped.load(),
+						m_thor_reach_frames.load());
+				}
+			}
 		}
 
 		void on_flush()
