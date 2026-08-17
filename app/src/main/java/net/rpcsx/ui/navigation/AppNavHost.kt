@@ -100,6 +100,8 @@ import net.rpcsx.ui.games.GamesScreen
 import net.rpcsx.ui.settings.AdvancedSettingsScreen
 import net.rpcsx.ui.settings.ControllerSettings
 import net.rpcsx.ui.settings.SettingsScreen
+import net.rpcsx.GameFolderRescan
+import net.rpcsx.ui.tools.InstalledDataScreen
 import net.rpcsx.ui.tools.TrimScreen
 import net.rpcsx.ui.user.UsersScreen
 import net.rpcsx.utils.FileUtil
@@ -251,6 +253,10 @@ fun AppNavHost() {
 
         composable(route = "trim") {
             TrimScreen(game = null, navigateBack = navController::navigateUp)
+        }
+
+        composable(route = "installed_data") {
+            InstalledDataScreen(navigateBack = navController::navigateUp)
         }
 
         composable(
@@ -703,6 +709,47 @@ fun GamesDestination(
                         selected = false,
                         icon = { Icon(painter = painterResource(id = R.drawable.tune), null) },
                         onClick = { navigateTo("trim") }
+                    )
+
+                    NavigationDrawerItem(
+                        label = { Text("Installed game data") },
+                        selected = false,
+                        icon = { Icon(painter = painterResource(id = R.drawable.ic_delete), null) },
+                        onClick = { navigateTo("installed_data") }
+                    )
+
+                    // Re-walks the folders the user has already granted, which is the
+                    // only way to notice a game added to one of them after import.
+                    // GameRepository.refresh() re-collects two fixed internal paths and
+                    // never revisits an imported folder.
+                    NavigationDrawerItem(
+                        label = { Text("Rescan game folders") },
+                        selected = false,
+                        icon = { Icon(painter = painterResource(id = R.drawable.ic_refresh), null) },
+                        onClick = {
+                            scope.launch { drawerState.close() }
+
+                            val granted = GameFolderRescan.grantedFolderCount(context)
+
+                            if (granted == 0) {
+                                AlertDialogQueue.showDialog(
+                                    title = "No folders to rescan",
+                                    message = "No game folder has been added yet. Use Add Games to " +
+                                        "pick one; it is remembered afterwards and this will rescan it.",
+                                    confirmText = "OK",
+                                    dismissText = ""
+                                )
+                            } else {
+                                GameFolderRescan.rescanAll(context)
+                                AlertDialogQueue.showDialog(
+                                    title = "Rescanning",
+                                    message = "Rescanning $granted folder(s). New games appear as they " +
+                                        "are found; games already added are left alone.",
+                                    confirmText = "OK",
+                                    dismissText = ""
+                                )
+                            }
+                        }
                     )
 
                     NavigationDrawerItem(
