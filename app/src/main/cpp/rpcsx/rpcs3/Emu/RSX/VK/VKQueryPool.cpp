@@ -9,7 +9,32 @@
 
 #include <thread>
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
+
 #include "VKGSRender.h"
+
+namespace
+{
+	// Read once, on the RSX thread's first wait. This gates a hot loop, so it must
+	// not re-read the property on every iteration.
+	bool thor_query_yield_enabled()
+	{
+		static const bool value = []()
+		{
+#ifdef __ANDROID__
+			char buffer[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.vk_query_yield", buffer);
+			return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
+#else
+			return false;
+#endif
+		}();
+
+		return value;
+	}
+}
 
 namespace vk
 {
@@ -195,16 +220,29 @@ namespace vk
 			// operating point, and docs/arm64/lv2-ppu-spin.md is the write-up of why
 			// that matters. The win here is not power. It is that an oversubscribed
 			// runqueue can now put an SPU thread on this core instead of a spinner.
+			// BEHIND A PROPERTY, DEFAULT OFF. It was default-on for one build and
+			// withdrawn with the conditional rendering change, when the user measured
+			// about 2 W more at the wall on Eternal Sonata and neither change had been
+			// measured here.
+			//
+			// Note the direction is not obvious, which is why it needs an arm rather
+			// than an argument. sched_yield does NOT sleep: it re-queues the thread and
+			// keeps it runnable, so it does not lower the operating point, and it lets
+			// ANOTHER hot thread take the core immediately. Trading one spinning core
+			// for one working core can raise total power while lowering wasted work.
+			// docs/arm64/lv2-ppu-spin.md is the write-up.
+			//
+			//   debug.rpcsx.thor.vk_query_yield = 1   (default 0)
 			for (u32 spins = 0; !query_info.ready; spins++)
 			{
 #ifdef __ANDROID__
-				if (spins < 64)
+				if (spins >= 64 && thor_query_yield_enabled())
 				{
-					rx::pause();
+					std::this_thread::yield();
 				}
 				else
 				{
-					std::this_thread::yield();
+					rx::pause();
 				}
 #else
 				rx::pause();

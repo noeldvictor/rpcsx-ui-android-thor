@@ -3,8 +3,30 @@
 #include "util/logs.hpp"
 #include "Emu/system_config.h"
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 namespace vk
 {
+	// Read once. The value decides a device capability, so it must not change
+	// underneath a running renderer.
+	static bool thor_cond_render_disabled()
+	{
+		static const bool value = []()
+		{
+#ifdef ANDROID
+			char buffer[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.vk_cond_render_off", buffer);
+			return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
+#else
+			return false;
+#endif
+		}();
+
+		return value;
+	}
+
 	// Global shared render device
 	const render_device* g_render_device = nullptr;
 
@@ -187,10 +209,26 @@ namespace vk
 		// :387 and :454, and this device reports "Turnip Adreno (TM) 740"). So one
 		// test covers the two vendors ARMSX3 names separately.
 		//
-		// UNMEASURED HERE. Their device, their titles.
-		if (optional_features_support.conditional_rendering && get_driver_vendor() == driver_vendor::QUALCOMM)
+		// BEHIND A PROPERTY, DEFAULT OFF, AND HERE IS WHY.
+		//
+		// Turning this on was made the default once and then withdrawn: the user
+		// reported roughly 2 W more at the wall on Eternal Sonata, read off the Thor's
+		// second screen, which is the instrument this project trusts for power.
+		//
+		// The mechanism is not mysterious. Falling back to
+		// rsx::thread::begin_conditional_rendering PERFORMS the draws that occlusion
+		// results would have culled, so it is strictly more GPU work by construction.
+		// On a title that leans on culling, that is a real power cost for a
+		// reliability win against a device loss NOBODY HAS SEEN ON THIS DEVICE.
+		//
+		// So the trade is: set this when a title dies with a Vulkan device loss, or
+		// when the render pass count is the thing being measured. Leave it unset
+		// otherwise.
+		//
+		//   debug.rpcsx.thor.vk_cond_render_off = 1   (default 0)
+		if (optional_features_support.conditional_rendering && get_driver_vendor() == driver_vendor::QUALCOMM && thor_cond_render_disabled())
 		{
-			rsx_log.notice("Conditional rendering disabled: unreliable on this driver (device loss on Turnip, unbounded render pass allocations on the proprietary Qualcomm driver).");
+			rsx_log.notice("Conditional rendering disabled by debug.rpcsx.thor.vk_cond_render_off: trades GPU work for reliability (device loss on Turnip, unbounded render pass allocations on the proprietary Qualcomm driver).");
 			optional_features_support.conditional_rendering = false;
 		}
 	}
