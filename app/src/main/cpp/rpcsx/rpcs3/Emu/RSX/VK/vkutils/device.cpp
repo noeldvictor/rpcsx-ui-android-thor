@@ -156,6 +156,43 @@ namespace vk
 
 		// v3dv and PanVK support BC1-BC3 which is all we require, support is reported as false since not all formats are supported
 		optional_features_support.texture_compression_bc = features.textureCompressionBC || get_driver_vendor() == driver_vendor::V3DV || get_driver_vendor() == driver_vendor::PANVK;
+
+		// Hardware conditional rendering is unreliable on this hardware, in two
+		// different ways, so we stop asking for it and fall back to
+		// rsx::thread::begin_conditional_rendering - the path desktop already takes
+		// wherever the extension is absent. It performs the draws instead of culling
+		// them, which costs GPU work in exchange for the session surviving.
+		//
+		// ARMSX3 reports both failures on an Adreno 740:
+		//
+		//   Turnip - Spider-Man: Web of Shadows loses the Vulkan device about a
+		//   minute into gameplay, reported against poke_query, which is the first
+		//   call that READS a result rather than the one at fault. This path is the
+		//   only place that records vkCmdCopyQueryPoolResults with
+		//   VK_QUERY_RESULT_WAIT_BIT, which makes the GPU itself block until the
+		//   query resolves. A query that never resolves therefore hangs the GPU
+		//   rather than the caller, and the watchdog takes the device out. The same
+		//   session logged 169 "Dubious query data pushed to cond render" warnings,
+		//   so being handed unresolved queries is not hypothetical.
+		//
+		//   Proprietary Qualcomm - allocates on every render pass end and never
+		//   releases it. Not our heap, and not something we can free.
+		//
+		// It is also render pass churn: their aggregation barriers closed 42 of the
+		// 91 render passes in a measured frame, and closing a pass on a tiler costs
+		// a tile store and a reload. See docs/arm64/adreno-tiler.md.
+		//
+		// This fork maps BOTH drivers to driver_vendor::QUALCOMM - the proprietary
+		// one by driver id, and Turnip by its name containing "Adreno" (device.cpp
+		// :387 and :454, and this device reports "Turnip Adreno (TM) 740"). So one
+		// test covers the two vendors ARMSX3 names separately.
+		//
+		// UNMEASURED HERE. Their device, their titles.
+		if (optional_features_support.conditional_rendering && get_driver_vendor() == driver_vendor::QUALCOMM)
+		{
+			rsx_log.notice("Conditional rendering disabled: unreliable on this driver (device loss on Turnip, unbounded render pass allocations on the proprietary Qualcomm driver).");
+			optional_features_support.conditional_rendering = false;
+		}
 	}
 
 	void physical_device::get_physical_device_properties(bool allow_extensions)
