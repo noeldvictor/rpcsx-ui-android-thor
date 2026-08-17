@@ -1195,7 +1195,14 @@ error_code sys_fs_close(ppu_thread &ppu, u32 fd) {
 
   std::string FD_state_log;
 
-  if (sys_fs.warning) {
+  // Trace, not warning. Every open is followed by a close, so this tracks
+  // sys_fs_open exactly: 8,846 lines of a 449,180 line buffer on Transformers.
+  //
+  // Note the gate has to move with the level. It reads `if (sys_fs.trace)` so the
+  // string is only formatted when the channel would actually print it - leaving it
+  // as `if (sys_fs.warning)` would keep paying for the fmt::format on every close
+  // while never emitting anything, which is the worst of both.
+  if (sys_fs.trace) {
     FD_state_log = fmt::format("sys_fs_close(fd=%u)", fd);
   }
 
@@ -1203,7 +1210,7 @@ error_code sys_fs_close(ppu_thread &ppu, u32 fd) {
     std::lock_guard lock(file->mp->mutex);
 
     if (!file->file) {
-      sys_fs.warning("%s", FD_state_log);
+      sys_fs.trace("%s", FD_state_log);
       return {CELL_EBADF, fd};
     }
 
@@ -1215,7 +1222,7 @@ error_code sys_fs_close(ppu_thread &ppu, u32 fd) {
     }
 
     if (!FD_state_log.empty()) {
-      sys_fs.warning("%s: %s", FD_state_log, *file);
+      sys_fs.trace("%s: %s", FD_state_log, *file);
     }
 
     // Free memory associated with fd if any
@@ -1637,7 +1644,9 @@ error_code sys_fs_rename(ppu_thread &ppu, vm::cptr<char> from,
   ppu.state += cpu_flag::wait;
   lv2_obj::sleep(ppu);
 
-  sys_fs.warning("sys_fs_rename(from=%s, to=%s)", from, to);
+  // Trace. UE3's cache install writes each asset to a __tmp name and renames it
+  // into place: 2,191 lines of a 449,180 line buffer on Transformers.
+  sys_fs.trace("sys_fs_rename(from=%s, to=%s)", from, to);
 
   const auto [from_error, vfrom] = translate_to_str(from);
 

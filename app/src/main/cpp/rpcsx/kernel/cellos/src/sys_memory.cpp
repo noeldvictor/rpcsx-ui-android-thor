@@ -221,7 +221,11 @@ error_code sys_memory_allocate_from_container(cpu_thread &cpu, u64 size,
 error_code sys_memory_free(cpu_thread &cpu, u32 addr) {
   cpu.state += cpu_flag::wait;
 
-  sys_memory.warning("sys_memory_free(addr=0x%x)", addr);
+  // Trace, for the same reason as sys_memory_allocate above - and this one is
+  // nearly as large: 118,789 lines of a 449,180 line buffer on Transformers.
+  // Allocation and free come in pairs, so fixing only one of them halves a flood
+  // rather than stopping it.
+  sys_memory.trace("sys_memory_free(addr=0x%x)", addr);
 
   const auto ct =
       addr % 0x10000
