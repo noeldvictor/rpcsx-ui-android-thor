@@ -1035,6 +1035,69 @@ Listed so the next pass resumes rather than restarts:
 * `cce09dbb3` — SPU recovers from a failed analysis, and the log floods stop.
 * `7f54855b7` — an lv2/vm read-only unlink lockup, and three log floods.
 
+# The upstream texture series of 2026-08-14..17, and why almost none of it is ours
+
+Upstream landed 16 commits on the RSX texture cache, `ffc50905a..f9f88aa9e`, 511
+insertions over 12 files. It was reported as a GPU improvement. **Three commits
+came here. The rest should not, and this section is why, so nobody re-derives it.**
+
+## Taken (`bf60895ea`)
+
+* `f9f88aa9e` — a real bug. `uvec4(floor(...))` on a **negative** float is
+  undefined, and `round_to_8bit()` feeds it an `fma` result that can go negative.
+  Both the fp32 and the native fp16 forms are fixed. Per fragment, and `max()` is
+  free next to what surrounds it.
+* `26782525f` — depth shrinks with every mip level. This tree used the base depth
+  for every level, so `get_texture_size()` overstated every mipmapped 3D texture.
+* `5e2d0eb76` — border texels pad the mip dimensions. **Order matters**: this was
+  written on top of `26782525f`, and taking it alone against this tree's older
+  base would compute the wrong size. They go together.
+
+## Not taken: the performance half has no reach here
+
+The performance work is host-side mipmap scanning for 3D textures (`7e35f5999`,
+191 lines) and the one-line commit that enables its fast path (`107b751a4`). It
+runs only for a texture that is **both 3D and mipmapped**.
+
+`debug.rpcsx.thor.tex3d_reach` measured it. Eternal Sonata, title screen and
+menus, 2,700 frames:
+
+    total=12950  3d=0  3d_mipmapped=0  cubemap_mipmapped=0
+
+**Not one 3D texture in 12,950 uploads.** Gameplay is still unsampled; if it
+agrees, this half is inert on this title.
+
+`970d74581` looks general from its title — "respect mip levels actually used" —
+and is not. Its only call sites are `generate_cubemap_from_images` and
+`generate_3d_from_2d_images`, so the same two counters cover it, and both read 0.
+
+## Not taken: two "general fixes" repair a feature this tree does not have
+
+`4475671bb` lets `process_framebuffer_resource_fast` take an offset. Two later
+commits then fix what that broke:
+
+* `9a4b84926` scales the offset when src and dst bpp mismatch.
+* `6f5f198ac` adds a cyclic-ref check "since we now allow offsets".
+
+This tree's call site passes **no offset at all**, and `scaled_offset` appears
+zero times in its `texture_cache_helpers.h`. It also already performs the
+cyclic-ref barrier those commits restore. **Predating the feature means predating
+its bugs.** Porting either one would be meaningless at best.
+
+## The porting cost, if the reach answer ever changes
+
+A trial 3-way merge resolves to 40 conflicts over five files, which reads as
+tractable and is not. A partial application failed to build with **102 errors of a
+different kind**: 50 `cannot initialize object parameter of type rsx::thread`, 18
+`override hides virtual member function`, 16 `vk::texture_cache is an abstract
+class`. Upstream changed the texture cache's **virtual interface**, so files with
+no conflicts at all stop compiling. It is a cross-cutting refactor of the VK
+backend, and it collides with this fork's `can_sample_linear` logic in
+`VKDraw.cpp`, where there is no side to pick.
+
+**Conflict count does not see interface changes.** That is the lesson worth
+keeping.
+
 # `rsx_log.always()` does not reach logcat. `rsx_log.error()` does.
 
 **Measured 2026-08-17, and it cost a build and a boot.** A new counter logged
