@@ -1353,7 +1353,24 @@ namespace vm
 
 		if (!utils::memory_lock(g_sudo_addr + addr, size))
 		{
-			vm_log.error("Failed to lock sudo memory (addr=0x%x, size=0x%x). Consider increasing your system limits.", addr, size);
+			// Report this once per session, not once per call.
+			//
+			// Android does not grant RLIMIT_MEMLOCK to ordinary apps, so this fails for
+			// every mapping and cannot be "fixed" by the user the message tells to raise
+			// their limits. Games that map and unmap shared memory in a loop then drown
+			// the log in it - ARMSX3 measured 6470 of these in ten seconds on Oblivion.
+			//
+			// NOTE for this fork: docs/arm64 records that vm_log emits nothing at all on
+			// this device, so the flood may never have reached our log. The change is
+			// still correct, and it stops this becoming a flood the day vm_log starts
+			// working. Do not read it as a measured win here.
+			static atomic_t<bool> s_reported{false};
+
+			if (!s_reported.exchange(true))
+			{
+				vm_log.error("Failed to lock sudo memory (addr=0x%x, size=0x%x). Consider increasing your system limits."
+					" Further failures will not be reported.", addr, size);
+			}
 		}
 	}
 

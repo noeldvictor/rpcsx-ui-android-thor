@@ -2012,7 +2012,9 @@ error_code sys_fs_fcntl(ppu_thread &ppu, u32 fd, u32 op, vm::ptr<void> _arg,
     // Load mountpoint (doesn't support multiple // at the start)
     std::string_view vpath{arg->name.get_ptr(), arg->name_size};
 
-    sys_fs.notice("sys_fs_fcntl(0xc0000006): %s", vpath);
+    // Trace for the same reason as sys_fs_utime: this rides along with the utime
+    // polling loop and made up the last third of that flood.
+    sys_fs.trace("sys_fs_fcntl(0xc0000006): %s", vpath);
 
     // Check only mountpoint
     vpath = vpath.substr(0, vpath.find_first_of("/", 1));
@@ -2886,8 +2888,14 @@ error_code sys_fs_utime(ppu_thread &ppu, vm::cptr<char> path,
   ppu.state += cpu_flag::wait;
   lv2_obj::sleep(ppu);
 
-  sys_fs.warning("sys_fs_utime(path=%s, timep=*0x%x)", path, timep);
-  sys_fs.warning("** actime=%u, modtime=%u", timep->actime, timep->modtime);
+  // Trace, not warning. Setting a file's timestamps is routine and uninteresting,
+  // but games that poll it do so in tight loops: ARMSX3 measured Oblivion's
+  // FileCaching thread hitting this 7274 times in ten seconds on one .BSA, and at
+  // two warning lines a call that alone stalled the emulator for over twenty
+  // seconds. Logging is not free on Android. Raise the sys_fs channel to Trace to
+  // get these back.
+  sys_fs.trace("sys_fs_utime(path=%s, timep=*0x%x)", path, timep);
+  sys_fs.trace("** actime=%u, modtime=%u", timep->actime, timep->modtime);
 
   const auto [path_error, vpath] = translate_to_str(path);
 

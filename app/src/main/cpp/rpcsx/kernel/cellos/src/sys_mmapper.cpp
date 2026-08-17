@@ -566,7 +566,11 @@ error_code sys_mmapper_map_shared_memory(ppu_thread &ppu, u32 addr, u32 mem_id,
                                          u64 flags) {
   ppu.state += cpu_flag::wait;
 
-  sys_mmapper.warning(
+  // Trace, not warning: a successful map is routine, and games that cycle shared
+  // memory do it thousands of times a second. ARMSX3 measured 6476 of these in ten
+  // seconds on Oblivion, and on Android writing them costs more than the mapping
+  // itself. Raise the sys_mmapper channel to Trace to get them back.
+  sys_mmapper.trace(
       "sys_mmapper_map_shared_memory(addr=0x%x, mem_id=0x%x, flags=0x%x)", addr,
       mem_id, flags);
 
@@ -680,7 +684,8 @@ error_code sys_mmapper_unmap_shared_memory(ppu_thread &ppu, u32 addr,
                                            vm::ptr<u32> mem_id) {
   ppu.state += cpu_flag::wait;
 
-  sys_mmapper.warning(
+  // Pairs with the map above; same reasoning.
+  sys_mmapper.trace(
       "sys_mmapper_unmap_shared_memory(addr=0x%x, mem_id=*0x%x)", addr, mem_id);
 
   const auto area = vm::get(vm::any, addr);
