@@ -989,6 +989,85 @@ Listed so the next pass resumes rather than restarts:
 * `cce09dbb3` — SPU recovers from a failed analysis, and the log floods stop.
 * `7f54855b7` — an lv2/vm read-only unlink lockup, and three log floods.
 
+# Prove which binary the device is running, before you measure anything
+
+**The app can load a dev-core override instead of the core in the APK.**
+`files/dev-core/active-core.json` names a library, and the app loads that one.
+An `adb install` then changes nothing that runs.
+
+On 2026-08-16 this cost a full boot. The override pinned a 1.35 GB library from
+**2026-07-17**, built from a different working copy
+(`Documents\New project 6\rpcsx-ui-android\`). A freshly built APK was installed
+and verified by `lastUpdateTime`, the title was booted, and the result was read
+as evidence about a change that never executed.
+
+`lastUpdateTime` proves the APK arrived. It does not prove the core ran. Only one
+thing does:
+
+```sh
+adb shell run-as net.rpcsx.easy cat /proc/<pid>/maps | grep librpcsx-android
+```
+
+The bundled core answers `/data/app/.../lib/arm64/librpcsx-android.so`. An
+override answers `/data/data/net.rpcsx.easy/files/dev-core/librpcsx-android.so`.
+**Read that line before the run, not after it.**
+
+To disable an override without destroying it, rename `active-core.path` and
+`active-core.json`. `tools/build_push_thor_core.ps1 -ResetToBundled` also deletes
+the library itself, which is not recoverable if the checkout that built it has
+moved on.
+
+This is the version-banner trap in a third costume. The banner lied about the
+build, a property can be absent from the `.so`, and now the whole library can be
+the wrong one.
+
+# ADPF is written, gated at runtime, and compiled out
+
+`thor_adpf_rsx_hint.h` is complete. It dlsym's the `APerformanceHint_*` family,
+gives ADPF a real 30 FPS deadline for Eternal Sonata, and reports the miss signal
+as well as the headroom signal. When it is compiled in it reads
+`debug.rpcsx.thor.adpf_rsx` and **defaults to off**, so the property alone
+decides.
+
+It is not compiled in. `CMakeLists.txt:19` defaults `RPCSX_THOR_ADPF_RSX_HINT` to
+`OFF`, and `build.gradle.kts:219` passes that default explicitly.
+
+**That last part is the cost.** The flag is always in the CMake argument list, so
+turning it on changes the argument string, which changes the `app/.cxx` hash, which
+means **a fresh 8-11 GB tree and a full native rebuild** - not a re-link. Budget
+for that before flipping `-PrpcsxThorAdpfRsxHint=1`, and read the disk warning in
+"Every distinct CMake flag combination costs 8-11 GB" first.
+
+Worth doing once, because after that build the experiment is one property and no
+rebuild. ARMSX3 shipped ADPF and kept it through a full renderer revert, which is
+weak evidence that it earns its place. Unmeasured here.
+
+# Build the probe, do not take the number
+
+**A number from outside this repo is a reason to test, never a result.** ARMSX3
+measures on their device, upstream measures on x86, and a vendor manual measures
+nothing at all. Nine of nine manual-derived predictions here were refuted.
+
+**Write the throwaway program. It is cheap and it is allowed.** The precedent is
+already in `tools/`: `bench/thor_bench.cpp`, `aes_arm64_bench.cpp`,
+`bcax_bench.c`, `read_ctr_el0.c`, `rdata_equiv.c`. Results go in
+[`bench-results.md`](docs/arm64/bench-results.md).
+
+Three shapes, cheapest first, all covered in "Test an acceleration theory outside
+the app first" above: read the codegen, model the two forms and diff them, or run
+a static binary on the device. None of them needs an APK, a boot, or a thermal
+gate.
+
+**Two open questions that each want one small program:**
+
+* Does `vkGetFenceStatus` really block on Turnip and Adreno 740? A commit already
+  landed on ARMSX3's 14.6 ms figure. One Vulkan binary that times the call
+  against an unsignalled fence settles it, and refutes the commit if they are
+  wrong about this driver.
+* Is SVE truly absent, or only unreported? `HWCAP` and the JIT log agree it is
+  absent, and Qualcomm disabled SVE2 across this generation. A static binary that
+  executes one SVE instruction under a `SIGILL` handler turns that into proof.
+
 # The audit ledger
 
 [`docs/arm64/audit-ledger.md`](docs/arm64/audit-ledger.md) tracks the
