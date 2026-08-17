@@ -436,12 +436,36 @@ struct GraphicsFrame : GSFrameBase {
 
   ANativeWindow *getNativeWindow() const {
     ANativeWindow *result;
+
+    // Waiting here for a moment at boot is normal: the RSX thread usually starts
+    // before the SurfaceView has been laid out. Waiting here FOREVER is not, and
+    // it used to be completely silent.
+    //
+    // SurfaceHolder.Callback::surfaceChanged is a ONE-SHOT. Android delivers it
+    // when the surface is created or resized and never repeats it, so a single
+    // missed delivery parks this loop for the whole session. The symptom is a
+    // black game area at ~0% CPU, with the emulator log stopping dead just after
+    // Vulkan device creation and nothing at all to say why - which is what makes
+    // it expensive to diagnose rather than merely broken. Rotating the device
+    // appears to fix it only because a configuration change forces a fresh
+    // surfaceChanged.
+    //
+    // Say so, rather than hanging quietly. From ARMSX3 614bf8b71.
+    u32 waited_ms = 0;
+
     while ((result = g_native_window.load()) == nullptr) [[unlikely]] {
       if (Emu.IsStopped()) {
         return activeNativeWindow;
       }
 
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      waited_ms += 100;
+
+      if (waited_ms % 3000 == 0) {
+        rpcsx_android.error("Still waiting for a Surface after %u ms -- the renderer "
+                            "cannot start until surfaceChanged reaches native.",
+                            waited_ms);
+      }
     }
 
     if (result != activeNativeWindow) [[unlikely]] {

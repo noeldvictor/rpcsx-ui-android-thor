@@ -1035,6 +1035,52 @@ Listed so the next pass resumes rather than restarts:
 * `cce09dbb3` — SPU recovers from a failed analysis, and the log floods stop.
 * `7f54855b7` — an lv2/vm read-only unlink lockup, and three log floods.
 
+# `_rpcsx_surfaceEvent` leaks an ANativeWindow reference, and that blocks a fix
+
+**Found by reading, on 2026-08-17, while porting ARMSX3's Surface re-delivery.
+Not yet fixed, because the fix cannot be validated without the device.**
+
+`ANativeWindow_fromSurface` **returns a reference the caller owns** and must
+release. `_rpcsx_surfaceEvent` treats it as borrowed:
+
+```cpp
+auto newWindow = ANativeWindow_fromSurface(env, surface);   // ref 1, owned by us
+auto prevWindow = g_native_window.exchange(newWindow);
+if (newWindow != prevWindow) {
+    ANativeWindow_acquire(newWindow);                        // ref 2
+    if (prevWindow) ANativeWindow_release(prevWindow);       // releases prev once
+}
+```
+
+Both paths leak. A **different** window ends holding two references where one is
+released later, and an **identical** window skips the block entirely while the
+`fromSurface` reference is never dropped at all.
+
+Today it is bounded, because the surface changes rarely.
+
+**It is what stops the real fix.** `SurfaceHolder.Callback::surfaceChanged` is a
+one-shot: Android delivers it on create or resize and never repeats it. A single
+missed delivery parks `getNativeWindow()` forever, which is a black game area at
+~0% CPU for the rest of the session, and rotating the device only appears to fix
+it because a configuration change forces a fresh `surfaceChanged`. ARMSX3 fixes
+this by **re-delivering the surface on attach and on every window visibility
+change** (`614bf8b71`), relying on the native side to no-op when the window
+matches.
+
+On this tree that no-op is the leaking path, so the fix would leak a window
+reference **per delivery** instead of once per session.
+
+**Order of work: fix the refcounting first, then port the re-delivery.** The
+correct shape is to let `g_native_window` own the `fromSurface` reference, drop
+the extra `acquire`, and release the incoming reference when the window is
+unchanged. That is a lifetime change on the render surface, where a mistake is a
+use-after-free rather than a leak, so it wants a device and a
+rotate/background/resume cycle before it is trusted.
+
+The diagnostic half is already in: the wait loop now says
+`Still waiting for a Surface after N ms` every three seconds, so the silent
+version of this failure cannot recur.
+
 # The upstream texture series of 2026-08-14..17, and why almost none of it is ours
 
 Upstream landed 16 commits on the RSX texture cache, `ffc50905a..f9f88aa9e`, 511
