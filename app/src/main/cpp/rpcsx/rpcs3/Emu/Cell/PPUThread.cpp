@@ -66,6 +66,8 @@
 
 #ifdef ANDROID
 #include <sys/system_properties.h>
+// mallopt(M_PURGE_ALL) - see the scudo note in the PPU compile worker below.
+#include <malloc.h>
 #endif
 
 #include "rx/asm.hpp"
@@ -308,6 +310,14 @@ static u64 ppu_compile_memory_budget(u64 fraction_divisor)
 	// The cap is not arbitrary: docs/arm64/ppu-compile-oom.md records a title dying
 	// in precompile with a Scudo out-of-memory, and raising this is what risks that
 	// again. So the default is unchanged and the override is opt-in.
+	//
+	// RAISING THIS MAKES THE SCUDO ABORT MORE LIKELY, NOT LESS. Measured 2026-08-17
+	// on BLUS30126: "Scudo OOM: The process has exhausted 256M for size class
+	// 262160", SIGABRT in PPUW.1.1, with 11.4 GB of 15.6 GB free. Scudo caps each
+	// size class at 256 MB regardless of free RAM, so more concurrent compiles means
+	// more simultaneous allocations in the same class. Free memory is not the
+	// constraint and this property cannot buy its way past it. Use it to trade
+	// against wall-clock on titles that already compile cleanly.
 	//
 	//   debug.rpcsx.thor.ppu_budget_mb = <MB>   (default 0 = the formula below)
 	//
@@ -7200,6 +7210,32 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 						jit_compiler jit2({}, g_cfg.core.llvm_cpu, 0x1);
 						ppu_initialize2(jit2, part, cache_path, obj_name);
 					}
+
+#ifdef ANDROID
+					// Hand this module's freed blocks back to the OS before the next one.
+					//
+					// Scudo caps each SIZE CLASS at 256 MB, independently of how much RAM
+					// the device has. LLVM compiling a large module fills the ~256 KB
+					// class, and free() returns those blocks to scudo's region rather than
+					// to the kernel, so the class fills across successive modules and the
+					// worker aborts:
+					//
+					//   Scudo OOM: The process has exhausted 256M for size class 262160.
+					//
+					// Observed 2026-08-17 on BLUS30126: SIGABRT in PPUW.1.1 while the
+					// device reported 11.4 GB free of 15.6 GB. The compile budget cannot
+					// prevent this - it bounds CONCURRENCY, and this is per-class volume,
+					// which is why docs/arm64/ppu-compile-oom.md could not explain the
+					// abort with the budget alone.
+					//
+					// The JIT instance above is already scoped per module, so the memory is
+					// genuinely free by here; this only decides whether scudo keeps it.
+#ifdef M_PURGE_ALL
+					mallopt(M_PURGE_ALL, 0);
+#else
+					mallopt(M_PURGE, 0);
+#endif
+#endif
 
 					ppu_log.success("LLVM: Compiled module %s", obj_name);
 				}
