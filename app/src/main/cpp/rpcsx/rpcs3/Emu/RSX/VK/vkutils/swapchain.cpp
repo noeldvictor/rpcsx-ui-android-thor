@@ -254,11 +254,45 @@ namespace vk
 			m_height = surface_descriptors.currentExtent.height;
 		}
 
+		// Losing the surface is routine on Android: the ANativeWindow is destroyed
+		// every time the app leaves the foreground. The capabilities query above
+		// already tolerates it, and a zeroed surface_descriptors then returns false
+		// at the extent check. These two present-mode queries were the remaining
+		// fatal path - a bare CHECK_RESULT here aborts the whole process with
+		// "Vulkan API call failed with unrecoverable error: Surface lost".
+		//
+		// Returning false instead lets the caller recreate the surface and retry,
+		// which every other surface path in this renderer already does. It also
+		// avoids the corrupted teardown behind the abort: killing the RSX thread
+		// mid-operation left the Main Callbacks thread freeing containers that were
+		// still being written. See ARMSX3 d069a55ac.
 		u32 nb_available_modes = 0;
-		CHECK_RESULT(VK_GET_SYMBOL(vkGetPhysicalDeviceSurfacePresentModesKHR)(gpu, m_surface, &nb_available_modes, nullptr));
+
+		if (const VkResult res = VK_GET_SYMBOL(vkGetPhysicalDeviceSurfacePresentModesKHR)(gpu, m_surface, &nb_available_modes, nullptr);
+			res != VK_SUCCESS)
+		{
+			if (res == VK_ERROR_SURFACE_LOST_KHR)
+			{
+				rsx_log.warning("Swapchain: surface was lost while counting present modes; it will be recreated.");
+				return false;
+			}
+
+			CHECK_RESULT(res);
+		}
 
 		std::vector<VkPresentModeKHR> present_modes(nb_available_modes);
-		CHECK_RESULT(VK_GET_SYMBOL(vkGetPhysicalDeviceSurfacePresentModesKHR)(gpu, m_surface, &nb_available_modes, present_modes.data()));
+
+		if (const VkResult res = VK_GET_SYMBOL(vkGetPhysicalDeviceSurfacePresentModesKHR)(gpu, m_surface, &nb_available_modes, present_modes.data());
+			res != VK_SUCCESS)
+		{
+			if (res == VK_ERROR_SURFACE_LOST_KHR)
+			{
+				rsx_log.warning("Swapchain: surface was lost while reading present modes; it will be recreated.");
+				return false;
+			}
+
+			CHECK_RESULT(res);
+		}
 
 		VkPresentModeKHR swapchain_present_mode = VK_PRESENT_MODE_FIFO_KHR;
 		std::vector<VkPresentModeKHR> preferred_modes;

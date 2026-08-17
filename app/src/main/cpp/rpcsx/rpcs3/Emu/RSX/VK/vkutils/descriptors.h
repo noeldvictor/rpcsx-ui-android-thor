@@ -101,7 +101,39 @@ namespace vk
 
 	class descriptor_set
 	{
+		// How many writes may queue before bind() forces a flush, and - through
+		// m_pool_size - how much every descriptor_set reserves the first time it is
+		// used.
+		//
+		// The reserve is a correctness requirement, not a tuning knob. push_*()
+		// hands Vulkan the address of a pool entry, and that address must stay valid
+		// until flush(), so the pools are sized up front to a capacity the queue
+		// cannot exceed, and they are never reallocated while writes are pending.
+		// simple_array::clear() only resets the size, so the memory is held for the
+		// object's whole life.
+		//
+		// At 16384 that is 16448 entries in each of three pools: about 920 KB per
+		// descriptor_set, and there is one per shader program. On a desktop this is
+		// invisible. On a phone it is the largest thing that grows during play.
+		// ARMSX3 profiled the heap of Ratchet & Clank on an Adreno 740 and found 56
+		// sets created in half a session, 49 MB, climbing for as long as new
+		// pipelines appeared. It is plain malloc and not device memory, so the VMM
+		// never sees it and texture eviction cannot reclaim it; their pool read
+		// 516 MB while the process reached 5.6 GB and was killed.
+		//
+		// Lowering this is safe only because max_cache_size is ALSO the flush
+		// threshold - descriptors.cpp:487 flushes at
+		// m_pending_writes.size() >= max_cache_size - so the queue can never outrun
+		// the reservation. The two must move together.
+		//
+		// 1024 costs one extra vkUpdateDescriptorSets per 1024 writes and takes the
+		// reservation to about 57 KB a set. UNMEASURED HERE; the numbers above are
+		// ARMSX3's, on their device (their 76af990ee).
+#ifdef __ANDROID__
+		static constexpr size_t max_cache_size = 1024;
+#else
 		static constexpr size_t max_cache_size = 16384;
+#endif
 		static constexpr size_t max_overflow_size = 64;
 		static constexpr size_t m_pool_size = max_cache_size + max_overflow_size;
 
