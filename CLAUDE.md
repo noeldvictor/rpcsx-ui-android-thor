@@ -505,7 +505,45 @@ The pattern across all five: the measurement was correct and the *inference* was
 not. When a number decides something, state what population it is over and what
 it excludes, before acting on it.
 
-## First: the game does not currently boot
+## SUPERSEDED 2026-08-16: Eternal Sonata boots and reaches its title screen
+
+**Observed on device at 21:27, 29.99 FPS at the title screen.** The overlay read
+PPU 2.0%, SPU 17.4%, RSX 2.5%, Total 22.0%. The section below describes a
+deterministic hang about eight and a half seconds into emulation. That did not
+happen. Read the rest of this section as history, and for the SPURS analysis,
+which is still the best account of what the stall was.
+
+**Do not credit any one change for this.** The build carried five, and no control
+was run:
+
+* the SPURS `cpu_flag::wait` port (`47cff9303`)
+* the Adreno fence poll (`28cd69e9e`)
+* conditional rendering off on Qualcomm drivers (`489b1845e`)
+* the descriptor reserve cut (`cb6a7ab6c`)
+* the occlusion query yield (`60d5a5be5`)
+
+**And the baseline is not clean.** Every earlier hang observation on this device
+was taken while the app loaded the **dev-core override from 2026-07-17**, not the
+core in the APK. See "Prove which binary the device is running". The bundled core
+may well have booted this title before any of the five landed. Nobody has run
+that arm.
+
+**The control that would settle it:** build the bundled core at `2d7145325`, the
+commit before the five, install it, verify `/proc/<pid>/maps`, and boot the same
+title. Until then this is "it boots", not "we fixed it".
+
+Two other things the same boot settled:
+
+* **The precompile progress display already exists and is good.** The screen reads
+  `Compiling PPU Modules...`, `Progress: file 78 of 78, module 44 of 76`, and a
+  remaining time, over a progress bar. A QOL list built from the README claimed
+  this was missing. It was wrong, as were four other items on it.
+* **Precompile here was about five minutes, not twenty-seven.** Boot at 21:22:25,
+  title screen by 21:27. The 27 minute figure in "A cold boot spends about 27
+  minutes in PPU precompile" was a colder cache; treat it as an upper bound, not
+  the normal case.
+
+## History: the game did not boot before 2026-08-16
 
 Eternal Sonata hangs about eight and a half seconds into emulation, deterministically,
 and never recovers. The screen keeps the last frame RSX presented — usually the SPU
@@ -532,6 +570,14 @@ and `/proc/<tid>/syscall` is useless anyway for a thread that never blocks — i
 `running` every time.
 
 ## The three things actually open
+
+**Items 0 and 1 need re-testing before anyone works on them.** Eternal Sonata
+reached its title screen on 2026-08-16 at 29.99 FPS, so the stall they describe
+did not occur in that build. Whether the defect is fixed, or merely not reached,
+is unknown: the build carried five changes and the earlier observations were all
+taken against the July dev-core override. **Boot Folklore before assuming the
+SPURS analysis below still describes live behaviour.** Full note at the top of
+this file.
 
 0. **It is a SPURS defect, not one game.** Folklore stalls at the **same SPU PC
    `0x12b0`** in `CellSpursKernel0`, same `lsa=0x100`, same 24-retry cap, on a
