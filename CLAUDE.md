@@ -1035,6 +1035,34 @@ Listed so the next pass resumes rather than restarts:
 * `cce09dbb3` — SPU recovers from a failed analysis, and the log floods stop.
 * `7f54855b7` — an lv2/vm read-only unlink lockup, and three log floods.
 
+# `rsx_log.always()` does not reach logcat. `rsx_log.error()` does.
+
+**Measured 2026-08-17, and it cost a build and a boot.** A new counter logged
+through `rsx_log.always()` printed **nothing** across 20,750 frames, while the
+property it was gated on read `1` and the string was confirmed present in the
+shipped `.so`. Every static check passed and the instrument was silent.
+
+Switching the same line to `rsx_log.error()` made it print immediately, on the
+first frame.
+
+`always` is level 0 in `util/logs.hpp`, commented "cannot be disabled", so the
+header says it is the *most* visible channel. On this device's Android log sink it
+is the least. Do not reason from the enum.
+
+**Use `rsx_log.error()` for anything you intend to read back over `adb`**, which
+is what `thor_rsx_auditor` already does - and that working precedent was sitting
+in the tree the whole time.
+
+This is the `vm_log` entry in a new costume, and the cost was the same shape: a
+silent instrument was nearly read as a zero result. The one-shot unconditional
+log is what separated them, and it should have been the first move:
+
+    static bool s_reported_once = false;
+    if (!s_reported_once) { s_reported_once = true; rsx_log.error("alive: gate=%d", gate); }
+
+Put it OUTSIDE the gate, so a false gate cannot silence the message that reports
+the gate.
+
 # Prove which binary the device is running, before you measure anything
 
 **The app can load a dev-core override instead of the core in the APK.**

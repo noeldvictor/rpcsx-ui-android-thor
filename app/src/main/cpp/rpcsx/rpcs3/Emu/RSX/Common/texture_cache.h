@@ -3620,6 +3620,31 @@ namespace rsx
 			m_texture_upload_misses_this_frame.store(0u);
 			m_texture_copies_ellided_this_frame.store(0u);
 
+			// One-shot, UNCONDITIONAL, and it prints the gate's own value.
+			//
+			// The first version of this probe printed nothing across 20750 frames
+			// while the property read '1'. Reading the code could not separate "this
+			// line never runs" from "the gate returned false", and those need
+			// opposite fixes. This is the same technique that cracked mov_rdata, and
+			// it should have been the first move rather than five rounds of reading.
+			//
+			// Deliberately outside the gate, so a false gate cannot silence the
+			// message that reports the gate.
+			{
+				static bool s_reported_once = false;
+				if (!s_reported_once)
+				{
+					s_reported_once = true;
+					char raw[PROP_VALUE_MAX]{};
+					int raw_len = 0;
+#ifdef ANDROID
+					raw_len = __system_property_get("debug.rpcsx.thor.tex3d_reach", raw);
+#endif
+					rsx_log.error("Thor 3D reach probe alive: gate=%d prop_len=%d prop='%s'",
+						thor_tex3d_reach_enabled() ? 1 : 0, raw_len, raw);
+				}
+			}
+
 			// Report the reach probe. Every 300 frames is often enough to see it
 			// climb and rare enough not to flood the log, and the counters are
 			// cumulative so nothing is lost between reports.
@@ -3632,7 +3657,10 @@ namespace rsx
 			{
 				if ((++m_thor_reach_frames % 300u) == 0u)
 				{
-					rsx_log.always()("Thor 3D texture reach: total=%llu 3d=%llu 3d_mipmapped=%llu cubemap_mipmapped=%llu over %u frames",
+					// .error() rather than .always(): the RSX auditor demonstrably
+					// reaches logcat through .error(), and a channel proven to produce
+					// output beats one that should.
+					rsx_log.error("Thor 3D texture reach: total=%llu 3d=%llu 3d_mipmapped=%llu cubemap_mipmapped=%llu over %u frames",
 						m_thor_uploads_total.load(),
 						m_thor_uploads_3d.load(),
 						m_thor_uploads_3d_mipmapped.load(),
