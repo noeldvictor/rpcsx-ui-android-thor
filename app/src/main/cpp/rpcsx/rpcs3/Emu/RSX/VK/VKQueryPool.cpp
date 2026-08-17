@@ -6,6 +6,9 @@
 #include "VKResourceManager.h"
 #include "vkutils/thor_rsx_auditor.h"
 #include "rx/asm.hpp"
+
+#include <thread>
+
 #include "VKGSRender.h"
 
 namespace vk
@@ -171,9 +174,41 @@ namespace vk
 		{
 			poke_query(query_info, index, result_flags);
 
-			while (!query_info.ready)
+			// Spin briefly, then hand the core back.
+			//
+			// A pure pause() spin is defensible on a desktop, where the result lands
+			// in microseconds and there are cores to spare. On a tiled GPU the result
+			// is not available until the tile pass resolves, so the wait is far
+			// longer, and this device runs about eleven hot emulator threads across
+			// five usable cores. Burning one on a spin does not make the result
+			// arrive sooner; it denies the core to an SPU thread that had real work.
+			//
+			// ARMSX3 profiled the RSX thread during Arkham City gameplay, 83261
+			// samples, and put 24.91% of them in this function - the largest single
+			// entry, ahead of the kernel at 11.63%. Their device, not measured here.
+			//
+			// The short spin keeps the fast case fast: a result that is nearly ready
+			// still returns without a scheduler round trip.
+			//
+			// Note what yield() is and is not. sched_yield does NOT sleep - it
+			// re-queues the thread and keeps it runnable, so it does not lower the
+			// operating point, and docs/arm64/lv2-ppu-spin.md is the write-up of why
+			// that matters. The win here is not power. It is that an oversubscribed
+			// runqueue can now put an SPU thread on this core instead of a spinner.
+			for (u32 spins = 0; !query_info.ready; spins++)
 			{
+#ifdef __ANDROID__
+				if (spins < 64)
+				{
+					rx::pause();
+				}
+				else
+				{
+					std::this_thread::yield();
+				}
+#else
 				rx::pause();
+#endif
 				poke_query(query_info, index, result_flags);
 			}
 		}
