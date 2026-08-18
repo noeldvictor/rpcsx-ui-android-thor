@@ -202,7 +202,7 @@ bool package_reader::read_metadata()
 {
 	// Read title ID and use it as an installation directory
 	m_install_dir.resize(9);
-	archive_read_block(55, &m_install_dir.front(), m_install_dir.size());
+	archive_read_block(55, {reinterpret_cast<u8*>(m_install_dir.data()), m_install_dir.size()}, m_install_dir.size());
 
 	// Read package metadata
 
@@ -529,7 +529,7 @@ bool package_reader::read_entries(std::vector<PKGEntry>& entries)
 	entries.clear();
 	entries.resize(m_header.file_count + BUF_PADDING / sizeof(PKGEntry) + 1);
 
-	const usz read_size = decrypt(0, m_header.file_count * sizeof(PKGEntry), m_header.pkg_platform == PKG_PLATFORM_TYPE_PSP_PSVITA ? PKG_AES_KEY2 : m_dec_key.data(), entries.data());
+	const usz read_size = decrypt(0, m_header.file_count * sizeof(PKGEntry), m_header.pkg_platform == PKG_PLATFORM_TYPE_PSP_PSVITA ? PKG_AES_KEY2 : m_dec_key.data(), std::span<u8>{reinterpret_cast<u8*>(entries.data()), entries.size() * sizeof(PKGEntry)});
 
 	if (read_size < m_header.file_count * sizeof(PKGEntry))
 	{
@@ -601,7 +601,7 @@ bool package_reader::read_param_sfo()
 
 		std::string name(entry.name_size + BUF_PADDING, '\0');
 
-		if (usz read_size = decrypt(entry.name_offset, entry.name_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), name.data()); read_size < entry.name_size)
+		if (usz read_size = decrypt(entry.name_offset, entry.name_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), std::span<u8>{reinterpret_cast<u8*>(name.data()), name.size()}); read_size < entry.name_size)
 		{
 			pkg_log.error("PKG name could not be read (size=0x%x, offset=0x%x)", entry.name_size, entry.name_offset);
 			continue;
@@ -624,7 +624,7 @@ bool package_reader::read_param_sfo()
 
 				data_buf.resize(block_size + BUF_PADDING);
 
-				if (decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), data_buf.data()) != block_size)
+				if (decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), data_buf) != block_size)
 				{
 					pkg_log.error("Failed to decrypt PARAM.SFO file");
 					return false;
@@ -859,7 +859,7 @@ bool package_reader::fill_data(std::map<std::string, install_entry*>& all_instal
 
 		const bool is_psp = (entry.type & PKG_FILE_ENTRY_PSP) != 0u;
 
-		if (const usz read_size = decrypt(entry.name_offset, entry.name_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), name.data()); read_size < entry.name_size)
+		if (const usz read_size = decrypt(entry.name_offset, entry.name_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), std::span<u8>{reinterpret_cast<u8*>(name.data()), name.size()}); read_size < entry.name_size)
 		{
 			num_failures++;
 			pkg_log.error("PKG name could not be read (size=0x%x, offset=0x%x)", entry.name_size, entry.name_offset);
@@ -950,6 +950,10 @@ fs::file DecryptEDAT(const fs::file& input, const std::string& input_file_name, 
 void package_reader::extract_worker()
 {
 	std::vector<u8> read_cache;
+
+	// Scratch for decrypting a non-16-aligned tail without overrunning a caller's
+	// buffer. See the note at its use below.
+	std::vector<u8> tail_buf;
 
 	while (m_num_failures == 0 && !m_aborted)
 	{
@@ -1146,7 +1150,7 @@ void package_reader::extract_worker()
 							read_cache.resize(block_size + BUF_PADDING);
 							cache_off = pos;
 
-							const usz advance_size = decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), read_cache.data());
+							const usz advance_size = decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), read_cache);
 
 							if (!advance_size)
 							{
@@ -1165,7 +1169,34 @@ void package_reader::extract_worker()
 						{
 							const u64 block_size = std::min<u64>(BUF_SIZE, size - read_size);
 
-							const usz advance_size = decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), static_cast<u8*>(ptr) + read_size);
+							// `ptr` belongs to whoever called read_at() on this fs::file, and
+							// it is exactly `size` bytes with NO padding. decrypt() works in
+							// whole 16-byte blocks, so for a block_size that is not a multiple
+							// of 16 it writes up to 15 bytes past the end - straight into the
+							// caller's memory, which is the OOB write upstream 582b5ba29 is
+							// about.
+							//
+							// A 16-aligned block cannot overrun, so the common path still
+							// decrypts in place with no copy. Only the ragged tail goes through
+							// a padded scratch buffer and is copied back at its true length.
+							usz advance_size = 0;
+
+							if (block_size % 16 == 0)
+							{
+								advance_size = decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(),
+									std::span<u8>{static_cast<u8*>(ptr) + read_size, block_size});
+							}
+							else
+							{
+								tail_buf.resize(block_size + BUF_PADDING);
+
+								advance_size = decrypt(entry.file_offset + pos, block_size, is_psp ? PKG_AES_KEY2 : m_dec_key.data(), tail_buf);
+
+								if (advance_size)
+								{
+									std::memcpy(static_cast<u8*>(ptr) + read_size, tail_buf.data(), std::min<usz>(advance_size, size - read_size));
+								}
+							}
 
 							if (!advance_size)
 							{
@@ -1382,15 +1413,24 @@ u64 package_reader::archive_read(void* data_ptr, const u64 num_bytes)
 	return m_file ? m_file.read(data_ptr, num_bytes) : 0;
 }
 
-std::span<const char> package_reader::archive_read_block(u64 offset, void* data_ptr, u64 num_bytes)
+std::span<const char> package_reader::archive_read_block(u64 offset, std::span<u8> dst, u64 num_bytes)
 {
-	const usz read_n = m_file.read_at(offset, data_ptr, num_bytes);
+	// The caller's buffer must actually hold what we are about to read into it.
+	ensure(dst.size() >= num_bytes);
 
-	return {static_cast<const char*>(data_ptr), read_n};
+	const usz read_n = m_file.read_at(offset, dst.data(), num_bytes);
+
+	return {reinterpret_cast<const char*>(dst.data()), read_n};
 }
 
-usz package_reader::decrypt(u64 offset, u64 size, const uchar* key, void* local_buf)
+usz package_reader::decrypt(u64 offset, u64 size, const uchar* key, std::span<u8> local_buf)
 {
+	// NOTE: this writes in whole 16-byte blocks, so it can touch up to 15 bytes
+	// PAST size. Every caller must pass a buffer with that headroom - BUF_PADDING
+	// exists for exactly this - and this check is what makes a caller that forgets
+	// fail loudly instead of corrupting whatever follows.
+	ensure(local_buf.size() >= size);
+
 	if (!m_is_valid)
 	{
 		return 0;
@@ -1403,11 +1443,11 @@ usz package_reader::decrypt(u64 offset, u64 size, const uchar* key, void* local_
 
 	// Read the data and set available size
 	const auto data_span = archive_read_block(m_header.data_offset + offset, local_buf, size);
-	ensure(data_span.data() == static_cast<void*>(local_buf));
+	ensure(data_span.data() == static_cast<void*>(local_buf.data()));
 
 	// Get block count
 	const u64 blocks = (data_span.size() + 15) / 16;
-	const auto out_data = reinterpret_cast<u8*>(local_buf);
+	const auto out_data = local_buf.data();
 
 	if (m_header.pkg_type == PKG_RELEASE_TYPE_DEBUG)
 	{
