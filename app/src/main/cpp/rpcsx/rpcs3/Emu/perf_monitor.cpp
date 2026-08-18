@@ -4,6 +4,7 @@
 #include "Emu/System.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
+#include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -107,6 +108,15 @@ void perf_monitor::operator()()
 
 				fmt::append(msg, ", SPU self-loop park: entries=%llu exits=%llu parked_now=%llu last_pc=0x%05x",
 					entries, exits, entries - exits, thor::g_spu_selfloop_park.last_pc.load());
+			}
+
+			// Reported only when the RSX park is on. parks=0 with it enabled is a
+			// real result: it says the ring never stayed empty long enough.
+			if (thor::rsx_fifo::enabled())
+			{
+				fmt::append(msg, ", RSX FIFO park: idle_polls=%llu parks=%llu slept_ms=%llu",
+					thor::rsx_fifo::g_idle_polls.load(), thor::rsx_fifo::g_parks.load(),
+					thor::rsx_fifo::g_park_us_total.load() / 1000);
 			}
 
 			perf_log.notice("%s", msg);

@@ -2246,3 +2246,52 @@ could not be read and the log channel that produced nothing.
 
 The property stays default 0, so nothing changes by default. It is kept for the
 same reason the bool form is kept: the negative should stay reproducible.
+
+# A real sleep parks the RSX where WFE did not, and it still trades frames for CPU
+
+**The third park form, built and measured 2026-08-18.** `rsx_fifo_park_us` sleeps
+for a bounded time instead of calling `rx::wait_for_event()`, after
+`rsx_fifo_park_after` consecutive empty polls. Counters on both, printed by
+`perf_monitor`.
+
+**The sleep works where WFE did not.** At `after=1024, us=100`, under induced
+starvation, `rsx::thread` fell from **839-870 ticks to 437-497** over a 45 s
+window, with no overlap. The `wait_for_event()` form left one arm burning 86% of a
+core. So the earlier failure was the wait, not the idea.
+
+**And it costs frames, at every setting tried.** Seven arms each at
+`after=8192, us=20`, the best configuration found:
+
+| | `rsx::thread` ticks, sorted | frames |
+| --- | --- | --- |
+| off | 624, 843, 852, 857, 864, **3737, 3757** | 3900, 4200, 4800, 5100 x4 |
+| parked | 631, 685, 740, 780, 1612, 1627, 1639 | **4200 x4**, 5100, 5400, 5400 |
+
+The park bounds the tail - nothing above 1639 against two off arms near 3750 - and
+it lands on 4200 frames in **four of seven** arms against one of seven. Mean frames
+4757 off, 4671 parked.
+
+**An n=3 sample of the same configuration read as a win on both axes**, at 685-740
+ticks and 5400 frames. Four more repeats reversed the frame half. Three samples
+were not enough, and this file now records that twice in one day.
+
+## The conclusion, across five variants
+
+| form | CPU | frames |
+| --- | --- | --- |
+| 8 x pause then WFE | +10% in the light state | 2700 against 4800 in one arm |
+| yield then WFE | no change, one arm at 86% of a core | 4200 against 4800 |
+| sleep 100 us after 1024 | -48% | 4200 in two of three |
+| sleep 20 us after 8192 | tail bounded | 4200 in four of seven |
+
+**Parking the RSX FIFO on this device trades frames for CPU. It does not make the
+emulator faster, and every form stays off by default.**
+
+That may still be worth having for **power** on a handheld, which is a different
+question from speed and is not measured here. `tools/thor_power_probe.ps1` and the
+second screen would answer it, on battery, with USB detached.
+
+**What is not yet ruled out** is the starve itself. Bounding its cost is not the
+same as preventing it. It correlates with heat - the two worst arms of the session
+read 74.7 C and 71.9 C - and with contention, and its cause is unknown. That is the
+open item, and it is worth more than a sixth park.

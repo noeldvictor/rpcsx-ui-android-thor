@@ -18,6 +18,10 @@
 
 #if defined(ARCH_ARM64)
 #include <cstdlib>
+#include <chrono>
+#include <thread>
+
+#include "Emu/RSX/thor_rsx_fifo_park.h"
 
 #if defined(ANDROID)
 #include <sys/system_properties.h>
@@ -785,6 +789,38 @@ namespace rsx
 					// CONSECUTIVE empty polls rather than total ones.
 					//
 					//   debug.rpcsx.thor.rsx_fifo_park_after = <polls>   (0 = off)
+					//   debug.rpcsx.thor.rsx_fifo_park_us    = <us>      (0 = off)
+					//
+					// The sleep is a real one, not WFE. An earlier arm starved with a
+					// wait_for_event() park engaged and still burned 86% of a core, so
+					// that wait does not sleep under load on this device. See
+					// thor_rsx_fifo_park.h.
+					if (thor::rsx_fifo::enabled())
+					{
+						thor::rsx_fifo::g_idle_polls++;
+
+						if (s_thor_fifo_idle_spins < thor::rsx_fifo::park_after())
+						{
+							s_thor_fifo_idle_spins++;
+							std::this_thread::yield();
+						}
+						else
+						{
+							const u32 us = thor::rsx_fifo::park_us();
+
+							// Counted BEFORE the sleep, so a watchdog reading the counters
+							// sees a park that is happening rather than only ones that
+							// finished. Every counter in this fork used to increment on
+							// completion, and none of them could see a stall.
+							thor::rsx_fifo::g_parks++;
+							thor::rsx_fifo::g_park_us_total += us;
+
+							std::this_thread::sleep_for(std::chrono::microseconds(us));
+						}
+
+						return;
+					}
+
 					if (const u32 park_after = thor_rsx_fifo_park_after())
 					{
 						if (s_thor_fifo_idle_spins < park_after)
