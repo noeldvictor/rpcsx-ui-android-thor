@@ -2565,14 +2565,27 @@ extern "C" bool _rpcsx_surfaceEvent(JNIEnv *env, jobject surface, jint event) {
       return false;
     }
 
+    // ANativeWindow_fromSurface returns a reference WE OWN and must release.
+    // g_native_window keeps exactly one reference to whatever it holds:
+    //
+    //   same window -> it already owns one, so drop the one we were just handed.
+    //   new window  -> hand ours over, and drop the reference to the old one.
+    //
+    // The previous code treated the fromSurface reference as borrowed and acquired
+    // a SECOND one on top of it. A changed window therefore leaked one reference,
+    // and an identical window skipped the block entirely and leaked the fromSurface
+    // reference outright. Bounded before, because the surface rarely changed - and
+    // the exact reason re-delivering it was unsafe, since re-delivery is by
+    // definition the identical-window path and would have leaked once per delivery.
+    //
+    // getNativeWindow() keeps its own separate reference for activeNativeWindow and
+    // is already balanced, so the window survives this release either way.
     auto prevWindow = g_native_window.exchange(newWindow);
 
-    if (newWindow != prevWindow) {
-      ANativeWindow_acquire(newWindow);
-
-      if (prevWindow != nullptr) {
-        ANativeWindow_release(prevWindow);
-      }
+    if (newWindow == prevWindow) {
+      ANativeWindow_release(newWindow);
+    } else if (prevWindow != nullptr) {
+      ANativeWindow_release(prevWindow);
     }
 
     if (event == 0 && Emu.IsPaused()) {
