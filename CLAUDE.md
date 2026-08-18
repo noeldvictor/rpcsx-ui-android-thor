@@ -2107,3 +2107,108 @@ Said plainly, because this file records retractions beside claims:
   7200, which looked decisive. Four more boots at park=1 then read 7200 three times.
   The 3600 readings were the attract-movie phase this file already documents, and
   the phase gate is what exposed the error.
+
+# Folklore's title screen has two steady states, and one of them starves the RSX
+
+**Profiled on device 2026-08-18. This is the mechanism behind the phase scatter
+this file has fought for weeks.**
+
+One 60 s window, same title, same build, same settings:
+
+| state | process ticks | frames | `rsx::thread` ticks |
+| --- | --- | --- | --- |
+| light | 1823-1890 | 7200 | 256-283 |
+| starved | 6876-6879 | 6000-6300 | 5985 |
+
+**The starved state costs 3.7x the CPU and delivers FEWER frames.** `rsx::thread`
+sits at 5985 ticks per 60 s, which is 99.75% of one core.
+
+A 24,208-sample profile of the starved state, 0 lost:
+
+| | share |
+| --- | --- |
+| `rsx::thread` | **89.13%** of all cycles |
+| kernel | 81.71% |
+| `librpcsx-android.so` | 3.95% |
+| `sched_yield`, self | 5.79% |
+
+**Every single `sched_yield` sample is on `rsx::thread`** - 1,295 samples, 100%
+self. That is the `FIFO_EMPTY` branch at `RSXFIFO.cpp:756` calling
+`std::this_thread::yield()` while the guest fails to feed the ring. The RSX starves
+and burns a whole core doing it.
+
+The light state, 9,365 samples, is a different program:
+
+| thread | share | | object | share |
+| --- | --- | --- | --- | --- |
+| `SPU[0x0000100]` | 40.35% | | JIT code (unnamed) | 42.19% |
+| `PPU[0x1000000]` | 24.04% | | `librpcsx-android.so` | 25.07% |
+| `rsx::thread` | 16.31% | | kernel | 17.10% |
+
+**Read the state before reading any arm.** The 185-ticks-over-1750-frames against
+1720-over-3500 pair this file records is these two states, not random scatter. The
+frame count identifies which one: 7200 per 60 s is light, 6000 is starved.
+
+# `rsx_fifo_park` is not a win, and the default stays 0
+
+**Measured 2026-08-18 across about twenty boots.** The property replaces the
+`sched_yield` spin above with eight `rx::pause()` calls and then
+`rx::wait_for_event()`.
+
+In the light state it is a small, consistent **regression**:
+
+| `rsx_fifo_park` | `rsx::thread` ticks | frames |
+| --- | --- | --- |
+| 0 | 256, 257 | 7200 |
+| 1 | 281, 283 | 7200 |
+
+That is +10% on the thread, +1.4% on the process, and the ranges do not overlap.
+The FIFO is rarely empty here, so the park pays its cost and buys nothing.
+
+Under induced starvation - seven spinner processes taking the cores away from the
+guest, identical in both arms - the park does bound the spin, and it also breaks:
+
+| arm | `rsx::thread` ticks | frames |
+| --- | --- | --- |
+| park 0 | 3863 | 4200 |
+| park 0 | 3691 | 4200 |
+| park 1 | 1083 | 5100 |
+| park 1 | **2200** | **2700** |
+
+The last row is the problem. **2700 frames is the worst throughput measured in the
+whole session**, and it came from the park. That is the wake latency ARMSX3
+records: ouroboros420/rpcsx parked bare here (`e31ef44ef`) and reverted it
+(`832c23078`) because it cost frame-time smoothness. This tree reproduced their
+result independently.
+
+**So the park trades a bounded worst case for an unbounded frame cost, and neither
+side is reliable.** It stays off. A change that fixes the starve without the wake
+latency has to keep short idles spinning - raise the eight-spin threshold far
+enough that only sustained starvation parks - and that is unbuilt and unmeasured.
+
+# `dma_nontemporal` is closed by arithmetic, not by an experiment
+
+The light-state profile puts `memcpy_opt` at **5.19%** of cycles, which is the
+reach this lever needs and the first time it has been measured. Then
+[`bench-results.md`](docs/arm64/bench-results.md) supplies the other half: the
+non-temporal copy is **3.1% faster at 16 KB**.
+
+3.1% of 5.19% is **0.16% of cycles**. The control spread on this device is several
+percent, so the experiment cannot resolve its own prediction. Do not run it.
+
+This is the rule about writing the predicted magnitude down first, working exactly
+as intended: two numbers already in the repo killed a lever in one line of
+arithmetic and cost no device time.
+
+# simpleperf needs `run-as` on this device
+
+`perf_event_paranoid` is 1 and `setprop security.perf_harden 0` does not change it,
+so `simpleperf record -p <pid>` fails with `Permission denied` on `cpu-cycles`.
+Run it as the app instead, which a debuggable build allows:
+
+    adb shell run-as net.rpcsx.easy /system/bin/simpleperf record \
+      -p <pid> --duration 25 -f 1000 -g -o /data/data/net.rpcsx.easy/perf.data
+
+The shipped `.so` is stripped, so symbols inside it come back as
+`librpcsx-android.so[+offset]`. Thread, DSO and kernel attribution all work
+without symbols, and that was enough to find the starve.
