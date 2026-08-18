@@ -856,62 +856,19 @@ namespace vk::thor::rsx_auditor
 
 	inline void on_frame_end()
 	{
-		// One-shot proof of life, deliberately ahead of the enabled() gate.
+		// RESOLVED, and the scaffolding is gone. The auditor does emit: on device on
+		// 2026-08-17 it printed "on_frame_end call #26750 (enabled=1 interval=60)"
+		// during gameplay. What had hidden it earlier was the log channel, not this
+		// function - rsx_log.always() does not reach logcat on this device while
+		// rsx_log.error() does. See CLAUDE.md.
 		//
-		// With debug.rpcsx.thor.rsx_auditor=1 set before launch and Folklore holding
-		// 60 fps, this auditor emitted nothing at all. Five rounds of reading
-		// established that on_frame_end is not compiled out, that it is reached from
-		// VKPresent.cpp via queue_swap_request, that the bypass path does not apply
-		// while rendering, that the property parses as enabled with a 60-frame
-		// interval, and that other rsx_log warnings do reach the log. All of which
-		// says it should work, and it does not.
-		//
-		// Counting which branch actually executes is what settled mov_rdata after the
-		// same amount of fruitless reading, so: log once, unconditionally, before any
-		// gate can suppress it. If this line never appears the function is not being
-		// called and every conclusion above is about dead code. If it appears, the
-		// fault is in enabled() or the interval and the next probe goes there.
+		// The probes that found it are removed because they were not free. Each ran
+		// per PRESENTED FRAME and called detail::enabled() directly, which is two
+		// atomics and a property re-poll every 4096 calls - the exact cost the
+		// constexpr-false enabled() above exists to keep out of Android hot paths.
+		// Reaching past that guard to diagnose it defeated it.
+		if (!enabled())
 		{
-			// The one-shot version proved on_frame_end runs with enabled=1 and
-			// interval=60, and no report still appeared. The only remaining way that
-			// happens is (frame % interval) never reaching 0 -- i.e. this runs far fewer
-			// times than once per presented frame. VKGSRender::flip() has several early
-			// returns ahead of queue_swap_request(), which would do exactly that.
-			//
-			// So count calls instead of announcing one: the first few, then sparsely.
-			static std::atomic<u64> calls{0};
-			const u64 call_no = calls.fetch_add(1, std::memory_order_relaxed) + 1;
-			const bool en_probe = detail::enabled();
-			const u64 poll_probe = detail::g_property_poll_counter.load(std::memory_order_relaxed);
-			if (call_no <= 5 || (call_no % 250) == 0)
-			{
-				rsx_log.error("Thor RSX Auditor: on_frame_end call #%llu (enabled=%d interval=%u) cached@%p poll_here=%llu",
-					static_cast<unsigned long long>(call_no),
-					en_probe ? 1 : 0,
-					detail::g_report_interval.load(std::memory_order_relaxed),
-					static_cast<const void*>(&detail::g_cached_enabled),
-					static_cast<unsigned long long>(poll_probe));
-			}
-		}
-
-		const bool en_gate = enabled();
-		if (!en_gate)
-		{
-			// The call probe above reports enabled=1, yet nothing past this point ever
-			// runs. Log the raw cached state here so the two disagreeing observations
-			// can be compared directly instead of inferred.
-			static std::atomic<u64> offs{0};
-			const u64 o = offs.fetch_add(1, std::memory_order_relaxed) + 1;
-			if (o <= 3 || (o % 500) == 0)
-			{
-				rsx_log.error("Thor RSX Auditor: ENABLED GATE REJECT #%llu cached=%u poll=%llu cached@%p en_gate=%d",
-					static_cast<unsigned long long>(o),
-					detail::g_cached_enabled.load(std::memory_order_acquire),
-					static_cast<unsigned long long>(detail::g_property_poll_counter.load(std::memory_order_relaxed)),
-					static_cast<const void*>(&detail::g_cached_enabled),
-					en_gate ? 1 : 0);
-			}
-
 			return;
 		}
 
