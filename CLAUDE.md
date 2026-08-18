@@ -1129,6 +1129,42 @@ Benign engine behaviour or a tracking bug is undecided, and it cannot be decided
 from the code: it needs the addresses logged and checked against what was
 allocated. Do not "fix" it before that.
 
+# A Thor with its screen off cannot boot a title
+
+**Measured 2026-08-18, and it cost most of an A/B session.** A scripted boot sat
+at 3.7% CPU with the renderer reporting
+`Still waiting for a Surface after 534000 ms`. Nothing was wrong with the
+emulator. The device had gone to sleep during a long adb session, so the window
+was never laid out, and `dumpsys activity top` showed it plainly:
+
+    net.rpcsx.GraphicsFrame{... 0,0-0,0 app:id/surfaceView}
+
+A `SurfaceView` measured 0x0 never creates a surface, so `surfaceChanged` never
+fires and `getNativeWindow()` blocks for the rest of the session.
+
+**Before that log line existed this was indistinguishable from a hang** - black
+screen, no output, and a plausible story about a missed one-shot delivery ready to
+be believed. Check the display before diagnosing anything:
+
+    adb shell dumpsys power | grep mWakefulness=
+    adb shell svc power stayon true     # before any unattended arm
+
+# Eternal Sonata's opening cutscene cannot resolve an A/B
+
+Ten consecutive CPU samples of ONE arm, thirty seconds, no setting changed:
+
+    503 496 518 111 159 148 151 144 185 129
+
+That is 1.1 to 5.2 cores busy within a single arm. The cutscene has phases, and
+the phase decides the number. This is the same wall the ledger already records -
+"Eternal Sonata CPU cannot resolve anything below ~1.4 cores" - reached from a
+different direction, and it rules the cutscene out as an A/B scene entirely.
+
+**Use Folklore.** The ledger says it resolves 0.005 cores and is the title to A/B
+on, and nothing since has contradicted that. A number taken from an Eternal Sonata
+cutscene is noise wearing a result's clothes, which is how two findings were
+retracted here in one day.
+
 # Diagnosing a boot: what the log will and will not tell you
 
 **A failed boot used to report its reason to a dialog and nowhere else.**
