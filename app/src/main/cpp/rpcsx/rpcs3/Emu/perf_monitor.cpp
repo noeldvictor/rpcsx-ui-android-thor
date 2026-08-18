@@ -3,6 +3,7 @@
 
 #include "Emu/System.h"
 #include "Emu/Cell/timers.hpp"
+#include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -84,6 +85,28 @@ void perf_monitor::operator()()
 			{
 				fmt::append(msg, ", RAM Usage: %lluMB (Peak: %lluMB)",
 					current_mem_use / (1024 * 1024), max_memory_usage / (1024 * 1024));
+			}
+
+			// The SPU self-loop park writes entries/last_pc BEFORE the wait and exits
+			// after it, so `parked_now` is the number of SPU threads parked at this
+			// instant and `last_pc` says where. Nothing in the tree read those three
+			// words until now, which made a null A/B unreadable: a lever with no reach
+			// and a lever with no effect both produce "no change".
+			//
+			// Printed only when the park is on, because the call is only emitted into
+			// the JIT when the timeout is non-zero. entries=0 with the park ON is
+			// therefore a real result - it says this scene never branches to self.
+			//
+			// perf_log.notice() is used because this thread's output is already in
+			// RPCSX.log. rsx_log.always() does NOT reach the Android sink; that cost a
+			// build and a boot on 2026-08-17.
+			if (thor::spu_selfloop_park_enabled())
+			{
+				const u64 entries = thor::g_spu_selfloop_park.entries.load();
+				const u64 exits = thor::g_spu_selfloop_park.exits.load();
+
+				fmt::append(msg, ", SPU self-loop park: entries=%llu exits=%llu parked_now=%llu last_pc=0x%05x",
+					entries, exits, entries - exits, thor::g_spu_selfloop_park.last_pc.load());
 			}
 
 			perf_log.notice("%s", msg);

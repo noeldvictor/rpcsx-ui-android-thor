@@ -1961,3 +1961,149 @@ reading the X3 table for work that runs on A715 — and that is a routing rule
 * **Check cores-busy across arms before reading the headline number.** It caught
   all three. If the arms differ by more than a few percent there, the comparison
   is void regardless of what the summary says.
+
+# The SPU self-loop park has no reach on Folklore's title screen
+
+**Measured 2026-08-18, and it closes an item this file carried as "built, default
+off, and unmeasured" since 2026-08-13.**
+
+The park counters now print. `perf_monitor` appends them to its own periodic line,
+which already reaches `RPCSX.log`:
+
+    SPU self-loop park: entries=0 exits=0 parked_now=0 last_pc=0x00000
+
+**Nine PERF lines, nine zeros**, with `debug.rpcsx.thor.spu_selfloop_park=100`, the
+property read back from `getprop`, and the format string confirmed in the shipped
+`.so`. The report fires and counts nothing, so the SPU never branches to itself on
+this scene. The `BR target == m_pos` case is never reached.
+
+**Before this, the counters had no reader.** `thor::g_spu_selfloop_park` was written
+at `SPULLVMRecompiler.cpp:10093-10098` and read by nothing; the string "selfloop"
+appeared in exactly two files in the tree. So the record-on-entry slot this file
+asks for existed and could not be read, and a lever with no reach was
+indistinguishable from a lever with no effect. That is the same shape as `vm_log`
+emitting nothing, and it is now fixed.
+
+**The 20% figure is Eternal Sonata gameplay, not a title screen.** Nothing here
+contradicts it. It says only that Folklore's title screen cannot test it, so any
+future arm on this lever needs a gameplay scene.
+
+## The A/B that ran first, and the control that killed it
+
+The park was A/B'd before the counter existed. Six interleaved arms, 60 s windows,
+every arm at 7200 frames:
+
+| arm | SPU ticks | process total | frames |
+| --- | --- | --- | --- |
+| park 0 | 576, 582, 588 | 1886, 1832, 1854 | 7200 each |
+| park 100 | 556, 567, 574 | 1825, 1873, 1866 | 7200 each |
+
+The ranges do not overlap - 576-588 against 556-574 - which reads as **-2.8% SPU
+thread CPU at no frame cost**. It is not a result.
+
+**A control pair with both arms at 0 gave 561, 575, 565, 571, 573.** That spread is
+14 ticks, the same size as the 16-tick "effect", and it straddles both arms. The
+counter then said `entries=0`, so there was never a mechanism.
+
+**This is the third time this exact shape has been retracted here**, and the second
+at the number 2.8% - the SPU branch lane extract was reported at 2.8%, made the
+default, and withdrawn. Run the control before believing a separation under 5%.
+
+# Measure the thread the change lives in, not the process
+
+`tools/thor_thread_ab.sh` A/Bs one property and reports **per-thread** CPU, summed
+over a thread-name prefix. `tools/thor_phase_gated_ab.sh` measures the whole
+process, which is right for a change that touches every thread and wrong for one
+that touches a single thread.
+
+Folklore's title screen, in one 60 s window:
+
+| | ticks | share |
+| --- | --- | --- |
+| process total | 1823-1890 | 0.30-0.35 cores |
+| `SPU[0x0000100]` | 561-592 | ~31% of the process |
+| `rsx::thread` | 252-323 | ~15% of the process |
+
+The process total spread for one fixed setting is about 60 ticks. A change confined
+to `rsx::thread` can therefore halve its own thread and stay inside the process
+noise. Name the thread.
+
+The tool takes a **prefix**, so `SPU[` sums every SPU thread, and it prints the
+matching thread count. A boot with a different thread count is not comparable, and
+the count is what says so.
+
+# Traps found while measuring on 2026-08-18
+
+* **The frame delta is quantized to 300.** The `tex3d_reach` probe reports every
+  300 frames, so every frame count is a multiple of 300. "Exactly 3600 against
+  exactly 7200" is the reporting granularity, not a deterministic result. Do not
+  read the roundness as strength.
+* **`tex3d_reach` is a free frame counter.** It prints `over N frames` through
+  `rsx_log.error()`, which this device flushes, so an A/B needs no build flag and
+  no SurfaceFlinger parsing to count frames.
+* **The screen and the charger heat the device with the emulator stopped.**
+  `svc power stayon true` plus USB charging held the CPU junction at 81-82 C for 40 s
+  of idle, with nothing running and the battery at 26 C. It is neither a launch
+  transient nor an artifact of reading the sensor.
+* **Tell a hot sensor from a real throttle with `scaling_max_freq`.** At 82 C the
+  A710/A715 cluster read `scaling_max_freq=2707200` against
+  `cpuinfo_max_freq=2803200`, a 3.4% cap, while CPU7 stayed uncapped at 3187200.
+  The frequency cap is the throttle; the temperature is only its cause.
+* **A bare max over `thermal_zone*` reads the wrong sensor.** All zones gave 63400
+  in the same minute that `cpu-1-*` gave 84300. Read the `cpu-1-*` junction zones.
+* **Widening the frame band lets a compile arm through.** A control arm passed a
+  3000-7600 band at 6000 frames while burning **6874** ticks against a normal 1850.
+  It was still compiling. The tight 6800-7600 band would have rejected it.
+* **The USB serial died mid-session and came back `unauthorized`.** The network
+  transport kept working throughout. Set `THOR_SERIAL=192.168.1.33:5555` rather
+  than restarting the session.
+
+# The lv2 spin win, re-measured on 2026-08-18 with a second instrument
+
+**This is the largest ARM64 performance property in the build, and it now has an
+independent confirmation.** The original measurement used cores-busy and reported a
+67.6% saving. This one counts scheduler ticks per thread, on a different build,
+months later, with the arms interleaved.
+
+Folklore, title screen, 60 s windows, every accepted arm at **7200 frames** and
+**16 PPU threads**:
+
+| `debug.rpcsx.thor.lv2_spin` | PPU thread ticks | process total | frames |
+| --- | --- | --- | --- |
+| **0** - this fork's default | **520** | **1824** | 7200 |
+| 50 - upstream behaviour | 4426 | 6003 | 7200 |
+| 50 - upstream behaviour | 4591 | 5937 | 7200 |
+
+**Upstream's spin costs 8.5x the PPU thread CPU and 3.3x the process CPU for the
+same 7200 frames.** The saving is **69%**, which agrees with the 67.6% already
+recorded here.
+
+**The ranges cannot be argued with.** Fifteen accepted default arms across the whole
+session, over four separate experiments, put the process total between **1823 and
+1890**. The two upstream arms are **5937 and 6003**. Nothing overlaps, and the
+separation is 3.2x against a control spread measured the same day at 14 ticks.
+
+**The frame count is the guard.** A CPU number alone cannot tell a thread that
+stopped spinning from an emulator that stopped working. Every arm here rendered
+exactly 7200 frames, so the CPU came off the spin and not off the work.
+
+The hotter arms are the upstream ones - 64.6 C and 66.2 C against 59.0 C. That is
+the consequence of burning three times the CPU, not a confound, and it pushes the
+upstream arm in the direction it already lost.
+
+# What this session did NOT establish
+
+Said plainly, because this file records retractions beside claims:
+
+* **No new optimization was found.** The number above is the fork's existing
+  default, re-verified. It is not work done on 2026-08-18.
+* **`spu_selfloop_park` gained nothing**, and now cannot on this scene - the counter
+  reads `entries=0`.
+* **`rsx_fifo_park` is still unresolved.** With the park on, `rsx::thread` spent
+  267-285 ticks against 252 with it off, from one sample of the off arm. If
+  anything that is worse, and it is not established either way. The default stays 0.
+* **A mid-session claim that the park halved the frame rate was wrong and is
+  withdrawn.** Two boots at park=1 read 3600 frames while twelve at park=0 read
+  7200, which looked decisive. Four more boots at park=1 then read 7200 three times.
+  The 3600 readings were the attract-movie phase this file already documents, and
+  the phase gate is what exposed the error.
