@@ -37,7 +37,7 @@ DEVICE="${THOR_SERIAL:-192.168.1.33:5555}"
 PKG="${THOR_PACKAGE:-net.rpcsx.easy}"
 TITLE="${THOR_TITLE:-BCUS98147}"
 GAME="${THOR_GAME:-/storage/2664-21DE/Roms/ps3/Folklore (USA) (En,Fr,De,Es,It).iso}"
-PROP="debug.rpcsx.thor.rsx_fifo_park"
+PROP="${THOR_PROP:-debug.rpcsx.thor.rsx_fifo_park}"
 WINDOW="${THOR_WINDOW:-45}"
 
 export MSYS_NO_PATHCONV=1

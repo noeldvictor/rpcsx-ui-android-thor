@@ -2212,3 +2212,37 @@ Run it as the app instead, which a debuggable build allows:
 The shipped `.so` is stripped, so symbols inside it come back as
 `librpcsx-android.so[+offset]`. Thread, DSO and kernel attribution all work
 without symbols, and that was enough to find the starve.
+
+# The adaptive FIFO park was built, measured, and does not work either
+
+`debug.rpcsx.thor.rsx_fifo_park_after = <polls>` parks the RSX only after that many
+CONSECUTIVE empty-FIFO polls, and keeps `std::this_thread::yield()` below the
+threshold. It was built on 2026-08-18 to separate the two idle shapes the bool form
+cannot: a brief idle between frames, and the sustained starve that burns a core.
+
+**It does not fix the starve.** Induced starvation, seven spinners, 45 s windows,
+threshold 1024:
+
+| arm | `rsx::thread` ticks | frames |
+| --- | --- | --- |
+| off | 867, 898 | 4800, 4800 |
+| after=1024 | 952, **3895**, 944 | 4800, **4200**, 4500 |
+
+One arm starved **with the park engaged** and still burned 3895 ticks, which is 86%
+of a core over the window.
+
+**That is the useful part of the result.** If the thread had reached
+`rx::wait_for_event()` and parked, it could not have spent 86% of a core. So either
+the event-stream wait does not sleep under this load, or the starve is not the
+`FIFO_EMPTY` branch in that instance. `rx/asm.hpp:461` measures an armed `WFE`
+parking 72,024 ns on an idle device; nothing has measured it on a loaded one, and
+these numbers say the idle figure does not carry over.
+
+**Do not build a fourth park before settling that.** The next step is a counter on
+the park branch - taken, and time spent - so "the park ran and slept" can be told
+from "the park never ran". Every park variant so far has been argued from a wait
+that was never confirmed to sleep, which is the same shape as the counters that
+could not be read and the log channel that produced nothing.
+
+The property stays default 0, so nothing changes by default. It is kept for the
+same reason the bool form is kept: the negative should stay reproducible.

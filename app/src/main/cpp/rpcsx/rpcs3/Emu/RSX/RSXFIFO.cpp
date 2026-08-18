@@ -17,6 +17,8 @@
 #include <bitset>
 
 #if defined(ARCH_ARM64)
+#include <cstdlib>
+
 #if defined(ANDROID)
 #include <sys/system_properties.h>
 #endif
@@ -45,6 +47,41 @@ namespace
 		}();
 
 		return enabled;
+	}
+
+	// Consecutive empty-FIFO polls before the RSX parks. 0 keeps the yield.
+	//
+	// This is the ADAPTIVE form of the park above, and it exists because the bool
+	// form cannot tell the two idle shapes apart. Measured 2026-08-18 on Folklore's
+	// title screen: a light state costs 256 ticks per 60 s on this thread, and a
+	// starved state costs 5985 - 99.75% of one core, with every sched_yield sample
+	// in a 24,208-sample profile landing on this one thread.
+	//
+	// Parking after eight pauses pays the wake latency on every brief idle. It
+	// measured +10% on this thread in the light state, and one arm under load
+	// returned 2700 frames against 4800. Parking only after a SUSTAINED empty ring
+	// leaves the light state on the code that already shipped.
+	u32 thor_rsx_fifo_park_after() noexcept
+	{
+		static const u32 threshold = []() noexcept -> u32
+		{
+#if defined(ANDROID)
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.rsx_fifo_park_after", value) <= 0)
+			{
+				return 0;
+			}
+
+			const unsigned long parsed = std::strtoul(value, nullptr, 10);
+
+			return parsed > 0xffffffffUL ? 0xffffffffU : static_cast<u32>(parsed);
+#else
+			return 0;
+#endif
+		}();
+
+		return threshold;
 	}
 
 	// Spins burned in the current idle episode. Only the RSX thread reaches this.
@@ -737,8 +774,32 @@ namespace rsx
 					//
 					//   debug.rpcsx.thor.rsx_fifo_park = 1   (default 0)
 					//
-					// Off by default, and unmeasured on this device.
+					// Off by default, and MEASURED on this device 2026-08-18: it costs
+					// +10% on this thread in the light state, and one arm under induced
+					// starvation returned 2700 frames against 4800. Prefer the adaptive
+					// form below. This one is kept so the negative stays reproducible.
 #if defined(ARCH_ARM64)
+					// The adaptive form takes precedence. A short idle keeps the
+					// yield that shipped; only a sustained empty ring parks, and the
+					// counter resets when a fresh idle episode begins, so it counts
+					// CONSECUTIVE empty polls rather than total ones.
+					//
+					//   debug.rpcsx.thor.rsx_fifo_park_after = <polls>   (0 = off)
+					if (const u32 park_after = thor_rsx_fifo_park_after())
+					{
+						if (s_thor_fifo_idle_spins < park_after)
+						{
+							s_thor_fifo_idle_spins++;
+							std::this_thread::yield();
+						}
+						else
+						{
+							rx::wait_for_event();
+						}
+
+						return;
+					}
+
 					if (thor_rsx_fifo_park_enabled())
 					{
 						if (s_thor_fifo_idle_spins < 8)
