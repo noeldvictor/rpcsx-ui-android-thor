@@ -2295,3 +2295,69 @@ second screen would answer it, on battery, with USB detached.
 same as preventing it. It correlates with heat - the two worst arms of the session
 read 74.7 C and 71.9 C - and with contention, and its cause is unknown. That is the
 open item, and it is worth more than a sixth park.
+
+# Symbolize against the build that ran, or read the wrong function
+
+**Two wrong symbol readings on 2026-08-18, both caught, both cheap to avoid.**
+
+The shipped `.so` is stripped, so simpleperf reports `librpcsx-android.so[+offset]`.
+The unstripped library is in
+`app/build/intermediates/cxx/RelWithDebInfo/*/obj/arm64-v8a/`, and resolving the
+offset against it is one `llvm-addr2line` call.
+
+**It has to be the SAME build.** An offset from one build resolved against another
+names a different function with complete confidence. `0x15e8340` read as
+`shared_mutex::imp_lock_shared`, which matched a known unfixed spin in
+[`busy-wait-inventory.md`](docs/arm64/busy-wait-inventory.md) and was about to be
+acted on. Re-recording against the installed build moved the same hot symbol to
+`0x15e8580` and named it `rx::pause()`. The host `simpleperf` says so plainly:
+
+    isn't used because of build id mismatch: expected 0xf952fa61..., real 0xb74402e6...
+
+`--symfs` refuses a mismatched library. `llvm-addr2line` does not, and it is the
+one people reach for.
+
+**And the corrected name is still not heat.** `rx::pause()` is `inline` and emitted
+into many translation units, so it becomes the nearest preceding symbol over a
+large address range in a partly stripped binary. This file already records that
+exact artifact for `get_thor_pause_mode` at ~31%. A hot `inline` helper in a symbol
+map is a measurement of the symbol table, not of the program.
+
+**So a stripped profile can name a thread, a DSO and the kernel, and it cannot name
+a function.** Thread and DSO attribution carried every real finding today; the
+function names produced two false leads in a row.
+
+Pulling the record needs `adb exec-out`, not `adb shell`: `adb shell cat` corrupts
+the binary and the host tool then reports `invalid attr section`.
+
+# The pause ladder is built and untested against the state it targets
+
+`debug.rpcsx.thor.rsx_fifo_pause_ladder = <N>` spends N-1 of every N empty-ring
+polls in `rx::pause()` and yields on the Nth. Default 0 keeps one yield per poll.
+
+It exists because a build-matched 33,850-sample profile of the starved state, 0
+lost, is almost entirely syscall overhead:
+
+| symbol | share |
+| --- | --- |
+| `[kernel.kallsyms]`, one address | 64.84% |
+| `[kernel.kallsyms]` | 8.64% |
+| `sched_yield` | 5.24% |
+| `[kernel.kallsyms]` | 3.89% |
+| `rsx::thread::run_FIFO()` | **1.93%** |
+
+The RSX thread's own code is 1.93%. The rest is the kernel servicing a
+`sched_yield` per poll. **That reframes the starve: it is not a wait that fails to
+sleep, it is a syscall storm**, and every park built before it treated the wrong
+half of the problem.
+
+**It is unmeasured against the starve**, because six arms under the stressor all
+stayed healthy at 2430-2494 ticks and 4800-5100 frames. The starved state appeared
+in 4 of ~14 boots earlier in the session and then stopped appearing. A/B'ing a fix
+for a state that will not reproduce measures nothing, so nothing is claimed.
+
+**The next session needs a trigger for the starve before it needs another fix.**
+It correlated with heat - the two worst arms read 74.7 C and 71.9 C - and with
+contention, and neither reproduces it on demand. The counters are in place to
+recognise it (`idle_polls`, `parks`) and `run_FIFO` self time separates it from the
+light state in one profile.

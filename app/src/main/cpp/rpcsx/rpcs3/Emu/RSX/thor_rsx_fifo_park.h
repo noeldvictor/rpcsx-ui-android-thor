@@ -93,6 +93,33 @@ namespace thor::rsx_fifo
 		return value;
 	}
 
+	// Pauses burned between two sched_yield calls on an empty ring. 0 keeps the
+	// current behaviour, which is one yield per poll.
+	//
+	// This is the measurement that produced it. A build-matched, 33,850-sample
+	// profile of the starved state, 0 lost:
+	//
+	//   64.84%  [kernel.kallsyms] one address
+	//    8.64%  [kernel.kallsyms]
+	//    5.24%  sched_yield
+	//    3.89%  [kernel.kallsyms]
+	//    1.93%  rsx::thread::run_FIFO()
+	//
+	// The RSX thread's OWN code is 1.93%. Everything above it is the kernel
+	// servicing sched_yield, which this loop calls once per poll on an empty ring.
+	// That is syscall overhead, not work, and it is why the starved state costs
+	// 3.7x the CPU of the light one while rendering FEWER frames.
+	//
+	// A yield is not needed for progress here: this device has 8 cores and the
+	// emulator runs far fewer busy threads than that. The ladder keeps one yield
+	// per N polls so a loaded machine can still preempt, and spends the rest in
+	// userspace where a poll costs no syscall.
+	inline u32 pause_ladder() noexcept
+	{
+		static const u32 value = read_u32_property("debug.rpcsx.thor.rsx_fifo_pause_ladder");
+		return value;
+	}
+
 	inline bool enabled() noexcept
 	{
 		return park_after() != 0 && park_us() != 0;

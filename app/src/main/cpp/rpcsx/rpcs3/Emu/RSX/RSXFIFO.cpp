@@ -795,6 +795,25 @@ namespace rsx
 					// wait_for_event() park engaged and still burned 86% of a core, so
 					// that wait does not sleep under load on this device. See
 					// thor_rsx_fifo_park.h.
+					// Cut the syscalls before considering any wait. One yield per poll
+					// is what makes the starved state 74% kernel; see
+					// thor_rsx_fifo_park.h for the profile.
+					if (const u32 ladder = thor::rsx_fifo::pause_ladder())
+					{
+						thor::rsx_fifo::g_idle_polls++;
+
+						if ((s_thor_fifo_idle_spins++ % ladder) != 0)
+						{
+							rx::pause();
+						}
+						else
+						{
+							std::this_thread::yield();
+						}
+
+						return;
+					}
+
 					if (thor::rsx_fifo::enabled())
 					{
 						thor::rsx_fifo::g_idle_polls++;
