@@ -1081,6 +1081,101 @@ The diagnostic half is already in: the wait loop now says
 `Still waiting for a Surface after N ms` every three seconds, so the silent
 version of this failure cannot recur.
 
+# The syscall log flood was the UE3 slowness, and it is measured
+
+**449,180 RPCS3 lines in one logcat buffer**, taken while Transformers ran its
+Unreal Engine 3 HD-cache install. On Android a log line is a syscall plus IPC, and
+this install is thousands of file operations back to back, so the logging cost
+more than the work it described.
+
+| lines | message |
+| --- | --- |
+| 119,107 | `Failed to lock sudo memory` |
+| 119,083 | `sys_memory_allocate` |
+| 118,789 | `sys_memory_free` |
+| 31,743 | `sys_fs_stat` |
+| 8,846 | `sys_fs_close` |
+| 8,203 | `sys_fs_open` |
+| 4,434 | `sys_fs_unlink` |
+| 2,191 | `sys_fs_rename` |
+
+All demoted to trace, or reported once per session for `lock_sudo`. **Measured
+after: 1,836 lines over three minutes** of boot and install on Transformers: War
+for Cybertron, which reached its title screen at 24.80 FPS with no `Fatal signal`
+and no Scudo OOM at 459% CPU.
+
+**Two traps in doing this.** Allocation and free come in pairs, and so do open and
+close: the first pass fixed one side of each and halved the flood rather than
+stopping it. And `sys_fs_close` builds its string under `if (sys_fs.warning)` and
+prints later, so the GATE has to move with the level - leaving it would pay
+`fmt::format` on every close and print nothing.
+
+**Do not port ARMSX3's flood list and stop.** Their four (`sys_fs_utime`,
+`sys_fs_fcntl`, `sys_mmapper` map/unmap, `vm::lock_sudo`) contained **none** of
+this tree's top four. The floods that matter here had to be counted here.
+
+## Open: 436 `sys_memory_free` failures in three minutes
+
+With the floods gone, the largest remaining entry is
+`'sys_memory_free' failed with CELL_EINVAL`, 436 of them in three minutes.
+
+`sys_memory_free` returns `CELL_EINVAL` when the address is not 64 KB aligned, or
+when `sys_memory_address_table.addrs[addr >> 16]` holds nothing. The two internal
+callers in `sys_memory.cpp` free an address they have just registered, so they
+cannot be the source - this is the **guest** freeing addresses the table does not
+know about.
+
+Benign engine behaviour or a tracking bug is undecided, and it cannot be decided
+from the code: it needs the addresses logged and checked against what was
+allocated. Do not "fix" it before that.
+
+# Diagnosing a boot: what the log will and will not tell you
+
+**A failed boot used to report its reason to a dialog and nowhere else.**
+`RPCSXActivity` called `RPCSX.boot()` and, on failure, showed an AlertDialog and
+called `finish()`. Over adb that is indistinguishable from a hang: the activity
+starts, the surface is created and destroyed inside 50 ms, and the log holds three
+surface events and nothing else.
+
+That cost a session on 2026-08-17. Three titles were read as "boot accepted but
+silently does nothing", and a Surface delivery bug was hunted that did not exist.
+The result is logged now, success and failure both, so the first line of a capture
+answers "did it boot".
+
+**Two harness facts worth knowing before scripting a boot:**
+
+* `THOR_DEBUG_BOOT` with `--ez thorRequireManagedProfile true` **refuses any title
+  without a recommended settings profile**. Eternal Sonata has one; Transformers,
+  Tales of Symphonia and BLUS30126 do not. Pass `false` for a diagnostic boot, and
+  read the accept or reject line before believing anything that follows.
+* `MSYS_NO_PATHCONV=1` fixes Git Bash rewriting **device** paths, and breaks
+  **local** ones in the same command. `adb install` needs a Windows path for the
+  APK while `adb shell` needs the guard for `/storage/...`. Scope it, do not export
+  it for the whole script.
+
+# 8.3 GB of installed data had no library entry at all
+
+`dev_hdd0/game` on this device, 2026-08-18:
+
+    BLUS30357  4.6 GB     BLUS30126  3.7 GB
+    BLUS31172_INSTALL_TOSRATATOSK  1.5 GB     BCUS98147  30 MB
+
+**BLUS30357 and BLUS30126 are not in `games.json`.** Their 8.3 GB is orphaned: no
+library entry, and deleting a game never touched it anyway - that path removes
+`game.info.path` when app managed, plus `cache/cache/<titleId>`, which is only the
+compile cache.
+
+For a disc game these are simply different places. The title writes to the virtual
+hard disk while it runs; the library entry is the ISO. Drawer > **Installed game
+data** lists them with sizes and deletes one on confirmation. Saves are not in
+there - those are `dev_hdd0/home/<user>/savedata` - so a delete costs a reinstall
+and cannot lose a save.
+
+Not everything under that folder is a title: `$locks` is emulator bookkeeping.
+Entries whose name does not begin with a title id are listed without a Delete
+button. The test is a **prefix**, because `BLUS31172_INSTALL_TOSRATATOSK` is real
+game data.
+
 # The upstream texture series of 2026-08-14..17, and why almost none of it is ours
 
 Upstream landed 16 commits on the RSX texture cache, `ffc50905a..f9f88aa9e`, 511
