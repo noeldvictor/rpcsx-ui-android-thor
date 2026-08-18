@@ -1129,6 +1129,40 @@ Benign engine behaviour or a tracking bug is undecided, and it cannot be decided
 from the code: it needs the addresses logged and checked against what was
 allocated. Do not "fix" it before that.
 
+# What the log-flood fix is actually worth, measured both ways
+
+**Built the pre-flood commit (9b48b5130) and the fixed tree, installed each, and
+booted Transformers: War for Cybertron from the same ISO to the same title screen,
+sampling at the same offset (~t+290 s), screen awake, back to back.**
+
+| | baseline | fixed |
+| --- | --- | --- |
+| RPCS3 log lines at t+290 s | **19,848** | **2,060** |
+| guest CPU total | 50.7% | 50.0% |
+| PPU / SPU / RSX | 10.1 / 37.2 / 3.3 | 9.9 / 36.9 / 3.2 |
+| host CPU, 5 samples | 371 437 407 448 492 | 425 388 429 462 489 |
+| FPS, single sample | 29.69 | 30.49 |
+
+**The log reduction is real and large: 9.6x at the same point.** The CPU figures
+are identical within noise.
+
+**The FPS difference is NOT a result.** Three further samples of the fixed arm ten
+seconds apart gave **27.23** with guest CPU at 72.6%, so that arm alone spans
+27.23-30.49. The title screen animates - the planet rotates and debris moves - so
+it is not a steady scene, and the 29.69 vs 30.49 gap sits inside one arm's own
+range. Reporting it as +2.7% would have been the retraction pattern this file
+already records twice.
+
+**So: the fix removes 90% of the log volume at zero CPU cost, and does not move
+frame rate on a post-install title screen.** That is consistent with where the
+flood actually was - the 449,180-line buffer was captured during the UE3 HD-cache
+INSTALL, which is thousands of file operations back to back and happens once. The
+user's report of the title being unusably slow was during that phase.
+
+**What would resolve a frame-rate claim:** Folklore, per the ledger, and the phase
+gate - accept only 3,500-frame windows, interleave the arms, and read ranges
+rather than single samples. A capped, animated title screen cannot answer it.
+
 # A Thor with its screen off cannot boot a title
 
 **Measured 2026-08-18, and it cost most of an A/B session.** A scripted boot sat
