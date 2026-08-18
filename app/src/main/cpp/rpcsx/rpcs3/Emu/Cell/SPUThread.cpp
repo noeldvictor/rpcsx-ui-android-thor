@@ -55,6 +55,7 @@
 #include <immintrin.h>
 #else
 #include <x86intrin.h>
+#include <set>
 #endif
 #endif
 
@@ -9172,7 +9173,26 @@ void spu_thread::halt()
 		spu_runtime::g_escape(this);
 	}
 
-	spu_log.fatal("Halt");
+	// Once per pc, for the same reason as UNK in SPUInterpreter.cpp: a halted SPURS
+	// kernel is re-entered and re-halts forever, and the two together wrote 600 MB
+	// in a minute on Eternal Sonata for ARMSX3. From their cce09dbb3.
+	{
+		static shared_mutex s_halt_mutex;
+		static std::set<u32> s_halt_seen;
+
+		bool first = false;
+
+		{
+			std::lock_guard lock(s_halt_mutex);
+			first = s_halt_seen.insert(pc).second;
+		}
+
+		if (first)
+		{
+			spu_log.fatal("Halt at 0x%05x -- further halts at this address will not be reported", pc);
+		}
+	}
+
 	spu_runtime::g_escape(this);
 }
 
