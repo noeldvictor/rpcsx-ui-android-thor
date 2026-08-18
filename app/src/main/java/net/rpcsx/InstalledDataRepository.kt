@@ -32,12 +32,32 @@ import java.io.File
 object InstalledDataRepository {
     private const val TAG = "InstalledDataRepository"
 
+    /**
+     * A PS3 title id: four letters then five digits, e.g. BLUS30357.
+     *
+     * Not everything under dev_hdd0/game is a game. A real device showed
+     * `$locks`, which is emulator bookkeeping, and `TEST12345` beside the four
+     * real titles. Offering a Delete button for those is noise in a destructive
+     * screen, which is the wrong place for it.
+     */
+    private val TITLE_ID = Regex("^[A-Z]{4}[0-9]{5}")
+
     data class Entry(
         val titleId: String,
         val dir: File,
         val sizeBytes: Long,
         val fileCount: Int,
     ) {
+        /**
+         * True when the directory name starts with a title id.
+         *
+         * Prefix, not exact match, because an installer can append to it -
+         * `BLUS31172_INSTALL_TOSRATATOSK` is real game data for BLUS31172 and must
+         * not be filed away as bookkeeping.
+         */
+        val isTitle: Boolean
+            get() = TITLE_ID.containsMatchIn(titleId)
+
         val sizeLabel: String
             get() = when {
                 sizeBytes >= 1L shl 30 -> "%.2f GB".format(sizeBytes.toDouble() / (1L shl 30))

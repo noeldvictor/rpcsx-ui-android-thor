@@ -130,17 +130,22 @@ fun InstalledDataScreen(navigateBack: () -> Unit) {
                             )
                         }
                     }
-                } else {
+                }
+
+                val titles = list.filter { it.isTitle }
+                val other = list.filterNot { it.isTitle }
+
+                if (titles.isNotEmpty()) {
                     item {
-                        val total = list.sumOf { it.sizeBytes }
+                        val total = titles.sumOf { it.sizeBytes }
                         Text(
-                            "${list.size} title(s), ${"%.2f".format(total.toDouble() / (1L shl 30))} GB total",
+                            "${titles.size} title(s), ${"%.2f".format(total.toDouble() / (1L shl 30))} GB total",
                             style = MaterialTheme.typography.titleSmall
                         )
                     }
                 }
 
-                items(list, key = { it.titleId }) { entry ->
+                items(titles, key = { it.titleId }) { entry ->
                     Card(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.padding(12.dp).fillMaxWidth(),
@@ -183,6 +188,35 @@ fun InstalledDataScreen(navigateBack: () -> Unit) {
                                     }
                                 )
                             }) { Text("Delete") }
+                        }
+                    }
+                }
+
+                // Everything under dev_hdd0/game that is not a title: emulator
+                // bookkeeping such as $locks, and leftovers like TEST12345. Shown so
+                // the sizes add up and nothing is hidden, but with no Delete button,
+                // because deleting bookkeeping is not a thing a user should be invited
+                // to do from a screen about game data.
+                if (other.isNotEmpty()) {
+                    item {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Other data", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Not game installs. Emulator bookkeeping and leftovers, listed so the " +
+                                "sizes account for everything in the folder.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    items(other, key = { it.titleId }) { entry ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(entry.titleId, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "${entry.sizeLabel}  ${entry.fileCount} files",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     }
                 }

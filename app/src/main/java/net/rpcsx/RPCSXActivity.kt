@@ -150,12 +150,28 @@ class RPCSXActivity : Activity() {
             RPCSX.activeGame.value = gamePath
 
             val bootResult = RPCSX.boot(gamePath)
+
+            // Log the result, always, and not only into the dialog.
+            //
+            // The reason used to go to AlertDialogQueue and nowhere else, so from adb
+            // a failed boot was indistinguishable from a hang: the activity started,
+            // the surface was created and destroyed inside 50 ms, and the log held
+            // nothing but three surface events. Diagnosing it meant looking at the
+            // screen, which is not available to a script and not available at all
+            // after the fact.
+            //
+            // Cost a whole session on 2026-08-17: three titles were read as "boot
+            // accepted but silently does nothing" when each was in fact failing with
+            // a named BootResult that nobody could see.
             if (bootResult != BootResult.NoErrors) {
+                Log.e("RPCSX Boot", "boot FAILED: $bootResult for '$gamePath'")
                 AlertDialogQueue.showDialog(
                     getString(R.string.failed_to_boot),
                     getString(R.string.error_with_msg, bootResult.name)
                 )
                 finish()
+            } else {
+                Log.w("RPCSX Boot", "boot ok: '$gamePath'")
             }
         }
     }
