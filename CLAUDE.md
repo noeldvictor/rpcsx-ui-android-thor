@@ -3326,3 +3326,37 @@ therefore leaving the hot window earlier (2:15 against still compiling at 6:00).
 Both facts are true and they point different ways. The default stays at 4096
 because the compile highs are accepted and wall-clock is what the user waits on.
 **Quote the energy figure, not just the time, if this is ever revisited.**
+
+# The compile budget trade, measured properly: 19% faster for 22% more energy
+
+**Three interleaved samples per arm, 2026-08-19, fixed work.** Earlier attempts used
+"modules compiled in a fixed 55 s window", which is NOT a usable metric - module
+sizes vary, so one setting returned 18 then 10, and any energy-per-module figure
+from it is noise. Fixed WORK is the comparable unit: compile the same 15 modules and
+integrate power over however long that takes. `tools/thor_compile_energy.sh`.
+
+| `ppu_budget_mb` | seconds | energy for 15 modules |
+| --- | --- | --- |
+| 1536 | 59, 61, 60 | 380, 372, 373 J |
+| **4096, the default** | **48, 50, 48** | **465, 472, 450 J** |
+
+**Neither range overlaps.** The default is **19% faster and uses 22% more energy for
+identical work**, so race-to-idle loses here: the extra cores cost more than the
+shorter run saves.
+
+**And the absolute size is what decides it.** The delta is 90 J per 15 modules, so
+about 468 J - **0.130 Wh** - extrapolated to a full ~78-module first load. Against a
+22.4 Wh battery that is **0.58% of one charge**, in exchange for roughly **57
+seconds** off the wait before a new game starts.
+
+**So the default stays at 4096.** A user waits through that minute once per title and
+never sees the half-percent. The trade is recorded rather than hidden, and anyone who
+wants the energy back has one command:
+
+    adb shell setprop debug.rpcsx.thor.ppu_budget_mb 1536
+
+**2048 and 3072 are not a middle ground**, or at least not one that showed: single
+runs returned 87 s and 88 s, slower than BOTH endpoints, which is incoherent as a
+curve and is run-to-run variance rather than a measurement. If a sweet spot is ever
+wanted, it needs the same three-sample treatment as the endpoints got, on a quiet
+device.
