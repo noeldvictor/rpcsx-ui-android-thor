@@ -3024,3 +3024,77 @@ real on titles with thermal headroom and absent on titles without.
 
 `total/3` keeps the fraction binding on smaller devices, so the cap only lifts
 where there is memory to lift it.
+
+# ARMSX3 fourth pass, 2026-08-19: two ARM64 correctness fixes ported
+
+ARMSX3 is at `4c080066c`, **41 commits** past the `62d8208c7` the third pass used.
+Upstream RPCS3 is at `b78bae0b9`, 25 commits past `f9f88aa9e`, of which exactly one
+touches ARM64 - `6161ecd7a`, the PPU float-to-int saturation defect that
+[`three-way-audit.md`](docs/arm64/three-way-audit.md) already records as fixed here.
+**So the value in this pass is entirely on the ARMSX3 side, and it is correctness,
+not speed.**
+
+## Ported: the SPU gateway scratchpad was 8192 bytes (`55a54c924`)
+
+**This tree had the defect verbatim**, at two sites in `SPUCommonRecompiler.cpp`.
+Compiled SPU functions build no frames of their own on ARM64 -
+`GHC_frame_preservation_pass` runs with `use_stack_frames = false` - so every one
+of them spills into a single shared reservation. ARMSX3 measured a 2401-instruction
+SPURS function wanting **~21 KB**, faulting at `sp+21760`, exactly the top of the
+thread's stack mapping, on the PROT_NONE guard page. Raised to **256 KB**.
+
+**Read this next time the app dies with no explanation.** A guard page is not
+emulator memory, so `is_emulator_fault()` correctly declines it, the handler
+forwards to libsigchain, and ART's FaultManager reads the guest registers as an
+`ArtMethod*` and kills the process. **No tombstone, no flushed emulator log, and
+Android records only `SIGNALED status=11`.** Every silent death during SPU
+execution in this fork's history is a candidate.
+
+**Their second half was already present here.** ARMSX3 also raised Android threads
+from bionic's 1 MB default to 8 MB; `util/Thread.cpp:2202` already does that under
+`#elif defined(__APPLE__) || defined(ANDROID)`. Checked before porting.
+
+**Verified on device:** Folklore boots and renders, 3600 frames, and zero matches
+for `Fatal signal`, `SIGSEGV`, `SIGBUS` or `Compilation failed` in the log or in
+logcat. The `sub sp, sp, #262144` shifted-immediate encoding is fine.
+
+## Ported: the SPU INTERPRETER still applied x86 saturation (`884cb47dd`)
+
+[`three-way-audit.md`](docs/arm64/three-way-audit.md) records the x86 float-to-int
+correction as a defect fixed here - **in the recompiler.** The interpreter copy was
+missed and was still present, unguarded, in `SPUInterpreter.cpp`.
+
+`_mm_cvttps_epi32` is sse2neon's `vcvtq_s32_f32`, i.e. `FCVTZS`, which **already**
+saturates, so the x86 fixup inverts a correct result. ARMSX3's measurements:
+
+| input | correct | what this tree produced |
+| --- | --- | --- |
+| CFLTS, +3e9 | `0x7fffffff` | `0x80000000` |
+| CFLTS, NaN | `0x80000000` | `0` |
+| CFLTU, 3e9 | `0xb2d05e00` | `0x7fffffff` |
+
+CFLTU is the worse one: the x86 form *relies* on `cvttps2dq` returning `0x80000000`
+and ORs the remainder back in, but `0x7fffffff | v == 0x7fffffff` for every
+`v < 2^31`, so **the entire upper half of the range collapsed to one value.**
+
+**And this file was wrong to call the interpreter cold.** The ledger says "both
+decoders are LLVM, the interpreter is fallback-only". `spu_interpreter_rt` is what
+`spu_run_interp_fallback` executes, so it is live on ARM64 - and forcing a block to
+the interpreter is the standard test for whether the recompiler emits wrong code,
+which means the test itself could introduce a fault the recompiler did not have.
+
+## Not ported yet, with the reason
+
+* **`19d23eb69`, the SHUFB byteswap fold.** `idx_selects_single` and
+  `get_swap_from_const` are present here - **3 matches** - so this tree carries
+  upstream `a7fc31f32`'s two semantic changes and therefore the hang: ARMSX3 measured
+  a function spinning forever inside one block, byte-identical counters across six
+  thread dumps at 96% CPU. **SHUFB is the most-emitted SPU op in this fork's corpus
+  at 5,794**, so this is the highest-value item left. It reverts a fold rather than
+  adding one, so it wants its own pass.
+* **`9b3331698`, `mov_rdata` at 16-byte granularity.** Ours is `std::memcpy`, whose
+  transfer sizes are a libc detail, so a racing reader can see a line stitched from
+  two versions. **Note the rationale differs from the version reverted here**: that
+  one was an instruction-count argument, this one is tearing. The re-land bar this
+  file already set still applies - millions of randomised 128-byte pairs diffed
+  against memcpy on device - and ARMSX3 state it fixed no observable behaviour.
