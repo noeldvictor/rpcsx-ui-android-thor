@@ -3486,3 +3486,42 @@ Qualcomm's numbering (512.676.53) while Turnip reports Mesa's (25.99.99), which 
 never pass, so fp16 was emulated in fp32 on every Turnip install. **This tree has no
 such gate** - checked - and the boot log already says `Using native float16_t
 variables if possible`, confirmed on device earlier. Nothing to take.
+
+# The accelerations are in the EMITTED code, counted on the current build
+
+**Verified 2026-08-19 by disassembly, not by reading flags.** The JIT log says which
+features are enabled; this says which instructions the recompiler actually produced.
+
+`debug.rpcsx.thor.spu_native_object_cache=1` with Eternal Sonata (the gate requires
+`BLUS30161`), 25 objects written by the current binary, **20,020 instructions**:
+
+| instruction | count | what it accelerates |
+| --- | --- | --- |
+| `udot` / `sdot` | 20 / 3 | asimddp - SPU `SUMB`, `GB`, block verification |
+| `bcax` | 26 | sha3 - SPU `EQV` and the `SHUFB` selector paths |
+| `tbl` / `tbx` | **240 / 47** | `SHUFB`, `ROTQBY`, PPU `VPERM` |
+| `addv` | 52 | SPU reductions |
+| `ushl` | 41 | `inf_shl`/`inf_lshr` |
+| `fcvtzs` | 2 | float to fixed point |
+| `ldp` / `stp` | 650 / 708 | paired access |
+
+**So dot-product, sha3 and the table-lookup lowerings are all live in code that
+runs**, on this build, on this device. That is the standard this file sets for a
+codegen claim - count the instruction in the shipped artifact, not the feature in a
+log line.
+
+**Pull only objects the CURRENT binary wrote.** The cache held 1305 objects and most
+were from 2026-08-10; a `-newermt` filter left 117 from today. Counting the stale
+ones would have described a build that no longer exists, which is the version-banner
+trap in yet another costume.
+
+**And the tbl/tbx mix moved.** This file records `SHUFB` emitting `TBX2` and warns
+that `TBX2` costs 2.1x the throughput of `TBL2` on the A715/A710 where SPU threads
+run. After the `idx_selects_single` revert the ratio here is **240 `tbl` to 47
+`tbx`** - the cheaper form dominates. That was not the goal of the revert, which was
+correctness, and it is a reason to re-measure the cost noted there rather than assume
+it still applies.
+
+`i8mm` (`smmla`/`ummla`) does not appear in this 25-object sample. It is gated on
+`GBH`/`GBB`, which those functions may simply not use; a larger sample would settle
+it. Not evidence of absence.
