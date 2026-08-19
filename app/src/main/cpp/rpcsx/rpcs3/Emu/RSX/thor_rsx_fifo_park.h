@@ -79,19 +79,28 @@ namespace thor::rsx_fifo
 #endif
 	}
 
+	// Read ONCE at load, into namespace-scope inline variables.
+	//
+	// These were function-local `static const` and that cost measurable time. A
+	// function-local static carries a guard-variable acquire load and a branch on
+	// EVERY call, and all three are called on every poll of an empty FIFO, which is
+	// one of the hottest loops in the emulator. Folklore's light state went from
+	// 1823-1890 process ticks per 60 s to 2662-2750 - about +46% - with all three
+	// properties unset and every code path they guard disabled.
+	//
+	// CLAUDE.md already records this exact trap for get_thor_pause_mode, where a
+	// runtime property put a guarded static in the SPU reservation spin. A namespace
+	// scope inline variable is initialized during dynamic initialization instead, so
+	// reading it is a plain load.
+	inline const u32 g_park_after = read_u32_property("debug.rpcsx.thor.rsx_fifo_park_after");
+	inline const u32 g_park_us = read_u32_property("debug.rpcsx.thor.rsx_fifo_park_us");
+	inline const u32 g_pause_ladder = read_u32_property("debug.rpcsx.thor.rsx_fifo_pause_ladder");
+
 	// Consecutive empty polls before the RSX sleeps. 0 keeps the yield.
-	inline u32 park_after() noexcept
-	{
-		static const u32 value = read_u32_property("debug.rpcsx.thor.rsx_fifo_park_after");
-		return value;
-	}
+	inline u32 park_after() noexcept { return g_park_after; }
 
 	// How long one park sleeps, in microseconds. 0 keeps the yield.
-	inline u32 park_us() noexcept
-	{
-		static const u32 value = read_u32_property("debug.rpcsx.thor.rsx_fifo_park_us");
-		return value;
-	}
+	inline u32 park_us() noexcept { return g_park_us; }
 
 	// Pauses burned between two sched_yield calls on an empty ring. 0 keeps the
 	// current behaviour, which is one yield per poll.
@@ -114,11 +123,7 @@ namespace thor::rsx_fifo
 	// emulator runs far fewer busy threads than that. The ladder keeps one yield
 	// per N polls so a loaded machine can still preempt, and spends the rest in
 	// userspace where a poll costs no syscall.
-	inline u32 pause_ladder() noexcept
-	{
-		static const u32 value = read_u32_property("debug.rpcsx.thor.rsx_fifo_pause_ladder");
-		return value;
-	}
+	inline u32 pause_ladder() noexcept { return g_pause_ladder; }
 
 	inline bool enabled() noexcept
 	{

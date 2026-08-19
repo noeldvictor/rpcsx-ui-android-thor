@@ -2403,3 +2403,66 @@ loop - not a build flag.
 a compile option recompiles every object. The `.cxx` tree is keyed on the CMake
 ARGUMENT list, so editing `CMakeLists.txt` does not spawn a second 8-11 GB tree -
 only a new `-D` flag would.
+
+# CORRECTION: the frame count does not pin the scene
+
+**Stated earlier in this file, and wrong.** The section above says Folklore's title
+screen has two steady states and that 7200 frames per 60 s identifies the light
+one. Measured across about forty boots on 2026-08-18, the process total at
+**exactly 7200 frames** falls in two separate clusters:
+
+    1823 1825 1832 1844 1845 1854 1866 1873 1873 1886 1890
+    2662 2687 2703 2703 2708 2717 2717 2724 2750 2750 2809
+
+Same title, same frame count, same 49-66 C band, same JIT target
+(`cpu=cortex-a78`, read from the log, not assumed). The gap is about **46%** and
+there is nothing between the clusters.
+
+**The extra ticks are not in `rsx::thread`.** That thread reads 256-330 in BOTH
+clusters. The difference is in the SPU and PPU threads, so it is the guest doing
+more work, not the renderer. No change to the FIFO code can produce it, and the
+one that was suspected did not: replacing three guarded statics with load-time
+inline variables left the cluster exactly where it was.
+
+**So there are at least three states, and frames identify none of them.** Use the
+process total to classify an arm, not the frame count:
+
+| state | process ticks / 60 s | frames |
+| --- | --- | --- |
+| light | ~1850 | 7200 |
+| middle | ~2710 | 7200 |
+| starved | ~6876 | 6000 |
+
+**Every A/B in this session survives this**, because the arms were interleaved and
+each run landed wholly in one cluster. That is what interleaving is for. **Absolute
+numbers from different runs are not comparable**, which is the rule this file
+already states for temperature drift, now with a second cause.
+
+# ADPF is compiled, measured, and does nothing here
+
+`-PrpcsxThorAdpfRsxHint=1` builds it; `debug.rpcsx.thor.adpf_rsx` switches it at
+runtime, so **one build serves both arms**. Confirmed in the shipped `.so` by both
+the property string and `APerformanceHint_createSession`.
+
+**First run, thermal gate at 88 C - and void.** ADPF looked like a 15% cut on
+`rsx::thread`, 328-381 against 316-323, with the ADPF arm far steadier. The arms
+ran at 63-90 C and the process totals sat at 2799-2832, well above the 1823-1890
+seen all session. Throttling inflates CPU-time ticks, so that was the thermal
+drift.
+
+**Second run, gate at 60 C, four repeats:**
+
+| `adpf_rsx` | `rsx::thread` ticks | process total | frames |
+| --- | --- | --- | --- |
+| 0 | 326, 279, 331, 327 | 2662, 2724, 2703, 2717 | 7200 |
+| 1 | 273, 330, 334, 329 | 2703, 2717, 2750, 2709 | 7200 |
+
+**Everything overlaps.** No effect on this scene. The default stays off, and the
+CMake option stays `OFF` so nobody pays 8-11 GB of `.cxx` for it.
+
+ARMSX3 keeping ADPF through a renderer revert is still the reason to try it on a
+scene that is GPU bound and frame limited. A 60 fps title screen is neither.
+
+**Set the thermal gate near the idle temperature, not near the limit.** 88000 was
+chosen so arms would not block, and it let a 90 C arm through. The device idles
+around 40-50 C after a rest, so 60000 is reachable and 88000 measures the throttle.
