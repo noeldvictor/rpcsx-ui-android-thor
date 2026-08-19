@@ -188,6 +188,41 @@ that, so treat it as encouraging rather than measured.
 
 ---
 
+## Faster game loading, if your game compiles cleanly
+
+The first load of a game compiles its PPU modules, which is the several-minute wait
+before the title screen. That stage runs **one module at a time** on this device,
+because the memory budget for concurrent compiles is smaller than a single module's
+estimate on some titles, so seven cores sit idle.
+
+Raising the budget lets more modules compile at once:
+
+```sh
+adb shell setprop debug.rpcsx.thor.ppu_budget_mb 4096
+```
+
+Measured on Folklore, PPU cache cleared before each run, time to compile 15 modules:
+
+| setting | seconds |
+| --- | --- |
+| default (1536 MB) | 61.7, 60.6 |
+| 4096 MB | **49.2, 47.5** |
+
+That is about **21% off the compile stage**. It is off by default and it is not a
+free win:
+
+* **Some titles may fail to boot with it on.** More concurrent compiles means more
+  simultaneous allocations, and Android's allocator caps each size class at 256 MB
+  no matter how much RAM is free. One title in this library already aborts during
+  precompile at the default setting. If a game stops booting, clear it:
+  `adb shell setprop debug.rpcsx.thor.ppu_budget_mb ""`
+* **It did not help every game.** On Transformers the gain disappeared, because more
+  parallel compiling means more heat and the CPU throttles at around 94 C.
+
+So: worth trying on a game you load often that already works, and worth clearing
+the moment anything misbehaves. The compiled result is cached, so this only affects
+the first load of each game.
+
 ## Thor variants
 
 All three share the same CPU and GPU. The difference is headroom for caches and

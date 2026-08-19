@@ -2968,3 +2968,21 @@ learned here, and it is worth more than any of the levers that were tested.
 this session on title-screen numbers - `host_mutex_spin` at 1.9%, the SPU park at
 2.8% - and both would have been avoided by asking first whether the scene repeats.
 Do that before the next A/B, not after it.
+
+# Scope decision, 2026-08-18: the wattage half is dropped
+
+The user was asked directly and chose to **drop the wattage half of the goal**,
+given that no instrument on this device can measure it: the battery gauge is frozen
+in all four nodes even USB-detached and discharging, the cpufreq residency proxy
+moved 0.2% against a known 2.4x effect, and the thermal proxy is swamped by the
+workload variance recorded above (51.0 C against 90.1 C for one setting).
+
+**So do not open a power question here without a plan for the second screen.** It
+is the only trusted instrument and it needs a person. Future work is speed, on the
+precompile harness, which resolves.
+
+On `ppu_budget_mb` the user had no preference, so the engineering call stands: the
+default does not change. A setting that can stop a game booting is not worth a gain
+that appeared on one title of two, when one command enables it. It is documented in
+`README.md` now, with both the 21% and the two ways it can disappoint, so it is
+discoverable rather than buried in a header comment.
