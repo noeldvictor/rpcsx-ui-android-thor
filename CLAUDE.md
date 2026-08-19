@@ -2505,3 +2505,30 @@ called it "0.008 cores on one light scene" and kept the latency guard. The guard
 costs 1.9% of all CPU on the scene where it was measured, the percentiles say it
 buys no latency, and two independent measurements agree on the size. Frame count
 is identical in every arm, so the CPU came off the spin and not off the work.
+
+# The battery fuel gauge is frozen on this device, so wattage is not remote
+
+**Measured 2026-08-18, with the USB cable detached and `USB powered: false`** -
+the condition this file says is needed for a real figure rather than a floor.
+
+    current_now    = 0          (constant)
+    voltage_now    = 4270960    (constant)
+    charge_counter = 4649084    (constant)
+    status         = Discharging
+
+`charge_counter` did not move over **60 s idle** or over **120 s of Folklore
+rendering at 7200 frames per 60 s**. A delta of 0 uAh is not a low reading, it is
+no reading: at the ~1.6 W this file records for idle, 60 s should consume about
+6250 uAh.
+
+So on this device **all three of the obvious nodes are dead**, and the earlier
+warning that USB charging turns `current_now` into a charge current is the smaller
+half of the problem. Detaching USB does not make the gauge report.
+
+**The AYN Thor's second screen stays the only trusted power instrument**, and it
+needs somebody to look at the device. A wattage claim cannot be produced over adb
+here.
+
+**Use CPU as the proxy, and say so.** Less CPU for the same frame count is less
+energy for the same work, which is sound, but it is an inference and not a
+measurement. Do not convert a tick saving into watts.
