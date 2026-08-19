@@ -188,42 +188,41 @@ that, so treat it as encouraging rather than measured.
 
 ---
 
-## Faster game loading, if your game compiles cleanly
+## Faster game loading
 
 The first load of a game compiles its PPU modules, which is the several-minute wait
-before the title screen. That stage runs **one module at a time** on this device,
-because the memory budget for concurrent compiles is smaller than a single module's
-estimate on some titles, so seven cores sit idle.
+before the title screen. That stage used to run **one module at a time**, because
+the memory budget for concurrent compiles was smaller than a single module's
+estimate on some titles, so seven cores sat idle.
 
-Raising the budget lets more modules compile at once:
+**The budget is now 4096 MB by default**, up from 1536. Measured on Folklore with
+the PPU cache cleared before each run, time to compile 15 modules:
+
+| budget | seconds |
+| --- | --- |
+| 1536 MB (old default) | 61.7, 60.6, 59.2 |
+| **4096 MB (now default)** | **49.2, 47.5, 46.0** |
+
+About **22% off the compile stage**, and it only affects each game's *first* load,
+because the result is cached.
+
+**If a game stops booting after this change, this is the first thing to undo.**
+More concurrent compiles means more simultaneous allocations, and Android's
+allocator caps each size class at 256 MB no matter how much RAM is free, so a title
+that already sits near that ceiling can abort during precompile:
 
 ```sh
-adb shell setprop debug.rpcsx.thor.ppu_budget_mb 4096
+adb shell setprop debug.rpcsx.thor.ppu_budget_mb 1536
 ```
 
-Measured on Folklore, PPU cache cleared before each run, time to compile 15 modules:
+Two honest caveats. It is **not a universal win** - on Transformers the gain
+disappeared, because parallel compiling produces heat and the CPU throttles around
+94 C. And the titles it was verified against are Folklore and Transformers, both of
+which precompile cleanly on the new default with no allocator abort; a title that
+was already close to the limit has not been tested, because the one known example
+in this library has no bootable disc image.
 
-| setting | seconds |
-| --- | --- |
-| default (1536 MB) | 61.7, 60.6 |
-| 4096 MB | **49.2, 47.5** |
-
-That is about **21% off the compile stage**. It is off by default and it is not a
-free win:
-
-* **Some titles may fail to boot with it on.** More concurrent compiles means more
-  simultaneous allocations, and Android's allocator caps each size class at 256 MB
-  no matter how much RAM is free. One title in this library already aborts during
-  precompile at the default setting. If a game stops booting, clear it:
-  `adb shell setprop debug.rpcsx.thor.ppu_budget_mb ""`
-* **It did not help every game.** On Transformers the gain disappeared, because more
-  parallel compiling means more heat and the CPU throttles at around 94 C.
-
-So: worth trying on a game you load often that already works, and worth clearing
-the moment anything misbehaves. The compiled result is cached, so this only affects
-the first load of each game.
-
-## Thor variants
+## Thor variants## Thor variants
 
 All three share the same CPU and GPU. The difference is headroom for caches and
 game storage.

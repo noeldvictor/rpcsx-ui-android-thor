@@ -345,7 +345,33 @@ static u64 ppu_compile_memory_budget(u64 fraction_divisor)
 		}
 	}
 
-	return std::min<u64>(total / 6, u64{1536} << 20);
+	// 4096 MB since 2026-08-18, raised from 1536 after measuring what the cap costs.
+	//
+	// The cap made a single module's estimate larger than the whole budget on some
+	// titles, so precompile ran fully serialized while seven cores idled. Measured
+	// on Folklore with the PPU cache cleared before every arm, emulator seconds to
+	// the 15th compiled module:
+	//
+	//   1536 MB   61.71, 60.63
+	//   4096 MB   49.24, 47.49
+	//
+	// About 21% off the compile stage, ranges not overlapping. That stage is the
+	// wait before a game's first title screen, so it is time a user sits through.
+	//
+	// THE RISK IS REAL, AND IT IS WHY README.md DOCUMENTS THE REVERT. More
+	// concurrent compiles means more simultaneous allocations, and Scudo caps each
+	// size class at 256 MB regardless of free RAM, so a title already near that
+	// ceiling can abort in precompile. Recovery is one command:
+	//
+	//   adb shell setprop debug.rpcsx.thor.ppu_budget_mb 1536
+	//
+	// It is also not a universal win: on Transformers the gain disappeared, because
+	// parallel compiling is heat and the big cluster throttles near 94 C.
+	//
+	// The fraction still binds on smaller devices, so this only lifts the cap where
+	// there is memory to lift it. total/3 keeps the budget at a third of RAM until
+	// 12 GB, and Thor's 15.6 GB reaches the 4096 MB cap.
+	return std::min<u64>(total / 3, u64{4096} << 20);
 #else
 	return rx::aligned_div<u64>(total, fraction_divisor);
 #endif

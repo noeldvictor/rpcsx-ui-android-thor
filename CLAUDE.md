@@ -2986,3 +2986,41 @@ default does not change. A setting that can stop a game booting is not worth a g
 that appeared on one title of two, when one command enables it. It is documented in
 `README.md` now, with both the 21% and the two ways it can disappoint, so it is
 discoverable rather than buried in a header comment.
+
+# SHIPPED: the PPU compile budget default is 4096 MB
+
+**Changed 2026-08-18 from `min(total/6, 1536 MB)` to `min(total/3, 4096 MB)`.**
+
+The old cap made a single module's estimate larger than the whole budget on some
+titles, so precompile serialized while seven cores idled. Measured on Folklore, PPU
+cache cleared before every arm, emulator seconds to the 15th compiled module:
+
+| budget | seconds |
+| --- | --- |
+| 1536 MB | 61.71, 60.63, 59.23 |
+| **4096 MB** | **49.24, 47.49, 46.03** |
+
+**Verified the way a default has to be, with the property UNSET**: 46.03 s against
+59.23 s for an explicit 1536 in the same interleaved run, and the emulator's own
+line reading `PPU precompile memory budget: 4096 MB (total 15255 MB)` on a boot with
+nothing set.
+
+**And verified not to break the titles that can be booted here.** Transformers
+carries the heaviest modules in this library - 1,677,721,600 bytes of estimate, the
+title this file recorded as fully serialized - and a cold precompile on the shipped
+default reached 44 modules with **zero** matches for `Scudo`, `SIGABRT` or
+`Fatal signal` in `RPCSX.log` and in logcat, process alive throughout.
+
+**What is NOT verified, stated plainly.** BLUS30126 is the title that aborts in
+precompile, and it has no bootable disc image here, so the one case this change
+makes riskier is the one case that could not be tested. The revert is one command
+and `README.md` names it as the first thing to undo if a game stops booting:
+
+    adb shell setprop debug.rpcsx.thor.ppu_budget_mb 1536
+
+**And it is not a universal win**: on Transformers the 21% did not appear, because
+compile concurrency is heat and the big cluster throttles near 94 C. The gain is
+real on titles with thermal headroom and absent on titles without.
+
+`total/3` keeps the fraction binding on smaller devices, so the cap only lifts
+where there is memory to lift it.
