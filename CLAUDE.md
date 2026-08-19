@@ -3184,3 +3184,68 @@ were the external force-stop recorded above, killing the process every ~21 secon
 with no crash signature. **Read the `forceStopPackage` line before blaming a
 change** - it is one grep, and it would have saved three rebuilds and two wrong
 reverts.
+
+# Thermal behaviour against a 70 C target, measured on every sensor
+
+**The user's requirement is junction/skin under 70 C long term and wattage mostly
+under 6 W. Measured 2026-08-19.** The answer splits cleanly by phase, and only one
+phase fails.
+
+## Sustained running PASSES, with room to spare
+
+Folklore, warm PPU cache, 280 s of continuous rendering:
+
+| sensor | range |
+| --- | --- |
+| `cpu-1-*` junction | 47.0 - 58.2 C |
+| `pm8550b_lite_tz` (PMIC) | 45.9 - 46.9 C |
+| `video` | 45.7 - 47.7 C |
+| fan controller's sensor | 45.1 - 47.8 C |
+| battery | 25.0 C |
+
+**Nothing approaches 70 C.** This is the state a game spends essentially all of its
+time in, because the compile result is cached per title.
+
+## The first-load compile stage FAILS, for about two minutes
+
+Same title, PPU cache cleared:
+
+| t | junction | fan/skin sensor | `video` | modules done |
+| --- | --- | --- | --- | --- |
+| 20-100 s | **90.7 - 95.2 C** | **80.7 - 83.7 C** | 65.9 - 72.2 C | 8 -> 43 |
+| 120 s | 77.5 | 71.6 | 64.7 | 50 |
+| 140-200 s | 52.2 - 54.2 | 50.7 - 52.7 | 50.9 - 54.0 | done |
+
+**This is not a junction artifact.** The skin sensor the fan controller reads gets
+to 83.7 C, so the device is genuinely hot, not just one core. It lasts about two
+minutes and happens once per title.
+
+## What does NOT reduce the peak
+
+* **`Max LLVM Compile Threads: 4`** instead of auto: peak unchanged at 91-95 C.
+* **`ppu_budget_mb` 1536 instead of 4096**: peak unchanged, in fact slightly higher
+  at 95.2 C, and the hot window lasts **far longer** - still compiling at 6:00
+  against 2:15 for the 4096 default.
+
+**So the shipped 4096 default is the better of the two for this requirement**, not
+the worse one. Same peak, much less time above 70 C. That was worth checking
+before assuming a faster compile means a hotter device.
+
+## And a session-long mistake this exposed
+
+Every thermal gate in this session used `cpu-1-*` and refused arms above 55-62 C.
+**Idle on this device is 41-47 C on those zones**, and the PMIC and skin sensors sit
+lower still, so those gates were far stricter than intended and cost long cooldowns
+and several abandoned arms. `thermal.md` already warns about junction versus
+package; this is that warning being ignored for a whole session.
+
+**For a "is the device hot" question, read the fan controller's sensor** - it is what
+the hardware itself acts on, it appears in logcat as
+`FanBase ... temperature = NN.N speedPercentage = NN`, and it tracks the skin. Use
+`cpu-1-*` only for spotting a per-core transient.
+
+## Wattage is still not measurable
+
+`current_now` reads 0, `charge_counter` and `voltage_now` do not move within a
+window, and `power_now` is frozen, on AC and off it. The 6 W target cannot be
+checked over adb. The second screen remains the only instrument.
