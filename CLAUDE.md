@@ -2466,3 +2466,42 @@ scene that is GPU bound and frame limited. A 60 fps title screen is neither.
 **Set the thermal gate near the idle temperature, not near the limit.** 88000 was
 chosen so arms would not block, and it let a 90 C arm through. The device idles
 around 40-50 C after a rest, so 60000 is reachable and 88000 measures the throttle.
+
+# SHIPPED: `host_mutex_spin` defaults to 0, and it is the lv2 defect one layer down
+
+**Changed 2026-08-18 after measuring it twice.** `shared_mutex::imp_lock_shared`
+spun 10 times before using the futex under it, and each spin is `rx::busy_wait()`
+at the x86 default of 3000 cycles. On this device's **19.2 MHz** generic timer that
+is 156 µs per iteration, so the mutex burned **1.56 ms of `YIELD` - a nop on this
+SMP core - in front of a futex that works**.
+
+That is exactly the lv2 wait defect, in the same codebase, one layer down: a spin
+count tuned in x86 cycles applied to a timer 170 times slower.
+
+Folklore title screen, 60 s windows, arms interleaved, thermal gate at 60 C, every
+arm at **7200 frames**:
+
+| `host_mutex_spin` | process ticks per 60 s | range |
+| --- | --- | --- |
+| 10, the old default | 2650, 2681, 2684, 2703 | 2650-2703 |
+| 0 | 2629, 2637, 2638, 2612 | **2612-2638** |
+
+**The ranges do not overlap** and the saving is **1.9%**. It agrees with the
+earlier measurement in
+[`busy-wait-inventory.md`](docs/arm64/busy-wait-inventory.md) - 0.377, 0.377, 0.378
+cores at 10 against 0.370, 0.368 at 0 - which is the same 1.9% from a different
+instrument on a different build. That run also recorded **p50, p95 and p99 frame
+time at 16.87 ms in BOTH arms**, so the latency this default guarded against was
+measured and is not there.
+
+**Verified after shipping, with the property unset**, which is the only thing that
+proves a default: 2587, 2634, 2648, 2641, 2631, 2651, mean **2632**. Explicit `0`
+means 2629; the old `10` means 2679. The shipped binary behaves like 0.
+
+`debug.rpcsx.thor.host_mutex_spin = 10` restores the old behaviour.
+
+**Why it was left at 10 before, and why that is now resolved.** The earlier note
+called it "0.008 cores on one light scene" and kept the latency guard. The guard
+costs 1.9% of all CPU on the scene where it was measured, the percentiles say it
+buys no latency, and two independent measurements agree on the size. Frame count
+is identical in every arm, so the CPU came off the spin and not off the work.
