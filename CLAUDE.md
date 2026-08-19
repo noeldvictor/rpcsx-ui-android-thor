@@ -2623,3 +2623,38 @@ the device-side cleanup is exactly what a dropped link skips.
 at ~2600 ticks, not the ~1845 of earlier in the session, so the two clusters
 recorded above remain unexplained and the correction stands: classify an arm by its
 process total, and never compare absolute numbers across runs.
+
+# Hardware acceleration: the surface is swept, and native fp16 was the last open one
+
+**Verified on device 2026-08-18**, from the boot log rather than from source:
+
+    RSX: GPU/driver supports float16 data types natively.
+         Using native float16_t variables if possible.
+    RSX: ** Using VK_KHR_shader_float16_int8
+
+So the Adreno guide's largest shader-side power item is **already taken**. Turnip
+exposes `shaderFloat16`, and `device.cpp:129` accepts it - the only force-disable
+is AMD Vega on the LLVM emitter. ARMSX3's `b82432c79`, listed above as "read but
+not yet examined", removes 203 lines of `device.cpp`; it is cleanup around a path
+this tree already has on, not a capability this tree is missing.
+
+The full picture, so nobody re-sweeps it:
+
+| capability | state |
+| --- | --- |
+| `SDOT`/`UDOT` (asimddp) | taken, `+dotprod` in the JIT log, gated on HWCAP |
+| `SMMLA`/`UMMLA` (i8mm) | taken, `+i8mm` in the JIT log |
+| `BCAX` (sha3) | taken, `+sha3`, used by SPU `EQV` and both `SHUFB` paths |
+| ARMv8 AES | fixed - was `#if __SSE2__`, now 19-22x on the primitive |
+| LSE / LSE2 128-bit atomics | live and verified in the build cache |
+| `TBL`/`TBX`, `URHADD`, `SQADD`, `FCVTZS` | emitted from generic IR, verified |
+| **native fp16 shaders** | **taken - verified in the boot log, this section** |
+| tiler `LOAD_OP_CLEAR` | implemented, correct, and neutral - Turnip folds it |
+| **`LAZILY_ALLOCATED` tile memory** | **the one genuinely unexploited item** |
+| SVE / SVE2 / TME | absent from this chip, and must never be ported |
+
+**One item is left and this device cannot measure it.** Transient attachments
+backed by `VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT` keep depth and MSAA in GMEM
+instead of DRAM. The saving is memory bandwidth and therefore power, and **the
+battery gauge here does not report**, so neither CPU ticks nor the cpufreq proxy
+can see it. It needs the second screen.
