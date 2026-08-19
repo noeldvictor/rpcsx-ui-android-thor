@@ -2830,3 +2830,59 @@ the target - it is one `clang -S` and it settles the question without a device.
 
 **With this the accelerator surface is fully closed.** Everything applicable is in
 use, the GPU items are neutral or inapplicable, and the feature list is inert.
+
+# What `ppu_budget_mb` is worth: 21% off precompile, and why the default still stands
+
+**Measured 2026-08-18 on the first heavy, reproducible, input-free workload found
+on this device.** The property existed with its cost documented and its benefit
+never measured. Now it has a number.
+
+Folklore, PPU cache cleared before every arm so the work is identical, metric is
+the emulator's own timestamp at the 15th `LLVM: Compiled module`:
+
+| `ppu_budget_mb` | seconds to compile 15 modules | temp |
+| --- | --- | --- |
+| 0, the default (1536 MB) | **61.71, 60.63** | 81.1, 82.7 C |
+| 4096 | **49.24, 47.49** | 94.0, 94.4 C |
+
+**About 21% faster, and the ranges are nowhere near each other.** The raised arms
+ran 12 C hotter because more cores are actually compiling; throttling pushes that
+arm slower, so the saving is if anything understated.
+
+**The default does not change, and the reason is in the source next to it.**
+Raising this makes the Scudo abort MORE likely: Scudo caps each size class at
+256 MB regardless of free RAM, so more concurrent compiles means more simultaneous
+allocations in one class, and BLUS30126 already dies there with `SIGABRT` in
+`PPUW.1.1` while 11.4 GB of 15.6 GB is free. A fifth off the load time is not worth
+a title that will not boot.
+
+**So this is an opt-in with a known price**, and it is now a quantified one:
+
+    adb shell setprop debug.rpcsx.thor.ppu_budget_mb 4096
+
+Worth setting for a title that already precompiles cleanly, and worth clearing the
+moment one does not. Transformers (BLUS30357) is the strongest candidate - its
+modules estimate at 1,677,721,600 bytes against the 1536 MB default, so it is the
+title this file records as fully serialized at ~103% CPU.
+
+# `tools/thor_precompile_ab.sh`, and why precompile is the workload to use
+
+**This is the answer to "there is no measurable workload on this device."** A title
+screen is 0.3-0.4 cores at a 60 fps cap and gameplay cannot be reached over adb.
+Precompile needs no input, saturates the compile workers, and repeats **exactly**
+the same work once the cache is cleared.
+
+It also self-times: the emulator stamps `LLVM: Compiling module` and
+`LLVM: Compiled module`, so the metric is its own clock and does not depend on how
+often the harness polls.
+
+The clear runs through `run-as`, because the cache tree is `drwxr-s---` and shell
+cannot unlink there, and the script checks the **postcondition** - a file count of
+zero - rather than the exit status of the `rm`. This repo has been fooled by an
+`rm` that silently did nothing.
+
+**Use it for any lever that plausibly touches compile throughput, allocation or
+host locking.** It resolved `ppu_budget_mb` at 21% in four arms, where the title
+screen could not resolve anything in eight attempts. It also closed
+`host_mutex_spin` for the third time: 59.18 and 60.22 seconds at 10 against 59.64
+and 66.70 at 0.
