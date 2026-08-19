@@ -3396,3 +3396,51 @@ file already identifies live - the SPU self-loop park at ~20% of gameplay CPU, M
 at 20.13%, `vm::writer_lock` at 4.49%. **All three are still unmeasurable headlessly,
 because gameplay cannot be reached over adb.** Now that wattage IS measurable, a game
 left at a save point would let every one of them be judged on power as well as time.
+
+# SHIPPED: the SPU self-loop park is on by default - 45% less CPU, 18% less power
+
+**The lever this file has carried as "built, default off, and unmeasured" since
+2026-08-13 is now measured, and it is the largest win in the fork after the lv2
+spin.** Default is `100` microseconds.
+
+Eternal Sonata's opening, four interleaved pairs, **every arm rendering exactly 3600
+frames** in the window:
+
+| `spu_selfloop_park` | power | CPU ticks |
+| --- | --- | --- |
+| 0 (the old default) | 4894, 5293, 4892, 4954 mW | 12542, 12440, 12447, 12798 |
+| **100 (now default)** | **4206, 4397, 4101, 3662 mW** | **6775, 6751, 7125, 6943** |
+
+**Neither range overlaps on either axis, and the frame count is identical.** That is
+**-45% CPU and -18% power for the same output**, taking this title from about 5.0 W
+to about 4.1 W - under the 6 W target the user set.
+
+**Verified as a default must be, with the property UNSET**: the counter reads
+`entries=26684 ... last_pc=0x00cc4`, so the shipped binary parks without being told to.
+
+## Why this took six weeks and three failed attempts
+
+**Reach, and nothing else.** On Folklore's title screen the counter reads
+`entries=0` - the loop is never entered - so the A/B measured nothing, twice, and the
+lever was written off as "no reach on this scene". On Eternal Sonata it reads about
+**49,000 entries per 60 s window at `pc=0x00cc4`**, which is the state-poll loop this
+file identified in the gameplay profile long ago.
+
+**A lever with no reach and a lever with no effect produce the same number.** The
+counter is the only thing that separates them, and it did not exist until 2026-08-18.
+That is the whole lesson: instrument the mechanism, then pick the workload that
+exercises it.
+
+**And the workload was reachable the whole time.** Gameplay cannot be driven over adb
+- three input paths tried, events confirmed reaching the kernel, guest sees none - but
+Eternal Sonata's opening plays unattended at 1.5-2.1 cores. It is the heaviest thing
+this device can be made to do headlessly, and it should be the default A/B scene for
+anything on the SPU or MFC path. A title screen at 0.35 cores answers nothing.
+
+## The hazard has not gone away
+
+Parking turns a burning core into a quiet sleeping thread, so a guest deadlock stops
+looking like one. `entries` and `last_pc` are written BEFORE the wait and `exits`
+after, so `entries - exits > 0` is a park happening right now and `last_pc` says
+where, and `perf_monitor` prints all three. **If a title hangs with a quiet CPU, read
+that line first**, and `debug.rpcsx.thor.spu_selfloop_park=0` restores the spin.

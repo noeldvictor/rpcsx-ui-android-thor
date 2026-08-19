@@ -70,6 +70,33 @@ struct spu_selfloop_park_t {
 inline spu_selfloop_park_t g_spu_selfloop_park{};
 
 // The timeout for one park, in microseconds. 0 turns the park off.
+// 100 us since 2026-08-19, MEASURED on Eternal Sonata's opening, which is the
+// heaviest workload reachable on this device without a controller.
+//
+// Four interleaved pairs, every arm rendering exactly 3600 frames in the window:
+//
+//   park off   power 4894, 5293, 4892, 4954 mW   CPU 12542, 12440, 12447, 12798
+//   park 100   power 4206, 4397, 4101, 3662 mW   CPU  6775,  6751,  7125,  6943
+//
+// Neither range overlaps: **-45% CPU and -18% power at identical frame output**.
+// That moves this title from about 5.0 W to about 4.1 W.
+//
+// The reach is why this took so long to see. On Folklore's title screen the counter
+// reads entries=0 - the loop is never entered - so an A/B there measures nothing,
+// which is exactly what happened when it was first tried. On Eternal Sonata it reads
+// ~49,000 entries per window at **pc=0x00cc4**, the state-poll loop CLAUDE.md already
+// identified as the hot one. A lever with no reach and a lever with no effect look
+// identical; the counter is what separates them.
+//
+// The hazard from the original design note still stands: parking turns a burning core
+// into a quiet sleeping thread, so a guest deadlock stops being obvious. That is why
+// `entries`, `last_pc` and `exits` exist, why entries/last_pc are written BEFORE the
+// wait, and why perf_monitor prints them - `entries - exits > 0` is a park happening
+// right now, and `last_pc` says where.
+//
+// `debug.rpcsx.thor.spu_selfloop_park=0` restores the spin.
+inline constexpr u64 kDefaultParkUs = 100;
+
 inline u64 spu_selfloop_park_us() {
   static const u64 value = []() -> u64 {
 #if defined(__ANDROID__)
@@ -82,15 +109,17 @@ inline u64 spu_selfloop_park_us() {
     const char *v = std::getenv("RPCSX_THOR_SPU_SELFLOOP_PARK");
 #endif
     if (!v) {
-      return 0;
+      return kDefaultParkUs;
     }
 
     char *end = nullptr;
     const unsigned long parsed = std::strtoul(v, &end, 10);
 
-    // A malformed value keeps the spin. Do not guess a timeout.
+    // A malformed value keeps the DEFAULT. Do not guess a timeout, and do not
+    // silently fall back to the spin either - that would make a typo look like a
+    // measured choice.
     if (end == v || (end && *end) || parsed > 1000000ul) {
-      return 0;
+      return kDefaultParkUs;
     }
 
     return static_cast<u64>(parsed);
