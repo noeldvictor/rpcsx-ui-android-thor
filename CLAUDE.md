@@ -2886,3 +2886,38 @@ host locking.** It resolved `ppu_budget_mb` at 21% in four arms, where the title
 screen could not resolve anything in eight attempts. It also closed
 `host_mutex_spin` for the third time: 59.18 and 60.22 seconds at 10 against 59.64
 and 66.70 at 0.
+
+## CORRECTION, same day: the 21% does not generalise, and Transformers is the proof
+
+The section above measured `ppu_budget_mb=4096` at 21% off Folklore's precompile and
+recommended Transformers as the best candidate, because its modules estimate at
+1,677,721,600 bytes and it is the title recorded here as fully serialized.
+
+**That recommendation was wrong.** Same harness, same 15-module metric, cache
+cleared before every arm, on BLUS30357:
+
+| `ppu_budget_mb` | seconds | temp |
+| --- | --- | --- |
+| 0, the default | 77.40, 67.86 | 87.1, 87.9 C |
+| 4096 | 73.68, **94.23** | 93.6, 94.4 C |
+
+**The ranges overlap and the slowest arm in the set is a raised one.** No Scudo
+abort appeared - zero matches in `RPCSX.log` and in logcat - so the crash did not
+reproduce, but the benefit did not either.
+
+**The mechanism is thermal.** Compile concurrency is the one thing on this device
+that converts directly into heat: the raised arms ran 6-7 C hotter and hit 94 C,
+where the big cluster throttles. On a passively cooled handheld, extra parallelism
+in a sustained CPU-bound stage buys wall-clock only while there is thermal headroom
+to spend, and Transformers' larger modules exhaust it.
+
+**So `ppu_budget_mb` is a per-title knob with a measured benefit on exactly one
+title tested and none on the other.** The default stays 1536 for the documented
+Scudo reason, and the 21% should be quoted with Folklore's name attached to it,
+never as a general figure.
+
+**And the general lesson is about this device, not this property:** a change that
+raises sustained CPU concurrency here has to be measured with the temperature
+beside it, because the thermal ceiling can take back everything the concurrency
+gained. That is a second mechanism by which a real speedup evaporates, alongside
+the frames-for-CPU trade the RSX park showed.
