@@ -2658,3 +2658,39 @@ backed by `VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT` keep depth and MSAA in GMEM
 instead of DRAM. The saving is memory bandwidth and therefore power, and **the
 battery gauge here does not report**, so neither CPU ticks nor the cpufreq proxy
 can see it. It needs the second screen.
+
+# CLOSED: `LAZILY_ALLOCATED` tile memory is inapplicable, not merely unimplemented
+
+**Checked 2026-08-18, and this removes a standing open item from the ledger.**
+
+The idea was sound and is recorded above: `VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT`
+on a `VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT` type keeps depth and MSAA in
+Adreno's on-chip GMEM instead of DRAM. This device offers such a type - `type 3:
+DEVICE_LOCAL LAZILY_ALLOCATED 11441 MB` - and the backend never uses it.
+
+**It cannot use it.** A transient image on lazily-allocated memory may have **no
+backing store at all**, so it can only ever be an attachment. Every RSX render
+target in this backend is created with more than that:
+
+    VKRenderTargets.h:233  colour  |= COLOR_ATTACHMENT | TRANSFER_DST | SAMPLED
+    VKRenderTargets.h:302  depth   |= DEPTH_STENCIL_ATTACHMENT | TRANSFER_DST | SAMPLED
+    VKRenderTargets.h:237/241/306   += TRANSFER_SRC, STORAGE where needed
+
+**`SAMPLED` is not decoration, it is the emulator.** A PS3 game can read a surface
+it just rendered as a texture, and the texture cache does exactly that. Remove the
+readback and the emulation is wrong; keep it and the image is ineligible for
+lazy allocation.
+
+The only attachments in the backend without `SAMPLED` are the **swapchain images**
+(`swapchain.cpp:10, 355`), and those must be presentable, which lazily-allocated
+memory is not.
+
+**So the one remaining unexploited hardware capability on this chip is unexploitable
+without changing RSX render-target semantics.** That is a redesign of surface
+lifetime, not an optimisation, and it would have to prove readback still works
+before it could claim a single byte. Do not open this again on the strength of the
+memory-type dump alone; the usage flags are the binding constraint.
+
+**With this closed, the hardware-acceleration sweep is complete**: every applicable
+accelerator on this silicon is in use, and the two that are not - SVE/SVE2 and TME -
+are absent from the chip.
