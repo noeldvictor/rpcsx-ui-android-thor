@@ -3525,3 +3525,56 @@ it still applies.
 `i8mm` (`smmla`/`ummla`) does not appear in this 25-object sample. It is gated on
 `GBH`/`GBB`, which those functions may simply not use; a larger sample would settle
 it. Not evidence of absence.
+
+# SHIPPED: GETLLAR sleeps instead of spinning - the "one thing to run next", done
+
+**[`spin.md`](docs/arm64/spin.md) records the GETLLAR wait as 93% of all instrumented
+spin, and this file has carried "sweep it" as the outstanding measurement ever since.
+Swept 2026-08-19.** Upstream defaults `SPU GETLLAR Busy Waiting Percentage` to 100 -
+always spin - while the analogous reservation knob is explicitly 0 on this device.
+The default here is now **0**.
+
+Eternal Sonata's opening, **seven interleaved pairs**, every arm rendering exactly
+3600 frames:
+
+| `getllar_busy_percent` | CPU ticks per 60 s |
+| --- | --- |
+| 100 (spin, upstream) | 7076, 7109, 7270, 7074, 7179, 7181, 7286 |
+| **0 (sleep, now default)** | **6468, 6450, 6628, 6441, 6625, 6529, 6609** |
+
+**7074-7286 against 6441-6628 - no overlap, -9% CPU at identical frame output**, and
+that is *on top of* the SPU self-loop park, which is also on by default now.
+
+**Verified with the property UNSET**, which is the only thing that proves a default:
+`cpu=6592`, inside the sleep range and nowhere near the spin range.
+
+## What is NOT verified, said plainly
+
+**The frame-time tail.** p50 is **16.86 ms in both arms** - 60 fps exactly - and the
+frame count is identical, so nothing is being dropped. But **a capped frame rate hides
+latency**, which is the whole reason this file demands p95 for a sleep change, and the
+`dumpsys SurfaceFlinger --latency` capture used here returned a contaminated tail:
+p95 of 1348 ms and p99 of 91 seconds are stale buffer entries, not frames. The
+capture needs the fix that produced clean percentiles for the lv2 spin work before
+that number means anything.
+
+The lv2 spin change is the same class - a bounded spin in front of a working wait -
+and measured **no cost at any percentile**. That is the prior, not proof.
+
+    adb shell setprop debug.rpcsx.thor.getllar_busy_percent 100
+
+restores the spin if a title looks stuttery for it.
+
+## Where the fork now stands on the SPU spin layers
+
+The four-layer table in this file listed lv2 syscalls, the SPU JIT self-loop, the SPU
+MFC reservation and `vm::writer_lock`. **Three of the four now sleep by default:**
+
+| layer | share of gameplay | state |
+| --- | --- | --- |
+| lv2 syscalls | 73.9% of a title screen | **fixed**, `lv2_spin=0` |
+| SPU JIT self-loop | ~20% | **fixed 2026-08-19**, park on, -45% CPU |
+| SPU MFC reservation (GETLLAR) | ~7%, 93% of instrumented spin | **fixed 2026-08-19**, -9% CPU |
+| `vm::writer_lock` | 6.2%, six threads | still an unbounded `sched_yield` |
+
+`vm::writer_lock` is the one left.

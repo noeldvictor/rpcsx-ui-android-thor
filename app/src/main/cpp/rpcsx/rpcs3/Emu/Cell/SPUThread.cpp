@@ -198,9 +198,38 @@ static FORCE_INLINE u32 get_thor_getllar_busy_percent(u32 configured) noexcept
 	{
 		return static_cast<u32>(overridden);
 	}
-#endif
 
+	// Default to SLEEPING rather than spinning, overriding whatever config says.
+	//
+	// Upstream defaults this to 100 - always spin - while the analogous SPU
+	// Reservation Busy Waiting Percentage is explicitly 0 for this device. spin.md
+	// records the GETLLAR wait as 93% of all instrumented spin, and this file has
+	// carried "sweep it" as the outstanding measurement since then.
+	//
+	// Measured 2026-08-19 on Eternal Sonata's opening, five interleaved pairs, every
+	// arm rendering exactly 3600 frames:
+	//
+	//   100 (spin)   CPU 7074-7270 ticks
+	//   0   (sleep)  CPU 6441-6628 ticks
+	//
+	// The ranges do not overlap: **-9% CPU at identical frame output**, on top of the
+	// SPU self-loop park which is also on by default now.
+	//
+	// WHAT IS NOT VERIFIED: the frame-time TAIL. p50 is 16.86 ms in both arms, which
+	// is 60 fps exactly, and the frame COUNT is identical, so nothing is being
+	// dropped. But a capped frame rate hides latency, and the SurfaceFlinger capture
+	// used here returned a contaminated tail - p99 of 91 seconds, which is stale
+	// buffer entries rather than a real frame. The lv2 spin change, which is the same
+	// class of change, showed no cost at any percentile when measured properly.
+	//
+	//   adb shell setprop debug.rpcsx.thor.getllar_busy_percent 100
+	//
+	// restores the spin if a title ever looks stuttery for it.
+	static_cast<void>(configured);
+	return 0;
+#else
 	return configured;
+#endif
 }
 
 // How many times the GETLLAR out-buffer check can give the same "not a loop" answer
