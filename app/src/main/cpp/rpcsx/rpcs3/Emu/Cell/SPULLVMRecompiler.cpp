@@ -7245,7 +7245,7 @@ public:
 		const auto known_idx = get_known_bits(c);
 		const bool perm_only = known_idx.Zero[7];
 		const bool perm_or_zero_only = known_idx.Zero[6];
-		const bool idx_selects_single = known_idx.extractBits(1, 4).isConstant();
+		[[maybe_unused]] const bool idx_selects_single = known_idx.extractBits(1, 4).isConstant();
 
 		const auto a = get_vr<u8[16]>(op.ra);
 		const auto b = get_vr<u8[16]>(op.rb);
@@ -7254,9 +7254,17 @@ public:
 		// Prefer single-table TBL/TBX whenever the selector provably reads only
 		// one source: it needs no register pair and cannot trip the scavenger.
 		// Genuine two-source shuffles use TBL2/TBX2 further below.
-		if (idx_selects_single || (op.ra == op.rb && !m_interp_magn))
+		// `idx_selects_single` is deliberately NOT a trigger. It comes from upstream a7fc31f32
+		// and treats a mask whose bit 4 is known-constant across all lanes as single-source.
+		// ARMSX3 traced a hang to it (19d23eb69): a SPURS function spins forever inside one
+		// block when compiled and boots when interpreted, with block counter, loop count and
+		// retreat count byte-identical across six thread dumps at 96% CPU. They state the
+		// miscompile lives in that flag combined with the ARM64 tbl/tbx paths - which is this
+		// block. This tree carries only that half of the commit; the byteswap widening
+		// (get_swap_from_const) is absent and the fold below is already splat-only.
+		if (op.ra == op.rb && !m_interp_magn)
 		{
-			const bool select_b = idx_selects_single && known_idx.One[4];
+			const bool select_b = false;
 			const auto only_src = select_b ? b : a;
 			const auto [src_is_const, src_data] = get_const_vector(only_src.value, m_pos);
 			const bool only_src_is_splat = src_is_const && src_data == v128::from8p(src_data._u8[0]);

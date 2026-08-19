@@ -3147,3 +3147,40 @@ look truncated during a contended session should be re-checked against this.
 default verification completed full 60-plus-second precompiles, which a 21 second
 kill cycle makes impossible, so they predate this and stand. The SHUFB revert is
 **untested** - it is not in the tree, and the evidence that provoked it was void.
+
+# Ported: the SHUFB single-source trigger (ARMSX3 `19d23eb69`)
+
+**Landed 2026-08-19 on a quiet device, after being wrongly rejected on a contended
+one.** Upstream `a7fc31f32` added `idx_selects_single`, which treats a mask whose
+bit 4 is known-constant across all lanes as single-source. ARMSX3 traced a hang to
+it: a SPURS function spins forever inside one block when compiled and boots when
+interpreted, with block counter, loop count and retreat count byte-identical across
+six thread dumps at 96% CPU. They state the miscompile lives in that flag combined
+with the ARM64 tbl/tbx paths - which is exactly this fork's block.
+
+**This tree carried only half of that commit.** The byteswap widening
+(`get_swap_from_const`) is absent here and the fold is already splat-only, so the
+flag was the whole exposure. The ARM64 single-source path now triggers on
+`op.ra == op.rb` alone, as before `a7fc31f32`.
+
+**Verified:** Folklore reaches 8700 frames in 75 s, the same trajectory as the build
+without the change (2400 / 5700 / 8700), zero `Fatal signal`, `SIGSEGV`, `SIGBUS` or
+`Compilation failed`, and a clean title screen at **60.01 FPS** with no corruption -
+which is the thing to look at for a shuffle defect.
+
+**Cost, unmeasured and stated.** Provably-single-source shuffles now take the
+two-source TBL2/TBX2 path, and `bench-results.md` measures TBX2 at 2.1x the
+throughput cost of TBL2 on the A715/A710 where SPU threads run. SHUFB is the
+most-emitted op in this fork's corpus at 5,794. That price is accepted because a
+shuffle that spins a core forever outranks a slower one, and because the reach of
+the fast path was never measured either. To re-open it, restore the flag behind a
+property and A/B on a **gameplay** scene.
+
+## RETRACTED: "the SHUFB change breaks Folklore"
+
+It does not. That conclusion came from a contended device and is void; so were the
+two that followed it, blaming the SPU scratchpad and then nothing at all. All three
+were the external force-stop recorded above, killing the process every ~21 seconds
+with no crash signature. **Read the `forceStopPackage` line before blaming a
+change** - it is one grep, and it would have saved three rebuilds and two wrong
+reverts.
