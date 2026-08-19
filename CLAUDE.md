@@ -3249,3 +3249,80 @@ the hardware itself acts on, it appears in logcat as
 `current_now` reads 0, `charge_counter` and `voltage_now` do not move within a
 window, and `power_now` is frozen, on AC and off it. The 6 W target cannot be
 checked over adb. The second screen remains the only instrument.
+
+# SOLVED: system wattage IS measurable on this device, from the charger input
+
+**Found 2026-08-19, after three instruments failed.** This supersedes every
+"wattage cannot be measured here" note above, including the fuel-gauge and cpufreq
+sections. Those remain true about the paths they describe; they were the wrong
+paths.
+
+## The working instrument
+
+    /sys/class/power_supply/usb/voltage_now    input volts  (~8.9 V here)
+    /sys/class/power_supply/usb/current_now    input amps   (tracks load)
+
+`P = voltage_now x current_now`. `tools/thor_power_iin.sh` samples it.
+
+**Validated against a figure this repo obtained independently**: idle measured
+**1.64 W** here against the **1.60 W** recorded earlier from the second screen. It
+also responds to load, which is the test the cpufreq proxy failed - 178 mA idle
+against 253-291 mA with a title rendering.
+
+**Two traps, both of which produced garbage before they were found:**
+
+* **`usb/current_now` is NOT frozen.** An earlier note in this file calls it "the
+  negotiated limit and sits frozen". That is wrong on this device: it moves with
+  load, and it is the stable channel.
+* **The PMIC ADC `in_current_pm8550b_iin_fb_input` is bidirectional and noisy.** It
+  swings +-2 A within one window and averages NEGATIVE under load. Do not use it;
+  use `usb/current_now`.
+* **The arithmetic overflows the device shell.** `(v/1000) * i` is
+  `8918 * 278000` = 2.48e9, past 32-bit signed, which reported **-1334 mW for a
+  device drawing 2.4 W**. Divide both terms first: `(v/1000) * (i/1000) / 1000`.
+
+**The condition that makes it valid:** the battery must not be charging. Check
+`in_current_pm8550b_ichg_fb_input` is 0 and the level is not climbing, or the input
+power includes whatever is going into the cell.
+
+## What this device actually draws
+
+| state | mean | range |
+| --- | --- | --- |
+| idle, emulator stopped | **1.64 W** | 1.32 - 2.52 |
+| Folklore title screen, 60 fps | **4.02 W** | 2.01 - 8.25 |
+| PPU compile, first load only | **9.42 W** | 7.05 - 12.95 |
+
+And the matching thermals, from the sensor the fan controller acts on:
+
+| state | skin sensor | `cpu-1-*` junction |
+| --- | --- | --- |
+| sustained rendering | 45 - 48 C | 47 - 58 C |
+| PPU compile | 81 - 84 C | 91 - 95 C |
+
+## Against the stated targets: under 70 C and mostly under 6 W
+
+**Sustained running meets both**, and that is where a game spends essentially all
+of its time, because the compile result is cached per title: 4.0 W and 45-48 C.
+
+**The first-load compile exceeds both** - 9.4 W and 84 C for about two minutes.
+**The user has ruled that acceptable**: compile-phase highs are fine, and the
+targets apply to normal running. Do not trade compile speed away for them.
+
+## What the compile budget costs, both ways
+
+Cold cache, 55 s window, both arms started under 55 C:
+
+| `ppu_budget_mb` | mean power | modules in the window |
+| --- | --- | --- |
+| 1536 | 5.92 W | 18 |
+| **4096, the default** | **9.61 W** | **24** |
+
+**So the shipped default draws 62% more power and does 33% more work.** Per module
+that is 22.0 J against 18.1 J - the faster setting is **less** energy-efficient,
+about 22% more energy for the same compile - while finishing the job sooner and
+therefore leaving the hot window earlier (2:15 against still compiling at 6:00).
+
+Both facts are true and they point different ways. The default stays at 4096
+because the compile highs are accepted and wall-clock is what the user waits on.
+**Quote the energy figure, not just the time, if this is ever revisited.**
