@@ -3578,3 +3578,48 @@ MFC reservation and `vm::writer_lock`. **Three of the four now sleep by default:
 | `vm::writer_lock` | 6.2%, six threads | still an unbounded `sched_yield` |
 
 `vm::writer_lock` is the one left.
+
+# The speed result: +13% frame rate when the CPU is the constraint
+
+**Measured 2026-08-19.** Every scene this device can reach headlessly renders at
+**exactly 3600 frames per 60 s** - 60 fps, the panel's rate - with CPU to spare.
+Folklore's title screen, Eternal Sonata's opening, even Watch_Dogs at 5.06 cores
+busy. `Frame limit: Off` changes nothing, because the cap is **presentation, not the
+limiter**. So on those scenes an optimisation cannot show as frame rate, only as
+headroom, and this session's wins looked like CPU numbers.
+
+**Make the CPU the constraint and the headroom becomes frames.** Eternal Sonata with
+six spinner processes competing for the cores, four interleaved pairs:
+
+| | frames per 60 s | fps |
+| --- | --- | --- |
+| park off + GETLLAR spin (upstream behaviour) | 3000, 3000, 3000, 3000 | **50** |
+| **shipped defaults** | 3600, 3300, 3300, 3300 | **55 - 60** |
+
+**Nothing overlaps, and the OFF arm returns exactly 3000 every time.** That is
+**+10% to +20% frame rate, mean +13%**, from the two defaults shipped today.
+
+## Why this is the honest way to state the speed win
+
+**A capped scene hides it and an uncapped one does not exist here.** The same two
+settings measured -48% CPU on the uncontended scene (13062 and 12939 ticks against
+6705 and 6708) and 0% frame rate, because 60 fps was already being met. The frames
+only appear once the machine cannot supply what the emulator asks for.
+
+**That is exactly the condition real gameplay creates**, and it is the condition this
+fork cannot reach directly - gameplay needs a controller and the guest pad cannot be
+driven over adb. The spinners are a stand-in for it: they do not make the emulator
+faster or slower, they make the CPU scarce, which is what a demanding scene does.
+
+**So quote it as conditional, never bare.** "+13% fps when CPU-bound" is supported.
+"+13% fps" is not, and on a title screen it would be flatly wrong.
+
+## What did NOT benefit, and why that matters
+
+Watch_Dogs shows **no difference at all** - 30295 ticks against 30306 - because the
+SPU self-loop park has **no reach** there: the counter reads `entries=0`. It is a
+different engine and it never branches to self. Eternal Sonata reads ~49,000 entries
+per window at `pc=0x00cc4`.
+
+**A lever that is worth 45% of CPU on one title can be worth nothing on another**, and
+the counter is the only way to know which before spending a session on it.
