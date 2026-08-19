@@ -2801,3 +2801,32 @@ acquires its device, not at another way of faking a button.
 a gameplay lever somebody has to drive the game to a save point by hand and leave
 it in a steady scene. That is the highest-value tooling gap here, and it is worth
 more than another lever.
+
+# The JIT's under-declared CPU features are worth nothing, checked off device
+
+**Checked 2026-08-18 in seconds, with no boot.** This file records that
+`cpu=cortex-a78` is Armv8.2, so features this chip has are never offered to LLVM:
+`lrcpc`, `flagm`, `flagm2`, `frint`, `fcma`, `sha512`. That reads like free
+performance left on the table.
+
+It is not. The shapes the translators actually emit - PPU `FCTIW`, SPU `CFLTS` and
+`CFLTU`, a truncating convert, and a flag-heavy compare chain - were compiled at
+three targets:
+
+| target | accel instructions | total | assembly |
+| --- | --- | --- | --- |
+| `cortex-a78` | 0 | 24 | baseline |
+| `cortex-a78+flagm+fp16fml+fcma` | 0 | 24 | **byte-identical** |
+| `cortex-a715` (the real core) | 0 | 24 | identical |
+
+No `frint32`, `frint64`, `rmif`, `setf`, `fcmla` or `fcadd` is selected at any
+target. LLVM does not reach for these instructions from this IR, so declaring them
+changes nothing, and the `cortex-a78` pin costs no codegen here.
+
+**That is ten manual-derived predictions refuted out of ten.** The pattern holds
+exactly: the manual is right that the silicon has the feature, and the inference
+that the compiler will therefore use it is wrong. Read the codegen before changing
+the target - it is one `clang -S` and it settles the question without a device.
+
+**With this the accelerator surface is fully closed.** Everything applicable is in
+use, the GPU items are neutral or inapplicable, and the feature list is inert.
