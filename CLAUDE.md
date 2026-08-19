@@ -3360,3 +3360,39 @@ runs returned 87 s and 88 s, slower than BOTH endpoints, which is incoherent as 
 curve and is run-to-run variance rather than a measurement. If a sweet spot is ever
 wanted, it needs the same three-sample treatment as the endpoints got, on a quiet
 device.
+
+# Against the 70 C / 6 W targets: heat passes everywhere, wattage fails under load
+
+**Measured 2026-08-19 with the charger-input instrument.** Eternal Sonata is the
+heaviest workload reachable without a controller - its opening plays unattended - so
+it is the closest thing to a gameplay number this device can produce headlessly.
+
+| workload | power (mean) | skin | junction | CPU |
+| --- | --- | --- | --- | --- |
+| idle, emulator stopped | **1.64 W** | ~42 C | 36 C | - |
+| Folklore title screen, 60 fps | **4.02 W** | 45-48 C | 47-58 C | 0.35 cores |
+| **Eternal Sonata, opening** | **5.33, 8.91, 7.37 W** | 56.9-58.0 C | 62.6 C | 1.5-2.1 cores |
+| PPU compile, first load only | 9.42 W | 81-84 C | 91-95 C | - |
+
+## Heat: PASSES
+
+Nothing outside the compile burst approaches 70 C. The heaviest reachable scene sits
+at **58 C skin and 62.6 C junction**, with the fan holding it there. Compile reaches
+84 C and the user has ruled that acceptable.
+
+## Wattage: FAILS on a real game
+
+Three consecutive 60 s samples of the same Eternal Sonata scene gave **5.33, 8.91 and
+7.37 W**, with peaks to **13.8 W**. Two of three are above the 6 W target and the mean
+of means is 7.2 W.
+
+**The spread is the scene, not the instrument.** This file already records ten
+consecutive CPU samples of one Eternal Sonata arm spanning 1.1 to 5.2 cores; the power
+follows it, and the CPU readings here moved 2.08 to 1.53 cores between samples.
+
+**So the 6 W target is met at a title screen and missed during actual play.** Any
+future power work should be aimed at the gameplay path, which is where the levers this
+file already identifies live - the SPU self-loop park at ~20% of gameplay CPU, MFC DMA
+at 20.13%, `vm::writer_lock` at 4.49%. **All three are still unmeasurable headlessly,
+because gameplay cannot be reached over adb.** Now that wattage IS measurable, a game
+left at a save point would let every one of them be judged on power as well as time.
