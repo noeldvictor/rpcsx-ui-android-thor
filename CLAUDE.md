@@ -2694,3 +2694,26 @@ memory-type dump alone; the usage flags are the binding constraint.
 **With this closed, the hardware-acceleration sweep is complete**: every applicable
 accelerator on this silicon is in use, and the two that are not - SVE/SVE2 and TME -
 are absent from the chip.
+
+# CORRECTION: the RSX thread does not live on the prime core
+
+**Sampled six times on 2026-08-18, two seconds apart, on a booted title:**
+
+    rsx::thread last_cpu = 3, 4, 3, 3, 3, 6
+
+That is the **A715/A710 mid cluster**, not CPU7. `Cpus_allowed_list` is `0-7` for
+every thread, so the scheduler is choosing, and it is choosing the mid cluster.
+
+Two places said otherwise and both were one sample. This file states "CPU7 (X3,
+currently running a single-threaded RSX that costs 2.23%)", and a reading earlier
+in this session found `last_cpu=7` once and nearly became an affinity experiment on
+the strength of it.
+
+**`last_cpu` is where a thread ran most recently, not where it lives.** One read of
+it is worth exactly as much as one boot, which this file already warns about for
+conclusions and now warns about for samples.
+
+**So there is no big.LITTLE placement win here.** The obvious power argument -
+a light renderer thread holding the prime core awake - does not apply, because it
+is not on the prime core. Any future placement work must start by sampling
+`last_cpu` repeatedly, not once.
