@@ -2750,3 +2750,34 @@ instrument produces output before believing its silence. `vm_log` wrote nothing,
 `rsx_log.always()` reached no sink, three counters had no reader - and now a proxy
 returned a number every time and still could not see a 2.4x effect. **A live number
 is not a working instrument.** Validate against a known-large effect first.
+
+# Gameplay cannot be reached over adb, which is why the big levers stay unmeasured
+
+**Tested 2026-08-18.** Folklore boots to "Press START button" and stays there.
+`adb shell input keyevent BUTTON_START` leaves the emulator running and the
+workload unchanged - 852 process ticks over 20 s against 871 before the key - so
+the event never reaches the emulated pad. RPCSX takes input through its own path,
+not through Android key events routed into the guest.
+
+Sending more keys is worse than useless: `BUTTON_START` then `ENTER`, `BUTTON_A`
+and `DPAD_CENTER` **killed the process**, because those reach the Android UI
+instead.
+
+**This is the root blocker behind most of this session.** The levers with the
+largest documented reach all live in gameplay:
+
+| lever | reach | where |
+| --- | --- | --- |
+| SPU self-loop park | ~20% of CPU | gameplay - `entries=0` on a title screen |
+| MFC DMA / `process_mfc_cmd` | 20.13% | gameplay profile |
+| `vm::writer_lock` | 4.49% | gameplay profile |
+
+A title screen is 0.3-0.4 cores at a 60 fps cap. Every remaining lever moves less
+than the scatter there, which is why eight variants in one session all came back
+unresolved or void.
+
+**So an automated A/B session can measure a title screen and nothing else.** To A/B
+a gameplay lever somebody has to drive the game to a save point by hand and leave
+it in a steady scene, or the input path has to be scripted at the emulator's own
+layer rather than through `input keyevent`. That is the highest-value tooling
+gap here, and it is worth more than another lever.
