@@ -2776,8 +2776,28 @@ A title screen is 0.3-0.4 cores at a 60 fps cap. Every remaining lever moves les
 than the scatter there, which is why eight variants in one session all came back
 unresolved or void.
 
+## Three input paths tried, all verified, none reaches the guest
+
+| path | delivered? | guest reacted? |
+| --- | --- | --- |
+| `input keyevent BUTTON_START` | yes, app stayed alive | no - 852 ticks against 871 |
+| `input keyevent ENTER/BUTTON_A/DPAD_CENTER` | yes | **killed the process** - they reach the Android UI |
+| `sendevent /dev/input/event9` BTN_START (0x13b) | **yes, confirmed by `getevent`** | no |
+| `sendevent` BTN_SOUTH / cross (0x130) | yes | no - screenshot still reads "Press START button" |
+
+The gamepad node is real and writable: `/dev/input/event9`, `"Odin Controller"`,
+`crw-rw---- root input`, and shell is in group 1004 (`input`). A capture taken
+while injecting shows the events arriving:
+
+    [ 656955.867266] 0001 013b 00000001     <- EV_KEY BTN_START press
+    [ 656956.923582] 0001 013b 00000000     <- release
+
+**So the events reach the kernel and the emulated pad still does not see them.**
+Whatever RPCSX binds to, it is not satisfied by an injected event on that node.
+Do not repeat these three; the next attempt should look at how the Pad Thread
+acquires its device, not at another way of faking a button.
+
 **So an automated A/B session can measure a title screen and nothing else.** To A/B
 a gameplay lever somebody has to drive the game to a save point by hand and leave
-it in a steady scene, or the input path has to be scripted at the emulator's own
-layer rather than through `input keyevent`. That is the highest-value tooling
-gap here, and it is worth more than another lever.
+it in a steady scene. That is the highest-value tooling gap here, and it is worth
+more than another lever.
