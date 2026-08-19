@@ -2921,3 +2921,50 @@ raises sustained CPU concurrency here has to be measured with the temperature
 beside it, because the thermal ceiling can take back everything the concurrency
 gained. That is a second mechanism by which a real speedup evaporates, alongside
 the frames-for-CPU trade the RSX park showed.
+
+# The real reason nothing resolved: a title screen is not a reproducible workload
+
+**This is the conclusion of the whole 2026-08-18 session, and it supersedes the
+"two states" and "three states" notes above.**
+
+Folklore's title screen was treated all session as a fixed workload to A/B against.
+It is not one, and it fails to be one on **every** axis measured:
+
+| axis | same title, same build, same settings |
+| --- | --- |
+| frames per 60 s | 7200 and 6000, and later 10200, 9600, 9000 |
+| process ticks per 60 s | two clusters, 1823-1890 and 2662-2809 |
+| steady junction temperature | **51.0 C and 90.1 C for the SAME setting** |
+
+That last row is the one that settles it. Two arms of `lv2_spin=0`, each cooled to
+the same floor and each held 300 s to settle, differed by **39 C**. No lever moves
+a device 39 C. The workload itself is different between boots.
+
+**So every null in this session is explained without needing any lever to be
+worthless.** Eight variants, four levers, two instruments - all were being asked to
+resolve a few percent against a workload whose own variation is larger than the
+effects. The interleaving is what kept the comparisons honest; it could not make
+the scene stand still.
+
+## What a usable workload on this device looks like
+
+`tools/thor_precompile_ab.sh` resolved `ppu_budget_mb` at 21% in **four arms**,
+after eight attempts on the title screen resolved nothing. The difference is not
+the lever, it is the workload:
+
+| property | title screen | PPU precompile |
+| --- | --- | --- |
+| identical work each run | **no** | yes - the cache is cleared, the modules are fixed |
+| needs input | no | no |
+| self-timed by the emulator | no | yes - `LLVM: Compiled module` stamps |
+| loads the machine | 0.3-0.4 cores | saturates the compile workers |
+
+**Prefer a workload with fixed, finite work over a free-running scene.** A scene
+that renders forever has no natural unit; a fixed set of modules to compile has
+one, and it is the emulator's own clock. This is the single most useful thing
+learned here, and it is worth more than any of the levers that were tested.
+
+**And it explains the retraction record.** Two claims were made and withdrawn in
+this session on title-screen numbers - `host_mutex_spin` at 1.9%, the SPU park at
+2.8% - and both would have been avoided by asking first whether the scene repeats.
+Do that before the next A/B, not after it.
