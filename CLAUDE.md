@@ -2571,3 +2571,55 @@ report.
 is a power reading from the second screen with the property on against off, and a
 correctness pass over more titles - not more CPU A/Bs, which have now been shown
 to be the wrong instrument for it.
+
+# RETRACTED the same day: `host_mutex_spin = 0` does not replicate
+
+**Shipped and reverted on 2026-08-18.** The claim above - 1.9% less process CPU
+with non-overlapping ranges - was real for the run that produced it and does not
+survive two further tests.
+
+| test | 10 | 0 | verdict |
+| --- | --- | --- | --- |
+| `busy-wait-inventory.md`, cores | 0.377, 0.377, 0.378 | 0.370, 0.368 | favours 0 |
+| CPU ticks, 4 pairs | 2650-2703 | 2612-2638 | favours 0 |
+| CPU ticks, **quiet device**, 3 pairs | 2614-2685 | 2584-2646 | **overlap** |
+| **energy proxy**, 7200-frame arms | 48487, 48506 | 48574, 49468 | **favours 10** |
+
+**Two for, two against, and the energy proxy is the one that matters most for a
+handheld.** The default returns to 10.
+
+**Spinning here is not dead code, which is why the sign can flip.** A spin in front
+of a block avoids a futex syscall and a context switch whenever the lock is
+released quickly. That is the entire reason spin-then-block exists, so 0 trades one
+cost for another and the winner depends on the contention pattern. This is NOT the
+lv2 case, where the spin sat in front of a wait that was already going to sleep.
+
+**And the first two runs were contaminated.** See below: twelve orphaned stressor
+processes were loading the device at ~430% CPU. Interleaving means the comparison
+still stood, but it is a second reason not to trust the pair.
+
+# Twelve orphaned stressors ran for hours, and interleaving is what saved the session
+
+`tools/thor_rsx_starve_ab.sh` starts spinner processes on the device and kills them
+at the end of each sample - **device-side**. When adb dropped mid-arm, and when the
+script was killed from the host, that kill never ran.
+
+Found by `top` while investigating why the device would not cool below 55 C with
+the emulator stopped: **twelve `yes` processes owned by `shell`, about 430% CPU**,
+junction at 86.7 C. They had been running for hours, through the ADPF, the
+`loadop_clear` and the `host_mutex_spin` arms.
+
+**Every comparison in that window survives, because the arms were interleaved and
+both saw the same background load.** That is precisely what the interleaving rule
+in this file is for, and this is the first time it has actually been needed.
+**Absolute numbers from that window do not survive.**
+
+The script now sweeps on entry and traps `EXIT INT TERM`, and the spinners are
+named `yes` so `killall` can find them. The rule generalises: **a harness that
+loads a shared device must clean up from the HOST side, on any exit path**, because
+the device-side cleanup is exactly what a dropped link skips.
+
+**It did not explain the bimodal totals.** Killing all twelve left the light state
+at ~2600 ticks, not the ~1845 of earlier in the session, so the two clusters
+recorded above remain unexplained and the correction stands: classify an arm by its
+process total, and never compare absolute numbers across runs.

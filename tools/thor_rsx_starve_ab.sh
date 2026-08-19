@@ -47,6 +47,19 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 [ "$(adb_sh 'echo ok' | tr -d '\r')" = "ok" ] || die "device not answering"
 
+# The stressors are the dangerous part of this script. If adb drops mid-arm, or the
+# script is killed, the device-side `kill $pids` never runs and the spinners survive
+# - on a SHARED device, at full load, invisibly.
+#
+# That happened on 2026-08-18. Twelve orphaned spinners ran for hours at about 430%
+# CPU, held the CPU junction at 86 C, and inflated every absolute measurement taken
+# afterwards by roughly 46%. Interleaving is the only reason the comparisons stood.
+#
+# So sweep before starting, and sweep again on ANY exit.
+kill_stressors() { adb_sh "killall yes 2>/dev/null; true" >/dev/null 2>&1; }
+trap kill_stressors EXIT INT TERM
+kill_stressors
+
 run_arm() {
   local value="$1" label="$2"
 
@@ -75,7 +88,7 @@ run_arm() {
     pids=''
     i=0
     while [ \$i -lt $STRESSORS ]; do
-      ( while :; do :; done ) & pids=\"\$pids \$!\"
+      ( yes > /dev/null ) & pids=\"\$pids \$!\"
       i=\$((i+1))
     done
     sleep 5
