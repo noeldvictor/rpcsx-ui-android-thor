@@ -119,6 +119,18 @@ void perf_monitor::operator()()
 					thor::rsx_fifo::g_park_us_total.load() / 1000);
 			}
 
+			// The stcx stale-128 probe. Printed unconditionally while the question is
+			// open, because a zero here is the RESULT - it says this tree does not have
+			// ARMSX3's ldarx defect - and a zero must be distinguishable from a probe
+			// that never ran, which is why the other-failure control prints beside it.
+			{
+				extern atomic_t<u64> g_ppu_stcx_stale_128;
+				extern atomic_t<u64> g_ppu_stcx_other_fail;
+
+				fmt::append(msg, ", stcx: stale128=%llu other_fail=%llu",
+					g_ppu_stcx_stale_128.load(), g_ppu_stcx_other_fail.load());
+			}
+
 			perf_log.notice("%s", msg);
 
 			if (thread_ctrl::state() == thread_state::aborting)

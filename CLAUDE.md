@@ -3444,3 +3444,45 @@ looking like one. `entries` and `last_pc` are written BEFORE the wait and `exits
 after, so `entries - exits > 0` is a park happening right now and `last_pc` says
 where, and `perf_monitor` prints all three. **If a title hangs with a quiet CPU, read
 that line first**, and `debug.rpcsx.thor.spu_selfloop_park=0` restores the spin.
+
+# ARMSX3 fifth pass: the PPU rtime defect is NOT in this tree, measured
+
+ARMSX3 is at `2e65c8b21`, 8 commits past the fourth pass. The significant one is
+`ca3b755fd`, a defect in the PPU `ldarx` cached-reservation fast path: re-reserving
+the line a successful `stdcx` just wrote leaves `ppu.rtime` one increment behind the
+line's counter, so **every conditional store after the first on that line fails by
+exactly 128**, and a retrying guest re-enters the same fast path with the same stale
+value. They measured **490 million** such failures on one address and it stops
+Assassin's Creed booting.
+
+**The shapes differ, so this was measured rather than ported.** Their fast path is an
+empty branch. This tree has `ppu.rtime -= 128` in `ppu_ldarx` and `ppu.rtime += 128`
+on the `ppu_stcx` success path. Read naively those cancel and would reproduce the
+defect - which is exactly the kind of reading that has been wrong here before.
+
+A probe on the failure site counted stores that fail with **unchanged data and a
+counter exactly 128 ahead**, against a control of every other failure. Eternal
+Sonata, one window:
+
+    stcx: stale128=207 other_fail=55
+
+**207, not 490 million, on a title that boots and renders.** And the signature is not
+even specific: a reservation line is 128 bytes, so another thread writing a
+*different* part of the line advances the counter while leaving the compared 8 bytes
+unchanged. That is ordinary sharing and it produces this pattern legitimately.
+
+**So the `+128`/`-128` pairing here is correct and nothing is ported.** The naive
+cancellation reading was wrong.
+
+**The probe stays**, printed by `perf_monitor` beside its control, because a future
+"conditional stores keep failing" report is answerable in one boot with it: a stale
+count in the millions next to a small control is the defect, both large together is
+contention, and both small is healthy. The numbers above are the healthy baseline.
+
+## Also in that range, and not applicable
+
+`91952ae4c` re-enables fp16 on Turnip. Their gate compared `driverVersion` against
+Qualcomm's numbering (512.676.53) while Turnip reports Mesa's (25.99.99), which can
+never pass, so fp16 was emulated in fp32 on every Turnip install. **This tree has no
+such gate** - checked - and the boot log already says `Using native float16_t
+variables if possible`, confirmed on device earlier. Nothing to take.

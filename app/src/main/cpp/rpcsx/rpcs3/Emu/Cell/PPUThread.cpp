@@ -279,6 +279,19 @@ private:
 	}
 };
 
+// Probe for the ldarx cached-reservation defect ARMSX3 fixed in ca3b755fd.
+//
+// g_ppu_stcx_stale_128 counts conditional-store failures whose DATA IS UNCHANGED and
+// whose reservation counter is exactly 128 ahead of ppu.rtime. That pair is the
+// signature of the stale fast path and nothing else produces it. Every other failure
+// is an ordinary lost reservation and lands in g_ppu_stcx_other_fail, which is the
+// control: a large stale count next to a small other count means the defect, while
+// both being large together just means contention.
+//
+// perf_monitor prints them. Delete this probe once the question is settled.
+atomic_t<u64> g_ppu_stcx_stale_128{0};
+atomic_t<u64> g_ppu_stcx_other_fail{0};
+
 // Budget for concurrent PPU LLVM compilation.
 //
 // Upstream sizes this as a fraction of total system memory, which assumes a
@@ -4902,6 +4915,32 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 
 	if (old_data != data || rtime != (res & -128))
 	{
+		// Probe for ARMSX3 ca3b755fd, which is a defect in the ldarx "cached
+		// reservation" fast path: re-reserving the line a successful stdcx just wrote
+		// leaves ppu.rtime one increment behind the line's counter, so every
+		// conditional store after the first on that line fails by EXACTLY 128 and a
+		// retrying guest re-enters the same fast path with the same stale value.
+		// They measured 490 million such failures on one address, all with a delta of
+		// 128 and the data unchanged, and it stops Assassin's Creed booting.
+		//
+		// This tree is NOT shaped like theirs. Their fast path is an empty branch;
+		// ours does `ppu.rtime -= 128` (ppu_ldarx) and the store does `ppu.rtime += 128`
+		// (below). Read naively those cancel and would reproduce the bug - but this
+		// code is inherited from upstream and works across many titles, so the
+		// semantics are more likely different than universally broken.
+		//
+		// So MEASURE rather than port. The signature is unambiguous: same data, delta
+		// exactly +128. Anything else is an ordinary lost reservation, which is normal
+		// and expected under contention.
+		if (old_data == data && ((res & -128) - rtime) == 128)
+		{
+			g_ppu_stcx_stale_128++;
+		}
+		else
+		{
+			g_ppu_stcx_other_fail++;
+		}
+
 		ppu.raddr = 0;
 		ppu.res_cached = 0;
 		return false;
