@@ -2532,3 +2532,42 @@ here.
 **Use CPU as the proxy, and say so.** Less CPU for the same frame count is less
 energy for the same work, which is sound, but it is an inference and not a
 measurement. Do not convert a tick saving into watts.
+
+# The Adreno LOAD_OP_CLEAR fold: correct, CPU-neutral, and its win is unmeasurable here
+
+**Measured 2026-08-18.** `debug.rpcsx.thor.loadop_clear` folds a full-surface clear
+into the render pass load op instead of issuing `vkCmdClearAttachments` inside the
+pass. On a tiler that is the difference between reading the whole attachment from
+system memory into GMEM and then throwing it away, and **not touching memory at
+all**. The Adreno guide calls the clear-after-load pattern the most-cited mobile
+GPU mistake.
+
+**Reach was already measured and is total:** 51 of 51 clears eligible on the title
+screen, and 60 of 60 colour-plus-depth on the rendered scene. This is not a lever
+looking for a workload.
+
+**It renders correctly.** Folklore's title screen with the fold on: a clean frame
+at **60.00 FPS**, overlay reading PPU 2.8%, SPU 1.3%, RSX 1.0%, Total 5.2%. No
+corruption, and the frame is in the session capture.
+
+**And it is CPU-neutral**, which is what it should be. Three interleaved repeats,
+thermal gate at 60 C, every arm at 7200 frames:
+
+| `loadop_clear` | `rsx::thread` ticks | process total |
+| --- | --- | --- |
+| 0 | 304, 331, 332 | 2608, 2639, 2631 |
+| 1 | 327, 327, 277 | 2566, 2622, 2661 |
+
+Everything overlaps. **A CPU tick counter cannot see this change**: the saving is
+GPU memory traffic, not host cycles.
+
+**Two explanations fit that result equally and this device separates neither:**
+the win is real and invisible to the CPU, or Turnip already folds the
+clear-after-load internally so there is nothing left to win. Deciding it needs a
+GPU counter or a wattage reading, and the fuel gauge on this device does not
+report.
+
+**So it stays default 0.** It is verified correct on ONE title. The remaining work
+is a power reading from the second screen with the property on against off, and a
+correctness pass over more titles - not more CPU A/Bs, which have now been shown
+to be the wrong instrument for it.
