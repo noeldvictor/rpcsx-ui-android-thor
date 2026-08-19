@@ -3098,3 +3098,52 @@ which means the test itself could introduce a fault the recompiler did not have.
   one was an instruction-count argument, this one is tearing. The re-land bar this
   file already set still applies - millions of randomised 128-byte pairs diffed
   against memcpy on device - and ARMSX3 state it fixed no observable behaviour.
+
+# Another session force-stopping the package looks exactly like your own crash
+
+**2026-08-19, and it produced three wrong conclusions in a row before it was
+caught.** While testing the SHUFB revert, Folklore started dying at 300-600 frames.
+The evidence looked like a clean regression:
+
+* the process was gone, `pidof` empty
+* **zero** `Fatal signal`, `SIGSEGV`, `SIGBUS` in `RPCSX.log` AND in logcat
+* no tombstone
+* it reproduced on the very next boot
+* the previous build had reached 3600 frames
+
+Three conclusions were drawn and **all three were wrong**: that the SHUFB change
+broke it, then - after reverting it did not help - that the scratchpad change did,
+then after reverting that too the failure continued.
+
+**The app was being force-stopped by something else.** Launched, then left
+completely alone for 90 seconds with no commands issued:
+
+    11:36:40 ActivityManager: Force stopping net.rpcsx.easy ...: from pid 25513
+    11:37:01 ActivityManager: Force stopping net.rpcsx.easy ...: from pid 25648
+    11:37:22 ActivityManager: Force stopping net.rpcsx.easy ...: from pid 25791
+    11:37:42 ActivityManager: Force stopping net.rpcsx.easy ...: from pid 25931
+
+A ~21 second cycle, a different device pid each time. Still running an hour later:
+three more in a 60 second window.
+
+**This is the shared-device protocol failing in a new direction.** That section
+warns not to force-stop the OTHER session's package. It did not anticipate the
+other session force-stopping OURS, on a timer.
+
+## The check, before diagnosing any silent death
+
+    adb logcat -d | grep -E "forceStopPackage|Force stopping"
+
+A kill from `ActivityManager` names the pid that asked for it. If that pid is not
+one of yours, stop debugging your own change - and note that **an external kill
+leaves no crash signature at all**, so it is indistinguishable from a clean exit or
+from the guard-page death recorded above unless this line is read.
+
+**And it invalidates measurements silently.** A 60 s window that gets killed at 21 s
+does not error; it returns whatever partial counters existed. Any arm whose numbers
+look truncated during a contended session should be re-checked against this.
+
+**What survived and what did not.** The `ppu_budget_mb` measurements and the
+default verification completed full 60-plus-second precompiles, which a 21 second
+kill cycle makes impossible, so they predate this and stand. The SHUFB revert is
+**untested** - it is not in the tree, and the evidence that provoked it was void.
