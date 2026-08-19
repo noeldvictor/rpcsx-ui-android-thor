@@ -132,6 +132,24 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 		add_compile_definitions(ARM_FEATURE_LSE2=1)
 	endif()
 
+	# DO NOT set -ftls-model=initial-exec here. Tried 2026-08-18 and reverted.
+	#
+	# A build-matched profile puts 1.29% of cycles in [linker]tlsdesc_resolver_dynamic,
+	# because the default TLS model for a shared library is global-dynamic and that
+	# means TLSDESC and a resolver call on AArch64. initial-exec would turn each
+	# access into a register-relative load, and the flag does apply: the rebuilt
+	# library carried 132 R_AARCH64_TLS_TPREL64 against 3 R_AARCH64_TLSDESC.
+	#
+	# The library then does not load at all:
+	#
+	#   dlopen failed: TLS symbol "(null)" in dlopened ".../librpcsx-android.so"
+	#   referenced from ".../librpcsx-android.so" using IE access model
+	#
+	# bionic refuses the initial-exec access model for a library brought in by
+	# dlopen, and System.loadLibrary is a dlopen. This is a platform rule, not a
+	# budget that a smaller TLS footprint would satisfy. The 1.29% is real and it is
+	# not reachable this way.
+
 	message(STATUS "RPCSX Android ARM tuning: -march=${RPCSX_ANDROID_ARM_ARCH} -mtune=${RPCSX_ANDROID_ARM_TUNE} lse2=${RPCSX_ANDROID_ARM_LSE2}")
 endif()
 

@@ -2361,3 +2361,45 @@ It correlated with heat - the two worst arms read 74.7 C and 71.9 C - and with
 contention, and neither reproduces it on demand. The counters are in place to
 recognise it (`idle_polls`, `parks`) and `run_FIFO` self time separates it from the
 light state in one profile.
+
+# initial-exec TLS is unreachable here, and bionic says so at load time
+
+**Tried and reverted 2026-08-18.** A build-matched profile of Folklore's title
+screen, 16,671 samples and none lost, puts **1.29% of all cycles** in
+`[linker]tlsdesc_resolver_dynamic`. That is the resolver body alone, so it is a
+lower bound: every dynamic TLS access also pays the call around it.
+
+The cause is the default. A shared library gets `global-dynamic` TLS, which on
+AArch64 means TLSDESC and a call into the linker on each access. The emulator core
+is full of `thread_local` state - 17 in `util/Thread.cpp`, 5 in `SPUThread.cpp` -
+reached from the hottest paths in the program.
+
+`-ftls-model=initial-exec` does apply, and the relocations prove it:
+
+| build | `R_AARCH64_TLS_TPREL64` | `R_AARCH64_TLSDESC` |
+| --- | --- | --- |
+| initial-exec | **132** | 3 |
+| default, restored | 0 | 135 |
+
+**And the library then does not load:**
+
+    dlopen failed: TLS symbol "(null)" in dlopened ".../librpcsx-android.so"
+    referenced from ".../librpcsx-android.so" using IE access model
+
+bionic refuses the initial-exec access model for a library brought in by `dlopen`,
+and `System.loadLibrary` is a `dlopen`. **This is a platform rule, not a budget a
+smaller TLS footprint would satisfy.** The note is in `CMakeLists.txt` at the place
+someone would add the flag.
+
+**It fails loudly, which is the one good thing about it.** The app does not start,
+so this cannot be mistaken for a working build or measured as a win. Compare the
+`mov_rdata` class of defect, where the code compiled to nothing and ran for months.
+
+The 1.29% is real and stays on the table. What would reach it is fewer dynamic TLS
+accesses on the hot path - caching a `thread_local` load in a local across a hot
+loop - not a build flag.
+
+**Cost of finding this out: two full native rebuilds, 17 and 16 minutes.** Changing
+a compile option recompiles every object. The `.cxx` tree is keyed on the CMake
+ARGUMENT list, so editing `CMakeLists.txt` does not spawn a second 8-11 GB tree -
+only a new `-D` flag would.
