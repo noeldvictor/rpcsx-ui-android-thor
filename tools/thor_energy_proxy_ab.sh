@@ -19,6 +19,29 @@
 # Reported alongside frames and CPU ticks. Lower frequency at fewer frames is not a
 # saving, it is the emulator failing to keep up.
 #
+# THIS PROXY IS INSENSITIVE. VALIDATED AND FAILED 2026-08-18.
+#
+# Run against a lever with a KNOWN enormous effect - lv2_spin 0 against 50, which
+# is upstream behaviour and costs 2.4x the process CPU on this scene:
+#
+#   lv2_spin=0    2612, 2710 process ticks    proxy 48554.8, 48582.8
+#   lv2_spin=50   6339, 6465 process ticks    proxy 48601.7, 48759.0
+#
+# A 140% rise in CPU moved the proxy by 0.2%. It cannot see that, so it cannot see
+# anything smaller either, and every "no winner" this tool has produced is a
+# SILENCE rather than a result.
+#
+# The reason is in the counter: cpufreq time_in_state accrues wall-clock residency
+# at each frequency whether the core is busy or idle. Over a fixed window the total
+# is nearly constant, and on a frame-capped scene the governor picks much the same
+# frequencies either way. It measures governor behaviour, not work done.
+#
+# KEEP IT ONLY as a governor-behaviour probe - "did this change move the frequency
+# distribution" is a fair question for it. Do not use it to decide a default, and
+# do not read its nulls as evidence. This file exists as the record of an
+# instrument that was checked before it was trusted, which is the rule that
+# CLAUDE.md states and that this tool was nearly used to break.
+#
 # This is a PROXY. Do not convert its output into watts.
 set -u
 

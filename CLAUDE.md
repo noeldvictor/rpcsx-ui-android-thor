@@ -2717,3 +2717,36 @@ conclusions and now warns about for samples.
 a light renderer thread holding the prime core awake - does not apply, because it
 is not on the prime core. Any future placement work must start by sampling
 `last_cpu` repeatedly, not once.
+
+# The cpufreq energy proxy is insensitive, and it was checked before it was trusted
+
+**Built and invalidated on 2026-08-18, in that order.** With the battery gauge dead,
+`tools/thor_energy_proxy_ab.sh` summed cpufreq residency times frequency per
+cluster as a stand-in for energy. Then it was run against a lever whose effect is
+already known to be enormous - `lv2_spin` 0 against 50, which is upstream behaviour:
+
+| `lv2_spin` | process ticks / 60 s | energy proxy |
+| --- | --- | --- |
+| 0 | 2612, 2710 | 48554.8, 48582.8 |
+| 50 | **6339, 6465** | 48601.7, 48759.0 |
+
+**A 2.4x rise in CPU moved the proxy by 0.2%.** The instrument cannot see a 140%
+change, so it cannot see a 2% one, and every null it produced is a silence rather
+than a result.
+
+The cause is in the counter. `time_in_state` accrues wall-clock residency at each
+frequency whether the core is busy or idle, so over a fixed window the total is
+nearly fixed; on a frame-capped scene the governor lands on much the same
+frequencies either way. It measures the governor, not the work.
+
+**This invalidates one leg of the `host_mutex_spin` revert.** That revert cited the
+proxy as "favouring 10"; that reading is void. **The revert still stands on the
+other leg**, which is CPU ticks on a quiet device: A(10) 2706-2955 against B(0)
+2592-2806 over three pairs, heavily overlapping. Unresolved is unresolved, and an
+unresolved default does not ship.
+
+**The rule this session nearly broke is the one already written here**: confirm an
+instrument produces output before believing its silence. `vm_log` wrote nothing,
+`rsx_log.always()` reached no sink, three counters had no reader - and now a proxy
+returned a number every time and still could not see a 2.4x effect. **A live number
+is not a working instrument.** Validate against a known-large effect first.
