@@ -1,5 +1,8 @@
 #include "VKCompute.h"
 #include <cstdlib>
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #include "VKHelpers.h"
 #include "VKRenderPass.h"
 #include "vkutils/buffer_object.h"
@@ -129,20 +132,38 @@ namespace vk
 			// on a single build instead of adding another guess. Powers of two only, and never
 			// past what the device accepts: an over-large local_size_x fails shader
 			// compilation, not validation. Ported from ARMSX3 cbee3cd44.
-			if (const char* const env = std::getenv("RPCSX_THOR_CS_GROUP_SIZE"))
+			// An Android app process does not inherit a shell environment, so the
+			// property is the lever that actually works on the device, and the
+			// variable stays for desktop runs. This mirrors
+			// cache_worker_affinity_mask: property first, then environment.
+			const char* requested_text = nullptr;
+#ifdef __ANDROID__
+			char prop_value[PROP_VALUE_MAX]{};
+			if (__system_property_get("debug.rpcsx.thor.cs_group_size", prop_value) > 0 && *prop_value)
+			{
+				requested_text = prop_value;
+			}
+#endif
+			if (!requested_text)
+			{
+				requested_text = std::getenv("RPCSX_THOR_CS_GROUP_SIZE");
+			}
+
+			if (requested_text && *requested_text)
 			{
 				const auto& limits = gpu.get_limits();
 				const u32 ceiling = std::min(limits.maxComputeWorkGroupSize[0], limits.maxComputeWorkGroupInvocations);
-				const u64 requested = std::strtoull(env, nullptr, 10);
+				char* end = nullptr;
+				const u64 requested = std::strtoull(requested_text, &end, 10);
 
-				if (requested >= 1 && requested <= ceiling && (requested & (requested - 1)) == 0)
+				if (end != requested_text && !*end && requested >= 1 && requested <= ceiling && (requested & (requested - 1)) == 0)
 				{
-					rsx_log.warning("cs: work group size overridden %u -> %u by RPCSX_THOR_CS_GROUP_SIZE.", optimal_group_size, static_cast<u32>(requested));
+					rsx_log.warning("cs: work group size overridden %u -> %u by debug.rpcsx.thor.cs_group_size.", optimal_group_size, static_cast<u32>(requested));
 					optimal_group_size = static_cast<u32>(requested);
 				}
 				else
 				{
-					rsx_log.error("cs: RPCSX_THOR_CS_GROUP_SIZE='%s' ignored; expected a power of two in [1, %u].", env, ceiling);
+					rsx_log.error("cs: cs_group_size='%s' ignored; expected a power of two in [1, %u].", requested_text, ceiling);
 				}
 			}
 
