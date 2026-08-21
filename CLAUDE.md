@@ -3623,3 +3623,122 @@ per window at `pc=0x00cc4`.
 
 **A lever that is worth 45% of CPU on one title can be worth nothing on another**, and
 the counter is the only way to know which before spending a session on it.
+
+# Open pull requests and Whatcookie, sixth pass, 2026-08-21
+
+Surveyed `RPCS3/rpcs3` open pull requests (`54` of them) and every pull request
+Whatcookie has opened (`112`, almost all merged). ARMSX3 had nothing new; its
+head is still `82f21b16d` from 2026-08-20.
+
+## The SPU verification checksum is STILL blind, and the blind spot only moved
+
+`#19230`, "SPU LLVM: Remove unsafe ARM checksum specialization", is a draft by
+Consumer-of-Souls. It removes the whole ARM64 checksum path and uses the generic
+512-bit checksum on ARM64 too, `181` lines deleted and none added. The reason
+given is that `UABD(a, b) == UABD(b, a)`, so swapping the paired vectors leaves
+the checksum unchanged and the verifier accepts a stale cached block. They
+reproduced two missed gameplay and cutscene triggers in LEGO Dimensions
+(`BLES02105`) on an Apple M4 Pro, and both fire with the change.
+
+**This tree does not have their bug, and it does have the same class of bug.**
+
+On 2026-08-10 this fork replaced `aarch64_neon_uabd` with a plain add, because
+`|a - b|` is unchanged when both sources shift by the same `d`. That fix is
+real and it is confirmed on device. It is also not enough. Read the two lanes
+that survive, `SPULLVMRecompiler.cpp`:
+
+    next_acc[1] = m_ir->CreateAdd(next_acc[1], m_ir->CreateAdd(vls[1], vls[2]));
+
+and its host mirror, which has to agree with it:
+
+    checksum[4 + i] += words[4 + i] + words[8 + i];
+
+A pair contributes only its SUM. So:
+
+| Pair operation | Blind to |
+| --- | --- |
+| `UABD(a, b)`, upstream today | `(a + d, b + d)` |
+| `a + b`, this fork since 2026-08-10 | `(a + d, b - d)`, and `(b, a)` |
+| generic path, every other target | neither |
+
+Both operations collapse two words into one number. They collapse different
+directions. Only the generic path keeps every source word in its own accumulator
+lane, and only it has no direction to collapse.
+
+The swap case is the one to worry about. Two adjacent 16-byte instruction groups
+exchanged between two versions of a streamed job binary is ordinary code motion,
+and this fork's own comment already describes the setting: "job managers stream
+near-identical job binaries through the same local-store addresses".
+
+**What to do.** Take `#19230`: delete the ARM specialization and use the generic
+checksum. It costs some ALU work per block, and the pull request says the generic
+path is still faster even on narrow hardware. It also makes ARM64 verification
+behave exactly like every other target, which removes a whole class of
+"only on Thor" mystery. If the ALU cost turns out to matter, an ARM path can come
+back later, but only with a pair operation that is not symmetric and not
+translation-invariant. `a + b` is both, so it cannot come back as it stands.
+
+**What to measure before believing anything here.** Nobody has shown a real
+collision in this fork. The claim above is about the arithmetic, not about a
+captured failure. `debug.rpcsx.thor.spu_native_object_cache=1` before the boot
+you intend to pull, and the cache tree needs `run-as net.rpcsx.easy` to clear.
+
+## Whatcookie: the merged series is already here; one closed idea is not
+
+The ARM64 series in `AGENTS.md`, section `ARM64 Upstream Perf Uplift`, covers the
+merged work: `ISB` for `pause`, `udot`/`sdot` for `SUMB`, `TBL` for `ROTQBY`,
+`I8MM` for `GBH`/`GBB`, `SVE2 XAR`, native ARM shuffles, the ARM timer scaling
+this fork rejected, and, on 2026-08-18, `#19259` "PPU: Stop inverting
+float-to-int saturation on ARM64", which this fork already had and does better.
+Nothing merged is missing.
+
+One CLOSED, unmerged pull request holds an idea worth having: `#18422`, "Utils:
+Add support for some more useful arm extensions". Besides `FEAT_LUT` and another
+`I8MM` use, it adds a function to detect the SVE VECTOR LENGTH, and says why:
+"We might need to guard use of SVE in SPU emulation behind a check that the SVE
+length is exactly 128b."
+
+This fork gates SVE by presence, through `arm64_spu_feature_mode` and
+`utils::has_sve()`. It does not gate by length. Snapdragon 8 Gen 2 has no SVE at
+all, so nothing here is broken today, but the gate is the wrong shape for a part
+that has SVE at a length other than 128 bits. Fix the shape when SVE work next
+comes up; do not open a session for it now.
+
+## `#18847` will collide with the `cortex-a78` pin
+
+`AArch64: identify Apple M2 Pro/Max and use a concrete -mcpu` adds
+`aarch64::get_cpu_llvm_name()`, which maps a detected SoC to an LLVM CPU name,
+and calls it from `fallback_cpu_detection()`. That is the same function this fork
+overrides to pin `cortex-a78`.
+
+Two consequences. If it merges, the next core rebase touches the exact lines the
+pin lives on, so read `docs/arm64/codegen.md` before resolving it. And it is a
+ready-made shape for the open item 3 in `docs/arm64/armsx3-comparison.md`,
+"Revisit the JIT `-mcpu`": a table that names a real core beats a pin, as long as
+the name it produces is still checked against the SVE trap that put the pin there.
+
+## `#19013` is a rebase hazard for the work landed on 2026-08-21
+
+kd-11's `rsx: Rework blit engine texture cache operations` moves blit target
+storage out of the texture cache and into the surface cache: `+1415/-984` across
+`21` files, of which `texture_cache.h` alone is `+820/-907`.
+
+The Android protected-page preflight landed on 2026-08-21 edits `texture_cache.h`
+and `nv3089.cpp`, and the lock-drop dance around `prepare_guest_read()` sits in
+the direct-upload path that this rework rewrites. It is a draft asking for
+testers, so nothing to do now. When it merges, port the preflight onto the new
+shape by intent, not by patch: the invariant is that the fault handler must not
+run while this thread holds the cache lock.
+
+## The index upload still has one scalar path, and upstream just improved the other
+
+`#16932`, Whatcookie, open: `BufferUtils: Optimize upload_untouched_skip_restart
+with AVX-512 paths`. It is x86 only and there is nothing to take.
+
+It is worth reading anyway, because it names the function family where this fork
+has an open gap of its own. `primitive_restart_impl::upload_untouched_naive` was
+written branch-free here so that AArch64 auto-vectorizes it, and the comment in
+`BufferUtils.cpp` explains why. `untouched_impl::upload_untouched_naive`, the
+path WITHOUT a restart index, still calls the branching `min_max()` helper, and a
+conditional side effect in the loop stops it vectorizing. Same file, same idea,
+five lines. EmuCoreC did not fix this one either.
