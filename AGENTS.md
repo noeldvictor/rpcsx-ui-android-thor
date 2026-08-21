@@ -558,6 +558,19 @@ Thor predictions.
      not isolated and `copy_data_swap_u32_neon` remains unmeasured.
      `debug.rpcsx.thor.spu_native_object_cache=1` must be set before the boot you
      intend to pull, and the cache tree needs `run-as net.rpcsx.easy` to clear.
+     **Corrected again 2026-08-21, and closed.** The 2026-08-10 fix moved the
+     blind spot, it did not remove it. A sum folds a pair of source words into
+     one accumulator lane exactly as an absolute difference does; it is simply
+     blind to a different change. `|a - b|` misses `(a + d, b + d)`, and `a + b`
+     misses `(a + d, b - d)` and misses the two words swapping. Upstream reached
+     the same conclusion for its own `UABD` form in RPCS3 pull request `19230`,
+     which found it through missed triggers in LEGO Dimensions on Apple silicon.
+     The ARM specialization is now deleted here. ARM64 runs the generic 512-bit
+     checksum, which gives every word its own lane and folds nothing inside a
+     block. The generic body came from upstream `origin/master`, so the rolled
+     `checksum_loop` came with it. The cost is more accumulate work per byte and
+     it is not measured. Nothing has booted with this change.
+     See `CLAUDE.md`, section "Open pull requests and Whatcookie, sixth pass".
      Full account in `docs/arm64/jit-emitted-code.md`.
   2. `FCGT` inline-asm `bsl` selection: present and byte-identical to upstream
      inside `#if defined(ARCH_ARM64)`. The surrounding function still uses this

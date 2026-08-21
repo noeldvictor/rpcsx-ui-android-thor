@@ -1897,19 +1897,110 @@ public:
 			llvm::Value* starta_pc = m_ir->CreateAnd(get_pc(starta), 0x3fffc);
 			llvm::Value* data_addr = m_ir->CreateGEP(get_type<u8>(), m_lsptr, starta_pc);
 
-#ifndef ARCH_ARM64
 			llvm::Value* acc0 = nullptr;
 			llvm::Value* acc1 = nullptr;
 			bool toggle = true;
-#endif
 
 			// Use a 512bit simple checksum to verify integrity if size is atleast 512b * 3
 			// This code uses a 512bit vector for all hardware to ensure behavior matches.
 			// The checksum path is still faster even on narrow hardware.
+			//
+			// ARM64 runs this path too, and that is the point of it. There used to be an
+			// ARM-only path here which folded six NEON vectors for each 96 bytes, so a PAIR
+			// of source words shared one accumulator lane. A pair which shares a lane can
+			// only contribute one number, and every one-number fold is blind to some change:
+			//
+			//   |a - b|, which upstream still has, is blind to (a + d, b + d).
+			//   a + b, which this fork used after 2026-08-10, is blind to (a + d, b - d)
+			//   and to the two words swapping.
+			//
+			// The swap is the case to fear. Two adjacent 16-byte instruction groups which
+			// exchange places between two versions of a streamed job binary is ordinary code
+			// motion, and a job manager streaming near-identical binaries through the same
+			// local-store addresses is exactly the workload here. A blind checksum lets the
+			// verifier accept a stale compiled block, and the guest then runs the wrong code
+			// with no log line anywhere.
+			//
+			// This path gives every source word its own accumulator lane, so it folds
+			// nothing inside a block and there is no direction to be blind in. Upstream
+			// reaches the same conclusion in RPCS3 pull request 19230, which found the
+			// symmetry through missed triggers in LEGO Dimensions on Apple silicon.
+			//
+			// The cost is real and unmeasured here: the old ARM path did 4 accumulate
+			// operations for each 96 bytes and this one does 1 for each 64 bytes, which is
+			// more work per byte. Measure before putting an ARM path back, and if one comes
+			// back, its pair operation must be neither symmetric nor translation-invariant.
 			if ((end - starta) >= 192 && !g_cfg.core.precise_spu_verification)
 			{
-#ifndef ARCH_ARM64
-				for (u32 j = starta; j < end; j += 64)
+				// Loop if there is atleast (16 * stride) bytes of data to checksum to save some instruction cache
+				constexpr u32 checksum_block_size = 64;
+				constexpr u32 checksum_loop_vectors = 16;
+				const u32 checksum_vectors_per_block = checksum_block_size / stride;
+				const u32 checksum_loop_blocks = (checksum_loop_vectors + checksum_vectors_per_block - 1) / checksum_vectors_per_block;
+				const u32 checksum_loop_size = checksum_block_size * checksum_loop_blocks;
+				const u32 checksum_loop_end = starta + ((end - starta) / checksum_loop_size) * checksum_loop_size;
+
+				bool use_checksum_loop = (checksum_loop_end - starta) >= checksum_loop_size * 2;
+
+				for (u32 j = starta; use_checksum_loop && j < checksum_loop_end; j += 4)
+				{
+					if (!func.data[(j - start) / 4])
+					{
+						use_checksum_loop = false;
+						break;
+					}
+				}
+				if (use_checksum_loop)
+				{
+					const auto acc_init = ConstantAggregateZero::get(get_type<u32[16]>());
+					const auto loop_block = BasicBlock::Create(m_context, "spu_checksum_loop", m_function);
+					const auto loop_next = BasicBlock::Create(m_context, "spu_checksum_next", m_function);
+					const auto loop_preheader = m_ir->GetInsertBlock();
+					m_ir->CreateBr(loop_block);
+
+					m_ir->SetInsertPoint(loop_block);
+					const auto offset = m_ir->CreatePHI(get_type<u32>(), 2);
+					const auto acc0_phi = m_ir->CreatePHI(get_type<u32[16]>(), 2);
+					const auto acc1_phi = m_ir->CreatePHI(get_type<u32[16]>(), 2);
+
+					offset->addIncoming(m_ir->getInt32(0), loop_preheader);
+					acc0_phi->addIncoming(acc_init, loop_preheader);
+					acc1_phi->addIncoming(acc_init, loop_preheader);
+
+					const auto offset64 = m_ir->CreateZExt(offset, get_type<u64>());
+					llvm::Value* next_acc0 = acc0_phi;
+					llvm::Value* next_acc1 = acc1_phi;
+
+					for (u32 block = 0; block < checksum_loop_blocks; block++)
+					{
+						const auto vls = m_ir->CreateAlignedLoad(get_type<u32[16]>(), _ptr(data_addr, m_ir->CreateAdd(offset64, m_ir->getInt64(block * checksum_block_size))), llvm::MaybeAlign{4});
+
+						if (block & 1)
+						{
+							next_acc1 = m_ir->CreateAdd(next_acc1, vls);
+						}
+						else
+						{
+							next_acc0 = m_ir->CreateAdd(next_acc0, vls);
+						}
+					}
+
+					const auto next_offset = m_ir->CreateAdd(offset, m_ir->getInt32(checksum_loop_size));
+					const auto loop_again = m_ir->CreateICmpULT(next_offset, m_ir->getInt32(checksum_loop_end - starta));
+					m_ir->CreateCondBr(loop_again, loop_block, loop_next);
+
+					offset->addIncoming(next_offset, loop_block);
+					acc0_phi->addIncoming(next_acc0, loop_block);
+					acc1_phi->addIncoming(next_acc1, loop_block);
+					acc0 = next_acc0;
+					acc1 = next_acc1;
+
+					check_iterations += (checksum_loop_end - starta) / checksum_block_size;
+
+					m_ir->SetInsertPoint(loop_next);
+				}
+
+				for (u32 j = use_checksum_loop ? checksum_loop_end : starta; j < end; j += checksum_block_size)
 				{
 					int indices[16];
 					bool holes = false;
@@ -1922,12 +2013,12 @@ public:
 						if (k < start || k >= end || !func.data[(k - start) / 4])
 						{
 							indices[i] = 16;
-							holes = true;
+							holes      = true;
 						}
 						else
 						{
 							indices[i] = i;
-							data = true;
+							data       = true;
 						}
 					}
 
@@ -1940,7 +2031,7 @@ public:
 					llvm::Value* vls = nullptr;
 
 					// Load unaligned code block from LS
-					vls = m_ir->CreateAlignedLoad(get_type<u32[16]>(), _ptr<u32[16]>(data_addr, j - starta), llvm::MaybeAlign{4});
+					vls = m_ir->CreateAlignedLoad(get_type<u32[16]>(), _ptr(data_addr, j - starta), llvm::MaybeAlign{4});
 
 					// Mask if necessary
 					if (holes)
@@ -1961,7 +2052,7 @@ public:
 					check_iterations++;
 				}
 
-				llvm::Value* acc = (acc0 && acc1) ? m_ir->CreateAdd(acc0, acc1) : (acc0 ? acc0 : acc1);
+				llvm::Value* acc = (acc0 && acc1) ? m_ir->CreateAdd(acc0, acc1): (acc0 ? acc0 : acc1);
 
 				// Create the checksum
 				u32 checksum[16] = {0};
@@ -1993,198 +2084,6 @@ public:
 				// Compare result with zero
 				const auto cond = m_ir->CreateICmpNE(elem, m_ir->getInt64(0));
 				m_ir->CreateCondBr(cond, label_diff, label_body, m_md_unlikely);
-#else
-				constexpr u32 checksum_block_size = 96;
-				constexpr u32 checksum_loop_vectors = 16;
-				const u32 checksum_vectors_per_block = checksum_block_size / stride;
-				const u32 checksum_loop_blocks = (checksum_loop_vectors + checksum_vectors_per_block - 1) / checksum_vectors_per_block;
-				const u32 checksum_loop_size = checksum_block_size * checksum_loop_blocks;
-				const u32 checksum_loop_end = starta + ((end - starta) / checksum_loop_size) * checksum_loop_size;
-
-				bool use_checksum_loop = (checksum_loop_end - starta) >= checksum_loop_size * 2;
-
-				for (u32 j = starta; use_checksum_loop && j < checksum_loop_end; j += 4)
-				{
-					if (!func.data[(j - start) / 4])
-					{
-						use_checksum_loop = false;
-						break;
-					}
-				}
-
-				const auto acc_init = ConstantAggregateZero::get(get_type<u32[4]>());
-				llvm::Value* checksum_parts[4] = {acc_init, acc_init, acc_init, acc_init};
-				u32 checksum[16] = {0};
-
-				// 96 bytes per ARM checksum step, six NEON vectors:
-				//   vls[0]         -> add
-				//   vls[1], vls[2] -> add, then add (was UABA: one absolute-difference accumulate)
-				//   vls[3]         -> add
-				//   vls[4], vls[5] -> add, then add (was UABA)
-				//
-				// The pair lanes SUM, they do not take an absolute difference. |a - b| is not
-				// injective in a way that matters here: adding the same constant to both source
-				// vectors leaves it completely unchanged, so two code blocks that differ by a
-				// uniform delta across a pair checksum identically and the verifier accepts the
-				// wrong cached block. That shape is not hypothetical for SPU code -- job managers
-				// stream near-identical job binaries through the same local-store addresses, and a
-				// relocation that shifts two paired words by the same amount is exactly the
-				// invariant case. The x86 path above sums every word into its own accumulator lane
-				// and has no such class; summing here restores equivalent collision resistance for
-				// two extra ALU ops per 96-byte block. Fix taken from ARMSX3; upstream RPCS3 master
-				// still emits the UABA form.
-				const auto update_checksum = [&](const u32* words)
-				{
-					for (u32 i = 0; i < 4; i++)
-					{
-						checksum[i] += words[i];
-						checksum[4 + i] += words[4 + i] + words[8 + i];
-						checksum[8 + i] += words[12 + i];
-						checksum[12 + i] += words[16 + i] + words[20 + i];
-					}
-				};
-
-				if (use_checksum_loop)
-				{
-					for (u32 j = starta; j < checksum_loop_end; j += checksum_block_size)
-					{
-						u32 words[24];
-
-						for (u32 i = 0; i < 24; i++)
-						{
-							words[i] = func.data[(j + i * 4 - start) / 4];
-						}
-
-						update_checksum(words);
-					}
-
-					const auto loop_block = BasicBlock::Create(m_context, "spu_checksum_loop", m_function);
-					const auto loop_next = BasicBlock::Create(m_context, "spu_checksum_next", m_function);
-					const auto loop_preheader = m_ir->GetInsertBlock();
-					m_ir->CreateBr(loop_block);
-
-					m_ir->SetInsertPoint(loop_block);
-					const auto offset = m_ir->CreatePHI(get_type<u32>(), 2);
-					llvm::PHINode* acc_phi[4];
-					llvm::Value* next_acc[4];
-
-					for (u32 part = 0; part < 4; part++)
-					{
-						acc_phi[part] = m_ir->CreatePHI(get_type<u32[4]>(), 2);
-						acc_phi[part]->addIncoming(checksum_parts[part], loop_preheader);
-						next_acc[part] = acc_phi[part];
-					}
-
-					offset->addIncoming(m_ir->getInt32(0), loop_preheader);
-					const auto offset64 = m_ir->CreateZExt(offset, get_type<u64>());
-
-					for (u32 block = 0; block < checksum_loop_blocks; block++)
-					{
-						llvm::Value* vls[6];
-
-						for (u32 part = 0; part < 6; part++)
-						{
-							vls[part] = m_ir->CreateAlignedLoad(get_type<u32[4]>(), _ptr(data_addr, m_ir->CreateAdd(offset64, m_ir->getInt64(block * checksum_block_size + part * 16))), llvm::MaybeAlign{4});
-						}
-
-						next_acc[0] = m_ir->CreateAdd(next_acc[0], vls[0]);
-						next_acc[1] = m_ir->CreateAdd(next_acc[1], m_ir->CreateAdd(vls[1], vls[2]));
-						next_acc[2] = m_ir->CreateAdd(next_acc[2], vls[3]);
-						next_acc[3] = m_ir->CreateAdd(next_acc[3], m_ir->CreateAdd(vls[4], vls[5]));
-					}
-
-					const auto next_offset = m_ir->CreateAdd(offset, m_ir->getInt32(checksum_loop_size));
-					const auto loop_again = m_ir->CreateICmpULT(next_offset, m_ir->getInt32(checksum_loop_end - starta));
-					m_ir->CreateCondBr(loop_again, loop_block, loop_next);
-					offset->addIncoming(next_offset, loop_block);
-
-					for (u32 part = 0; part < 4; part++)
-					{
-						acc_phi[part]->addIncoming(next_acc[part], loop_block);
-						checksum_parts[part] = next_acc[part];
-					}
-
-					check_iterations += (checksum_loop_end - starta) / checksum_block_size;
-					m_ir->SetInsertPoint(loop_next);
-				}
-
-				for (u32 j = use_checksum_loop ? checksum_loop_end : starta; j < end; j += checksum_block_size)
-				{
-					llvm::Value* vls[6] = {};
-					u32 words[24] = {};
-					bool any_data = false;
-
-					for (u32 part = 0; part < 6; part++)
-					{
-						int indices[4];
-						bool holes = false;
-						bool data = false;
-
-						for (u32 i = 0; i < 4; i++)
-						{
-							const u32 k = j + (part * 4 + i) * 4;
-
-							if (k < start || k >= end || !func.data[(k - start) / 4])
-							{
-								indices[i] = 4;
-								holes = true;
-							}
-							else
-							{
-								indices[i] = i;
-								data = true;
-								words[part * 4 + i] = func.data[(k - start) / 4];
-							}
-						}
-
-						if (!data)
-						{
-							vls[part] = acc_init;
-							continue;
-						}
-
-						any_data = true;
-						vls[part] = m_ir->CreateAlignedLoad(get_type<u32[4]>(), _ptr<u32[4]>(data_addr, j + part * 16 - starta), llvm::MaybeAlign{4});
-
-						if (holes)
-						{
-							vls[part] = m_ir->CreateShuffleVector(vls[part], acc_init, llvm::ArrayRef(indices, 4));
-						}
-					}
-
-					if (!any_data)
-					{
-						continue;
-					}
-
-					checksum_parts[0] = m_ir->CreateAdd(checksum_parts[0], vls[0]);
-					checksum_parts[1] = m_ir->CreateAdd(checksum_parts[1], m_ir->CreateAdd(vls[1], vls[2]));
-					checksum_parts[2] = m_ir->CreateAdd(checksum_parts[2], vls[3]);
-					checksum_parts[3] = m_ir->CreateAdd(checksum_parts[3], m_ir->CreateAdd(vls[4], vls[5]));
-
-					update_checksum(words);
-
-					check_iterations++;
-				}
-
-				llvm::Value* elem = nullptr;
-
-				for (u32 part = 0; part < 4; part++)
-				{
-					auto* const_vector = ConstantDataVector::get(m_context, llvm::ArrayRef(checksum + part * 4, 4));
-					llvm::Value* acc = m_ir->CreateXor(checksum_parts[part], const_vector);
-					acc = m_ir->CreateBitCast(acc, get_type<u64[2]>());
-
-					for (u32 i = 0; i < 2; i++)
-					{
-						const auto lane = m_ir->CreateExtractElement(acc, i);
-						elem = elem ? m_ir->CreateOr(elem, lane) : lane;
-					}
-				}
-
-				const auto cond = m_ir->CreateICmpNE(elem, m_ir->getInt64(0));
-				m_ir->CreateCondBr(cond, label_diff, label_body, m_md_unlikely);
-#endif
 			}
 #ifdef ARCH_ARM64
 			else

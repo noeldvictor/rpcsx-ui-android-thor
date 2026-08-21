@@ -3670,13 +3670,23 @@ exchanged between two versions of a streamed job binary is ordinary code motion,
 and this fork's own comment already describes the setting: "job managers stream
 near-identical job binaries through the same local-store addresses".
 
-**What to do.** Take `#19230`: delete the ARM specialization and use the generic
-checksum. It costs some ALU work per block, and the pull request says the generic
-path is still faster even on narrow hardware. It also makes ARM64 verification
-behave exactly like every other target, which removes a whole class of
-"only on Thor" mystery. If the ALU cost turns out to matter, an ARM path can come
-back later, but only with a pair operation that is not symmetric and not
-translation-invariant. `a + b` is both, so it cannot come back as it stands.
+**DONE 2026-08-21.** The ARM specialization is deleted. ARM64 now runs the same
+512-bit checksum as every other target, which gives every source word its own
+accumulator lane and folds nothing inside a block. The change is `-200/+99` lines
+in `SPULLVMRecompiler.cpp`, and the generic body came from upstream
+`origin/master`, not from a hand rewrite, so the rolled `checksum_loop` came with
+it. Without that loop the old generic body here was unrolled only, and a large
+block would have emitted a long verification prologue on every entry.
+
+The cost is real and unmeasured. The old ARM path did four accumulate operations
+for each 96 bytes; this one does one for each 64 bytes, which is more work per
+byte. If it ever measures badly, an ARM path can come back, but only with a pair
+operation that is neither symmetric nor translation-invariant. `a + b` is both,
+so it cannot come back as it stands.
+
+**Still to do: a device round.** This changes what the verifier accepts. Nothing
+has booted with it. Watch for cache-rejection rows and for a change in the SPU
+program build count, which was about `1188` across eight workers on 2026-08-21.
 
 **What to measure before believing anything here.** Nobody has shown a real
 collision in this fork. The claim above is about the arithmetic, not about a
