@@ -112,6 +112,19 @@ This grants installed identity only. Classify it `installed-exact-no-launch` /
 credit. The 32-against-64 group-size A/B still needs one bounded round on a free
 device, and `RPCSX_THOR_CS_GROUP_SIZE` makes that a single-build comparison.
 
+**Superseded the same day.** The upstream Android UI merge changed the app, so
+the device now carries the post-merge build instead:
+
+- Exact APK `C5DE64F6...BD6622`, 73,841,738 bytes, `thortest`, arm64-v8a only.
+- It replaced `E0F652F5...E04B87`. The five core ports are identical in both.
+- Installed hash equals the host hash. `HASH_MATCH=True`.
+- No activity started. PID absent, `mResumedActivity` empty.
+- Silicon was 48.2 C before and 47.8 C after. The gate stayed bypassed, on the
+  same instruction, because the device was still in use.
+
+The classification does not change. It is still `installed-exact-no-launch` and
+still carries no measured credit.
+
 ## Evidence
 
 - Captures: none. The install was direct, so it produced no gate capture.
