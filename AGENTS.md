@@ -438,6 +438,26 @@ Keep `CLAUDE.md` as the map. New detail belongs in the topic file, not in it.
 - Latest corrected-contract field proof `20260715-220332-cpu4-verify25cc-e379fba-extendedkey-first-battle-windows` is a valid moving-field counterproof: correct field/animation through `185s`, five external-clean host snapshots, zero targeted fatal/draw/access/Vulkan/device-lost/assertion hits, and strict verifier `732/732` accepted with `1878` hits and mismatch/overflow `0`. Scripted screenshot labels did not make it a battle.
 - Exact repaired-binary Options proof `20260715-223137-cpu4-verify25cc-e379fba-options-fastselect-windows` reached and held the complete title Options page through `130s`, had six external-clean host snapshots and zero targeted fatal signatures, and passed the strict verifier `461/461` with `957` hits and mismatch/overflow `0`. Do not rerun capped field or Options; genuine first battle is the only remaining correctness checkpoint.
 
+## Fork And Pull Request Watch
+
+Watch the RPCS3 forks and the RPCS3 pull requests. Another tree often fixes an
+Android fault or an ARM64 fault before we meet it. Run the survey at the start
+of a sprint round, and not more than one time a week. The survey is host work.
+It does not touch Thor.
+
+- The ledger is `docs/fork-watch.md`. It holds the watch list, the API
+  commands, and every survey result.
+- The first tree on the list is `https://github.com/sashkinbro/EmuCoreC`. It is
+  an active RPCS3 fork for Android with Adreno fixes and ARM64 compile fixes.
+- Every tree on the list is GPL-2.0. A port is legal. Put the origin commit
+  hash in the port commit message.
+- Verify a claim against the source. Do not trust a commit title. Diff the
+  added lines against the vendored core in `app/src/main/cpp/rpcsx/`.
+- Check the file path before you call a file absent. The vendored core uses
+  the old layout `rpcs3/util/JIT*`. Current upstream uses `Utilities/JIT*`.
+- Record a survey that finds nothing. Write the date and the empty result.
+- A port needs the same proof as any other change. See `Speed Claim Rules`.
+
 ## ARM64 Upstream Perf Uplift
 
 Tracks the upstream RPCS3 ARM64 CPU-emulation series against the vendored core.
