@@ -158,12 +158,8 @@ Not taken, and why:
 
 Follow-up work this survey found. None of it is started:
 
-1. **`VK_EXT_extended_dynamic_state`** (`47220b15`). EmuCoreC sets topology,
-   cull mode, front face and the depth state at draw time instead of baking
-   them into the pipeline. That removes pipeline permutations, which is the
-   Adreno stutter we care about. This tree has no `extended_dynamic_state`
-   support at all, so the port needs the device query, the command pointers,
-   `vk::normalize_dynamic_pipeline_state()` and `vk::get_pipeline_topology()`.
+1. ~~**`VK_EXT_extended_dynamic_state`**~~ Done on 2026-08-21. See the entry
+   below.
 2. **`VKGSRender::on_vram_exhausted()` while uninterruptible** (`47220b15`).
    Our version asserts and ends the process. EmuCoreC releases what it can
    without a hard sync. The port needs `vk::is_last_ditch_eviction()`, which
@@ -172,3 +168,39 @@ Follow-up work this survey found. None of it is started:
    the branching `min_max()` helper, which does not vectorise. Our own
    `primitive_restart_impl` shows the branch-free shape that does. EmuCoreC did
    not fix this one either.
+
+### 2026-08-21 — EmuCoreC, extended dynamic state
+
+Follow-up 1 above is done. `VK_EXT_extended_dynamic_state` now moves the
+topology, the cull mode, the front face and the three depth states out of the
+pipeline object and into the command buffer.
+
+What the port covers, beyond the EmuCoreC commit:
+
+* EmuCoreC's device hunk REPLACES the `VK_EXT_multi_draw` feature query with the
+  new one, so their tree stopped asking for multi-draw. Read that hunk before
+  you take anything else from `47220b15`. This tree adds the new query beside
+  the old one.
+* The six entry points come from `vkGetDeviceProcAddr`, and the code asks for
+  the `EXT` name first and the Vulkan 1.3 core name second. A loader can export
+  one and not the other. If any one of the six is missing, the feature goes off,
+  because the pipeline objects and the draw path must agree about who owns
+  these states.
+* Three places produce pipeline properties, not one: the draw path, the shader
+  interpreter preload, and the disk shader cache. All three normalise now. The
+  cache matters most: a key built from raw properties never matches a key built
+  from normalised ones, and every preloaded pipeline would miss.
+* The draw path normalises the freshly decoded properties BEFORE it compares
+  them with the current ones. EmuCoreC compares first and normalises after, so
+  with the feature live the comparison never succeeds and the pipeline lookup
+  runs for every draw with a dirty pipeline configuration.
+* `debug.rpcsx.thor.vk_dynamic_state_off = 1` turns the feature off for an A/B
+  run on the device. A driver which emulates these states instead of setting
+  registers can be slower, and nobody measured this on Thor.
+
+A device log line reports the state: "Extended dynamic state is live." Flipping
+the property leaves the old shader cache entries unused, not wrong: the draw
+path asks for a different key, misses, and compiles again.
+
+Not measured. The claim is only that the pipeline count falls, and even that is
+unverified on hardware.

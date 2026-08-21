@@ -12,6 +12,9 @@
 
 namespace vk
 {
+	VkFrontFace get_front_face(rsx::front_face ffv);
+	VkCullModeFlags get_cull_face(rsx::cull_face cfv);
+
 	VkImageViewType get_view_type(rsx::texture_dimension_extended type)
 	{
 		switch (type)
@@ -141,6 +144,35 @@ VkRenderPass VKGSRender::get_render_pass()
 	}
 
 	return m_cached_renderpass;
+}
+
+// Push the states which the pipeline object no longer holds. See
+// vk::normalize_dynamic_pipeline_state(): the pipeline keeps only the class of the
+// topology, and placeholder values for the cull mode, the front face and the depth
+// state. Every draw sets the real ones here.
+void VKGSRender::set_extended_dynamic_state()
+{
+	m_device->_vkCmdSetPrimitiveTopologyEXT(*m_current_command_buffer, m_current_primitive_topology);
+
+	m_device->_vkCmdSetCullModeEXT(*m_current_command_buffer,
+		rsx::method_registers.cull_face_enabled()
+			? vk::get_cull_face(rsx::method_registers.cull_face_mode())
+			: VK_CULL_MODE_NONE);
+
+	m_device->_vkCmdSetFrontFaceEXT(*m_current_command_buffer,
+		vk::get_front_face(rsx::method_registers.front_face_mode()));
+
+	// Depth write and the compare operation are meaningless without the depth test,
+	// and decode_rsx_state() only wrote them when the test was on. Keep that shape.
+	const bool depth_test_enabled = rsx::method_registers.depth_test_enabled();
+
+	m_device->_vkCmdSetDepthTestEnableEXT(*m_current_command_buffer, depth_test_enabled ? VK_TRUE : VK_FALSE);
+
+	m_device->_vkCmdSetDepthWriteEnableEXT(*m_current_command_buffer,
+		(depth_test_enabled && rsx::method_registers.depth_write_enabled()) ? VK_TRUE : VK_FALSE);
+
+	m_device->_vkCmdSetDepthCompareOpEXT(*m_current_command_buffer,
+		depth_test_enabled ? vk::get_compare_func(rsx::method_registers.depth_func()) : VK_COMPARE_OP_NEVER);
 }
 
 void VKGSRender::update_draw_state()
@@ -933,6 +965,13 @@ void VKGSRender::emit_geometry(u32 sub_index)
 			m_device->_vkCmdBeginConditionalRenderingEXT(*m_current_command_buffer, &info);
 			m_current_command_buffer->flags |= vk::command_buffer::cb_has_conditional_render;
 		}
+	}
+
+	// These come from the RSX registers, not from the pipeline object, so they have
+	// to be pushed for every draw and not only when the pipeline is rebound.
+	if (m_device->get_extended_dynamic_state_support())
+	{
+		set_extended_dynamic_state();
 	}
 
 	// Bind the new set of descriptors for use with this draw call

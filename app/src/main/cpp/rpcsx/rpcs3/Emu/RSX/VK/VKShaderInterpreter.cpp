@@ -90,6 +90,13 @@ namespace vk
 				VK_BLEND_OP_ADD, VK_BLEND_OP_ADD);
 			pipe_properties.push_back(base_props);
 
+			// The interpreter preloads these before the first draw, so they have to carry
+			// the same pipeline identity which the draw path will ask for.
+			for (auto& props : pipe_properties)
+			{
+				vk::normalize_dynamic_pipeline_state(props);
+			}
+
 			return pipe_properties;
 		}
 	}

@@ -25,6 +25,66 @@ namespace vk
 	int g_num_pipe_compilers = 0;
 	atomic_t<int> g_compiler_index{};
 
+	// True when the draw path, and not the pipeline object, owns the topology, the
+	// cull mode, the front face and the depth state.
+	//
+	// The shader cache loader and the interpreter preloader ask this as well as the
+	// draw path, and the first of those can run before a device exists.
+	static bool extended_dynamic_state_active()
+	{
+		return g_render_device && g_render_device->get_extended_dynamic_state_support();
+	}
+
+	VkPrimitiveTopology get_pipeline_topology(VkPrimitiveTopology topology, VkBool32 primitive_restart)
+	{
+		if (!extended_dynamic_state_active())
+		{
+			return topology;
+		}
+
+		// vkCmdSetPrimitiveTopology can only move inside the topology CLASS which built
+		// the pipeline object. Pick one member of the class for every member of it, so
+		// that the whole class shares one pipeline.
+		//
+		// The choice inside the class is not free. A pipeline with
+		// primitiveRestartEnable set must name a strip topology or a fan topology, so
+		// the restart flag decides which member represents the class.
+		switch (topology)
+		{
+		case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+		case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+			return primitive_restart ? VK_PRIMITIVE_TOPOLOGY_LINE_STRIP : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+		case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+		case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+		case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+			return primitive_restart ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		default:
+			return topology;
+		}
+	}
+
+	void normalize_dynamic_pipeline_state(pipeline_props& props)
+	{
+		if (!extended_dynamic_state_active())
+		{
+			return;
+		}
+
+		// Take the states which the draw path now sets out of the pipeline identity.
+		// The values below are placeholders and never reach the GPU: every one of them
+		// is overwritten by set_extended_dynamic_state() before the draw. They only
+		// have to be the SAME placeholders every time, so that two RSX states which
+		// differ in nothing else now hash to one pipeline.
+		props.state.ia.topology = get_pipeline_topology(props.state.ia.topology, props.state.ia.primitiveRestartEnable);
+
+		props.state.rs.cullMode = VK_CULL_MODE_NONE;
+		props.state.rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+		props.state.ds.depthTestEnable = VK_FALSE;
+		props.state.ds.depthWriteEnable = VK_FALSE;
+		props.state.ds.depthCompareOp = VK_COMPARE_OP_NEVER;
+	}
+
 	namespace
 	{
 		VkPipelineCache g_driver_pipeline_cache = VK_NULL_HANDLE;
@@ -474,6 +534,16 @@ namespace vk
 		dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_STENCIL_WRITE_MASK);
 		dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
 		dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
+
+		if (extended_dynamic_state_active())
+		{
+			dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY_EXT);
+			dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_CULL_MODE_EXT);
+			dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_FRONT_FACE_EXT);
+			dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT);
+			dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT);
+			dynamic_state_descriptors.push_back(VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT);
+		}
 
 		auto pdss = &create_info.state.ds;
 		VkPipelineDepthStencilStateCreateInfo ds2;

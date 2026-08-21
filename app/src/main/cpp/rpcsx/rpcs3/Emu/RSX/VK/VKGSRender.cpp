@@ -2012,8 +2012,13 @@ bool VKGSRender::load_program()
 {
 	const auto shadermode = g_cfg.video.shadermode.get();
 
-	// TODO: EXT_dynamic_state should get rid of this sillyness soon (kd)
 	const auto vertex_state = vk::decode_vertex_input_assembly_state();
+
+	// The pipeline object holds the topology itself, or, with
+	// VK_EXT_extended_dynamic_state, only the class of it. The draw path sets the
+	// real one, so keep both.
+	const auto pipeline_topology = vk::get_pipeline_topology(vertex_state.primitive, vertex_state.restart_index_enabled);
+	m_current_primitive_topology = vertex_state.primitive;
 
 	if (m_graphics_state & rsx::pipeline_state::invalidate_pipeline_bits)
 	{
@@ -2026,7 +2031,7 @@ bool VKGSRender::load_program()
 	}
 	else if (!(m_graphics_state & rsx::pipeline_state::pipeline_config_dirty) &&
 			 m_program &&
-			 m_pipeline_properties.state.ia.topology == vertex_state.primitive &&
+			 m_pipeline_properties.state.ia.topology == pipeline_topology &&
 			 m_pipeline_properties.state.ia.primitiveRestartEnable == vertex_state.restart_index_enabled)
 	{
 		if (!m_shader_interpreter.is_interpreter(m_program)) [[likely]]
@@ -2059,6 +2064,8 @@ bool VKGSRender::load_program()
 			m_device->get_depth_bounds_support());
 
 		properties.renderpass_key = m_current_renderpass_key;
+		vk::normalize_dynamic_pipeline_state(properties);
+
 		if (m_program &&
 			!m_shader_interpreter.is_interpreter(m_program) &&
 			m_pipeline_properties == properties)
@@ -2073,10 +2080,12 @@ bool VKGSRender::load_program()
 	}
 	else
 	{
-		// Update primitive type and restart index. Note that this is not needed with EXT_dynamic_state
-		m_pipeline_properties.state.set_primitive_type(vertex_state.primitive);
+		// Update primitive type and restart index. With EXT_extended_dynamic_state the
+		// pipeline object only needs the class of the topology.
+		m_pipeline_properties.state.set_primitive_type(pipeline_topology);
 		m_pipeline_properties.state.enable_primitive_restart(vertex_state.restart_index_enabled);
 		m_pipeline_properties.renderpass_key = m_current_renderpass_key;
+		vk::normalize_dynamic_pipeline_state(m_pipeline_properties);
 	}
 
 	m_vertex_prog = nullptr;

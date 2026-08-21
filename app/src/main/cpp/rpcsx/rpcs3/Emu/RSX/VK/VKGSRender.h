@@ -185,6 +185,9 @@ private:
 	rsx::invalidation_cause m_offloader_fault_cause;
 
 	vk::draw_call_t m_current_draw{};
+	// The topology the guest asked for. With VK_EXT_extended_dynamic_state the
+	// pipeline object holds only its class, so the draw path sets this one.
+	VkPrimitiveTopology m_current_primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	u64 m_current_renderpass_key = 0;
 	VkRenderPass m_cached_renderpass = VK_NULL_HANDLE;
 	std::vector<vk::image*> m_fbo_images;
@@ -229,6 +232,7 @@ private:
 	VkRenderPass get_render_pass();
 
 	void update_draw_state();
+	void set_extended_dynamic_state();
 
 	void check_heap_status(u32 flags = VK_HEAP_CHECK_ALL);
 	void check_present_status();

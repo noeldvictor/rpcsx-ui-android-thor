@@ -89,6 +89,12 @@ namespace vk
 		template <typename... Args>
 		void add_pipeline_entry(RSXVertexProgram& vp, RSXFragmentProgram& fp, vk::pipeline_props& props, Args&&... args)
 		{
+			// These props come off the disk cache. That cache can hold entries written
+			// before extended dynamic state was live, or written with it live and read
+			// back without it. Normalise them, or the key built here does not match the
+			// key the draw path builds, and every preloaded pipeline misses.
+			vk::normalize_dynamic_pipeline_state(props);
+
 			vk::pipeline_preload_cache_hit_scope preload_scope;
 			get_graphics_pipeline(nullptr, vp, fp, props, false, false, std::forward<Args>(args)...);
 		}

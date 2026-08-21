@@ -90,6 +90,7 @@ namespace vk
 			bool barycentric_coords = false;
 			bool conditional_rendering = false;
 			bool debug_utils = false;
+			bool extended_dynamic_state = false;
 			bool external_memory_host = false;
 			bool framebuffer_loops = false;
 			bool sampler_mirror_clamped = false;
@@ -170,6 +171,12 @@ namespace vk
 		PFN_vkCmdWaitEvents2KHR _vkCmdWaitEvents2KHR = nullptr;
 		PFN_vkCmdPipelineBarrier2KHR _vkCmdPipelineBarrier2KHR = nullptr;
 		PFN_vkGetDeviceFaultInfoEXT _vkGetDeviceFaultInfoEXT = nullptr;
+		PFN_vkCmdSetPrimitiveTopologyEXT _vkCmdSetPrimitiveTopologyEXT = nullptr;
+		PFN_vkCmdSetCullModeEXT _vkCmdSetCullModeEXT = nullptr;
+		PFN_vkCmdSetFrontFaceEXT _vkCmdSetFrontFaceEXT = nullptr;
+		PFN_vkCmdSetDepthTestEnableEXT _vkCmdSetDepthTestEnableEXT = nullptr;
+		PFN_vkCmdSetDepthWriteEnableEXT _vkCmdSetDepthWriteEnableEXT = nullptr;
+		PFN_vkCmdSetDepthCompareOpEXT _vkCmdSetDepthCompareOpEXT = nullptr;
 
 	public:
 		render_device() = default;
@@ -239,6 +246,13 @@ namespace vk
 		bool get_external_memory_host_support() const
 		{
 			return pgpu->optional_features_support.external_memory_host;
+		}
+		// VK_EXT_extended_dynamic_state. When this is live the draw path sets
+		// topology, cull mode, front face and the depth state for each draw, and
+		// the pipeline object carries none of them.
+		bool get_extended_dynamic_state_support() const
+		{
+			return pgpu->optional_features_support.extended_dynamic_state;
 		}
 		bool get_surface_capabilities_2_support() const
 		{

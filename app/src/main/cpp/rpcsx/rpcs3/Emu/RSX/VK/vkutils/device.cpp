@@ -27,6 +27,32 @@ namespace vk
 		return value;
 	}
 
+	// Read once, for the same reason.
+	//
+	// VK_EXT_extended_dynamic_state moves topology, cull mode, front face and the
+	// depth state out of the pipeline object and into the command buffer. That
+	// removes pipeline permutations, which is the stutter we care about. It also
+	// gives the driver less to fold into the pipeline ahead of time, so a driver
+	// which emulates these states can be slower. Nothing measured this on Thor
+	// yet, so keep an off switch for an A/B run.
+	//
+	//   debug.rpcsx.thor.vk_dynamic_state_off = 1   (default 0)
+	static bool thor_extended_dynamic_state_disabled()
+	{
+		static const bool value = []()
+		{
+#ifdef ANDROID
+			char buffer[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.vk_dynamic_state_off", buffer);
+			return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
+#else
+			return false;
+#endif
+		}();
+
+		return value;
+	}
+
 	// Global shared render device
 	const render_device* g_render_device = nullptr;
 
@@ -121,6 +147,14 @@ namespace vk
 				features2.pNext = &pipeline_cache_control_info;
 			}
 
+			VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_dynamic_state_info{};
+			if (device_extensions.is_supported(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME))
+			{
+				extended_dynamic_state_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+				extended_dynamic_state_info.pNext = features2.pNext;
+				features2.pNext = &extended_dynamic_state_info;
+			}
+
 			auto _vkGetPhysicalDeviceFeatures2KHR = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2KHR>(VK_GET_SYMBOL(vkGetInstanceProcAddr)(parent, "vkGetPhysicalDeviceFeatures2KHR"));
 			ensure(_vkGetPhysicalDeviceFeatures2KHR); // "vkGetInstanceProcAddress failed to find entry point!"
 			_vkGetPhysicalDeviceFeatures2KHR(dev, &features2);
@@ -136,6 +170,7 @@ namespace vk
 			optional_features_support.barycentric_coords = !!shader_barycentric_info.fragmentShaderBarycentric;
 			optional_features_support.framebuffer_loops = !!fbo_loops_info.attachmentFeedbackLoopLayout;
 			optional_features_support.extended_device_fault = !!device_fault_info.deviceFault;
+			optional_features_support.extended_dynamic_state = !!extended_dynamic_state_info.extendedDynamicState;
 			optional_features_support.pipeline_creation_cache_control = !!pipeline_cache_control_info.pipelineCreationCacheControl;
 			optional_features_support.pipeline_creation_cache_control_extension =
 				optional_features_support.pipeline_creation_cache_control &&
@@ -230,6 +265,12 @@ namespace vk
 		{
 			rsx_log.notice("Conditional rendering disabled by debug.rpcsx.thor.vk_cond_render_off: trades GPU work for reliability (device loss on Turnip, unbounded render pass allocations on the proprietary Qualcomm driver).");
 			optional_features_support.conditional_rendering = false;
+		}
+
+		if (optional_features_support.extended_dynamic_state && thor_extended_dynamic_state_disabled())
+		{
+			rsx_log.notice("Extended dynamic state disabled by debug.rpcsx.thor.vk_dynamic_state_off: the pipeline object carries the topology, the cull mode, the front face and the depth state again.");
+			optional_features_support.extended_dynamic_state = false;
 		}
 	}
 
@@ -734,6 +775,11 @@ namespace vk
 			requested_extensions.push_back(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME);
 		}
 
+		if (pgpu->optional_features_support.extended_dynamic_state)
+		{
+			requested_extensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
+		}
+
 		enabled_features.robustBufferAccess = ensure(pgpu->features.robustBufferAccess, "robustBufferAccess is unsupported");
 		enabled_features.fullDrawIndexUint32 = VK_TRUE;
 		enabled_features.independentBlend = ensure(pgpu->features.independentBlend, "independentBlend is unsupported");
@@ -923,6 +969,15 @@ namespace vk
 			device.pNext = &fbo_loop_features;
 		}
 
+		VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_dynamic_state_features{};
+		if (pgpu->optional_features_support.extended_dynamic_state)
+		{
+			extended_dynamic_state_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+			extended_dynamic_state_features.extendedDynamicState = VK_TRUE;
+			extended_dynamic_state_features.pNext = const_cast<void*>(device.pNext);
+			device.pNext = &extended_dynamic_state_features;
+		}
+
 		VkPhysicalDeviceSynchronization2FeaturesKHR synchronization2_info{};
 		if (pgpu->optional_features_support.synchronization_2)
 		{
@@ -996,6 +1051,41 @@ namespace vk
 		{
 			_vkCmdBeginConditionalRenderingEXT = reinterpret_cast<PFN_vkCmdBeginConditionalRenderingEXT>(VK_GET_SYMBOL(vkGetDeviceProcAddr)(dev, "vkCmdBeginConditionalRenderingEXT"));
 			_vkCmdEndConditionalRenderingEXT = reinterpret_cast<PFN_vkCmdEndConditionalRenderingEXT>(VK_GET_SYMBOL(vkGetDeviceProcAddr)(dev, "vkCmdEndConditionalRenderingEXT"));
+		}
+
+		if (pgpu->optional_features_support.extended_dynamic_state)
+		{
+			// Vulkan 1.3 promoted these to core. Ask for the extension name first, and
+			// fall back to the core name, because a loader can export one and not the
+			// other. If any one of the six is absent, the feature goes off: the pipeline
+			// objects and the draw path must agree about who owns these states.
+			const auto get_proc = [&](const char* ext_name, const char* core_name) -> PFN_vkVoidFunction
+			{
+				if (auto proc = VK_GET_SYMBOL(vkGetDeviceProcAddr)(dev, ext_name))
+				{
+					return proc;
+				}
+
+				return VK_GET_SYMBOL(vkGetDeviceProcAddr)(dev, core_name);
+			};
+
+			_vkCmdSetPrimitiveTopologyEXT = reinterpret_cast<PFN_vkCmdSetPrimitiveTopologyEXT>(get_proc("vkCmdSetPrimitiveTopologyEXT", "vkCmdSetPrimitiveTopology"));
+			_vkCmdSetCullModeEXT = reinterpret_cast<PFN_vkCmdSetCullModeEXT>(get_proc("vkCmdSetCullModeEXT", "vkCmdSetCullMode"));
+			_vkCmdSetFrontFaceEXT = reinterpret_cast<PFN_vkCmdSetFrontFaceEXT>(get_proc("vkCmdSetFrontFaceEXT", "vkCmdSetFrontFace"));
+			_vkCmdSetDepthTestEnableEXT = reinterpret_cast<PFN_vkCmdSetDepthTestEnableEXT>(get_proc("vkCmdSetDepthTestEnableEXT", "vkCmdSetDepthTestEnable"));
+			_vkCmdSetDepthWriteEnableEXT = reinterpret_cast<PFN_vkCmdSetDepthWriteEnableEXT>(get_proc("vkCmdSetDepthWriteEnableEXT", "vkCmdSetDepthWriteEnable"));
+			_vkCmdSetDepthCompareOpEXT = reinterpret_cast<PFN_vkCmdSetDepthCompareOpEXT>(get_proc("vkCmdSetDepthCompareOpEXT", "vkCmdSetDepthCompareOp"));
+
+			if (!_vkCmdSetPrimitiveTopologyEXT || !_vkCmdSetCullModeEXT || !_vkCmdSetFrontFaceEXT ||
+				!_vkCmdSetDepthTestEnableEXT || !_vkCmdSetDepthWriteEnableEXT || !_vkCmdSetDepthCompareOpEXT)
+			{
+				rsx_log.error("vk: The driver reports VK_EXT_extended_dynamic_state but does not export all six entry points. The feature is off.");
+				pgpu->optional_features_support.extended_dynamic_state = false;
+			}
+			else
+			{
+				rsx_log.notice("vk: Extended dynamic state is live. The draw path owns the topology, the cull mode, the front face and the depth state.");
+			}
 		}
 
 		if (pgpu->optional_features_support.debug_utils)
