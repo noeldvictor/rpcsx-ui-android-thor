@@ -1,8 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
-    id("org.jetbrains.kotlin.plugin.serialization")
+    alias(libs.plugins.kotlin.serialization)
     id("kotlin-parcelize")
 }
 
@@ -149,7 +148,7 @@ require(rpcsxAndroidAbis.isNotEmpty()) {
 
 android {
     namespace = "net.rpcsx"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = "29.0.13113456"
 
     defaultConfig {
@@ -333,5 +332,5 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.squareup.okhttp3)
     implementation(libs.androidx.documentfile)
-    implementation(libs.compose.preferences)
+    implementation(libs.materialswitch)
 }

@@ -97,9 +97,9 @@ import net.rpcsx.ui.cheats.CheatsScreen
 import net.rpcsx.ui.drivers.GpuDriversScreen
 import net.rpcsx.ui.games.GameDetailScreen
 import net.rpcsx.ui.games.GamesScreen
-import net.rpcsx.ui.settings.AdvancedSettingsScreen
-import net.rpcsx.ui.settings.ControllerSettings
-import net.rpcsx.ui.settings.SettingsScreen
+import net.rpcsx.ui.settings.main.AdvancedSettingsScreen
+import net.rpcsx.ui.settings.main.ControllerSettingsScreen
+import net.rpcsx.ui.settings.main.SettingsScreen
 import net.rpcsx.GameFolderRescan
 import net.rpcsx.ui.tools.InstalledDataScreen
 import net.rpcsx.ui.tools.TrimScreen
@@ -327,7 +327,7 @@ fun AppNavHost() {
         composable(
             route = "controls"
         ) {
-            ControllerSettings(
+            ControllerSettingsScreen(
                 navigateBack = navController::navigateUp
             )
         }
@@ -337,7 +337,7 @@ fun AppNavHost() {
             arguments = listOf(navArgument("path") { type = NavType.StringType })
         ) { entry ->
             val path = Uri.decode(entry.arguments?.getString("path").orEmpty())
-            ControllerSettings(
+            ControllerSettingsScreen(
                 titleId = GameRepository.find(path)?.info?.titleId?.value,
                 navigateBack = navController::navigateUp
             )
