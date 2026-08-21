@@ -394,7 +394,7 @@ extern void ppu_initialize();
 extern void ppu_finalize(const ppu_module<lv2_obj>& info, bool force_mem_release = false);
 extern bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only = false, u64 file_size = 0);
 extern bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_size, concurent_memory_limit& memory_limit);
-static void ppu_initialize2(class jit_compiler& jit, const ppu_module<lv2_obj>& module_part, const std::string& cache_path, const std::string& obj_name);
+static bool ppu_initialize2(class jit_compiler& jit, const ppu_module<lv2_obj>& module_part, const std::string& cache_path, const std::string& obj_name);
 extern bool ppu_load_exec(const ppu_exec_object&, bool virtual_load, const std::string&, utils::serial* = nullptr);
 extern std::pair<shared_ptr<lv2_overlay>, CellError> ppu_load_overlay(const ppu_exec_object&, bool virtual_load, const std::string& path, s64 file_offset, utils::serial* = nullptr);
 extern void ppu_unload_prx(const lv2_prx&);
@@ -5266,6 +5266,50 @@ struct jit_core_allocator
 	// Initialize global semaphore with the max number of threads
 	::semaphore<0x7fff> sem{std::max<s16>(thread_count, 1)};
 
+#ifdef ANDROID
+	// The dynamic companion to limit() below. limit() picks the worker count once,
+	// at startup, and it reads memory before the emulator maps the PS3 address
+	// space. The reading is therefore optimistic, and the count cannot fall later.
+	// These helpers look again at the moment a module starts, and hold a module
+	// back while memory is short.
+	//
+	// Ported from sashkinbro/EmuCoreC 47220b15, with our own memory reading.
+	atomic_t<u32> low_memory_claim{0};
+
+	static u64 avail_memory()
+	{
+		const auto [total_mem, used_mem] = utils::get_memory_usage();
+		return total_mem > used_mem ? total_mem - used_mem : 0;
+	}
+
+	static bool memory_is_tight()
+	{
+		const u64 avail = avail_memory();
+		return avail != 0 && avail < (2048ull * 1024 * 1024);
+	}
+
+	static bool memory_is_critical()
+	{
+		const u64 avail = avail_memory();
+		return avail != 0 && avail < (1024ull * 1024 * 1024);
+	}
+
+	// Give the OS up to ten seconds to give memory back. A compile which starts
+	// here is the one which aborts the process, so waiting is the cheaper choice.
+	static void wait_for_memory()
+	{
+		for (u32 waited_ms = 0; waited_ms < 10'000 && memory_is_critical(); waited_ms += 100)
+		{
+			if (Emu.IsStopped())
+			{
+				return;
+			}
+
+			thread_ctrl::wait_for(100'000);
+		}
+	}
+#endif
+
 	static s16 limit()
 	{
 		const s32 by_cores = std::min<s32>(0x7fff, utils::get_thread_count());
@@ -7294,10 +7338,54 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 					ppu_log.warning("LLVM: Compiling module %s%s", cache_path, obj_name);
 
+#ifdef ANDROID
+					// Under memory pressure, let one module compile at a time. The worker count
+					// from limit() is fixed at startup and cannot answer for the memory state
+					// now. See docs/arm64/ppu-compile-oom.md.
+					struct claim_guard_t
+					{
+						atomic_t<u32>* owner = nullptr;
+
+						~claim_guard_t()
+						{
+							if (owner)
+							{
+								owner->release(0);
+								owner->notify_one();
+							}
+						}
+					} serialise_compiles;
+
+					if (jit_core_allocator::memory_is_tight())
+					{
+						auto& claim = g_fxo->get<jit_core_allocator>().low_memory_claim;
+
+						for (u32 i = 0; i < 600; i++)
+						{
+							if (claim.compare_and_swap_test(0, 1))
+							{
+								serialise_compiles.owner = &claim;
+								break;
+							}
+
+							if (Emu.IsStopped())
+							{
+								break;
+							}
+
+							claim.wait(1, atomic_wait_timeout{100'000'000});
+						}
+
+						jit_core_allocator::wait_for_memory();
+					}
+#endif
+
+					bool compiled_this_module = false;
+
 					{
 						// Use another JIT instance
 						jit_compiler jit2({}, g_cfg.core.llvm_cpu, 0x1);
-						ppu_initialize2(jit2, part, cache_path, obj_name);
+						compiled_this_module = ppu_initialize2(jit2, part, cache_path, obj_name);
 					}
 
 #ifdef ANDROID
@@ -7326,7 +7414,10 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 #endif
 #endif
 
-					ppu_log.success("LLVM: Compiled module %s", obj_name);
+					if (compiled_this_module)
+					{
+						ppu_log.success("LLVM: Compiled module %s", obj_name);
+					}
 				}
 
 				core_lock.unlock();
@@ -7564,7 +7655,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	return ppu_initialize(info, check_only, file_size, memory_limit);
 }
 
-static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module_part, const std::string& cache_path, const std::string& obj_name)
+static bool ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module_part, const std::string& cache_path, const std::string& obj_name)
 {
 #ifdef LLVM_AVAILABLE
 	using namespace llvm;
@@ -7652,7 +7743,7 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 			if (Emu.IsStopped())
 			{
 				ppu_log.success("LLVM: Translation cancelled");
-				return;
+				return false;
 			}
 
 			if (mod_func.size)
@@ -7671,7 +7762,7 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 				else
 				{
 					Emu.Pause();
-					return;
+					return false;
 				}
 			}
 		}
@@ -7687,7 +7778,7 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 			else
 			{
 				Emu.Pause();
-				return;
+				return false;
 			}
 		}
 
@@ -7717,13 +7808,29 @@ static void ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 				{
 					Emu.GracefulShutdown(false, true);
 				});
-			return;
+			return false;
 		}
 #endif
 		ppu_log.notice("LLVM: %zu functions generated (code_size=0x%x, num_func=%d, max_addr(-)min_addr=0x%x)", _module->getFunctionList().size(), guest_code_size, num_func, max_addr - min_addr);
 	}
 
 	// Load or compile module
+#ifdef ARCH_ARM64
+	// Report a compile failure instead of ending the process with it. The loader
+	// finds the missing object, sets failed_to_load, and the guest code runs on the
+	// interpreter. That is slow, and it is much better than the SIGABRT in
+	// docs/arm64/ppu-compile-oom.md. Ported from sashkinbro/EmuCoreC 47220b15.
+	std::string llvm_error;
+
+	if (!jit.try_add(std::move(_module), cache_path, llvm_error))
+	{
+		ppu_log.error("LLVM: Failed to compile module %s: %s", obj_name, llvm_error);
+		return false;
+	}
+#else
 	jit.add(std::move(_module), cache_path);
+#endif
 #endif // LLVM_AVAILABLE
+
+	return true;
 }

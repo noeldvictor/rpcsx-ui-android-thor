@@ -1107,6 +1107,32 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 			},
 			nullptr);
 
+		// LLVM keeps the out-of-memory handler apart from the fatal handler, and it
+		// dispatches the two on their own. Without this one, an allocation which LLVM
+		// reports itself writes "LLVM ERROR: out of memory" to file descriptor 2. That
+		// goes nowhere in an Android app, and LLVM then calls abort(). The result is a
+		// signal-6 death with an empty log. Send it through the same recoverable path
+		// as the fatal handler, so a guarded compile survives, and an unguarded one at
+		// least says why it stopped.
+		//
+		// This does not catch the failure in docs/arm64/ppu-compile-oom.md. That one is
+		// a Scudo "internal map failure" which aborts inside the allocator, below LLVM,
+		// so LLVM never reports it. Ported from sashkinbro/EmuCoreC d2b993c5.
+		llvm::remove_bad_alloc_error_handler();
+		llvm::install_bad_alloc_error_handler([](void*, const char* msg, bool)
+			{
+				const std::string_view out = msg ? msg : "";
+
+				if (g_llvm_fatal_message)
+				{
+					*g_llvm_fatal_message = out;
+					thread_ctrl::silent_exit();
+				}
+
+				fmt::throw_exception("LLVM Out Of Memory: '%s'", out);
+			},
+			nullptr);
+
 		return true;
 	}();
 

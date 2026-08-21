@@ -1798,6 +1798,9 @@ error_code sys_fs_unlink(ppu_thread &ppu, vm::cptr<char> path) {
       return {mp == &g_mp_sys_dev_hdd1 ? sys_fs.warning : sys_fs.error,
               CELL_ENOENT, path};
     }
+    case fs::error::readonly: {
+      return {CELL_EROFS, path};
+    }
     default:
       sys_fs.error("sys_fs_unlink(): unknown error %s", error);
     }
@@ -2707,6 +2710,9 @@ error_code sys_fs_truncate(ppu_thread &ppu, vm::cptr<char> path, u64 size) {
       return {mp == &g_mp_sys_dev_hdd1 ? sys_fs.warning : sys_fs.error,
               CELL_ENOENT, path};
     }
+    case fs::error::readonly: {
+      return {CELL_EROFS, path};
+    }
     default:
       sys_fs.error("sys_fs_truncate(): unknown error %s", error);
     }
@@ -2944,6 +2950,9 @@ error_code sys_fs_utime(ppu_thread &ppu, vm::cptr<char> path,
     case fs::error::noent: {
       return {mp == &g_mp_sys_dev_hdd1 ? sys_fs.warning : sys_fs.error,
               CELL_ENOENT, path};
+    }
+    case fs::error::readonly: {
+      return {CELL_EROFS, path};
     }
     default:
       sys_fs.error("sys_fs_utime(): unknown error %s", error);

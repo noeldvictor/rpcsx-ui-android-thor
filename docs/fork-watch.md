@@ -102,3 +102,73 @@ Do not take these:
 
 Open point: nobody measured any of the four items above on Thor. The order
 above is a reading order, not a speed claim.
+
+### 2026-08-20 — EmuCoreC, what we took
+
+The survey above named four commits to read. We read all of them, and two more.
+The port is host-verified only: every file compiles for `arm64-v8a` and the
+full native build links. Nothing ran on Thor, and nothing is measured.
+
+Taken:
+
+1. The ARM64 PPU gateway scratchpad, `8192` to `262144` bytes. EmuCoreC found
+   the fault in `d2b993c5` and used 64 KB. We use the same number as our SPU
+   gateway. See the note above `PPU_GW_SCRATCH_SIZE`.
+2. The Android preflight for RSX-protected guest pages, from `e67d18b7`,
+   `77c30684` and `77dc85d0`. `rsx::prepare_guest_read()` and
+   `rsx::prepare_guest_write()` resolve protected pages from normal thread
+   context, so a fault cannot recurse on the Android signal stack. A mirror in
+   `Emu/RSX/Host/MM.cpp` answers "is this page open?" with one atomic load, so
+   the hot paths pay almost nothing. ZCULL and two texture-cache paths now use
+   the new `rsx::mm_protect_immediate()` to keep the mirror true.
+3. The LLVM out-of-memory handler, from `d2b993c5`. LLVM dispatches it apart
+   from the fatal handler, and without it an LLVM-reported allocation failure
+   dies with an empty log.
+4. The PPU compile survival and throttle, from `47220b15`. `ppu_initialize2()`
+   now returns a result, uses `try_add` on ARM64, and reports a failed module
+   instead of ending the process with it. Under memory pressure a module also
+   waits for the other workers, because the worker count from `limit()` is
+   fixed at startup. This aims at `docs/arm64/ppu-compile-oom.md`.
+5. `fs::error::readonly` now maps to `CELL_EROFS` in `sys_fs_unlink`,
+   `sys_fs_truncate` and `sys_fs_utime`.
+
+Not taken, and why:
+
+* The Cubeb switch to OpenSL ES (`e67d18b7`). `android/CMakeLists.txt` sets
+  `USE_OPENSL off`, so that backend is not compiled here and the switch would
+  fail at `cubeb_init`.
+* The block which disables GPU byteswap and hardware deswizzle on Android
+  (`77c30684`). It is a behaviour change, not a stability fix, and it would
+  undo the Adreno compute work in `d76de5b5c`.
+* The OpenGL ES renderer (`f83474fa`, `b56e30ff`). Thor has a complete Vulkan
+  path on an Adreno 740.
+* Every log-level demotion in `77dc85d0` and `47220b15`. Our log policy is our
+  own, and those channels carry evidence for the current sprint.
+* The `g_ppu_avoid_strict_fma` retry in `47220b15`. It changes PPU float
+  results on the second attempt, and nothing shows that the first attempt fails
+  for a reason that weaker FMA would fix.
+* The little-core CPU name guard, the FCTIW/FCTID saturation fix, the JIT
+  instruction-cache maintenance, the `vm.cpp` log-once, and the vectorised
+  index upload with a restart index. This tree already has all five, and its
+  versions carry more explanation. See `docs/arm64/codegen.md`,
+  `Emu/RSX/Common/BufferUtils.cpp`, and `rpcs3/util/JITLLVM.cpp`.
+* The `m_poisoned` engine leak in `d2b993c5`. It guards `~MCJIT` against a
+  deadlock. Our `m_engine` and `m_context` already hold no-operation deleters,
+  so nothing here destroys the engine and there is nothing to guard.
+
+Follow-up work this survey found. None of it is started:
+
+1. **`VK_EXT_extended_dynamic_state`** (`47220b15`). EmuCoreC sets topology,
+   cull mode, front face and the depth state at draw time instead of baking
+   them into the pipeline. That removes pipeline permutations, which is the
+   Adreno stutter we care about. This tree has no `extended_dynamic_state`
+   support at all, so the port needs the device query, the command pointers,
+   `vk::normalize_dynamic_pipeline_state()` and `vk::get_pipeline_topology()`.
+2. **`VKGSRender::on_vram_exhausted()` while uninterruptible** (`47220b15`).
+   Our version asserts and ends the process. EmuCoreC releases what it can
+   without a hard sync. The port needs `vk::is_last_ditch_eviction()`, which
+   this tree does not have.
+3. **The index upload without a restart index.** `untouched_impl` still uses
+   the branching `min_max()` helper, which does not vectorise. Our own
+   `primitive_restart_impl` shows the branch-free shape that does. EmuCoreC did
+   not fix this one either.
