@@ -10,6 +10,9 @@ figure of ~20–30 fps is on a Snapdragon 8 Gen 2, the Thor's exact chip.
 > compares their tree of 2026-08-12, and **it retracts two claims made here**: they
 > reverted the thread scheduler mode and the GETLLAR busy-wait percentage that this
 > page cites as their advantage. Their own measurements caused both reverts.
+> [The third pass](#third-pass-2026-08-20) compares their tree of 2026-08-20. It
+> records what was ported, and it shows this tree ahead of upstream on the ARM64
+> float-to-int saturation fix.
 
 **Method matters here.** The comparison downloaded the ARMSX3 tree *and* upstream
 `RPCS3/rpcs3` master and diffed them: **only 133 files differ.** That diff is what
@@ -455,4 +458,55 @@ JIT and the memory budget.
 **The most valuable thing in this pass is not code.** It is that they measured, and
 then reverted, both configuration changes that the first pass held up as their
 advantage. A comparison against a moving fork has a shelf life of about three days.
+
+## Third pass (2026-08-20)
+
+Both trees were fetched again. `RPCS3/rpcs3` master is `243d7db5b`.
+`ARMSX2/ARMSX3` master is `82f21b16d`, which is 166 commits later than the second
+pass. 49 of those are theirs. 117 are upstream RPCS3 that they inherited.
+
+Five changes were ported. The dated detail is in
+`debug-experiments/20260820-armsx3-upstream-selective-port.md`.
+
+**The one real find is the compute group size.** `a2f005955` gives Adreno its own
+case at 64 lanes. This tree still had the old single `QUALCOMM` case at 32, with
+the upstream comment "TODO: Actually bench this". Adreno waves are 64 lanes wide,
+so a 32-lane group does not pack with its neighbour: the GPU takes a whole wave
+and masks half of it off. These kernels use no shared memory and no barriers, so
+the group size is only a scheduling hint. `cbee3cd44` came with it, so
+`RPCSX_THOR_CS_GROUP_SIZE` can compare 32 against 64 on one build.
+
+**The log-level work is the second find.** `ab58fb087` and `d9a0481dc` move hot
+diagnostics to trace. Three of their eleven demotions were refused here, because
+the analyzers in `tools/` read those exact lines and fail closed. `Trampoline
+simplified` was the valuable one: it sat at error level and they counted it about
+1500 times in a 15 minute session.
+
+### Where this tree is now ahead
+
+**`6161ecd7a` is the clearest case yet.** Upstream stopped inverting float-to-int
+saturation on ARM64, which this tree fixed earlier. This tree also gives NaN the
+PowerPC result of `0x80000000`; `fcvtns` produces 0. Upstream still has that
+wrong. Porting their commit would have been a regression, and only reading both
+implementations showed it.
+
+`82164a54c`, the SELB XFloat normalization, is already present at both call
+sites.
+
+### Still theirs, still open
+
+* **`5d71742da`** — the driver pipeline cache persists across runs. This is the
+  most valuable thing left in their tree, because cold start is the problem here.
+  It depends on their `vk_android_loader`, which this tree does not have, so it
+  is 224 lines and an adaptation, not a port.
+* **`ac897144b`, `07a24cf71`** — PPU compile out-of-memory. This tree has its own
+  Scudo handling; see [`ppu-compile-oom.md`](ppu-compile-oom.md). Read both
+  before touching either.
+* The Turnip conditional-rendering items from the second pass are unchanged.
+
+### What is not worth reading
+
+They added frame generation across 17 commits and then reverted the whole line in
+`187654eae`. The rest of their 49 is the Play-store build, RPCN, input, and save
+data: their application, not their core.
 

@@ -4944,7 +4944,7 @@ public:
 
 			if (spu_compile_diagnostics_enabled())
 			{
-				spu_log.warning("[0x%x] MFC_EAH: $%u is not a zero constant", m_pos, +op.rt);
+				spu_log.trace("[0x%x] MFC_EAH: $%u is not a zero constant", m_pos, +op.rt);
 			}
 			// m_ir->CreateStore(val.value, spu_ptr<u32>(OFFSET_OF(spu_thread, ch_mfc_cmd.eah)));
 			return;

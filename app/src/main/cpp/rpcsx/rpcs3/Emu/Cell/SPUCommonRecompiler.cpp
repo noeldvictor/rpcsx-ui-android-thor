@@ -1718,7 +1718,7 @@ void spu_cache::initialize(bool build_existing_cache)
 					{
 						if (ls[start_new / 4] && g_spu_itype.decode(ls[start_new / 4]) != spu_itype::UNK)
 						{
-							spu_log.notice("Precompiling fallthrough to 0x%05x", start_new);
+							spu_log.trace("Precompiling fallthrough to 0x%05x", start_new);
 							func2 = compiler->analyse(ls.data(), start_new, &targets);
 							block_addr = start_new;
 							continue;
@@ -1781,7 +1781,7 @@ void spu_cache::initialize(bool build_existing_cache)
 						}
 					}
 
-					spu_log.notice("Precompiling filler space at 0x%05x (next=0x%05x)", new_entry, next_func);
+					spu_log.trace("Precompiling filler space at 0x%05x (next=0x%05x)", new_entry, next_func);
 					func2 = compiler->analyse(ls.data(), new_entry, &targets);
 					block_addr = new_entry;
 				}
@@ -2350,7 +2350,12 @@ spu_function_t spu_runtime::rebuild_ubertrampoline(u32 id_inst)
 			if (w.level >= w.beg->first.size() || w.level >= it->first.size())
 			{
 				// If functions cannot be compared, assume smallest function
-				spu_log.error("Trampoline simplified at ??? (level=%u)", w.level);
+				// Routine control-flow simplification, not a failure. ARMSX3 saw it fire about
+				// 1500 times in a 15 minute session at error level. This diagnostic is
+				// per-block, which a desktop can afford and a phone writing to storage
+				// cannot: the burst lands while the game already stalls to compile. Raise
+				// the SPU log channel to see it again. Ported from ARMSX3 d9a0481dc.
+				spu_log.trace("Trampoline simplified at ??? (level=%u)", w.level);
 #if defined(ARCH_X64)
 				make_jump(0xe9, w.beg->second); // jmp rel32
 #elif defined(ARCH_ARM64)
@@ -2389,7 +2394,7 @@ spu_function_t spu_runtime::rebuild_ubertrampoline(u32 id_inst)
 
 			if (it == m_flat_list.end())
 			{
-				spu_log.error("Trampoline simplified (II) at ??? (level=%u)", w.level);
+				spu_log.trace("Trampoline simplified (II) at ??? (level=%u)", w.level);
 #if defined(ARCH_X64)
 				make_jump(0xe9, w.beg->second); // jmp rel32
 #elif defined(ARCH_ARM64)
@@ -8619,7 +8624,7 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 
 	if (likely_putllc_loop && !had_putllc_evaluation && spu_pattern_diagnostics_enabled())
 	{
-		spu_log.notice("Likely missed PUTLLC16 patterns. (entry=0x%x)", entry_point);
+		spu_log.trace("Likely missed PUTLLC16 patterns. (entry=0x%x)", entry_point);
 	}
 
 	if (result.data.empty())

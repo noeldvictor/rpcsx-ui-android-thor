@@ -386,8 +386,15 @@ error_code sys_memory_container_get_size(cpu_thread &cpu,
                                          u32 cid) {
   cpu.state += cpu_flag::wait;
 
-  sys_memory.warning("sys_memory_container_get_size(mem_info=*0x%x, cid=0x%x)",
-                     mem_info, cid);
+  // A pure query with no side effects, and a game can poll it in a loop. ARMSX3
+  // counted 20,664 calls in a 19 minute session, 5,123 of them inside one second.
+  // At warning level that writes thousands of lines a second to device storage,
+  // which is the same way the SPU recompiler diagnostics stalled the emulator.
+  // Nothing is lost: a container's size is fixed when it is created, and both
+  // sys_memory_container_create and _destroy still log at warning level.
+  // Ported from ARMSX3 ab58fb087.
+  sys_memory.trace("sys_memory_container_get_size(mem_info=*0x%x, cid=0x%x)",
+                   mem_info, cid);
 
   const auto ct = idm::get_unlocked<lv2_memory_container>(cid);
 
