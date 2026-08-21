@@ -404,6 +404,30 @@ static void ppu_break(ppu_thread&, ppu_opcode_t, be_t<u32>*, ppu_intrp_func*);
 
 extern void do_cell_atomic_128_store(u32 addr, const void* to_write);
 
+#ifdef ARCH_ARM64
+// Size of the shared stack scratchpad the ARM64 PPU gateway reserves for generated code.
+//
+// This is the PPU twin of SPU_GW_SCRATCH_SIZE in SPUCommonRecompiler.cpp. Read the long note
+// there first; the mechanism and the failure are the same. PPUTranslator.cpp sets
+// use_stack_frames = false for the same reason, so every compiled PPU function spills into
+// this one reservation, and the reservation has to cover the WORST function the recompiler
+// will ever emit.
+//
+// The old value was 8192, the same number that overflowed on the SPU side. Nobody raised it
+// here when the SPU side moved to 256 KB. EmuCoreC hit the PPU case and raised it to 64 KB
+// (sashkinbro/EmuCoreC d2b993c5). This tree uses the same number as its SPU gateway instead,
+// because the two gateways fail the same way and one number is easier to reason about.
+//
+// The overflow is silent on Android. It lands on the PROT_NONE guard page above the thread
+// stack, is_emulator_fault() correctly declines a guard page, ART's FaultManager takes the
+// signal, and the process dies with no tombstone and no flushed emulator log.
+//
+// STILL A FIXED BOUND, and the reservation costs address space only until a function touches
+// it. Thread stacks here are 8 MB (Thread.cpp, pthread_attr_setstacksize 0x800000), so 256 KB
+// of scratch leaves ample room.
+static constexpr u32 PPU_GW_SCRATCH_SIZE = 262144;
+#endif
+
 const auto ppu_gateway = build_function_asm<void (*)(ppu_thread*)>("ppu_gateway", [](native_asm& c, auto& args)
 	{
 		// Gateway for PPU, converts from native to GHC calling convention, also saves RSP value for escape
@@ -599,7 +623,7 @@ const auto ppu_gateway = build_function_asm<void (*)(ppu_thread*)>("ppu_gateway"
 
 		// GHC scratchpad mem. If managed correctly (i.e no returns ever), GHC functions should never require a stack frame.
 	    // We allocate a slab to use for all functions as they tail-call into each other.
-		c.sub(a64::sp, a64::sp, Imm(8192));
+		c.sub(a64::sp, a64::sp, Imm(PPU_GW_SCRATCH_SIZE));
 
 		// Execute LLE call
 		c.blr(call_target);
@@ -608,7 +632,7 @@ const auto ppu_gateway = build_function_asm<void (*)(ppu_thread*)>("ppu_gateway"
 		c.bind(hv_ctx_pc);
 
 		// Clear scratchpad allocation
-		c.add(a64::sp, a64::sp, Imm(8192));
+		c.add(a64::sp, a64::sp, Imm(PPU_GW_SCRATCH_SIZE));
 
 		c.ldr(a64::x20, arm::Mem(a64::sp));
 		c.add(a64::sp, a64::sp, Imm(16));
