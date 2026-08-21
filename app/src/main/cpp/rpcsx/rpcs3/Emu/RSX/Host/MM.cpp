@@ -9,16 +9,81 @@
 #include <util/address_range.h>
 #include <util/mutex.h>
 
+#ifdef __ANDROID__
+#include <array>
+#include <atomic>
+#include <algorithm>
+#endif
+
 namespace rsx
 {
 	rsx::simple_array<MM_block> g_deferred_mprotect_queue;
 	shared_mutex g_mprotect_queue_lock;
+
+#ifdef __ANDROID__
+	// RSX protections are independent of the vm::page_* flags, so vm::check_addr
+	// cannot answer "will this read fault?". Keep a compact mirror of what RSX
+	// protected. One byte for each 4 KiB guest page covers the whole 32-bit guest
+	// address space in 1 MiB.
+	//
+	// The mirror exists so that Android code can ask the question cheaply. A miss
+	// in one direction is safe: a page that the mirror calls accessible, but which
+	// is really protected, only returns the old behaviour, which is a fault. A page
+	// that the mirror calls protected, but which is really open, only costs one
+	// extra call to the violation handler.
+	//
+	// utils::protection::rw is 0, so the zero-initialised mirror starts as "open",
+	// which is correct for memory that RSX never touched.
+	static constexpr usz s_guest_page_count = 0x1'0000'0000ull / 4096;
+	std::array<std::atomic<u8>, s_guest_page_count> g_guest_page_protection{};
+
+	static void mm_track_protection(u64 start, u64 length, utils::protection prot)
+	{
+		if (!length)
+		{
+			return;
+		}
+
+		const u64 guest_base = reinterpret_cast<u64>(vm::base(0));
+		if (start < guest_base || start >= guest_base + 0x1'0000'0000ull)
+		{
+			return;
+		}
+
+		const u64 first = (start - guest_base) / 4096;
+		const u64 end = std::min<u64>(start - guest_base + length, 0x1'0000'0000ull);
+		const u64 last = (end - 1) / 4096;
+		const u8 value = static_cast<u8>(prot);
+
+		for (u64 page = first; page <= last; page++)
+		{
+			g_guest_page_protection[page].store(value, std::memory_order_release);
+		}
+	}
+
+	bool mm_is_accessible(u32 vm_address, bool is_writing)
+	{
+		const auto prot = static_cast<utils::protection>(
+			g_guest_page_protection[vm_address / 4096].load(std::memory_order_acquire));
+		return is_writing ? prot == utils::protection::rw : prot != utils::protection::no;
+	}
+#else
+	static void mm_track_protection(u64, u64, utils::protection)
+	{
+	}
+
+	bool mm_is_accessible(u32, bool)
+	{
+		return true;
+	}
+#endif
 
 	void mm_flush_mprotect_queue_internal()
 	{
 		for (const auto& block : g_deferred_mprotect_queue)
 		{
 			utils::memory_protect(reinterpret_cast<void*>(block.start), block.length, block.prot);
+			mm_track_protection(block.start, block.length, block.prot);
 		}
 
 		g_deferred_mprotect_queue.clear();
@@ -36,6 +101,7 @@ namespace rsx
 		if (g_cfg.video.disable_async_host_memory_manager)
 		{
 			utils::memory_protect(ptr, length, prot);
+			mm_track_protection(reinterpret_cast<u64>(ptr), length, prot);
 			return;
 		}
 
@@ -58,11 +124,40 @@ namespace rsx
 			}
 
 			utils::memory_protect(ptr, length, prot);
+			mm_track_protection(start, length, prot);
 			return;
 		}
 
 		// No, Ro, etc.
 		mm_defer_mprotect_internal(start, length, prot);
+		// Show the scheduled restrictive protection at once. A preflight which sees
+		// it sends the page through the normal violation handler, and that handler
+		// flushes the queue before anything reads the memory.
+		mm_track_protection(start, length, prot);
+	}
+
+	void mm_protect_immediate(void* ptr, u64 length, utils::protection prot)
+	{
+#ifdef __ANDROID__
+		const auto start = reinterpret_cast<u64>(ptr);
+		const auto end = start + length;
+
+		std::lock_guard lock(g_mprotect_queue_lock);
+
+		for (const auto& block : g_deferred_mprotect_queue)
+		{
+			if (block.overlaps(start, end))
+			{
+				mm_flush_mprotect_queue_internal();
+				break;
+			}
+		}
+
+		utils::memory_protect(ptr, length, prot);
+		mm_track_protection(start, length, prot);
+#else
+		utils::memory_protect(ptr, length, prot);
+#endif
 	}
 
 	void mm_flush()

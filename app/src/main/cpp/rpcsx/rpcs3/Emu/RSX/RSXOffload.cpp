@@ -3,6 +3,7 @@
 #include "Emu/Memory/vm.h"
 #include "Common/BufferUtils.h"
 #include "Core/RSXReservationLock.hpp"
+#include "Host/MM.h"
 #include "RSXOffload.h"
 #include "RSXThread.h"
 
@@ -13,6 +14,62 @@
 
 namespace rsx
 {
+#ifdef __ANDROID__
+	extern std::function<bool(u32 addr, bool is_writing)> g_access_violation_handler;
+
+	// The ART signal chain cannot host the full RSX texture-cache path. A protected
+	// guest range can fault inside memcpy(), enter VKGSRender::on_access_violation(),
+	// and fault a second time while the kernel still blocks SIGSEGV. The second fault
+	// kills the process, and it kills it silently: a guard page is not emulator
+	// memory, so ART's FaultManager takes the signal and Android records only
+	// "SIGNALED status=11".
+	//
+	// Resolve the protected pages from normal thread context first. The mirror in
+	// Host/MM.cpp answers the common case without a call, so this costs one atomic
+	// load for each page when nothing is protected.
+	//
+	// Ported from sashkinbro/EmuCoreC e67d18b7, 77c30684 and 77dc85d0.
+	static bool prepare_guest_access(u32 address, u32 length, bool is_writing)
+	{
+		if (!address || !length || !g_access_violation_handler)
+		{
+			return false;
+		}
+
+		const u32 last = rx::add_saturate<u32>(address, length - 1);
+		const u8 required_permission = is_writing ? vm::page_writable : vm::page_readable;
+		u32 current = address;
+		bool handled = false;
+
+		for (;;)
+		{
+			if (!vm::check_addr(current, required_permission) || !mm_is_accessible(current, is_writing))
+			{
+				handled |= g_access_violation_handler(current, is_writing);
+			}
+
+			if (current / 4096 == last / 4096)
+			{
+				break;
+			}
+
+			current = (current & ~4095u) + 4096u;
+		}
+
+		return handled;
+	}
+
+	bool prepare_guest_read(u32 address, u32 length)
+	{
+		return prepare_guest_access(address, length, false);
+	}
+
+	bool prepare_guest_write(u32 address, u32 length)
+	{
+		return prepare_guest_access(address, length, true);
+	}
+#endif
+
 	struct dma_manager::offload_thread
 	{
 		lf_queue<transport_packet> m_work_queue;
@@ -49,6 +106,9 @@ namespace rsx
 					case raw_copy:
 					{
 						const u32 vm_addr = vm::try_get_addr(job.src).first;
+#ifdef __ANDROID__
+						prepare_guest_read(vm_addr, job.length);
+#endif
 						rsx::reservation_lock<true, 1> rsx_lock(vm_addr, job.length, g_cfg.video.strict_rendering_mode && vm_addr);
 						std::memcpy(job.dst, job.src, job.length);
 						break;
@@ -115,6 +175,9 @@ namespace rsx
 		if (length <= max_immediate_transfer_size || !g_cfg.video.multithreaded_rsx)
 		{
 			const u32 vm_addr = vm::try_get_addr(src).first;
+#ifdef __ANDROID__
+			prepare_guest_read(vm_addr, length);
+#endif
 			rsx::reservation_lock<true, 1> rsx_lock(vm_addr, length, g_cfg.video.strict_rendering_mode && vm_addr);
 			std::memcpy(dst, src, length);
 		}

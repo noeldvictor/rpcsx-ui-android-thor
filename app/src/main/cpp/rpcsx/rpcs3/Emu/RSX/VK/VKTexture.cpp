@@ -12,6 +12,9 @@
 #include "VKGSRender.h"
 
 #include "../GCM.h"
+#ifdef __ANDROID__
+#include "../RSXOffload.h"
+#endif
 #include "../rsx_utils.h"
 
 #include "rx/align.hpp"
@@ -1034,6 +1037,28 @@ namespace vk
 				void* mapped_buffer = upload_heap.map(offset_in_upload_buffer, image_linear_size + 8);
 				return {mapped_buffer, image_linear_size};
 			};
+
+#ifdef __ANDROID__
+			// Linear B8 takes the zero-copy DMA path below and never reads guest memory with
+			// the CPU. Every other guest format can enter a CPU conversion path, so resolve
+			// the RSX-protected pages first. A fault inside that conversion runs the
+			// violation handler on the Android signal stack, and that can fault a second
+			// time and kill the process.
+			//
+			// Skip the privileged sudo mapping. It is already readable, and a trip through
+			// the fault handler there can invalidate a render target which load_memory()
+			// still uses.
+			const bool may_read_on_cpu = is_swizzled || format != CELL_GCM_TEXTURE_B8;
+			const uptr source_address = uptr(layout.data.data());
+			const uptr sudo_address = uptr(vm::g_sudo_addr);
+			const bool uses_sudo_mapping = source_address >= sudo_address && (source_address - sudo_address) <= u32{umax};
+
+			if (!(image_setup_flags & (source_is_gpu_resident | source_guest_read_prepared)) && may_read_on_cpu && !uses_sudo_mapping)
+			{
+				const u32 guest_address = vm::try_get_addr(layout.data.data()).first;
+				rsx::prepare_guest_read(guest_address, static_cast<u32>(layout.data.size()));
+			}
+#endif
 
 			auto io_buf = rsx::io_buffer(buf_allocator);
 			opt = upload_texture_subresource(io_buf, layout, format, is_swizzled, caps);

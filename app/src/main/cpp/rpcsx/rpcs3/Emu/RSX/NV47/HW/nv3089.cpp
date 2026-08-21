@@ -4,6 +4,9 @@
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/Core/RSXReservationLock.hpp"
 #include "Emu/RSX/Common/tiled_dma_copy.hpp"
+#ifdef __ANDROID__
+#include "Emu/RSX/RSXOffload.h"
+#endif
 
 #include "context_accessors.define.h"
 
@@ -576,9 +579,22 @@ namespace rsx
 			const u16 out_h = REGS(ctx)->blit_engine_output_height();
 
 			// Lock here. RSX cannot execute any locking operations from this point, including ZCULL read barriers
+			const u32 read_length = src.pitch * src.height;
+			const u32 write_length = dst.pitch * dst.clip_height;
+#ifdef __ANDROID__
+			// A CPU blit can touch RSX-protected source pages or destination pages.
+			// Resolve them on the normal RSX stack before memcpy or tiled conversion
+			// starts. The Android signal stack is too small for the texture readback
+			// and the shader compilation which the violation handler can start.
+			// The destination goes first: its invalidation can flush texture-cache
+			// ranges and protect them again, and those ranges can overlap the source.
+			// The source goes last, immediately before the reservation and the blit.
+			prepare_guest_write(dst.rsx_address, write_length);
+			prepare_guest_read(src.rsx_address, read_length);
+#endif
 			auto res = ::rsx::reservation_lock<true>(
-				dst.rsx_address, dst.pitch * dst.clip_height,
-				src.rsx_address, src.pitch * src.height);
+				dst.rsx_address, write_length,
+				src.rsx_address, read_length);
 
 			if (!g_cfg.video.force_cpu_blit_processing &&
 				(dst.dma == CELL_GCM_CONTEXT_DMA_MEMORY_FRAME_BUFFER || src.dma == CELL_GCM_CONTEXT_DMA_MEMORY_FRAME_BUFFER) &&

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Core/RSXEngLock.hpp"
 #include "Core/RSXReservationLock.hpp"
+#include "Host/MM.h"
 #include "RSXThread.h"
 
 namespace rsx
@@ -30,7 +31,7 @@ namespace rsx
 				{
 					if (p.second.prot != utils::protection::rw)
 					{
-						utils::memory_protect(vm::base(p.first), utils::get_page_size(), utils::protection::rw);
+						rsx::mm_protect_immediate(vm::base(p.first), utils::get_page_size(), utils::protection::rw);
 					}
 				}
 
@@ -821,7 +822,7 @@ namespace rsx
 
 				if (page.prot == utils::protection::rw)
 				{
-					utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::no);
+					rsx::mm_protect_immediate(vm::base(page_address), utils::get_page_size(), utils::protection::no);
 					page.prot = utils::protection::no;
 				}
 			}
@@ -869,7 +870,7 @@ namespace rsx
 
 				if (page.prot != utils::protection::rw)
 				{
-					utils::memory_protect(vm::base(this_address), utils::get_page_size(), utils::protection::rw);
+					rsx::mm_protect_immediate(vm::base(this_address), utils::get_page_size(), utils::protection::rw);
 					page.prot = utils::protection::rw;
 				}
 
@@ -915,7 +916,7 @@ namespace rsx
 						else
 						{
 							// R/W to stale block, unload it and move on
-							utils::memory_protect(vm::base(page_address), utils::get_page_size(), utils::protection::rw);
+							rsx::mm_protect_immediate(vm::base(page_address), utils::get_page_size(), utils::protection::rw);
 							m_locked_pages[location].erase(page_address);
 
 							return true;

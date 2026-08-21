@@ -25,6 +25,9 @@
 #include "Emu/Cell/timers.hpp"
 
 #include "Emu/RSX/Core/RSXReservationLock.hpp"
+#ifdef __ANDROID__
+#include "Emu/RSX/RSXOffload.h"
+#endif
 
 #include <atomic>
 #include <algorithm>
@@ -3895,7 +3898,18 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 
 	record_thor_es_dma_payload(_this, args.cmd, src, args.size);
 
-	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (get_strict_rendering_mode_for_spu_mfc() || (get_rsx_fifo_accuracy_for_spu_mfc() && !get_spu_accurate_dma_for_mfc() && eal < rsx::constants::local_mem_base)));
+	bool android_prepared_guest_write = false;
+#ifdef __ANDROID__
+	// A put lands in guest memory which RSX can protect. Resolve the pages here,
+	// where a fault is recoverable, instead of inside the copy below. Take the
+	// reservation lock when the handler took a page, because the range then holds
+	// data which RSX still tracks.
+	if (!is_get && eal < RAW_SPU_BASE_ADDR)
+	{
+		android_prepared_guest_write = rsx::prepare_guest_write(eal, args.size);
+	}
+#endif
+	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (android_prepared_guest_write || get_strict_rendering_mode_for_spu_mfc() || (get_rsx_fifo_accuracy_for_spu_mfc() && !get_spu_accurate_dma_for_mfc() && eal < rsx::constants::local_mem_base)));
 
 	if ((!g_use_rtm && !is_get) || get_spu_accurate_dma_for_mfc()) [[unlikely]]
 	{

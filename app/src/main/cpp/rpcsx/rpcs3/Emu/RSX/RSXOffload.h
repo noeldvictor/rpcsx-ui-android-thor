@@ -11,6 +11,14 @@ class named_thread;
 
 namespace rsx
 {
+#ifdef __ANDROID__
+	// Resolve RSX-protected guest pages before code which cannot recover from a
+	// nested Android signal reads them or writes them. Each function returns true
+	// if the violation handler took at least one page.
+	bool prepare_guest_read(u32 address, u32 length);
+	bool prepare_guest_write(u32 address, u32 length);
+#endif
+
 	class dma_manager
 	{
 		enum op

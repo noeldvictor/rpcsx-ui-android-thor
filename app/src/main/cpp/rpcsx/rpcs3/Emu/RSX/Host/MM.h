@@ -34,6 +34,11 @@ namespace rsx
 	};
 
 	void mm_protect(void* start, u64 length, utils::protection prot);
+	// Apply the protection now, and keep the Android preflight mirror correct.
+	void mm_protect_immediate(void* start, u64 length, utils::protection prot);
+	// Cheap lock-free question: can the guest touch this address without a fault
+	// from an RSX protection? Always true off Android.
+	bool mm_is_accessible(u32 vm_address, bool is_writing);
 	void mm_flush_lazy();
 	void mm_flush(u32 vm_address);
 	void mm_flush();
