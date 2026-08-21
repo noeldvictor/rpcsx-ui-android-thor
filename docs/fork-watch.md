@@ -204,3 +204,27 @@ path asks for a different key, misses, and compiles again.
 
 Not measured. The claim is only that the pipeline count falls, and even that is
 unverified on hardware.
+
+### 2026-08-21 — ARMSX3 and upstream RPCS3, nothing to take yet
+
+Both remotes were fetched from `rpcs3-upstream`, which carries `origin`
+(RPCS3/rpcs3) and `armsx3` (ARMSX2/ARMSX3).
+
+**ARMSX3: zero new commits.** Its head is still `82f21b16d`, from
+2026-08-20 18:13, the same commit the survey of 2026-08-20 stopped at. The
+title of that head is worth reading: "VK: credit sashkinbro for the pipeline
+cache format and the Adreno split". ARMSX3 is taking from the same author whose
+fork we ported this week, so the two trees will keep converging and a change
+seen there may already be here.
+
+**Upstream RPCS3: two new commits** on top of `243d7db5b`.
+
+* `8fd2ae954` "Filter UnlockTrophy reply". RPCN only. Not for this tree.
+* `b97f4bd8d` "rsx: Implement flat shading semantics". A candidate, not taken
+  yet. It touches `VKVertexProgram.cpp/.h`, `vkutils/device.cpp/.h`,
+  `gcm_enums.h` and `rsx_methods.cpp/.h`, and the device part reads like a new
+  optional extension query. Read it against the extended dynamic state work
+  landed today, because both change `vkutils/device.cpp` in the same place. It
+  is a correctness feature, not a speed one.
+
+Nothing was ported from this survey.
