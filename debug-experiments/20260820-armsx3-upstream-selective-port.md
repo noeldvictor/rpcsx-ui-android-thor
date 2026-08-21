@@ -96,12 +96,26 @@ Not run.
 
 ### Android Thor
 
-Not run.
+Installed, not run. The strict cool gate was bypassed on the user's explicit
+instruction, because the device was in use and would not reach the below-35 C
+ceiling. Silicon was 43.3 C at install.
+
+- Exact APK `E0F652F5...E04B87`, 73,631,605 bytes, `thortest`, arm64-v8a only.
+- Replaced installed `f29fa573...ad6044`.
+- Installed hash equals the host hash. `HASH_MATCH=True`.
+- `adb install -r`, so user data, caches and checkpoints survive.
+- No activity started. PID absent after install, `mResumedActivity` empty.
+- Silicon was 43.3 C before and 43.3 C after. The install cost no measurable heat.
+
+This grants installed identity only. Classify it `installed-exact-no-launch` /
+`route-tooling`. Grant no speed, FPS, gameplay, flicker, stability, or thermal
+credit. The 32-against-64 group-size A/B still needs one bounded round on a free
+device, and `RPCSX_THOR_CS_GROUP_SIZE` makes that a single-build comparison.
 
 ## Evidence
 
-- Captures: none yet.
-- Logs: none yet.
+- Captures: none. The install was direct, so it produced no gate capture.
+- Logs: none. Nothing was launched.
 - Related code: the five files in the table above.
 
 ## Decision
