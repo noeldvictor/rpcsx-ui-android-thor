@@ -3,10 +3,11 @@ package net.rpcsx.utils
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import net.rpcsx.BuildConfig
 import net.rpcsx.RPCSX
-import kotlin.concurrent.thread
 
 /**
  * Load a savestate into the RUNNING emulator, over adb.
@@ -56,9 +57,31 @@ class ThorDebugLoadStateReceiver : BroadcastReceiver() {
             return
         }
 
-        // Off the main thread, matching the save receiver and RPCSXActivity.
-        // loadState() enters the emulator and blocks while it restores.
-        thread(name = "RPCSX-ThorDebugLoadState") {
+        // ON the main thread, and NOT on a worker like the save receiver uses.
+        //
+        // loadState reaches boot_last_savestate(false), which runs
+        // Emu.GracefulShutdown() and then Emu.BootGame(): a full teardown and reboot
+        // of the VM. Those are wrapped in Emu.CallFromMainThread, but this port binds
+        // that callback to run INLINE on the calling thread, at
+        // android/src/rpcsx-android.cpp setupCallbacks. So the thread which calls in is
+        // the thread which tears the VM down.
+        //
+        // MEASURED, AND THE THREAD IS NOT THE CAUSE. Both forms corrupt the heap:
+        //
+        //   worker thread : Scudo ERROR: invalid chunk state when deallocating ...
+        //   main looper   : scudo::reportInvalidChunkState(...)  -- same crash
+        //
+        // So savestate RESTORE is broken in this fork on any thread, and the fault is
+        // in the load path itself, not in how it is dispatched. The main looper is kept
+        // because it is the thread the lifecycle code expects, not because it helps.
+        //
+        // RPCSXActivity drives the same call from a worker, through runNativeHotkey, so
+        // the SELECT + right stick UP hotkey is broken too. This is a real user-facing
+        // defect and it is UNFIXED.
+        //
+        // Consequence: there is no repeatable gameplay workload on this device. Capture
+        // works, restore does not, so a heavy scene cannot be replayed across arms.
+        Handler(Looper.getMainLooper()).post {
             val result = runCatching { RPCSX.instance.loadState() }
                 .onFailure { Log.e(TAG, "Thor debug loadstate failed: request=$requestId", it) }
                 .getOrDefault(false)
