@@ -1990,11 +1990,22 @@ static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 {
 	const fault_depth_guard depth_guard;
 
-	if (s_fault_depth > 4)
+	if (s_fault_depth > 1)
 	{
-		// Say so, rather than dying the way this flag was added to prevent.
-		std::fprintf(stderr, "Fault handler recursed %d deep at %p. Aborting.\n",
-			s_fault_depth, info ? info->si_addr : nullptr);
+		// Do NOT re-enter. The RSX fault handler takes m_cache_mutex, in
+		// texture_cache.h invalidate_address, and that mutex is not recursive. Coming
+		// back in while it is held deadlocks the thread, which is a silent freeze and no
+		// better than the silent kill this was meant to cure.
+		//
+		// So SA_NODEFER does not make a nested fault survivable. What it buys is that the
+		// kernel can deliver the second signal at all, so this line runs. Before it the
+		// process simply vanished: ART took the signal, Android logged "SIGNALED
+		// status=11", and there was no tombstone and no flushed log to read.
+		//
+		// A nested fault is a defect in the handler. Name it, then stop.
+		std::fprintf(stderr, "Nested fault at %p, depth %d, inside the fault handler. "
+			"The handler holds a non-recursive lock, so re-entering would hang. Aborting.\n",
+			info ? info->si_addr : nullptr, s_fault_depth);
 		std::fflush(stderr);
 		std::abort();
 	}
@@ -2164,10 +2175,14 @@ const bool s_exception_handler_set = []() -> bool
 	//
 	// That crash is what 21493f1e1 tried to avoid by resolving every protected page in a
 	// range BEFORE each copy. It worked and it cost half the frame rate, measured: 29.67
-	// FPS against 14.84 on Eternal Sonata. This flag treats the fault instead of the copy,
-	// so it costs nothing when nothing faults.
+	// FPS against 14.84 on Eternal Sonata. This flag costs nothing when nothing faults.
 	//
-	// The recursion is bounded in signal_handler by s_fault_depth.
+	// BE PRECISE ABOUT WHAT THIS BUYS. It does NOT make a nested fault survivable: the
+	// handler takes a non-recursive m_cache_mutex, so re-entering it would hang instead.
+	// What it buys is DELIVERY. Without the flag the second signal cannot be delivered at
+	// all and the process vanishes with no tombstone and no log. With it, signal_handler
+	// runs, sees the depth, names the address and aborts. Same death, but now it is
+	// reported and the defect can be found.
 	sa.sa_flags = SA_SIGINFO | SA_NODEFER;
 	sigemptyset(&sa.sa_mask);
 	sa.sa_sigaction = signal_handler;
