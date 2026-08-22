@@ -1972,8 +1972,33 @@ const bool s_exception_handler_set = []() -> bool
 
 #else
 
+// How deep this thread is inside the fault handler.
+//
+// SA_NODEFER lets a nested fault reach the handler, which is what stops the silent kill.
+// It also means a handler which ALWAYS faults would recurse until the stack runs out. One
+// nested fault is the case that happens: resolve a page, touch a second protected page.
+// Anything deeper is a defect, and this reports it instead of overflowing the stack.
+static thread_local int s_fault_depth = 0;
+
+struct fault_depth_guard
+{
+	fault_depth_guard() { s_fault_depth++; }
+	~fault_depth_guard() { s_fault_depth--; }
+};
+
 static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 {
+	const fault_depth_guard depth_guard;
+
+	if (s_fault_depth > 4)
+	{
+		// Say so, rather than dying the way this flag was added to prevent.
+		std::fprintf(stderr, "Fault handler recursed %d deep at %p. Aborting.\n",
+			s_fault_depth, info ? info->si_addr : nullptr);
+		std::fflush(stderr);
+		std::abort();
+	}
+
 	ucontext_t* context = static_cast<ucontext_t*>(uct);
 
 #if defined(ARCH_X64)
@@ -2127,7 +2152,23 @@ void sigpipe_signaling_handler(int)
 const bool s_exception_handler_set = []() -> bool
 {
 	struct ::sigaction sa;
-	sa.sa_flags = SA_SIGINFO;
+
+	// SA_NODEFER, so a fault INSIDE the handler can still be delivered.
+	//
+	// Without it the kernel blocks SIGSEGV for the duration of the handler. The handler
+	// resolves RSX page protections, and resolving one can touch another protected page,
+	// which faults again. That second fault cannot be delivered while the signal is
+	// blocked, so the kernel kills the process. On Android a guard page is not emulator
+	// memory either, so ART's FaultManager takes the signal and the whole record is
+	// "SIGNALED status=11": no tombstone, no stack, no flushed log. The app just vanishes.
+	//
+	// That crash is what 21493f1e1 tried to avoid by resolving every protected page in a
+	// range BEFORE each copy. It worked and it cost half the frame rate, measured: 29.67
+	// FPS against 14.84 on Eternal Sonata. This flag treats the fault instead of the copy,
+	// so it costs nothing when nothing faults.
+	//
+	// The recursion is bounded in signal_handler by s_fault_depth.
+	sa.sa_flags = SA_SIGINFO | SA_NODEFER;
 	sigemptyset(&sa.sa_mask);
 	sa.sa_sigaction = signal_handler;
 

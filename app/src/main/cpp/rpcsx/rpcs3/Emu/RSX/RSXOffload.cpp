@@ -38,38 +38,28 @@ namespace rsx
 	// region skip was supposed to reduce and what nothing has actually verified.
 	static atomic_t<u64> g_preflight_iterations = 0;
 
-	// 0 off, 1 full, 2 probe only.
+	// Off or on. There is no probe-only mode any more.
 	//
-	// Mode 2 walks and probes exactly as mode 1 does and never calls the handler. It is
-	// not correct to ship, it is there to SPLIT the cost. Mode 1 measured 14.84 FPS
-	// against 29.67 with the preflight off, and the walk has two halves: about 17 million
-	// page probes and about 20,000 handler calls. Each half has been asserted to be the
-	// cost at some point today, on reasoning, and reasoning has been wrong four times.
+	// A mode which probed and did not resolve was added on 2026-08-22 to split the cost,
+	// and it killed the emulator inside two minutes: the copy faults on a page nothing
+	// resolved, faults again inside the handler, and ART takes the process with no
+	// tombstone. That is the exact crash this preflight exists to stop. A diagnostic must
+	// not reintroduce the bug it measures.
 	//
-	// Mode 2 fast means the handler calls are the cost, and the fix is one handler call
-	// for each protected RANGE. Mode 2 slow means the probes are, and the fix is to stop
-	// probing per page.
-	static int thor_guest_preflight_mode()
+	//   debug.rpcsx.thor.guest_preflight = 1   (default 0)
+	static bool thor_guest_preflight_enabled()
 	{
 #ifdef __ANDROID__
-		static const int value = []()
+		static const bool value = []()
 		{
 			char buffer[PROP_VALUE_MAX]{};
 			const int length = __system_property_get("debug.rpcsx.thor.guest_preflight", buffer);
-			if (length <= 0)
-			{
-				return 0;
-			}
-			if (buffer[0] == '2')
-			{
-				return 2;
-			}
-			return (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T') ? 1 : 0;
+			return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
 		}();
 
 		return value;
 #else
-		return 1;
+		return true;
 #endif
 	}
 
@@ -102,9 +92,7 @@ namespace rsx
 		// default. Set the property when chasing one of those silent deaths.
 		//
 		//   debug.rpcsx.thor.guest_preflight = 1   (default 0)
-		const int preflight_mode = thor_guest_preflight_mode();
-
-		if (preflight_mode == 0)
+		if (!thor_guest_preflight_enabled())
 		{
 			return false;
 		}
@@ -148,8 +136,8 @@ namespace rsx
 			const u64 total = s_fast + s_slow;
 			if ((total % 100000) == 0 && s_reported.exchange(total) != total)
 			{
-				rsx_log.error("guest page preflight: mode=%d fast=%llu slow=%llu pages_walked=%llu iterations=%llu handler_calls=%llu",
-					preflight_mode, +s_fast, +s_slow, +s_pages, +g_preflight_iterations, +g_preflight_handler_calls);
+				rsx_log.error("guest page preflight: fast=%llu slow=%llu pages_walked=%llu iterations=%llu handler_calls=%llu",
+					+s_fast, +s_slow, +s_pages, +g_preflight_iterations, +g_preflight_handler_calls);
 			}
 
 			if (fast)
@@ -158,56 +146,36 @@ namespace rsx
 			}
 		}
 
-		u32 current = address;
 		bool handled = false;
 
-		for (;;)
+		// Visit only the pages RSX actually holds protected.
+		//
+		// The old loop stepped every 4 KiB page of the range and asked vm::check_addr for
+		// each one. A texture upload passes a whole surface, so that was about 1,800 steps
+		// for one upload, and the counters showed 17 million probes against 115 useful
+		// handler calls at boot. More than 99.99% of the work found nothing.
+		//
+		// mm_next_protected_page reads the mirror instead, which is one contiguous byte
+		// for each page, and skips a 1 MiB region whose counter is zero. So a clean range
+		// costs a handful of cache lines and no page table lookups at all.
+		//
+		// Every protected page still reaches the handler, so this resolves exactly what
+		// the per-page loop resolved. It is NOT the probe-only mode, which skipped the
+		// resolution and killed the process inside memcpy within two minutes.
+		for (u32 page = mm_next_protected_page(address, last, is_writing); page != 0;)
 		{
-			// Skip a whole 1 MiB region when it holds no protected page.
-			//
-			// This is where the cost was. A texture upload passes a whole surface, and a
-			// surface is large: 2560x720 is 1,800 pages. It always reaches this loop,
-			// because it targets protected memory by definition -- protection is how the
-			// cache learns the guest wrote. But the protected pages are a tiny part of
-			// the range. The counters said 17 million pages walked against 115 calls to
-			// the handler, so more than 99.999% of the walk found nothing.
-			//
-			// Measured: 21493f1e1 alone took Eternal Sonata from 29.67 FPS to 14.84.
-			// Skipping clean regions turns 256 probes into one for each of them.
-			if (!mm_range_has_protection(current, 1))
-			{
-				const u32 region_end = (current | ((1u << 20) - 1));
-
-				if (region_end >= last)
-				{
-					break;
-				}
-
-				current = region_end + 1;
-				continue;
-			}
-
-			if (!vm::check_addr(current, required_permission) || !mm_is_accessible(current, is_writing))
-			{
-				// Count these. The handler invalidates the texture cache, so it is orders of
-				// magnitude dearer than the probe, and the page count alone cannot say whether
-				// the cost is the walk or the handler.
-				g_preflight_handler_calls++;
-
-				if (preflight_mode != 2)
-				{
-					handled |= g_access_violation_handler(current, is_writing);
-				}
-			}
-
 			g_preflight_iterations++;
+			g_preflight_handler_calls++;
+			handled |= g_access_violation_handler(page, is_writing);
 
-			if (current / 4096 == last / 4096)
+			if (page / 4096 >= last / 4096)
 			{
 				break;
 			}
 
-			current = (current & ~4095u) + 4096u;
+			// Re-scan from the next page. The handler resolves a whole cache section, so
+			// the following pages are usually open again and the scan skips them.
+			page = mm_next_protected_page(page + 4096, last, is_writing);
 		}
 
 		return handled;

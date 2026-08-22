@@ -40,6 +40,7 @@ namespace rsx
 	// from an RSX protection? Always true off Android.
 	bool mm_is_accessible(u32 vm_address, bool is_writing);
 	bool mm_range_has_protection(u32 vm_address, u32 length);
+	u32 mm_next_protected_page(u32 vm_address, u32 last_address, bool is_writing);
 	void mm_flush_lazy();
 	void mm_flush(u32 vm_address);
 	void mm_flush();

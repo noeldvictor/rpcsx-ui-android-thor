@@ -102,6 +102,45 @@ namespace rsx
 		}
 	}
 
+	u32 mm_next_protected_page(u32 vm_address, u32 last_address, bool is_writing)
+	{
+		// Walk the mirror, not the page tables.
+		//
+		// The mirror is one byte for each page, contiguous, so scanning it for a range is
+		// a linear read of a few cache lines: 1,800 pages of a surface is 1,800 bytes.
+		// The old loop asked vm::check_addr for EVERY page instead, which is far dearer
+		// and which only matters for a page the mirror already flags.
+		//
+		// Returns the first page at or after vm_address which RSX holds protected against
+		// this access, or 0 when the range holds none. Zero is not a valid guest page here
+		// because the caller rejects a null address before it gets this far.
+		//
+		// The safety model is the one the mirror was built with: a page the mirror calls
+		// open, but which is really closed, simply faults as it did before this preflight
+		// existed. It never claims a protected page is open.
+		for (u64 page = vm_address / 4096; page <= u64{last_address} / 4096; page++)
+		{
+			if (g_protected_region_pages[(page * 4096) >> s_region_shift].load(std::memory_order_acquire) == 0)
+			{
+				// No protected page in this whole 1 MiB region: jump the region.
+				page = (((page * 4096) | ((1u << s_region_shift) - 1)) / 4096);
+				continue;
+			}
+
+			const auto prot = static_cast<utils::protection>(
+				g_guest_page_protection[page].load(std::memory_order_acquire));
+
+			const bool blocked = is_writing ? prot != utils::protection::rw : prot == utils::protection::no;
+
+			if (blocked)
+			{
+				return static_cast<u32>(page * 4096);
+			}
+		}
+
+		return 0;
+	}
+
 	bool mm_range_has_protection(u32 vm_address, u32 length)
 	{
 		if (!length)
