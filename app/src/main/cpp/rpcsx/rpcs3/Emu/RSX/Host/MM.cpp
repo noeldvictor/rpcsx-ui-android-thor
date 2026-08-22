@@ -37,17 +37,27 @@ namespace rsx
 	static constexpr usz s_guest_page_count = 0x1'0000'0000ull / 4096;
 	std::array<std::atomic<u8>, s_guest_page_count> g_guest_page_protection{};
 
-	// How many guest pages RSX currently holds protected.
+	// How many protected pages each 1 MiB region holds.
 	//
-	// The mirror above answers "is THIS page protected" for one page. The callers
-	// which matter ask about a whole texture, and they walked it one 4 KiB page at a
-	// time: a 2560x720 surface is 1,800 iterations of an atomic load plus a
-	// vm::check_addr, on the RSX thread, for every upload. Almost every one of those
-	// walks finds nothing, because RSX usually has nothing protected at all.
+	// The mirror above answers "is THIS page protected", for one page. The callers
+	// that matter ask about a whole range, and they walked it one 4 KiB page at a
+	// time: a 2560x720 surface is 1,800 steps of a vm::check_addr plus an atomic
+	// load, on the RSX thread, for one upload. The SPU MFC put path asks for every
+	// DMA, and process_mfc_cmd is 20% of gameplay.
 	//
-	// So count the protected pages. Zero means no walk can find anything, and the
-	// caller can return immediately.
-	static std::atomic<u64> g_protected_page_count{0};
+	// A single global "is anything protected" flag does NOT help. The texture cache
+	// protects pages as a matter of course, so that flag is set for most of
+	// gameplay and every walk would still run in full.
+	//
+	// So count per region instead. A region is 1 MiB, which is 256 pages, so a
+	// range test reads 256 times fewer counters than the walk reads pages: one
+	// counter for a 16 KiB DMA, eight for a 7 MiB surface. A zero region cannot
+	// hold a protected page, so the walk can skip it, and a non-zero region falls
+	// back to the exact per-page walk. The test is conservative in the safe
+	// direction: it never claims a protected page is open.
+	static constexpr u32 s_region_shift = 20; // 1 MiB
+	static constexpr usz s_region_count = 0x1'0000'0000ull >> s_region_shift;
+	static std::array<std::atomic<u32>, s_region_count> g_protected_region_pages{};
 
 	static void mm_track_protection(u64 start, u64 length, utils::protection prot)
 	{
@@ -77,22 +87,39 @@ namespace rsx
 			if (was_protected != now_protected)
 			{
 				// This path runs when a protection changes, which is rare. The read
-				// path runs for each texture upload, which is not.
+				// path runs for each texture upload and each SPU DMA, which is not.
+				auto& region = g_protected_region_pages[(page * 4096) >> s_region_shift];
+
 				if (now_protected)
 				{
-					g_protected_page_count.fetch_add(1, std::memory_order_relaxed);
+					region.fetch_add(1, std::memory_order_release);
 				}
 				else
 				{
-					g_protected_page_count.fetch_sub(1, std::memory_order_relaxed);
+					region.fetch_sub(1, std::memory_order_release);
 				}
 			}
 		}
 	}
 
-	bool mm_any_protected()
+	bool mm_range_has_protection(u32 vm_address, u32 length)
 	{
-		return g_protected_page_count.load(std::memory_order_acquire) != 0;
+		if (!length)
+		{
+			return false;
+		}
+
+		const u64 last = std::min<u64>(u64{vm_address} + length - 1, 0xFFFF'FFFFull);
+
+		for (u64 region = vm_address >> s_region_shift; region <= (last >> s_region_shift); region++)
+		{
+			if (g_protected_region_pages[region].load(std::memory_order_acquire) != 0)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	bool mm_is_accessible(u32 vm_address, bool is_writing)
@@ -111,7 +138,7 @@ namespace rsx
 		return true;
 	}
 
-	bool mm_any_protected()
+	bool mm_range_has_protection(u32, u32)
 	{
 		return false;
 	}

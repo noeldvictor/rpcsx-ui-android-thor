@@ -157,6 +157,17 @@ runtime codes stay listed but greyed out until native validation exists.
 
 - **Launching a second game after closing the first can fail.** Under
   investigation. Restarting the app is the current workaround.
+- **A 3D-scene slowdown was reported on 2026-08-22 and is fixed but not yet
+  measured.** `21493f1e1` put a page-by-page guest memory check on the texture
+  upload, the blit and the SPU DMA paths. It walked one 4 KiB page at a time
+  over whole surfaces, and over every SPU MFC put. `58614e0aa` and the commit
+  after it skip that walk for a 1 MiB region which holds no protected page. The
+  reason for the original check stays valid, so the check still runs when RSX
+  has protected something. **No device run confirms the recovery yet.**
+- **The library only lists what you add through the folder picker.** Dropping an
+  ISO into the folder does not add it. If added games disappear after a restart,
+  the save failed: `games.json` must be writable by the app. An `adb` session
+  which writes that file makes it unwritable, and the failure used to be silent.
 - Heavy scenes still drop well below 30 FPS.
 - Cold compilation on first launch generates significant heat and can stall
   before a game reaches its title screen.
@@ -222,7 +233,7 @@ which precompile cleanly on the new default with no allocator abort; a title tha
 was already close to the limit has not been tested, because the one known example
 in this library has no bootable disc image.
 
-## Thor variants## Thor variants
+## Thor variants
 
 All three share the same CPU and GPU. The difference is headroom for caches and
 game storage.

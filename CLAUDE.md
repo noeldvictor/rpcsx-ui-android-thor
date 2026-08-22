@@ -3883,3 +3883,98 @@ nothing to attach to.
 **So do not read "Eternal Sonata is fixed" as an upstream result.** Whether the
 flowers and grass render correctly HERE is a separate question, and only the
 device answers it.
+
+# A correctness fix on a hot path needs a COST, not only a reason
+
+**Found 2026-08-22, from a user report of about 10 FPS lost in 3D scenes.** This
+is a new failure class for this file. Every entry above is about a claimed WIN
+that did not survive. This one is about a claimed COST that nobody priced.
+
+`21493f1e1` added `prepare_guest_read()` and `prepare_guest_write()` to resolve
+RSX-protected pages from normal thread context. The reason is good, and the fix
+stays: a protected range that faults inside `memcpy()` can fault a second time
+inside the handler, and Android then kills the process with no tombstone.
+
+`prepare_guest_access` walks the range **one 4 KiB page at a time**. Each step
+costs a `vm::check_addr` **and** an atomic load. Its comment said "one atomic
+load for each page", which undercounts the work by half.
+
+**The size of the ranges is what makes it expensive, and nobody looked at the
+call sites.**
+
+| call site | what it passes |
+| --- | --- |
+| `texture_cache.h:2562` | a whole surface, `tex_size` |
+| `VKTexture.cpp:1059` | the whole `layout.data.size()` |
+| `nv3089.cpp:593` | the blit source |
+| `SPUThread.cpp`, `do_dma_transfer` | **every SPU MFC put** |
+
+A 2560x720 surface is about 1,800 steps for one upload. The SPU site is worse:
+`process_mfc_cmd` is **20.13% of gameplay** in this fork's own profile, and this
+file already records that Eternal Sonata "pounds 16 KB transfers".
+
+## The fix, and the first fix which was wrong
+
+Count the protected pages **per 1 MiB region**, and skip the walk for a region
+which holds none. That reads 256 times fewer counters than the walk reads pages:
+one counter for a 16 KiB DMA, eight for a 7 MiB surface. A zero region cannot
+hold a protected page. A non-zero region falls back to the exact walk, so the
+crash fix stays intact.
+
+**A global "is anything protected" flag was written first, and it was useless.**
+The texture cache keeps pages protected through most of gameplay, so the flag is
+set nearly always and every walk would still run in full. The coarse map works
+because it asks about the range, not about the process.
+
+## The rule this adds
+
+Before you put work on a hot path, write down the cost the same way this file
+already demands for a win:
+
+1. **Per call, in operations.** Not "cheap". Count the loads and the branches.
+2. **Times the call rate.** Get the rate from the profile, not from a guess.
+3. **Against the real arguments.** Open each call site and read what it passes.
+   A loop priced per page is priced wrong when the caller hands it a surface.
+4. **Then measure it.** A correctness fix still has to show its cost on the
+   device before it ships.
+
+The reach question this file already asks about wins — *does this run, and how
+often* — applies exactly the same to costs. It was never asked here.
+
+## And a guess that cost a round trip
+
+I blamed flat shading first, because it was the newest change that touched a
+shader key. I gated it, rebuilt, installed, and measured **14.70 FPS median**.
+The gate changed nothing. The evidence for the real cause was in the call sites
+the whole time, and reading them took minutes.
+
+**Read the code before you theorise about it.** Two of the three suspects were
+excluded by reading, not by running: DP3_PRECISE needs Shader Precision ultra
+and this device reads High, and `copy_data_swap_u32_cmp` is the NEON form on
+ARM64 rather than a scalar fallback.
+
+## Still unmeasured, and named so nobody assumes
+
+The page walk fix is derived from reading. **No device run has confirmed it.**
+Two other changes from the same window are also untested:
+
+* `d91dba53f`, extended dynamic state. Its own comment in `device.cpp` says a
+  driver that emulates those states can be slower, and its device run on
+  2026-08-21 recorded "No FPS. No frame counter was read." Test it with
+  `debug.rpcsx.thor.vk_dynamic_state_off=1`, which needs no rebuild.
+  `tools/thor_dynamic_state_ab.sh` runs that A/B with the guards.
+* `9e906e616`, the generic SPU checksum. It does more work for each byte on the
+  hottest vector path in the SPU JIT, and nothing has booted with it.
+
+## Why the manual is not the place to start here
+
+The instruction to "read the ARM manuals and find places to improve" is the
+method this file already records as failing. **Ten manual-derived predictions
+were measured, and ten were refuted.** The manuals were right every time; the
+inference on top of them was not.
+
+What found this defect was the opposite move, and it is the one the audit ledger
+already recommends: **establish reach first**. Open the call sites, read the
+argument sizes, and multiply by the rate from the profile. That took minutes and
+needed no device. Go to `docs/hardware/` when a specific instruction choice is
+already known to be hot, never to hunt for one.

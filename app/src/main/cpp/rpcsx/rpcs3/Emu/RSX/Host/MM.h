@@ -39,7 +39,7 @@ namespace rsx
 	// Cheap lock-free question: can the guest touch this address without a fault
 	// from an RSX protection? Always true off Android.
 	bool mm_is_accessible(u32 vm_address, bool is_writing);
-	bool mm_any_protected();
+	bool mm_range_has_protection(u32 vm_address, u32 length);
 	void mm_flush_lazy();
 	void mm_flush(u32 vm_address);
 	void mm_flush();

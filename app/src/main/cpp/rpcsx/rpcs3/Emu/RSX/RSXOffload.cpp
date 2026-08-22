@@ -47,13 +47,14 @@ namespace rsx
 		// every upload. The comment above used to say "one atomic load for each page",
 		// which undercounted it by half and priced it as if the ranges were small.
 		//
-		// RSX usually holds nothing protected, and then no page in any range can need
-		// the handler. One counter read answers that for the whole range. The range
-		// form of vm::check_addr answers the rest in one call instead of per page.
+		// A per-region test answers "can this range hold a protected page" 256 times
+		// more cheaply than the walk answers it: one counter for a 16 KiB DMA, eight
+		// for a 7 MiB surface. A global "is anything protected" flag would not work,
+		// because the texture cache keeps pages protected through most of gameplay.
 		//
-		// This is exactly the pre-2026-08-20 behaviour whenever RSX has protected
-		// nothing, and the full walk whenever it has.
-		if (!mm_any_protected() && vm::check_addr(address, required_permission, length))
+		// When the answer is no, this is the behaviour from before 21493f1e1. When it
+		// is yes, the exact per-page walk below still runs.
+		if (!mm_range_has_protection(address, length) && vm::check_addr(address, required_permission, length))
 		{
 			return false;
 		}
