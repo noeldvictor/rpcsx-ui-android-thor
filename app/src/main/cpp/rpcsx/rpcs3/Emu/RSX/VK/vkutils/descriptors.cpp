@@ -334,7 +334,30 @@ namespace vk
 
 	descriptor_set::~descriptor_set()
 	{
-		if (m_update_after_bind_mask)
+		// Check that the manager is still alive before reaching for it.
+		//
+		// g_fxo->get<T>() hands back the raw storage and says so: "Obtain object
+		// pointer (may be uninitialized memory)". It does not consult m_init. After
+		// Emu.Kill() the typemap is cleared, and the next reset() memsets that storage
+		// to the 0xCC trap pattern, so deregister() then walks m_notification_list
+		// through garbage.
+		//
+		// A descriptor_set can outlive the typemap. Loading a savestate runs
+		// Emu.GracefulShutdown() and then Emu.BootGame() from the main thread, and a
+		// vk::compute_task is destroyed on that thread after the clear.
+		//
+		// MEASURED 2026-08-22, loading a savestate in Eternal Sonata (BLUS30161):
+		//
+		//   Segfault reading location 00cccccccccccccc at ...
+		//   X10 = X11 = cccccccccccccccc          <- the reset() trap pattern
+		//   vk::descriptors::dispatch_manager::deregister(vk::descriptor_set*)
+		//   vk::descriptor_set::~descriptor_set()
+		//   vk::compute_task::~compute_task()
+		//   Thread: Main Thread.
+		//
+		// Skipping the deregister is correct here: the list being deregistered from has
+		// already been destroyed, so there is nothing left to remove this set from.
+		if (m_update_after_bind_mask && g_fxo->is_init<descriptors::dispatch_manager>())
 		{
 			g_fxo->get<descriptors::dispatch_manager>().deregister(this);
 		}
@@ -351,7 +374,9 @@ namespace vk
 			m_in_use = true;
 			m_update_after_bind_mask = g_render_device->get_descriptor_update_after_bind_support();
 
-			if (m_update_after_bind_mask)
+			// Same guard as the destructor above: get<T>() does not check m_init, so a
+			// register_ during teardown would push into trap-filled storage.
+			if (m_update_after_bind_mask && g_fxo->is_init<descriptors::dispatch_manager>())
 			{
 				g_fxo->get<descriptors::dispatch_manager>().register_(this);
 			}

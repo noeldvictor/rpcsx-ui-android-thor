@@ -564,7 +564,52 @@ void jit_announce(uptr, usz, std::string_view);
 
 void qt_events_aware_op(int repeat_duration_ms,
                         std::function<bool()> wrapped_op) {
-  /// ?????
+  // Repeat the operation until it reports completion.
+  //
+  // THIS WAS AN EMPTY STUB, AND THE EMPTY STUB IS WHY LOADING A SAVESTATE CRASHED.
+  //
+  // Emulator::GracefulShutdown() calls this to WAIT for m_state to reach
+  // system_state::stopped before it returns. With no body there was no wait, so
+  // boot_last_savestate() went straight on to Emu.BootGame() while the Emulation
+  // Join Thread was still inside Kill() tearing the fixed typemap down. Boot then
+  // ran Emulator::Init() -> g_fxo->reset() -> clear() on the main thread at the
+  // same time as the join thread ran its own g_fxo->reset() -> clear(). Two
+  // threads destroying one typemap.
+  //
+  // MEASURED 2026-08-22, from load state broadcasts on Eternal Sonata (BLUS30161).
+  // One race, surfacing in four different places as each earlier one was fixed:
+  //
+  //   Scudo ERROR: invalid chunk state ... llvm::Module::~Module()
+  //   Segfault reading 0x8               ... fixed_typemap.hpp:360, info == nullptr
+  //   Segfault reading 0x40              ... fixed_typemap.hpp:398, info == nullptr
+  //     and there BOTH the main thread and the Emulation Join Thread faulted
+  //     inside clear(), which is what named the race
+  //   Segfault reading 00cccccccccccccc  ... the 0xCC trap pattern reset() writes
+  //
+  // The Qt build loops here while it pumps the event queue. Android has no queue
+  // to pump, so this only sleeps for the interval the caller asked for.
+  //
+  // Bounded, because the callers include the UI thread and an unbounded wait there
+  // is an ANR. On timeout it gives up and returns, which is what the stub did on
+  // every call, so a timeout can be no worse than the old behaviour.
+  if (!wrapped_op) {
+    return;
+  }
+
+  constexpr auto timeout = std::chrono::seconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  const auto interval =
+      std::chrono::milliseconds(std::max(1, repeat_duration_ms));
+
+  while (!wrapped_op()) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      rpcsx_android.error("qt_events_aware_op: gave up waiting after %d seconds",
+                          static_cast<int>(timeout.count()));
+      return;
+    }
+
+    std::this_thread::sleep_for(interval);
+  }
 }
 
 static std::string unwrap(JNIEnv *env, jstring string) {

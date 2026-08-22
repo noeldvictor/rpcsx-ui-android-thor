@@ -332,6 +332,42 @@ namespace stx
 			g_tls_serialize_name = {};
 		}
 
+		// Number of entries actually pushed into m_info.
+		//
+		// Counts the ENTRIES, not the m_init flags. reset() writes a null sentinel at
+		// m_info[-1] before the first entry, and iterator::operator++ below already
+		// treats that null as the end of the list, so the entries are the authoritative
+		// record of what was pushed.
+		//
+		// m_init can carry one flag more than there are entries. init<T, As>() sets the
+		// flag first and pushes the entry last, so any early return between the two
+		// leaves a flag set with nothing pushed. A count taken from the flags then walks
+		// one step past the first entry, onto the sentinel, and dereferences it.
+		//
+		// MEASURED 2026-08-22, loading a savestate in Eternal Sonata (BLUS30161):
+		//
+		//   Segfault reading location 0000000000000008 at ...
+		//   stx::manual_typemap<void, 33554432u, 128u>::clear()
+		//   fixed_typemap.hpp:360           -> info->thread_op, with info == nullptr
+		//
+		// The dump gives X22 = 0x5b8, so the flag count was 183, and it faults at
+		// X23 = -0x5b8, the 183rd step. m_info held 182 entries, so step 183 read the
+		// sentinel. Counting entries cannot overrun, because nothing ever pushes a null.
+		//
+		// clear() and save() both used the flag count. save() is savestate CAPTURE, so
+		// the same overrun reached the save path too.
+		u32 entry_count() const noexcept
+		{
+			u32 count = 0;
+
+			for (const typeinfo* const* it = m_info; it[-1]; it--)
+			{
+				count++;
+			}
+
+			return count;
+		}
+
 		void clear()
 		{
 			if (!is_init())
@@ -340,16 +376,7 @@ namespace stx
 			}
 
 			// Get actual number of created objects
-			u32 _max = 0;
-
-			for (const auto& type : stx::typelist<typeinfo>())
-			{
-				if (m_init[type.index()])
-				{
-					// Skip object if not created
-					_max++;
-				}
-			}
+			u32 _max = entry_count();
 
 			// Order semi-destructors before the actual destructors
 			// This allows to safely access data that may be deallocated or destroyed from other members of FXO regardless of their intialization time
@@ -413,16 +440,7 @@ namespace stx
 			}
 
 			// Get actual number of created objects
-			u32 _max = 0;
-
-			for (const auto& type : stx::typelist<typeinfo>())
-			{
-				if (m_init[type.index()])
-				{
-					// Skip object if not created
-					_max++;
-				}
-			}
+			u32 _max = entry_count();
 
 			// Save data in forward order
 			for (u32 i = _max; i; i--)

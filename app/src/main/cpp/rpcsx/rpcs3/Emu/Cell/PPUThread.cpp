@@ -5434,6 +5434,10 @@ namespace
 			{
 				for (auto& buck : buckets)
 				{
+					// Take the bucket lock. get() and remove() both hold it, and this
+					// walks the same map.
+					std::lock_guard lock(buck.mutex);
+
 					for (auto& mod : buck.map)
 					{
 						for (auto& jit : mod.second.pjit)
@@ -5441,6 +5445,28 @@ namespace
 							*jit = s;
 						}
 					}
+
+					// Clear, so a SECOND destroying_context cannot destroy the same
+					// modules again.
+					//
+					// Without this the entries stay in the map after their jits are gone.
+					// On a normal exit that never shows, because this runs once and the
+					// process dies. Loading a savestate is not a normal exit:
+					// boot_last_savestate() calls Emu.GracefulShutdown() and then
+					// Emu.BootGame(), so the manager sees destroying_context twice and
+					// frees each llvm::Module twice.
+					//
+					// MEASURED 2026-08-22, from a load state broadcast:
+					//
+					//   Abort message: 'Scudo ERROR: invalid chunk state when
+					//                   deallocating address ...'
+					//   #06 llvm::Module::~Module()
+					//   #09 llvm::MCJIT::~MCJIT()
+					//   #12 jit_module_manager::operator=(thread_state)
+					//
+					// The entries are unusable after their jits are destroyed, so dropping
+					// them loses nothing.
+					buck.map.clear();
 				}
 			}
 

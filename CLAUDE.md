@@ -4217,3 +4217,111 @@ device so far which has ever moved frames for a lever.
 
 **A day of clean negative results is a warning about the workload, not a verdict
 on the code.**
+
+## Load state crashed four different ways, and all four were one race
+
+2026-08-22. `loadState()` killed the process. Fixing it took four changes,
+because each fix let the teardown get further and uncovered the next fault. The
+last one named the cause.
+
+The chain, in the order it was found. Every line is from a real run:
+
+| # | Symptom | Site |
+|---|---------|------|
+| 1 | `Scudo ERROR: invalid chunk state` | `llvm::Module::~Module`, from `jit_module_manager::operator=` |
+| 2 | `Segfault reading location 0x8` | `fixed_typemap.hpp:360`, `info->thread_op`, `info == nullptr` |
+| 3 | `Segfault reading 00cccccccccccccc` | `vk::descriptor_set::~descriptor_set` |
+| 4 | `Segfault reading location 0x40` | `fixed_typemap.hpp:398`, `info == nullptr`, **on two threads at once** |
+
+Row 4 is the one that named it. The main thread and the Emulation Join Thread
+faulted at the same PC, inside `manual_typemap::clear()`. Two threads were
+destroying one typemap.
+
+### The cause: an empty stub
+
+`qt_events_aware_op` in `android/src/rpcsx-android.cpp` was this:
+
+```cpp
+void qt_events_aware_op(int repeat_duration_ms, std::function<bool()> wrapped_op) {
+  /// ?????
+}
+```
+
+`Emulator::GracefulShutdown()` calls it to WAIT for `m_state` to reach
+`system_state::stopped`. With no body there was no wait, so
+`boot_last_savestate()` went on to `Emu.BootGame()` while the join thread was
+still inside `Kill()`. Boot then ran `Emulator::Init()` -> `g_fxo->reset()` ->
+`clear()` at the same time as the join thread ran its own.
+
+`Kill()` even says what it assumed, at `System.cpp:3834`:
+
+```
+// Final termination from main thread
+CallFromMainThread(...)
+```
+
+It is not on the main thread here. This port binds `call_from_main_thread` to
+`cb()`, an inline call on whichever thread got there. So the "main thread only"
+teardown runs on the join thread, and the guarantee that made it safe is gone.
+
+### What this costs to find, and the cheaper route
+
+Four build-install-measure rounds. The cheaper route was available at round one:
+**two threads in the same function is a race, so look at what was supposed to
+serialize them.** Rows 1, 2 and 3 all had that shape and none of them said so,
+because only one thread had faulted yet.
+
+### The rule
+
+**When a port stubs out a synchronisation primitive, every caller that depended
+on it is now unsynchronised, and none of them will say so.** The stub compiles,
+returns, and the callers keep their comments about guarantees they no longer
+have. Grep the port layer for empty bodies before trusting a lifecycle comment.
+
+### The other three are still real, and still fixed
+
+None of them are reverted, and none are redundant:
+
+- `jit_module_manager::operator=` destroyed every JIT and left the entries in
+  the map, and took no bucket lock while walking a map that `get()` and
+  `remove()` both lock. Now clears under the lock.
+- `manual_typemap::clear()` and `save()` sized their loops from the `m_init`
+  flags and walked the `m_info` array. `reset()` fronts that array with a null
+  sentinel, and `iterator::operator++` already treats that null as the end.
+  Counting the entries cannot overrun. `clear()` is the measured one; `save()`
+  had the same shape and was fixed with it.
+- `descriptor_set::~descriptor_set` reached `g_fxo->get<T>()`, which is
+  documented "may be uninitialized memory" and does not check `m_init`. Now
+  guarded on `is_init<T>()`.
+
+## Savestates cannot round trip on this device: no firmware
+
+Measured 2026-08-22, after the crash chain above was fixed. The process now
+survives a load, and the savestate restores objects, threads and file
+descriptors. It then fails:
+
+```
+ppu_loader: PS3 firmware is not installed or the installed firmware is invalid.
+...
+Verification failed (object: 0x0)
+(in kernel/cellos/src/sys_prx.cpp:426)
+```
+
+`sys_prx.cpp:426` is `ensure(g_cfg.savestate.state_inspection_mode.get())`. When
+a PRX cannot be restored from a real firmware module, restore requires Inspection
+Mode, and it is off. `$FILES/dev_flash` does not exist at all.
+
+A disc boot does not need this, because the HLE modules stand in. A savestate
+does, because it captured PRX objects that have to be rebuilt.
+
+**So there is still no repeatable gameplay workload on this device, and the
+reason is now a missing file and not a bug.** Either install firmware, or turn on
+Inspection Mode savestates and accept what that mode restores. Until then the
+capped-workload warning in the section above still governs every A/B here.
+
+### Back up the savestate before capturing one
+
+A capture overwrites `$TITLE_1_0.SAVESTAT.zst` in place. There is no second slot
+and no `.bak`. A capture taken to test the load path **destroyed the existing
+savestate for that title**, and nothing on the device kept a copy. Copy the file
+somewhere else first.
