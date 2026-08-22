@@ -8,6 +8,7 @@
 
 #include "Emu/Memory/vm_locking.h"
 #include "Emu/RSX/rsx_methods.h"
+#include "Emu/RSX/thor_flat_shading.h"
 #include "Emu/RSX/Host/MM.h"
 #include "Emu/RSX/Host/RSXDMAWriter.h"
 #include "Emu/RSX/NV47/HW/context_accessors.define.h"
@@ -52,7 +53,7 @@ GLGSRender::GLGSRender(utils::serial* ar) noexcept : GSRender(ar)
 	backend_config.supports_multidraw = true;
 	backend_config.supports_normalized_barycentrics = true;
 	// OpenGL 3.2 and later default to GL_LAST_VERTEX_CONVENTION, which is what RSX wants.
-	backend_config.supports_last_provoking_vertex = true;
+	backend_config.supports_last_provoking_vertex = rsx::thor_flat_shading_enabled();
 
 	if (g_cfg.video.antialiasing_level != msaa_level::none)
 	{

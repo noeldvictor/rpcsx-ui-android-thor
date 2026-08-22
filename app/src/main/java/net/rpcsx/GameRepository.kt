@@ -1,6 +1,7 @@
 package net.rpcsx
 
 import android.content.res.Resources.NotFoundException
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.Keep
@@ -142,10 +143,25 @@ class GameRepository {
         }
 
         private fun saveSnapshot(games: List<GameInfo>) {
+            // Report a failed save. Do not swallow it.
+            //
+            // This write can fail for a reason the user cannot see. On one device games.json
+            // was owned by "shell", left behind by an adb session, at mode 644. The app could
+            // read it and not write it. So a folder import added every game to the list in
+            // memory, this save threw, printStackTrace went nowhere anybody looks, and the
+            // library came back empty after each restart. The library looked broken while the
+            // scan was working correctly.
+            val file = File(RPCSX.rootDirectory + "games.json")
             try {
-                File(RPCSX.rootDirectory + "games.json").writeText(Json.encodeToString(games))
+                file.writeText(Json.encodeToString(games))
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(
+                    "GameRepository",
+                    "Failed to save the game library to ${file.absolutePath}. " +
+                        "${games.size} entries are in memory and are NOT on disk, so they are lost " +
+                        "on restart. Check that the file is writable by this app.",
+                    e
+                )
             }
         }
 

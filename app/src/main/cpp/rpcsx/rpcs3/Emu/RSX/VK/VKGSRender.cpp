@@ -19,6 +19,7 @@
 #include "vkutils/thor_rsx_auditor.h"
 
 #include "Emu/RSX/rsx_methods.h"
+#include "Emu/RSX/thor_flat_shading.h"
 #include "Emu/RSX/Host/MM.h"
 #include "Emu/RSX/Host/RSXDMAWriter.h"
 #include "Emu/RSX/NV47/HW/context_accessors.define.h"
@@ -620,8 +621,9 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 
 	backend_config.supports_multidraw = true;
 
-	backend_config.supports_last_provoking_vertex = m_device->get_provoking_vertex_last_support();
-	if (!backend_config.supports_last_provoking_vertex)
+	backend_config.supports_last_provoking_vertex =
+		rsx::thor_flat_shading_enabled() && m_device->get_provoking_vertex_last_support();
+	if (rsx::thor_flat_shading_enabled() && !backend_config.supports_last_provoking_vertex)
 	{
 		rsx_log.warning("VK_EXT_provoking_vertex with provokingVertexLast is not available. RSX flat shading falls back to smooth interpolation.");
 	}
