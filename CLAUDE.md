@@ -4077,3 +4077,61 @@ down before believing it, per the rule above.
 against 29.65, which looks like a catastrophic regression and is two different
 scenes. Use `tools/thor_gameplay_ab.sh` on a savestate, which restores the same
 frame for both arms.
+
+# The first gameplay levers ever measured here, and a capped scene lies to you
+
+**2026-08-22.** Two on-by-default levers were measured on a running title for the
+first time in this fork. Both keep their defaults, and the way the numbers move
+is the lesson.
+
+## At the frame cap, only CPU can move
+
+Eternal Sonata at a pinned clock runs at 29.67 FPS, which is the cap. Four
+interleaved arms each:
+
+| lever | CPU | frames |
+| --- | --- | --- |
+| `spu_selfloop_park` 100 against 0 | 36-38 against 46-48 | identical |
+| `getllar_busy_percent` 0 against 100 | 35-37 against 39-42 | identical |
+
+So the park is 22% less CPU and the GETLLAR sleep is 13% less, at the same
+output. **Frames cannot show either.** A capped scene has no headroom to give
+back, so a lever which trades CPU for latency looks free. This file already says
+"a capped frame rate hides latency"; this is that, measured.
+
+## Take the cores away and the same lever moves FRAMES
+
+Six spinner processes, identical in both arms, `tools/thor_starve_ab.sh`:
+
+| `spu_selfloop_park` | frames |
+| --- | --- |
+| 100, the default | **11.86, 11.87** |
+| 0, spin | 8.48, 9.88 |
+
+**The park is worth 20 to 40% MORE frames once the CPU is scarce**, and the arms
+separate cleanly.
+
+**The prediction was the opposite and it was wrong.** Parking costs about 10 us of
+wake latency, per `bench-results.md`, so the expectation was that removing the cap
+would expose that cost as lost frames. It does not. Spinning burns cores which the
+RSX and PPU threads need, and under contention that is far worse than a wake.
+
+Note the spread as well: `park=100` repeats to 0.01 FPS while `park=0` scatters
+across 1.4 FPS. A spin competing for contended cores is not reproducible; a park
+is.
+
+## What this means for the next A/B
+
+**Measure at the cap AND under starvation.** They answer different questions, and
+either one alone is misleading. The cap says what a lever costs in CPU. Starvation
+says what it is worth in frames when the machine is short, which is the state a
+demanding scene puts it in.
+
+Starvation is a proxy for a heavy scene, not a substitute. It makes the CPU scarce
+without making the guest do more work. Treat a result from it as evidence about
+CPU pressure, not about a specific game scene.
+
+**Clean the spinners up from the HOST, on every exit path.** This file records
+twelve orphaned `yes` processes running for hours at about 430% CPU after a
+dropped link, contaminating a whole session. `tools/thor_starve_ab.sh` traps EXIT,
+INT and TERM, and sweeps on entry as well.
