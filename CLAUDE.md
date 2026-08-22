@@ -4174,3 +4174,46 @@ absolute number drifts. The same configuration measured 11.86 FPS in one session
 and 9.89 in another, while repeating to 0.00 inside each. Two builds compared
 across sessions would have produced a confident 20% regression which was only
 drift, which is the 4:50 against 3:19 error in another costume.
+
+# The Eternal Sonata intro cannot show a performance change, and that limits every
+# negative result taken on it
+
+**Profiled 2026-08-22: 24 samples of 10 s each, across four minutes of the intro.**
+
+    min 29.65   max 29.67   spread 0.02 FPS
+
+It never leaves the cap. Not once, anywhere in the sequence.
+
+And it is not idle while it does that: 3.0 cores busy and 72.7 C at the sample
+point. It is working, and it still has enough headroom to hold 30 FPS whatever
+changes underneath it. This file records Eternal Sonata GAMEPLAY at **5.26 cores**,
+so the intro is about 57% of the real load.
+
+## What that costs the results measured on it
+
+Everything measured there which came back "no difference" is a statement about a
+scene with spare headroom, and says much less than it appears to about a scene
+without. On 2026-08-22 that covers flat shading, extended dynamic state, the guest
+page walk, both parking levers at the cap, and the build against build comparison.
+
+The proof is in the one case where the cap was removed. Six spinners took the
+cores away, and `spu_selfloop_park` immediately separated by 20 to 40% on frames,
+having looked free at the cap. The cap was hiding it.
+
+## The rule
+
+**Before believing a negative result, show the workload could have produced a
+positive one.** Two cheap checks:
+
+1. **Is it capped?** A flat 29.6x across every sample means frames cannot move, so
+   frames prove nothing. Read CPU instead, or remove the cap.
+2. **Is it loaded?** Compare cores busy against the figure for real gameplay. The
+   intro is 3.0 against 5.26. A workload at half load has headroom to absorb a
+   regression without showing it.
+
+`tools/thor_starve_ab.sh` removes the cap by taking the cores away. It is a proxy
+for CPU scarcity, not for a specific scene, and it is the only workload on this
+device so far which has ever moved frames for a lever.
+
+**A day of clean negative results is a warning about the workload, not a verdict
+on the code.**
