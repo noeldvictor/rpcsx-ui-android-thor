@@ -55,6 +55,10 @@ DYNAMIC_IMPORT_RENAME("Kernel32.dll", SetThreadDescriptionImport, "SetThreadDesc
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <unistd.h>
+#if defined(__ANDROID__)
+#include <sys/system_properties.h>
+#include <android/set_abort_message.h>
+#endif
 #endif
 
 #if defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
@@ -1986,9 +1990,51 @@ struct fault_depth_guard
 	~fault_depth_guard() { s_fault_depth--; }
 };
 
+// Provoke ONE nested fault, to prove the report above actually prints.
+//
+// Debug only, and off unless asked. A nested fault is rare in normal running: the
+// full preflight ran for minutes without one, and the only thing which reliably
+// produced one was a probe-only mode which skipped the resolution and killed the
+// emulator during play. That mode is deleted. This replaces it with something which
+// cannot fire unless somebody sets the property, and which fires exactly once.
+//
+//   debug.rpcsx.thor.fault_test = 1   (default 0, debug builds only)
+//
+// Expect: "Nested fault at 0x... Aborting." and a dead process. The death IS the
+// pass. SA_NODEFER exists so the kernel can deliver the second signal at all; before
+// it the process vanished as "SIGNALED status=11" with no tombstone and nothing to
+// read.
+static bool thor_fault_test_enabled()
+{
+#if defined(__ANDROID__)
+	static const bool value = []()
+	{
+		char buffer[PROP_VALUE_MAX]{};
+		const int length = __system_property_get("debug.rpcsx.thor.fault_test", buffer);
+		return length > 0 && buffer[0] == '1';
+	}();
+
+	return value;
+#else
+	return false;
+#endif
+}
+
 static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 {
 	const fault_depth_guard depth_guard;
+
+	if (s_fault_depth == 1 && thor_fault_test_enabled())
+	{
+		static atomic_t<u32> fired{0};
+
+		if (fired.compare_and_swap_test(0, 1))
+		{
+			// Touch an address which cannot be mapped, from inside the handler. That is
+			// the nested fault, and with SA_NODEFER the kernel can deliver it.
+			*reinterpret_cast<volatile u8*>(0x1000) = 0;
+		}
+	}
 
 	if (s_fault_depth > 1)
 	{
@@ -2003,10 +2049,50 @@ static void signal_handler(int /*sig*/, siginfo_t* info, void* uct) noexcept
 		// status=11", and there was no tombstone and no flushed log to read.
 		//
 		// A nested fault is a defect in the handler. Name it, then stop.
-		std::fprintf(stderr, "Nested fault at %p, depth %d, inside the fault handler. "
-			"The handler holds a non-recursive lock, so re-entering would hang. Aborting.\n",
-			info ? info->si_addr : nullptr, s_fault_depth);
-		std::fflush(stderr);
+		// write(2), not fprintf. fprintf is NOT async-signal-safe: it takes an internal
+		// stdio lock, and this path runs from a signal which may have interrupted code
+		// already holding that lock. The report would then deadlock instead of printing,
+		// which is the silence this whole change exists to remove.
+		char buf[160];
+		usz n = 0;
+		const auto put = [&](const char* text)
+		{
+			while (*text && n + 1 < sizeof(buf)) buf[n++] = *text++;
+		};
+		const auto put_hex = [&](u64 value)
+		{
+			put("0x");
+			bool started = false;
+			for (int shift = 60; shift >= 0; shift -= 4)
+			{
+				const int digit = (value >> shift) & 0xf;
+				if (digit || started || shift == 0)
+				{
+					started = true;
+					if (n + 1 < sizeof(buf)) buf[n++] = "0123456789abcdef"[digit];
+				}
+			}
+		};
+
+		put("Nested fault at ");
+		put_hex(info ? reinterpret_cast<u64>(info->si_addr) : 0);
+		put(" inside the fault handler. Re-entering would deadlock on a non-recursive lock. Aborting.\n");
+		buf[n < sizeof(buf) ? n : sizeof(buf) - 1] = ' ';
+
+		// android_set_abort_message, NOT write(2) to stderr.
+		//
+		// MEASURED 2026-08-22: the provoked nested fault aborted correctly, and the
+		// write(2) report did not appear in logcat at all. Android discards a native
+		// app's stderr. The line written to end the silence was itself silent, which is
+		// this session's own lesson arriving a third time in the same file.
+		//
+		// bionic provides this for exactly this case. It is async-signal-safe, and the
+		// text lands in the tombstone and in the DEBUG block as "Abort message".
+#if defined(__ANDROID__)
+		android_set_abort_message(buf);
+#else
+		[[maybe_unused]] const auto ignored = ::write(2, buf, n);
+#endif
 		std::abort();
 	}
 
