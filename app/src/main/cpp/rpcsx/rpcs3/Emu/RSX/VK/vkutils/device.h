@@ -100,6 +100,7 @@ namespace vk
 			bool unrestricted_depth_range = false;
 			bool extended_device_fault = false;
 			bool texture_compression_bc = false;
+			bool provoking_vertex_last = false;
 			bool pipeline_creation_cache_control = false;
 			bool pipeline_creation_cache_control_extension = false;
 		} optional_features_support;
@@ -285,6 +286,10 @@ namespace vk
 		bool get_texture_compression_bc_support() const
 		{
 			return pgpu->optional_features_support.texture_compression_bc;
+		}
+		bool get_provoking_vertex_last_support() const
+		{
+			return pgpu->optional_features_support.provoking_vertex_last;
 		}
 		bool get_pipeline_creation_cache_control_support() const
 		{

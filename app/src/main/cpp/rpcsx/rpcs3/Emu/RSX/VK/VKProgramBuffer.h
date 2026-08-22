@@ -45,13 +45,18 @@ namespace vk
 			std::function<pipeline_type*(pipeline_storage_type&)> callback,
 			VkPipelineLayout common_pipeline_layout)
 		{
-			const auto compiler_flags = compile_async ? vk::pipe_compiler::COMPILE_DEFERRED : vk::pipe_compiler::COMPILE_INLINE;
+			auto compiler_flags = static_cast<u32>(compile_async ? vk::pipe_compiler::COMPILE_DEFERRED : vk::pipe_compiler::COMPILE_INLINE);
+			if (vertexProgramData.use_last_provoking_vertex)
+			{
+				compiler_flags |= vk::pipe_compiler::USE_LAST_PROVOKING_VERTEX;
+			}
+
 			VkShaderModule modules[2] = {vertexProgramData.handle, fragmentProgramData.handle};
 
 			auto compiler = vk::get_pipe_compiler();
 			auto result = compiler->compile(
 				pipelineProperties, modules, common_pipeline_layout,
-				compiler_flags, callback,
+				static_cast<vk::pipe_compiler::op_flags>(compiler_flags), callback,
 				vertexProgramData.uniforms,
 				fragmentProgramData.uniforms);
 

@@ -510,3 +510,34 @@ They added frame generation across 17 commits and then reverted the whole line i
 `187654eae`. The rest of their 49 is the Play-store build, RPCN, input, and save
 data: their application, not their core.
 
+## Seventh pass, 2026-08-22, against `daed55c42` (release 0.9.4.2)
+
+38 commits past `82f21b16d`. **Six changes ported, none measured on the device.**
+The full account, with the rejected items and their reasons, is in
+[`../../CLAUDE.md`](../../CLAUDE.md), section "ARMSX3 seventh pass". Only the
+summary is here, so the two do not disagree.
+
+Ported: the `nv4097` redundant vertex program check (`e13fc184f`, and **this tree
+had the defect**), the savestate resume guard (`a46dae38b`), the NP Ethernet
+address (`b2caae9da`), and from upstream RPCS3 the DP3 precision fix
+(`3aac7d776`) and flat shading (`b97f4bd8d`).
+
+Rejected: the fence poll switch and its same-day revert (net zero), the Oboe
+backend fix (no Oboe here), cellAudio (no `Emu/Cell/Modules` here), the ISO short
+read (no `Loader/ISO.cpp` here, and unconfirmed by them), the pipeline cache kill
+switch (this tree has its own persisted cache), and nine commits that touch only
+their Kotlin UI.
+
+### Frame generation, second attempt, deferred again
+
+They shipped LSFG frame generation across 20 commits, `e05ea4d21` onward. That is
+35 new files and about 324 KB, plus 264 insertions across seven existing VK files.
+
+**Note the history above: they already added frame generation across 17 commits
+and reverted the whole line in `187654eae`.** This is the second attempt. It is
+two days old, it took 18 fix-ups in one day, and one of those reverts its own
+single-submit restructure. It is also written against their VK backend, and ours
+now calls through `VK_GET_SYMBOL()`, keeps its own pipeline cache, carries the RSX
+auditor hooks, and holds the extended dynamic state pipeline key work.
+
+Wait for it to settle before reading it again.

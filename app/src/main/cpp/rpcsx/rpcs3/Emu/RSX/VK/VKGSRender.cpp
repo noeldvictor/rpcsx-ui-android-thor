@@ -620,6 +620,13 @@ VKGSRender::VKGSRender(utils::serial* ar) noexcept : GSRender(ar)
 
 	backend_config.supports_multidraw = true;
 
+	backend_config.supports_last_provoking_vertex = m_device->get_provoking_vertex_last_support();
+	if (!backend_config.supports_last_provoking_vertex)
+	{
+		rsx_log.warning("VK_EXT_provoking_vertex with provokingVertexLast is not available. RSX flat shading falls back to smooth interpolation.");
+	}
+
+
 	// NVIDIA has broken attribute interpolation
 	backend_config.supports_normalized_barycentrics = (!vk::is_NVIDIA(vk::get_driver_vendor()) ||
 													   !m_device->get_barycoords_support() ||

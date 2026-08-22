@@ -443,7 +443,7 @@ namespace vk
 			{
 				if (job.is_graphics_job)
 				{
-					auto compiled = int_compile_graphics_pipe(job.graphics_data, job.graphics_modules, job.pipe_layout, job.inputs, {});
+					auto compiled = int_compile_graphics_pipe(job.graphics_data, job.graphics_modules, job.pipe_layout, job.inputs, {}, job.flags);
 					job.callback_func(compiled);
 				}
 				else
@@ -512,7 +512,7 @@ namespace vk
 	}
 
 	std::unique_ptr<glsl::program> pipe_compiler::int_compile_graphics_pipe(const vk::pipeline_props& create_info, VkShaderModule modules[2], VkPipelineLayout pipe_layout,
-		const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs)
+		const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs, op_flags flags)
 	{
 		VkPipelineShaderStageCreateInfo shader_stages[2] = {};
 		shader_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -599,11 +599,25 @@ namespace vk
 		VkPipelineColorBlendStateCreateInfo cs = create_info.state.cs;
 		cs.pAttachments = create_info.state.att_state;
 
+		// Flat shading takes the color from the LAST vertex, which is the RSX convention.
+		// VK_EXT_provoking_vertex gives that; the caller sets the flag only when the device
+		// reports the feature, so the ensure() below cannot fire on a device without it.
+		VkPipelineRasterizationStateCreateInfo rs = create_info.state.rs;
+		VkPipelineRasterizationProvokingVertexStateCreateInfoEXT provoking_vertex_state{};
+		if (flags & USE_LAST_PROVOKING_VERTEX)
+		{
+			ensure(m_device->get_provoking_vertex_last_support());
+			provoking_vertex_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT;
+			provoking_vertex_state.pNext = rs.pNext;
+			provoking_vertex_state.provokingVertexMode = VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT;
+			rs.pNext = &provoking_vertex_state;
+		}
+
 		VkGraphicsPipelineCreateInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		info.pVertexInputState = &vi;
 		info.pInputAssemblyState = &create_info.state.ia;
-		info.pRasterizationState = &create_info.state.rs;
+		info.pRasterizationState = &rs;
 		info.pColorBlendState = &cs;
 		info.pMultisampleState = pmss;
 		info.pViewportState = &vp;
@@ -640,7 +654,7 @@ namespace vk
 		const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs)
 	{
 		// It is very inefficient to defer this as all pointers need to be saved
-		ensure(flags == COMPILE_INLINE);
+		ensure(!(flags & COMPILE_DEFERRED));
 		return int_compile_graphics_pipe(create_info, pipe_layout, vs_inputs, fs_inputs);
 	}
 
@@ -651,12 +665,14 @@ namespace vk
 		op_flags flags, callback_t callback,
 		const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs)
 	{
-		if (flags == COMPILE_INLINE)
+		// Test the bit. flags now also carries USE_LAST_PROVOKING_VERTEX, so an equality
+		// comparison against COMPILE_INLINE would send an inline compile to the queue.
+		if (!(flags & COMPILE_DEFERRED))
 		{
-			return int_compile_graphics_pipe(create_info, module_handles, pipe_layout, vs_inputs, fs_inputs);
+			return int_compile_graphics_pipe(create_info, module_handles, pipe_layout, vs_inputs, fs_inputs, flags);
 		}
 
-		m_work_queue.push(create_info, pipe_layout, module_handles, vs_inputs, fs_inputs, callback);
+		m_work_queue.push(create_info, pipe_layout, module_handles, vs_inputs, fs_inputs, callback, flags);
 		return {};
 	}
 

@@ -5,6 +5,8 @@
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/Common/BufferUtils.h"
 
+#include <bit> // std::rotl
+
 #define RSX(ctx) ctx->rsxthr
 #define REGS(ctx) (&rsx::method_registers)
 #define RSX_CAPTURE_EVENT(name)          \
@@ -186,8 +188,18 @@ namespace rsx
 				const usz first_index_off = 0;
 				const usz second_index_off = (((rcount / 4) - 1) / 2) * 4;
 
-				const u64 src_op1_2 = read_from_ptr<be_t<u64>>(fifo_span.data() + first_index_off);
-				const u64 src_op2_2 = read_from_ptr<be_t<u64>>(fifo_span.data() + second_index_off);
+				// Rotated by 32, because the two reads are not in the same word order.
+				//
+				// copy_data_swap_u32 below writes each word byte-swapped on its own. be_t<u64>
+				// swaps all eight bytes, so it also EXCHANGES the two words. Without the
+				// rotate this compares (w0,w1) against (w1,w0), which agrees only when
+				// w0 == w1. The check therefore never fired: each upload set the ucode dirty,
+				// and that forces a vertex program re-analysis, a program cache hint drop and
+				// a full transform constant re-upload on every draw.
+				//
+				// From ARMSX3 e13fc184f. Upstream RPCS3 still has the defect.
+				const u64 src_op1_2 = std::rotl<u64>(read_from_ptr<be_t<u64>>(fifo_span.data() + first_index_off), 32);
+				const u64 src_op2_2 = std::rotl<u64>(read_from_ptr<be_t<u64>>(fifo_span.data() + second_index_off), 32);
 
 				// Fast comparison
 				if (src_op1_2 != read_from_ptr<u64>(out_ptr + first_index_off) || src_op2_2 != read_from_ptr<u64>(out_ptr + second_index_off))

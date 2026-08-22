@@ -2082,7 +2082,9 @@ namespace rsx
 	{
 		if (m_graphics_state.test(rsx::pipeline_state::xform_instancing_state_dirty))
 		{
-			current_vertex_program.ctrl = 0;
+			// Clear only this bit. The ctrl word now also carries RSX_SHADER_CONTROL_FLAT_SHADING,
+			// which a different dirty signal owns.
+			current_vertex_program.ctrl &= ~RSX_SHADER_CONTROL_INSTANCED_CONSTANTS;
 			if (rsx::method_registers.current_draw_clause.is_trivial_instanced_draw)
 			{
 				current_vertex_program.ctrl |= RSX_SHADER_CONTROL_INSTANCED_CONSTANTS;
@@ -2101,6 +2103,13 @@ namespace rsx
 
 		ensure(!m_graphics_state.test(rsx::pipeline_state::vertex_program_ucode_dirty));
 		current_vertex_program.output_mask = rsx::method_registers.vertex_attrib_output_mask();
+
+		current_vertex_program.ctrl &= ~RSX_SHADER_CONTROL_FLAT_SHADING;
+		if (rsx::method_registers.shade_mode() == rsx::shading_mode::flat &&
+			backend_config.supports_last_provoking_vertex)
+		{
+			current_vertex_program.ctrl |= RSX_SHADER_CONTROL_FLAT_SHADING;
+		}
 
 		for (u32 textures_ref = current_vp_metadata.referenced_textures_mask, i = 0; textures_ref; textures_ref >>= 1, ++i)
 		{
@@ -2141,6 +2150,12 @@ namespace rsx
 		current_fragment_program.texcoord_control_mask = m_ctx->register_state->texcoord_control_mask();
 		current_fragment_program.two_sided_lighting = m_ctx->register_state->two_side_light_en();
 		current_fragment_program.mrt_buffers_count = rsx::utility::get_mrt_buffers_count(m_ctx->register_state->surface_color_target());
+
+		if (m_ctx->register_state->shade_mode() == rsx::shading_mode::flat &&
+			backend_config.supports_last_provoking_vertex)
+		{
+			current_fragment_program.ctrl |= RSX_SHADER_CONTROL_FLAT_SHADING;
+		}
 
 		if (method_registers.current_draw_clause.classify_mode() == primitive_class::polygon)
 		{

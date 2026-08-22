@@ -2872,6 +2872,27 @@ bool Emulator::Pause(bool freeze_emulation, bool show_resume_message)
 
 void Emulator::Resume()
 {
+	// Do not resume while a savestate is written, or while a close runs.
+	//
+	// Saving arms after_kill_callback with Emu.Restart, then it kills the VM. The restart runs
+	// BootGame, and restore_on_no_boot does ensure(IsStopped()). That overload accepts only
+	// stopped, loading or stopping. A Resume in that window sets the state to running, and the
+	// assert then aborts the process.
+	//
+	// Android makes the window easy to hit. setupCallbacks binds call_from_main_thread to run
+	// its callback INLINE on the calling thread (android/src/rpcsx-android.cpp), so the whole
+	// kill-and-restart chain runs on the savestate thread while the UI thread stays free.
+	//
+	// m_emu_state_close_pending is the emulator's own marker for that window. Each failure path
+	// clears it, so this guard cannot make a game permanently unresumable.
+	//
+	// From ARMSX3 a46dae38b.
+	if (m_emu_state_close_pending)
+	{
+		sys_log.notice("Resume request ignored: a savestate or a close is in flight.");
+		return;
+	}
+
 	if (m_state != system_state::paused)
 	{
 		return;

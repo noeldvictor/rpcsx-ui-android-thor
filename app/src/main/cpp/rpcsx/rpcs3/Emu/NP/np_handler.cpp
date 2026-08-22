@@ -678,6 +678,47 @@ namespace np
 		}
 #endif
 
+#ifdef __ANDROID__
+		// Derive an address, because Android does not give one.
+		//
+		// The generic branch above reads the MAC with SIOCGIFHWADDR. Android has refused that
+		// to an app since Android 6, and it enforces the refusal from 10: the ioctl gives
+		// EPERM, and /sys/class/net/*/address is unreadable. So discover_ether_address() always
+		// failed on a modern device, np_handler logged "Failed to discover ethernet or ip
+		// address!", and it gave up. That leaves the network stack unidentified. It blocks RPCN
+		// and each game that asks the stack who it is.
+		//
+		// The IP half was never the problem. It learns the local address from a UDP connect to
+		// 8.8.8.8, which is a routing lookup and sends nothing.
+		//
+		// Nothing validates this address against hardware. It identifies the console to the
+		// network stack and to peers, and a locally administered address is the correct thing
+		// to present when the platform refuses the real one. Console PSID defaults to a random
+		// per-install value, so two users do not collide.
+		//
+		// This runs AFTER the ioctl, not instead of it, so a device or a ROM that does answer
+		// keeps its own address.
+		//
+		// From ARMSX3 b2caae9da. Their tree holds the PSID as one u128; this tree holds it as
+		// two u32 fields, so the composition here is local.
+		{
+			const u64 psid =
+				(static_cast<u64>(g_cfg.sys.console_psid_high) << 32) |
+				static_cast<u64>(g_cfg.sys.console_psid_low);
+
+			for (usz i = 0; i < 6; i++)
+			{
+				ether_address[i] = static_cast<u8>(psid >> (i * 8));
+			}
+
+			ether_address[0] &= 0xFE; // Not a multicast address
+			ether_address[0] |= 0x02; // Locally administered
+
+			nph_log.notice("Derived the Ethernet address from Console PSID: the platform does not expose one.");
+			return true;
+		}
+#endif
+
 		return false;
 	}
 

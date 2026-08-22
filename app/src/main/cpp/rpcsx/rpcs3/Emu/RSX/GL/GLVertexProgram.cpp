@@ -158,7 +158,11 @@ void GLVertexDecompilerThread::insertOutputs(std::stringstream& OS, const std::v
 		if (i.need_declare)
 		{
 			// All outputs must be declared always to allow setting default values
-			OS << "layout(location=" << gl::get_varying_register_location(i.name) << ") out vec4 " << i.name << ";\n";
+			// NV4097_SET_SHADE_MODE applies to the front and back diffuse and specular colors.
+			const bool flat_color = (m_prog.ctrl & RSX_SHADER_CONTROL_FLAT_SHADING) &&
+				(i.name.starts_with("diff_color") || i.name.starts_with("spec_color"));
+			OS << "layout(location=" << gl::get_varying_register_location(i.name) << ") out "
+				<< (flat_color ? "flat " : "") << "vec4 " << i.name << ";\n";
 		}
 	}
 }

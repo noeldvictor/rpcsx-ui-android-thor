@@ -3764,3 +3764,122 @@ written branch-free here so that AArch64 auto-vectorizes it, and the comment in
 path WITHOUT a restart index, still calls the branching `min_max()` helper, and a
 conditional side effect in the loop stops it vectorizing. Same file, same idea,
 five lines. EmuCoreC did not fix this one either.
+
+# ARMSX3 seventh pass, 2026-08-22: six ports, and one confirmed defect of our own
+
+ARMSX3 is at `daed55c42`, release **0.9.4.2**. That is **38 commits** past the
+`82f21b16d` the sixth pass used. Upstream RPCS3 is at `3aac7d776`.
+
+**Six changes are ported. None is measured on the device yet.**
+
+## The one that matters: our redundant vertex program check never fired
+
+`nv4097.cpp` read the source with `be_t<u64>` and the destination with a plain
+`u64`. `copy_data_swap_u32` writes each word byte-swapped on its own, but
+`be_t<u64>` swaps all eight bytes, so it also EXCHANGES the two words. The
+comparison was therefore `(w0,w1)` against `(w1,w0)`, and it agreed only when
+`w0 == w1`.
+
+So the check was dead. Every transform program upload set
+`vertex_program_ucode_dirty`. That forces a vertex program re-analysis, a program
+cache hint drop and a full transform constant re-upload, **on every draw**, on the
+RSX thread.
+
+The fix is `std::rotl<u64>(..., 32)` on both reads. It is two lines.
+
+**This is ARMSX3-original, not upstream.** Their `e13fc184f` is not in
+`RPCS3/rpcs3` master, and upstream still carries the defect. They lost the hunk
+once themselves, in their ROP remap merge, and restored it in `c6a0878a9`.
+
+**The reach here is unmeasured.** The cost is per draw, so the size depends on the
+title. Do not quote a number until one is taken.
+
+## Also ported
+
+| change | source | what it does here |
+| --- | --- | --- |
+| DP3 precision | rpcs3 `3aac7d776` | adds `FUNCTION::DP3_PRECISE`, an `fma` chain, used when the instruction asks for REAL precision and Shader Precision is ultra |
+| Flat shading | rpcs3 `b97f4bd8d` | `NV4097_SET_SHADE_MODE` now reaches the shaders. VK gets `VK_EXT_provoking_vertex` with `provokingVertexLast`; GL already defaults to that convention |
+| Savestate resume guard | ARMSX3 `a46dae38b` | `Resume()` refuses while `m_emu_state_close_pending` is set |
+| NP Ethernet address | ARMSX3 `b2caae9da` | derives a locally administered MAC from Console PSID on Android |
+
+**Two of these needed a rewrite, not a copy.**
+
+The NP one reads `g_cfg.sys.console_psid` as one `u128` in their tree. This tree
+holds two `u32` fields, `console_psid_high` and `console_psid_low`, and it has no
+`derive_mac_from_psid` helper, so the composition here is local code.
+
+The flat shading one lands on `VKPipelineCompiler`, where this fork already has
+the extended dynamic state work. Their `op_flags` carries
+`SEPARATE_SHADER_OBJECTS = 4`; this tree has no such flag, so
+`USE_LAST_PROVOKING_VERTEX` takes the value 4 here and 8 upstream. `compiler_flags`
+was `const auto` of the enum type here, so it is now a `u32` with a cast at the
+call.
+
+**The savestate guard premise holds here too, and it was checked.**
+`setupCallbacks` binds `call_from_main_thread` to run its callback INLINE
+(`android/src/rpcsx-android.cpp:1997`). So the kill-and-restart chain runs on the
+savestate thread while the UI thread can resume underneath it, exactly as ARMSX3
+describe.
+
+## Not ported, with the reason
+
+- **`b91c6551e` and `0262053a9`** add a runtime fence poll switch and revert it the
+  same day. `git diff b91c6551e^ 0262053a9 -- rpcs3/` is **empty**. There is
+  nothing to take.
+- **`0a3fcc622`, the Oboe backend fix.** This tree has no Oboe backend. Android
+  audio goes through `rpcsx/AudioOut.cpp` and `rpcsx/audio/`.
+- **`72410638f`, cellAudio.** `rpcs3/Emu/Cell/Modules/` does not exist here. This
+  file already records that the HLE modules live in `kernel/cellos/`.
+- **`2f0c63ac1`, the ISO short read.** It targets `rpcs3/Loader/ISO.cpp`, which is
+  absent. Our `rpcs3/dev/iso.cpp` has no such predicate. ARMSX3 also say the
+  report is NOT confirmed as the cause.
+- **`b9689d07f`, the pipeline cache switch.** This tree already has its own driver
+  pipeline cache, `g_driver_pipeline_cache` at `VKPipelineCompiler.cpp:90`, and it
+  persists to disk. Theirs is a plain env kill switch on a different
+  implementation in `device.cpp`.
+- **Nine commits touch only `armsx3-ui/`.** That is their Kotlin app under
+  `com.armsx2` and `com.armsx3`: Flurry, the Really Slick screensavers, the
+  savestate picker, the config database, the ARMv8.0 message, the frame limit row.
+  Our UI is `net.rpcsx`. None of it transfers.
+
+## Deferred: the LSFG frame generation port, 20 commits
+
+`e05ea4d21` and the nineteen commits after it add **35 files and about 324 KB**,
+plus 264 insertions across seven existing VK files. `VKPresent.cpp` takes 145 of
+them, `swapchain.cpp` 61, `device.cpp` 48.
+
+It is written against their VK backend. Ours has diverged: we call through
+`VK_GET_SYMBOL()`, we keep our own pipeline cache, we carry the RSX auditor hooks,
+and we hold the extended dynamic state pipeline key work.
+
+It is also two days old. Eighteen fix-ups landed on it in one day, and one of them
+reverts the single-submit restructure. Wait for it to settle.
+
+# CORRECTION: upstream did NOT fix Eternal Sonata
+
+**Checked 2026-08-22, because a report said the title was fixed.** It is not, and
+the fix that exists repairs a defect this tree never had.
+
+`RPCS3/rpcs3` holds **zero** commits that name Eternal Sonata. What closed on
+2026-08-03 is issue "graphical glitches with flowers/grass", and PR **#19101**
+closed it. That merged as `4214dff35`, "rsx: Apply alpha test for all primitive
+types".
+
+**It repairs a regression that upstream introduced.** #17862 moved the alpha test
+and the alpha-to-coverage flags into the non-point-sprite branch of
+`get_current_fragment_program`. #19101 moves them back out.
+
+**This tree predates #17862 entirely.** `get_current_fragment_program` here has no
+alpha test handling at all. This fork sets the alpha test in a ROP control
+uniform, in `fill_fragment_state_buffer` at `RSXDrawCommands.cpp:658`, and it does
+not gate that on the primitive class. So the defect cannot occur, and the fix has
+nothing to attach to.
+
+**Three Eternal Sonata issues stay OPEN upstream:** a crash on build
+`0.0.42-19697-652cf60b` (2026-08-04), "Freezing and Crashing" (2026-06-09), and
+"Triangle Menu Not Opening" (2026-03-20).
+
+**So do not read "Eternal Sonata is fixed" as an upstream result.** Whether the
+flowers and grass render correctly HERE is a separate question, and only the
+device answers it.

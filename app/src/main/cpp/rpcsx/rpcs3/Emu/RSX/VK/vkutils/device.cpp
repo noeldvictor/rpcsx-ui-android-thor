@@ -155,6 +155,14 @@ namespace vk
 				features2.pNext = &extended_dynamic_state_info;
 			}
 
+			VkPhysicalDeviceProvokingVertexFeaturesEXT provoking_vertex_info{};
+			if (device_extensions.is_supported(VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME))
+			{
+				provoking_vertex_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT;
+				provoking_vertex_info.pNext = features2.pNext;
+				features2.pNext = &provoking_vertex_info;
+			}
+
 			auto _vkGetPhysicalDeviceFeatures2KHR = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2KHR>(VK_GET_SYMBOL(vkGetInstanceProcAddr)(parent, "vkGetPhysicalDeviceFeatures2KHR"));
 			ensure(_vkGetPhysicalDeviceFeatures2KHR); // "vkGetInstanceProcAddress failed to find entry point!"
 			_vkGetPhysicalDeviceFeatures2KHR(dev, &features2);
@@ -171,6 +179,7 @@ namespace vk
 			optional_features_support.framebuffer_loops = !!fbo_loops_info.attachmentFeedbackLoopLayout;
 			optional_features_support.extended_device_fault = !!device_fault_info.deviceFault;
 			optional_features_support.extended_dynamic_state = !!extended_dynamic_state_info.extendedDynamicState;
+			optional_features_support.provoking_vertex_last = !!provoking_vertex_info.provokingVertexLast;
 			optional_features_support.pipeline_creation_cache_control = !!pipeline_cache_control_info.pipelineCreationCacheControl;
 			optional_features_support.pipeline_creation_cache_control_extension =
 				optional_features_support.pipeline_creation_cache_control &&
@@ -770,6 +779,11 @@ namespace vk
 			requested_extensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
 		}
 
+		if (pgpu->optional_features_support.provoking_vertex_last)
+		{
+			requested_extensions.push_back(VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME);
+		}
+
 		if (pgpu->optional_features_support.pipeline_creation_cache_control_extension)
 		{
 			requested_extensions.push_back(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME);
@@ -1013,6 +1027,15 @@ namespace vk
 			shader_barycentric_info.pNext = const_cast<void*>(device.pNext);
 			shader_barycentric_info.fragmentShaderBarycentric = VK_TRUE;
 			device.pNext = &shader_barycentric_info;
+		}
+
+		VkPhysicalDeviceProvokingVertexFeaturesEXT provoking_vertex_info{};
+		if (pgpu->optional_features_support.provoking_vertex_last)
+		{
+			provoking_vertex_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT;
+			provoking_vertex_info.pNext = const_cast<void*>(device.pNext);
+			provoking_vertex_info.provokingVertexLast = VK_TRUE;
+			device.pNext = &provoking_vertex_info;
 		}
 
 		VkPhysicalDevicePipelineCreationCacheControlFeatures pipeline_cache_control_info{};

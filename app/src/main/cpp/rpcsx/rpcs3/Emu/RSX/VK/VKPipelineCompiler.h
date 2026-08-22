@@ -77,7 +77,8 @@ namespace vk
 		{
 			COMPILE_DEFAULT = 0,
 			COMPILE_INLINE = 1,
-			COMPILE_DEFERRED = 2
+			COMPILE_DEFERRED = 2,
+			USE_LAST_PROVOKING_VERTEX = 4
 		};
 
 		using callback_t = std::function<void(std::unique_ptr<glsl::program>&)>;
@@ -135,6 +136,7 @@ namespace vk
 			VkPipelineLayout pipe_layout;
 			VkShaderModule graphics_modules[2];
 			std::vector<glsl::program_input> inputs;
+			op_flags flags = COMPILE_DEFAULT;
 
 			pipe_compiler_job(
 				const vk::pipeline_props& props,
@@ -142,9 +144,11 @@ namespace vk
 				VkShaderModule modules[2],
 				const std::vector<glsl::program_input>& vs_in,
 				const std::vector<glsl::program_input>& fs_in,
-				callback_t func)
+				callback_t func,
+				op_flags op = COMPILE_DEFAULT)
 			{
 				callback_func = func;
+				flags = op;
 				graphics_data = props;
 				pipe_layout = layout;
 				graphics_modules[0] = modules[0];
@@ -175,7 +179,7 @@ namespace vk
 		std::unique_ptr<glsl::program> int_compile_graphics_pipe(const VkGraphicsPipelineCreateInfo& create_info, VkPipelineLayout pipe_layout,
 			const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs);
 		std::unique_ptr<glsl::program> int_compile_graphics_pipe(const vk::pipeline_props& create_info, VkShaderModule modules[2], VkPipelineLayout pipe_layout,
-			const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs);
+			const std::vector<glsl::program_input>& vs_inputs, const std::vector<glsl::program_input>& fs_inputs, op_flags flags = COMPILE_DEFAULT);
 	};
 
 	void initialize_pipe_compiler(int num_worker_threads = -1);

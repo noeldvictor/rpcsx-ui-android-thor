@@ -501,6 +501,26 @@ It does not touch Thor.
 - Record a survey that finds nothing. Write the date and the empty result.
 - A port needs the same proof as any other change. See `Speed Claim Rules`.
 
+### Last survey: 2026-08-22, ARMSX3 seventh pass
+
+ARMSX3 is at `daed55c42`, release 0.9.4.2, which is 38 commits past the sixth
+pass. Upstream RPCS3 is at `3aac7d776`. **Six changes are ported and none is
+measured on the device.** The full account is in `CLAUDE.md`, section "ARMSX3
+seventh pass".
+
+- The largest item is ours, not theirs. The redundant vertex program check in
+  `nv4097.cpp` compared two different word orders, so it never fired and each
+  transform program upload marked the ucode dirty. That is a per-draw cost on the
+  RSX thread. Fixed with `std::rotl<u64>(..., 32)`, from ARMSX3 `e13fc184f`.
+  Upstream RPCS3 still carries the defect.
+- Also ported: DP3 precision and flat shading from RPCS3, and the savestate resume
+  guard and the NP Ethernet address from ARMSX3.
+- The LSFG frame generation port is deferred. It is 35 new files, it is two days
+  old, and it is written against their VK backend, which has diverged from ours.
+- **Upstream did NOT fix Eternal Sonata.** The August fix repairs an upstream
+  regression that this tree predates. Three Eternal Sonata issues stay open there.
+  See the CORRECTION section in `CLAUDE.md`.
+
 ## ARM64 Upstream Perf Uplift
 
 Tracks the upstream RPCS3 ARM64 CPU-emulation series against the vendored core.
