@@ -38,6 +38,26 @@ namespace rsx
 
 		const u32 last = rx::add_saturate<u32>(address, length - 1);
 		const u8 required_permission = is_writing ? vm::page_writable : vm::page_readable;
+
+		// Leave at once when there is nothing to find.
+		//
+		// The walk below runs one 4 KiB page at a time over the WHOLE range, and each
+		// step costs a vm::check_addr and an atomic load. A texture upload hands this
+		// function a whole surface: 2560x720 is 1,800 steps, on the RSX thread, for
+		// every upload. The comment above used to say "one atomic load for each page",
+		// which undercounted it by half and priced it as if the ranges were small.
+		//
+		// RSX usually holds nothing protected, and then no page in any range can need
+		// the handler. One counter read answers that for the whole range. The range
+		// form of vm::check_addr answers the rest in one call instead of per page.
+		//
+		// This is exactly the pre-2026-08-20 behaviour whenever RSX has protected
+		// nothing, and the full walk whenever it has.
+		if (!mm_any_protected() && vm::check_addr(address, required_permission, length))
+		{
+			return false;
+		}
+
 		u32 current = address;
 		bool handled = false;
 

@@ -37,6 +37,18 @@ namespace rsx
 	static constexpr usz s_guest_page_count = 0x1'0000'0000ull / 4096;
 	std::array<std::atomic<u8>, s_guest_page_count> g_guest_page_protection{};
 
+	// How many guest pages RSX currently holds protected.
+	//
+	// The mirror above answers "is THIS page protected" for one page. The callers
+	// which matter ask about a whole texture, and they walked it one 4 KiB page at a
+	// time: a 2560x720 surface is 1,800 iterations of an atomic load plus a
+	// vm::check_addr, on the RSX thread, for every upload. Almost every one of those
+	// walks finds nothing, because RSX usually has nothing protected at all.
+	//
+	// So count the protected pages. Zero means no walk can find anything, and the
+	// caller can return immediately.
+	static std::atomic<u64> g_protected_page_count{0};
+
 	static void mm_track_protection(u64 start, u64 length, utils::protection prot)
 	{
 		if (!length)
@@ -55,10 +67,32 @@ namespace rsx
 		const u64 last = (end - 1) / 4096;
 		const u8 value = static_cast<u8>(prot);
 
+		const bool now_protected = value != static_cast<u8>(utils::protection::rw);
+
 		for (u64 page = first; page <= last; page++)
 		{
-			g_guest_page_protection[page].store(value, std::memory_order_release);
+			const u8 previous = g_guest_page_protection[page].exchange(value, std::memory_order_acq_rel);
+			const bool was_protected = previous != static_cast<u8>(utils::protection::rw);
+
+			if (was_protected != now_protected)
+			{
+				// This path runs when a protection changes, which is rare. The read
+				// path runs for each texture upload, which is not.
+				if (now_protected)
+				{
+					g_protected_page_count.fetch_add(1, std::memory_order_relaxed);
+				}
+				else
+				{
+					g_protected_page_count.fetch_sub(1, std::memory_order_relaxed);
+				}
+			}
 		}
+	}
+
+	bool mm_any_protected()
+	{
+		return g_protected_page_count.load(std::memory_order_acquire) != 0;
 	}
 
 	bool mm_is_accessible(u32 vm_address, bool is_writing)
@@ -75,6 +109,11 @@ namespace rsx
 	bool mm_is_accessible(u32, bool)
 	{
 		return true;
+	}
+
+	bool mm_any_protected()
+	{
+		return false;
 	}
 #endif
 
