@@ -157,13 +157,17 @@ runtime codes stay listed but greyed out until native validation exists.
 
 - **Launching a second game after closing the first can fail.** Under
   investigation. Restarting the app is the current workaround.
-- **A 3D-scene slowdown was reported on 2026-08-22 and is fixed but not yet
-  measured.** `21493f1e1` put a page-by-page guest memory check on the texture
-  upload, the blit and the SPU DMA paths. It walked one 4 KiB page at a time
-  over whole surfaces, and over every SPU MFC put. `58614e0aa` and the commit
-  after it skip that walk for a 1 MiB region which holds no protected page. The
-  reason for the original check stays valid, so the check still runs when RSX
-  has protected something. **No device run confirms the recovery yet.**
+- **A 3D-scene slowdown from 2026-08-22 is found and fixed.** `21493f1e1` added
+  a guest memory preflight which calls the RSX fault handler for every protected
+  page in a range before a copy, and that handler invalidates the texture cache.
+  A bisect measured it on Eternal Sonata at one 3D route: the parent commit gave
+  **29.67 FPS**, that commit gave **14.84**, and turning the preflight off gives
+  **29.67** again. It is off by default from `e427306cb`.
+  `debug.rpcsx.thor.guest_preflight=1` restores it. The crash it guarded against
+  is real but rare -- a protected range faulting inside `memcpy()` can fault again
+  inside the handler, and Android then kills the app with no tombstone -- so it is
+  **not covered by default** until a version lands which resolves a whole range
+  with one handler call.
 - **The library only lists what you add through the folder picker.** Dropping an
   ISO into the folder does not add it. If added games disappear after a restart,
   the save failed: `games.json` must be writable by the app. An `adb` session
@@ -196,6 +200,13 @@ there is no 30 FPS guarantee for any other title.
 Recent hands-on testing after the August 2026 ARM64 work reports more titles
 running well, but no FPS figures or compatibility matrix have been captured for
 that, so treat it as encouraging rather than measured.
+
+**2026-08-22, measured again on the same title.** A 3D route gives **29.67 FPS**
+median on the current build, from SurfaceFlinger present timestamps rather than
+from the overlay. The same route gave 14.84 on the four builds before
+`e427306cb`. If a build ever feels half speed, bisect it: four builds of about
+ninety seconds each name the commit, and this project has now twice reached the
+wrong answer by reasoning about the code first.
 
 ---
 

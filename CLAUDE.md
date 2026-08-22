@@ -3953,30 +3953,62 @@ excluded by reading, not by running: DP3_PRECISE needs Shader Precision ultra
 and this device reads High, and `copy_data_swap_u32_cmp` is the NEON form on
 ARM64 rather than a scalar fallback.
 
-## Now measured, and the fix is only a partial one
+## RESOLVED by a bisect: 21493f1e1 alone, 29.67 FPS against 14.84
 
-**Counters on the preflight, Eternal Sonata, 2026-08-22:**
+**Eternal Sonata, one 3D route, the same clock point, 2026-08-22.**
 
-    0:00:28   fast=578144    slow=21856    pages_walked=88965
-    0:02:10   fast=4195552   slow=104448   pages_walked=17030113
+| build | median | FPS |
+| --- | --- | --- |
+| `bd2c13249`, the parent | 33.70 ms | **29.67** |
+| `21493f1e1`, the preflight | 67.39 ms | **14.84** |
+| `21493f1e1` + a per-region skip | 50.58 ms | 19.77 |
+| preflight off by default | 33.71 ms | **29.67** |
 
-**4.3 million calls and 17 million page probes in 130 seconds**, which is about
-131,000 probes for each second. The path is hot. Nobody had established that
-before; the change shipped on the argument that it was cheap.
+**One commit halved the frame rate.** Four builds found it. Hours of reading did
+not, and produced four wrong answers on the way.
 
-**The region fix takes 97.6% of the CALLS and almost none of the PAGES.** A
-texture upload targets protected memory by definition, because protection is how
-the cache learns the guest wrote to it. So the uploads always take the slow walk,
-and they are the large ranges: the slow calls average 163 pages each.
+### The cost is the HANDLER, not the probes
 
-**The frame rate did not recover.** A 3D scene measured 50.58 ms median, which is
-19.77 FPS, against the 27-30 FPS this title gave before. So the walk is real and
-the fix is real and **neither is the whole regression**. Do not close this.
+Both earlier fixes attacked the page probes and both fell short, because the
+probes are not the cost. The preflight calls `g_access_violation_handler` for
+every protected page in a range BEFORE the copy, and that handler invalidates the
+texture cache. A counter read **20,177 calls in two minutes**.
 
-The next number to take is `handler_calls`, which counts entry into
-`g_access_violation_handler` from the preflight. The handler invalidates the
-texture cache, so it costs orders of magnitude more than a probe, and the page
-count cannot tell a cheap walk from cache thrashing.
+Natural faulting, which is what the parent commit does, enters the handler only
+for a page the copy really touches. A texture upload hands the preflight a whole
+surface and targets protected memory by definition, so the eager form multiplies
+the invalidations. Region skipping cannot help for the same reason: an upload has
+no clean regions to skip.
+
+`debug.rpcsx.thor.guest_preflight = 1` restores it. Default 0.
+
+**The crash it prevented is real and is now unguarded by default.** A protected
+range which faults inside `memcpy()` can fault again inside the handler, and ART
+kills the process with no tombstone. A correct and fast form would resolve a
+whole protected RANGE with one handler call. That is not written. Do not record
+the crash as covered.
+
+## BISECT FIRST. It is four builds and it cannot lie to you.
+
+**This is the most useful thing in this file.** The session that found the defect
+above spent hours on inference and produced four confident wrong diagnoses, each
+killed by a number:
+
+| blamed | how it died |
+| --- | --- |
+| flat shading | gated off, rebuilt, measured 14.70 FPS. No change. |
+| extended dynamic state | a boot with the property set was still slow. |
+| thermals | a cooled retest was still slow, and the FASTEST arm of the day started at 84.3 C. |
+| **the page walk, cleared by me** | I priced 17M probes against 115 handler calls and called it a fraction of a percent. The bisect says 15 FPS. |
+
+The last row is the worst, because it is the same error the defect itself was:
+**pricing a hot loop by reasoning instead of measuring it.** It was made in the
+same session as the section above which warns against it.
+
+A bisect over a week of commits is four builds, about ninety seconds each. Take
+the known-good commit the user names, build it, measure the same route, and
+halve the window. Do this BEFORE reading any code. Reading is for after the
+commit is named, when it explains a fact rather than proposing one.
 
 ## A guard, because a mirror pair with no check is a trap
 
@@ -3987,41 +4019,20 @@ Both failure modes were reconstructed and the check was shown to FAIL on each
 before it was trusted. A check which has never been shown to catch anything is
 worth nothing, and this file already says so about five earlier searches.
 
-## What was NOT the cause, established by measurement
-
-* **Flat shading.** Gated off, rebuilt, installed, measured: 14.70 FPS median. No
-  change. The gate stays because the lever is unmeasured, not because it was the
-  fault.
-* **Extended dynamic state.** A boot with `vk_dynamic_state_off=1` was still slow.
-* **Thermals.** A cooled retest was still slow, and the fastest arm of the day
-  started at 84.3 C while a 52.6 C arm was half the speed.
-
-## Three method errors from one session, all avoidable
+## Three method errors from the same session
 
 1. **A stripped `.so` has no function names.** Verifying a fix by grepping the
    shipped library for `mm_range_has_protection` returned zero, and so did a grep
    for `mm_is_accessible`, which certainly exists. Grep for a STRING LITERAL you
-   added on purpose. This is the sixth entry in this file for that class.
+   added on purpose. Sixth entry in this file for that class.
 2. **An emulator clock does not pin a scene.** `tools/thor_dynamic_state_ab.sh`
-   waited for a fixed clock and compared a title menu against a 3D scene, then
-   read 29.40 against 14.84 FPS as workload variance. They are different
-   workloads. **Pin the scene, not the timestamp.**
+   waited for a fixed clock and compared a title MENU against a 3D scene, then
+   read 29.40 against 14.84 FPS as workload variance. That produced a retraction
+   of a real regression. **Pin the scene, not the timestamp.**
 3. **A harness which sets a property must restore it.** The A/B left
    `vk_dynamic_state_off=1` behind, and the next measurement was nearly read as a
    default-build result.
 
-## Still untested
-
-The page walk fix is confirmed hot but only partly effective.
-Two other changes from the same window are also untested:
-
-* `d91dba53f`, extended dynamic state. Its own comment in `device.cpp` says a
-  driver that emulates those states can be slower, and its device run on
-  2026-08-21 recorded "No FPS. No frame counter was read." Test it with
-  `debug.rpcsx.thor.vk_dynamic_state_off=1`, which needs no rebuild.
-  `tools/thor_dynamic_state_ab.sh` runs that A/B with the guards.
-* `9e906e616`, the generic SPU checksum. It does more work for each byte on the
-  hottest vector path in the SPU JIT, and nothing has booted with it.
 
 ## Why the manual is not the place to start here
 
