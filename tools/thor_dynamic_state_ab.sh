@@ -41,9 +41,18 @@ arm() {
   local mark; mark=$(sh "date +%s")
   sh "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $PKG/net.rpcsx.MainActivity --es path '$ISO' --es titleId $TITLE --es thorDebugBootRequestId $label --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true" >/dev/null
 
-  # wait for the fixed scene point
+  # Wait for the scene point.
+  #
+  # This tests the WHOLE log, not the last line. Testing tail -1 only matches when
+  # the target happens to be the newest line at the instant of the poll, so it can
+  # miss the window entirely and time out.
+  #
+  # AND NOTE THE LIMIT: an emulator clock does not pin a SCENE. This gate matched
+  # 3:00 through 9:59 once, and sampled 29.65 FPS at 3:19 and 3.4 FPS at 4:50 from
+  # the same build. Use tools/thor_gameplay_ab.sh with a savestate when the answer
+  # has to be trusted.
   local waited=0
-  while ! sh "grep -v 'Performance Sensor' $LOG 2>/dev/null | tail -1" | grep -q "$CLOCK"; do
+  while ! sh "grep -c '$CLOCK' $LOG 2>/dev/null" | grep -qv '^0$'; do
     waited=$((waited+5)); [ $waited -gt 420 ] && { echo "$label: never reached $CLOCK"; return 1; }
     sh "sleep 5" >/dev/null
   done
