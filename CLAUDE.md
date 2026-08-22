@@ -4046,3 +4046,34 @@ already recommends: **establish reach first**. Open the call sites, read the
 argument sizes, and multiply by the rate from the profile. That took minutes and
 needed no device. Go to `docs/hardware/` when a specific instruction choice is
 already known to be hot, never to hunt for one.
+
+# READY TO TEST, deliberately NOT shipped: the dead call on the SPU DMA path
+
+**Written, built, and reverted on 2026-08-22 because it has no number.** The whole
+day started with changes which shipped on reasoning, so this one does not.
+
+`do_dma_transfer` calls `rsx::prepare_guest_write(eal, args.size)` for **every SPU
+MFC put**. With the preflight off by default that call does nothing but return
+false. **LTO is off in this build**, so it is a real, non-inlinable call across a
+translation unit, and `process_mfc_cmd` is **20.13%** of gameplay in this fork's
+own profile. This file already records the same shape costing real time once:
+`copy_data_swap_u32` "fell through to a scalar loop behind a non-inlinable
+function pointer with LTO off".
+
+The change is three edits and about fifteen lines:
+
+1. `RSXOffload.cpp` gets `bool g_guest_preflight_enabled`, set once from the
+   property. Namespace scope, so it is zero-initialised to false, which is the
+   default, and the RSX library loads before any SPU thread exists.
+2. `RSXOffload.h` gets `inline bool guest_preflight_enabled()` reading it.
+3. `SPUThread.cpp` guards the call: `if (rsx::guest_preflight_enabled() && ...)`.
+
+**Predicted magnitude: unknown, and possibly zero.** A well predicted branch on a
+cached bool is cheap and the call it replaces was also cheap. Write the number
+down before believing it, per the rule above.
+
+**How to test it properly.** Not on the Eternal Sonata opening. The attempt on
+2026-08-22 sampled emulator clock 4:50 against a 3:19 baseline and read 3.4 FPS
+against 29.65, which looks like a catastrophic regression and is two different
+scenes. Use `tools/thor_gameplay_ab.sh` on a savestate, which restores the same
+frame for both arms.
