@@ -8,8 +8,14 @@
 # FPS at 4:50, and three consistent samples of the wrong scene looked exactly like
 # a reproducible regression. A savestate restores the same frame every time.
 #
-# Make one with the pad: SELECT + right stick DOWN (RPCSXActivity.kt). Injected
-# input does not reach the guest on this device, so a person has to do it once.
+# The savestate is made over adb, by this script. No pad, no hands.
+#
+# ThorDebugSaveStateReceiver already exists and is exported in debug builds, where
+# THOR_DEBUG_TOOLS is true. It is a BROADCAST on purpose: an activity intent would
+# bring MainActivity forward and push the emulator out of the foreground, which
+# changes the very workload being captured.
+#
+# It was asked for by hand for hours before anyone looked for it. Look first.
 #
 # Usage:
 #   tools/thor_gameplay_ab.sh debug.rpcsx.thor.spu_selfloop_park 0 100 3
@@ -37,11 +43,26 @@ sh() { MSYS_NO_PATHCONV=1 "$ADB" -s "$DEVICE" shell "$@" 2>/dev/null | tr -d '\r
 restore() { sh "setprop $PROP ''" >/dev/null 2>&1 || true; }
 trap restore EXIT INT TERM
 
-sh "ls $ROOT/savestates/$TITLE" | grep -q . || {
-  echo "No savestate for $TITLE." >&2
-  echo "Load your save, reach the scene, then press SELECT + right stick DOWN." >&2
-  exit 1
-}
+SAVEDIR=$ROOT/config/savestates/$TITLE
+
+# Capture one now, from whatever is running, unless the caller already has one.
+if ! sh "ls $SAVEDIR" | grep -q .; then
+  [ -n "$(sh "pidof $PKG")" ] || {
+    echo "Nothing is running, so there is no scene to capture." >&2
+    echo "Boot the title to the scene you want measured, then re-run." >&2
+    exit 1
+  }
+  echo "No savestate for $TITLE. Capturing the running scene."
+  sh "am broadcast -a net.rpcsx.THOR_DEBUG_SAVESTATE -n $PKG/net.rpcsx.utils.ThorDebugSaveStateReceiver --es thorSaveStateRequestId abcapture" >/dev/null
+  waited=0
+  while ! sh "ls $SAVEDIR" | grep -q .; do
+    sh "sleep 3" >/dev/null; waited=$((waited+3))
+    [ $waited -gt 90 ] && { echo "savestate never appeared in $SAVEDIR" >&2; exit 1; }
+  done
+fi
+
+STATE=$(sh "ls -t $SAVEDIR | head -1")
+echo "using savestate: $STATE"
 
 arm() {
   local value=$1 label=$2
@@ -52,10 +73,12 @@ arm() {
 
   local t0; t0=$(sh "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -n | tail -1")
   sh "input keyevent KEYCODE_WAKEUP; svc power stayon true" >/dev/null
-  sh "am start -a net.rpcsx.THOR_RESUME_SAVESTATE -n $PKG/net.rpcsx.MainActivity --es titleId $TITLE" >/dev/null
+  # THOR_DEBUG_BOOT takes any absolute path, and a savestate is bootable like a disc.
+  # The title must already be in games.yml, which booting the disc once achieves.
+  sh "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $PKG/net.rpcsx.MainActivity --es path '$SAVEDIR/$STATE' --es titleId $TITLE --es thorDebugBootRequestId $label --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile false" >/dev/null
 
   # Wait for frames, not for a clock. A clock does not pin a scene; a savestate does.
-  local waited=0
+  waited=0
   while [ "$(sh "pidof $PKG")" = "" ] || [ "$(sh "dumpsys SurfaceFlinger --list | grep -c 'RPCSXActivity](BLAST)'")" = "0" ]; do
     sh "sleep 5" >/dev/null; waited=$((waited+5))
     [ $waited -gt 300 ] && { echo "$label: never presented a surface"; return 1; }
