@@ -3,6 +3,18 @@
 Technical notes for making this emulator fast on Thor. `AGENTS.md` is the
 operating contract; this file is the hardware knowledge behind it.
 
+## Read `AGENTS.md` first
+
+**This repository is the PS3 project.** It is the one place PS3 work goes, and
+its remote is `git@github.com:noeldvictor/rpcsx-ui-android-thor.git`. Work from
+`RPCSX/rpcsx`, `RPCS3/rpcs3` and `ARMSX2/ARMSX3` all arrives here, one port at a
+time. The sibling checkout `ps3-thor/rpcs3-upstream` is for reading upstream
+only: do not push it, do not build it, and do not install it on the Thor.
+
+`AGENTS.md`, section **Upstream Sources**, holds the rules and the reasons. Read
+it before you touch an upstream tree. This paragraph is a pointer, not a second
+copy, because two copies of a rule disagree.
+
 # Write all documentation in ASD-STE100
 
 Use Simplified Technical English (ASD-STE100) for all new documentation and all

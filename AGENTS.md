@@ -49,6 +49,49 @@ Keep `CLAUDE.md` as the map. New detail belongs in the topic file, not in it.
 - Fast native-core hot swap: `.\tools\build_push_thor_core.ps1 -Label NAME`.
 - Reset hot swap: `.\tools\build_push_thor_core.ps1 -ResetToBundled`.
 
+## Upstream Sources
+
+**This repository is the PS3 project. All PS3 work goes here.** Its remote is
+`git@github.com:noeldvictor/rpcsx-ui-android-thor.git`, branch `master`. No other
+checkout in the parent workspace has a remote that you own.
+
+Three upstream projects feed this one repository. Each one arrives a different
+way:
+
+| upstream | what it gives | how it arrives |
+| --- | --- | --- |
+| `RPCSX/rpcsx` | the vendored core in `app/src/main/cpp/rpcsx` | `tools/sync_rpcsx_core.ps1`. Plain files, not a submodule. Read `UPSTREAM.md` in that directory. |
+| `RPCS3/rpcs3` | emulator core and RSX changes | by hand, one commit at a time. This fork takes rpcs3 changes directly, and it is ahead of RPCSX on them. |
+| `ARMSX2/ARMSX3` | Android and AArch64 changes | by hand, one commit at a time, after you check each one against this tree. |
+
+**Never merge an upstream branch into this repository.** The three trees have
+different layouts and different histories. Content comes in as separate ports.
+
+**Check every ARMSX3 commit against this tree before you port it.** Their device
+is not always this device. Their `busy_wait` scaling dropped the Thor to about
+1 FPS, because this fork had already retuned each call site for the real
+19.2 MHz timer. Their RSX semaphore fallback targets Oryon, not the 8 Gen 2.
+Their log-flood list held none of this tree's four largest floods. Record each
+pass in `docs/arm64/armsx3-comparison.md`. Say what you rejected, and say why.
+
+### The comparison checkout is not a build target
+
+`C:\Users\leanerdesigner\Documents\ps3-thor\rpcs3-upstream` exists only to read
+upstream work. It carries two remotes:
+
+- `origin` is `RPCS3/rpcs3`.
+- `armsx3` is `ARMSX2/ARMSX3`.
+
+Obey these rules for it:
+
+- Fetch it to see new upstream commits. This is its whole purpose.
+- **Never push it.** You own neither remote. No fork of either one exists under
+  `noeldvictor`.
+- **Never build it, and never install it on the Thor.** Its `android/` directory
+  builds the ARMSX3 app. That app is a different package from `net.rpcsx.easy`.
+- A merge inside it gives you nothing that ships. Only a port into this
+  repository reaches the device.
+
 ## PS3 Sprint Gate
 
 - Active goal: make Eternal Sonata `BLUS30161` stable and faster on AYN Thor while preserving correct field, title Options/menu, first-battle visuals, and bounded thermals.
