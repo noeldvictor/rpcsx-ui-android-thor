@@ -34,20 +34,42 @@ namespace rsx
 	//
 	// Ported from sashkinbro/EmuCoreC e67d18b7, 77c30684 and 77dc85d0.
 	static atomic_t<u64> g_preflight_handler_calls = 0;
+	// pages_walked counts the nominal range size. This counts the loop, which is what the
+	// region skip was supposed to reduce and what nothing has actually verified.
+	static atomic_t<u64> g_preflight_iterations = 0;
 
-	static bool thor_guest_preflight_enabled()
+	// 0 off, 1 full, 2 probe only.
+	//
+	// Mode 2 walks and probes exactly as mode 1 does and never calls the handler. It is
+	// not correct to ship, it is there to SPLIT the cost. Mode 1 measured 14.84 FPS
+	// against 29.67 with the preflight off, and the walk has two halves: about 17 million
+	// page probes and about 20,000 handler calls. Each half has been asserted to be the
+	// cost at some point today, on reasoning, and reasoning has been wrong four times.
+	//
+	// Mode 2 fast means the handler calls are the cost, and the fix is one handler call
+	// for each protected RANGE. Mode 2 slow means the probes are, and the fix is to stop
+	// probing per page.
+	static int thor_guest_preflight_mode()
 	{
 #ifdef __ANDROID__
-		static const bool value = []()
+		static const int value = []()
 		{
 			char buffer[PROP_VALUE_MAX]{};
 			const int length = __system_property_get("debug.rpcsx.thor.guest_preflight", buffer);
-			return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
+			if (length <= 0)
+			{
+				return 0;
+			}
+			if (buffer[0] == '2')
+			{
+				return 2;
+			}
+			return (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T') ? 1 : 0;
 		}();
 
 		return value;
 #else
-		return true;
+		return 1;
 #endif
 	}
 
@@ -80,7 +102,9 @@ namespace rsx
 		// default. Set the property when chasing one of those silent deaths.
 		//
 		//   debug.rpcsx.thor.guest_preflight = 1   (default 0)
-		if (!thor_guest_preflight_enabled())
+		const int preflight_mode = thor_guest_preflight_mode();
+
+		if (preflight_mode == 0)
 		{
 			return false;
 		}
@@ -124,8 +148,8 @@ namespace rsx
 			const u64 total = s_fast + s_slow;
 			if ((total % 100000) == 0 && s_reported.exchange(total) != total)
 			{
-				rsx_log.error("guest page preflight: fast=%llu slow=%llu pages_walked=%llu handler_calls=%llu",
-					+s_fast, +s_slow, +s_pages, +g_preflight_handler_calls);
+				rsx_log.error("guest page preflight: mode=%d fast=%llu slow=%llu pages_walked=%llu iterations=%llu handler_calls=%llu",
+					preflight_mode, +s_fast, +s_slow, +s_pages, +g_preflight_iterations, +g_preflight_handler_calls);
 			}
 
 			if (fast)
@@ -169,8 +193,14 @@ namespace rsx
 				// magnitude dearer than the probe, and the page count alone cannot say whether
 				// the cost is the walk or the handler.
 				g_preflight_handler_calls++;
-				handled |= g_access_violation_handler(current, is_writing);
+
+				if (preflight_mode != 2)
+				{
+					handled |= g_access_violation_handler(current, is_writing);
+				}
 			}
+
+			g_preflight_iterations++;
 
 			if (current / 4096 == last / 4096)
 			{
