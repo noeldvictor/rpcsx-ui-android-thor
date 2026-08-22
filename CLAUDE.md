@@ -3953,9 +3953,66 @@ excluded by reading, not by running: DP3_PRECISE needs Shader Precision ultra
 and this device reads High, and `copy_data_swap_u32_cmp` is the NEON form on
 ARM64 rather than a scalar fallback.
 
-## Still unmeasured, and named so nobody assumes
+## Now measured, and the fix is only a partial one
 
-The page walk fix is derived from reading. **No device run has confirmed it.**
+**Counters on the preflight, Eternal Sonata, 2026-08-22:**
+
+    0:00:28   fast=578144    slow=21856    pages_walked=88965
+    0:02:10   fast=4195552   slow=104448   pages_walked=17030113
+
+**4.3 million calls and 17 million page probes in 130 seconds**, which is about
+131,000 probes for each second. The path is hot. Nobody had established that
+before; the change shipped on the argument that it was cheap.
+
+**The region fix takes 97.6% of the CALLS and almost none of the PAGES.** A
+texture upload targets protected memory by definition, because protection is how
+the cache learns the guest wrote to it. So the uploads always take the slow walk,
+and they are the large ranges: the slow calls average 163 pages each.
+
+**The frame rate did not recover.** A 3D scene measured 50.58 ms median, which is
+19.77 FPS, against the 27-30 FPS this title gave before. So the walk is real and
+the fix is real and **neither is the whole regression**. Do not close this.
+
+The next number to take is `handler_calls`, which counts entry into
+`g_access_violation_handler` from the preflight. The handler invalidates the
+texture cache, so it costs orders of magnitude more than a probe, and the page
+count cannot tell a cheap walk from cache thrashing.
+
+## A guard, because a mirror pair with no check is a trap
+
+`tools/check_checksum_mirror.py` fails when the SPU block checksum IR and its
+host mirror disagree, and when either side folds a pair with equal weight.
+
+Both failure modes were reconstructed and the check was shown to FAIL on each
+before it was trusted. A check which has never been shown to catch anything is
+worth nothing, and this file already says so about five earlier searches.
+
+## What was NOT the cause, established by measurement
+
+* **Flat shading.** Gated off, rebuilt, installed, measured: 14.70 FPS median. No
+  change. The gate stays because the lever is unmeasured, not because it was the
+  fault.
+* **Extended dynamic state.** A boot with `vk_dynamic_state_off=1` was still slow.
+* **Thermals.** A cooled retest was still slow, and the fastest arm of the day
+  started at 84.3 C while a 52.6 C arm was half the speed.
+
+## Three method errors from one session, all avoidable
+
+1. **A stripped `.so` has no function names.** Verifying a fix by grepping the
+   shipped library for `mm_range_has_protection` returned zero, and so did a grep
+   for `mm_is_accessible`, which certainly exists. Grep for a STRING LITERAL you
+   added on purpose. This is the sixth entry in this file for that class.
+2. **An emulator clock does not pin a scene.** `tools/thor_dynamic_state_ab.sh`
+   waited for a fixed clock and compared a title menu against a 3D scene, then
+   read 29.40 against 14.84 FPS as workload variance. They are different
+   workloads. **Pin the scene, not the timestamp.**
+3. **A harness which sets a property must restore it.** The A/B left
+   `vk_dynamic_state_off=1` behind, and the next measurement was nearly read as a
+   default-build result.
+
+## Still untested
+
+The page walk fix is confirmed hot but only partly effective.
 Two other changes from the same window are also untested:
 
 * `d91dba53f`, extended dynamic state. Its own comment in `device.cpp` says a

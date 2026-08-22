@@ -29,6 +29,8 @@ namespace rsx
 	// load for each page when nothing is protected.
 	//
 	// Ported from sashkinbro/EmuCoreC e67d18b7, 77c30684 and 77dc85d0.
+	static atomic_t<u64> g_preflight_handler_calls = 0;
+
 	static bool prepare_guest_access(u32 address, u32 length, bool is_writing)
 	{
 		if (!address || !length || !g_access_violation_handler)
@@ -54,9 +56,35 @@ namespace rsx
 		//
 		// When the answer is no, this is the behaviour from before 21493f1e1. When it
 		// is yes, the exact per-page walk below still runs.
-		if (!mm_range_has_protection(address, length) && vm::check_addr(address, required_permission, length))
+		// Reach, reported. This tree has shipped several levers whose cost or benefit
+		// was argued and never counted, and this walk is one of them. The counters say
+		// how often the fast path fires and how many pages the slow path really walks,
+		// so the next person does not have to infer it.
+		//
+		// rsx_log.error, because rsx_log.always does not reach logcat on this device.
 		{
-			return false;
+			static atomic_t<u64> s_fast = 0, s_slow = 0, s_pages = 0, s_reported = 0;
+
+			const bool fast = !mm_range_has_protection(address, length) &&
+				vm::check_addr(address, required_permission, length);
+
+			(fast ? s_fast : s_slow)++;
+			if (!fast)
+			{
+				s_pages += (last / 4096) - (address / 4096) + 1;
+			}
+
+			const u64 total = s_fast + s_slow;
+			if ((total % 100000) == 0 && s_reported.exchange(total) != total)
+			{
+				rsx_log.error("guest page preflight: fast=%llu slow=%llu pages_walked=%llu handler_calls=%llu",
+					+s_fast, +s_slow, +s_pages, +g_preflight_handler_calls);
+			}
+
+			if (fast)
+			{
+				return false;
+			}
 		}
 
 		u32 current = address;
@@ -66,6 +94,10 @@ namespace rsx
 		{
 			if (!vm::check_addr(current, required_permission) || !mm_is_accessible(current, is_writing))
 			{
+				// Count these. The handler invalidates the texture cache, so it is orders of
+				// magnitude dearer than the probe, and the page count alone cannot say whether
+				// the cost is the walk or the handler.
+				g_preflight_handler_calls++;
 				handled |= g_access_violation_handler(current, is_writing);
 			}
 
