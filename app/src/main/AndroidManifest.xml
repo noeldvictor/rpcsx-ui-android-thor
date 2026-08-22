@@ -98,5 +98,13 @@
                 <action android:name="net.rpcsx.THOR_DEBUG_SAVESTATE" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".utils.ThorDebugLoadStateReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.rpcsx.THOR_DEBUG_LOADSTATE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
