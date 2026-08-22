@@ -4135,3 +4135,42 @@ CPU pressure, not about a specific game scene.
 twelve orphaned `yes` processes running for hours at about 430% CPU after a
 dropped link, contaminating a whole session. `tools/thor_starve_ab.sh` traps EXIT,
 INT and TERM, and sweeps on entry as well.
+
+# The code from 2026-08-20 to now costs nothing under load, measured build against build
+
+**A report of "slower than last week" is a comparison between two builds, so
+measure that, not a list of suspects.** Four interleaved arms, six spinners each,
+installs alternating inside one session:
+
+| build | frames |
+| --- | --- |
+| `bd2c13249`, 2026-08-20 | 11.86, 11.87 |
+| HEAD, after twelve commits | 11.86, 11.87 |
+
+**Identical to 0.01 FPS.** The rig is not blind: the same starvation setup
+separated `spu_selfloop_park` by 20 to 40% earlier the same day. It would have
+shown a regression of that size and there is none.
+
+So the whole 08-20 to now window is exonerated for CPU-bound frame cost, and that
+covers every change made today.
+
+## Why this test beats hunting levers
+
+Every lever tested is a hypothesis somebody thought of. This one tests everything
+which changed at once, including what nobody suspected. It cost two builds and
+four arms, against a day of dead hypotheses: flat shading, extended dynamic state,
+thermals, the guest page walk, and both parking defaults, each killed by its own
+measurement.
+
+**Reach for it FIRST when a report is shaped as "it used to be faster".** Build
+the named good commit, save both APKs, and alternate installs. If the builds
+separate, bisect. If they do not, the code is not the cause and the answer is in
+the scene, the settings, or the device.
+
+## Interleave the INSTALLS, not just the arms
+
+`tools/thor_build_ab.sh` alternates installs inside one session, because the
+absolute number drifts. The same configuration measured 11.86 FPS in one session
+and 9.89 in another, while repeating to 0.00 inside each. Two builds compared
+across sessions would have produced a confident 20% regression which was only
+drift, which is the 4:50 against 3:19 error in another costume.
