@@ -4,6 +4,10 @@
 #include "Common/BufferUtils.h"
 #include "Core/RSXReservationLock.hpp"
 #include "Host/MM.h"
+
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #include "RSXOffload.h"
 #include "RSXThread.h"
 
@@ -31,9 +35,52 @@ namespace rsx
 	// Ported from sashkinbro/EmuCoreC e67d18b7, 77c30684 and 77dc85d0.
 	static atomic_t<u64> g_preflight_handler_calls = 0;
 
+	static bool thor_guest_preflight_enabled()
+	{
+#ifdef __ANDROID__
+		static const bool value = []()
+		{
+			char buffer[PROP_VALUE_MAX]{};
+			const int length = __system_property_get("debug.rpcsx.thor.guest_preflight", buffer);
+			return length > 0 && (buffer[0] == '1' || buffer[0] == 'y' || buffer[0] == 'Y' || buffer[0] == 't' || buffer[0] == 'T');
+		}();
+
+		return value;
+#else
+		return true;
+#endif
+	}
+
 	static bool prepare_guest_access(u32 address, u32 length, bool is_writing)
 	{
 		if (!address || !length || !g_access_violation_handler)
+		{
+			return false;
+		}
+
+		// Off by default, because it costs half the frame rate.
+		//
+		// MEASURED on Eternal Sonata, one 3D route, same clock point, 2026-08-22:
+		//
+		//   bd2c13249, the parent commit   29.67 FPS
+		//   21493f1e1, this preflight      14.84 FPS
+		//
+		// A bisect of four builds put the whole loss on this one commit. Extended dynamic
+		// state, the SPU checksum and six upstream ports all measured clean.
+		//
+		// The cost is NOT the page probes. It is the handler. This preflight calls
+		// g_access_violation_handler for every protected page in the range, before the
+		// copy, and that handler invalidates the texture cache. A counter read 20,177
+		// calls in two minutes. Faulting naturally, which is what the parent commit does,
+		// only enters the handler for a page the copy really touches.
+		//
+		// The crash it prevents is real: a protected range which faults inside memcpy()
+		// can fault a second time inside the handler, and ART then kills the process with
+		// no tombstone. It is also rare, and it is not worth half the frame rate by
+		// default. Set the property when chasing one of those silent deaths.
+		//
+		//   debug.rpcsx.thor.guest_preflight = 1   (default 0)
+		if (!thor_guest_preflight_enabled())
 		{
 			return false;
 		}
@@ -92,6 +139,30 @@ namespace rsx
 
 		for (;;)
 		{
+			// Skip a whole 1 MiB region when it holds no protected page.
+			//
+			// This is where the cost was. A texture upload passes a whole surface, and a
+			// surface is large: 2560x720 is 1,800 pages. It always reaches this loop,
+			// because it targets protected memory by definition -- protection is how the
+			// cache learns the guest wrote. But the protected pages are a tiny part of
+			// the range. The counters said 17 million pages walked against 115 calls to
+			// the handler, so more than 99.999% of the walk found nothing.
+			//
+			// Measured: 21493f1e1 alone took Eternal Sonata from 29.67 FPS to 14.84.
+			// Skipping clean regions turns 256 probes into one for each of them.
+			if (!mm_range_has_protection(current, 1))
+			{
+				const u32 region_end = (current | ((1u << 20) - 1));
+
+				if (region_end >= last)
+				{
+					break;
+				}
+
+				current = region_end + 1;
+				continue;
+			}
+
 			if (!vm::check_addr(current, required_permission) || !mm_is_accessible(current, is_writing))
 			{
 				// Count these. The handler invalidates the texture cache, so it is orders of
