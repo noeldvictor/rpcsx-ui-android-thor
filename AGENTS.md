@@ -8979,3 +8979,43 @@ budget lasts longer.
 
 **Do not run long unattended gameplay arms on this title.** The device belongs
 to somebody.
+
+# RULED OUT BY EXPERIMENT: a missed SPURS reservation notification
+
+**2026-08-23.** The halt would not reproduce in 64 controlled boots, so instead
+of waiting for the rare timing window the emulator was made to CREATE one.
+
+`debug.rpcsx.thor.spurs_drop_notify = N` drops one reservation notification in N
+for reservations INSIDE THE SPURS BLOCK, at both notify sites in `do_putllc`.
+Default 0, and it announces itself in the log because it breaks a guarantee on
+purpose.
+
+**Run at 1 in 8, the most aggressive rate tried:**
+
+    dropped 3840 of 30713 notifications   (CellSpursKernel2)
+    dropped 4096 of 32761 notifications   (CellSpursKernel3)
+
+**No halt. No SPU trap. No dead FIFO.** The title kept rendering at 27.33 FPS
+through thousands of deliberately lost notifications.
+
+## Why this is a real result and not a shrug
+
+It confirms a code reading with an experiment. `SPUThread.cpp:6510` waits with
+`atomic_wait_timeout{100'000}` and the loop then RE-READS the line, so a lost
+notification costs at most 100 us of latency and cannot leave a stale read. The
+theory deserved a test rather than a paragraph, and it failed the test.
+
+**So the halt is not a reservation-visibility problem.** That removes the
+mechanism this file has suspected longest, including the one behind the concern
+about `Accurate SPU Reservations: false`, whose own comment says it works
+because "we have notifications for nearly all writes".
+
+## What that leaves
+
+The guest refuses the CONTENT of the SPURS state, not its freshness. The next
+injection targets are the limiter's own accounting rather than visibility:
+`group->spurs_running`, `max_run`, and the timeout branch that fires when
+`spurs_average_task_duration` grows.
+
+Keep the injector. A negative that is reproducible is worth as much as a win,
+and this one is one property away from being re-run.

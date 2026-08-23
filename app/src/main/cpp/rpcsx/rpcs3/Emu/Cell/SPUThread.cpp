@@ -174,6 +174,32 @@ static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexc
 //
 // Read once and cached, because the call site is inside the GETLLAR retry path
 // and a property read per iteration would perturb the very thing being measured.
+// Fault injection for the SPURS halt hunt. 0 is off, N drops one SPURS-block
+// reservation notification in N. Read once and cached, like every other Thor
+// property here: they are read once into a static for the life of the process.
+static u32 get_thor_spurs_drop_notify() noexcept
+{
+	static const u32 s_value = []() -> u32
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_drop_notify", value) > 0)
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed > 0 && parsed < 100000)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+#endif
+		return 0;
+	}();
+
+	return s_value;
+}
+
 static FORCE_INLINE u32 get_thor_getllar_busy_percent(u32 configured) noexcept
 {
 #ifdef ANDROID
@@ -5458,9 +5484,59 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 	{
 		if (raddr)
 		{
+			// FAULT INJECTION, default OFF.
+			//
+			// The SPURS halt does not reproduce: 64 controlled boots across FIFO
+			// settings, wake-up delays, heat and CPU starvation produced none. So
+			// stop waiting for the rare timing window and MAKE one.
+			//
+			// The suspected mechanism is a reservation notification that the SPURS
+			// kernel needed and did not get, leaving it to read stale state and
+			// refuse it. This drops one notification in N for reservations INSIDE
+			// THE SPURS BLOCK, which is exactly that mechanism on demand.
+			//
+			//   adb shell setprop debug.rpcsx.thor.spurs_drop_notify 64
+			//
+			// If the halt appears under this and never without it, the mechanism is
+			// named and the fix has a target. If it does NOT appear even at an
+			// aggressive rate, a missed notification is NOT the cause, which is
+			// worth just as much: this file records that a wait here is bounded at
+			// 100 us and re-reads, so the theory deserved a test rather than a
+			// paragraph.
+			//
+			// It is a DIAGNOSTIC. It deliberately breaks a guarantee, so it must
+			// never be left on, and it says so in the log the first time it fires.
+			bool thor_drop_this_notify = false;
+
+			if (const u32 drop_every = get_thor_spurs_drop_notify(); drop_every != 0)
+			{
+				if (spurs_addr && raddr - spurs_addr <= 0x80)
+				{
+					static atomic_t<u64> s_seen{0};
+					static atomic_t<u64> s_dropped{0};
+
+					if ((s_seen++ % drop_every) == 0)
+					{
+						thor_drop_this_notify = true;
+						const u64 n = ++s_dropped;
+
+						if (n == 1 || (n % 256) == 0)
+						{
+							spu_log.error("Thor SPURS fault injection ACTIVE: dropped %llu of %llu "
+								"SPURS-block reservation notifications (1 in %u). This BREAKS a "
+								"guarantee on purpose. Clear debug.rpcsx.thor.spurs_drop_notify "
+								"before measuring anything.", n, +s_seen, drop_every);
+						}
+					}
+				}
+			}
+
 			if (raddr != spurs_addr || pc != 0x11e4)
 			{
-				vm::reservation_notifier_notify(addr);
+				if (!thor_drop_this_notify)
+				{
+					vm::reservation_notifier_notify(addr);
+				}
 			}
 			else
 			{
@@ -5469,7 +5545,7 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 
 				const bool switched_from_running_to_idle = (static_cast<u8>(rdata[SPU_IDLE]) & thread_bit_mask) == 0 && (_ref<u8>(0x100 + SPU_IDLE) & thread_bit_mask) != 0;
 
-				if (switched_from_running_to_idle)
+				if (switched_from_running_to_idle && !thor_drop_this_notify)
 				{
 					vm::reservation_notifier_notify(addr);
 				}
