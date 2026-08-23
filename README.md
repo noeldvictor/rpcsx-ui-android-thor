@@ -233,9 +233,18 @@ be costly.
 
 It still crashes occasionally, and the delay is NOT the reason it crashes less.
 A controlled test finished at 0 faults in 12 boots at 20 us against 0 in 15 at
-50 us: 27 clean boots, no difference. The underlying fault is a rare SPU halt
-inside the game's own SPURS kernel, rarer than 1 in 27 under these conditions,
-and it is **not fixed**.
+50 us: no difference. A second test cleared the FIFO setting as well, at 0 faults
+in 10 boots on `Fast` against 0 in 27 on `Atomic`. That is **37 consecutive clean
+boots**, so no setting explains the fault.
+
+The underlying fault is a rare SPU halt inside the game's own SPURS kernel: the
+game checks something, does not like the answer, and stops its own SPU. It is
+**not fixed**, and it is rarer than 1 in 37 under these conditions.
+
+What did change is that it now explains itself. When it happens the log names the
+trap, the SPU program counter, and the state of the SPURS scheduler, instead of
+printing an address. If you hit it, the lines beginning `SPU trap` are the ones
+worth reporting.
 
 ## A 10% CPU saving you can try, but it is off by default for a reason
 
@@ -442,6 +451,19 @@ Output goes to the ignored `debug-captures/` folder.
 ---
 
 ## Development notes
+
+If you are bringing up a new title, start with the workup tool. It boots the
+game, names the failure instead of saying it did not work, and suggests the
+settings to try:
+
+```sh
+tools/thor_game_workup.sh BLUS30357 "/storage/.../game.iso"
+```
+
+It knows eleven distinct failures — a dead RSX queue, an SPU halt, a compile
+abort, a shader stall, a hang, and others — and it never writes a game profile.
+`docs/arm64/title-recipes.md` records what each title already refused, so the
+same experiment is not run twice.
 
 Ongoing performance work is logged in `debug-experiments/`. Recent highlights:
 

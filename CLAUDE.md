@@ -5239,3 +5239,104 @@ A controlled `Fast` against `Atomic` arm, same everything else, about 25 boots
 each. That is roughly two hours of device time and it is the honest next
 experiment. Nothing shorter can separate a fault this rare, which is the same
 lesson as the pooled rate: **a rare event needs a denominator, not an anecdote.**
+
+# The SPURS halt: two more candidates are eliminated, and the fault now names itself
+
+**2026-08-23.** The goal was to fix the halt. It is not fixed, and this section
+says exactly what is now known, because a rare fault needs a denominator.
+
+## `RSX FIFO Accuracy` is not the cause
+
+The previous pass said the candidate that survived was FIFO accuracy, not the
+wake-up delay. A controlled arm removes it:
+
+| arm | boots | faults |
+| --- | --- | --- |
+| Atomic | 27 | 0 |
+| Fast | 10 | 0 |
+
+**37 consecutive clean boots.** No setting-level hypothesis is left.
+
+## The GETLLAR sleep cannot leave a SPURS waiter stale
+
+This looked like a real Thor-specific mechanism, and it is wrong. `do_putllc`
+SUPPRESSES the reservation notification for a SPURS kernel store: at
+`SPUThread.cpp:5461` it notifies only when `raddr != spurs_addr || pc != 0x11e4`,
+or when the thread went from running to idle. Upstream can suppress it because
+upstream waiters SPIN, and this fork ships `getllar_busy_percent=0`, so our
+waiters SLEEP.
+
+**The sleep is bounded.** `SPUThread.cpp:6510` waits with
+`atomic_wait_timeout{100'000}` and the loop then re-reads the line. A missed
+wake costs 100 us of latency, and it cannot produce a stale read.
+
+Read the timeout before you build a theory on a wait.
+
+## What shipped: the fault is self-diagnosing
+
+`handle_access_violation` in `rpcs3/util/Thread.cpp` now decodes the trap. It
+gives the tag name, the thread, the program counter, the SPURS address, the
+reservation address, and the SPURS limiter state: the group, `max_run`,
+`spurs_running`, the idle mask, and the task timing.
+
+**It reads the local store and the thread group only.** A read of guest main
+memory can fault a second time inside the handler, and Android then stops the
+process with no log at all. `_ref` masks the address with `% SPU_LS_SIZE`, so it
+cannot fault.
+
+## Heat is the one correlate never controlled
+
+Every clean arm cooled below 62 C first. One historical fault ran on a hot
+device, and the SPURS limiter is timing-driven: `spurs_average_task_duration`
+sets a wait clamped between 10 ms and 100 ms. A throttled device changes that
+timing.
+
+An arm of back-to-back boots with no cooldown is running. The thermal guard
+stays ON, because the device is shared and the guard does not stop this title
+reaching 90 C anyway.
+
+# A game workup suite, because every new title started from nothing
+
+**Written 2026-08-23 after Transformers cost a week.** This repo had 18 skills.
+Nearly all of them were for one title or one subsystem, and they answered
+"is this number valid". None of them answered "what do I do next for this game".
+
+| Artifact | What it is |
+| --- | --- |
+| `tools/thor_game_workup.sh` | one unattended command: preflight, boot, name the failure, then measure |
+| `.agents/skills/thor-game-workup/SKILL.md` | the procedure, the trap tags, and a profile-to-lever table |
+| `docs/arm64/title-recipes.md` | per title: the signature, what shipped, what it refused, what is open |
+
+**Triage gates speed, and that is not a preference.** This project measured
+Transformers for a week as a slow title. It was a hanging title, and every
+number from that week described a dead emulator.
+
+The tool knows eleven failures by name, and it refuses rather than guesses: an
+unreachable device, a battery below 20%, an active dev-core override, and a
+sleeping screen. It restores a config by moving an on-device backup, never by
+rebuilding the text, because a harness that rebuilt a config with `printf` into
+`while read` dropped the only line and ran every arm unset.
+
+**It proposes. It does not write a game profile.** A measured win is not
+automatically a correct default: `Accurate SPU Reservations: false` measured
+-10.6% and -8.4% and is still not shipped.
+
+# What you can know before you boot a title
+
+`thor-ghidra-static-lane` now covers two jobs that need no runtime evidence.
+
+**The SPURS halt map.** The SPURS kernel comes from `libsre` and its image is
+the same on every boot. Capture the local store of `CellSpursKernel0` once,
+disassemble it, and record every `HGT`, `HLGT` and `HEQ` with its condition. A
+future trap then resolves in one lookup instead of a session. The disassembler
+is already in this tree at `Emu/Cell/SPUDisAsm.cpp`. **The trigger that writes
+the local store to a file does not exist yet. Build it before you promise the
+map.**
+
+**The static title fingerprint.** `PARAM.SFO`, the engine strings, the imported
+PRX list, the count of embedded SPU images, and the module size estimate all
+read off the disc image. They say whether a title can reach our SPURS defects at
+all, and they predict the precompile time and the Scudo risk.
+
+**A fingerprint says which failures are possible. It does not say which one
+happened.** The workup tool still decides that.
