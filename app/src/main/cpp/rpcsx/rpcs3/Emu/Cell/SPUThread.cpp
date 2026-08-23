@@ -288,9 +288,62 @@ static FORCE_INLINE bool get_mfc_debug_for_runtime() noexcept
 #endif
 }
 
+// Override for Accurate SPU Reservations, so the setting can be A/B'd.
+//
+// WHY THIS SITE. A 25 s profile of restored Eternal Sonata gameplay puts
+// `vm::writer_lock::writer_lock` at 8.60% of all cycles, and with `passive_lock`
+// and the two `shared_mutex` entries VM range locking is about 12.7% of
+// everything, fed about equally by all six SPU threads.
+//
+// It arrives through do_putlluc. `g_use_rtm` is false on ARM64, so there is no
+// transactional path, and with accurate reservations ON every reservation store
+// takes the hard `vm::writer_lock`. With it OFF that whole branch is skipped and
+// the store is a plain `mov_rdata` plus a reservation bump.
+//
+// -1 means "use the config", which is the default and leaves behaviour untouched.
+// 0 and 1 force it. Read ONCE into a namespace-scope inline const, because the
+// caller is FORCE_INLINE on the MFC path and a property read per call would
+// perturb the thing being measured; thor_rsx_fifo_park.h records a function-local
+// static costing about +46% of a thread for exactly that reason.
+//
+//   adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0
+//
+// THIS IS A CORRECTNESS SETTING, NOT A FREE SWITCH. Upstream defaults it on.
+// Turning it off relaxes the atomicity SPU reservations rely on, so it must be
+// judged on whether a title still runs correctly, not only on whether it is
+// faster.
+#ifdef ANDROID
+inline const int g_thor_accurate_reservations_override = []() -> int
+{
+	char value[PROP_VALUE_MAX]{};
+
+	if (__system_property_get("debug.rpcsx.thor.spu_accurate_reservations", value) <= 0)
+	{
+		return -1;
+	}
+
+	if (value[0] == '0')
+	{
+		return 0;
+	}
+
+	if (value[0] == '1')
+	{
+		return 1;
+	}
+
+	return -1;
+}();
+#endif
+
 static FORCE_INLINE bool get_spu_accurate_reservations_for_runtime() noexcept
 {
 #ifdef ANDROID
+	if (g_thor_accurate_reservations_override >= 0)
+	{
+		return g_thor_accurate_reservations_override != 0;
+	}
+
 	return g_cfg.core.spu_accurate_reservations.observe();
 #else
 	return g_cfg.core.spu_accurate_reservations.get();

@@ -214,6 +214,23 @@ runtime codes stay listed but greyed out until native validation exists.
 
 ---
 
+## A 10% CPU saving you can try on Eternal Sonata
+
+```
+adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0
+```
+
+Measured on device, two interleaved rounds on the same restored scene: **-10.6%
+total CPU and -9.3% on the SPU threads at identical frame output**, with the two
+arms' ranges not overlapping. It works by skipping a hard memory lock that every
+SPU reservation store otherwise takes on ARM64, which profiling showed to be
+about 12.7% of all cycles.
+
+It is **off by default on purpose**. This relaxes the atomicity SPU reservations
+rely on, and the evidence so far is two 50-second arms plus about three minutes of
+gameplay with no faults. That cannot rule out a problem that appears an hour in.
+Try it, and if a long session is clean it is worth making permanent for that game.
+
 ## Where performance actually stands
 
 Honest summary: **one game has been measured properly, and it is not a promise

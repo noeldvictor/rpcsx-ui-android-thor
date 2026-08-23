@@ -4745,3 +4745,45 @@ render path; it cannot idle an SPU thread that spins regardless of presentation.
 **The open question is that SPU thread**, not the frame rate. 29.37% of all cycles
 in one thread's JIT code, and `spu_selfloop_park` is already on and already has
 reach elsewhere. Whatever it is spinning on is not the self-loop the park catches.
+
+# The first lever that actually moves Eternal Sonata's measured bottleneck
+
+`debug.rpcsx.thor.spu_accurate_reservations` overrides the config setting of the
+same name. -1/unset uses the config, 0 and 1 force it. Read once into a
+namespace-scope inline const, because the caller is FORCE_INLINE on the MFC path.
+
+The profile said VM range locking is 12.7% of all cycles, arriving through
+`do_putlluc`: `g_use_rtm` is false on ARM64, so with accurate reservations ON
+every reservation store takes the hard `vm::writer_lock`. Turning it off skips
+that branch entirely.
+
+Two interleaved rounds on the restored savestate, `THREAD_MATCH='SPU['`:
+
+| arm | FPS | cores | range | SPU threads |
+| --- | --- | --- | --- | --- |
+| accurate=1 (default) | 27.41 | 3.348 | 3.345 - 3.351 | 1.782 |
+| accurate=0 | 27.30 | 2.994 | 2.951 - 3.037 | 1.617 |
+
+**-10.6% total CPU and -9.3% on the SPU threads at identical frame output, and
+the ranges do not overlap.** That is the first lever tried here that clears the
++/-5% noise floor. The FIFO pause ladder and the writer-lock spin count both did
+not, and both were rejected for it.
+
+## Why it is NOT a default yet
+
+It is a CORRECTNESS setting. Upstream defaults it on, and turning it off relaxes
+the atomicity SPU reservations depend on. What has actually been observed:
+
+- both A/B arms, 50 s each, no faults
+- about three minutes of restored gameplay, no faults, no visual corruption
+- the title then returns to its attract screen, so the tail of that soak is a
+  light load and proves less than it looks
+
+That is not enough evidence to relax atomicity for everyone by default. Subtle
+reservation bugs show up as save corruption or a hang much later than three
+minutes, which is exactly the failure mode a short soak cannot see.
+
+**To try it:** `adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0`,
+then play normally. If a long session is clean it belongs in the BLUS30161
+profile as `Accurate SPU Reservations: false`, which is the same -10.6% without a
+property.
