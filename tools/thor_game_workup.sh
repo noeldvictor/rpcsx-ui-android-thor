@@ -56,6 +56,28 @@ sh_()   { MSYS_NO_PATHCONV=1 "$ADB" -s "$SERIAL" shell "$1" 2>&1 | tr -d '\r'; }
 temp_() { sh_ "for z in /sys/class/thermal/thermal_zone*; do t=\$(cat \$z/temp 2>/dev/null); n=\$(cat \$z/type 2>/dev/null); case \$n in cpu*) [ -n \"\$t\" ] && echo \$((t/1000));; esac; done" | sort -rn | head -1; }
 lgrep() { sh_ "grep -ac '$1' $LOG"; }
 
+# Is a MOVIE playing? Ask the emulator, do not read the frame rate.
+#
+# The frame rate is actively misleading: Transformers renders its cutscene at
+# 120 to 133 FPS uncapped and its title screen at 30, so the HIGH number means a
+# movie and not speed. A cutscene also cannot resolve a measurement -- one
+# configuration here measured 3.78 and 5.89 cores on consecutive rounds because
+# each run landed in a different scene.
+#
+# Needs the control API, which is debug builds only. If it is not reachable this
+# returns "unknown", and an unknown is NOT treated as "no movie".
+CTRL_PORT="${CTRL_PORT:-8099}"
+scene_() {
+    command -v curl >/dev/null 2>&1 || { echo unknown; return; }
+    local r
+    r=$(curl -s --max-time 4 "127.0.0.1:${CTRL_PORT}/scene" 2>/dev/null)
+    case "$r" in
+    *'"videoDecoding":true'*)  echo movie ;;
+    *'"videoDecoding":false'*) echo not-movie ;;
+    *)                          echo unknown ;;
+    esac
+}
+
 BAK="$CFG.workup.bak"
 HAD_CFG=0
 cleanup() {
@@ -256,7 +278,16 @@ classify() {
         return 1
     fi
 
-    say "VERDICT: HEALTHY - ${frames} FPS, $(temp_)C."
+    local sc; sc=$(scene_)
+    if [ "$sc" = "movie" ]; then
+        say "VERDICT: HEALTHY, BUT A MOVIE IS PLAYING - ${frames} FPS, $(temp_)C."
+        say "  The guest is decoding video. Do NOT measure this window: a cutscene"
+        say "  cannot resolve an A/B, and its frame rate says nothing about speed."
+        say "  Skip it with: curl -X POST 127.0.0.1:$CTRL_PORT/pad/press?buttons=START"
+        return 0
+    fi
+
+    say "VERDICT: HEALTHY - ${frames} FPS, $(temp_)C. (scene: $sc)"
     return 0
 }
 
@@ -287,7 +318,16 @@ while [ "$r" -le "$REPEATS" ]; do
         say "  capturing a 25 s profile (run-as; perf_event_paranoid blocks the direct form)"
         sh_ "run-as $PKG /system/bin/simpleperf record -p $PID --duration 25 -g -f 1000 -o /data/data/$PKG/perf.data" >/dev/null 2>&1
     fi
+    SC0=$(scene_)
     sh_ "sleep 40" >/dev/null
+    SC1=$(scene_)
+    # A sample that touched a movie is void. Say so and drop it, rather than
+    # letting it average with the rest.
+    if [ "$SC0" = "movie" ] || [ "$SC1" = "movie" ]; then
+        say "  r$r VOID (a movie played during the sample; scene $SC0 -> $SC1)"
+        r=$((r + 1))
+        continue
+    fi
     C1=$(sh_ "cat /proc/$PID/stat" | awk '{print $14+$15}')
     FPS=$(sh_ "grep -a 'Frames:' $LOG | tail -n +$((M+1))" | grep -oE '[0-9.]+ FPS' | grep -oE '^[0-9.]+' \
           | awk '{s+=$1;n++} END{if(n)printf "%.2f",s/n; else printf "0"}')
