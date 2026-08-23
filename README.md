@@ -179,6 +179,12 @@ runtime codes stay listed but greyed out until native validation exists.
   is one slot per game and no backup. Copy
   `Android/data/net.rpcsx.easy/files/config/savestates/<TITLE>/` somewhere else
   first if you care about it.
+- **Games added from your own folder used to vanish on the next refresh.** Fixed.
+  `refresh()` cleared the whole library and then re-collected only two internal
+  paths, so an ISO on a memory card was dropped and the reduced list was written
+  straight back to `games.json`. Pull-to-refresh was enough to trigger it, which
+  is why rescanning "worked" until the next restart. A refresh now keeps entries
+  it cannot rediscover.
 - **The library only lists what you add through the folder picker.** Dropping an
   ISO into the folder does not add it. If added games disappear after a restart,
   the save failed: `games.json` must be writable by the app. An `adb` session

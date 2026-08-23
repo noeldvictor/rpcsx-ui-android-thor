@@ -217,11 +217,47 @@ class GameRepository {
         }
 
         private fun refresh() {
+            // Keep the entries this function is INCAPABLE of rediscovering.
+            //
+            // refresh() clears the whole library and then re-collects exactly two
+            // fixed paths, config/dev_hdd0/game and config/games. A game the user
+            // imported from their own folder - an ISO on a memory card, say - is in
+            // neither, so the clear dropped it, add() saved the reduced list, and the
+            // game was gone from games.json permanently. The library looked like it
+            // "forgot" a folder, and rescanning appeared to work because the entries
+            // came back in memory until the next refresh removed them again.
+            //
+            // GameFolderRescan re-walks the folders Android still grants, but it is
+            // wired only to a manual menu action, so nothing rescued these entries on
+            // a normal refresh.
+            //
+            // Anything under RPCSX.rootDirectory is the emulator's own storage and IS
+            // rediscovered by the two collectGameInfo calls below, so it is not
+            // preserved here and stale copies of it still disappear as intended. A
+            // path outside that root can only have come from a user import. It is kept
+            // unless it is a plain file path that no longer exists, which is how a
+            // deleted ISO still leaves the library.
+            val preserved = synchronized(instance) {
+                instance.games
+                    .map { game -> toInfo(game.info) }
+                    .filter { info ->
+                        info.path != "$" &&
+                            !info.path.startsWith(RPCSX.rootDirectory) &&
+                            !(info.path.startsWith("/") && !File(info.path).exists())
+                    }
+            }
+
             runOnMainBlocking { clear() }
             RPCSX.instance.collectGameInfo(
                 RPCSX.rootDirectory + "/config/dev_hdd0/game", -1
             )
             RPCSX.instance.collectGameInfo(RPCSX.rootDirectory + "/config/games", -1)
+
+            if (preserved.isNotEmpty()) {
+                // add() merges by path, so a title the collection above already found
+                // is updated rather than duplicated.
+                add(preserved.toTypedArray(), -1)
+            }
         }
         
         @Keep
