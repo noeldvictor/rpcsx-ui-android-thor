@@ -5425,11 +5425,18 @@ ordinary access violation keeps upstream behaviour.
     debug.rpcsx.thor.spu_trap_stop = 0        keep the old behaviour
     debug.rpcsx.thor.spu_trap_stop_test = 1   raise a fake trap, to test the stop
 
-**NOT YET VERIFIED ON THE DEVICE.** The test property exists because the real
-halt is rarer than 1 in 52 controlled boots, and an untested path in a fatal
-handler is worth nothing. The measurement that decides it is the CPU, not the
-log line: if `Emu.Pause()` does not reach an SPU thread spinning inside a JIT
-loop, the device keeps cooking and the change is useless.
+**VERIFIED ON THE DEVICE, and the measurement is the CPU, not the log line.**
+Transformers rendering, the fake trap injected, the same process sampled
+before and after:
+
+| | cores | temperature |
+| --- | --- | --- |
+| before the trap | 3.63 | 69 C |
+| after the trap | **0.09** | **45 C** |
+
+**A 97.5% drop.** `Emu.Pause()` does reach an SPU thread spinning inside a JIT
+loop, which was the open question. The four minute burn at 87 to 94 C after a
+guest halt is gone.
 
 # The starvation arm did not run
 
@@ -5439,3 +5446,78 @@ limiter is timing-driven, it computes a wait from `spurs_average_task_duration`
 clamped to 10 to 100 ms, and every one of the 52 clean boots ran with the CPU
 free, so the timeout branch was rarely taken. Taking the cores away perturbs
 exactly that. Re-run it with the force-stop before the cooldown.
+
+# A control API inside the emulator, and the pad injection that does NOT work yet
+
+**Built 2026-08-23.** `net/rpcsx/debug/ThorControlServer.kt` runs a small HTTP
+server inside the app. It exists because **the emulated pad cannot be driven
+from outside the app**, which this file already records: `input keyevent` left
+the workload unchanged, `ENTER` and `BUTTON_A` reached the Android UI and killed
+the process, and `sendevent` on the real gamepad node was confirmed arriving in
+the kernel with `getevent` while the guest saw nothing.
+
+It binds to **127.0.0.1 only** and runs in debug builds only, gated on
+`BuildConfig.THOR_DEBUG_TOOLS`. The Thor is a shared device on a real network,
+and an open control port on it would let anything drive the emulator.
+
+    adb forward tcp:8099 tcp:8099
+    curl 127.0.0.1:8099/status
+    curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
+
+**What is verified working on the device:**
+
+    {"state":3,"titleId":"BLUS30357","version":"20260820-1d34ec9 Draft"}
+
+`/status`, `/`, `/setting`, `/savestate`, `/loadstate` and the button name to
+bit mapping all answer correctly. `/pad/press?buttons=START` returns
+`{"ok":true,"pressed":["START"],"d1":8,"d2":0}`, and `d1=8` is
+`CELL_PAD_CTRL_START`.
+
+## The pad reaches the Pad object and the guest ignores it
+
+**Do not read the API's `ok:true` as "the guest pressed the button".** It means
+`_rpcsx_overlayPadData` found `g_virtual_pad` and wrote the bits.
+
+Tested on the Transformers title screen, which shows `Press START button`:
+
+| what was sent | what the screen did |
+| --- | --- |
+| `START` for 200 ms | nothing |
+| `CROSS` for 200 ms | nothing |
+| `START` held and re-asserted 30 times | nothing |
+
+**A near miss to avoid repeating.** The frame rate went from 122.50 to 29.83
+across the first attempt, which read exactly like the button working. It was the
+intro ending by itself and reaching the title screen. **The screenshot is what
+settled it**: the screen still read `Press START button`. A frame rate change is
+not evidence that input arrived.
+
+## What is ruled out
+
+- **The pad is connected.** `initVirtualPad` calls
+  `pad->Init(CELL_PAD_STATUS_CONNECTED, ...)`, and `g_virtual_pad` is non-null,
+  because a null pad makes `_rpcsx_overlayPadData` return false and it returned
+  true.
+- **Nothing else overwrites the bits.** `m_pressed` is assigned at exactly two
+  places in `rpcsx-android.cpp`, both inside `_rpcsx_overlayPadData`.
+- **The aggregation is not missing.** `ps3fw/cellPad.cpp:410-422` builds
+  `m_digital_1` and `m_digital_2` from `button.m_pressed`, which is the field the
+  API writes.
+- **The emulator is running.** `/status` reports state 3, and `EmulatorState`
+  gives 3 as `Running`.
+- **The guest asked for pads.** The log holds `cellPad: cellPadInit(max_connect=2)`.
+
+## The next diagnostic
+
+Find what the pad thread does between our write and `cellPadGetData`. The
+suspicion is a handler pass for player 0 that rebuilds button state each poll,
+so the injected bits are cleared before the guest reads them. Log
+`pad->m_digital_1` inside `cellPad.cpp` right after the aggregation loop, and
+compare it against the value the API sent. That separates "our write is lost"
+from "the guest reads a different pad".
+
+**The intended workflow, once input lands.** Pause, take a screenshot, decide
+which button the screen is asking for, resume, and press immediately. That
+removes the race against animation which makes blind pressing unreliable, and it
+is how a scene route should be driven. `/pause` is NOT implemented yet: `RPCSX`
+exposes `resume`, `kill` and `getState`, and no pause external.

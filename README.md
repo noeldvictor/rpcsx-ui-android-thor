@@ -452,6 +452,32 @@ Output goes to the ignored `debug-captures/` folder.
 
 ## Development notes
 
+### Controlling the emulator from a script or an agent
+
+Debug builds run a small control API inside the app, so a tool can read state
+and drive the emulator without touching the screen. It binds to **127.0.0.1
+only** and is absent from release builds, so nothing on your network can reach
+it. Use an adb forward:
+
+```sh
+adb forward tcp:8099 tcp:8099
+curl 127.0.0.1:8099/            # list the endpoints and the button names
+curl 127.0.0.1:8099/status      # {"state":3,"titleId":"BLUS30357",...}
+curl -X POST '127.0.0.1:8099/loadstate'
+curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
+```
+
+Why it exists: the emulated pad cannot be driven from outside the app, so
+automated testing could never get past a title screen, and every large
+performance lever in this emulator lives in actual gameplay. Reading state,
+settings and savestates works today.
+
+**Pad injection is not finished.** The call reaches the pad object and the guest
+still ignores it, so `"ok":true` means the button was written, not that the game
+saw it. `CLAUDE.md` records what is ruled out and the next diagnostic.
+
+### Bringing up a new title
+
 If you are bringing up a new title, start with the workup tool. It boots the
 game, names the failure instead of saying it did not work, and suggests the
 settings to try:
