@@ -21,6 +21,7 @@
 #include "util/simd.hpp"
 #include "util/serialization.hpp"
 #include "util/thor_wait_profiler.h"
+#include "Emu/Memory/thor_vm_writer_lock.h"
 
 #include <thread>
 
@@ -703,7 +704,7 @@ namespace vm
 				range_lock->release(0);
 			}
 
-			if (i < 100)
+			if (i < thor::vm_writer_lock::spins())
 			{
 				if (to_prepare_memory)
 				{
@@ -713,7 +714,7 @@ namespace vm
 					to_prepare_memory = false;
 				}
 
-				thor_wait::profiled_busy_wait(thor_wait::site::vm_writer_lock, 200);
+				thor_wait::profiled_busy_wait(thor_wait::site::vm_writer_lock, thor::vm_writer_lock::cycles());
 			}
 			else
 			{
