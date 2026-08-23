@@ -4906,3 +4906,44 @@ those operations and broke every caller.
 
 Transformers crashed once more during these runs even with `RSX FIFO Accuracy:
 Atomic` (`fatal=1` on one arm). The FIFO fix made it far more stable, not stable.
+
+## What the reservations fix actually did, re-profiled
+
+Transformers re-profiled with the shipped profile applied, 104,290 samples,
+`fatal=0`, frames verified >0 across the window:
+
+| | before | after |
+| --- | --- | --- |
+| `vm::range_lock_internal` | 15.37% | not in the top list |
+| `vm::writer_lock::writer_lock` | 10.69% | **0.63%** |
+| `[kernel.kallsyms]` | 20.76% | **4.38%** |
+| `librpcsx-android.so` total | 46.30% | **8.26%** |
+| JIT guest code | 27.51% | **85.35%** |
+
+**VM range locking went from 29.1% of all cycles to under 1%**, and kernel time
+fell with it, which is what a lock that was contending should do when it stops
+contending. `iso_dev::read_dir` also left the top list once the directory cache
+landed.
+
+The emulator is now mostly RUNNING THE GAME rather than fighting itself: 85% of
+cycles are recompiled guest code. Going faster from here means either less guest
+work or better code generation, not more lock tuning.
+
+## The title screen is heavy, and that is itself a clue
+
+Eternal Sonata's title screen costs 5.7% CPU. Transformers' costs about 70%, with
+SPU at 56.1%, on a menu with a rotating planet. A twelve-fold difference for a
+comparable scene says its SPU threads are busy when the game is not, and the
+self-loop park reads `entries=0` for this title against 93,713 for Eternal Sonata,
+so whatever they are doing is not a branch-to-self the park can catch.
+
+## A fixed sleep is not a deterministic workload
+
+The title-screen A/B for reservations landed all four arms at 30 FPS and gave
++/-0.2%. The next one, same fixed 80 s wait, produced arms at 0.00 and 20.00 FPS
+alongside arms at 30, because boot time varies by tens of seconds. Averaging those
+would have invented a result.
+
+`tools/thor_title_ab.sh` now GATES: it waits for two consecutive frame reports at
+the title screen's rate, re-checks after sampling, and prints INVALID rather than
+contributing a number it cannot stand behind.
