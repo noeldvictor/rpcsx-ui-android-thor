@@ -4971,3 +4971,21 @@ the CPU do less, and here it made it do more.
 **The gate is what made this readable.** Both `true` arms would otherwise have
 contributed a 20.00 FPS number to an average and shown up as "slower but similar",
 instead of "never got there at all".
+
+## Rejected for Transformers: SPU Block Size Mega
+
+`SPU Block Size: Mega` against the shipped `Safe`:
+
+| arm | result |
+| --- | --- |
+| `Safe`, round 1 | 29.92 FPS at 67 C, 2.640 cores |
+| `Mega`, round 1 | fell to **0.70 FPS** mid-sample |
+| `Safe`, round 2 | 29.95 FPS at 68 C, 2.592 cores |
+| `Mega`, round 2 | fell to **1.68 FPS** mid-sample |
+
+It was worth trying, because after the reservations fix 85% of cycles are
+recompiled guest code and block size is the setting that governs how well that
+code is generated. It does not survive contact: bigger blocks mean recompiling
+more at once, and this title falls off a cliff doing it. Two out of two.
+
+`Safe` stays.
