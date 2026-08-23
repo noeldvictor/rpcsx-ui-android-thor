@@ -5051,3 +5051,69 @@ about +/-0.2%:
 
 Net measured effect on the title screen: **2.81 cores at 73 C down to about 2.6
 cores at 67-70 C**, at the same 30 FPS, plus a title that reaches its menus at all.
+
+# Researching upstream beat guessing locally
+
+Three local lever sweeps found one win. Twenty minutes of reading upstream found
+the stability fix and killed a documented open question. Do this first.
+
+## The crash fix came from the community, not from us
+
+RPCS3 lists BLUS30357 as **Playable** (0.0.25-14483, Dec 2022), which by itself
+says the SPU halt is OUR problem, not the title's. The RPCS3 forum thread for the
+sibling title, Fall of Cybertron, same studio and same engine, says: set the
+**driver wake-up delay to 50 us and enable atomic FIFO**, and if it still crashes
+try 150 to 200.
+
+We shipped Atomic FIFO but only 20 us. At 50 us:
+
+| delay | boots crashed |
+| --- | --- |
+| 20 us | roughly 2 in 5 |
+| 50 us | **0 of 7** |
+
+## And the cost was measured, not assumed
+
+RPCS3 issue 12295 says raising this delay causes a *severe* performance
+regression, 60 FPS down to 20 on God of War, and recommends reverting to 1 us
+with Atomic FIFO instead. That is a direct argument against what the forum
+advises, so it was measured here rather than picked:
+
+| delay | FPS | cores |
+| --- | --- | --- |
+| 20 us | 29.95 | 2.557 [2.549..2.565] |
+| 50 us | 29.95 | 2.568 [2.554..2.582] |
+
+0.4% apart with overlapping ranges. **The regression that issue describes does not
+bite this title on this device**, so the stability is effectively free. Two
+credible upstream sources disagreed and the device settled it.
+
+## The SHUFB TBL2 candidate: answered, and the answer is no
+
+`thor_shufb_tbl2_or.h` has carried an explicit open question since it was written:
+the transform is proven equivalent over all 256 selector bytes, but "**Not
+measured: that the replacement is faster.**" This is the SIMD-asymmetry idea the
+DBT literature keeps returning to, applied to the most common op in the corpus,
+5,794 `SHUFB` against 2,203 `fm`.
+
+`thor_bench shufb` on device answers it:
+
+| | ns |
+| --- | --- |
+| `tbl2_tp` isolated | 0.085 |
+| `tbx2_tp` isolated | 0.339 |
+| `seq_tbx2_current` | 0.239 |
+| `seq_tbl2_orr_candidate` | 0.235 |
+
+**The 4x isolated throughput gap collapses to 1.7% in the real sequence**, because
+the replacement trades one TBX2 for a TBL2 *plus an ORR*, and the sequence is not
+throughput-bound on that instruction anyway. 1.7% of the SHUFB sequences alone is
+far below the +/-5% this project can measure in-app.
+
+Keep `debug.rpcsx.thor.shufb_tbl2_or` at 0. The open question in that header is
+now closed with numbers, and the general lesson is worth more than the result:
+**an isolated instruction-throughput ratio is not a program speedup.** The
+surrounding sequence decides.
+
+Note the bench pins its own affinity and always reports `cpu=7`; `taskset` does
+not override it, so these are prime-core numbers.

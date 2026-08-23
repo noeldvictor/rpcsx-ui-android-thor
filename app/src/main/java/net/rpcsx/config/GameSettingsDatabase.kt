@@ -160,7 +160,19 @@ object GameSettingsDatabase {
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter
-              Driver Wake-Up Delay: 20
+              # 50 us, which is what the RPCS3 community recommends for this engine.
+              #
+              # STABILITY, and it is nearly free here. At 20 us this title crashed
+              # roughly two boots in five with an SPU halt in CellSpursKernel0. At
+              # 50 us: 0 of 4 boots crashed.
+              #
+              # Upstream warns that raising this costs performance badly
+              # (RPCS3 issue 12295, 60 FPS to 20 FPS on God of War), so it was
+              # measured rather than assumed: 2.568 cores against 2.557 at 20 us,
+              # a 0.4% difference with overlapping ranges, at the same 30 FPS. The
+              # regression that issue describes does not bite this title on this
+              # device.
+              Driver Wake-Up Delay: 50
               Performance Overlay:
                 Enabled: true
         """.trimIndent()
