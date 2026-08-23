@@ -64,23 +64,28 @@ class ThorDebugLoadStateReceiver : BroadcastReceiver() {
         // of the VM. Those are wrapped in Emu.CallFromMainThread, but this port binds
         // that callback to run INLINE on the calling thread, at
         // android/src/rpcsx-android.cpp setupCallbacks. So the thread which calls in is
-        // the thread which tears the VM down.
+        // the thread which tears the VM down. The main looper is used because it is the
+        // thread the lifecycle code expects.
         //
-        // MEASURED, AND THE THREAD IS NOT THE CAUSE. Both forms corrupt the heap:
+        // THIS WORKS NOW. It did not on 2026-08-22, when loading corrupted the heap and
+        // killed the process, and five defects had to go before a save would restore:
         //
-        //   worker thread : Scudo ERROR: invalid chunk state when deallocating ...
-        //   main looper   : scudo::reportInvalidChunkState(...)  -- same crash
+        //   1. qt_events_aware_op was an empty stub, so GracefulShutdown never waited
+        //      and boot raced teardown. Two threads cleared one fixed typemap.
+        //   2. jit_module_manager::operator= destroyed every JIT and kept the entries,
+        //      with no bucket lock, so a second pass double-freed llvm::Module.
+        //   3. manual_typemap clear()/save() sized loops from the m_init flags but
+        //      walked the m_info array, running onto its null sentinel.
+        //   4. ppu_thread::serialize_common had the register context serialization
+        //      COMMENTED OUT, so every restored thread came back with cia=0.
+        //   5. The resume step ran under lv2_obj::g_mutex and deadlocked against it,
+        //      so the emulator never left system_state::starting and RSX never drew.
         //
-        // So savestate RESTORE is broken in this fork on any thread, and the fault is
-        // in the load path itself, not in how it is dispatched. The main looper is kept
-        // because it is the thread the lifecycle code expects, not because it helps.
-        //
-        // RPCSXActivity drives the same call from a worker, through runNativeHotkey, so
-        // the SELECT + right stick UP hotkey is broken too. This is a real user-facing
-        // defect and it is UNFIXED.
-        //
-        // Consequence: there is no repeatable gameplay workload on this device. Capture
-        // works, restore does not, so a heavy scene cannot be replayed across arms.
+        // Consequence, and it is the useful one: **there is now a repeatable gameplay
+        // workload on this device.** Capture once, then restore the same frame for
+        // every arm of an A/B. The restored Eternal Sonata scene runs at about 25.8
+        // FPS, which is BELOW the 30 cap, so frames can move and a lever which costs
+        // frames cannot hide behind the cap.
         Handler(Looper.getMainLooper()).post {
             val result = runCatching { RPCSX.instance.loadState() }
                 .onFailure { Log.e(TAG, "Thor debug loadstate failed: request=$requestId", it) }

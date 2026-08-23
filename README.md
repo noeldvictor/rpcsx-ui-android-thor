@@ -168,6 +168,17 @@ runtime codes stay listed but greyed out until native validation exists.
   inside the handler, and Android then kills the app with no tombstone -- so it is
   **not covered by default** until a version lands which resolves a whole range
   with one handler call.
+- **Save states work again.** Loading one used to kill the app, and before that
+  it restored a game with no register state at all. Four separate defects fixed
+  it: a savestate never stored the PPU register context, boot raced teardown
+  because a synchronisation helper was an empty stub, a JIT map was destroyed
+  twice, and the resume step deadlocked against the scheduler lock. A save now
+  restores into live gameplay. Capture with SELECT + right stick DOWN and load
+  with SELECT + right stick UP.
+- **Capturing a save state overwrites the previous one for that title.** There
+  is one slot per game and no backup. Copy
+  `Android/data/net.rpcsx.easy/files/config/savestates/<TITLE>/` somewhere else
+  first if you care about it.
 - **The library only lists what you add through the folder picker.** Dropping an
   ISO into the folder does not add it. If added games disappear after a restart,
   the save failed: `games.json` must be writable by the app. An `adb` session

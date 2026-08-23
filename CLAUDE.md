@@ -4391,3 +4391,45 @@ somewhere else first.
    count on three separate runs, which is strong evidence for a lost update. The
    counters were correct every time. One log line settled what three screenshots
    could not.
+
+# There is now a repeatable gameplay workload, and it is BELOW the cap
+
+2026-08-22. Every warning above about capped scenes was written because the only
+workloads reachable here were the Eternal Sonata intro and a title screen, both
+pinned at 29.6x with frames that cannot move. Savestate load now works, so that
+constraint is gone.
+
+**Capture once, then restore the same frame for every arm.** Both halves are
+reachable over adb without touching the device:
+
+```sh
+# capture (overwrites the single slot for that title - back it up first)
+adb shell am broadcast -a net.rpcsx.THOR_DEBUG_SAVESTATE     -n net.rpcsx.easy/net.rpcsx.utils.ThorDebugSaveStateReceiver
+
+# restore, into a session already running that disc
+adb shell am broadcast -a net.rpcsx.THOR_DEBUG_LOADSTATE     -n net.rpcsx.easy/net.rpcsx.utils.ThorDebugLoadStateReceiver
+```
+
+The restored Eternal Sonata scene measures **25.7 to 25.9 FPS at 3.1 cores**.
+Below 30. That is the whole point: a lever which costs frames can no longer hide
+behind the cap, and the two cheap checks in the rule above ("is it capped?", "is
+it loaded?") now both pass on a workload that takes one command to reproduce.
+
+## Read liveness from /proc, not from SurfaceFlinger
+
+`dumpsys SurfaceFlinger --latency <layer>` reported FROZEN for a session which
+its own overlay showed running at 25.74 FPS. The scene was a dialogue box, so the
+presented image barely changed and the latency buffer did not advance the way the
+parse assumed. It also returns a fixed 126-entry buffer, so a stale read looks
+exactly like a real measurement.
+
+**Use thread CPU time instead.** Fields 14 and 15 of
+`/proc/<pid>/task/<tid>/stat` are utime and stime in jiffies:
+
+```sh
+# rsx::thread went 2129 -> 2682 jiffies in ten seconds. Not ambiguous.
+```
+
+For the whole process, `/proc/<pid>/stat` delta over a fixed window gives cores
+directly: 3119 jiffies over 10 s is 3.1 cores. That is the discriminator this
+file has been asking for, and it does not care whether the picture changed.
