@@ -1244,6 +1244,49 @@ bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t
 
 	const auto cpu = get_current_cpu_thread();
 
+	// Name the emulator's own SPU traps instead of reporting a raw address.
+	//
+	// SPULLVMRecompiler deliberately access-violates at 0xffdeadXX to report an
+	// illegal SPU condition, and the ADDRESS says which one. Without this the log
+	// reads only "Access violation writing location 0xffdead00", which looks like
+	// a wild pointer and is not one.
+	//
+	// MEASURED 2026-08-22, Transformers: War for Cybertron. That line was
+	// misdiagnosed twice here, first as a game bug and then as a hot loop worth
+	// optimizing, before the address was traced to make_halt(). 0xffdead00 means
+	// the GUEST ran a halt instruction: its own SPURS kernel checked an invariant
+	// and stopped itself.
+	//
+	// The fault is rare, under 1 in 33 boots here, so whoever sees it next may get
+	// one chance at the evidence. Print what is needed to act on it.
+	if ((addr & ~0xffu) == 0xffdead00u)
+	{
+		const char* what = "unknown SPU trap";
+
+		switch (addr & 0xffu)
+		{
+		case 0x00: what = "HALT, the guest ran a halt instruction (HGT/HLGT/HEQ)"; break;
+		case 0x04: what = "TAG, illegal MFC tag update"; break;
+		case 0x20: what = "BIJT, external tail call in a true function"; break;
+		case 0xf0: what = "invalid MFC slot"; break;
+		default: break;
+		}
+
+		if (const auto trapped_spu = cpu ? cpu->try_get<spu_thread>() : nullptr)
+		{
+			const u32 spurs = trapped_spu->spurs_addr;
+			const u32 res = trapped_spu->raddr;
+
+			sys_log.fatal("SPU trap 0x%08x: %s. thread='%s' pc=0x%05x spurs_addr=0x%08x raddr=0x%08x reservation_in_spurs_block=%d",
+				addr, what, *trapped_spu->spu_tname.load(), trapped_spu->pc, spurs, res,
+				(spurs && res && res - spurs <= 0x80) ? 1 : 0);
+		}
+		else
+		{
+			sys_log.fatal("SPU trap 0x%08x: %s (no SPU context)", addr, what);
+		}
+	}
+
 	struct spu_unsavable
 	{
 		spu_thread* _spu;
