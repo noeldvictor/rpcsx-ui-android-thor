@@ -4522,3 +4522,84 @@ measuring. Do not quote power from this rig while it is plugged in.
 **Establish a power noise floor with a null pair before quoting a power number,
 exactly as was already required for cores.** Until then CPU at fixed frames is
 the discriminator here, because that one has a measured noise floor.
+
+# The first symbol-level profile of real gameplay on this device
+
+2026-08-22. `simpleperf`, 25 s, 85,615 samples, 0 lost, on the restored Eternal
+Sonata savestate during its active window. This is a RelWithDebInfo core: the
+`debuggable` flag no longer drags `CMAKE_BUILD_TYPE` to Debug, so the profile
+describes the build that ships.
+
+Recipe, because `perf_event_paranoid` blocks the direct form:
+
+```sh
+adb shell run-as net.rpcsx.easy /system/bin/simpleperf record     -p <pid> --duration 25 -f 1000 -g -o /data/data/net.rpcsx.easy/perf.data
+```
+
+Symbols come from a symfs tree mirroring the on-device path and holding the
+UNSTRIPPED `librpcsx-android.so` out of
+`app/build/intermediates/cxx/RelWithDebInfo/*/obj/arm64-v8a/`. The host
+`simpleperf.exe` ships in the NDK under `simpleperf/bin/windows/x86_64/`.
+
+## Where the cycles are
+
+| by thread | share |
+| --- | --- |
+| `rsx::thread` | 14.51% |
+| six SPU threads | 65.49% total, 10.4 to 11.8% each |
+| PPU (three threads) | 17.03% |
+
+| by object | share |
+| --- | --- |
+| `unknown` (JIT-generated guest code) | 38.10% |
+| `librpcsx-android.so` | 37.31% |
+| `[kernel.kallsyms]` | 15.93% |
+| Turnip driver | 3.94% |
+| libc | 3.92% |
+
+| top symbols | share of ALL cycles |
+| --- | --- |
+| `spu_thread::process_mfc_cmd()` | **12.69%** |
+| kernel, one address | 8.73% |
+| `vm::writer_lock::writer_lock(...)` | **8.60%** |
+| `vm::passive_lock(cpu_thread&)` | 3.13% |
+| `memcpy_opt` | 2.78% |
+| `vk::wait_for_event` | 2.12% |
+| `rsx::thread::run_FIFO()` | 1.03% |
+| `sched_yield` | 0.76% |
+| `shared_mutex::imp_lock` + `imp_lock_shared` | 0.98% |
+
+**VM range locking is 12.7% of everything**, counting `writer_lock`,
+`passive_lock` and the two `shared_mutex` entries. That rivals the MFC command
+handler itself, and all six SPU threads contribute to it about equally.
+
+## Two things this kills
+
+**The RSX is not spin-bound, it is GPU-bound.** Inside `rsx::thread`:
+`vk::wait_for_event` 14.61%, `memcpy_opt` 11.85%, Turnip 14.76%,
+`run_FIFO` 7.13%. `sched_yield` is 0.76% of the whole process. That is why the
+FIFO pause ladder changed nothing: it optimizes a spin that is not where the time
+goes. **Do not spend more arms on RSX idle-poll levers.**
+
+**The SPU cost is reservations and DMA, not the interpreter.** `process_mfc_cmd`
+plus VM locking is about a quarter of all cycles.
+
+## Where the writer lock comes from
+
+`do_putlluc` in `SPUThread.cpp`. `g_use_rtm` is false on ARM64, so with
+**`Accurate SPU Reservations: true`** (the upstream default, and what this device
+runs) every reservation store takes the hard path:
+
+```cpp
+vm::writer_lock lock(addr, spu ? spu->range_lock : nullptr);
+```
+
+The constructor spins `busy_wait(200)` up to 100 times before its first
+`std::this_thread::yield()`. Six SPU threads doing that against one range-lock
+bitmap is the 8.60%.
+
+Line 5541 of that function shows the escape: when accurate reservations are OFF
+the lock is skipped entirely. That is a correctness setting, not a free switch, so
+it needs measuring against a title that actually stresses reservations rather than
+being flipped on faith. **Unmeasured. It is the highest-value open lever here, and
+the spin count inside the constructor is the safer thing to try first.**
