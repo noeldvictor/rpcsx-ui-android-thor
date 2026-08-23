@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/thor_thermal_guard.h"
 #include "RSXThread.h"
 
 #include "Capture/rsx_capture.h"
@@ -3367,6 +3368,19 @@ namespace rsx
 		{
 			// Apply a second limit
 			limit = limit2;
+		}
+
+		// Thermal guard, applied last so it can override everything above it.
+		//
+		// `|| !limit` matters more than the comparison does. The measurement that
+		// produced this guard was an UNCAPPED title: with no frame limit the
+		// renderer runs as fast as the silicon allows and heat is the only thing
+		// that stops it, which it did at 94 C. A guard that only tightened an
+		// existing cap would have done nothing in exactly the case that needs it.
+		if (const double thermal_limit = thor::thermal_guard::frame_limit_or_zero();
+			thermal_limit > 0.0 && (thermal_limit < limit || !limit))
+		{
+			limit = thermal_limit;
 		}
 
 		if (limit)

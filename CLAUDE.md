@@ -4710,3 +4710,38 @@ One run hit `VM: Access violation reading location 0xfff3...` in
 more minutes at 0.00 FPS**. The SPU threads keep spinning after a fatal guest
 error. Nothing renders, nothing progresses, and the device stays hot until the
 user notices. That is worth fixing on its own and it is not title-specific.
+
+## A gameplay thermal guard now exists, and it does not fix Transformers
+
+`Emu/thor_thermal_guard.h`. perf_monitor samples the CPU thermal zones every 4th
+tick, about 2 s, and above 85 C the RSX flip limiter imposes 20 FPS. It applies
+even when the title has no frame limit, which was the case that reached 94 C.
+Off with `debug.rpcsx.thor.thermal_guard_c=0`.
+
+**It flapped on the first attempt.** Hysteresis alone, 85 engage and 75 release,
+gave more than twenty transitions in three and a half minutes:
+
+```
+ENGAGED at 85 C  ->  released at 71 C, two seconds later
+```
+
+Capping the frame rate idles the cores instantly, so the per-core sensor drops
+14 C in one sample and the guard lets go before the heat has gone anywhere. Adding
+a dwell, a minimum of 8 samples engaged before release is even considered, took it
+to 9 transitions with engaged periods of 34 and 52 s.
+
+**And it does not cool this title.** With the guard live and holding 20 FPS:
+
+| t | temp | FPS |
+| --- | --- | --- |
+| +180 s | 87 C | 19.85 |
+| **+200 s** | **95 C** | **19.60** |
+| +220 s | 93 C | 19.90 |
+
+Capped the whole time and still climbing. The heat is one SPU thread at ~96%
+running guest code, and that thread is not frame-bound. The guard bounds the
+render path; it cannot idle an SPU thread that spins regardless of presentation.
+
+**The open question is that SPU thread**, not the frame rate. 29.37% of all cycles
+in one thread's JIT code, and `spu_selfloop_park` is already on and already has
+reach elsewhere. Whatever it is spinning on is not the self-loop the park catches.

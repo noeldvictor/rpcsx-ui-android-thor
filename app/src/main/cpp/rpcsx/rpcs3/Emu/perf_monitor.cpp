@@ -7,6 +7,7 @@
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
+#include "Emu/thor_thermal_guard.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -35,10 +36,43 @@ void perf_monitor::operator()()
 	u64 last_flip_index = 0;
 	u64 last_flip_time = umax;
 
+	u64 thermal_tick = 0;
+	bool thermal_engaged_logged = false;
+
 	for (u64 sleep_until = get_system_time();;)
 	{
 		thread_ctrl::wait_until(&sleep_until, update_interval_us);
 		elapsed_us += update_interval_us;
+
+		// Sample temperature for the gameplay thermal guard.
+		//
+		// Here because this thread already wakes on a timer and nothing on the
+		// render path can afford to read sysfs. Every fourth tick, so about 2 s:
+		// silicon temperature does not move faster than that, and the guard has
+		// hysteresis to absorb what it does miss.
+		if (++thermal_tick % 4 == 0)
+		{
+			thor::thermal_guard::sample();
+
+			// Log the EDGES only. A line every 2 s would bury the log, and the
+			// interesting facts are when it engaged, how hot it was, and when it
+			// let go again.
+			if (const bool now_engaged = thor::thermal_guard::engaged(); now_engaged != thermal_engaged_logged)
+			{
+				thermal_engaged_logged = now_engaged;
+
+				if (now_engaged)
+				{
+					perf_log.warning("Thermal guard ENGAGED at %u C, limiting to %u FPS",
+						thor::thermal_guard::hottest_celsius(), thor::thermal_guard::g_hot_fps);
+				}
+				else
+				{
+					perf_log.notice("Thermal guard released at %u C",
+						thor::thermal_guard::hottest_celsius());
+				}
+			}
+		}
 
 		double total_usage = 0.0;
 
