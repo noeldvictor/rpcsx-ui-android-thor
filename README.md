@@ -185,6 +185,11 @@ runtime codes stay listed but greyed out until native validation exists.
   straight back to `games.json`. Pull-to-refresh was enough to trigger it, which
   is why rescanning "worked" until the next restart. A refresh now keeps entries
   it cannot rediscover.
+- **Pull-to-refresh now re-walks the folders you imported.** It used to re-collect
+  only two internal paths, so a game dropped into a folder you had already added
+  stayed invisible no matter how many times you refreshed. On this device that one
+  gesture took the library from 8 entries to 12, finding Transformers, Watch_Dogs,
+  White Knight Chronicles II and Vampire Rain.
 - **The library only lists what you add through the folder picker.** Dropping an
   ISO into the folder does not add it. If added games disappear after a restart,
   the save failed: `games.json` must be writable by the app. An `adb` session

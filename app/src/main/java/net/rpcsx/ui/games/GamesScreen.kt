@@ -69,6 +69,7 @@ import net.rpcsx.GameFlag
 import net.rpcsx.GameInfo
 import net.rpcsx.GameProgress
 import net.rpcsx.GameProgressType
+import net.rpcsx.GameFolderRescan
 import net.rpcsx.GameRepository
 import net.rpcsx.ProgressRepository
 import net.rpcsx.R
@@ -593,7 +594,22 @@ fun GamesScreen(onOpenGameDetails: (Game) -> Unit = {}) {
         state = state,
         onRefresh = {
             if (gameInProgress == null && !isRefreshing) {
-                GameRepository.queueRefresh()
+                // Re-walk the folders the user imported, not just the two internal
+                // roots.
+                //
+                // queueRefresh() alone re-collects config/dev_hdd0/game and
+                // config/games and nothing else, so a game dropped into a folder the
+                // user had already granted stayed invisible however many times they
+                // pulled to refresh. The grants are still held by Android, and
+                // GameFolderRescan walks them; it was reachable only from a menu item
+                // that nobody would think to look for while staring at a library that
+                // was missing a game.
+                //
+                // rescanAll() ends by calling queueRefresh() itself, so the internal
+                // roots are still collected after the walk. installPackages skips
+                // targets already known and GameRepository.add merges by path, so
+                // repeating this does not duplicate anything.
+                GameFolderRescan.rescanAll(context)
             }
         },
         indicator = {
