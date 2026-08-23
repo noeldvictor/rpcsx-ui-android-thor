@@ -8744,20 +8744,25 @@ Every clean boot before this ran with the CPU free, so that branch was rarely
 entered. Five spinner processes were started 25 s into each boot, once the title
 was already doing SPURS work.
 
-    11 boots, 0 SPU traps, 0 dead FIFO, 0 fatal errors
+    12 boots, 0 SPU traps, 0 dead FIFO, 0 fatal errors
 
-## The running total
+## The running total, counted once each
 
 | arm | boots | faults |
 | --- | --- | --- |
-| `RSX FIFO Accuracy: Atomic` | 27 | 0 |
+| `RSX FIFO Accuracy: Atomic` (this IS the delay 20 and delay 50 pair, 12 + 15) | 27 | 0 |
 | `RSX FIFO Accuracy: Fast` | 10 | 0 |
-| wake-up delay 20 against 50 | 12 + 15 | 0 |
 | hot device, no cooldown, 94 to 97 C | 15 | 0 |
-| CPU starvation, 5 spinners | 11 | 0 |
+| CPU starvation, 5 spinners | 12 | 0 |
+| **total** | **64** | **0** |
 
-**About 63 controlled boots and not one reproduction.** Every setting-level
-hypothesis is now eliminated, and so are heat and CPU scarcity.
+**64 controlled boots and not one reproduction.** Every setting-level
+hypothesis is eliminated, and so are heat and CPU scarcity.
+
+**The delay arms are NOT a separate 27.** They are the same boots as the
+Atomic arm, and listing both double counts the denominator. This file already
+records a rate quoted from pooled boots that was not a rate; the same care
+applies to a denominator.
 
 ## What the arm DID show
 
