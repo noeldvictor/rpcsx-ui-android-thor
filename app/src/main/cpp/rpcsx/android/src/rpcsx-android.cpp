@@ -2315,6 +2315,19 @@ extern "C" bool _rpcsx_overlayPadData(int digital1, int digital2,
     btn.m_value = btn.m_pressed ? 255 : 0;
   }
 
+  {
+    static std::atomic<u64> s_last{0};
+    char v[PROP_VALUE_MAX]{};
+    if (__system_property_get("debug.rpcsx.thor.pad_probe", v) > 0 && v[0] && v[0] != '0') {
+      const u64 now = get_system_time();
+      u64 last = s_last.load();
+      if (now - last > 1000000 && s_last.compare_exchange_strong(last, now)) {
+        rpcsx_android.error("Thor pad probe WRITE: pad=%p d1=0x%04x d2=0x%04x player=%u",
+          static_cast<const void*>(pad.get()), digital1, digital2, pad->m_player_id);
+      }
+    }
+  }
+
   pad->m_sticks[0].m_value = leftStickX;
   pad->m_sticks[1].m_value = leftStickY;
   pad->m_sticks[2].m_value = rightStickX;

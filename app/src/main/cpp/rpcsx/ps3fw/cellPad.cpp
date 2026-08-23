@@ -6,6 +6,9 @@
 #include "Emu/Io/pad_types.h"
 #include "Emu/RSX/Overlays/overlay_debug_overlay.h"
 #include "Input/pad_thread.h"
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
 #include "Input/product_info.h"
 #include "cellPad.h"
 
@@ -479,6 +482,33 @@ void pad_get_data(u32 port_no, CellPadData* data, bool get_periph_data = false)
 			}
 			default:
 				break;
+			}
+		}
+
+		// THOR PAD PROBE. Which pad object does the guest read, and did the
+		// aggregation see any pressed button? Compare the pointer against the one
+		// the control API writes. Rate limited, and off unless asked for.
+		{
+			static std::atomic<u64> s_last{0};
+			static const bool s_on = []{
+#ifdef ANDROID
+				char v[PROP_VALUE_MAX]{};
+				return __system_property_get("debug.rpcsx.thor.pad_probe", v) > 0 && v[0] && v[0] != '0';
+#else
+				return false;
+#endif
+			}();
+
+			if (s_on)
+			{
+				// Report on a change, or every 600th poll, whichever comes first.
+				const u64 n = s_last.fetch_add(1) + 1;
+				if (pad->m_digital_1 != d1Initial || pad->m_digital_2 != d2Initial || n % 600 == 0)
+				{
+					cellPad.error("Thor pad probe GUEST: port=%u pad=%p d1=0x%04x d2=0x%04x (was 0x%04x/0x%04x) status=0x%x",
+						port_no, static_cast<const void*>(pad.get()), pad->m_digital_1, pad->m_digital_2,
+						d1Initial, d2Initial, pad->m_port_status);
+				}
 			}
 		}
 
