@@ -4603,3 +4603,79 @@ the lock is skipped entirely. That is a correctness setting, not a free switch, 
 it needs measuring against a title that actually stresses reservations rather than
 being flipped on faith. **Unmeasured. It is the highest-value open lever here, and
 the spin count inside the constructor is the safer thing to try first.**
+
+# Transformers: War for Cybertron, and why one FPS number is worthless here
+
+2026-08-22, BLUS30357, measured on device. This title was reported as "so slow".
+The frame rate swings so widely by scene that any single measurement of it is
+meaningless, and the first one taken was badly misleading:
+
+| scene | frame rate | cost |
+| --- | --- | --- |
+| engine cutscene, uncapped | 120-133 FPS | 3.74 cores |
+| engine cutscene, 30 cap | 29.8-30.0 FPS | 2.81 cores |
+| 3D gameplay, uncapped | 40.4 FPS | 85.9% total CPU |
+| while a shader compiles | **2.0 FPS** | overlay reads "Compiling shaders" |
+
+The first profile taken here landed on a cutscene, read 133 FPS, and produced the
+conclusion "this title is not slow, it only has a cold-compile problem". **That was
+wrong**, and the thing that disproved it was letting a second run continue into
+actual gameplay, where the same build reads 2.0 FPS mid-shader and 40 FPS after.
+A profile of a cutscene is not a profile of a game.
+
+## It gets to 94 C, and nothing stops it
+
+Uncapped 3D gameplay at 85.9% CPU took the CPU thermal zones to **88-94 C**:
+
+```
+94C cpu-1-3   93C cpu-1-9   92C cpu-1-5   91C cpu-1-7   89C cpu-1-8
+```
+
+They fell to 53 C within 25 s of force-stopping, so that is emulator load and
+nothing else. The SoC and Android's thermal HAL still throttle in hardware, so
+this is not a device about to be destroyed; it IS a device spending gameplay in
+thermal throttling, which makes the game worse as well as hotter.
+
+**The 72 C guard this file refers to elsewhere does NOT cover gameplay.**
+`thermal_headroom_probe` is sampled at exactly one site,
+`sample_before_ppu_compile` in PPUThread.cpp, so it bounds the PPU compile phase
+only. There is no thermal feedback of any kind on the running game. That is a real
+gap and it is why nothing intervened at 94 C.
+
+## What the profile says, and how different it is from Eternal Sonata
+
+25 s, 91,176 samples, 0 lost, on the 133 FPS cutscene:
+
+| symbol | Transformers | Eternal Sonata |
+| --- | --- | --- |
+| guest JIT code, one SPU thread | **29.37%** | - |
+| `rsx::thread::run_FIFO()` | **10.71%** | 1.03% |
+| `vm::writer_lock::writer_lock` | 1.24% | **8.60%** |
+| `spu_thread::process_mfc_cmd()` | 1.05% | **12.69%** |
+
+**There is no shared lever.** Eternal Sonata is reservation and VM-lock bound;
+Transformers is doing real guest SPU work and RSX FIFO processing. Do not copy
+one title's Core tuning to the other, and do not expect the `vm_writer_lock`
+spin knob to do anything here.
+
+## The ten minute first boot is real, and it is one-time
+
+Cold, this title compiles PPU LLVM modules of 4,000 to 9,500 functions each
+across six workers at 100% CPU and does not render a frame for **585 seconds**.
+The cache is reused: the second boot reached a frame in **30 seconds**. So it is
+the size of this EBOOT, not a misconfiguration, and `Max LLVM Compile Threads`
+is already 0 (auto).
+
+## The profile that ships
+
+`GameSettingsDatabase` now carries BLUS30357: `Frame limit: 30` and
+`Shader Mode: Async with Shader Interpreter`.
+
+The cap is **for heat, not for speed**. The interpreter is for the 2.0 FPS stall:
+the default Async Shader Recompiler stalls the frame until a shader is ready,
+while the interpreter draws immediately and compiles behind it.
+
+**NOT VERIFIED:** whether uncapped frames mean the SIMULATION runs fast. Frame
+rate and game speed are different things, and only frame rate was measured. Do
+not repeat the claim that this title "runs at 4.3x speed" uncapped; it was an
+inference, it was challenged, and it was never tested.

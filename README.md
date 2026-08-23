@@ -194,6 +194,19 @@ runtime codes stay listed but greyed out until native validation exists.
   ISO into the folder does not add it. If added games disappear after a restart,
   the save failed: `games.json` must be writable by the app. An `adb` session
   which writes that file makes it unwritable, and the failure used to be silent.
+- **Transformers: War for Cybertron gets hot, and there is no thermal guard on
+  gameplay.** Uncapped 3D gameplay measured 85.9% CPU and took the CPU thermal
+  zones to 88-94 C; they fell back to 53 C within 25 seconds of stopping. The
+  emulator's thermal probe only runs before the PPU compile phase, so nothing
+  watches temperature while you play. The shipped profile for this title caps it
+  to 30 FPS for that reason, not for speed.
+- **First boot of a big game can take ten minutes with no picture.** Transformers
+  compiles PPU modules of 4,000 to 9,500 functions across six threads and renders
+  nothing for about 585 seconds. It is a one-time cost per cache: the second boot
+  reached a frame in about 30 seconds.
+- **Stutter when new shaders appear.** The frame stops while a shader compiles,
+  which reads as 2 FPS and looks like a freeze. Titles with a Thor profile now use
+  Async with Shader Interpreter, which draws immediately and compiles behind.
 - Heavy scenes still drop well below 30 FPS.
 - Cold compilation on first launch generates significant heat and can stall
   before a game reaches its title screen.

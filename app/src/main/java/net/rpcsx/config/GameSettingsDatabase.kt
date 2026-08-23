@@ -65,6 +65,51 @@ object GameSettingsDatabase {
                 VRAM allocation limit (MB): 3072
               Performance Overlay:
                 Enabled: true
+        """.trimIndent(),
+        "BLUS30357" to """
+            # RPCSX_THOR_PROFILE_OVERRIDE
+            # Transformers: War for Cybertron profile for AYN Thor.
+            #
+            # MEASURED on device 2026-08-22, warm PPU cache. The frame rate in this
+            # title swings enormously by scene, so a single number describes nothing:
+            #
+            #   engine cutscene, uncapped   120-133 FPS   3.74 cores
+            #   engine cutscene, 30 cap     29.8-30.0     2.81 cores
+            #   3D gameplay, uncapped       40.4 FPS      85.9% total CPU
+            #   while compiling a shader     2.0 FPS
+            #
+            # THE CAP IS FOR HEAT, NOT FOR SPEED. Uncapped 3D gameplay at 85.9% CPU
+            # took the CPU thermal zones to 88-94 C, against the 72 C guard this
+            # project uses elsewhere; they fell back to 53 C within 25 s of stopping.
+            # Capping the parts that can run fast keeps them from cooking the device
+            # for frames the title never asked for, and costs -25% CPU on the scenes
+            # that were exceeding 30.
+            #
+            # NOT VERIFIED, and it should not be assumed: whether uncapped frames mean
+            # the SIMULATION runs fast. Frame rate and game speed are different things
+            # and only the frame rate was measured here.
+            #
+            # Async with Shader Interpreter, not the default Async Shader Recompiler.
+            # The recompiler stalls the frame when a shader is not ready yet, which is
+            # what the 2.0 FPS reading above is: the overlay reads "Compiling shaders"
+            # and the picture stops. The interpreter draws immediately with an
+            # interpreted shader and compiles the real one behind it, which trades a
+            # little steady-state cost for not freezing.
+            #
+            # No Core tuning here on purpose. A 25 s profile of this title puts 29.37%
+            # of cycles in guest SPU code and 10.71% in rsx::thread::run_FIFO, with
+            # vm::writer_lock at 1.24% and spu_thread::process_mfc_cmd at 1.05%. It is
+            # NOT reservation-bound the way Eternal Sonata is, so that title's Core
+            # settings do not apply and are deliberately not copied.
+            #
+            # The first boot costs about ten minutes of PPU LLVM compilation across six
+            # workers. That is the size of this EBOOT, not a setting. The cache is
+            # reused: the second boot reached a frame in about 30 s.
+            Video:
+              Frame limit: 30
+              Shader Mode: Async with Shader Interpreter
+              Performance Overlay:
+                Enabled: true
         """.trimIndent()
     )
 
