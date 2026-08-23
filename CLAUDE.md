@@ -4294,30 +4294,68 @@ None of them are reverted, and none are redundant:
   documented "may be uninitialized memory" and does not check `m_init`. Now
   guarded on `is_init<T>()`.
 
-## Savestates cannot round trip on this device: no firmware
+## Savestates: the register context was never being written
 
-Measured 2026-08-22, after the crash chain above was fixed. The process now
-survives a load, and the savestate restores objects, threads and file
-descriptors. It then fails:
+2026-08-22, after the crash chain above was fixed. The process survived a load
+and the savestate restored its objects, threads and file descriptors. Then every
+restored PPU thread came back with `cia=0x0` and zeroed registers, and all 13
+faulted within two milliseconds:
 
 ```
-ppu_loader: PS3 firmware is not installed or the installed firmware is invalid.
-...
-Verification failed (object: 0x0)
-(in kernel/cellos/src/sys_prx.cpp:426)
+PPU: Loading PPU Thread [0x1000000: main_thread]: cia=0x0, ...
+VM: Access violation reading location 0x0 (unmapped memory)   x13
 ```
 
-`sys_prx.cpp:426` is `ensure(g_cfg.savestate.state_inspection_mode.get())`. When
-a PRX cannot be restored from a real firmware module, restore requires Inspection
-Mode, and it is off. `$FILES/dev_flash` does not exist at all.
+The read is `vm::read32(ppu.cia)` in the savestate command queued by the
+`ppu_thread(utils::serial&)` constructor. With `cia` zero it fetches the
+instruction at address 0.
 
-A disc boot does not need this, because the HLE modules stand in. A savestate
-does, because it captured PRX objects that have to be rebuilt.
+The cause, in `ppu_thread::serialize_common`:
 
-**So there is still no repeatable gameplay workload on this device, and the
-reason is now a missing file and not a bug.** Either install firmware, or turn on
-Inspection Mode savestates and accept what that mode restores. Until then the
-capped-workload warning in the section above still governs every A/B here.
+```cpp
+// ar(gpr, fpr, cr, fpscr.bits, lr, ctr, vrsave, cia, xer, sat, nj, prio.raw().all);
+```
+
+**The line that serializes the whole register context was commented out.** A
+savestate kept no gpr, no fpr, no cr, no lr, no ctr and no cia. Upstream RPCS3
+has the line live. It arrived commented out with the RPCSX core vendoring, and
+the reason it stopped compiling is visible in the code: the RPCSX restructure
+moved the registers into `PPUContext` and flattened upstream's `xer` struct into
+`xer_so`, `xer_ov`, `xer_ca` and `xer_cnt`. Naming those four restores it, and
+the contents match one for one.
+
+After the fix, restored threads carry real addresses (`0x31c188` for the
+semaphore waiters, `0xd0f17c` for `_fs_aio_thread`, `0xca833c` for
+`_gcm_intr_thread`), which are the same addresses the live session was at. No
+access violation, no verification failure, and `loadState()` returns true.
+
+### Still open: the restore does not resume
+
+The savestate loads and the correct frame is on screen, but nothing advances.
+`rsx::thread` sits at 0% and the SurfaceFlinger timestamp for the layer does not
+change, so the visible image is just the last frame RSX drew. PPU threads are at
+0 CPU, which is right for threads parked in lv2 waits, and four SPU threads spin.
+
+Two things were checked and are NOT the cause:
+
+- **Progress accounting.** The "Building SPU Cache" overlay reads
+  `module 1198 of 1200` and `system_progress.cpp` only closes the dialog on exact
+  equality, which looks like the answer. It is not. Instrumenting the counters at
+  the join point printed `total_funcs=1200 emitted=1200 pending=0 ptotal=1200
+  pdone=1200`. They balance. The overlay is stale because RSX stopped drawing,
+  not because the count is short. A fix built on the count was written, disproved
+  by that measurement, and reverted.
+- **Firmware.** An earlier note here claimed firmware was missing. **That was
+  wrong.** Firmware 4.89 is installed, 144 modules under
+  `$FILES/config/dev_flash/sys/external`, `liblv2.sprx` included. The check ran
+  against `$FILES/dev_flash`, which is not where it lives.
+
+The one real `PS3 firmware is not installed` line comes from the
+**save-then-auto-reload** path only, and it is a VFS problem, not a firmware one.
+That path never calls `Emulator::Init()`, so nothing re-mounts the VFS after
+`Kill()` destroyed the fxo-owned `vfs_manager`, and `vfs::get("/dev_flash/...")`
+resolves to nothing. The genuine load path does call `Init()`, logs
+`Using VFS config`, and finds the firmware.
 
 ### Back up the savestate before capturing one
 
@@ -4325,3 +4363,13 @@ A capture overwrites `$TITLE_1_0.SAVESTAT.zst` in place. There is no second slot
 and no `.bak`. A capture taken to test the load path **destroyed the existing
 savestate for that title**, and nothing on the device kept a copy. Copy the file
 somewhere else first.
+
+### Two method notes from this hunt
+
+1. **Check the path before blaming the data.** "Firmware is not installed" was
+   taken at face value and written into this file as fact. One `find` for
+   `dev_flash` would have shown it sitting in `config/`.
+2. **Instrument before fixing an accounting bug.** The overlay showed a short
+   count on three separate runs, which is strong evidence for a lost update. The
+   counters were correct every time. One log line settled what three screenshots
+   could not.

@@ -3946,7 +3946,31 @@ void ppu_thread::serialize_common(utils::serial& ar)
 {
 	[[maybe_unused]] const s32 version = GET_OR_USE_SERIALIZATION_VERSION(ar.is_writing(), ppu);
 
-	// ar(gpr, fpr, cr, fpscr.bits, lr, ctr, vrsave, cia, xer, sat, nj, prio.raw().all);
+	// Serialize the register context.
+	//
+	// THIS LINE WAS COMMENTED OUT, AND THAT IS WHY LOADING A SAVESTATE DID NOTHING
+	// USEFUL. Without it a savestate keeps no gpr, no fpr, no cr, no lr, no ctr and
+	// no cia, so every restored PPU thread came back with a zeroed context.
+	//
+	// MEASURED 2026-08-22, loading Eternal Sonata (BLUS30161). Every restored thread
+	// logged cia=0x0, and then all 13 faulted inside two milliseconds of each other:
+	//
+	//   PPU: Loading PPU Thread [0x1000000: main_thread]: cia=0x0, ...
+	//   VM: Access violation reading location 0x0 (unmapped memory)   x13
+	//
+	// The read is vm::read32(ppu.cia) in the savestate command queued by the
+	// constructor below. cia is 0, so it fetches the instruction at address 0.
+	//
+	// Upstream RPCS3 has this line live (PPUThread.cpp, serialize_common). It is
+	// commented out here because the RPCSX restructure moved the registers into
+	// PPUContext and flattened upstream's `xer` struct into four fields, so the
+	// upstream line stopped compiling. Naming the four fields restores it. Their
+	// contents match one for one: upstream's xer is a struct of exactly so, ov, ca
+	// and cnt.
+	//
+	// The cia check below is upstream's, and it now guards a value that was really
+	// read, so a bad savestate is refused here instead of running from address 0.
+	ar(gpr, fpr, cr, fpscr.bits, lr, ctr, vrsave, cia, xer_so, xer_ov, xer_ca, xer_cnt, sat, nj, prio.raw().all);
 
 	if (cia % 4 || (cia >> 28) >= 0xCu)
 	{
