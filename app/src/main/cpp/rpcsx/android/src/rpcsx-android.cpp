@@ -2693,11 +2693,31 @@ extern "C" std::string _rpcsx_deviceInfo() {
       thor::g_spu_trap_addr.load() ? "true" : "false");
 }
 
+// Pause and resume, so an experiment can STOP THE WORLD while it decides.
+//
+// Without this every screenshot races the scene: the picture is taken, the game
+// keeps running, and by the time a button is pressed the screen has moved on.
+// That is a contamination source, not a convenience. Pause, look, decide,
+// resume, press.
+extern "C" bool _rpcsx_pause() { return Emu.Pause(); }
+extern "C" bool _rpcsx_isPaused() { return Emu.IsPaused(); }
+
 extern "C" std::string _rpcsx_sceneInfo() {
   const u64 age = thor::vdec_age_us();
+  const u32 open_files = thor::g_video_files_open.load();
+  const auto name = thor::g_video_name.load();
+
+  // Say WHICH source saw it. "movie" beside "vdecUnits: 0" looks like a
+  // contradiction until you know the container is what was seen.
+  const char *source = age < 500000 ? "cellVdec"
+                       : open_files ? "open-video-file"
+                                    : "none";
+
   return fmt::format(
-      "{\"videoDecoding\":%s,\"vdecUnits\":%llu,\"vdecAgeMs\":%lld}",
-      thor::video_playing() ? "true" : "false",
+      "{\"videoDecoding\":%s,\"source\":\"%s\",\"videoFilesOpen\":%u,"
+      "\"videoFile\":\"%s\",\"vdecUnits\":%llu,\"vdecAgeMs\":%lld}",
+      thor::video_playing() ? "true" : "false", source, open_files,
+      name ? *name : std::string(),
       thor::g_vdec_units.load(),
       age == umax ? -1LL : static_cast<s64>(age / 1000));
 }

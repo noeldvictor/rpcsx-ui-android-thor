@@ -20,18 +20,32 @@
 //
 // ## What this detects, and what it does not
 //
-// **Pre-rendered video (FMV) is detected exactly.** The guest decodes it
-// through `cellVdec`, so a decode call IS a movie playing. No heuristic.
+// TWO sources, because one is not enough.
 //
-// **A real-time engine cutscene is NOT detected by this.** Transformers' intro
-// is rendered by the game, not decoded, so `cellVdec` never fires. Report the
-// fact measured here and let the caller combine it with the picture; do not
-// dress a guess up as a detection.
+// 1. **`cellVdec`** catches titles that use SONY'S decoder. Exact when it
+//    fires, and silent otherwise.
+// 2. **An open video container** catches the rest. Many PS3 games ship Bink
+//    and decode it in their own SPU code, so `cellVdec` NEVER fires for them.
+//
+// **This was got wrong once and it matters.** Transformers plays
+// `FMV_intro.bik`. The probe reported `videoDecoding: false` for the whole
+// intro, that was written up as "not a movie", and a measurement was taken
+// of a movie. A `vdecUnits` of 0 across a run means the title never calls
+// cellVdec at all, which says NOTHING about what is on screen.
+//
+// **A real-time engine cutscene is still not detected by either source**, as
+// it neither decodes nor opens a container. Judge that from the screenshot,
+// and pause first so the picture and the decision do not race the scene.
 
 #include "Emu/Cell/timers.hpp"
 #include "util/types.hpp"
 
 #include <atomic>
+#include <cctype>
+#include <string>
+#include <string_view>
+#include "util/atomic.hpp"
+#include "util/shared_ptr.hpp"
 
 namespace thor
 {
@@ -59,11 +73,69 @@ namespace thor
 		return now > last ? now - last : 0;
 	}
 
-	// A movie is playing if the guest decoded video very recently. The window is
-	// generous on purpose: a 30 fps stream is one unit every 33 ms, and a decoder
-	// that is briefly starved must not read as "the movie ended".
+	// ---------------------------------------------------------------------
+	// Video the guest decodes ITSELF, on the SPUs.
+	//
+	// `cellVdec` catches only titles that use Sony's decoder. Many PS3 games
+	// ship Bink (RAD) and decode it in their own SPU code, so `cellVdec` never
+	// fires and a `vdecUnits` of 0 says NOTHING about whether a movie is on
+	// screen.
+	//
+	// Transformers is one of them. Its intro is `FMV_intro.bik`, the probe read
+	// `videoDecoding: false` throughout, and a measurement was taken of a movie.
+	//
+	// So watch what the guest OPENS. A title holds the container open for the
+	// length of playback, which makes "a video file is open" a solid signal and
+	// a much better one than any frame rate.
+	// ---------------------------------------------------------------------
+	inline std::atomic<u32> g_video_files_open{0};
+	inline std::atomic<u64> g_video_opened_us{0};
+	inline atomic_ptr<std::string> g_video_name{};
+
+	inline bool path_is_video(std::string_view path) noexcept
+	{
+		// Lowercase the tail only; a guest path can be any case.
+		const usz dot = path.find_last_of('.');
+
+		if (dot == umax || dot + 1 >= path.size())
+		{
+			return false;
+		}
+
+		std::string ext(path.substr(dot + 1));
+
+		for (char& c : ext)
+		{
+			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		}
+
+		return ext == "bik" || ext == "bk2" || ext == "pam" || ext == "pss" ||
+			   ext == "m2v" || ext == "sfd" || ext == "mp4" || ext == "mpg" ||
+			   ext == "m4v" || ext == "avi" || ext == "wmv";
+	}
+
+	inline void video_file_opened(std::string_view path) noexcept
+	{
+		g_video_files_open.fetch_add(1, std::memory_order_relaxed);
+		g_video_opened_us.store(get_system_time(), std::memory_order_relaxed);
+		g_video_name = stx::make_single<std::string>(std::string(path));
+	}
+
+	inline void video_file_closed() noexcept
+	{
+		u32 n = g_video_files_open.load(std::memory_order_relaxed);
+
+		while (n != 0 && !g_video_files_open.compare_exchange_weak(n, n - 1))
+		{
+		}
+	}
+
+	// A movie is playing if the guest decoded video very recently, OR it is
+	// holding a video container open. The decode window is generous on purpose:
+	// a 30 fps stream is one unit every 33 ms, and a decoder that is briefly
+	// starved must not read as "the movie ended".
 	inline bool video_playing() noexcept
 	{
-		return vdec_age_us() < 500'000;
+		return vdec_age_us() < 500'000 || g_video_files_open.load(std::memory_order_relaxed) != 0;
 	}
 } // namespace thor

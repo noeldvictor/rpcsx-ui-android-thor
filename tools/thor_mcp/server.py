@@ -126,8 +126,10 @@ def t_state(_):
     if not reachable():
         return {"error": "device unreachable; an empty answer here is NOT a dead emulator"}
     ensure_forward()
+    paused = hold(a, default=a.get("pause", True))
     return {
         "reachable": True,
+        "paused": paused,
         "pid": pid() or None,
         "cpuJunctionC": temp_c(),
         "battery": sh("cat /sys/class/power_supply/battery/capacity").strip(),
@@ -195,18 +197,73 @@ def t_wait_ready(a):
 
 def t_press(a):
     """Press when the screen is READY, not on a timer. Presses sent during an
-    intro are correctly ignored by the game and read as a broken API."""
-    return api(f"/pad/press?buttons={a['buttons']}&ms={int(a.get('ms', 150))}", "POST")
+    intro are correctly ignored by the game and read as a broken API.
+
+    A PAUSED guest cannot see a button, so this resumes first, presses, and then
+    puts the emulator back the way it found it. That keeps the pause-look-decide
+    -press loop working without the caller tracking the state by hand."""
+    was_paused = is_paused()
+    if was_paused:
+        api("/resume", "POST")
+        time.sleep(0.3)
+
+    r = api(f"/pad/press?buttons={a['buttons']}&ms={int(a.get('ms', 150))}", "POST")
+
+    settle = float(a.get("settleS", 1.0))
+    if settle > 0:
+        time.sleep(settle)
+    if was_paused and a.get("rePause", True):
+        api("/pause", "POST")
+
+    return {"press": r, "wasPaused": was_paused,
+            "rePaused": was_paused and a.get("rePause", True)}
+
+
+def is_paused():
+    r = api("/status")
+    # EmulatorState: 0 Stopped 1 Loading 2 Stopping 3 Running 4 Paused
+    return isinstance(r, dict) and r.get("state") == 4
+
+
+def hold(a, default=True):
+    """PAUSE BY DEFAULT for anything that inspects.
+
+    If the emulator is not paused while a tool looks at it, the game runs on
+    while the caller thinks, and the state reasoned about is already stale by
+    the time a button is pressed. Pausing is not a convenience here, it is what
+    makes an observation mean anything.
+
+    Pass pause=false when you deliberately want a live reading.
+    """
+    if a.get("pause", default):
+        api("/pause", "POST")
+        return True
+    return False
+
+
+def t_pause(a):
+    """Stop the world. Without it every screenshot races the scene: the picture
+    is taken, the game runs on, and the button lands somewhere else."""
+    return api("/pause", "POST")
+
+
+def t_resume(a):
+    return api("/resume", "POST")
 
 
 def t_screenshot(a):
+    """Pause, capture, and STAY paused so the picture is still true when you act."""
+    paused = hold(a)
     out = a.get("path") or os.path.join(os.getcwd(), "thor_shot.png")
     data = adb(["exec-out", "screencap", "-p"], binary=True)
     if len(data) < 1024:
         return {"error": f"screencap returned {len(data)} bytes"}
     with open(out, "wb") as f:
         f.write(data)
-    return {"path": out, "bytes": len(data), "scene": api("/scene")}
+    return {"path": out, "bytes": len(data), "scene": api("/scene"),
+            "paused": paused,
+            "note": "still PAUSED; the picture stays true until you resume. "
+                    "thor_press resumes for you and re-pauses after."}
 
 
 def t_sample(a):
@@ -215,6 +272,10 @@ def t_sample(a):
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
+
+    if is_paused():
+        return {"void": True, "reason": "the emulator is PAUSED; a paused sample measures "
+                                        "about 0.3 cores and means nothing. Resume first."}
 
     s0 = api("/scene")
     dev0 = api("/device")
@@ -281,13 +342,15 @@ def t_stop(_):
 
 
 TOOLS = [
-    ("thor_state", "Device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state.", {"type": "object", "properties": {}}, t_state),
+    ("thor_state", "PAUSES BY DEFAULT, then reports device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state.", {"type": "object", "properties": {}}, t_state),
     ("thor_cooldown", "Force-stop the emulator, then wait for the CPU junction to fall below targetC. Stops first on purpose: cooling while the emulator runs never finishes.", {"type": "object", "properties": {"targetC": {"type": "integer"}, "timeoutS": {"type": "integer"}}}, t_cooldown),
     ("thor_boot", "Boot a title. freshCompile (default true) turns the SPU object cache OFF, so a diagnosis is against a fresh compile rather than a replayed object.", {"type": "object", "properties": {"titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}}, "required": ["titleId", "isoPath"]}, t_boot),
     ("thor_wait_ready", "Wait until the title actually renders, instead of sleeping a fixed time.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}}}, t_wait_ready),
-    ("thor_press", "Press pad buttons in the guest, e.g. START or CROSS. Screenshot first: a press sent during an intro is correctly ignored.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}}, "required": ["buttons"]}, t_press),
-    ("thor_screenshot", "Capture the screen to a PNG and report whether a movie is playing.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
-    ("thor_sample", "Measure process and per-thread CPU over a window. REFUSES while a movie plays or the thermal guard is engaged.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}}}, t_sample),
+    ("thor_press", "Press pad buttons. RESUMES first if paused, presses, then re-pauses, because a paused guest cannot see a button.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}}, "required": ["buttons"]}, t_press),
+    ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
+    ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
+    ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
+    ("thor_sample", "Measure process and per-thread CPU. REFUSES while PAUSED, while a movie plays, or while the thermal guard is engaged.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),
     ("thor_setprop", "Set a debug property and read it back, so an arm cannot silently run unset.", {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name"]}, t_setprop),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),

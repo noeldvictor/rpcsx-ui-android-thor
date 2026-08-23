@@ -240,3 +240,57 @@ drops the only line, so every arm ran unset and the arms agreed perfectly.
 ## It proposes, it does not ship
 
 No tool writes a game profile or an engine default. Hand the user a diff.
+
+# PAUSE. The game does not wait while you think.
+
+**This is the rule that makes every other observation mean something.**
+
+If the emulator is not paused while you look at it, it keeps running. The
+screenshot you reason about is already stale, the scene has moved on, and the
+button you press lands somewhere you never saw. That is not a small race: an
+intro advances several scenes in the time it takes to read one picture.
+
+So the tools PAUSE BY DEFAULT:
+
+| tool | pause behaviour |
+| --- | --- |
+| `thor_screenshot` | pauses, captures, and STAYS paused |
+| `thor_state` | pauses before reading |
+| `thor_press` | RESUMES, presses, then re-pauses |
+| `thor_sample` | REFUSES while paused |
+
+`thor_press` resumes on its own because a paused guest cannot see a button, and
+it puts the emulator back the way it found it. So the loop is:
+
+    thor_screenshot   -> paused, and the picture is true
+    (decide)          -> the game is not moving while you decide
+    thor_press START  -> resumes, presses, re-pauses
+    thor_screenshot   -> paused again, see what changed
+
+**`thor_sample` refuses while paused, and that refusal is correct.** A paused
+emulator measures about 0.3 cores against 3.9 running. A sample taken paused is
+not a small error, it is a number about nothing.
+
+Pass `pause: false` only when you deliberately want a live reading, such as
+watching a frame rate settle.
+
+# Detecting a movie: TWO sources, because one was not enough
+
+`GET /scene` reports `source`:
+
+| source | what it means |
+| --- | --- |
+| `cellVdec` | the guest decodes through Sony's decoder |
+| `open-video-file` | the guest holds a video container open, such as a `.bik` |
+| `none` | neither, which is NOT proof that the screen shows the game |
+
+**This was got wrong, and the way it was wrong is the lesson.** Transformers
+plays `FMV_intro.bik`. The first probe watched `cellVdec` only, reported
+`videoDecoding: false` for the whole intro, and a measurement was taken OF A
+MOVIE. Many PS3 games ship Bink and decode it in their own SPU code, so Sony's
+decoder never fires and `vdecUnits` stays 0 for the entire run.
+
+So `"movie"` beside `"vdecUnits": 0` is not a contradiction. Read `source`.
+
+**A real-time engine cutscene is detected by neither**, because it neither
+decodes nor opens a container. Judge that from a PAUSED screenshot.

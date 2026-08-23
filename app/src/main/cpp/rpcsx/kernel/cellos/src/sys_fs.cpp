@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/thor_playback_probe.h"
 
 #include "rx/asm.hpp"
 #include "sys_fs.h"
@@ -1038,6 +1039,15 @@ error_code sys_fs_open(ppu_thread &ppu, vm::cptr<char> path, s32 flags,
           })) {
     ppu.check_state();
     *fd = id;
+
+    // A guest that opens a video container is about to play a MOVIE.
+    // cellVdec catches only Sony-decoder titles; this one ships Bink and
+    // decodes it on the SPUs, so a measurement was once taken of a movie
+    // while the decoder probe read zero.
+    if (thor::path_is_video(ppath)) {
+      thor::video_file_opened(ppath);
+    }
+
     return CELL_OK;
   }
 
@@ -1191,6 +1201,10 @@ error_code sys_fs_close(ppu_thread &ppu, u32 fd) {
 
   if (!file) {
     return {CELL_EBADF, fd};
+  }
+
+  if (thor::path_is_video(file->name.data())) {
+    thor::video_file_closed();
   }
 
   std::string FD_state_log;

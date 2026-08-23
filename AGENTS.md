@@ -8786,3 +8786,66 @@ be now: Transformers goes from its title screen to the main menu on an injected
 `START`. A run that reaches actual gameplay and holds it exercises SPURS job
 dispatch, which a title screen barely touches, and the trap decoder plus the
 SPURS state in `/diag` make the next occurrence self-explaining.
+
+# PAUSE BY DEFAULT, or the observation is about a scene that already ended
+
+**Added 2026-08-23, after measuring a movie.** The emulator does not wait while
+a tool thinks. A screenshot taken live is stale before it is read, and the
+button pressed afterwards lands on a scene nobody looked at.
+
+`POST /pause` and `POST /resume` exist now, and the MCP tools pause by default:
+`thor_screenshot` pauses and STAYS paused, `thor_state` pauses before reading,
+`thor_press` resumes and re-pauses because a paused guest cannot see a button,
+and `thor_sample` REFUSES while paused.
+
+**Verified on the device: 3.91 cores running, 0.33 cores paused.**
+
+That last refusal matters. A sample taken while paused reads about 0.3 cores
+against 3.9 running, so it is not a small error, it is a number about nothing.
+
+# CORRECTED: cellVdec alone cannot see a movie
+
+**The first movie probe watched `cellVdec` only, and it was wrong.**
+Transformers plays `FMV_intro.bik`. The probe reported `videoDecoding: false`
+through the whole intro, that was written up as "not a movie", and a
+measurement was taken of a movie.
+
+**Many PS3 games ship Bink and decode it in their own SPU code**, so Sony's
+decoder is never called and `vdecUnits` stays 0 for the entire run. A zero there
+says the title does not use `cellVdec`. It says NOTHING about what is on screen.
+
+`/scene` now has two sources and reports which one fired:
+
+| source | meaning |
+| --- | --- |
+| `cellVdec` | decoding through Sony's decoder |
+| `open-video-file` | the guest holds a container open, e.g. `.bik` |
+| `none` | neither, and NOT proof the game is running |
+
+The container hook is in `sys_fs_open` and `sys_fs_close`, because a title holds
+the file open for the length of playback. Measured on Transformers: the probe
+reads not-a-movie through boot, then `movie` for the whole intro, with
+`vdecUnits` still 0.
+
+**An engine cutscene is detected by neither.** Judge it from a PAUSED
+screenshot.
+
+# Transformers heat: the profile IS the fix, and it does apply
+
+**Measured 2026-08-23 through `/device`.**
+
+| | no profile applied | shipped profile |
+| --- | --- | --- |
+| frame rate | 126 | **30.0** |
+| CPU junction | 77 C | **67 C** |
+| charger input | 8206 to 9089 mW | **7408 mW** |
+| cores busy | 3.74 to 3.91 | **3.04** |
+
+**A boot without the profile renders an intro at 126 FPS on a handheld**, which
+is where the heat came from. The shipped profile caps it at 30 and takes 10 C
+and about 1.5 W off.
+
+**Read the `/diag` config before believing any heat number.** The unprofiled
+boots above came from `--ez thorReplaceCustomProfile false`, a debug-boot flag
+and not what a user gets. The config readback is what exposed it: `frameLimit:
+Off` and `rsxFifoAccuracy: Fast` where the profile says 30 and Atomic.

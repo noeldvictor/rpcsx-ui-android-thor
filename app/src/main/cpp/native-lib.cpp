@@ -53,6 +53,8 @@ struct RPCSXApi {
   std::string (*sceneInfo)();
   std::string (*deviceInfo)();
   std::string (*diagInfo)();
+  bool (*pause)();
+  bool (*isPaused)();
   bool (*surfaceEvent)(JNIEnv *env, jobject surface, jint event);
   bool (*usbDeviceEvent)(int fd, int vendorId, int productId, int event);
   bool (*installFw)(JNIEnv *env, int fd, long progressId);
@@ -131,6 +133,8 @@ struct RPCSXLibrary : RPCSXApi {
     result.sceneInfo = reinterpret_cast<decltype(sceneInfo)>(dlsym(handle, "_rpcsx_sceneInfo"));
     result.deviceInfo = reinterpret_cast<decltype(deviceInfo)>(dlsym(handle, "_rpcsx_deviceInfo"));
     result.diagInfo = reinterpret_cast<decltype(diagInfo)>(dlsym(handle, "_rpcsx_diagInfo"));
+    result.pause = reinterpret_cast<decltype(pause)>(dlsym(handle, "_rpcsx_pause"));
+    result.isPaused = reinterpret_cast<decltype(isPaused)>(dlsym(handle, "_rpcsx_isPaused"));
     result.surfaceEvent = reinterpret_cast<decltype(surfaceEvent)>(dlsym(handle, "_rpcsx_surfaceEvent"));
     result.usbDeviceEvent = reinterpret_cast<decltype(usbDeviceEvent)>(dlsym(handle, "_rpcsx_usbDeviceEvent"));
     result.installFw = reinterpret_cast<decltype(installFw)>(dlsym(handle, "_rpcsx_installFw"));
@@ -399,6 +403,16 @@ Java_net_rpcsx_RPCSX_diagInfo(JNIEnv *env, jobject) {
     return wrap(env, std::string("{}"));
   }
   return wrap(env, rpcsxLib.diagInfo());
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_pause(JNIEnv *, jobject) {
+  return rpcsxLib.pause != nullptr && rpcsxLib.pause();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcsx_RPCSX_isPaused(JNIEnv *, jobject) {
+  return rpcsxLib.isPaused != nullptr && rpcsxLib.isPaused();
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_surfaceEvent(

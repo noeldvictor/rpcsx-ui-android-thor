@@ -222,7 +222,18 @@ object ThorControlServer {
             "/savestate" -> """{"ok":${runCatching { rpcsx.saveState() }.getOrDefault(false)},"warning":"one slot, overwrites"}"""
             "/loadstate" -> """{"ok":${runCatching { rpcsx.loadState() }.getOrDefault(false)}}"""
 
-            "/resume" -> { runCatching { rpcsx.resume() }; """{"ok":true}""" }
+            // STOP THE WORLD while you decide.
+            //
+            // Without this every screenshot races the scene: the picture is
+            // taken, the game keeps running, and by the time the button is
+            // pressed the screen has moved on. That is a contamination source,
+            // not a convenience. Pause, look, decide, resume, press.
+            "/pause" -> {
+                val ok = runCatching { rpcsx.pause() }.getOrDefault(false)
+                """{"ok":$ok,"paused":${runCatching { rpcsx.isPaused() }.getOrDefault(false)}}"""
+            }
+
+            "/resume" -> { runCatching { rpcsx.resume() }; """{"ok":true,"paused":${runCatching { rpcsx.isPaused() }.getOrDefault(false)}}""" }
             "/kill" -> { runCatching { rpcsx.kill() }; """{"ok":true}""" }
 
             "/setting" -> {
@@ -252,10 +263,31 @@ object ThorControlServer {
     private fun scene(): String {
         val raw = runCatching { RPCSX.instance.sceneInfo() }.getOrDefault("{}")
         val playing = raw.contains("\"videoDecoding\":true")
-        val advice = if (playing) "movie" else "not-a-movie-or-engine-cutscene"
+        // vdecUnits==0 for the WHOLE run means this title never calls cellVdec at
+        // all. That is NOT "no movie": many PS3 games ship Bink/RAD video that
+        // the game decodes on the SPUs in its own code, so Sony's decoder is
+        // never involved. Transformers is one of them, and reporting it as
+        // "not a movie" was wrong.
+        val neverUsed = raw.contains("\"vdecUnits\":0")
+
+        val advice = when {
+            playing -> "movie"
+            neverUsed -> "unknown-this-title-never-calls-cellVdec"
+            else -> "no-video-decoding-right-now"
+        }
+        val note = when {
+            playing && raw.contains("\"source\":\"open-video-file\"") ->
+                "a MOVIE is playing: the guest holds a video container open. vdecUnits stays 0 " +
+                "because this title decodes it on the SPUs (Bink), not through cellVdec."
+            playing -> "a MOVIE is playing: the guest is decoding video through cellVdec"
+            neverUsed -> "this title decodes its own video on the SPUs (Bink and similar), so cellVdec " +
+                "never fires and this probe CANNOT see its movies. Judge from the screenshot, and pause first."
+            else -> "cellVdec is used by this title but is idle now; an engine cutscene is still not detected here"
+        }
+
         val inner = if (raw.length > 2) raw.trim().removePrefix("{").removeSuffix("}") else ""
         val sep = if (inner.isEmpty()) "" else ","
-        return """{$inner$sep"advice":"$advice","note":"videoDecoding is exact for FMV; an engine cutscene is not detected here, judge it from the screenshot"}"""
+        return """{$inner$sep"advice":"$advice","reliable":${playing || !neverUsed},"note":"${esc(note)}"}"""
     }
 
     /**
@@ -322,6 +354,7 @@ object ThorControlServer {
 "POST /pad/release",
 "POST /savestate   (one slot, overwrites)",
 "POST /loadstate",
+"POST /pause    stop the world while you decide, then /resume",
 "POST /resume","POST /kill",
 "GET  /setting?path=","POST /setting?path=&value="
 ],"buttons":${knownButtons()}}"""

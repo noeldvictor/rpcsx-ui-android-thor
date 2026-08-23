@@ -105,6 +105,8 @@ class RPCSX {
     external fun sceneInfo(): String
     external fun deviceInfo(): String
     external fun diagInfo(): String
+    external fun pause(): Boolean
+    external fun isPaused(): Boolean
     external fun supportsCustomDriverLoading() : Boolean
     external fun isInstallableFile(fd: Int) : Boolean
     external fun getDirInstallPath(sfoFd: Int) : String?
