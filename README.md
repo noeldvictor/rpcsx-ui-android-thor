@@ -239,7 +239,10 @@ boots**, so no setting explains the fault.
 
 The underlying fault is a rare SPU halt inside the game's own SPURS kernel: the
 game checks something, does not like the answer, and stops its own SPU. It is
-**not fixed**, and it is rarer than 1 in 37 under these conditions.
+**not fixed**. Roughly **63 controlled boots** across five conditions have not
+reproduced it once: both FIFO settings, both wake-up delays, a deliberately hot
+device at 94-97 C, and heavy CPU starvation. No setting explains it, and neither
+does heat or a loaded machine.
 
 What did change is that it now explains itself. When it happens the log names the
 trap, the SPU program counter, and the state of the SPURS scheduler, instead of

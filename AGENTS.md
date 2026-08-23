@@ -8734,3 +8734,50 @@ exit, and `thor_boot` takes `freshCompile` for the same reason.
 **What is NOT established.** This is one measurement on one title. Nobody has
 soaked it across many cold boots, and it changes what the verifier accepts. If a
 title starts misbehaving after this, clear the property FIRST and say so.
+
+# The SPURS starvation arm: no reproduction, and the count is now 63 boots
+
+**Run 2026-08-23 with the fixed harness.** The idea was mechanical rather than a
+guess: the SPURS limiter computes its wait from `spurs_average_task_duration`,
+clamped between 10 and 100 ms, and takes a TIMEOUT branch when tasks run long.
+Every clean boot before this ran with the CPU free, so that branch was rarely
+entered. Five spinner processes were started 25 s into each boot, once the title
+was already doing SPURS work.
+
+    11 boots, 0 SPU traps, 0 dead FIFO, 0 fatal errors
+
+## The running total
+
+| arm | boots | faults |
+| --- | --- | --- |
+| `RSX FIFO Accuracy: Atomic` | 27 | 0 |
+| `RSX FIFO Accuracy: Fast` | 10 | 0 |
+| wake-up delay 20 against 50 | 12 + 15 | 0 |
+| hot device, no cooldown, 94 to 97 C | 15 | 0 |
+| CPU starvation, 5 spinners | 11 | 0 |
+
+**About 63 controlled boots and not one reproduction.** Every setting-level
+hypothesis is now eliminated, and so are heat and CPU scarcity.
+
+## What the arm DID show
+
+Starvation degrades this title badly without ever tripping the halt. Frame rate
+across the eleven boots: 17.6, 15.1, 20.0, 15.2, 20.0, 15.0, 14.0, 13.1, **2.0**,
+16.2, **0.0**. The two worst are a real observation and not a fault: the title
+survives, keeps its RSX queue, and simply cannot keep up.
+
+The 20.00 readings are the thermal guard's cap, not a measurement.
+
+## What this closes, and what is left
+
+**Stop doing passive boots.** Sixty-three of them across five different
+conditions have produced nothing, and each one costs about two minutes of device
+time. A rare event needs a denominator, and this denominator says the fault is
+rarer than 1 in 63 under every condition tried.
+
+**The honest next step is real gameplay, which is now reachable.** Every boot so
+far ended at a title screen, because the guest pad could not be driven. It can
+be now: Transformers goes from its title screen to the main menu on an injected
+`START`. A run that reaches actual gameplay and holds it exercises SPURS job
+dispatch, which a title screen barely touches, and the trap decoder plus the
+SPURS state in `/diag` make the next occurrence self-explaining.
