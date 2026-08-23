@@ -114,7 +114,13 @@ read 90.79% in one SPU thread. The RSX had died 35 seconds earlier.
 
 ## Step 4. What this repo already tried
 
-**Read this before you spend device time.** Each row cost at least one session.
+**Per title, read [`docs/arm64/title-recipes.md`](../../../docs/arm64/title-recipes.md)
+first.** It gives the profile signature, the shipped settings, and every lever
+each title refused, with the number. Two titles needed opposite fixes, so a
+setting that wins on one title is not a default for the next one.
+
+The table below is the global list. **Read it before you spend device time.**
+Each row cost at least one session.
 
 | Lever | Result |
 | --- | --- |
