@@ -8391,77 +8391,96 @@ clamped to 10 to 100 ms, and every one of the 52 clean boots ran with the CPU
 free, so the timeout branch was rarely taken. Taking the cores away perturbs
 exactly that. Re-run it with the force-stop before the cooldown.
 
-# A control API inside the emulator, and the pad injection that does NOT work yet
+# The control API: drive the emulator from a tool
 
-**Built 2026-08-23.** `net/rpcsx/debug/ThorControlServer.kt` runs a small HTTP
-server inside the app. It exists because **the emulated pad cannot be driven
-from outside the app**, which this file already records: `input keyevent` left
-the workload unchanged, `ENTER` and `BUTTON_A` reached the Android UI and killed
-the process, and `sendevent` on the real gamepad node was confirmed arriving in
-the kernel with `getevent` while the guest saw nothing.
-
-It binds to **127.0.0.1 only** and runs in debug builds only, gated on
-`BuildConfig.THOR_DEBUG_TOOLS`. The Thor is a shared device on a real network,
-and an open control port on it would let anything drive the emulator.
+**Working since 2026-08-23, pad injection included.** `ThorControlServer.kt`
+runs a small HTTP server in the app. It binds to **127.0.0.1 only** and runs in
+debug builds only, gated on `BuildConfig.THOR_DEBUG_TOOLS`. The Thor is shared
+and on a real network, so an open control port would let anything drive it.
 
     adb forward tcp:8099 tcp:8099
-    curl 127.0.0.1:8099/status
+    curl 127.0.0.1:8099/            # every endpoint and every button name
+
+| call | what it does |
+| --- | --- |
+| `GET /status` | state, title id, build version |
+| `POST /pad/press?buttons=CROSS,START&ms=120` | press, hold, release |
+| `POST /pad?d1=&d2=&lx=&ly=&rx=&ry=` | raw pad state, sticks 0..255, centre 128 |
+| `POST /pad/release` | clear the buttons, centre the sticks |
+| `POST /savestate` | capture. ONE slot, and it overwrites |
+| `POST /loadstate` | restore |
+| `POST /resume`, `POST /kill` | emulation control |
+| `GET` or `POST /setting?path=&value=` | read or write one config value |
+
+Buttons: `UP DOWN LEFT RIGHT CROSS CIRCLE SQUARE TRIANGLE L1 L2 L3 R1 R2 R3
+START SELECT PS`.
+
+## Why it exists
+
+**The emulated pad cannot be driven from outside the app.** This file records
+three attempts that all failed: `input keyevent BUTTON_START` left the workload
+unchanged, `ENTER` and `BUTTON_A` reached the Android UI and killed the process,
+and `sendevent` on the real gamepad node was confirmed arriving in the kernel
+with `getevent` while the guest saw nothing.
+
+So no tool could pass a title screen, and every large lever in this fork lives
+in gameplay: the SPU self-loop park is about 20% of gameplay CPU,
+`process_mfc_cmd` is 20.13%, `vm::writer_lock` is 4.49%. A title screen is 0.35
+cores behind a frame cap and can show none of them.
+
+**It works now.** Transformers goes from its title screen to the main menu on an
+injected `START`.
+
+## Press when the screen is ready, not on a timer
+
+**This cost a wrong conclusion.** The first attempts were written up as "pad
+injection does not reach the guest". They reached it. The presses landed during
+the intro, before the game asked for input, so the game correctly ignored them.
+
+The frame rate went 122.50 to 29.83 across that attempt, which read exactly like
+the button working. It was the intro ending by itself. **The screenshot settled
+it**: the screen still read `Press START button`. A frame rate change is not
+evidence that input arrived.
+
+So the loop is: screenshot, decide what the screen asks for, then press.
+
+    adb exec-out screencap -p > shot.png
     curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
 
-**What is verified working on the device:**
+## The probe, when input seems not to arrive
 
-    {"state":3,"titleId":"BLUS30357","version":"20260820-1d34ec9 Draft"}
+`debug.rpcsx.thor.pad_probe=1` prints both sides:
 
-`/status`, `/`, `/setting`, `/savestate`, `/loadstate` and the button name to
-bit mapping all answer correctly. `/pad/press?buttons=START` returns
-`{"ok":true,"pressed":["START"],"d1":8,"d2":0}`, and `d1=8` is
-`CELL_PAD_CTRL_START`.
+    WRITE: pad=0x7434915cd8 d1=0x0008 player=0
+    GUEST: port=0 pad=0x7434915cd8 d1=0x0008 (was 0x0000) status=0x1
 
-## The pad reaches the Pad object and the guest ignores it
+The same pointer means the guest reads the pad we write. A changing `d1` with a
+clean press and release edge means the guest saw the button. That separates "our
+write is lost" from "the guest reads another pad", which no screenshot can.
 
-**Do not read the API's `ok:true` as "the guest pressed the button".** It means
-`_rpcsx_overlayPadData` found `g_virtual_pad` and wrote the bits.
+**`ok:true` from the API is NOT "the guest pressed the button".** It means
+`_rpcsx_overlayPadData` found the pad and wrote the bits.
 
-Tested on the Transformers title screen, which shows `Press START button`:
+## Not implemented
 
-| what was sent | what the screen did |
-| --- | --- |
-| `START` for 200 ms | nothing |
-| `CROSS` for 200 ms | nothing |
-| `START` held and re-asserted 30 times | nothing |
+`/pause`. `RPCSX` exposes `resume`, `kill` and `getState`, and no pause
+external. The intended loop is pause, screenshot, decide, resume, press, which
+removes the race against animation.
 
-**A near miss to avoid repeating.** The frame rate went from 122.50 to 29.83
-across the first attempt, which read exactly like the button working. It was the
-intro ending by itself and reaching the title screen. **The screenshot is what
-settled it**: the screen still read `Press START button`. A frame rate change is
-not evidence that input arrived.
+# Never open a file for writing before the content is built
 
-## What is ruled out
+**2026-08-23, and it destroyed this file for a minute.** A rewrite did:
 
-- **The pad is connected.** `initVirtualPad` calls
-  `pad->Init(CELL_PAD_STATUS_CONNECTED, ...)`, and `g_virtual_pad` is non-null,
-  because a null pad makes `_rpcsx_overlayPadData` return false and it returned
-  true.
-- **Nothing else overwrites the bits.** `m_pressed` is assigned at exactly two
-  places in `rpcsx-android.cpp`, both inside `_rpcsx_overlayPadData`.
-- **The aggregation is not missing.** `ps3fw/cellPad.cpp:410-422` builds
-  `m_digital_1` and `m_digital_2` from `button.m_pressed`, which is the field the
-  API writes.
-- **The emulator is running.** `/status` reports state 3, and `EmulatorState`
-  gives 3 as `Running`.
-- **The guest asked for pads.** The log holds `cellPad: cellPadInit(max_connect=2)`.
+    open(p, 'wb').write(build_content())
 
-## The next diagnostic
+Python opens and TRUNCATES first, then evaluates the argument. `build_content()`
+raised, so the file was left at zero bytes with nothing written.
 
-Find what the pad thread does between our write and `cellPadGetData`. The
-suspicion is a handler pass for player 0 that rebuilds button state each poll,
-so the injected bits are cleared before the guest reads them. Log
-`pad->m_digital_1` inside `cellPad.cpp` right after the aggregation loop, and
-compare it against the value the API sent. That separates "our write is lost"
-from "the guest reads a different pad".
+Build the bytes, THEN open:
 
-**The intended workflow, once input lands.** Pause, take a screenshot, decide
-which button the screen is asking for, resume, and press immediately. That
-removes the race against animation which makes blind pressing unreliable, and it
-is how a scene route should be driven. `/pause` is NOT implemented yet: `RPCSX`
-exposes `resume`, `kill` and `getState`, and no pause external.
+    body = build_content()
+    open(p, 'wb').write(body)
+
+It cost nothing because the file was committed one step earlier. **Commit before
+a large mechanical rewrite**, so the recovery is `git checkout --` and not a
+reconstruction.

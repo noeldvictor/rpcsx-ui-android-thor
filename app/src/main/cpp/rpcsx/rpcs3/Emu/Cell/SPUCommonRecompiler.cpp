@@ -346,10 +346,19 @@ bool spu_dynamic_mfc_fast_enabled() noexcept
 
 bool spu_native_object_cache_enabled() noexcept
 {
-	if (Emu.GetTitleID() != "BLUS30161")
-	{
-		return false;
-	}
+	// The title lock is gone. It pinned this cache to BLUS30161, so every OTHER
+	// title recompiled every SPU program on every boot, which is the
+	// "SPU Runtime: Built N functions" line on each load.
+	//
+	// The ASLR hazard that a per-title audit would guard against is handled in
+	// the recompiler, not here: exactly ONE site bakes an absolute host address
+	// into emitted IR, `g_timebase_offs`, and it is already gated on this same
+	// flag and emitted as a named external instead. A baked host pointer is
+	// valid for the launch that wrote it and wild on the next one.
+	//
+	// The property still decides, and it is still DEFAULT OFF, so no title
+	// changes behaviour until somebody asks. What this removes is the reason a
+	// second title could not even be measured.
 
 	const char* value = nullptr;
 	usz length = 0;
