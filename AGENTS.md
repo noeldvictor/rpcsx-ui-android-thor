@@ -97,7 +97,8 @@ Obey these rules for it:
 - Active goal: make Eternal Sonata `BLUS30161` stable and faster on AYN Thor while preserving correct field, title Options/menu, first-battle visuals, and bounded thermals.
 - The clean-current-upstream Windows 200% gate is cleared. Thor work is permitted only as one short, temperature-guarded validation per cool round; do not heat-soak or immediately repeat a route.
 - Keep RPCS3 gameplay on screen 1 with `-WindowsGameScreen 1`.
-- Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, `ps3-continual-harness-refiner`, and `ps3-spu-contract-compiler`.
+- Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, `ps3-continual-harness-refiner`, `ps3-spu-contract-compiler`, and `thor-measurement-validity`.
+- `thor-measurement-validity` gates any number taken off the device. Read it before you quote cores, FPS, power, or a crash rate from Thor, and before you read a `simpleperf` capture.
 - Always start by checking for an active meaningful run/edit. Do not duplicate live work.
 - Newest failed visual/log/window/route evidence overrides older opportunities.
 
