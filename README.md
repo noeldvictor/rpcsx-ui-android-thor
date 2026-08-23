@@ -455,26 +455,46 @@ Output goes to the ignored `debug-captures/` folder.
 ### Controlling the emulator from a script or an agent
 
 Debug builds run a small control API inside the app, so a tool can read state
-and drive the emulator without touching the screen. It binds to **127.0.0.1
-only** and is absent from release builds, so nothing on your network can reach
-it. Use an adb forward:
+and **drive the game** without a person holding the device. It binds to
+**127.0.0.1 only** and is absent from release builds, so nothing on your network
+can reach it. Use an adb forward:
 
 ```sh
 adb forward tcp:8099 tcp:8099
-curl 127.0.0.1:8099/            # list the endpoints and the button names
-curl 127.0.0.1:8099/status      # {"state":3,"titleId":"BLUS30357",...}
-curl -X POST '127.0.0.1:8099/loadstate'
-curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
+curl 127.0.0.1:8099/                # list every endpoint and button name
 ```
 
-Why it exists: the emulated pad cannot be driven from outside the app, so
-automated testing could never get past a title screen, and every large
-performance lever in this emulator lives in actual gameplay. Reading state,
-settings and savestates works today.
+| call | what it does |
+| --- | --- |
+| `GET /status` | emulator state, title id, build version |
+| `POST /pad/press?buttons=CROSS,START&ms=120` | press buttons, hold, release |
+| `POST /pad?d1=&d2=&lx=&ly=&rx=&ry=` | set raw pad state, sticks 0..255, centre 128 |
+| `POST /pad/release` | clear every button and centre the sticks |
+| `POST /savestate` | capture (ONE slot, it overwrites) |
+| `POST /loadstate` | restore |
+| `POST /resume`, `POST /kill` | emulation control |
+| `GET /setting?path=`, `POST /setting?path=&value=` | read or write one config value |
 
-**Pad injection is not finished.** The call reaches the pad object and the guest
-still ignores it, so `"ok":true` means the button was written, not that the game
-saw it. `CLAUDE.md` records what is ruled out and the next diagnostic.
+Button names: `UP DOWN LEFT RIGHT CROSS CIRCLE SQUARE TRIANGLE L1 L2 L3 R1 R2
+R3 START SELECT PS`.
+
+Why it exists: the emulated pad cannot be driven from outside the app. Android
+key events do not reach the guest, and injecting on the real gamepad node
+arrives in the kernel while the guest sees nothing. So automated testing could
+never get past a title screen, and the largest performance costs in this
+emulator only appear during real gameplay.
+
+It works. Transformers advances from its title screen to the main menu on an
+injected `START`.
+
+**Press when the screen is ready, not on a timer.** Presses sent during an
+intro are correctly ignored by the game, which reads exactly like a broken API.
+Take a screenshot, decide what the screen is asking for, then press:
+
+```sh
+adb exec-out screencap -p > shot.png
+curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
+```
 
 ### Bringing up a new title
 
