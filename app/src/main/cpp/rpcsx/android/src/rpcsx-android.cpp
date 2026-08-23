@@ -6,6 +6,7 @@
 #include "Emu/Cell/PPUAnalyser.h"
 #include "Emu/Cell/SPURecompiler.h"
 #include "Emu/IdManager.h"
+#include "Emu/thor_playback_probe.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
 #include "Emu/Io/Null/NullMouseHandler.h"
@@ -2596,6 +2597,17 @@ extern "C" bool _rpcsx_loadState() {
 }
 
 extern "C" std::string _rpcsx_getTitleId() { return Emu.GetTitleID(); }
+
+// Tell a caller whether the guest is playing a movie. See
+// Emu/thor_playback_probe.h for what this does and does not detect.
+extern "C" std::string _rpcsx_sceneInfo() {
+  const u64 age = thor::vdec_age_us();
+  return fmt::format(
+      "{\"videoDecoding\":%s,\"vdecUnits\":%llu,\"vdecAgeMs\":%lld}",
+      thor::video_playing() ? "true" : "false",
+      thor::g_vdec_units.load(),
+      age == umax ? -1LL : static_cast<s64>(age / 1000));
+}
 
 extern "C" bool _rpcsx_surfaceEvent(JNIEnv *env, jobject surface, jint event) {
   rpcsx_android.warning("surface event %p, %d", surface, event);

@@ -136,8 +136,15 @@ object ThorControlServer {
                 val state = runCatching { rpcsx.getState() }.getOrDefault(-1)
                 val title = runCatching { rpcsx.getTitleId() }.getOrDefault("")
                 val version = runCatching { rpcsx.getVersion() }.getOrDefault("")
-                """{"state":$state,"titleId":"${esc(title)}","version":"${esc(version)}"}"""
+                """{"state":$state,"titleId":"${esc(title)}","version":"${esc(version)}","scene":${scene()}}"""
             }
+
+            // Is a MOVIE playing? Pair this with your screenshot: a picture does
+            // not say whether it is a cutscene or the game, and the frame rate
+            // says it even less. Transformers renders its cutscene at 120 to 133
+            // FPS and its title screen at 30, so a high number is a movie rather
+            // than speed.
+            "/scene" -> scene()
 
             "/pad" -> {
                 val d1 = q["d1"]?.toIntOrNull() ?: 0
@@ -204,8 +211,28 @@ object ThorControlServer {
         }
     }
 
+    /**
+     * What the emulator KNOWS about the current scene.
+     *
+     * `videoDecoding` is exact: the guest hands access units to `cellVdec`, so a
+     * recent decode IS pre-rendered video playing. There is no heuristic in it.
+     *
+     * A real-time engine cutscene is NOT covered, because the game renders it
+     * rather than decoding it, so `cellVdec` never fires. `advice` says which of
+     * the two cases you are in, and says `unknown` rather than guessing.
+     */
+    private fun scene(): String {
+        val raw = runCatching { RPCSX.instance.sceneInfo() }.getOrDefault("{}")
+        val playing = raw.contains("\"videoDecoding\":true")
+        val advice = if (playing) "movie" else "not-a-movie-or-engine-cutscene"
+        val inner = if (raw.length > 2) raw.trim().removePrefix("{").removeSuffix("}") else ""
+        val sep = if (inner.isEmpty()) "" else ","
+        return """{$inner$sep"advice":"$advice","note":"videoDecoding is exact for FMV; an engine cutscene is not detected here, judge it from the screenshot"}"""
+    }
+
     private fun help() = """{"endpoints":[
 "GET  /status",
+"GET  /scene    is a movie playing? pair with your screenshot",
 "POST /pad?d1=&d2=&lx=&ly=&rx=&ry=   sticks 0..255, centre 128",
 "POST /pad/press?buttons=CROSS,START&ms=120",
 "POST /pad/release",

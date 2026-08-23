@@ -50,6 +50,7 @@ struct RPCSXApi {
   bool (*setFastForwardEnabled)(bool enabled);
   bool (*toggleFastForward)();
   std::string (*getTitleId)();
+  std::string (*sceneInfo)();
   bool (*surfaceEvent)(JNIEnv *env, jobject surface, jint event);
   bool (*usbDeviceEvent)(int fd, int vendorId, int productId, int event);
   bool (*installFw)(JNIEnv *env, int fd, long progressId);
@@ -125,6 +126,7 @@ struct RPCSXLibrary : RPCSXApi {
     result.setFastForwardEnabled = reinterpret_cast<decltype(setFastForwardEnabled)>(dlsym(handle, "_rpcsx_setFastForwardEnabled"));
     result.toggleFastForward = reinterpret_cast<decltype(toggleFastForward)>(dlsym(handle, "_rpcsx_toggleFastForward"));
     result.getTitleId = reinterpret_cast<decltype(getTitleId)>(dlsym(handle, "_rpcsx_getTitleId"));
+    result.sceneInfo = reinterpret_cast<decltype(sceneInfo)>(dlsym(handle, "_rpcsx_sceneInfo"));
     result.surfaceEvent = reinterpret_cast<decltype(surfaceEvent)>(dlsym(handle, "_rpcsx_surfaceEvent"));
     result.usbDeviceEvent = reinterpret_cast<decltype(usbDeviceEvent)>(dlsym(handle, "_rpcsx_usbDeviceEvent"));
     result.installFw = reinterpret_cast<decltype(installFw)>(dlsym(handle, "_rpcsx_installFw"));
@@ -369,6 +371,14 @@ Java_net_rpcsx_RPCSX_toggleFastForward(JNIEnv *, jobject) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_net_rpcsx_RPCSX_getTitleId(JNIEnv *env, jobject) {
   return wrap(env, rpcsxLib.getTitleId());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_net_rpcsx_RPCSX_sceneInfo(JNIEnv *env, jobject) {
+  if (rpcsxLib.sceneInfo == nullptr) {
+    return wrap(env, std::string("{}"));
+  }
+  return wrap(env, rpcsxLib.sceneInfo());
 }
 
 extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcsx_RPCSX_surfaceEvent(

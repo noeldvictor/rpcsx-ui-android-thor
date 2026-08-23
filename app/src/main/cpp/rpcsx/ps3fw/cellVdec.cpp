@@ -43,6 +43,8 @@ extern "C"
 
 std::mutex g_mutex_avcodec_open2;
 
+#include "Emu/thor_playback_probe.h"
+
 LOG_CHANNEL(cellVdec);
 
 template <>
@@ -1244,6 +1246,12 @@ error_code cellVdecDecodeAu(ppu_thread& ppu, u32 handle,
 
 	cellVdec.trace("cellVdecDecodeAu(handle=0x%x, mode=%d, auInfo=*0x%x)", handle,
 		+mode, auInfo);
+
+	// The guest is decoding video, so a MOVIE is playing. This is the exact
+	// signal, not a guess from the frame rate: this title runs its cutscene at
+	// 120 to 133 FPS and its title screen at 30, so a high number is a movie
+	// rather than speed. A tool reads it to skip, and to refuse to measure.
+	thor::vdec_tick();
 
 	const auto vdec = idm::get_unlocked<vdec_context>(handle);
 

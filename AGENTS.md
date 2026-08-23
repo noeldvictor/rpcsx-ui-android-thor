@@ -8484,3 +8484,64 @@ Build the bytes, THEN open:
 It cost nothing because the file was committed one step earlier. **Commit before
 a large mechanical rewrite**, so the recovery is `git checkout --` and not a
 reconstruction.
+
+# Is it a movie or the game? Ask, do not guess from the frame rate
+
+**Built 2026-08-23.** `GET /scene` answers it, and `/status` carries the same
+field. Pair it with your screenshot: a picture does not say whether it is a
+cutscene or the game.
+
+    curl 127.0.0.1:8099/scene
+    {"videoDecoding":true,"vdecUnits":812,"vdecAgeMs":16,"advice":"movie", ...}
+
+## Why it exists
+
+**Two things go wrong without it.**
+
+A movie is skipped with START, and START during gameplay does something else.
+A tool that drives the emulator has to know which it is looking at.
+
+And **a cutscene cannot resolve a measurement**. This repo measured ONE
+configuration at 3.78 and 5.89 cores on consecutive rounds because each run
+landed in a different scene, and the complaint at the time was exactly "you keep
+testing movies". A workup must refuse to measure while a movie plays.
+
+**The frame rate is the worst possible signal.** Transformers renders its
+cutscene at 120 to 133 FPS uncapped and its title screen at 30, so a HIGH number
+means a movie and not speed. Reading the number harder does not fix that, which
+is why this is a separate probe and not an FPS threshold.
+
+## What it detects exactly, and what it does not
+
+**Pre-rendered video is exact.** The guest hands access units to `cellVdec`, so
+`thor::vdec_tick()` in `cellVdecDecodeAu` counts real decodes. There is no
+heuristic in `videoDecoding`.
+
+**A real-time engine cutscene is NOT detected.** Transformers' intro is rendered
+by the game rather than decoded, so `cellVdec` never fires and `videoDecoding`
+is false during it. The endpoint says `not-a-movie-or-engine-cutscene` rather
+than claiming the game is running. **Judge that case from the screenshot**, and
+do not dress the guess up as a detection.
+
+`vdecAgeMs` is -1 when nothing was ever decoded. The playing window is 500 ms,
+which is generous on purpose: a 30 fps stream is one unit every 33 ms, and a
+briefly starved decoder must not read as "the movie ended".
+
+# The SPU object cache is on external storage, and counting it wrong reads as zero
+
+**2026-08-23.** An A/B of the SPU native object cache reported `objects=0` in
+every arm, which reads exactly like a cache that does not work. It held **3149**
+objects.
+
+The count used `run-as <pkg> ls cache/cache/<title>/...`, a path relative to the
+app's PRIVATE directory. The cache is on EXTERNAL storage:
+
+    /storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/cache/<TITLE>/ppu-*/spu-native-v2/
+
+`run-as` still owns the clear, because the tree denies group write, but it needs
+the ABSOLUTE path for an external directory. **Confirm the postcondition**: the
+clear is trusted because a re-count read 3149 then 0, never because `rm`
+returned success.
+
+This is the fifth entry in this file for one class: a search that finds nothing
+and a search that searches nothing look identical.

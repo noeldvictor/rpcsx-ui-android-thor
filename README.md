@@ -470,6 +470,7 @@ curl 127.0.0.1:8099/                # list every endpoint and button name
 | `POST /pad/press?buttons=CROSS,START&ms=120` | press buttons, hold, release |
 | `POST /pad?d1=&d2=&lx=&ly=&rx=&ry=` | set raw pad state, sticks 0..255, centre 128 |
 | `POST /pad/release` | clear every button and centre the sticks |
+| `GET /scene` | is a movie playing? pair this with your screenshot |
 | `POST /savestate` | capture (ONE slot, it overwrites) |
 | `POST /loadstate` | restore |
 | `POST /resume`, `POST /kill` | emulation control |
@@ -486,6 +487,14 @@ emulator only appear during real gameplay.
 
 It works. Transformers advances from its title screen to the main menu on an
 injected `START`.
+
+**Ask whether it is a movie, do not read the frame rate.** `GET /scene`
+reports whether the guest is decoding video, which is exact for pre-rendered
+cutscenes. Frame rate is actively misleading here: Transformers renders its
+cutscene at 120-133 FPS and its title screen at 30, so the high number is a
+movie rather than speed. A real-time engine cutscene is not detected this way
+and has to be judged from the picture, which the endpoint says plainly rather
+than guessing.
 
 **Press when the screen is ready, not on a timer.** Presses sent during an
 intro are correctly ignored by the game, which reads exactly like a broken API.
