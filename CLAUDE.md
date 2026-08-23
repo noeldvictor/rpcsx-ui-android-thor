@@ -4679,3 +4679,34 @@ while the interpreter draws immediately and compiles behind it.
 rate and game speed are different things, and only frame rate was measured. Do
 not repeat the claim that this title "runs at 4.3x speed" uncapped; it was an
 inference, it was challenged, and it was never tested.
+
+## The thermal shape, measured properly
+
+The first thermal reading here took the max across every zone without naming it,
+which is not a measurement. Named, sampled every 12 s from a 45 C idle:
+
+| t | hottest zone |
+| --- | --- |
+| idle | 45 C |
+| +12 s | 77 C `cpu-1-9` |
+| **+24 s** | **94 C `cpu-1-5`** |
+| +36 s | 80 C `cpu-1-3` |
+| +48 s | 69 C `cpu-1-8` |
+
+**It peaks at 94 C and the SoC then throttles it back to 69-80 C on its own.** So
+the device is not being destroyed, and saying so would be alarmist. What it IS
+doing is spending gameplay in thermal throttling, which costs the frame rate the
+throttling was supposed to protect. Back to 47 C within 25 s of a force-stop.
+
+The source is not the compiler. That run logged zero `LLVM: Compiling module`
+lines. `top -H` at the peak shows **one SPU thread at 96.2%** with five more at
+15-33%, which is the same shape as the profile: 29.37% of all cycles in guest SPU
+code in a single thread. This is real emulation work, not spin and not overhead.
+
+### After a guest fault it keeps burning
+
+One run hit `VM: Access violation reading location 0xfff3...` in
+`SPU[0x0000100] CellSpursKernel0` at 0:00:34 and then sat at **87-88 C for four
+more minutes at 0.00 FPS**. The SPU threads keep spinning after a fatal guest
+error. Nothing renders, nothing progresses, and the device stays hot until the
+user notices. That is worth fixing on its own and it is not title-specific.
