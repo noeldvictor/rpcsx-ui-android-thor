@@ -9,6 +9,7 @@
 #include "cellos/sys_event.h"
 #include "cellos/sys_process.h"
 #include "cellos/sys_spu.h"
+#include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Thread.h"
 #include "util/JIT.h"
 #include <thread>
@@ -1310,6 +1311,12 @@ bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t
 		{
 			sys_log.fatal("SPU trap 0x%08x: %s (no SPU context)", addr, what);
 		}
+
+		// Ask the monitor thread to stop emulation. It is not done here because
+		// this runs in signal context and Emu.Pause() takes locks. Upstream
+		// pauses only the faulting thread, and the rest of the emulator then
+		// spins at about 90% CPU and 90 C behind a frozen picture.
+		thor::g_spu_trap_addr.store(addr, std::memory_order_relaxed);
 	}
 
 	struct spu_unsavable

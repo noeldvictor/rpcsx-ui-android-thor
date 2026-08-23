@@ -5346,3 +5346,96 @@ all, and they predict the precompile time and the Scudo risk.
 
 **A fingerprint says which failures are possible. It does not say which one
 happened.** The workup tool still decides that.
+
+# A cooldown gate that runs BEFORE the force-stop cooks the device
+
+**2026-08-23, and it is the worst harness defect written here.** A reproduction
+arm held the Thor at **94 to 95 C for many minutes** and could not escape.
+
+The loop looked correct:
+
+    for each boot:
+        while temp >= 70: sleep        # cool first
+        am force-stop ...              # then restart the title
+        am start ...
+
+**The emulator from the PREVIOUS boot is still running during that wait.** So
+the harness waited for a temperature that its own workload made impossible, and
+the wait never ended. The device does not cool while the thing heating it runs.
+
+**Force-stop first. Cool second.** The order is the whole bug:
+
+    am force-stop ...
+    while temp >= 70: sleep
+    am start ...
+
+## And TaskStop did not kill it
+
+Stopping the background task reported success, and the script kept running: the
+spinners came back and the emulator restarted. Only `ps` found it, a `bash` at
+PID 32031 with an `adb` child and a `sleep`.
+
+**Confirm the DEVICE is quiet, not that the task is stopped.** The three checks
+that told the truth were `pidof`, `pgrep -c yes`, and `top`, which read
+`800%cpu ... 757%idle` once the host process was really dead. A stop that is not
+confirmed on the device is not a stop, which is the same rule this file already
+gives for `rm` and for an empty `pidof`.
+
+**The battery never passed 25 C.** The SoC ran hot, the cell did not. Read both
+before deciding how alarmed to be.
+
+# The SPU object cache is hard-gated to one title
+
+`spu_native_object_cache_enabled()` at `SPUCommonRecompiler.cpp:349` opens with:
+
+    if (Emu.GetTitleID() != "BLUS30161") { return false; }
+
+So **every other title recompiles its SPU programs on every boot**, and Eternal
+Sonata does too unless `debug.rpcsx.thor.spu_native_object_cache` is set, which
+it is not by default. That is the `SPU Runtime: Built NNNN functions` line on
+each load.
+
+Even when it is on, the log says it covers startup objects only: runtime misses
+stay uncached.
+
+This looks like an experiment that nobody generalised. It is the clearest open
+lead on load time, and unlike the SPURS halt it is reproducible on every boot.
+**Do not just delete the title check.** The cache key hashes the optimised IR
+and the target identity, and the SPU block verification checksum changed on
+2026-08-22, so stale objects must be shown to invalidate before this ships.
+
+# The SPU trap now stops the emulator instead of cooking the device
+
+**The halt is still not fixed. This fixes what the halt COSTS.**
+
+When the guest halts its own SPU, `util/Thread.cpp` pauses only the faulting
+thread. Everything else keeps running, the RSX starves 1.3 s later, and the
+remaining SPU threads spin at about 90% of the process at 87 to 94 C with a
+frozen picture. One run stayed that way for four minutes.
+
+`Emu/Cell/thor_spu_trap_stop.h` stores the trap address, and `perf_monitor`
+pauses emulation on its next tick. **The handler must not pause the emulator
+itself**: it runs in signal context and `Emu.Pause()` takes locks, and this fork
+has already self-deadlocked once by running lock-taking work inline where
+upstream queued it.
+
+It acts ONLY on the `0xffdeadXX` range, where the guest asked to stop. An
+ordinary access violation keeps upstream behaviour.
+
+    debug.rpcsx.thor.spu_trap_stop = 0        keep the old behaviour
+    debug.rpcsx.thor.spu_trap_stop_test = 1   raise a fake trap, to test the stop
+
+**NOT YET VERIFIED ON THE DEVICE.** The test property exists because the real
+halt is rarer than 1 in 52 controlled boots, and an untested path in a fatal
+handler is worth nothing. The measurement that decides it is the CPU, not the
+log line: if `Emu.Pause()` does not reach an SPU thread spinning inside a JIT
+loop, the device keeps cooking and the change is useless.
+
+# The starvation arm did not run
+
+Two boots completed before the cooldown defect above stopped it, both clean.
+**Two boots is not a result.** The idea still stands and is untested: the SPURS
+limiter is timing-driven, it computes a wait from `spurs_average_task_duration`
+clamped to 10 to 100 ms, and every one of the 52 clean boots ran with the CPU
+free, so the timeout branch was rarely taken. Taking the cores away perturbs
+exactly that. Re-run it with the force-stop before the cooldown.

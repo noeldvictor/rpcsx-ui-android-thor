@@ -7,6 +7,7 @@
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "Emu/Cell/thor_spu_ls_dump.h"
+#include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
 #include "util/cpu_stats.hpp"
@@ -60,6 +61,9 @@ void perf_monitor::operator()()
 			// writes at most one file for each run. It lives here so that no SPU
 			// path pays for it.
 			thor::spu_ls_dump_tick();
+
+			// Stop the emulator if the guest halted its own SPU.
+			thor::spu_trap_stop_tick();
 
 			// Log the EDGES only. A line every 2 s would bury the log, and the
 			// interesting facts are when it engaged, how hot it was, and when it
