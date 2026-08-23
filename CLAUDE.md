@@ -4989,3 +4989,65 @@ code is generated. It does not survive contact: bigger blocks mean recompiling
 more at once, and this title falls off a cliff doing it. Two out of two.
 
 `Safe` stays.
+
+# What actually kills Transformers: the GAME halts its own SPU
+
+The Dead FIFO error is a symptom, not the cause. The full sequence:
+
+```
+0:00:37.42  {SPU[0x0000100] CellSpursKernel0}
+            VM: Access violation writing location 0xffdead00 (unmapped)
+0:00:38.77  {RSX} Dead FIFO commands queue state has been detected!
+```
+
+The SPU faults FIRST and the RSX dies 1.3 s later because nothing is feeding the
+ring any more. Raising `RSX FIFO Accuracy` to Atomic treats the symptom, which is
+why it survives much longer but still fails sometimes.
+
+**`0xffdead00` is an emulator trap, not a wild pointer.** SPULLVMRecompiler.cpp
+`make_halt()` deliberately access-violates at that address and stores a tag:
+
+```cpp
+const auto ptr = _ptr<u32>(m_memptr, 0xffdead00);
+m_ir->CreateStore(m_ir->getInt32("HALT"_u32), ptr);
+```
+
+`make_halt` is emitted for the SPU HALT family, `HGT`, `HLGT`, `HEQ` and friends.
+So the guest executed a conditional halt: **Transformers' own SPURS kernel checked
+something, did not like the answer, and halted itself.** It is a guest assertion
+firing, which means the emulator handed SPURS something it did not expect.
+
+The tag written says which trap fired, and they are all distinct:
+
+| address | tag | meaning |
+| --- | --- | --- |
+| `0xffdead00` | `HALT` | guest executed a halt instruction |
+| `0xffdead04` | `TAG` | illegal MFC tag update |
+| `0xffdead20` | `BIJT` | external tail call in a true function |
+| `0xffdeadf0` | - | invalid MFC slot |
+
+**When an SPU faults at 0xffdeadXX, read the tag before calling it a crash.** It
+is the emulator reporting a specific illegal condition, and each one points
+somewhere different.
+
+This is a SPURS emulation bug and it is NOT fixed. It is the thing standing
+between this title and being reliable, and it is a much deeper fix than any
+setting.
+
+# Transformers: the full lever sweep
+
+Everything tried against the gated title-screen workload, which repeats to
+about +/-0.2%:
+
+| lever | result |
+| --- | --- |
+| `Accurate SPU Reservations: false` | **-8.4% CPU**, shipped |
+| `RSX FIFO Accuracy: Atomic` | survives the FIFO symptom, shipped |
+| `Shader Mode: Async with Shader Interpreter` | removes the compile stall, shipped |
+| `Frame limit: 30` | -25% CPU against uncapped, shipped |
+| `SPU loop detection: true` | REJECTED, hotter, 2/2 arms pinned at the guard cap |
+| `SPU Block Size: Mega` | REJECTED, collapsed to 0.70 and 1.68 FPS |
+| `Preferred SPU Threads: 2` | null, 2.614 against 2.617 cores |
+
+Net measured effect on the title screen: **2.81 cores at 73 C down to about 2.6
+cores at 67-70 C**, at the same 30 FPS, plus a title that reaches its menus at all.
