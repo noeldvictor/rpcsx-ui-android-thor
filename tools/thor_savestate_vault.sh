@@ -111,12 +111,32 @@ push|restore)
 
     dst="$(dev_path "$title")"
     sh_ "mkdir -p $FILES/config/savestates/$title" >/dev/null
-    # adb push REPLACES the file. A device-side redirect cannot: the file is
-    # owned by the app and shell only has read access to its group.
-    MSYS_NO_PATHCONV=1 "$ADB" -s "$SERIAL" push "$file" "$dst" 2>&1 | tail -1
+
+    # TWO STEPS, because a direct push into the app's external directory is
+    # refused. Measured on this device:
+    #
+    #   adb push -> .../Android/data/<pkg>/files/...   Permission denied
+    #   adb push -> /data/local/tmp                    works
+    #   run-as <pkg> cp /data/local/tmp/... -> dest    works
+    #
+    # Scoped storage lets shell READ that directory and not create in it, so
+    # only the app's own uid can put the file there.
+    #
+    # MSYS_NO_PATHCONV protects the DEVICE path and BREAKS the local one in the
+    # same command, so the local side is converted explicitly. Without that the
+    # push failed with "cannot stat" while the byte-count check still reported
+    # MATCH, because the device already held a good copy from the capture. A
+    # postcondition that can pass for the wrong reason is not a postcondition.
+    winfile="$file"
+    command -v cygpath >/dev/null 2>&1 && winfile="$(cygpath -w "$file")"
+    stage="/data/local/tmp/thor_ss_$title.zst"
+    MSYS_NO_PATHCONV=1 "$ADB" -s "$SERIAL" push "$winfile" "$stage" 2>&1 | tail -1
+    sh_ "run-as $PKG cp $stage $dst"
+    sh_ "rm -f $stage" >/dev/null 2>&1
     # Confirm the POSTCONDITION: compare byte counts, never trust the exit code.
     localn=$(stat -c%s "$file" 2>/dev/null)
-    dev_n=$(sh_ "stat -c%s $dst 2>/dev/null")
+    # stat and wc both fail on this path for shell; ls -l field 5 works.
+    dev_n=$(sh_ "ls -l $dst 2>/dev/null" | awk '{print $5}')
     say "  local=$localn device=$dev_n $([ "$localn" = "$dev_n" ] && echo MATCH || echo MISMATCH)"
     [ "$localn" = "$dev_n" ] || { say "REFUSED: byte counts differ, not loading"; exit 1; }
 
