@@ -11,6 +11,8 @@
 #include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
+#include "Emu/system_progress.hpp"
+#include "cellos/sys_spu.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
 #include "Emu/Io/Null/NullMouseHandler.h"
@@ -2611,6 +2613,70 @@ extern "C" std::string _rpcsx_getTitleId() { return Emu.GetTitleID(); }
 // with no effect produce the same number, and this project wrote off the SPU
 // self-loop park twice on a scene where its counter reads entries=0. Reading
 // reach directly beats grepping a log for it.
+// Compile progress, the config ACTUALLY in effect, and live SPURS state.
+//
+// Each answers a question that has cost this project real time.
+//
+// PROGRESS ends fixed sleeps. "A fixed sleep is not a deterministic workload":
+// boot time varies by tens of seconds, a cold PPU precompile can take ten
+// minutes, and an arm that samples into a compile measures the compile.
+//
+// CONFIG ends an arm that never applied its lever. A harness here fed a spec
+// into `printf | while read`, which drops the only line, so EVERY arm ran unset
+// and the two arms agreed perfectly. Read the lever back before believing it.
+//
+// SPURS is the open bug. The limiter's state was only ever read after a fault.
+extern "C" std::string _rpcsx_diagInfo() {
+  std::string spurs = "[]";
+  {
+    std::string items;
+    idm::select<named_thread<spu_thread>>([&](u32, named_thread<spu_thread> &spu) {
+      const auto group = spu.group;
+      if (group == nullptr || spu.spurs_addr == 0) {
+        return;
+      }
+      if (!items.empty()) {
+        items += ",";
+      }
+      fmt::append(items,
+                  R"({"index":%u,"pc":"0x%05x","spursAddr":"0x%08x","group":"%s",)"
+                  R"("maxNum":%u,"maxRun":%u,"spursRunning":%u,"waited":%s,"enteredWait":%s})",
+                  spu.index, spu.pc, spu.spurs_addr, group->name, group->max_num,
+                  group->max_run, +group->spurs_running,
+                  spu.spurs_waited ? "true" : "false",
+                  spu.spurs_entered_wait ? "true" : "false");
+    });
+    if (!items.empty()) {
+      spurs = "[" + items + "]";
+    }
+  }
+
+  // progress_dialog_string_t converts to std::string; it has no load().
+  std::string text = static_cast<std::string>(g_progr_text);
+  // It goes into JSON, and it is emulator text rather than a literal.
+  for (char &c : text) {
+    if (c == '"' || c == 0x5c) { // 0x5c is a backslash
+      c = ' ';
+    }
+  }
+
+  return fmt::format(
+      R"({"progress":{"filesDone":%u,"filesTotal":%u,"modulesDone":%u,"modulesTotal":%u,"text":"%s"},)"
+      R"("config":{"rsxFifoAccuracy":"%s","accurateSpuReservations":"%s","spuBlockSize":"%s",)"
+      R"("spuDecoder":"%s","frameLimit":"%s","shaderMode":"%s","driverWakeUpDelay":"%s"},)"
+      R"("spurs":%s})",
+      +g_progr_fdone, +g_progr_ftotal, +g_progr_pdone, +g_progr_ptotal,
+      text,
+      g_cfg.core.rsx_fifo_accuracy.to_string(),
+      g_cfg.core.spu_accurate_reservations.to_string(),
+      g_cfg.core.spu_block_size.to_string(),
+      g_cfg.core.spu_decoder.to_string(),
+      g_cfg.video.frame_limit.to_string(),
+      g_cfg.video.shadermode.to_string(),
+      g_cfg.video.driver_wakeup_delay.to_string(),
+      spurs);
+}
+
 extern "C" std::string _rpcsx_deviceInfo() {
   const u64 park_in = thor::g_spu_selfloop_park.entries.load();
   const u64 park_out = thor::g_spu_selfloop_park.exits.load();

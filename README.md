@@ -472,6 +472,9 @@ curl 127.0.0.1:8099/                # list every endpoint and button name
 | `POST /pad/release` | clear every button and centre the sticks |
 | `GET /scene` | is a movie playing? pair this with your screenshot |
 | `GET /device` | CPU temperature, thermal-guard state, power, FPS, cores, RAM |
+| `GET /diag` | compile progress, the settings actually in effect, live SPURS state |
+| `GET /threads?match=SPU` | per-thread CPU (cumulative; sample twice and subtract) |
+| `GET /log?match=fatal&n=40` | tail of the emulator log, filtered |
 | `POST /savestate` | capture (ONE slot, it overwrites) |
 | `POST /loadstate` | restore |
 | `POST /resume`, `POST /kill` | emulation control |

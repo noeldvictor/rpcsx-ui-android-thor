@@ -156,6 +156,24 @@ object ThorControlServer {
             // number.
             "/device" -> runCatching { RPCSX.instance.deviceInfo() }.getOrDefault("{}")
 
+            // Compile progress, the config ACTUALLY in effect, and live SPURS
+            // state. Poll progress instead of sleeping a fixed time: boot varies
+            // by tens of seconds and a cold precompile can take ten minutes.
+            // Read the config back before believing an arm applied its lever.
+            "/diag" -> runCatching { RPCSX.instance.diagInfo() }.getOrDefault("{}")
+
+            // Per-thread CPU. Measure the THREAD a lever targets, not the
+            // process: rsx::thread is 0.51 of 2.90 cores, so a 30% saving there
+            // moves the process total by 5% and hides in the noise.
+            //
+            // The app reads its own /proc, so this needs no JNI and no root.
+            "/threads" -> threads(q["match"] ?: "")
+
+            // The tail of the emulator log, filtered. Ends grepping over adb for
+            // every check, and the level matters: a fatal error must be seen
+            // BEFORE any profile or number is believed.
+            "/log" -> logTail(q["match"] ?: "", (q["n"]?.toIntOrNull() ?: 40).coerceIn(1, 400))
+
             "/pad" -> {
                 val d1 = q["d1"]?.toIntOrNull() ?: 0
                 val d2 = q["d2"]?.toIntOrNull() ?: 0
@@ -240,7 +258,62 @@ object ThorControlServer {
         return """{$inner$sep"advice":"$advice","note":"videoDecoding is exact for FMV; an engine cutscene is not detected here, judge it from the screenshot"}"""
     }
 
+    /**
+     * Per-thread CPU, in jiffies of user+system time, from this process's own
+     * /proc. Optionally filtered to threads whose name contains [match].
+     *
+     * Jiffies are cumulative since the thread started, so a caller samples twice
+     * and takes the difference. That is deliberate: a rate computed here would
+     * pick its own window and hide the one the caller actually measured over.
+     */
+    private fun threads(match: String): String {
+        val dir = java.io.File("/proc/self/task")
+        val rows = mutableListOf<String>()
+
+        for (tid in dir.list().orEmpty()) {
+            val stat = runCatching { java.io.File("/proc/self/task/$tid/stat").readText() }.getOrNull() ?: continue
+            // The comm field is parenthesised and may itself contain spaces, so
+            // split on the LAST ')' rather than on whitespace.
+            val close = stat.lastIndexOf(')')
+            if (close < 0) continue
+            val name = stat.substringAfter('(').substring(0, close - stat.indexOf('(') - 1)
+            if (match.isNotEmpty() && !name.contains(match)) continue
+
+            val fields = stat.substring(close + 2).trim().split(' ')
+            // After comm and state, utime is field 14 and stime 15 overall.
+            val utime = fields.getOrNull(11)?.toLongOrNull() ?: continue
+            val stime = fields.getOrNull(12)?.toLongOrNull() ?: continue
+            rows += """{"tid":$tid,"name":"${esc(name)}","jiffies":${utime + stime}}"""
+        }
+
+        return """{"clockTicksPerSecond":100,"threads":[${rows.joinToString(",")}],""" +
+            """"note":"jiffies are cumulative; sample twice and difference them"}"""
+    }
+
+    /** The tail of RPCSX.log, optionally filtered to lines containing [match]. */
+    private fun logTail(match: String, n: Int): String {
+        val log = java.io.File(RPCSX.rootDirectory + "cache/RPCSX.log")
+        if (!log.isFile) return """{"error":"no log at ${esc(log.path)}"}"""
+
+        val kept = ArrayDeque<String>()
+        runCatching {
+            log.bufferedReader().useLines { seq ->
+                for (line in seq) {
+                    if (match.isNotEmpty() && !line.contains(match)) continue
+                    kept.addLast(line)
+                    if (kept.size > n) kept.removeFirst()
+                }
+            }
+        }.onFailure { return """{"error":"${esc(it.message ?: "read failed")}"}""" }
+
+        return """{"path":"${esc(log.path)}","match":"${esc(match)}","lines":[""" +
+            kept.joinToString(",") { "\"${esc(it)}\"" } + "]}"
+    }
+
     private fun help() = """{"endpoints":[
+"GET  /diag     compile progress, config in effect, live SPURS state",
+"GET  /threads?match=SPU   per-thread CPU jiffies (sample twice, difference)",
+"GET  /log?match=fatal&n=40  tail of RPCSX.log",
 "GET  /status",
 "GET  /scene    is a movie playing? pair with your screenshot",
 "GET  /device   heat, throttling, power, fps, cores, and lever reach counters",

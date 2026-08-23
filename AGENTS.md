@@ -8617,3 +8617,49 @@ In rough order of what would have saved the most time here:
 Each is a small read of state the emulator already holds. The pattern is fixed:
 a counter or accessor, a `_rpcsx_*` export, a `native-lib.cpp` binding, a Kotlin
 `external fun`, and one endpoint.
+
+# `/diag`, `/threads`, `/log`: the rest of the state a tool needs
+
+**Added 2026-08-23.** Each one ends a specific way this project wasted time.
+
+## `/diag` - compile progress, the config IN EFFECT, and live SPURS
+
+    curl 127.0.0.1:8099/diag
+
+**Progress ends fixed sleeps.** `filesDone/filesTotal`, `modulesDone/modulesTotal`
+and the dialog `text`. A fixed sleep is not a deterministic workload: boot time
+varies by tens of seconds, a cold PPU precompile can take ten minutes, and an
+arm that samples into a compile measures the compile. One arm reported 14.6
+CPU-seconds over 254 seconds and every other check looked clean, because the
+title was 27 minutes from starting.
+
+**Config ends an arm that never applied its lever.** It reports
+`rsxFifoAccuracy`, `accurateSpuReservations`, `spuBlockSize`, `spuDecoder`,
+`frameLimit`, `shaderMode` and `driverWakeUpDelay` as the emulator has them, not
+as a file says. A harness here fed its spec into `printf | while read`, which
+drops a line with no trailing newline, so EVERY arm ran unset and the two arms
+agreed perfectly.
+
+**SPURS is the open bug.** For each SPU thread in a SPURS group it gives
+`index`, `pc`, `spursAddr`, `group`, `maxNum`, `maxRun`, `spursRunning`,
+`waited` and `enteredWait`. The limiter's state used to be readable only after a
+fault, and only from a log line.
+
+## `/threads?match=SPU` - per-thread CPU
+
+Measure the THREAD a lever targets, not the process. `rsx::thread` is 0.51 of
+2.90 cores, so a lever saving 30% of that thread moves the process total by 5%
+and hides in the noise.
+
+Jiffies are cumulative, so **sample twice and difference them**. The endpoint
+does not compute a rate on purpose: a rate computed inside would pick its own
+window instead of the one the caller measured over.
+
+The app reads its own `/proc/self/task`, so this needs no JNI and no root.
+
+## `/log?match=fatal&n=40` - the tail of RPCSX.log
+
+**Read the log for a fatal error BEFORE believing any profile.** One capture
+here read 90.79% in a single SPU thread and was written up as a hot loop. The
+RSX had died 35 seconds earlier and `Frames: 0 in 10.00s` was in the log the
+whole time.
