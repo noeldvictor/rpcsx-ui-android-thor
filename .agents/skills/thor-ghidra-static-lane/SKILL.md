@@ -42,9 +42,33 @@ A trap then resolves in one lookup. Folklore stalls at SPU `pc=0x12b0` in
 `CellSpursKernel0`, and Transformers halts in the same module, so one map can
 serve more than one title.
 
-**Say which part is built.** The disassembler and the Ghidra SPU lane exist. A
-trigger that writes the local store to a file on demand does NOT exist yet.
-Build that trigger before you promise the map.
+**The trigger is built and verified on the device.**
+
+    adb shell setprop debug.rpcsx.thor.spu_ls_dump CellSpursKernel0
+    # boot the title, let it run, then:
+    adb exec-out shell cat \
+      /storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/spu_ls_CellSpursKernel0.bin \
+      > debug-captures/spu_ls_CellSpursKernel0.bin
+
+It writes 262144 bytes, which is the whole local store, and it reports the file
+and the program counter through `spu_log`. It runs from `perf_monitor`, so no
+SPU path pays for it. The default is off.
+
+**A flat scan cannot tell code from data.** A first scan of the Transformers
+image found 146 halt-shaped words. Four of them are constants: `0x7f454c46` is
+the `\\x7fELF` magic, `0x7fefffff` is the high word of a double, and
+`0x4fc903ca` is a float. A real guest assert compares against 0 or -1, so filter
+on the operand and mark the rest as suspect.
+
+The decoder index is `inst >> 21`, from `Emu/Cell/SPUOpcodes.h`:
+
+| kind | index | kind | `inst >> 24` |
+| --- | --- | --- | --- |
+| `HGT` | `0x258` | `HGTI` | `0x4f` |
+| `HLGT` | `0x2d8` | `HLGTI` | `0x5f` |
+| `HEQ` | `0x3d8` | `HEQI` | `0x7f` |
+
+Keep the image and the map in `debug-captures/`, which is not tracked.
 
 ### 2. The static title fingerprint
 

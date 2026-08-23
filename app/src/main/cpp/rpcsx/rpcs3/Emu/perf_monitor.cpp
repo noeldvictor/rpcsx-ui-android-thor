@@ -6,6 +6,7 @@
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
+#include "Emu/Cell/thor_spu_ls_dump.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
 #include "util/cpu_stats.hpp"
@@ -53,6 +54,12 @@ void perf_monitor::operator()()
 		if (++thermal_tick % 4 == 0)
 		{
 			thor::thermal_guard::sample();
+
+			// Write one SPU local store, if somebody asked for one. It returns
+			// at once when the property is unset, which is the default, and it
+			// writes at most one file for each run. It lives here so that no SPU
+			// path pays for it.
+			thor::spu_ls_dump_tick();
 
 			// Log the EDGES only. A line every 2 s would bury the log, and the
 			// interesting facts are when it engaged, how hot it was, and when it

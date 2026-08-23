@@ -5329,9 +5329,15 @@ automatically a correct default: `Accurate SPU Reservations: false` measured
 the same on every boot. Capture the local store of `CellSpursKernel0` once,
 disassemble it, and record every `HGT`, `HLGT` and `HEQ` with its condition. A
 future trap then resolves in one lookup instead of a session. The disassembler
-is already in this tree at `Emu/Cell/SPUDisAsm.cpp`. **The trigger that writes
-the local store to a file does not exist yet. Build it before you promise the
-map.**
+is already in this tree at `Emu/Cell/SPUDisAsm.cpp`. **The trigger is built and
+verified on the device**: `debug.rpcsx.thor.spu_ls_dump=<name substring>`
+writes 262144 bytes from `perf_monitor`, so no SPU path pays for it.
+
+A first scan of the Transformers image found **146 halt-shaped words, 142 of
+them real**. Almost all are `HEQI ra, -1` or `HEQI ra, 0`, which is a guest
+that asserts on an error return or a null handle. **A flat scan cannot tell
+code from data**: four hits are constants, and one of them is the `ELF`
+magic. Filter on the operand.
 
 **The static title fingerprint.** `PARAM.SFO`, the engine strings, the imported
 PRX list, the count of embedded SPU images, and the module size estimate all
