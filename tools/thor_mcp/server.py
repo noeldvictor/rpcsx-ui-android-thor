@@ -38,7 +38,38 @@ import time
 import urllib.error
 import urllib.request
 
-ADB = os.environ.get("ADB", r"/c/Users/leanerdesigner/AppData/Local/Android/Sdk/platform-tools/adb")
+def _resolve_adb():
+    """Find an adb THIS process can execute.
+
+    The repo's shell tools use an MSYS path like /c/Users/.../adb. Windows
+    Python cannot spawn that: it fails with WinError 2, "cannot find the
+    file specified", which reads like adb is missing when it is not. So the
+    MSYS shape is converted, the usual SDK location is tried, and PATH is the
+    fallback.
+    """
+    import shutil
+
+    candidates = []
+    env = os.environ.get("ADB")
+    if env:
+        candidates.append(env)
+        if len(env) > 3 and env[0] == "/" and env[2] == "/":
+            drive = env[1].upper() + ":"
+            candidates.append(drive + env[2:].replace("/", os.sep))
+
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates.append(os.path.join(local, "Android", "Sdk", "platform-tools", "adb.exe"))
+
+    for c in candidates:
+        for cand in (c, c + ".exe"):
+            if os.path.isfile(cand):
+                return cand
+
+    return shutil.which("adb") or "adb"
+
+
+ADB = _resolve_adb()
 SERIAL = os.environ.get("THOR_SERIAL", "192.168.1.3:5555")
 PORT = int(os.environ.get("THOR_CTRL_PORT", "8099"))
 PKG = "net.rpcsx.easy"
@@ -158,6 +189,14 @@ def t_cooldown(a):
 
 
 def t_boot(a):
+    t = temp_c()
+    ceiling = int(a.get("maxStartC", 70))
+    if t >= ceiling:
+        return {"refused": True, "cpuJunctionC": t,
+                "reason": f"device is {t} C, at or above the {ceiling} C start ceiling. "
+                          "Booting now measures the throttle and cooks the device. "
+                          "Call thor_cooldown first."}
+
     title, iso = a["titleId"], a["isoPath"]
     if a.get("freshCompile", True):
         # Diagnose against a fresh compile. A cached SPU object replaces a
@@ -335,10 +374,24 @@ def t_setprop(a):
 
 
 def t_stop(_):
-    sh(f"am force-stop {PKG}; killall yes; svc power stayon false")
-    time.sleep(3)
-    return {"pid": pid() or None, "cpuJunctionC": temp_c(),
-            "note": "confirm the DEVICE is quiet, not that a task was stopped"}
+    """Stop, and KEEP stopping. One force-stop loses to the app's respawn: the
+    device once climbed 56 -> 79 -> 95 C after a stop that reported success,
+    with the app back at 542% CPU while pidof had read empty."""
+    for _ in range(5):
+        sh(f"am force-stop {PKG}")
+        p = pid()
+        if p:
+            sh(f"kill -9 {p}")
+        time.sleep(2)
+    sh("killall yes; svc power stayon false")
+    time.sleep(2)
+
+    # Confirm with top, not pidof. An unreachable device and a dead process both
+    # answer empty, and a respawn refills the pid a second later.
+    busy = sh("top -b -n 2 -d 2 -o %CPU 2>/dev/null | grep -ci rpcsx").strip()
+    return {"pid": pid() or None, "rpcsxRowsInTop": busy,
+            "quiet": (not pid()) and busy in ("0", ""),
+            "note": "quiet means top agrees, not just pidof"}
 
 
 TOOLS = [
@@ -397,6 +450,27 @@ def main():
                 out = fn(params.get("arguments") or {})
             except Exception as e:  # a crash here must not kill the server
                 out = {"error": f"{type(e).__name__}: {e}"}
+
+            # TEMPERATURE ON EVERY RESPONSE, no exceptions.
+            #
+            # This device was roasted more than once because the temperature was
+            # something to remember to check. It reached 95 C while the caller
+            # believed nothing was running, because `am force-stop` loses to the
+            # app's respawn and `pidof` read empty a moment earlier by timing.
+            #
+            # So every tool answers with the temperature and, when it is high,
+            # says what to do about it. A number nobody asked for is the only
+            # kind that gets seen in time.
+            if isinstance(out, dict):
+                t = temp_c()
+                out["cpuJunctionC"] = t
+                if t >= 90:
+                    out["THERMAL"] = ("CRITICAL %d C. Stop the run. Call thor_stop, then VERIFY "
+                                      "with top, not pidof: force-stop loses to the respawn." % t)
+                elif t >= 80:
+                    out["THERMAL"] = "HOT %d C. Shorten the window and cool between runs." % t
+                elif t >= 70:
+                    out["THERMAL"] = "WARM %d C. Fine for a short window, not a long arm." % t
             send({"jsonrpc": "2.0", "id": rid, "result": {
                 "content": [{"type": "text", "text": json.dumps(out, indent=2)}]}})
         elif rid is not None:

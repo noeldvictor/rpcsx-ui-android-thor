@@ -8923,3 +8923,59 @@ lever that was unmeasurable on a title screen can now be measured on it.
 5. Wait about 90 s for the level to load.
 
 **Pause between steps.** The game does not wait while a screenshot is read.
+
+# `am force-stop` LOSES TO THE RESPAWN, and that is how the device gets roasted
+
+**2026-08-23. This is the most dangerous operational defect found here.**
+
+A run was stopped, `pidof` answered empty, `top` showed no rows for the package,
+and the temperature was reported as falling. Then it climbed: **56 C, 79 C,
+95 C**, with nothing believed to be running.
+
+The app was back at **542% CPU**. `am force-stop` had returned, the process had
+respawned, and `pidof` had read empty a moment earlier purely by timing. One
+force-stop and one `pidof` are not a stop.
+
+**What actually stops it:**
+
+    for i in 1..5: am force-stop <pkg>; kill -9 $(pidof <pkg>); sleep 2
+    top -b -n 2 -d 2 | grep -c <pkg>      # confirm with TOP, not pidof
+
+`thor_stop` does exactly that now and reports `quiet` only when `top` agrees.
+
+## Temperature rides on EVERY tool response
+
+The temperature used to be something to remember to check, and it was checked
+after the damage. Every MCP tool now returns `cpuJunctionC`, including tools
+that never touch the device, plus a `THERMAL` line at 70, 80 and 90 C saying
+what to do.
+
+`thor_boot` REFUSES above 70 C: booting a hot device measures the throttle and
+cooks the handheld.
+
+**A number nobody asked for is the only kind that gets seen in time.**
+
+## And adb must be resolvable by the process that calls it
+
+The MCP server defaulted to the repo's MSYS path, `/c/Users/.../adb`. Windows
+Python cannot spawn that shape: it fails with `WinError 2, cannot find the file
+specified`, which reads exactly like adb being absent. The server now converts
+the MSYS shape, tries the SDK location, and falls back to PATH.
+
+**A tool that cannot reach the device reports the same silence as a device that
+is idle.** That is the same class as an unreachable adb answering empty like a
+dead process.
+
+# Transformers gameplay is inherently about 94 C, and that bounds every arm
+
+Measured repeatedly: real gameplay in this title sits at **85 to 96 C** and
+**4.9 to 6.1 cores**, whatever the harness does. The thermal guard is engaged
+throughout and caps at 20 FPS, and the game still only reaches 17 to 18.
+
+So an arm that runs gameplay back to back WILL hold the device near its ceiling.
+Any SPURS hunt on this workload must either use short windows with real
+cooldowns, or lower `thermal_guard_c` so the guard caps earlier and the heat
+budget lasts longer.
+
+**Do not run long unattended gameplay arms on this title.** The device belongs
+to somebody.
