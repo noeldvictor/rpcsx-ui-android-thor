@@ -5201,3 +5201,41 @@ a title that already halts, and because the mechanism connecting the two is
 written in the emulator's own source.
 
 **A measured win is not automatically a correct default.**
+
+## The wake-up delay does nothing for the halt. Controlled, and finished.
+
+The delay-20 arm completed. Both arms differ only in the delay, both are passive
+boots to the title screen from under 62 C:
+
+| arm | boots | halts |
+| --- | --- | --- |
+| delay 20 us | 12 | **0** |
+| delay 50 us | 15 | **0** |
+
+**27 consecutive clean boots.** So:
+
+- The original "about 2 boots in 5 crashed at 20 us" was wrong by a wide margin,
+  and the correction already published understated how wrong. The fault is rarer
+  than 1 in 27 under these conditions.
+- `Driver Wake-Up Delay: 50` is kept ONLY because upstream recommends it for this
+  engine and it measured free (0.4%, overlapping ranges). It has no demonstrated
+  effect on the halt. Do not describe it as the crash fix.
+
+### What the four historical faults actually had in common
+
+They are not explained by the delay. Reviewing the conditions of each:
+
+- two ran with the stock `RSX FIFO Accuracy: Fast`;
+- one ran with the thermal guard disabled, on a hot device;
+- one ran during a managed-profile verification straight after an install.
+
+The 27 clean boots all ran with `Atomic`, the guard on, and a cooldown below
+62 C before each boot. **The candidate that survives is `RSX FIFO Accuracy`, not
+the delay**, and heat is a second candidate that has not been separated from it.
+
+### What would actually settle it
+
+A controlled `Fast` against `Atomic` arm, same everything else, about 25 boots
+each. That is roughly two hours of device time and it is the honest next
+experiment. Nothing shorter can separate a fault this rare, which is the same
+lesson as the pooled rate: **a rare event needs a denominator, not an anecdote.**

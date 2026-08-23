@@ -231,11 +231,11 @@ RPCS3 community recommends for this engine, and it measured free here (0.4% CPU,
 overlapping ranges, same frame rate) despite upstream warning that raising it can
 be costly.
 
-It still crashes occasionally. An earlier claim here that 50 us fixed the crash
-was withdrawn: the comparison it rested on pooled boots that differed in several
-settings, and a controlled retest at the lower delay did not crash either. The
-underlying fault is a rare SPU halt inside the game's own SPURS kernel and it is
-**not fixed**.
+It still crashes occasionally, and the delay is NOT the reason it crashes less.
+A controlled test finished at 0 faults in 12 boots at 20 us against 0 in 15 at
+50 us: 27 clean boots, no difference. The underlying fault is a rare SPU halt
+inside the game's own SPURS kernel, rarer than 1 in 27 under these conditions,
+and it is **not fixed**.
 
 ## A 10% CPU saving you can try, but it is off by default for a reason
 
