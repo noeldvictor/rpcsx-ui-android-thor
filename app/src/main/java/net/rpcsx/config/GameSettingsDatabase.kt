@@ -50,6 +50,28 @@ object GameSettingsDatabase {
               SPU Reservation Busy Waiting Percentage: 0
               SPU Reservation Busy Waiting Enabled: false
               Max SPURS Threads: 6
+              # Accurate SPU Reservations stays ON. See the reversal note below.
+              #
+              # REVERTED 2026-08-23. It was set to false for a measured -10.6% CPU,
+              # and the measurement stands, but the setting is not safe here:
+              #
+              #  - Upstream documents that disabling it "can break games like
+              #    InFamous, which freezes right after the intro". Transformers on
+              #    this device halts its SPU shortly after its intro.
+              #  - SPUThread.cpp has a path taken ONLY when this is false, for
+              #    reservations inside the SPURS block (raddr - spurs_addr <= 0x80).
+              #    Its own comment says it works because "we have notifications for
+              #    nearly all writes". Nearly all is not all, and a missed
+              #    notification leaves SPURS reading stale state, which is what its
+              #    kernel asserts on.
+              #  - This profile had it explicitly true before, which was a decision,
+              #    and flipping it was overriding that decision on a CPU number.
+              #
+              # The -10.6% is still available per-session and is recorded in
+              # CLAUDE.md and README.md:
+              #   adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0
+              #
+              # OLD COMMENT, kept because the measurement is still valid:
               # Accurate SPU Reservations OFF. -10.6% CPU at identical frames.
               #
               # g_use_rtm is false on ARM64, so with this ON every reservation store
@@ -65,7 +87,7 @@ object GameSettingsDatabase {
               # clean: both arms, plus about three minutes of restored gameplay with
               # no faults. That cannot rule out a problem an hour in. If this title
               # ever corrupts a save or hangs, set it back to true here first.
-              Accurate SPU Reservations: false
+              Accurate SPU Reservations: true
               SPU Verification: true
               Sleep Timers Accuracy: As Host
             Video:
@@ -140,6 +162,19 @@ object GameSettingsDatabase {
             # it had never got to before.
             Core:
               RSX FIFO Accuracy: Atomic
+              # Accurate SPU Reservations stays ON. Reverted 2026-08-23.
+              #
+              # This title HALTS ITS OWN SPU inside CellSpursKernel0, and disabling
+              # accurate reservations is documented upstream as causing exactly this
+              # class of failure, a freeze shortly after the intro, in other titles.
+              # SPUThread.cpp's SPURS path for !accurate_reservations relies on
+              # "notifications for nearly all writes"; a missed one leaves the SPURS
+              # kernel reading stale state, and stale state is what it asserts on.
+              #
+              # -8.4% CPU is not worth a freeze on a title that already halts. The
+              # measurement is kept below and the property is still available.
+              #
+              # OLD COMMENT, measurement still valid:
               # Accurate SPU Reservations OFF. -8.4% CPU at identical frames.
               #
               # This title is MORE reservation-bound than Eternal Sonata. A verified
@@ -156,7 +191,7 @@ object GameSettingsDatabase {
               # the same configuration gave 3.78 and 5.89 cores on consecutive rounds
               # because each run lands in a different scene. Use a state you can reach
               # identically every time.
-              Accurate SPU Reservations: false
+              Accurate SPU Reservations: true
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter

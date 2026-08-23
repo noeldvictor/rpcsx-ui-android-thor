@@ -237,7 +237,7 @@ settings, and a controlled retest at the lower delay did not crash either. The
 underlying fault is a rare SPU halt inside the game's own SPURS kernel and it is
 **not fixed**.
 
-## A 10% CPU saving you can try on Eternal Sonata
+## A 10% CPU saving you can try, but it is off by default for a reason
 
 ```
 adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0
@@ -249,10 +249,13 @@ arms' ranges not overlapping. It works by skipping a hard memory lock that every
 SPU reservation store otherwise takes on ARM64, which profiling showed to be
 about 12.7% of all cycles.
 
-It is **off by default on purpose**. This relaxes the atomicity SPU reservations
-rely on, and the evidence so far is two 50-second arms plus about three minutes of
-gameplay with no faults. That cannot rule out a problem that appears an hour in.
-Try it, and if a long session is clean it is worth making permanent for that game.
+It is **off by default on purpose, and it was briefly a default until that was
+reverted.** Upstream documents that disabling accurate SPU reservations can break
+games "right after the intro", and RPCS3's own SPU code takes a special path when
+it is off which relies on catching "nearly all" writes to the SPURS block. Nearly
+all is not all, and Transformers already halts its own SPU near its intro.
+
+The -10.6% is real and measured. It is your call per session, not a default.
 
 ## Where performance actually stands
 

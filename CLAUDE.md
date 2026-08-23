@@ -5138,3 +5138,66 @@ surrounding sequence decides.
 
 Note the bench pins its own affinity and always reports `cpu=7`; `taskset` does
 not override it, so these are prime-core numbers.
+
+# The SPURS halt, and why `Accurate SPU Reservations: false` was reverted
+
+## What the fault is
+
+The guest's own SPURS kernel executes a conditional HALT. `0xffdead00` with the
+tag `HALT` is `make_halt()` in SPULLVMRecompiler.cpp, emitted for `HGT`, `HLGT`
+and `HEQ`. So the game checked an invariant on the SPURS block, found it wrong,
+and stopped itself. The Dead FIFO error 1.3 s later is the RSX starving after it.
+
+## What was ruled out
+
+**Our SPURS HLE is not the bug.** `cellSpurs.cpp`, `cellSpursSpu.cpp` and
+`cellSpursJq.cpp` diff against upstream RPCS3 to include paths
+(`Emu/Cell/lv2/` -> `cellos/`, `util/asm.hpp` -> `rx/asm.hpp`), a
+`-Wunused-parameter` pragma, and clang-format churn. **Zero semantic difference.**
+
+**We do have upstream's SPURS limiter.** `spurs_addr`, `spurs_entered_wait`,
+`spurs_average_task_duration`, `spurs_wait_duration_last` and the
+`CellSpursKernelGroup` detection are all present. A first grep suggested they were
+missing; that grep was truncated by `head -12` and showed only Thor's own probe
+code sitting above them. **Check whether a grep was truncated before concluding
+something is absent.**
+
+**No upstream patch exists for it.** The only published patch for BLUS30357 is an
+FPS unlock.
+
+## Why the reservations setting went back to true
+
+Two independent pieces of evidence, neither of them a guess:
+
+1. Upstream documents that disabling accurate SPU reservations **"can break games
+   like InFamous, which freezes right after the intro"**. This title halts its SPU
+   shortly after its intro.
+
+2. `SPUThread.cpp` has a branch entered ONLY when the setting is false, and only
+   for reservations inside the SPURS block:
+
+   ```cpp
+   if (raddr - spurs_addr <= 0x80 && !accurate_reservations && mask1 == SPU_EVENT_LR)
+   ```
+
+   Its own comment says this works because "we have notifications for **nearly
+   all** writes". Nearly all is not all. A missed notification leaves the SPURS
+   kernel reading stale state, and stale state is precisely what it asserts on.
+
+Eternal Sonata's profile had `Accurate SPU Reservations: true` set **explicitly**
+before this session. That was a decision, and flipping it on the strength of a CPU
+number was overriding it.
+
+**The measurements stand and are not withdrawn**: -10.6% on Eternal Sonata and
+-8.4% on Transformers, both with non-overlapping ranges. The setting is still
+reachable per session:
+
+```
+adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0
+```
+
+It is no longer a default, because an 8 to 10% CPU saving is not worth a freeze on
+a title that already halts, and because the mechanism connecting the two is
+written in the emulator's own source.
+
+**A measured win is not automatically a correct default.**
