@@ -9019,3 +9019,57 @@ injection targets are the limiter's own accounting rather than visibility:
 
 Keep the injector. A negative that is reproducible is worth as much as a win,
 and this one is one property away from being re-run.
+
+# ALSO RULED OUT: the limiter sleeping too long
+
+**2026-08-23, second injection.** `debug.rpcsx.thor.spurs_wait_scale` scales the
+SPURS limiter's wait in percent; 100 is a no-op, 300 makes every SPURS thread
+sleep three times too long. Default 100.
+
+**Run at 300%, proven active in the log:**
+
+    wait now 30000 us, applied 7680 times   (CellSpursKernel2)
+    wait now 30000 us, applied 8192 times   (CellSpursKernel3)
+
+The title degraded badly, 7.5 FPS then 0.71, which is what a scheduler
+perturbation of that size should do. **No halt, no SPU trap, no dead FIFO.**
+
+At 1000% the title stopped rendering entirely and still did not halt.
+
+## Two mechanisms are now excluded by experiment
+
+| injected | dose | result |
+| --- | --- | --- |
+| missed SPURS reservation notification | 3840 of 30713 dropped | no halt |
+| limiter sleeps too long | 7680+ applications at 3x | no halt |
+
+So the guest is not refusing stale state, and it is not refusing a workload that
+merely ran late. **It refuses a VALUE.** The halt map says how: almost every site
+is `HEQI rX, -1` or `HEQI rX, 0`, which is a guest checking a return code or a
+handle and finding an error.
+
+## What that points at next
+
+A wrong VALUE reaching the guest has two plausible sources left:
+
+1. **The SPURS structure content** written by the PPU-side HLE. Diffed against
+   upstream with no semantic difference, so this needs a field-level check
+   rather than another diff.
+2. **Wrong code executing.** If the SPU block verifier accepts a block that is
+   not the one in local store, the guest runs the wrong function and computes a
+   wrong value, which is exactly the shape of these halts. The ARM64 checksum
+   folds 24 words into 16 lanes, so it is LOSSY where the generic path is not.
+
+The second is testable without reproducing the fault, because the generic
+512-bit checksum is strictly more discriminating than the ARM fold. Measure what
+it costs; if it is cheap, the safer verifier is the better default.
+
+## The harness lesson from these two arms
+
+**Boot spikes to 91 to 95 C during PPU compile and that is expected**, so a
+thermal ceiling must not apply until the title renders. An earlier arm aborted
+at 15 seconds and learned nothing because the injector had not run yet.
+
+And a grep with a variable containing spaces, quoted with nested double quotes,
+silently reported `inj=0` while the injection was firing thousands of times. The
+first arm's phase-2 counts were a harness bug, not evidence.

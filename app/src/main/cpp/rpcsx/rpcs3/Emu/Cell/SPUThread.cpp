@@ -177,6 +177,37 @@ static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexc
 // Fault injection for the SPURS halt hunt. 0 is off, N drops one SPURS-block
 // reservation notification in N. Read once and cached, like every other Thor
 // property here: they are read once into a static for the life of the process.
+// Second SPURS fault injector: scale the limiter WAIT, in percent.
+//
+// A missed reservation notification was ruled out by experiment, so the guest
+// refuses the CONTENT of SPURS state rather than its freshness. The limiter is
+// the emulator deciding how long an SPU thread SLEEPS, which the guest can
+// observe as a workload that did not progress.
+//
+//   100 is normal. 1000 sleeps ten times too long. 10 barely sleeps.
+static u32 get_thor_spurs_wait_scale() noexcept
+{
+	static const u32 s_value = []() -> u32
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_wait_scale", value) > 0)
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed > 0 && parsed <= 100000)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+#endif
+		return 100;
+	}();
+
+	return s_value;
+}
+
 static u32 get_thor_spurs_drop_notify() noexcept
 {
 	static const u32 s_value = []() -> u32
@@ -7109,7 +7140,26 @@ bool spu_thread::process_mfc_cmd()
 				spurs_entered_wait = true;
 
 				// Wait the duration of one and a half tasks
-				const u64 spurs_wait_time = std::clamp<u64>(spurs_average_task_duration / spurs_task_count_to_calculate * 3 / 2, 10'000, 100'000);
+				u64 spurs_wait_time = std::clamp<u64>(spurs_average_task_duration / spurs_task_count_to_calculate * 3 / 2, 10'000, 100'000);
+
+				// Fault injection, default 100 which is a no-op. This is how long the
+				// emulator makes a SPURS thread SLEEP, and the guest can observe a
+				// workload that did not progress. Scaling it is the timing window the
+				// halt hunt cannot otherwise reach: 64 controlled boots produced none.
+				if (const u32 scale = get_thor_spurs_wait_scale(); scale != 100)
+				{
+					static atomic_t<u64> s_scaled{0};
+
+					spurs_wait_time = spurs_wait_time / 100 * scale;
+
+					if (const u64 n = ++s_scaled; n == 1 || (n % 512) == 0)
+					{
+						spu_log.error("Thor SPURS wait scaling ACTIVE: %u%%, wait now %llu us, "
+							"applied %llu times. This perturbs scheduling ON PURPOSE. Clear "
+							"debug.rpcsx.thor.spurs_wait_scale before measuring anything.",
+							scale, spurs_wait_time, n);
+					}
+				}
 				spurs_wait_duration_last = spurs_wait_time;
 				thor_spurs_wait_probe_log(*this, thor_spurs_wait_event::putllc_wait,
 					SPU_EVENT_LR, raddr, rtime, 0xffffffffu, max_run,
