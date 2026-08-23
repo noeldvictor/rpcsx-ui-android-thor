@@ -4947,3 +4947,27 @@ would have invented a result.
 `tools/thor_title_ab.sh` now GATES: it waits for two consecutive frame reports at
 the title screen's rate, re-checks after sampling, and prints INVALID rather than
 contributing a number it cannot stand behind.
+
+## Rejected for Transformers: SPU loop detection
+
+`SPU loop detection: true` makes this title HOTTER, reproducibly.
+
+| arm | result |
+| --- | --- |
+| `false`, round 1 | 30.00 FPS at 70 C, 2.605 cores |
+| `true`, round 1 | never reached 30, pinned at 20.00 FPS |
+| `false`, round 2 | 29.94 FPS at 70 C, 2.778 cores |
+| `true`, round 2 | never reached 30, pinned at 20.00 FPS |
+
+20.00 is exactly the thermal guard's cap, so both `true` arms were at or above
+85 C while both `false` arms sat at 70 C. Two out of two each way.
+
+The setting only affects `SPU_RdDec`, where it adds `state += cpu_flag::wait` and
+a `std::this_thread::yield()` when the guest polls the decrementer. On a title
+that polls it often that is a syscall per poll, which is the same trade the RSX
+FIFO pause ladder lost on: moving work from userspace to the kernel does not make
+the CPU do less, and here it made it do more.
+
+**The gate is what made this readable.** Both `true` arms would otherwise have
+contributed a 20.00 FPS number to an average and shown up as "slower but similar",
+instead of "never got there at all".
