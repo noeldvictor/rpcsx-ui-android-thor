@@ -523,6 +523,24 @@ iso_dev::read_dir(const iso::Entry& entry)
 		return {};
 	}
 
+	// Serve from the cache when this directory has been read before.
+	//
+	// open_entry() calls this once per path component, so a six-deep path re-reads
+	// six directories off the disc image on every open. The image is read-only, so
+	// a listing cannot go stale. See the cache member in iso.hpp for the
+	// measurement that motivated it.
+	const u32 cache_key = entry.extents.empty() ? 0 : entry.extents.front().lba.value();
+
+	if (cache_key)
+	{
+		reader_lock lock(m_dir_cache->mutex);
+
+		if (const auto found = m_dir_cache->map.find(cache_key); found != m_dir_cache->map.end())
+		{
+			return found->second;
+		}
+	}
+
 	auto block_size = m_dev->block_size();
 	std::vector<iso::Entry> isoEntries;
 	std::vector<std::string> names;
@@ -630,6 +648,19 @@ iso_dev::read_dir(const iso::Entry& entry)
 					names.emplace_back(filename);
 				}
 			}
+		}
+	}
+
+	// Store before returning. Bounded, because a pathological image should not be
+	// able to grow this without limit; 512 directories is far more than any title
+	// walks and costs little.
+	if (cache_key)
+	{
+		std::lock_guard lock(m_dir_cache->mutex);
+
+		if (m_dir_cache->map.size() < 512 && !m_dir_cache->map.count(cache_key))
+		{
+			m_dir_cache->map.emplace(cache_key, std::make_pair(isoEntries, names));
 		}
 	}
 

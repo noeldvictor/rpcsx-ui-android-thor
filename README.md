@@ -214,6 +214,20 @@ runtime codes stay listed but greyed out until native validation exists.
 
 ---
 
+## Transformers: War for Cybertron
+
+It was not slow, it was hanging. With the default RSX FIFO setting the RSX thread
+died about 35 seconds in and the emulator kept burning ~90% CPU at 87-94 C with a
+frozen picture. Its profile now sets `RSX FIFO Accuracy: Atomic`, which runs past
+that point and reaches the menus, plus a 30 FPS cap and Async with Shader
+Interpreter for the compile stutter.
+
+Profiling then showed VM range locking at **29.1% of all cycles**, so its profile
+also sets `Accurate SPU Reservations: false`: **-8.4% CPU at identical frames**,
+measured on a state reachable identically every run.
+
+It is more stable than it was, not stable: it still crashed once in testing.
+
 ## A 10% CPU saving you can try on Eternal Sonata
 
 ```

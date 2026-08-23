@@ -1,6 +1,10 @@
 #pragma once
 
 #include "util/File.h"
+#include "util/mutex.h"
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 #include "block_dev.hpp"
 #include "util/endian.hpp"
 #include "util/types.hpp"
@@ -279,4 +283,39 @@ private:
 	std::optional<iso::Entry> open_entry(std::string_view path);
 	std::pair<std::vector<iso::Entry>, std::vector<std::string>> read_dir(const iso::Entry& entry);
 	fs::file read_file(const iso::Entry& entry);
+
+	// Cache of directory listings, keyed by the directory's first extent LBA.
+	//
+	// WHY. open_entry() resolves a path one component at a time and calls
+	// read_dir() for EVERY component, and read_dir() reads blocks off the disc
+	// image each time. Opening
+	// /dev_bdvd/PS3_GAME/USRDIR/UnrealEngine3/TransGame/CookedPS3/<file> therefore
+	// re-reads six directories from the ISO on every single open, and an Unreal
+	// Engine 3 title opens a great many files.
+	//
+	// MEASURED 2026-08-23, Transformers: War for Cybertron in slow gameplay,
+	// 243,663 samples: iso_dev::read_dir is 1.78% of ALL cycles, during play, long
+	// after loading. It is pure repeat work.
+	//
+	// The disc image is READ-ONLY, so a listing cannot go stale and the cache needs
+	// no invalidation. Keyed by LBA rather than by path because two paths can reach
+	// the same directory and the LBA is what read_dir actually reads.
+	//
+	// Held behind a shared_ptr, NOT inline.
+	//
+	// A shared_mutex member is neither copyable nor movable, and iso_dev is
+	// returned by value and stored in a std::optional, so putting the mutex
+	// directly in the class deleted those operations and broke every caller. The
+	// indirection keeps iso_dev's value semantics; the cache is shared between
+	// copies of the same device, which is correct because they describe one image.
+	//
+	// Guarded because lookups run on whatever guest thread opens a file, and
+	// several do.
+	struct dir_cache
+	{
+		::shared_mutex mutex;
+		std::unordered_map<u32, std::pair<std::vector<iso::Entry>, std::vector<std::string>>> map;
+	};
+
+	std::shared_ptr<dir_cache> m_dir_cache = std::make_shared<dir_cache>();
 };

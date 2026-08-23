@@ -50,7 +50,22 @@ object GameSettingsDatabase {
               SPU Reservation Busy Waiting Percentage: 0
               SPU Reservation Busy Waiting Enabled: false
               Max SPURS Threads: 6
-              Accurate SPU Reservations: true
+              # Accurate SPU Reservations OFF. -10.6% CPU at identical frames.
+              #
+              # g_use_rtm is false on ARM64, so with this ON every reservation store
+              # in do_putlluc takes the hard vm::writer_lock. A profile of restored
+              # gameplay puts VM range locking at 12.7% of ALL cycles.
+              #
+              # Two interleaved rounds on one restored savestate:
+              #   on    fps 27.41  cores 3.348 [3.345..3.351]  SPU threads 1.782
+              #   off   fps 27.30  cores 2.994 [2.951..3.037]  SPU threads 1.617
+              # Ranges do not overlap, which the +/-5% noise floor demands.
+              #
+              # THIS RELAXES RESERVATION ATOMICITY and upstream ships it on. Observed
+              # clean: both arms, plus about three minutes of restored gameplay with
+              # no faults. That cannot rule out a problem an hour in. If this title
+              # ever corrupts a save or hangs, set it back to true here first.
+              Accurate SPU Reservations: false
               SPU Verification: true
               Sleep Timers Accuracy: As Host
             Video:
@@ -125,6 +140,23 @@ object GameSettingsDatabase {
             # it had never got to before.
             Core:
               RSX FIFO Accuracy: Atomic
+              # Accurate SPU Reservations OFF. -8.4% CPU at identical frames.
+              #
+              # This title is MORE reservation-bound than Eternal Sonata. A verified
+              # gameplay profile, 243,663 samples with no fatal error in the window,
+              # reads vm::range_lock_internal 15.37%, vm::writer_lock 10.69% and
+              # vm::passive_lock 3.07%: 29.1% of ALL cycles in VM range locking.
+              #
+              # Two interleaved rounds, measured at the title screen because it is
+              # deterministic and already heavy at 70.7% CPU, reached with no input:
+              #   on    fps 29.99  cores 2.81  [2.81..2.81]
+              #   off   fps 30.00  cores 2.575 [2.57..2.58]
+              #
+              # Measuring by pressing through cutscenes was tried first and is WORTHLESS:
+              # the same configuration gave 3.78 and 5.89 cores on consecutive rounds
+              # because each run lands in a different scene. Use a state you can reach
+              # identically every time.
+              Accurate SPU Reservations: false
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter

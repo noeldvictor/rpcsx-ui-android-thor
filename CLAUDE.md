@@ -4838,3 +4838,71 @@ Reaching the title screen: 68.6% total CPU, SPU 50.5%, PPU 15.0%, RSX 3.1%, and
 5.11 cores measured from /proc. That is a genuinely heavy title, and the thermal
 guard engages on it at 86 C. The bottleneck there has NOT been characterised yet,
 because every profile taken so far was of a hang.
+
+# Transformers: the measured bottleneck, and the harness mistake that hid it
+
+## Pressing through cutscenes is not a workload
+
+The first Transformers A/B advanced by pressing A and START and measured whatever
+it landed in. The same configuration gave **3.78 cores in one round and 5.89 in
+the next**, because each run lands in a different scene. It measured scene
+variance and nothing else, and the user said so before the numbers did.
+
+**Use a state reachable identically every time.** For this title that is the
+TITLE SCREEN, which needs no input at all and is already heavy: 70.7% CPU with
+SPU at 56.1%, hot enough that the thermal guard caps it. Measured there, the
+spread of one configuration is +/-0.2%, against +/-5% on the savestate harness and
+something like +/-50% on the cutscene approach.
+
+## The bottleneck
+
+A verified gameplay profile, 243,663 samples at 18-20 FPS with `fatal=0` checked
+across the whole window:
+
+| symbol | share of all cycles |
+| --- | --- |
+| `vm::range_lock_internal` | **15.37%** |
+| `[kernel.kallsyms]` | 13.48% |
+| `vm::writer_lock::writer_lock` | **10.69%** |
+| `rsx::thread::on_notify_pre_memory_unmapped` | 4.29% |
+| `spu_thread::process_mfc_cmd` | 3.43% |
+| `vm::passive_lock` | **3.07%** |
+| `iso_dev::read_dir` | 1.78% |
+
+**VM range locking is 29.1% of everything**, more than double Eternal Sonata's
+12.7%. The earlier claim that this title is "not reservation-bound" came from a
+profile of a cutscene and was wrong.
+
+## What shipped
+
+`Accurate SPU Reservations: false` in both game profiles.
+
+| title | FPS | cores on | cores off | delta |
+| --- | --- | --- | --- | --- |
+| Eternal Sonata | 27.4 both | 3.348 [3.345..3.351] | 2.994 [2.951..3.037] | **-10.6%** |
+| Transformers | 30.0 both | 2.81 [2.81..2.81] | 2.575 [2.57..2.58] | **-8.4%** |
+
+Neither pair overlaps. End-to-end check of the shipped Transformers profile:
+2.59 cores at 71 C against 2.81 at 73 C.
+
+It relaxes reservation atomicity and upstream ships it on, so if either title
+corrupts a save or hangs, set it back to `true` in the profile first.
+
+## The ISO directory cache
+
+`open_entry` resolves a path one component at a time and calls `read_dir` for
+every component, and `read_dir` read blocks off the disc image each time. A UE3
+title opening `.../UnrealEngine3/TransGame/CookedPS3/<file>` therefore re-read six
+directories from the ISO on every open, which is the 1.78% above, during play,
+long after loading.
+
+Now cached by first-extent LBA. The image is read-only so a listing cannot go
+stale and no invalidation is needed. The cache lives behind a `shared_ptr`: a
+`shared_mutex` member is neither copyable nor movable, and `iso_dev` is returned
+by value and stored in a `std::optional`, so putting the mutex inline deleted
+those operations and broke every caller.
+
+## Still open
+
+Transformers crashed once more during these runs even with `RSX FIFO Accuracy:
+Atomic` (`fatal=1` on one arm). The FIFO fix made it far more stable, not stable.
