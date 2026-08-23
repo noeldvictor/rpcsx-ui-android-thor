@@ -10,6 +10,7 @@
 #include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
+#include "Emu/thor_device_stats.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -163,6 +164,14 @@ void perf_monitor::operator()()
 
 					fmt::append(msg, ", Frames: %llu in %.2fs (%.2f FPS)", frames,
 						window_us / 1000000.0, frames * 1000000.0 / window_us);
+
+					// Publish for the control API, so a tool can read speed, heat and
+					// power without grepping the log. Frames go with the CPU number on
+					// purpose: CPU alone cannot tell a thread that stopped spinning
+					// from an emulator that stopped working.
+					thor::device_stats::publish(frames * 1000000.0 / window_us,
+						total_usage / 100.0 * utils::get_thread_count(), flips,
+						current_mem_use / (1024 * 1024));
 				}
 
 				last_flip_index = flips;

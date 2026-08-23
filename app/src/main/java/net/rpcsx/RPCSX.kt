@@ -103,6 +103,7 @@ class RPCSX {
     external fun getUser(): String
     external fun getTitleId(): String
     external fun sceneInfo(): String
+    external fun deviceInfo(): String
     external fun supportsCustomDriverLoading() : Boolean
     external fun isInstallableFile(fd: Int) : Boolean
     external fun getDirInstallPath(sfoFd: Int) : String?

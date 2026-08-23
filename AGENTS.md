@@ -8545,3 +8545,75 @@ returned success.
 
 This is the fifth entry in this file for one class: a search that finds nothing
 and a search that searches nothing look identical.
+
+# `/device`: heat, throttling, power, speed, and lever REACH
+
+**Added 2026-08-23.** Poll one endpoint instead of grepping a log.
+
+    curl 127.0.0.1:8099/device
+
+It carries `cpuJunctionC`, `thermalGuardEngaged`, `thermalGuardCapFps`, `fps`,
+`coresBusy`, `frames`, `ramMb`, `inputPowerMw`, `batteryPercent`, `batteryC`,
+plus the reach counters: `spuSelfLoopPark` (entries, exits, parkedNow, lastPc),
+`rsxFifo` (idlePolls, parks) and `spuTrap`.
+
+**Read `thermalGuardEngaged` before believing a slow arm.** An arm pinned at
+exactly the guard's cap is a TRIPPED GUARD, not a slow configuration. Two `SPU
+loop detection` arms read 20.00 FPS for that reason.
+
+**Read the counters before believing a null.** A lever with no reach and a lever
+with no effect give the same number. The SPU self-loop park was written off
+twice on a scene where its counter reads `entries=0`.
+
+**Frames come with the CPU number on purpose.** A CPU number alone cannot tell a
+thread that stopped spinning from an emulator that stopped working.
+
+Two caveats are in the payload itself. `cpuJunctionC` is a `cpu-1-*` junction
+zone and is up to about 2 s old, because the guard samples every fourth
+`perf_monitor` tick and nothing on the render path can afford to read sysfs.
+`inputPowerMw` is CHARGER INPUT and is valid only while the battery is not
+charging: the fuel gauge on this device is frozen in all four nodes, so the
+charger is the only working instrument.
+
+# A savestate vault, so an experiment can restore the same scene
+
+`tools/thor_savestate_vault.sh` keeps savestates in `debug-captures/`, which is
+NOT tracked. A savestate holds game memory and does not belong in a public
+repository.
+
+    tools/thor_savestate_vault.sh list
+    tools/thor_savestate_vault.sh save    BLUS30161   # backup, capture, pull
+    tools/thor_savestate_vault.sh restore BLUS30161   # push, then load
+
+**The device keeps ONE slot per title and a capture OVERWRITES it.** A capture
+taken here to test the load path destroyed the only savestate for a title, and
+nothing kept a copy. `save` therefore pulls the existing slot into the vault
+FIRST, and the vault stamps every version and never overwrites.
+
+`push` uses `adb push`, because a device-side redirect cannot replace that file:
+it is owned by the app and shell has only group read. The tool compares byte
+counts afterwards and refuses to load on a mismatch, because this project has
+been fooled by a copy that reported success and changed nothing.
+
+## Why a savestate is the workload that matters
+
+A title screen is 0.35 cores behind a frame cap and can show nothing. A restored
+savestate runs real gameplay BELOW the cap, at 25.7 to 25.9 FPS and 3.1 cores,
+so a lever that costs frames can no longer hide behind the cap.
+
+# What else is worth pushing through the API
+
+In rough order of what would have saved the most time here:
+
+| candidate | what it would end |
+| --- | --- |
+| **compile progress** (PPU modules done/total, SPU functions built) | fixed sleeps. "A fixed sleep is not a deterministic workload", and a cold boot can take ten minutes |
+| **applied config readback** | an arm that never applied its lever. A harness once ran EVERY arm unset and the two arms agreed perfectly |
+| **per-thread CPU** (`rsx::thread` against the SPU threads) | measuring the process when the lever touches one thread. `rsx::thread` is 0.51 of 2.90 cores, so a 30% saving there hides in process noise |
+| **SPURS state** (`spurs_running`, `max_run`, idle mask) | reading the SPURS limiter only after a fault. It is the open bug |
+| **error and fatal log tail** | grepping the log over adb for every check |
+| **RSX counters** (draws, texture uploads, flips) | guessing whether a GPU change had reach |
+
+Each is a small read of state the emulator already holds. The pattern is fixed:
+a counter or accessor, a `_rpcsx_*` export, a `native-lib.cpp` binding, a Kotlin
+`external fun`, and one endpoint.

@@ -146,6 +146,16 @@ object ThorControlServer {
             // than speed.
             "/scene" -> scene()
 
+            // Heat, throttling, power, speed, and the REACH counters for the
+            // levers this fork ships. Poll this instead of grepping the log.
+            //
+            // Read `thermalGuardEngaged` before believing a slow arm: an arm
+            // pinned at exactly the guard's cap is a tripped guard, not a slow
+            // configuration. And read the counters before believing a null: a
+            // lever with no reach and a lever with no effect give the same
+            // number.
+            "/device" -> runCatching { RPCSX.instance.deviceInfo() }.getOrDefault("{}")
+
             "/pad" -> {
                 val d1 = q["d1"]?.toIntOrNull() ?: 0
                 val d2 = q["d2"]?.toIntOrNull() ?: 0
@@ -233,6 +243,7 @@ object ThorControlServer {
     private fun help() = """{"endpoints":[
 "GET  /status",
 "GET  /scene    is a movie playing? pair with your screenshot",
+"GET  /device   heat, throttling, power, fps, cores, and lever reach counters",
 "POST /pad?d1=&d2=&lx=&ly=&rx=&ry=   sticks 0..255, centre 128",
 "POST /pad/press?buttons=CROSS,START&ms=120",
 "POST /pad/release",

@@ -7,6 +7,10 @@
 #include "Emu/Cell/SPURecompiler.h"
 #include "Emu/IdManager.h"
 #include "Emu/thor_playback_probe.h"
+#include "Emu/thor_device_stats.h"
+#include "Emu/Cell/thor_spu_selfloop_park.h"
+#include "Emu/Cell/thor_spu_trap_stop.h"
+#include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
 #include "Emu/Io/Null/NullMouseHandler.h"
@@ -2600,6 +2604,29 @@ extern "C" std::string _rpcsx_getTitleId() { return Emu.GetTitleID(); }
 
 // Tell a caller whether the guest is playing a movie. See
 // Emu/thor_playback_probe.h for what this does and does not detect.
+// Everything a tool needs to run an experiment here: heat, throttling,
+// power, speed, and the REACH counters for the levers this fork ships.
+//
+// The counters matter as much as the speed. A lever with no reach and a lever
+// with no effect produce the same number, and this project wrote off the SPU
+// self-loop park twice on a scene where its counter reads entries=0. Reading
+// reach directly beats grepping a log for it.
+extern "C" std::string _rpcsx_deviceInfo() {
+  const u64 park_in = thor::g_spu_selfloop_park.entries.load();
+  const u64 park_out = thor::g_spu_selfloop_park.exits.load();
+
+  return fmt::format(
+      "{\"device\":%s,"
+      "\"spuSelfLoopPark\":{\"entries\":%llu,\"exits\":%llu,\"parkedNow\":%llu,\"lastPc\":\"0x%05x\"},"
+      "\"rsxFifo\":{\"idlePolls\":%llu,\"parks\":%llu},"
+      "\"spuTrap\":{\"lastAddr\":\"0x%08x\",\"tripped\":%s}}",
+      thor::device_stats::to_json(), park_in, park_out, park_in - park_out,
+      thor::g_spu_selfloop_park.last_pc.load(),
+      thor::rsx_fifo::g_idle_polls.load(), thor::rsx_fifo::g_parks.load(),
+      thor::g_spu_trap_addr.load(),
+      thor::g_spu_trap_addr.load() ? "true" : "false");
+}
+
 extern "C" std::string _rpcsx_sceneInfo() {
   const u64 age = thor::vdec_age_us();
   return fmt::format(

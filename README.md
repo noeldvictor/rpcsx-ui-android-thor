@@ -471,6 +471,7 @@ curl 127.0.0.1:8099/                # list every endpoint and button name
 | `POST /pad?d1=&d2=&lx=&ly=&rx=&ry=` | set raw pad state, sticks 0..255, centre 128 |
 | `POST /pad/release` | clear every button and centre the sticks |
 | `GET /scene` | is a movie playing? pair this with your screenshot |
+| `GET /device` | CPU temperature, thermal-guard state, power, FPS, cores, RAM |
 | `POST /savestate` | capture (ONE slot, it overwrites) |
 | `POST /loadstate` | restore |
 | `POST /resume`, `POST /kill` | emulation control |
@@ -504,6 +505,22 @@ Take a screenshot, decide what the screen is asking for, then press:
 adb exec-out screencap -p > shot.png
 curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
 ```
+
+### Keeping savestates for experiments
+
+A savestate is the only repeatable gameplay workload on this device, so the
+tooling keeps them in `debug-captures/`, which is not tracked. Savestates hold
+game memory and stay on your machine.
+
+```sh
+tools/thor_savestate_vault.sh list
+tools/thor_savestate_vault.sh save    BLUS30161   # backs up, captures, pulls
+tools/thor_savestate_vault.sh restore BLUS30161   # pushes, then loads
+```
+
+**The device keeps one slot per game and a capture overwrites it**, so `save`
+copies the existing slot into the vault before capturing. The vault stamps every
+version and never overwrites one.
 
 ### Bringing up a new title
 
