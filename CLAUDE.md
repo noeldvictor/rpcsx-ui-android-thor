@@ -4787,3 +4787,54 @@ minutes, which is exactly the failure mode a short soak cannot see.
 then play normally. If a long session is clean it belongs in the BLUS30161
 profile as `Accurate SPU Reservations: false`, which is the same -10.6% without a
 property.
+
+# Transformers was not slow. It was hanging, and then cooking the device.
+
+The whole "why is Transformers so slow" investigation had the wrong subject.
+
+`RSX FIFO Accuracy` defaults to `Fast`. With it, the RSX thread dies about 35 s
+into this title:
+
+```
+SIG: Thread terminated due to fatal error:
+     Dead FIFO commands queue state has been detected!
+```
+
+**And the emulator does not stop.** After the RSX thread is gone, one SPU thread
+keeps spinning at ~90% of the whole process, 0.00 FPS, 87-94 C, indefinitely.
+That is the "it gets super hot" report: not a heavy game, a hung one.
+
+Setting `RSX FIFO Accuracy: Atomic` with `Driver Wake-Up Delay: 20`, which is
+exactly what the exception text tells you to do, gives 280 s with zero fatal
+errors, 30.00 FPS held, and the title screen reached for the first time.
+
+## The trap this laid, and it nearly worked
+
+A 20 s profile taken during the hung state reads:
+
+```
+SPU[0x0000100]   90.79%   of all cycles
+unknown[+...]    90.28%   "one address"
+```
+
+That looks exactly like a single hot loop worth attacking, and it was written up
+here as one. **Both halves were wrong.** `unknown[+base]` is the JIT arena, which
+simpleperf cannot symbolize, so ALL recompiled SPU code collapses onto one
+"symbol" and one `vaddr_in_file` - it is not one address and it never was. And
+the thread was not busy, it was spinning after the RSX had already died.
+
+Two rules from it:
+
+1. **Check for a fatal error in the log before believing any profile.** The FPS
+   line read `Frames: 0 in 10.00s` for the entire recording and that was visible
+   the whole time.
+2. **`unknown[+X]` in a JIT process is a region, not a symbol.** Neither
+   `--sort symbol` nor `--sort vaddr_in_file` nor `report-sample` can see inside
+   it. Do not quote a percentage against it as if it were a function.
+
+## What the profile is worth once the title actually runs
+
+Reaching the title screen: 68.6% total CPU, SPU 50.5%, PPU 15.0%, RSX 3.1%, and
+5.11 cores measured from /proc. That is a genuinely heavy title, and the thermal
+guard engages on it at 86 C. The bottleneck there has NOT been characterised yet,
+because every profile taken so far was of a hang.

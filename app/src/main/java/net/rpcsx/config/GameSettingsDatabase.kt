@@ -105,9 +105,30 @@ object GameSettingsDatabase {
             # The first boot costs about ten minutes of PPU LLVM compilation across six
             # workers. That is the size of this EBOOT, not a setting. The cache is
             # reused: the second boot reached a frame in about 30 s.
+            # RSX FIFO Accuracy: Atomic, and this is the important line in this file.
+            #
+            # WITH THE DEFAULT "Fast" THIS TITLE HANGS. Measured twice: the RSX thread
+            # dies about 35 s in with
+            #
+            #   SIG: Thread terminated due to fatal error:
+            #        Dead FIFO commands queue state has been detected!
+            #
+            # and after that the emulator does NOT stop. One SPU thread keeps spinning
+            # at ~90% of the whole process, 0.00 FPS, 87-94 C, until the user notices.
+            # A profile taken in that state reads 90.79% in a single SPU thread and
+            # describes nothing except a hung emulator; it was very nearly mistaken for
+            # a bottleneck here.
+            #
+            # The exception text says what to do, and it is right: with Atomic and a
+            # 20 us wake-up delay the same boot ran 280 s with zero fatal errors,
+            # held 30.00 FPS, and reached the "Press START button" title screen, which
+            # it had never got to before.
+            Core:
+              RSX FIFO Accuracy: Atomic
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter
+              Driver Wake-Up Delay: 20
               Performance Overlay:
                 Enabled: true
         """.trimIndent()
