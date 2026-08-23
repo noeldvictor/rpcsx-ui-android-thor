@@ -226,11 +226,16 @@ Profiling then showed VM range locking at **29.1% of all cycles**, so its profil
 also sets `Accurate SPU Reservations: false`: **-8.4% CPU at identical frames**,
 measured on a state reachable identically every run.
 
-Stability came from the RPCS3 community: the driver wake-up delay wanted **50 us**
-alongside Atomic FIFO, not the 20 us shipped first. At 20 us this title crashed
-about two boots in five; at 50 us, **0 of 7**. Upstream warns that raising this
-delay can cost a lot of performance, so it was measured here: 0.4% with
-overlapping ranges, at the same frame rate.
+The driver wake-up delay is **50 us** alongside Atomic FIFO, which is what the
+RPCS3 community recommends for this engine, and it measured free here (0.4% CPU,
+overlapping ranges, same frame rate) despite upstream warning that raising it can
+be costly.
+
+It still crashes occasionally. An earlier claim here that 50 us fixed the crash
+was withdrawn: the comparison it rested on pooled boots that differed in several
+settings, and a controlled retest at the lower delay did not crash either. The
+underlying fault is a rare SPU halt inside the game's own SPURS kernel and it is
+**not fixed**.
 
 ## A 10% CPU saving you can try on Eternal Sonata
 

@@ -5065,12 +5065,33 @@ sibling title, Fall of Cybertron, same studio and same engine, says: set the
 **driver wake-up delay to 50 us and enable atomic FIFO**, and if it still crashes
 try 150 to 200.
 
-We shipped Atomic FIFO but only 20 us. At 50 us:
+We shipped Atomic FIFO but only 20 us. At 50 us: **0 of 7 boots crashed**.
 
-| delay | boots crashed |
-| --- | --- |
-| 20 us | roughly 2 in 5 |
-| 50 us | **0 of 7** |
+### CORRECTION: the "2 in 5 at 20 us" figure was not a measurement
+
+It pooled boots across DIFFERENT configurations. The four crashes actually seen
+were: two with the stock `RSX FIFO Accuracy: Fast`, one with
+`Accurate SPU Reservations: true`, and one with it false, spread over roughly ten
+boots that differed in more than the delay.
+
+A controlled retest, five boots at Atomic + delay 20 + accurate=false, the only
+difference from the shipped profile being the delay, produced **0 halts in 4
+completed boots**.
+
+So the honest position is:
+
+| | boots | halts |
+| --- | --- | --- |
+| delay 20, controlled | 4 | 0 |
+| delay 50, controlled | 7 | 0 |
+
+**Delay 50 has not been shown to fix anything**, because the delay-20 arm did not
+fail either. The fault is rarer than the pooled number implied, and separating a
+roughly 1-in-10 event needs tens of boots per arm, not a handful. 50 us is kept
+because it is what upstream recommends for this engine and it measured free
+(0.4%, overlapping ranges), NOT because it is proven to fix the halt.
+
+A rate quoted from boots that differed in several settings at once is not a rate.
 
 ## And the cost was measured, not assumed
 
