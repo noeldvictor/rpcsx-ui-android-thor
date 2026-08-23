@@ -8849,3 +8849,77 @@ and about 1.5 W off.
 boots above came from `--ez thorReplaceCustomProfile false`, a debug-boot flag
 and not what a user gets. The config readback is what exposed it: `frameLimit:
 Off` and `rsxFifoAccuracy: Fast` where the profile says 30 and Atomic.
+
+# FIRST MEASUREMENT OF TRANSFORMERS GAMEPLAY, and it is not the title screen
+
+**2026-08-23.** Every earlier number for this title came from a title screen or
+an intro, because the guest pad could not be driven. It can be now, so the game
+was driven into a real level: intro skipped with START, then Solo Campaign,
+then into the Decepticon Campaign.
+
+| | title screen | REAL GAMEPLAY |
+| --- | --- | --- |
+| frame rate | 30.0 | **17 to 18** |
+| CPU junction | 67 C | **85 to 96 C** |
+| charger input | 7408 mW | **8300 to 13800 mW** |
+| cores busy | 3.04 | **4.9 to 6.1** |
+| SPURS threads | - | 6, running 2 to 6 |
+
+**It cannot reach its own 30 FPS cap.** The thermal guard is engaged the whole
+time and caps at 20, and the game sits at 17 to 18, so it is under BOTH caps.
+This is CPU bound, not cap bound, and the title screen showed none of it.
+
+## The gameplay hot path, named for the first time
+
+A build-matched profile of that state, **147,559 samples, 0 lost, and a fatal
+check run first**:
+
+| offset | resolves to | share |
+| --- | --- | --- |
+| `+3773dc0`, `+dc4`, `+dc8`, `+dcc` | `vm::writer_lock::writer_lock` (`vm.cpp:712`) | **~13% combined** |
+| `+37737dc` | `vm::range_lock_internal` (`vm.cpp:416`) | 2.85% |
+| `+3861800` | `rsx::FIFO::FIFO_control::fetch_u32` | 1.60% |
+| `+36df360` | `spu_thread::process_mfc_cmd` | 1.39% |
+| - | `memcpy_opt` | 1.97% |
+
+**VM range locking dominates gameplay**, which is the same signature this file
+records for Transformers before `Accurate SPU Reservations: false` was measured
+at -8.4% and then REVERTED on correctness grounds. The config readback confirms
+`accurateSpuReservations: true` is what ran.
+
+## A free win that was NOT free, checked before shipping
+
+The second chain resolved to `perf_stat::push` inside `~perf_meter` inside
+`range_lock_internal`, which reads as emulator instrumentation costing 2.85% in
+the hottest function of the game.
+
+**It is not.** `vm.cpp:312` constructs `perf_meter<"RHW_LOCK">` with the `(int)`
+overload, which ZEROES the timestamps, so the destructor returns at its first
+check long before the `perf_report` gate. The attribution is the DWARF line
+table mapping a function epilogue to the last inlined thing.
+
+That is this file's own "nearest-symbol attribution is not heat" trap, in an
+inline-chain costume. The cost is `range_lock_internal` itself. **Nothing was
+shipped for it.**
+
+# A Transformers GAMEPLAY savestate exists now
+
+`debug-captures/savestates/BLUS30357/`, 126.7 MB, captured in the Decepticon
+Campaign level. Not tracked, because a savestate holds game memory.
+
+    tools/thor_savestate_vault.sh restore BLUS30357
+
+**This replaces six minutes of menu navigation with one command**, and it is the
+first reproducible GAMEPLAY workload this project has had for this title. Every
+lever that was unmeasurable on a title screen can now be measured on it.
+
+## The route, recorded so it can be repeated
+
+1. Boot with `thorRequireManagedProfile true` and `thorReplaceCustomProfile
+   true`, or the profile does NOT apply and the intro renders at 126 FPS.
+2. Poll `/scene`. While `advice` is `movie`, press `START` to skip.
+3. `START` to leave the title screen.
+4. `CROSS` on Solo Campaign, `CROSS`, `CROSS`.
+5. Wait about 90 s for the level to load.
+
+**Pause between steps.** The game does not wait while a screenshot is read.
