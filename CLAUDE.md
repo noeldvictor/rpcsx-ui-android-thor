@@ -4433,3 +4433,92 @@ exactly like a real measurement.
 For the whole process, `/proc/<pid>/stat` delta over a fixed window gives cores
 directly: 3119 jiffies over 10 s is 3.1 cores. That is the discriminator this
 file has been asking for, and it does not care whether the picture changed.
+
+## The A/B that measured nothing, twice, and what caught it
+
+Two separate ways to measure nothing showed up in one session on the new
+savestate harness. Both produced clean, plausible, self-consistent numbers.
+
+**1. The lever was never applied.** `apply_arm` fed the spec into a loop like:
+
+```sh
+printf '%s' "$1" | tr ';' '
+' | while read -r kv; do ...; done   # WRONG
+```
+
+`printf '%s'` writes no trailing newline, so `read` hits EOF on the only line and
+**the loop body never runs**. Every arm ran with the property unset. The two arms
+then agreed beautifully, because they were the same configuration:
+
+```
+default          cores 3.097, 3.215, 3.259     fps 27.62 - 27.78
+ladder=64        (identical, because it was never set)
+```
+
+What caught it was the RSX FIFO counter line being ABSENT from the log. With the
+lever genuinely on, the same scene reads `idle_polls=10076786` and climbing by
+about 500k per 10 s report. A lever with no reach and a lever with no effect look
+identical; only the counter separates them, which is why perf_monitor now prints
+that line when EITHER the park or the ladder is on.
+
+Two rules from it:
+
+- **Read the property back off the device and print it with every arm.** The
+  harness does this now. A silent no-op must not be able to pass as a result.
+- **Never edit a script while it is running.** bash reads a script incrementally,
+  so editing the file mid-run made it die with `unexpected EOF` at a line that had
+  no syntax error. Run measurements from a frozen copy.
+
+**2. The accidental null A/B is the useful part.** Because both arms were the same
+configuration, that broken run measured this harness's own noise floor:
+
+| metric | spread over 3 samples of ONE configuration |
+| --- | --- |
+| whole-process cores | 3.097 to 3.259, about **+/-5%** |
+| FPS | 27.62 to 27.78, about **+/-0.6%** |
+
+**+/-5% on cores is the bar any CPU claim has to clear here.** That number also
+says to measure the THREAD a lever targets, not the process: `rsx::thread` is 0.51
+of 2.90 cores, so a lever saving 30% of that thread moves the process total by 5%
+and vanishes into the noise. Measured on the thread itself the same saving is 30%.
+The harness now reports both, and `THREAD_MATCH` selects which thread.
+
+**Run a null pair before believing any arm.** This file already said that about
+Folklore's title screen. It is now measured for the savestate workload too.
+
+## The RSX FIFO pause ladder: no benefit, and a warning about the power probe
+
+`debug.rpcsx.thor.rsx_fifo_pause_ladder=64` keeps one `sched_yield` per 64 empty
+FIFO polls and spends the other 63 in `rx::pause()`. It has enormous REACH on the
+restored savestate scene: `idle_polls=10076786`, climbing about 500k per 10 s, so
+the ring really is empty that often and the lever really does run.
+
+Two interleaved rounds on that scene:
+
+| arm | FPS | cores | range | power samples |
+| --- | --- | --- | --- | --- |
+| default | 27.64 | 3.234 | 3.178 - 3.290 | 7545, 7016 mW |
+| ladder=64 | 27.64 | 3.295 | 3.243 - 3.346 | 10351, 6593 mW |
+
+**No CPU benefit.** The ladder is 1.9% worse on cores, which is inside the +/-5%
+noise floor, and the ranges overlap. Frames are identical. Not shipped.
+
+There is a mechanical reason to expect no win: `rx::pause()` on ARM64 is `YIELD`,
+which `docs/arm64/bench-results.md` measures at 0.36 ns, the same as a `NOP`. The
+ladder therefore trades a syscall that lets the core deschedule for spinning at
+full issue rate. It moves time from kernel to user, not off the CPU.
+
+### The power probe is NOT usable while the charger is attached
+
+The first ladder sample read 10351 mW against 7545 mW for default, which looked
+like a 37% power regression and was reported as one. **The second sample of the
+same arm read 6593 mW, below both default samples.** One arm, one configuration,
+6593 to 10351 mW.
+
+`ichg_fb` was checked on every sample and never exceeded the charging threshold,
+so the guard did not fire, and the spread is still larger than any effect worth
+measuring. Do not quote power from this rig while it is plugged in.
+
+**Establish a power noise floor with a null pair before quoting a power number,
+exactly as was already required for cores.** Until then CPU at fixed frames is
+the discriminator here, because that one has a measured noise floor.
