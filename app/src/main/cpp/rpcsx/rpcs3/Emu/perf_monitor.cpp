@@ -2,6 +2,8 @@
 #include "perf_monitor.hpp"
 
 #include "Emu/System.h"
+#include "Emu/IdManager.h"
+#include "Emu/RSX/RSXThread.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
@@ -28,6 +30,10 @@ void perf_monitor::operator()()
 
 	std::vector<double> per_core_usage;
 	std::string msg;
+
+	// Guest frame accounting, so an A/B can read frames out of this log.
+	u64 last_flip_index = 0;
+	u64 last_flip_time = umax;
 
 	for (u64 sleep_until = get_system_time();;)
 	{
@@ -88,6 +94,36 @@ void perf_monitor::operator()()
 					current_mem_use / (1024 * 1024), max_memory_usage / (1024 * 1024));
 			}
 
+			// Frames rendered since the previous report.
+			//
+			// The guest's own flip counter, NOT the host compositor. `dumpsys
+			// SurfaceFlinger --latency` is not usable for this: it reported a frozen
+			// layer for a session whose own overlay read 25.74 FPS, because the scene
+			// was a dialogue box and the presented image barely changed. Its buffer is
+			// also a fixed 126 entries, so a stale read is indistinguishable from a
+			// real measurement. int_flip_index does not care whether the picture
+			// changed.
+			//
+			// The window is measured rather than assumed, because the log interval
+			// drops from 10 s to 0.5 s whenever RAM is climbing.
+			if (const auto rsx_thr = g_fxo->try_get<rsx::thread>())
+			{
+				const u64 flips = rsx_thr->int_flip_index;
+				const u64 now = get_system_time();
+
+				if (last_flip_time != umax && now > last_flip_time)
+				{
+					const u64 window_us = now - last_flip_time;
+					const u64 frames = flips >= last_flip_index ? flips - last_flip_index : 0;
+
+					fmt::append(msg, ", Frames: %llu in %.2fs (%.2f FPS)", frames,
+						window_us / 1000000.0, frames * 1000000.0 / window_us);
+				}
+
+				last_flip_index = flips;
+				last_flip_time = now;
+			}
+
 			// The SPU self-loop park writes entries/last_pc BEFORE the wait and exits
 			// after it, so `parked_now` is the number of SPU threads parked at this
 			// instant and `last_pc` says where. Nothing in the tree read those three
@@ -112,7 +148,12 @@ void perf_monitor::operator()()
 
 			// Reported only when the RSX park is on. parks=0 with it enabled is a
 			// real result: it says the ring never stayed empty long enough.
-			if (thor::rsx_fifo::enabled())
+			// Printed when EITHER the park or the pause ladder is on. The ladder also
+			// increments idle_polls, and gating this on enabled() alone made the
+			// ladder's reach invisible: with it on and the park off, nothing printed,
+			// so "the ring is never empty" and "the lever is not running" looked the
+			// same. That is the exact failure this file's counters exist to prevent.
+			if (thor::rsx_fifo::enabled() || thor::rsx_fifo::pause_ladder())
 			{
 				fmt::append(msg, ", RSX FIFO park: idle_polls=%llu parks=%llu slept_ms=%llu",
 					thor::rsx_fifo::g_idle_polls.load(), thor::rsx_fifo::g_parks.load(),
