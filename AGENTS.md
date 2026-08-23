@@ -8663,3 +8663,74 @@ The app reads its own `/proc/self/task`, so this needs no JNI and no root.
 here read 90.79% in a single SPU thread and was written up as a hot loop. The
 RSX had died 35 seconds earlier and `Frames: 0 in 10.00s` was in the log the
 whole time.
+
+# The `thor` MCP server: typed tools instead of a hand-written harness
+
+**Built 2026-08-23.** `tools/thor_mcp/server.py`, wired in `.mcp.json`. Ten
+tools: `thor_state`, `thor_cooldown`, `thor_boot`, `thor_wait_ready`,
+`thor_press`, `thor_screenshot`, `thor_sample`, `thor_log`, `thor_setprop`,
+`thor_stop`.
+
+**It exists because the LOOP was the defect, not the primitives.** Every harness
+failure in one day was the same bash logic retyped:
+
+* a cooldown placed BEFORE the force-stop, which waited for a temperature the
+  still running emulator prevented, and held the device at 95 C;
+* a cache count using a path relative to the app's private directory when the
+  cache is on external storage, reporting 0 objects while 3149 existed;
+* `printf | while read`, which drops a line with no trailing newline, so every
+  arm ran unset and both arms agreed perfectly.
+
+None of those is an emulator bug. They vanish when the loop lives in one tested
+place.
+
+## The refusals are the product
+
+`thor_sample` returns `void: true` and a reason when the window cannot be
+measured:
+
+* **a movie is playing** - a cutscene cannot resolve a measurement, and one
+  configuration measured 3.78 and 5.89 cores on consecutive rounds;
+* **the thermal guard is engaged** - the arm then measures the guard's frame
+  cap, which is how two arms read exactly 20.00 FPS.
+
+**A `void` is a RESULT.** Do not average it and do not retry until it passes.
+
+`thor_setprop` reads the property BACK, `thor_cooldown` stops the emulator
+before it waits, `thor_boot` turns the SPU object cache off for a diagnosis, and
+`thor_stop` reports the device is quiet rather than that a task was stopped.
+
+**No tool writes a game profile or an engine default.** Propose only.
+
+The procedure lives in the `thor-game-workup` skill. This server is the
+mechanism; the skill is the policy.
+
+# SHIPPED: the SPU object cache is ON by default
+
+**Changed 2026-08-23.** Unset now means enabled, so a title stops rebuilding its
+SPU programs on every boot.
+
+Measured on Transformers, to the same `SPU Runtime: Built 3118 functions`
+milestone:
+
+| cache | seconds |
+| --- | --- |
+| off | 23.2, 24.0 |
+| on, cold (writes 3149 objects) | 25.1 |
+| **on, warm (reads them)** | **12.0** |
+
+Cold slightly slower and warm about half is the shape a working cache must have,
+and the off baseline repeats to 0.8 s.
+
+## TURN IT OFF WHILE DIAGNOSING A GAME
+
+**It changes WHICH CODE RUNS.** A cached object replaces a compile, so a fault
+or a fix can be an artifact of a stale object rather than a property of the
+change. `tools/thor_game_workup.sh` forces it off for the run and restores it on
+exit, and `thor_boot` takes `freshCompile` for the same reason.
+
+    adb shell setprop debug.rpcsx.thor.spu_native_object_cache 0
+
+**What is NOT established.** This is one measurement on one title. Nobody has
+soaked it across many cold boots, and it changes what the verifier accepts. If a
+title starts misbehaving after this, clear the property FIRST and say so.

@@ -1,6 +1,6 @@
 ---
 name: thor-game-workup
-description: Triage and then speed up ANY PS3 title on the Thor, title-agnostic. Use when a game does not boot, hangs, crashes, runs slow, or gets hot, and when you must decide which lever to try next from a profile. Use before you sweep settings, and use it to avoid a repeat of an experiment this repo already did.
+description: Triage and then speed up ANY PS3 title on the Thor, title-agnostic, by hand or through the `thor` MCP tools (thor_state, thor_boot, thor_sample, thor_press). Use when a game does not boot, hangs, crashes, runs slow, or gets hot, and when you must decide which lever to try next from a profile. Use before you sweep settings, and use it to avoid a repeat of an experiment this repo already did.
 ---
 
 # Thor Game Workup
@@ -183,3 +183,60 @@ It does not ship a setting. It prints what it would suggest.
 Reservations: false` measured -10.6% and is not shipped, because upstream
 documents that it breaks titles and the emulator's own source shows the path.
 Ask what a win costs in correctness, and ask who chose the current value.
+
+# Driving it through the MCP tools
+
+The `thor` MCP server (`tools/thor_mcp/server.py`, wired in `.mcp.json`) is the
+mechanism. This skill is the policy. Use the tools instead of writing a bash
+harness: every harness defect in this repo came from retyping the same loop.
+
+    thor_state       everything at once: reachable, pid, temp, status, telemetry,
+                     compile progress, config IN EFFECT, live SPURS
+    thor_cooldown    force-stop FIRST, then cool
+    thor_boot        boot a title; freshCompile=true turns the SPU cache OFF
+    thor_wait_ready  wait for real frames, never a fixed sleep
+    thor_screenshot  PNG plus whether a movie is playing
+    thor_press       press pad buttons in the guest
+    thor_sample      process and per-thread CPU; REFUSES a bad window
+    thor_log         the log tail, filtered
+    thor_setprop     set a property AND read it back
+    thor_stop        stop everything and prove the device is quiet
+
+## The loop
+
+1. `thor_state`. If it is not reachable, stop. An unreachable device answers
+   empty exactly like a dead process.
+2. `thor_cooldown`.
+3. `thor_boot` with `freshCompile: true` when DIAGNOSING. The SPU object cache
+   is on by default and replaces a compile with a stored object, so a fault
+   could be an artifact of a stale object rather than the change.
+4. `thor_wait_ready`, never a sleep.
+5. `thor_screenshot`, and READ IT. Decide what the screen asks for.
+6. `thor_press` only then. A press during an intro is correctly ignored, and
+   that reads exactly like a broken API.
+7. `thor_sample`. Take the refusals seriously; see below.
+8. `thor_stop`, and confirm the DEVICE is quiet.
+
+## What `thor_sample` refuses, and why you must not work around it
+
+- **A movie is playing.** A cutscene cannot resolve a measurement. One
+  configuration measured 3.78 and 5.89 cores on consecutive rounds here.
+- **The thermal guard is engaged.** The arm is then measuring the guard's frame
+  cap, not the lever. Two arms read exactly 20.00 FPS for that reason.
+
+A `void: true` result is a RESULT. Do not average it, and do not retry until it
+passes.
+
+## Two things the tools give you that a bash harness did not
+
+**Reach.** `thor_state` carries the park and FIFO counters. A lever with no
+reach and a lever with no effect give the same number; the SPU self-loop park
+was written off twice on a scene where its counter reads `entries=0`.
+
+**The config in effect.** `thor_state` reports what the EMULATOR has, not what a
+file says. A harness once fed its spec through `printf | while read`, which
+drops the only line, so every arm ran unset and the arms agreed perfectly.
+
+## It proposes, it does not ship
+
+No tool writes a game profile or an engine default. Hand the user a diff.

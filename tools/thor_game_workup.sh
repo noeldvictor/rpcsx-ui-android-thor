@@ -98,6 +98,8 @@ cleanup() {
     for p in thermal_guard_c spu_accurate_reservations rsx_fifo_pause_ladder guest_preflight; do
         sh_ "setprop debug.rpcsx.thor.$p ''" >/dev/null 2>&1
     done
+    # Put the SPU object cache back the way it was, including "unset".
+    sh_ "setprop debug.rpcsx.thor.spu_native_object_cache '${CACHE_WAS:-}'" >/dev/null 2>&1
 }
 trap cleanup EXIT INT TERM
 
@@ -133,6 +135,17 @@ say "battery=${BATT}%  temp=$(temp_)C  title=$TITLE"
 # A Thor with its screen off cannot boot a title: a SurfaceView measured 0x0
 # never creates a surface, and the renderer waits forever.
 sh_ "input keyevent KEYCODE_WAKEUP; svc power stayon true" >/dev/null
+
+# Diagnose against a FRESH COMPILE, never a replayed one.
+#
+# The SPU native object cache is on by default, and it changes which code runs:
+# a cached object replaces a compile, so a fault or a fix could be an artifact
+# of a stale object rather than a property of the change. That is fine for
+# playing and wrong for debugging, so this tool turns it off for the run and
+# restores it on exit.
+CACHE_WAS=$(sh_ "getprop debug.rpcsx.thor.spu_native_object_cache")
+sh_ "setprop debug.rpcsx.thor.spu_native_object_cache 0" >/dev/null
+say "SPU object cache forced OFF for this run (was '${CACHE_WAS:-unset}')"
 
 if [ -n "$EXTRA_CFG" ]; then
     if [ -n "$(sh_ "run-as $PKG ls $CFG 2>/dev/null")" ]; then

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "thor": {
+      "command": "python",
+      "args": ["tools/thor_mcp/server.py"],
+      "env": {
+        "THOR_SERIAL": "192.168.1.3:5555",
+        "THOR_CTRL_PORT": "8099"
+      }
+    }
+  }
+}

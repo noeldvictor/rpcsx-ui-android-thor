@@ -380,9 +380,20 @@ bool spu_native_object_cache_enabled() noexcept
 		length = value ? std::strlen(value) : 0;
 	}
 
+	// DEFAULT ON since 2026-08-23. Unset means enabled, so a title stops
+	// rebuilding its SPU programs on every boot. Measured on Transformers, to
+	// the same "SPU Runtime: Built 3118 functions" milestone: 23.2 s and 24.0 s
+	// with the cache off, 12.0 s on the warm boot that reads it.
+	//
+	// TURN IT OFF WHILE DIAGNOSING A GAME. It changes WHICH CODE RUNS: a
+	// cached object replaces a fresh compile, so a fault or a fix can be an
+	// artifact of a stale object rather than a property of the change. The
+	// workup tooling forces it off for that reason.
+	//
+	//   adb shell setprop debug.rpcsx.thor.spu_native_object_cache 0
 	if (!value || !length)
 	{
-		return false;
+		return true;
 	}
 
 	std::string normalized(value, length);

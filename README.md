@@ -509,6 +509,19 @@ adb exec-out screencap -p > shot.png
 curl -X POST '127.0.0.1:8099/pad/press?buttons=START&ms=150'
 ```
 
+### Faster repeat launches
+
+The SPU object cache is now on by default, so a game stops rebuilding its SPU
+code on every launch. On Transformers the same milestone took 23-24 seconds
+without it and 12 seconds on a later launch that reuses it.
+
+Turn it off if you are chasing a bug, because it changes which code runs and a
+stale object can look like a fault:
+
+```sh
+adb shell setprop debug.rpcsx.thor.spu_native_object_cache 0
+```
+
 ### Keeping savestates for experiments
 
 A savestate is the only repeatable gameplay workload on this device, so the
