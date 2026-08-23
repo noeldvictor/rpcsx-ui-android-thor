@@ -1804,13 +1804,40 @@ bool lv2_obj::sleep_unlocked(cpu_thread &thread, u64 timeout,
     } else {
       ppu_log.warning("Final Thread");
 
-      // All threads are ready, wake threads
-      Emu.CallFromMainThread([] {
-        if (Emu.IsStarting()) {
-          // It uses lv2_obj::g_mutex, run it on main thread
-          Emu.FinalizeRunRequest();
-        }
-      });
+      // All threads are ready, wake threads.
+      //
+      // NOT on this thread. sleep() holds lv2_obj::g_mutex across this call, and
+      // FinalizeRunRequest() takes that same mutex again by way of
+      // make_scheduler_ready() -> awake_all() -> awake(). g_mutex is a
+      // shared_mutex and does not nest, so running the finalize here deadlocks
+      // the very thread holding the lock.
+      //
+      // The comment that used to sit on the line below said "It uses
+      // lv2_obj::g_mutex, run it on main thread". Upstream earns that: its
+      // CallFromMainThread queues onto the Qt main thread, which runs the
+      // callback after sleep() has released the mutex. This port binds
+      // call_from_main_thread to a direct cb() call, so the queueing that made
+      // the comment true is gone, and the callback runs under the lock.
+      //
+      // MEASURED 2026-08-22, loading an Eternal Sonata savestate.
+      // FinalizeRunRequest was entered and never reached its
+      // compare_and_swap_test(starting, running), so the emulator stayed in
+      // system_state::starting. rsx::thread waits on IsPausedOrReady(), which is
+      // `m_state >= paused` and so is true for `starting` as well, and it span in
+      // its startup wait for ever while the restored frame sat on screen:
+      //
+      //   Thor resume: rsx still waiting, spins=52000 running=1
+      //                paused_or_ready=1 dma_address=0x40100000
+      //
+      // A detached thread restores the ordering upstream depends on: it blocks on
+      // g_mutex until sleep() releases it, then finalizes.
+      std::thread([]() {
+        Emu.CallFromMainThread([] {
+          if (Emu.IsStarting()) {
+            Emu.FinalizeRunRequest();
+          }
+        });
+      }).detach();
     }
   };
 

@@ -4329,33 +4329,51 @@ semaphore waiters, `0xd0f17c` for `_fs_aio_thread`, `0xca833c` for
 `_gcm_intr_thread`), which are the same addresses the live session was at. No
 access violation, no verification failure, and `loadState()` returns true.
 
-### Still open: the restore does not resume
+### RESOLVED: the restore did not resume, and it was a self-deadlock
 
-The savestate loads and the correct frame is on screen, but nothing advances.
-`rsx::thread` sits at 0% and the SurfaceFlinger timestamp for the layer does not
-change, so the visible image is just the last frame RSX drew. PPU threads are at
-0 CPU, which is right for threads parked in lv2 waits, and four SPU threads spin.
+The savestate loaded and the correct frame was on screen, but nothing advanced.
+`rsx::thread` sat at 0% and the SurfaceFlinger timestamp never moved.
 
-Two things were checked and are NOT the cause:
+The chain, from instrumented runs:
 
-- **Progress accounting.** The "Building SPU Cache" overlay reads
-  `module 1198 of 1200` and `system_progress.cpp` only closes the dialog on exact
-  equality, which looks like the answer. It is not. Instrumenting the counters at
-  the join point printed `total_funcs=1200 emitted=1200 pending=0 ptotal=1200
-  pdone=1200`. They balance. The overlay is stale because RSX stopped drawing,
-  not because the count is short. A fix built on the count was written, disproved
-  by that measurement, and reverted.
-- **Firmware.** An earlier note here claimed firmware was missing. **That was
-  wrong.** Firmware 4.89 is installed, 144 modules under
-  `$FILES/config/dev_flash/sys/external`, `liblv2.sprx` included. The check ran
-  against `$FILES/dev_flash`, which is not where it lives.
+```
+lv2_obj::sleep()             -> lock_guard{g_mutex}          lv2.cpp:1710
+  sleep_unlocked()           -> "Final Thread"
+    CallFromMainThread(...)  -> runs INLINE on this thread
+      FinalizeRunRequest()
+        make_scheduler_ready() -> awake_all() -> awake() -> lock_guard(g_mutex)
+```
 
-The one real `PS3 firmware is not installed` line comes from the
-**save-then-auto-reload** path only, and it is a VFS problem, not a firmware one.
-That path never calls `Emulator::Init()`, so nothing re-mounts the VFS after
-`Kill()` destroyed the fxo-owned `vfs_manager`, and `vfs::get("/dev_flash/...")`
-resolves to nothing. The genuine load path does call `Init()`, logs
-`Using VFS config`, and finds the firmware.
+`g_mutex` is a `shared_mutex` and does not nest, so the thread deadlocked while
+holding it. `FinalizeRunRequest` logged its entry and never reached its
+`compare_and_swap_test(starting, running)`, so the state stayed `starting`. RSX
+waits on `IsPausedOrReady()`, which is `m_state >= paused`, and `starting` is 7
+while `paused` is 4, so that is true for `starting` too. RSX span for ever:
+
+```
+Thor resume: rsx still waiting, spins=52000 running=1 paused_or_ready=1 dma=0x40100000
+```
+
+The call site carried the warning already: *"It uses lv2_obj::g_mutex, run it on
+main thread"*. Upstream earns that, because its `CallFromMainThread` queues onto
+the Qt main thread and runs after `sleep()` drops the lock. This port binds
+`call_from_main_thread` to a direct `cb()`, so the queueing that made the comment
+true is gone. **Same root cause as the load-state crash chain, in a second
+place.**
+
+Fixed by running the finalize from a detached thread, which blocks on `g_mutex`
+until `sleep()` releases it and so keeps upstream's ordering.
+
+After the fix, a savestate restores into live 3D gameplay: 25.7 to 25.9 FPS,
+`rsx::thread` burning 5.5 s of CPU per 10 s wall, the process at 3.1 cores.
+
+### Do not trust SurfaceFlinger --latency alone for liveness
+
+The last check said FROZEN while the game was demonstrably running at 25.74 FPS
+on its own overlay. The scene was a dialogue box, so the presented image barely
+changed and the latency buffer did not move the way the parse expected. **Read
+CPU time from `/proc/<pid>/task/<tid>/stat` instead**: `rsx::thread` going from
+2129 to 2682 jiffies in ten seconds is not ambiguous.
 
 ### Back up the savestate before capturing one
 
