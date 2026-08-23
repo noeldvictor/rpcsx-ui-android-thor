@@ -1283,6 +1283,87 @@ bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t
 				addr, what, *trapped_spu->spu_tname.load(), trapped_spu->pc, spurs, res,
 				(spurs && res && res - spurs <= 0x80) ? 1 : 0);
 
+			// DECODE THE HALT ITSELF, and print the value that failed.
+			//
+			// The program counter alone does not say WHY the guest stopped. The
+			// halt instruction names a register and a value it refused, and both
+			// are in hand right here: the instruction is in local store at `pc`,
+			// and the register is in `gpr`. Printing them turns "the guest
+			// asserted somewhere" into "the guest refused THIS value HERE".
+			//
+			// This matters because the fault will not reproduce: 64 controlled
+			// boots produced none, so the next occurrence has to be the whole
+			// diagnosis rather than an invitation to try again.
+			//
+			// Decoder indices are from Emu/Cell/SPUOpcodes.h, where the table is
+			// indexed by `inst >> 21`. RR forms compare two registers; the RI10
+			// forms compare one register against a signed 10-bit immediate.
+			{
+				const u32 halt_pc = trapped_spu->pc;
+				const u32 inst = trapped_spu->_ref<u32>(halt_pc);
+				const u32 top11 = inst >> 21;
+				const u32 top8 = inst >> 24;
+				const u32 ra = (inst >> 7) & 0x7f;
+				const u32 rb = (inst >> 14) & 0x7f;
+
+				// The SPU preferred slot is word 3 in this codebase, which is what
+				// the rest of the tree uses for scalar values (gpr[1]._u32[3]).
+				const auto slot = [&](u32 r) { return trapped_spu->gpr[r & 0x7f]._u32[3]; };
+
+				s32 imm = static_cast<s32>((inst >> 14) & 0x3ff);
+				if (imm & 0x200)
+				{
+					imm -= 0x400;
+				}
+
+				const char* op = nullptr;
+				bool is_imm = false;
+
+				switch (top11)
+				{
+				case 0x258: op = "HGT (halt if signed greater)"; break;
+				case 0x2d8: op = "HLGT (halt if logically greater)"; break;
+				case 0x3d8: op = "HEQ (halt if equal)"; break;
+				default: break;
+				}
+
+				if (!op)
+				{
+					switch (top8)
+					{
+					case 0x4f: op = "HGTI (halt if signed greater than immediate)"; is_imm = true; break;
+					case 0x5f: op = "HLGTI (halt if logically greater than immediate)"; is_imm = true; break;
+					case 0x7f: op = "HEQI (halt if equal to immediate)"; is_imm = true; break;
+					default: break;
+					}
+				}
+
+				if (!op)
+				{
+					// Not a halt encoding. Say so rather than print a guess: the
+					// program counter may have moved past the instruction.
+					sys_log.fatal("SPU trap: instruction at pc=0x%05x is 0x%08x, which is NOT a halt "
+						"encoding. The pc may not point at the trapping instruction.", halt_pc, inst);
+				}
+				else if (is_imm)
+				{
+					sys_log.fatal("SPU trap decoded: %s at pc=0x%05x. r%u = 0x%08x (%d), immediate = %d. "
+						"The guest refused this value.", op, halt_pc, ra, slot(ra),
+						static_cast<s32>(slot(ra)), imm);
+				}
+				else
+				{
+					sys_log.fatal("SPU trap decoded: %s at pc=0x%05x. r%u = 0x%08x, r%u = 0x%08x. "
+						"The guest refused this pair.", op, halt_pc, ra, slot(ra), rb, slot(rb));
+				}
+
+				// The few instructions before the halt are the check that produced
+				// the value, so print them raw for offline disassembly.
+				sys_log.fatal("SPU trap context: [pc-16..pc] = %08x %08x %08x %08x %08x",
+					trapped_spu->_ref<u32>(halt_pc - 16), trapped_spu->_ref<u32>(halt_pc - 12),
+					trapped_spu->_ref<u32>(halt_pc - 8), trapped_spu->_ref<u32>(halt_pc - 4), inst);
+			}
+
 			// The SPURS kernel halts itself when it does not agree with the
 			// state the limiter keeps. Print that state beside the trap, so the
 			// fault names the invariant and not only the address.
