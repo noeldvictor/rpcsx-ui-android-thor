@@ -8,6 +8,7 @@
 #include "cellos/sys_mmapper.h"
 #include "cellos/sys_event.h"
 #include "cellos/sys_process.h"
+#include "cellos/sys_spu.h"
 #include "Thread.h"
 #include "util/JIT.h"
 #include <thread>
@@ -1280,6 +1281,30 @@ bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t
 			sys_log.fatal("SPU trap 0x%08x: %s. thread='%s' pc=0x%05x spurs_addr=0x%08x raddr=0x%08x reservation_in_spurs_block=%d",
 				addr, what, *trapped_spu->spu_tname.load(), trapped_spu->pc, spurs, res,
 				(spurs && res && res - spurs <= 0x80) ? 1 : 0);
+
+			// The SPURS kernel halts itself when it does not agree with the
+			// state the limiter keeps. Print that state beside the trap, so the
+			// fault names the invariant and not only the address.
+			//
+			// Read the local store and the group only. Both belong to the
+			// emulator and are always mapped. A read of guest main memory can
+			// fault a second time inside this handler, and Android then kills
+			// the process with no log at all.
+			if (const auto group = trapped_spu->group)
+			{
+				constexpr u32 spurs_idle_byte = 0x100 + 0x73;
+				const u8 idle_mask = trapped_spu->_ref<u8>(spurs_idle_byte);
+				const u32 thread_bit = 1u << trapped_spu->index;
+
+				sys_log.fatal("SPU trap SPURS state: group='%s' id=0x%x index=%u max_num=%u max_run=%u "
+					"spurs_running=%u idle_mask=0x%02x this_thread_idle=%d waited=%d entered_wait=%d "
+					"avg_task_us=%llu last_wait_us=%llu",
+					group->name, group->id, trapped_spu->index, group->max_num, group->max_run,
+					+group->spurs_running, idle_mask, (idle_mask & thread_bit) != 0 ? 1 : 0,
+					trapped_spu->spurs_waited ? 1 : 0, trapped_spu->spurs_entered_wait ? 1 : 0,
+					trapped_spu->spurs_average_task_duration / spu_thread::spurs_task_count_to_calculate,
+					trapped_spu->spurs_wait_duration_last);
+			}
 		}
 		else
 		{
