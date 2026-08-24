@@ -194,6 +194,100 @@ static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexc
 // the accounting perturbation the notification and wait-scale arms did not
 // cover.
 //
+// Measure the SPURS tear DIRECTLY, instead of waiting for the halt it causes.
+//
+// The halt is far too rare to use as the measurement. About 92 controlled
+// sessions produced no reproduction, so a soak that counts halts would return
+// zero on every arm and say nothing about any of them.
+//
+// The tear that is BELIEVED to cause it is not rare in the same way. It happens
+// whenever a plain MFC GET reads a 128-byte line while another SPU is inside an
+// unprotected reservation store of that line. That is countable, and it is the
+// actual claim of docs/arm64/spurs-halt.md.
+//
+// The check is a SAMPLE taken before the copy, not a window held across it, so
+// it UNDERCOUNTS. It is a lower bound and a differential, not a rate. Read it
+// only by comparing arms:
+//
+//   fast path, probe on : how often a GET overlaps a line being written
+//   spurs_store_exclusive=1 : should fall to zero, because writer_lock now
+//                             excludes the range lock this DMA takes
+//
+// If the first number is already zero over a long combat run, the mechanism
+// does not occur and the hypothesis is dead, cheaply and without a halt.
+//
+// 0 is off.
+static bool get_thor_spurs_tear_probe() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_tear_probe", value) > 0)
+		{
+			return std::strtol(value, nullptr, 10) != 0;
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
+// Count a plain GET whose source overlaps a line under an active reservation
+// lock. Caps the walk, because a DMA can be 16 KB and this is a diagnostic.
+static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
+{
+	static atomic_t<u64> s_checked{0};
+	static atomic_t<u64> s_locked{0};
+	static atomic_t<u64> s_locked_spurs{0};
+
+	const u32 first = eal & -128;
+	const u32 last = (eal + size - 1) & -128;
+	const u32 lines = std::min<u32>((last - first) / 128 + 1, 8);
+
+	const u64 checked = ++s_checked;
+
+	// Heartbeat, so ZERO tears is distinguishable from a probe that never
+	// ran. Without this an arm with no hits logs nothing at all, which
+	// reads exactly like a probe that was left off. That is the case this
+	// experiment most needs to be able to state.
+	if ((checked % (1u << 20)) == 0)
+	{
+		spu_log.error("Thor SPURS tear probe alive: %llu plain GETs checked, %llu overlapped a "
+			"locked line, %llu of those within 0x80 of spurs_addr.",
+			checked, +s_locked, +s_locked_spurs);
+	}
+
+	for (u32 i = 0; i < lines; i++)
+	{
+		const u32 line = first + i * 128;
+
+		if (vm::reservation_acquire(line) & vm::rsrv_unique_lock)
+		{
+			const u64 n = ++s_locked;
+
+			// Near the SPURS control block is the case the hypothesis is about.
+			if (spurs_addr && line - spurs_addr <= 0x80)
+			{
+				s_locked_spurs++;
+			}
+
+			if (n == 1 || (n % 4096) == 0)
+			{
+				spu_log.error("Thor SPURS tear probe: %llu of %llu plain GETs overlapped a line "
+					"under an active reservation lock, %llu of them within 0x80 of spurs_addr. "
+					"This is a SAMPLE before the copy, so it undercounts. Compare arms, not "
+					"absolute rates.", n, checked, +s_locked_spurs);
+			}
+
+			break;
+		}
+	}
+}
+
+
 // Make the SPURS 128-byte reservation stores exclusive again.
 //
 // This is a NARROW arm for the alignment-assert hypothesis in
@@ -4093,6 +4187,12 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 		android_prepared_guest_write = rsx::prepare_guest_write(eal, args.size);
 	}
 #endif
+	// Default off. See get_thor_spurs_tear_probe.
+	if (is_get && eal < RAW_SPU_BASE_ADDR && get_thor_spurs_tear_probe()) [[unlikely]]
+	{
+		thor_spurs_tear_check(eal, args.size, _this ? _this->spurs_addr : 0);
+	}
+
 	rsx::reservation_lock<false, 1> rsx_lock(eal, args.size, !is_get && (android_prepared_guest_write || get_strict_rendering_mode_for_spu_mfc() || (get_rsx_fifo_accuracy_for_spu_mfc() && !get_spu_accurate_dma_for_mfc() && eal < rsx::constants::local_mem_base)));
 
 	if ((!g_use_rtm && !is_get) || get_spu_accurate_dma_for_mfc()) [[unlikely]]
