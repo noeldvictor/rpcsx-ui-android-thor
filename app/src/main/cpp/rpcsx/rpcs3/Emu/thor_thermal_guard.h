@@ -265,6 +265,58 @@ namespace thor::thermal_guard
 
 	inline u32 hottest_celsius() noexcept { return g_hottest_mc.observe() / 1000; }
 
+	// EMERGENCY STOP, above the guard.
+	//
+	// The frame cap is not thermal protection. It bounds the RENDER path, and
+	// Transformers proved that is not where the heat is: with the guard engaged
+	// and holding 20 FPS the junction still climbed to 95 C, because one SPU
+	// thread was busy regardless of presentation.
+	//
+	// So there is a second line: if the junction stays at or above the abort
+	// temperature for a few consecutive samples, PAUSE emulation outright. A
+	// paused emulator measured 0.33 cores against 3.91 running, so this actually
+	// stops the heat instead of asking the renderer to slow down.
+	//
+	//   debug.rpcsx.thor.thermal_abort_c      default 100, 0 disables
+	//   debug.rpcsx.thor.thermal_abort_dwell  default 3 samples, about 6 s
+	//
+	// The default is deliberately ABOVE normal play. This title peaks at 94 to
+	// 97 C in gameplay, so 100 C never fires in normal use and only catches a
+	// runaway. An experiment should set it LOWER, because a harness left running
+	// unattended is exactly how this device got held at 95 C.
+	inline const u32 g_abort_c = read_u32_property("debug.rpcsx.thor.thermal_abort_c", 100);
+	inline const u32 g_abort_dwell = read_u32_property("debug.rpcsx.thor.thermal_abort_dwell", 3);
+	inline atomic_t<u32> g_abort_streak{0};
+	inline atomic_t<bool> g_aborted{false};
+
+	// Returns true exactly once, on the sample that trips the abort.
+	inline bool check_thermal_abort() noexcept
+	{
+		if (g_abort_c == 0 || g_aborted.load())
+		{
+			return false;
+		}
+
+		const u32 now_c = hottest_celsius();
+
+		if (now_c < g_abort_c)
+		{
+			g_abort_streak = 0;
+			return false;
+		}
+
+		// Dwell, so a launch transient cannot trip it. This device reads 56.6 C at
+		// t=4 s and 46.6 C by t=10 s, and a guard without dwell force-stopped
+		// fifteen consecutive runs on heat it never sustained.
+		if (++g_abort_streak < g_abort_dwell)
+		{
+			return false;
+		}
+
+		g_aborted = true;
+		return true;
+	}
+
 	inline bool engaged() noexcept { return g_engaged.observe(); }
 
 	// The frame limit to impose right now, or 0 for "do not interfere".

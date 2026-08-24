@@ -87,6 +87,27 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept
 }
 #endif
 
+// Strict SPU block verification, default OFF. See the comment at the checksum
+// for the measurement that motivates it. Read once: the recompiler must not
+// change shape between the IR it emits and the host mirror that checks it.
+static bool get_thor_spu_strict_checksum() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_strict_checksum", value) > 0)
+		{
+			return value[0] == '1' || value[0] == 't' || value[0] == 'y';
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
 class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 {
 	// JIT Instance
@@ -1994,7 +2015,30 @@ public:
 				const auto cond = m_ir->CreateICmpNE(elem, m_ir->getInt64(0));
 				m_ir->CreateCondBr(cond, label_diff, label_body, m_md_unlikely);
 #else
-				constexpr u32 checksum_block_size = 96;
+				// STRICT VERIFICATION, off by default.
+				//
+				// The ARM64 path folds 96 bytes into 16 lanes by adding pairs as
+				// `w + 2*w`, so it carries 24 words in 16 accumulators and LOSES
+				// information the generic 64-byte path keeps.
+				//
+				// Measured on the real dumped SPURS kernel image, 1186 non-empty
+				// windows: 25 pairs with DIFFERENT bytes share an ARM checksum, and
+				// the generic checksum separates 17 of them. One pair differs in 58
+				// bytes and folds to the same value.
+				//
+				// That is the block verifier failing to tell two blocks apart, which
+				// is exactly the shape needed for the SPURS halt: accept the wrong
+				// block, run the wrong code, compute a wrong value, and the guest
+				// refuses it with HEQI against -1 or 0.
+				//
+				//   adb shell setprop debug.rpcsx.thor.spu_strict_checksum 1
+				//
+				// Strict costs throughput: 64 bytes an iteration instead of 96. It is
+				// default OFF until that cost is measured, because a correctness fix
+				// on a hot path still has to show its price.
+				const bool thor_strict_checksum = get_thor_spu_strict_checksum();
+				const u32 checksum_block_size = thor_strict_checksum ? 64u : 96u;
+				const u32 thor_parts_per_block = checksum_block_size / 16;
 				constexpr u32 checksum_loop_vectors = 16;
 				const u32 checksum_vectors_per_block = checksum_block_size / stride;
 				const u32 checksum_loop_blocks = (checksum_loop_vectors + checksum_vectors_per_block - 1) / checksum_vectors_per_block;
@@ -2064,10 +2108,20 @@ public:
 						// emits vls[1] + (vls[2] << 1) and vls[4] + (vls[5] << 1). If this
 						// mirror disagrees by so much as a weight, every block fails
 						// verification and the runtime recompiles for ever.
-						checksum[i] += words[i];
-						checksum[4 + i] += words[4 + i] + 2 * words[8 + i];
-						checksum[8 + i] += words[12 + i];
-						checksum[12 + i] += words[16 + i] + 2 * words[20 + i];
+						if (thor_strict_checksum)
+						{
+							checksum[i] += words[i];
+							checksum[4 + i] += words[4 + i];
+							checksum[8 + i] += words[8 + i];
+							checksum[12 + i] += words[12 + i];
+						}
+						else
+						{
+							checksum[i] += words[i];
+							checksum[4 + i] += words[4 + i] + 2 * words[8 + i];
+							checksum[8 + i] += words[12 + i];
+							checksum[12 + i] += words[16 + i] + 2 * words[20 + i];
+						}
 					}
 				};
 
@@ -2109,15 +2163,26 @@ public:
 					{
 						llvm::Value* vls[6];
 
-						for (u32 part = 0; part < 6; part++)
+						for (u32 part = 0; part < thor_parts_per_block; part++)
 						{
 							vls[part] = m_ir->CreateAlignedLoad(get_type<u32[4]>(), _ptr(data_addr, m_ir->CreateAdd(offset64, m_ir->getInt64(block * checksum_block_size + part * 16))), llvm::MaybeAlign{4});
 						}
 
-						next_acc[0] = m_ir->CreateAdd(next_acc[0], vls[0]);
-						next_acc[1] = m_ir->CreateAdd(next_acc[1], m_ir->CreateAdd(vls[1], m_ir->CreateShl(vls[2], 1)));
-						next_acc[2] = m_ir->CreateAdd(next_acc[2], vls[3]);
-						next_acc[3] = m_ir->CreateAdd(next_acc[3], m_ir->CreateAdd(vls[4], m_ir->CreateShl(vls[5], 1)));
+						if (thor_strict_checksum)
+						{
+							// One vector per accumulator. Nothing folded, nothing lost.
+							for (u32 part = 0; part < 4; part++)
+							{
+								next_acc[part] = m_ir->CreateAdd(next_acc[part], vls[part]);
+							}
+						}
+						else
+						{
+							next_acc[0] = m_ir->CreateAdd(next_acc[0], vls[0]);
+							next_acc[1] = m_ir->CreateAdd(next_acc[1], m_ir->CreateAdd(vls[1], m_ir->CreateShl(vls[2], 1)));
+							next_acc[2] = m_ir->CreateAdd(next_acc[2], vls[3]);
+							next_acc[3] = m_ir->CreateAdd(next_acc[3], m_ir->CreateAdd(vls[4], m_ir->CreateShl(vls[5], 1)));
+						}
 					}
 
 					const auto next_offset = m_ir->CreateAdd(offset, m_ir->getInt32(checksum_loop_size));
@@ -2141,7 +2206,7 @@ public:
 					u32 words[24] = {};
 					bool any_data = false;
 
-					for (u32 part = 0; part < 6; part++)
+					for (u32 part = 0; part < thor_parts_per_block; part++)
 					{
 						int indices[4];
 						bool holes = false;
@@ -2184,10 +2249,24 @@ public:
 						continue;
 					}
 
-					checksum_parts[0] = m_ir->CreateAdd(checksum_parts[0], vls[0]);
-					checksum_parts[1] = m_ir->CreateAdd(checksum_parts[1], m_ir->CreateAdd(vls[1], m_ir->CreateShl(vls[2], 1)));
-					checksum_parts[2] = m_ir->CreateAdd(checksum_parts[2], vls[3]);
-					checksum_parts[3] = m_ir->CreateAdd(checksum_parts[3], m_ir->CreateAdd(vls[4], m_ir->CreateShl(vls[5], 1)));
+					// The TAIL path must fold exactly as the loop path does, or the IR
+					// and the host mirror disagree and EVERY block fails verification.
+					// Patching only the loop path did precisely that: 210 s with no
+					// "SPU Runtime: Built" line and 0.00 FPS, recompiling for ever.
+					if (thor_strict_checksum)
+					{
+						for (u32 part = 0; part < 4; part++)
+						{
+							checksum_parts[part] = m_ir->CreateAdd(checksum_parts[part], vls[part]);
+						}
+					}
+					else
+					{
+						checksum_parts[0] = m_ir->CreateAdd(checksum_parts[0], vls[0]);
+						checksum_parts[1] = m_ir->CreateAdd(checksum_parts[1], m_ir->CreateAdd(vls[1], m_ir->CreateShl(vls[2], 1)));
+						checksum_parts[2] = m_ir->CreateAdd(checksum_parts[2], vls[3]);
+						checksum_parts[3] = m_ir->CreateAdd(checksum_parts[3], m_ir->CreateAdd(vls[4], m_ir->CreateShl(vls[5], 1)));
+					}
 
 					update_checksum(words);
 

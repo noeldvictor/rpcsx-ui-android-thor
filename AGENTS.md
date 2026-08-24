@@ -9073,3 +9073,78 @@ at 15 seconds and learned nothing because the injector had not run yet.
 And a grep with a variable containing spaces, quoted with nested double quotes,
 silently reported `inj=0` while the injection was firing thousands of times. The
 first arm's phase-2 counts were a harness bug, not evidence.
+
+# THE STRONGEST SPURS LEAD YET: the ARM64 block verifier cannot tell blocks apart
+
+**Measured 2026-08-23 on the real dumped SPURS kernel image, no device needed.**
+
+The ARM64 SPU block-verification checksum folds 96 bytes into 16 lanes by adding
+pairs as `w + 2*w`, so 24 words go into 16 accumulators. The generic path keeps
+64 bytes in 16 lanes, one word per lane, and folds nothing.
+
+Over 1186 non-empty 384-byte windows of the live image:
+
+| | count |
+| --- | --- |
+| DISTINCT-content pairs the ARM fold cannot tell apart | 25 |
+| of those, the generic checksum also cannot | 8 |
+| **pairs the generic WOULD have caught, the ARM fold does not** | **17** |
+
+`0x150c0` against `0x15120` differ in **58 bytes** and produce the same ARM
+checksum. A constructed pair confirms the invariance directly: add 2 to one word
+and subtract 1 from its partner and the fold cannot see it, while the generic
+checksum can.
+
+**This is the shape the halt needs.** Accept the wrong block, run the wrong
+code, compute a wrong value, and the guest refuses it. The halt map says almost
+every site is `HEQI rX, -1` or `HEQI rX, 0`, a guest checking a return code.
+
+## The fix, and why it satisfies "do not fix one game and break another"
+
+`debug.rpcsx.thor.spu_strict_checksum = 1` makes ARM64 use the one-to-one form.
+
+It cannot break a title by accepting something wrong, because it accepts
+strictly FEWER blocks than today. The only risk is the opposite, rejecting
+blocks it should accept, which shows up immediately as endless recompilation.
+
+**Verified on the device:** `SPU Runtime: Built 3118 functions`, the same count
+as the folded path, and the title renders at 29.60 FPS. No false rejections.
+
+**Default OFF** until the throughput cost is measured. Strict covers 64 bytes an
+iteration against 96, and a correctness fix on a hot path still has to show its
+price.
+
+## The mistake that proves the risk is real
+
+The first attempt patched the LOOP path and the host mirror and left the TAIL
+path folding. IR and mirror then disagreed, every block failed verification, and
+the run spent **210 seconds with no `SPU Runtime: Built` line at 0.00 FPS**,
+recompiling for ever.
+
+That is exactly the failure the file warns about, produced by a one-sided edit.
+Both emit sites and the mirror must change together, and
+`tools/check_checksum_mirror.py` is the check that they agree.
+
+# An emergency thermal stop, because a frame cap is not thermal protection
+
+**The guard bounds the RENDER path and the heat is not there.** With the guard
+engaged and holding 20 FPS, Transformers still climbed to 95 C, because one SPU
+thread is busy regardless of presentation.
+
+So there is a second line. If the junction stays at or above the abort
+temperature for a few consecutive samples, `perf_monitor` PAUSES emulation. A
+paused emulator measures 0.33 cores against 3.91 running, so this stops the heat
+instead of asking the renderer to slow down.
+
+    debug.rpcsx.thor.thermal_abort_c      default 100, 0 disables
+    debug.rpcsx.thor.thermal_abort_dwell  default 3 samples, about 6 s
+
+**The default is deliberately above normal play.** This title peaks at 94 to
+97 C in gameplay, so 100 never fires in normal use and only catches a runaway.
+
+**Do NOT set it below the PPU compile peak.** Compile legitimately reaches 91 to
+95 C, so an abort at 90 fires on every cold boot. Measured: at 90 it tripped
+during compile, exactly as configured.
+
+An experiment SHOULD set it lower than the default, because a harness left
+running unattended is how this device was held at 95 C in the first place.

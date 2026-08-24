@@ -66,6 +66,20 @@ void perf_monitor::operator()()
 			// Stop the emulator if the guest halted its own SPU.
 			thor::spu_trap_stop_tick();
 
+			// Emergency thermal stop. The frame cap bounds the renderer; this stops
+			// the emulator. Same reason the trap stop lives here: pausing takes
+			// locks, so it must not happen on a sampling or signal path.
+			if (thor::thermal_guard::check_thermal_abort())
+			{
+				perf_log.error("THERMAL ABORT at %u C, sustained for %u samples. Pausing "
+					"emulation to protect the device. A frame cap does not stop this: the "
+					"heat is SPU work, not presentation. Raise or clear "
+					"debug.rpcsx.thor.thermal_abort_c to continue.",
+					thor::thermal_guard::hottest_celsius(), thor::thermal_guard::g_abort_dwell);
+
+				Emu.Pause();
+			}
+
 			// Log the EDGES only. A line every 2 s would bury the log, and the
 			// interesting facts are when it engaged, how hot it was, and when it
 			// let go again.

@@ -525,6 +525,27 @@ stale object can look like a fault:
 adb shell setprop debug.rpcsx.thor.spu_native_object_cache 0
 ```
 
+
+### Overheating protection
+
+Two layers, because a frame cap is not thermal protection: the emulator can be
+hot from SPU work while the renderer is already capped.
+
+* **The thermal guard** lowers the frame limit above 85 C.
+* **The emergency stop** pauses emulation outright if the CPU junction stays at
+  or above 100 C. A paused emulator uses about 0.3 cores against 3.9 running, so
+  this actually stops the heat.
+
+```sh
+adb shell setprop debug.rpcsx.thor.thermal_abort_c 95   # stricter
+adb shell setprop debug.rpcsx.thor.thermal_abort_c 0    # disable
+```
+
+The default of 100 C is above normal play, which peaks around 94-97 C in a
+demanding title, so it only catches a runaway. Do not set it below about 95 C
+unless you accept it firing during the first-load compile, which legitimately
+reaches 91-95 C.
+
 ### Keeping savestates for experiments
 
 A savestate is the only repeatable gameplay workload on this device, so the
