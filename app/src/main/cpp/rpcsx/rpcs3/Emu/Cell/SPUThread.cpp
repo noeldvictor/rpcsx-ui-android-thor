@@ -255,9 +255,15 @@ static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
 	// experiment most needs to be able to state.
 	if ((checked % (1u << 20)) == 0)
 	{
+		// Print spurs_addr itself. The near-spurs counter is guarded by it, and
+		// the do_putllc fast path is gated on the same comparison, so an
+		// invalid_spurs value of 0xffffff80 would make BOTH dead code and turn
+		// a count of zero into an artifact rather than a result.
 		spu_log.error("Thor SPURS tear probe alive: %llu plain GETs checked, %llu overlapped a "
-			"locked line, %llu of those within 0x80 of spurs_addr.",
-			checked, +s_locked, +s_locked_spurs);
+			"locked line, %llu of those within 0x80 of spurs_addr. spurs_addr=0x%x (%s).",
+			checked, +s_locked, +s_locked_spurs, spurs_addr,
+			spurs_addr == 0u - 0x80u ? "INVALID, near-spurs count is meaningless" :
+				spurs_addr == 0 ? "UNSET" : "real");
 	}
 
 	for (u32 i = 0; i < lines; i++)

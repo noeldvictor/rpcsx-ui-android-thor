@@ -244,3 +244,80 @@ halt, which is the one way this experiment can lie.
 The fault rate is the measurement, so the run has to be long enough to see one.
 No boot in about 92 controlled sessions produced a halt on demand, so treat a
 short clean run as no evidence rather than as a fix.
+
+## Result: the tear hypothesis is REFUTED
+
+Measured on device, restored 3D combat, 2026-08-23. Three arms, then a fourth
+run to remove the one artifact that could have voided them.
+
+| arm | overlaps / plain GETs checked | within 0x80 of `spurs_addr` | fps |
+| --- | --- | --- | --- |
+| control, shipped profile | 8859 / 15728640 | **0** | 19.10 |
+| narrow, `spurs_store_exclusive=1` | 8773 / 14680064 | **0** | 18.50 |
+| wide, accurate reservations | 9058 / 14680064 | **0** | 18.80 |
+
+**No plain MFC GET ever overlapped a SPURS control line under an active
+reservation lock.** The `do_putllc` fast path applies only to addresses within
+0x80 of `spurs_addr`, so if nothing reads those lines concurrently, the tear
+described above cannot happen. Steps 2 to 5 of that mechanism do not occur.
+
+The narrow arm also changed nothing, 8773 against 8859, which is noise. So the
+fix built for this hypothesis fixes nothing, as expected once the near-spurs
+count is zero.
+
+### The check that stopped this being void
+
+A count of zero had a second possible cause. The counter is guarded by
+`spurs_addr`, and the same value gates the fast path. `spurs_addr` can hold
+`invalid_spurs`, which is `0xffffff80`, and against that value
+`addr - spurs_addr <= 0x80` reduces to `addr == 0`. Both the counter and the
+fast path would then be dead code, and zero would mean nothing at all.
+
+So the probe was changed to print the value, and a fourth run read it:
+
+    spurs_addr=0x1e97a80 (real).  0 of 5138 within 0x80 of spurs_addr
+
+The address is real. The comparison was live. **The zero is a result, not an
+artifact.**
+
+### What the other 8800 overlaps are, and why they say nothing
+
+They are arm-independent by construction, and that is a flaw in the probe rather
+than a finding. The probe samples the reservation lock bit, which every path
+sets, fast and accurate alike. It therefore cannot tell a protected write from an
+unprotected one, and the near-identical counts across three arms are what that
+design guarantees. Only the near-`spurs_addr` column carries information.
+
+Anyone reusing `spurs_tear_probe` should read only that column.
+
+## What this leaves standing, and what it does not
+
+Standing, because it is static and does not depend on the refuted mechanism:
+
+- 46 reachable halt sites against 146 from a linear scan.
+- Seven of them are alignment asserts with the predicate given above.
+
+**Not standing: the assumption that the halt which fires is one of those seven.**
+That was never measured. No reproduction has been caught with the trap decoder in
+place, so the halting program counter is still unknown, and **39 of the 46
+reachable halts remain unclassified**. The seven were classified first because
+they share an obvious idiom, not because there is evidence that one of them fires.
+
+The next honest step is not another fix for this hypothesis. It is either to
+classify the remaining 39, or to catch one reproduction and read the program
+counter, which the decoder now makes diagnostic.
+
+### And a distinction that was being blurred
+
+There are TWO SPURS failures on this device and they are not the same fault:
+
+| | Transformers | Eternal Sonata and Folklore |
+| --- | --- | --- |
+| symptom | HALT, `0xffdead00`, a guest assert | STALL, no halt |
+| site | unknown program counter | `pc=0x12b0`, `lsa=0x100`, 24-retry cap |
+| reservation | unknown | clean: no leaked lock, counter 4, readable |
+| reproduces | no, about 92 sessions | yes, on boot |
+
+`0x12b0` is a `WRCH`, not a halt, so the stall is not this assert firing. This
+note is about the halt. The stall has its own entry in `AGENTS.md`, and it has
+something this does not: **a reproduction.**

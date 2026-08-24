@@ -7999,6 +7999,14 @@ as false for -8.4% CPU. `GETLLAR` publishes a 128-byte line and the SPURS kernel
 reads its pointers out of it, so a line that the guest can observe part-written
 gives a mixed pointer, a misaligned pointer, and this halt. **Not yet measured.**
 
+**The follow-on tear hypothesis was tested on device and REFUTED.** Three arms
+on restored 3D combat measured 0 plain GETs overlapping a SPURS control line
+under an active reservation lock, in every arm, with `spurs_addr=0x1e97a80`
+confirmed real rather than `invalid_spurs`. The narrow fix built for it
+changed nothing, 8773 against 8859. **And the assumption that the halt which
+fires is one of the seven asserts was never measured: 39 of the 46 reachable
+halts are still unclassified and the halting program counter is unknown.**
+
 Full account, including two wrong turns this analysis made first, in
 [`docs/arm64/spurs-halt.md`](docs/arm64/spurs-halt.md). The tool is
 `tools/spu_cfg.py`.
