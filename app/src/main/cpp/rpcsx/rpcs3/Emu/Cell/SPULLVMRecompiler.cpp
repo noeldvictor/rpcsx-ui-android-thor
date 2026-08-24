@@ -103,6 +103,40 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept
 // Unset means "use the config", so a device with neither set is bit-identical
 // to before this existed. Read once, because the recompiler must not change
 // shape between the IR it emits and the host mirror that checks it.
+// Cheaper host-counter to PS3-timebase conversion in the INLINED decrementer
+// read. Default off.
+//
+// The shipped form is (tsc/freq)*80e6 + ((tsc%freq)*80e6)/freq: a UDIV, a UREM
+// and a second UDIV. That shape exists only to stop `tsc * 80e6` overflowing 64
+// bits. Reducing 80e6/freq by its GCD at compile time removes the need: on this
+// device freq is 19.2 MHz so the fraction is exactly 25/6, and the conversion
+// becomes one multiply and one division by a small constant, which LLVM lowers
+// to a multiply-shift.
+//
+// It is EXACT rather than approximate, and it cannot overflow at the reduced
+// numerator - 2^64/25 is about a million years at 19.2 MHz.
+//
+// It matters because this read is inlined into every SPU `RDCH RdDec`, and the
+// SPURS kernel of Transformers sits in a counted delay loop that runs it 2400
+// times per wait, per SPU. See docs/arm64/transformers-30fps.md.
+static bool get_thor_spu_dec_fastconv() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_dec_fastconv", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
 static xfloat_accuracy get_thor_xfloat_accuracy() noexcept
 {
 	static const int s_override = []() -> int
@@ -4700,9 +4734,37 @@ public:
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr<u64>(OFFSET_OF(spu_thread, ch_dec_start_timestamp)));
 				const auto dec_value = m_ir->CreateLoad(get_type<u32>(), spu_ptr<u32>(OFFSET_OF(spu_thread, ch_dec_value)));
 				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
-				const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
-				const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));
-				const auto tsctb = m_ir->CreateSub(m_ir->CreateAdd(tscx, tscm), timebase_offs);
+				// Default off. See get_thor_spu_dec_fastconv.
+				llvm::Value* tsctb = nullptr;
+
+				if (get_thor_spu_dec_fastconv())
+				{
+					u64 num = 80000000, den = utils::get_tsc_freq();
+
+					// Reduce by GCD so one multiply and one small division do the
+					// whole conversion, exactly.
+					for (u64 a = num, b = den; b;)
+					{
+						const u64 t = a % b;
+						a = b;
+						b = t;
+
+						if (!b)
+						{
+							num /= a;
+							den /= a;
+						}
+					}
+
+					tsctb = m_ir->CreateSub(m_ir->CreateUDiv(m_ir->CreateMul(tsc, m_ir->getInt64(num)), m_ir->getInt64(den)), timebase_offs);
+				}
+				else
+				{
+					const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
+					const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));
+					tsctb = m_ir->CreateAdd(tscx, tscm);
+					tsctb = m_ir->CreateSub(tsctb, timebase_offs);
+				}
 				const auto frz = m_ir->CreateLoad(get_type<u8>(), spu_ptr<u8>(OFFSET_OF(spu_thread, is_dec_frozen)));
 				const auto frzev = m_ir->CreateICmpEQ(frz, m_ir->getInt8(0));
 
@@ -5562,9 +5624,37 @@ public:
 			{
 				const auto timebase_offs = load_timebase_offs();
 				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
-				const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
-				const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));
-				const auto tsctb = m_ir->CreateSub(m_ir->CreateAdd(tscx, tscm), timebase_offs);
+				// Default off. See get_thor_spu_dec_fastconv.
+				llvm::Value* tsctb = nullptr;
+
+				if (get_thor_spu_dec_fastconv())
+				{
+					u64 num = 80000000, den = utils::get_tsc_freq();
+
+					// Reduce by GCD so one multiply and one small division do the
+					// whole conversion, exactly.
+					for (u64 a = num, b = den; b;)
+					{
+						const u64 t = a % b;
+						a = b;
+						b = t;
+
+						if (!b)
+						{
+							num /= a;
+							den /= a;
+						}
+					}
+
+					tsctb = m_ir->CreateSub(m_ir->CreateUDiv(m_ir->CreateMul(tsc, m_ir->getInt64(num)), m_ir->getInt64(den)), timebase_offs);
+				}
+				else
+				{
+					const auto tscx = m_ir->CreateMul(m_ir->CreateUDiv(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000));
+					const auto tscm = m_ir->CreateUDiv(m_ir->CreateMul(m_ir->CreateURem(tsc, m_ir->getInt64(utils::get_tsc_freq())), m_ir->getInt64(80000000)), m_ir->getInt64(utils::get_tsc_freq()));
+					tsctb = m_ir->CreateAdd(tscx, tscm);
+					tsctb = m_ir->CreateSub(tsctb, timebase_offs);
+				}
 				m_ir->CreateStore(tsctb, spu_ptr<u64>(OFFSET_OF(spu_thread, ch_dec_start_timestamp)));
 			}
 			else

@@ -215,3 +215,42 @@ a job submission to change. Note that the obvious target, PhysX, is not
 separable: the title creates six SPU threads, all `CellSpursKernel0` to `5`, and
 loads `libspurs_jq.sprx`, so physics is dispatched as SPURS jobs among all other
 work.
+
+## The decrementer fast conversion: implemented, measured, NULL
+
+`debug.rpcsx.thor.spu_dec_fastconv`, default 0, in `SPULLVMRecompiler.cpp`.
+
+The shipped inlined decrementer read converts the host counter to the 80 MHz PS3
+timebase with `(tsc/freq)*80e6 + ((tsc%freq)*80e6)/freq` - a UDIV, a UREM and a
+second UDIV - a shape that exists only to stop `tsc * 80e6` overflowing 64 bits.
+Reducing `80e6/freq` by its GCD at compile time removes the need: on this device
+freq is 19.2 MHz, so the fraction is exactly **25/6**, and the conversion becomes
+one multiply and one division by a small constant. It is exact, not approximate,
+and cannot overflow at the reduced numerator.
+
+The reasoning was sound and the result is null:
+
+| arm | fps | cores | CPU |
+| --- | --- | --- | --- |
+| control | 18.40, 18.47 | 5.211, 5.045 | 69.1%, 67.5% |
+| `spu_dec_fastconv=1` | 18.23 | 5.613 | 73.8% |
+
+So the decrementer conversion is not the bottleneck either. Kept default off.
+
+## The artifact that produced THREE false wins
+
+Three runs reported roughly **29 FPS on about 3 cores at 33% CPU and 68 C**:
+29.97, 27.95 and 29.37. Each looked like the answer to the whole problem. Each
+had `loadstate: {"ok":false}`.
+
+A failed load leaves the game wherever the BOOT reached, and that place passes a
+`coresBusy>4.5` gate momentarily while actually running a LIGHTER scene. So the
+number is real, and it is not the combat scene.
+
+It does carry one genuine piece of information: **this title does reach 30 FPS on
+this device in lighter scenes.** The 3D combat workload is the hard case, not the
+emulator as a whole.
+
+The harness now REQUIRES `ok:true` from loadstate, retries three times, and
+refuses the run otherwise. A gate that can pass for the wrong reason is not a
+gate - the same lesson the savestate byte-count check records.

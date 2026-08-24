@@ -89,7 +89,23 @@ one_run(){
   [ "$ok" = "0" ] && { echo "   $tag SKIP (never rendered)"; return; }
 
   # Load only - the file is already in place from before the boot.
-  echo "   loadstate: $(api loadstate | head -c 60)"
+  #
+  # REQUIRE ok:true. A failed load leaves the game wherever the boot reached,
+  # and that place passes the cores gate while running a LIGHTER scene at about
+  # 29 FPS on 3 cores at 33% CPU. That artifact produced three separate false
+  # "wins" - 29.97, 27.95 and 29.37 - each of which looked like the answer and
+  # none of which was the combat scene. Retry, then refuse the run.
+  LOADED=0
+  for _l in 1 2 3; do
+    LS=$(api loadstate)
+    echo "   loadstate: $(printf '%s' "$LS" | head -c 40)"
+    case "$LS" in *'"ok":true'*) LOADED=1; break;; esac
+    sh_ "sleep 8" >/dev/null
+  done
+  if [ "$LOADED" != "1" ]; then
+    echo "   $tag INVALID (savestate never loaded; refusing to measure the wrong scene)"
+    return
+  fi
 
   # THE GATE, and it now proves the scene rather than inferring it.
   #
