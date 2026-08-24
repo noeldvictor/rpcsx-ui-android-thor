@@ -1362,6 +1362,109 @@ bool handle_access_violation(u32 addr, bool is_writing, bool is_exec, ucontext_t
 				sys_log.fatal("SPU trap context: [pc-16..pc] = %08x %08x %08x %08x %08x",
 					trapped_spu->_ref<u32>(halt_pc - 16), trapped_spu->_ref<u32>(halt_pc - 12),
 					trapped_spu->_ref<u32>(halt_pc - 8), trapped_spu->_ref<u32>(halt_pc - 4), inst);
+
+				// Name the assert, not only the address.
+				//
+				// Recursive-descent disassembly of a captured CellSpursKernel0
+				// local store (debug-captures/spu_ls_CellSpursKernel0.bin) walked
+				// 5665 instructions from four observed program counters and found
+				// 46 reachable halt sites, against 146 that a linear scan reports.
+				// SEVEN of those 46, one cluster of DMA helpers at 0x133c0 to
+				// 0x137d0, share the idiom below. Each is a BRSL target, so each
+				// is a function entry, called one to three times. The other 39
+				// reachable halts are different checks, so this decoder says so
+				// rather than forcing every trap into one shape:
+				//
+				//     ANDI  rX, r3, 127         is the effective address aligned
+				//     SHLQBYI rY, r4, 4
+				//     ANDI  rZ, rY, 3 | 7 | 15  is the size a multiple
+				//     CEQI/SFI/SELB rR, ...
+				//     HEQI  rR, 0               halt unless BOTH hold
+				//
+				// So the SPURS kernel halts on a MISALIGNED DMA OR ATOMIC
+				// ARGUMENT. That is a data-validity check, not a timing check.
+				// It matters because every mechanism excluded so far perturbed
+				// scheduling, and four of those were forced by injection with no
+				// halt. Scheduling cannot make a pointer misaligned, so those
+				// results do not bound this failure at all.
+				//
+				// The value the assert refuses is therefore an address the guest
+				// read out of a SPURS structure. Print the candidate address and
+				// size so the first reproduction identifies WHICH pointer is bad,
+				// instead of only where the guest gave up.
+				{
+					const auto quad = [&](u32 r)
+					{
+						return trapped_spu->gpr[r & 0x7f];
+					};
+
+					u32 ea_reg = umax;
+					u32 size_mask = 0;
+
+					// ANDI is RI10 with inst >> 24 == 0x14. A mask of 127 against
+					// an argument register is the address-alignment half of the
+					// idiom; 3, 7 or 15 is the size half.
+					for (u32 back = 4; back <= 64; back += 4)
+					{
+						if (halt_pc < back)
+						{
+							break;
+						}
+
+						const u32 w = trapped_spu->_ref<u32>(halt_pc - back);
+
+						if ((w >> 24) != 0x14)
+						{
+							continue;
+						}
+
+						const u32 m = (w >> 14) & 0x3ff;
+
+						if (m == 127)
+						{
+							// Keep looking. A block can hold two masks of 127: the
+							// address check, and a later one on a derived value that
+							// never reaches the halt. Block 0x133c0 has ANDI r17, r3,
+							// 127 and then ANDI r14, r16, 127. The address check is
+							// always the earlier, so the last one this backward scan
+							// sees is the right one. Taking the nearest instead names
+							// r16 on four of the seven asserts, which is a scratch
+							// register and not the pointer that was refused.
+							ea_reg = (w >> 7) & 0x7f;
+						}
+						else if ((m == 3 || m == 7 || m == 15) && size_mask == 0)
+						{
+							size_mask = m;
+						}
+					}
+
+					if (ea_reg != umax)
+					{
+						const u32 ea = trapped_spu->gpr[ea_reg]._u32[3];
+
+						sys_log.fatal("SPU trap is an ALIGNMENT ASSERT: candidate effective address in "
+							"r%u = 0x%08x, %s 128-byte aligned. Size mask checked = %u. This halt refuses "
+							"a MISALIGNED DMA or atomic argument, so look for who wrote this pointer, "
+							"not for a scheduling race.",
+							ea_reg, ea, (ea & 127) == 0 ? "IS" : "is NOT", size_mask);
+					}
+					else
+					{
+						sys_log.fatal("SPU trap: no alignment-assert idiom found in the 16 instructions "
+							"before the halt. This is a different check from the SPURS DMA argument asserts.");
+					}
+
+					// The SPU ABI passes arguments in r3 upward. Print them whole,
+					// because the assert reads word 1 of the size register and the
+					// preferred slot alone would hide it.
+					for (u32 r = 3; r <= 6; r++)
+					{
+						const auto v = quad(r);
+
+						sys_log.fatal("SPU trap arg r%u = %08x %08x %08x %08x",
+							r, v._u32[0], v._u32[1], v._u32[2], v._u32[3]);
+					}
+				}
 			}
 
 			// The SPURS kernel halts itself when it does not agree with the

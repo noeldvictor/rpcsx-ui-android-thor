@@ -17,6 +17,7 @@ The detail behind it is split by topic, because a single file had grown past
 - `docs/arm64/spin.md` — where the CPU time goes, and the one untested lever
 - `docs/arm64/instruments.md` — what each measuring tool can and cannot answer
 - `docs/arm64/thermal.md` — sensors and the thermal guard
+- `docs/arm64/spurs-halt.md` — WHICH check the SPURS kernel refuses, and why every timing injection missed it
 - `docs/arm64/ledger.md` — the audit ledger and open opportunities
 - `docs/hardware/` — Arm's vendored per-core optimization guides
 
@@ -7977,6 +7978,30 @@ somewhere different.
 This is a SPURS emulation bug and it is NOT fixed. It is the thing standing
 between this title and being reliable, and it is a much deeper fix than any
 setting.
+
+**The halt has now been identified.** Recursive-descent disassembly of a
+captured `CellSpursKernel0` local store finds 46 reachable halt sites, against
+146 that a linear scan reports. Seven of them are one cluster of DMA helpers,
+and each asserts the same thing:
+
+> halt unless the effective address in `r3` is aligned to 128 bytes, and the
+> size in `r4` is a multiple of 4, 8 or 16.
+
+**That is a data check, not a timing check.** It refuses a POINTER. This matters
+because the ten mechanisms excluded before it were all perturbations of
+scheduling, and four of those were FORCED by injection with no halt: 3840
+dropped notifications, a 3x wait scale, `max_run` clamped to 1 for 16896
+applications, and 8080 checksum mutations per row. None of those can make a
+pointer misaligned, so **those four null results do not bound this failure.**
+
+The lead that follows is `Accurate SPU Reservations`, which this profile SHIPS
+as false for -8.4% CPU. `GETLLAR` publishes a 128-byte line and the SPURS kernel
+reads its pointers out of it, so a line that the guest can observe part-written
+gives a mixed pointer, a misaligned pointer, and this halt. **Not yet measured.**
+
+Full account, including two wrong turns this analysis made first, in
+[`docs/arm64/spurs-halt.md`](docs/arm64/spurs-halt.md). The tool is
+`tools/spu_cfg.py`.
 
 # Transformers: the full lever sweep
 

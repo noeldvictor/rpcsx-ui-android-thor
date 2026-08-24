@@ -577,6 +577,27 @@ abort, a shader stall, a hang, and others — and it never writes a game profile
 `docs/arm64/title-recipes.md` records what each title already refused, so the
 same experiment is not run twice.
 
+### When a title halts its own SPU
+
+An SPU access violation at `0xffdead00` is an emulator trap, not a wild pointer.
+The guest ran a halt instruction, so one of its own checks refused a value. To
+find out WHICH check, dump the local store and walk it:
+
+```sh
+adb shell setprop debug.rpcsx.thor.spu_ls_dump CellSpursKernel0
+python tools/spu_cfg.py debug-captures/spu_ls_CellSpursKernel0.bin --entry 0xf3c4
+```
+
+Give it program counters you really saw, from `/diag` or from the trap message.
+A linear scan of a local store reports three times too many halt sites, because
+almost every word decodes as a valid SPU instruction; following control flow
+separates code from data.
+
+On the SPURS kernel this found that seven halts are argument asserts that refuse
+a MISALIGNED pointer. That is a data fault, not a scheduling fault, and it is why
+a long series of timing experiments never reproduced it. See
+[`docs/arm64/spurs-halt.md`](docs/arm64/spurs-halt.md).
+
 Ongoing performance work is logged in `debug-experiments/`. Recent highlights:
 
 - [ARM64 upstream integration, August 2026](debug-experiments/20260805-arm64-upstream-perf-uplift.md)
