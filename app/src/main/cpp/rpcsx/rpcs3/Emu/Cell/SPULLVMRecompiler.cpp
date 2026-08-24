@@ -97,12 +97,21 @@ static bool get_thor_spu_strict_checksum() noexcept
 #ifdef ANDROID
 		char value[PROP_VALUE_MAX]{};
 
-		if (__system_property_get("debug.rpcsx.thor.spu_strict_checksum", value) > 0)
+		if (__system_property_get("debug.rpcsx.thor.spu_strict_checksum", value) > 0 && value[0])
 		{
-			return value[0] == '1' || value[0] == 't' || value[0] == 'y';
+			// Explicit 0/f/n restores the old folded checksum.
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
 		}
 #endif
-		return false;
+		// DEFAULT ON since 2026-08-23. The folded form cannot tell some blocks
+		// apart: 25 distinct-content pairs collide in the real SPURS image and
+		// the generic form separates 17 of them, one differing in 58 bytes.
+		//
+		// It accepts strictly FEWER blocks than the fold, so it cannot break a
+		// title by letting something wrong through, and it measured free: 2.708
+		// cores against 2.740 with overlapping ranges, same 30 FPS, same 3118
+		// functions built.
+		return true;
 	}();
 
 	return s_value;
