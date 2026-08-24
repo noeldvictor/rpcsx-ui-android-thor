@@ -337,3 +337,66 @@ PhysX on the SPUs. It could not be confirmed or refuted from the device:
 So PhysX may well be a large part of SPU0's load. Nothing available on the device
 can attribute it, and attributing it would require reverse engineering the job
 descriptors, which is the one place Ghidra would earn its keep.
+
+## The SPU profiler settles it: SPU0 is POLLING, not working
+
+`debug.rpcsx.thor.spu_prof=1` arms RPCS3's own SPU profiler, which reports per
+thread how many samples were idle and how many were reservation operations.
+Measured on gated 3D combat:
+
+| thread | idle | reservation share of non-idle |
+| --- | --- | --- |
+| `SPU[0x0000100]` CellSpursKernel0 | **1.23%** | **99.10%** |
+| `SPU[0x1000100]` | 91.07% | 40.30% |
+| `SPU[0x2000100]` | 92.12% | 38.97% |
+| `SPU[0x3000100]` | 91.23% | 42.55% |
+| `SPU[0x4000100]` | 91.08% | 43.08% |
+| all threads | 76.44% | 80.83% |
+
+**SPU0 is 98.8% busy and essentially all of it is reservation traffic.** It is
+GETLLAR/PUTLLC polling the SPURS control line - waiting for work - not computing.
+The other five SPUs are about 91% idle.
+
+That corrects the earlier reading of the per-thread census. SPU0 does carry twice
+the CPU of any other SPU, but CPU time is not work: it is a spin. **The "SPU
+50.4%" the game's own overlay reports is mostly WASTE, not physics.**
+
+## And the spin is not the bottleneck either
+
+`debug.rpcsx.thor.getllar_busy_percent` controls whether a GETLLAR wait spins or
+sleeps. It defaults to 100, always spin.
+
+| arm | fps | CPU | stale128 |
+| --- | --- | --- | --- |
+| control, 100 | 18.46 | 64.8% | 5,598,729 |
+| 25 | 18.17 | 67.0% | 3,306,310 |
+| 0, sleep | 18.32 | 73.2% | 3,391,509 |
+
+**Reservation conflicts fell about 40% and the frame rate did not move.** So the
+36,000 failed reservations per second are a SYMPTOM of the polling, not the
+cause of the frame time. Removing 40% of them buys nothing.
+
+## What this leaves, stated precisely
+
+- The GPU is idle: 3.4% by the guest's own overlay, 2.3% of the host profile.
+- Five of six SPUs are ~91% idle.
+- The sixth is ~99% busy POLLING for work it is not being given.
+- Reducing that polling by 40% changes no frames.
+
+Every SPU is therefore waiting, and the frame is produced elsewhere - the PPU
+threads and `rsx::thread`. Nothing in the system is saturated, which is the
+signature of a SERIAL DEPENDENCY CHAIN rather than a throughput limit.
+
+**So the question worth asking next is not "why are the SPUs slow" - they are
+idle. It is "what is the PPU waiting for between frames".** That is a different
+investigation from the one this file has been running, and none of the ten
+levers tested here touch it.
+
+## And it is not PhysX, on this evidence
+
+The hypothesis predicted the right SHAPE - PC PhysX is famously single-threaded
+and bottlenecks one core while others idle - and the census did show exactly one
+saturated thread. But the profiler shows that thread is 99.1% RESERVATION
+polling, not computation. A physics solver saturating a core would show as
+compute samples, not as reservation samples. Whatever SPU0 is doing, it is
+waiting on a lock, not solving constraints.

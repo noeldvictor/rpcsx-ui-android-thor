@@ -1,4 +1,5 @@
 ﻿#include "rx/align.hpp"
+#include "Emu/CPU/thor_spu_prof.h"
 #include "stdafx.h"
 #include "util/JIT.h"
 #include "util/date_time.h"
@@ -3423,7 +3424,7 @@ std::string spu_thread::dump_misc() const
 
 	fmt::append(ret, "Block Weight: %u (Retreats: %u)", block_counter, block_failure);
 
-	if (g_cfg.core.spu_prof)
+	if (thor::spu_prof_override(!!g_cfg.core.spu_prof))
 	{
 		// Get short function hash and position in chunk
 		fmt::append(ret, "\nCurrent block: %s", spu_block_hash{atomic_storage<u64>::load(block_hash)});
