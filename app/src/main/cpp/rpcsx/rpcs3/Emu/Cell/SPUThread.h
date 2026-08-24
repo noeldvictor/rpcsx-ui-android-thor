@@ -753,6 +753,20 @@ public:
 	u64 ch_dec_start_timestamp = 0; // timestamp of writing decrementer value
 	u32 ch_dec_value = 0;           // written decrementer value
 	bool is_dec_frozen = false;
+
+	// Decrementer read cache, for debug.rpcsx.thor.spu_dec_cache.
+	//
+	// The SPU profiler puts 96.84% of CellSpursKernel0 in ONE block, a 2400
+	// iteration SPURS backoff whose body is an increment, an RDCH of the
+	// decrementer, a compare and a branch. Each of those reads compiles to an
+	// mrs cntvct_el0 plus a timebase conversion. The intermediate values are
+	// dead - the destination is overwritten every iteration - but LLVM cannot
+	// remove them because llvm.readcyclecounter carries side effects by design.
+	//
+	// So instead of removing the reads, serve most of them from a cache and take
+	// the real counter read every Nth time.
+	u64 thor_dec_cached_tsc = 0;
+	u32 thor_dec_cache_ctr = 0;
 	std::pair<u32, u32> read_dec() const; // Read decrementer
 
 	atomic_t<u32> run_ctrl = 0; // SPU Run Control register (only provided to get latest data written)

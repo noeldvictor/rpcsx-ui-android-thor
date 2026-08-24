@@ -120,6 +120,54 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept
 // It matters because this read is inlined into every SPU `RDCH RdDec`, and the
 // SPURS kernel of Transformers sits in a counted delay loop that runs it 2400
 // times per wait, per SPU. See docs/arm64/transformers-30fps.md.
+// Serve most inlined decrementer reads from a per-SPU cache.
+//
+// MEASURED TARGET. The SPU profiler puts 96.84% of CellSpursKernel0 in ONE
+// block - a 2400 iteration SPURS backoff whose body is an increment, an RDCH of
+// the decrementer, a compare and a branch. Each read compiles to an
+// mrs cntvct_el0 plus a 19.2 MHz to 80 MHz timebase conversion. SPU0 is 4% idle,
+// so it burns a core on a loop that computes nothing while the other five SPUs
+// sit ~91% idle behind it.
+//
+// The intermediate reads are DEAD - the destination is overwritten every
+// iteration - but LLVM cannot delete them, because llvm.readcyclecounter carries
+// side effects by design. That is CORRECT in general: a loop that polls the timer
+// in its EXIT CONDITION must re-read it, and marking the intrinsic pure would let
+// LLVM hoist the read out of such a loop and hang it.
+//
+// So this does not remove reads. It takes the real counter every Nth read and
+// serves the rest from a cached value, which bounds the error rather than
+// changing what the read means. A polling loop still re-reads and still exits,
+// at most N iterations late; in a tight loop that is tens of nanoseconds.
+//
+//   debug.rpcsx.thor.spu_dec_cache = N   (power of two, 0 or unset = off)
+//
+// Default off. This CHANGES OBSERVED GUEST TIME and must be measured, not
+// assumed.
+static u32 get_thor_spu_dec_cache() noexcept
+{
+	static const u32 s_value = []() -> u32
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_dec_cache", value) > 0 && value[0])
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			// Power of two only, so the test is a mask rather than a modulo.
+			if (parsed >= 2 && parsed <= 4096 && (parsed & (parsed - 1)) == 0)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+#endif
+		return 0;
+	}();
+
+	return s_value;
+}
+
 static bool get_thor_spu_dec_fastconv() noexcept
 {
 	static const bool s_value = []() -> bool
@@ -4734,7 +4782,38 @@ public:
 				const auto timebase_offs = load_timebase_offs();
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr<u64>(OFFSET_OF(spu_thread, ch_dec_start_timestamp)));
 				const auto dec_value = m_ir->CreateLoad(get_type<u32>(), spu_ptr<u32>(OFFSET_OF(spu_thread, ch_dec_value)));
-				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
+				llvm::Value* tsc = nullptr;
+
+				if (const u32 thor_cache = get_thor_spu_dec_cache())
+				{
+					// Take the real counter when (++ctr & (N-1)) == 0, else reuse the
+					// cached one. See get_thor_spu_dec_cache.
+					const auto ctr_ptr = spu_ptr<u32>(OFFSET_OF(spu_thread, thor_dec_cache_ctr));
+					const auto cache_ptr = spu_ptr<u64>(OFFSET_OF(spu_thread, thor_dec_cached_tsc));
+					const auto ctr = m_ir->CreateAdd(m_ir->CreateLoad(get_type<u32>(), ctr_ptr), m_ir->getInt32(1));
+					m_ir->CreateStore(ctr, ctr_ptr);
+
+					const auto need = m_ir->CreateICmpEQ(m_ir->CreateAnd(ctr, m_ir->getInt32(thor_cache - 1)), m_ir->getInt32(0));
+					const auto fresh = llvm::BasicBlock::Create(m_context, "dec_fresh", m_function);
+					const auto after = llvm::BasicBlock::Create(m_context, "dec_after", m_function);
+					const auto entry_bb = m_ir->GetInsertBlock();
+					m_ir->CreateCondBr(need, fresh, after);
+
+					m_ir->SetInsertPoint(fresh);
+					const auto real = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
+					m_ir->CreateStore(real, cache_ptr);
+					m_ir->CreateBr(after);
+
+					m_ir->SetInsertPoint(after);
+					const auto phi = m_ir->CreatePHI(get_type<u64>(), 2);
+					phi->addIncoming(real, fresh);
+					phi->addIncoming(m_ir->CreateLoad(get_type<u64>(), cache_ptr), entry_bb);
+					tsc = phi;
+				}
+				else
+				{
+					tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
+				}
 				// Default off. See get_thor_spu_dec_fastconv.
 				llvm::Value* tsctb = nullptr;
 
@@ -5624,7 +5703,38 @@ public:
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
 				const auto timebase_offs = load_timebase_offs();
-				const auto tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
+				llvm::Value* tsc = nullptr;
+
+				if (const u32 thor_cache = get_thor_spu_dec_cache())
+				{
+					// Take the real counter when (++ctr & (N-1)) == 0, else reuse the
+					// cached one. See get_thor_spu_dec_cache.
+					const auto ctr_ptr = spu_ptr<u32>(OFFSET_OF(spu_thread, thor_dec_cache_ctr));
+					const auto cache_ptr = spu_ptr<u64>(OFFSET_OF(spu_thread, thor_dec_cached_tsc));
+					const auto ctr = m_ir->CreateAdd(m_ir->CreateLoad(get_type<u32>(), ctr_ptr), m_ir->getInt32(1));
+					m_ir->CreateStore(ctr, ctr_ptr);
+
+					const auto need = m_ir->CreateICmpEQ(m_ir->CreateAnd(ctr, m_ir->getInt32(thor_cache - 1)), m_ir->getInt32(0));
+					const auto fresh = llvm::BasicBlock::Create(m_context, "dec_fresh", m_function);
+					const auto after = llvm::BasicBlock::Create(m_context, "dec_after", m_function);
+					const auto entry_bb = m_ir->GetInsertBlock();
+					m_ir->CreateCondBr(need, fresh, after);
+
+					m_ir->SetInsertPoint(fresh);
+					const auto real = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
+					m_ir->CreateStore(real, cache_ptr);
+					m_ir->CreateBr(after);
+
+					m_ir->SetInsertPoint(after);
+					const auto phi = m_ir->CreatePHI(get_type<u64>(), 2);
+					phi->addIncoming(real, fresh);
+					phi->addIncoming(m_ir->CreateLoad(get_type<u64>(), cache_ptr), entry_bb);
+					tsc = phi;
+				}
+				else
+				{
+					tsc = m_ir->CreateCall(get_intrinsic(llvm::Intrinsic::readcyclecounter));
+				}
 				// Default off. See get_thor_spu_dec_fastconv.
 				llvm::Value* tsctb = nullptr;
 

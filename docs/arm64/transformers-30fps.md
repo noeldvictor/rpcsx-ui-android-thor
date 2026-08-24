@@ -738,3 +738,47 @@ precisely the case `thor_spu_selfloop_park.h` does not cover.
 hoist or CSE the read out of genuine timer-polling loops and hang them. The
 safety of this transformation comes from the exit condition being independent of
 the read, and that has to be checked per loop.
+
+## Attempted fix: caching decrementer reads. DEADLOCKS the game.
+
+`debug.rpcsx.thor.spu_dec_cache = N`, default off, in `SPULLVMRecompiler.cpp`.
+
+Having confirmed that 96.84% of SPU0 is the delay loop at `0x0f3c4`, and that the
+expensive part of each iteration is the `mrs cntvct_el0` rather than the
+arithmetic (the fast-conversion arm removed the divides and measured null), the
+obvious move is to stop taking the system register read on every iteration.
+
+The implementation takes the real counter every Nth read and serves the rest from
+a per-SPU cached value, on the reasoning that a polling loop still re-reads and
+so still exits, at most N iterations late.
+
+**That reasoning is wrong, and the device says so immediately.** With N=64 the
+title deadlocks during boot: 1.2% process CPU, 0.14 cores, 0 frames. Near-zero
+CPU means the threads are BLOCKED, not spinning - the guest is waiting on time
+that, from its point of view, is not passing.
+
+Reverted to default off.
+
+### What that failure teaches, and it is worth more than the attempt
+
+**Guest code depends on the decrementer ADVANCING, not merely on being readable.**
+Any transformation of this loop must preserve the property that successive reads
+make progress in time. That rules out:
+
+- caching or reusing a previous read
+- hoisting the read out of a loop
+- CSE-ing several reads into one
+- marking `llvm.readcyclecounter` pure so LLVM does any of the above for free
+
+which is precisely why the intrinsic carries side effects in the first place.
+
+So the remaining safe shape is narrower than it looked: **remove only the reads
+whose RESULT IS DEAD, and only where the loop's exit condition does not depend on
+them.** In the `0x0f3c4` loop the exit depends solely on the counter `r4`, and
+`r3` is overwritten every iteration, so 2399 of the 2400 reads are dead by that
+test - but establishing that requires loop-level analysis in the recompiler, not
+a per-read substitution.
+
+Anyone attempting this should keep the deadlock above as the acceptance test: if
+the title boots to gameplay, the transformation preserved time; if it hangs at
+near-zero CPU, it did not.
