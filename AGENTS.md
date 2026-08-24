@@ -9148,3 +9148,54 @@ during compile, exactly as configured.
 
 An experiment SHOULD set it lower than the default, because a harness left
 running unattended is how this device was held at 95 C in the first place.
+
+# NOT ESTABLISHED: shortening the vm::writer_lock spin on Transformers gameplay
+
+**2026-08-23.** The arithmetic was good and the target was chosen from a real
+profile, and the result is still not a result.
+
+`vm::writer_lock` spins up to 100 times at `busy_wait(200)`. The generic timer
+here is 19.2 MHz, so each spin is about 10.4 us and the lock can burn **1.04 ms**
+before it yields. That is an x86-derived spin count on a timer 170 times slower,
+which is the one defect class that has paid off twice here: the lv2 spin at
+1.3 ms was worth 69%, and `host_mutex_spin` was 1.56 ms.
+
+The gameplay profile resolves INTO that loop: `vm::writer_lock` at about 13% and
+`rx::prefetch_write`, which is `vm.cpp:712-713` inside the spin.
+
+**Measured on the 3D scene, arms interleaved:**
+
+| arm | cores | fps | n |
+| --- | --- | --- | --- |
+| default, 100 spins | 5.765 [5.755..5.776] | 19.55 | 2 |
+| 8 spins | 5.735 | 19.63 | **1** |
+
+**The treatment arm is n=1, so this is not a result.** This file forbids quoting
+n=1 for good reason: one arm once read 10351 mW against 7545 and was written up
+as a +37% regression, and the second arm of the same configuration came in below
+both controls.
+
+The fourth arm was correctly REFUSED by the gate, at `fps=0.00`, rather than
+averaged in.
+
+## What it suggests, and what would settle it
+
+Cutting the spin from 100 to 8 did not move CPU or frames. That points at the
+lock being TAKEN OFTEN rather than spun on for too long: with six SPU threads
+contending, a shorter spin just reaches the `yield` sooner and pays a syscall
+instead of a wait.
+
+So the lever for this 13% is not the spin length. It is how often the lock is
+taken, which is `Accurate SPU Reservations`, measured at -8.4% on the title
+screen and reverted on correctness grounds.
+
+**And one correctness objection to that revert is now weaker.** Its own comment
+rests on having "notifications for nearly all writes", and dropping 3840 of
+30713 SPURS-block notifications on purpose produced no fault at all. That does
+not clear the setting, because upstream also reports it breaking InFamous, but
+it removes the mechanism this file suspected.
+
+To settle the spin question properly: three valid arms per side on the 3D scene,
+which is about 40 minutes of device time at 90 C. It is not worth that until the
+reservations question is answered, because that lever is an order of magnitude
+larger.
