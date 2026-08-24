@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #include "Emu/thor_thermal_guard.h"
 #include "RSXThread.h"
 
@@ -2816,7 +2819,39 @@ namespace rsx
 	void thread::fifo_wake_delay(u64 div)
 	{
 		// TODO: Nanoseconds accuracy
-		u64 remaining = g_cfg.video.driver_wakeup_delay;
+		// Runtime override, so this can be A/B tested without editing the
+		// per-title config that the managed profile rewrites on every boot.
+		//
+		// This title SHIPS 50 us while the upstream default is 0, and upstream
+		// warns the setting can cost 60 FPS down to 20 (RPCS3 issue 12295). The
+		// justification recorded in the profile measured "2.568 cores against
+		// 2.557 at 20 us, at the same 30 FPS" - which is the TITLE SCREEN at 2.5
+		// cores, not 3D combat at 5.5. It was never measured on the workload
+		// that matters, and fifo_wake_delay sits in the FIFO path, called from
+		// nv406e.cpp and RSXFIFO.cpp.
+		//
+		//   debug.rpcsx.thor.driver_wakeup_delay = <us>
+		//
+		// Unset uses the config, so an unset device is unchanged.
+		static const int s_thor_wake_override = []() -> int
+		{
+#ifdef __ANDROID__
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.driver_wakeup_delay", value) > 0 && value[0])
+			{
+				const long parsed = std::strtol(value, nullptr, 10);
+
+				if (parsed >= 0 && parsed <= 16667)
+				{
+					return static_cast<int>(parsed);
+				}
+			}
+#endif
+			return -1;
+		}();
+
+		u64 remaining = s_thor_wake_override < 0 ? +g_cfg.video.driver_wakeup_delay : static_cast<u64>(s_thor_wake_override);
 
 		if (!remaining)
 		{

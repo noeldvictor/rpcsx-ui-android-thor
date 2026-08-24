@@ -400,3 +400,63 @@ saturated thread. But the profiler shows that thread is 99.1% RESERVATION
 polling, not computation. A physics solver saturating a core would show as
 compute samples, not as reservation samples. Whatever SPU0 is doing, it is
 waiting on a lock, not solving constraints.
+
+## Driver Wake-Up Delay: also null, and the profile's justification was the title screen
+
+The profile ships `Driver Wake-Up Delay: 50` where the upstream default is 0, and
+upstream warns the setting can cost 60 FPS down to 20 (RPCS3 issue 12295). The
+justification recorded in the config measured "2.568 cores against 2.557 at
+20 us, at the same 30 FPS" - **the title screen at 2.5 cores, not 3D combat at
+5.5.** `fifo_wake_delay` busy-waits that many microseconds and is called from
+`nv406e.cpp` and `RSXFIFO.cpp`, so it sits in the FIFO path.
+
+Re-measured on 3D combat via `debug.rpcsx.thor.driver_wakeup_delay`:
+
+| arm | fps | cores | CPU |
+| --- | --- | --- | --- |
+| 50, as shipped | 18.53 | 5.087 | 66.8% |
+| 20 | 18.48 | 5.447 | 75.5% |
+
+Null. The 0 arm failed its savestate load three times and was refused rather than
+counted.
+
+## The full ledger: eleven levers, eleven nulls
+
+| lever | fps |
+| --- | --- |
+| Balemuni Aurora GPU driver | null |
+| `vm::writer_lock` spins / cycles | null |
+| SPURS `max_run` clamp 4 | null |
+| SPURS `max_run` clamp 3 | null |
+| `Accurate SPU Reservations` off | null |
+| `XFloat Accuracy` relaxed | null |
+| `XFloat Accuracy` inaccurate | null |
+| `SPU Verification` off | null |
+| decrementer fast conversion (code change) | null |
+| RSX FIFO park | null, though it engaged |
+| `getllar_busy_percent` 25 and 0 | null, though conflicts fell 40% |
+| `Driver Wake-Up Delay` 20 | null |
+
+Every one measured on gated 3D combat with the savestate load confirmed. Three
+apparent wins were retracted as artifacts of a failed load.
+
+## Why no knob can work here, stated once
+
+The measurements agree on a single picture:
+
+- the GPU is idle, 3.4% by the guest's overlay and 2.3% of the host profile
+- five of six SPUs are about 91% idle
+- the sixth is 98.8% busy and 99.1% of that is RESERVATION POLLING
+- cutting that polling by 40% changes no frames
+- CPU total sits at 63 to 75%, so no core is saturated
+
+**Nothing in the system is saturated and nothing is compute bound.** That is the
+signature of a serial dependency chain: each frame waits on a sequence of
+handoffs, and the wall clock is the sum of the waits, not the sum of the work.
+Adding parallelism cannot help, removing overhead cannot help, and making any
+one participant faster cannot help unless it is the one on the chain.
+
+**The open question is what the PPU waits for between frames**, which none of
+these eleven levers touches. Answering it needs the PPU profiler
+(`g_cfg.core.ppu_prof`, which now has the same override plumbing as the SPU one)
+and a frame-boundary trace, not another setting.
