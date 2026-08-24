@@ -128,12 +128,55 @@ observe it in a torn state.
 path the guest uses to read these structures: `GETLLAR` publishes a 128-byte
 reservation line, and the SPURS kernel reads its pointers out of that line.
 
-That is a hypothesis with a mechanism, not another lever to try:
+### The mechanism, read out of the source
 
-1. A reservation line is read while a writer is part way through it.
-2. The pointer that the guest lifts out of the line is a mix of old and new.
-3. The mixed value is not aligned to 128 bytes.
-4. The next DMA helper asserts, and the SPU halts at `0xffdead00`.
+On this device `g_use_rtm` is false, because AArch64 has no TSX. Under that
+condition the setting decides how a 128-byte reservation store excludes everyone
+else:
+
+| path, ARM64 with no RTM | `accurate = true` | `accurate = false` |
+| --- | --- | --- |
+| `do_putllc`, address within 0x80 of `spurs_addr` | `cpu_thread::suspend_all<+3>` around the copy | bare `mov_rdata`, then `res += 64` |
+| `do_putlluc` | `vm::writer_lock` held across the copy | bare `mov_rdata`, then `res += 32` |
+
+`SPUThread.cpp:5424` and `SPUThread.cpp:5735`. Both accurate paths exclude every
+concurrent guest memory access. Neither of the fast paths excludes anything.
+
+**The reservation seqlock is still correct in the fast paths.** Both take the
+lock before the copy and release it after, and both arrive at 128, so the counter
+advances by one line and the low 7 bits clear:
+
+- `do_putlluc` sets `rsrv_unique_lock | rsrv_putunc_flag`, which is 64 + 32 = 96,
+  and releases with `+= 32`.
+- `do_putllc` sets `rsrv_unique_lock`, which is 64, and releases with `+= 64`.
+
+Any reader that follows the reservation protocol therefore retries and never
+tears. **A `GETLLAR` from another SPU is safe.**
+
+The exposure is to readers that do NOT consult the reservation, and there is
+one: **plain MFC DMA**. `do_dma_transfer` takes only `vm::range_lock`
+(`SPUThread.cpp:4335` and 4427 to 4443). `vm::writer_lock` is exactly the thing
+that excludes range-lock holders, and the fast paths do not take it.
+
+So:
+
+1. SPU A does `PUTLLC` or `PUTLLUC` on a SPURS control line. With accurate off,
+   it copies 128 bytes with no exclusion.
+2. SPU B does an ordinary MFC `GET` of that same line. Its DMA takes a range
+   lock, which `writer_lock` would have excluded, and which now excludes nothing.
+3. SPU B reads the line part written, so a pointer inside it is a mix of the old
+   and the new value.
+4. The mixed pointer is not aligned to 128 bytes.
+5. SPU B calls one of the seven DMA helpers, the `HEQI` fires, and the SPU halts
+   at `0xffdead00`.
+
+SPURS kernels DMA the control blocks of each other with plain `GET`, so step 2 is
+not a contrived case. It is what SPURS does.
+
+This also explains the shape of the failure: it needs a narrow race, so it is
+rare and not deterministic; it is a data fault, so no timing injection reproduces
+it; and it needs several SPUs sharing control lines, so it appears in SPURS and
+not elsewhere.
 
 It fits what has been seen. It is rare and it is not deterministic, because it
 needs a race window. It survives every timing injection tried so far, because
@@ -141,9 +184,15 @@ timing injection does not corrupt data. And it explains why the two affected
 titles both load the SPURS kernel of Sony from `libsre` and stop at the same
 kind of program counter.
 
-**It is not yet measured.** The decisive test is to run the restored 3D combat
-savestate with `Accurate SPU Reservations` set true and set false, long enough
-for the fault rate to separate. Treat this section as a lead until then.
+**The unprotected write is verified in source. The causal link to the halt is
+not yet measured.** The decisive test is to run the restored 3D combat savestate
+with `Accurate SPU Reservations` true and false, long enough for the fault rate
+to separate. Until that runs, steps 3 to 5 above are inference.
+
+Note what does NOT follow from this. It does not follow that the setting should
+be turned back on: it costs 8.4% CPU on a device that is already thermally
+bound, and a fix that protects only the SPURS control lines would cost far less.
+Measure first, then choose the narrow fix.
 
 ## What the trap now prints
 
