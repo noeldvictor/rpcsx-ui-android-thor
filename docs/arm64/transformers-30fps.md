@@ -84,3 +84,72 @@ loads `libspurs_jq.sprx`, the SPURS job queue. Physics is dispatched as SPURS
 JOBS on those same kernels, so there is no PhysX thread or group to throttle,
 and no emulator-side switch for it. Separating physics jobs from rendering and
 animation jobs would mean reverse engineering the job descriptors.
+
+## The game's own overlay agrees, 2026-08-24
+
+Captured from a real 3D combat scene the user navigated to by hand, with the
+in-game performance overlay visible:
+
+    FPS : 19.73
+    PPU : 13.2 %   SPU : 50.4 %   RSX : 03.4 %   Total : 67.0 %
+
+**RSX is 3.4%.** The GPU is nearly idle, which closes the driver question a
+second time and from the GUEST side rather than from a host profile. **SPU is
+50.4%**, so the SPUs are the load. That is independent confirmation of the host
+profile above, measured by different code, and the two agree.
+
+## SPU codegen levers, measured 2026-08-24: all null on FPS
+
+Every run below restored the savestate and was gated on BOTH `coresBusy>4.5` AND
+the scene probe reporting `videoDecoding=false` with `videoFilesOpen=0`, so no
+number here comes from an intro movie. A warm-up boot per arm was discarded,
+because changing SPU codegen invalidates the SPU cache.
+
+| arm | fps | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| control, xfloat approximate | 18.44 | 5.593 | 70.8% | 95 C |
+| xfloat relaxed | 18.44 | 5.380 | 65.0% | 94 C |
+| xfloat inaccurate | 18.33 | 5.533 | 69.0% | 93 C |
+| SPU verification OFF | 18.57 | 5.100 | 65.0% | 89 C |
+
+**No arm moves the frame rate.** SPU float accuracy is not the bottleneck, which
+is consistent with everything else: the cost is contention and scheduling, not
+arithmetic.
+
+`SPU verification OFF` is the only arm that looks different on CPU and heat,
+65.0% against 70.8% and 89 C against 95 C. It is n=1 and the arms did not start
+from the same temperature, so it is a LEAD and not a result until repeated.
+
+### A number that was retracted before it could mislead
+
+One warm-up read **29.97 FPS at 2.607 cores, 35.2% CPU and 71 C**, which looks
+like the answer to everything. It is not. That run's `loadstate` returned
+`{"ok":false}`, so the savestate never loaded and the run measured a different,
+lighter part of the game that briefly passed the cores gate. **A load that fails
+silently produces a beautiful and meaningless number.** The harness now prints
+the loadstate result on every run for exactly this reason.
+
+## What the community already knows, and why it does not help
+
+The RPCS3 wiki lists this title as Playable. The only performance advice found
+is *disable SPU loop detection*, which is already off in this profile, and an
+"Unlock FPS" patch, which is irrelevant here: the title is running BELOW its 30
+FPS cap, so removing the cap changes nothing. There is no published fix for this
+workload.
+
+## Harness traps found the hard way
+
+- **`curl` returns empty transiently.** An empty read parsed as `cores=0` made
+  the gate reject a run that was in combat at 18.34 FPS. `api` now retries and
+  re-establishes the adb forward.
+- **Pushing a savestate into a RUNNING emulator truncates it.** Measured as
+  `local=123821207` against `device=28180480`, three attempts in a row, because
+  the app holds the slot open. The vault correctly REFUSES to load a short file.
+  The savestate is now pushed while the app is STOPPED, and the run only
+  triggers the load.
+- **Editing the per-title config between arms does not survive the boot.** The
+  debug-boot path applies a managed profile that rewrites that file. Dropping
+  `thorRequireManagedProfile` to avoid the rewrite means NO profile is applied at
+  all, which produced a 6.24 FPS "control" against a true 18.4. The levers are
+  driven by `debug.rpcsx.thor.*` properties instead, which are read after the
+  profile is applied.

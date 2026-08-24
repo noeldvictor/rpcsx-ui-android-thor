@@ -87,6 +87,75 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept
 }
 #endif
 
+// SPU codegen levers, overridable at runtime for A/B measurement.
+//
+// WHY THESE EXIST AS PROPERTIES. The combat profile is 54% JIT-generated GUEST
+// code and only 2.3% GPU driver, so the settings that change what the SPU
+// recompiler EMITS are the only ones with a budget large enough to move frames.
+// They live in the per-title config, but the debug-boot path applies a managed
+// profile that REWRITES that file, so editing it between arms does not survive
+// the boot - measured, and it produced a 6.24 FPS "control" against a true 18.7.
+// A property is read after the profile is applied and cannot be clobbered by it.
+//
+//   debug.rpcsx.thor.spu_xfloat = 0 accurate | 1 approximate | 2 relaxed | 3 inaccurate
+//   debug.rpcsx.thor.spu_verification = 0 | 1
+//
+// Unset means "use the config", so a device with neither set is bit-identical
+// to before this existed. Read once, because the recompiler must not change
+// shape between the IR it emits and the host mirror that checks it.
+static xfloat_accuracy get_thor_xfloat_accuracy() noexcept
+{
+	static const int s_override = []() -> int
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_xfloat", value) > 0 && value[0])
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed >= 0 && parsed <= 3)
+			{
+				return static_cast<int>(parsed);
+			}
+		}
+#endif
+		return -1;
+	}();
+
+	if (s_override < 0)
+	{
+		return g_cfg.core.spu_xfloat_accuracy;
+	}
+
+	return static_cast<xfloat_accuracy>(s_override);
+}
+
+static bool get_thor_spu_verification() noexcept
+{
+	static const int s_override = []() -> int
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_verification", value) > 0 && value[0])
+		{
+			return (value[0] == '0' || value[0] == 'f' || value[0] == 'n') ? 0 : 1;
+		}
+#endif
+		return -1;
+	}();
+
+	if (s_override < 0)
+	{
+		// cfg::_bool has an EXPLICIT operator bool, so it does not convert
+		// implicitly on return.
+		return !!g_cfg.core.spu_verification;
+	}
+
+	return s_override != 0;
+}
+
 // Strict SPU block verification, default OFF. See the comment at the checksum
 // for the measurement that motivates it. Read once: the recompiler must not
 // change shape between the IR it emits and the host mirror that checks it.
@@ -370,7 +439,7 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Create tail call to the function chunk (non-tail calls are just out of question)
 	void tail_chunk(llvm::FunctionCallee callee, llvm::Value* base_pc = nullptr)
 	{
-		if (!callee && !g_cfg.core.spu_verification)
+		if (!callee && !get_thor_spu_verification())
 		{
 			// Disable patchpoints if verification is disabled
 			callee = m_dispatch;
@@ -1881,10 +1950,10 @@ public:
 		m_ir->SetInsertPoint(label_test);
 
 		// Set block hash for profiling (if enabled)
-		if (g_cfg.core.spu_prof && g_cfg.core.spu_verification)
+		if (g_cfg.core.spu_prof && get_thor_spu_verification())
 			m_ir->CreateStore(m_ir->getInt64((m_hash_start & -65536)), spu_ptr<u64>(OFFSET_OF(spu_thread, block_hash)));
 
-		if (!g_cfg.core.spu_verification)
+		if (!get_thor_spu_verification())
 		{
 			// Disable check (unsafe)
 			m_ir->CreateBr(label_body);
@@ -2587,7 +2656,7 @@ public:
 
 		m_ir->SetInsertPoint(label_diff);
 
-		if (g_cfg.core.spu_verification)
+		if (get_thor_spu_verification())
 		{
 			const auto pbfail = spu_ptr<u64>(OFFSET_OF(spu_thread, block_failure));
 			m_ir->CreateStore(m_ir->CreateAdd(m_ir->CreateLoad(get_type<u64>(), pbfail), m_ir->getInt64(1)), pbfail);
@@ -2675,7 +2744,7 @@ public:
 						if (src > 0x40000)
 						{
 							// Use the xfloat hint to create 256-bit (4x double) PHI
-							llvm::Type* type = g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate && bb.reg_maybe_xf[i] ? get_type<f64[4]>() : get_reg_type(i);
+							llvm::Type* type = get_thor_xfloat_accuracy() == xfloat_accuracy::accurate && bb.reg_maybe_xf[i] ? get_type<f64[4]>() : get_reg_type(i);
 
 							const auto _phi = m_ir->CreatePHI(type, ::size32(bb.preds), fmt::format("phi0x%05x_r%u", baddr, i));
 							m_block->phi[i] = _phi;
@@ -2927,7 +2996,7 @@ public:
 							reduced_loop_restore_regs[i] = m_block->reg[i];
 						}
 
-						llvm::Type* type = g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate && bb.reg_maybe_xf[i] ? get_type<f64[4]>() : get_reg_type(i);
+						llvm::Type* type = get_thor_xfloat_accuracy() == xfloat_accuracy::accurate && bb.reg_maybe_xf[i] ? get_type<f64[4]>() : get_reg_type(i);
 
 						if (i < reduced_loop_info->loop_dicts.size() && (reduced_loop_info->loop_dicts.test(i) || reduced_loop_info->loop_writes.test(i)))
 						{
@@ -3717,7 +3786,7 @@ public:
 
 				if (found == m_functions.end())
 				{
-					if (false && g_cfg.core.spu_verification)
+					if (false && get_thor_spu_verification())
 					{
 						const std::string ppname = fmt::format("%s-chunkpp-0x%05x", m_hash, i);
 						m_engine->updateGlobalMapping(ppname, reinterpret_cast<u64>(m_spurt->make_branch_patchpoint(i / 4)));
@@ -7897,7 +7966,7 @@ public:
 
 	void FCGT(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, sext<s32[4]>(fcmp_ord(get_vr<f64[4]>(op.ra) > get_vr<f64[4]>(op.rb))));
 			return;
@@ -7986,7 +8055,7 @@ public:
 
 	void FCMGT(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, sext<s32[4]>(fcmp_ord(fabs(get_vr<f64[4]>(op.ra)) > fabs(get_vr<f64[4]>(op.rb)))));
 			return;
@@ -8032,7 +8101,7 @@ public:
 					return eval(sext<s32[4]>(mai > mbi));
 				}
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					return eval(sext<s32[4]>(fcmp_uno(ma > mb) & (mai > mbi)));
 				}
@@ -8053,7 +8122,7 @@ public:
 
 	void FA(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, get_vr<f64[4]>(op.ra) + get_vr<f64[4]>(op.rb));
 			return;
@@ -8078,7 +8147,7 @@ public:
 
 	void FS(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, get_vr<f64[4]>(op.ra) - get_vr<f64[4]>(op.rb));
 			return;
@@ -8089,7 +8158,7 @@ public:
 				const auto a = value<f32[4]>(ci->getOperand(0));
 				const auto b = value<f32[4]>(ci->getOperand(1));
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					const auto bc = clamp_smax(b); // for #4478
 					return eval(a - bc);
@@ -8111,7 +8180,7 @@ public:
 
 	void FM(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, get_vr<f64[4]>(op.ra) * get_vr<f64[4]>(op.rb));
 			return;
@@ -8126,7 +8195,7 @@ public:
 				const bool a_notnan = a_known.isKnownNeverNaN();
 				const bool b_notnan = b_known.isKnownNeverNaN();
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					if (a.value == b.value || (a_notnan && b_notnan))
 					{
@@ -8166,7 +8235,7 @@ public:
 
 		// This causes issues in LBP 1(first platform on first temple level doesn't come down when grabbed)
 		// Presumably 1/x might result in Zero/NaN when a/x doesn't
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::relaxed)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::relaxed)
 		{
 			auto full_fm_accurate = [&](const auto& a, const auto& div)
 			{
@@ -8208,7 +8277,7 @@ public:
 
 	void FESD(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			const auto r = zshuffle(get_vr<f64[4]>(op.ra), 1, 3);
 			const auto d = bitcast<s64[2]>(r);
@@ -8238,7 +8307,7 @@ public:
 
 	void FRDS(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			const auto r = get_vr<f64[2]>(op.ra);
 			const auto d = bitcast<s64[2]>(r);
@@ -8269,7 +8338,7 @@ public:
 
 	void FCEQ(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, sext<s32[4]>(fcmp_ord(get_vr<f64[4]>(op.ra) == get_vr<f64[4]>(op.rb))));
 			return;
@@ -8296,7 +8365,7 @@ public:
 					return eval(sext<s32[4]>(bitcast<s32[4]>(a) == bitcast<s32[4]>(b)));
 				}
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					return eval(sext<s32[4]>(fcmp_ord(a == b)) | sext<s32[4]>(bitcast<s32[4]>(a) == bitcast<s32[4]>(b)));
 				}
@@ -8317,7 +8386,7 @@ public:
 
 	void FCMEQ(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			set_vr(op.rt, sext<s32[4]>(fcmp_ord(fabs(get_vr<f64[4]>(op.ra)) == fabs(get_vr<f64[4]>(op.rb)))));
 			return;
@@ -8347,7 +8416,7 @@ public:
 					return eval(sext<s32[4]>(bitcast<s32[4]>(fa) == bitcast<s32[4]>(fb)));
 				}
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					return eval(sext<s32[4]>(fcmp_ord(fa == fb)) | sext<s32[4]>(bitcast<s32[4]>(fa) == bitcast<s32[4]>(fb)));
 				}
@@ -8406,7 +8475,7 @@ public:
 	void FNMS(spu_opcode_t op)
 	{
 		// See FMA.
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			const auto [a, b, c] = get_vrs<f64[4]>(op.ra, op.rb, op.rc);
 			set_vr(op.rt4, fmuladd(-a, b, c));
@@ -8447,7 +8516,7 @@ public:
 	void FMA(spu_opcode_t op)
 	{
 		// Hardware FMA produces the same result as multiple + add on the limited double range (xfloat).
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			const auto [a, b, c] = get_vrs<f64[4]>(op.ra, op.rb, op.rc);
 			set_vr(op.rt4, fmuladd(a, b, c));
@@ -8466,7 +8535,7 @@ public:
 				const bool a_notnan = a_known.isKnownNeverNaN();
 				const bool b_notnan = b_known.isKnownNeverNaN();
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					if (a_notnan && b_notnan)
 					{
@@ -8673,7 +8742,7 @@ public:
 			return;
 
 		// NFS Most Wanted doesn't like this
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::relaxed)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::relaxed)
 		{
 			// Those patterns are not safe vs non optimization as inaccuracy from spu_re will spread with early fm before the accuracy is improved
 
@@ -8737,7 +8806,7 @@ public:
 	void FMS(spu_opcode_t op)
 	{
 		// See FMA.
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			const auto [a, b, c] = get_vrs<f64[4]>(op.ra, op.rb, op.rc);
 			set_vr(op.rt4, fmuladd(a, b, -c));
@@ -8750,7 +8819,7 @@ public:
 				const auto b = value<f32[4]>(ci->getOperand(1));
 				const auto c = value<f32[4]>(ci->getOperand(2));
 
-				if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate)
+				if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate)
 				{
 					constexpr auto interested_classes = llvm::FPClassTest::fcNan | llvm::FPClassTest::fcInf | spu_zero_fp_classes;
 					const auto a_known = get_known_fp_class<4>(a, interested_classes);
@@ -8817,7 +8886,7 @@ public:
 
 		const auto [a, b] = get_vrs<f32[4]>(op.ra, op.rb);
 
-		switch (g_cfg.core.spu_xfloat_accuracy)
+		switch (get_thor_xfloat_accuracy())
 		{
 		case xfloat_accuracy::approximate:
 		{
@@ -8905,7 +8974,7 @@ public:
 		}
 
 		// Do not pattern match for accurate
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::approximate || g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::relaxed)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::approximate || get_thor_xfloat_accuracy() == xfloat_accuracy::relaxed)
 		{
 			if (const auto [ok, mb] = match_expr(b, frest(match<f32[4]>())); ok && mb.eq(a))
 			{
@@ -8923,7 +8992,7 @@ public:
 		}
 
 		const auto r = eval(fi(a, b));
-		if (!m_interp_magn && g_cfg.core.spu_xfloat_accuracy != xfloat_accuracy::accurate)
+		if (!m_interp_magn && get_thor_xfloat_accuracy() != xfloat_accuracy::accurate)
 			spu_log.todo("[%s:0x%05x] Unmatched spu_fi found", m_hash, m_pos);
 
 		set_vr(op.rt, r);
@@ -8931,7 +9000,7 @@ public:
 
 	void CFLTS(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			value_t<f64[4]> a = get_vr<f64[4]>(op.ra);
 			value_t<f64[4]> s;
@@ -9015,7 +9084,7 @@ public:
 
 	void CFLTU(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			value_t<f64[4]> a = get_vr<f64[4]>(op.ra);
 			value_t<f64[4]> s;
@@ -9106,7 +9175,7 @@ public:
 
 	void CSFLT(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			value_t<s32[4]> a = get_vr<s32[4]>(op.ra);
 			value_t<f64[4]> r;
@@ -9146,7 +9215,7 @@ public:
 
 	void CUFLT(spu_opcode_t op)
 	{
-		if (g_cfg.core.spu_xfloat_accuracy == xfloat_accuracy::accurate)
+		if (get_thor_xfloat_accuracy() == xfloat_accuracy::accurate)
 		{
 			value_t<s32[4]> a = get_vr<s32[4]>(op.ra);
 			value_t<f64[4]> r;
