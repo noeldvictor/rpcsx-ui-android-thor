@@ -665,3 +665,76 @@ already measured at zero frames (`getllar_busy_percent=0`: conflicts down 40%,
 FPS unchanged), and five of six SPUs are ~91% idle. The likely outcome is a
 cooler, less wasteful emulator at the SAME frame rate. That is worth having, and
 it is not the 30 FPS this file is named for.
+
+# CONFIRMED: 96.84% of SPU0 is ONE do-nothing delay loop
+
+The SPU profiler's per-block chart, taken on the player's own 3D combat scene:
+
+    Thread "SPU[0x0000100] CellSpursKernel0": 102322 samples (4.06% idle)
+
+      [chunk-0x0f3c4]  96.8380%   (95063 of 98167)
+      [chunk-0x13da4]   1.0594%
+      [chunk-0x00290]   0.7467%
+      [chunk-0x011f4]   0.3148%
+      ... everything else below 0.31%
+
+`0x0f3c4` is the block disassembled earlier in this file:
+
+    0x0f3c4  IL   r4, 0
+    0x0f3c8  IL   r5, 2400
+    0x0f3d0  AI   r4, r4, 1        i++
+    0x0f3d4  RDCH r3, RdDec        inlined mrs cntvct_el0 + timebase conversion
+    0x0f3d8  CEQ  r40, r4, r5      i == 2400 ?
+    0x0f3dc  BRZ  r40, 0x0f3d0
+
+**The hottest code in the emulator for this title is a delay loop that computes
+nothing.** SPU0 is 4% idle, so it burns essentially a full core on it, and the
+other five SPUs sit ~91% idle waiting behind it.
+
+## Why this is expensive here and free on a PS3
+
+The loop is a fixed 2400-iteration backoff between polls of the SPURS workload.
+On real hardware each iteration is a few cycles and the decrementer read is a
+local register. Emulated, each iteration executes an `mrs cntvct_el0` - a system
+register read - plus a conversion from the 19.2 MHz host counter to the 80 MHz
+PS3 timebase, plus the loop arithmetic. That is roughly three orders of magnitude
+more expensive per iteration, and it runs 2400 times per poll, per wait.
+
+## Why the twelve levers all measured null
+
+None of them touched the cost of ONE ITERATION of this loop:
+
+- the GPU driver, the FIFO park, the wake-up delay: not SPU code at all
+- SPURS clamps and accurate reservations: change how many threads run and how
+  stores are ordered, not what this loop costs
+- `getllar_busy_percent`: changes whether the WAIT spins or sleeps, and this
+  loop is not that wait - it is the guest's own backoff, executed either way
+- the decrementer fast conversion: removed the `udiv`/`urem` but left the
+  `mrs cntvct_el0`, which is the expensive half
+
+That last one is the informative failure. It attacked part of the right thing and
+still measured null, which says the `mrs` dominates, not the arithmetic.
+
+## The fix this points to
+
+**The intermediate decrementer reads are DEAD.** `r3` is overwritten on every
+iteration and only the final value is used after the loop, so 2399 of the 2400
+reads have no observable effect. LLVM cannot remove them because
+`llvm.readcyclecounter` carries side effects by design - which is correct in
+general, since a loop that polls the timer in its EXIT CONDITION must re-read it.
+
+So the transformation has to be loop-aware rather than a blanket change:
+
+- recognise a counted loop whose exit condition does NOT depend on the channel
+  read, and whose read destination is dead on every iteration but the last
+- keep one read, drop the rest, preserve the elapsed-time behaviour by other
+  means if it matters
+
+That is the "spin detection and retranslation with descheduling" the literature
+describes, applied to a COUNTED loop rather than an infinite one - which is
+precisely the case `thor_spu_selfloop_park.h` does not cover.
+
+**Do not mark `readcyclecounter` pure to get DCE for free.** It would let LLVM
+hoist or CSE the read out of genuine timer-polling loops and hang them. The
+safety of this transformation comes from the exit condition being independent of
+the read, and that has to be checked per loop.
