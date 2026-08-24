@@ -151,7 +151,27 @@ static u32 get_thor_spu_dec_cache() noexcept
 #ifdef ANDROID
 		char value[PROP_VALUE_MAX]{};
 
-		// NEUTRALISED. This property is refused, and the code below is kept only
+		// NEUTRALISED after a THIRD failure. Kept only as a record.
+		//
+		//   1. frozen cache               -> hang at 1.2% CPU, 0 frames
+		//   2. monotonic interpolation    -> SPU threads died with STOP 0x0
+		//   3. gated on a provably-dead value in a self-loop -> hang at 0.12
+		//      cores with 5 fatals
+		//
+		// Attempt 3 is the informative one, because the gate looked airtight: the
+		// block had to branch to ITSELF, be at most 8 instructions, and the RdDec
+		// destination had to be absent from the analyser's bb->reg_use. It hung
+		// anyway. So one of those does not mean what it appears to - most likely
+		// reg_use records reads BEFORE the first write and therefore says nothing
+		// about a read that follows the write in the same block, or the condition
+		// matched blocks other than the intended 0x0f3c4.
+		//
+		// Do not re-enable on a heuristic. Prove, on the compiled block, WHICH
+		// reads were skipped and what consumed them. The target is real: 96.84% of
+		// CellSpursKernel0 is that one backoff, 92.4 us against about 1.5 us on
+		// hardware.
+		//
+		// This property is refused, and the code below is kept only
 		// so the measurement that killed it is not lost.
 		//
 		// Serving intermediate decrementer reads from a cache DEADLOCKS the title:

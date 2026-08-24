@@ -782,3 +782,53 @@ a per-read substitution.
 Anyone attempting this should keep the deadlock above as the acceptance test: if
 the title boots to gameplay, the transformation preserved time; if it hangs at
 near-zero CPU, it did not.
+
+# THE LEAD WORTH TAKING NEXT: Reduced Loops are OFF on Android
+
+Found by reading `SPUCommonRecompiler.cpp`, and the file says it plainly itself:
+
+> **This switches off upstream's Reduced Loop entirely on Android**, because
+> `emit_reduced_loops` gates whether the analyzer records the pattern at all.
+> Upstream calls that work its Cell breakthrough and measured **5-7% average FPS
+> on Twisted Metal**, one of the most SPU-heavy titles... So this `return false`
+> is the most expensive line in the file if the corruption it guards against has
+> since been fixed. **It may well have been.**
+
+Why this matters more than anything else measured here:
+
+- **The hot block is a COUNTED LOOP.** `0x0f3c4` is 96.84% of CellSpursKernel0 and
+  is exactly the shape `reduced_loop_t` analyses - an induction variable, an
+  increment, a compare and a back edge.
+- **The optimisation already exists in this tree**, with `loop_may_update` and
+  `reduced_loop_restore_regs` present, and it is disabled by a single
+  `return false` rather than missing.
+- **It is already switchable**, no build required:
+  `debug.rpcsx.thor.spu_reduced_loop_emit = 1`, default 0.
+- **The recorded corruption was BLUS30161, Eternal Sonata** - not this title.
+
+The file also records exactly what is missing from upstream's fix set: our base
+carries `02eb54920` and `13de8233b` but **not the whole of** `a03a78dbd`, the one
+that verifies a loop can actually complete rather than spinning forever -
+`no_change_bits` and `cond_verify` are here while `is_cond_need_runtime_verify`
+and the pattern-30 discard are not.
+
+## Status: UNMEASURED on 3D combat, and here is why
+
+Both arms landed at about 2.75 cores, which is NOT the combat scene, so the
+numbers say nothing. The savestate still reports `loadstate ok:true` but no
+longer restores to the scene it was captured in.
+
+**Cause: the savestate was captured on a different build.** Several rebuilds
+happened after it was taken, and enabling reduced loops changes the SPU cache
+variant as well - the cache path gains `-thor-rl-u2-v2`. A state captured under
+one codegen does not restore usefully under another.
+
+**So the next session must, in this order:**
+
+1. Build once and STOP rebuilding.
+2. Reach 3D combat by hand on that build and capture a savestate.
+3. Then A/B `spu_reduced_loop_emit` 0 against 1 on that state.
+
+And per the warning already in `SPUCommonRecompiler.cpp`: **test correctness
+before speed.** The recorded failure is state corruption at a fixed SPU PC, not a
+crash, so a run that boots proves nothing on its own.
