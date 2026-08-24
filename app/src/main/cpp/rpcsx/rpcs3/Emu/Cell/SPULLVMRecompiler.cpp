@@ -103,15 +103,33 @@ static bool get_thor_spu_strict_checksum() noexcept
 			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
 		}
 #endif
-		// DEFAULT ON since 2026-08-23. The folded form cannot tell some blocks
-		// apart: 25 distinct-content pairs collide in the real SPURS image and
-		// the generic form separates 17 of them, one differing in 58 bytes.
+		// DEFAULT OFF, and the reason is a CORRECTION.
 		//
-		// It accepts strictly FEWER blocks than the fold, so it cannot break a
-		// title by letting something wrong through, and it measured free: 2.708
-		// cores against 2.740 with overlapping ranges, same 30 FPS, same 3118
-		// functions built.
-		return true;
+		// This was briefly shipped on by default, on the strength of 25 pairs in
+		// the real SPURS image that the fold cannot tell apart while the generic
+		// form separates 17 of them. That measurement is real and the inference
+		// from it was WRONG: those pairs are UNRELATED 384-byte windows, and the
+		// verifier never compares unrelated windows. It compares a block against
+		// the current content AT ITS OWN ADDRESS.
+		//
+		// Tested the way the verifier is actually used, 8080 trials per row,
+		// mutating a real block the way another build of a streamed job binary
+		// would:
+		//
+		//   1 instruction changed : ARM missed 0,  generic missed 0
+		//   2 instructions        : ARM missed 17, generic missed 40
+		//   3, 4, 8 instructions  : both essentially 0
+		//
+		// So the fold is NOT worse than generic on realistic edits, and at two
+		// edits it is better. It is blind only to a contrived paired change,
+		// add 2 to one word and subtract 1 from its partner, which a compiler
+		// does not emit.
+		//
+		// The strict form still costs nothing measurable, and a default change
+		// with no demonstrated benefit is not worth its risk. Keep the option.
+		//
+		//   debug.rpcsx.thor.spu_strict_checksum=1
+		return false;
 	}();
 
 	return s_value;

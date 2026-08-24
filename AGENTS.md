@@ -9199,3 +9199,57 @@ To settle the spin question properly: three valid arms per side on the 3D scene,
 which is about 40 minutes of device time at 90 C. It is not worth that until the
 reservations question is answered, because that lever is an order of magnitude
 larger.
+
+# RETRACTED, same day: the ARM checksum is NOT the SPURS halt
+
+**The measurement was right and the inference was wrong, which is the failure
+this file records more than any other.**
+
+The claim was that the ARM64 block checksum cannot tell blocks apart, from 25
+pairs in the real SPURS image that collide under the fold while the generic form
+separates 17 of them, one differing in 58 bytes. Every number there is correct.
+
+**Those pairs are UNRELATED 384-byte windows, and the verifier never compares
+unrelated windows.** It compares a block against the current content AT ITS OWN
+ADDRESS. So the test measured something the verifier does not do.
+
+## Tested the way the verifier is actually used
+
+Take a real block and mutate it the way ANOTHER BUILD of a streamed job binary
+would, then ask whether the checksum still matches. 8080 trials a row:
+
+| edit | ARM fold missed | generic missed |
+| --- | --- | --- |
+| 1 instruction | 0 / 8080 | 0 / 8080 |
+| 2 instructions | **17 / 8080** | **40 / 8080** |
+| 3 instructions | 0 / 8080 | 0 / 8080 |
+| 4 instructions | 0 / 8080 | 1 / 8080 |
+| 8 instructions | 0 / 8080 | 0 / 8080 |
+
+**The fold is not worse than the generic form on realistic edits, and at two
+edits it is better.** It is blind only to a contrived paired change, add 2 to one
+word and subtract 1 from its partner, which a compiler does not emit.
+
+## So the default is reverted
+
+The strict form still measures free, 2.708 cores against 2.740 with overlapping
+ranges. **Free is not a reason.** A default change with no demonstrated benefit
+carries risk and buys nothing, and this file already says a measured win is not
+automatically a correct default. The property stays:
+
+    debug.rpcsx.thor.spu_strict_checksum=1
+
+## What this costs the SPURS hunt
+
+The strongest remaining lead is gone. Three mechanisms have now been excluded:
+
+| mechanism | how | result |
+| --- | --- | --- |
+| missed SPURS reservation notification | dropped 3840 of 30713 | no halt |
+| limiter sleeping too long | 7680+ applications at 3x | no halt |
+| block verifier accepting a wrong block | 8080 realistic mutations a row | fold is not the weaker one |
+
+**Write the test the code actually performs, not the one that is easy to
+write.** Comparing unrelated windows was easy and it answered nothing. Comparing
+a block to a mutated copy of itself is the verifier's real question, and it took
+the same twenty minutes.
