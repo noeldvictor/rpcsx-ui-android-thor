@@ -294,3 +294,52 @@ So `"movie"` beside `"vdecUnits": 0` is not a contradiction. Read `source`.
 
 **A real-time engine cutscene is detected by neither**, because it neither
 decodes nor opens a container. Judge that from a PAUSED screenshot.
+
+# DRIVING A GAME: pause, screenshot, LOOK, decide, press. Never a blind sequence.
+
+**This is not a preference. A blind press sequence corrupts the run.**
+
+The failed way, and it failed on this title today: skip the intro, then fire
+`START`, `CROSS`, `CROSS`, `CROSS` on a timer and assume the menus advanced. The
+arm came back `INVALID (no 3D scene: fps=0.00 cores=1.100)` and the game was
+sitting on the **Hasbro logo**, because the presses had landed on whatever
+happened to be on screen.
+
+## Why a timer cannot work here
+
+**Transformers plays SEVERAL intro movies back to back**: Activision, Hasbro, a
+developer logo, then the FMV. A fixed sequence desynchronises the moment any one
+of them runs long or short.
+
+**And `/scene` alone is not enough to skip them.** It reports `videoDecoding`
+from an open `.bik`, so it goes FALSE in the GAP BETWEEN two movies. A skip loop
+that breaks on the first "not a movie" exits mid-intro and then presses blind.
+Measured: the probe read `source: none` while the Hasbro logo was on screen.
+
+## The loop that works
+
+    POST /pause          the game stops. It does not advance while you think.
+    adb exec-out screencap -p > shot.png
+    READ THE SCREENSHOT  decide what this screen is asking for
+    POST /pad/press?...  thor_press resumes, presses, and re-pauses
+    POST /pause          look again, confirm what changed
+
+`thor_press` already resumes and re-pauses on its own, because a paused guest
+cannot see a button.
+
+**Pausing is the part that makes it correct**, not the part that makes it
+tidy. Without it the screenshot is stale before it is read, and the button lands
+on a scene nobody looked at. Verified: 3.91 cores running, 0.33 paused.
+
+## What a script may and may not do
+
+A script MAY: boot, cool, wait for frames, sample, and REFUSE an arm whose gate
+does not pass.
+
+A script MAY NOT: decide which button to press. That needs eyes on the picture.
+So an experiment that requires navigation is driven by hand to the scene, and
+then a savestate is captured so the scene is reproducible without navigating
+again.
+
+**Capture the savestate the FIRST time you reach the scene.** Reaching the
+Decepticon Campaign by hand cost six minutes; restoring it costs one command.
