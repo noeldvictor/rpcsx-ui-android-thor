@@ -563,3 +563,34 @@ for the SPURS kernel entirely, which is the expensive part on ARM.
 **This is the only remaining lever with headroom.** Every setting-level lever is
 exhausted, and the polling it would remove is the single largest identified
 waste in the profile.
+
+### Why implementing those nine is probably NOT the speedup, despite being the only lever left
+
+Worth stating before anyone spends weeks on it.
+
+**The nine are not partial implementations.** In `ps3fw/cellSpurs.cpp` they are
+COMMENTED-OUT DECLARATIONS - `// s32 cellSpursCreateTaskWithAttribute();` and so
+on. There is nothing to complete; the task and queue API would be written from
+scratch.
+
+**HLE SPURS would not move the work to the host.** SPURS tasks ARE SPU binaries.
+Under HLE the kernel's scheduling and polling move to host code, but the tasks
+themselves still execute on emulated SPUs. The saving is the SPURS kernel
+overhead, not the job work.
+
+**And that saving was already measured, indirectly, at zero.**
+`getllar_busy_percent=0` makes the GETLLAR wait SLEEP instead of spin - the same
+overhead HLE removes. Reservation conflicts fell about 40% and the frame rate did
+not move: 18.46 control against 18.32.
+
+**The structural fact agrees.** Five of six SPUs sit at about 91% idle. If SPU
+work were the constraint they would be busy. The sixth is busy only because it
+polls, and paying less for that poll bought nothing.
+
+So the expected value of implementing the SPURS task API, for THIS title's frame
+rate, is low. It would remove a real waste - a core spent polling, which is worth
+having for heat and battery - but the frame is not waiting on it.
+
+**What that leaves as the honest next step** is the question this file has ended
+on twice: what the PPU is waiting for between frames. Nothing measured so far
+touches it, and it is the only participant not yet shown to be idle.
