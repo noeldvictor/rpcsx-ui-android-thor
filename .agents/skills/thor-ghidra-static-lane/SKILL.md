@@ -138,3 +138,54 @@ tooling. Current clean tools are:
 A Ghidra finding is useful only if it names the exact runtime anchor, guest
 module/image, address/PC/block, suspected emulator bottleneck, proposed gated
 change, and the correctness checks needed to prove it.
+
+## When Ghidra is worth it, and when it is not
+
+**Tested 2026-08-23 on the dumped SPURS kernel, both halves.**
+
+### You do NOT need Ghidra to DECODE SPU code
+
+`Emu/Cell/SPUOpcodes.h` holds the emulator's own decode table, `{class, value,
+GET(NAME)}`, and it parses in a few lines:
+
+    ent = re.findall(r'\{\s*(\d+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*GET\((\w+)\)', src)
+    # index is `inst >> 21`; an entry of magnitude m covers value<<m .. |m ones
+
+**199 opcodes, zero setup, and it CANNOT disagree with the recompiler**, because
+it is the same table the recompiler decodes with. That is a stronger guarantee
+than any external disassembler gives.
+
+### You DO need it for STRUCTURE, and a linear scan cannot fake it
+
+A scan of the SPURS image found 141 halt sites asserting against 0 or -1, and
+classifying what produced each checked value gave `XSWD` 69, `SFI` 43, `AND` 6,
+`LQD` 4. **That classification is not trustworthy**, because a linear scan
+cannot tell code from data, and one "halt site" in the same image is the
+`\x7fELF` magic in a data region.
+
+The obvious statistical fix does not work. Measuring how much of each 4 KB page
+decodes as valid SPU instructions gives **99 to 100% on every page**, because
+the SPU opcode space is dense and almost any word decodes to something. The test
+cannot separate code from data at all.
+
+So the things only Ghidra gives you here are:
+
+* what is actually code, by following control flow from entry points;
+* where a function starts and ends;
+* who calls whom, so "is this halt even reachable from job dispatch?" is
+  answerable;
+* a backward slice from one instruction to the value it consumed.
+
+### The trigger
+
+**Use Ghidra when you have a runtime ANCHOR, and not before.** With a program
+counter from the trap decoder, the job is bounded and decisive: follow control
+flow back from that one address to the invariant that failed, in about an hour.
+
+Without an anchor it is 141 candidate sites in somebody else's SPURS kernel with
+no way to rank them. That is the unbounded exploration this lane exists to
+refuse.
+
+**For PPU and PRX work the balance is different**: PowerPC has real symbols,
+`Ps3GhidraScripts` resolves NIDs, and the decompiler output is worth reading. On
+SPU the decode is free and only the structure is scarce.
