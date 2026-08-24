@@ -619,6 +619,20 @@ static FORCE_INLINE bool get_spu_accurate_reservations_for_runtime() noexcept
 #endif
 }
 
+// Report what the emulator is ACTUALLY using, for /diag.
+//
+// /diag printed g_cfg.core.spu_accurate_reservations, which is the CONFIG
+// value, while every decision in this file goes through the function above and
+// its debug.rpcsx.thor.spu_accurate_reservations override. On 2026-08-24 that
+// made /diag report accurateSpuReservations true through a whole series of runs
+// that were running with it OFF. A reader trusting that field would conclude
+// their arm never applied, and would be wrong in the direction that wastes the
+// most time.
+bool thor_spu_accurate_reservations_effective() noexcept
+{
+	return get_spu_accurate_reservations_for_runtime();
+}
+
 static FORCE_INLINE u32 get_mfc_transfers_shuffling_for_runtime() noexcept
 {
 #ifdef ANDROID

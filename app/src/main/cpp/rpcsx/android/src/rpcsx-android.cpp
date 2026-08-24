@@ -2626,6 +2626,11 @@ extern "C" std::string _rpcsx_getTitleId() { return Emu.GetTitleID(); }
 // and the two arms agreed perfectly. Read the lever back before believing it.
 //
 // SPURS is the open bug. The limiter's state was only ever read after a fault.
+// The EFFECTIVE value, not the config value. Defined in Emu/Cell/SPUThread.cpp.
+// /diag used to print the config here, which reported "true" through runs that
+// were running with the debug.rpcsx.thor override set to 0.
+bool thor_spu_accurate_reservations_effective() noexcept;
+
 extern "C" std::string _rpcsx_diagInfo() {
   std::string spurs = "[]";
   {
@@ -2668,7 +2673,7 @@ extern "C" std::string _rpcsx_diagInfo() {
       +g_progr_fdone, +g_progr_ftotal, +g_progr_pdone, +g_progr_ptotal,
       text,
       g_cfg.core.rsx_fifo_accuracy.to_string(),
-      g_cfg.core.spu_accurate_reservations.to_string(),
+      thor_spu_accurate_reservations_effective() ? "true" : "false",
       g_cfg.core.spu_block_size.to_string(),
       g_cfg.core.spu_decoder.to_string(),
       g_cfg.video.frame_limit.to_string(),
