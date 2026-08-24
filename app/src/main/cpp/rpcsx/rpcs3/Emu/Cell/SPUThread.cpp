@@ -185,6 +185,40 @@ static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexc
 // observe as a workload that did not progress.
 //
 //   100 is normal. 1000 sleeps ten times too long. 10 barely sleeps.
+// Third SPURS injector: clamp the limiter's max_run.
+//
+// The guest cannot read group->spurs_running, which is emulator state. It CAN
+// observe how many of its SPU threads make progress, through its own idle mask
+// at local store 0x173 and its workload counters. Clamping max_run SERIALISES
+// the SPURS group while the guest still believes it has six threads, which is
+// the accounting perturbation the notification and wait-scale arms did not
+// cover.
+//
+// 0 is off. N clamps max_run to N.
+static u32 get_thor_spurs_max_run_clamp() noexcept
+{
+	static const u32 s_value = []() -> u32
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_max_run_clamp", value) > 0)
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed > 0 && parsed < 64)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+#endif
+		return 0;
+	}();
+
+	return s_value;
+}
+
+
 static u32 get_thor_spurs_wait_scale() noexcept
 {
 	static const u32 s_value = []() -> u32
@@ -7097,6 +7131,21 @@ bool spu_thread::process_mfc_cmd()
 			// Wait for other threads to complete their tasks (temporarily)
 			u32 max_run = group->max_run;
 
+			// Fault injection, default off. See get_thor_spurs_max_run_clamp.
+			if (const u32 thor_clamp = get_thor_spurs_max_run_clamp(); thor_clamp != 0 && max_run > thor_clamp)
+			{
+				static atomic_t<u64> s_clamped{0};
+				max_run = thor_clamp;
+
+				if (const u64 n = ++s_clamped; n == 1 || (n % 512) == 0)
+				{
+					spu_log.error("Thor SPURS max_run clamp ACTIVE: %u, group asked %u, applied "
+						"%llu times. This SERIALISES SPURS on purpose. Clear "
+						"debug.rpcsx.thor.spurs_max_run_clamp before measuring anything.",
+						thor_clamp, +group->max_run, n);
+				}
+			}
+
 			auto [prev_running, ok] = spurs_entered_wait ? std::make_pair(+group->spurs_running, false) :
 			                                               group->spurs_running.fetch_op([max_run, num = group->max_num](u32& x)
 															   {
@@ -7192,6 +7241,12 @@ bool spu_thread::process_mfc_cmd()
 					}
 
 					max_run = group->max_run;
+
+					// Same clamp on the re-read, or the loop escapes the injection.
+					if (const u32 thor_clamp = get_thor_spurs_max_run_clamp(); thor_clamp != 0 && max_run > thor_clamp)
+					{
+						max_run = thor_clamp;
+					}
 
 					prev_running = group->spurs_running.fetch_op([max_run](u32& x)
 														   {

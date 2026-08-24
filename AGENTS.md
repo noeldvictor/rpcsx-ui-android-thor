@@ -9354,3 +9354,52 @@ diagnosis rather than a notification.
 a restored 3D combat scene, one command, 18 FPS at 5.5 cores, reproducible to
 0.5 FPS across six runs. Every performance lever that was unmeasurable on a
 title screen can now be measured on the scene that actually matters.
+
+# FOURTH mechanism excluded: serialising SPURS does not cause the halt
+
+**2026-08-23.** `debug.rpcsx.thor.spurs_max_run_clamp = N` clamps the limiter's
+`max_run` at BOTH reads, so the SPURS group runs N threads at a time while the
+guest still believes it has six. Default 0.
+
+**Run at 1, the most extreme value, in restored 3D combat:**
+
+    max_run clamp ACTIVE: 1, group asked 6, applied 16896 times
+
+The game degraded as it should: 18.3 FPS to 14.6, 5.5 cores to 4.1. **No halt,
+no SPU trap, no dead FIFO** across two minutes of fully serialised SPURS.
+
+The guest cannot read `spurs_running` directly, but it CAN observe how many of
+its threads progress, through its idle mask and its workload counters. If a
+disagreement between the emulator's scheduling and the guest's expectation
+caused the assertion, serialising six threads to one is the way to provoke it.
+It does not.
+
+## Ten mechanisms, none of them it
+
+| mechanism | how | result |
+| --- | --- | --- |
+| RSX FIFO accuracy | 27 Atomic, 10 Fast | no halt |
+| wake-up delay | 12 at 20, 15 at 50 | no halt |
+| heat | 15 boots at 94 to 97 C | no halt |
+| CPU starvation | 12 boots, 5 spinners | no halt |
+| SPURS under job dispatch | 6 combat runs | no halt |
+| missed SPURS notification | 3840 of 30713 dropped | no halt |
+| limiter sleeping too long | 7680+ at 3x | no halt |
+| **limiter scheduling, serialised** | **16896 clamps to 1** | **no halt** |
+| block verifier | 8080 realistic mutations a row | fold not weaker |
+| uninitialised SPURS state | `cellSpurs.cpp:1127` memsets it | ruled out |
+
+**Four of those were FORCED, not waited for.** The injectors make the emulator
+create the failure mode on demand, at doses far past anything a real run would
+see, and the guest tolerated every one.
+
+## What that means
+
+The halt is not caused by anything this project can construct from the emulator
+side: not a setting, not the machine's state, and not any perturbation of the
+SPURS contract that has been thought of. Either it needs a guest state no arm
+has reached, or its cause is outside the mechanisms enumerated here.
+
+**Reproduction has cost about 92 controlled sessions.** The injectors stay,
+because a negative that is reproducible is worth keeping, and each is one
+property away from being re-run against a new idea.
