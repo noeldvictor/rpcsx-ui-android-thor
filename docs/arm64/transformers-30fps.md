@@ -254,3 +254,86 @@ emulator as a whole.
 The harness now REQUIRES `ok:true` from loadstate, retries three times, and
 refuses the run otherwise. A gate that can pass for the wrong reason is not a
 gate - the same lesson the savestate byte-count check records.
+
+## The per-thread census: SPU0 carries twice the load
+
+`tools/thor_thread_census.sh` reads `/proc/PID/task/*/stat` during verified 3D
+combat. It needs no server and cannot come back empty the way the control API
+does.
+
+| thread | jiffies | note |
+| --- | --- | --- |
+| `SPU[0x0000100]` | 1438 | **about twice every other SPU** |
+| `SPU[0x2000100]` | 795 | |
+| `SPU[0x1000100]` | 775 | |
+| `SPU[0x3000100]` | 763 | |
+| `SPU[0x4000100]` | 755 | |
+| `rsx::thread` | 732 | as much as a whole SPU |
+| `SPU[0x5000100]` | 599 | |
+| `PPU[0x100000b]` rendering | 536 | |
+| `PPU[0x1000000]` main | 486 | |
+
+Read the RATIOS, not the percentages: the sample window includes adb round trips,
+so the absolute figures are inflated.
+
+**This is the finding.** Five SPUs run at roughly two thirds of one SPU's load
+while SPU0 saturates. The frame is not short of cores - it is waiting on ONE
+thread. That is why every lever that adds parallelism or removes overhead has
+measured null: the critical path is guest work concentrated on SPU0, and the
+emulator does not choose that distribution. SPURS does, inside the guest.
+
+## RSX FIFO park: engaged, and still null
+
+`rsx::thread` burning as much as an SPU, while the game's own overlay reports
+RSX at 3.4%, suggests FIFO polling rather than rendering. The park exists for
+exactly that, and it is default off.
+
+| arm | fps | cores | CPU | park counters |
+| --- | --- | --- | --- | --- |
+| control | 18.67 | 5.506 | 69.5% | - |
+| `park_after=16 us=100` | 18.30 | 5.547 | 67.8% | idle_polls=34707 parks=33258 slept_ms=3325 |
+
+The park ENGAGED - 33,258 sleeps totalling 3.3 s - and bought nothing. The FIFO
+is idle often, but the idle time is not where the frame goes.
+
+## Every lever measured against this workload
+
+| lever | fps result |
+| --- | --- |
+| Balemuni Aurora GPU driver | null; GPU is 2.3% of the profile |
+| `vm::writer_lock` spins / cycles | null |
+| SPURS `max_run` clamp 4 and 3 | null; conflict rate unchanged |
+| `Accurate SPU Reservations` off | null (an earlier +3.8% was one run, retracted) |
+| `XFloat Accuracy` relaxed | null |
+| `XFloat Accuracy` inaccurate | null |
+| `SPU Verification` off | null on fps |
+| decrementer fast conversion (code) | null |
+| RSX FIFO park | null |
+
+Nine levers, nine nulls, all on gated 3D combat with the savestate load
+confirmed. Three separate "wins" were retracted as artifacts.
+
+**The conclusion this supports:** 18.4 FPS in heavy combat is set by guest SPU
+work concentrated on one thread. No emulator setting reaches it, and neither did
+a targeted micro-optimisation of the hottest inlined sequence. What would reach
+it is making SPU0's work finish sooner - recompiler output quality - or the game
+distributing it differently, which is not ours to choose.
+
+## PhysX: tested, and not separable
+
+The hypothesis is reasonable - this is Unreal Engine 3, and UE3 on PS3 runs
+PhysX on the SPUs. It could not be confirmed or refuted from the device:
+
+- The title creates exactly SIX SPU threads, all `CellSpursKernel0` to `5`, and
+  loads `libspurs_jq.sprx`. Physics is dispatched as SPURS JOBS among all other
+  work, so there is no PhysX thread or group to isolate or throttle.
+- Local store captured DURING combat carries no physics signature. It contains
+  `SPURSTASK MODULE` and nothing else identifiable; SPU job binaries are stripped
+  code.
+- Diffing the idle capture against the combat capture shows 21.8% of the local
+  store changed, but the largest changed regions decode as 258 `STOP` opcodes,
+  which is DATA - job input and output buffers - not job code.
+
+So PhysX may well be a large part of SPU0's load. Nothing available on the device
+can attribute it, and attributing it would require reverse engineering the job
+descriptors, which is the one place Ghidra would earn its keep.
