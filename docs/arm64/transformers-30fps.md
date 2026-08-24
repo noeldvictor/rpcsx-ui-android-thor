@@ -153,3 +153,65 @@ workload.
   all, which produced a 6.24 FPS "control" against a true 18.4. The levers are
   driven by `debug.rpcsx.thor.*` properties instead, which are read after the
   profile is applied.
+
+## Why the existing 20% SPU win does not apply here
+
+`thor_spu_selfloop_park.h` parks an SPU that branches to ITSELF. It exists
+because a gameplay profile of Eternal Sonata put about **20% of all CPU** in an
+empty self-loop, which nothing inside the loop can end.
+
+Transformers reports `SPU self-loop park: entries=0`, and that is CORRECT rather
+than a missed opportunity. Its SPURS wait is a different shape, recovered by
+disassembling the captured local store at the program counter `/diag` reports:
+
+    0x0f3c4  IL   r4, 0
+    0x0f3c8  IL   r5, 2400
+    0x0f3d0  AI   r4, r4, 1        i++
+    0x0f3d4  RDCH r3, RdDec        read the decrementer
+    0x0f3d8  CEQ  r40, r4, r5      i == 2400 ?
+    0x0f3dc  BRZ  r40, 0x0f3d0
+    ...
+    0x0f3f4  BRNZ r41, 0x0f3a0     value unchanged, poll again
+
+This loop TERMINATES by itself after 2400 iterations, so parking it would be
+wrong: the thread is counting, not waiting on an external write. The park
+mechanism declines it for the right reason.
+
+## The decrementer read, and why it is expensive here
+
+The 2400 iterations each execute `RDCH RdDec`. With `spu_loop_detection` off and
+`clocks_scale` at 100, `SPULLVMRecompiler.cpp` INLINES that read rather than
+calling out, and the inlined sequence is not cheap on ARM64:
+
+- `mrs cntvct_el0` through `llvm.readcyclecounter`, a system register read
+- a `udiv`, a `urem` and a second `udiv` against `utils::get_tsc_freq()` to
+  convert the 19.2 MHz counter to the 80 MHz PS3 timebase (LLVM folds the
+  constant divisors to multiply-shift, but the dependency chain remains)
+- two loads, a subtract, a select
+
+So one guest delay loop is 2400 system-register reads plus 2400 conversion
+chains, per wait, per SPU.
+
+**This also explains why `SPU loop detection` was measured as HOTTER and
+rejected.** Turning it on does not merely add a yield: the condition
+`!(g_cfg.core.spu_loop_detection)` DISABLES the inlined fast path, so every
+decrementer read becomes an out-of-line call. The setting pays a large cost
+before it can offer any benefit.
+
+That is the shape of a real optimisation - keep the inlined read AND detect the
+spin, rather than trading one for the other - but it is unmeasured, and nothing
+here should be taken as a claim that it wins.
+
+## Does this need Ghidra? No, and here is why
+
+Ghidra reverse engineers guest code. The SPU side of that is already covered by
+`tools/spu_cfg.py` and `tools/spu_slice.py`, which is how the loop above was
+recovered. The bottleneck is not a gap in understanding the game; it is the cost
+of emulating six SPUs plus a serial dependency chain, and neither is a
+disassembly problem.
+
+Ghidra earns its keep only for PATCHING the guest - finding a quality setting or
+a job submission to change. Note that the obvious target, PhysX, is not
+separable: the title creates six SPU threads, all `CellSpursKernel0` to `5`, and
+loads `libspurs_jq.sprx`, so physics is dispatched as SPURS jobs among all other
+work.
