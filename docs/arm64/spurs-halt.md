@@ -498,3 +498,50 @@ Anyone trusting that field would conclude their arm never applied.
 3. **Ask why five threads park at `0x011a8` and are never released.** That is
    the emulator's SPURS limiter state, and `spursRunning=1` with five waiters is
    the invariant to check against the limiter's own accounting.
+
+# CORRECTION 2026-08-24: the freeze happens on the SHIPPED profile
+
+Earlier sections tie the boot freeze to `Accurate SPU Reservations: false`. **That
+is wrong.** Booting the title to hand it to a player, with every experimental
+property cleared and `/diag` confirming `accurateSpuReservations: true`, the very
+first boot froze:
+
+    frames stuck at 582 for 36 s, fps 0.00, process CPU pinned at 28.2%
+
+That is the same signature as the earlier reproductions - frames stop, CPU stays
+around 28%, nothing is logged - and it occurred on the STOCK configuration.
+
+So the freeze is not a property of the accurate-reservations setting. The setting
+changed the RATE at which it was seen, not whether it happens. The second boot
+reached gameplay normally, which fits a rate of roughly one in two to six cold
+boots.
+
+**This is the live bug.** It is reproducible, it is in the configuration that
+ships, and it is what the SPURS work in this file was originally chasing.
+
+# Why both HLE SPURS routes are blocked in this tree
+
+Worth recording next to the halt work, because HLE SPURS would remove the SPU
+polling that dominates the profile.
+
+There are two routes, and one mechanism blocks both:
+
+1. **Full HLE cellSpurs** - needs nine PPU task/queue functions that are
+   commented-out declarations.
+2. **LLE PPU side plus HLE SPU kernel** - the elegant one. Keep the real libsre
+   on the PPU, so the game keeps working and the nine functions are not needed,
+   and replace ONLY the SPU-side kernel with the host C++ that already exists in
+   `ps3fw/cellSpursSpu.cpp` (2114 lines, including the taskset policy module).
+
+Route 2 needs `spu.RegisterHleFunction(entry, spursKernelEntry)`. Searched across
+the whole emulator:
+
+- `RegisterHleFunction` is **not defined anywhere** in `rpcs3/`
+- `custom_task` is **not defined anywhere** in `rpcs3/`
+
+Both survive only as commented-out call sites inside `ps3fw/cellSpurs.cpp` and
+`ps3fw/cellSpursSpu.cpp`. **The mechanism that lets an SPU thread execute host
+code was removed from this codebase.** That is the real reason the HLE SPURS
+kernel is dead code, and it is a larger job than writing the nine functions:
+the hook has to be reintroduced into `spu_thread` first, and then placed after
+`sys_spu_thread_group_start()` because that call rewrites SPU local store.
