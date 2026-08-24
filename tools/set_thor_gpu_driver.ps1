@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Default", "TurnipA7xx", "TurnipA8xx")]
+    [ValidateSet("Default", "TurnipA7xx", "TurnipA8xx", "TurnipR3", "Aurora")]
     [string] $Driver = "Default",
     [string] $Package = "net.rpcsx.easy",
     [switch] $StopApp
@@ -27,6 +27,28 @@ $driverInfo = switch ($Driver) {
             Selected = "Mesa Turnip driver v26.0.0 - R8-v1"
             Path = "/data/data/$Package/files/gpu_drivers/Mesa Turnip driver v26.0.0 - R8-v1"
             Name = "vulkan.ad07xx.so"
+        }
+    }
+    "TurnipR3" {
+        # The driver this device shipped with before the Aurora comparison, and
+        # therefore the BASELINE any Aurora measurement has to beat. Note the
+        # library is libvulkan_freedreno.so here, with the lib prefix, while
+        # Aurora ships vulkan.freedreno.so without it - do not copy one name
+        # onto the other package.
+        @{
+            Selected = "Turnip v26.3.0-R3-v1"
+            Path = "/data/data/$Package/files/gpu_drivers/Turnip v26.3.0-R3-v1"
+            Name = "libvulkan_freedreno.so"
+        }
+    }
+    "Aurora" {
+        # Balemuni's Aurora, Mesa 26.3.0-devel, installed by
+        # tools/thor_install_gpu_driver.sh --aurora. The directory name comes
+        # from meta.json "name" and must match it exactly.
+        @{
+            Selected = "Balemuni Apex Ultimate (Mesa 26.3.0-devel - SD8 Gen 2 / Adreno 740)"
+            Path = "/data/data/$Package/files/gpu_drivers/Balemuni Apex Ultimate (Mesa 26.3.0-devel - SD8 Gen 2 / Adreno 740)"
+            Name = "vulkan.freedreno.so"
         }
     }
     "TurnipA8xx" {

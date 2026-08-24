@@ -39,6 +39,12 @@ data class GpuDriverChannelInfo(
 
 val CuratedGpuDriverChannels = listOf(
     GpuDriverChannelInfo(
+        title = "Balemuni's Aurora (Adreno 740 / Thor)",
+        repoUrl = "https://github.com/Balemuni/Balemunis-Aurora",
+        note = "Mesa 26.3.0-devel Turnip, built for Snapdragon 8 Gen 2 and naming AYN Thor directly. Take the SD8Gen2 asset. NOTE: as of the Balemuni tag the SD8Gen2 and AllAdreno zips are the SAME FILE, sha256 dbd1971d..., so the device-specific name is packaging and not a separate build. Unvalidated repo, so bypassValidation is required.",
+        bypassValidation = true
+    ),
+    GpuDriverChannelInfo(
         title = "Kimchi AdrenoToolsDrivers",
         repoUrl = DefaultGpuDriverChannel,
         note = "Best first stop. Mixed Qualcomm and Mesa Turnip packages; for Thor Adreno 740 prefer A6xx/A7xx Turnip builds and keep Default as fallback."
