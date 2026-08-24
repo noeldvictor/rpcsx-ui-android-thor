@@ -460,3 +460,51 @@ one participant faster cannot help unless it is the one on the chain.
 these eleven levers touches. Answering it needs the PPU profiler
 (`g_cfg.core.ppu_prof`, which now has the same override plumbing as the SPU one)
 and a frame-boundary trace, not another setting.
+
+## The LLE-to-HLE SPURS idea: UNTESTED, and the hook does not work
+
+This is the most promising untried lever, and it is recorded here so nobody
+repeats the dead end.
+
+**The idea.** This title loads `libsre.sprx` and runs SPURS **LLE** - the real
+Sony SPURS kernel executing on emulated SPUs. That kernel is what SPU0 spends
+98.8% of its time polling inside. RPCS3 ships an HLE `cellSpurs`
+(`ps3fw/cellSpurs.cpp`, with `REG_FUNC` registrations), and under HLE that
+polling would not exist at all: the scheduler would be host code.
+
+**The hook that was added does not reach it.** `debug.rpcsx.thor.hle_libs` was
+wired into the `is_ignored` lambda in `PPUThread.cpp`. Verified on a COLD boot
+with the property set to `libsre.sprx`:
+
+- zero `forcing HLE` lines in the log
+- `libsre` still appears 78 times
+- all six `CellSpursKernel` threads still created
+
+That lambda decides the GAME's own PRX files. Firmware modules arrive through
+`sys_prx_load_module` and never pass through it. **So the arms run with that
+property are VOID, not null.** They are not evidence that HLE SPURS does nothing.
+
+**A savestate cannot test this either.** The vault savestate was captured under
+LLE, so restoring it replays an already-loaded module set. Testing HLE SPURS
+requires reaching a 3D scene by hand with HLE forced from the first boot.
+
+**And the likely outcome is a broken boot.** RPCS3 issue 9063, "Working HLE
+CellSpurs implementation", is labelled `Unimplemented`. The value of the
+experiment is measuring the CEILING - how much of the frame is SPURS-kernel
+overhead - not shipping it.
+
+## What the literature says about the actual problem
+
+The failure mode here has a name and a standard treatment. A guest thread that
+executes an instruction, then executes it again **without causing an observable
+change to the net system state**, is spinning; binary translators respond by
+retranslating that spin with descheduling code
+([spin-wait detection in VMs](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/9201673),
+[selective descheduling of idling guests](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/8352944),
+[cross-architectural emulation, arXiv:2501.03427](https://arxiv.org/pdf/2501.03427)).
+
+RPCS3 already implements two narrow cases of this - the GETLLAR spin
+optimisation and `thor_spu_selfloop_park.h` for a branch-to-self - and neither
+covers the shape this title uses, which is a COUNTED delay loop around a
+reservation poll. That is the gap, and it is a recompiler change rather than a
+setting.

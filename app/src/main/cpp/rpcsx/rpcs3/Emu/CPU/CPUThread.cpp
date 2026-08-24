@@ -809,7 +809,7 @@ void cpu_thread::operator()()
 	{
 	case thread_class::ppu:
 	{
-		if (g_cfg.core.ppu_prof)
+		if (thor::ppu_prof_override(!!g_cfg.core.ppu_prof))
 		{
 			g_fxo->get<cpu_profiler>().registered.push(id);
 		}
@@ -1705,7 +1705,7 @@ void cpu_thread::flush_profilers() noexcept
 		return;
 	}
 
-	if (thor::spu_prof_override(!!g_cfg.core.spu_prof) || g_cfg.core.ppu_prof)
+	if (thor::spu_prof_override(!!g_cfg.core.spu_prof) || thor::ppu_prof_override(!!g_cfg.core.ppu_prof))
 	{
 		g_fxo->get<cpu_profiler>().registered.push(0);
 	}

@@ -47,4 +47,28 @@ namespace thor
 
 		return s_override < 0 ? cfg_value : s_override != 0;
 	}
+	inline bool ppu_prof_override(bool cfg_value) noexcept
+	{
+		// Same shape as spu_prof_override, armed to answer what the SPU profiler
+		// left open: five of six SPUs are ~91% idle and the sixth only POLLS, so
+		// the frame is produced on the PPU side and the wall clock is a chain of
+		// waits. This says which PPU thread, and where.
+		//
+		//   debug.rpcsx.thor.ppu_prof = 1
+		static const int s_override = []() -> int
+		{
+#if defined(__ANDROID__)
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.ppu_prof", value) > 0 && value[0])
+			{
+				return (value[0] == '0' || value[0] == 'f' || value[0] == 'n') ? 0 : 1;
+			}
+#endif
+			return -1;
+		}();
+
+		return s_override < 0 ? cfg_value : s_override != 0;
+	}
+
 } // namespace thor

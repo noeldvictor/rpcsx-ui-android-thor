@@ -5742,6 +5742,52 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 					}
 				}
 
+				// Runtime HLE force list, so LLE/HLE can be A/B tested without editing
+				// the per-title config that the managed profile rewrites on boot.
+				//
+				// WHY. This title loads libsre.sprx and runs SPURS LLE - the real Sony
+				// SPURS kernel on emulated SPUs. The SPU profiler shows SPU0 at 98.8%
+				// busy with 99.1% of that being reservation POLLING inside that kernel,
+				// while the other five SPUs sit ~91% idle. RPCS3 ships an HLE cellSpurs
+				// (ps3fw/cellSpurs.cpp), and under HLE that polling does not exist.
+				//
+				//   debug.rpcsx.thor.hle_libs = libsre.sprx,libspurs_jq.sprx
+				//
+				// STATUS: THIS HOOK DOES NOT REACH FIRMWARE MODULES. Verified on a cold
+				// boot with the property set to libsre.sprx: the log carried ZERO
+				// "forcing HLE" lines while libsre still appeared 78 times, and all six
+				// CellSpursKernel threads were still created. This lambda decides the
+				// GAME's own PRX files; firmware modules arrive through
+				// sys_prx_load_module and never pass here. So the LLE-to-HLE SPURS
+				// question is UNTESTED, not answered - do not read the arms that used
+				// this property as a null result.
+				//
+				// A savestate cannot test it either: the one in the vault was captured
+				// under LLE, so restoring it replays an already-loaded module set.
+				// Testing HLE SPURS means reaching 3D by hand under HLE.
+				//
+				// EXPECT THIS TO BREAK THINGS. RPCS3 issue 9063, "Working HLE CellSpurs
+				// implementation", is labelled Unimplemented. This exists to MEASURE the
+				// ceiling, not to ship.
+				static const std::string s_thor_hle_libs = []() -> std::string
+				{
+#ifdef __ANDROID__
+					char value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.hle_libs", value) > 0)
+					{
+						return std::string(value);
+					}
+#endif
+					return {};
+				}();
+
+				if (!s_thor_hle_libs.empty() && s_thor_hle_libs.find(entry.name) != std::string::npos)
+				{
+					ppu_log.error("Thor: forcing HLE for %s (debug.rpcsx.thor.hle_libs)", entry.name);
+					return true;
+				}
+
 				if (g_cfg.core.libraries_control.get_set().count(entry.name + ":lle"))
 				{
 					// Force LLE

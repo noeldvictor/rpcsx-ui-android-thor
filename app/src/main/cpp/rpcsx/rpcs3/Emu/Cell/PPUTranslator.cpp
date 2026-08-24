@@ -1,6 +1,7 @@
 #ifdef LLVM_AVAILABLE
 
 #include "Emu/system_config.h"
+#include "Emu/CPU/thor_spu_prof.h"
 #include "Emu/Cell/Common.h"
 #include "cellos/sys_sync.h"
 #include "PPUTranslator.h"
@@ -767,7 +768,7 @@ void PPUTranslator::CallFunction(u64 target, Value* indirect)
 				callee = m_module->getOrInsertFunction(fmt::format("__0x%x", target_last - base), type);
 				cast<Function>(callee.getCallee())->setCallingConv(CallingConv::GHC);
 
-				if (g_cfg.core.ppu_prof)
+				if (thor::ppu_prof_override(!!g_cfg.core.ppu_prof))
 				{
 					m_ir->CreateStore(GetAddr(target_last - m_addr), m_ir->CreateStructGEP(m_thread_type, m_thread, static_cast<uint>(&m_cia - m_locals)));
 				}
