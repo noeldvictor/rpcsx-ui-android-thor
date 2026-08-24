@@ -7081,6 +7081,41 @@ bool spu_thread::process_mfc_cmd()
 								(ntime_now & vm::rsrv_unique_lock) ? 1u : 0u,
 								static_cast<unsigned long long>(ntime_now / 128));
 
+								// The PPU census, taken at the moment of the stall.
+								//
+								// docs/arm64/rsx-boot-hang.md accounts for four PPU threads and
+								// exonerates every one: SpursHdlr0 is in sys_spu_thread_group_join,
+								// main_thread is the event helper and is SUPPOSED to block forever,
+								// the SPU kernel correctly polls an empty workload area, and the
+								// reservation machinery was cleared three ways. The GDB stub lists
+								// eleven threads. Nobody has looked at the other seven.
+								//
+								// A fault where every observed party behaves correctly is a fault in
+								// a party nobody observed. So print all of them, here, where the
+								// stall is already known to be live.
+								//
+								// current_function is the HLE function a thread is inside, which is
+								// what separates "parked in a syscall" from "running guest code".
+								// last_function is sticky and survives the return, so a thread in
+								// guest code still names where it last was.
+								{
+									u32 census = 0;
+
+									idm::select<named_thread<ppu_thread>>([&](u32 id, ppu_thread& ppu)
+										{
+											census++;
+
+											spu_log.error("PPU census %u at SPURS stall: id=0x%x name='%s' "
+												"cia=0x%08x func='%s' last='%s'",
+												census, id, ppu.get_name().c_str(), ppu.cia,
+												ppu.current_function ? ppu.current_function : "-",
+												ppu.last_function ? ppu.last_function : "-");
+										});
+
+									spu_log.error("PPU census complete: %u threads. Four are already accounted "
+										"for and exonerated, so read the others.", census);
+								}
+
 							// What the SPU sees, versus what memory holds.
 							//
 							// Everything above reads current memory through get_super_ptr. The SPU

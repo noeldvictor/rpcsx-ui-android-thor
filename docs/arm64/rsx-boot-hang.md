@@ -1,5 +1,31 @@
 # The RSX boot hang: a deterministic repro, and what it is not
 
+> **STATUS 2026-08-23: THE STALL DESCRIBED BELOW NO LONGER REPRODUCES.**
+>
+> Both titles were re-run on this date, on the current build, and both boot and
+> render:
+>
+> | title | measured |
+> | --- | --- |
+> | Eternal Sonata `BLUS30161` | boots, **30.00 FPS** sustained, no stall report in 150 s |
+> | Folklore `BCUS98147` | boots, **60.00 FPS** sustained, `SPU self-loop park: entries=0` |
+>
+> The GETLLAR stall reporter is still armed and fired zero times in either run.
+> So `0x9d4d80`, the four writes, the empty workload half and the eleven-thread
+> census are all HISTORY. Read this file for the method and for what was
+> excluded, not as a description of live behaviour.
+>
+> This is what the warning at the top of `AGENTS.md` asked for: boot the title
+> before assuming this analysis still holds. It was booted. It does not.
+>
+> One practical note, because it cost a boot to find. The debug-boot intent was
+> refused with `reason=managed-profile-not-applied` and `EACCES`, because
+> `config_BLUS30161.yml` was owned by `shell` with mode `-rw-r--r--` and the app
+> runs as `u0_a158`, so it could read the file but not replace it. Removing that
+> file let the app write its own. A config owned by the wrong user looks exactly
+> like a title that will not boot.
+
+
 Eternal Sonata does not reach gameplay on the current build. It hangs, hard, about
 eight and a half seconds into emulation, and it does so the same way every time.
 

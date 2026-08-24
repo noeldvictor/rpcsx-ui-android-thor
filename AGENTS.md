@@ -3536,6 +3536,15 @@ taken against the July dev-core override. **Boot Folklore before assuming the
 SPURS analysis below still describes live behaviour.** Full note at the top of
 this file.
 
+**RE-MEASURED 2026-08-23: items 0 and 1 below are HISTORY. The stall is gone.**
+Eternal Sonata boots and holds **30.00 FPS**; Folklore boots and holds **60.00
+FPS** with `SPU self-loop park: entries=0`. The GETLLAR stall reporter is still
+armed and fired zero times in either run. Transformers ran four sessions the
+same day, reached 3D combat every time, and reported `trap=0 dead=0`. So no
+SPURS fault reproduces on any of the three titles right now. What remains on
+Transformers is speed and heat, about 19 FPS at 92 to 95 C, which is not this
+defect. Full note in `docs/arm64/rsx-boot-hang.md`.
+
 0. **It is a SPURS defect, not one game.** Folklore stalls at the **same SPU PC
    `0x12b0`** in `CellSpursKernel0`, same `lsa=0x100`, same 24-retry cap, on a
    different reservation address. Both load Sony's SPURS kernel from `libsre`, so

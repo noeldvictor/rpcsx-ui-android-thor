@@ -20,6 +20,13 @@ the memory behind it. The skill `thor-game-workup` is the procedure.
 
 ## BLUS30161, Eternal Sonata
 
+**State 2026-08-23: boots and renders at 30.00 FPS.** The SPURS boot stall
+this title was known for no longer reproduces. If the debug boot is refused
+with `managed-profile-not-applied` and `EACCES`, check the owner of
+`config_BLUS30161.yml`: a config owned by `shell` cannot be replaced by the
+app, and that looks exactly like a title that will not boot.
+
+
 **State: boots, renders, and reaches gameplay through a savestate.**
 
 | | |
