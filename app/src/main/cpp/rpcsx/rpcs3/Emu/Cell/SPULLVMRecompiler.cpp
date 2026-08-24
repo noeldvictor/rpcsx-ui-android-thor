@@ -151,7 +151,19 @@ static u32 get_thor_spu_dec_cache() noexcept
 #ifdef ANDROID
 		char value[PROP_VALUE_MAX]{};
 
-		if (__system_property_get("debug.rpcsx.thor.spu_dec_cache", value) > 0 && value[0])
+		// NEUTRALISED. This property is refused, and the code below is kept only
+		// so the measurement that killed it is not lost.
+		//
+		// Serving intermediate decrementer reads from a cache DEADLOCKS the title:
+		// 1.2% process CPU, 0.14 cores, 0 frames. Guest code depends on the
+		// decrementer ADVANCING, not merely on being readable. A later attempt to
+		// interpolate a monotonic value instead of freezing one was in flight when
+		// SPU threads began dying with "Unknown STOP code: 0x0", i.e. executing
+		// zeroed memory, and the cause was not isolated. Both are off.
+		//
+		// Anything tried here must keep the title booting to gameplay. A hang at
+		// near-zero CPU, or a STOP 0x0, means time stopped advancing for the guest.
+		if (false && __system_property_get("debug.rpcsx.thor.spu_dec_cache", value) > 0 && value[0])
 		{
 			const long parsed = std::strtol(value, nullptr, 10);
 
