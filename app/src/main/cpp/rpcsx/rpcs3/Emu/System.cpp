@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 
 #include "Crypto/unedat.h"
 #include "Crypto/unpkg.h"
@@ -1591,6 +1594,56 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 
 			// Disable incompatible settings
 			fixup_settings(&_psf);
+
+			// Thor: force selected firmware libraries to HLE, from a property.
+			//
+			// WHY HERE. libraries_control is consulted while modules load, in
+			// PPUModule.cpp and PPUThread.cpp, so the entries have to exist before
+			// that. An earlier attempt hooked one of the CONSUMERS instead - the
+			// is_ignored lambda in PPUThread.cpp - and never fired, because that
+			// lambda decides the GAME's own PRX files while firmware modules arrive
+			// by a different route. Setting the config entry reaches every consumer.
+			//
+			//   debug.rpcsx.thor.hle_libs = libsre.sprx,libspurs_jq.sprx
+			//
+			// WHAT IT IS FOR. This title runs SPURS LLE, and the SPU profiler puts
+			// SPU0 at 98.8% busy with 99.1% of that being reservation POLLING inside
+			// that kernel while the other five SPUs sit ~91% idle. RPCS3 ships an HLE
+			// cellSpurs - 162 KB, 140 REG_FUNC - so under HLE that polling would not
+			// exist. Expect breakage: RPCS3 issue 9063 tracks HLE cellSpurs as
+			// incomplete. The point is to measure the CEILING of SPURS overhead.
+#ifdef __ANDROID__
+			{
+				char hle_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.hle_libs", hle_value) > 0 && hle_value[0])
+				{
+					auto set = g_cfg.core.libraries_control.get_set();
+					std::string spec(hle_value);
+
+					for (usz pos = 0; pos <= spec.size();)
+					{
+						const usz next = spec.find(',', pos);
+						std::string name = spec.substr(pos, next == umax ? umax : next - pos);
+
+						while (!name.empty() && (name.front() == ' ')) name.erase(name.begin());
+						while (!name.empty() && (name.back() == ' ')) name.pop_back();
+
+						if (!name.empty())
+						{
+							set.erase(name + ":lle");
+							set.emplace(name + ":hle");
+							sys_log.error("Thor: forcing HLE for %s", name);
+						}
+
+						if (next == umax) break;
+						pos = next + 1;
+					}
+
+					g_cfg.core.libraries_control.set_set(std::move(set));
+				}
+			}
+#endif
 
 			// Force audio provider
 			if (m_path.ends_with("vsh.self"sv))

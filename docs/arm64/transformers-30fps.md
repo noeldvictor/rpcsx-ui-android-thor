@@ -461,7 +461,7 @@ these eleven levers touches. Answering it needs the PPU profiler
 (`g_cfg.core.ppu_prof`, which now has the same override plumbing as the SPU one)
 and a frame-boundary trace, not another setting.
 
-## The LLE-to-HLE SPURS idea: UNTESTED, and the hook does not work
+## The LLE-to-HLE SPURS idea: NOW TESTED (the first hook was in the wrong place)
 
 This is the most promising untried lever, and it is recorded here so nobody
 repeats the dead end.
@@ -508,3 +508,58 @@ optimisation and `thor_spu_selfloop_park.h` for a branch-to-self - and neither
 covers the shape this title uses, which is a COUNTED delay loop around a
 reservation poll. That is the gap, and it is a recompiler change rather than a
 setting.
+
+### Tested 2026-08-24: HLE SPURS engages, removes the polling, and the title hangs
+
+The first hook was wired into a CONSUMER of `libraries_control` - the
+`is_ignored` lambda in `PPUThread.cpp` - and never fired, because that lambda
+decides the GAME's own PRX files. The working place is to inject the entry into
+`g_cfg.core.libraries_control` itself, on the normal boot path in
+`Emu/System.cpp` right after `fixup_settings`, BEFORE modules load. Every
+consumer then sees it.
+
+    debug.rpcsx.thor.hle_libs = libsre.sprx
+
+With that, on a cold boot:
+
+    SYS: Thor: forcing HLE for libsre.sprx
+    SPURS SPU threads: (none)
+
+**`CellSpursKernel0` to `5` are never created.** SPU0's 99.1% reservation
+polling cannot happen, because there is no SPU-side SPURS kernel at all. That is
+the ceiling experiment working exactly as intended.
+
+**And the title hangs.** 0 FPS, 0 frames, 1.08 cores held for 120 s, with an
+`abort` in `main_thread`. RPCS3 issue 9063 is right that HLE cellSpurs is
+incomplete.
+
+### What is missing is a bounded, named list
+
+The game calls exactly nine HLE entry points that are `TODO` stubs, and they are
+all the SPURS **task** API:
+
+| function | in `ps3fw/cellSpurs.cpp` |
+| --- | --- |
+| `cellSpursCreateTaskWithAttribute` | line 380 |
+| `cellSpursTaskExitCodeInitialize` | line 382 |
+| `_cellSpursTaskAttributeInitialize` | line 387 |
+| `cellSpursTaskAttributeSetExitCodeContainer` | - |
+| `_cellSpursLFQueueInitialize` | line 421 |
+| `cellSpursLFQueueAttachLv2EventQueue` | - |
+| `_cellSpursQueueInitialize` | line 432 |
+| `cellSpursQueueAttachLv2EventQueue` | - |
+| `cellSpursSetExceptionEventHandler` | - |
+
+So "HLE cellSpurs is unimplemented" is now a specific work item for this title:
+**the task and queue API**. The rest of the module is present - 162 KB and 140
+`REG_FUNC` registrations.
+
+Two things worth stating about the size of that job. It is the CORE of SPURS,
+not a periphery, so it is a real project rather than an afternoon. And it is
+architecture-independent host C++ - nothing in it is x86-specific - so it
+carries no extra risk on Snapdragon, and would in fact avoid SPU recompilation
+for the SPURS kernel entirely, which is the expensive part on ARM.
+
+**This is the only remaining lever with headroom.** Every setting-level lever is
+exhausted, and the polling it would remove is the single largest identified
+waste in the profile.
