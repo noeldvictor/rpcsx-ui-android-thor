@@ -212,3 +212,35 @@ says so rather than inventing an interpretation.
 The value of this is that the FIRST reproduction is now diagnostic. Before, a
 trap gave a program counter and a value. Now it gives the bad pointer, which is
 the fact needed to find the writer.
+
+## The arm to run
+
+`debug.rpcsx.thor.spurs_store_exclusive`, default 0.
+
+Set it to 1 and the two fast paths take `vm::writer_lock` around the 128-byte
+copy, and change nothing else. That is the ONE variable this hypothesis needs.
+
+Do not use `Accurate SPU Reservations` as the test. It closes the same hole, but
+it also changes the `PUTLLC` failure path, the `PUTLLUC` path, the LR event
+handling near `spurs_addr`, and the recompiled `PUTLLC` success predicate. A
+result from it cannot say WHICH of those mattered, and it costs 8.4% CPU.
+
+Three arms on the restored 3D combat savestate, long enough for the fault rate
+to separate:
+
+| arm | `spurs_store_exclusive` | `Accurate SPU Reservations` | what a null result means |
+| --- | --- | --- | --- |
+| control | 0 | false | the shipped profile, and the baseline fault rate |
+| narrow | 1 | false | if the halt stops here, the tear is the cause |
+| wide | 0 | true | if this stops it and narrow does not, the cause is elsewhere in that setting |
+
+**Read the caution in the code before trusting a clean narrow run.** The accurate
+branch of `do_putlluc` already takes `vm::writer_lock` while holding the same
+reservation lock bits, so that order is exercised. In `do_putllc` the accurate
+path uses `suspend_all` instead, so the ordering the narrow arm introduces there
+is NOT already exercised upstream. A stall on that line would look like a fixed
+halt, which is the one way this experiment can lie.
+
+The fault rate is the measurement, so the run has to be long enough to see one.
+No boot in about 92 controlled sessions produced a halt on demand, so treat a
+short clean run as no evidence rather than as a fix.

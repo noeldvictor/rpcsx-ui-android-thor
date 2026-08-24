@@ -194,6 +194,46 @@ static FORCE_INLINE auto get_spu_wait_policy_for_runtime(const T& setting) noexc
 // the accounting perturbation the notification and wait-scale arms did not
 // cover.
 //
+// Make the SPURS 128-byte reservation stores exclusive again.
+//
+// This is a NARROW arm for the alignment-assert hypothesis in
+// docs/arm64/spurs-halt.md, not a shipping change. Default off.
+//
+// On ARM64 g_use_rtm is false. Under that condition Accurate SPU Reservations
+// decides how do_putllc and do_putlluc copy 128 bytes: accurate suspends every
+// other thread, or holds vm::writer_lock, while the fast path copies with no
+// exclusion at all. The reservation seqlock stays correct either way, so a
+// GETLLAR from another SPU is safe. Plain MFC DMA is NOT: do_dma_transfer takes
+// only vm::range_lock, and vm::writer_lock is exactly what excludes range-lock
+// holders.
+//
+// So another SPU doing a plain GET of a SPURS control line can read it part
+// written, lift a mixed pointer out of it, and halt on the alignment assert.
+//
+// Turning Accurate SPU Reservations back on would also close this, but it
+// changes many things at once and costs 8.4% CPU on a device that is already
+// thermally bound. This toggle changes ONE thing: it takes vm::writer_lock
+// around those two copies and nothing else. If the halt rate falls with this
+// and not with the other levers, the tear is the cause.
+static bool get_thor_spurs_store_exclusive() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_store_exclusive", value) > 0)
+		{
+			return std::strtol(value, nullptr, 10) != 0;
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
+
 // 0 is off. N clamps max_run to N.
 static u32 get_thor_spurs_max_run_clamp() noexcept
 {
@@ -5425,7 +5465,25 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 			{
 				if (addr - spurs_addr <= 0x80)
 				{
-					mov_rdata(vm::_ref<spu_rdata_t>(addr), to_write);
+					// Default off. See get_thor_spurs_store_exclusive.
+					//
+					// CAUTION, and the reason this stays default off. The
+					// accurate branch of do_putlluc already takes writer_lock
+					// while holding the same reservation lock bits, so that
+					// order is exercised. Here the accurate path uses
+					// suspend_all instead, so this ordering is NOT already
+					// exercised upstream. Watch for a stall on this line
+					// before believing a clean run.
+					if (get_thor_spurs_store_exclusive())
+					{
+						vm::writer_lock lock(addr, range_lock);
+						mov_rdata(vm::_ref<spu_rdata_t>(addr), to_write);
+					}
+					else
+					{
+						mov_rdata(vm::_ref<spu_rdata_t>(addr), to_write);
+					}
+
 					res += 64;
 					return true;
 				}
@@ -5734,7 +5792,20 @@ void do_cell_atomic_128_store(u32 addr, const void* to_write)
 
 		if (!get_spu_accurate_reservations_for_runtime())
 		{
-			mov_rdata(sdata, *static_cast<const spu_rdata_t*>(to_write));
+			// Default off. See get_thor_spurs_store_exclusive. The accurate
+			// non-RTM branch below takes the same lock, so this only restores
+			// the exclusion that the fast path drops.
+			if (get_thor_spurs_store_exclusive())
+			{
+				auto spu = cpu ? cpu->try_get<spu_thread>() : nullptr;
+				vm::writer_lock lock(addr, spu ? spu->range_lock : nullptr);
+				mov_rdata(sdata, *static_cast<const spu_rdata_t*>(to_write));
+			}
+			else
+			{
+				mov_rdata(sdata, *static_cast<const spu_rdata_t*>(to_write));
+			}
+
 			vm::reservation_acquire(addr) += 32;
 		}
 		else if (cpu->state & cpu_flag::pause)
