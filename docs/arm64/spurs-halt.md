@@ -321,3 +321,49 @@ There are TWO SPURS failures on this device and they are not the same fault:
 `0x12b0` is a `WRCH`, not a halt, so the stall is not this assert firing. This
 note is about the halt. The stall has its own entry in `AGENTS.md`, and it has
 something this does not: **a reproduction.**
+
+## All 46 reachable halts are now classified
+
+`tools/spu_slice.py` recovers the predicate of each one by backward slicing
+rather than by matching a shape. It starts from the register the halt tests,
+walks back through reachable code, and each time an instruction writes a
+register the slice still needs, records it and adds ITS sources.
+
+    python tools/spu_slice.py debug-captures/spu_ls_CellSpursKernel0.bin         --entry 0xf3c4 --entry 0x11e4 --entry 0x12ec --entry 0x12b0
+
+| count | class |
+| --- | --- |
+| 18 | boolean assert: halts unless the tested condition holds |
+| 10 | halts when the value is -1, often an error return |
+| 7 | DMA argument assert: address 128-byte aligned AND size a multiple |
+| 6 | halts when the value is zero |
+| 4 | compound boolean assert: halts unless every condition holds |
+| 1 | range assert: halts when the value exceeds 0 |
+
+**Unclassified: 0.** So if a trap ever fires, its program counter now names the
+class of check that refused, instead of returning "other check".
+
+`--at ADDR` prints the recovered algebra for one site. On the site decoded by
+hand earlier it reproduces that reading exactly:
+
+    0x13690  HEQI r15 imm=0   DMA argument assert
+       0x1368c  r15 = (r16 & ~r17) | (r18 & r17)
+       0x13688  r18 = 0 - r19
+       0x13684  r19 = (r20 == 0) ? ~0 : 0
+       0x13680  r20 = r8 & 7
+       0x13678  r17 = (r21 == 0) ? ~0 : 0
+       0x13674  r8 = SHLQBYI(r4)
+       0x13670  r16 = 0
+       0x13668  r21 = r3 & 127
+       inputs not produced in this slice: r3, r4
+
+Two limits are enforced rather than left as traps for the reader:
+
+- **The slice stops at a flow boundary.** Past a `BI`, `IRET`, `BR` or `BRA` the
+  code belongs to another block, so a register live there is an INPUT to this
+  block, not something it computed. Without that stop the slice walks into the
+  previous function and reports ITS `r3` as the provenance of this function's
+  `r3` parameter, which is a different value entirely.
+- **The labels state what the code does, not what it means.** A halt on -1 is
+  labelled as a halt on -1. That -1 is usually an error return is an
+  interpretation, and the tool does not assert it.
