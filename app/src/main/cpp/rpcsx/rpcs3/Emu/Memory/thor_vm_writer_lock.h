@@ -39,6 +39,32 @@
 // spinning thread holds its core at full issue rate and burns power for nothing.
 // The RSX FIFO pause ladder already failed for exactly that reason. Fewer, shorter
 // spins is therefore the direction to measure first.
+//
+// ## MEASURED 2026-08-24, on restored Transformers 3D combat: NULL.
+//
+// Five arms, control pair first because bench-results.md records that every
+// in-app arm on a title screen was void when a control pair disagreed with
+// itself. Here the pair agreed, so the arms are readable.
+//
+//   controlA  100/200   18.70 fps  5.220 cores
+//   controlB  100/200   18.60 fps  5.307 cores
+//   spins=8   8/200     18.66 fps  5.447 cores
+//   cycles=50 100/50    18.77 fps  5.687 cores
+//   both      8/50      18.74 fps  5.520 cores
+//
+// Every frame rate falls inside the control pair's own spread, 18.60 to 18.77.
+// The cores column rises with RUN ORDER rather than with the setting, 5.220,
+// 5.307, 5.447, 5.687, 5.520, and only controlA started cold at 33 C against 47
+// to 48 C for the rest, so that trend is thermal and no regression is claimed
+// from it either.
+//
+// So "fewer, shorter spins" is not the lever, and this file should not send the
+// next reader after it again. The defaults stay at 100 and 200.
+//
+// Note the site IS live on this title: the profile sets Accurate SPU
+// Reservations true since the 2026-08-23 revert, and with g_use_rtm false on
+// ARM64 that is exactly the path which lands in this constructor. The null is a
+// null, not a measurement of dead code.
 
 #include "util/types.hpp"
 

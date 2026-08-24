@@ -245,6 +245,26 @@ The fault rate is the measurement, so the run has to be long enough to see one.
 No boot in about 92 controlled sessions produced a halt on demand, so treat a
 short clean run as no evidence rather than as a fix.
 
+## The first tear run was VOID, and here is why
+
+Recorded before the result below, because the mistake is more instructive than
+the number and it nearly shipped as a finding.
+
+The first three arms passed `acc=''` for Accurate SPU Reservations, intending
+"leave it at the shipped default". The shipped default for this title is
+`true`, since it was **reverted on 2026-08-23** because the title halts its own
+SPU with it off. `AGENTS.md` still listed `false` as shipped, and that stale
+line was taken at face value.
+
+So all three arms ran the SAME configuration. Worse, both sites that
+`spurs_store_exclusive` patches live inside `if (!accurate)`, so under
+`accurate=true` the toggle is **dead code**. The narrow arm could not have
+differed from the control no matter what the hypothesis said.
+
+`spurs_addr` was checked for exactly this class of error and came back real. The
+configuration was not checked the same way. **Verify every gate an arm depends
+on, not just the one that occurs to you.**
+
 ## Result: the tear hypothesis is REFUTED
 
 Measured on device, restored 3D combat, 2026-08-23. Three arms, then a fourth
@@ -367,3 +387,29 @@ Two limits are enforced rather than left as traps for the reader:
 - **The labels state what the code does, not what it means.** A halt on -1 is
   labelled as a halt on -1. That -1 is usually an error return is an
   interpretation, and the tool does not assert it.
+
+### Re-run 2026-08-24 with the configuration set explicitly
+
+| arm | accurate | `spurs_store_exclusive` | fps | cores | tears near `spurs_addr` |
+| --- | --- | --- | --- | --- | --- |
+| shipped | on | 0 | 18.60 | 5.060 | **0** |
+| accOff | **off** | 0 | 19.30 | 5.000 | **0** |
+| accOffFix | off | 1 | 18.50 | 5.200 | **0** |
+
+`spurs_addr=0x1e97a80 (real)` in every arm.
+
+**Zero tears near the SPURS control block even with `accurate=off`**, which is
+the configuration that actually opens the unprotected fast path. That is a real
+refutation. The earlier one was void.
+
+Two other things this run settles:
+
+- **The -8.4% CPU win is real**: 19.30 FPS against 18.60 shipped, +3.8%. The
+  reason the setting is refused is the halt, not the speed.
+- **The narrow fix cannot yet be claimed to make `accurate=off` safe.** No halt
+  appeared in any arm in 90 s, including `accOff`. With nothing to reproduce,
+  the fix has nothing to be tested against.
+
+That last point is the honest blocker on recovering the 8.4%. The path to it is
+a reproduction of the halt under `accurate=off`, long enough to establish a
+rate, not another mechanism proposed from the source.

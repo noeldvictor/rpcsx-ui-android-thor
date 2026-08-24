@@ -8027,7 +8027,7 @@ about +/-0.2%:
 
 | lever | result |
 | --- | --- |
-| `Accurate SPU Reservations: false` | **-8.4% CPU**, shipped |
+| `Accurate SPU Reservations: false` | **-8.4% CPU**, measured and still valid. **NO LONGER SHIPPED: reverted 2026-08-23.** The title halts its own SPU inside `CellSpursKernel0` with this off, and -8.4% CPU does not pay for a freeze. The profile now sets it `true`. Re-measured 2026-08-24: off gives 19.30 FPS against 18.60 shipped, so the win is real and the reason for refusing it is the halt, not the speed. |
 | `RSX FIFO Accuracy: Atomic` | survives the FIFO symptom, shipped |
 | `Shader Mode: Async with Shader Interpreter` | removes the compile stall, shipped |
 | `Frame limit: 30` | -25% CPU against uncapped, shipped |
