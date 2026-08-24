@@ -294,6 +294,60 @@ static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
 }
 
 
+// Do not re-enter the SPURS limiter wait when the limiter is not throttling.
+//
+// THE INVARIANT THAT IS VIOLATED. Captured live during the freeze on
+// 2026-08-24, /diag reported for all six threads:
+//
+//     maxNum=6  maxRun=6  spursRunning=1  and five with enteredWait=true
+//
+// max_run is the number the limiter permits to run and it equals max_num, so
+// the limiter is throttling NOBODY. One or two threads are running. The other
+// five are asleep for no reason the limiter can state.
+//
+// WHY THEY ARE ASLEEP. The entry test refuses to throttle unless the limiter is
+// actually restricting the group:
+//
+//     if (x >= max_run && max_run < num) { x--; return true; }
+//
+// but the guard around the sleep is `if (ok || spurs_entered_wait)`, and
+// spurs_entered_wait is sticky: it is set when a thread goes not-idle -> idle
+// and cleared ONLY on the reverse transition, both detected inside a successful
+// PUTLLC at pc 0x11e4. So once set, the thread re-enters the wait on every pass
+// WITHOUT re-testing `max_run < num`. It then sleeps on spurs_running, which
+// only another SPURS thread can change - and the others are asleep in the same
+// place. The one thread still running is in the guest's own poll loop at
+// 0x0f3c4, which spins 2400 times reading RdDec and re-polls a value that only
+// a woken thread could produce. That is a circular wait.
+//
+// It matches the profile taken while frozen: 44% of cycles in JIT-generated
+// guest code, 2.67% in sched_yield, frames stopped, and no fault logged
+// anywhere because nothing is violating a rule the emulator checks.
+//
+// THE FIX. Make re-entry honour the same condition as entry. When
+// max_run >= max_num the limiter is not throttling and there is nothing for a
+// thread to wait for.
+//
+// 1 enables. Default 0 is current behaviour.
+static bool get_thor_spurs_wait_honour_maxrun() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_wait_honour_maxrun", value) > 0)
+		{
+			return std::strtol(value, nullptr, 10) != 0;
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
+
 // Always notify on a SPURS-block PUTLLC, instead of only on running -> idle.
 //
 // THE PAIRING THIS TESTS. do_putllc suppresses the reservation notification
@@ -7425,7 +7479,14 @@ bool spu_thread::process_mfc_cmd()
 																   return false;
 															   });
 
-			if (ok || spurs_entered_wait)
+			// Default off. See get_thor_spurs_wait_honour_maxrun. The sticky
+			// spurs_entered_wait bypasses the `max_run < num` test that the entry
+			// path above applies, so a thread keeps sleeping after the limiter has
+			// stopped throttling.
+			const bool thor_may_wait = !get_thor_spurs_wait_honour_maxrun() ||
+				(group && group->max_run < group->max_num);
+
+			if (ok || (spurs_entered_wait && thor_may_wait))
 			{
 				lv2_obj::prepare_for_sleep(*this);
 
