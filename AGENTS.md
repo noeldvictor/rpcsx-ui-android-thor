@@ -9302,3 +9302,55 @@ again.
 
 **Capture the savestate the FIRST time you reach the scene.** Reaching the
 Decepticon Campaign by hand cost six minutes; restoring it costs one command.
+
+# SPURS under REAL JOB DISPATCH: still no halt, and that closes the hypotheses
+
+**2026-08-23, six runs of restored 3D combat.** Every earlier boot ended at a
+title screen or an intro, where SPURS IDLES: `/diag` shows the group asleep and
+the self-loop park counter reads `entries=0`. This arm ran the failing subsystem
+under load.
+
+| run | cores | fps | spursRunning | fault |
+| --- | --- | --- | --- | --- |
+| 1 | 5.632 | 18.33 | 3 | none |
+| 2 | 5.560 | 18.33 | 2 | none |
+| 3 | 5.580 | 18.31 | 2 | none |
+| 4 | 5.340 | 17.79 | 2 | none |
+| 5 | 5.060 | 17.79 | **6** | none |
+| 6 | 5.200 | 18.00 | 3 | none |
+
+**0 faults in 6 valid combat runs, 0 void.** No button presses were involved:
+the savestate restores the scene directly, so nothing was pressed blind.
+
+## The hypothesis list is now empty
+
+| mechanism | how it was tested | result |
+| --- | --- | --- |
+| RSX FIFO accuracy | 27 Atomic, 10 Fast boots | no halt |
+| driver wake-up delay | 12 at 20, 15 at 50 | no halt |
+| heat | 15 boots at 94 to 97 C | no halt |
+| CPU starvation | 12 boots, 5 spinners | no halt |
+| missed SPURS notification | forced 3840 of 30713 drops | no halt |
+| limiter sleeping too long | 7680+ applications at 3x | no halt |
+| block verifier accepting a wrong block | 8080 realistic mutations a row | fold is not weaker |
+| uninitialised SPURS state | source audit, `cellSpurs.cpp:1127` memsets it | ruled out |
+| **SPURS under real job dispatch** | **6 combat runs, spursRunning 2 to 6** | **no halt** |
+
+**About 90 controlled sessions and not one reproduction.** The fault is not a
+function of a setting, of heat, of CPU scarcity, of notification loss, of
+limiter timing, of block verification, of uninitialised state, or of SPURS being
+busy.
+
+## So stop trying to reproduce it
+
+Each attempt costs two to five minutes and roughly 90 C on a handheld somebody
+owns. Ninety of them have produced nothing. **The next occurrence has to be
+caught in the wild, and it is now worth catching**: the handler decodes the halt
+instruction, names the register and prints its value, prints the SPURS limiter
+state, and dumps the four instruction words before the halt. One occurrence is a
+diagnosis rather than a notification.
+
+**What this arm DID deliver** is the workload this project lacked for two years:
+a restored 3D combat scene, one command, 18 FPS at 5.5 cores, reproducible to
+0.5 FPS across six runs. Every performance lever that was unmeasurable on a
+title screen can now be measured on the scene that actually matters.
