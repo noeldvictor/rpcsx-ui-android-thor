@@ -413,3 +413,88 @@ Two other things this run settles:
 That last point is the honest blocker on recovering the 8.4%. The path to it is
 a reproduction of the halt under `accurate=off`, long enough to establish a
 rate, not another mechanism proposed from the source.
+
+# A REPRODUCIBLE SPURS FREEZE, 2026-08-24
+
+This is the first SPURS fault in this effort that reproduces on demand. It is
+worth more than any of the hypotheses above, all of which died.
+
+## The recipe
+
+    tools/thor_spurs_freeze_repro.sh          # RUNS=8 WATCH=150 by default
+
+Transformers `BLUS30357`, **cold boot**, `debug.rpcsx.thor.spu_accurate_reservations=0`.
+Rate: **1 to 2 freezes in 8 boots**, so budget at least 8 boots per arm.
+
+**Cold boot, not the combat savestate.** The recorded halt is at `0:00:37.42`,
+inside the logo and intro phase. Restoring the 3D combat savestate jumps over
+exactly that window, which is the most likely reason about 92 combat sessions
+found nothing. The freezes here land between 60 and 120 s.
+
+**`accurate=off` is required.** The shipped profile sets Accurate SPU
+Reservations `true` since the 2026-08-23 revert, precisely because the title
+misbehaves with it off. So the shipped configuration is the one in which this
+fault CANNOT be studied.
+
+## What the freeze looks like
+
+It is a LIVE-LOCK, not a deadlock, and nothing is logged because nothing faults:
+
+| signal | value |
+| --- | --- |
+| frames | stop dead, `Frames: 0 in 10.00s` |
+| process CPU | stays at ~28%, two threads pinned at 97% |
+| `stcx: stale128` | falls from ~12600 per 10 s to exactly 10 |
+| `other_fail` | frozen, unchanging |
+| SPURS threads | 5 of 6 parked at `pc=0x011a8`, `enteredWait=true` |
+| the sixth | `pc=0x0f3c4`, `spursRunning=1` |
+| trap / ffdead / Dead FIFO | **0** |
+| GETLLAR stall report | **0** |
+
+So the SPURS group has collapsed to one running thread while five wait, and the
+emulator never notices, because no counter it owns is being violated.
+
+## Measuring liveness: use frames, not fps
+
+The first version of this script called a run frozen when fps stopped changing
+and declared a reproduction on a perfectly healthy boot. **This title is capped
+at 30, so a healthy run reports exactly 30.00 for ever.** Liveness has to come
+from the cumulative `frames` counter, which only ever increases.
+
+## Tested and rejected: the notification-suppression pairing
+
+`do_putllc` suppresses the reservation notify when the store is on the SPURS
+control line at `pc 0x11e4`, unless the thread went running to idle. The
+`!accurate` branch of the RdEventStat wait, at `SPUThread.cpp:8537`, waits on
+that same notifier and justifies itself with "we have notifications for nearly
+all writes". One side stops notifying for the idle to RUNNING direction and the
+other is built on receiving them, which looked like a live-lock by construction.
+
+`debug.rpcsx.thor.spurs_always_notify=1` restores the unconditional notify.
+
+| arm | freezes in 8 cold boots |
+| --- | --- |
+| `always_notify=0`, baseline | 1 |
+| `always_notify=1` | 2 |
+
+**No effect.** At this sample size 1 and 2 are the same number. The pairing is
+real in the code but it is not what causes this. The toggle stays default off.
+
+## Also fixed: `/diag` reported a value the emulator was not using
+
+`/diag` printed `g_cfg.core.spu_accurate_reservations`, the CONFIG value, while
+the runtime uses `get_spu_accurate_reservations_for_runtime()` and its
+`debug.rpcsx.thor.spu_accurate_reservations` override. During these runs `/diag`
+said `accurateSpuReservations: true` while the emulator was running with it off.
+Anyone trusting that field would conclude their arm never applied.
+
+## What to try next, in order
+
+1. **Bisect.** The repro costs about 3 minutes per boot and needs 8 boots for a
+   rate, which makes a bisect practical for the first time.
+2. **Find what the two 97% threads are executing.** `/threads` gives per-thread
+   jiffies and names them; a simpleperf capture taken WHILE frozen would name
+   the function. Nothing in this session has done that yet.
+3. **Ask why five threads park at `0x011a8` and are never released.** That is
+   the emulator's SPURS limiter state, and `spursRunning=1` with five waiters is
+   the invariant to check against the limiter's own accounting.

@@ -294,6 +294,44 @@ static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
 }
 
 
+// Always notify on a SPURS-block PUTLLC, instead of only on running -> idle.
+//
+// THE PAIRING THIS TESTS. do_putllc suppresses the reservation notification
+// when the store is on the SPURS control line at pc 0x11e4, unless the thread
+// just went from running to idle. The RdEventStat wait path meanwhile takes a
+// branch specific to `!accurate` for `raddr - spurs_addr <= 0x80`, and its own
+// comment justifies that branch with "in this situation we have notifications
+// for nearly all writes making it possible".
+//
+// So one side stops sending notifications for the idle -> RUNNING direction,
+// and the other side is built on receiving them. When check_cache_line_waiter()
+// returns false that waiter does not even sleep: it spins and continues.
+//
+// That predicts the freeze measured on 2026-08-24 with accurate off. Frames
+// stop, two threads sit at 97% CPU, five of six SPURS threads park at pc
+// 0x011a8 with spursRunning=1, and stale128 falls from about 12600 per 10 s
+// to 10. Nothing is logged, because nothing faults.
+//
+// 1 restores the unconditional notify. Default 0 is current behaviour.
+static bool get_thor_spurs_always_notify() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spurs_always_notify", value) > 0)
+		{
+			return std::strtol(value, nullptr, 10) != 0;
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
+
 // Make the SPURS 128-byte reservation stores exclusive again.
 //
 // This is a NARROW arm for the alignment-assert hypothesis in
@@ -5774,7 +5812,10 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 
 				const bool switched_from_running_to_idle = (static_cast<u8>(rdata[SPU_IDLE]) & thread_bit_mask) == 0 && (_ref<u8>(0x100 + SPU_IDLE) & thread_bit_mask) != 0;
 
-				if (switched_from_running_to_idle && !thor_drop_this_notify)
+				// Default off. See get_thor_spurs_always_notify.
+				const bool thor_force_notify = get_thor_spurs_always_notify();
+
+				if ((switched_from_running_to_idle || thor_force_notify) && !thor_drop_this_notify)
 				{
 					vm::reservation_notifier_notify(addr);
 				}
