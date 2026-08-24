@@ -594,3 +594,74 @@ having for heat and battery - but the frame is not waiting on it.
 **What that leaves as the honest next step** is the question this file has ended
 on twice: what the PPU is waiting for between frames. Nothing measured so far
 touches it, and it is the only participant not yet shown to be idle.
+
+## WHY the HLE cellSpurs is incomplete: the answer is two specific things
+
+Researched and then confirmed in this tree, rather than inferred from the issue
+label.
+
+### 1. The HLE SPU kernel exists and is NEVER REGISTERED
+
+`ps3fw/cellSpursSpu.cpp` is **2114 lines**. It contains a complete SPURS kernel
+written as host C++ - `spursKernelEntry` at line 696, the system service
+(`spursSysServiceMain`, `spursSysServiceActivateWorkload`), and the **taskset
+policy module** (`spursTasksetEntry`, `spursTasksetStartTask`,
+`spursTasksetResumeTask`, `spursTasksetProcessRequest`).
+
+It is dead code. In `ps3fw/cellSpurs.cpp` around line 1271, inside
+`_spurs::initialize` where each SPU thread is created:
+
+```cpp
+// entry point cannot be initialized immediately because SPU LS will be
+// rewritten by sys_spu_thread_group_start()
+// idm::get_unlocked<named_thread<spu_thread>>(spurs->spus[num])->custom_task = ...
+{
+    // Disabled
+    // spu.RegisterHleFunction(entry, spursKernelEntry);
+};
+```
+
+**That one commented line is the difference between the SPURS kernel running as
+host C++ and running as emulated SPU code.** With it enabled, SPU0's 99.1%
+reservation polling would execute as native ARM64 instead of recompiled SPU.
+
+The comment also states the obstacle plainly: **the entry point cannot be
+registered at initialize time, because `sys_spu_thread_group_start()` rewrites
+SPU local store afterwards.** So the hook has to move to after the group starts.
+That is an ordering problem with a known cause, not a mystery.
+
+Upstream matches: RPCS3 PR 1001 ("SPURS Taskset") was written and then disabled
+to prevent regressions, and enabling it required removing a `while (1) sleep()`
+in `spursKernelEntry`. This fork has no such sleep - it has the unregistered
+hook instead.
+
+### 2. The PPU-side task API is nine commented-out declarations
+
+Separately, the functions this title calls are not stubs to finish but
+declarations that were never written:
+
+`cellSpursCreateTaskWithAttribute`, `cellSpursTaskExitCodeInitialize`,
+`_cellSpursTaskAttributeInitialize`, `cellSpursTaskAttributeSetExitCodeContainer`,
+`_cellSpursLFQueueInitialize`, `cellSpursLFQueueAttachLv2EventQueue`,
+`_cellSpursQueueInitialize`, `cellSpursQueueAttachLv2EventQueue`,
+`cellSpursSetExceptionEventHandler`.
+
+### So "can it be completed?"
+
+The honest shape of the job:
+
+1. **Move the `RegisterHleFunction` hook** to after `sys_spu_thread_group_start`,
+   so the SPU LS rewrite does not clobber it. Bounded, and the reason it is
+   currently disabled is documented in the code.
+2. **Write the nine PPU task/queue functions**, against the taskset code that
+   already exists in `cellSpursSpu.cpp`.
+3. Expect to debug SPURS state layout mismatches, which is what made this hard
+   for upstream in the first place.
+
+Step 1 alone is testable and is the one that would remove the polling.
+
+**But see the section above on expected value.** Making that polling cheaper was
+already measured at zero frames (`getllar_busy_percent=0`: conflicts down 40%,
+FPS unchanged), and five of six SPUs are ~91% idle. The likely outcome is a
+cooler, less wasteful emulator at the SAME frame rate. That is worth having, and
+it is not the 30 FPS this file is named for.
