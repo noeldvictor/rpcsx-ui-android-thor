@@ -68,6 +68,28 @@ def main():
                  "cannot see the two words swap, which is ordinary code motion in a streamed "
                  "job binary. Use a different weight." % lane)
 
+    # THE CHECK THAT WAS MISSING, and it is the one that mattered.
+    #
+    # A commutative fold is blind to SWAPPING the two words. A weighted fold is
+    # not, so the earlier check passed and the verifier was still blind: ANY
+    # fold of two 32-bit words into one lane loses information, and w + k*w is
+    # blind to adding k*d to one word and subtracting d from the other.
+    #
+    # Measured on the real dumped SPURS kernel image: over 1186 non-empty
+    # windows, 25 pairs with DIFFERENT bytes shared an ARM checksum and the
+    # generic checksum separated 17 of them. One pair differed in 58 bytes.
+    #
+    # So report the blind transformation explicitly, per lane, rather than
+    # printing OK and moving on.
+    for lane, weight in sorted(ir.items()):
+        # a + k*b is unchanged by (a + k*d, b - d) for any d.
+        print("  NOTE lane %d is blind to: add %d to the first word and subtract 1 "
+              "from the second. Any 2-into-1 fold is lossy; only the generic "
+              "one-word-per-lane form is not." % (lane, weight))
+
+    if ir:
+        print("  Set debug.rpcsx.thor.spu_strict_checksum=1 for the non-lossy form.")
+
     print("OK: %d folded lane(s), IR and host mirror agree, no lane uses a commutative fold."
           % len(ir))
     for lane, weight in sorted(ir.items()):
