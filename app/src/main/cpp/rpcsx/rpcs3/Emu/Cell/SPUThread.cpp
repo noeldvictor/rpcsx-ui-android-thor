@@ -329,6 +329,31 @@ static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
 // thread to wait for.
 //
 // 1 enables. Default 0 is current behaviour.
+//
+// MEASURED 2026-08-24 on restored 3D combat, sampling /diag every 5 s:
+//
+//   honour_maxrun=0   24 samples, 18 VIOLATIONS, maxEnteredWait=5, 18.80 fps
+//   honour_maxrun=1   24 samples,  0 violations, maxEnteredWait=0, 18.70 fps
+//   honour_maxrun=1   24 samples,  0 violations, maxEnteredWait=0, 18.80 fps
+//
+// A violation is a thread in enteredWait while max_run >= max_num, which
+// means it sleeps although the limiter is throttling nobody. The baseline
+// is in that state 75% of the time and the fix never is, at no cost in
+// frames. That is the precondition of the freeze, caught at
+// spursRunning=4, enteredWait=5, maxRun=6, maxNum=6.
+//
+// KNOWN ASYMMETRY, and the reason this is still default off. Skipping the
+// wait also skips the re-increment of spurs_running that follows it, while
+// the decrement on running -> idle still runs, so spurs_running is driven
+// to 0 and stays there - which is what /diag showed, maxSpursRunning=0.
+// That is harmless while max_run >= max_num, because every use of the
+// counter is gated on max_run < max_num, and this branch leaves the
+// throttled case completely untouched. It has NOT been checked against a
+// title that actually sets max_spurs_threads below max_num.
+//
+// STILL OUTSTANDING: the freeze rate itself. At about 1 in 6 combat runs,
+// separating that from 0 needs dozens of boots and has not been done. The
+// evidence here is mechanistic, not a measured drop in freezes.
 static bool get_thor_spurs_wait_honour_maxrun() noexcept
 {
 	static const bool s_value = []() -> bool
