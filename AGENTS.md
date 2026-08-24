@@ -17,6 +17,7 @@ The detail behind it is split by topic, because a single file had grown past
 - `docs/arm64/spin.md` — where the CPU time goes, and the one untested lever
 - `docs/arm64/instruments.md` — what each measuring tool can and cannot answer
 - `docs/arm64/thermal.md` — sensors and the thermal guard
+- `docs/arm64/transformers-30fps.md` — where the 18.7 FPS goes, and what 30 FPS would really cost
 - `docs/arm64/gpu-drivers.md` — driver swaps measured; why a GPU driver cannot help a CPU-bound scene
 - `docs/arm64/spurs-halt.md` — WHICH check the SPURS kernel refuses, and why every timing injection missed it
 - `docs/arm64/ledger.md` — the audit ledger and open opportunities
