@@ -523,6 +523,31 @@ static u32 get_thor_spurs_drop_notify() noexcept
 	return s_value;
 }
 
+// Defined in ps3fw/cellSpursSpu.cpp. The whole SPU-side SPURS kernel lives there
+// and has been unreachable since RegisterHleFunction was removed.
+extern bool spursKernelEntry(spu_thread& spu);
+
+static FORCE_INLINE bool get_thor_hle_spurs_kernel() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.hle_spurs_kernel", value) <= 0 || !value[0])
+		{
+			return false;
+		}
+
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+	}();
+
+	return s_value;
+#else
+	return false;
+#endif
+}
+
 static FORCE_INLINE u32 get_thor_max_spurs_threads(u32 configured) noexcept
 {
 #ifdef ANDROID
@@ -3920,6 +3945,45 @@ void spu_thread::cpu_task()
 		}
 	}
 
+	// BOOTSTRAP THE HLE SPURS KERNEL.
+	//
+	// Every RegisterHleFunction call in cellSpursSpu.cpp lives INSIDE a function
+	// that is itself an HLE callback - spursKernelEntry re-registers itself at
+	// line 732 - so nothing installs the first one. The site that was meant to,
+	// in cellSpurs.cpp, is disabled and depends on `custom_task`, which no longer
+	// exists on spu_thread:
+	//
+	//   // idm::get_unlocked<named_thread<spu_thread>>(spurs->spus[num])
+	//   //     ->custom_task = ... spu.RegisterHleFunction(entry, spursKernelEntry);
+	//
+	// Its comment says why it could not be done at creation: the local store is
+	// rewritten by sys_spu_thread_group_start. Doing it HERE, as the thread
+	// begins executing, is after that rewrite and needs no extra hook.
+	//
+	// Both kernel entry addresses are registered because which one applies
+	// depends on the SF1_32_WORKLOADS flag, and spursKernelEntry reads its own
+	// context to tell. Registering an address the title never reaches is inert.
+	//
+	// Gated on the group name, the same test cellSpursSpu.cpp uses to identify a
+	// SPURS group, and on a property so the default is unchanged:
+	//
+	//   debug.rpcsx.thor.hle_spurs_kernel = 1
+	//
+	// This is only meaningful together with hle_libs forcing libsre.sprx to HLE.
+	if (group && get_thor_hle_spurs_kernel())
+	{
+		constexpr std::string_view spurs_suffix = "CellSpursKernelGroup"sv;
+
+		if (group->name.ends_with(spurs_suffix))
+		{
+			// 0x818 / 0x848 are CELL_SPURS_KERNEL{1,2}_ENTRY_ADDR from
+			// ps3fw/include/rpcsx/fw/ps3/cellSpurs.h, which this TU does not include.
+			RegisterHleFunction(0x818, spursKernelEntry);
+			RegisterHleFunction(0x848, spursKernelEntry);
+			spu_log.success("Thor: HLE SPURS kernel armed on '%s' (spu %u)", group->name, index);
+		}
+	}
+
 	if (jit)
 	{
 		while (true)
@@ -3928,6 +3992,15 @@ void spu_thread::cpu_task()
 			{
 				if (check_state())
 					break;
+			}
+
+			// An HLE-registered address is host code, so it must be taken
+			// BEFORE the zero-word check: a workload address that was never
+			// loaded into local store reads as 0x0 and would otherwise be
+			// mistaken for a STOP.
+			if (RunHleFunction())
+			{
+				continue;
 			}
 
 			if (_ref<u32>(pc) == 0x0u)
@@ -3960,6 +4033,11 @@ void spu_thread::cpu_task()
 			{
 				if (check_state())
 					break;
+			}
+
+			if (RunHleFunction())
+			{
+				continue;
 			}
 
 			spu_runtime::g_interpreter(*this, _ptr<u8>(0), nullptr);

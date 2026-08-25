@@ -642,10 +642,10 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 		switch (wklInfo->addr.addr())
 		{
 		case SPURS_IMG_ADDR_SYS_SRV_WORKLOAD:
-			// spu.RegisterHleFunction(0xA00, spursSysServiceEntry);
+			spu.RegisterHleFunction(0xA00, spursSysServiceEntry);
 			break;
 		case SPURS_IMG_ADDR_TASKSET_PM:
-			// spu.RegisterHleFunction(0xA00, spursTasksetEntry);
+			spu.RegisterHleFunction(0xA00, spursTasksetEntry);
 			break;
 		default:
 			std::memcpy(spu._ptr<void>(0xA00), wklInfo->addr.get_ptr(), wklInfo->size);
@@ -729,9 +729,9 @@ bool spursKernelEntry(spu_thread& spu)
 
 	// Register SPURS kernel HLE functions
 	// spu.UnregisterHleFunctions(0, 0x40000/*LS_BOTTOM*/);
-	// spu.RegisterHleFunction(isKernel2 ? CELL_SPURS_KERNEL2_ENTRY_ADDR : CELL_SPURS_KERNEL1_ENTRY_ADDR, spursKernelEntry);
-	// spu.RegisterHleFunction(ctxt->exitToKernelAddr, spursKernelWorkloadExit);
-	// spu.RegisterHleFunction(ctxt->selectWorkloadAddr, isKernel2 ? spursKernel2SelectWorkload : spursKernel1SelectWorkload);
+	spu.RegisterHleFunction(isKernel2 ? CELL_SPURS_KERNEL2_ENTRY_ADDR : CELL_SPURS_KERNEL1_ENTRY_ADDR, spursKernelEntry);
+	spu.RegisterHleFunction(ctxt->exitToKernelAddr, spursKernelWorkloadExit);
+	spu.RegisterHleFunction(ctxt->selectWorkloadAddr, isKernel2 ? spursKernel2SelectWorkload : spursKernel1SelectWorkload);
 
 	// Start the system service
 	spursKernelDispatchWorkload(spu, u64{CELL_SPURS_SYS_SERVICE_WORKLOAD_ID} << 32);
@@ -1340,7 +1340,7 @@ bool spursTasksetEntry(spu_thread& spu)
 
 	// Register SPURS takset policy module HLE functions
 	// spu.UnregisterHleFunctions(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, 0x40000/*LS_BOTTOM*/);
-	// spu.RegisterHleFunction(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, spursTasksetEntry);
+	spu.RegisterHleFunction(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, spursTasksetEntry);
 	// spu.RegisterHleFunction(ctxt->syscallAddr, spursTasksetSyscallEntry);
 
 	{
