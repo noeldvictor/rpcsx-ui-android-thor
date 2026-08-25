@@ -10268,3 +10268,30 @@ inferring the intro from `coresBusy`.
    of the 17%.
 5. **`/crash`** - last signal, thread, top frames and build-id. Triage today means
    hand-parsing `logcat -b crash` and symbolising against the unstripped library.
+
+## /loadstate is a POST. Issuing it as GET returns ok:true and does NOT restore
+
+Three combat runs were lost to this on 2026-08-25. The harness helper used
+`curl -s` (a GET), the endpoint answered `{"ok":true}`, and the emulator carried
+on booting normally - `emuTime` reset to about 8 s, the scene stayed light at
+30 fps and ~1 core, and the 3D gate correctly refused to call it combat. It reads
+exactly like a savestate that restores into the wrong place, which is what sent
+me looking at block size, config mismatch and heap corruption first.
+
+With `curl -X POST` the same savestate restores immediately: `fps=18.57`,
+`coresBusy=5.360`, i.e. combat, on the first poll after loading.
+
+**An `ok:true` from this API means the request was accepted, not that the effect
+happened.** Verify the effect - `coresBusy` and `emuTime` - not the acknowledgement.
+
+## /scene cannot see this title's movies, and says so
+
+```
+"advice":"unknown-this-title-never-calls-cellVdec","reliable":false
+"note":"this title decodes its own video on the SPUs (Bink and similar), so
+        cellVdec never fires and this probe CANNOT see its movies."
+```
+
+So for BLUS30357 the `videoDecoding:false` term in a 3D gate is meaningless and
+`coresBusy > 4.5` is carrying the whole test. Keep the cores term; do not add
+confidence from the video term on this title.
