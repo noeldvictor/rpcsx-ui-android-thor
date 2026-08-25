@@ -9819,3 +9819,50 @@ made thread_local), anything per-workload or per-task allocated during HLE modul
 load, and any queue that the LLE path drains but the HLE path does not.
 
 Total RAM is NOT the signal - it is normal. Watch the size-class OOM lines.
+
+## CORRECTION: the signal fix is not inert - it crashes a SPURS kernel SPU thread
+
+Reversed-order A/B settles what four earlier rounds could not:
+
+```
+fix=1  FAILED 12/12   (both orderings, with retries)
+fix=0  passed  4/4
+```
+
+The property does control the outcome, so the "it is run order" retraction was
+wrong in the other direction. What it controls is not a hang:
+
+```
+Emu Thread Name: 'SPU[0x2000100] CellSpursKernel2'
+SIG: Thread time: 0.029795s   Faults: 0 [rsx:0, spu:0]
+CPU Thread 'SPU[0x2000100] CellSpursKernel2' terminated abnormally!
+Zygote: exited due to signal 11 (Segmentation fault)
+```
+
+**A SPURS kernel SPU thread segfaults about 30 ms into execution.**
+
+### Absence of a log line is NOT absence of execution
+
+This is the trap that cost the most time here. The selector probes read zero in
+failing boots and I took that as proof the code never ran. RPCS3 installs its own
+SIGSEGV handler and writes the register dump SYNCHRONOUSLY, while ordinary log
+lines are buffered and lost when the process dies. Android produces no tombstone
+for the same reason, which is why `logcat -b crash` kept coming back empty.
+
+**On a crashing run, trust only synchronous output.** Everything buffered is
+missing, not absent.
+
+### The coherent reading
+
+The fix works. The signal survives, the selector picks a real workload instead of
+re-selecting wid=32, dispatch registers `spursTasksetEntry` at 0xA00, and the SPU
+executes taskset policy-module code this HLE implementation does not fully
+provide - and faults. Breaking the deadlock moves the failure from "never
+dispatches" to "dispatches into unimplemented code", which is the expected next
+frontier rather than a regression.
+
+**NOT PROVEN:** the faulting PC was never captured - the log rotated before it
+could be read. Copy RPCSX.log off the device immediately after the crash, before
+the next boot recreates it. Then disassemble the taskset policy module at
+`SPURS_IMG_ADDR_TASKSET_PM` (0x200) with Ghidra to see what `spursTasksetEntry`
+must implement.
