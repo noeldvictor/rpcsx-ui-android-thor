@@ -692,6 +692,44 @@ Thor predictions.
   rate target. A run that thermal-stops before the title renders produces no
   speed credit for it, per `Speed Claim Rules`.
 
+## Why HLE cellSpurs Cannot Work: the dispatch mechanism is gone
+
+**2026-08-25, definitive.** RPCS3 issue 9063 calls HLE cellSpurs "incomplete",
+which reads as missing functions. It is not. The SPU-side SPURS kernel is
+FULLY WRITTEN - 2114 lines in `ps3fw/cellSpursSpu.cpp` - and completely
+unreachable.
+
+Every hook that would let it run is commented out, in our tree AND upstream:
+
+    645:  // spu.RegisterHleFunction(0xA00, spursSysServiceEntry);
+    648:  // spu.RegisterHleFunction(0xA00, spursTasksetEntry);
+    732:  // spu.RegisterHleFunction(..., spursKernelEntry);
+    733:  // spu.RegisterHleFunction(ctxt->exitToKernelAddr, spursKernelWorkloadExit);
+    1343: // spu.RegisterHleFunction(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, spursTasksetEntry);
+
+`RegisterHleFunction` does not exist on `spu_thread`. It was the mechanism that
+made an SPU call a host C++ function when its PC reached a given local-store
+address, and it was removed. Without it `spursKernelDispatchWorkload` reaches:
+
+    case SPURS_IMG_ADDR_TASKSET_PM:
+        // spu.RegisterHleFunction(0xA00, spursTasksetEntry);
+        break;                       // <- loads NOTHING into LS
+    ...
+    spu.pc = 0xA00;                  // <- then jumps there anyway
+
+so the SPU executes whatever happens to be at 0xA00. That is exactly the
+observed failure: with `hle_libs=libsre.sprx`, BLUS30357 creates its taskset,
+`cellSpursSendWorkloadSignal` and `cellSpursWakeUp` both fire, and then it sits
+at 13.5% process CPU with 0.0% on every core and zero frames.
+
+**So completing HLE cellSpurs is not a matter of filling in stubs.** The PPU-side
+task API stubs were real and are now implemented (`2b463256d`), and they were not
+the wall. The wall is that reviving this path requires reimplementing SPU
+HLE-function dispatch across the interpreter and both recompilers - hooking guest
+PCs to host callbacks - which is an emulator-core feature, not a module fix.
+
+Do not estimate HLE cellSpurs as "a few TODO functions" again.
+
 ## Ghidra Is The Instrument For Slowdowns, Not Just Halts
 
 **Promoted 2026-08-24.** Eighteen speed levers measured null on Transformers
