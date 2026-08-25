@@ -692,6 +692,66 @@ Thor predictions.
   rate target. A run that thermal-stops before the title renders produces no
   speed credit for it, per `Speed Claim Rules`.
 
+## HLE cellSpurs: what was fixed, and the exact next step
+
+**2026-08-25.** The section below said HLE cellSpurs "cannot work". That was
+right about the cause and wrong about it being terminal. Four bugs were fixed and
+the SPU-side SPURS kernel now RUNS. It still does not render.
+
+### Fixed
+
+| bug | commit |
+| --- | --- |
+| PPU task attribute API - four UNIMPLEMENTED_FUNC stubs upstream also lacks | `2b463256d` |
+| SPU HLE function dispatch - the removed RegisterHleFunction, rebuilt | `8c945f88a` |
+| `cellSpursInitializeWithAttribute` returned EINVAL on an empty SPU image | `676c27535` |
+| access violation - a FAILURE path running unconditionally in create_event_helper | `10d871538` |
+
+With `hle_libs=libsre.sprx,libspurs_jq.sprx` and `hle_spurs_kernel=1`:
+
+    Thor: HLE SPURS kernel armed on 'CellSpursKernel0'..'CellSpursKernel5'
+    SPU[0x0000100] .. SPU[0x5000100]   all six threads exist and execute
+    access violations 0, fatals 0, coresBusy 6.92   (was 1.08)
+
+frames = 0. The kernel spins without producing work.
+
+### The exact next step
+
+Two host-entry PPU threads are still no-ops: `_spurs::create_handler` returns
+CELL_OK for a thread it never creates, and `_spurs::create_event_helper` only has
+its teardown skipped. Both need rebuilding against today's API - the disabled
+code uses `non_task()`, which no longer exists on ppu_thread, and the old
+`ppu_thread(name, prio, stack)` constructor.
+
+The recipe, assembled from sys_ppu_thread.cpp:501 and PPUFunction.h:269:
+
+    // 1. register the host function at global init
+    ppu_function_manager::register_function<decltype(&_spurs::handler_entry),
+        &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry));
+
+    // 2. get a guest-callable address for it
+    const u32 code = g_fxo->get<ppu_function_manager>()
+        .func_addr(FIND_FUNC(_spurs::handler_entry));
+
+    // 3. build the thread - entry is a ppu_func_opd_t{addr, rtoc}, rtoc 0 is
+    //    fine for an HLE stub
+    const vm::addr_t stack{vm::alloc(0x4000, vm::stack, 4096)};
+    const u32 tid = idm::import<named_thread<ppu_thread>>([&]() {
+        ppu_thread_params p;
+        p.stack_addr = stack;
+        p.stack_size = 0x4000;
+        p.tls_addr   = 0;
+        p.entry      = ppu_func_opd_t{code, 0};
+        p.arg0       = spurs.addr();
+        p.arg1       = 0;
+        return stx::make_shared<named_thread<ppu_thread>>(p, name, prio, 0);
+    });
+    // 4. spurs->ppu0 = tid;  then start it
+
+Do the handler first: it is the only caller of `sys_spu_thread_group_start` for
+the SPURS group, and the workload-ready diagnostic added in `ebc121e37` will
+name the failing field the moment it runs.
+
 ## Why HLE cellSpurs Cannot Work: the dispatch mechanism is gone
 
 **2026-08-25, definitive.** RPCS3 issue 9063 calls HLE cellSpurs "incomplete",
