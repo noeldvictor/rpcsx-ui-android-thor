@@ -21,6 +21,8 @@ object GameSettingsDatabase {
     private const val TIMESTAMP_HEADER = "# Database timestamp: "
     private const val SOURCE_URL = "https://api.rpcs3.net/config/?api=v1"
     private val thorUnsafeSpuAsmjit = Regex("""^(\s*SPU Decoder:\s*)Recompiler \(ASMJIT\)\s*$""")
+    private val thorSpuBlockSize = Regex("""^(\s*SPU Block Size:\s*).*$""")
+    private val thorCoreSection = Regex("""^Core:\s*$""")
     private val databaseTimestampPattern = Regex("""^\s*"timestamp"\s*:\s*(\d+)\s*,?\s*$""")
 
     private val lock = Any()
@@ -699,19 +701,85 @@ object GameSettingsDatabase {
         }
     }
 
+    // THE ANDROID ADAPTATION LAYER.
+    //
+    // Every managed profile here comes from api.rpcs3.net, and those values were
+    // chosen on x86 desktops. Most carry over. A few INVERT on this ARM64 SoC,
+    // and those are what this function fixes - it runs on EVERY title, not only
+    // the two with a hand-written Thor override.
+    //
+    // Keep this in sync with "PC PROFILE INVERSION REGISTER" in AGENTS.md, which
+    // holds the evidence. Do not add an entry here without a measurement there.
+    //
+    // WHAT THE UPSTREAM DATABASE ACTUALLY CONTAINS, measured against the shipped
+    // asset: 2125 titles, MEDIAN ONE setting each, and the common keys are
+    // rendering-correctness flags - Write Color Buffers 1128, ZCULL 404, Read
+    // Color Buffers 300. PC profiles answer "does this game render correctly",
+    // not "is this game fast on your CPU". That is the real delta, and it is why
+    // Thor needs its own layer rather than a translation of theirs.
+    //
+    //   SPU Decoder ASMJIT -> LLVM   FORCED. Not a tradeoff: ASMJIT is an x86
+    //                                backend and does not exist on ARM64.
+    //   SPU Block Size -> Mega       INJECTED ONLY WHEN ABSENT. Measured +16.5%
+    //                                in BLUS30357 combat. Upstream's global
+    //                                default is Safe, which is right on a PC -
+    //                                larger blocks trade compile time for fewer
+    //                                dispatches, and dispatch costs more here.
+    //
+    // **An explicit per-game value is NEVER overwritten.** The upstream database
+    // sets this key deliberately in 145 titles - Mega in 133 and **Safe in 12**
+    // (BLES00461, BLES01717, ...).
+    //
+    // Be careful about WHY those twelve are respected. They are titles where Mega
+    // broke the game ON x86, with a different SPU recompiler backend, and this
+    // file's whole premise is that PC findings do not automatically transfer to
+    // ARM64. So they are NOT proof of breakage here - they are unverified risk.
+    //
+    // They are respected anyway because the two mistakes are not symmetrical:
+    // wrongly keeping Safe costs some speed and is recoverable by measuring,
+    // while wrongly forcing Mega ships a broken game to someone who did not ask
+    // to be an experiment. Conservative default, then measure - do not assume in
+    // either direction. Any of the twelve verified working on Android is a free
+    // win and belongs in the register with its numbers.
     private fun sanitizeThorManagedConfig(config: String): String {
         if (!ThorPerformanceProfile.isThorTarget()) {
             return config
         }
 
-        return config
+        var sawBlockSize = false
+
+        val adapted = config
             .lineSequence()
             .map { line ->
-                thorUnsafeSpuAsmjit.matchEntire(line)?.let { match ->
-                    "${match.groupValues[1]}Recompiler (LLVM)"
-                } ?: line
+                val asmjit = thorUnsafeSpuAsmjit.matchEntire(line)
+                if (asmjit != null) {
+                    return@map "${asmjit.groupValues[1]}Recompiler (LLVM)"
+                }
+
+                if (thorSpuBlockSize.matchEntire(line) != null) {
+                    // Respect it, whatever it says. See the note above.
+                    sawBlockSize = true
+                }
+
+                line
             }
             .joinToString("\n")
+
+        if (sawBlockSize) {
+            return adapted
+        }
+
+        // Silent, so INJECT. Leaving it out falls through to the persisted global
+        // value, which on an existing install is still Safe from the old default.
+        val lines = adapted.lines().toMutableList()
+        val coreAt = lines.indexOfFirst { thorCoreSection.matchEntire(it) != null }
+
+        if (coreAt >= 0) {
+            lines.add(coreAt + 1, "  SPU Block Size: Mega")
+            return lines.joinToString("\n")
+        }
+
+        return "Core:\n  SPU Block Size: Mega\n" + adapted
     }
 
     private fun managedConfigTimestamp(configText: String?): Long? {

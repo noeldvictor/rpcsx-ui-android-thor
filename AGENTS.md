@@ -10086,3 +10086,185 @@ Three ways a device ends up on Mega, in order of how much they cover:
 Do NOT "migrate" config.yml by rewriting a persisted Safe to Mega. There is no
 way to tell a stale default apart from a deliberate user choice, and silently
 overwriting the second one is worse than leaving the first.
+
+# PC PROFILE INVERSION REGISTER
+
+**Keep this list. It is the most transferable thing this project has learned.**
+
+Every managed per-game profile in this app is downloaded from
+`https://api.rpcs3.net/config/?api=v1` and was tuned on x86 desktops. Most values
+carry over unchanged. A few **INVERT**: the value that is right on a PC is wrong
+on Thor's Snapdragon 8 Gen 2. Those are the ones worth hunting, because each is a
+free win hiding inside settings that look already-tuned - and because nobody
+upstream will find them, the hardware being far too new to have community data.
+
+| Setting | PC value | Thor value | Why it inverts | Evidence |
+| --- | --- | --- | --- | --- |
+| SPU Decoder | Recompiler (ASMJIT) | Recompiler (LLVM) | Not a tradeoff. ASMJIT is an x86 backend and does not exist on ARM64. | n/a, structural |
+| SPU Block Size | Safe | **Mega** | Larger blocks trade compile time for fewer block dispatches. Dispatch costs relatively more on this ARM64 SoC than on x86, so the tradeoff flips. | **+16.5%**, BLUS30357 combat, interleaved w/ control pair, 2026-08-25 |
+| busy_wait tick counts | tuned for a ~3 GHz TSC | retuned by hand | `get_tsc()` here is `cntvct_el0` at **19.2 MHz**, so a "200 cycle" wait is 10.4 us - roughly 100x the intended duration. | rx/asm.hpp, and the ~1 FPS lock convoy caused by naively rescaling |
+
+## Where the adaptation happens
+
+`GameSettingsDatabase.sanitizeThorManagedConfig()`. It runs on EVERY title's
+managed config, which is what makes it the right home - the `thorProfileOverrides`
+map only covers hand-written per-title profiles, and note it uses `put`, so an
+override **REPLACES** the PC config wholesale rather than merging with it.
+
+Writing an inversion into the per-title config also matters mechanically: a
+custom config overrides the global `config.yml`, and existing installs still have
+the old `SPU Block Size: Safe` persisted there. Fixing only the compiled default
+in `system_config.h` reaches fresh installs and nobody else.
+
+## How to look for the next one
+
+Not by reading settings and reasoning about them - that is how ~28 attempts
+failed. Take a census or a symbol profile FIRST, find where the cycles actually
+are, then ask which setting touches that. The block-size win came from a profile
+saying "55% of cycles are JIT-compiled guest code", not from anyone thinking hard
+about block sizes.
+
+Candidates not yet measured, in the order their cost distribution suggests:
+
+- anything affecting SPU codegen quality, since guest JIT is the dominant cost
+- `Accurate SPU DMA`, `Accurate RSX reservation access` - correctness/speed knobs
+  whose PC tradeoff may not hold when `g_use_rtm` is false, as it always is here
+- RSX/driver settings against the Turnip Vulkan driver, which no PC profile has
+  ever seen
+
+## What the upstream database actually contains
+
+Measured against the shipped asset, `app/src/main/assets/config/config_database.dat`:
+
+```
+2125 titles, MEDIAN 1 setting each, max 10
+sections:  Video 1818   Core 751   Audio 80
+top keys:  Write Color Buffers 1128   Accurate ZCULL 404   Relaxed ZCULL 404
+           Read Color Buffers 300     Frame limit 254      Async Texture Streaming 238
+```
+
+**PC per-game profiles answer "does this game RENDER CORRECTLY", not "is this
+game fast on your CPU".** That is the real delta. It is not that their values are
+wrong for Thor - it is that they are answering a different question, on a
+different axis, and the CPU-side axis is empty. Two of the three titles this
+project cares about (BLUS30357, BLUS31601) have **no PC entry at all**, and
+BLUS30161's entire profile is two lines.
+
+So an Android profile layer is not a translation of theirs. It is the half nobody
+has written.
+
+## Never overwrite an EXPLICIT per-game value
+
+The database sets `SPU Block Size` deliberately in 145 titles: **Mega in 133** and
+**Safe in 12** (BLES00461, BLES01717, BLES01718, BLES01719, ...). The twelve are
+titles where Mega is known to break the game.
+
+A first version of `sanitizeThorManagedConfig` force-rewrote every occurrence to
+Mega, which would have traded a correctness regression in twelve titles for speed
+nobody asked for. It now **injects only when the profile is silent** and respects
+any explicit value. Fill the silence; do not argue with a decision.
+
+Note also that Mega is already upstream's per-game choice in 133 titles, so it is
+not exotic - and the twelve Safe entries are a ready-made known-bad list.
+
+## The twelve "Safe" titles are UNVERIFIED RISK, not proof
+
+They are respected, but be honest about what they are. Those titles broke with
+Mega **on x86**, under a different SPU recompiler backend. This register's entire
+premise is that PC findings do not automatically transfer to ARM64 - so treating
+a PC breakage report as established fact here contradicts it. It is unverified
+risk, not evidence.
+
+They are respected anyway because the two errors are not symmetrical:
+
+- wrongly keeping Safe costs some speed, and is recoverable by measuring
+- wrongly forcing Mega ships a broken game to someone who did not volunteer
+
+Conservative default, then measure. **Any of the twelve that is verified working
+on Android is a free win** and belongs here with its numbers. Do not quietly
+promote one without a measurement, and do not treat the list as settled either.
+
+# A Killed Harness Leaves Its Properties Set. Clear Them EXPLICITLY.
+
+2026-08-25. Two combat profile runs aborted at the 3D gate, and the log said why
+only on the third look:
+
+```
+Thor: SPU Block Size forced to Safe (now Safe)
+```
+
+Nothing in `profile_combat.sh` sets that property. It was left behind by an
+Eternal Sonata A/B that was **stopped mid-run**, so its `trap ... EXIT` cleanup
+never completed. Both later runs silently inherited `safe` while the operator
+believed they were on the profile's Mega.
+
+`setprop` state is GLOBAL and survives the process, the app, and the harness that
+set it. A `trap` only helps when the script is allowed to finish.
+
+## The rule
+
+A harness must SET THE FULL PROPERTY STATE IT DEPENDS ON at the start, including
+clearing the ones it does not want. Never inherit ambient state:
+
+```bash
+for p in spu_block_size spu_xfloat spu_loop_detection hle_libs \
+         frame_limit vm_range_lock_wfe wait_profiler; do
+  setprop debug.rpcsx.thor.$p ''
+done
+```
+
+and print `getprop | grep debug.rpcsx.thor` afterwards, so the run's own output
+records what it actually ran under. This is the same principle as
+"An Arm Must PROVE It Engaged" - do not trust that a setting is what you think,
+make the run state it.
+
+After killing any device harness, clear the properties by hand before starting
+the next one, and verify with `getprop` rather than assuming the trap ran.
+
+# Use The Control API. Most Of What The Harnesses Hand-Roll Already Exists.
+
+`net/rpcsx/debug/ThorControlServer.kt` on port 8099 already exposes:
+
+```
+GET  /diag      compile progress, CONFIG IN EFFECT, live SPURS state
+GET  /scene     is a movie playing (exact - cellVdec based), plus advice
+GET  /setting?path=Core@@SPU%20Block%20Size          read a config value
+POST /setting?path=...&value="Mega"                  write one
+GET  /threads?match=SPU    per-thread CPU jiffies
+GET  /log?match=fatal&n=40 tail of RPCSX.log
+GET  /device    heat, throttling, power, fps, cores, lever reach counters
+POST /pause /resume /kill /savestate /loadstate /pad
+```
+
+Settings are addressed as `Section@@Name` and enum values are JSON-quoted, e.g.
+`Core@@SPU Decoder` = `"Recompiler (LLVM)"`. See ThorPerformanceProfile.kt.
+
+**Two whole classes of false result this session came from not using these.**
+
+- Engagement was checked by grepping `RPCSX.log` for the effective-config dump.
+  `/diag` reports config in effect directly, and `/setting?path=` reads back one
+  value, from the emulator rather than from a property you hope was parsed.
+- Levers were driven by `setprop`, whose state is GLOBAL and survives the app and
+  the harness. A killed Eternal Sonata run left `spu_block_size=safe` behind and
+  two later profile runs inherited it silently. `/setting` has no such lifetime.
+
+Prefer `/kill` over `am force-stop`, `/pause` over guessing, and `/scene` over
+inferring the intro from `coresBusy`.
+
+## What is still genuinely missing, in value order
+
+1. **`/frametimes`** - p50/p95/p99 over a window plus a sample count. `/device`
+   returns a smoothed fps, and the combat control pair disagrees with ITSELF by
+   17%, so nothing below about 20% is resolvable today. This is worth more than
+   every other item here combined, because it is the reason results are unreadable.
+2. **`/waits`** - the thor_wait census as a live counter dump. It currently needs
+   a `-PrpcsxThorWaitProfiler=1` build, logcat scraping, and manual diffing of two
+   cumulative summaries.
+3. **Run-scoped config** - set a batch of settings for the next boot that clears
+   itself, which removes the ambient-leak class by construction rather than by
+   discipline.
+4. **A scene fingerprint** - `/scene` says whether a movie plays, not WHICH scene.
+   Savestate runs still diverge after restore, and that divergence is a large part
+   of the 17%.
+5. **`/crash`** - last signal, thread, top frames and build-id. Triage today means
+   hand-parsing `logcat -b crash` and symbolising against the unstripped library.
