@@ -523,6 +523,29 @@ static u32 get_thor_spurs_drop_notify() noexcept
 	return s_value;
 }
 
+static FORCE_INLINE bool get_thor_spu_loop_detection(bool configured) noexcept
+{
+#ifdef ANDROID
+	static const int s_state = []() noexcept -> int
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_loop_detection", value) <= 0 || !value[0])
+		{
+			return -1;
+		}
+
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T' ? 1 : 0;
+	}();
+
+	if (s_state >= 0)
+	{
+		return s_state != 0;
+	}
+#endif
+	return configured;
+}
+
 static FORCE_INLINE u32 get_thor_getllar_busy_percent(u32 configured) noexcept
 {
 #ifdef ANDROID
@@ -8535,7 +8558,24 @@ s64 spu_thread::get_ch_value(u32 ch)
 		u32 out = read_dec().first;
 
 		// Polling: We might as well hint to the scheduler to slot in another thread since this one is counting down
-		if (get_spu_wait_policy_for_runtime(g_cfg.core.spu_loop_detection) && out > spu::scheduler::native_jiffy_duration_us)
+		//
+		// THIS IS THE PARK FOR THE SPURS BACKOFF, and it has never been on.
+		//
+		// Ghidra puts 96.84% of CellSpursKernel0 in one loop whose body is
+		// `ai / rdch ch8 / ceq / brz` - a 2400-iteration delay reading the
+		// decrementer, i.e. THIS channel, 2400 times per backoff. Measured in
+		// restored 3D combat, all six SPU threads are 68-100% ON CPU while the
+		// profiler reports five of them 83-89% idle in GUEST terms: about five
+		// cores spent spinning on nothing, which is both the 94-96 C and the
+		// reason pinning to the big cores made things worse.
+		//
+		// `spu_loop_detection` defaults to false upstream and no Thor profile sets
+		// it, so this yield has never executed on this device. Overriding it by
+		// property makes the sweep cost one boot instead of one build, matching
+		// the getllar_busy_percent convention directly above.
+		//
+		//   debug.rpcsx.thor.spu_loop_detection = 0 | 1   (unset = use config)
+		if (get_thor_spu_loop_detection(get_spu_wait_policy_for_runtime(g_cfg.core.spu_loop_detection)) && out > spu::scheduler::native_jiffy_duration_us)
 		{
 			state += cpu_flag::wait;
 			std::this_thread::yield();
