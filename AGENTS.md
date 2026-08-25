@@ -10369,3 +10369,57 @@ stability harness failed its assertion and that run went ahead without it. The
 technique stands on the data above; the wiring does not exist yet. (The commit
 message that introduced this section says "wired into the stability harness" -
 it is wrong.)
+
+# HLE SPURS: Why Six SPUs Dispatch Once And Stop, Found By READING
+
+`hle-spurs-wip` reaches six armed kernels deterministically, renders nothing, and
+its head commit records the symptom precisely:
+
+```
+SPU0..SPU5  dispatch#1: wid=32 addr=0x100
+no dispatch#2 on any SPU
+```
+
+plus zero entries into `spursSysServiceIdleHandler` across 440 s. Those two facts
+together already name the path, without another run.
+
+`spursSysServiceMain` is:
+
+```cpp
+while (true) {
+    spursSysServiceProcessRequests(spu, ctxt);
+poll:
+    if (cellSpursModulePollStatus(spu, nullptr)) { ...; break; }  // exit to kernel
+    if (ctxt->spuIdling == 0) continue;                           // spin back
+    ...; spursSysServiceIdleHandler(spu, ctxt); goto poll;        // park
+}
+```
+
+Never parking and never dispatching again leaves exactly one path: `continue`,
+forever. So `cellSpursModulePollStatus` never returns non-zero. And it ends:
+
+```cpp
+u32 wklId = result >> 32;
+return wklId == ctxt->wklCurrentId ? 0 : 1;
+```
+
+It reports "leave" only when the selected workload DIFFERS from the current one.
+The dispatch log says the current one is **wid=32**, the system-service workload,
+so every poll re-selects 32, compares equal, returns 0, and the loop spins.
+
+**The defect is therefore in workload SELECTION, not in the service loop.**
+`spursKernel1SelectWorkload` / `spursKernel2SelectWorkload` never select the
+taskset workload, so the SPU can never leave the system service. That is the same
+condition the earlier `NO-WORKLOAD-HAS-ANY-STATE` observation reported from the
+other side: no workload is in a state that makes it selectable.
+
+## What to do next, and what NOT to do
+
+Instrument SELECTION, not the service loop: one-shot per SPU, record the workload
+state bits that `spursKernel1SelectWorkload` reads - `wklState1`,
+`wklStatus1`, `wklEnabled`, and the ready count - at the first call. The question
+is which predicate rejects the taskset workload, and the answer is in the state
+the PPU side wrote, not in the SPU loop that reads it.
+
+Do NOT add per-iteration logging on this path. This branch has boot-looped from
+exactly that twice, and the loop above runs continuously on six SPUs.
