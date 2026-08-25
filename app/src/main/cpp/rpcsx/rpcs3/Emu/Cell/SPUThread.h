@@ -669,62 +669,6 @@ public:
 		return get_type() != spu_type::threaded;
 	} // Threaded SPUs are saved as part of the SPU group
 
-	// SPU HLE FUNCTION DISPATCH, revived.
-	//
-	// `ps3fw/cellSpursSpu.cpp` contains the whole SPU-side SPURS kernel - 2114
-	// lines, taskset dispatch included - and every hook that would invoke it is
-	// commented out, in this tree and in upstream RPCS3 identically, because
-	// `RegisterHleFunction` was removed:
-	//
-	//     // spu.RegisterHleFunction(0xA00, spursTasksetEntry);
-	//
-	// Without it `spursKernelDispatchWorkload` loads NOTHING into local store for
-	// a taskset workload and then sets `pc = 0xA00` anyway, so the SPU executes
-	// whatever happens to be there. That is the measured HLE hang: the title
-	// creates its taskset, cellSpursWakeUp fires, and the process sits at 13.5%
-	// CPU with 0.0% on all eight cores and zero frames.
-	//
-	// The mechanism it needs is small, because every stranded function already has
-	// the signature `bool f(spu_thread&)`: a program-counter to host-callback map,
-	// consulted in the execution loop before the guest block runs. A callback
-	// returning false means it moved `pc` itself and the loop should re-dispatch.
-	//
-	// Registrations are per SPU THREAD, not global: each SPURS kernel runs its own
-	// copy and `spursKernelDispatchWorkload` re-registers 0xA00 as the workload
-	// changes, so two threads can legitimately hold different callbacks for the
-	// same address at the same time.
-	std::map<u32, bool (*)(spu_thread&)> hle_functions;
-
-	void RegisterHleFunction(u32 addr, bool (*func)(spu_thread&))
-	{
-		hle_functions[addr] = func;
-	}
-
-	void UnregisterHleFunction(u32 addr)
-	{
-		hle_functions.erase(addr);
-	}
-
-	// Returns true when a callback ran, meaning the caller must NOT execute the
-	// guest block at this pc.
-	bool RunHleFunction()
-	{
-		if (hle_functions.empty()) [[likely]]
-		{
-			return false;
-		}
-
-		const auto found = hle_functions.find(pc);
-
-		if (found == hle_functions.end())
-		{
-			return false;
-		}
-
-		found->second(*this);
-		return true;
-	}
-
 	u32 pc = 0;
 	u32 dbg_step_pc = 0;
 
@@ -1082,6 +1026,73 @@ public:
 			return static_cast<std::conditional_t<std::is_void_v<Func>, Func, decltype(_this->group)>>(_this->group)->prio.atomic_op(std::move(func));
 		}
 	} prio{this};
+	// PLACED AT THE END OF THE CLASS ON PURPOSE.
+	//
+	// This member was first declared just above `u32 pc`, and that BROKE THE
+	// EMULATOR - the title stopped booting entirely, with all properties cleared.
+	// SPULLVMRecompiler.cpp takes OFFSET_OF(spu_thread, ...) in 121 places, and
+	// the compiled SPU cache on disk holds those offsets baked in. Inserting a
+	// field ahead of `pc` shifted every one of them, so cached code read the
+	// wrong members.
+	//
+	// Anything added to spu_thread must go AFTER the fields the recompiler
+	// addresses, or every existing SPU cache is silently invalidated.
+	// SPU HLE FUNCTION DISPATCH, revived.
+	//
+	// `ps3fw/cellSpursSpu.cpp` contains the whole SPU-side SPURS kernel - 2114
+	// lines, taskset dispatch included - and every hook that would invoke it is
+	// commented out, in this tree and in upstream RPCS3 identically, because
+	// `RegisterHleFunction` was removed:
+	//
+	//     // spu.RegisterHleFunction(0xA00, spursTasksetEntry);
+	//
+	// Without it `spursKernelDispatchWorkload` loads NOTHING into local store for
+	// a taskset workload and then sets `pc = 0xA00` anyway, so the SPU executes
+	// whatever happens to be there. That is the measured HLE hang: the title
+	// creates its taskset, cellSpursWakeUp fires, and the process sits at 13.5%
+	// CPU with 0.0% on all eight cores and zero frames.
+	//
+	// The mechanism it needs is small, because every stranded function already has
+	// the signature `bool f(spu_thread&)`: a program-counter to host-callback map,
+	// consulted in the execution loop before the guest block runs. A callback
+	// returning false means it moved `pc` itself and the loop should re-dispatch.
+	//
+	// Registrations are per SPU THREAD, not global: each SPURS kernel runs its own
+	// copy and `spursKernelDispatchWorkload` re-registers 0xA00 as the workload
+	// changes, so two threads can legitimately hold different callbacks for the
+	// same address at the same time.
+	std::map<u32, bool (*)(spu_thread&)> hle_functions;
+
+	void RegisterHleFunction(u32 addr, bool (*func)(spu_thread&))
+	{
+		hle_functions[addr] = func;
+	}
+
+	void UnregisterHleFunction(u32 addr)
+	{
+		hle_functions.erase(addr);
+	}
+
+	// Returns true when a callback ran, meaning the caller must NOT execute the
+	// guest block at this pc.
+	bool RunHleFunction()
+	{
+		if (hle_functions.empty()) [[likely]]
+		{
+			return false;
+		}
+
+		const auto found = hle_functions.find(pc);
+
+		if (found == hle_functions.end())
+		{
+			return false;
+		}
+
+		found->second(*this);
+		return true;
+	}
+
 };
 
 class spu_function_logger
