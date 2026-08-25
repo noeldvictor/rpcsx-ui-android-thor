@@ -9921,3 +9921,61 @@ tools/ghidra_scripts/DisassembleSpuWindows.java  disassemble the window
 That gives the reference implementation `spursTasksetEntry` must match, which is
 the difference between guessing at the crash and reading what the code is
 supposed to do.
+
+# GHIDRA: the taskset policy module, disassembled
+
+HLE now dispatches `wid=0 addr=0x200` (SPURS_IMG_ADDR_TASKSET_PM) and then faults
+about 20 ms later. In HLE, 0x200 is only a MARKER - dispatch registers
+`spursTasksetEntry` and no guest code is loaded - so there is nothing to read
+there. The real module ships in `libsre.sprx` and LLE loads it into SPU local
+store at **0xA00**.
+
+Dumped LS during live LLE combat and disassembled it. Artifacts in
+`debug-captures/spu-ls/`:
+
+```
+spu_ls_CellSpursKernel0.bin   262144 bytes, 50.6% non-zero
+  0xA00 region: 486 / 512 bytes non-zero   <- real code, not padding
+ls_A00.txt                    window around the entry
+taskset_pm_full.txt           entry + both init routines
+```
+
+## The entry, which is what spursTasksetEntry stands in for
+
+```
+00000a00: ila r2,0x20db8         module identity constants
+00000a10: il  sp,0x2c50          stack pointer for the policy module
+00000a18: lqr r17,0x76a          load taskset state from LS 0x757..0x77a
+00000a54: stqr r8,0x757          write it back
+00000a64: brsl lr,0x00001ec8     init call #1
+00000a68: brsl lr,0x00001778     init call #2
+00000a70: stqa lr,0x2c80         ---- task CONTEXT SAVE AREA ----
+00000a74: stqa sp,0x2c90
+00000a7c: stqa r80,0x2ca0  ...  r92,0x2d60
+```
+
+The register-save block is the important part: this module implements **task
+context switching**, saving callee-saved registers r80+ into a context area at
+0x2c80. An HLE stand-in that does not maintain that area is exactly the shape of
+thing that faults shortly after the first dispatch.
+
+## Init routine at 0x1778
+
+```
+0000177c: il sp,0x2c30           its own stack
+00001780: il r3,0x2c70
+0000178c: stqa r3,0x2c30         publishes a pointer at 0x2c30
+00001794: stqa r80,0x2c70        zeroes the structure at 0x2c70
+00001798: il r3,0x5
+0000179c: brsl lr,0x00000e40     call with arg 5
+000017a0: lqd r4,0x20(sp)
+000017a4: clgti r2,r4,0x7f       bounds check against 0x7f
+000017a8: brnz r2,0x00001c50     -> error path if > 127
+```
+
+So the module builds state at 0x2c30 / 0x2c70 and bounds-checks a count against
+127 - a taskset holds up to 128 tasks, so that is the task-id range check.
+
+**Read this before writing more HLE taskset code.** The LS addresses it touches
+(0x757-0x77a, 0x2c30, 0x2c70, 0x2c80-0x2d60) are the contract; an HLE
+implementation that does not honour them will corrupt state the guest later reads.
