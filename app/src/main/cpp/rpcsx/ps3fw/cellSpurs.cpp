@@ -199,7 +199,7 @@ namespace _spurs
 	void handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs);
 
 	// Create the SPURS handler thread
-	s32 create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority);
+	s32 create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority);
 
 	// Invoke event handlers
 	s32 invoke_event_handlers(ppu_thread& ppu, vm::ptr<CellSpurs::EventPortMux> eventPortMux);
@@ -737,8 +737,15 @@ void _spurs::handler_wait_ready(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 void _spurs::handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
+	// Distinguishes "the thread was never released" from "it ran and took the
+	// early exit". Both leave sys_spu_thread_group_start uncalled and look
+	// identical from outside.
+	cellSpurs.error("Thor: SPURS handler_entry ENTERED (flags=0x%x flags1=0x%x spuTG=0x%x)",
+		+spurs->flags, +spurs->flags1, +spurs->spuTG);
+
 	if (spurs->flags & SAF_UNKNOWN_FLAG_30)
 	{
+		cellSpurs.error("Thor: SPURS handler_entry EARLY EXIT on SAF_UNKNOWN_FLAG_30");
 		return sys_ppu_thread_exit(ppu, 0);
 	}
 
@@ -801,7 +808,7 @@ static bool get_thor_hle_spurs_kernel_enabled() noexcept
 static const u32 s_thor_spurs_handler_index =
 	ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry));
 
-s32 _spurs::create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority)
+s32 _spurs::create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 {
 	// THE HANDLER THREAD, rebuilt against today's API.
 	//
@@ -860,10 +867,18 @@ s32 _spurs::create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 
 		spurs->ppu0 = tid;
 
-		if (const auto thread = idm::get_unlocked<named_thread<ppu_thread>>(tid))
+		// Start it with the REAL syscall, not by imitating it.
+		//
+		// The first attempt cleared cpu_flag::stop and notified directly, and
+		// `handler_entry` was NEVER ENTERED - the instrumentation added for
+		// exactly this question printed zero lines. sys_ppu_thread_start does more
+		// than clear the flag: it runs inside an idm::get callback holding
+		// lv2_obj::notify_all_t and goes through the scheduler's awake path.
+		// Calling it is both correct and shorter.
+		if (const s32 start_rc = sys_ppu_thread_start(ppu, tid))
 		{
-			thread->state -= cpu_flag::stop;
-			thread->state.notify_one();
+			cellSpurs.error("Thor: SPURS handler thread start failed 0x%x (id=0x%x)", start_rc, tid);
+			return CELL_OK;
 		}
 
 		cellSpurs.error("Thor: SPURS handler thread created and started (id=0x%x, entry=0x%x)", tid, code);
@@ -1505,7 +1520,7 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	}
 
 	// Create the SPURS handler thread
-	if (s32 rc = _spurs::create_handler(spurs, ppuPriority))
+	if (s32 rc = _spurs::create_handler(ppu, spurs, ppuPriority))
 	{
 		_spurs::stop_event_helper(ppu, spurs);
 		ppu_execute<&sys_lwcond_destroy>(ppu, lwCond);
@@ -1514,37 +1529,17 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 		return rollback(), rc;
 	}
 
-	// START THE SPU THREAD GROUP DIRECTLY, because no handler thread exists.
+	// The direct group start that used to live here is GONE.
 	//
-	// `_spurs::create_handler` above is a complete no-op - its whole body is
-	// commented out and it returns CELL_OK vacuously - so cellSpursInitialize
-	// reports success while creating nothing. The handler is the ONLY caller of
-	// sys_spu_thread_group_start for this group (cellSpurs.cpp:714), so on the
-	// HLE path the group is created, its threads are initialized, and it is never
-	// started. Measured: group_start called 0 times, no SPU threads in /proc, the
-	// title signals a workload into a group with no running SPUs and waits at
-	// 1.08 cores forever.
+	// It existed only because create_handler was a no-op, so nothing else called
+	// sys_spu_thread_group_start. Now that the handler thread is real it starts
+	// the group itself, and starting it twice made the handler fail immediately:
 	//
-	// Reviving the handler properly means rebuilding it against today's API: the
-	// disabled code uses `non_task()`, which no longer exists on ppu_thread, and
-	// the old `ppu_thread(name, prio, stack)` constructor, which is now
-	// `ppu_thread(const ppu_thread_params&, name, prio, detached)`. That is a
-	// real piece of work.
+	//   Thor: SPURS handler_entry ENTERED (flags=0x2000000 flags1=0x0 ...)
+	//   '_spurs::handler_entry' failed with 0x8001000f : CELL_ESTAT
 	//
-	// This is NOT that. It starts the group once so the question underneath can
-	// be answered at all: does the HLE SPURS kernel run when its SPUs are given a
-	// chance? Everything downstream - the SPU HLE dispatch, the taskset policy
-	// module, the task API - has been unreachable and therefore untested.
-	//
-	// WHAT IT DOES NOT DO: there is no handler to re-start the group after a
-	// join, none of the workload-ready gating happens, and nothing tears it down.
-	// It is a diagnostic, gated on the same property as the kernel arming, and it
-	// must not be mistaken for a fix.
-	if (get_thor_hle_spurs_kernel_enabled())
-	{
-		const s32 start_rc = sys_spu_thread_group_start(ppu, spurs->spuTG);
-		cellSpurs.error("Thor: HLE SPURS group start (no handler exists) -> 0x%x", start_rc);
-	}
+	// CELL_ESTAT is sys_spu_thread_group_start refusing a group that is already
+	// running. The scaffold had become the bug.
 
 	// Enable SPURS exception handler
 	if (s32 rc = cellSpursEnableExceptionEventHandler(ppu, spurs, true /*enable*/))
