@@ -10337,3 +10337,29 @@ wrong on the next.
 **Use it in the 3D gate.** `coresBusy > 4.5` alone admitted a run at `fps=0.00`
 once already. `drawActivity == "scene"` is an independent signal that does not
 depend on how busy the host happens to be.
+
+## Draw count is a SCENE FINGERPRINT, and it may fix the 17% spread
+
+Four consecutive combat samples on 2026-08-25, same run:
+
+```
+drawsLastFrame   1472  1484  1485  1480     spread 0.4%
+fps              18.00 19.30 19.30 18.90    spread 3.5%
+```
+
+The draw count is an order of magnitude steadier than the frame rate, because it
+describes WHAT IS BEING RENDERED rather than how fast the host managed it. That
+makes it the scene fingerprint this project has been missing.
+
+**Use it to decide whether two arms are comparable at all.** The combat control
+pair disagrees with itself by 17%, and scene divergence after a savestate restore
+was the suspected cause but could never be checked - a savestate fixes the
+starting frame, not the following minute of AI and physics. Now it can:
+
+- record the mean `drawsLastFrame` in every arm
+- if two arms differ materially in draws, they were rendering different scenes
+  and their frame rates CANNOT be compared, regardless of what the numbers say
+- if they agree and the frame rates still differ, the difference is real
+
+This is cheap - one `/scene` call per poll - and it converts an unfalsifiable
+suspicion into a measurement. Add it to any harness that compares frame rates.
