@@ -1259,6 +1259,49 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	spurs->spuImg.entry_point = isSecond ? CELL_SPURS_KERNEL2_ENTRY_ADDR : CELL_SPURS_KERNEL1_ENTRY_ADDR;
 	spurs->spuImg.nsegs = 0;
 
+	// THE EINVAL THAT KILLS HLE SPURS.
+	//
+	// The image above is deliberately EMPTY - no segments - because the SPURS
+	// kernel was meant to be host code reached through RegisterHleFunction, and
+	// that mechanism was removed from spu_thread. Today's lv2 rejects it:
+	//
+	//   sys_spu.cpp: if (entry_point > 0x3fffc || nsegs <= 0 || nsegs > 0x20)
+	//                    return CELL_EINVAL;
+	//
+	// so the FIRST sys_spu_thread_initialize fails, cellSpursInitializeWithAttribute
+	// returns 0x80010002, and BLUS30357 ignores that and builds tasksets on an
+	// uninitialized CellSpurs. Every later symptom - no handler thread,
+	// sys_spu_thread_group_start never called, no SPU threads at all, the hang at
+	// 1.08 cores - descends from this one line.
+	//
+	// A minimal image that PASSES validation is enough, because the entry point is
+	// intercepted by the HLE dispatch before any of it executes. lv2 requires at
+	// least one COPY segment whose size is non-zero, whose ls and size are
+	// 16-byte aligned, and whose source address is 4-byte aligned. Sixteen bytes
+	// of zeros at local store 0 satisfies all of it and is inert.
+	if (get_thor_hle_spurs_kernel_enabled())
+	{
+		if (const u32 img_mem = vm::alloc(0x100, vm::main))
+		{
+			std::memset(vm::base(img_mem), 0, 0x100);
+
+			const auto segs = vm::ptr<sys_spu_segment>::make(img_mem);
+			segs[0].type = SYS_SPU_SEGMENT_TYPE_COPY;
+			segs[0].ls = 0;
+			segs[0].size = 0x10;
+			segs[0].addr = img_mem + 0x80;
+
+			spurs->spuImg.segs = segs;
+			spurs->spuImg.nsegs = 1;
+
+			cellSpurs.error("Thor: HLE SPURS minimal SPU image installed at 0x%x (entry 0x%x)", img_mem, +spurs->spuImg.entry_point);
+		}
+		else
+		{
+			cellSpurs.error("Thor: HLE SPURS could not allocate a minimal SPU image");
+		}
+	}
+
 	// Create a thread group for this SPURS context
 	std::memcpy(spuTgName.get_ptr(), spurs->prefix, spurs->prefixSize);
 	std::memcpy(spuTgName.get_ptr() + spurs->prefixSize, "CellSpursKernelGroup", 21);
