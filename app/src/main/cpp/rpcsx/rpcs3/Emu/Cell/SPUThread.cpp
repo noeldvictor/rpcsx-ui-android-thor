@@ -523,6 +523,34 @@ static u32 get_thor_spurs_drop_notify() noexcept
 	return s_value;
 }
 
+static FORCE_INLINE u32 get_thor_max_spurs_threads(u32 configured) noexcept
+{
+#ifdef ANDROID
+	static const u32 s_value = []() noexcept -> u32
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.max_spurs_threads", value) > 0 && value[0])
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed >= 1 && parsed <= 6)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+
+		return 0;
+	}();
+
+	if (s_value)
+	{
+		return s_value;
+	}
+#endif
+	return configured;
+}
+
 static FORCE_INLINE bool get_thor_spu_loop_detection(bool configured) noexcept
 {
 #ifdef ANDROID
@@ -8806,7 +8834,31 @@ s64 spu_thread::get_ch_value(u32 ch)
 
 			if (raddr && (mask1 & ~SPU_EVENT_TM) == SPU_EVENT_LR)
 			{
-				if (u32 max_threads = std::min<u32>(get_spu_wait_policy_for_runtime(g_cfg.core.max_spurs_threads), group ? group->max_num : u32{umax}); group && group->max_run != max_threads)
+				// LIMIT HOW MANY SPUs SPIN.
+				//
+				// Measured in restored 3D combat: all six SPU threads are 68-100%
+				// ON CPU while the SPU profiler reports five of them 83-89% idle in
+				// GUEST terms, and simpleperf puts 54.19% of ALL cycles in
+				// JIT-compiled guest code against 2.25% in the GPU driver. More
+				// than half the machine is executing a PS3 busy-wait, because the
+				// SPURS backoff Ghidra found at 0x0f3d0 takes 92.4 us here against
+				// the ~1.5 us it was calibrated for.
+				//
+				// This is upstream's own HACK for that: cap the running SPURS
+				// threads per group. Fewer runners means fewer spinners contending
+				// for the same reservation line, and the workload is already
+				// idle-waiting rather than compute-bound, so the capacity being
+				// removed is capacity nothing was using.
+				//
+				//   debug.rpcsx.thor.max_spurs_threads = 1..6   (unset = config, 6)
+				//
+				// EXPECT CORRECTNESS RISK, not just a slow arm. The comment above
+				// on get_thor_spurs_wait_honour_maxrun records that the
+				// spurs_running bookkeeping has NOT been checked against a title
+				// that actually sets this below max_num, which is exactly what this
+				// makes possible. Verify the scene renders and check the SPURS
+				// invariants before believing any FPS number from it.
+				if (u32 max_threads = std::min<u32>(get_thor_max_spurs_threads(get_spu_wait_policy_for_runtime(g_cfg.core.max_spurs_threads)), group ? group->max_num : u32{umax}); group && group->max_run != max_threads)
 				{
 					constexpr std::string_view spurs_suffix = "CellSpursKernelGroup"sv;
 
