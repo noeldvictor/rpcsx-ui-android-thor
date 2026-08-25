@@ -1,7 +1,19 @@
+#include "stdafx.h"
 #ifdef __ANDROID__
+// AFTER stdafx.h, never before.
+//
+// stdafx.h is the precompiled header. Placing any include ahead of it changes
+// the feature-test macros for THIS translation unit only, which is an ODR
+// mismatch against every other unit and shows up at runtime as corruption
+// rather than as a compile error.
+//
+// The symptom here was savestate restore: `loadstate` returned {"ok":true} and
+// emulation never came back, ending in "Emulation Join Thread is too sleepy".
+// Bisected by isolation - the handler diagnostic, SPUThread.*, and
+// cellSpursSpu.cpp each tested INNOCENT, leaving this file, and the only
+// always-active change in it was this include placement.
 #include <sys/system_properties.h>
 #endif
-#include "stdafx.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/Memory/vm_reservation.h"
@@ -801,12 +813,15 @@ static bool get_thor_hle_spurs_kernel_enabled() noexcept
 #endif
 }
 
-// Register the handler entry as an HLE function so it has a guest-callable
-// address. MUST be namespace scope: ppu_function_manager allocates one block for
-// the whole registered list, and a function added after that allocation would
-// have an address past the end of it.
-static const u32 s_thor_spurs_handler_index =
-	ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry));
+// DISABLED FOR THE BISECT: this namespace-scope static registered an extra
+// function at GLOBAL INIT, unconditionally, with no property gate. The
+// ppu_function_manager list it appends to is SERIALIZED - PPUFunction.h declares
+// save(utils::serial&) and a deserializing constructor - so adding an entry
+// changes the savestate format. That matches every observation: SPUThread.* and
+// cellSpursSpu.cpp both tested innocent, and only this file broke restore.
+// static const u32 s_thor_spurs_handler_index =
+//     ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry));
+static const u32 s_thor_spurs_handler_index = 0;
 
 s32 _spurs::create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 {
