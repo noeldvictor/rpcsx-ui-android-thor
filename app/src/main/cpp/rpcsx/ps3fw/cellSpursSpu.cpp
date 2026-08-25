@@ -773,6 +773,29 @@ void spursSysServiceIdleHandler(spu_thread& spu, SpursKernelContext* ctxt)
 
 	while (true)
 	{
+		// REFRESH THE SNAPSHOT BEFORE READING IT.
+		//
+		// LS 0x100 is `SpursKernelContext::tempArea[0x80]` - a 128-byte scratch at
+		// the head of the context, into which the head of CellSpurs is meant to be
+		// DMA'd. That is why these readers use 0x100, and it is by design, not a
+		// collision.
+		//
+		// The defect is that nothing refreshes it here. spursKernelEntry memsets
+		// the whole context, tempArea included, and the ONLY other write is in
+		// spursSysServiceCleanupAfterSystemWorkload - far too late and too rare to
+		// serve this loop. So the idle handler reads zeros, every workload looks
+		// like state 0 / priority 0 / readyCount 0, and all six SPUs park here:
+		//
+		//   Thor SPU0 idle-handler first entry: ... NO-WORKLOAD-HAS-ANY-STATE
+		//
+		// while the PPU had created the taskset and signalled wid=1.
+		//
+		// Redirecting the read to ctxt->spurs instead was tried twice and BOOT
+		// LOOPED both times (f766f1880, and the read-only narrowing after it): the
+		// code is written against a private snapshot, not against the live
+		// structure the PPU mutates under it. Refreshing the snapshot is what the
+		// hardware kernel does, and it keeps every read local.
+		std::memcpy(spu._ptr<void>(0x100), ctxt->spurs.get_ptr(), 128);
 		const auto spurs = spu._ptr<CellSpurs>(0x100);
 		// vm::reservation_acquire(ctxt->spurs.addr());
 
