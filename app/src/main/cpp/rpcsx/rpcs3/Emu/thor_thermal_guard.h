@@ -74,6 +74,7 @@
 // thermal guard that costs frames to ask about would be self-defeating.
 
 #include "util/atomic.hpp"
+#include <atomic>
 #include "util/types.hpp"
 
 #include <cstdio>
@@ -151,6 +152,13 @@ namespace thor::thermal_guard
 	// limit of most titles, so it stops being a silent tax on titles the cap
 	// cannot help. A device that wants the old behaviour sets the property to 20.
 	inline const u32 g_hot_fps = read_u32_property("debug.rpcsx.thor.thermal_guard_fps", 30);
+	inline const u32 g_floor_ratio = read_u32_property("debug.rpcsx.thor.thermal_guard_floor_ratio", 0);
+	inline std::atomic<double> g_last_fps{0.0};
+
+	// Fed by device_stats::publish(), which already computes the rate. Pushed in
+	// rather than pulled, because device_stats includes this header and the
+	// reverse would be circular.
+	inline void note_measured_fps(double fps) noexcept { g_last_fps.store(fps); }
 
 	// Minimum samples to stay engaged once engaged, whatever the temperature does.
 	//
@@ -343,8 +351,47 @@ namespace thor::thermal_guard
 	inline bool engaged() noexcept { return g_engaged.observe(); }
 
 	// The frame limit to impose right now, or 0 for "do not interfere".
+	// A CAP CANNOT COOL A GAME THAT IS ALREADY BELOW IT.
+	//
+	// The guard engages at 85 C and returns g_hot_fps (30). The frame limiter then
+	// caps to 30. That sheds real work in the scenes this guard was built for -
+	// Transformers renders its engine cutscenes at 120-133 FPS - but restored 3D
+	// COMBAT runs at about 19 FPS, so the 30 cap never binds, no work is removed,
+	// and the device climbs to 93-96 C with the guard "engaged" and doing nothing.
+	//
+	// `thermal_guard_floor_ratio` gives the guard something to do in that case: if
+	// the measured rate is already under the cap, cap to a FRACTION of the
+	// measured rate instead, which does bind and does shed work.
+	//
+	//   debug.rpcsx.thor.thermal_guard_floor_ratio = <percent>   (default 0 = off)
+	//
+	// 0 keeps the shipped behaviour exactly. 85 would ask a 19 FPS scene to run at
+	// about 16 FPS while it is over temperature. That is a REAL trade - it buys
+	// temperature with frames - so it stays opt-in until measured, and it must be
+	// judged on temperature, not on frame rate.
 	inline double frame_limit_or_zero() noexcept
 	{
-		return engaged() ? static_cast<double>(g_hot_fps) : 0.0;
+		if (!engaged())
+		{
+			return 0.0;
+		}
+
+		const double cap = static_cast<double>(g_hot_fps);
+
+		if (g_floor_ratio == 0)
+		{
+			return cap;
+		}
+
+		const double measured = g_last_fps.load();
+
+		if (measured > 1.0 && measured < cap)
+		{
+			// Already under the cap: bind to a fraction of what we actually get.
+			const double floored = measured * static_cast<double>(g_floor_ratio) / 100.0;
+			return floored > 1.0 ? floored : cap;
+		}
+
+		return cap;
 	}
 } // namespace thor::thermal_guard

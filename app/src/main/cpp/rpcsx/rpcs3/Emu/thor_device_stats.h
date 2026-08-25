@@ -55,6 +55,9 @@ namespace thor::device_stats
 	inline void publish(double fps, double cores, u64 frames, u64 ram_mb) noexcept
 	{
 		g_fps_milli.store(static_cast<u32>(fps * 1000.0), std::memory_order_relaxed);
+		// Let the thermal guard bind below its own cap: a 30 fps cap sheds nothing
+		// from a 19 fps scene. See thor_thermal_guard.h.
+		thermal_guard::note_measured_fps(fps);
 		g_cores_milli.store(static_cast<u32>(cores * 1000.0), std::memory_order_relaxed);
 		g_frames.store(frames, std::memory_order_relaxed);
 		g_ram_mb.store(ram_mb, std::memory_order_relaxed);
