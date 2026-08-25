@@ -692,6 +692,99 @@ Thor predictions.
   rate target. A run that thermal-stops before the title renders produces no
   speed credit for it, per `Speed Claim Rules`.
 
+## Ghidra Is The Instrument For Slowdowns, Not Just Halts
+
+**Promoted 2026-08-24.** Eighteen speed levers measured null on Transformers
+before anything disassembled the loop they were all aimed at. Ghidra answered it
+in one run. Reach for it EARLY on a slowdown, not after the profiler has been
+argued with for a session.
+
+A profiler says WHERE the time goes. It cannot say WHAT the code is doing there,
+and on SPU code the difference decides whether a lever can possibly work. The
+same 96.84%-of-a-thread hot block reads as "the bottleneck" to a profiler and as
+"a backoff while starved" to a disassembler, and those two readings call for
+opposite fixes.
+
+### The toolchain, which is already installed
+
+    ghidra        C:\Users\leanerdesigner\Documents\SteamPortableTools\toolchains\ghidra_12.0.4_PUBLIC
+    SPU module    .../toolchains/GhidraSPU  -> installed as Ghidra/Processors/SPU
+    language id   SPU:BE:128:default
+    script        tools/ghidra_scripts/DisassembleSpuWindows.java
+
+Ghidra has no SPU processor by default. The `GhidraSPU` module supplies it, and
+it is already unpacked into the Ghidra install, so `-processor
+"SPU:BE:128:default"` just works.
+
+### Getting the image
+
+The SPURS kernel is `libsre` and its local store is identical on every boot and
+on every one of the six SPU threads, so ONE dump serves all of them. Only the PC
+differs.
+
+    adb shell setprop debug.rpcsx.thor.spu_ls_dump CellSpursKernel0
+    # perf_monitor writes 262144 bytes; no SPU path pays for it
+    adb pull .../files/cache/spu_ls_CellSpursKernel0.bin spurs_ls.bin
+
+### The run
+
+Import base-zero, because a local store IS the address space:
+
+    "$GHIDRA/support/analyzeHeadless.bat" <projdir> spurs \
+      -import spurs_ls.bin \
+      -processor "SPU:BE:128:default" \
+      -loader BinaryLoader -loader-baseAddr 0 \
+      -scriptPath <repo>/tools/ghidra_scripts \
+      -postScript DisassembleSpuWindows.java out.txt 0x120 0xf3c4
+
+Re-use the project for follow-up windows with `-process spurs_ls.bin
+-noanalysis`; re-analysing a 256 KB image every time wastes a minute per
+question. Windows are centred, so `0x120` gives about 0x90 either side.
+
+### What it bought, worked example
+
+`chunk-0x0f3c4` is 96.84% of `CellSpursKernel0`. Disassembled:
+
+    f3c4:  il   r4,0x0        ; i = 0
+    f3c8:  il   r5,0x960      ; limit = 2400
+    f3d0:  ai   r4,r4,0x1     ; i++            <- loop head
+    f3d4:  rdch r3,ch8        ; ch8 = SPU_RdDec
+    f3d8:  ceq  r40,r4,r5     ; i == 2400 ?
+    f3dc:  brz  r40,0xf3d0
+
+The exit condition is the COUNTER. The decrementer value is never used - it is
+overwritten every iteration. So this is a calibrated delay, roughly 1.5 us on a
+3.2 GHz SPU. Here every `rdch ch8` inlines an `mrs cntvct_el0` at 38.49 ns, so
+it takes **92.4 us**, about 60x too long.
+
+The caller is what matters, and only a disassembler shows it:
+
+    f3b4:  brsl 0x13c68       ; poll
+    f3bc:  brz  r3,0xf238     ; got it -> leave
+    f3c4:  <the 2400 delay>   ; else back off
+    f3f4:  brnz r41,0xf3a0    ; retry
+
+and inside that poll:
+
+    13db4..13dcc: wrch ch16..ch21   ; MFC_LSA/EAH/EAL/Size/TagID/Cmd
+    13dd0:        rdch r2,ch27      ; MFC_RdAtomicStat
+
+which is a **reservation on the SPURS work queue**, then a blocking status read.
+
+So the hot block is a poll-with-backoff on an atomic, not compute. The SPU is
+STARVED, not slow. That single reading explains why eighteen levers that all made
+WORK cheaper measured null - none of them can help a processor waiting on work
+that has not been published.
+
+### The rule this establishes
+
+**Before optimising a hot SPU block, disassemble it and read its CALLER.** A
+counted loop whose exit condition is its own counter is a delay. A loop around a
+`ch27` read is a wait. Neither is work, and "make it faster" is the wrong verb
+for both. Record the channel numbers - `ch8` RdDec, `ch16-21` the MFC command
+registers, `ch27` MFC_RdAtomicStat - because the channel is what says which of
+the three it is.
+
 ## Startup Cache Worker Affinity
 
 - Startup cache compilation is the hottest phase of a Thor boot. Measured pair

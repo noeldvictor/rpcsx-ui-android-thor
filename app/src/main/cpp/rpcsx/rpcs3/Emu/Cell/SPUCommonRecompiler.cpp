@@ -3682,6 +3682,192 @@ struct block_reg_info
 	}
 };
 
+// Shorten the SPURS backoff loop, which costs 60x what the guest intended.
+//
+// ## What the loop is, from Ghidra
+//
+// `chunk-0x0f3c4` is 96.84% of CellSpursKernel0. Disassembled with the SPU
+// processor module against a captured local store, it is exactly:
+//
+//     f3c4:  il   r4,0x0        ; i = 0
+//     f3c8:  il   r5,0x960      ; limit = 2400
+//     f3d0:  ai   r4,r4,0x1     ; i++            <- loop head
+//     f3d4:  rdch r3,ch8        ; ch8 = SPU_RdDec
+//     f3d8:  ceq  r40,r4,r5     ; i == 2400 ?
+//     f3dc:  brz  r40,0xf3d0
+//
+// The exit condition is the COUNTER. The decrementer result is overwritten on
+// the next iteration and never read, so this is a calibrated delay, not a timed
+// wait - about 1.5 us on a 3.2 GHz SPU.
+//
+// Its caller is a poll-with-backoff around an atomic:
+//
+//     brsl 0x13c68   -> wrch ch16..ch21 (MFC DMA cmd), rdch ch27 (AtomicStat)
+//     brz  r3        -> work arrived, leave
+//     <this loop>    -> else back off
+//     brnz r41       -> retry
+//
+// So the SPU is polling the SPURS work queue. On this device every `rdch ch8`
+// inlines an `mrs cntvct_el0` at 38.49 ns, making the backoff **92.4 us**. The
+// consequence is not wasted cycles, it is LATENCY: when the PPU finally
+// publishes work, the SPU does not look again for up to 92 us, and that is paid
+// on every dispatch by all six SPU threads.
+//
+// ## What this does
+//
+// Rewrites the limit immediate in OUR analysed copy of the function - guest
+// memory is never touched - so the delay lands near the 1.5 us the code was
+// written for. Only the delay changes:
+//
+//   * r4 counts up to the new limit instead of the old one, and both r4 and r5
+//     are re-initialised by `il` before any later use, so neither escapes.
+//   * `rdch ch8` still executes, so guest time still ADVANCES. Every previous
+//     attempt here died by freezing or faking the decrementer - a frozen cache
+//     hung the title at 1.2% CPU and an interpolated one killed SPU threads
+//     with STOP 0x0. This changes only how MANY times a live read happens.
+//   * shortening a backoff can only make the poll more frequent, and the poll
+//     re-checks a real condition, so correctness does not depend on the count.
+//
+//   debug.rpcsx.thor.spu_backoff_div = <divisor>   (default 1 = off)
+//
+// Default 1 leaves every immediate untouched and the analysed program
+// bit-identical to before. Matching is on the exact four-instruction shape plus
+// a preceding `il` of the compared register, not on a PC or an image hash, so it
+// cannot fire on an unrelated loop that merely looks similar.
+static u32 get_thor_spu_backoff_div() noexcept
+{
+	static const u32 s_value = []() noexcept -> u32
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_backoff_div", value) > 0 && value[0])
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed >= 2 && parsed <= 4096)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+#endif
+		return 1;
+	}();
+
+	return s_value;
+}
+
+static void thor_shorten_spu_backoff_loops(spu_program& result, u32 lsa)
+{
+	const u32 div = get_thor_spu_backoff_div();
+
+	if (div <= 1 || result.data.size() < 4)
+	{
+		return;
+	}
+
+	for (usz i = 0; i + 3 < result.data.size(); i++)
+	{
+		const spu_opcode_t op_ai{std::bit_cast<be_t<u32>>(result.data[i])};
+		const spu_opcode_t op_rd{std::bit_cast<be_t<u32>>(result.data[i + 1])};
+		const spu_opcode_t op_eq{std::bit_cast<be_t<u32>>(result.data[i + 2])};
+		const spu_opcode_t op_br{std::bit_cast<be_t<u32>>(result.data[i + 3])};
+
+		if (g_spu_itype.decode(op_ai.opcode) != spu_itype::AI ||
+			g_spu_itype.decode(op_rd.opcode) != spu_itype::RDCH ||
+			g_spu_itype.decode(op_eq.opcode) != spu_itype::CEQ ||
+			g_spu_itype.decode(op_br.opcode) != spu_itype::BRZ)
+		{
+			continue;
+		}
+
+		// i++ on a single register, a decrementer read, and a compare of that
+		// same counter against a second register.
+		if (op_ai.rt != op_ai.ra || op_ai.si10 != 1 || op_rd.ra != SPU_RdDec)
+		{
+			continue;
+		}
+
+		const u32 counter = op_ai.rt;
+		const u32 limit_reg = op_eq.ra == counter ? +op_eq.rb : +op_eq.ra;
+
+		if (op_eq.ra != counter && op_eq.rb != counter)
+		{
+			continue;
+		}
+
+		// The branch must close the loop back onto the `ai`, and test the
+		// register the compare just produced.
+		const u32 head_pc = lsa + static_cast<u32>(i) * 4;
+		const u32 br_pc = head_pc + 12;
+
+		if (op_br.rt != op_eq.rt || br_pc + (op_br.si16 * 4) != head_pc)
+		{
+			continue;
+		}
+
+		// The decrementer destination must not be the counter or the limit, or
+		// the read would not be dead.
+		if (op_rd.rt == counter || op_rd.rt == limit_reg)
+		{
+			continue;
+		}
+
+		// Walk back for the `il` that loads the limit. Stop at the first write
+		// to that register so a value from somewhere else is never rewritten.
+		for (usz k = i; k-- > 0;)
+		{
+			const spu_opcode_t prev{std::bit_cast<be_t<u32>>(result.data[k])};
+			const auto type = g_spu_itype.decode(prev.opcode);
+
+			if (type != spu_itype::IL)
+			{
+				const auto [wr, _rd, _n] = op_register_targets(lsa + static_cast<u32>(k) * 4, prev);
+
+				if (wr == limit_reg)
+				{
+					break;
+				}
+
+				continue;
+			}
+
+			if (prev.rt != limit_reg)
+			{
+				continue;
+			}
+
+			const u32 old_limit = static_cast<u32>(prev.si16);
+
+			// Only a LARGE positive spin count is a backoff worth touching.
+			//
+			// The floor was 64 and the log showed "limit 75 -> 8", i.e. an
+			// already-shortened loop being shortened again on a later analysis of
+			// the same function. Requiring 256 puts every real backoff seen in
+			// this image (2400 and 17500) well inside the window while making a
+			// patched value ineligible, so the divisor is applied once.
+			if (old_limit < 256 || old_limit > 0x7fff)
+			{
+				break;
+			}
+
+			// Never below 64 iterations. div=32 took 2400 to 75 and the title
+			// NEVER RENDERED: polling that much harder on the same reservation
+			// line starves the writer that was supposed to publish the work, so
+			// the wait it is backing off from never ends. The backoff length is
+			// load-bearing, not slack.
+			const u32 new_limit = std::max<u32>(64, old_limit / div);
+			spu_opcode_t patched{prev.opcode};
+			patched.i16 = new_limit & 0xffff;
+			result.data[k] = std::bit_cast<u32>(be_t<u32>{patched.opcode});
+
+			spu_log.error("Thor: shortened SPU backoff at 0x%05x: limit %u -> %u (counter r%u, limit r%u)",
+				head_pc, old_limit, new_limit, counter, limit_reg);
+			break;
+		}
+	}
+}
+
 spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, std::map<u32, std::vector<u32>>* out_target_list)
 {
 	// Result: addr + raw instruction data
@@ -8676,6 +8862,8 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 	{
 		// Blocks starting from 0x0 or invalid instruction won't be compiled, may need special interpreter fallback
 	}
+
+	thor_shorten_spu_backoff_loops(result, lsa);
 
 	return result;
 }

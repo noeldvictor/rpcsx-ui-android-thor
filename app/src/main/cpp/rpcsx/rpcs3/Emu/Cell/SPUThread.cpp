@@ -3732,8 +3732,74 @@ void spu_thread::cpu_return()
 
 extern thread_local std::string (*g_tls_log_prefix)();
 
+// Keep the emulated CPUs off the little cores.
+//
+// ## Measured, on BLUS30357 in restored 3D combat
+//
+// Core residency from /proc/PID/task/*/stat field 39, 80 samples per thread.
+// Thor is 3x A510 at 2016 MHz (cpu0-2), 4x A715 at 2803 MHz (cpu3-6) and one
+// X3 at 3187 MHz (cpu7):
+//
+//   SPU0 - the only busy one, 1.8% guest idle -   8.8% on a little core
+//   SPU1..SPU5 - 83-89% guest idle, spinning  -  15-25% on a little core
+//   PPU[0x1000000] - the MAIN thread          -  26.2% on a little core
+//   all emulator threads                      -  15.6% on a little core
+//
+// The main PPU thread spends a quarter of its life at 2016 MHz instead of 2803
+// or 3187. That is roughly a 35% clock penalty applied to the critical path.
+//
+// ## Why the scheduler does this
+//
+// Five SPU threads are 83-89% idle in GUEST terms while each burns about 60% of
+// a PHYSICAL core spinning. The kernel cannot see "idle guest"; it sees six
+// runnable SPU threads plus rsx::thread plus the PPUs - more runnable work than
+// the five fast cores can hold - so it spills onto the A510s. The thread it
+// spills is whichever one happens to be ready, and 26% of the time that is the
+// main PPU thread.
+//
+// This is the shape that makes work-cheapening levers useless: seventeen of them
+// measured null, and none of them can help a critical thread running on a core
+// 35% slower.
+//
+//   debug.rpcsx.thor.cpu_affinity_mask = <hex or decimal>   (default 0 = off)
+//
+// 0xf8 is the four A715s plus the X3. Default is 0, which means the ordinary
+// scheduler and behaviour identical to before.
+//
+// A mask is a BOUND, not a guarantee: pinning six SPU threads plus the PPUs to
+// five cores oversubscribes them. That is deliberate here, because the threads
+// being squeezed are the ones that are only spinning - but it is exactly why
+// this must be A/B'd rather than assumed, and why the default stays off.
+static u64 get_thor_cpu_affinity_mask() noexcept
+{
+	static const u64 s_mask = []() noexcept -> u64
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.cpu_affinity_mask", value) > 0 && value[0])
+		{
+			const unsigned long parsed = std::strtoul(value, nullptr, 0);
+
+			if (parsed != 0 && parsed <= 0xffull)
+			{
+				return static_cast<u64>(parsed);
+			}
+		}
+#endif
+		return 0;
+	}();
+
+	return s_mask;
+}
+
 void spu_thread::cpu_task()
 {
+	if (const u64 thor_mask = get_thor_cpu_affinity_mask())
+	{
+		thread_ctrl::set_thread_affinity_mask(thor_mask);
+	}
+
 #ifdef __APPLE__
 	pthread_jit_write_protect_np(true);
 #endif
