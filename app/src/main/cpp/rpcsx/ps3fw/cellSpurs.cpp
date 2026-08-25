@@ -810,6 +810,11 @@ static const u32 s_thor_spurs_handler_index =
 
 s32 _spurs::create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 {
+	// UNCONDITIONAL, before the property check. Separates "create_handler is
+	// never called" from "it is called and the gate is off" - the two look
+	// identical from the log otherwise, which is what stalled the last run.
+	cellSpurs.error("Thor: create_handler CALLED (prio=%u, hle_gate=%u)", ppuPriority, get_thor_hle_spurs_kernel_enabled() ? 1u : 0u);
+
 	// THE HANDLER THREAD, rebuilt against today's API.
 	//
 	// This function was a no-op returning CELL_OK for a thread it never created,
