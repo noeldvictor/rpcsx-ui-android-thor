@@ -3071,18 +3071,27 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 		return CELL_SPURS_POLICY_MODULE_ERROR_INVAL;
 	}
 
+	// THOR: this function is called exactly twice by BLUS30357, so logging every
+	// path is free. It matters because the SPU selection gate reads signal=0
+	// FIVE MILLISECONDS AFTER this returns, and the gate's other two terms are
+	// also dead (readyCount=0, wklFlag=0), so the signal is the whole reason a
+	// taskset workload would ever be selected. Five early returns can swallow it
+	// silently, and entry logging cannot tell them apart.
 	if (!(spurs->wklEnabled.load() & (0x80000000u >> wid)))
 	{
+		cellSpurs.error("Thor signal wid=%u REJECTED: not enabled (wklEnabled=0x%x)", wid, +spurs->wklEnabled);
 		return CELL_SPURS_POLICY_MODULE_ERROR_SRCH;
 	}
 
 	if (spurs->exception)
 	{
+		cellSpurs.error("Thor signal wid=%u REJECTED: exception set", wid);
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
 	}
 
 	if (spurs->wklState(wid) != SPURS_WKL_STATE_RUNNABLE)
 	{
+		cellSpurs.error("Thor signal wid=%u REJECTED: state=%u not RUNNABLE", wid, +spurs->wklState(wid));
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
 	}
 
@@ -3090,6 +3099,10 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 		{
 			sig |= 0x8000 >> (wid % 16);
 		});
+
+	cellSpurs.error("Thor signal wid=%u WRITTEN: wklSignal1=0x%x wklEnabled=0x%x readyCount=%u state=%u",
+		wid, +spurs->wklSignal1.load(), +spurs->wklEnabled,
+		+spurs->wklReadyCount1[wid % CELL_SPURS_MAX_WORKLOAD], +spurs->wklState(wid));
 
 	return CELL_OK;
 }

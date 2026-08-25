@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <atomic>
 #include "Loader/ELF.h"
 
 #include "Emu/Memory/vm_reservation.h"
@@ -261,6 +262,30 @@ s32 sys_spu_thread_switch_system_module(spu_thread& spu, u32 status)
 //----------------------------------------------------------------------------
 
 // Select a workload to run
+// THOR HLE SPURS DIAGNOSIS, one shot per SPU.
+//
+// The branch is stuck with every SPU selecting wid=32 (the system service) once
+// and never again. cellSpursModulePollStatus only reports "leave" when the
+// selected workload DIFFERS from the current one, and selection can only pick a
+// workload whose ctxt->wklRunnable1 bit is set - which is set only from
+// spurs->wklState1[i] == SPURS_WKL_STATE_RUNNABLE.
+//
+// So exactly two things need to be known, and neither is guessable:
+//   1. does spursSysServiceActivateWorkload run at all on each SPU?
+//   2. when it does, what does it actually READ out of wklState1?
+//
+// ONE SHOT PER SPU. Per-iteration logging on this path has boot-looped this
+// branch twice: six SPUs run these functions continuously.
+static std::atomic<u32> g_thor_hle_req_logged{0};
+static std::atomic<u32> g_thor_hle_act_logged{0};
+static std::atomic<u32> g_thor_hle_sel_logged{0};
+
+static bool thor_hle_once(std::atomic<u32>& bits, u32 spuNum) noexcept
+{
+	const u32 bit = 1u << (spuNum & 31);
+	return (bits.fetch_or(bit) & bit) == 0;
+}
+
 bool spursKernel1SelectWorkload(spu_thread& spu)
 {
 	const auto ctxt = spu._ptr<SpursKernelContext>(0x100);
@@ -313,6 +338,32 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 		}
 		else
 		{
+			// THOR: the four terms of the selection gate, once per SPU.
+			//
+			// state1 already reads [02 02 ...] and spurs matches the PPU's
+			// address, so RUNNABLE is NOT the problem. The gate is
+			//   runnable && priority[i] != 0 && wklMaxContention[i] > contention[i]
+			//   && (wklFlag || wklSignal || (readyCount && requestCount > contention[i]))
+			// and the title does call cellSpursSendWorkloadSignal, so print every
+			// term for the two workloads that exist and let it name the failure.
+			if (thor_hle_once(g_thor_hle_sel_logged, ctxt->spuNum))
+			{
+				for (u32 k = 0; k < 2; k++)
+				{
+					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u",
+						+ctxt->spuNum, k,
+						(ctxt->wklRunnable1 & (0x8000 >> k)) ? 1u : 0u,
+						+ctxt->priority[k],
+						+spurs->wklMaxContention[k],
+						+contention[k],
+						+spurs->wklReadyCount1[k],
+						+spurs->wklIdleSpuCountOrReadyCount2[k],
+						(spurs->wklSignal1.load() & (0x8000u >> k)) ? 1u : 0u,
+						+spurs->wklFlag.flag.load(),
+						+spurs->wklFlagReceiver);
+				}
+			}
+
 			// Caclulate the scheduling weight for each workload
 			u16 maxWeight = 0;
 			for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
@@ -1026,6 +1077,13 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 	{
 		auto spurs = ctxt->spurs.get_ptr();
 
+		if (thor_hle_once(g_thor_hle_req_logged, ctxt->spuNum))
+		{
+			cellSpurs.error("Thor HLE SPU%u processRequests#1: spurs=0x%x msgUpdateWkl=0x%x sysSrvMsg=0x%x wklMskB=0x%x",
+				+ctxt->spuNum, ctxt->spurs.addr(),
+				+spurs->sysSrvMsgUpdateWorkload, +spurs->sysSrvMessage, +spurs->wklMskB);
+		}
+
 		// Terminate request
 		if (spurs->sysSrvMsgTerminate & (1 << ctxt->spuNum))
 		{
@@ -1118,6 +1176,24 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 	// vm::reservation_op(ctxt->spurs.ptr(&CellSpurs::wklState1).addr(), 128, [&]()
 	{
 		auto spurs = ctxt->spurs.get_ptr();
+
+		if (thor_hle_once(g_thor_hle_act_logged, ctxt->spuNum))
+		{
+			// The 16 state bytes as the SPU sees them, from MAIN MEMORY. If the
+			// PPU's spursAddWorkload really wrote RUNNABLE(2), it is visible here
+			// or the two sides are not looking at the same CellSpurs.
+			char st[64]{};
+			for (u32 k = 0, o = 0; k < CELL_SPURS_MAX_WORKLOAD && o + 3 < sizeof(st); k++, o += 3)
+			{
+				const u32 v = +spurs->wklState1[k];
+				st[o] = static_cast<char>('0' + (v / 10) % 10);
+				st[o + 1] = static_cast<char>('0' + v % 10);
+				st[o + 2] = ' ';
+			}
+
+			cellSpurs.error("Thor HLE SPU%u activateWorkload#1: spurs=0x%x wklMskB=0x%x state1=[%s]",
+				+ctxt->spuNum, ctxt->spurs.addr(), +spurs->wklMskB, st);
+		}
 
 		for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
 		{
