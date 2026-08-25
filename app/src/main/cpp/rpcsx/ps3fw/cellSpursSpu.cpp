@@ -636,6 +636,15 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	const auto wklInfo = spu._ptr<CellSpurs::WorkloadInfo>(0x3FFE0);
 	std::memcpy(wklInfo, wklInfoOffset, 0x20);
 
+	// What does the HLE kernel actually pick?
+	//
+	// All six kernels arm and run, and the title renders nothing. This says
+	// whether a workload is being selected at all, which of the three cases the
+	// switch below takes, and whether the taskset policy module is ever reached.
+	// SPURS_IMG_ADDR_TASKSET_PM is the one that matters for this title.
+	cellSpurs.error("Thor SPU%u kernel dispatch: wid=%u addr=0x%x size=0x%x current=0x%x pollStatus=0x%x",
+		spu.index, wid, wklInfo->addr.addr(), +wklInfo->size, ctxt->wklCurrentAddr.addr(), pollStatus);
+
 	// Load the workload to LS
 	if (ctxt->wklCurrentAddr != wklInfo->addr)
 	{
