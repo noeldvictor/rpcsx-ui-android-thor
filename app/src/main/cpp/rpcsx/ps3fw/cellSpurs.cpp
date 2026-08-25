@@ -1,6 +1,3 @@
-#ifdef __ANDROID__
-#include <sys/system_properties.h>
-#endif
 #include "stdafx.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
@@ -199,7 +196,7 @@ namespace _spurs
 	void handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs);
 
 	// Create the SPURS handler thread
-	s32 create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority);
+	s32 create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority);
 
 	// Invoke event handlers
 	s32 invoke_event_handlers(ppu_thread& ppu, vm::ptr<CellSpurs::EventPortMux> eventPortMux);
@@ -637,41 +634,6 @@ void _spurs::handler_wait_ready(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 		// Find a runnable workload
 		spurs->handlerDirty = 0;
-
-		// WHY THE HLE SPURS PATH NEVER STARTS ITS SPU THREADS.
-		//
-		// sys_spu_thread_group_start for the SPURS kernel group happens only
-		// after this function returns, so if no workload ever looks runnable the
-		// group is created and never started - which is exactly what was
-		// measured: the group appears in the log at 18.56 s, the title then calls
-		// CreateTaskWithAttribute, SendWorkloadSignal and WakeUp, and /proc shows
-		// NO SPU threads at all, only the "SPU LLVM" compiler worker.
-		//
-		// Three independent conditions must hold for a workload to count, and the
-		// loop below cannot say which one failed. This prints them once per
-		// waiting pass for every workload that has any state at all, so the next
-		// run names the field instead of guessing at it.
-		if (spurs->exception == 0u)
-		{
-			for (u32 i = 0; i < 16; i++)
-			{
-				if (spurs->wklState1[i] == SPURS_WKL_STATE_NON_EXISTENT)
-				{
-					continue;
-				}
-
-				cellSpurs.error("Thor SPURS handler wait: wkl%u state=%u priority=0x%llx maxContention=0x%x readyCount=%u signal=%u flag=%u flagReceiver=%u",
-					i,
-					+spurs->wklState1[i],
-					static_cast<unsigned long long>(std::bit_cast<u64>(spurs->wklInfo1[i].priority)),
-					+spurs->wklMaxContention[i],
-					+spurs->wklReadyCount1[i],
-					(spurs->wklSignal1.load() & (0x8000u >> i)) ? 1u : 0u,
-					+spurs->wklFlag.flag.load(),
-					+spurs->wklFlagReceiver);
-			}
-		}
-
 		if (spurs->exception == 0u)
 		{
 			bool foundRunnableWorkload = false;
@@ -737,15 +699,8 @@ void _spurs::handler_wait_ready(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 void _spurs::handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
-	// Distinguishes "the thread was never released" from "it ran and took the
-	// early exit". Both leave sys_spu_thread_group_start uncalled and look
-	// identical from outside.
-	cellSpurs.error("Thor: SPURS handler_entry ENTERED (flags=0x%x flags1=0x%x spuTG=0x%x)",
-		+spurs->flags, +spurs->flags1, +spurs->spuTG);
-
 	if (spurs->flags & SAF_UNKNOWN_FLAG_30)
 	{
-		cellSpurs.error("Thor: SPURS handler_entry EARLY EXIT on SAF_UNKNOWN_FLAG_30");
 		return sys_ppu_thread_exit(ppu, 0);
 	}
 
@@ -780,115 +735,24 @@ void _spurs::handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 	}
 }
 
-static bool get_thor_hle_spurs_kernel_enabled() noexcept
+s32 _spurs::create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 {
-#ifdef __ANDROID__
-	static const bool s_value = []() noexcept -> bool
+	struct handler_thread : ppu_thread
 	{
-		char value[PROP_VALUE_MAX]{};
+		using ppu_thread::ppu_thread;
 
-		if (__system_property_get("debug.rpcsx.thor.hle_spurs_kernel", value) <= 0 || !value[0])
+		void non_task()
 		{
-			return false;
+			// BIND_FUNC(_spurs::handler_entry)(*this);
 		}
+	};
 
-		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
-	}();
+	// auto eht = idm::make_ptr<ppu_thread, handler_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr0", ppuPriority, 0x4000);
 
-	return s_value;
-#else
-	return false;
-#endif
-}
+	// spurs->ppu0 = eht->id;
 
-// Register the handler entry as an HLE function so it has a guest-callable
-// address. MUST be namespace scope: ppu_function_manager allocates one block for
-// the whole registered list, and a function added after that allocation would
-// have an address past the end of it.
-static const u32 s_thor_spurs_handler_index =
-	ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry));
-
-s32 _spurs::create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority)
-{
-	// UNCONDITIONAL, before the property check. Separates "create_handler is
-	// never called" from "it is called and the gate is off" - the two look
-	// identical from the log otherwise, which is what stalled the last run.
-	cellSpurs.error("Thor: create_handler CALLED (prio=%u, hle_gate=%u)", ppuPriority, get_thor_hle_spurs_kernel_enabled() ? 1u : 0u);
-
-	// THE HANDLER THREAD, rebuilt against today's API.
-	//
-	// This function was a no-op returning CELL_OK for a thread it never created,
-	// so cellSpursInitialize reported success and the SPURS group was never
-	// started - the handler is the ONLY caller of sys_spu_thread_group_start for
-	// it (see the loop at the top of this file). The original code is disabled
-	// because it used `non_task()`, gone from ppu_thread, and the old
-	// `ppu_thread(name, prio, stack)` constructor, now
-	// `ppu_thread(const ppu_thread_params&, name, prio, detached)`.
-	//
-	// A host function is reached from a PPU thread the same way any HLE call is:
-	// register it, take its guest code address, and use that as the entry. The
-	// shape below follows _sys_ppu_thread_create in cellos/src/sys_ppu_thread.cpp.
-	//
-	// Gated so the default path keeps the old no-op behaviour exactly.
-	if (get_thor_hle_spurs_kernel_enabled())
-	{
-		const u32 code = g_fxo->get<ppu_function_manager>().func_addr(s_thor_spurs_handler_index, true);
-
-		if (!code)
-		{
-			cellSpurs.error("Thor: SPURS handler has no guest address (index %u)", s_thor_spurs_handler_index);
-			return CELL_OK;
-		}
-
-		const vm::addr_t stack{vm::alloc(0x4000, vm::stack, 4096)};
-
-		if (!stack)
-		{
-			cellSpurs.error("Thor: SPURS handler stack allocation failed");
-			return CELL_OK;
-		}
-
-		const std::string name = std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr0";
-
-		const u32 tid = idm::import<named_thread<ppu_thread>>([&]()
-		{
-			ppu_thread_params p{};
-			p.stack_addr = stack;
-			p.stack_size = 0x4000;
-			p.tls_addr = 0;
-			p.entry = ppu_func_opd_t{code, 0};
-			p.arg0 = spurs.addr();
-			p.arg1 = 0;
-
-			return stx::make_shared<named_thread<ppu_thread>>(p, name, ppuPriority, 0);
-		});
-
-		if (!tid)
-		{
-			vm::dealloc(stack);
-			cellSpurs.error("Thor: SPURS handler thread creation failed");
-			return CELL_OK;
-		}
-
-		spurs->ppu0 = tid;
-
-		// Start it with the REAL syscall, not by imitating it.
-		//
-		// The first attempt cleared cpu_flag::stop and notified directly, and
-		// `handler_entry` was NEVER ENTERED - the instrumentation added for
-		// exactly this question printed zero lines. sys_ppu_thread_start does more
-		// than clear the flag: it runs inside an idm::get callback holding
-		// lv2_obj::notify_all_t and goes through the scheduler's awake path.
-		// Calling it is both correct and shorter.
-		if (const s32 start_rc = sys_ppu_thread_start(ppu, tid))
-		{
-			cellSpurs.error("Thor: SPURS handler thread start failed 0x%x (id=0x%x)", start_rc, tid);
-			return CELL_OK;
-		}
-
-		cellSpurs.error("Thor: SPURS handler thread created and started (id=0x%x, entry=0x%x)", tid, code);
-		return CELL_OK;
-	}
+	// eht->gpr[3] = spurs.addr();
+	// eht->run();
 
 	return CELL_OK;
 }
@@ -1084,31 +948,6 @@ s32 _spurs::create_event_helper(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 p
 	};
 
 	// auto eht = idm::make_ptr<ppu_thread, event_helper_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr1", ppuPriority, 0x8000);
-
-	// THE SECOND NO-OP HELPER, and this one does damage rather than nothing.
-	//
-	// `if (!eht)` is commented out with the thread creation, so what was the
-	// FAILURE path now runs UNCONDITIONALLY: it disconnects the event port,
-	// destroys it, detaches the queue, force-destroys the event queue and returns
-	// CELL_SPURS_CORE_ERROR_STAT. The `return CELL_OK` at the end of this
-	// function is unreachable.
-	//
-	// So _spurs::initialize always fails here, tearing down an event port it just
-	// created, which is where the access violation at liblv2 0x022273bc reading
-	// 0x555538f8 comes from - teardown running over half-initialized state.
-	//
-	// Skipping it leaves SPURS without an event helper THREAD, which is not
-	// correct, but the port and queue survive and initialization can continue.
-	// That is the only way to find out whether anything past this point works,
-	// since nothing past it has ever executed.
-	//
-	// Gated on debug.rpcsx.thor.hle_spurs_kernel, so the default path still runs
-	// the original code exactly.
-	if (get_thor_hle_spurs_kernel_enabled())
-	{
-		cellSpurs.error("Thor: HLE SPURS skipping the dead event-helper failure path (no helper thread is created either way)");
-		return CELL_OK;
-	}
 
 	// if (!eht)
 	{
@@ -1361,49 +1200,6 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	spurs->spuImg.entry_point = isSecond ? CELL_SPURS_KERNEL2_ENTRY_ADDR : CELL_SPURS_KERNEL1_ENTRY_ADDR;
 	spurs->spuImg.nsegs = 0;
 
-	// THE EINVAL THAT KILLS HLE SPURS.
-	//
-	// The image above is deliberately EMPTY - no segments - because the SPURS
-	// kernel was meant to be host code reached through RegisterHleFunction, and
-	// that mechanism was removed from spu_thread. Today's lv2 rejects it:
-	//
-	//   sys_spu.cpp: if (entry_point > 0x3fffc || nsegs <= 0 || nsegs > 0x20)
-	//                    return CELL_EINVAL;
-	//
-	// so the FIRST sys_spu_thread_initialize fails, cellSpursInitializeWithAttribute
-	// returns 0x80010002, and BLUS30357 ignores that and builds tasksets on an
-	// uninitialized CellSpurs. Every later symptom - no handler thread,
-	// sys_spu_thread_group_start never called, no SPU threads at all, the hang at
-	// 1.08 cores - descends from this one line.
-	//
-	// A minimal image that PASSES validation is enough, because the entry point is
-	// intercepted by the HLE dispatch before any of it executes. lv2 requires at
-	// least one COPY segment whose size is non-zero, whose ls and size are
-	// 16-byte aligned, and whose source address is 4-byte aligned. Sixteen bytes
-	// of zeros at local store 0 satisfies all of it and is inert.
-	if (get_thor_hle_spurs_kernel_enabled())
-	{
-		if (const u32 img_mem = vm::alloc(0x100, vm::main))
-		{
-			std::memset(vm::base(img_mem), 0, 0x100);
-
-			const auto segs = vm::ptr<sys_spu_segment>::make(img_mem);
-			segs[0].type = SYS_SPU_SEGMENT_TYPE_COPY;
-			segs[0].ls = 0;
-			segs[0].size = 0x10;
-			segs[0].addr = img_mem + 0x80;
-
-			spurs->spuImg.segs = segs;
-			spurs->spuImg.nsegs = 1;
-
-			cellSpurs.error("Thor: HLE SPURS minimal SPU image installed at 0x%x (entry 0x%x)", img_mem, +spurs->spuImg.entry_point);
-		}
-		else
-		{
-			cellSpurs.error("Thor: HLE SPURS could not allocate a minimal SPU image");
-		}
-	}
-
 	// Create a thread group for this SPURS context
 	std::memcpy(spuTgName.get_ptr(), spurs->prefix, spurs->prefixSize);
 	std::memcpy(spuTgName.get_ptr() + spurs->prefixSize, "CellSpursKernelGroup", 21);
@@ -1525,7 +1321,7 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	}
 
 	// Create the SPURS handler thread
-	if (s32 rc = _spurs::create_handler(ppu, spurs, ppuPriority))
+	if (s32 rc = _spurs::create_handler(spurs, ppuPriority))
 	{
 		_spurs::stop_event_helper(ppu, spurs);
 		ppu_execute<&sys_lwcond_destroy>(ppu, lwCond);
@@ -1533,18 +1329,6 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 		_spurs::finalize_spu(ppu, spurs);
 		return rollback(), rc;
 	}
-
-	// The direct group start that used to live here is GONE.
-	//
-	// It existed only because create_handler was a no-op, so nothing else called
-	// sys_spu_thread_group_start. Now that the handler thread is real it starts
-	// the group itself, and starting it twice made the handler fail immediately:
-	//
-	//   Thor: SPURS handler_entry ENTERED (flags=0x2000000 flags1=0x0 ...)
-	//   '_spurs::handler_entry' failed with 0x8001000f : CELL_ESTAT
-	//
-	// CELL_ESTAT is sys_spu_thread_group_start refusing a group that is already
-	// running. The scaffold had become the bug.
 
 	// Enable SPURS exception handler
 	if (s32 rc = cellSpursEnableExceptionEventHandler(ppu, spurs, true /*enable*/))

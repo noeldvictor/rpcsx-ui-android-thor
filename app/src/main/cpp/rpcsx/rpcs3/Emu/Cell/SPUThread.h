@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include "Emu/CPU/CPUThread.h"
 #include "Emu/CPU/Hypervisor.h"
 #include "Emu/Cell/SPUInterpreter.h"
@@ -1026,27 +1024,6 @@ public:
 			return static_cast<std::conditional_t<std::is_void_v<Func>, Func, decltype(_this->group)>>(_this->group)->prio.atomic_op(std::move(func));
 		}
 	} prio{this};
-	// SPU HLE FUNCTION DISPATCH.
-	//
-	// The map lives in a THREAD-LOCAL outside this class, not as a member.
-	//
-	// Declaring it as a member broke the emulator twice. First placed before
-	// `u32 pc`, it shifted every OFFSET_OF(spu_thread, ...) the LLVM recompiler
-	// bakes into cached SPU code - 121 of them - and the title stopped booting.
-	// Moved to the end of the class it booted again, but the SAVESTATE would no
-	// longer load, which costs the only repeatable combat workload there is.
-	//
-	// Each SPU thread runs on its own host thread, so a thread_local map is
-	// exactly the right scope and touches neither the class layout nor the
-	// serialized format. Anything added to spu_thread pays both of those taxes;
-	// this needed to pay neither.
-	void RegisterHleFunction(u32 addr, bool (*func)(spu_thread&));
-	void UnregisterHleFunction(u32 addr);
-
-	// Returns true when a callback ran, meaning the caller must NOT execute the
-	// guest block at this pc.
-	bool RunHleFunction();
-
 };
 
 class spu_function_logger
