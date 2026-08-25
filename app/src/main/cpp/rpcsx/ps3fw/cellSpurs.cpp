@@ -1,3 +1,6 @@
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #include "stdafx.h"
 #include "Emu/System.h"
 #include "Emu/system_config.h"
@@ -770,6 +773,27 @@ void _spurs::handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 	}
 }
 
+static bool get_thor_hle_spurs_kernel_enabled() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.hle_spurs_kernel", value) <= 0 || !value[0])
+		{
+			return false;
+		}
+
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+	}();
+
+	return s_value;
+#else
+	return false;
+#endif
+}
+
 s32 _spurs::create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 {
 	struct handler_thread : ppu_thread
@@ -1363,6 +1387,38 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 		ppu_execute<&sys_lwmutex_destroy>(ppu, lwMutex);
 		_spurs::finalize_spu(ppu, spurs);
 		return rollback(), rc;
+	}
+
+	// START THE SPU THREAD GROUP DIRECTLY, because no handler thread exists.
+	//
+	// `_spurs::create_handler` above is a complete no-op - its whole body is
+	// commented out and it returns CELL_OK vacuously - so cellSpursInitialize
+	// reports success while creating nothing. The handler is the ONLY caller of
+	// sys_spu_thread_group_start for this group (cellSpurs.cpp:714), so on the
+	// HLE path the group is created, its threads are initialized, and it is never
+	// started. Measured: group_start called 0 times, no SPU threads in /proc, the
+	// title signals a workload into a group with no running SPUs and waits at
+	// 1.08 cores forever.
+	//
+	// Reviving the handler properly means rebuilding it against today's API: the
+	// disabled code uses `non_task()`, which no longer exists on ppu_thread, and
+	// the old `ppu_thread(name, prio, stack)` constructor, which is now
+	// `ppu_thread(const ppu_thread_params&, name, prio, detached)`. That is a
+	// real piece of work.
+	//
+	// This is NOT that. It starts the group once so the question underneath can
+	// be answered at all: does the HLE SPURS kernel run when its SPUs are given a
+	// chance? Everything downstream - the SPU HLE dispatch, the taskset policy
+	// module, the task API - has been unreachable and therefore untested.
+	//
+	// WHAT IT DOES NOT DO: there is no handler to re-start the group after a
+	// join, none of the workload-ready gating happens, and nothing tears it down.
+	// It is a diagnostic, gated on the same property as the kernel arming, and it
+	// must not be mistaken for a fix.
+	if (get_thor_hle_spurs_kernel_enabled())
+	{
+		const s32 start_rc = sys_spu_thread_group_start(ppu, spurs->spuTG);
+		cellSpurs.error("Thor: HLE SPURS group start (no handler exists) -> 0x%x", start_rc);
 	}
 
 	// Enable SPURS exception handler
