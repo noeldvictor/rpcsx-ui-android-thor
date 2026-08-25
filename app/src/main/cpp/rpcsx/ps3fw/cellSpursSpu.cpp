@@ -1054,6 +1054,20 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 // Activate a workload
 void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 {
+	// DMA IN, MODIFY LOCALLY, DMA OUT - what a real SPU does, and what this code
+	// was written for.
+	//
+	// LS 0x100 is SpursKernelContext::tempArea, a 128-byte scratch meant to hold
+	// the head of CellSpurs. Nothing refreshed it, so every read below saw the
+	// zeros spursKernelEntry memset there. This function computes
+	// ctxt->wklRunnable1 from spurs->wklState1, and wklRunnable1 is EXACTLY what
+	// the selector and the idle handler test - so a stale snapshot made every
+	// workload permanently unrunnable, which is the whole failure.
+	//
+	// Redirecting the reads to ctxt->spurs instead was tried and boot-looped the
+	// emulator twice; the code is written against a private copy. So refresh the
+	// copy here, and write the modified bytes back at the end.
+	std::memcpy(spu._ptr<void>(0x100), ctxt->spurs.get_ptr(), 128);
 	const auto spurs = spu._ptr<CellSpurs>(0x100);
 	std::memcpy(spu._ptr<void>(0x30000), ctxt->spurs->wklInfo1, 0x200);
 	if (spurs->flags1 & SF1_32_WORKLOADS)
@@ -1141,6 +1155,12 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 		}
 
 		std::memcpy(spu._ptr<void>(0x2D80), spurs->wklState1, 128);
+
+		// Write the modified snapshot back. wklStatus1/wklStatus2 and any
+		// SHUTTING_DOWN -> REMOVABLE transition above were applied to the local
+		// copy; without this they are discarded and the workload is never marked
+		// as taken by this SPU.
+		std::memcpy(ctxt->spurs.get_ptr(), spu._ptr<void>(0x100), 128);
 	} //);
 
 	if (wklShutdownBitSet)
