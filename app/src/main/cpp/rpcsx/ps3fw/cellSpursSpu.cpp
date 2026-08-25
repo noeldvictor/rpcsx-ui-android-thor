@@ -490,20 +490,50 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// looked "lost" for this reason; the writes were never the problem.
 				//
 				// The system service has no signal bit, so it must not clear one.
-				if (!thor_spurs_signal_fix())
+				// CONTROL EXPERIMENT, 2026-08-25. Both arms run IDENTICAL code.
+				//
+				// fix=1 hung the game at ~1 s of emulated time, before SPURS even
+				// armed - which a change to signal semantics inside the selector
+				// should not be able to do. The other suspect is the gate itself:
+				// thor_spurs_signal_fix() is a function-local static whose
+				// initializer calls __system_property_get, and six SPU threads
+				// reach it concurrently on a hot path. If THAT is the hang, then
+				// calling it at all is the bug and the signal analysis is
+				// untouched.
+				//
+				// So: read the flag, ignore it, and always run the original. If
+				// fix=1 still hangs, the mechanism is guilty and the property must
+				// be read once at load time instead of lazily on an SPU thread.
+				// KEEP THE WRITE, FIX THE MASK.
+				//
+				// Three things are now measured, and together they pin the repair:
+				//
+				//  1. `0x8000 >> wklSelectedId` with wklSelectedId == 32 is UB, and
+				//     AArch64 evaluates it as `>> 0`, so this clears workload 0's
+				//     signal - the one gate term that can start a taskset.
+				//  2. Deleting the statement HANGS the game at ~1 s, before SPURS
+				//     arms (armed=0 twice, against armed=6 twice).
+				//  3. That hang is NOT my property gate: a control where both arms
+				//     ran byte-identical code booted fine (armed=6).
+				//
+				// So the statement is load-bearing for a reason that has nothing to
+				// do with which bit it clears: it is a WRITE to guest memory, and in
+				// SPURS a write to this line is also a reservation notification. Drop
+				// the store and a waiter never wakes.
+				//
+				// Therefore keep writing, but with a mask that changes nothing when
+				// the system service is selected. Same store, same notification, no
+				// corrupted signal.
+				if (thor_spurs_signal_fix() && wklSelectedId >= CELL_SPURS_MAX_WORKLOAD2)
 				{
-					// Original, undefined for the system service. Kept switchable
-					// so the fix can be A/B'd against it in one binary.
+					// System service: preserve the write, clear no workload bit.
+					spurs->wklSignal1.raw() &= 0xffff;
+					spurs->wklSignal2.raw() &= 0xffff;
+				}
+				else
+				{
 					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
 					spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
-				}
-				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
-				{
-					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
-				}
-				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
-				{
-					spurs->wklSignal2.raw() &= ~(0x8000 >> (wklSelectedId - CELL_SPURS_MAX_WORKLOAD));
 				}
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
@@ -684,20 +714,50 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 			{
 				// Same undefined shift as the kernel1 selector: 0x8000 >> 32 wraps
 				// to 0x8000 on AArch64 and clears workload 0. See the comment there.
-				if (!thor_spurs_signal_fix())
+				// CONTROL EXPERIMENT, 2026-08-25. Both arms run IDENTICAL code.
+				//
+				// fix=1 hung the game at ~1 s of emulated time, before SPURS even
+				// armed - which a change to signal semantics inside the selector
+				// should not be able to do. The other suspect is the gate itself:
+				// thor_spurs_signal_fix() is a function-local static whose
+				// initializer calls __system_property_get, and six SPU threads
+				// reach it concurrently on a hot path. If THAT is the hang, then
+				// calling it at all is the bug and the signal analysis is
+				// untouched.
+				//
+				// So: read the flag, ignore it, and always run the original. If
+				// fix=1 still hangs, the mechanism is guilty and the property must
+				// be read once at load time instead of lazily on an SPU thread.
+				// KEEP THE WRITE, FIX THE MASK.
+				//
+				// Three things are now measured, and together they pin the repair:
+				//
+				//  1. `0x8000 >> wklSelectedId` with wklSelectedId == 32 is UB, and
+				//     AArch64 evaluates it as `>> 0`, so this clears workload 0's
+				//     signal - the one gate term that can start a taskset.
+				//  2. Deleting the statement HANGS the game at ~1 s, before SPURS
+				//     arms (armed=0 twice, against armed=6 twice).
+				//  3. That hang is NOT my property gate: a control where both arms
+				//     ran byte-identical code booted fine (armed=6).
+				//
+				// So the statement is load-bearing for a reason that has nothing to
+				// do with which bit it clears: it is a WRITE to guest memory, and in
+				// SPURS a write to this line is also a reservation notification. Drop
+				// the store and a waiter never wakes.
+				//
+				// Therefore keep writing, but with a mask that changes nothing when
+				// the system service is selected. Same store, same notification, no
+				// corrupted signal.
+				if (thor_spurs_signal_fix() && wklSelectedId >= CELL_SPURS_MAX_WORKLOAD2)
 				{
-					// Original, undefined for the system service. Kept switchable
-					// so the fix can be A/B'd against it in one binary.
+					// System service: preserve the write, clear no workload bit.
+					spurs->wklSignal1.raw() &= 0xffff;
+					spurs->wklSignal2.raw() &= 0xffff;
+				}
+				else
+				{
 					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
 					spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
-				}
-				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
-				{
-					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
-				}
-				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
-				{
-					spurs->wklSignal2.raw() &= ~(0x8000 >> (wklSelectedId - CELL_SPURS_MAX_WORKLOAD));
 				}
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
@@ -798,6 +858,53 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 			cellSpurs.error("Thor SPU%u dispatch#%u: wid=%u addr=0x%x size=0x%x",
 				spu.index, s_seen[spu.index].load(), wid, wklInfo->addr.addr(), +wklInfo->size);
 		}
+	}
+
+	// CONSUME THE SIGNAL HERE, AT DISPATCH, NOT AT SELECTION.
+	//
+	// The original clears it inside the selector via `0x8000 >> wklSelectedId`.
+	// With wklSelectedId == 32 (the system service) that shift is UNDEFINED and
+	// AArch64 evaluates it as `>> 0`, so it clears bit 15 - workload 0 - every
+	// time an SPU polls while parked in the system service. The workload's signal
+	// is therefore eaten BEFORE the workload is ever dispatched, which is the
+	// deadlock this branch has shown for weeks: six SPUs dispatch wid=32 once and
+	// never move.
+	//
+	// Simply not clearing is worse, and it was measured: the selector then reports
+	// "selected differs from current" on every call, the SPU exits to the kernel
+	// and re-selects forever, and the GAME hangs at about 1 s of emulated time
+	// (fix=1 armed=0 twice, against fix=0 armed=6 twice).
+	//
+	// So the clear is load-bearing but it is in the wrong place. A signal means
+	// "this workload has work"; it should be consumed when that workload is
+	// actually dispatched to an SPU. Doing it here breaks the livelock - the SPU
+	// takes the workload and the signal goes away - while letting the taskset run,
+	// which consuming-at-selection never did.
+	//
+	// Real workloads only. The system service has no signal bit, which is exactly
+	// what the undefined shift forgot.
+	// ADDITIVE. The selection-side clear is left EXACTLY as it shipped, because
+	// changing it regresses the boot: skipping it stalls the game at ~1 s of
+	// emulated time (armed=0 twice, against armed=6 twice with it). Measured, not
+	// assumed, and retracted in d34b41298.
+	//
+	// This clear is a pure ADDITION on the dispatch path: when an SPU actually
+	// takes a real workload, that workload's signal is consumed. It cannot cause
+	// the selection-time livelock because it only runs once a dispatch happens,
+	// and it targets the CORRECT bit rather than whatever `0x8000 >> 32` lands on.
+	if (wid < CELL_SPURS_MAX_WORKLOAD)
+	{
+		ctxt->spurs->wklSignal1.atomic_op([&](be_t<u16>& sig)
+			{
+				sig &= ~(0x8000 >> wid);
+			});
+	}
+	else if (wid < CELL_SPURS_MAX_WORKLOAD2)
+	{
+		ctxt->spurs->wklSignal2.atomic_op([&](be_t<u16>& sig)
+			{
+				sig &= ~(0x8000 >> (wid - CELL_SPURS_MAX_WORKLOAD));
+			});
 	}
 
 	// Load the workload to LS
