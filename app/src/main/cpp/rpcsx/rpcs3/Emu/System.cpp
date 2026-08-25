@@ -1613,6 +1613,42 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			// exist. Expect breakage: RPCS3 issue 9063 tracks HLE cellSpurs as
 			// incomplete. The point is to measure the CEILING of SPURS overhead.
 #ifdef __ANDROID__
+			// SPU BLOCK SIZE, overridable.
+			//
+			// Upstream defaults it to `safe`, the most conservative setting, and no
+			// Thor profile overrides it - so every measurement in this repo has run
+			// on `safe`. `mega` and `giga` compile larger SPU blocks and cut
+			// per-block dispatch overhead, which is worth knowing because simpleperf
+			// on this title puts 54.19% of ALL cycles in JIT-compiled guest code
+			// against 2.25% in the GPU driver.
+			//
+			// Applied here, beside hle_libs, because the managed profile rewrites
+			// the per-title yml and an edit made before that does not survive.
+			//
+			//   debug.rpcsx.thor.spu_block_size = safe | mega | giga
+			//
+			// Unset leaves the configured value untouched. Note each setting gets
+			// its own SPU cache file (spu-safe / spu-mega / spu-giga), so the first
+			// boot on a new value pays a full recompile and is not comparable.
+			{
+				char bs_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.spu_block_size", bs_value) > 0 && bs_value[0])
+				{
+					const std::string want(bs_value);
+
+					if (want == "safe" || want == "mega" || want == "giga")
+					{
+						g_cfg.core.spu_block_size.from_string(want);
+						sys_log.error("Thor: SPU Block Size forced to %s", want);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring SPU Block Size '%s' (expected safe|mega|giga)", want);
+					}
+				}
+			}
+
 			{
 				char hle_value[PROP_VALUE_MAX]{};
 
