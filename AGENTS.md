@@ -9771,3 +9771,51 @@ shift analysis was right and the conclusion drawn from it was wrong, and only th
 A/B separated them. Two earlier attributions this session failed the same way - a
 "different CellSpurs" theory and a harness collision misread as a regression -
 which is why this one was gated behind a property instead of asserted.
+
+# THE HLE SPURS BLOCKER IS A SMALL-OBJECT LEAK, NOT SPURS LOGIC
+
+Measured 2026-08-25, BLUS30357, same build, same device:
+
+```
+LLE control   peak 6714 MB   scudo OOM: 0    reaches emu 0:02:10, renders 30 fps
+HLE forced    peak 6728 MB   scudo OOM in size classes 144 / 176 / 192
+                             Process exited due to signal 9 (Killed)
+                             forcing=2  create_handler=0  handler_entry=0
+```
+
+**Peak memory is the same to within 0.2%.** HLE does not use more memory - it
+exhausts SPECIFIC small-object size classes while total usage matches the healthy
+path. Scudo caps each size class at 256 MB, and 256 MB / ~176 B is about **1.5
+million live objects**. That is an unbounded container or a leak on the HLE path,
+not compiler pressure.
+
+It is killed by SIGKILL **before `create_handler`**, i.e. before SPURS
+initialisation begins at all.
+
+## This retro-explains the entire day of HLE failures
+
+- deaths at 4 s, 13 s and 17 s: one failure, caught at different points in the
+  allocation ramp
+- processes vanishing with NO crash record: SIGKILL leaves none, which is why
+  `logcat -b crash` kept coming back empty
+- the earlier `scudo::reportInvalidChunkState` abort: the same allocator, stressed
+- BOTH selector probes reading zero: the code never ran, because the process died
+  before SPURS
+- and therefore why four "repair" A/Bs were worthless - they were measuring an
+  OOM, not a signal change
+
+## What NOT to do next
+
+`spu_cache_worker_limit` / `spu_cache_preload_limit` / `compile_budget_ms` were
+tried and made it die EARLIER. They bound SPU cache preload, and `create_handler=0`
+proves death happens before SPURS work starts, so they cannot be the lever.
+
+## What to do next
+
+Find the container. Scudo size classes 144-192 B, ~1.5 M objects, on a path taken
+only when `hle_libs` forces libsre.sprx to HLE. Candidates worth checking before
+guessing: the per-SPU HLE function map (`RegisterHleFunction`, which this fork
+made thread_local), anything per-workload or per-task allocated during HLE module
+load, and any queue that the LLE path drains but the HLE path does not.
+
+Total RAM is NOT the signal - it is normal. Watch the size-class OOM lines.
