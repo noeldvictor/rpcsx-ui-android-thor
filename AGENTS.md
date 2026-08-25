@@ -9866,3 +9866,58 @@ could be read. Copy RPCSX.log off the device immediately after the crash, before
 the next boot recreates it. Then disassemble the taskset policy module at
 `SPURS_IMG_ADDR_TASKSET_PM` (0x200) with Ghidra to see what `spursTasksetEntry`
 must implement.
+
+# HLE SPURS BREAKTHROUGH: the taskset workload dispatches for the first time
+
+2026-08-25, with `debug.rpcsx.thor.spurs_signal_fix=1`:
+
+```
+Thor SPU1 dispatch#1: wid=32 addr=0x100     <- system service, as always
+Thor SPU2 dispatch#2: wid=0  addr=0x200     <- SPURS_IMG_ADDR_TASKSET_PM
+Thor SPU0 dispatch#2: wid=32 addr=0x100
+...
+CPU Thread 'SPU[0x0000100] CellSpursKernel0' terminated abnormally!   signal 11
+```
+
+**`wid=0 addr=0x200` is the taskset policy module.** Every previous run on this
+branch dispatched `wid=32 addr=0x100` once per SPU and never moved. This is the
+first time an SPU has left the system service.
+
+So the shift fix is correct and it works:
+
+  `0x8000 >> wklSelectedId` with wklSelectedId == 32 is undefined, AArch64
+  evaluates it as `>> 0`, and it cleared workload 0's signal on every poll -
+  the only live term in the selection gate. Guarding the sentinel lets the
+  signal survive, selection picks the real workload, and dispatch registers
+  `spursTasksetEntry` at 0xA00.
+
+## And it reframes every "failed" A/B in this session
+
+fix=1 failed 12/12 and I read that as a regression, then as run order, then as an
+allocator leak. It was none of those: **the arm crashes BECAUSE it makes
+progress.** It dispatches into taskset code this HLE implementation does not
+fully provide, and faults ~20 ms later. A harness that scores "did it boot" marks
+that as worse than a deadlock that boots cleanly forever.
+
+**Scoring a repair by whether the boot survives will always prefer the deadlock.**
+Score by how far the state machine gets - here, by whether a `wid != 32` dispatch
+appears.
+
+## Next, and this is where Ghidra returns
+
+The fault is in taskset policy-module code. In HLE, 0x200 is only a MARKER -
+there is no guest code to read - but the real implementation exists as SPU code
+inside `libsre.sprx` (114,254 bytes, present in dev_flash), and in LLE the SPU
+loads it into local store at **0xA00**.
+
+Dump that LS window during live LLE combat and disassemble it, exactly as
+`chunk-0x0f3c4` was proven to be 96.84% of `CellSpursKernel0`:
+
+```
+tools/ghidra_scripts/DumpMemoryRange.java        capture LS 0xA00
+tools/ghidra_scripts/DisassembleSpuWindows.java  disassemble the window
+```
+
+That gives the reference implementation `spursTasksetEntry` must match, which is
+the difference between guessing at the crash and reading what the code is
+supposed to do.
