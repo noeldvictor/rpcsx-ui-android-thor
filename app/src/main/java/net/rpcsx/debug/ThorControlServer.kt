@@ -270,8 +270,26 @@ object ThorControlServer {
         // "not a movie" was wrong.
         val neverUsed = raw.contains("\"vdecUnits\":0")
 
+        // DRAW COUNT closes the gap cellVdec leaves. A movie is a fullscreen
+        // quad whatever the container, so this works for titles that decode on
+        // the SPUs and never touch cellVdec - which is the case that used to
+        // return "unknown" and leave a 3D gate resting on coresBusy alone.
+        // Parsed by substring rather than Regex: the JSON here is emitted by
+        // sceneInfo() one field at a time, and a literal backslash class in a
+        // Kotlin string is easy to get wrong for no benefit.
+        val draws = raw.substringAfter("\"drawsLastFrame\":", "")
+            .takeWhile { it.isDigit() }
+            .toIntOrNull()
+        val activity = raw.substringAfter("\"drawActivity\":\"", "")
+            .substringBefore('"', "")
+            .ifEmpty { null }
+
         val advice = when {
             playing -> "movie"
+            activity == "no-draws" -> "not-rendering"
+            activity == "fullscreen-quad-like" -> "movie-or-fullscreen-image"
+            activity == "menu-or-simple" -> "menu-or-simple-scene"
+            activity == "scene" -> "rendering-a-scene"
             neverUsed -> "unknown-this-title-never-calls-cellVdec"
             else -> "no-video-decoding-right-now"
         }
@@ -280,6 +298,10 @@ object ThorControlServer {
                 "a MOVIE is playing: the guest holds a video container open. vdecUnits stays 0 " +
                 "because this title decodes it on the SPUs (Bink), not through cellVdec."
             playing -> "a MOVIE is playing: the guest is decoding video through cellVdec"
+            neverUsed && activity != null ->
+                "cellVdec never fires for this title (it decodes video on the SPUs, Bink and similar), so the " +
+                "video fields say nothing. drawsLastFrame=${draws ?: -1} is the usable signal: a fullscreen movie " +
+                "quad is a handful of draws, a 3D scene is hundreds."
             neverUsed -> "this title decodes its own video on the SPUs (Bink and similar), so cellVdec " +
                 "never fires and this probe CANNOT see its movies. Judge from the screenshot, and pause first."
             else -> "cellVdec is used by this title but is idle now; an engine cutscene is still not detected here"
@@ -287,7 +309,7 @@ object ThorControlServer {
 
         val inner = if (raw.length > 2) raw.trim().removePrefix("{").removeSuffix("}") else ""
         val sep = if (inner.isEmpty()) "" else ","
-        return """{$inner$sep"advice":"$advice","reliable":${playing || !neverUsed},"note":"${esc(note)}"}"""
+        return """{$inner$sep"advice":"$advice","reliable":${playing || !neverUsed || activity != null},"note":"${esc(note)}"}"""
     }
 
     /**

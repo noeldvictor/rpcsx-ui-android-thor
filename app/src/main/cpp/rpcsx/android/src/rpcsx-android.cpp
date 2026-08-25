@@ -2718,13 +2718,22 @@ extern "C" std::string _rpcsx_sceneInfo() {
                        : open_files ? "open-video-file"
                                     : "none";
 
+  // DRAW COUNT, so this probe can see movies neither cellVdec nor a filename
+  // can. BLUS30357 packs its Bink video inside UE3 archives and decodes it on
+  // the SPUs, so `source` is "none" and `videoDecoding` is false THROUGHOUT its
+  // movies - both correct, both useless. A fullscreen movie quad and a 3D scene
+  // differ by two orders of magnitude in draws, whatever the container.
+  const u32 draws = thor::g_last_frame_draws.load();
+
   return fmt::format(
       "{\"videoDecoding\":%s,\"source\":\"%s\",\"videoFilesOpen\":%u,"
-      "\"videoFile\":\"%s\",\"vdecUnits\":%llu,\"vdecAgeMs\":%lld}",
+      "\"videoFile\":\"%s\",\"vdecUnits\":%llu,\"vdecAgeMs\":%lld,"
+      "\"drawsLastFrame\":%u,\"drawActivity\":\"%s\"}",
       thor::video_playing() ? "true" : "false", source, open_files,
       name ? *name : std::string(),
       thor::g_vdec_units.load(),
-      age == umax ? -1LL : static_cast<s64>(age / 1000));
+      age == umax ? -1LL : static_cast<s64>(age / 1000),
+      draws, thor::draw_activity(draws));
 }
 
 extern "C" bool _rpcsx_surfaceEvent(JNIEnv *env, jobject surface, jint event) {

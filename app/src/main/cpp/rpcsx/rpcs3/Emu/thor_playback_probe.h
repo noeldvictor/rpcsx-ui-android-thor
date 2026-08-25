@@ -89,6 +89,40 @@ namespace thor
 	// a much better one than any frame rate.
 	// ---------------------------------------------------------------------
 	inline std::atomic<u32> g_video_files_open{0};
+
+	// DRAW CALLS IN THE LAST COMPLETED FRAME.
+	//
+	// `path_is_video` and cellVdec both MISS this device's most important title.
+	// BLUS30357 is Unreal Engine 3: its Bink video is packed inside archives, so
+	// no `.bik` path is ever opened, and it decodes on the SPUs, so cellVdec never
+	// fires. `/scene` correctly reported "unknown-this-title-never-calls-cellVdec"
+	// and could say nothing more, which left `coresBusy > 4.5` carrying an entire
+	// 3D gate on its own.
+	//
+	// Draw count does not care how the video arrives. A movie is a fullscreen
+	// quad - a handful of draws a frame - while this title's 3D combat submits
+	// hundreds. That separation is large, and it is engine-independent, so it
+	// works for titles whose movies no probe can otherwise see.
+	//
+	// Written once per flip from `m_frame_stats.draw_calls` just before RSXThread
+	// resets it, so it is the LAST COMPLETE frame rather than one being built.
+	inline std::atomic<u32> g_last_frame_draws{0};
+
+	inline void frame_completed(u32 draw_calls) noexcept
+	{
+		g_last_frame_draws.store(draw_calls, std::memory_order_relaxed);
+	}
+
+	// Deliberately wide. The point is to separate "a few quads" from "a scene",
+	// not to name a genre, and a threshold that tries to be precise here would be
+	// tuned to one title and wrong on the next.
+	inline const char* draw_activity(u32 draws) noexcept
+	{
+		if (draws == 0) return "no-draws";
+		if (draws <= 8) return "fullscreen-quad-like";
+		if (draws <= 40) return "menu-or-simple";
+		return "scene";
+	}
 	inline std::atomic<u64> g_video_opened_us{0};
 	inline atomic_ptr<std::string> g_video_name{};
 

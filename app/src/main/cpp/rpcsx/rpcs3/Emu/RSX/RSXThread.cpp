@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/thor_playback_probe.h"
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
 #endif
@@ -3297,6 +3298,11 @@ namespace rsx
 			Emu.Pause();
 			thread_ctrl::wait_for(30'000);
 		}
+
+		// Snapshot before the reset: /scene reports draws of the LAST COMPLETE
+		// frame, which is what separates a fullscreen movie quad from a scene in
+		// titles whose video no probe can see. See thor_playback_probe.h.
+		thor::frame_completed(m_frame_stats.draw_calls);
 
 		// Reset current stats
 		m_frame_stats = {};
