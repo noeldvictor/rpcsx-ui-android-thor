@@ -9675,3 +9675,71 @@ has reached, or its cause is outside the mechanisms enumerated here.
 **Reproduction has cost about 92 controlled sessions.** The injectors stay,
 because a negative that is reproducible is worth keeping, and each is one
 property away from being re-run against a new idea.
+
+# BUG CLASS: Shift By A Variable That Can Reach The Register Width
+
+Found 2026-08-25 in `cellSpursSpu.cpp`, and it had hidden HLE SPURS for weeks.
+
+```cpp
+spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);   // wklSelectedId can be 32
+```
+
+C says a shift by >= the promoted operand's width is UNDEFINED. What ARM64
+actually does is worse than a trap, because it looks like it works:
+
+- **A64 `LSR`/`LSL`/`ASR` take the shift amount MODULO the register width** -
+  bits[4:0] for the 32-bit form, bits[5:0] for the 64-bit form.
+- So `0x8000 >> 32` is assembled as a 32-bit shift by `32 & 31` = **0**, and
+  evaluates to `0x8000` rather than the 0 the author assumed.
+
+The line therefore became `wklSignal1 &= ~0x8000`, silently clearing workload 0's
+signal - the ONE term that can start a taskset workload, since `wklFlag` reads
+0xFFFFFFFF and `readyCount` is 0. Its guard is
+`!isPoll || wklSelectedId == ctxt->wklCurrentId`, both 32 once an SPU parks in the
+system service, so **six SPUs erased that bit on every poll**. Being stuck in the
+system service was what triggered the clear that prevented ever leaving it.
+
+x86 has the same modulo behaviour (`SHR` masks the count to 5 or 6 bits), so this
+is not ARM-specific in principle - but it bites here because this is where HLE
+SPURS actually runs, and because `wklSelectedId == 32` is the NORMAL state on
+this path rather than an edge case.
+
+## How to find the rest
+
+The dangerous shape is a shift by an **id that has a sentinel value at or above
+the register width**. In SPURS that sentinel is
+`CELL_SPURS_SYS_SERVICE_WORKLOAD_ID = 32` against 32-bit masks:
+
+```sh
+grep -nE '(<<|>>) *(wklSelectedId|wklCurrentId)' ps3fw/cellSpursSpu.cpp
+```
+
+Audited the whole selector after the fix: every OTHER use of `wklSelectedId`
+guards the sentinel explicitly -
+
+```cpp
+if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID) contention[wklSelectedId]++;
+if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID) ctxt->wklLocContention[wklSelectedId] = 1;
+```
+
+which matters twice over: it confirms the signal clear was the unique unguarded
+site, and it shows the array writes are NOT out of bounds even though
+`contention[]` and `wklLocContention[]` hold only 16 entries. I checked that
+before claiming a second bug, and there isn't one.
+
+`wid`-indexed shifts elsewhere in `cellSpurs.cpp` are safe: every one is behind a
+`wid >= CELL_SPURS_MAX_WORKLOAD2` validation, so the count stays <= 31.
+
+## The lesson that generalises beyond shifts
+
+Two "fixes" to the WRITE side - `vm::light_op` to a direct `atomic_op` - both
+read back 0 and both looked like failures. **Neither write was ever broken.** A
+reader elsewhere was erasing the value microseconds later. What separated the two
+explanations was logging INSIDE the atomic operation as well as after it:
+
+```
+inside=<what the op saw>   readback=<same field, one line later>
+```
+
+When a store "does not stick", prove whether it happened before you go looking at
+addressing, endianness or memory ordering.
