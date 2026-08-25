@@ -10011,3 +10011,78 @@ property `debug.rpcsx.thor.spu_block_size = safe|mega|giga` is for sweeps and no
 canonicalizes case and verifies the result; note each size keeps its OWN SPU
 cache file, so the first boot on a new value pays a full recompile and its number
 must be discarded.
+
+# SPU Block Size Is A DEVICE Default Now, Not A Per-Title Secret
+
+`system_config.h` defaults `SPU Block Size` to **Mega under `__ANDROID__`** and
+leaves Safe everywhere else. Nobody should have to know this setting exists.
+
+The reason it can be a device default rather than a per-title one is that the
+mechanism is architectural: larger recompiler blocks trade compile time for fewer
+block dispatches, and dispatch costs relatively more on this ARM64 SoC than on
+the x86 desktops where Safe was chosen. **That is also why RPCS3's PC profiles do
+not transfer to this device** - they encode a different tradeoff, and the
+community has no Snapdragon 8 Gen 2 data because the hardware is too new.
+
+Evidence base is ONE title (+16.5%, BLUS30357). The mechanism is general, the
+measurement is not, so this is a default and not a law:
+
+- a per-title profile in `GameSettingsDatabase.kt` can set `Safe`
+- `debug.rpcsx.thor.spu_block_size = safe` reverts it with no rebuild
+- anything measured to regress belongs in the profile, with its numbers
+
+## Can we auto-detect the right value from the game?
+
+**Not from the ISO, and it is worth knowing why before someone tries.** The
+setting changes how the SPU recompiler forms blocks. Whether that pays depends on
+the branch structure and dispatch frequency of SPU code that is loaded at runtime
+by SPURS as job binaries - it is not a property of the disc, the SFO, the title
+ID, or the EBOOT. There is no static feature that predicts it.
+
+What is actually available, cheapest first:
+
+1. **A good default plus a measured exception list.** What is implemented. It
+   costs the user nothing and is right whenever the mechanism holds.
+2. **Failure fallback.** If a title breaks under Mega, record Safe for that title
+   and never ask again. This is the honest form of "auto" - detect the failure,
+   not the suitability. NOT implemented.
+3. **On-device calibration.** Boot the title twice and keep the faster arm. It is
+   the only method that truly measures, and it costs two full SPU recompiles
+   (about ten minutes each on a cold cache) before the user plays anything. Only
+   worth offering as an explicit "tune this game" action, never automatically.
+
+Do not attempt a heuristic over ISO contents. It would look principled and be
+guessing.
+
+## Giga is not the next step up
+
+Tried 2026-08-25 with a discarded warm-up boot, the way Mega was. Both the
+warm-up and the arm reported **never rendered**: the cold Giga cache does not
+finish compiling inside a 600 s window. Mega arms in the same round were fine at
+19.17 and 19.39. Giga is not adoptable until that compile cost is solved.
+
+## Caveat: a persisted config.yml beats the compiled default
+
+`files/config/config.yml` stores every setting, and on an existing install it
+already reads:
+
+```
+  SPU Block Size: Safe
+```
+
+written from the OLD default. A compiled default only applies where no value has
+been persisted, so **changing `system_config.h` alone does nothing for anyone who
+already has this build installed.** What actually reaches those devices is the
+per-title entry in `GameSettingsDatabase.kt`, because a custom per-title config
+overrides the global one - which is why that entry is kept even though it now
+names the same value as the default.
+
+Three ways a device ends up on Mega, in order of how much they cover:
+
+1. per-title profile (`GameSettingsDatabase.kt`) - works today, existing installs
+2. compiled default (`system_config.h`) - fresh installs only
+3. `adb shell setprop debug.rpcsx.thor.spu_block_size mega` - a sweep, one boot
+
+Do NOT "migrate" config.yml by rewriting a persisted Safe to Mega. There is no
+way to tell a stale default apart from a deliberate user choice, and silently
+overwriting the second one is worse than leaving the first.

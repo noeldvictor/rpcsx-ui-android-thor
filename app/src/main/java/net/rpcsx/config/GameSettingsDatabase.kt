@@ -133,11 +133,16 @@ object GameSettingsDatabase {
             # interpreted shader and compiles the real one behind it, which trades a
             # little steady-state cost for not freezing.
             #
-            # No Core tuning here on purpose. A 25 s profile of this title puts 29.37%
-            # of cycles in guest SPU code and 10.71% in rsx::thread::run_FIFO, with
-            # vm::writer_lock at 1.24% and spu_thread::process_mfc_cmd at 1.05%. It is
-            # NOT reservation-bound the way Eternal Sonata is, so that title's Core
-            # settings do not apply and are deliberately not copied.
+            # SUPERSEDED 2026-08-25. This used to read "No Core tuning here on
+            # purpose", citing vm::writer_lock at 1.24%. A symbolized 146,125-sample
+            # profile of RESTORED 3D COMBAT - rather than of whatever scene the old
+            # capture landed in - disagrees on every figure: six SPU threads are
+            # 71.4% of all cycles, 55% of everything is JIT-compiled guest code, and
+            # vm::writer_lock is 11.47%, the largest named symbol in the emulator.
+            # See debug-captures/perf/combat-profile-20260825.txt.
+            #
+            # Eternal Sonata's Core settings still are not copied, but the reason is
+            # no longer "this title is not reservation-bound" - it is.
             #
             # The first boot costs about ten minutes of PPU LLVM compilation across six
             # workers. That is the size of this EBOOT, not a setting. The cache is
@@ -161,6 +166,28 @@ object GameSettingsDatabase {
             # held 30.00 FPS, and reached the "Press START button" title screen, which
             # it had never got to before.
             Core:
+              # SPU Block Size: Mega. MEASURED +16.5% in restored 3D combat,
+              # 2026-08-25, and the first non-null after roughly 28 levers.
+              #
+              #   controlA 16.60  controlB 16.44   control pair agrees to 1.0%
+              #   mega1    19.14  mega2    19.34   mega pair agrees to 1.0%
+              #
+              # Mean 16.52 -> 19.24. The arms do not overlap - the highest control
+              # is below the lowest mega - and the runs were interleaved, so run
+              # order cannot explain it. A third round reproduced it at 19.17.
+              #
+              # WHY THIS AND NOT A WAIT LEVER. A wait-site census puts every host
+              # busy-wait together at 7.7% of busy CPU, so the whole class was
+              # incapable of paying. The profile puts 55% of cycles in JIT-compiled
+              # guest code, and block size is the only setting that touches it:
+              # larger recompiler blocks mean fewer dispatches and more optimisation
+              # across branch boundaries.
+              #
+              # Each size keeps its OWN SPU cache file, so the first boot after
+              # changing this pays a full SPU recompile and is not representative.
+              # Giga was tried and its cold cache did not finish compiling inside a
+              # 600 s window, so it is not adopted here.
+              SPU Block Size: Mega
               RSX FIFO Accuracy: Atomic
               # Accurate SPU Reservations stays ON. Reverted 2026-08-23.
               #

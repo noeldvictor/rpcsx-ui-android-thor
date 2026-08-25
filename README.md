@@ -222,9 +222,43 @@ frozen picture. Its profile now sets `RSX FIFO Accuracy: Atomic`, which runs pas
 that point and reaches the menus, plus a 30 FPS cap and Async with Shader
 Interpreter for the compile stutter.
 
-Profiling then showed VM range locking at **29.1% of all cycles**, so its profile
-also sets `Accurate SPU Reservations: false`: **-8.4% CPU at identical frames**,
-measured on a state reachable identically every run.
+Profiling showed VM range locking at **29.1% of all cycles**, and its profile
+briefly set `Accurate SPU Reservations: false` for **-8.4% CPU at identical
+frames**. That was **reverted on 2026-08-23 and the profile now sets `true`**:
+this title halts its own SPU inside `CellSpursKernel0`, and relaxing reservation
+accuracy is documented upstream as causing exactly that class of freeze. -8.4%
+CPU is not worth a freeze on a title that already halts.
+
+Note what "at identical frames" concealed: that measurement was taken at the
+title screen, which is **capped at 30 FPS**, so both arms were pinned against the
+cap and the frame-rate column could not move. It was never evidence about
+gameplay speed.
+
+### The setting that actually made it faster: SPU Block Size
+
+**+16.5% in 3D combat**, and for this game you do not have to do anything - its
+profile sets it. It is also the compiled default on Android now, though note that
+an install which already has a `config.yml` keeps the `Safe` written there, so the
+per-game profile is what actually reaches existing devices.
+
+    control  16.60 / 16.44 FPS        Mega  19.14 / 19.34 FPS
+
+Interleaved, with a control pair, and the arms do not overlap. RPCS3 defaults
+this to `Safe`, which is the right choice on a PC; larger recompiler blocks trade
+compile time for fewer block dispatches, and dispatch costs relatively more on
+Thor's ARM64 chip than on an x86 desktop. **This is the clearest example of why
+RPCS3's PC profiles do not transfer to this device** - and why there is no
+community data to copy, since the Snapdragon 8 Gen 2 is too new.
+
+It took about 28 failed attempts to find, and the failures are the useful part. A
+census of every busy-wait in the emulator came to **7.7% of busy CPU**, so the
+entire class of "make waiting cheaper" tweaks could never have paid, no matter how
+well argued. A symbolized profile put **55% of cycles in JIT-compiled guest code**
+and 71.4% in six SPU threads. Block size is the only setting that touches that.
+
+`Giga` is not a further step: its cold cache never finished compiling and the
+game did not render. If a game misbehaves, `Safe` can be restored per title, or
+globally with `adb shell setprop debug.rpcsx.thor.spu_block_size safe`.
 
 The driver wake-up delay is **50 us** alongside Atomic FIFO, which is what the
 RPCS3 community recommends for this engine, and it measured free here (0.4% CPU,

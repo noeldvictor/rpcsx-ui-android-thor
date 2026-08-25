@@ -46,7 +46,42 @@ struct cfg_root : cfg::node
 		cfg::_int<0, 16> spu_delay_penalty{this, "SPU delay penalty", 3};              // Number of milliseconds to block a thread if a virtual 'core' isn't free
 		cfg::_bool spu_loop_detection{this, "SPU loop detection", false};              // Try to detect wait loops and trigger thread yield
 		cfg::_int<1, 6> max_spurs_threads{this, "Max SPURS Threads", 6, true};         // HACK. If less then 6, max number of running SPURS threads in each thread group.
+		// SPU Block Size defaults to MEGA on this device, not Safe.
+		//
+		// Upstream's Safe default is the right call on a PC. It is the wrong one
+		// here, and the reason is architectural rather than per-title: larger
+		// recompiler blocks trade compile time for fewer block dispatches, and
+		// dispatch is relatively far more expensive on this ARM64 SoC than on the
+		// x86 desktops the default was chosen on.
+		//
+		// MEASURED 2026-08-25, BLUS30357 restored 3D combat, interleaved with a
+		// control pair, the setting proven engaged from the SPU cache artifact and
+		// the effective-config dump:
+		//
+		//   control 16.60 / 16.44      mega 19.14 / 19.34      +16.5%
+		//
+		// The arms do not overlap and a later round reproduced mega at 19.17/19.39.
+		// It is the first non-null after roughly 28 levers, all of which tuned
+		// waiting - which a census caps at 7.7% of busy CPU - while 55% of cycles
+		// are JIT-compiled guest code that only this setting touches.
+		//
+		// EVIDENCE BASE IS ONE TITLE. The mechanism is general, the measurement is
+		// not, so this is a default and not a law: a per-title profile in
+		// GameSettingsDatabase.kt can set Safe, and
+		// `debug.rpcsx.thor.spu_block_size = safe` reverts it on any device without
+		// a rebuild. Anything found to regress belongs in the profile, with numbers.
+		//
+		// GIGA IS NOT THE NEXT STEP. Tried the same day: its cold cache did not
+		// finish compiling inside a 600 s window, twice, so the title never
+		// rendered. Do not adopt it without solving that first.
+		//
+		// Guarded on `__ANDROID__`, which the compiler predefines, NOT `ANDROID`,
+		// which not every CMake target in this tree receives.
+#ifdef __ANDROID__
+		cfg::_enum<spu_block_size_type> spu_block_size{this, "SPU Block Size", spu_block_size_type::mega};
+#else
 		cfg::_enum<spu_block_size_type> spu_block_size{this, "SPU Block Size", spu_block_size_type::safe};
+#endif
 		cfg::_bool spu_accurate_dma{this, "Accurate SPU DMA", false};
 		cfg::_bool spu_accurate_reservations{this, "Accurate SPU Reservations", true};
 		cfg::_bool accurate_cache_line_stores{this, "Accurate Cache Line Stores", false};
