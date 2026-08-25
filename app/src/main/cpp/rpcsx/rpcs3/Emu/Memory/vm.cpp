@@ -22,6 +22,7 @@
 #include "util/serialization.hpp"
 #include "util/thor_wait_profiler.h"
 #include "Emu/Memory/thor_vm_writer_lock.h"
+#include "Emu/Memory/thor_vm_range_lock.h"
 
 #include <thread>
 
@@ -394,7 +395,22 @@ namespace vm
 				perf0.restart();
 			}
 
-			thor_wait::profiled_busy_wait(thor_wait::site::vm_range_lock, 200);
+			// Park, or poll. See Emu/Memory/thor_vm_range_lock.h: the 200 here is
+			// 10.4 us on this device's 19.2 MHz counter, not 200 cycles, and it is
+			// spent at full issue rate re-reading cntvct_el0.
+			if (const u32 park_after = thor::vm_range_lock::wfe_after();
+				park_after && i >= park_after)
+			{
+				// Record the entry so the census still counts this wait, then sleep
+				// on the bitmap a releasing writer has to touch. Only reached once
+				// the wait is already long: the event-stream fallback is ~95 us.
+				thor_wait::record(thor_wait::site::vm_range_lock, 0);
+				rx::spin_on_cacheline_once(g_range_lock_bits[1], g_range_lock_bits[1].observe(), 0);
+			}
+			else
+			{
+				thor_wait::profiled_busy_wait(thor_wait::site::vm_range_lock, thor::vm_range_lock::cycles());
+			}
 
 			if (i >= 2 && !_cpu)
 			{
@@ -2345,6 +2361,9 @@ namespace vm
 
 		auto mem_lock = &*std::prev(std::end(vm::g_range_lock_set));
 
+		// Retry counter, so the WFE park below can wait until a hold is long.
+		u64 spins = 0;
+
 		while (true)
 		{
 			range_lock->store(begin | (u64{size} << 32));
@@ -2404,7 +2423,24 @@ namespace vm
 			// Wait a bit before accessing global lock
 			range_lock->release(0);
 
-			thor_wait::profiled_busy_wait(thor_wait::site::vm_range_lock, 200);
+			spins++;
+
+			// Park, or poll. See Emu/Memory/thor_vm_range_lock.h: the 200 here is
+			// 10.4 us on this device's 19.2 MHz counter, not 200 cycles, and it is
+			// spent at full issue rate re-reading cntvct_el0.
+			if (const u32 park_after = thor::vm_range_lock::wfe_after();
+				park_after && spins >= park_after)
+			{
+				// Record the entry so the census still counts this wait, then sleep
+				// on the bitmap a releasing writer has to touch. Only reached once
+				// the wait is already long: the event-stream fallback is ~95 us.
+				thor_wait::record(thor_wait::site::vm_range_lock, 0);
+				rx::spin_on_cacheline_once(g_range_lock_bits[1], g_range_lock_bits[1].observe(), 0);
+			}
+			else
+			{
+				thor_wait::profiled_busy_wait(thor_wait::site::vm_range_lock, thor::vm_range_lock::cycles());
+			}
 		}
 
 		const bool result = try_access_internal(begin, ptr, size, is_write);
