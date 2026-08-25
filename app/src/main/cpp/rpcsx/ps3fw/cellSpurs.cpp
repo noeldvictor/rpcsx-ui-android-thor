@@ -794,24 +794,81 @@ static bool get_thor_hle_spurs_kernel_enabled() noexcept
 #endif
 }
 
+// Register the handler entry as an HLE function so it has a guest-callable
+// address. MUST be namespace scope: ppu_function_manager allocates one block for
+// the whole registered list, and a function added after that allocation would
+// have an address past the end of it.
+static const u32 s_thor_spurs_handler_index =
+	ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry));
+
 s32 _spurs::create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority)
 {
-	struct handler_thread : ppu_thread
+	// THE HANDLER THREAD, rebuilt against today's API.
+	//
+	// This function was a no-op returning CELL_OK for a thread it never created,
+	// so cellSpursInitialize reported success and the SPURS group was never
+	// started - the handler is the ONLY caller of sys_spu_thread_group_start for
+	// it (see the loop at the top of this file). The original code is disabled
+	// because it used `non_task()`, gone from ppu_thread, and the old
+	// `ppu_thread(name, prio, stack)` constructor, now
+	// `ppu_thread(const ppu_thread_params&, name, prio, detached)`.
+	//
+	// A host function is reached from a PPU thread the same way any HLE call is:
+	// register it, take its guest code address, and use that as the entry. The
+	// shape below follows _sys_ppu_thread_create in cellos/src/sys_ppu_thread.cpp.
+	//
+	// Gated so the default path keeps the old no-op behaviour exactly.
+	if (get_thor_hle_spurs_kernel_enabled())
 	{
-		using ppu_thread::ppu_thread;
+		const u32 code = g_fxo->get<ppu_function_manager>().func_addr(s_thor_spurs_handler_index, true);
 
-		void non_task()
+		if (!code)
 		{
-			// BIND_FUNC(_spurs::handler_entry)(*this);
+			cellSpurs.error("Thor: SPURS handler has no guest address (index %u)", s_thor_spurs_handler_index);
+			return CELL_OK;
 		}
-	};
 
-	// auto eht = idm::make_ptr<ppu_thread, handler_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr0", ppuPriority, 0x4000);
+		const vm::addr_t stack{vm::alloc(0x4000, vm::stack, 4096)};
 
-	// spurs->ppu0 = eht->id;
+		if (!stack)
+		{
+			cellSpurs.error("Thor: SPURS handler stack allocation failed");
+			return CELL_OK;
+		}
 
-	// eht->gpr[3] = spurs.addr();
-	// eht->run();
+		const std::string name = std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr0";
+
+		const u32 tid = idm::import<named_thread<ppu_thread>>([&]()
+		{
+			ppu_thread_params p{};
+			p.stack_addr = stack;
+			p.stack_size = 0x4000;
+			p.tls_addr = 0;
+			p.entry = ppu_func_opd_t{code, 0};
+			p.arg0 = spurs.addr();
+			p.arg1 = 0;
+
+			return stx::make_shared<named_thread<ppu_thread>>(p, name, ppuPriority, 0);
+		});
+
+		if (!tid)
+		{
+			vm::dealloc(stack);
+			cellSpurs.error("Thor: SPURS handler thread creation failed");
+			return CELL_OK;
+		}
+
+		spurs->ppu0 = tid;
+
+		if (const auto thread = idm::get_unlocked<named_thread<ppu_thread>>(tid))
+		{
+			thread->state -= cpu_flag::stop;
+			thread->state.notify_one();
+		}
+
+		cellSpurs.error("Thor: SPURS handler thread created and started (id=0x%x, entry=0x%x)", tid, code);
+		return CELL_OK;
+	}
 
 	return CELL_OK;
 }
