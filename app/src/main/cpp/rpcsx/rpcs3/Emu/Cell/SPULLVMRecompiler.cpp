@@ -183,12 +183,44 @@ static u32 get_thor_spu_dec_cache() noexcept
 		//
 		// Anything tried here must keep the title booting to gameplay. A hang at
 		// near-zero CPU, or a STOP 0x0, means time stopped advancing for the guest.
-		if (false && __system_property_get("debug.rpcsx.thor.spu_dec_cache", value) > 0 && value[0])
+		// RE-ENABLED, with N BOUNDED BY THE TICK PERIOD.
+		//
+		// Measured on the Thor, on core 7, 2,000,000 reads each:
+		//
+		//   CNTFRQ_EL0    19,200,000 Hz  ->  one tick = 52.08 ns
+		//   cntvct_el0    36.87 ns/read  ->  118 cycles at 3.2 GHz
+		//   clock_gettime 54.07 ns       ->  no cheaper source
+		//   cntpct_el0, cntvctss_el0     ->  TRAP, unavailable
+		//
+		// THE COUNTER IS COARSER THAN THE READ THAT SAMPLES IT. Back-to-back reads
+		// land inside the same tick, so a cache whose window is shorter than one
+		// tick returns the TRUE value every time - the counter provably cannot
+		// have advanced. That is exactness, not approximation, and it is what
+		// separates this from the three attempts that disabled the feature.
+		//
+		// Those failed - frozen cache hung at 1.2% CPU, interpolation killed SPU
+		// threads with STOP 0x0 - and the property accepted N up to 4096. A cached
+		// read is a load and a compare, a few ns; at N=256 the window is close to a
+		// microsecond, twenty ticks, and guest time appears to STOP. That is
+		// failure mode one exactly. The feature was not wrong, the N was.
+		//
+		// So the bound is now the measurement: cached window must stay under one
+		// 52.08 ns tick, which caps N at 8. Anything larger is refused rather than
+		// silently clamped, because a too-large N looks identical to a hang.
+		//
+		//   debug.rpcsx.thor.spu_dec_cache = 2 | 4 | 8   (0 or unset = off)
+		//
+		// WHY IT MATTERS: Ghidra puts 96.84% of CellSpursKernel0 in a 2400-
+		// iteration backoff whose body is one `rdch ch8`. At 118 cycles a read that
+		// loop costs ~88 us, where a real SPU's few-cycle read makes it ~3 us. The
+		// loop is 30x too slow because of this one instruction.
+		if (__system_property_get("debug.rpcsx.thor.spu_dec_cache", value) > 0 && value[0])
 		{
 			const long parsed = std::strtol(value, nullptr, 10);
 
-			// Power of two only, so the test is a mask rather than a modulo.
-			if (parsed >= 2 && parsed <= 4096 && (parsed & (parsed - 1)) == 0)
+			// Power of two only, so the test is a mask rather than a modulo, and
+			// at most 8 so the cached window stays inside one counter tick.
+			if (parsed >= 2 && parsed <= 8 && (parsed & (parsed - 1)) == 0)
 			{
 				return static_cast<u32>(parsed);
 			}
@@ -4829,6 +4861,26 @@ public:
 					const auto fresh = llvm::BasicBlock::Create(m_context, "dec_fresh", m_function);
 					const auto after = llvm::BasicBlock::Create(m_context, "dec_after", m_function);
 					const auto entry_bb = m_ir->GetInsertBlock();
+
+					// LOAD THE CACHED VALUE HERE, IN THE ENTRY BLOCK.
+					//
+					// This load used to be written inline in the phi->addIncoming
+					// call below, while the insert point was already `after`. The
+					// load was therefore EMITTED in `after` but declared as the
+					// incoming value from `entry_bb`, and a phi's incoming value
+					// must dominate the end of its incoming block. LLVM rejected it:
+					//
+					//   LLVM: Verification failed at 0xd4c0:
+					//   Instruction does not dominate all uses!
+					//     %118 = load i64, ptr %88, align 8
+					//     %117 = phi i64 [ %116, %dec_fresh ], [ %118, %106 ]
+					//
+					// Compilation then threw, the SPU worker threads died, and the
+					// title hung at about 1% CPU with no frames. That is precisely
+					// the "frozen cache -> hang at 1.2% CPU" result this feature was
+					// disabled for: it was never a problem with caching semantics, it was
+					// invalid IR. Emitting the load before the branch fixes it.
+					const auto cached = m_ir->CreateLoad(get_type<u64>(), cache_ptr);
 					m_ir->CreateCondBr(need, fresh, after);
 
 					m_ir->SetInsertPoint(fresh);
@@ -4839,7 +4891,7 @@ public:
 					m_ir->SetInsertPoint(after);
 					const auto phi = m_ir->CreatePHI(get_type<u64>(), 2);
 					phi->addIncoming(real, fresh);
-					phi->addIncoming(m_ir->CreateLoad(get_type<u64>(), cache_ptr), entry_bb);
+					phi->addIncoming(cached, entry_bb);
 					tsc = phi;
 				}
 				else
@@ -5750,6 +5802,14 @@ public:
 					const auto fresh = llvm::BasicBlock::Create(m_context, "dec_fresh", m_function);
 					const auto after = llvm::BasicBlock::Create(m_context, "dec_after", m_function);
 					const auto entry_bb = m_ir->GetInsertBlock();
+
+					// Second copy of the decrementer cache. Same dominance bug as
+					// the one above, and it bit on the SECOND RdDec in a function:
+					//
+					//   %107 = phi i64 [ %106, %dec_fresh1 ], [ %108, %dec_after ]
+					//
+					// with %108 emitted after the phi. Load in the entry block.
+					const auto cached = m_ir->CreateLoad(get_type<u64>(), cache_ptr);
 					m_ir->CreateCondBr(need, fresh, after);
 
 					m_ir->SetInsertPoint(fresh);
@@ -5760,7 +5820,7 @@ public:
 					m_ir->SetInsertPoint(after);
 					const auto phi = m_ir->CreatePHI(get_type<u64>(), 2);
 					phi->addIncoming(real, fresh);
-					phi->addIncoming(m_ir->CreateLoad(get_type<u64>(), cache_ptr), entry_bb);
+					phi->addIncoming(cached, entry_bb);
 					tsc = phi;
 				}
 				else
