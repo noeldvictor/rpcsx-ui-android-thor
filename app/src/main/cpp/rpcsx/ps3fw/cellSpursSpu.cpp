@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
 #include <atomic>
 #include "Loader/ELF.h"
 
@@ -280,6 +283,53 @@ static std::atomic<u32> g_thor_hle_req_logged{0};
 static std::atomic<u32> g_thor_hle_act_logged{0};
 static std::atomic<u32> g_thor_hle_sel_logged{0};
 
+// Gate for the wklSignal clear fix. **DEFAULT OFF - the fix REGRESSES HLE.**
+//
+//   debug.rpcsx.thor.spurs_signal_fix = 0  original unguarded shift (default)
+//   debug.rpcsx.thor.spurs_signal_fix = 1  guard the sentinel
+//
+// MEASURED 2026-08-25, one binary, four interleaved arms, 150 s settle:
+//
+//   fix=1  armed=0  emu stalls at 0:00:04   (2 of 2)
+//   fix=0  armed=6  emu reaches 0:00:17     (2 of 2)
+//
+// The undefined shift is REAL: `0x8000 >> 32` is UB and AArch64 evaluates it as
+// `>> 0`, so the line clears workload 0's signal, and the PPU can be seen writing
+// the signal and reading 0x0 back one line later. But the SPURS state machine
+// DEPENDS on that accidental clear. With the signal left standing,
+// cellSpursModulePollStatus reports "selected workload differs from current" on
+// every call, the SPU exits to the kernel and re-selects forever, and emulation
+// livelocks before SPURS even arms.
+//
+// So the clear is load-bearing and the correct repair is NOT to delete it. What
+// is needed is a consume-on-dispatch that clears the signal for the workload the
+// SPU actually runs, without relying on a shift that only works by accident.
+// Until that exists, the original behaviour ships.
+//
+// The fix is correct on its own terms - `0x8000 >> 32` is undefined and AArch64
+// evaluates it as `>> 0`, clearing workload 0 - but correctness of the shift does
+// not prove it is the cause of a later crash, and attributing by reasoning is how
+// this session has already been wrong twice. One property, two arms, same binary.
+static bool thor_spurs_signal_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.spurs_signal_fix", v) <= 0 || !v[0])
+		{
+			// DEFAULT OFF. The guard is correct about the undefined shift and
+			// WRONG about the consequence - measured below.
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_hle_once(std::atomic<u32>& bits, u32 spuNum) noexcept
 {
 	const u32 bit = 1u << (spuNum & 31);
@@ -440,7 +490,14 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// looked "lost" for this reason; the writes were never the problem.
 				//
 				// The system service has no signal bit, so it must not clear one.
-				if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
+				if (!thor_spurs_signal_fix())
+				{
+					// Original, undefined for the system service. Kept switchable
+					// so the fix can be A/B'd against it in one binary.
+					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
+					spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
+				}
+				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
 				{
 					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
 				}
@@ -627,7 +684,14 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 			{
 				// Same undefined shift as the kernel1 selector: 0x8000 >> 32 wraps
 				// to 0x8000 on AArch64 and clears workload 0. See the comment there.
-				if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
+				if (!thor_spurs_signal_fix())
+				{
+					// Original, undefined for the system service. Kept switchable
+					// so the fix can be A/B'd against it in one binary.
+					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
+					spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
+				}
+				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
 				{
 					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
 				}

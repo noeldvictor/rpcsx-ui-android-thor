@@ -9743,3 +9743,31 @@ inside=<what the op saw>   readback=<same field, one line later>
 
 When a store "does not stick", prove whether it happened before you go looking at
 addressing, endianness or memory ordering.
+
+
+## RETRACTION: the shift guard is correct about the UB and REGRESSES HLE
+
+Measured 2026-08-25, one binary, four interleaved arms, 150 s settle:
+
+```
+fix=1  armed=0  emu stalls at 0:00:04   (2 of 2)
+fix=0  armed=6  emu reaches 0:00:17     (2 of 2)
+```
+
+**The clear is load-bearing.** The undefined shift is real - `0x8000 >> 32` is UB,
+AArch64 evaluates it as `>> 0`, and the PPU can be seen writing wklSignal1 and
+reading 0x0 back one line later - but the SPURS state machine DEPENDS on the
+signal being cleared. Leave it standing and `cellSpursModulePollStatus` reports
+"selected workload differs from current" on every call, so the SPU exits to the
+kernel and re-selects forever. Emulation livelocks before SPURS arms.
+
+So `c6e6079b2` is not a fix on its own and is now **default off**, switchable via
+`debug.rpcsx.thor.spurs_signal_fix`. The real repair is a consume-on-dispatch that
+clears the signal for the workload the SPU actually runs, instead of relying on a
+shift that only clears the right bit by accident.
+
+**A correct statement about one line is not a correct change to a system.** The
+shift analysis was right and the conclusion drawn from it was wrong, and only the
+A/B separated them. Two earlier attributions this session failed the same way - a
+"different CellSpurs" theory and a harness collision misread as a regression -
+which is why this one was gated behind a property instead of asserted.
