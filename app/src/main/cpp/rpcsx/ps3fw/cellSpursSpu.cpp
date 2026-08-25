@@ -331,21 +331,6 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// 4. The number of SPUs allocated to it must be less than the number of SPUs requested (i.e. readyCount)
 				//    OR the workload must be signalled
 				//    OR the workload flag is 0 and the workload is configured as the wokload flag receiver
-				// WHY IS THE TASKSET NEVER SELECTED?
-				//
-				// All six kernels dispatch wid=32 addr=0x100 - the system service -
-				// and never SPURS_IMG_ADDR_TASKSET_PM at 0x200, so the title's
-				// taskset (wid=1) loses here. Log every workload that has ANY sign
-				// of life, with each of the four gating values separated, so the
-				// rejecting condition names itself instead of being guessed at.
-				if (runnable || ctxt->priority[i] != 0 || wklSignal || readyCount)
-				{
-					cellSpurs.error("Thor SPU%u select wkl%u: runnable=%u priority=%u maxContention=%u contention=%u signal=%u flag=%u readyCount=%u requestCount=%u",
-						spu.index, i, runnable ? 1u : 0u, +ctxt->priority[i],
-						+spurs->wklMaxContention[i], +contention[i],
-						wklSignal ? 1u : 0u, +wklFlag, +readyCount, +requestCount);
-				}
-
 				if (runnable && ctxt->priority[i] != 0 && spurs->wklMaxContention[i] > contention[i])
 				{
 					if (wklFlag || wklSignal || (readyCount != 0 && requestCount > contention[i]))
@@ -651,15 +636,6 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	const auto wklInfo = spu._ptr<CellSpurs::WorkloadInfo>(0x3FFE0);
 	std::memcpy(wklInfo, wklInfoOffset, 0x20);
 
-	// What does the HLE kernel actually pick?
-	//
-	// All six kernels arm and run, and the title renders nothing. This says
-	// whether a workload is being selected at all, which of the three cases the
-	// switch below takes, and whether the taskset policy module is ever reached.
-	// SPURS_IMG_ADDR_TASKSET_PM is the one that matters for this title.
-	cellSpurs.error("Thor SPU%u kernel dispatch: wid=%u addr=0x%x size=0x%x current=0x%x pollStatus=0x%x",
-		spu.index, wid, wklInfo->addr.addr(), +wklInfo->size, ctxt->wklCurrentAddr.addr(), pollStatus);
-
 	// Load the workload to LS
 	if (ctxt->wklCurrentAddr != wklInfo->addr)
 	{
@@ -698,8 +674,6 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 // SPURS kernel workload exit
 bool spursKernelWorkloadExit(spu_thread& spu)
 {
-	cellSpurs.error("Thor SPU%u workloadExit -> kernel reselects", spu.index);
-
 	const auto ctxt = spu._ptr<SpursKernelContext>(0x100);
 	const bool isKernel2 = ctxt->spurs->flags1 & SF1_32_WORKLOADS ? true : false;
 
@@ -771,15 +745,6 @@ bool spursKernelEntry(spu_thread& spu)
 // Entry point of the system service
 bool spursSysServiceEntry(spu_thread& spu)
 {
-	// Does the system service ever RETURN to the kernel?
-	//
-	// Every SPU dispatches wid=32 addr=0x100 exactly once and never selects
-	// again, so they are all inside this workload. The kernel re-enters selection
-	// through spursKernelWorkloadExit at ctxt->exitToKernelAddr. If ENTER appears
-	// once per SPU and EXIT never does, the system service never gives the kernel
-	// back and that is the wall.
-	cellSpurs.error("Thor SPU%u sysService ENTER (pc=0x%05x)", spu.index, spu.pc);
-
 	const auto ctxt = spu._ptr<SpursKernelContext>(spu.gpr[3]._u32[3]);
 	// auto arg = spu.gpr[4]._u64[1];
 	auto pollStatus = spu.gpr[5]._u32[3];
