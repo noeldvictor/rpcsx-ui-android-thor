@@ -127,7 +127,30 @@ namespace thor::thermal_guard
 	// Read once at load, so the render path never parses a property.
 	inline const u32 g_engage_c = read_u32_property("debug.rpcsx.thor.thermal_guard_c", 85);
 	inline const u32 g_release_c = read_u32_property("debug.rpcsx.thor.thermal_guard_release", 70);
-	inline const u32 g_hot_fps = read_u32_property("debug.rpcsx.thor.thermal_guard_fps", 20);
+	// RAISED FROM 20 TO 30 on 2026-08-24, measured.
+	//
+	// The header above already says this guard "does not cool every title" and
+	// shows Transformers climbing to 95 C while pinned at the 20 FPS cap. This is
+	// the other half of that measurement: what the cap COSTS when it does not
+	// cool.
+	//
+	// BLUS30357, restored 3D combat, eight arms across three A-B-A runs, with the
+	// guard reporting engaged in 8/8 samples of every arm:
+	//
+	//   thermal_guard_fps = 20   18.08, 18.09, 18.20      Tend 91-95 C
+	//   thermal_guard_fps = 60   18.79, 18.84, 18.86, 18.94, 18.96   Tend 91-97 C
+	//
+	// Every arm at 60 beat every arm at 20, and the two groups do not overlap. So
+	// the cap costs about 4% of the frame rate. The temperatures are the same, so
+	// it buys nothing back - exactly as the header predicts for a title whose heat
+	// is a saturated SPU thread rather than presentation.
+	//
+	// 30 rather than 60, because the guard still has a real job on a title with NO
+	// frame limit of its own, which is the case that produced the 94 C reading
+	// documented above. 30 still bounds that, and it is at or above the internal
+	// limit of most titles, so it stops being a silent tax on titles the cap
+	// cannot help. A device that wants the old behaviour sets the property to 20.
+	inline const u32 g_hot_fps = read_u32_property("debug.rpcsx.thor.thermal_guard_fps", 30);
 
 	// Minimum samples to stay engaged once engaged, whatever the temperature does.
 	//

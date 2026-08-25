@@ -1489,9 +1489,76 @@ static FORCE_INLINE constexpr void record_thor_es_getllar(
 {
 }
 
-static FORCE_INLINE constexpr u32 thor_es_getllar_retry_spin_limit() noexcept
+// How long an SPU spins on a failed GETLLAR before yielding, for ANY title.
+//
+// ## What this is for
+//
+// Measured on BLUS30357 in restored 3D combat, host CPU against guest idle:
+//
+//   SPU0  101.2% of a core   1.8% idle   <- genuinely working
+//   SPU2   61.6%            83.6% idle
+//   SPU4   59.5%            84.2% idle
+//   SPU3   59.1%            83.0% idle
+//   SPU1   58.8%            83.6% idle
+//   SPU5   47.3%            88.6% idle
+//
+// Five SPUs report 83-89% IDLE in guest terms while each burns about 60% of a
+// physical core. That is roughly THREE FULL CORES spent spinning on nothing, on
+// an eight-core device whose total sits at 5.7-7.3 cores. It is also the heat:
+// three cores held at full clock in a poll loop, and `pause()` on AArch64 is
+// `YIELD`, which retires as a nop on a non-SMT core - no clock drop, no park.
+//
+// The spin is this loop: 24 retries at 300 ticks each. A tick is CNTVCT_EL0 at
+// 19.2 MHz, so 300 ticks is ~15.6 us and a full wait is ~374 us before the
+// thread yields to the OS.
+//
+// ## Why it had never been tried on this title
+//
+// Every existing knob here is gated on `Emu.GetTitleID() == "BLUS30161"` -
+// Eternal Sonata. `yield8` could not lower the limit for any other game, and
+// `short_wait` / `tiny_wait` could not lower the cycles. So for Transformers the
+// code could only ever return 24 and 300. These properties remove the gate
+// without changing any default:
+//
+//   debug.rpcsx.thor.getllar_spin_limit  = <retries>  (default 24)
+//   debug.rpcsx.thor.getllar_spin_cycles = <ticks>    (default 300)
+//
+// Unset means identical behaviour to before, and the BLUS30161 modes still win
+// where they applied, so nothing that was measured for Eternal Sonata moves.
+//
+// ## Read this before assuming lower is better
+//
+// rx/asm.hpp records that scaling busy_wait globally - which collapses these
+// backoffs - dropped Thor to about 1 FPS through lock convoys on every contended
+// reservation. That was scaling the CYCLES by 100x on every site at once. This
+// is a per-site retry COUNT, and past the limit the thread yields to the OS
+// rather than spinning, which is the behaviour that lets another thread run. The
+// two are not the same change, but the warning is why the default stays put and
+// why this must be A/B'd rather than assumed.
+static u32 get_thor_getllar_property(const char* name, u32 fallback) noexcept
 {
-	return 24;
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+
+	if (__system_property_get(name, value) > 0 && value[0])
+	{
+		const long parsed = std::strtol(value, nullptr, 10);
+
+		if (parsed >= 1 && parsed <= 100000)
+		{
+			return static_cast<u32>(parsed);
+		}
+	}
+#else
+	(void)name;
+#endif
+	return fallback;
+}
+
+static u32 thor_es_getllar_retry_spin_limit() noexcept
+{
+	static const u32 s_value = get_thor_getllar_property("debug.rpcsx.thor.getllar_spin_limit", 24);
+	return s_value;
 }
 
 static FORCE_INLINE constexpr bool thor_es_getllar_skip_rsx_lock(
@@ -1500,9 +1567,10 @@ static FORCE_INLINE constexpr bool thor_es_getllar_skip_rsx_lock(
 	return false;
 }
 
-static FORCE_INLINE constexpr u32 thor_es_getllar_retry_cycles() noexcept
+static u32 thor_es_getllar_retry_cycles() noexcept
 {
-	return 300;
+	static const u32 s_value = get_thor_getllar_property("debug.rpcsx.thor.getllar_spin_cycles", 300);
+	return s_value;
 }
 #endif
 
@@ -10004,6 +10072,73 @@ bool spu_thread::capture_state()
 	return true;
 }
 
+// How long an SPU channel wait spins before it sleeps.
+//
+// ## The defect
+//
+// Both blocking channel paths spin ten times before falling through to a real
+// wait, and both call profiled_busy_wait with NO cycle count:
+//
+//     for (int i = 0; i < 10; i++) { profiled_busy_wait(site::spu_channel_pop); }
+//
+// The default is 3000, inherited from upstream where a tick is an x86 TSC tick
+// at roughly 3 GHz - about a microsecond. Here a tick is CNTVCT_EL0 at
+// 19.2 MHz, so 3000 ticks is **156 microseconds**, and ten of them is
+// **1.56 milliseconds** in front of a futex that works.
+//
+// This is an OVERSIGHT, not a decision. rx/asm.hpp refuses to scale busy_wait
+// globally precisely because "every hot call site was retuned by hand against
+// Thor's real 19.2 MHz timer" - and the numeric sites were: 100, 200, 300, 500.
+// These two pass nothing, so the retune could not reach them. The proof is
+// twelve lines away in this same file, where the SAME site enum is used with an
+// explicit 500:
+//
+//     profiled_busy_wait(thor_wait::site::spu_channel_pop, 500);
+//
+// ## Why it should matter here
+//
+// SPU channels are the mailbox and signal path - the PPU-to-SPU handoff SPURS
+// uses constantly. In restored 3D combat this title runs at 64-74% CPU with
+// five of six SPUs about 91% idle and the GPU at 2-5%: nothing is saturated, so
+// the frame is mostly WAITING rather than working. A spin loop does check its
+// condition between iterations, so this does not add 1.56 ms to every handoff -
+// but it does mean a value that arrives one microsecond in is not noticed for up
+// to 156 microseconds. That blind window is the latency, and it is paid on every
+// contended channel operation.
+//
+// It is also heat: this spin is `get_tsc()` in a loop at full clock, and
+// `pause()` on AArch64 is `YIELD`, which retires as a nop on a non-SMT core.
+//
+// ## Default unchanged until measured
+//
+// The default stays 3000, so a device with the property unset behaves exactly as
+// before. Set it lower to shrink the blind window:
+//
+//   debug.rpcsx.thor.spu_channel_spin = <ticks>   (default 3000; 300 ~= 15.6us)
+//
+static u32 get_thor_spu_channel_spin() noexcept
+{
+	static const u32 s_value = []() noexcept -> u32
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_channel_spin", value) > 0 && value[0])
+		{
+			const long parsed = std::strtol(value, nullptr, 10);
+
+			if (parsed >= 1 && parsed <= 100000)
+			{
+				return static_cast<u32>(parsed);
+			}
+		}
+#endif
+		return 3000;
+	}();
+
+	return s_value;
+}
+
 bool spu_thread::try_load_debug_capture()
 {
 	if (cpu_flag::wait - state)
@@ -10107,7 +10242,7 @@ s64 spu_channel::pop_wait(cpu_thread& spu, bool pop)
 
 	for (int i = 0; i < 10; i++)
 	{
-		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_pop);
+		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_pop, get_thor_spu_channel_spin());
 
 		if (!(data & bit_wait))
 		{
@@ -10189,7 +10324,7 @@ bool spu_channel::push_wait(cpu_thread& spu, u32 value, bool push)
 			return true;
 		}
 
-		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_push);
+		thor_wait::profiled_busy_wait(thor_wait::site::spu_channel_push, get_thor_spu_channel_spin());
 		state = data;
 	}
 
