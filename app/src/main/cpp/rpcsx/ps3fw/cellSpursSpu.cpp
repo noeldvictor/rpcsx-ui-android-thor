@@ -771,9 +771,58 @@ void spursSysServiceIdleHandler(spu_thread& spu, SpursKernelContext* ctxt)
 {
 	bool shouldExit;
 
+	// ONE line per SPU, on first entry only.
+	//
+	// The SPUs park here because no workload looks schedulable, which is the same
+	// condition that stops the weighted selector picking the taskset. The fields
+	// below are the whole test. Logging them per iteration is what killed four
+	// runs at 0:00:02 (36cb52ca1), so this fires ONCE per SPU: six lines total,
+	// then never again.
+	{
+		static std::array<std::atomic<bool>, 8> s_reported{};
+
+		if (spu.index < 8 && !s_reported[spu.index].exchange(true))
+		{
+			const auto spurs0 = ctxt->spurs.get_ptr();
+			std::string dump;
+
+			for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
+			{
+				const u16 runnable = ctxt->wklRunnable1 & (0x8000 >> i);
+				const u8 prio = ctxt->priority[i];
+				const u8 maxc = spurs0->wklMaxContention[i];
+				const u8 cur = spurs0->wklCurrentContention[i];
+				const u8 ready = spurs0->wklReadyCount1[i];
+				const u16 sig = spurs0->wklSignal1.load() & (0x8000 >> i);
+
+				if (runnable || prio || ready || sig)
+				{
+					fmt::append(dump, " [wkl%u run=%u prio=%u maxC=%u curC=%u ready=%u sig=%u]",
+						i, runnable ? 1u : 0u, prio, maxc, cur, ready, sig ? 1u : 0u);
+				}
+			}
+
+			cellSpurs.error("Thor SPU%u idle-handler first entry: nSpus=%u flags1=0x%x spuIdling=0x%x sysSrvMsg=0x%x%s",
+				spu.index, +spurs0->nSpus, +spurs0->flags1, +spurs0->spuIdling, +spurs0->sysSrvMessage,
+				dump.empty() ? " NO-WORKLOAD-HAS-ANY-STATE" : dump.c_str());
+		}
+	}
+
 	while (true)
 	{
-		const auto spurs = spu._ptr<CellSpurs>(0x100);
+// NOT the local store. `SpursKernelContext` lives at local-store 0x100 - see
+// `spu._ptr<SpursKernelContext>(0x100)` in spursKernelEntry and the selectors -
+// so reading a CellSpurs from 0x100 reinterprets the kernel context and yields
+// garbage. Every workload then reads as state 0 / priority 0 / readyCount 0,
+// which is exactly what the idle-handler breadcrumb showed on all six SPUs:
+//
+//   Thor SPU0 idle-handler first entry: nSpus=6 flags1=0x0 spuIdling=0x0
+//       sysSrvMsg=0x0 NO-WORKLOAD-HAS-ANY-STATE
+//
+// while the PPU had created the taskset and signalled wid=1. The correct handle
+// is ctxt->spurs, which is what spursKernel1SelectWorkload and seven other sites
+// already use, and which this very function uses two lines later for wklInfo1.
+		const auto spurs = ctxt->spurs.get_ptr();
 		// vm::reservation_acquire(ctxt->spurs.addr());
 
 		// Find the number of SPUs that are idling in this SPURS instance
@@ -1031,7 +1080,9 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 // Activate a workload
 void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 {
-	const auto spurs = spu._ptr<CellSpurs>(0x100);
+	// Same defect as the idle handler: 0x100 is the kernel CONTEXT, not a
+	// CellSpurs. Note the very next line already uses ctxt->spurs correctly.
+	const auto spurs = ctxt->spurs.get_ptr();
 	std::memcpy(spu._ptr<void>(0x30000), ctxt->spurs->wklInfo1, 0x200);
 	if (spurs->flags1 & SF1_32_WORKLOADS)
 	{
