@@ -3869,6 +3869,39 @@ static u64 get_thor_cpu_affinity_mask() noexcept
 	return s_mask;
 }
 
+// Thread-local so it costs spu_thread neither a layout change nor a savestate
+// field. See the comment on the declarations in SPUThread.h for the two ways a
+// member here broke the emulator.
+static thread_local std::map<u32, bool (*)(spu_thread&)> g_thor_spu_hle_functions;
+
+void spu_thread::RegisterHleFunction(u32 addr, bool (*func)(spu_thread&))
+{
+	g_thor_spu_hle_functions[addr] = func;
+}
+
+void spu_thread::UnregisterHleFunction(u32 addr)
+{
+	g_thor_spu_hle_functions.erase(addr);
+}
+
+bool spu_thread::RunHleFunction()
+{
+	if (g_thor_spu_hle_functions.empty()) [[likely]]
+	{
+		return false;
+	}
+
+	const auto found = g_thor_spu_hle_functions.find(pc);
+
+	if (found == g_thor_spu_hle_functions.end())
+	{
+		return false;
+	}
+
+	found->second(*this);
+	return true;
+}
+
 void spu_thread::cpu_task()
 {
 	if (const u64 thor_mask = get_thor_cpu_affinity_mask())
