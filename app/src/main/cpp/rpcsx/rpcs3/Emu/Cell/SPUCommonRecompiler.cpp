@@ -250,6 +250,31 @@ static bool spu_reduced_loop_emit_enabled() noexcept
 	// `is_cond_need_runtime_verify` and the pattern-30 discard are not. So the
 	// completability check here is not upstream's final form.
 	//
+	// ANSWERED on 2026-08-24, on BLUS30357 in restored 3D combat. Both halves:
+	//
+	//   CORRECTNESS  three 90 s runs with emit=1, zero fatals, scene rendered
+	//                normally throughout. The corruption this line guards
+	//                against did NOT reproduce on this title. Unroll is pinned
+	//                to upstream's 2-iteration contract by
+	//                spu_reduced_loop_unroll_factor(), so the u4 variant that
+	//                deterministically corrupted BLUS30161 was never in play.
+	//   SPEED        18.30 FPS with emit=1 against 18.10 with emit=0, +0.5%,
+	//                which is inside the run-to-run noise of this scene.
+	//
+	// It really did engage - the emulator wrote the variant cache file
+	// `spu-safe-thor-rl-u2-v2-v1-tane.dat`, and that name is only produced when
+	// use_thor_reduced_loop_cache is true. Do not re-test by grepping the log:
+	// spu_log.notice does not reach RPCSX.log here, so the cache FILENAME is the
+	// witness. A first attempt was confounded because that file was created
+	// during the measured run, making the treatment pay recompilation the
+	// control did not; the numbers above are from the rerun with both caches
+	// warm.
+	//
+	// So the loop is not where this title's frames go, even though it is 96.84%
+	// of CellSpursKernel0. Turning it off costs nothing measurable and the
+	// default stays off. If you want that 96.84% back, the lever is HLE
+	// cellSpurs, which deletes the loop rather than making it cheaper.
+	//
 	// Made switchable so the question can be asked rather than assumed. The
 	// default stays off, which is the behaviour this file has had.
 	//

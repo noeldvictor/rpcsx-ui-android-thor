@@ -4355,9 +4355,117 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 	return CELL_OK;
 }
 
-s32 cellSpursCreateTaskWithAttribute()
+// THE SPURS TASK ATTRIBUTE API, implemented here because Transformers needs it.
+//
+// ## Why it was missing, and why it can be added
+//
+// BLUS30357 boots into HLE cellSpurs and immediately calls, in this order:
+//
+//   _cellSpursTaskAttributeInitialize          -> was UNIMPLEMENTED_FUNC
+//   cellSpursTaskAttributeSetExitCodeContainer -> was UNIMPLEMENTED_FUNC
+//   cellSpursCreateTaskWithAttribute           -> was UNIMPLEMENTED_FUNC
+//
+// It then WAITS FOREVER for tasks that were never created: measured at 13.5%
+// process CPU, 0.0% on all eight cores, zero frames, hung from 13 seconds in.
+// Upstream RPCS3 carries the same three stubs, so this is not a porting gap. It
+// is unimplemented everywhere, which is what issue 9063 means by "HLE cellSpurs
+// is incomplete".
+//
+// `cellSpursCreateTask` - the non-attribute form - is FULLY IMPLEMENTED in this
+// file, and so are `_spurs::create_task` and `_spurs::task_start`. The attribute
+// form is only a different way of passing the same six values. So the work here
+// is not to write a task scheduler. It is to carry six values across three
+// calls.
+//
+// ## Why we are allowed to choose the layout
+//
+// `CellSpursTaskAttribute` is declared `u8 reserved[256]` - an OPAQUE buffer.
+// Every function that touches it is HLE and therefore ours: the initializer
+// writes it, the exit-code setter modifies it, the creator reads it. The guest
+// only passes the pointer between our functions and never inspects the bytes,
+// because on real firmware those bytes are private to libsre as well.
+//
+// So the layout below is ours to define. It carries a magic, so a buffer that
+// never passed through our initializer is detected instead of silently misread.
+//
+// ## The argument order is a HYPOTHESIS until hardware says otherwise
+//
+// This tree carries no prototype for these calls - the declarations sit
+// commented out at the top of this file with empty parameter lists. The order
+// used here follows `_cellSpursTasksetAttributeInitialize`, which IS implemented
+// and takes (attribute, revision, sdk_version, ...). So every one of these
+// functions also logs its raw incoming GPRs, and ONE run settles the ABI rather
+// than letting a guess survive into a measurement. If r4 is not a small revision
+// number, or r5 does not look like an SDK version, the order here is wrong and
+// the log will say so plainly.
+struct thor_spurs_task_attr
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	static constexpr u32 c_magic = 0x54415454; // 'TATT'
+
+	be_t<u32> magic;
+	be_t<u32> revision;
+	be_t<u32> sdk_version;
+	be_t<u32> ea_elf;
+	be_t<u64> ea_context;
+	be_t<u32> size_context;
+	be_t<u32> ea_exit_code_container;
+	CellSpursTaskLsPattern ls_pattern;
+	CellSpursTaskArgument argument;
+};
+
+static_assert(sizeof(thor_spurs_task_attr) <= 256, "task attribute view must fit the opaque 256-byte buffer");
+
+static void thor_log_task_abi(ppu_thread& ppu, const char* who)
+{
+	cellSpurs.error("Thor ABI probe %s: r3=0x%llx r4=0x%llx r5=0x%llx r6=0x%llx r7=0x%llx r8=0x%llx r9=0x%llx r10=0x%llx",
+		who, ppu.gpr[3], ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7], ppu.gpr[8], ppu.gpr[9], ppu.gpr[10]);
+}
+
+s32 cellSpursCreateTaskWithAttribute(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id, vm::ptr<CellSpursTaskAttribute> attribute)
+{
+	cellSpurs.warning("cellSpursCreateTaskWithAttribute(taskset=*0x%x, task_id=*0x%x, attribute=*0x%x)", taskset, task_id, attribute);
+	thor_log_task_abi(ppu, "cellSpursCreateTaskWithAttribute");
+
+	if (!taskset || !attribute)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	if (!taskset.aligned() || !attribute.aligned())
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	const auto view = vm::ptr<thor_spurs_task_attr>::make(attribute.addr());
+
+	if (view->magic != thor_spurs_task_attr::c_magic)
+	{
+		cellSpurs.error("cellSpursCreateTaskWithAttribute: attribute at 0x%x was not initialized by _cellSpursTaskAttributeInitialize (magic=0x%x)", attribute, view->magic);
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	// Unpack into exactly the arguments cellSpursCreateTask already takes. The
+	// pattern and argument live inside the attribute buffer, so create_task
+	// receives pointers into it - it copies them, it does not retain them.
+	const vm::ptr<CellSpursTaskLsPattern> ls_pattern = vm::ptr<CellSpursTaskLsPattern>::make(attribute.addr() + static_cast<u32>(offsetof(thor_spurs_task_attr, ls_pattern)));
+	const vm::ptr<CellSpursTaskArgument> argument = vm::ptr<CellSpursTaskArgument>::make(attribute.addr() + static_cast<u32>(offsetof(thor_spurs_task_attr, argument)));
+
+	s32 rc = _spurs::create_task(taskset, task_id, vm::cptr<void>::make(view->ea_elf), vm::cptr<void>::make(static_cast<u32>(view->ea_context)), view->size_context, ls_pattern, argument);
+
+	if (rc != CELL_OK)
+	{
+		cellSpurs.error("cellSpursCreateTaskWithAttribute: create_task failed with 0x%x", rc);
+		return rc;
+	}
+
+	rc = _spurs::task_start(ppu, taskset, *task_id);
+
+	if (rc != CELL_OK)
+	{
+		cellSpurs.error("cellSpursCreateTaskWithAttribute: task_start failed with 0x%x", rc);
+		return rc;
+	}
+
 	return CELL_OK;
 }
 
@@ -4446,9 +4554,20 @@ s32 cellSpursTaskExitCodeGet()
 	return CELL_OK;
 }
 
-s32 cellSpursTaskExitCodeInitialize()
+s32 cellSpursTaskExitCodeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskExitCode> container)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.warning("cellSpursTaskExitCodeInitialize(container=*0x%x)", container);
+	thor_log_task_abi(ppu, "cellSpursTaskExitCodeInitialize");
+
+	if (!container)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// The container is a 128-byte opaque block the guest hands us to hold a
+	// task's exit code. Zeroing it is what "initialize" means here; the code
+	// itself is written when a task ends.
+	std::memset(container.get_ptr(), 0, sizeof(CellSpursTaskExitCode));
 	return CELL_OK;
 }
 
@@ -4476,15 +4595,154 @@ s32 cellSpursTaskGenerateLsPattern()
 	return CELL_OK;
 }
 
-s32 _cellSpursTaskAttributeInitialize()
+s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttribute> attribute, u32 revision, u32 sdk_version, vm::cptr<void> elf, u64 ea_context, u32 size_context, vm::cptr<CellSpursTaskLsPattern> ls_pattern, vm::cptr<CellSpursTaskArgument> argument)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.warning("_cellSpursTaskAttributeInitialize(attribute=*0x%x, revision=%d, sdk_version=0x%x, elf=*0x%x, ea_context=0x%llx, size_context=0x%x, ls_pattern=*0x%x, argument=*0x%x)",
+		attribute, revision, sdk_version, elf, ea_context, size_context, ls_pattern, argument);
+	thor_log_task_abi(ppu, "_cellSpursTaskAttributeInitialize");
+
+	if (!attribute)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	if (!attribute.aligned())
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	const auto view = vm::ptr<thor_spurs_task_attr>::make(attribute.addr());
+
+	std::memset(attribute.get_ptr(), 0, sizeof(CellSpursTaskAttribute));
+
+	view->magic = thor_spurs_task_attr::c_magic;
+	view->revision = revision;
+	view->sdk_version = sdk_version;
+	view->ea_elf = elf.addr();
+	view->ea_exit_code_container = 0;
+
+	// RESOLVING THE CONTEXT, from what the hardware probe actually showed.
+	//
+	// Taking r7 as the context address directly makes `_spurs::create_task`
+	// return CELL_SPURS_TASK_ERROR_ALIGN, because for sdk_version >= 0x27FFFF -
+	// this title reports 0x300000 - the context must be 128-byte aligned, and
+	// r7 was 0xd0040460, which is only 16-aligned and sits on the stack.
+	//
+	// The PPU thread dump says what that address really is:
+	//
+	//   r7 : 0xd0040460 -> 10 37 00 80 00 03 d4 00
+	//
+	// Two big-endian u32s: 0x10370080 and 0x0003d400. The first IS 128-byte
+	// aligned. The second is 0x3d400, which is the very constant create_task
+	// compares the context size against. So r7 points at a {context, size} pair
+	// rather than being the context, and reading through it produces values that
+	// satisfy every check that direct use fails.
+	//
+	// That is inferred from ONE title. So it is applied only when the indirection
+	// actually looks right, the direct reading is kept as the fallback, and the
+	// branch taken is logged - a second title will then either confirm this or
+	// show itself immediately instead of silently creating a broken task.
+	u32 resolved_context = static_cast<u32>(ea_context);
+	u32 resolved_size = size_context;
+	const char* how = "direct";
+
+	if (resolved_context && (resolved_context % 128) != 0 &&
+		vm::check_addr(resolved_context, vm::page_info_t::page_readable, 8))
+	{
+		const auto pair = vm::ptr<be_t<u32>>::make(resolved_context);
+		const u32 indirect_ea = pair[0];
+		const u32 indirect_size = pair[1];
+
+		if (indirect_ea && (indirect_ea % 128) == 0 && indirect_size >= CELL_SPURS_TASK_EXECUTION_CONTEXT_SIZE &&
+			vm::check_addr(indirect_ea, vm::page_info_t::page_readable, 128))
+		{
+			resolved_context = indirect_ea;
+			resolved_size = indirect_size;
+			how = "indirect via {context,size} pair";
+		}
+	}
+
+	if (resolved_context && (resolved_context % 128) != 0)
+	{
+		// Still unusable. A null context is LEGAL and means "no save area", which
+		// beats handing create_task an address it will reject outright.
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: context 0x%x is not 128-byte aligned and no valid pair was found, continuing without a context", resolved_context);
+		resolved_context = 0;
+		resolved_size = 0;
+		how = "dropped";
+	}
+
+	cellSpurs.error("_cellSpursTaskAttributeInitialize: context resolved %s -> ea=0x%x size=0x%x", how, resolved_context, resolved_size);
+
+	view->ea_context = resolved_context;
+	view->size_context = resolved_size;
+
+	// VALIDATE BEFORE DEREFERENCING, because the tail of this signature is
+	// inferred rather than known.
+	//
+	// The ABI probe on hardware returned, for BLUS30357:
+	//
+	//   r3=0xd0040470 (attribute)  r4=0x1 (revision)  r5=0x300000 (sdk_version)
+	//   r6=0x177ec80  -> 7f 45 4c 46, the ELF header, so r6 IS eaElf
+	//   r7=0xd0040460 (context, on the stack)         r8=0x0 (sizeContext)
+	//   r9=0x170a258  (lsPattern)                     r10=0x7
+	//
+	// Seven of the eight match the order `cellSpursCreateTask` already uses. The
+	// eighth does not: 0x7 is not an address, and dereferencing it aborted this
+	// function outright - "PPU: Function aborted", which stopped the boot.
+	//
+	// Either the call takes seven arguments and r10 is leftover, or it takes eight
+	// and this title passes nothing meaningful. Both readings agree on what to do:
+	// treat an implausible pointer as absent. A guest pointer must therefore be
+	// CHECKED, not merely non-null, and a rejected one is logged so the next run
+	// can tell "the game passed nothing" from "the order is still wrong".
+	if (ls_pattern && vm::check_addr(ls_pattern.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern)))
+	{
+		view->ls_pattern = *ls_pattern;
+	}
+	else if (ls_pattern)
+	{
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern=0x%x is not readable memory, treating as absent", ls_pattern.addr());
+	}
+
+	if (argument && vm::check_addr(argument.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskArgument)))
+	{
+		view->argument = *argument;
+	}
+	else if (argument)
+	{
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: argument=0x%x is not readable memory, treating as absent", argument.addr());
+	}
+
 	return CELL_OK;
 }
 
-s32 cellSpursTaskAttributeSetExitCodeContainer()
+s32 cellSpursTaskAttributeSetExitCodeContainer(ppu_thread& ppu, vm::ptr<CellSpursTaskAttribute> attribute, vm::ptr<CellSpursTaskExitCode> container)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.warning("cellSpursTaskAttributeSetExitCodeContainer(attribute=*0x%x, container=*0x%x)", attribute, container);
+	thor_log_task_abi(ppu, "cellSpursTaskAttributeSetExitCodeContainer");
+
+	if (!attribute)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	if (!attribute.aligned())
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	const auto view = vm::ptr<thor_spurs_task_attr>::make(attribute.addr());
+
+	if (view->magic != thor_spurs_task_attr::c_magic)
+	{
+		// The buffer never passed through our initializer. Refusing beats writing a
+		// field into a layout we do not own.
+		cellSpurs.error("cellSpursTaskAttributeSetExitCodeContainer: attribute at 0x%x was not initialized by _cellSpursTaskAttributeInitialize (magic=0x%x)", attribute, view->magic);
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	view->ea_exit_code_container = container.addr();
 	return CELL_OK;
 }
 
