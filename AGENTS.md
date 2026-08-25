@@ -9675,3 +9675,339 @@ has reached, or its cause is outside the mechanisms enumerated here.
 **Reproduction has cost about 92 controlled sessions.** The injectors stay,
 because a negative that is reproducible is worth keeping, and each is one
 property away from being re-run against a new idea.
+
+# Patches Never Apply On A Savestate Load
+
+`PPUModule.cpp` applies patches twice, and **both** calls are gated on `!ar`,
+where `ar` is the deserialization manager:
+
+```cpp
+g_fxo->get<patch_engine>().apply(applied, !ar ? hash : std::string{}, ...);
+if (!ar && !Emu.GetTitleID().empty())
+    g_fxo->get<patch_engine>().apply(applied, Emu.GetTitleID() + '-' + hash, ...);
+```
+
+So a restored savestate carries whatever code was in memory when it was taken,
+and a patch installed afterwards has **no** effect on it. The gold combat
+savestate is the only repeatable workload in this project, which means
+
+**a patch cannot be A/B'd against the savestate at all.** Testing one requires a
+cold boot from the ISO and playing to the scene by hand.
+
+Both key spellings are live and it is worth knowing which: the bare
+`PPU-<sha1>` key, and `<SERIAL>-PPU-<sha1>` — the form the installed
+`BLUS31601_patch.yml` actually uses.
+
+## And a frame-rate "unlock" patch cannot help a title running BELOW the cap
+
+The RPCS3 wiki lists an *Unlock FPS* patch for BLUS30357. It removes a 30 fps
+ceiling. Combat here measures 19.1. **A ceiling does not bind from below**, so
+the patch is not a candidate for this slowdown no matter how it is installed.
+The emulator-side limiter was excluded the same way, by reading it rather than
+testing it: `RSXThread.cpp` computes `needed_us = 1000000 / limit`, then waits
+only when it is *ahead* of the deadline. A frame slower than `needed_us`
+collapses `time` to now, skips the wait and slides the deadline. It cannot
+quantize, and it cannot bind at 19.1.
+
+# Pull A Backup Before Writing ANY File On The Device
+
+`files/config/patch_config.yml` was 2663 bytes of enable flags for the installed
+Artemis cheat set. It was overwritten with an 80-byte file and **no backup was
+taken first**, so those flags are gone; only the patch *definitions* in
+`config/patches/BLUS31601_patch.yml` survived, and only because nothing wrote to
+them. They are now copied to `debug-captures/patches/`.
+
+`adb push` also resets mode and owner — the file came back `-rw-r--r-- shell`
+where the app needs `-rw-rw---- ... ext_data_rw`. Check the mode after every
+push to an app data directory, and `chmod 660` it back.
+
+Note `chmod` does NOT take on `files/config/patches/` — it stays `drwxr-s---`,
+so new files cannot be created there from the shell. Existing files can still be
+written, which means the only way to add a patch from the harness is to append a
+second top-level key to a patch file that is already there.
+
+# The Combat Control Pair Disagrees With Itself By 17%
+
+Measured 2026-08-25, restored combat from the gold savestate, 60 s window,
+two arms with IDENTICAL settings:
+
+```
+controlA   fps=19.65  cores=5.363  86C -> 90C
+controlB   fps=17.00  cores=5.547  79C -> 94C
+```
+
+**17%.** Anything smaller than that cannot be resolved by this harness, which
+means a large part of the null inventory may be levers the measurement could not
+see rather than levers that do nothing. Do not report a combat fps delta under
+about 20% as a result unless the control pair in that same round agreed.
+
+Two mechanisms, and they are separable:
+
+1. **Thermal.** controlB started 7 C COOLER and finished 4 C HOTTER, and it was
+   the slower arm. At 90-94 C the SoC governor is throttling, so the arms are
+   racing a thermal ceiling rather than each other. Neither run had reached
+   thermal steady state inside its window - both were still climbing.
+
+2. **Scene divergence.** The savestate fixes the starting frame, not the next
+   60 seconds. AI, physics and camera drift apart between runs. The existing
+   note that "each run lands in a different scene" was written about pressing
+   through cutscenes and was believed solved by the savestate. It is not solved,
+   only reduced.
+
+## What a readable combat arm needs
+
+- A control PAIR every round, reported, and the round discarded when they
+  disagree. This is already the rule for title-screen arms; it was never applied
+  to savestate combat because the savestate was assumed to make runs identical.
+- A temperature BAND for the measurement window, not just a pre-boot cool gate.
+  Cooling to <50 C before boot does not help when boot itself arrives at 79-86 C
+  and the window then climbs to 94 C.
+- Proportional metrics survive this. A census that asks "which wait site
+  dominates" is robust to a 17% scale error in a way that "is arm B faster"
+  is not. Prefer the census when the question allows it.
+
+# The Emulator Is COMPUTE-Bound, Not Wait-Bound. Stop Tuning Backoffs.
+
+Measured 2026-08-25 with `-PrpcsxThorWaitProfiler=1`, restored 3D combat,
+two profiler summaries 30 s apart and subtracted so the numbers describe combat
+and not boot or the intro movies:
+
+```
+IN 3D COMBAT: fps=18.70 -> 18.90  cores=5.360  92C -> 94C
+
+site              calls/s     wait us/s    % of ONE core
+vm_passive         81572        178132        17.8%
+rsx_fifo            8862         92315         9.2%
+getllar_retry       5898         92151         9.2%
+vm_range            2907         30280         3.0%
+mutex_x               94         14766         1.5%
+vm_writer            678          7062         0.7%
+```
+
+Total busy-wait is **414,706 us/s = 0.41 core-seconds per second**. With
+`coresBusy` at 5.36 that is **7.7% of all busy CPU time**.
+
+**So every busy-wait in the emulator, removed entirely and perfectly, is worth
+about 8% of CPU: roughly 18.8 -> 20.3 FPS.** It cannot reach 30. This is the
+single fact that explains the null inventory: those arms were dividing up a 7.7%
+slice, and the combat harness cannot resolve anything under about 17%.
+
+Do not open another backoff-tuning arm on this title without first showing, from
+a census, that the site is worth more than the noise floor.
+
+## It also corrects what Ghidra was evidence FOR
+
+`chunk-0x0f3c4` being "96.84% of CellSpursKernel0" is the share of SPU program
+blocks - where the SPU program counter sits - and NOT a share of host CPU time.
+The same site measured from the host is `getllar_retry` at 92,151 us/s, which is
+**1.7% of busy CPU**. Ghidra was right that the SPU is starved rather than slow.
+It was never evidence that the spin costs the host anything much.
+
+## And the thermal ceiling theory is dead
+
+The census records cpufreq beside the temperature:
+
+```
+cpu0=2016/2016MHz  cpu3=2803/2803MHz  cpu7=3187/3187MHz    at 92-94 C
+```
+
+Every cluster is pinned at its MAXIMUM. The SoC is not throttling this workload
+even at 94 C, so combat frame rate is not thermally limited, and the 17% control
+spread is scene divergence rather than heat. A change that lowers heat is worth
+having for the device's sake, but it must not be sold as a frame-rate fix.
+
+## Where the frame time actually is
+
+The other 92% is real work. That is now the only question worth asking, and it
+needs a symbol-level profile (`-PrpcsxThorDebuggable=1`, simpleperf through
+`run-as`), not another lever.
+
+# Where The Frame Time Actually Is: The Combat Symbol Profile
+
+2026-08-25, restored 3D combat, 146,125 samples, 0 lost, 25 s at 18.3-18.6 fps.
+Debuggable thortest (`-PrpcsxThorDebuggable=1`), simpleperf through `run-as`,
+symbolized on the HOST against the unstripped 1.3 GB library - build-id verified
+to match the installed one first. Full report:
+`debug-captures/perf/combat-profile-20260825.txt`.
+
+```
+BY THREAD                          BY DSO                     TOP SYMBOLS
+SPU[0x0000100]  19.93%             55.07% unknown (guest JIT) 11.47% vm::writer_lock::writer_lock
+SPU[0x3000100]  10.82%             28.50% librpcsx-android.so  6.27% [kernel]
+SPU[0x4000100]  10.75%             10.88% [kernel]             5.24% unknown[+72270debb8]
+SPU[0x2000100]  10.72%              2.79% libc.so              3.29% spu_thread::process_mfc_cmd
+SPU[0x1000100]  10.70%              2.30% libvulkan_freedreno  3.15% thor_wait::profiled_busy_wait
+SPU[0x5000100]   8.52%                                         2.01% memcpy_opt
+rsx::thread      9.53%                                         1.57% rsx::FIFO::fetch_u32
+PPU[0x100000b]   7.03%                                         1.17% vm::range_lock_internal
+PPU[0x1000000]   6.65%
+```
+
+**Six SPU threads are 71.4% of all cycles**, and 55% of everything is JIT-compiled
+guest code in anonymous mappings. That is real SPU program execution spread over
+thousands of small blocks, NOT one hot spin loop - the largest single JIT block
+is 5.24%.
+
+## This is also how the SPU spin hid from the wait census
+
+The SPU spins in GUEST code, executing translated SPU instructions at full host
+issue rate. That never touches a host busy-wait site, which is why the census
+reports `getllar_retry` at 1.7% of busy CPU while Ghidra reports the same loop as
+96.84% of `CellSpursKernel0`. Both are correct and they measure different things.
+**Guest-side spinning is invisible to thor_wait and expensive to the host.**
+
+## The one concentrated, addressable symbol
+
+`vm::writer_lock::writer_lock` at **11.47%** - the largest named symbol in the
+emulator. It is reached from `do_putllc`/`do_putlluc`: `g_use_rtm` is false on
+ARM64, so with accurate reservations on, every SPU reservation store takes the
+hard path. Its hot operation is `bits.bit_test_set()` on the SINGLE
+`g_range_lock_bits[1]` cacheline, which six SPU threads must each own
+exclusively in turn - a line bouncing across clusters that sit behind different
+L2s. `profiled_busy_wait` is only 3.15%, so this cost is the acquisition itself,
+not the backoff.
+
+## And there is idle capacity, so this is a DEPENDENCY problem
+
+`coresBusy` is 5.36 of 8 while nine threads are live. About 2.6 cores sit idle,
+so the workload is not throughput-limited - it is serialized on a PPU -> SPU ->
+RSX dependency chain. **More CPU would not help.** That is a further reason no
+backoff or affinity lever can reach the target: they add throughput to a
+critical path that is waiting on order, not on cores.
+
+An affinity lever exists and is default-off:
+`debug.rpcsx.thor.cpu_affinity_mask` (SPUThread.cpp, PPUThread.cpp - one mask for
+both). With 2.6 cores already idle, squeezing threads onto the five big cores is
+unlikely to pay, and its own comment says it must be A/B'd rather than assumed.
+
+# SPU Loop Detection Is A NULL Here, And The Reason Is Structural
+
+Measured 2026-08-25, restored 3D combat, interleaved, control pair first.
+The property is `debug.rpcsx.thor.spu_loop_detection` (SPUThread.cpp), which
+had never been measured on this device before this round.
+
+```
+controlA   fps=16.83  cores=5.423  78C -> 95C
+on         fps=16.65  cores=5.573  86C -> 93C
+controlB   fps=16.53  cores=5.483  85C -> 93C
+on2        fps=16.87  cores=5.517  88C -> 93C
+```
+
+The control pair agrees to 1.8% this round, so the arms ARE readable. Mean
+control 16.68, mean on 16.76: **+0.5%, inside noise.** More telling, the
+prediction that would have made it real did not happen - `coresBusy` did not fall
+(5.45 -> 5.55) and the temperature did not drop.
+
+## Why it cannot work at this site
+
+The yield is gated on a SINGLE requested wait exceeding a scheduler jiffy:
+
+```cpp
+if (get_thor_spu_loop_detection(...) && out > spu::scheduler::native_jiffy_duration_us)
+{
+    state += cpu_flag::wait;
+    std::this_thread::yield();
+}
+```
+
+But Ghidra shows the hot loop reads the decrementer **2400 times per backoff** -
+thousands of SHORT polls, never one long wait - so `out` stays far below a jiffy
+and the branch never executes. The comment above it, which predicted this would
+reclaim "about five cores spent spinning on nothing", is describing a real
+condition with a mechanism that cannot reach it.
+
+**Do not re-run this arm.** A yield keyed to the size of one decrementer request
+cannot see a loop made of many small requests. Anything aiming at that spin has
+to key on the REPETITION - the same pc polling the same channel N times - not on
+the magnitude of a single wait.
+
+## Note on absolute frame rate between rounds
+
+This round reads 16.5-16.9 fps where earlier rounds read 18.6-19.7. Every run
+here ended at 93-95 C, and the earlier ones at 90 C. Within a round the controls
+agree; across rounds they do not. Compare arms only against controls from their
+OWN round.
+
+# An Arm Must PROVE It Engaged, Or Its Null Is Worthless
+
+2026-08-25. A full interleaved A/B of `SPU Block Size` - warm-up boot plus four
+measured runs, about an hour of device time - was **void**, not null:
+
+```
+controlA 16.65   mega1 16.22   controlB 16.25   mega2 16.32
+```
+
+It was measuring Safe against Safe. Two independent checks caught it, and the
+frame rate was not one of them:
+
+1. `spu-mega-v1-tane.dat` was still **456,128 bytes dated 2026-08-23** after the
+   run, while `spu-safe-v1-tane.dat` is 2,918,964 bytes. Each block size keeps
+   its own SPU cache, so a mega arm that really ran would have rewritten it.
+2. The log said `Thor: SPU Block Size forced to mega` and the effective-config
+   dump three lines later said `SPU Block Size: Safe`.
+
+The cause is the same one that void'd the frame-limit arm earlier the same day:
+**the enum serializes CAPITALIZED.** `spu_block_size_type` prints "Safe", "Mega",
+"Giga", so `from_string("mega")` rejects the value and leaves the setting alone.
+The override then logged success anyway, because it never checked the return
+value that `from_string` gives you for exactly this reason.
+
+## The rule
+
+Every property-driven arm must assert, from something the EMULATOR did, that the
+setting took effect - before any number from it is believed:
+
+- prefer an artifact: the mega SPU cache file changing size or mtime
+- or the effective-config dump (`Used configuration:`), NOT the "forced to" line,
+  which only proves the override code ran
+- and always check the return value of `cfg::*::from_string`; it exists to tell
+  you the string was rejected
+
+`frame_limit` already did this correctly, which is why its bad value produced a
+loud "could not parse" instead of a quiet null. `spu_block_size` did not. Copy
+the frame-limit shape, not the block-size one.
+
+# SPU BLOCK SIZE = MEGA IS WORTH +16.5% IN COMBAT. First real win.
+
+Measured 2026-08-25, restored 3D combat, interleaved, control pair first, with
+the setting PROVEN engaged before any number was believed:
+
+```
+WARMUP-mega  19.55   (discarded, paid the recompile)
+controlA     16.60   cores 5.550   81C -> 94C
+mega1        19.14   cores 5.397   88C -> 96C
+controlB     16.44   cores 5.607   83C -> 96C
+mega2        19.34   cores 5.620   93C -> 94C
+```
+
+Control pair agrees to 1.0%, mega pair agrees to 1.0%, and the two arms do not
+overlap at all: the highest control (16.60) is below the lowest mega (19.14).
+Interleaving rules out run order - controls are at positions 2 and 4, mega at 3
+and 5. **Mean 16.52 -> 19.24, +16.5%.**
+
+Engagement proof, which is mandatory here after a whole A/B of this same setting
+was void on the same day:
+
+- `spu-mega-v1-tane.dat` **456,128 -> 641,020 bytes**, restamped by the run
+- `Thor: SPU Block Size forced to Mega (now Mega)` and the effective-config dump
+  `SPU Block Size: Mega`
+
+## Why this one worked when ~28 levers did not
+
+Every null this session tuned WAITING. The combat census puts all host busy-waits
+together at 7.7% of busy CPU, so none of them could ever have been worth more
+than a couple of frames. The symbol profile puts **55% of all cycles in
+JIT-compiled guest code** and 71.4% in six SPU threads. Block size is the only
+configuration knob that touches THAT: larger recompiler blocks mean fewer
+dispatches and more optimisation across branch boundaries.
+
+**Aim at the census, not at the intuition.** The measured cost distribution
+picked the winner; every lever chosen by reasoning about mechanisms lost.
+
+## Enable it for this title
+
+`Core: SPU Block Size: Mega` belongs in `config_BLUS30357.yml`. The runtime
+property `debug.rpcsx.thor.spu_block_size = safe|mega|giga` is for sweeps and now
+canonicalizes case and verifies the result; note each size keeps its OWN SPU
+cache file, so the first boot on a new value pays a full recompile and its number
+must be discarded.

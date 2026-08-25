@@ -1671,14 +1671,30 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				{
 					const std::string want(bs_value);
 
-					if (want == "safe" || want == "mega" || want == "giga")
+					// The enum serializes CAPITALIZED - "Safe", "Mega", "Giga" -
+					// so `from_string("mega")` REJECTS the value and leaves the
+					// setting alone. This block used to pass the lowercase string
+					// straight through and log success without checking the return
+					// value, so `spu_block_size=mega` silently did nothing while
+					// claiming to work: an A/B run against it on 2026-08-25 was
+					// measuring Safe against Safe. Canonicalize, then VERIFY.
+					std::string canon;
+
+					if (want == "safe" || want == "Safe") canon = "Safe";
+					else if (want == "mega" || want == "Mega") canon = "Mega";
+					else if (want == "giga" || want == "Giga") canon = "Giga";
+
+					if (canon.empty())
 					{
-						g_cfg.core.spu_block_size.from_string(want);
-						sys_log.error("Thor: SPU Block Size forced to %s", want);
+						sys_log.error("Thor: ignoring SPU Block Size '%s' (expected safe|mega|giga)", want);
+					}
+					else if (g_cfg.core.spu_block_size.from_string(canon))
+					{
+						sys_log.error("Thor: SPU Block Size forced to %s (now %s)", canon, g_cfg.core.spu_block_size.to_string());
 					}
 					else
 					{
-						sys_log.error("Thor: ignoring SPU Block Size '%s' (expected safe|mega|giga)", want);
+						sys_log.error("Thor: FAILED to set SPU Block Size '%s', still %s", canon, g_cfg.core.spu_block_size.to_string());
 					}
 				}
 			}
