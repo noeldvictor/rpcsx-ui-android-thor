@@ -340,6 +340,20 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 {
 	const auto ctxt = spu._ptr<SpursKernelContext>(0x100);
 
+	// WHEN does this first run? Four repairs to the clear below have hung the boot
+	// at ~4 s of emulated time, but 'armed' is logged at SPU THREAD CREATION and
+	// the group is not created until ~17 s - so either this selector runs far
+	// earlier than assumed, or the hang has nothing to do with it. One shot per
+	// SPU, at entry, before any of the changed code.
+	{
+		static std::atomic<u32> s_entry_logged{0};
+
+		if (thor_hle_once(s_entry_logged, spu.index))
+		{
+			cellSpurs.error("Thor SELECTOR first entry: spu=%u pc=0x%05x", spu.index, spu.pc);
+		}
+	}
+
 	// The first and only argument to this function is a boolean that is set to false if the function
 	// is called by the SPURS kernel and set to true if called by cellSpursModulePollStatus.
 	// If the first argument is true then the shared data is not updated with the result.
@@ -611,6 +625,18 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 bool spursKernel2SelectWorkload(spu_thread& spu)
 {
 	const auto ctxt = spu._ptr<SpursKernelContext>(0x100);
+
+	// The kernel1 probe never fired, which I read as "the selector never runs".
+	// That conclusion was only valid for kernel1 - this title may take the
+	// 32-workload path instead, and the gate has call sites in BOTH selectors.
+	{
+		static std::atomic<u32> s_entry2_logged{0};
+
+		if (thor_hle_once(s_entry2_logged, spu.index))
+		{
+			cellSpurs.error("Thor SELECTOR2 first entry: spu=%u pc=0x%05x", spu.index, spu.pc);
+		}
+	}
 
 	// The first and only argument to this function is a boolean that is set to false if the function
 	// is called by the SPURS kernel and set to true if called by cellSpursModulePollStatus.
