@@ -634,6 +634,41 @@ void _spurs::handler_wait_ready(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 		// Find a runnable workload
 		spurs->handlerDirty = 0;
+
+		// WHY THE HLE SPURS PATH NEVER STARTS ITS SPU THREADS.
+		//
+		// sys_spu_thread_group_start for the SPURS kernel group happens only
+		// after this function returns, so if no workload ever looks runnable the
+		// group is created and never started - which is exactly what was
+		// measured: the group appears in the log at 18.56 s, the title then calls
+		// CreateTaskWithAttribute, SendWorkloadSignal and WakeUp, and /proc shows
+		// NO SPU threads at all, only the "SPU LLVM" compiler worker.
+		//
+		// Three independent conditions must hold for a workload to count, and the
+		// loop below cannot say which one failed. This prints them once per
+		// waiting pass for every workload that has any state at all, so the next
+		// run names the field instead of guessing at it.
+		if (spurs->exception == 0u)
+		{
+			for (u32 i = 0; i < 16; i++)
+			{
+				if (spurs->wklState1[i] == SPURS_WKL_STATE_NON_EXISTENT)
+				{
+					continue;
+				}
+
+				cellSpurs.error("Thor SPURS handler wait: wkl%u state=%u priority=0x%llx maxContention=0x%x readyCount=%u signal=%u flag=%u flagReceiver=%u",
+					i,
+					+spurs->wklState1[i],
+					static_cast<unsigned long long>(std::bit_cast<u64>(spurs->wklInfo1[i].priority)),
+					+spurs->wklMaxContention[i],
+					+spurs->wklReadyCount1[i],
+					(spurs->wklSignal1.load() & (0x8000u >> i)) ? 1u : 0u,
+					+spurs->wklFlag.flag.load(),
+					+spurs->wklFlagReceiver);
+			}
+		}
+
 		if (spurs->exception == 0u)
 		{
 			bool foundRunnableWorkload = false;
