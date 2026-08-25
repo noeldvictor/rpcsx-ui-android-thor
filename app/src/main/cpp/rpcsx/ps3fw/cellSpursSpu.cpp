@@ -636,6 +636,23 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	const auto wklInfo = spu._ptr<CellSpurs::WorkloadInfo>(0x3FFE0);
 	std::memcpy(wklInfo, wklInfoOffset, 0x20);
 
+	// ONE-SHOT per SPU. Does the selector pick the taskset now that the workload
+	// state is real?
+	//
+	// SPURS_IMG_ADDR_SYS_SRV_WORKLOAD = 0x100, SPURS_IMG_ADDR_TASKSET_PM = 0x200.
+	// Before the snapshot fixes every SPU dispatched 0x100 once and stopped. Logs
+	// the FIRST TWO dispatches per SPU only - per-dispatch logging on this path
+	// boot-looped the branch (36cb52ca1), the one-shot breadcrumb pattern did not.
+	{
+		static std::array<std::atomic<u32>, 8> s_seen{};
+
+		if (spu.index < 8 && s_seen[spu.index].fetch_add(1) < 2)
+		{
+			cellSpurs.error("Thor SPU%u dispatch#%u: wid=%u addr=0x%x size=0x%x",
+				spu.index, s_seen[spu.index].load(), wid, wklInfo->addr.addr(), +wklInfo->size);
+		}
+	}
+
 	// Load the workload to LS
 	if (ctxt->wklCurrentAddr != wklInfo->addr)
 	{
