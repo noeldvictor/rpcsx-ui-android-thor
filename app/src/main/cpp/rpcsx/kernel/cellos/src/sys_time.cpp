@@ -1,4 +1,10 @@
 #include "stdafx.h"
+#ifdef __ANDROID__
+// AFTER stdafx.h, never before - stdafx.h is the precompiled header, and an
+// include placed ahead of it changes feature-test macros for this translation
+// unit only.
+#include <sys/system_properties.h>
+#endif
 
 #include "sys_time.h"
 
@@ -149,9 +155,75 @@ u64 convert_to_timebased_time(u64 time) {
   return result - g_timebase_offs;
 }
 
+// Cheaper PPU timebase conversion. Default off.
+//
+// Every guest `mftb` becomes a call to this function - PPUTranslator emits
+// Call("__mftb_%u") rather than inlining - and the shipped conversion below
+// performs FOUR 64-bit divisions:
+//
+//   (tsc / freq * tb + tsc % freq * tb / freq) * clocks_scale / 100
+//
+// On ARM64 a 64-bit udiv is roughly 12-20 cycles, so that is ~60-80 cycles of
+// division on top of a `mrs cntvct_el0` measured at 36.87 ns / 118 cycles on the
+// Thor. About 200 cycles for a timestamp.
+//
+// The division shape exists only to stop `tsc * 80e6` overflowing 64 bits. But
+// 80e6 / freq reduces: this device reports CNTFRQ_EL0 = 19,200,000 Hz, so the
+// ratio is exactly 25/6 and the conversion becomes one multiply and one division
+// by a small constant, which the compiler lowers to a multiply-shift.
+//
+// It is EXACT, not approximate, and cannot overflow at the reduced numerator -
+// 2^64/25 ticks at 19.2 MHz is over a million years. When clocks_scale is 100,
+// the trailing `* 100 / 100` is skipped as the identity it is.
+//
+// The SPU side already has this as debug.rpcsx.thor.spu_dec_fastconv. The PPU
+// side never got it, and PPU[0x100000b] - the game's RenderingThread - is the
+// busiest non-SPU thread in combat at 76.7% on-CPU.
+//
+//   debug.rpcsx.thor.ppu_tb_fastconv = 1   (default off)
+static bool thor_ppu_tb_fastconv() noexcept {
+#ifdef __ANDROID__
+  static const bool s_value = []() noexcept -> bool {
+    char value[PROP_VALUE_MAX]{};
+    if (__system_property_get("debug.rpcsx.thor.ppu_tb_fastconv", value) <= 0 ||
+        !value[0]) {
+      return false;
+    }
+    return value[0] == '1' || value[0] == 'y' || value[0] == 't';
+  }();
+  return s_value;
+#else
+  return false;
+#endif
+}
+
+static inline u64 thor_gcd(u64 a, u64 b) noexcept {
+  while (b) {
+    const u64 t = a % b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
+
 u64 get_timebased_time() {
   if (u64 freq = utils::get_tsc_freq()) {
     const u64 tsc = rx::get_tsc();
+
+    if (thor_ppu_tb_fastconv()) {
+      // Reduce timebase/freq once. Both are constant for the process life.
+      static const u64 s_div = thor_gcd(g_timebase_freq, freq);
+      static const u64 s_num = g_timebase_freq / s_div;
+      static const u64 s_den = freq / s_div;
+
+      u64 result = tsc * s_num / s_den;
+
+      if (const u64 scale = g_cfg.core.clocks_scale; scale != 100u) {
+        result = result * scale / 100u;
+      }
+
+      return result - g_timebase_offs;
+    }
 
 #if _MSC_VER
     const u64 result =
