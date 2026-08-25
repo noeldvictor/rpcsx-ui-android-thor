@@ -168,15 +168,21 @@ object GameSettingsDatabase {
             # held 30.00 FPS, and reached the "Press START button" title screen, which
             # it had never got to before.
             Core:
-              # SPU Block Size: Mega. MEASURED +16.5% in restored 3D combat,
-              # 2026-08-25, and the first non-null after roughly 28 levers.
+              # SPU Block Size: Mega. MEASURED +3.2% frames and -4.7% CPU in
+              # restored 3D combat, 2026-08-25, 420 s windows, interleaved:
               #
-              #   controlA 16.60  controlB 16.44   control pair agrees to 1.0%
-              #   mega1    19.14  mega2    19.34   mega pair agrees to 1.0%
+              #   safe 18.60 / 18.70   cores 5.74 / 5.70
+              #   mega 19.20 / 19.30   cores 5.32 / 5.58
               #
-              # Mean 16.52 -> 19.24. The arms do not overlap - the highest control
-              # is below the lowest mega - and the runs were interleaved, so run
-              # order cannot explain it. A third round reproduced it at 19.17.
+              # Both pairs agree to 0.5%. Mega does more work per cycle, which is
+              # what the mechanism predicts, so it is kept.
+              #
+              # RETRACTED: an earlier 60 s round reported +16.5% and does not
+              # reproduce. Mega measures 19.1-19.4 in every round ever taken;
+              # SAFE is bimodal across rounds by ~13% and that round caught its
+              # slow mode. Its control pair agreed to 1.0% and still misled,
+              # because two controls can agree and both sit in the wrong mode.
+              # See the retraction section in AGENTS.md.
               #
               # WHY THIS AND NOT A WAIT LEVER. A wait-site census puts every host
               # busy-wait together at 7.7% of busy CPU, so the whole class was

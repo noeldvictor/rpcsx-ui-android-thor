@@ -236,14 +236,22 @@ gameplay speed.
 
 ### The setting that actually made it faster: SPU Block Size
 
-**+16.5% in 3D combat**, and for this game you do not have to do anything - its
-profile sets it. It is also the compiled default on Android now, though note that
-an install which already has a `config.yml` keeps the `Safe` written there, so the
-per-game profile is what actually reaches existing devices.
+**+3.2% frames and -4.7% CPU in 3D combat**, and for this game you do not have to
+do anything - its profile sets it. It is also the compiled default on Android now,
+though note that an install which already has a `config.yml` keeps the `Safe`
+written there, so the per-game profile is what actually reaches existing devices.
 
-    control  16.60 / 16.44 FPS        Mega  19.14 / 19.34 FPS
+    Safe  18.60 / 18.70 FPS  (5.74 / 5.70 cores)
+    Mega  19.20 / 19.30 FPS  (5.32 / 5.58 cores)
 
-Interleaved, with a control pair, and the arms do not overlap. RPCS3 defaults
+Interleaved, 420-second windows, both pairs agreeing to 0.5%.
+
+An earlier 60-second round measured **+16.5%** and that number does not
+reproduce. Mega measures the same everywhere (19.1-19.4); it was the *Safe*
+baseline that was unusually slow in that round, and Safe turns out to be bimodal
+across rounds by about 13% for reasons not yet understood. The lesson is kept in
+AGENTS.md: two controls can agree with each other and still both sit in the wrong
+mode, so agreement within a round does not make rounds comparable. RPCS3 defaults
 this to `Safe`, which is the right choice on a PC; larger recompiler blocks trade
 compile time for fewer block dispatches, and dispatch costs relatively more on
 Thor's ARM64 chip than on an x86 desktop. **This is the clearest example of why

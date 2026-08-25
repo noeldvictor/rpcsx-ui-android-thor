@@ -58,9 +58,15 @@ struct cfg_root : cfg::node
 		// control pair, the setting proven engaged from the SPU cache artifact and
 		// the effective-config dump:
 		//
-		//   control 16.60 / 16.44      mega 19.14 / 19.34      +16.5%
+		//   safe 18.60 / 18.70 (5.74 / 5.70 cores)
+		//   mega 19.20 / 19.30 (5.32 / 5.58 cores)      +3.2% fps, -4.7% CPU
 		//
-		// The arms do not overlap and a later round reproduced mega at 19.17/19.39.
+		// 420 s windows, interleaved, both pairs agreeing to 0.5%. An earlier
+		// 60 s round measured +16.5% and DOES NOT REPRODUCE: mega measures the
+		// same everywhere (19.1-19.4), while safe is bimodal across rounds by
+		// about 13% and that round caught its slow mode. See the retraction in
+		// AGENTS.md. Mega still wins on both frames and CPU, which is what the
+		// mechanism predicts, so the default stands - the size of the win did not.
 		// It is the first non-null after roughly 28 levers, all of which tuned
 		// waiting - which a census caps at 7.7% of busy CPU - while 55% of cycles
 		// are JIT-compiled guest code that only this setting touches.

@@ -10423,3 +10423,51 @@ the PPU side wrote, not in the SPU loop that reads it.
 
 Do NOT add per-iteration logging on this path. This branch has boot-looped from
 exactly that twice, and the loop above runs continuously on six SPUs.
+
+# RETRACTION: SPU Block Size Mega is +3.2%, NOT +16.5%
+
+The +16.5% recorded earlier on 2026-08-25 does not reproduce. A better-controlled
+round the same day, 420 s windows instead of 60 s, interleaved, both pairs
+internally consistent:
+
+```
+megaA 19.20  cores 5.320       safeA 18.60  cores 5.740
+megaB 19.30  cores 5.580       safeB 18.70  cores 5.700
+mega  19.25  cores 5.45        safe  18.65  cores 5.72
+```
+
+**+3.2% frames and -4.7% CPU.** Mega is still better on both axes, and it still
+belongs as the Android default - it does more work per cycle, which is what the
+mechanism predicts. But the headline was wrong by a factor of five.
+
+## Why the first number was wrong, and why its control pair did not catch it
+
+Every Safe measurement taken this session:
+
+```
+16.83  16.65  16.53  16.87  16.60  16.44        <- one mode
+18.70  18.90  18.60  18.70                      <- the other
+```
+
+**Safe is BIMODAL across rounds, by about 13%.** Mega is not: 19.14, 19.34,
+19.17, 19.39, 19.20, 19.30 everywhere it has ever been measured. So the +16.5%
+came from an unusually slow Safe baseline rather than from Mega being fast.
+
+The round that produced it was interleaved and its control pair agreed to 1.0%
+(16.60 / 16.44), which is the check this project relies on - and it is not
+sufficient. **Two controls can agree with each other and still both sit in the
+wrong mode.** A control pair proves consistency WITHIN a round; it says nothing
+about whether that round is comparable to another.
+
+## What would have caught it
+
+The draw-count fingerprint, measured and documented hours earlier and never
+wired in. If those Safe arms were rendering a heavier scene, `drawsLastFrame`
+would have said so directly - it holds to 0.4% inside a scene while fps swings
+3.5%. **Record it in every arm.** A number that cannot be compared across rounds
+is worth less than one that can, and this is the second time scene divergence has
+silently set the answer.
+
+Until the cause of Safe's bimodality is known, quote block size as **+3.2%, from
+the 420 s round**, and treat any single-round combat delta under about 5% as
+unresolved rather than real.
