@@ -331,6 +331,21 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// 4. The number of SPUs allocated to it must be less than the number of SPUs requested (i.e. readyCount)
 				//    OR the workload must be signalled
 				//    OR the workload flag is 0 and the workload is configured as the wokload flag receiver
+				// WHY IS THE TASKSET NEVER SELECTED?
+				//
+				// All six kernels dispatch wid=32 addr=0x100 - the system service -
+				// and never SPURS_IMG_ADDR_TASKSET_PM at 0x200, so the title's
+				// taskset (wid=1) loses here. Log every workload that has ANY sign
+				// of life, with each of the four gating values separated, so the
+				// rejecting condition names itself instead of being guessed at.
+				if (runnable || ctxt->priority[i] != 0 || wklSignal || readyCount)
+				{
+					cellSpurs.error("Thor SPU%u select wkl%u: runnable=%u priority=%u maxContention=%u contention=%u signal=%u flag=%u readyCount=%u requestCount=%u",
+						spu.index, i, runnable ? 1u : 0u, +ctxt->priority[i],
+						+spurs->wklMaxContention[i], +contention[i],
+						wklSignal ? 1u : 0u, +wklFlag, +readyCount, +requestCount);
+				}
+
 				if (runnable && ctxt->priority[i] != 0 && spurs->wklMaxContention[i] > contention[i])
 				{
 					if (wklFlag || wklSignal || (readyCount != 0 && requestCount > contention[i]))
