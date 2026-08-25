@@ -1008,6 +1008,31 @@ s32 _spurs::create_event_helper(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 p
 
 	// auto eht = idm::make_ptr<ppu_thread, event_helper_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr1", ppuPriority, 0x8000);
 
+	// THE SECOND NO-OP HELPER, and this one does damage rather than nothing.
+	//
+	// `if (!eht)` is commented out with the thread creation, so what was the
+	// FAILURE path now runs UNCONDITIONALLY: it disconnects the event port,
+	// destroys it, detaches the queue, force-destroys the event queue and returns
+	// CELL_SPURS_CORE_ERROR_STAT. The `return CELL_OK` at the end of this
+	// function is unreachable.
+	//
+	// So _spurs::initialize always fails here, tearing down an event port it just
+	// created, which is where the access violation at liblv2 0x022273bc reading
+	// 0x555538f8 comes from - teardown running over half-initialized state.
+	//
+	// Skipping it leaves SPURS without an event helper THREAD, which is not
+	// correct, but the port and queue survive and initialization can continue.
+	// That is the only way to find out whether anything past this point works,
+	// since nothing past it has ever executed.
+	//
+	// Gated on debug.rpcsx.thor.hle_spurs_kernel, so the default path still runs
+	// the original code exactly.
+	if (get_thor_hle_spurs_kernel_enabled())
+	{
+		cellSpurs.error("Thor: HLE SPURS skipping the dead event-helper failure path (no helper thread is created either way)");
+		return CELL_OK;
+	}
+
 	// if (!eht)
 	{
 		sys_event_port_disconnect(ppu, spurs->eventPort);
