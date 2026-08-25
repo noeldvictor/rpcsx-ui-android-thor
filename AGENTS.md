@@ -8428,6 +8428,43 @@ all, and they predict the precompile time and the Scudo risk.
 **A fingerprint says which failures are possible. It does not say which one
 happened.** The workup tool still decides that.
 
+# "Never rendered" is usually the harness, not the lever
+
+**2026-08-25.** Three arms in a row reported `SKIP (never rendered)` -
+`spu_backoff_div=32`, `spu_backoff_div=4`, and `getllar_busy_percent=25` - and a
+conclusion was drawn from all three. One of them was innocent.
+
+Every failing arm shared two properties that had nothing to do with its lever:
+
+  * it CLEARED the SPU cache first, so ~3147 functions had to be recompiled
+  * it booted from **86-88 C**, while every control that rendered booted from
+    **59-62 C**
+
+The render wait was 420 s. AGENTS.md already records that a cold cache build on a
+hot device never completes inside the thermal bound. So "never rendered" meant
+"did not finish compiling in time", and the lever was blamed for the harness.
+
+Retested from a cold device, one at a time:
+
+    getllar_busy_percent=25   RENDERED at t+30 s, 3147 functions, 0 fatals
+    spu_backoff_div=4         process DEAD by t+60 s, temp 69 C then flat 32 C
+
+So one was a harness artifact and the other was a real crash. They are
+indistinguishable from the arm's output alone.
+
+**Rules this earns:**
+
+1. A lever that does not change generated code does NOT need the SPU cache
+   cleared. Clearing it anyway buys a ten-minute recompile and a false negative.
+   Only clear it for a lever that rewrites analysed instructions.
+2. Cool BEFORE the boot, with the app already stopped, in every arm - not only
+   the first. An A-B-A whose later arms start 30 C hotter is not a controlled
+   comparison.
+3. Before believing `never rendered`, distinguish the three causes: still
+   compiling (`SPU Runtime: Built` count rising), thermally paused (`THERMAL
+   ABORT` in the log), or dead (control API returns nothing and `pidof` is
+   empty). The output looks identical and the meanings are opposite.
+
 # A cooldown gate that runs BEFORE the force-stop cooks the device
 
 **2026-08-23, and it is the worst harness defect written here.** A reproduction
