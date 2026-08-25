@@ -10471,3 +10471,55 @@ silently set the answer.
 Until the cause of Safe's bimodality is known, quote block size as **+3.2%, from
 the 420 s round**, and treat any single-round combat delta under about 5% as
 unresolved rather than real.
+
+# HLE/LLE ARM64 Audit: The HLE Modules Are Not Hot, And That Is The Point
+
+Asked whether the shipped HLE modules are ARM64-optimised. Audited, and then
+checked against a profile rather than stopping at the code.
+
+**The code is architecture-neutral by construction.** `ps3fw/` contains ZERO
+x86-only intrinsics - no `_mm_*`, no `__m128`, no `immintrin` - and zero
+ARM64/NEON references, because every module goes through the portable
+`v128` / `gv_*` layer. The single `ARCH_X64` site, in `cellAdec.cpp`, is a
+fallback for x86 WITHOUT SSSE3; ARM64 takes the `#else` branch, which uses
+`gv_shuffle8` and is the better path.
+
+`util/simd.hpp` looks lopsided - 16 `ARCH_X64` against 4 `ARCH_ARM64` - but that
+is misleading. Those x86 blocks sit inside `requires(asmjit::any_operand_v<...>)`
+templates: they are the **asmjit x86 JIT-emitter** overloads, and on ARM64
+`FOR_X64` expands to `fmt::throw_exception("Unimplemented for this
+architecture!")`. They are unreachable here, not unoptimised. Where it matters,
+there IS hand-written NEON - `gv_fshl8` uses `vandq_s8`/`vshlq_u8`/`vorrq_u8`
+in place of a 15-instruction generic sequence.
+
+`rx::v128` is a plain 16-byte-aligned union of arrays with no native vector
+member, so `gv_*` operations without hand-written NEON depend on clang
+auto-vectorising. Worth knowing before optimising anything there - but only if it
+is hot.
+
+## It is not hot. Nothing in ps3fw is.
+
+Searching the 144k-sample combat profile for any HLE module:
+
+```
+0.08%  cellAudio Thread     <- a thread name, not even a symbol
+```
+
+**No HLE module appears.** Optimising them for ARM64 would gain nothing
+measurable in this title, because they are not executing.
+
+## Why that is an argument FOR HLE SPURS, not against it
+
+This title runs SPURS through **LLE** - the guest's own `libsre.sprx` SPU code -
+which is why 55% of all cycles are JIT-compiled guest code and why Ghidra finds
+96.84% of `CellSpursKernel0` in a poll-with-backoff. The HLE modules are cold
+precisely because the hot work is being done by guest code instead of by them.
+
+So the lever is not "make HLE faster". It is **move work into HLE at all**:
+switching SPURS from LLE to HLE replaces that guest SPU loop with native host
+code, which is what SPUCommonRecompiler.cpp means by "deletes the loop rather
+than making it cheaper".
+
+**And "ARM64-optimising LLE" means optimising the SPU recompiler**, since LLE
+work IS the JIT'd guest code. That is where `SPU Block Size`, `XFloat Accuracy`
+and the codegen levers live - the same 55%.
