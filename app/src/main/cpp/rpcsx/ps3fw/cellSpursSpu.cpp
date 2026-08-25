@@ -698,6 +698,8 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 // SPURS kernel workload exit
 bool spursKernelWorkloadExit(spu_thread& spu)
 {
+	cellSpurs.error("Thor SPU%u workloadExit -> kernel reselects", spu.index);
+
 	const auto ctxt = spu._ptr<SpursKernelContext>(0x100);
 	const bool isKernel2 = ctxt->spurs->flags1 & SF1_32_WORKLOADS ? true : false;
 
@@ -769,6 +771,15 @@ bool spursKernelEntry(spu_thread& spu)
 // Entry point of the system service
 bool spursSysServiceEntry(spu_thread& spu)
 {
+	// Does the system service ever RETURN to the kernel?
+	//
+	// Every SPU dispatches wid=32 addr=0x100 exactly once and never selects
+	// again, so they are all inside this workload. The kernel re-enters selection
+	// through spursKernelWorkloadExit at ctxt->exitToKernelAddr. If ENTER appears
+	// once per SPU and EXIT never does, the system service never gives the kernel
+	// back and that is the wall.
+	cellSpurs.error("Thor SPU%u sysService ENTER (pc=0x%05x)", spu.index, spu.pc);
+
 	const auto ctxt = spu._ptr<SpursKernelContext>(spu.gpr[3]._u32[3]);
 	// auto arg = spu.gpr[4]._u64[1];
 	auto pollStatus = spu.gpr[5]._u32[3];
