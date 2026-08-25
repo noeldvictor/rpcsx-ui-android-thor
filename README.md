@@ -507,7 +507,7 @@ curl 127.0.0.1:8099/                # list every endpoint and button name
 | `POST /pad/press?buttons=CROSS,START&ms=120` | press buttons, hold, release |
 | `POST /pad?d1=&d2=&lx=&ly=&rx=&ry=` | set raw pad state, sticks 0..255, centre 128 |
 | `POST /pad/release` | clear every button and centre the sticks |
-| `GET /scene` | is a movie playing? pair this with your screenshot |
+| `GET /scene` | is a movie playing, plus draw calls in the last frame |
 | `GET /device` | CPU temperature, thermal-guard state, power, FPS, cores, RAM |
 | `GET /diag` | compile progress, the settings actually in effect, live SPURS state |
 | `GET /threads?match=SPU` | per-thread CPU (cumulative; sample twice and subtract) |
@@ -533,9 +533,26 @@ injected `START`.
 reports whether the guest is decoding video, which is exact for pre-rendered
 cutscenes. Frame rate is actively misleading here: Transformers renders its
 cutscene at 120-133 FPS and its title screen at 30, so the high number is a
-movie rather than speed. A real-time engine cutscene is not detected this way
-and has to be judged from the picture, which the endpoint says plainly rather
-than guessing.
+movie rather than speed.
+
+`/scene` also reports **how many draw calls the last completed frame issued**,
+which is what lets it see movies the other two probes cannot:
+
+```
+"drawsLastFrame":1,    "drawActivity":"fullscreen-quad-like"  <- intro movie
+"drawsLastFrame":1472, "drawActivity":"scene"                 <- 3D combat
+```
+
+That matters because `cellVdec` and video filenames both MISS Transformers
+entirely. It is an Unreal Engine 3 title: the Bink video is packed inside
+archives, so no video filename is ever opened, and it decodes on the SPUs, so
+Sony's decoder never runs. Extending the list of video extensions cannot fix
+that - there is no filename to match. A movie is a fullscreen quad whatever the
+container, and a 3D scene is hundreds of draws, so the draw count separates them
+without knowing anything about the format.
+
+A real-time engine cutscene still renders like gameplay and is not called a
+movie here. The endpoint says which signal it used rather than guessing.
 
 **Press when the screen is ready, not on a timer.** Presses sent during an
 intro are correctly ignored by the game, which reads exactly like a broken API.

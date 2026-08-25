@@ -10295,3 +10295,45 @@ happened.** Verify the effect - `coresBusy` and `emuTime` - not the acknowledgem
 So for BLUS30357 the `videoDecoding:false` term in a 3D gate is meaningless and
 `coresBusy > 4.5` is carrying the whole test. Keep the cores term; do not add
 confidence from the video term on this title.
+
+# /scene Can Now See Movies That cellVdec And Filenames Cannot
+
+`videoDecoding` and `videoFilesOpen` both miss this device's most important
+title, and no amount of extending the extension list fixes it:
+
+- BLUS30357 is **Unreal Engine 3**. Its Bink video lives inside packed archives,
+  so no `.bik` path is ever opened and `path_is_video` has nothing to match.
+- It **decodes on the SPUs**, so `cellVdec` never fires and `vdecUnits` stays 0
+  for the entire run.
+
+Both probes were correct and both were useless. The old `/scene` said so
+honestly - `"advice":"unknown-this-title-never-calls-cellVdec"` - which is better
+than guessing but left every 3D gate in this project resting on `coresBusy > 4.5`
+alone, with the `videoDecoding == false` term contributing nothing.
+
+**Draw count does not care how the video arrives.** A movie is a fullscreen quad,
+a handful of draws per frame; this title's 3D combat submits hundreds. RSX
+already counted it in `m_frame_stats.draw_calls` and nothing exposed it. It is
+now snapshotted just before RSXThread resets the per-frame stats - so it is the
+LAST COMPLETE frame, not one under construction - and reported:
+
+MEASURED on BLUS30357, 2026-08-25, same boot:
+
+```
+intro    "drawsLastFrame":1     "drawActivity":"fullscreen-quad-like"  "advice":"movie"
+combat   "drawsLastFrame":1472  "drawActivity":"scene"   "advice":"rendering-a-scene"
+```
+
+**One draw against 1472** - three orders of magnitude, on a title where both of
+the other probes see nothing. The intro really is a single fullscreen quad per
+frame, which is exactly what a Bink blit looks like.
+
+`advice` resolves to `movie-or-fullscreen-image`, `menu-or-simple-scene`,
+`rendering-a-scene` or `not-rendering`. The thresholds in
+`thor::draw_activity()` are deliberately WIDE: the job is separating "a few
+quads" from "a scene", and a precise boundary would be tuned to one title and
+wrong on the next.
+
+**Use it in the 3D gate.** `coresBusy > 4.5` alone admitted a run at `fps=0.00`
+once already. `drawActivity == "scene"` is an independent signal that does not
+depend on how busy the host happens to be.
