@@ -3095,13 +3095,37 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
 	}
 
-	vm::light_op<true>(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2, [&](atomic_be_t<u16>& sig)
+	// FIX: set the signal the same way this file CLEARS it in spursAddWorkload.
+	//
+	// The vm::light_op form that used to be here did not stick. Measured: this
+	// function reached its write path with state=2 and wklEnabled correct, ran the
+	// light_op, and reading wklSignal1 back on the very next line still gave 0x0
+	// for wid=0 where 0x8000 was expected - so the store was lost, not cleared by
+	// a later consumer. light_op writes through vm::get_super_ptr(addr) computed
+	// from a host-pointer subtraction, while the SPU selection gate and every
+	// other reader use the ordinary mapping.
+	//
+	// spursAddWorkload already clears this very field with a direct atomic_op on
+	// the member, and that path demonstrably works. Use the same shape to set it.
+	//
+	// This matters because it is the ONLY term that can start a taskset workload
+	// here: the gate is (wklFlag || wklSignal || readyCount) and the other two are
+	// dead - flag reads 0xFFFFFFFF and readyCount is 0.
+	u16 thor_inside = 0;
+	(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2).atomic_op([&](be_t<u16>& data)
 		{
-			sig |= 0x8000 >> (wid % 16);
+			data |= 0x8000 >> (wid % 16);
+			thor_inside = data;
 		});
 
-	cellSpurs.error("Thor signal wid=%u WRITTEN: wklSignal1=0x%x wklEnabled=0x%x readyCount=%u state=%u",
-		wid, +spurs->wklSignal1.load(), +spurs->wklEnabled,
+	// inside  = what the atomic op itself saw after OR-ing, at the write site
+	// readback = the same field through the ordinary mapping, one line later
+	// If inside is right and readback is 0, the store lands somewhere the readers
+	// do not look. If inside is ALSO 0, the OR itself is not doing what it reads
+	// like - which would point at be_t/atomic_be_t semantics, not at addressing.
+	cellSpurs.error("Thor signal wid=%u: inside=0x%x readback=0x%x addr=0x%x sig2=0x%x enabled=0x%x ready=%u state=%u",
+		wid, thor_inside, +spurs->wklSignal1.load(), spurs.addr(),
+		+spurs->wklSignal2.load(), +spurs->wklEnabled,
 		+spurs->wklReadyCount1[wid % CELL_SPURS_MAX_WORKLOAD], +spurs->wklState(wid));
 
 	return CELL_OK;

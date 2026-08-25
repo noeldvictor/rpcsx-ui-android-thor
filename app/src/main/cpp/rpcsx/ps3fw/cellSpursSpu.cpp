@@ -420,9 +420,34 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 			if (!isPoll || wklSelectedId == ctxt->wklCurrentId)
 			{
-				// Clear workload signal for the selected workload
-				spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
-				spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
+				// Clear workload signal for the selected workload.
+				//
+				// **THE SHIFT IS UNDEFINED FOR THE SYSTEM SERVICE, AND ON AArch64
+				// IT SILENTLY ERASES WORKLOAD 0's SIGNAL.**
+				//
+				// wklSelectedId is CELL_SPURS_SYS_SERVICE_WORKLOAD_ID (32) whenever
+				// no real workload is selectable, and the guard above is
+				// `!isPoll || wklSelectedId == ctxt->wklCurrentId`, TRUE on every
+				// poll once an SPU sits in the system service. AArch64 takes a
+				// 32-bit shift count MODULO 32, so `0x8000 >> 32` evaluates to
+				// `0x8000 >> 0` = 0x8000 and the line becomes
+				// `wklSignal1 &= ~0x8000` - clearing workload 0.
+				//
+				// Measured: cellSpursSendWorkloadSignal(wid=0) reached its write
+				// path with state=2, and reading wklSignal1 back ONE LINE LATER
+				// gave 0x0. Six SPUs spinning here erase the bit faster than the
+				// PPU returns. A vm::light_op write and a direct atomic_op both
+				// looked "lost" for this reason; the writes were never the problem.
+				//
+				// The system service has no signal bit, so it must not clear one.
+				if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
+				{
+					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
+				}
+				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
+				{
+					spurs->wklSignal2.raw() &= ~(0x8000 >> (wklSelectedId - CELL_SPURS_MAX_WORKLOAD));
+				}
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
 				if (wklSelectedId == spurs->wklFlagReceiver)
@@ -600,9 +625,16 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 
 			if (!isPoll || wklSelectedId == ctxt->wklCurrentId)
 			{
-				// Clear workload signal for the selected workload
-				spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
-				spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
+				// Same undefined shift as the kernel1 selector: 0x8000 >> 32 wraps
+				// to 0x8000 on AArch64 and clears workload 0. See the comment there.
+				if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
+				{
+					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
+				}
+				else if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
+				{
+					spurs->wklSignal2.raw() &= ~(0x8000 >> (wklSelectedId - CELL_SPURS_MAX_WORKLOAD));
+				}
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
 				if (wklSelectedId == spurs->wklFlagReceiver)
