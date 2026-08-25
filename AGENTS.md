@@ -10363,3 +10363,9 @@ starting frame, not the following minute of AI and physics. Now it can:
 
 This is cheap - one `/scene` call per poll - and it converts an unfalsifiable
 suspicion into a measurement. Add it to any harness that compares frame rates.
+
+**Status: proven, not yet adopted.** The edit that was meant to add this to the
+stability harness failed its assertion and that run went ahead without it. The
+technique stands on the data above; the wiring does not exist yet. (The commit
+message that introduced this section says "wired into the stability harness" -
+it is wrong.)
