@@ -1613,6 +1613,40 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			// exist. Expect breakage: RPCS3 issue 9063 tracks HLE cellSpurs as
 			// incomplete. The point is to measure the CEILING of SPURS overhead.
 #ifdef __ANDROID__
+			// FRAME LIMIT, overridable.
+			//
+			// The per-title profile sets `Frame limit: 30` and EVERY measurement in
+			// this repo has run with it on. That matters because a target-frame-time
+			// limiter QUANTIZES: a frame that takes slightly more than 33.3 ms
+			// cannot be shown at the 33.3 ms mark, so it waits for the next one and
+			// the result is 66.6 ms, i.e. 20 FPS. Combat measures 19.1.
+			//
+			// If that is what is happening, then twenty-five null levers were null
+			// BY CONSTRUCTION - each shaved a few ms off a ~35 ms frame without
+			// crossing 33.3 ms, so the quantized output stayed put - and the true
+			// uncapped rate is higher than anything measured so far.
+			//
+			//   debug.rpcsx.thor.frame_limit = off | 30 | 60 | auto
+			//
+			// Unset leaves the profile's value alone.
+			{
+				char fl_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.frame_limit", fl_value) > 0 && fl_value[0])
+				{
+					const std::string want(fl_value);
+
+					if (g_cfg.video.frame_limit.from_string(want))
+					{
+						sys_log.error("Thor: Frame limit forced to %s", want);
+					}
+					else
+					{
+						sys_log.error("Thor: could not parse Frame limit '%s'", want);
+					}
+				}
+			}
+
 			// SPU BLOCK SIZE, overridable.
 			//
 			// Upstream defaults it to `safe`, the most conservative setting, and no
