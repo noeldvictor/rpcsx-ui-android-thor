@@ -4410,7 +4410,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	{
 		static std::atomic<u32> s_calls{0};
 
-		if (const u32 n = s_calls++; (n & 0x3FFF) == 0)
+		if (const u32 n = s_calls++; (n & 0x3F) == 0)   // every 64: the run only makes ~650 pushes
 		{
 			cellSpurs.warning("Thor QUEUE RING #%u: head=%u tail=%u depth=%u used=%u eq=0x%x",
 				n, +queue->head.load(), +queue->tail.load(), +queue->depth,
@@ -4496,6 +4496,16 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 
 	std::memcpy(vm::base(queue->buffer.addr() + slot * entry_size), buffer.get_ptr(), entry_size);
 
+	{
+		static std::atomic<u32> s_ok{0};
+
+		if (const u32 n = s_ok++; (n & 0x3F) == 0)
+		{
+			cellSpurs.warning("Thor QUEUE PUSH OK #%u: slot=%u head=%u tail=%u", n, slot,
+				+queue->head.load(), +queue->tail.load());
+		}
+	}
+
 	// WAKE THE CONSUMER.
 	//
 	// This was removed once, and correctly at the time: `queue->spurs` was then
@@ -4529,9 +4539,71 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	//
 	// Measured before this: 483,819 pushes against 0 pops, with the consumer
 	// parked in CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL.
-	if (const u32 tid = taskId & 0xFF; tid && queue->taskset)
+	// SIGNAL THE TASK THAT IS ACTUALLY WAITING, NOT THE CALLER'S ARGUMENT.
+	//
+	// Reading arg3 as a task id was wrong. Measured, straight out of the taskset:
+	//
+	//   ts=0x10364100 enabled=80000000 waiting=80000000 signalled=00000000
+	//   SIGNAL taskId=1 rc=0x80410905 (SRCH)
+	//
+	// enabled=80000000 is MSB-first, so ONLY TASK 0 exists - the game creates two
+	// tasksets with one task each - and task 0 is the one WAITING. Every push was
+	// signalling task 1, which cannot exist, so the consumer was never woken and
+	// head froze at ~40 while tail ran to 302.
+	//
+	// The waiting bitmap names the right target, so use it. Bit layout is
+	// `(1u << 31) >> (taskId % 32)`, hence countl_zero gives the id.
+	u32 wake = taskId & 0xFF;
+
+	if (queue->taskset)
+	{
+		const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
+
+		for (u32 w = 0; w < 4; w++)
+		{
+			const u32 word = vm::_ref<be_t<u32>>(ts.addr() + OFFSET_OF(CellSpursTaskset, waiting) + w * 4);
+
+			if (word)
+			{
+				wake = w * 32 + std::countl_zero(word);
+				break;
+			}
+		}
+	}
+
+	if (const u32 tid = wake; queue->taskset)
 	{
 		const s32 rc = _cellSpursSendSignal(ppu, vm::static_ptr_cast<CellSpursTaskset>(queue->taskset), tid);
+
+		// WHAT DOES THE SIGNAL ACTUALLY RETURN?
+		//
+		// The consumer drains 46 entries and then head freezes forever, and every
+		// taskset syscall in the census comes from taskId=0 while these pushes
+		// carry taskId=1. If task 1 is not enabled in the taskset,
+		// _cellSpursSendSignal returns SRCH (0x80410905) and sets no signalled
+		// bit, so the consumer is never made ready and never scheduled.
+		{
+			static std::atomic<u32> s_sig{0};
+
+			if (const u32 n = s_sig++; (n & 0x3F) == 0)
+			{
+				// WHICH TASKS EXIST, AND IN WHAT STATE? rc is SRCH every time, and
+				// the game creates two tasksets with one task each, so signalling
+				// task 1 in a taskset that only has task 0 can only fail. Read the
+				// bitmaps rather than infer them.
+				const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
+				const auto rd = [&](u32 off) { return vm::_ref<be_t<u32>>(ts.addr() + off); };
+
+				cellSpurs.warning("Thor SIGNAL #%u: taskId=%u rc=0x%x | ts=0x%x running=%08x ready=%08x pready=%08x waiting=%08x enabled=%08x signalled=%08x",
+					n, tid, rc, ts.addr(),
+					+rd(OFFSET_OF(CellSpursTaskset, running)),
+					+rd(OFFSET_OF(CellSpursTaskset, ready)),
+					+rd(OFFSET_OF(CellSpursTaskset, pending_ready)),
+					+rd(OFFSET_OF(CellSpursTaskset, waiting)),
+					+rd(OFFSET_OF(CellSpursTaskset, enabled)),
+					+rd(OFFSET_OF(CellSpursTaskset, signalled)));
+			}
+		}
 
 		if (rc + 0u == CELL_SPURS_TASK_ERROR_INVAL)
 		{

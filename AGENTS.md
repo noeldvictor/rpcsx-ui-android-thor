@@ -11481,3 +11481,45 @@ counter printed periodically - and compare the WAIT_SIGNAL count against the
 `cellSpursSendWorkloadSignal` count of 2. If the task waits many times but only
 two workload signals fire, the loss is on the PPU side; if it waits twice, the
 task itself is exiting its consume loop.
+
+## THE CONSUMER DRAINS: signal the WAITING task, not the caller's argument
+
+The queue's consumer had been stuck because every push signalled the wrong task.
+Reading the taskset bitmaps at signal time settled it in one run:
+
+    ts=0x10364100 enabled=80000000 waiting=80000000 signalled=00000000
+    SIGNAL taskId=1 rc=0x80410905 (SRCH)
+
+`enabled=80000000` is MSB-first, so **only task 0 exists** - the title creates two
+tasksets (0x101b4e80 and 0x10364100) with one task each - and task 0 is the one
+WAITING. Passing the caller's third argument (1) as a task id could only ever
+return SRCH, set no signalled bit, and leave the consumer asleep.
+
+So the third argument is NOT a task id, or r31 is reloaded across the ~0x280 bytes
+between the prologue and the call at 0x16c80 that were never disassembled. Either
+way the taskset itself carries the answer: scan the `waiting` bitmap and signal
+that task. Layout is `(1u << 31) >> id`, so `countl_zero` gives the id.
+
+RESULT, measured:
+
+    before   rc=0x80410905  head frozen at ~41 while tail ran to 302, ring full
+    after    rc=0x0         head TRACKS tail (128/129, 192/193), ring stays empty
+             frames 32 -> 50, and fps read 5.00 at t+20s (every prior run: 0.00)
+
+**This is the first HLE run to report a non-zero frame rate.**
+
+### Ruled out in the same round
+
+`wklCurrentContention` was the leading suspicion for blocked re-selection and it
+is WRONG: the periodic gate probe reads `runnable=1 prio=1 maxCont=8 cont=0`
+throughout, so contention is not stuck. The failing term is `signal=0` on wkl0 -
+and since there are two tasksets, the queue's taskset may simply be a different
+workload id than the one the probe prints. Check `taskset->wid` before assuming a
+gate defect.
+
+### Probe discipline, third instance
+
+A one-shot probe cannot show a RE-entry failure. `select#1` was one-shot and had
+to be made periodic to see the gate at all. Same for the syscall census
+(one-shot -> counted, which is how the YIELD spin and the taskId=0/1 mismatch
+became visible). Default to counting, not first-hit.

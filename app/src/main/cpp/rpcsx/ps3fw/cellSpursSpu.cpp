@@ -560,10 +560,12 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			// at 12.175456. Trigger on the condition itself so the log shows what
 			// the selector sees WHILE a real workload is signalled - which is the
 			// only moment that can explain the deadlock.
-			static std::array<std::atomic<u32>, 8> s_sel_sig_logged{};
+			// PERIODIC, NOT ONE-SHOT. The first dispatch works; what fails is
+			// RE-selection after the task waits. A one-shot probe cannot show that,
+			// so sample the gate terms every 4096 selector calls.
+			static std::atomic<u32> s_sel_calls2{0};
 
-			if (ctxt->spuNum < 8 && spurs->wklSignal1.load() != 0
-				&& thor_hle_once(s_sel_sig_logged[ctxt->spuNum], 0))
+			if (const u32 sn = s_sel_calls2++; (sn & 0xFFF) == 0)
 			{
 				for (u32 k = 0; k < 2; k++)
 				{
@@ -2595,13 +2597,32 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 	// warning level so it survives the default filter - trace does not, and that
 	// already caused one misreading this session.
 	{
+		// COUNT, DO NOT ONE-SHOT.
+		//
+		// The one-shot version proved WHICH syscalls the task issues (#2
+		// WAIT_SIGNAL then #1 YIELD) but not HOW OFTEN, and that is now the
+		// question. A queue push only re-dispatches the workload when the task's
+		// `waiting` bit is set, and only 2 workload signals fired all run. So:
+		//
+		//   many WAIT_SIGNALs against 2 signals -> the loss is PPU-side
+		//   exactly 2 WAIT_SIGNALs              -> the task leaves its consume loop
+		//
+		// Printed every 64 calls so a hot path stays cheap.
 		static std::array<std::atomic<u32>, 16> s_seen{};
+		static std::atomic<u32> s_total{0};
 
 		const u32 which = syscallNum & 0x0F;
 
-		if (which < 16 && s_seen[which].fetch_add(1) == 0)
+		if (which < 16)
 		{
-			cellSpurs.warning("Thor TASK SYSCALL #%u (raw=0x%x) args=0x%x taskId=%u", which, syscallNum, args, +ctxt->taskId);
+			s_seen[which]++;
+
+			if (const u32 n = s_total++; (n & 0x3F) == 0)
+			{
+				cellSpurs.warning("Thor SYSCALL CENSUS n=%u: exit=%u yield=%u waitSig=%u poll=%u recvFlag=%u (taskId=%u)",
+					n, s_seen[0].load(), s_seen[1].load(), s_seen[2].load(),
+					s_seen[3].load(), s_seen[4].load(), +ctxt->taskId);
+			}
 		}
 	}
 
