@@ -10850,3 +10850,37 @@ reserves against. Two things still need reading before writing code:
 `direction == 2` for push is worth noting on its own: the current stubs accept
 anything, so a title pushing on a pop-direction queue currently gets CELL_OK where
 hardware returns 0x80410909.
+
+## The block/notify mechanism is ordinary lv2 - so the queue IS implementable
+
+`0x1309c` (full path) and `0x1d8f8` (notify path) are import stubs - `r12 = 0x30000`,
+`lwz r12,-0x1fc4(r12)`, `bctr` through a descriptor. Scanning libsre for candidate
+FNIDs names what it imports and exports:
+
+    sys_lwmutex_lock      0x1573dc3f      sys_lwmutex_unlock   0x1bc200f4
+    sys_lwcond_wait       0x2a6d9d51      sys_lwcond_signal    0xef87a695
+    cellSyncQueuePush     0x5ae841e5      cellSyncQueueTryPush 0x705985cd
+    cellSyncMutexLock     0x1bb675c2      _cellSyncLFQueuePushBody 0xba5961ca
+    _cellSyncLFQueueGetPushPointer      0xe9bf2110
+    _cellSyncLFQueueCompletePushPointer 0x4e88c68d
+    cellSpursSendWorkloadSignal 0x1d2bca4b   cellSpursWakeUp 0x7e4ea023
+
+**No exotic primitive.** The blocking wait is `sys_lwmutex` + `sys_lwcond`, both
+already fully implemented in this tree, and the SPU-side wake is
+`cellSpursSendWorkloadSignal` / `cellSpursWakeUp`, which are also already
+implemented (they are what the seven HLE fixes above were exercising). The
+cellSync LFQueue helpers are present too, so the ring maths has a working
+reference in `cellSync.cpp`.
+
+That closes the specification. Implementing `cellSpursQueuePushBody` needs:
+
+1. Signature `(vm::ptr<CellSpursQueue>, vm::cptr<void> buffer, u32 mode)` - the
+   stubs take NO parameters today, which is why nothing can work.
+2. Validate: null -> 0x80410911, `addr & 0x7F` -> 0x80410910,
+   `direction != 2` -> 0x80410909.
+3. Reserve/advance the tail at 0x04 against head at 0x00 and depth at 0x0C, copy
+   `entry_size` (0x08) bytes into `buffer` (0x10).
+4. Block on lwmutex/lwcond when full; wake the consumer after the write.
+
+Everything in steps 2-4 has a working implementation elsewhere in this tree. This
+is no longer research - it is a bounded port against a recovered spec.
