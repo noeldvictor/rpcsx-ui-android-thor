@@ -9676,6 +9676,2078 @@ has reached, or its cause is outside the mechanisms enumerated here.
 because a negative that is reproducible is worth keeping, and each is one
 property away from being re-run against a new idea.
 
+# BUG CLASS: Shift By A Variable That Can Reach The Register Width
+
+Found 2026-08-25 in `cellSpursSpu.cpp`, and it had hidden HLE SPURS for weeks.
+
+```cpp
+spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);   // wklSelectedId can be 32
+```
+
+C says a shift by >= the promoted operand's width is UNDEFINED. What ARM64
+actually does is worse than a trap, because it looks like it works:
+
+- **A64 `LSR`/`LSL`/`ASR` take the shift amount MODULO the register width** -
+  bits[4:0] for the 32-bit form, bits[5:0] for the 64-bit form.
+- So `0x8000 >> 32` is assembled as a 32-bit shift by `32 & 31` = **0**, and
+  evaluates to `0x8000` rather than the 0 the author assumed.
+
+The line therefore became `wklSignal1 &= ~0x8000`, silently clearing workload 0's
+signal - the ONE term that can start a taskset workload, since `wklFlag` reads
+0xFFFFFFFF and `readyCount` is 0. Its guard is
+`!isPoll || wklSelectedId == ctxt->wklCurrentId`, both 32 once an SPU parks in the
+system service, so **six SPUs erased that bit on every poll**. Being stuck in the
+system service was what triggered the clear that prevented ever leaving it.
+
+x86 has the same modulo behaviour (`SHR` masks the count to 5 or 6 bits), so this
+is not ARM-specific in principle - but it bites here because this is where HLE
+SPURS actually runs, and because `wklSelectedId == 32` is the NORMAL state on
+this path rather than an edge case.
+
+## How to find the rest
+
+The dangerous shape is a shift by an **id that has a sentinel value at or above
+the register width**. In SPURS that sentinel is
+`CELL_SPURS_SYS_SERVICE_WORKLOAD_ID = 32` against 32-bit masks:
+
+```sh
+grep -nE '(<<|>>) *(wklSelectedId|wklCurrentId)' ps3fw/cellSpursSpu.cpp
+```
+
+Audited the whole selector after the fix: every OTHER use of `wklSelectedId`
+guards the sentinel explicitly -
+
+```cpp
+if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID) contention[wklSelectedId]++;
+if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID) ctxt->wklLocContention[wklSelectedId] = 1;
+```
+
+which matters twice over: it confirms the signal clear was the unique unguarded
+site, and it shows the array writes are NOT out of bounds even though
+`contention[]` and `wklLocContention[]` hold only 16 entries. I checked that
+before claiming a second bug, and there isn't one.
+
+`wid`-indexed shifts elsewhere in `cellSpurs.cpp` are safe: every one is behind a
+`wid >= CELL_SPURS_MAX_WORKLOAD2` validation, so the count stays <= 31.
+
+## The lesson that generalises beyond shifts
+
+Two "fixes" to the WRITE side - `vm::light_op` to a direct `atomic_op` - both
+read back 0 and both looked like failures. **Neither write was ever broken.** A
+reader elsewhere was erasing the value microseconds later. What separated the two
+explanations was logging INSIDE the atomic operation as well as after it:
+
+```
+inside=<what the op saw>   readback=<same field, one line later>
+```
+
+When a store "does not stick", prove whether it happened before you go looking at
+addressing, endianness or memory ordering.
+
+
+## RETRACTION: the shift guard is correct about the UB and REGRESSES HLE
+
+Measured 2026-08-25, one binary, four interleaved arms, 150 s settle:
+
+```
+fix=1  armed=0  emu stalls at 0:00:04   (2 of 2)
+fix=0  armed=6  emu reaches 0:00:17     (2 of 2)
+```
+
+**The clear is load-bearing.** The undefined shift is real - `0x8000 >> 32` is UB,
+AArch64 evaluates it as `>> 0`, and the PPU can be seen writing wklSignal1 and
+reading 0x0 back one line later - but the SPURS state machine DEPENDS on the
+signal being cleared. Leave it standing and `cellSpursModulePollStatus` reports
+"selected workload differs from current" on every call, so the SPU exits to the
+kernel and re-selects forever. Emulation livelocks before SPURS arms.
+
+So `c6e6079b2` is not a fix on its own and is now **default off**, switchable via
+`debug.rpcsx.thor.spurs_signal_fix`. The real repair is a consume-on-dispatch that
+clears the signal for the workload the SPU actually runs, instead of relying on a
+shift that only clears the right bit by accident.
+
+**A correct statement about one line is not a correct change to a system.** The
+shift analysis was right and the conclusion drawn from it was wrong, and only the
+A/B separated them. Two earlier attributions this session failed the same way - a
+"different CellSpurs" theory and a harness collision misread as a regression -
+which is why this one was gated behind a property instead of asserted.
+
+# THE HLE SPURS BLOCKER IS A SMALL-OBJECT LEAK, NOT SPURS LOGIC
+
+Measured 2026-08-25, BLUS30357, same build, same device:
+
+```
+LLE control   peak 6714 MB   scudo OOM: 0    reaches emu 0:02:10, renders 30 fps
+HLE forced    peak 6728 MB   scudo OOM in size classes 144 / 176 / 192
+                             Process exited due to signal 9 (Killed)
+                             forcing=2  create_handler=0  handler_entry=0
+```
+
+**Peak memory is the same to within 0.2%.** HLE does not use more memory - it
+exhausts SPECIFIC small-object size classes while total usage matches the healthy
+path. Scudo caps each size class at 256 MB, and 256 MB / ~176 B is about **1.5
+million live objects**. That is an unbounded container or a leak on the HLE path,
+not compiler pressure.
+
+It is killed by SIGKILL **before `create_handler`**, i.e. before SPURS
+initialisation begins at all.
+
+## This retro-explains the entire day of HLE failures
+
+- deaths at 4 s, 13 s and 17 s: one failure, caught at different points in the
+  allocation ramp
+- processes vanishing with NO crash record: SIGKILL leaves none, which is why
+  `logcat -b crash` kept coming back empty
+- the earlier `scudo::reportInvalidChunkState` abort: the same allocator, stressed
+- BOTH selector probes reading zero: the code never ran, because the process died
+  before SPURS
+- and therefore why four "repair" A/Bs were worthless - they were measuring an
+  OOM, not a signal change
+
+## What NOT to do next
+
+`spu_cache_worker_limit` / `spu_cache_preload_limit` / `compile_budget_ms` were
+tried and made it die EARLIER. They bound SPU cache preload, and `create_handler=0`
+proves death happens before SPURS work starts, so they cannot be the lever.
+
+## What to do next
+
+Find the container. Scudo size classes 144-192 B, ~1.5 M objects, on a path taken
+only when `hle_libs` forces libsre.sprx to HLE. Candidates worth checking before
+guessing: the per-SPU HLE function map (`RegisterHleFunction`, which this fork
+made thread_local), anything per-workload or per-task allocated during HLE module
+load, and any queue that the LLE path drains but the HLE path does not.
+
+Total RAM is NOT the signal - it is normal. Watch the size-class OOM lines.
+
+## CORRECTION: the signal fix is not inert - it crashes a SPURS kernel SPU thread
+
+Reversed-order A/B settles what four earlier rounds could not:
+
+```
+fix=1  FAILED 12/12   (both orderings, with retries)
+fix=0  passed  4/4
+```
+
+The property does control the outcome, so the "it is run order" retraction was
+wrong in the other direction. What it controls is not a hang:
+
+```
+Emu Thread Name: 'SPU[0x2000100] CellSpursKernel2'
+SIG: Thread time: 0.029795s   Faults: 0 [rsx:0, spu:0]
+CPU Thread 'SPU[0x2000100] CellSpursKernel2' terminated abnormally!
+Zygote: exited due to signal 11 (Segmentation fault)
+```
+
+**A SPURS kernel SPU thread segfaults about 30 ms into execution.**
+
+### Absence of a log line is NOT absence of execution
+
+This is the trap that cost the most time here. The selector probes read zero in
+failing boots and I took that as proof the code never ran. RPCS3 installs its own
+SIGSEGV handler and writes the register dump SYNCHRONOUSLY, while ordinary log
+lines are buffered and lost when the process dies. Android produces no tombstone
+for the same reason, which is why `logcat -b crash` kept coming back empty.
+
+**On a crashing run, trust only synchronous output.** Everything buffered is
+missing, not absent.
+
+### The coherent reading
+
+The fix works. The signal survives, the selector picks a real workload instead of
+re-selecting wid=32, dispatch registers `spursTasksetEntry` at 0xA00, and the SPU
+executes taskset policy-module code this HLE implementation does not fully
+provide - and faults. Breaking the deadlock moves the failure from "never
+dispatches" to "dispatches into unimplemented code", which is the expected next
+frontier rather than a regression.
+
+**NOT PROVEN:** the faulting PC was never captured - the log rotated before it
+could be read. Copy RPCSX.log off the device immediately after the crash, before
+the next boot recreates it. Then disassemble the taskset policy module at
+`SPURS_IMG_ADDR_TASKSET_PM` (0x200) with Ghidra to see what `spursTasksetEntry`
+must implement.
+
+# HLE SPURS BREAKTHROUGH: the taskset workload dispatches for the first time
+
+2026-08-25, with `debug.rpcsx.thor.spurs_signal_fix=1`:
+
+```
+Thor SPU1 dispatch#1: wid=32 addr=0x100     <- system service, as always
+Thor SPU2 dispatch#2: wid=0  addr=0x200     <- SPURS_IMG_ADDR_TASKSET_PM
+Thor SPU0 dispatch#2: wid=32 addr=0x100
+...
+CPU Thread 'SPU[0x0000100] CellSpursKernel0' terminated abnormally!   signal 11
+```
+
+**`wid=0 addr=0x200` is the taskset policy module.** Every previous run on this
+branch dispatched `wid=32 addr=0x100` once per SPU and never moved. This is the
+first time an SPU has left the system service.
+
+So the shift fix is correct and it works:
+
+  `0x8000 >> wklSelectedId` with wklSelectedId == 32 is undefined, AArch64
+  evaluates it as `>> 0`, and it cleared workload 0's signal on every poll -
+  the only live term in the selection gate. Guarding the sentinel lets the
+  signal survive, selection picks the real workload, and dispatch registers
+  `spursTasksetEntry` at 0xA00.
+
+## And it reframes every "failed" A/B in this session
+
+fix=1 failed 12/12 and I read that as a regression, then as run order, then as an
+allocator leak. It was none of those: **the arm crashes BECAUSE it makes
+progress.** It dispatches into taskset code this HLE implementation does not
+fully provide, and faults ~20 ms later. A harness that scores "did it boot" marks
+that as worse than a deadlock that boots cleanly forever.
+
+**Scoring a repair by whether the boot survives will always prefer the deadlock.**
+Score by how far the state machine gets - here, by whether a `wid != 32` dispatch
+appears.
+
+## Next, and this is where Ghidra returns
+
+The fault is in taskset policy-module code. In HLE, 0x200 is only a MARKER -
+there is no guest code to read - but the real implementation exists as SPU code
+inside `libsre.sprx` (114,254 bytes, present in dev_flash), and in LLE the SPU
+loads it into local store at **0xA00**.
+
+Dump that LS window during live LLE combat and disassemble it, exactly as
+`chunk-0x0f3c4` was proven to be 96.84% of `CellSpursKernel0`:
+
+```
+tools/ghidra_scripts/DumpMemoryRange.java        capture LS 0xA00
+tools/ghidra_scripts/DisassembleSpuWindows.java  disassemble the window
+```
+
+That gives the reference implementation `spursTasksetEntry` must match, which is
+the difference between guessing at the crash and reading what the code is
+supposed to do.
+
+# GHIDRA: the taskset policy module, disassembled
+
+HLE now dispatches `wid=0 addr=0x200` (SPURS_IMG_ADDR_TASKSET_PM) and then faults
+about 20 ms later. In HLE, 0x200 is only a MARKER - dispatch registers
+`spursTasksetEntry` and no guest code is loaded - so there is nothing to read
+there. The real module ships in `libsre.sprx` and LLE loads it into SPU local
+store at **0xA00**.
+
+Dumped LS during live LLE combat and disassembled it. Artifacts in
+`debug-captures/spu-ls/`:
+
+```
+spu_ls_CellSpursKernel0.bin   262144 bytes, 50.6% non-zero
+  0xA00 region: 486 / 512 bytes non-zero   <- real code, not padding
+ls_A00.txt                    window around the entry
+taskset_pm_full.txt           entry + both init routines
+```
+
+## The entry, which is what spursTasksetEntry stands in for
+
+```
+00000a00: ila r2,0x20db8         module identity constants
+00000a10: il  sp,0x2c50          stack pointer for the policy module
+00000a18: lqr r17,0x76a          load taskset state from LS 0x757..0x77a
+00000a54: stqr r8,0x757          write it back
+00000a64: brsl lr,0x00001ec8     init call #1
+00000a68: brsl lr,0x00001778     init call #2
+00000a70: stqa lr,0x2c80         ---- task CONTEXT SAVE AREA ----
+00000a74: stqa sp,0x2c90
+00000a7c: stqa r80,0x2ca0  ...  r92,0x2d60
+```
+
+The register-save block is the important part: this module implements **task
+context switching**, saving callee-saved registers r80+ into a context area at
+0x2c80. An HLE stand-in that does not maintain that area is exactly the shape of
+thing that faults shortly after the first dispatch.
+
+## Init routine at 0x1778
+
+```
+0000177c: il sp,0x2c30           its own stack
+00001780: il r3,0x2c70
+0000178c: stqa r3,0x2c30         publishes a pointer at 0x2c30
+00001794: stqa r80,0x2c70        zeroes the structure at 0x2c70
+00001798: il r3,0x5
+0000179c: brsl lr,0x00000e40     call with arg 5
+000017a0: lqd r4,0x20(sp)
+000017a4: clgti r2,r4,0x7f       bounds check against 0x7f
+000017a8: brnz r2,0x00001c50     -> error path if > 127
+```
+
+So the module builds state at 0x2c30 / 0x2c70 and bounds-checks a count against
+127 - a taskset holds up to 128 tasks, so that is the task-id range check.
+
+**Read this before writing more HLE taskset code.** The LS addresses it touches
+(0x757-0x77a, 0x2c30, 0x2c70, 0x2c80-0x2d60) are the contract; an HLE
+implementation that does not honour them will corrupt state the guest later reads.
+
+## HLE boot instability: the SPU object cache is implicated, but clearing it is not a fix
+
+The HLE path boot-loops. Cleared the SPU native object cache - 25,824 files,
+246 MB, accumulated across every build and setting tried in one session - and
+re-ran:
+
+```
+t+60s   emu=0:01:04   <- first boot on the fresh cache, 9x further than before
+t+90s   emu=0:00:04   <- then progressively worse as the cache refills
+t+270s  emu=0:00:07
+```
+
+Before clearing, HLE died at emu 0:00:07 on 5 of 5 attempts. The first boot after
+clearing reached 0:01:04. So cache size is IMPLICATED - it matches the scudo
+failure signature, size classes 144/176/192 exhausted at 256 MB each (~1.5M small
+objects) while total RAM stays normal at 6.7 GB, the same as a healthy LLE boot.
+Tens of thousands of small objects loaded at boot is how that distribution
+arises.
+
+**But clearing it did not fix HLE.** It still never arms, and it still loops.
+
+Note the earlier mitigation attempt was aimed wrong: `spu_cache_worker_limit` and
+`spu_cache_preload_limit` bound compile CONCURRENCY, not the NUMBER of cached
+objects loaded, and they made it die sooner.
+
+`rm -rf` on that directory silently does nothing from the shell - it is
+`drwxr-s---` owned by the app. Use `run-as net.rpcsx.easy rm -rf <dir>` on a
+debuggable build. The same permission shape blocks `config/patches/`.
+
+### State of HLE at the end of this session
+
+Two real bugs found and fixed, both AArch64-specific, both confirmed by Ghidra:
+
+1. `0x8000 >> 32` is undefined; AArch64 evaluates it as `>> 0`, erasing workload
+   0's signal every poll - the only live term in the selection gate. FIXED and
+   VERIFIED: produced the first `wid=0 addr=0x200` taskset dispatch on this branch.
+2. The taskset syscall entry at 0xA70 was never registered, so the SPU branched
+   there and executed zeros. FIXED, NOT VERIFIED - no boot has reached it.
+
+What blocks verification is boot instability, not either fix. An LLE control on
+the same binary reaches emu 0:02:10 and renders at 19.19 fps.
+
+**Next: make the HLE boot survive.** Until it does, no HLE change can be judged.
+
+## RETRACTED: "the HLE boot is SIGKILLed by the allocator"
+
+Every HLE boot failure this session was scored as "died early" or "boot loop".
+That framing was wrong and it cost rounds, because it invited theories about
+emulator state - a deadlock, a bad jump, the object cache - when the emulator
+was never the thing making the decision.
+
+The emulator's own log simply STOPS mid-boot, around 0:00:02 emulated. There is
+no `terminated abnormally`, no assertion, no fatal line. RPCS3 writes crash
+dumps synchronously, so their absence is evidence. `logcat -b crash` is EMPTY
+and `/data/tombstones` gains nothing: **Android emits no tombstone for SIGKILL**.
+
+logcat names the killer:
+
+    scudo: Scudo OOM: The process has exhausted 256M for size class 144.
+    scudo: Scudo OOM: The process has exhausted 256M for size class 176.
+    scudo: Scudo OOM: The process has exhausted 256M for size class 192.
+    ActivityManager: Process net.rpcsx.easy (pid 8497) has died: fg TOP
+    Zygote: Process 15396 exited due to signal 9 (Killed)
+
+Scudo caps EACH size class at 256 MB independently. Three adjacent small-object
+classes fill within ~8 seconds of process start - roughly 1.8 M live objects per
+class - while emulated time has advanced only ~2 s. The process is over no
+total-RAM limit; a healthy LLE boot reaches the same RSS. It dies because one
+allocation SHAPE runs away, not because memory runs out.
+
+### Why the earlier "symptom, not cause" verdict was wrong
+
+Disabling `spu_native_object_cache` produced `scudoOOM=0` while boots still
+failed, and that was read as clearing scudo of involvement. It does not: it
+shows the cache is *a* contributor to those classes, not that the classes are
+innocent. The OOM reappears with the cache on, and the kill signature is
+unambiguous. Treat `Scudo OOM` in logcat as the primary boot-failure signal.
+
+### Two allocation sites already excluded
+
+- **`RegisterHleFunction`** - `g_thor_spu_hle_functions` is a
+  `std::map<u32, bool(*)(spu_thread&)>`. Assigning an existing key allocates
+  nothing, and a node is ~48 B. Wrong size class, wrong behaviour. Re-registering
+  the taskset syscall entry on every `spursTasksetEntry` is not a leak.
+- **Thor probe logging** - every probe on this path is one-shot guarded
+  (`thor_hle_once`, or `s_seen[spu.index].fetch_add(1) < 2`). Note this vector is
+  real though: commit 36cb52ca1 boot-looped the branch with per-dispatch logging,
+  which is the same failure by a different producer. Never add an unguarded log
+  to the SPURS kernel, selector, or dispatch path.
+
+### How to find the site without root
+
+`am dumpheap -n` and `libc.debug.malloc.options backtrace` both need `adb root`,
+and the Thor is a production build - `adbd cannot run as root`. So the allocation
+site has to be bisected from inside the build. Both HLE fixes are now
+property-gated for exactly this:
+
+    debug.rpcsx.thor.spurs_signal_fix      0/1
+    debug.rpcsx.thor.taskset_syscall_fix   0/1
+
+One binary, four cells (baseline HLE / signal only / both / LLE control), reading
+only whether `Scudo OOM` appears. That separates "my fixes allocate" from "the
+HLE path always did".
+
+## Check the device model before every device run
+
+A full diagnostic round - install, boot, logcat capture - was executed against a
+**Quest 2**. Two devices are attached:
+
+    1WMHH830AY1165   Oculus Quest 2
+    192.168.1.3:5555 AYN Thor
+
+The captured log was full of `VrApi`, `boltlib`, and Oculus auth errors, which is
+the only reason it was caught. Every harness now opens with a guard, and any new
+one must too:
+
+    MODEL=$($A shell getprop ro.product.model | tr -d '\r')
+    [ "$MODEL" != "AYN Thor" ] && { echo "WRONG DEVICE: '$MODEL'"; exit 1; }
+
+## The game boots by intent, not by launching the activity
+
+A harness that only runs `monkey -p net.rpcsx.easy` lands in the UI and boots
+nothing. The app then sits at 0 fps forever and looks like a hang. The real boot
+is an intent carrying the ISO:
+
+    am start -a net.rpcsx.THOR_DEBUG_BOOT -n net.rpcsx.easy/net.rpcsx.MainActivity \
+      --es path '<ISO>' --es titleId BLUS30357 --es thorDebugBootRequestId <tag> \
+      --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true
+
+## The retraction, measured: scudo OOM is NOT the HLE boot killer
+
+The section above was written from a single HLE boot's logcat and is wrong. A
+four-cell bisect on ONE binary, using the new property gates, settles it:
+
+    cell                 scudoOOM  deaths  armed  emu
+    A baseline HLE          3        0       6    0:00:18
+    B signal fix           21        6       0    0:00:18
+    C both fixes           21        6       0    0:00:18
+    D LLE control           3        0       0    0:02:10
+
+**The LLE control emits the same three `Scudo OOM` lines and runs fine.** Three
+OOM messages - one per size class - is what a NORMAL boot on this device prints.
+The 21 in B/C is 6 restarts x ~3 per boot: the count scales WITH the deaths, so
+it is a consequence of restarting, not a cause. Reading "Scudo OOM in logcat" as
+the failure signal is a mistake; it is background noise on this hardware.
+
+What the bisect actually proves:
+
+- **`spurs_signal_fix=1` is what breaks the boot.** B and C both restart 6 times
+  in 120 s. This reproduces exactly what the in-code comment already recorded
+  ("fix=1 armed=0 twice, against fix=0 armed=6 twice"). `armed=0` there is a
+  SAMPLING ARTIFACT, not a claim that arming never happens - the log is read at
+  the end of the window, and the last restart is only seconds old.
+- **`taskset_syscall_fix` is neutral.** B and C are identical in every column, so
+  registering 0xA70 neither helps nor harms. Every earlier suspicion that it
+  caused the regression was wrong.
+- **Baseline HLE arms 6 kernels and survives** - but emulated time sticks at
+  0:00:18 while LLE reaches 0:02:10. That is the weeks-old deadlock, alive but
+  frozen, and it renders NOTHING. HLE has never produced a frame to measure.
+
+## The vise, and why the shift guard is not the way out
+
+    clear at selection (baseline)  -> 0x8000 >> 32 eats workload 0's signal
+                                      -> six SPUs park on wid=32 -> DEADLOCK
+    do not clear (signal fix)      -> "selected differs from current" forever
+                                      -> restart loop -> LIVELOCK
+
+Both ends fail, so the defect is not at the clear site.
+
+## Ghidra: what the REAL kernel does at 0x290
+
+Disassembled `CELL_SPURS_KERNEL1_SELECT_WORKLOAD_ADDR` (0x290) out of
+`debug-captures/spu-ls/spu_ls_CellSpursKernel0.bin` with the SPU language
+(`analyzeHeadless ... -processor SPU:BE:128:default -postScript
+DisassembleSpuWindows.java out.txt 0x300 0x290 0x818 0x808 -noanalysis`):
+
+    00000298: ila  r8,0x8000        ; mask base
+    000002c4: rotqbyi r20,r10,0xc   ; r20 = selected workload id
+    000002d8: ceqi r7,r20,0x20      ; EXPLICIT test: id == 32 (system service)
+    000002dc: sfi  r9,r20,0x0       ; r9 = -id
+    000002e0: sfi  r5,r7,0x0        ; r5 = -(id == 32)
+    000002e4: rotm r6,r8,r9         ; r6 = 0x8000 >> id
+    000002e8: or   r3,r29,r5        ; folds "id == 32" INTO THE RESULT
+    000002f4: fsmb r32,r6           ; mask -> byte mask
+    00000380: andc r17,r21,r32      ; candidates &= ~mask
+
+Two findings, both load-bearing:
+
+1. **SPU `rotm` shifts in zeros and gives 0 for any count >= 32.** So on real
+   hardware `0x8000 >> 32` is ZERO and clears nothing. The AArch64
+   shift-modulo-32 that turns it into 0x8000 is a genuine port bug, and
+   "clear nothing" is hardware-correct. The guard is right about the semantics.
+2. **The hardware kernel uses that mask to EXCLUDE the selected workload from the
+   candidate set (`fsmb` + `andc`), not to clear a signal word in memory**, and it
+   separately folds `id == 32` into the returned value. The HLE port instead
+   writes `wklSignal1/2` in memory. That structural difference - not the shift -
+   is the remaining gap, and it explains why fixing only the shift livelocks: the
+   clear becomes correct while the selector's result stays wrong.
+
+Checked and cleared while looking (do not re-investigate):
+
+- `wklSignal2 &= ~(0x80000000u >> id)` looks wrong for a `be_t<u16>` but is not:
+  for wids 16..31 it produces exactly `0x8000 >> (id-16)`, and for 0..15 it
+  truncates to a no-op. Only `id == 32` is broken.
+- `std::memcpy(ctxt, spurs, 128)` at the end of the selector cannot clobber the
+  selection: `tempArea[0x80]` is the first 128 bytes and `wklCurrentId` sits at
+  struct offset 0xDC.
+
+## XFloat Accuracy: the biggest measured lever so far, +16.2%
+
+The shipped default is `Approximate` (`system_config.h`). `Inaccurate` is faster
+by a wide margin on this title, and unlike every other candidate this session it
+REPRODUCED ACROSS ROUNDS.
+
+Eight arms, two independent rounds, interleaved approx/inacc so drift cannot
+favour one side, each arm restoring the SAME savestate and gated on
+`coresBusy > 4.5` so only restored 3D combat counts:
+
+    Approximate  16.67  16.08  16.45  15.70   mean 16.23
+    Inaccurate   18.92  18.82  18.89  18.76   mean 18.85
+
+Non-overlapping ranges, and `Inaccurate` is the TIGHTER distribution - 0.85%
+spread against 6%. Compare with the SPU Block Size "+16.5%" that collapsed to
++3.2% once a better-controlled round ran: that one never reproduced, this one
+did, twice.
+
+Verified visually, because the mode is LOSSY and a frame rate means nothing if
+the picture is wrong. The same restored scene captured under both settings
+(`scratchpad/xf_approx.png`, `xf_inacc.png`) is pixel-plausible identical:
+same camera, same geometry, same effects, no corruption. Those two screenshots
+also served as the scene fingerprint, which mattered because:
+
+**The draw-count fingerprint DOES NOT EXIST on `hle-spurs-wip`.** `drawsLastFrame`
+and `drawActivity` live on `master` only, so `/scene` on this branch returns
+`videoDecoding/source/videoFile/advice` and nothing else. Every arm printed
+`draws/frame=0 scenePolls=0`. Do not trust that field on this branch; either
+cherry-pick it from master or control the scene by construction (same savestate,
+same `coresBusy` gate) and confirm with a screenshot.
+
+Recorded rather than buried: the in-game overlay at the two capture instants read
+20.32 (approx) against 20.78 (inacc), much closer than the windowed averages. A
+single instantaneous sample is noise against a 6-sample 60 s window, and the
+windowed ranges do not overlap, so the averages are what is trusted - but the
+discrepancy is real and someone should watch for it.
+
+Scoped to BLUS30357 only. `Inaccurate` is lossy, upstream defaults to
+`Approximate` deliberately, and nothing measured here licenses it for other
+titles.
+
+### The harness bug that hid the fingerprint for a whole round
+
+`xfloat_ab.sh` computed the fingerprint with escaped quotes inside `awk`:
+
+    awk -v s=\"${ds:-0}\" -v k=\"$n\" 'BEGIN{print s/k}'
+
+awk received literal quote characters, so every arm was a division by zero and
+printed `draws/frame=0`. The check that exists specifically to catch
+incomparable scenes silently did nothing. It now also prints `scenePolls`, so a
+missing field is distinguishable from a genuine zero, and resets that counter per
+arm rather than accumulating across the round.
+
+## THE DEADLOCK IS BROKEN: an SPU selected a real workload
+
+First time in this branch's history. With `spurs_signal_fix=1` and
+`spurs_sel_cond_fix=1`:
+
+    Thor SPU5 SELECTED REAL WORKLOAD wid=0 (isPoll=1)
+    Thor SPU0 SELECTED REAL WORKLOAD wid=2 (isPoll=1)
+    select#1 wkl0: runnable=1 prio=1 maxCont=8 cont=0 ready=0 signal=1
+
+All four gate terms pass. For weeks the answer was six SPUs on `wid=32` forever.
+
+### What the Ghidra read bought
+
+The selector's branch, from the real kernel at LS 0x290:
+
+    00000290: ceqi r30,r3,0x0      ; r30 = (arg0 == 0)      -> !isPoll
+    00000294: lqr  r10,-0x31       ; PC-rel: 0x294 - 0xc4 = LS 0x1d0
+    000002c4: rotqbyi r20,r10,0xc  ; bytes 12..15 of 0x1d0 = 0x1dc
+    000002d8: ceqi r7,r20,0x20     ; r7  = (wklCurrentId == 32)
+    000002e8: or   r3,r29,r5       ; !isPoll || wklCurrentId == 32
+
+LS 0x1dc is `SpursKernelContext::wklCurrentId`. Hardware asks "am I running the
+SYSTEM SERVICE"; the port asked "did the selection change". Parked in the system
+service, `currentId` is 32, a selected workload 0 fails `0 != 32` and is routed
+to the context-switch path, which exits and re-selects forever. That one wrong
+comparison is the livelock, and fixing it also fixed the boot loop:
+`sig=1` alone armed 0 of 4 boots, `sig=1 + selcond=1` arms 6 and survives.
+
+### The defect the fix itself introduced, and the repair
+
+Both selections carry `isPoll=1` - they come from `cellSpursModulePollStatus`,
+which only asks "should I yield?". A widened commit condition made the POLL
+consume the signal: it cleared `wklSignal1`, so when the kernel then selected for
+real (`isPoll=0`) the signal was gone, it picked 32, and dispatched the system
+service again. The same deadlock, displaced by one step.
+
+The original condition could not hit this - during a poll it only fired when
+nothing changed. **Widening the commit requires narrowing the clear.** A poll now
+reports its selection and consumes nothing (`consumeSignal = !selcond || !isPoll`).
+
+### Probe discipline: every one-shot probe on this path fired too early
+
+`select#1` printed `runnable=0 prio=0 maxCont=0` for days and was read as a stuck
+gate. It was not - the probe fires at FIRST selector entry, which is before the
+PPU creates and activates the workload. Timeline from one run:
+
+    12.169976  select#1 probe    (200th call)   signal=0
+    12.175456  cellSpursSendWorkloadSignal(wid=0)  readback=0x8000
+
+Even the 200th call lost the race. Probes on this path must fire on the
+CONDITION (`wklSignal1 != 0`), not on a count. `debug.rpcsx.thor.sel_probe_nth`
+exists but is the weaker tool.
+
+Three theories died to this, all retracted: a stale LS snapshot (the selector uses
+`ctxt->spurs.get_ptr()`, live memory), a workload-ID mismatch (the `wid=1` signal
+came from a differently-configured run; with the job queue left as LLE the game
+correctly signals `wid=0`), and scudo OOM as the killer (the LLE control emits the
+same three lines and runs fine).
+
+### Harness note
+
+`armed == 6` is the WRONG validity test. `armed=12` means the SPURS group armed
+twice, which is a further-along boot, not an invalid one. Test `armed >= 6`.
+
+## HLE SPURS RUNS: taskset dispatched and executing, no halt
+
+    Thor SPU1 dispatch#2: wid=0 addr=0x200 size=0x1e40
+    Thor SPU2 dispatch#2: wid=0 addr=0x200 size=0x1e40
+    Invalid taskset state: 0    Halt at 0x00a00: 0    segfaults: 0
+    process alive, coresBusy=4.059
+
+`addr=0x200` is SPURS_IMG_ADDR_TASKSET_PM. For weeks this was six SPUs parked on
+`wid=32`. Four fixes were needed, in this order, and each only makes sense with
+the ones before it:
+
+1. **`spurs_signal_fix`** - `0x8000 >> 32` is UB and AArch64 evaluates it as
+   `>> 0`, erasing workload 0's signal. Ghidra: hardware uses `rotm`, which
+   shifts in zeros and yields 0 for any count >= 32, so hardware clears NOTHING.
+2. **`spurs_sel_cond_fix`** - the selector's commit branch. Hardware at LS 0x290
+   asks `!isPoll || wklCurrentId == 32`; the port asked
+   `!isPoll || wklSelectedId == wklCurrentId`. Parked in the system service,
+   `currentId` is 32, so a selected workload 0 failed `0 != 32` and was routed to
+   the context-switch path forever. This ALSO cured the boot loop: `sig=1` alone
+   armed 0 of 4 boots, `sig=1 + selcond=1` arms and survives.
+3. **poll must not consume the signal** - widening the commit meant a POLL
+   (`cellSpursModulePollStatus`, "should I yield?") was clearing `wklSignal1`, so
+   the kernel's real selection found nothing and dispatched the system service
+   again. Widening the commit REQUIRES narrowing the clear.
+4. **`taskset_enabled_fix`** - see below.
+
+### The task-id allocator wrote into the wrong half of the bitset
+
+`CellSpursTaskset::enabled` is `atomic_be_t<u32> values[4]`, addressed everywhere
+by `get_bit(b) = values[b/32] & ((1u<<31) >> (b%32))`. `pending_ready`, `get_bit`
+and the SPU-side validity check all use that word layout. The allocator in
+`cellSpursCreateTask` instead reinterpreted the field as one `be_t<v128>` and
+allocated from `_u64[0]` - but converting a 128-bit big-endian value REVERSES ALL
+SIXTEEN BYTES, which swaps the two u64 halves as well as the bytes within them.
+`_u64[0]` is therefore not `values[0]`, so the same task landed in a different
+half depending on which writer touched it:
+
+    Thor INVALID TASKSET STATE: tasksetAddr=0x101b4e80
+      en     = 8000000000000000 0000000000000000
+      pready = 0000000000000000 8000000000000000
+
+The taskset policy module then fails its own check - pending-ready but not
+enabled - logs "Invalid taskset state", halts, and the process dies. The code's
+own comment named the correct behaviour and then deviated from it: "Realfw
+processes this using 4 32-bits atomic loops / But here its processed within a
+single 128-bit atomic op". Doing the four 32-bit loops fixes it.
+
+This is an UPSTREAM RPCS3 bug, not Thor-specific, but it only bites when
+`cellSpurs` is HLE'd, so the shipped LLE path is unaffected.
+
+### Read logcat, not RPCSX.log, for anything near a crash
+
+RPCSX.log loses its buffered tail when the process dies, and a taskset halt kills
+the process. An entire round was scored `armed=0 activate=0 real=0` from
+RPCSX.log while logcat held `dispatch#2 wid=0 addr=0x200` for the same boot.
+logcat's android sink is synchronous. This trap was already recorded once and was
+walked into again.
+
+## Where HLE SPURS actually stands: runs deep, renders nothing
+
+After the four fixes, the chain runs end to end:
+
+    kernel arms -> selector picks a REAL workload -> taskset dispatches at
+    addr=0x200 -> taskset PM passes its own validity check -> the TASK's ELF
+    executes at PC 0x04a00
+
+That is far past the wall this branch sat behind for weeks. It still produces
+**zero frames**, and two runs bound the failure:
+
+    spu_trap_stop=1 (pause on halt)   300s: frames=0, cores FLAT at 4.059,
+                                      35C -> 84C, process died at t+320s
+    spu_trap_stop=0 (keep running)    220s: frames=0, cores ~5.96 (all six SPUs
+                                      pinned), halts=0, 47C -> 92C
+
+The guest task executes a conditional HALT (`HEQ`/`HGT` -> `make_halt` ->
+the `0xffdead00` store in SPULLVMRecompiler). With the trap guard on, Thor pauses
+and the flat 4.059 core reading is paused-but-spinning. With it off, there is no
+halt recorded at all and all six SPUs spin at full tilt with no frame ever
+presented - a LIVELOCK, not a crash.
+
+So the remaining defect is not in workload selection or taskset validation. It is
+in what the task does once it runs: either the arguments handed to it by
+`spursTasksetStartTask` (gpr[3] = taskArgs, gpr[4] = taskset args / spurs addr)
+are wrong, or a syscall it makes returns something it will not accept.
+
+**HLE has contributed no frames. The shipped frame rate is 18.85 fps and comes
+entirely from XFloat Accuracy: Inaccurate.** Do not let the depth of the SPURS
+progress imply otherwise in any report.
+
+### Heat, measured while doing this
+
+HLE livelock puts six SPUs at 100% and takes the device from 47C to 92C in under
+four minutes while rendering nothing. Any HLE soak must cap runtime and cool
+between arms, or it cooks the Thor for no data.
+
+## SPU Block Size Mega: +2.2% FPS and -5.6% CPU, and why it never applied before
+
+    safe  18.90  18.83   mean 18.87   cores 5.61
+    mega  19.36  19.19   mean 19.28   cores 5.30
+
+Interleaved safe/mega/safe/mega, same savestate, gated on coresBusy > 4.5,
+measured ON TOP OF XFloat Accuracy: Inaccurate - so the two compose. Ranges do
+not overlap. The CPU drop is the more valuable half on a device that sits in the
+nineties Celsius.
+
+**It had never actually been applied on this branch.** Two independent reasons,
+both silent:
+
+1. `debug.rpcsx.thor.spu_block_size` passed the lowercase word to
+   `from_string`, whose canonical spelling is `"Mega"`. The call failed, the
+   value stayed `Safe`, and the code still logged "forced to mega". Every
+   `/diag` in this session reported `spuBlockSize "Safe"`, including during runs
+   believed to be testing Mega. Fixed: canonicalise, check the return, log the
+   value actually in effect. Same trap as XFloat's `"Inaccurate"`.
+2. `sanitizeThorManagedConfig` on THIS branch only rewrites ASMJIT -> LLVM. The
+   "inject Mega when the profile is silent" logic lives on `master`, like the
+   draw-count scene API. Do not assume master's adaptation-layer behaviour exists
+   here.
+
+Engagement proof, and use one every time a setting claims to be applied: the SPU
+object cache grew 3794 -> 4556 on the first mega arm. A setting that changes the
+recompiled IR MUST produce new objects; an arm where the count does not move did
+not engage.
+
+## Driver Wake-Up Delay 0: +2.8%, and it was boot-tested before shipping
+
+    delay 50   19.41  19.36   mean 19.39
+    delay 0    20.05  19.81   mean 19.93
+
+Interleaved, on top of XFloat Inaccurate and SPU Block Size Mega, same
+savestate, `coresBusy > 4.5`, non-overlapping ranges.
+
+The profile had 50 us **for stability, not speed**: an earlier note recorded that
+at 20 us this title crashed roughly two boots in five with an SPU halt in
+CellSpursKernel0, against 0 of 4 at 50 us. A 2.8% gain is not worth a 40% crash
+rate, so 0 was boot-tested rather than benchmarked and shipped:
+
+    delay 0    0 crash / 5 boots
+    delay 50   0 crash / 5 boots
+
+A 2-in-5 rate would have shown in ~87% of samples this size. What this does NOT
+prove: five boots cannot establish equality, and 20 us was never retested - 0 and
+20 are different points on that curve. If random SPU halts in CellSpursKernel0
+come back, this is the first line to revert.
+
+## Running total on BLUS30357, all measured in restored 3D combat
+
+    shipped at session start        16.23   (Approximate + Safe + delay 50)
+    XFloat Accuracy: Inaccurate     18.85   +16.2%
+    + SPU Block Size: Mega          19.28   +2.2%,  -5.6% CPU
+    + Driver Wake-Up Delay: 0       19.93   +2.8%
+
+**+22.8% total.** Two of the three had never actually been applied: `from_string`
+matches the enum's canonical capitalisation, so the lowercase property values
+failed silently while the log claimed success.
+
+30 FPS needs +50% from 19.93. Every config knob on this path has now been swept -
+xfloat, block size, wake-up delay, reservations, loop detection, verification,
+affinity (big-core pinning measures 15.32 against 19.07 default, so the A510s
+carry real work). None of the remainder is worth more than low single digits.
+The only lever sized for the gap is HLE SPURS, which now runs into the task's own
+ELF and livelocks with six SPUs pinned and zero frames.
+
+## The taskset syscall entry used to THROW, and that invalidates one earlier verdict
+
+`spursTasksetSyscallEntry` contained, immediately after handling the syscall:
+
+    fmt::throw_exception("Broken (TODO)");
+    // if (spu.m_is_branch == false) {
+    //     spursTasksetResumeTask(spu);
+    // }
+
+That is why upstream left the `0xA70` registration commented out. **It also
+retracts the bisect verdict that `taskset_syscall_fix` was "exactly neutral".**
+It was not neutral - nothing had ever reached a task, so no task ever made a
+syscall, so the throw was never hit. B and C matched because the code under test
+was unreachable, not because it did nothing.
+
+`spu.m_is_branch` was removed along with `custom_task`. The test it stood for is
+observable: a syscall that switches context MOVES pc (`cellSpursModuleExit` sets
+`pc = ctxt->exitToKernelAddr`). So snapshot pc, run the syscall, and resume the
+task only if pc is untouched. Verified: 0 `Broken (TODO)` throws in a 480 s run
+where tasks dispatch and run.
+
+### Still blocked: the task halts on its own assertion
+
+    480s: frames=0, cores FROZEN at 5.040, tasksetDispatch=1, task halts=2,
+          37C -> 89C, thermal guard engaged (cap 30, never binds at 0 fps)
+
+The task executes a conditional HALT (`HEQ`/`HGT`). No throw, no invalid taskset
+state, no segfault - the guest itself decides its inputs are wrong. So the next
+question is what `spursTasksetStartTask` hands it:
+
+    gpr[2] = 0
+    gpr[3] = taskArgs (128-bit)
+    gpr[4] = { spurs address, taskset->args }
+    gpr[5..127] = 0
+    pc = ctxt->savedContextLr._u32[3]
+
+Ghidra note for whoever picks this up: the real policy module CLEARS local store
+0x3000..0x3d000 before starting a task (`il r38,0x3000` / `ila r39,0x3d000` and a
+computed `bi r5` into an unrolled `stqd` run at 0x18b0-0x18ec). The HLE
+`spursTasksetStartTask` does no such clear. That is a concrete, testable
+difference and the obvious next thing to try.
+
+## The task's assertion, named by the trap decoder, and fixed
+
+The SPU trap decoder in this tree does the work that a bare pc cannot:
+
+    SPU trap 0xffdead00: HALT ... thread='CellSpursKernel0' pc=0x04a00
+    SPU trap decoded: HEQI (halt if equal to immediate) at pc=0x04a00.
+      r55 = 0x00000000 (0), immediate = 0. The guest refused this value.
+    SPU trap arg r4 = 00000000 00000000 00000000 00000000
+
+`r4` is exactly what `spursTasksetStartTask` loads with the SPURS address and the
+taskset args. It was zero, so the task refused it.
+
+**Cause: the taskset snapshot at LS 0x2700 is never filled.**
+`SpursTasksetContext` opens with `tempAreaTaskset[0x80]` at 0x2700 - scratch meant
+to hold a DMA'd copy of the taskset head - and `CellSpursTaskset` keeps `spurs` at
+0x60 and `args` at 0x68, both inside it. That is why the code reads
+`spu._ptr<CellSpursTaskset>(0x2700)`. But `spursTasksetEntry` memsets the whole
+context, and the only other write is
+
+    std::memcpy(spu._ptr<void>(0x2700), spu._ptr<void>(0x100), 128); // Copy data
+
+at the end of `spursTasksetProcessRequest`, which copies the KERNEL's `CellSpurs`
+head from LS 0x100 - the wrong structure - and runs BEFORE
+`spursTasksetStartTask` reads it.
+
+Identical to the defect the idle handler already documents in this file
+("REFRESH THE SNAPSHOT BEFORE READING IT"), and the identical repair: copy the
+live taskset in before reading. Exactly 128 bytes, so it lands in
+`tempAreaTaskset` and cannot touch context fields starting at 0x2780.
+
+RESULT, measured: `halts` goes 2 -> **0**, and `coresBusy` rises 5.02 -> 6.38 -
+the SPUs are doing real work instead of sitting halted.
+
+**Still frames=0.** Tasks now run without asserting and the title still does not
+render in 240 s. Whatever remains is downstream of task entry.
+
+## Running score, so nobody has to re-derive it
+
+Seven HLE defects fixed, in the order each became visible:
+
+    1. 0x8000 >> 32 UB erasing workload 0's signal   (Ghidra: rotm gives 0)
+    2. selector commit branch tested the wrong operand (Ghidra: LS 0x290)
+    3. a POLL consumed the signal                     (side effect of 2)
+    4. task-id allocator wrote the wrong bitset half  (upstream be_t<v128> bug)
+    5. syscall entry threw "Broken (TODO)"            (also retracts the
+                                                       "syscall fix is neutral"
+                                                       verdict - it was
+                                                       UNREACHABLE, not inert)
+    6. task LS clear ran to 0x40000, hardware stops at 0x3d000 (Ghidra)
+    7. taskset snapshot at LS 0x2700 never refreshed  (trap decoder: r4 = 0)
+
+Shipped frame rate is 19.93 fps and comes entirely from config
+(XFloat Inaccurate, SPU Block Size Mega, Driver Wake-Up Delay 0).
+**HLE has contributed zero frames.**
+
+## WHY HLE SPURS CANNOT RENDER THIS TITLE: the queue API is not implemented
+
+This closes the question. Seven defects were found and fixed, the taskset
+dispatches, the task runs without asserting - and the game still freezes at
+emulated 0:00:09. The last thing the PPU does:
+
+    cellSpurs TODO: cellSpursQueuePushBody()
+    cellSpurs TODO: cellSpursQueuePushBody()
+
+Every SPURS queue function in `cellSpurs.cpp` is a bare stub. They do not even
+declare parameters:
+
+    s32 cellSpursQueuePushBody()
+    {
+        UNIMPLEMENTED_FUNC(cellSpurs);
+        return CELL_OK;
+    }
+
+Eleven of them: `_cellSpursQueueInitialize`, `PopBody`, `PushBody`,
+`AttachLv2EventQueue`, `DetachLv2EventQueue`, `GetTasksetAddress`, `Clear`,
+`Depth`, `GetEntrySize`, `Size`, `GetDirection`. The LFQueue variants are stubbed
+too (`_cellSpursLFQueueInitialize`, `cellSpursLFQueueAttachLv2EventQueue`).
+
+The title pushes work onto a SPURS queue, gets `CELL_OK`, and nothing is queued.
+The consuming task never receives work and the game waits forever. That is the
+whole of the "tasks run, six SPUs busy, frames=0" signature - not a bug left to
+find.
+
+**So HLE SPURS for this title is blocked on IMPLEMENTING the queue API, not on
+debugging.** That is real work: the SPURS queue is a ring buffer in shared memory
+with SPU-side consumers, and it needs correct DMA and reservation semantics on
+both sides. Nothing in the seven fixes is wasted - they are all prerequisites -
+but none of them can produce a frame while the push is a no-op.
+
+Do not restart HLE frame-rate attempts for BLUS30357 until the queue API exists.
+Verify with one boot: if `cellSpursQueuePushBody` still logs TODO, the run cannot
+render and the result is known in advance.
+
+## Both HLE configurations are dead ends for this title. Measured, not assumed.
+
+The queue-API blocker is PPU-side, so the obvious escape is to keep `libsre.sprx`
+as LLE (real firmware queue) and arm ONLY the SPU-side HLE kernel, which is where
+the time is. That was written into a bisect plan hours earlier and never run.
+It has now been run, interleaved against LLE controls:
+
+    lleA      hk=0  armed=0  fps=20.08  cores=4.540  95C
+    hlekern   hk=1  armed=6  NO FRAMES
+    lleB      hk=0  armed=0  fps=20.01  cores=4.600  95C
+
+So:
+
+    HLE libsre + HLE kernel  ->  cellSpursQueuePushBody is a stub, freeze at 0:00:09
+    LLE libsre + HLE kernel  ->  arms 6 kernels, renders nothing
+
+The second is the important one. The HLE SPU kernel arms cleanly against the REAL
+firmware and the title still never presents a frame, so the HLE kernel does not
+interoperate with the genuine LLE policy modules either. **There is no
+configuration in which HLE SPURS produces a frame for BLUS30357.**
+
+The LLE controls in that same round read 20.08 and 20.01, which agrees with the
+shipped 19.87-19.93 and confirms the harness was measuring real gameplay.
+
+### What would actually be required
+
+1. Implement the SPURS queue API - eleven stubs, and `CellSpursQueue` is not even
+   defined in this tree, so its ABI has to be recovered from `libsre` first.
+2. Make the HLE kernel interoperate with real policy modules, or HLE those too.
+
+Neither is a debugging task. Do not spend device time on HLE frame-rate runs for
+this title until (1) exists; the outcome is predictable from one `TODO` line.
+
+## The queue gap is UPSTREAM RPCS3, not a Thor fork regression
+
+Checked against `rpcs3-upstream/rpcs3/Emu/Cell/Modules/cellSpurs.cpp`:
+
+    s32 cellSpursQueuePushBody()
+    {
+        UNIMPLEMENTED_FUNC(cellSpurs);
+        return CELL_OK;
+    }
+
+Byte-identical stubs, and `CellSpursQueue` is not defined upstream either - the
+header has only `using CellSpursLFQueue = CellSyncLFQueue`. **No RPCS3 version
+implements the SPURS queue API.** So this is not something to fix by syncing with
+upstream or by finding the fork's mistake; the functionality has never existed.
+
+That is the final word on HLE SPURS for BLUS30357. It is blocked on writing code
+that does not exist anywhere, starting with recovering the `CellSpursQueue` ABI
+from `libsre`.
+
+### Recovering the queue ABI: libsre.sprx on device is ENCRYPTED
+
+    /storage/emulated/0/Android/data/net.rpcsx.easy/files/config/dev_flash/sys/external/libsre.sprx
+    114254 bytes, magic 53434500 = "SCE\0"
+
+It is an SCE SELF, not an ELF - RPCS3 decrypts it in memory at load with its
+built-in keys, so the on-disk copy cannot be fed to Ghidra directly. Recovering
+the PPU-side queue ABI needs an unself pass first (`Utilities/unself.cpp`
+upstream), and there is no built RPCS3 host binary in this workspace.
+
+What IS already available for this: `debug-captures/spu-ls/spu_ls_CellSpursKernel0.bin`
+is a decrypted 256 KB SPU local store containing the real kernel and taskset
+policy module, dumped via `debug.rpcsx.thor.spu_ls_dump`. It gives the SPU side of
+any structure the queue touches. The PPU side still has to come from an unself'd
+libsre.
+
+### Proof that the queue stubs are the HLE blocker, from the WORKING boot
+
+A default boot (no `hle_libs`) shows the game loading the real firmware module
+itself, at runtime:
+
+    sys_prx: _sys_prx_load_module(path="/dev_flash/sys/external/libsre.sprx")
+    sys_prx: Loaded module: "/dev_flash/sys/external/libsre.sprx" (id=0x23001100)
+    ... [libsre: 0x02297c8c] sys_spu: sys_spu_thread_group_create(num=6, prio=127)
+
+and **`cellSpursQueue` appears ZERO times in that log**. The real libsre
+implements the queue, so the stubs are never reached. Forcing
+`hle_libs='libsre.sprx'` substitutes RPCS3's `UNIMPLEMENTED_FUNC` versions and
+the title freezes at 0:00:09. That is the blocker, confirmed from both sides.
+
+It also means the HLE-kernel-only arm (LLE libsre, `hle_spurs_kernel=1`) had a
+working queue and STILL rendered nothing - so that failure is the HLE kernel not
+interoperating with the real policy modules, which is a separate problem from the
+queue.
+
+### If you add a decrypted-module dump, hook the RIGHT path
+
+`debug.rpcsx.thor.dump_decrypted_modules` was added to the `load_libs` loop in
+PPUModule.cpp, which only handles STATICALLY listed LLE libraries - the log shows
+just `liblv2.sprx` there. libsre arrives through `sys_prx_load_module` at runtime,
+so the hook never fires for it. Hook the dynamic path instead.
+
+## UNLOCKED: the decrypted firmware, and every queue FNID located
+
+The queue ABI is recoverable after all. `debug.rpcsx.thor.dump_decrypted_modules=1`
+now hooks `decrypt_self` in `Crypto/unself.cpp` - EVERY decryption path funnels
+through there, including the dynamic `_sys_prx_load_module` the game itself uses,
+which a hook in PPUModule.cpp's static `load_libs` loop never sees.
+
+    Thor: dumped decrypted module #4 ... (239344 bytes)   <- libsre
+    Thor: dumped decrypted module #7 ... (74864 bytes)    <- libspurs_jq
+
+`decrypted_04.elf` is **ELF 64-bit big-endian, e_machine=0x15 (PPC64)** and
+contains `CellSpursKernel`, `CellSpursTaskset`, `SPURSTASK`, `SpursHdlr0`.
+That is Sony's SPURS runtime, disassemblable in Ghidra with the PowerPC 64 BE
+language.
+
+FNIDs are `le_u32(sha1(name + suffix)[:4])` with the 16-byte suffix in
+`ppu_generate_id` (PPUModule.cpp:90). All eleven queue exports are present in
+libsre, in its FNID table at file offsets 0x1e02c-0x1e25c:
+
+    _cellSpursQueueInitialize          0x082bfb09   @0x1e034
+    cellSpursQueuePopBody              0x91066667   @0x1e188
+    cellSpursQueuePushBody             0x92cff6ed   @0x1e190
+    cellSpursQueueAttachLv2EventQueue  0xe5443be7   @0x1e24c
+    cellSpursQueueDetachLv2EventQueue  0x039d70b7   @0x1e02c
+    cellSpursQueueGetTasksetAddress    0x2093252b   @0x1e06c
+    cellSpursQueueClear                0x247414d0   @0x1e074
+    cellSpursQueueDepth                0x35f02287   @0x1e0a0
+    cellSpursQueueGetEntrySize         0x369fe03d   @0x1e0a4
+    cellSpursQueueSize                 0x54876603   @0x1e0e8
+    cellSpursQueueGetDirection         0xec68442c   @0x1e25c
+
+### Next step, concretely
+
+1. `adb shell setprop debug.rpcsx.thor.dump_decrypted_modules 1`, boot the title,
+   pull `files/cache/decrypted_04.elf`.
+2. Parse the PRX export descriptor to pair the FNID table with its `faddrs`
+   array - the loader logs the shape:
+   `** Exported module '<name>' (fnids=0x..., faddrs=0x..., ...)`.
+   `cellSpursQueueGetEntrySize`, `Depth` and `Size` are the cheapest to read and
+   they reveal the structure's field offsets immediately.
+3. Recover `CellSpursQueue` from those accessors, then implement Push/Pop.
+
+**The firmware dumps are NOT committed.** They are Sony's copyrighted code; this
+repo has a GitHub remote. Regenerate them with the property above - it takes one
+boot. Keep them local.
+
+## CellSpursQueue ABI, recovered from libsre with Ghidra
+
+`decrypted_04.elf` imported as **PowerPC:BE:64:default**, disassembled at the
+export addresses resolved above. The trivial accessors give the layout directly -
+each is "validate, load one field, store to out-param":
+
+    cellSpursQueueGetEntrySize      lwz r0,0x8(r11)    -> u32 @ 0x08
+    cellSpursQueueDepth             lwz r0,0xc(r11)    -> u32 @ 0x0C
+    cellSpursQueueGetDirection      lwz r0,0x1c(r11)   -> u32 @ 0x1C
+    cellSpursQueueGetTasksetAddress ld  r0,0x60(r11)   -> u64 @ 0x60
+
+`_cellSpursQueueInitialize` (0x164c0) then writes EVERY field through r5, which
+completes the layout - an initialiser is the best possible source for a struct:
+
+    stw r31,0x00(r5)   stw r31,0x04(r5)   ; two counters, both zeroed
+    stw r7, 0x08(r5)   ; entry size   (arg)
+    stw r8, 0x0C(r5)   ; depth        (arg)
+    std r0, 0x10(r5)   ; buffer       (u64)
+    stw r9, 0x18(r5)
+    stw r10,0x1C(r5)   ; direction    (arg)
+    std r11,0x60(r5)   ; taskset      (u64)
+    std r3, 0x68(r5)   ; spurs        (u64)
+
+    struct CellSpursQueue
+    {
+        be_t<u32> head;          // 0x00  zeroed at init, ring counter
+        be_t<u32> tail;          // 0x04  zeroed at init, ring counter
+        be_t<u32> entry_size;    // 0x08
+        be_t<u32> depth;         // 0x0C  capacity; Size() wraps against it
+        vm::bptr<void, u64> buffer; // 0x10
+        be_t<u32> x18;           // 0x18
+        be_t<u32> direction;     // 0x1C
+        u8 unk20[0x40];          // 0x20
+        vm::bptr<CellSpursTaskset, u64> taskset; // 0x60
+        vm::bptr<CellSpurs, u64> spurs;          // 0x68
+    };
+
+Which counter is head and which is tail is not yet proven - `cellSpursQueueSize`
+reads 0x0C and does signed wrap arithmetic over the pair, so stepping that
+function settles it. Note also `lbz r0,0xe(r11)` elsewhere, a byte read inside the
+0x0C word: depth is probably packed rather than a plain u32.
+
+**Validation contract**, identical in every entry point:
+
+    cmpwi r11,0x0                      -> if queue == nullptr, return 0x80410911
+    rlwinm r0,r11,0x0,0x19,0x1f        -> r11 & 0x7F
+    bne   ...                          -> if not 128-byte aligned, return 0x80410910
+    cmpwi r4,0x0                       -> if out-param == nullptr, return 0x80410911
+
+(`lis r3,-0x7fbf` + `ori r3,r3,0x91x` builds 0x8041091x.) So the HLE versions must
+take `vm::ptr<CellSpursQueue>`, reject null and non-128-byte-aligned pointers with
+those exact codes, and write results through an out-pointer - NOT return them.
+
+`cellSpursQueueSize` at 0x168fc is the interesting one for semantics: it reads
+depth at 0x0C and does signed wrap arithmetic over two counters
+(`subf`/`add`/`nor` around 0x16940-0x16984), which is the ring-buffer
+head/tail distance. Those two counter fields are the next thing to pin down.
+
+`cellSpursQueuePushBody` at 0x169d0 is a real function - 0xC0 stack frame, saves
+r28-r31, takes (r3=queue, r4=buffer, r5=?) - and calls into sync primitives. It is
+the last piece, not the first; do the counters and Initialize first.
+
+### Reproducing this
+
+    adb shell setprop debug.rpcsx.thor.dump_decrypted_modules 1
+    # boot the title once, then
+    adb pull .../files/cache/decrypted_04.elf
+    analyzeHeadless <proj> p -import decrypted_04.elf \
+        -processor PowerPC:BE:64:default \
+        -postScript DisassembleSpuWindows.java out.txt 0x60 <code_va...> -noanalysis
+
+Export addresses come from pairing the FNID table (file 0x1e024, vaddr 0x1df24)
+with the faddrs table (file 0x1e2f8, vaddr 0x1e1f8), 181 entries; each faddr
+points at an OPD entry whose first word is the real code address.
+
+## cellSpursQueuePushBody: the protocol, read off the firmware
+
+`0x169d0`, after the shared null/alignment validation:
+
+    lwz   r0,0x1c(r29)   ; direction
+    cmpwi r0,0x2         ; MUST be 2 to push, else return 0x80410909
+    addi  r9,r9,0x4      ; &queue->tail
+    lwarx r11,0,r28      ; load-and-RESERVE the counter at 0x04
+    sync  0x1            ; lwsync
+    lwz   r0,0x0(r29)    ; head  @0x00
+    lwz   r8,0xc(r29)    ; depth @0x0C
+    subf/add ...         ; wrap arithmetic -> free space
+    bl 0x0001309c        ; taken when the queue is FULL (blocking helper)
+    bl 0x0001d8f8        ; taken after the entry is written (notify helper)
+
+So it is a **PowerPC reservation-based lock-free ring**: `lwarx`/`stwcx.` on the
+tail at 0x04, head at 0x00, capacity at 0x0C, entries of `entry_size` (0x08) in
+the buffer at 0x10. That settles the open question from the layout note - the
+counter at **0x04 is the one PUSH advances**, so 0x00 is head and 0x04 is tail.
+
+This is implementable in HLE: the PPU-side function can do the same protocol with
+`vm::` atomics against the same guest memory, which is what the SPU-side consumer
+reserves against. Two things still need reading before writing code:
+
+- **0x0001309c** - what it waits on when full. Determines whether the HLE version
+  must block on an lv2 event queue or can spin.
+- **0x0001d8f8** - the notify path. Determines what the consumer is woken by;
+  getting this wrong is a silent hang, not an error.
+
+`direction == 2` for push is worth noting on its own: the current stubs accept
+anything, so a title pushing on a pop-direction queue currently gets CELL_OK where
+hardware returns 0x80410909.
+
+## The block/notify mechanism is ordinary lv2 - so the queue IS implementable
+
+`0x1309c` (full path) and `0x1d8f8` (notify path) are import stubs - `r12 = 0x30000`,
+`lwz r12,-0x1fc4(r12)`, `bctr` through a descriptor. Scanning libsre for candidate
+FNIDs names what it imports and exports:
+
+    sys_lwmutex_lock      0x1573dc3f      sys_lwmutex_unlock   0x1bc200f4
+    sys_lwcond_wait       0x2a6d9d51      sys_lwcond_signal    0xef87a695
+    cellSyncQueuePush     0x5ae841e5      cellSyncQueueTryPush 0x705985cd
+    cellSyncMutexLock     0x1bb675c2      _cellSyncLFQueuePushBody 0xba5961ca
+    _cellSyncLFQueueGetPushPointer      0xe9bf2110
+    _cellSyncLFQueueCompletePushPointer 0x4e88c68d
+    cellSpursSendWorkloadSignal 0x1d2bca4b   cellSpursWakeUp 0x7e4ea023
+
+**No exotic primitive.** The blocking wait is `sys_lwmutex` + `sys_lwcond`, both
+already fully implemented in this tree, and the SPU-side wake is
+`cellSpursSendWorkloadSignal` / `cellSpursWakeUp`, which are also already
+implemented (they are what the seven HLE fixes above were exercising). The
+cellSync LFQueue helpers are present too, so the ring maths has a working
+reference in `cellSync.cpp`.
+
+That closes the specification. Implementing `cellSpursQueuePushBody` needs:
+
+1. Signature `(vm::ptr<CellSpursQueue>, vm::cptr<void> buffer, u32 mode)` - the
+   stubs take NO parameters today, which is why nothing can work.
+2. Validate: null -> 0x80410911, `addr & 0x7F` -> 0x80410910,
+   `direction != 2` -> 0x80410909.
+3. Reserve/advance the tail at 0x04 against head at 0x00 and depth at 0x0C, copy
+   `entry_size` (0x08) bytes into `buffer` (0x10).
+4. Block on lwmutex/lwcond when full; wake the consumer after the write.
+
+Everything in steps 2-4 has a working implementation elsewhere in this tree. This
+is no longer research - it is a bounded port against a recovered spec.
+
+## The SPURS queue is IMPLEMENTED, and the title moves past the freeze
+
+`_cellSpursQueueInitialize`, `cellSpursQueuePushBody` and `cellSpursQueuePopBody`
+are no longer `UNIMPLEMENTED_FUNC` stubs. They are written from the recovered
+firmware layout and protocol, with the exact error codes libsre returns
+(0x80410911 null, 0x80410910 align, 0x80410909 wrong direction - all three
+already existed as CELL_SPURS_TASK_ERROR_NULL_POINTER / _ALIGN / _PERM, which
+independently confirms the disassembly was read correctly).
+
+MEASURED: `TODO: cellSpursQueue` count drops to **0**, Initialize is called, and
+the title executes code it had never reached - `cellSpursTaskExitCodeGet` and
+`_spurs::task_start`. Every previous HLE run froze at the push.
+
+`head`/`tail` are declared `atomic_be_t<u32>` because the firmware reserves them
+with `lwarx`/`stwcx.`; the compiler rejecting `compare_and_swap_test` on `be_t`
+is what surfaced that.
+
+### The wake was a guess, and guessing there is memory corruption
+
+The first version called `cellSpursWakeUp(queue->spurs)`. That produced
+
+    Verification failed (object: 0x0)  in _spurs::task_start
+
+because Initialize had stored the SAME pointer in taskset (0x60) and spurs (0x68)
+while the firmware writes two DIFFERENT registers (`std r11,0x60`, `std r3,0x68`)
+and only r3 is the argument. `cellSpursWakeUp` WRITES through the structure it is
+handed, so a taskset pointer there corrupts the taskset. Removed; `spurs` is now
+left NULL rather than aliased, because a null fails loudly and a wrong pointer
+corrupts silently. **Resolve the notify import at libsre 0x1d8f8 before adding a
+wake back.**
+
+### Where it now stops
+
+Removing the wake did NOT clear the fatal - it is the GAME's own path:
+`cellSpursCreateTask` -> `_spurs::task_start` -> `cellSpursWakeUp` fails because
+`taskset->spurs` reads null. So the next defect is in taskset initialisation, on a
+path nothing could reach before the queue existed. That is the thread to pull.
+
+**This code only runs when cellSpurs is HLE'd.** The shipped configuration loads
+the real libsre via `sys_prx_load_module`, so the shipped 19.87 fps path never
+touches any of it.
+
+## HLE SPURS RENDERS. 31 frames, no crash, no halt.
+
+    frames=31   fatal=0   halts=0   tasksetDispatch=2   emu 0:00:10
+
+First frames ever produced with `hle_libs='libsre.sprx'` and the HLE SPURS
+kernel. The blocker was a memory corruption in the queue implementation, found by
+reading the firmware's argument validation instead of reasoning by analogy.
+
+### The signature was wrong, and it zeroed the taskset
+
+`_cellSpursQueueInitialize` was written with the shape of
+`_cellSpursLFQueueInitialize` - queue as argument 2. The firmware prologue at
+libsre 0x164c0 says otherwise, because it validates each argument distinctively:
+
+    lwz r0,0x74(r4)            ; r4->0x74 = CellSpursTaskset::wid
+    ld  r3,0x60(r4)            ; r4->0x60 = CellSpursTaskset::spurs  -> r4 IS the taskset
+    rlwinm r0,r5,0,0x19,0x1f   ; r5 & 0x7f -> r5 is the QUEUE (128-byte aligned)
+    rlwinm r0,r6,0,0x1c,0x1f   ; r6 & 0x0f -> r6 is the buffer (16-byte aligned)
+    cmplwi r7,0x4000           ; r7 = size, capped at 0x4000
+    or r10,r9,r9 ... stw r10,0x1c(r5)  ; r9 = direction
+
+PPC64 passes args in r3..r10, so the real signature is
+
+    _cellSpursQueueInitialize(spurs, taskset, queue, buffer, size, depth, direction)
+
+Writing 0x70 bytes through argument 2 therefore landed on the TASKSET and zeroed
+`spurs` at 0x60 - exactly the null that produced
+`Verification failed (object: 0x0)` in `_spurs::task_start`.
+
+**Both of this session's queue bugs came from reasoning by analogy rather than
+reading the disassembly**: the aliased spurs/taskset pointers, and this argument
+order. Both were memory corruption, not clean failures. The firmware answers these
+questions directly - ask it.
+
+### Where it stops now: 31 frames, then a stall
+
+No fatal, no halt, cores at ~6.9, frames frozen at 31. That matches the known
+simplification: the ring returns `CELL_SPURS_TASK_ERROR_BUSY` when full instead of
+blocking on lwmutex/lwcond, and the notify was removed. Once the queue fills, the
+push fails and the title stops advancing.
+
+`queue->spurs` now holds the REAL spurs pointer (`taskset->spurs`, per
+`ld r3,0x60(r4)` then `std r3,0x68(r5)`), so re-adding the wake is no longer the
+corrupting guess it was - that is the next thing to try.
+
+### The wake does NOT fix the stall - hypothesis rejected
+
+Re-adding `cellSpursWakeUp` with the now-correct spurs pointer changed nothing:
+
+    without wake   frames=31   fatal=0   emu 0:00:10
+    with wake      frames=27   fatal=0   emu 0:00:10
+
+27 against 31 is noise, and both stall at the same emulated time with cores near
+7.0 and no fatal. So the stall is **not** the ring filling up, and "the queue
+returns BUSY instead of blocking" is NOT the current blocker. That hypothesis is
+rejected rather than left hanging.
+
+The wake is kept because it is what the firmware does (it stores `taskset->spurs`
+at queue+0x68 and notifies through its import), but it buys nothing measurable
+today and must not be cited as a fix.
+
+What the numbers actually say: the title renders roughly 30 frames - the early
+boot/logo output - reaches emulated 0:00:10, and then stops advancing while all
+six SPUs stay busy. Emulated time freezing at the same point in every run, with no
+halt and no fatal, is a wait, not a crash. The next question is what the PPU is
+blocked on at 0:00:10, which `/threads` at the stall will answer.
+
+**Do not re-run HLE frame tests without a hypothesis.** Each cycle is ~10 minutes
+with the device at 85-89 C, and two consecutive changes here were guesses that
+cost a round each.
+
+## The stall, diagnosed: the render pump waits on SPURS completion
+
+Ran the stall to completion and interrogated it instead of guessing again:
+
+    stalled at frames=31
+    {PPU[0x1000005] Thread (FlipPump)} cellSpursWakeUp(spurs=*0x1e97a80)
+    ... repeated every ~265 us, indefinitely
+
+**FlipPump - the frame-presentation thread - spins on `cellSpursWakeUp` at about
+3,800 calls per second**, waiting for SPU work that never completes. At the same
+moment `/diag` shows all six SPUs at `pc=0x00a00` with `spursRunning=6`: busy, not
+waiting, and not finishing the job FlipPump needs.
+
+So the remaining defect is in **work completion**, not in dispatch, selection,
+the taskset, or the queue. Those all now function - the title boots through SPURS
+and presents ~30 frames. Something the task should signal on completion never
+reaches the PPU, and the renderer blocks forever.
+
+Also visible and probably unrelated: `sys_fs_opendir` on
+`/dev_hdd0/game/BLUS30357/USRDIR/UnrealEngine3/TransGame/PS3Cache` fails
+CELL_ENOENT twice just before the spin begins.
+
+### Instrumentation caveat, so nobody misreads the same line
+
+The run printed `QueuePush trace: 0`. That is NOT evidence that
+`cellSpursQueuePushBody` was never called - it logs at `trace` level, which is
+filtered by default, while `_cellSpursQueueInitialize` logs at `warning` and did
+appear. Raise the push log to `warning` before drawing any conclusion from it.
+
+### Next step
+
+Find what signals task completion back to the PPU. FlipPump is looping on
+`cellSpursWakeUp` from `HLE:0x02003f74`, so the caller is a game routine polling
+for a SPURS result. The candidates are the taskset's task-exit path
+(`cellSpursTaskExitCodeGet` appears in these logs) and the event-flag machinery,
+both of which are HLE'd here.
+
+### Snapshot refresh added to the syscall handler - correct, but not the cure
+
+`spursTasksetProcessSyscall` had the same stale-snapshot defect as
+`spursTasksetStartTask` and `spursTasksetDispatch`: it reads
+`spu._ptr<CellSpursTaskset>(0x2700)`, the scratch nothing fills. Its
+`CELL_SPURS_TASK_SYSCALL_EXIT` case reads `taskset->x78` from that to find the
+task-exit callback, which is the completion path FlipPump waits on, so it was a
+well-motivated suspect.
+
+Fixed for consistency - all three sites now refresh before reading. Measured:
+
+    before   frames=31/27   tasksetDispatch=1..2
+    after    frames=32      tasksetDispatch=3
+
+Dispatches went up, frames did not, and the stall is unchanged at emulated
+0:00:10 with 299 `cellSpursWakeUp` calls logged. **So this was not the cure**, and
+it must not be described as one. The completion signal is still not reaching the
+PPU.
+
+Remaining candidates, none yet tested:
+
+- `spursTasksetOnTaskExit` - what it actually does with the callback address, and
+  whether the PPU-side handler ever runs.
+- The event-flag path (`cellSpursEventFlag*`), which is how a PPU thread normally
+  blocks on SPURS work rather than by spinning on `cellSpursWakeUp`.
+- Whether the task ever reaches the EXIT syscall at all: put a one-shot
+  `warning`-level probe in each `case` of `spursTasksetProcessSyscall` and read
+  which syscalls the task actually issues. That is the cheapest next measurement
+  and it needs one boot.
+
+## THE STALL, FULLY EXPLAINED: the queue's NOTIFICATION half is the stub
+
+One boot with the queue calls raised to `warning` (they were at `trace`, which the
+default filter drops - that is what produced a misleading "QueuePush: 0" earlier):
+
+    _cellSpursQueueInitialize(spurs=*0x0, taskset=*0x10364100, queue=*0x1030e400)
+    cellSpurs TODO: cellSpursQueueAttachLv2EventQueue()     <- STILL A STUB
+    PushBody:  479359 calls
+    PopBody:   0
+    Thor TASK SYSCALL #2 (WAIT_SIGNAL) args=0xa taskId=0
+    Thor TASK SYSCALL #1 (YIELD)
+
+The whole deadlock, end to end:
+
+1. The task issues **WAIT_SIGNAL** - it is blocked waiting to be signalled, then
+   yields.
+2. **`cellSpursQueueAttachLv2EventQueue` is an unimplemented stub**, and that is
+   the mechanism that delivers the signal.
+3. Nothing ever wakes the consumer, so **PopBody is never called - 0 times**.
+4. The ring fills, `PushBody` returns `CELL_SPURS_TASK_ERROR_BUSY`, and the title
+   retries: **479,359 pushes**. That retry loop is what pins seven cores at 90 C
+   while frames sit at 28-32.
+
+So the data path works and the NOTIFY path does not. Note also that Initialize is
+called with `spurs = 0` and a valid taskset, which is exactly the
+"taskset OR spurs" branch at libsre 0x1654c - the implementation already handles
+it by taking `taskset->spurs`.
+
+### What remains, concretely
+
+- Implement `cellSpursQueueAttachLv2EventQueue` (and `Detach`), which binds the
+  lv2 event queue the consumer waits on.
+- Signal the waiting task when a push succeeds. `_cellSpursSendSignal(taskset,
+  taskId)` exists and is the obvious primitive; which task to signal must come
+  from the queue structure, so resolve what lives in the unmapped bytes at 0x20..0x5F
+  and at 0x18 before wiring it - **do not guess this**, two guesses tonight were
+  memory corruption.
+- Only then does BUSY-instead-of-blocking matter.
+
+## cellSpursQueueAttachLv2EventQueue: the contract, from libsre 0x16778
+
+    lwz r0,0x1c(r3)          ; direction != 0        else 0x80410909 PERM
+    lwz r0,0x18(r3)          ; MUST already be -1    else 0x8041090f STAT
+    ld  r0,0x68(r3)          ; spurs != 0            else 0x80410902 INVAL
+    addi r4,r1,0x74 / addi r5,r1,0x70 / li r6,0x1
+    ... delegates with (spurs, &out, &out, 1)
+
+Two things fall out:
+
+1. **Field 0x18 is the "no event queue attached" sentinel and its value is -1.**
+   `_cellSpursQueueInitialize` must set it to 0xFFFFFFFF; setting it to 0 (as the
+   first implementation did, now fixed) makes every attach fail with STAT before
+   it does anything.
+2. The attach **delegates to `cellSpursAttachLv2EventQueue`**, which this tree
+   ALREADY IMPLEMENTS. So the notify half is not another from-scratch job - it is
+   a wrapper: validate, call the existing function, store the resulting queue id
+   in 0x18.
+
+That makes the remaining work small and specific, and it is the last thing between
+HLE and continuous frames: the consumer waits on that event queue
+(TASK SYSCALL #2 WAIT_SIGNAL), and nothing signals it today, which is why
+PopBody is called 0 times against 479,359 pushes.
+
+## Implementing the notify half moved emulated time 0:00:10 -> 0:03:12
+
+`cellSpursQueueAttachLv2EventQueue` and `Detach` are implemented - validation in
+the firmware's exact order, then a delegate to `cellSpursAttachLv2EventQueue`
+(already in this tree via `_spurs::attach_lv2_eq`) with `isDynamic = 1`, storing
+the returned port in 0x18 and restoring the -1 sentinel on detach.
+
+    Initialize: 1   Attach: 1   Push: 481958   Pop: 0
+    emu 0:03:12     fatals: 0   frames: 27
+
+**Emulated time advanced past the wall by a factor of about 19.** Every previous
+HLE run froze at 0:00:10; the title now runs for over three minutes of emulated
+time. The attach is called once and succeeds, so the PPU is no longer blocked
+where it was.
+
+What has NOT changed: `PopBody` is still 0, frames still sit at 27, and the push
+retry loop still runs (481,958). So the consumer is still not being woken - the
+attach binds the event queue but nothing yet SIGNALS through it on a successful
+push.
+
+### Next, and the evidence for it
+
+The task blocks with `CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL` (census: syscall #2,
+`args=0xa`). The signal side is `_cellSpursSendSignal(taskset, taskId)`, which
+exists. The open question is still WHICH task to signal on a push - do not guess
+it; it should come from the queue structure's unmapped bytes (0x20..0x5F) or from
+`args=0xa` in that WAIT_SIGNAL census line, which looks like a task id or mask.
+Read `cellSpursQueuePushBody`'s tail at libsre 0x16b60/0x16bc8 (the two `bl`
+targets) to see exactly what it notifies.
+
+## Reading PushBody's tail: one correction, and the struct is bigger than 0x70
+
+### `bl 0x1d8f8` is MEMCPY, not a notify
+
+Earlier notes called it the notify import. It is not. Its call site:
+
+    lwz   r3,0x8(r29)    ; entry_size
+    ld    r0,0x10(r29)   ; buffer
+    mullw r3,r3,r6       ; entry_size * slot
+    add   r3,r3,r0       ; dest = buffer + slot*entry_size
+    rldicl r4,r30,0,0x20 ; src  = the caller's buffer argument
+    rldicl r5,r3,0,0x20  ; size
+    bl 0x0001d8f8        ; memcpy(dest, src, size)
+
+That is the data copy, and it CONFIRMS the addressing in the implemented
+`cellSpursQueuePushBody` - `buffer + slot * entry_size` is exactly what the
+firmware computes.
+
+### The real notify is a RAW SYSCALL, and the struct extends past 0x70
+
+    lwz r3,0x74(r29)   ; a field at 0x74
+    addi r4,r1,0x78
+    li  r5,0x0
+    li  r11,0x82       ; lv2 syscall number in r11
+    sc  0x0
+    ...
+    ld  r6,0x60(r29)   ; taskset
+    bl  0x0001309c
+
+Two consequences:
+
+1. **`CellSpursQueue` is LARGER than 0x70.** `lwz r3,0x74(r29)` reads a field
+   beyond the current definition, and the `CHECK_SIZE(CellSpursQueue, 0x70)` in
+   cellSpurs.h is therefore wrong. The guest allocates this memory so nothing has
+   crashed, but the definition needs extending once 0x70..0x77+ are identified.
+   The value at 0x74 is passed as the FIRST argument to that syscall, so it is an
+   id of some kind - very likely the lv2 event queue or port id.
+2. The notify is a direct `sc`, not an exported call, which is why scanning for
+   FNIDs never found it.
+
+**Do not guess the syscall number from a hand-built table.** An attempt to index
+`kernel/cellos/src/lv2.cpp` recovered only 732 of ~1024 slots, so the mapping was
+unreliable and is not recorded here. Read it properly, or set a breakpoint/log on
+`sc` from this address range instead.
+
+## The notify syscall, read not guessed: 0x82 = sys_event_queue_receive
+
+The syscall table annotates every entry with its number, so this needs no
+counting (an earlier attempt to index it by position recovered 732 of ~1024 slots
+and was correctly discarded):
+
+    kernel/cellos/src/lv2.cpp:345
+    BIND_SYSC(sys_event_queue_receive),   // 130 (0x082)
+
+So the full-ring path in `cellSpursQueuePushBody` is
+
+    lwz  r3,0x74(r29)   ; lv2 event queue id
+    addi r4,r1,0x78     ; &event
+    li   r5,0x0         ; timeout 0 = infinite
+    li   r11,0x82       ; sys_event_queue_receive
+    sc   0x0
+
+**It blocks on an event queue whose id lives at 0x74** - past where the struct
+definition ended. Three defects in code written this session, all caught by the
+firmware and none visible any other way:
+
+    wrong argument order in Initialize   -> wrote 0x70 bytes over the taskset
+    0x18 initialised to 0 instead of -1  -> every attach would fail STAT
+    no field at 0x74 at all              -> blocking path had nothing to wait on
+
+`CellSpursQueue` is now 0x78 with `event_queue_id` at 0x74; Attach writes both it
+and the port at 0x18, Detach clears both, Initialize zeroes them.
+
+    Init: 1  Attach: 1  Push: 536152  Pop: 0
+    emu 0:03:33   fatals: 0   frames: 32
+
+Emulated time is now 0:03:33 against 0:00:10 before any of this, and the run is
+crash-free. `Pop` is still 0.
+
+### The next thread: the LF variant is stubbed too
+
+    cellSpurs TODO: cellSpursLFQueueAttachLv2EventQueue()
+
+Called immediately BEFORE the CellSpursQueue attach, from a different game site.
+This title uses BOTH queue types and only `CellSpursQueue` has been implemented.
+`CellSpursLFQueue` is `CellSyncLFQueue`, which is already defined and has working
+`cellSync` helpers (`_cellSyncLFQueueGetPushPointer`,
+`_cellSyncLFQueueCompletePushPointer`), so that one is a wiring job rather than an
+ABI recovery. Do it before touching anything else - the consumer may be waiting on
+the LF queue, not on this one, which would explain `Pop: 0` entirely.
+
+## The push notify, implemented - and a correction about what "Pop: 0" means
+
+`cellSpursQueuePushBody`'s third argument is **a task id, not a blocking flag**.
+libsre keeps it in r31 and the tail masks it to 8 bits to signal the consumer:
+
+    ld     r0,0x60(r29)      ; taskset
+    rldicl r31,r31,0x0,0x38  ; 3rd arg & 0xFF = task id
+    or     r4,r31,r31
+    bl     0x000125d8        ; _cellSpursSendSignal(taskset, taskId)
+    xoris  r0,r3,0x8041 ; cmpwi r0,0x902   ; INVAL -> 0x80410914 FATAL
+
+Implemented, including the firmware's INVAL->FATAL mapping. The title calls it
+with `taskId=1`, so the signal now goes where libsre would send it.
+
+### `Pop: 0` IS NOT THE SUCCESS SIGNAL - that reading was wrong
+
+`cellSpursQueuePopBody` is the **PPU-side** API. The consumer for this queue is an
+**SPU task**, which reads the ring straight out of memory and never calls a PPU
+export. So `Pop: 0` is expected and always was; it says nothing about whether the
+consumer is draining. Several rounds were scored against it as if it did.
+
+A correct drain check needs one of:
+
+- the ring's own counters - read `queue->head` (0x00) over time; if head advances,
+  something IS consuming;
+- or an SPU-side probe where the task reads the ring.
+
+**Do that before any further queue work.** The current state may already be
+correct on the data path, with the remaining stall somewhere else entirely.
+
+### State at the end of this session
+
+    Push: 479264   Pop: 0 (meaningless, see above)
+    emu 0:03:11    fatals: 0    frames: 31    cores ~7.0
+
+## The ring probe found the real deadlock, and it was self-inflicted
+
+Sampling the ring's own counters (head at 0x00, tail at 0x04) is the ONLY valid
+drain check - `Pop: 0` never was one, see above:
+
+    RING #0:      head=0   tail=0    used=0
+    RING #16384:  head=42  tail=298  used=256   <- FULL
+    RING #32768+: head=42  tail=298  used=256   <- frozen thereafter
+
+**head advanced 0 -> 42, so the SPU consumer DOES read the ring.** The data path
+works. Then the ring filled and `cellSpursQueuePushBody` returned BUSY
+immediately, the caller retried in a tight loop, and the PPU thread never yielded
+- starving the very SPU task that had to drain it. ~480,000 pushes, seven cores
+pinned, head frozen.
+
+That was the "known simplification" flagged when the queue was first written and
+twice dismissed as not the blocker. It was the blocker.
+
+Fixed: the full path never busy-returns. It blocks on the event queue when one is
+bound (`sys_event_queue_receive`, which is what libsre's `li r11,0x82 ; sc 0x0`
+does), otherwise yields explicitly, bounded at 1024 attempts so a genuinely stuck
+consumer still surfaces BUSY rather than hanging.
+
+    pushes  481204 -> 65912   (7.3x less spinning)
+    head    37 -> 52
+    emu 0:03:07   fatals 0   frames 29
+
+### Still open: eq=0x0 at push time, and it is a self-defeating guard
+
+The probe now prints the event queue id and it reads **0**, so the blocking branch
+never runs and only the yield fallback does. Two candidate causes, not yet
+separated:
+
+1. **The guard is defeated by its own function.** `_cellSpursQueueInitialize` sets
+   `x18 = 0xFFFFFFFF` (the correct sentinel) and the preservation check is
+   `if (event_queue_id == 0 || x18 == 0xFFFFFFFF) event_queue_id = 0;` - which is
+   ALWAYS true by then. Reorder or drop that check.
+2. **Attach and Push may be on different queue objects.** The title calls Attach
+   at 0:00:09.449 and Initialize at 0:00:09.561 - attach BEFORE initialise, which
+   is odd enough to suspect two queues. Log both addresses and compare before
+   assuming (1).
+
+Resolve which before touching it again.
+
+## Attach takes ONE argument, and the full-ring wait must be BOUNDED
+
+### The eq=0x0 mystery: a phantom parameter
+
+Logging all three call sites settled it without another guess - same queue object
+throughout, so the "two queues" theory was wrong:
+
+    Initialize: queue=0x1030e400  taskset=0x10364100
+    Attach:     queue=0x1030e400  eventQueueId=0x10364100   <- the TASKSET address
+    Push:       queue=0x1030e400
+
+`cellSpursQueueAttachLv2EventQueue` had been given a SECOND PARAMETER that does
+not exist. RPCS3 duly passed it r4, which merely happened to hold the taskset
+pointer, and that was stored as an event queue id - hence `eq=0x0` downstream.
+
+The firmware validates ONLY r3 and derives the rest: `ld r0,0x68(r3)` for spurs,
+then `(spurs, &out, &out, 1)` - two OUTPUT pointers, so it CREATES the queue and
+receives id and port. That is `_spurs::create_lv2_eq(ppu, spurs, &id, &port, 1,
+attr)`, already in this tree. Rewritten to one argument, and now `eq=0x8d006100`.
+
+Also removed a guard of mine that was pure theatre: it tested `x18` for an
+existing binding, but Initialize sets `x18` to the sentinel a few lines earlier,
+so the condition was always true.
+
+### timeout=0 means WAIT FOREVER
+
+All three behaviours measured on this one path:
+
+    return BUSY at once     481204 pushes   emu 0:03:07   spinning, 7 cores pinned
+    block, timeout 0           292 pushes   emu 0:00:10   HUNG
+    bounded wait, 200 us       455 pushes   emu 0:03:04   neither
+
+A 200 us wait yields the CPU - which is what lets the SPU consumer drain - without
+betting the thread on a signal that may never arrive, bounded at 4096 attempts so
+a stuck consumer surfaces BUSY instead of hanging. **~1000x fewer pushes than the
+original spin, and no hang.**
+
+### State at the end of this session
+
+    emu 0:03:04   fatals 0   frames 29   pushes 455   eq bound
+    consumer confirmed reading the ring (head reached 52 in an earlier arm)
+
+Frames still stop at ~29. The queue is no longer the bottleneck: it binds, it
+does not spin, it does not hang, and the SPU side reads it. Whatever holds the
+renderer is downstream of that.
+
+**Five defects in this session's own code were caught by the firmware and by
+nothing else**: wrong argument order, wrong sentinel value, a missing field, a
+mislabelled parameter, and a parameter that does not exist. Every one silent.
+
+## The renderer is no longer stalled - it is SLOW. And the wait is not the limit.
+
+`FlipPump` now pushes render work on a steady cadence with emulated time advancing
+alongside it - no deadlock, no spin, no hang:
+
+    0:01:04.79  FlipPump  cellSpursQueuePushBody(taskId=1)
+    0:01:05.90  FlipPump  cellSpursQueuePushBody(taskId=1)
+    0:01:06.99  ...
+
+That was ~1 push per emulated second, which matched the wait arithmetic exactly
+(200 us x up to 4096 retries is ~0.8 s per push once the ring is full, and nothing
+signals the queue so every retry burns its full timeout). So the timeout was
+tested directly:
+
+    timeout 200 us   pushes 455   emu 0:03:04   frames 29
+    timeout  20 us   pushes 654   emu 0:03:04   frames 28
+
+**Ten times shorter, identical emulated progress.** The wait was never the limit -
+the SPU consumer's drain rate is. That closes the tuning avenue; do not spend
+another cycle on the timeout.
+
+### Where HLE SPURS actually stands at the end of this session
+
+    emu 0:03:04    fatals 0    frames ~28    pushes ~650    eq bound
+    queue: binds, does not spin, does not hang, consumer confirmed reading it
+    (head reached 52 in a probed arm)
+
+The queue is healthy and is NOT the bottleneck. The title runs three minutes of
+emulated time and presents ~28 frames, so the remaining problem is how slowly the
+SPU side consumes - a throughput question, not a correctness one, and a much
+better problem than the deadlock this started as.
+
+**Shipped frame rate remains 19.87 fps and comes entirely from config**
+(XFloat Inaccurate, SPU Block Size Mega, Driver Wake-Up Delay 0). HLE has still
+never been the fast path, and nothing here changes that.
+
+## THE LAST LINK: a push only re-dispatches the workload if `waiting` is set
+
+`_cellSpursSendSignal(taskset, taskId)` does not unconditionally wake anything:
+
+    signal = !!(~signalled & waiting & mask);   // 1 ONLY if the task is WAITING
+    ...
+    case 1:
+        cellSpursSendWorkloadSignal(spurs, taskset->wid);   // re-dispatch workload
+        cellSpursWakeUp(spurs);
+
+So a queue push wakes the consumer **only when that task's `waiting` bit is set in
+the taskset structure in main memory**. Otherwise `signal = 0` and nothing is
+dispatched. The `waiting` bit is set SPU-side by
+`SPURS_TASKSET_REQUEST_WAIT_SIGNAL` in `spursTasksetProcessRequest`.
+
+The counts line up exactly:
+
+    cellSpursSendWorkloadSignal: 2      real workload dispatches: 2
+    system-service dispatches:   8      readyCount APIs: 0 (title never calls them)
+
+The workload is signalled twice, dispatches twice, and is then never scheduled
+again - so the task that drains the ring stops running. **That is the drain-rate
+limit**, and it is the last link in the chain.
+
+### Where to look
+
+`SPURS_TASKSET_REQUEST_WAIT_SIGNAL` in `spursTasksetProcessRequest` - does it
+actually set the `waiting` bit at the address the PPU reads? That function reads
+the taskset through `ctxt->taskset.addr()` (main memory, correct) but this whole
+file has a history of the SPU side updating a local snapshot instead of the shared
+structure - the same class of defect fixed three times already this session.
+
+### Logging trap, hit twice - check the level before believing a zero
+
+`_cellSpursSendSignal` logs at **trace**, which the default filter drops, so a
+count of 0 for it means NOTHING. The same mistake produced a misleading
+`QueuePush: 0` earlier. Before treating any zero count as evidence, confirm the
+call site logs at `warning` or above.
+
+### RULED OUT: the WAIT_SIGNAL handler sets the waiting bit correctly
+
+    case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:
+        if (!(signalled0._u & ctxtTaskIdMask))
+        {
+            numNewlyReadyTasks--;
+            running._u  &= ~ctxtTaskIdMask;
+            waiting._u  |=  ctxtTaskIdMask;   // <- set correctly
+            signalled0._u &= ~ctxtTaskIdMask;
+            ready0._u   &= ~ctxtTaskIdMask;
+        }
+
+and those locals ARE written back to the shared structure at the end of
+`spursTasksetProcessRequest` via
+`vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, waiting))`.
+So this is NOT another local-snapshot defect - do not re-investigate it.
+
+Note the guard: the bit is only set when the task is NOT already signalled. If a
+signal is already pending the task consumes it and does not wait, which is
+correct.
+
+So the remaining question is narrower than "is the bit set": it is **how often the
+task re-enters WAIT_SIGNAL**. The syscall census logs one line per syscall number
+(one-shot), so it cannot answer that. Make that probe COUNT instead - a per-number
+counter printed periodically - and compare the WAIT_SIGNAL count against the
+`cellSpursSendWorkloadSignal` count of 2. If the task waits many times but only
+two workload signals fire, the loss is on the PPU side; if it waits twice, the
+task itself is exiting its consume loop.
+
+## THE CONSUMER DRAINS: signal the WAITING task, not the caller's argument
+
+The queue's consumer had been stuck because every push signalled the wrong task.
+Reading the taskset bitmaps at signal time settled it in one run:
+
+    ts=0x10364100 enabled=80000000 waiting=80000000 signalled=00000000
+    SIGNAL taskId=1 rc=0x80410905 (SRCH)
+
+`enabled=80000000` is MSB-first, so **only task 0 exists** - the title creates two
+tasksets (0x101b4e80 and 0x10364100) with one task each - and task 0 is the one
+WAITING. Passing the caller's third argument (1) as a task id could only ever
+return SRCH, set no signalled bit, and leave the consumer asleep.
+
+So the third argument is NOT a task id, or r31 is reloaded across the ~0x280 bytes
+between the prologue and the call at 0x16c80 that were never disassembled. Either
+way the taskset itself carries the answer: scan the `waiting` bitmap and signal
+that task. Layout is `(1u << 31) >> id`, so `countl_zero` gives the id.
+
+RESULT, measured:
+
+    before   rc=0x80410905  head frozen at ~41 while tail ran to 302, ring full
+    after    rc=0x0         head TRACKS tail (128/129, 192/193), ring stays empty
+             frames 32 -> 50, and fps read 5.00 at t+20s (every prior run: 0.00)
+
+**This is the first HLE run to report a non-zero frame rate.**
+
+### Ruled out in the same round
+
+`wklCurrentContention` was the leading suspicion for blocked re-selection and it
+is WRONG: the periodic gate probe reads `runnable=1 prio=1 maxCont=8 cont=0`
+throughout, so contention is not stuck. The failing term is `signal=0` on wkl0 -
+and since there are two tasksets, the queue's taskset may simply be a different
+workload id than the one the probe prints. Check `taskset->wid` before assuming a
+gate defect.
+
+### Probe discipline, third instance
+
+A one-shot probe cannot show a RE-entry failure. `select#1` was one-shot and had
+to be made periodic to see the gate at all. Same for the syscall census
+(one-shot -> counted, which is how the YIELD spin and the taskId=0/1 mismatch
+became visible). Default to counting, not first-hit.
+
+## The queue's taskset is WORKLOAD 2, and the gate probe was reading wkl0/wkl1
+
+Several rounds of "the gate shows signal=0" were about the wrong workloads. The
+PPU log names the right one:
+
+    Thor signal wid=2: inside=0x2000 readback=0x2000 ... ready=255
+    (0x2000 == 0x8000 >> 2)
+
+333 of 334 workload signals go to **wid=2**. The `select#1` probe printed only
+k=0 and k=1, so it never showed the workload that matters. Extended to k<4.
+
+### wkl2's real gate terms: maxContention blocks it
+
+    select#1 wkl2: runnable=1 prio=15 maxCont=1 cont=1 ready=1 signal=1
+
+`runnable`, `ready` and `signal` all PASS. The failing term is
+`maxContention > contention` with **maxCont=1 and cont=1**. Workload 2 admits
+exactly one SPU and contention already reads 1, so it can never be selected
+again - and with maxCont=1 there is no headroom to absorb any accounting error.
+
+This is the same contention defect that showed as `cont=253` on wkl0, which is
+still present in the STORED counter (the clamp added earlier saturates the read,
+it does not stop the value accumulating). Contention is decremented only when an
+SPU re-enters the selector and subtracts its own `wklLocContention`; an SPU parked
+in the taskset PM yielding (measured: 5,440 YIELDs against 1 WAIT_SIGNAL) never
+does that, so its contribution is never released.
+
+**That is the next thing to fix**, and it is the last gate term still failing.
+
+### Run-to-run variance is large - do not trust single runs
+
+Frame counts across otherwise identical builds this round: 31, 32, 34, 50, 52,
+126. Only probe code changed between some of those. Any claim about a frame-count
+improvement needs at least two runs per arm; this session has repeatedly been
+misled by single samples.
+
+### Eliminated this round
+
+- **Bit-convention mismatch between PPU and SPU task bitmaps** - `SELECT_TASK`
+  prints `ready0=00000000000000008000000000000000`, whose `_u64[1]` MSB is bit 127
+  of the u128, exactly what `u128{1} << (~0 & 127)` tests. The conventions agree
+  and SELECT_TASK does find task 0.
+- **Re-signalling the workload on every push** - implemented and measured, no
+  change (head still froze). Kept because it matches firmware behaviour, but it is
+  not the fix.
+
+## The consumer IS scheduled and IS the queue's task. It polls without consuming.
+
+    CENSUS n=5568: exit=0 yield=5568 waitSig=1 poll=0 recvFlag=0
+                   (taskId=0 taskset=0x10364100 spu=0)
+
+`0x10364100` is the taskset the queue is bound to. So the spinning task is the
+QUEUE'S OWN CONSUMER, running on SPU 0, and it holds wkl2's single contention slot
+legitimately - `cont=1` against `maxCont=1` is correct occupancy, not a leak.
+
+This kills two theories at once:
+
+- **contention leak** - no leak; the slot is held by the task that should hold it.
+- **wrong taskset spinning** - it is the right taskset.
+
+What it leaves: the consumer runs, yields 5,568 times, waits for a signal exactly
+once, and never drains the ring past ~43 entries even though `tail` runs to 257+.
+It polls and does not see the data.
+
+### Note on pc=0x00a00 - it is ambiguous, do not read it as "idle"
+
+`spursSysServiceEntry` and `spursTasksetEntry` are BOTH registered at 0xA00
+(dispatch picks by image address: 0x100 -> sys service, 0x200 -> taskset PM). So
+`/diag` reporting every SPU at `pc=0x00a00` does NOT mean they are idling in the
+system service - SPU 0 was inside the taskset PM the whole time. An earlier
+conclusion that "nobody is running workload 2, so contention=1 is stale" was
+wrong for this reason.
+
+### wkl2's gate, full distribution
+
+    439427 x  runnable=1 prio=0  maxCont=1 cont=1 ready=1 signal=1
+     89855 x  runnable=1 prio=15 maxCont=1 cont=1 ready=1 signal=1
+       158 x  runnable=0 prio=0  maxCont=0 cont=0 ready=0 signal=0   (early boot)
+
+Two separate failing conditions, and `prio=0` dominates. Priority comes from
+`wklInfo1[i].priority[spuNum]`, so workload 2 has a priority on only some SPUs -
+the ACTIVATE probe reads `spu=0: wkl2=0`. Whether that is correct for a
+maxContention=1 workload is the next thing to establish.
+
+### Next
+
+The remaining question is why the guest task polls and does not see queue data
+that is demonstrably present in main memory. That needs SPU-side visibility into
+what the task reads - the HLE layer cannot see it, because the task is guest code.
+`debug.rpcsx.thor.spu_ls_dump` plus the task's ELF is the route.
+
+## Ring indices are MODULO DEPTH, and the starvation is intermittent
+
+`cellSpursQueueSize` (libsre 0x168fc) computes the used count as
+
+    if (head <= tail) used = tail - head
+    else              used = tail + depth - head
+
+    lwz r3,0xc(r29) ; cmpw cr7,r9,r0 ; subf r11,r9,r0
+    ... subf r9,r3,r9 ; add r0,r0,r3 ; subf r11,r9,r0
+
+so head and tail are INDICES MODULO DEPTH. The implementation had monotonic
+counters, which made `used` meaningless to the guest consumer once tail passed
+depth. Push and pop now wrap, one slot reserved so `tail == head` still means
+empty.
+
+### What the fix did, and what it did NOT do
+
+The best run went from **0 dispatches of the queue's workload** to **45 of 46
+sampled**, with frames 29 -> 68. But it does not reproduce:
+
+    run A   frames 68   wid=2 dispatches 45
+    run B   frames 36   wid=2 dispatches  6
+    run C   frames 31   wid=2 dispatches  0
+
+Same build, three runs. **So the starvation is NOT fixed - it is intermittent.**
+Do not cite the 68/45 run as a result.
+
+That spread is itself diagnostic: whether the queue's workload is ever selectable
+is a race. It has `maxContention = 1`, and the contention counter has been
+measured running away to 253, so a single accounting error permanently closes its
+gate. Sometimes the SPU wins the race and the workload runs; usually it does not.
+
+**The contention accounting is the remaining defect**, and it is now the only
+thing between here and a consumer that drains reliably.
+
+### Head normalisation is a REGRESSION - do not re-add it
+
+Reducing head mod depth before the comparison looks harmless and produces the same
+used count for the observed values, but measured it collapsed dispatch activity
+from 46 sampled to 1 and frames from 68 to 42. Use the firmware's comparison on
+the raw values.
+
+## 30 FPS REACHED on the HLE path, and the harness left the device broken
+
+    t+40s  fps=30.00 frames=822
+    t+160s fps=30.00 frames=5322      (140 s sustained at the profile's 30 cap)
+
+The last defect was raw `-=` on u8 counters in the workload-preemption path:
+
+    spurs->wklCurrentContention[wklId & 0x0F] -= 0x01;
+    spurs->wklIdleSpuCountOrReadyCount2[wklId & 0x0F].raw() -= 1;
+
+Decrementing a counter already at 0 wraps to 255. The queue's taskset has
+`maxContention = 1`, so `maxContention > contention` could never hold again and
+its gate closed permanently. All four decrements now saturate at 0. Evidence:
+max contention on that workload went 253/255 -> 1-2 in every run afterwards.
+
+**It is NOT reliable: 30 fps in 1 boot of 3.** The other two stall, and a stalled
+HLE boot presents as a BLACK SCREEN.
+
+### The harness must clear its properties, and it did not
+
+Killing a run mid-flight left these set on the device:
+
+    hle_libs=libsre.sprx  hle_spurs_kernel=1  spurs_signal_fix=1 ...
+
+so the next NORMAL launch from the UI booted straight into the experimental HLE
+path and black-screened. The user hit this. `trap EXIT` does not fire on kill -
+this is the same lesson recorded earlier for `setprop` leakage and it cost a user
+session this time.
+
+**Before handing the device back, always:**
+
+    for p in hle_libs hle_spurs_kernel spurs_signal_fix spurs_sel_cond_fix \
+             taskset_snapshot_fix task_ls_clear_fix taskset_syscall_fix \
+             taskset_enabled_fix contention_atomic_fix spu_xfloat spu_block_size \
+             driver_wakeup_delay spu_getllar_busy max_spurs_threads \
+             thermal_abort_c spu_trap_stop sel_probe_nth; do
+      adb shell setprop debug.rpcsx.thor.$p ''
+    done
+    adb shell am force-stop net.rpcsx.easy
+
+### Do NOT put the HLE properties in the game profile
+
+They are experimental and fail two boots in three. Only the three measured config
+settings belong there: XFloat Accuracy Inaccurate, SPU Block Size Mega, Driver
+Wake-Up Delay 0.
+
+## The JIT was compiling everything for cortex-a78. Fixed, and it is worth +0.46%.
+
+    JIT: LLVM AArch64 target: cpu=cortex-a78 attrs=+sha3,+dotprod,+i8mm,-sve,-sve2
+
+Every SPU and PPU block was compiled for an ARMv8.2 core from 2020 while the
+device runs Cortex-X3 + A715 (ARMv9). `-mcpu` selects LLVM's scheduling and
+issue-width model, so vector code was scheduled for a much narrower machine.
+
+The substitution existed only to suppress SVE, and the feature string already
+passes `-sve,-sve2`, so it was suppressed twice over. `debug.rpcsx.thor.jit_cpu_native`
+was added by an earlier session and never measured - the comment said so
+explicitly. Measured now, interleaved, in restored 3D combat, with a separate warm
+cache per arm because changing `-mcpu` changes the generated code:
+
+    cortex-a78   20.39  20.40   mean 20.395
+    native core  20.51  20.47   mean 20.490
+
+**+0.46%, non-overlapping.** Now the default.
+
+### The important reading is the NEGATIVE one
+
+SPU threads are 71% of cycles, and giving LLVM the correct microarchitecture
+bought 0.5%. **So SPU code is not limited by instruction scheduling or NEON
+quality.** It is limited by synchronisation - the 29% of cycles in VM locking
+(range_lock_internal 15.37%, writer_lock 10.69%, passive_lock 3.07%).
+
+That closes codegen tuning as a path to 30 fps and puts everything back on the
+serialised PPU->SPU->RSX chain. Do not spend more effort on -mcpu, -mattr, or
+NEON intrinsic quality for this title.
+
+## HLE reliability: measured, and it is ~1 boot in 6
+
+    release_idle_taskset=1   1/5 then 0/6
+    release_idle_taskset=0   0/6
+
+Same build, so the idle-release change is NOT the regression - the success rate is
+simply low, and the earlier "1 in 3" was a small-sample illusion. Releasing the
+contention slot when a taskset has no runnable task is kept (it is correct) but it
+does not move reliability.
+
+**Do not attempt further reliability fixes by reasoning.** Every fix that worked
+this session came from a measurement; both that came from reasoning alone (head
+normalisation, idle release) were neutral or harmful. The next step is a
+comparative one: capture the full RPCSX log from a GOOD boot and a STALLED boot
+and diff them. The harness has the hook for this; the pull path needs fixing.
 # Patches Never Apply On A Savestate Load
 
 `PPUModule.cpp` applies patches twice, and **both** calls are gated on `!ar`,
@@ -10523,3 +12595,114 @@ than making it cheaper".
 **And "ARM64-optimising LLE" means optimising the SPU recompiler**, since LLE
 work IS the JIT'd guest code. That is where `SPU Block Size`, `XFloat Accuracy`
 and the codegen levers live - the same 55%.
+
+# RETRACTION: Every HLE SPURS Frame Rate In This File Was A Black Screen
+
+Found 2026-08-26, by taking a screenshot instead of reading a number.
+
+A live capture during an HLE SPURS run shows the overlay and **nothing else**:
+
+```
+FPS : 29.27
+PPU : 39.3 %   SPU : 28.4 %   RSX : 06.6 %   Total : 74.3 %
+```
+
+The framebuffer is black. No geometry, no HUD, no scene. The emulator is
+presenting empty frames at the 30 cap and the frame counter is dutifully
+counting them.
+
+## What this retracts
+
+Every HLE number recorded above - including "30.00 fps sustained 140 s" and the
+5,322-frame run - measured **blank frames**. They are not comparable to the LLE
+figures, which are drawn scenes. The correct reading of the HLE arm is not
+"faster than 19.87"; it is **the game does not render**.
+
+`RSX : 06.6 %` was in every one of those captures and is the tell that was
+there the whole time. A drawn combat scene runs RSX far higher; 6.6% is a GPU
+with almost nothing submitted to it. The evidence for "black screen" was
+present in the numbers before the screenshot, and went unread because the
+frame rate was the only field being looked at.
+
+## What this means for "HLE is the lever"
+
+The section above concluding that switching SPURS from LLE to HLE "deletes the
+loop rather than making it cheaper" is **unproven, not disproven**. The
+mechanism argument still stands on its own. What does not stand is any
+measurement offered as evidence for it, because a path that renders nothing
+cannot demonstrate a speed-up. Treat that conclusion as a hypothesis with zero
+supporting measurements.
+
+## The rule this creates
+
+**A frame rate without a screenshot is not a measurement.** The harness must
+capture the framebuffer alongside every fps sample and the sample must be
+discarded unless the frame is non-black. The three cheap checks, in order:
+
+1. `RSX %` - under ~15% on this title means nothing is being drawn.
+2. A screencap, checked for a non-trivial number of distinct pixel values.
+3. The scene gate that already exists (`coresBusy > 4.5`), which passed here
+   and is therefore **not** sufficient on its own - busy cores can be a SPURS
+   spin with no draw calls behind it.
+
+The savestate-load gate is also not sufficient: this run had a black screen
+whether or not the state loaded, because the question was never asked.
+
+# Branch Layout, And Why HLE SPURS Is Not On master
+
+Settled 2026-08-26, after the black-screen retraction above.
+
+- **`master` is the branch that runs.** It carries every measurement that was
+  taken on frames the GPU actually drew, and it does NOT contain the HLE SPURS
+  implementation. `e19e23005` reverted that work here deliberately, because it
+  breaks savestate restore - and the retraction above is the second, independent
+  reason to keep it out.
+- **`hle-spurs-wip` is an archive, not a queue.** Its ~74 commits and the HLE
+  SPURS sections of this file are kept for the reverse-engineering in them:
+  the recovered `CellSpursQueue` layout, the selection-gate condition, the
+  contention accounting, the shift-by-register-width bug class. That knowledge
+  is worth keeping even though the code it describes renders nothing.
+
+**Do not merge `hle-spurs-wip` into `master`.** It was attempted on 2026-08-26
+and the result does not compile: master's revert deletes
+`spu_thread::RegisterHleFunction` and the gate function the branch calls, so
+git's merge silently guts the branch's own implementation while leaving its
+call sites. A merge in that direction produces either a build failure or, if
+"fixed" by re-adding the deleted pieces, the black-screen path back on the
+branch that works.
+
+What DID cross from the branch to master is the part that was measured on drawn
+frames: `XFloat Accuracy: Inaccurate` in the BLUS30357 profile. Nothing else
+from the HLE work has evidence behind it that survives the retraction.
+
+# The Frame-Drawn Check: tools/bench/thor_frame_check.py
+
+Added 2026-08-26 so the black-screen retraction above cannot happen twice.
+
+```
+python tools/bench/thor_frame_check.py --serial 192.168.1.3:5555
+    exit 0  DRAWN  - the fps sample beside it may be reported
+    exit 1  BLACK  - discard the sample
+    exit 2  could not decide
+```
+
+**Distinct colour count is the signal, not darkness.** A night level or a fade
+is legitimately dark but still holds thousands of distinct near-black values; a
+blank framebuffer with the overlay drawn on it holds only the overlay's own
+antialiasing ramp. Validated against five captures already in this project:
+
+```
+live.png      (HLE SPURS, 29.27 fps)   BLACK    162 distinct   98.5% dark    28 KB
+gameplay.png  (combat)                 DRAWN  16724            38.9%       2211 KB
+restored.png  (combat, restored)       DRAWN  16060            38.3%       2208 KB
+tf_play.png   (gameplay)               DRAWN  29334            25.9%       1877 KB
+tf_menu.png   (menu)                   DRAWN  30896             4.7%       1646 KB
+```
+
+The cutoff is 1500 colours - two orders of magnitude above the black population
+and ten times below the lowest drawn frame, so it needs no tuning.
+
+**Wire it into the arm, not into the report.** Call it in the same loop that
+samples `/device` and drop the sample on exit 1, rather than screenshotting
+once at the end. A run can start drawn and stop drawing; a single capture at
+either end would have missed it.

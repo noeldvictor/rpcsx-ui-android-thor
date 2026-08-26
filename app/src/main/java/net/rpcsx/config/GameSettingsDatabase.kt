@@ -196,6 +196,27 @@ object GameSettingsDatabase {
               # Giga was tried and its cold cache did not finish compiling inside a
               # 600 s window, so it is not adopted here.
               SPU Block Size: Mega
+              # XFloat Accuracy: Inaccurate. THE LARGEST SINGLE WIN MEASURED ON
+              # THIS TITLE: 16.23 -> 19.87 FPS (+22.4%) in the gold combat
+              # savestate, which is a drawn 3D scene, not a cutscene.
+              #
+              # It reads as a huge number because for weeks it was doing NOTHING.
+              # `cfg::_enum::from_string` matches the enum's own spelling, so the
+              # property path passing "inaccurate" was rejected and the setting
+              # stayed at its default while the log claimed success. The same trap
+              # hid `SPU Block Size: Mega` above. Both only started applying once
+              # System.cpp canonicalised the string AND checked the return value,
+              # and the jump is what those two settings were always worth.
+              #
+              # So the credit belongs to XFloat and block size TOGETHER. Driver
+              # Wake-Up Delay was already 0 during the 16.23 baseline and is NOT
+              # part of this win - which is why it stays at the value its own
+              # stability measurement chose, further down.
+              #
+              # PS3 SPUs are not IEEE-754: they flush denormals and truncate
+              # instead of rounding. Inaccurate matches that in a single native
+              # ARM64 float op, where Accurate emulates it in software.
+              XFloat Accuracy: Inaccurate
               RSX FIFO Accuracy: Atomic
               # Accurate SPU Reservations stays ON. Reverted 2026-08-23.
               #
