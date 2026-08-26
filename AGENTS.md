@@ -11327,3 +11327,53 @@ separated:
    assuming (1).
 
 Resolve which before touching it again.
+
+## Attach takes ONE argument, and the full-ring wait must be BOUNDED
+
+### The eq=0x0 mystery: a phantom parameter
+
+Logging all three call sites settled it without another guess - same queue object
+throughout, so the "two queues" theory was wrong:
+
+    Initialize: queue=0x1030e400  taskset=0x10364100
+    Attach:     queue=0x1030e400  eventQueueId=0x10364100   <- the TASKSET address
+    Push:       queue=0x1030e400
+
+`cellSpursQueueAttachLv2EventQueue` had been given a SECOND PARAMETER that does
+not exist. RPCS3 duly passed it r4, which merely happened to hold the taskset
+pointer, and that was stored as an event queue id - hence `eq=0x0` downstream.
+
+The firmware validates ONLY r3 and derives the rest: `ld r0,0x68(r3)` for spurs,
+then `(spurs, &out, &out, 1)` - two OUTPUT pointers, so it CREATES the queue and
+receives id and port. That is `_spurs::create_lv2_eq(ppu, spurs, &id, &port, 1,
+attr)`, already in this tree. Rewritten to one argument, and now `eq=0x8d006100`.
+
+Also removed a guard of mine that was pure theatre: it tested `x18` for an
+existing binding, but Initialize sets `x18` to the sentinel a few lines earlier,
+so the condition was always true.
+
+### timeout=0 means WAIT FOREVER
+
+All three behaviours measured on this one path:
+
+    return BUSY at once     481204 pushes   emu 0:03:07   spinning, 7 cores pinned
+    block, timeout 0           292 pushes   emu 0:00:10   HUNG
+    bounded wait, 200 us       455 pushes   emu 0:03:04   neither
+
+A 200 us wait yields the CPU - which is what lets the SPU consumer drain - without
+betting the thread on a signal that may never arrive, bounded at 4096 attempts so
+a stuck consumer surfaces BUSY instead of hanging. **~1000x fewer pushes than the
+original spin, and no hang.**
+
+### State at the end of this session
+
+    emu 0:03:04   fatals 0   frames 29   pushes 455   eq bound
+    consumer confirmed reading the ring (head reached 52 in an earlier arm)
+
+Frames still stop at ~29. The queue is no longer the bottleneck: it binds, it
+does not spin, it does not hang, and the SPU side reads it. Whatever holds the
+renderer is downstream of that.
+
+**Five defects in this session's own code were caught by the firmware and by
+nothing else**: wrong argument order, wrong sentinel value, a missing field, a
+mislabelled parameter, and a parameter that does not exist. Every one silent.

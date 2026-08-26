@@ -4341,10 +4341,15 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 	// from the guest and is not zeroed for us. 0x74 in particular MUST start at 0
 	// so a push before any attach cannot wait on a stale event queue id.
 	queue->x70 = 0;
-	// DO NOT clobber an event queue that is already bound. The title calls
-	// Attach at 0:00:09.449 and Initialize at 0:00:09.561 - initialise-after-
-	// attach - so zeroing here threw away the id the blocking path needs.
-	if (queue->event_queue_id == 0u || queue->x18 == 0xFFFFFFFFu)
+	// LEAVE AN ALREADY-BOUND EVENT QUEUE ALONE.
+	//
+	// This title calls Attach at 0:00:09.449 and Initialize at 0:00:09.561 -
+	// initialise AFTER attach, on the SAME queue object (0x1030e400, confirmed by
+	// logging all three call sites). Zeroing here throws away the id the blocking
+	// path needs. An earlier guard tried to test x18 for this and was useless,
+	// because Initialize sets x18 to the -1 sentinel a few lines above, making the
+	// condition always true.
+	if (!queue->event_queue_id)
 	{
 		queue->event_queue_id = 0;
 	}
@@ -4436,10 +4441,27 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			//
 			// libsre blocks with a raw syscall on the event queue id at 0x74:
 			//     li r11,0x82 ; sc 0x0     = sys_event_queue_receive(id, &ev, 0)
+			// BOUNDED WAIT, NOT AN INFINITE ONE.
+			//
+			// Measured both extremes on this exact path:
+			//
+			//   return BUSY at once      spin: 481,204 pushes, emu reached 0:03:07
+			//   block with timeout 0     hang: 292 pushes,      emu stuck at 0:00:10
+			//
+			// A timeout of 0 means WAIT FOREVER, and nothing signals this queue
+			// yet, so the PPU never came back. A short timeout yields the CPU -
+			// which is what lets the SPU consumer drain - without betting the
+			// thread on a signal that may never arrive.
 			if (queue->event_queue_id)
 			{
-				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 0);
-				continue;
+				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 200);
+
+				if (spins++ < 4096)
+				{
+					continue;
+				}
+
+				return CELL_SPURS_TASK_ERROR_BUSY;
 			}
 
 			// NO EVENT QUEUE BOUND - STILL DO NOT SPIN.
@@ -4580,9 +4602,18 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 // The delegate is cellSpursAttachLv2EventQueue, which this tree already
 // implements via _spurs::attach_lv2_eq, so this is a wrapper rather than new
 // machinery. `isDynamic = 1` is the `li r6,0x1` above.
-s32 cellSpursQueueAttachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, u32 eventQueueId)
+// ONE ARGUMENT. The firmware validates only r3 and derives the rest itself:
+// `ld r0,0x68(r3)` fetches spurs, then it calls with (spurs, &out, &out, 1) -
+// TWO OUTPUT POINTERS - so it CREATES the event queue and receives both the id
+// and the port. Declaring a second parameter made RPCS3 hand this function r4,
+// which merely happened to hold the taskset pointer, and the id stored at 0x74
+// was garbage - the probe read eq=0x0 because of it.
+//
+// `_spurs::create_lv2_eq(ppu, spurs, queueId, port, size, attr)` is that call,
+// with size = 1 from the `li r6,0x1`.
+s32 cellSpursQueueAttachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue)
 {
-	cellSpurs.warning("cellSpursQueueAttachLv2EventQueue(queue=*0x%x, eventQueueId=0x%x)", queue, eventQueueId);
+	cellSpurs.warning("cellSpursQueueAttachLv2EventQueue(queue=*0x%x)", queue);
 
 	s32 error = CELL_OK;
 
@@ -4607,12 +4638,16 @@ s32 cellSpursQueueAttachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> q
 		return CELL_SPURS_TASK_ERROR_INVAL;
 	}
 
+	vm::var<u32> queueId;
 	vm::var<u8> port;
 
-	if (s32 rc = cellSpursAttachLv2EventQueue(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs), eventQueueId, port, 1))
+	if (s32 rc = _spurs::create_lv2_eq(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs), queueId, port, 1,
+			sys_event_queue_attribute_t{SYS_SYNC_PRIORITY, SYS_PPU_QUEUE, {"_spuQue "_u64}}))
 	{
 		return rc;
 	}
+
+	const u32 eventQueueId = *queueId;
 
 	// BOTH fields matter. 0x18 takes the port (its -1 sentinel is what gates a
 	// second attach), and 0x74 takes the EVENT QUEUE ID, which is what
