@@ -4380,8 +4380,56 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 // entries. That reads as corruption and is only a bad subtraction; the claim
 // loop below always used the firmware formula. Same arithmetic as
 // cellSpursQueueSize (libsre 0x168fc).
+// THE GUEST CONSUMER COUNTS MONOTONICALLY. Measured 2026-08-26.
+//
+// With the taskset capture fixed (yield_redispatch_fix) the SPU consumer runs
+// and advances `head` for the first time, and it goes PAST depth:
+//
+//     head=64  tail=64   head=128 tail=128   head=190 tail=192
+//     head=257 tail=0    depth=256
+//
+// head=257 cannot be an index modulo 256. The consumer keeps a monotonic
+// counter and takes the buffer slot as `n % depth`. Our push wrapped tail with
+// `% depth`, so the two sides disagreed the moment tail passed 255:
+// `tail + depth - head` = 0 + 256 - 257 underflows to 4294967295, `used + 1`
+// wraps to 0, the full test never fires, and the producer floods the ring
+// (8.3 million push calls in one run).
+//
+// RETRACTS the earlier note that monotonic counters break the consumer. That
+// was measured when the consumer was CAPTURED inside the taskset and had
+// drained only ~40 entries, so "tail ran to 302 while the consumer saw empty
+// forever" was the capture, not the arithmetic. With the SPU actually running,
+// head tracks tail within a couple of entries.
+//
+// Monotonic counters also make full and empty distinguishable without
+// reserving a slot, so all `depth` entries are usable.
+//
+//   debug.rpcsx.thor.queue_monotonic_fix = 0  restore the modulo-depth tail
+static bool thor_queue_monotonic_fix() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.queue_monotonic_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static u32 spurs_ring_used(u32 head, u32 tail, u32 depth) noexcept
 {
+	if (thor_queue_monotonic_fix())
+	{
+		return tail - head;   // monotonic on both sides
+	}
+
 	return head <= tail ? tail - head : tail + depth - head;
 }
 
@@ -4464,9 +4512,11 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		// same for the observed values) but it collapsed dispatch activity: the
 		// queue's workload went from 45 sampled dispatches to 0, and frames from
 		// 68 to 42. Use the firmware's own comparison on the raw values.
-		const u32 used = head <= tail ? tail - head : tail + depth - head;
+		const u32 used = spurs_ring_used(head, tail, depth);
 
-		if (used + 1 >= depth)
+		// Monotonic counters distinguish full from empty on their own, so no slot
+		// has to be reserved and all `depth` entries are usable.
+		if (thor_queue_monotonic_fix() ? used >= depth : used + 1 >= depth)
 		{
 			// BLOCK, DO NOT SPIN. Returning BUSY here starves the very consumer
 			// that has to drain the ring: the caller retried immediately and the
@@ -4525,9 +4575,10 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
-		if (queue->tail.compare_and_swap_test(tail, (tail + 1) % depth))
+		if (queue->tail.compare_and_swap_test(tail, thor_queue_monotonic_fix() ? tail + 1 : (tail + 1) % depth))
 		{
-			slot = tail;
+			// The COUNTER is monotonic; the BUFFER INDEX is the counter mod depth.
+			slot = thor_queue_monotonic_fix() ? tail % depth : tail;
 			break;
 		}
 	}
@@ -4718,9 +4769,11 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
-		if (queue->head.compare_and_swap_test(head, (head + 1) % depth))
+		// Same convention as the push side: monotonic counter, index = counter % depth.
+		if (queue->head.compare_and_swap_test(head, thor_queue_monotonic_fix() ? head + 1 : (head + 1) % depth))
 		{
-			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + head * entry_size), entry_size);
+			const u32 idx = thor_queue_monotonic_fix() ? head % depth : head;
+			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + idx * entry_size), entry_size);
 			break;
 		}
 	}
