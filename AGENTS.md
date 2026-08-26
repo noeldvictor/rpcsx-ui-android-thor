@@ -10187,3 +10187,56 @@ Checked and cleared while looking (do not re-investigate):
 - `std::memcpy(ctxt, spurs, 128)` at the end of the selector cannot clobber the
   selection: `tempArea[0x80]` is the first 128 bytes and `wklCurrentId` sits at
   struct offset 0xDC.
+
+## XFloat Accuracy: the biggest measured lever so far, +16.2%
+
+The shipped default is `Approximate` (`system_config.h`). `Inaccurate` is faster
+by a wide margin on this title, and unlike every other candidate this session it
+REPRODUCED ACROSS ROUNDS.
+
+Eight arms, two independent rounds, interleaved approx/inacc so drift cannot
+favour one side, each arm restoring the SAME savestate and gated on
+`coresBusy > 4.5` so only restored 3D combat counts:
+
+    Approximate  16.67  16.08  16.45  15.70   mean 16.23
+    Inaccurate   18.92  18.82  18.89  18.76   mean 18.85
+
+Non-overlapping ranges, and `Inaccurate` is the TIGHTER distribution - 0.85%
+spread against 6%. Compare with the SPU Block Size "+16.5%" that collapsed to
++3.2% once a better-controlled round ran: that one never reproduced, this one
+did, twice.
+
+Verified visually, because the mode is LOSSY and a frame rate means nothing if
+the picture is wrong. The same restored scene captured under both settings
+(`scratchpad/xf_approx.png`, `xf_inacc.png`) is pixel-plausible identical:
+same camera, same geometry, same effects, no corruption. Those two screenshots
+also served as the scene fingerprint, which mattered because:
+
+**The draw-count fingerprint DOES NOT EXIST on `hle-spurs-wip`.** `drawsLastFrame`
+and `drawActivity` live on `master` only, so `/scene` on this branch returns
+`videoDecoding/source/videoFile/advice` and nothing else. Every arm printed
+`draws/frame=0 scenePolls=0`. Do not trust that field on this branch; either
+cherry-pick it from master or control the scene by construction (same savestate,
+same `coresBusy` gate) and confirm with a screenshot.
+
+Recorded rather than buried: the in-game overlay at the two capture instants read
+20.32 (approx) against 20.78 (inacc), much closer than the windowed averages. A
+single instantaneous sample is noise against a 6-sample 60 s window, and the
+windowed ranges do not overlap, so the averages are what is trusted - but the
+discrepancy is real and someone should watch for it.
+
+Scoped to BLUS30357 only. `Inaccurate` is lossy, upstream defaults to
+`Approximate` deliberately, and nothing measured here licenses it for other
+titles.
+
+### The harness bug that hid the fingerprint for a whole round
+
+`xfloat_ab.sh` computed the fingerprint with escaped quotes inside `awk`:
+
+    awk -v s=\"${ds:-0}\" -v k=\"$n\" 'BEGIN{print s/k}'
+
+awk received literal quote characters, so every arm was a division by zero and
+printed `draws/frame=0`. The check that exists specifically to catch
+incomparable scenes silently did nothing. It now also prints `scenePolls`, so a
+missing field is distinguishable from a genuine zero, and resets that counter per
+arm rather than accumulating across the round.

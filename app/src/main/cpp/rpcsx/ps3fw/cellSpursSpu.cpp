@@ -310,6 +310,24 @@ static std::atomic<u32> g_thor_hle_sel_logged{0};
 // evaluates it as `>> 0`, clearing workload 0 - but correctness of the shift does
 // not prove it is the cause of a later crash, and attributing by reasoning is how
 // this session has already been wrong twice. One property, two arms, same binary.
+static bool thor_spurs_sel_cond_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.spurs_sel_cond_fix", v) <= 0 || !v[0])
+		{
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool thor_taskset_syscall_fix() noexcept
 {
 #ifdef ANDROID
@@ -500,7 +518,36 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			// Not sure what this does. Possibly mark the SPU as idle/in use.
 			ctxt->spuIdling = wklSelectedId == CELL_SPURS_SYS_SERVICE_WORKLOAD_ID ? 1 : 0;
 
-			if (!isPoll || wklSelectedId == ctxt->wklCurrentId)
+			// GHIDRA: THE SECOND TERM IS THE WRONG COMPARISON.
+			//
+			// The real kernel's selector at LS 0x290 computes this branch as:
+			//
+			//     00000290: ceqi r30,r3,0x0      ; r30 = (arg0 == 0)
+			//     00000294: lqr  r10,-0x31       ; PC-rel: 0x294 - 0xc4 = LS 0x1d0
+			//     000002c4: rotqbyi r20,r10,0xc  ; bytes 12..15 of 0x1d0 = 0x1dc
+			//     000002d8: ceqi r7,r20,0x20     ; r7  = (wklCurrentId == 32)
+			//     000002a0: sfi  r29,r30,0x0     ; r29 = -(arg0 == 0)
+			//     000002e0: sfi  r5,r7,0x0       ; r5  = -(wklCurrentId == 32)
+			//     000002e8: or   r3,r29,r5       ; r3  = !isPoll || currentId == 32
+			//
+			// LS 0x1dc is SpursKernelContext::wklCurrentId, so hardware asks
+			// "am I currently running the SYSTEM SERVICE", NOT "did the
+			// selection change". The port asks the latter, and that is the
+			// livelock: parked in the system service, currentId is 32, a real
+			// workload 0 is selected, `0 != 32` sends it down the
+			// context-switch-required path at the `else if` below, which
+			// exits to the kernel and re-selects forever. Hardware instead
+			// COMMITS here - sets wklCurrentId and dispatches.
+			//
+			// Only meaningful with spurs_signal_fix=1; alone, the signal is
+			// still eaten by `0x8000 >> 32` before a workload can be selected.
+			//
+			//   debug.rpcsx.thor.spurs_sel_cond_fix = 1
+			const bool commitSelection = thor_spurs_sel_cond_fix()
+				? (!isPoll || ctxt->wklCurrentId == CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
+				: (!isPoll || wklSelectedId == ctxt->wklCurrentId);
+
+			if (commitSelection)
 			{
 				// Clear workload signal for the selected workload.
 				//

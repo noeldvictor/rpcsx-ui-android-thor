@@ -192,6 +192,38 @@ object GameSettingsDatabase {
               # because each run lands in a different scene. Use a state you can reach
               # identically every time.
               Accurate SPU Reservations: true
+              # XFloat Accuracy: Inaccurate. +16.2% FPS in 3D combat, MEASURED.
+              #
+              # The shipped default is Approximate (system_config.h). Eight arms
+              # across two independent rounds, interleaved approx/inacc so drift
+              # cannot favour one side, each restoring the SAME savestate and each
+              # gated on coresBusy > 4.5 so only restored 3D combat is counted:
+              #
+              #   Approximate  16.67  16.08  16.45  15.70   mean 16.23
+              #   Inaccurate   18.92  18.82  18.89  18.76   mean 18.85
+              #
+              # Non-overlapping ranges, and Inaccurate is the TIGHTER distribution
+              # (0.85% spread against 6%). It reproduced across rounds, which is
+              # exactly what the SPU Block Size "+16.5%" failed to do before it
+              # collapsed to +3.2%.
+              #
+              # VISUALLY VERIFIED, because this mode is lossy and frame rate is
+              # worthless if the picture is wrong. The same restored scene was
+              # captured under both settings (scratchpad xf_approx.png /
+              # xf_inacc.png): identical camera and geometry, no corruption, no
+              # missing effects.
+              #
+              # HONEST CAVEAT: the in-game overlay at the two capture instants read
+              # 20.32 (approx) against 20.78 (inacc), far closer than the windowed
+              # averages. Single instantaneous samples are noise against 6-sample
+              # 60 s windows with non-overlapping ranges, so the averages are what
+              # is trusted here - but it is recorded rather than buried.
+              #
+              # Scoped to THIS TITLE deliberately. Inaccurate is lossy and upstream
+              # defaults to Approximate for good reason; nothing here licenses it
+              # for other games. Overriding it per title also respects the rule that
+              # an explicit per-game value is never silently rewritten.
+              XFloat Accuracy: Inaccurate
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter
