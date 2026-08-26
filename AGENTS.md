@@ -11656,3 +11656,49 @@ Reducing head mod depth before the comparison looks harmless and produces the sa
 used count for the observed values, but measured it collapsed dispatch activity
 from 46 sampled to 1 and frames from 68 to 42. Use the firmware's comparison on
 the raw values.
+
+## 30 FPS REACHED on the HLE path, and the harness left the device broken
+
+    t+40s  fps=30.00 frames=822
+    t+160s fps=30.00 frames=5322      (140 s sustained at the profile's 30 cap)
+
+The last defect was raw `-=` on u8 counters in the workload-preemption path:
+
+    spurs->wklCurrentContention[wklId & 0x0F] -= 0x01;
+    spurs->wklIdleSpuCountOrReadyCount2[wklId & 0x0F].raw() -= 1;
+
+Decrementing a counter already at 0 wraps to 255. The queue's taskset has
+`maxContention = 1`, so `maxContention > contention` could never hold again and
+its gate closed permanently. All four decrements now saturate at 0. Evidence:
+max contention on that workload went 253/255 -> 1-2 in every run afterwards.
+
+**It is NOT reliable: 30 fps in 1 boot of 3.** The other two stall, and a stalled
+HLE boot presents as a BLACK SCREEN.
+
+### The harness must clear its properties, and it did not
+
+Killing a run mid-flight left these set on the device:
+
+    hle_libs=libsre.sprx  hle_spurs_kernel=1  spurs_signal_fix=1 ...
+
+so the next NORMAL launch from the UI booted straight into the experimental HLE
+path and black-screened. The user hit this. `trap EXIT` does not fire on kill -
+this is the same lesson recorded earlier for `setprop` leakage and it cost a user
+session this time.
+
+**Before handing the device back, always:**
+
+    for p in hle_libs hle_spurs_kernel spurs_signal_fix spurs_sel_cond_fix \
+             taskset_snapshot_fix task_ls_clear_fix taskset_syscall_fix \
+             taskset_enabled_fix contention_atomic_fix spu_xfloat spu_block_size \
+             driver_wakeup_delay spu_getllar_busy max_spurs_threads \
+             thermal_abort_c spu_trap_stop sel_probe_nth; do
+      adb shell setprop debug.rpcsx.thor.$p ''
+    done
+    adb shell am force-stop net.rpcsx.easy
+
+### Do NOT put the HLE properties in the game profile
+
+They are experimental and fail two boots in three. Only the three measured config
+settings belong there: XFloat Accuracy Inaccurate, SPU Block Size Mega, Driver
+Wake-Up Delay 0.
