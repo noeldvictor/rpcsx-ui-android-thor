@@ -4401,8 +4401,9 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 // forever" was the capture, not the arithmetic. With the SPU actually running,
 // head tracks tail within a couple of entries.
 //
-// Monotonic counters also make full and empty distinguishable without
-// reserving a slot, so all `depth` entries are usable.
+// NOTE: monotonic counters fix the underflow, but the reserved slot STAYS.
+// The consumer reduces the counters modulo depth, where used == depth is
+// congruent to 0 and reads as empty. See the full test below.
 //
 //   debug.rpcsx.thor.queue_monotonic_fix = 0  restore the modulo-depth tail
 static bool thor_queue_monotonic_fix() noexcept
@@ -4423,11 +4424,39 @@ static bool thor_queue_monotonic_fix() noexcept
 #endif
 }
 
+// THE COUNTERS RUN MODULO 2*DEPTH. Measured 2026-08-26, and it is decisive.
+//
+// With the taskset capture fixed the consumer runs, and the ring drains
+// perfectly for 511 entries - head tracking tail exactly:
+//
+//     head=64  tail=64  used=0
+//     head=128 tail=128 used=0
+//     head=511 tail=512 used=1
+//
+// and then head goes 511 -> 2. It WRAPPED, at 512, which is 2*depth for
+// depth=256. That is the double-range ring: keep the indices modulo 2N and the
+// buffer slot modulo N, and full (indices differ by N) stays distinguishable
+// from empty (indices equal) WITHOUT giving up a slot.
+//
+// This supersedes two earlier readings, both taken while the consumer was
+// captured inside the taskset and barely running:
+//
+//   - "indices are modulo depth"  - wrong; head legitimately reaches 257.
+//   - "indices are monotonic"     - wrong; head wraps at 512, so a monotonic
+//                                   tail runs away and used explodes past
+//                                   depth (measured head=2 tail=513 used=511).
+//
+static u32 spurs_ring_range(u32 depth) noexcept
+{
+	return depth * 2;
+}
+
 static u32 spurs_ring_used(u32 head, u32 tail, u32 depth) noexcept
 {
 	if (thor_queue_monotonic_fix())
 	{
-		return tail - head;   // monotonic on both sides
+		const u32 range = spurs_ring_range(depth);
+		return (tail + range - head) % range;
 	}
 
 	return head <= tail ? tail - head : tail + depth - head;
@@ -4514,8 +4543,21 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		// 68 to 42. Use the firmware's own comparison on the raw values.
 		const u32 used = spurs_ring_used(head, tail, depth);
 
-		// Monotonic counters distinguish full from empty on their own, so no slot
-		// has to be reserved and all `depth` entries are usable.
+		// KEEP ONE SLOT RESERVED, EVEN WITH MONOTONIC COUNTERS.
+		//
+		// Letting all `depth` entries be used was wrong and is measured: the
+		// producer filled to used=256 and the consumer then sat on a full ring
+		// doing nothing, head frozen at 89 while tail held at 345.
+		//
+		// OUR counters are monotonic, but the CONSUMER reduces them modulo depth,
+		// and there `used = 345 - 89 = 256` is congruent to 0 - indistinguishable
+		// from EMPTY. That full/empty ambiguity is exactly what the reserved slot
+		// exists to prevent, and it is why the firmware never lets used reach
+		// depth. Monotonic counters fix the UNDERFLOW; they do not license
+		// filling the last slot.
+		// In the double-range scheme `used == depth` IS full and is unambiguous,
+		// so no slot is reserved. The reserved slot only existed to break the
+		// full/empty tie that modulo-depth indices cannot resolve.
 		if (thor_queue_monotonic_fix() ? used >= depth : used + 1 >= depth)
 		{
 			// BLOCK, DO NOT SPIN. Returning BUSY here starves the very consumer
@@ -4575,7 +4617,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
-		if (queue->tail.compare_and_swap_test(tail, thor_queue_monotonic_fix() ? tail + 1 : (tail + 1) % depth))
+		if (queue->tail.compare_and_swap_test(tail, thor_queue_monotonic_fix() ? (tail + 1) % spurs_ring_range(depth) : (tail + 1) % depth))
 		{
 			// The COUNTER is monotonic; the BUFFER INDEX is the counter mod depth.
 			slot = thor_queue_monotonic_fix() ? tail % depth : tail;
@@ -4770,7 +4812,7 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 		}
 
 		// Same convention as the push side: monotonic counter, index = counter % depth.
-		if (queue->head.compare_and_swap_test(head, thor_queue_monotonic_fix() ? head + 1 : (head + 1) % depth))
+		if (queue->head.compare_and_swap_test(head, thor_queue_monotonic_fix() ? (head + 1) % spurs_ring_range(depth) : (head + 1) % depth))
 		{
 			const u32 idx = thor_queue_monotonic_fix() ? head % depth : head;
 			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + idx * entry_size), entry_size);

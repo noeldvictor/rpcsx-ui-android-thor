@@ -11894,3 +11894,60 @@ calls - multiply by 64 for call counts. The ring probe's `used` was a raw
 `tail - head` and printed 4294967295 once tail wrapped; it now uses the
 firmware's wrapped formula (`spurs_ring_used`). That number was never
 corruption, only a bad subtraction in a print.
+
+# HLE SPURS, Measured 2026-08-26: Two Blockers Down, One Left
+
+All arms: combat savestate, frame-gated harness, AYN Thor, `taskset_writeback_fix=1`.
+
+## What the two fixes actually did
+
+| signal | baseline | +yield_redispatch | +queue_monotonic |
+|---|---|---|---|
+| dispatches / select | 1 / 1 | 403 / 403 | 278 / 278 |
+| ring `head` | frozen at 42 | advancing to 257 | advancing to 89 |
+| `used=42949...` underflow lines | present | present | **0** |
+| push calls | ~32k | ~8.3M (flood) | **~37k** |
+| `used` at a full ring | 4294967295 | 4294967295 | **256, exact** |
+| producer blocks when full | never | never | **yes** (`tail` holds) |
+
+Both are mechanical wins and both are deterministic - unlike frame count, which
+on this branch has measured 31, 32, 34, 44, 50, 52, 126 and 208 across builds
+that differed only in probe code. **Do not A/B this work on frame count.** Use
+the ring and dispatch counters; they do not lie and they do not vary.
+
+## The remaining stall is consumer-side, and is NOT the queue
+
+With the ring proven correct and backpressure working, the consumer still
+stops:
+
+    head=89  tail=345  depth=256  used=256      (full, producer correctly blocked)
+    CENSUS n=4032: exit=0 yield=4032 waitSig=1 poll=0 recvFlag=0
+
+256 entries are sitting in the ring and the task will not take them. It is
+yield-spinning, having called WAIT_SIGNAL exactly once. So it is waiting on
+something that is **not** queue data - the queue is full, visible, and correctly
+accounted.
+
+The freeze point moves with the build (42, then 89), which is what a race or a
+missing completion looks like, not a fixed arithmetic bound.
+
+### Where to look next, in order
+
+1. **`spursDmaWaitForCompletion` is commented out** in several places on this
+   path (`// spursDmaWaitForCompletion(spu, 1 << ctxt->dmaTagId);`), including
+   both halves of the task context save/restore. If the guest issues a DMA and
+   waits on its tag group, nothing completes it and the task spins exactly like
+   this.
+2. **The non-atomic taskset read-modify-write.** The `vm::reservation_op`
+   wrapper is commented out, so the SPU's read/modify/write races the PPU's
+   atomic `_cellSpursSendSignal`. Only `signalled` has two writers, so the fix
+   is narrow: clear `signalled & ~signalled0` rather than storing the word.
+3. **0x2700 aliasing** - `SpursTasksetContext` and `CellSpursTaskset` are read
+   from the same local store address.
+
+## Cost to watch
+
+`yield_redispatch_fix` forces a full context save per yield: 0x380 bytes plus up
+to 122 2KB LS blocks, ~244KB each way, at thousands of yields per second. The
+arm measured fps=1.40. If frames ever flow, throttle re-dispatch to every Nth
+yield before reading anything into the frame rate.

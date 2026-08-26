@@ -574,6 +574,51 @@ static bool thor_yield_redispatch_fix() noexcept
 #endif
 }
 
+// DO NOT CLOBBER A SIGNAL THE PPU SET WHILE WE WERE THINKING.
+//
+// spursTasksetProcessRequest reads the six taskset bitmaps, computes, and
+// writes them back - and the `vm::reservation_op` wrapper that should make
+// that atomic is COMMENTED OUT (in upstream too). Meanwhile the PPU updates
+// `signalled` inside a real reservation_op in _cellSpursSendSignal. So:
+//
+//     SPU reads signalled = 0
+//     PPU atomically sets signalled |= mask      <- a push
+//     SPU writes back a value derived from 0     <- the signal is ERASED
+//
+// The consumer then waits for a signal that was already delivered and thrown
+// away, and `head` freezes wherever it happened to be. MEASURED freeze points
+// across otherwise identical runs: 42, 89, 257, 511. A fixed arithmetic bug
+// does not move; a race does.
+//
+// `signalled` is the ONLY field with two writers - _cellSpursSendSignal reads
+// the others but assigns only `op.signalled[...]` - so the fix is narrow.
+// Instead of storing the whole word, CONSUME exactly the bits this pass
+// decided to consume (`signalled & ~signalled0`) inside a reservation on the
+// same 128-byte line the PPU reserves, leaving any concurrently-set bit alone.
+//
+// The clear is done on the raw 16 bytes as a v128 rather than per big-endian
+// word, because a bitwise AND-NOT of two views of the same memory layout is
+// endian-agnostic and a per-word version would need a byte swap to be correct.
+//
+//   debug.rpcsx.thor.signal_atomic_fix = 0  restore the clobbering store
+static bool thor_signal_atomic_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.signal_atomic_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_taskset_syscall_fix() noexcept
 {
 #ifdef ANDROID
@@ -2588,8 +2633,27 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 			thor_taskset_writeback_fix() ? ready0 : ready;
 		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, pending_ready)) = v128{};
 		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, enabled)) = enabled;
-		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, signalled)) =
-			thor_taskset_writeback_fix() ? signalled0 : signalled;
+		if (thor_taskset_writeback_fix() && thor_signal_atomic_fix())
+		{
+			// Consume only what this pass consumed; see thor_signal_atomic_fix.
+			const v128 consumed = gv_andn(signalled0, signalled);   // signalled & ~signalled0
+
+			if (consumed._u)
+			{
+				vm::reservation_op(spu, vm::unsafe_ptr_cast<spurs_taskset_signal_op>(+ctxt->taskset),
+					[&](spurs_taskset_signal_op& op)
+					{
+						v128& mem = reinterpret_cast<v128&>(op.signalled[0]);
+						mem = gv_andn(consumed, mem);   // mem & ~consumed
+						return true;
+					});
+			}
+		}
+		else
+		{
+			vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, signalled)) =
+				thor_taskset_writeback_fix() ? signalled0 : signalled;
+		}
 
 		std::memcpy(spu._ptr<void>(0x2700), spu._ptr<void>(0x100), 128); // Copy data
 	} //);
