@@ -1991,6 +1991,25 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 		if ((waiting & running) != v128{} || (ready & pready) != v128{} ||
 			(gv_andn(enabled, running | ready | pready | signalled | waiting) != v128{}))
 		{
+			// THE TASKSET NOW DISPATCHES - `wid=0 addr=0x200` - and dies here.
+			// Print the address it is reading and every bitmap the check uses, so
+			// "invalid" can be told apart from "reading the wrong memory". The PPU
+			// created this taskset at 0x10364100; if tasksetAddr is not that, the
+			// argument plumbed through dispatch is wrong, not the state.
+			{
+				static std::atomic<u32> s_bad_state{0};
+
+				if (thor_hle_once(s_bad_state, 0))
+				{
+					cellSpurs.error("Thor INVALID TASKSET STATE: tasksetAddr=0x%x wait=%016llx%016llx run=%016llx%016llx "
+									"ready=%016llx%016llx pready=%016llx%016llx en=%016llx%016llx sig=%016llx%016llx",
+						ctxt->taskset.addr(),
+						waiting._u64[0], waiting._u64[1], running._u64[0], running._u64[1],
+						ready._u64[0], ready._u64[1], pready._u64[0], pready._u64[1],
+						enabled._u64[0], enabled._u64[1], signalled._u64[0], signalled._u64[1]);
+				}
+			}
+
 			spu_log.error("Invalid taskset state");
 			spursHalt(spu);
 		}

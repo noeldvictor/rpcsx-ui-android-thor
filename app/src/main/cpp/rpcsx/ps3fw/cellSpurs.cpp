@@ -36,6 +36,28 @@
 
 LOG_CHANNEL(cellSpurs);
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
+static bool thor_taskset_enabled_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.taskset_enabled_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 template <>
 void fmt_class_string<CellSpursCoreError>::format(std::string& out, u64 arg)
 {
@@ -4461,6 +4483,54 @@ s32 _spurs::create_task(vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id,
 
 	u32 tmp_task_id;
 
+	// ALLOCATE THE TASK ID IN THE SAME LAYOUT EVERY OTHER READER USES.
+	//
+	// The comment below was right about the firmware and wrong to deviate from
+	// it. `enabled` is a CellSpursTaskset::atomic_tasks_bitset - four big-endian
+	// 32-bit words, addressed by `get_bit(b) = values[b/32] & ((1u<<31) >> b%32)`.
+	// `pending_ready`, `get_bit` and the SPU-side taskset check all use that word
+	// layout. Only this allocator reinterpreted the field as a single be_t<v128>
+	// and allocated from `_u64[0]`, but converting a 128-bit big-endian value
+	// reverses ALL SIXTEEN BYTES, which swaps the two u64 halves as well as the
+	// bytes inside them. `_u64[0]` is therefore NOT `values[0]`, so the same task
+	// landed in a different half depending on which writer touched it.
+	//
+	// MEASURED, on the first boot where the taskset ever dispatched:
+	//
+	//   Thor SPU0 dispatch#2: wid=0 addr=0x200 size=0x1e40
+	//   Thor INVALID TASKSET STATE: tasksetAddr=0x101b4e80
+	//     en     = 8000000000000000 0000000000000000
+	//     pready = 0000000000000000 8000000000000000
+	//
+	// The taskset policy module then fails its own validity check - a task is
+	// pending-ready while not enabled - logs "Invalid taskset state" and halts,
+	// which kills the SPU thread and the process.
+	//
+	// "Realfw processes this using 4 32-bits atomic loops" is the correct
+	// behaviour, so do that. Each `values[w]` is its own atomic_be_t<u32>.
+	//
+	//   debug.rpcsx.thor.taskset_enabled_fix = 0 restores the 128-bit shortcut
+	if (thor_taskset_enabled_fix())
+	{
+		vm::light_op(taskset->enabled, [&](CellSpursTaskset::atomic_tasks_bitset& v)
+			{
+				tmp_task_id = CELL_SPURS_MAX_TASK;
+
+				for (u32 w = 0; w < 4; w++)
+				{
+					const u32 cur = v.values[w];
+					const u32 pos = std::countl_one(cur);
+
+					if (pos != 32)
+					{
+						v.values[w] = cur | ((1u << 31) >> pos);
+						tmp_task_id = w * 32 + pos;
+						return;
+					}
+				}
+			});
+	}
+	else
 	vm::light_op(vm::_ref<atomic_be_t<v128>>(taskset.ptr(&CellSpursTaskset::enabled).addr()), [&](atomic_be_t<v128>& ptr)
 		{
 			// NOTE: Realfw processes this using 4 32-bits atomic loops

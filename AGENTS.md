@@ -10304,3 +10304,61 @@ same three lines and runs fine).
 
 `armed == 6` is the WRONG validity test. `armed=12` means the SPURS group armed
 twice, which is a further-along boot, not an invalid one. Test `armed >= 6`.
+
+## HLE SPURS RUNS: taskset dispatched and executing, no halt
+
+    Thor SPU1 dispatch#2: wid=0 addr=0x200 size=0x1e40
+    Thor SPU2 dispatch#2: wid=0 addr=0x200 size=0x1e40
+    Invalid taskset state: 0    Halt at 0x00a00: 0    segfaults: 0
+    process alive, coresBusy=4.059
+
+`addr=0x200` is SPURS_IMG_ADDR_TASKSET_PM. For weeks this was six SPUs parked on
+`wid=32`. Four fixes were needed, in this order, and each only makes sense with
+the ones before it:
+
+1. **`spurs_signal_fix`** - `0x8000 >> 32` is UB and AArch64 evaluates it as
+   `>> 0`, erasing workload 0's signal. Ghidra: hardware uses `rotm`, which
+   shifts in zeros and yields 0 for any count >= 32, so hardware clears NOTHING.
+2. **`spurs_sel_cond_fix`** - the selector's commit branch. Hardware at LS 0x290
+   asks `!isPoll || wklCurrentId == 32`; the port asked
+   `!isPoll || wklSelectedId == wklCurrentId`. Parked in the system service,
+   `currentId` is 32, so a selected workload 0 failed `0 != 32` and was routed to
+   the context-switch path forever. This ALSO cured the boot loop: `sig=1` alone
+   armed 0 of 4 boots, `sig=1 + selcond=1` arms and survives.
+3. **poll must not consume the signal** - widening the commit meant a POLL
+   (`cellSpursModulePollStatus`, "should I yield?") was clearing `wklSignal1`, so
+   the kernel's real selection found nothing and dispatched the system service
+   again. Widening the commit REQUIRES narrowing the clear.
+4. **`taskset_enabled_fix`** - see below.
+
+### The task-id allocator wrote into the wrong half of the bitset
+
+`CellSpursTaskset::enabled` is `atomic_be_t<u32> values[4]`, addressed everywhere
+by `get_bit(b) = values[b/32] & ((1u<<31) >> (b%32))`. `pending_ready`, `get_bit`
+and the SPU-side validity check all use that word layout. The allocator in
+`cellSpursCreateTask` instead reinterpreted the field as one `be_t<v128>` and
+allocated from `_u64[0]` - but converting a 128-bit big-endian value REVERSES ALL
+SIXTEEN BYTES, which swaps the two u64 halves as well as the bytes within them.
+`_u64[0]` is therefore not `values[0]`, so the same task landed in a different
+half depending on which writer touched it:
+
+    Thor INVALID TASKSET STATE: tasksetAddr=0x101b4e80
+      en     = 8000000000000000 0000000000000000
+      pready = 0000000000000000 8000000000000000
+
+The taskset policy module then fails its own check - pending-ready but not
+enabled - logs "Invalid taskset state", halts, and the process dies. The code's
+own comment named the correct behaviour and then deviated from it: "Realfw
+processes this using 4 32-bits atomic loops / But here its processed within a
+single 128-bit atomic op". Doing the four 32-bit loops fixes it.
+
+This is an UPSTREAM RPCS3 bug, not Thor-specific, but it only bites when
+`cellSpurs` is HLE'd, so the shipped LLE path is unaffected.
+
+### Read logcat, not RPCSX.log, for anything near a crash
+
+RPCSX.log loses its buffered tail when the process dies, and a taskset halt kills
+the process. An entire round was scored `armed=0 activate=0 real=0` from
+RPCSX.log while logcat held `dispatch#2 wid=0 addr=0x200` for the same boot.
+logcat's android sink is synchronous. This trap was already recorded once and was
+walked into again.
