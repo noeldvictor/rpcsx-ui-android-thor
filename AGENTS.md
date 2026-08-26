@@ -12188,3 +12188,57 @@ submits no draws, and the candidates are elsewhere:
 arithmetic is sound in the samples either side of it, so this is a torn read in
 the PROBE - it loads head and tail non-atomically - not a real ring state. Do
 not chase it; make the probe read both under one reservation if it matters.
+
+# Two Leads Killed By Measurement, Not By Implementation
+
+2026-08-26, after the SPURS queue was confirmed working.
+
+## The LF queue is not on the data path
+
+It was the leading suspect - `_cellSpursLFQueueInitialize` and
+`cellSpursLFQueueAttachLv2EventQueue` are both `UNIMPLEMENTED_FUNC`, and an SPU
+was measured reserving the LF queue's address (`GETLLAR EA #0: addr=0x101b1f80`).
+
+Counted over the whole 3m29s run:
+
+    _cellSpursLFQueuePushBody   1
+    _cellSpursLFQueuePopBody    0
+    LFQueueAttach               1
+    LFQueueInitialize           2
+
+**One push, zero pops.** It is set up and then essentially unused. Implementing
+it would have been a day spent on a queue that carries no traffic.
+
+## cellOvis is not the problem either
+
+The HLE path calls `cellOvisGetOverlayTableSize` 22 times and the LLE path -
+same title, same scene, verified DRAWN at 30 fps - calls it ZERO times. Our stub
+returns 0 ("no overlay table needed") and `cellOvisFixSpuSegments` does nothing,
+so the worry was that HLE loads incomplete SPU task code.
+
+Probed the actual images instead of assuming:
+
+    Thor OVIS #1: phnum=3  PT_LOAD[0] vaddr=0x03000 filesz=0x1eca0
+                           PT_LOAD[1] vaddr=0x21d00 filesz=0x1d0
+                  PT_LOAD=2 shared-vaddr=0
+
+All four sampled ELFs: two PT_LOAD segments at DISTINCT virtual addresses,
+`shared-vaddr=0`. **These SPU images carry no overlays**, so returning 0 is
+correct and the empty FixSpuSegments is harmless. The 22-vs-0 call difference is
+a consequence of the two paths reaching different code, not a cause of anything.
+
+Note in passing: the task ELFs load at vaddr 0x3000 - `CELL_SPURS_TASK_TOP` -
+and the largest reaches ~0x21ed0, comfortably inside the 0x3d000 bound that
+`task_ls_clear_fix` uses. That fix is consistent with these images.
+
+## What that leaves
+
+Still: HLE presents a flat green frame at 29.89 fps, `RSX 6.3%`, `SPU 69.0%`,
+frames flowing, SPURS queue healthy. LLE on the same scene is DRAWN, 41,042
+distinct colours, 30 fps.
+
+Both cheap leads are gone. The next one that is worth a build is a DIFFERENTIAL
+against the LLE control, because that path demonstrably works: the LLE run
+reaches code that calls cellVoice 17 times and HLE never does, which says the
+two runs diverge somewhere earlier than the renderer. Find the divergence point
+in the PPU call stream before touching the RSX side.
