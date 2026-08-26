@@ -10602,3 +10602,36 @@ but none of them can produce a frame while the push is a no-op.
 Do not restart HLE frame-rate attempts for BLUS30357 until the queue API exists.
 Verify with one boot: if `cellSpursQueuePushBody` still logs TODO, the run cannot
 render and the result is known in advance.
+
+## Both HLE configurations are dead ends for this title. Measured, not assumed.
+
+The queue-API blocker is PPU-side, so the obvious escape is to keep `libsre.sprx`
+as LLE (real firmware queue) and arm ONLY the SPU-side HLE kernel, which is where
+the time is. That was written into a bisect plan hours earlier and never run.
+It has now been run, interleaved against LLE controls:
+
+    lleA      hk=0  armed=0  fps=20.08  cores=4.540  95C
+    hlekern   hk=1  armed=6  NO FRAMES
+    lleB      hk=0  armed=0  fps=20.01  cores=4.600  95C
+
+So:
+
+    HLE libsre + HLE kernel  ->  cellSpursQueuePushBody is a stub, freeze at 0:00:09
+    LLE libsre + HLE kernel  ->  arms 6 kernels, renders nothing
+
+The second is the important one. The HLE SPU kernel arms cleanly against the REAL
+firmware and the title still never presents a frame, so the HLE kernel does not
+interoperate with the genuine LLE policy modules either. **There is no
+configuration in which HLE SPURS produces a frame for BLUS30357.**
+
+The LLE controls in that same round read 20.08 and 20.01, which agrees with the
+shipped 19.87-19.93 and confirms the harness was measuring real gameplay.
+
+### What would actually be required
+
+1. Implement the SPURS queue API - eleven stubs, and `CellSpursQueue` is not even
+   defined in this tree, so its ABI has to be recovered from `libsre` first.
+2. Make the HLE kernel interoperate with real policy modules, or HLE those too.
+
+Neither is a debugging task. Do not spend device time on HLE frame-rate runs for
+this title until (1) exists; the outcome is predictable from one `TODO` line.
