@@ -399,6 +399,24 @@ static void thor_refresh_taskset_snapshot(spu_thread& spu, SpursTasksetContext* 
 	std::memcpy(spu._ptr<void>(0x2700), ctxt->taskset.get_ptr(), 128);
 }
 
+static bool thor_release_idle_taskset() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.release_idle_taskset", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_contention_atomic_fix() noexcept
 {
 #ifdef ANDROID
@@ -2624,6 +2642,32 @@ void spursTasksetDispatch(spu_thread& spu)
 		{
 			cellSpurs.error("Thor DISPATCH #%u: selected taskId=%u isWaiting=%u (exit if >= %u) taskset=0x%x",
 				dn, taskId, isWaiting, +CELL_SPURS_MAX_TASK, ctxt->taskset.addr());
+		}
+	}
+
+	// RELEASE THE CONTENTION SLOT WHEN THERE IS NOTHING TO RUN.
+	//
+	// Measured: 182 of 183 sampled dispatches selected taskId=128 - no runnable
+	// task - and the SPU then exits and immediately re-enters the same workload.
+	// The selector only releases a slot when the SPU switches to a DIFFERENT
+	// workload, so an SPU in that loop holds the slot indefinitely. With
+	// maxContention = 1 on the queue's taskset, one SPU spinning there locks every
+	// other SPU out, and the boot never drains - which is the 2-in-3 failure.
+	//
+	// Releasing here is safe: the SPU is about to leave the workload anyway, and
+	// if work arrives it (or another SPU) re-acquires through the normal gate.
+	//
+	//   debug.rpcsx.thor.release_idle_taskset = 0 disables
+	if (taskId >= CELL_SPURS_MAX_TASK && thor_release_idle_taskset())
+	{
+		const auto kctxt = spu._ptr<SpursKernelContext>(0x100);
+		const u32 held = kctxt->wklCurrentId;
+
+		if (held < CELL_SPURS_MAX_WORKLOAD && kctxt->wklLocContention[held])
+		{
+			vm::_ref<atomic_t<u8>>(kctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + held)
+				.atomic_op([](u8& v) { if (v) v--; });
+			kctxt->wklLocContention[held] = 0;
 		}
 	}
 

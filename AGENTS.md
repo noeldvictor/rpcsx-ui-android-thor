@@ -11702,3 +11702,49 @@ session this time.
 They are experimental and fail two boots in three. Only the three measured config
 settings belong there: XFloat Accuracy Inaccurate, SPU Block Size Mega, Driver
 Wake-Up Delay 0.
+
+## The JIT was compiling everything for cortex-a78. Fixed, and it is worth +0.46%.
+
+    JIT: LLVM AArch64 target: cpu=cortex-a78 attrs=+sha3,+dotprod,+i8mm,-sve,-sve2
+
+Every SPU and PPU block was compiled for an ARMv8.2 core from 2020 while the
+device runs Cortex-X3 + A715 (ARMv9). `-mcpu` selects LLVM's scheduling and
+issue-width model, so vector code was scheduled for a much narrower machine.
+
+The substitution existed only to suppress SVE, and the feature string already
+passes `-sve,-sve2`, so it was suppressed twice over. `debug.rpcsx.thor.jit_cpu_native`
+was added by an earlier session and never measured - the comment said so
+explicitly. Measured now, interleaved, in restored 3D combat, with a separate warm
+cache per arm because changing `-mcpu` changes the generated code:
+
+    cortex-a78   20.39  20.40   mean 20.395
+    native core  20.51  20.47   mean 20.490
+
+**+0.46%, non-overlapping.** Now the default.
+
+### The important reading is the NEGATIVE one
+
+SPU threads are 71% of cycles, and giving LLVM the correct microarchitecture
+bought 0.5%. **So SPU code is not limited by instruction scheduling or NEON
+quality.** It is limited by synchronisation - the 29% of cycles in VM locking
+(range_lock_internal 15.37%, writer_lock 10.69%, passive_lock 3.07%).
+
+That closes codegen tuning as a path to 30 fps and puts everything back on the
+serialised PPU->SPU->RSX chain. Do not spend more effort on -mcpu, -mattr, or
+NEON intrinsic quality for this title.
+
+## HLE reliability: measured, and it is ~1 boot in 6
+
+    release_idle_taskset=1   1/5 then 0/6
+    release_idle_taskset=0   0/6
+
+Same build, so the idle-release change is NOT the regression - the success rate is
+simply low, and the earlier "1 in 3" was a small-sample illusion. Releasing the
+contention slot when a taskset has no runnable task is kept (it is correct) but it
+does not move reliability.
+
+**Do not attempt further reliability fixes by reasoning.** Every fix that worked
+this session came from a measurement; both that came from reasoning alone (head
+normalisation, idle release) were neutral or harmful. The next step is a
+comparative one: capture the full RPCSX log from a GOOD boot and a STALLED boot
+and diff them. The harness has the hook for this; the pull path needs fixing.
