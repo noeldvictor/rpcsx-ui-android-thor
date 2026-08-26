@@ -310,6 +310,24 @@ static std::atomic<u32> g_thor_hle_sel_logged{0};
 // evaluates it as `>> 0`, clearing workload 0 - but correctness of the shift does
 // not prove it is the cause of a later crash, and attributing by reasoning is how
 // this session has already been wrong twice. One property, two arms, same binary.
+static bool thor_taskset_syscall_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.taskset_syscall_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_spurs_signal_fix() noexcept
 {
 #ifdef ANDROID
@@ -1725,7 +1743,17 @@ bool spursTasksetEntry(spu_thread& spu)
 	// and spursTasksetSyscallEntry is the HLE stand-in for that. The entry above
 	// is already registered by this very function, so the mechanism is present
 	// and only this call was missing.
-	spu.RegisterHleFunction(ctxt->syscallAddr, spursTasksetSyscallEntry);
+	// Gated so it can be A/B'd in ONE binary. The breakthrough run - armed=6 plus
+	// the first wid=0 addr=0x200 dispatch - predates this registration, and a
+	// later run armed 6 kernels but never dispatched the taskset. That is the only
+	// delta, so it has to be isolated rather than assumed either way.
+	//
+	//   debug.rpcsx.thor.taskset_syscall_fix = 1  register the handler (default)
+	//   debug.rpcsx.thor.taskset_syscall_fix = 0  leave 0xA70 unregistered
+	if (thor_taskset_syscall_fix())
+	{
+		spu.RegisterHleFunction(ctxt->syscallAddr, spursTasksetSyscallEntry);
+	}
 
 	{
 		// Initialise the taskset policy module

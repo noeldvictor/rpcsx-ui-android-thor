@@ -10023,3 +10023,88 @@ What blocks verification is boot instability, not either fix. An LLE control on
 the same binary reaches emu 0:02:10 and renders at 19.19 fps.
 
 **Next: make the HLE boot survive.** Until it does, no HLE change can be judged.
+
+## The HLE boot does not crash. It is SIGKILLed by the Android allocator.
+
+Every HLE boot failure this session was scored as "died early" or "boot loop".
+That framing was wrong and it cost rounds, because it invited theories about
+emulator state - a deadlock, a bad jump, the object cache - when the emulator
+was never the thing making the decision.
+
+The emulator's own log simply STOPS mid-boot, around 0:00:02 emulated. There is
+no `terminated abnormally`, no assertion, no fatal line. RPCS3 writes crash
+dumps synchronously, so their absence is evidence. `logcat -b crash` is EMPTY
+and `/data/tombstones` gains nothing: **Android emits no tombstone for SIGKILL**.
+
+logcat names the killer:
+
+    scudo: Scudo OOM: The process has exhausted 256M for size class 144.
+    scudo: Scudo OOM: The process has exhausted 256M for size class 176.
+    scudo: Scudo OOM: The process has exhausted 256M for size class 192.
+    ActivityManager: Process net.rpcsx.easy (pid 8497) has died: fg TOP
+    Zygote: Process 15396 exited due to signal 9 (Killed)
+
+Scudo caps EACH size class at 256 MB independently. Three adjacent small-object
+classes fill within ~8 seconds of process start - roughly 1.8 M live objects per
+class - while emulated time has advanced only ~2 s. The process is over no
+total-RAM limit; a healthy LLE boot reaches the same RSS. It dies because one
+allocation SHAPE runs away, not because memory runs out.
+
+### Why the earlier "symptom, not cause" verdict was wrong
+
+Disabling `spu_native_object_cache` produced `scudoOOM=0` while boots still
+failed, and that was read as clearing scudo of involvement. It does not: it
+shows the cache is *a* contributor to those classes, not that the classes are
+innocent. The OOM reappears with the cache on, and the kill signature is
+unambiguous. Treat `Scudo OOM` in logcat as the primary boot-failure signal.
+
+### Two allocation sites already excluded
+
+- **`RegisterHleFunction`** - `g_thor_spu_hle_functions` is a
+  `std::map<u32, bool(*)(spu_thread&)>`. Assigning an existing key allocates
+  nothing, and a node is ~48 B. Wrong size class, wrong behaviour. Re-registering
+  the taskset syscall entry on every `spursTasksetEntry` is not a leak.
+- **Thor probe logging** - every probe on this path is one-shot guarded
+  (`thor_hle_once`, or `s_seen[spu.index].fetch_add(1) < 2`). Note this vector is
+  real though: commit 36cb52ca1 boot-looped the branch with per-dispatch logging,
+  which is the same failure by a different producer. Never add an unguarded log
+  to the SPURS kernel, selector, or dispatch path.
+
+### How to find the site without root
+
+`am dumpheap -n` and `libc.debug.malloc.options backtrace` both need `adb root`,
+and the Thor is a production build - `adbd cannot run as root`. So the allocation
+site has to be bisected from inside the build. Both HLE fixes are now
+property-gated for exactly this:
+
+    debug.rpcsx.thor.spurs_signal_fix      0/1
+    debug.rpcsx.thor.taskset_syscall_fix   0/1
+
+One binary, four cells (baseline HLE / signal only / both / LLE control), reading
+only whether `Scudo OOM` appears. That separates "my fixes allocate" from "the
+HLE path always did".
+
+## Check the device model before every device run
+
+A full diagnostic round - install, boot, logcat capture - was executed against a
+**Quest 2**. Two devices are attached:
+
+    1WMHH830AY1165   Oculus Quest 2
+    192.168.1.3:5555 AYN Thor
+
+The captured log was full of `VrApi`, `boltlib`, and Oculus auth errors, which is
+the only reason it was caught. Every harness now opens with a guard, and any new
+one must too:
+
+    MODEL=$($A shell getprop ro.product.model | tr -d '\r')
+    [ "$MODEL" != "AYN Thor" ] && { echo "WRONG DEVICE: '$MODEL'"; exit 1; }
+
+## The game boots by intent, not by launching the activity
+
+A harness that only runs `monkey -p net.rpcsx.easy` lands in the UI and boots
+nothing. The app then sits at 0 fps forever and looks like a hang. The real boot
+is an intent carrying the ISO:
+
+    am start -a net.rpcsx.THOR_DEBUG_BOOT -n net.rpcsx.easy/net.rpcsx.MainActivity \
+      --es path '<ISO>' --es titleId BLUS30357 --es thorDebugBootRequestId <tag> \
+      --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true
