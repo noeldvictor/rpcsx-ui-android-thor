@@ -10696,3 +10696,49 @@ queue.
 PPUModule.cpp, which only handles STATICALLY listed LLE libraries - the log shows
 just `liblv2.sprx` there. libsre arrives through `sys_prx_load_module` at runtime,
 so the hook never fires for it. Hook the dynamic path instead.
+
+## UNLOCKED: the decrypted firmware, and every queue FNID located
+
+The queue ABI is recoverable after all. `debug.rpcsx.thor.dump_decrypted_modules=1`
+now hooks `decrypt_self` in `Crypto/unself.cpp` - EVERY decryption path funnels
+through there, including the dynamic `_sys_prx_load_module` the game itself uses,
+which a hook in PPUModule.cpp's static `load_libs` loop never sees.
+
+    Thor: dumped decrypted module #4 ... (239344 bytes)   <- libsre
+    Thor: dumped decrypted module #7 ... (74864 bytes)    <- libspurs_jq
+
+`decrypted_04.elf` is **ELF 64-bit big-endian, e_machine=0x15 (PPC64)** and
+contains `CellSpursKernel`, `CellSpursTaskset`, `SPURSTASK`, `SpursHdlr0`.
+That is Sony's SPURS runtime, disassemblable in Ghidra with the PowerPC 64 BE
+language.
+
+FNIDs are `le_u32(sha1(name + suffix)[:4])` with the 16-byte suffix in
+`ppu_generate_id` (PPUModule.cpp:90). All eleven queue exports are present in
+libsre, in its FNID table at file offsets 0x1e02c-0x1e25c:
+
+    _cellSpursQueueInitialize          0x082bfb09   @0x1e034
+    cellSpursQueuePopBody              0x91066667   @0x1e188
+    cellSpursQueuePushBody             0x92cff6ed   @0x1e190
+    cellSpursQueueAttachLv2EventQueue  0xe5443be7   @0x1e24c
+    cellSpursQueueDetachLv2EventQueue  0x039d70b7   @0x1e02c
+    cellSpursQueueGetTasksetAddress    0x2093252b   @0x1e06c
+    cellSpursQueueClear                0x247414d0   @0x1e074
+    cellSpursQueueDepth                0x35f02287   @0x1e0a0
+    cellSpursQueueGetEntrySize         0x369fe03d   @0x1e0a4
+    cellSpursQueueSize                 0x54876603   @0x1e0e8
+    cellSpursQueueGetDirection         0xec68442c   @0x1e25c
+
+### Next step, concretely
+
+1. `adb shell setprop debug.rpcsx.thor.dump_decrypted_modules 1`, boot the title,
+   pull `files/cache/decrypted_04.elf`.
+2. Parse the PRX export descriptor to pair the FNID table with its `faddrs`
+   array - the loader logs the shape:
+   `** Exported module '<name>' (fnids=0x..., faddrs=0x..., ...)`.
+   `cellSpursQueueGetEntrySize`, `Depth` and `Size` are the cheapest to read and
+   they reveal the structure's field offsets immediately.
+3. Recover `CellSpursQueue` from those accessors, then implement Push/Pop.
+
+**The firmware dumps are NOT committed.** They are Sony's copyrighted code; this
+repo has a GitHub remote. Regenerate them with the property above - it takes one
+boot. Keep them local.
