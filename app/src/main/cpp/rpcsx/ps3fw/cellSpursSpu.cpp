@@ -1922,13 +1922,35 @@ bool spursTasksetSyscallEntry(spu_thread& spu)
 		}
 
 		// Handle the syscall
+		//
+		// THIS FUNCTION USED TO THROW. `fmt::throw_exception("Broken (TODO)")`
+		// sat right here, which is why the registration of this entry at 0xA70 was
+		// commented out upstream - and why registering it looked "neutral" in the
+		// A/B: nothing ever reached a task, so nothing ever made a syscall. Now
+		// that tasks actually run, every syscall lands here.
+		//
+		// The original intent is in the dead code below: resume the task unless
+		// the syscall caused a context switch. `spu.m_is_branch` no longer exists
+		// on spu_thread (the same removal that killed `custom_task`), but the test
+		// it stood for is observable - a syscall that switches context MOVES pc,
+		// e.g. cellSpursModuleExit sets pc to ctxt->exitToKernelAddr. So snapshot
+		// pc, run the syscall, and resume only if pc is untouched.
+		//
+		//   debug.rpcsx.thor.taskset_syscall_fix = 0 restores the throw
+		const u32 pc_before = spu.pc;
+
 		spu.gpr[3]._u32[3] = spursTasksetProcessSyscall(spu, spu.gpr[3]._u32[3], spu.gpr[4]._u32[3]);
 
+		if (!thor_taskset_syscall_fix())
+		{
+			fmt::throw_exception("Broken (TODO)");
+		}
+
 		// Resume the previously executing task if the syscall did not cause a context switch
-		fmt::throw_exception("Broken (TODO)");
-		// if (spu.m_is_branch == false) {
-		//     spursTasksetResumeTask(spu);
-		// }
+		if (spu.pc == pc_before)
+		{
+			spursTasksetResumeTask(spu);
+		}
 	}
 
 	return false;

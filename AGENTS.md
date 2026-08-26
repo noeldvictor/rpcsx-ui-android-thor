@@ -10467,3 +10467,45 @@ affinity (big-core pinning measures 15.32 against 19.07 default, so the A510s
 carry real work). None of the remainder is worth more than low single digits.
 The only lever sized for the gap is HLE SPURS, which now runs into the task's own
 ELF and livelocks with six SPUs pinned and zero frames.
+
+## The taskset syscall entry used to THROW, and that invalidates one earlier verdict
+
+`spursTasksetSyscallEntry` contained, immediately after handling the syscall:
+
+    fmt::throw_exception("Broken (TODO)");
+    // if (spu.m_is_branch == false) {
+    //     spursTasksetResumeTask(spu);
+    // }
+
+That is why upstream left the `0xA70` registration commented out. **It also
+retracts the bisect verdict that `taskset_syscall_fix` was "exactly neutral".**
+It was not neutral - nothing had ever reached a task, so no task ever made a
+syscall, so the throw was never hit. B and C matched because the code under test
+was unreachable, not because it did nothing.
+
+`spu.m_is_branch` was removed along with `custom_task`. The test it stood for is
+observable: a syscall that switches context MOVES pc (`cellSpursModuleExit` sets
+`pc = ctxt->exitToKernelAddr`). So snapshot pc, run the syscall, and resume the
+task only if pc is untouched. Verified: 0 `Broken (TODO)` throws in a 480 s run
+where tasks dispatch and run.
+
+### Still blocked: the task halts on its own assertion
+
+    480s: frames=0, cores FROZEN at 5.040, tasksetDispatch=1, task halts=2,
+          37C -> 89C, thermal guard engaged (cap 30, never binds at 0 fps)
+
+The task executes a conditional HALT (`HEQ`/`HGT`). No throw, no invalid taskset
+state, no segfault - the guest itself decides its inputs are wrong. So the next
+question is what `spursTasksetStartTask` hands it:
+
+    gpr[2] = 0
+    gpr[3] = taskArgs (128-bit)
+    gpr[4] = { spurs address, taskset->args }
+    gpr[5..127] = 0
+    pc = ctxt->savedContextLr._u32[3]
+
+Ghidra note for whoever picks this up: the real policy module CLEARS local store
+0x3000..0x3d000 before starting a task (`il r38,0x3000` / `ila r39,0x3d000` and a
+computed `bi r5` into an unrolled `stqd` run at 0x18b0-0x18ec). The HLE
+`spursTasksetStartTask` does no such clear. That is a concrete, testable
+difference and the obvious next thing to try.
