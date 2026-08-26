@@ -1636,14 +1636,32 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				{
 					const std::string want(bs_value);
 
-					if (want == "safe" || want == "mega" || want == "giga")
+					// CANONICALISE, AND CHECK THE RETURN.
+					//
+					// `from_string` matches the enum's own spelling - "Safe",
+					// "Mega", "Giga" - so passing the lowercase word FAILS and
+					// silently leaves the configured value alone, while the log
+					// below still claimed it had been forced. /diag reported
+					// spuBlockSize "Safe" through every "mega" run because of this.
+					// Same trap as XFloat Accuracy, whose canonical value is
+					// "Inaccurate".
+					std::string canon;
+
+					if (want == "safe" || want == "Safe") canon = "Safe";
+					else if (want == "mega" || want == "Mega") canon = "Mega";
+					else if (want == "giga" || want == "Giga") canon = "Giga";
+
+					if (canon.empty())
 					{
-						g_cfg.core.spu_block_size.from_string(want);
-						sys_log.error("Thor: SPU Block Size forced to %s", want);
+						sys_log.error("Thor: ignoring SPU Block Size '%s' (expected safe|mega|giga)", want);
+					}
+					else if (g_cfg.core.spu_block_size.from_string(canon))
+					{
+						sys_log.error("Thor: SPU Block Size forced to %s (now %s)", canon, g_cfg.core.spu_block_size.to_string());
 					}
 					else
 					{
-						sys_log.error("Thor: ignoring SPU Block Size '%s' (expected safe|mega|giga)", want);
+						sys_log.error("Thor: FAILED to set SPU Block Size '%s', still %s", canon, g_cfg.core.spu_block_size.to_string());
 					}
 				}
 			}

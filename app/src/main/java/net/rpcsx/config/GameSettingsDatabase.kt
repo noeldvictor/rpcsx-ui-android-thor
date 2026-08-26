@@ -224,6 +224,26 @@ object GameSettingsDatabase {
               # for other games. Overriding it per title also respects the rule that
               # an explicit per-game value is never silently rewritten.
               XFloat Accuracy: Inaccurate
+              # SPU Block Size: Mega. +2.2% FPS and -5.6% CPU, MEASURED ON TOP OF
+              # the XFloat change above, so the two compose rather than overlap.
+              #
+              #   safe  18.90  18.83   mean 18.87   cores 5.61
+              #   mega  19.36  19.19   mean 19.28   cores 5.30
+              #
+              # Interleaved safe/mega/safe/mega, same savestate, coresBusy > 4.5.
+              # Ranges do not overlap. The lower CPU at higher FPS is the useful
+              # half - this device runs in the nineties Celsius, so less work for
+              # more frames is worth more than the frames alone.
+              #
+              # THIS HAD TO BE SET HERE, IN THE PROFILE, because the property
+              # override was silently inert: debug.rpcsx.thor.spu_block_size
+              # passed the lowercase "mega" to from_string, whose canonical
+              # spelling is "Mega", so it failed and left the value at Safe while
+              # still logging "forced to mega". Every /diag in this session read
+              # spuBlockSize "Safe" for that reason. The override now canonicalises
+              # and checks its return; the engagement proof is the SPU object cache
+              # growing 3794 -> 4556 on the first mega arm, which it never did before.
+              SPU Block Size: Mega
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter

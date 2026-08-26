@@ -10399,3 +10399,32 @@ progress imply otherwise in any report.
 HLE livelock puts six SPUs at 100% and takes the device from 47C to 92C in under
 four minutes while rendering nothing. Any HLE soak must cap runtime and cool
 between arms, or it cooks the Thor for no data.
+
+## SPU Block Size Mega: +2.2% FPS and -5.6% CPU, and why it never applied before
+
+    safe  18.90  18.83   mean 18.87   cores 5.61
+    mega  19.36  19.19   mean 19.28   cores 5.30
+
+Interleaved safe/mega/safe/mega, same savestate, gated on coresBusy > 4.5,
+measured ON TOP OF XFloat Accuracy: Inaccurate - so the two compose. Ranges do
+not overlap. The CPU drop is the more valuable half on a device that sits in the
+nineties Celsius.
+
+**It had never actually been applied on this branch.** Two independent reasons,
+both silent:
+
+1. `debug.rpcsx.thor.spu_block_size` passed the lowercase word to
+   `from_string`, whose canonical spelling is `"Mega"`. The call failed, the
+   value stayed `Safe`, and the code still logged "forced to mega". Every
+   `/diag` in this session reported `spuBlockSize "Safe"`, including during runs
+   believed to be testing Mega. Fixed: canonicalise, check the return, log the
+   value actually in effect. Same trap as XFloat's `"Inaccurate"`.
+2. `sanitizeThorManagedConfig` on THIS branch only rewrites ASMJIT -> LLVM. The
+   "inject Mega when the profile is silent" logic lives on `master`, like the
+   draw-count scene API. Do not assume master's adaptation-layer behaviour exists
+   here.
+
+Engagement proof, and use one every time a setting claims to be applied: the SPU
+object cache grew 3794 -> 4556 on the first mega arm. A setting that changes the
+recompiled IR MUST produce new objects; an arm where the count does not move did
+not engage.
