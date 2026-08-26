@@ -4380,22 +4380,29 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 
 	std::memcpy(vm::base(queue->buffer.addr() + slot * entry_size), buffer.get_ptr(), entry_size);
 
-	// DO NOT WAKE FROM HERE. Measured: calling cellSpursWakeUp with this pointer
-	// took the title from "frozen at the queue push" to a fatal
+	// WAKE THE CONSUMER.
 	//
-	//   Verification failed (object: 0x0)  in _spurs::task_start
-	//   ensure(rc == CELL_OK) after cellSpursWakeUp
+	// This was removed once, and correctly at the time: `queue->spurs` was then
+	// aliased to the TASKSET pointer by a wrong Initialize signature, and
+	// cellSpursWakeUp WRITES through what it is handed, so it corrupted the
+	// taskset and produced `Verification failed (object: 0x0)` in
+	// _spurs::task_start. The pointer was bad because the signature was wrong,
+	// NOT because waking is wrong.
 	//
-	// because Initialize below stores the SAME pointer in taskset (0x60) and
-	// spurs (0x68) while the firmware writes two DIFFERENT registers there
-	// (std r11,0x60 / std r3,0x68). cellSpursWakeUp WRITES through the structure
-	// it is given, so handing it a taskset pointer corrupts the taskset that
-	// task_start then uses. The wake was a guess - the firmware notifies through
-	// an import stub at 0x1d8f8 that has not been resolved to a specific
-	// function yet - and a wrong guess here is memory corruption, not a no-op.
+	// With the signature fixed, 0x68 holds the real spurs - the firmware itself
+	// does `ld r3,0x60(r4)` then `std r3,0x68(r5)`, i.e. it stores taskset->spurs
+	// there - so this is exactly the pointer libsre would use.
 	//
-	// Leaving it out is safe: the SPU-side consumer polls the ring. Resolve the
-	// import before adding a notify back.
+	// Needed because this ring returns BUSY when full instead of blocking on
+	// lwmutex/lwcond: the title rendered 31 frames and then stalled with a full
+	// queue and nothing draining it. The result is deliberately ignored, since a
+	// failed wake must not turn a successful push into a failure.
+	if (queue->spurs)
+	{
+		ppu_execute<&cellSpursWakeUp>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs));
+	}
+
+	return CELL_OK;
 	return CELL_OK;
 }
 

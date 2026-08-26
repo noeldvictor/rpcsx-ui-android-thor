@@ -10971,3 +10971,29 @@ push fails and the title stops advancing.
 `queue->spurs` now holds the REAL spurs pointer (`taskset->spurs`, per
 `ld r3,0x60(r4)` then `std r3,0x68(r5)`), so re-adding the wake is no longer the
 corrupting guess it was - that is the next thing to try.
+
+### The wake does NOT fix the stall - hypothesis rejected
+
+Re-adding `cellSpursWakeUp` with the now-correct spurs pointer changed nothing:
+
+    without wake   frames=31   fatal=0   emu 0:00:10
+    with wake      frames=27   fatal=0   emu 0:00:10
+
+27 against 31 is noise, and both stall at the same emulated time with cores near
+7.0 and no fatal. So the stall is **not** the ring filling up, and "the queue
+returns BUSY instead of blocking" is NOT the current blocker. That hypothesis is
+rejected rather than left hanging.
+
+The wake is kept because it is what the firmware does (it stores `taskset->spurs`
+at queue+0x68 and notifies through its import), but it buys nothing measurable
+today and must not be cited as a fix.
+
+What the numbers actually say: the title renders roughly 30 frames - the early
+boot/logo output - reaches emulated 0:00:10, and then stops advancing while all
+six SPUs stay busy. Emulated time freezing at the same point in every run, with no
+halt and no fatal, is a wait, not a crash. The next question is what the PPU is
+blocked on at 0:00:10, which `/threads` at the stall will answer.
+
+**Do not re-run HLE frame tests without a hypothesis.** Each cycle is ~10 minutes
+with the device at 85-89 C, and two consecutive changes here were guesses that
+cost a round each.
