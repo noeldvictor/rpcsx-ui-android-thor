@@ -4210,21 +4210,199 @@ s32 cellSpursLFQueueGetTasksetAddress()
 	return CELL_OK;
 }
 
-s32 _cellSpursQueueInitialize()
+// THE SPURS QUEUE, IMPLEMENTED FROM THE FIRMWARE.
+//
+// These were UNIMPLEMENTED_FUNC stubs taking NO PARAMETERS, here and in upstream
+// RPCS3, and CellSpursQueue was defined nowhere. A title that pushes work gets
+// CELL_OK, nothing is queued, the consuming task never runs, and it hangs - which
+// is exactly what Transformers (BLUS30357) does at emulated 0:00:09 the moment
+// libsre is forced to HLE.
+//
+// Layout, error codes and protocol were recovered from the decrypted libsre.sprx
+// with Ghidra (see AGENTS.md). Every validation constant below is the one the
+// firmware actually returns:
+//
+//     queue == 0                  -> 0x80410911  CELL_SPURS_TASK_ERROR_NULL_POINTER
+//     queue & 0x7f                -> 0x80410910  CELL_SPURS_TASK_ERROR_ALIGN
+//     direction != 2 (on push)    -> 0x80410909  CELL_SPURS_TASK_ERROR_PERM
+//
+// The firmware push is `lwarx` on the tail at 0x04 against head at 0x00 and depth
+// at 0x0c. Here the same invariant is kept with an atomic compare-exchange on the
+// tail, which is the equivalent on a host that is not executing PPC reservations.
+//
+// KNOWN SIMPLIFICATION, stated rather than hidden: the firmware BLOCKS on
+// sys_lwmutex/sys_lwcond when the ring is full, and this returns
+// CELL_SPURS_TASK_ERROR_BUSY instead. A caller that fills the queue therefore
+// sees a different behaviour from hardware. Implementing the block needs the
+// lwmutex/lwcond pair the queue was created with, which _cellSpursQueueInitialize
+// does not obviously store in the 0x70 bytes recovered so far.
+static bool spurs_queue_valid(vm::ptr<CellSpursQueue> queue, s32& error)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	if (!queue)
+	{
+		error = CELL_SPURS_TASK_ERROR_NULL_POINTER;
+		return false;
+	}
+
+	if (queue.addr() % 128)
+	{
+		error = CELL_SPURS_TASK_ERROR_ALIGN;
+		return false;
+	}
+
+	return true;
+}
+
+s32 _cellSpursQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 size, u32 depth, u32 direction)
+{
+	cellSpurs.warning("_cellSpursQueueInitialize(pTasksetOrSpurs=*0x%x, queue=*0x%x, buffer=*0x%x, size=%d, depth=%d, direction=%d)",
+		pTasksetOrSpurs, queue, buffer, size, depth, direction);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!buffer || !depth)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// Mirrors the firmware's store order at libsre 0x165c4.
+	queue->head.release(0);
+	queue->tail.release(0);
+	queue->entry_size = size;
+	queue->depth = depth;
+	queue->buffer.set(buffer.addr());
+	queue->x18 = 0;
+	queue->direction = direction;
+	// The firmware stores two DIFFERENT values here - std r11,0x60(r5) and
+	// std r3,0x68(r5) - and only r3 is the incoming argument. Which object r11
+	// is derived from is not yet established, so store the argument as the
+	// taskset (the name of the parameter) and leave spurs NULL rather than
+	// aliasing them. A wrong pointer at 0x68 is worse than a null one: anything
+	// that writes through it corrupts whatever it actually points at.
+	queue->taskset.set(pTasksetOrSpurs.addr());
+	queue->spurs.set(0);
+
 	return CELL_OK;
 }
 
-s32 cellSpursQueuePopBody()
+s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.trace("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// libsre 0x16a58: lwz r0,0x1c(r29) ; cmpwi r0,0x2 ; bne -> 0x80410909
+	if (queue->direction != CELL_SPURS_QUEUE_PPU2SPU)
+	{
+		return CELL_SPURS_TASK_ERROR_PERM;
+	}
+
+	const u32 depth = queue->depth;
+	const u32 entry_size = queue->entry_size;
+
+	if (!depth || !queue->buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// Claim a slot: advance the tail only if the ring is not full. This is the
+	// compare-exchange equivalent of the firmware's lwarx/stwcx. on 0x04.
+	u32 slot = 0;
+
+	while (true)
+	{
+		const u32 tail = queue->tail.load();
+		const u32 head = queue->head.load();
+
+		if (tail - head >= depth)
+		{
+			return CELL_SPURS_TASK_ERROR_BUSY;
+		}
+
+		if (queue->tail.compare_and_swap_test(tail, tail + 1))
+		{
+			slot = tail % depth;
+			break;
+		}
+	}
+
+	std::memcpy(vm::base(queue->buffer.addr() + slot * entry_size), buffer.get_ptr(), entry_size);
+
+	// DO NOT WAKE FROM HERE. Measured: calling cellSpursWakeUp with this pointer
+	// took the title from "frozen at the queue push" to a fatal
+	//
+	//   Verification failed (object: 0x0)  in _spurs::task_start
+	//   ensure(rc == CELL_OK) after cellSpursWakeUp
+	//
+	// because Initialize below stores the SAME pointer in taskset (0x60) and
+	// spurs (0x68) while the firmware writes two DIFFERENT registers there
+	// (std r11,0x60 / std r3,0x68). cellSpursWakeUp WRITES through the structure
+	// it is given, so handing it a taskset pointer corrupts the taskset that
+	// task_start then uses. The wake was a guess - the firmware notifies through
+	// an import stub at 0x1d8f8 that has not been resolved to a specific
+	// function yet - and a wrong guess here is memory corruption, not a no-op.
+	//
+	// Leaving it out is safe: the SPU-side consumer polls the ring. Resolve the
+	// import before adding a notify back.
 	return CELL_OK;
 }
 
-s32 cellSpursQueuePushBody()
+s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::ptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.trace("cellSpursQueuePopBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	const u32 depth = queue->depth;
+	const u32 entry_size = queue->entry_size;
+
+	if (!depth || !queue->buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	while (true)
+	{
+		const u32 head = queue->head.load();
+		const u32 tail = queue->tail.load();
+
+		if (head == tail)
+		{
+			return CELL_SPURS_TASK_ERROR_BUSY;
+		}
+
+		if (queue->head.compare_and_swap_test(head, head + 1))
+		{
+			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + (head % depth) * entry_size), entry_size);
+			break;
+		}
+	}
+
 	return CELL_OK;
 }
 

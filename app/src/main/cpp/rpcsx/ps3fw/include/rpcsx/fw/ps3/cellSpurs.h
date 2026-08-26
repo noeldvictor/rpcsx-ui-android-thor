@@ -942,6 +942,55 @@ struct alignas(128) CellSpursEventFlag_x00
 	be_t<u32> eventQueueId;              // 0x7C
 };
 
+// RECOVERED FROM FIRMWARE. libsre.sprx, decrypted via
+// debug.rpcsx.thor.dump_decrypted_modules and disassembled in Ghidra as
+// PowerPC:BE:64. This structure is defined NOWHERE in RPCS3, upstream included,
+// which is why all eleven cellSpursQueue* entry points are UNIMPLEMENTED_FUNC.
+//
+// Layout taken from _cellSpursQueueInitialize (libsre 0x164c0), which writes
+// every field through r5 - an initialiser is the best possible source:
+//
+//     stw r31,0x00(r5)  stw r31,0x04(r5)   ; both zeroed
+//     stw r7, 0x08(r5)  ; entry size
+//     stw r8, 0x0c(r5)  ; depth
+//     std r0, 0x10(r5)  ; buffer
+//     stw r9, 0x18(r5)
+//     stw r10,0x1c(r5)  ; direction
+//     std r11,0x60(r5)  ; taskset
+//     std r3, 0x68(r5)  ; spurs
+//
+// Confirmed against the accessors, each of which loads exactly one field:
+// GetEntrySize lwz 0x08, Depth lwz 0x0c, GetDirection lwz 0x1c,
+// GetTasksetAddress ld 0x60.
+//
+// cellSpursQueuePushBody (0x169d0) reserves the counter at 0x04 with lwarx, so
+// 0x04 is the one PUSH advances: 0x00 is head, 0x04 is tail.
+struct CellSpursQueue
+{
+	// atomic: the firmware reserves these with lwarx/stwcx.
+	atomic_be_t<u32> head; // 0x00
+	atomic_be_t<u32> tail; // 0x04
+	be_t<u32> entry_size;// 0x08
+	be_t<u32> depth;     // 0x0C
+	vm::bptr<void, u64> buffer; // 0x10
+	be_t<u32> x18;       // 0x18
+	be_t<u32> direction; // 0x1C
+	u8 unk20[0x40];      // 0x20
+	vm::bptr<CellSpursTaskset, u64> taskset; // 0x60
+	vm::bptr<CellSpurs, u64> spurs;          // 0x68
+};
+
+CHECK_SIZE(CellSpursQueue, 0x70);
+
+// From cellSpursQueuePushBody: `cmpwi r0,0x2` against the field at 0x1c, and
+// CELL_SPURS_TASK_ERROR_PERM if it does not match.
+enum CellSpursQueueDirection : u32
+{
+	CELL_SPURS_QUEUE_SPU2SPU = 0,
+	CELL_SPURS_QUEUE_SPU2PPU = 1,
+	CELL_SPURS_QUEUE_PPU2SPU = 2,
+};
+
 using CellSpursLFQueue = CellSyncLFQueue;
 
 union CellSpursTaskArgument

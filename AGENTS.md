@@ -10884,3 +10884,45 @@ That closes the specification. Implementing `cellSpursQueuePushBody` needs:
 
 Everything in steps 2-4 has a working implementation elsewhere in this tree. This
 is no longer research - it is a bounded port against a recovered spec.
+
+## The SPURS queue is IMPLEMENTED, and the title moves past the freeze
+
+`_cellSpursQueueInitialize`, `cellSpursQueuePushBody` and `cellSpursQueuePopBody`
+are no longer `UNIMPLEMENTED_FUNC` stubs. They are written from the recovered
+firmware layout and protocol, with the exact error codes libsre returns
+(0x80410911 null, 0x80410910 align, 0x80410909 wrong direction - all three
+already existed as CELL_SPURS_TASK_ERROR_NULL_POINTER / _ALIGN / _PERM, which
+independently confirms the disassembly was read correctly).
+
+MEASURED: `TODO: cellSpursQueue` count drops to **0**, Initialize is called, and
+the title executes code it had never reached - `cellSpursTaskExitCodeGet` and
+`_spurs::task_start`. Every previous HLE run froze at the push.
+
+`head`/`tail` are declared `atomic_be_t<u32>` because the firmware reserves them
+with `lwarx`/`stwcx.`; the compiler rejecting `compare_and_swap_test` on `be_t`
+is what surfaced that.
+
+### The wake was a guess, and guessing there is memory corruption
+
+The first version called `cellSpursWakeUp(queue->spurs)`. That produced
+
+    Verification failed (object: 0x0)  in _spurs::task_start
+
+because Initialize had stored the SAME pointer in taskset (0x60) and spurs (0x68)
+while the firmware writes two DIFFERENT registers (`std r11,0x60`, `std r3,0x68`)
+and only r3 is the argument. `cellSpursWakeUp` WRITES through the structure it is
+handed, so a taskset pointer there corrupts the taskset. Removed; `spurs` is now
+left NULL rather than aliased, because a null fails loudly and a wrong pointer
+corrupts silently. **Resolve the notify import at libsre 0x1d8f8 before adding a
+wake back.**
+
+### Where it now stops
+
+Removing the wake did NOT clear the fatal - it is the GAME's own path:
+`cellSpursCreateTask` -> `_spurs::task_start` -> `cellSpursWakeUp` fails because
+`taskset->spurs` reads null. So the next defect is in taskset initialisation, on a
+path nothing could reach before the queue existed. That is the thread to pull.
+
+**This code only runs when cellSpurs is HLE'd.** The shipped configuration loads
+the real libsre via `sys_prx_load_module`, so the shipped 19.87 fps path never
+touches any of it.
