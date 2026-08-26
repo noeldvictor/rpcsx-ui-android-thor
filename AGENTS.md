@@ -10635,3 +10635,22 @@ shipped 19.87-19.93 and confirms the harness was measuring real gameplay.
 
 Neither is a debugging task. Do not spend device time on HLE frame-rate runs for
 this title until (1) exists; the outcome is predictable from one `TODO` line.
+
+## The queue gap is UPSTREAM RPCS3, not a Thor fork regression
+
+Checked against `rpcs3-upstream/rpcs3/Emu/Cell/Modules/cellSpurs.cpp`:
+
+    s32 cellSpursQueuePushBody()
+    {
+        UNIMPLEMENTED_FUNC(cellSpurs);
+        return CELL_OK;
+    }
+
+Byte-identical stubs, and `CellSpursQueue` is not defined upstream either - the
+header has only `using CellSpursLFQueue = CellSyncLFQueue`. **No RPCS3 version
+implements the SPURS queue API.** So this is not something to fix by syncing with
+upstream or by finding the fork's mistake; the functionality has never existed.
+
+That is the final word on HLE SPURS for BLUS30357. It is blocked on writing code
+that does not exist anywhere, starting with recovering the `CellSpursQueue` ABI
+from `libsre`.
