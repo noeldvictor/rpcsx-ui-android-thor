@@ -11748,3 +11748,149 @@ this session came from a measurement; both that came from reasoning alone (head
 normalisation, idle release) were neutral or harmful. The next step is a
 comparative one: capture the full RPCSX log from a GOOD boot and a STALLED boot
 and diff them. The harness has the hook for this; the pull path needs fixing.
+
+# BUG CLASS: Computing The New State And Committing The Old One
+
+Found 2026-08-26 in `spursTasksetProcessRequest`, by reading rather than
+measuring. **The source-level defect below is proven; whether it is THE cause
+of the black screen is a separate question, measured separately.**
+
+Every arm of the request switch mutates `signalled0` and `ready0`:
+
+```cpp
+v128 signalled0 = (signalled & (ready | pready));
+v128 ready0     = (signalled | ready | pready);
+...
+case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:
+    signalled0._u &= ~ctxtTaskIdMask;      // the update
+    ready0._u     &= ~ctxtTaskIdMask;
+```
+
+and the writeback committed the words it had READ:
+
+```cpp
+... OFFSET_OF(CellSpursTaskset, ready))     = ready;       // not ready0
+... OFFSET_OF(CellSpursTaskset, signalled)) = signalled;   // not signalled0
+```
+
+So POLL_SIGNAL, WAIT_SIGNAL and DESTROY_TASK each computed a state transition
+and threw it away. `waiting`, `running` and `enabled` were committed correctly,
+which is why the taskset looked half-alive rather than dead.
+
+## Why it is a transcription bug, not a design choice
+
+Upstream RPCS3 has this **entire writeback commented out**
+(`rpcs3/Emu/Cell/Modules/cellSpursSpu.cpp`), stale variable names and all. It
+was never exercised by a running system there. Uncommenting the block on this
+branch brought the wrong names along with it. Checking upstream for the
+*intent* of a block is not enough when upstream never ran it.
+
+## What it costs
+
+`_cellSpursSendSignal` raises the workload signal only when
+`~signalled & waiting & mask` is 1. If `signalled` can never be cleared it
+latches on the first push, the workload stops being signalled, and the only
+thing that could clear it is the task running - which needs the signal. The
+measured fixed point is exactly that:
+
+    waiting=80000000  signalled=80000000     (set, never consumed)
+    gate: wkl0 signal=0, wkl1 signal=0
+
+The "re-signal the workload on every push" workaround in `cellSpursQueuePushBody`
+was built to fight this and was recorded as "no change" - it treats the symptom
+from the PPU side while the SPU side keeps discarding the consumption.
+
+DESTROY_TASK is worse than a stall: it clears `enabled` but commits the old
+`ready`/`signalled`, leaving state bits set for a task that is no longer
+enabled. The invariant check at the top of the same function halts the SPU on
+exactly that condition, so the old writeback could turn a task exit into an
+`Invalid taskset state` halt.
+
+## The invariant still holds with the fix
+
+Entry requires `running|ready|pready|signalled|waiting` to be a subset of
+`enabled`. Both new words are subsets of old ones that already satisfied it -
+`ready0 = signalled|ready|pready` and `signalled0 = signalled & (ready|pready)` -
+so committing them cannot violate it, in any arm.
+
+    debug.rpcsx.thor.taskset_writeback_fix = 0   restore the discarding writeback
+
+# The HLE Stall, Measured: The SPU Is Captured Inside The Taskset
+
+Measured 2026-08-26 with `taskset_writeback_fix=1` (verified live on device),
+combat savestate, frame-gated harness.
+
+    LLE control    DRAWN fps=19.47  n=6  black=0  cores=5.260
+    HLE WB_ON      SAVESTATE NEVER LOADED (stalled boot), 33 frames, 6.34 cores
+
+From the live log of the stalled run:
+
+    dispatches: 1        select: 1        pushes: ~32,000   push-ok: ~300
+    CENSUS n=3200: exit=0 yield=3200 waitSig=1 poll=0 recvFlag=0
+                   (taskId=0 taskset=0x10364100 spu=0)
+    RING head=42 tail=41 depth=256          (255 used, ring genuinely full)
+
+## SELECT_TASK runs exactly once in the whole run
+
+`spursTasksetProcessSyscall` only re-dispatches at the bottom of the function:
+
+```cpp
+if (incident)
+{
+    if (spursTasksetPollStatus(spu)) spursTasksetExit(spu);
+    else                             spursTasksetDispatch(spu);
+}
+```
+
+and the YIELD arm sets `incident` **only inside** its
+`if (spursTasksetPollStatus(spu) || ..._POLL)` branch. For this taskset both are
+permanently 0:
+
+- `POLL` computes `readyButNotRunning = gv_andn(running, ready0)`. This taskset
+  has ONE enabled task (`enabled=80000000`) and it is the task doing the
+  polling, so the set is always empty.
+- `spursTasksetPollStatus` returns 1 only when the workload selector picks a
+  DIFFERENT workload, which it does not here.
+
+So every yield is a no-op with `incident = 0`, no dispatch follows, the syscall
+returns, the guest resumes and yields again - 3,200 times and counting. The SPU
+never returns to the kernel, so the workload can never be re-selected. The one
+dispatch that did happen came from the single `WAIT_SIGNAL` (`waitSig=1`).
+
+**This makes the stall structural, not a race.** Whatever else is wrong, once
+the guest task enters a yield loop the SPU is captured and nothing can recover
+it.
+
+## What this retracts
+
+The starvation was previously attributed to a lost or unconsumed signal. The
+signal path is now instrumented and works: pushes reach `_cellSpursSendSignal`
+with the right task, and `taskset_writeback_fix` makes consumption commit. It
+does not help, because the code that would consume runs once.
+
+`taskset_writeback_fix` is still correct and is KEPT - `POLL_SIGNAL`,
+`WAIT_SIGNAL` and `DESTROY_TASK` were all discarding their updates, and
+DESTROY_TASK could leave state bits set for a disabled task, which the
+invariant check halts on. It is simply not the thing that unblocks rendering.
+
+## Still open, and why they are not the next thing
+
+- **Non-atomic taskset read-modify-write.** The `vm::reservation_op` wrapper
+  around the whole block is commented out (in upstream too), so the SPU's
+  read/modify/write of the bitmaps races the PPU's atomic `_cellSpursSendSignal`.
+  Only `signalled` has two writers, so the fix is narrow: clear exactly
+  `signalled & ~signalled0` instead of storing the word. Worth doing, but it
+  cannot explain a path that executes once.
+- **0x2700 aliasing.** `spu._ptr<SpursTasksetContext>(0x2700)` and
+  `spu._ptr<CellSpursTaskset>(0x2700)` are the SAME local store address read as
+  two different structs. The bitmaps said `running=00000000 waiting=80000000`
+  while the census showed that same task executing thousands of yields, so the
+  taskset's recorded state and what is actually running disagree.
+
+## Measurement note
+
+`pushes` and `push-ok` in the counts above are LOG LINES, each printed every 64
+calls - multiply by 64 for call counts. The ring probe's `used` was a raw
+`tail - head` and printed 4294967295 once tail wrapped; it now uses the
+firmware's wrapped formula (`spurs_ring_used`). That number was never
+corruption, only a bad subtraction in a print.

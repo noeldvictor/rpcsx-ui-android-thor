@@ -4373,6 +4373,18 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 //
 // libsre 0x169f8 keeps it in r31 and the tail masks it to 8 bits to signal the
 // consumer, so naming it isBlocking (as the stub did) is misleading.
+// THE RING IS WRAPPED, SO PRINT THE WRAPPED COUNT.
+//
+// The probe used to print `tail - head` raw, which underflows the moment tail
+// wraps past head and reported `used=4294967295` for a ring holding 255
+// entries. That reads as corruption and is only a bad subtraction; the claim
+// loop below always used the firmware formula. Same arithmetic as
+// cellSpursQueueSize (libsre 0x168fc).
+static u32 spurs_ring_used(u32 head, u32 tail, u32 depth) noexcept
+{
+	return head <= tail ? tail - head : tail + depth - head;
+}
+
 s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 taskId)
 {
 	cellSpurs.warning("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, taskId=%d)", queue, buffer, taskId);
@@ -4414,7 +4426,8 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		{
 			cellSpurs.warning("Thor QUEUE RING #%u: head=%u tail=%u depth=%u used=%u eq=0x%x",
 				n, +queue->head.load(), +queue->tail.load(), +queue->depth,
-				queue->tail.load() - queue->head.load(), +queue->event_queue_id);
+				spurs_ring_used(+queue->head.load(), +queue->tail.load(), +queue->depth),
+				+queue->event_queue_id);
 		}
 	}
 

@@ -471,6 +471,109 @@ static bool thor_spurs_sel_cond_fix() noexcept
 #endif
 }
 
+// COMMIT THE UPDATED TASKSET STATE, NOT THE VALUES IT WAS READ WITH.
+//
+// Every arm of the switch in spursTasksetProcessRequest mutates `signalled0`
+// and `ready0` - those ARE the new values - while the writeback below stored
+// `signalled` and `ready`, the words as they were read. So every state
+// transition the request made was computed and then thrown away.
+//
+// This is a transcription bug, not a design choice. Upstream RPCS3 has the
+// whole writeback COMMENTED OUT (Emu/Cell/Modules/cellSpursSpu.cpp), so its
+// variable names were never exercised by a running system; uncommenting the
+// block brought the stale names with it.
+//
+// WHAT IT COSTS: a signal can never be consumed. `_cellSpursSendSignal` only
+// raises the workload signal when `~signalled & waiting & mask` is 1, so once
+// `signalled` latches it stays latched, the workload stops being signalled,
+// and the task that would clear it can only clear it BY RUNNING. Measured
+// state at the stall is exactly that fixed point:
+//
+//     waiting=80000000  signalled=80000000   (set, never consumed)
+//     gate: wkl0 signal=0, wkl1 signal=0
+//
+// and the consumer drains ~40 entries before freezing while the producer
+// jams on a full ring. The black-screen HLE run is this deadlock: no SPURS
+// task completes, so no geometry reaches RSX (6.6% GPU) while the frame
+// counter keeps presenting empty frames at the 30 cap.
+//
+// DESTROY_TASK leaks the same way - it clears the task from `ready0` and
+// `signalled0`, so without this the taskset keeps a destroyed task marked
+// ready forever.
+//
+// The taskset invariant still holds after the change: `ready & pending_ready`
+// is 0 because pending_ready is stored as 0 and ready0 absorbs it, and
+// `enabled` stays a subset of running|ready|pready|signalled|waiting in both
+// the park path (waiting gets the bit) and the select path (running does).
+//
+//   debug.rpcsx.thor.taskset_writeback_fix = 0  restore the discarding writeback
+static bool thor_taskset_writeback_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.taskset_writeback_fix", v) <= 0 || !v[0])
+		{
+			return true;   // ON by default: the discarding writeback is a defect
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
+// LET A YIELD ACTUALLY RETURN TO THE KERNEL.
+//
+// spursTasksetProcessSyscall only re-dispatches at the bottom of the function,
+// and only when `incident` is set:
+//
+//     if (incident) { pollStatus ? spursTasksetExit(spu) : spursTasksetDispatch(spu); }
+//
+// The YIELD arm sets `incident` only inside its
+// `if (pollStatus || REQUEST_POLL)` branch, and for a ONE-TASK taskset both
+// halves are permanently 0:
+//
+//   - REQUEST_POLL computes `readyButNotRunning = gv_andn(running, ready0)`.
+//     The only enabled task is the one doing the polling, so the set is empty.
+//   - spursTasksetPollStatus returns 1 only if the workload selector picks a
+//     DIFFERENT workload, which it does not here.
+//
+// So every yield is a no-op, no dispatch follows, the guest resumes and yields
+// again. MEASURED: 3,200+ yields against `dispatches: 1` and `select: 1`, with
+// six SPUs pinned at pc=0x00a70. The SPU is CAPTURED inside the taskset and the
+// kernel can never re-select the workload, which is the stall.
+//
+// Upstream guards the yield to avoid a pointless context save/restore when
+// nothing else can run. That is an OPTIMISATION, not a correctness rule: with
+// the guard lifted, SELECT_TASK simply re-selects the same task and resumes it
+// - and if the task has genuinely parked, SELECT_TASK returns MAX_TASK and the
+// taskset EXITS, handing the SPU back so a push can re-select the workload.
+// That is the normal SPURS lifecycle the capture was preventing.
+//
+// Costs a context save/restore per yield, so it is measured, not assumed.
+//
+//   debug.rpcsx.thor.yield_redispatch_fix = 1  yield always re-dispatches
+static bool thor_yield_redispatch_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.yield_redispatch_fix", v) <= 0 || !v[0])
+		{
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool thor_taskset_syscall_fix() noexcept
 {
 #ifdef ANDROID
@@ -2480,10 +2583,13 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 
 		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, waiting)) = waiting;
 		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, running)) = running;
-		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, ready)) = ready;
+		// See thor_taskset_writeback_fix: ready0/signalled0 are the UPDATED words.
+		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, ready)) =
+			thor_taskset_writeback_fix() ? ready0 : ready;
 		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, pending_ready)) = v128{};
 		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, enabled)) = enabled;
-		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, signalled)) = signalled;
+		vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, signalled)) =
+			thor_taskset_writeback_fix() ? signalled0 : signalled;
 
 		std::memcpy(spu._ptr<void>(0x2700), spu._ptr<void>(0x100), 128); // Copy data
 	} //);
@@ -2904,7 +3010,12 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 		incident = CELL_SPURS_TRACE_TASK_EXIT;
 		break;
 	case CELL_SPURS_TASK_SYSCALL_YIELD:
-		if (spursTasksetPollStatus(spu) || spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr))
+		// See thor_yield_redispatch_fix: without it a one-task taskset can never
+		// set `incident`, so it never re-dispatches and captures the SPU.
+		// ORDER MATTERS: spursTasksetPollStatus has a side effect
+		// (spursTasksetProcessPollStatus on the false path), so it must still be
+		// evaluated. The gate is a FALLBACK, never a short-circuit.
+		if (spursTasksetPollStatus(spu) || spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr) || thor_yield_redispatch_fix())
 		{
 			// If we reach here then it means that either another task can be scheduled or another workload can be scheduled
 			// Save the context of the current task
