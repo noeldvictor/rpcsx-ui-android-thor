@@ -10428,3 +10428,42 @@ Engagement proof, and use one every time a setting claims to be applied: the SPU
 object cache grew 3794 -> 4556 on the first mega arm. A setting that changes the
 recompiled IR MUST produce new objects; an arm where the count does not move did
 not engage.
+
+## Driver Wake-Up Delay 0: +2.8%, and it was boot-tested before shipping
+
+    delay 50   19.41  19.36   mean 19.39
+    delay 0    20.05  19.81   mean 19.93
+
+Interleaved, on top of XFloat Inaccurate and SPU Block Size Mega, same
+savestate, `coresBusy > 4.5`, non-overlapping ranges.
+
+The profile had 50 us **for stability, not speed**: an earlier note recorded that
+at 20 us this title crashed roughly two boots in five with an SPU halt in
+CellSpursKernel0, against 0 of 4 at 50 us. A 2.8% gain is not worth a 40% crash
+rate, so 0 was boot-tested rather than benchmarked and shipped:
+
+    delay 0    0 crash / 5 boots
+    delay 50   0 crash / 5 boots
+
+A 2-in-5 rate would have shown in ~87% of samples this size. What this does NOT
+prove: five boots cannot establish equality, and 20 us was never retested - 0 and
+20 are different points on that curve. If random SPU halts in CellSpursKernel0
+come back, this is the first line to revert.
+
+## Running total on BLUS30357, all measured in restored 3D combat
+
+    shipped at session start        16.23   (Approximate + Safe + delay 50)
+    XFloat Accuracy: Inaccurate     18.85   +16.2%
+    + SPU Block Size: Mega          19.28   +2.2%,  -5.6% CPU
+    + Driver Wake-Up Delay: 0       19.93   +2.8%
+
+**+22.8% total.** Two of the three had never actually been applied: `from_string`
+matches the enum's canonical capitalisation, so the lowercase property values
+failed silently while the log claimed success.
+
+30 FPS needs +50% from 19.93. Every config knob on this path has now been swept -
+xfloat, block size, wake-up delay, reservations, loop detection, verification,
+affinity (big-core pinning measures 15.32 against 19.07 default, so the A510s
+carry real work). None of the remainder is worth more than low single digits.
+The only lever sized for the gap is HLE SPURS, which now runs into the task's own
+ELF and livelocks with six SPUs pinned and zero frames.

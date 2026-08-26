@@ -247,19 +247,34 @@ object GameSettingsDatabase {
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter
-              # 50 us, which is what the RPCS3 community recommends for this engine.
+              # 0 us - the upstream default. +2.8% FPS, MEASURED, and the
+              # stability worry that motivated 50 does not reproduce at 0.
               #
-              # STABILITY, and it is nearly free here. At 20 us this title crashed
-              # roughly two boots in five with an SPU halt in CellSpursKernel0. At
-              # 50 us: 0 of 4 boots crashed.
+              #   delay 50   19.41  19.36   mean 19.39
+              #   delay 0    20.05  19.81   mean 19.93
               #
-              # Upstream warns that raising this costs performance badly
-              # (RPCS3 issue 12295, 60 FPS to 20 FPS on God of War), so it was
-              # measured rather than assumed: 2.568 cores against 2.557 at 20 us,
-              # a 0.4% difference with overlapping ranges, at the same 30 FPS. The
-              # regression that issue describes does not bite this title on this
-              # device.
-              Driver Wake-Up Delay: 50
+              # Interleaved 50/0/50/0 on top of XFloat Inaccurate and SPU Block
+              # Size Mega, same savestate, coresBusy > 4.5, non-overlapping ranges.
+              #
+              # THE OLD NOTE IS KEPT BECAUSE IT WAS RIGHT TO WORRY. It recorded
+              # that at 20 us this title crashed roughly two boots in five with an
+              # SPU halt in CellSpursKernel0, against 0 of 4 at 50 us. Frame rate
+              # must not be bought with random death, so 0 was BOOT-TESTED before
+              # shipping, not just benchmarked:
+              #
+              #   delay 0    0 crash / 5 boots   (four reached emu 0:02:17-0:02:20)
+              #   delay 50   0 crash / 5 boots
+              #
+              # A 2-in-5 failure rate would have appeared in about 87% of samples
+              # this size, so there is no evidence of the 20 us behaviour at 0.
+              # Note what this does NOT prove: five boots cannot establish equality,
+              # and 20 us was never retested. If random SPU halts in
+              # CellSpursKernel0 reappear, this line is the first suspect.
+              #
+              # Upstream warns that RAISING this costs performance badly (RPCS3
+              # issue 12295, 60 FPS to 20 FPS on God of War), which is consistent
+              # with lowering it helping here.
+              Driver Wake-Up Delay: 0
               Performance Overlay:
                 Enabled: true
         """.trimIndent()
