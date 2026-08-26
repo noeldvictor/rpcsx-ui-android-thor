@@ -11248,3 +11248,38 @@ This title uses BOTH queue types and only `CellSpursQueue` has been implemented.
 `_cellSyncLFQueueCompletePushPointer`), so that one is a wiring job rather than an
 ABI recovery. Do it before touching anything else - the consumer may be waiting on
 the LF queue, not on this one, which would explain `Pop: 0` entirely.
+
+## The push notify, implemented - and a correction about what "Pop: 0" means
+
+`cellSpursQueuePushBody`'s third argument is **a task id, not a blocking flag**.
+libsre keeps it in r31 and the tail masks it to 8 bits to signal the consumer:
+
+    ld     r0,0x60(r29)      ; taskset
+    rldicl r31,r31,0x0,0x38  ; 3rd arg & 0xFF = task id
+    or     r4,r31,r31
+    bl     0x000125d8        ; _cellSpursSendSignal(taskset, taskId)
+    xoris  r0,r3,0x8041 ; cmpwi r0,0x902   ; INVAL -> 0x80410914 FATAL
+
+Implemented, including the firmware's INVAL->FATAL mapping. The title calls it
+with `taskId=1`, so the signal now goes where libsre would send it.
+
+### `Pop: 0` IS NOT THE SUCCESS SIGNAL - that reading was wrong
+
+`cellSpursQueuePopBody` is the **PPU-side** API. The consumer for this queue is an
+**SPU task**, which reads the ring straight out of memory and never calls a PPU
+export. So `Pop: 0` is expected and always was; it says nothing about whether the
+consumer is draining. Several rounds were scored against it as if it did.
+
+A correct drain check needs one of:
+
+- the ring's own counters - read `queue->head` (0x00) over time; if head advances,
+  something IS consuming;
+- or an SPU-side probe where the task reads the ring.
+
+**Do that before any further queue work.** The current state may already be
+correct on the data path, with the remaining stall somewhere else entirely.
+
+### State at the end of this session
+
+    Push: 479264   Pop: 0 (meaningless, see above)
+    emu 0:03:11    fatals: 0    frames: 31    cores ~7.0

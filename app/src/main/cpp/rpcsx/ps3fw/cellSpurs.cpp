@@ -4180,10 +4180,25 @@ s32 _cellSpursLFQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpurs
 	return SyncErrorToSpursError(cellSyncLFQueueInitialize(pQueue, buffer, size, depth, direction, pTasksetOrSpurs));
 }
 
-s32 _cellSpursLFQueuePushBody()
+// Defined in cellSync.cpp and not declared in cellSync.h, so declare them here.
+// Signatures copied verbatim from cellSync.cpp:1117 and :1418.
+error_code _cellSyncLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 isBlocking);
+error_code _cellSyncLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<void> buffer, u32 isBlocking);
+
+// The SPURS LF queue push is a thin wrapper over the cellSync one, exactly like
+// _cellSpursLFQueueInitialize is over cellSyncLFQueueInitialize.
+// `_cellSyncLFQueuePushBody` is FULLY IMPLEMENTED in cellSync.cpp, so this stub
+// was discarding a working implementation and returning CELL_OK with nothing
+// queued - the same shape of bug as the cellSpursQueue* stubs.
+//
+// This title exercises BOTH queue families: the log shows
+// cellSpursLFQueueAttachLv2EventQueue and cellSpursQueueAttachLv2EventQueue
+// called from different sites within 30 ms of each other.
+s32 _cellSpursLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
-	return CELL_OK;
+	cellSpurs.warning("_cellSpursLFQueuePushBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	return SyncErrorToSpursError(static_cast<s32>(_cellSyncLFQueuePushBody(ppu, queue, buffer, isBlocking)));
 }
 
 s32 cellSpursLFQueueAttachLv2EventQueue(vm::ptr<CellSyncLFQueue> queue)
@@ -4198,10 +4213,11 @@ s32 cellSpursLFQueueDetachLv2EventQueue(vm::ptr<CellSyncLFQueue> queue)
 	return CELL_OK;
 }
 
-s32 _cellSpursLFQueuePopBody()
+s32 _cellSpursLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
-	return CELL_OK;
+	cellSpurs.warning("_cellSpursLFQueuePopBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	return SyncErrorToSpursError(static_cast<s32>(_cellSyncLFQueuePopBody(ppu, queue, buffer, isBlocking)));
 }
 
 s32 cellSpursLFQueueGetTasksetAddress()
@@ -4342,9 +4358,13 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 	return CELL_OK;
 }
 
-s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 isBlocking)
+// THE THIRD ARGUMENT IS A TASK ID, NOT A BLOCKING FLAG.
+//
+// libsre 0x169f8 keeps it in r31 and the tail masks it to 8 bits to signal the
+// consumer, so naming it isBlocking (as the stub did) is misleading.
+s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 taskId)
 {
-	cellSpurs.warning("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+	cellSpurs.warning("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, taskId=%d)", queue, buffer, taskId);
 
 	s32 error = CELL_OK;
 
@@ -4416,6 +4436,28 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	{
 		ppu_execute<&cellSpursWakeUp>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs));
 	}
+
+	// SIGNAL THE CONSUMER TASK. This is the notify libsre performs after the
+	// entry is copied, and its absence is why PopBody was never reached:
+	//
+	//     ld     r0,0x60(r29)      ; taskset
+	//     rldicl r31,r31,0x0,0x38  ; the 3rd argument masked to 8 bits = task id
+	//     or     r4,r31,r31
+	//     bl     0x000125d8        ; _cellSpursSendSignal(taskset, taskId)
+	//     xoris  r0,r3,0x8041 ; cmpwi r0,0x902  ; INVAL -> 0x80410914 FATAL
+	//
+	// Measured before this: 483,819 pushes against 0 pops, with the consumer
+	// parked in CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL.
+	if (const u32 tid = taskId & 0xFF; tid && queue->taskset)
+	{
+		const s32 rc = _cellSpursSendSignal(ppu, vm::static_ptr_cast<CellSpursTaskset>(queue->taskset), tid);
+
+		if (rc + 0u == CELL_SPURS_TASK_ERROR_INVAL)
+		{
+			return CELL_SPURS_TASK_ERROR_FATAL;
+		}
+	}
+
 
 	return CELL_OK;
 	return CELL_OK;
