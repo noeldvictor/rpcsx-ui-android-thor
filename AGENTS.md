@@ -11157,3 +11157,48 @@ it; it should come from the queue structure's unmapped bytes (0x20..0x5F) or fro
 `args=0xa` in that WAIT_SIGNAL census line, which looks like a task id or mask.
 Read `cellSpursQueuePushBody`'s tail at libsre 0x16b60/0x16bc8 (the two `bl`
 targets) to see exactly what it notifies.
+
+## Reading PushBody's tail: one correction, and the struct is bigger than 0x70
+
+### `bl 0x1d8f8` is MEMCPY, not a notify
+
+Earlier notes called it the notify import. It is not. Its call site:
+
+    lwz   r3,0x8(r29)    ; entry_size
+    ld    r0,0x10(r29)   ; buffer
+    mullw r3,r3,r6       ; entry_size * slot
+    add   r3,r3,r0       ; dest = buffer + slot*entry_size
+    rldicl r4,r30,0,0x20 ; src  = the caller's buffer argument
+    rldicl r5,r3,0,0x20  ; size
+    bl 0x0001d8f8        ; memcpy(dest, src, size)
+
+That is the data copy, and it CONFIRMS the addressing in the implemented
+`cellSpursQueuePushBody` - `buffer + slot * entry_size` is exactly what the
+firmware computes.
+
+### The real notify is a RAW SYSCALL, and the struct extends past 0x70
+
+    lwz r3,0x74(r29)   ; a field at 0x74
+    addi r4,r1,0x78
+    li  r5,0x0
+    li  r11,0x82       ; lv2 syscall number in r11
+    sc  0x0
+    ...
+    ld  r6,0x60(r29)   ; taskset
+    bl  0x0001309c
+
+Two consequences:
+
+1. **`CellSpursQueue` is LARGER than 0x70.** `lwz r3,0x74(r29)` reads a field
+   beyond the current definition, and the `CHECK_SIZE(CellSpursQueue, 0x70)` in
+   cellSpurs.h is therefore wrong. The guest allocates this memory so nothing has
+   crashed, but the definition needs extending once 0x70..0x77+ are identified.
+   The value at 0x74 is passed as the FIRST argument to that syscall, so it is an
+   id of some kind - very likely the lv2 event queue or port id.
+2. The notify is a direct `sc`, not an exported call, which is why scanning for
+   FNIDs never found it.
+
+**Do not guess the syscall number from a hand-built table.** An attempt to index
+`kernel/cellos/src/lv2.cpp` recovered only 732 of ~1024 slots, so the mapping was
+unreliable and is not recorded here. Read it properly, or set a breakpoint/log on
+`sc` from this address range instead.
