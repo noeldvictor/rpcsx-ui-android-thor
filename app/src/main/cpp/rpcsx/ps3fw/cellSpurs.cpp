@@ -4454,7 +4454,12 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			// thread on a signal that may never arrive.
 			if (queue->event_queue_id)
 			{
-				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 200);
+				// 20 us, NOT 200. Nothing signals this queue yet, so every retry
+				// burns the FULL timeout - at 200 us x 4096 that is ~0.8 s per
+				// push once the ring is full, and the measured result was
+				// FlipPump pushing exactly once per emulated second. The cadence
+				// was the timeout, not the game.
+				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 20);
 
 				if (spins++ < 4096)
 				{

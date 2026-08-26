@@ -11377,3 +11377,39 @@ renderer is downstream of that.
 **Five defects in this session's own code were caught by the firmware and by
 nothing else**: wrong argument order, wrong sentinel value, a missing field, a
 mislabelled parameter, and a parameter that does not exist. Every one silent.
+
+## The renderer is no longer stalled - it is SLOW. And the wait is not the limit.
+
+`FlipPump` now pushes render work on a steady cadence with emulated time advancing
+alongside it - no deadlock, no spin, no hang:
+
+    0:01:04.79  FlipPump  cellSpursQueuePushBody(taskId=1)
+    0:01:05.90  FlipPump  cellSpursQueuePushBody(taskId=1)
+    0:01:06.99  ...
+
+That was ~1 push per emulated second, which matched the wait arithmetic exactly
+(200 us x up to 4096 retries is ~0.8 s per push once the ring is full, and nothing
+signals the queue so every retry burns its full timeout). So the timeout was
+tested directly:
+
+    timeout 200 us   pushes 455   emu 0:03:04   frames 29
+    timeout  20 us   pushes 654   emu 0:03:04   frames 28
+
+**Ten times shorter, identical emulated progress.** The wait was never the limit -
+the SPU consumer's drain rate is. That closes the tuning avenue; do not spend
+another cycle on the timeout.
+
+### Where HLE SPURS actually stands at the end of this session
+
+    emu 0:03:04    fatals 0    frames ~28    pushes ~650    eq bound
+    queue: binds, does not spin, does not hang, consumer confirmed reading it
+    (head reached 52 in a probed arm)
+
+The queue is healthy and is NOT the bottleneck. The title runs three minutes of
+emulated time and presents ~28 frames, so the remaining problem is how slowly the
+SPU side consumes - a throughput question, not a correctness one, and a much
+better problem than the deadlock this started as.
+
+**Shipped frame rate remains 19.87 fps and comes entirely from config**
+(XFloat Inaccurate, SPU Block Size Mega, Driver Wake-Up Delay 0). HLE has still
+never been the fast path, and nothing here changes that.
