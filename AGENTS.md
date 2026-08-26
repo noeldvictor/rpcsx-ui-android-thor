@@ -11452,3 +11452,32 @@ structure - the same class of defect fixed three times already this session.
 count of 0 for it means NOTHING. The same mistake produced a misleading
 `QueuePush: 0` earlier. Before treating any zero count as evidence, confirm the
 call site logs at `warning` or above.
+
+### RULED OUT: the WAIT_SIGNAL handler sets the waiting bit correctly
+
+    case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:
+        if (!(signalled0._u & ctxtTaskIdMask))
+        {
+            numNewlyReadyTasks--;
+            running._u  &= ~ctxtTaskIdMask;
+            waiting._u  |=  ctxtTaskIdMask;   // <- set correctly
+            signalled0._u &= ~ctxtTaskIdMask;
+            ready0._u   &= ~ctxtTaskIdMask;
+        }
+
+and those locals ARE written back to the shared structure at the end of
+`spursTasksetProcessRequest` via
+`vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, waiting))`.
+So this is NOT another local-snapshot defect - do not re-investigate it.
+
+Note the guard: the bit is only set when the task is NOT already signalled. If a
+signal is already pending the task consumes it and does not wait, which is
+correct.
+
+So the remaining question is narrower than "is the bit set": it is **how often the
+task re-enters WAIT_SIGNAL**. The syscall census logs one line per syscall number
+(one-shot), so it cannot answer that. Make that probe COUNT instead - a per-number
+counter printed periodically - and compare the WAIT_SIGNAL count against the
+`cellSpursSendWorkloadSignal` count of 2. If the task waits many times but only
+two workload signals fire, the loss is on the PPU side; if it waits twice, the
+task itself is exiting its consume loop.
