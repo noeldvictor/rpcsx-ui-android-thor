@@ -11127,3 +11127,33 @@ That makes the remaining work small and specific, and it is the last thing betwe
 HLE and continuous frames: the consumer waits on that event queue
 (TASK SYSCALL #2 WAIT_SIGNAL), and nothing signals it today, which is why
 PopBody is called 0 times against 479,359 pushes.
+
+## Implementing the notify half moved emulated time 0:00:10 -> 0:03:12
+
+`cellSpursQueueAttachLv2EventQueue` and `Detach` are implemented - validation in
+the firmware's exact order, then a delegate to `cellSpursAttachLv2EventQueue`
+(already in this tree via `_spurs::attach_lv2_eq`) with `isDynamic = 1`, storing
+the returned port in 0x18 and restoring the -1 sentinel on detach.
+
+    Initialize: 1   Attach: 1   Push: 481958   Pop: 0
+    emu 0:03:12     fatals: 0   frames: 27
+
+**Emulated time advanced past the wall by a factor of about 19.** Every previous
+HLE run froze at 0:00:10; the title now runs for over three minutes of emulated
+time. The attach is called once and succeeds, so the PPU is no longer blocked
+where it was.
+
+What has NOT changed: `PopBody` is still 0, frames still sit at 27, and the push
+retry loop still runs (481,958). So the consumer is still not being woken - the
+attach binds the event queue but nothing yet SIGNALS through it on a successful
+push.
+
+### Next, and the evidence for it
+
+The task blocks with `CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL` (census: syscall #2,
+`args=0xa`). The signal side is `_cellSpursSendSignal(taskset, taskId)`, which
+exists. The open question is still WHICH task to signal on a push - do not guess
+it; it should come from the queue structure's unmapped bytes (0x20..0x5F) or from
+`args=0xa` in that WAIT_SIGNAL census line, which looks like a task id or mask.
+Read `cellSpursQueuePushBody`'s tail at libsre 0x16b60/0x16bc8 (the two `bl`
+targets) to see exactly what it notifies.

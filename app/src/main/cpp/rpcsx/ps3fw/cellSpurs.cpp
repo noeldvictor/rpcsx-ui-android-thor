@@ -4460,16 +4460,93 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 	return CELL_OK;
 }
 
-s32 cellSpursQueueAttachLv2EventQueue()
+// ATTACH THE EVENT QUEUE THE CONSUMER WAITS ON.
+//
+// This is the notify half of the SPURS queue, and it was the last stub standing
+// between HLE and continuous frames: the task blocks with
+// CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL, nothing ever signals it, so PopBody was
+// called 0 times against 479,359 pushes and the ring stayed full.
+//
+// Contract from libsre 0x16778, in this exact order:
+//
+//     cmpwi r3,0x0             ; null queue        -> 0x80410911 NULL_POINTER
+//     rlwinm r0,r3,0,0x19,0x1f ; queue & 0x7f      -> 0x80410910 ALIGN
+//     lwz r0,0x1c(r3)          ; direction == 0    -> 0x80410909 PERM
+//     lwz r0,0x18(r3)          ; 0x18 != -1        -> 0x8041090f STAT
+//     ld  r0,0x68(r3)          ; spurs == 0        -> 0x80410902 INVAL
+//     ... delegates with (spurs, ..., ..., 1)
+//
+// The delegate is cellSpursAttachLv2EventQueue, which this tree already
+// implements via _spurs::attach_lv2_eq, so this is a wrapper rather than new
+// machinery. `isDynamic = 1` is the `li r6,0x1` above.
+s32 cellSpursQueueAttachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, u32 eventQueueId)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.warning("cellSpursQueueAttachLv2EventQueue(queue=*0x%x, eventQueueId=0x%x)", queue, eventQueueId);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!queue->direction)
+	{
+		return CELL_SPURS_TASK_ERROR_PERM;
+	}
+
+	// 0x18 holds -1 until an event queue is attached.
+	if (queue->x18 != 0xFFFFFFFFu)
+	{
+		return CELL_SPURS_TASK_ERROR_STAT;
+	}
+
+	if (!queue->spurs)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	vm::var<u8> port;
+
+	if (s32 rc = cellSpursAttachLv2EventQueue(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs), eventQueueId, port, 1))
+	{
+		return rc;
+	}
+
+	queue->x18 = *port;
 	return CELL_OK;
 }
 
-s32 cellSpursQueueDetachLv2EventQueue()
+s32 cellSpursQueueDetachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
-	return CELL_OK;
+	cellSpurs.warning("cellSpursQueueDetachLv2EventQueue(queue=*0x%x)", queue);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	// Nothing attached is the -1 sentinel; detaching then is a state error.
+	if (queue->x18 == 0xFFFFFFFFu)
+	{
+		return CELL_SPURS_TASK_ERROR_STAT;
+	}
+
+	if (!queue->spurs)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	const s32 rc = cellSpursDetachLv2EventQueue(vm::static_ptr_cast<CellSpurs>(queue->spurs), static_cast<u8>(+queue->x18));
+
+	if (rc == CELL_OK)
+	{
+		queue->x18 = 0xFFFFFFFF;
+	}
+
+	return rc;
 }
 
 s32 cellSpursQueueGetTasksetAddress()
