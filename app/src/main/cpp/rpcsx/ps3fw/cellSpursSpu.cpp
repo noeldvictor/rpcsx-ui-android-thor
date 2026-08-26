@@ -555,23 +555,59 @@ static bool thor_taskset_writeback_fix() noexcept
 //
 // Costs a context save/restore per yield, so it is measured, not assumed.
 //
-//   debug.rpcsx.thor.yield_redispatch_fix = 1  yield always re-dispatches
-static bool thor_yield_redispatch_fix() noexcept
+// THROTTLE IT. Re-dispatching on EVERY yield is correct but ruinously
+// expensive: spursTasketSaveTaskContext copies 0x380 bytes plus up to 122 2KB
+// local store blocks, and the restore copies the same back, so each yield
+// moves about 244KB twice. The task was measured yielding 273,152 times in one
+// run - on the order of 130 GB of memcpy - which is enough to starve the task
+// of forward progress all by itself and to look like a spin.
+//
+// Handing the SPU back does not have to happen on every yield; it has to
+// happen OFTEN ENOUGH that the kernel can re-select a workload and that a
+// parked task can be noticed. One in N is enough for that and costs 1/N of the
+// copying.
+//
+//   debug.rpcsx.thor.yield_redispatch_fix = 0   never (upstream behaviour)
+//   debug.rpcsx.thor.yield_redispatch_fix = 1   every yield
+//   debug.rpcsx.thor.yield_redispatch_fix = N   every Nth yield (N power of 2)
+static u32 thor_yield_redispatch_every() noexcept
 {
 #ifdef ANDROID
-	static const bool s_on = []() noexcept
+	static const u32 s_n = []() noexcept -> u32
 	{
 		char v[PROP_VALUE_MAX]{};
 		if (__system_property_get("debug.rpcsx.thor.yield_redispatch_fix", v) <= 0 || !v[0])
 		{
-			return false;
+			return 0;
 		}
-		return v[0] != '0';
+
+		const long parsed = std::strtol(v, nullptr, 10);
+		return parsed > 0 ? static_cast<u32>(parsed) : 0;
 	}();
-	return s_on;
+	return s_n;
 #else
-	return false;
+	return 0;
 #endif
+}
+
+static bool thor_yield_redispatch_fix() noexcept
+{
+	const u32 every = thor_yield_redispatch_every();
+
+	if (!every)
+	{
+		return false;
+	}
+
+	if (every == 1)
+	{
+		return true;
+	}
+
+	// Per-SPU counter: two SPUs in the same taskset must not share a phase and
+	// accidentally both skip, or both pay, on the same yields.
+	static thread_local u32 s_count = 0;
+	return (s_count++ % every) == 0;
 }
 
 // DO NOT CLOBBER A SIGNAL THE PPU SET WHILE WE WERE THINKING.

@@ -12007,3 +12007,23 @@ way - and the task yields 273,152 times. That is on the order of 130 GB of
 memcpy. Before reading anything into "the task spins", throttle re-dispatch to
 every Nth yield and re-measure: the spin may be an artifact of making every
 yield enormously expensive.
+
+## Throttling the yield re-dispatch: measured WORSE, hypothesis closed
+
+`yield_redispatch_fix` now takes a count - 0 off, 1 every yield, N every Nth -
+so the ~244KB-each-way context save could be amortised. Measured:
+
+    N = 1    2,945 frames at ~29.5 fps (one lucky boot), flat green, RSX 5.8%
+    N = 64   28 frames, BLACK, stalled
+
+So the expensive every-yield re-dispatch is doing real work, and the task's
+273,152 yields are NOT an artifact of making each one costly. **That hypothesis
+is closed.** Keep N=1.
+
+## And the good run does not reproduce
+
+The 2,945-frame run was a lucky boot, not a result: a repeat at the same N=1
+settings stalled at 32 frames. This path still boots successfully about 1 in 6
+times, and even the successful boot drew nothing. Two arms is not enough to
+call anything here - see the run-to-run variance section - and a single good
+run is exactly the trap this file already warns about twice.
