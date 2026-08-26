@@ -978,9 +978,23 @@ struct CellSpursQueue
 	u8 unk20[0x40];      // 0x20
 	vm::bptr<CellSpursTaskset, u64> taskset; // 0x60
 	vm::bptr<CellSpurs, u64> spurs;          // 0x68
+	be_t<u32> x70;                           // 0x70
+	// THE LV2 EVENT QUEUE ID. cellSpursQueuePushBody blocks on it when the ring
+	// is full, with a raw syscall rather than an exported call - which is why no
+	// FNID scan ever found the notify path:
+	//
+	//     lwz  r3,0x74(r29)   ; this field
+	//     addi r4,r1,0x78     ; &event
+	//     li   r5,0x0         ; timeout 0 = infinite
+	//     li   r11,0x82       ; lv2 130 = sys_event_queue_receive
+	//     sc   0x0
+	//
+	// Reading it is also what proved the structure extends past 0x70; the earlier
+	// CHECK_SIZE(0x70) was wrong.
+	be_t<u32> event_queue_id;                // 0x74
 };
 
-CHECK_SIZE(CellSpursQueue, 0x70);
+CHECK_SIZE(CellSpursQueue, 0x78);
 
 // From cellSpursQueuePushBody: `cmpwi r0,0x2` against the field at 0x1c, and
 // CELL_SPURS_TASK_ERROR_PERM if it does not match.

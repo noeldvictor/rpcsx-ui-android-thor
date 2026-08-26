@@ -4321,6 +4321,11 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 	// Initialising it to 0 would make every attach fail with STAT.
 	queue->x18 = 0xFFFFFFFF;
 	queue->direction = direction;
+	// Not written by the firmware's store run at 0x165c4, but this memory comes
+	// from the guest and is not zeroed for us. 0x74 in particular MUST start at 0
+	// so a push before any attach cannot wait on a stale event queue id.
+	queue->x70 = 0;
+	queue->event_queue_id = 0;
 	// std r11,0x60(r5) = the taskset, std r3,0x68(r5) = taskset->spurs (r3 is
 	// reloaded from r4->0x60 at 0x1655c). When no taskset is given the spurs
 	// argument stands in, which is the branch at 0x1654c.
@@ -4513,7 +4518,13 @@ s32 cellSpursQueueAttachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> q
 		return rc;
 	}
 
+	// BOTH fields matter. 0x18 takes the port (its -1 sentinel is what gates a
+	// second attach), and 0x74 takes the EVENT QUEUE ID, which is what
+	// cellSpursQueuePushBody feeds to sys_event_queue_receive when the ring is
+	// full. Storing only the port - as the first version did - leaves 0x74 zero
+	// and the blocking path with nothing to wait on.
 	queue->x18 = *port;
+	queue->event_queue_id = eventQueueId;
 	return CELL_OK;
 }
 
@@ -4544,6 +4555,7 @@ s32 cellSpursQueueDetachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> q
 	if (rc == CELL_OK)
 	{
 		queue->x18 = 0xFFFFFFFF;
+		queue->event_queue_id = 0;
 	}
 
 	return rc;

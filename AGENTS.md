@@ -11202,3 +11202,49 @@ Two consequences:
 `kernel/cellos/src/lv2.cpp` recovered only 732 of ~1024 slots, so the mapping was
 unreliable and is not recorded here. Read it properly, or set a breakpoint/log on
 `sc` from this address range instead.
+
+## The notify syscall, read not guessed: 0x82 = sys_event_queue_receive
+
+The syscall table annotates every entry with its number, so this needs no
+counting (an earlier attempt to index it by position recovered 732 of ~1024 slots
+and was correctly discarded):
+
+    kernel/cellos/src/lv2.cpp:345
+    BIND_SYSC(sys_event_queue_receive),   // 130 (0x082)
+
+So the full-ring path in `cellSpursQueuePushBody` is
+
+    lwz  r3,0x74(r29)   ; lv2 event queue id
+    addi r4,r1,0x78     ; &event
+    li   r5,0x0         ; timeout 0 = infinite
+    li   r11,0x82       ; sys_event_queue_receive
+    sc   0x0
+
+**It blocks on an event queue whose id lives at 0x74** - past where the struct
+definition ended. Three defects in code written this session, all caught by the
+firmware and none visible any other way:
+
+    wrong argument order in Initialize   -> wrote 0x70 bytes over the taskset
+    0x18 initialised to 0 instead of -1  -> every attach would fail STAT
+    no field at 0x74 at all              -> blocking path had nothing to wait on
+
+`CellSpursQueue` is now 0x78 with `event_queue_id` at 0x74; Attach writes both it
+and the port at 0x18, Detach clears both, Initialize zeroes them.
+
+    Init: 1  Attach: 1  Push: 536152  Pop: 0
+    emu 0:03:33   fatals: 0   frames: 32
+
+Emulated time is now 0:03:33 against 0:00:10 before any of this, and the run is
+crash-free. `Pop` is still 0.
+
+### The next thread: the LF variant is stubbed too
+
+    cellSpurs TODO: cellSpursLFQueueAttachLv2EventQueue()
+
+Called immediately BEFORE the CellSpursQueue attach, from a different game site.
+This title uses BOTH queue types and only `CellSpursQueue` has been implemented.
+`CellSpursLFQueue` is `CellSyncLFQueue`, which is already defined and has working
+`cellSync` helpers (`_cellSyncLFQueueGetPushPointer`,
+`_cellSyncLFQueueCompletePushPointer`), so that one is a wiring job rather than an
+ABI recovery. Do it before touching anything else - the consumer may be waiting on
+the LF queue, not on this one, which would explain `Pop: 0` entirely.
