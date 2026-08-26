@@ -10240,3 +10240,67 @@ printed `draws/frame=0`. The check that exists specifically to catch
 incomparable scenes silently did nothing. It now also prints `scenePolls`, so a
 missing field is distinguishable from a genuine zero, and resets that counter per
 arm rather than accumulating across the round.
+
+## THE DEADLOCK IS BROKEN: an SPU selected a real workload
+
+First time in this branch's history. With `spurs_signal_fix=1` and
+`spurs_sel_cond_fix=1`:
+
+    Thor SPU5 SELECTED REAL WORKLOAD wid=0 (isPoll=1)
+    Thor SPU0 SELECTED REAL WORKLOAD wid=2 (isPoll=1)
+    select#1 wkl0: runnable=1 prio=1 maxCont=8 cont=0 ready=0 signal=1
+
+All four gate terms pass. For weeks the answer was six SPUs on `wid=32` forever.
+
+### What the Ghidra read bought
+
+The selector's branch, from the real kernel at LS 0x290:
+
+    00000290: ceqi r30,r3,0x0      ; r30 = (arg0 == 0)      -> !isPoll
+    00000294: lqr  r10,-0x31       ; PC-rel: 0x294 - 0xc4 = LS 0x1d0
+    000002c4: rotqbyi r20,r10,0xc  ; bytes 12..15 of 0x1d0 = 0x1dc
+    000002d8: ceqi r7,r20,0x20     ; r7  = (wklCurrentId == 32)
+    000002e8: or   r3,r29,r5       ; !isPoll || wklCurrentId == 32
+
+LS 0x1dc is `SpursKernelContext::wklCurrentId`. Hardware asks "am I running the
+SYSTEM SERVICE"; the port asked "did the selection change". Parked in the system
+service, `currentId` is 32, a selected workload 0 fails `0 != 32` and is routed
+to the context-switch path, which exits and re-selects forever. That one wrong
+comparison is the livelock, and fixing it also fixed the boot loop:
+`sig=1` alone armed 0 of 4 boots, `sig=1 + selcond=1` arms 6 and survives.
+
+### The defect the fix itself introduced, and the repair
+
+Both selections carry `isPoll=1` - they come from `cellSpursModulePollStatus`,
+which only asks "should I yield?". A widened commit condition made the POLL
+consume the signal: it cleared `wklSignal1`, so when the kernel then selected for
+real (`isPoll=0`) the signal was gone, it picked 32, and dispatched the system
+service again. The same deadlock, displaced by one step.
+
+The original condition could not hit this - during a poll it only fired when
+nothing changed. **Widening the commit requires narrowing the clear.** A poll now
+reports its selection and consumes nothing (`consumeSignal = !selcond || !isPoll`).
+
+### Probe discipline: every one-shot probe on this path fired too early
+
+`select#1` printed `runnable=0 prio=0 maxCont=0` for days and was read as a stuck
+gate. It was not - the probe fires at FIRST selector entry, which is before the
+PPU creates and activates the workload. Timeline from one run:
+
+    12.169976  select#1 probe    (200th call)   signal=0
+    12.175456  cellSpursSendWorkloadSignal(wid=0)  readback=0x8000
+
+Even the 200th call lost the race. Probes on this path must fire on the
+CONDITION (`wklSignal1 != 0`), not on a count. `debug.rpcsx.thor.sel_probe_nth`
+exists but is the weaker tool.
+
+Three theories died to this, all retracted: a stale LS snapshot (the selector uses
+`ctxt->spurs.get_ptr()`, live memory), a workload-ID mismatch (the `wid=1` signal
+came from a differently-configured run; with the job queue left as LLE the game
+correctly signals `wid=0`), and scudo OOM as the killer (the LLE control emits the
+same three lines and runs fine).
+
+### Harness note
+
+`armed == 6` is the WRONG validity test. `armed=12` means the SPURS group armed
+twice, which is a further-along boot, not an invalid one. Test `armed >= 6`.

@@ -310,6 +310,43 @@ static std::atomic<u32> g_thor_hle_sel_logged{0};
 // evaluates it as `>> 0`, clearing workload 0 - but correctness of the shift does
 // not prove it is the cause of a later crash, and attributing by reasoning is how
 // this session has already been wrong twice. One property, two arms, same binary.
+// EVERY one-shot probe on this path fires at FIRST entry, which is BEFORE the
+// PPU has created and activated the workload. That is why select#1 has always
+// printed runnable=0 prio=0 maxCont=0: it was reading pre-activation state, not
+// a stuck gate. To see the gate that actually deadlocks, fire on the Nth call
+// instead of the first.
+//
+//   debug.rpcsx.thor.sel_probe_nth = N   (default 200, 0 disables)
+static u32 thor_sel_probe_nth() noexcept
+{
+#ifdef ANDROID
+	static const u32 s_n = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.sel_probe_nth", v) <= 0 || !v[0])
+		{
+			return 200u;
+		}
+		return static_cast<u32>(std::atoi(v));
+	}();
+	return s_n;
+#else
+	return 0u;
+#endif
+}
+
+static bool thor_hle_nth(std::atomic<u32>& counter, u32 spuNum) noexcept
+{
+	const u32 n = thor_sel_probe_nth();
+	if (!n || spuNum >= 8)
+	{
+		return false;
+	}
+	// one counter per SPU packed into the caller's atomic is not enough, so the
+	// caller passes a per-SPU counter array element
+	return counter.fetch_add(1) == n;
+}
+
 static bool thor_spurs_sel_cond_fix() noexcept
 {
 #ifdef ANDROID
@@ -446,7 +483,17 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			//   && (wklFlag || wklSignal || (readyCount && requestCount > contention[i]))
 			// and the title does call cellSpursSendWorkloadSignal, so print every
 			// term for the two workloads that exist and let it name the failure.
-			if (thor_hle_once(g_thor_hle_sel_logged, ctxt->spuNum))
+			// FIRE BECAUSE A SIGNAL IS PENDING, not on a call count.
+			//
+			// Fixed-count probes keep landing before the PPU writes the signal:
+			// the 200th call read 12.169976 while cellSpursSendWorkloadSignal ran
+			// at 12.175456. Trigger on the condition itself so the log shows what
+			// the selector sees WHILE a real workload is signalled - which is the
+			// only moment that can explain the deadlock.
+			static std::array<std::atomic<u32>, 8> s_sel_sig_logged{};
+
+			if (ctxt->spuNum < 8 && spurs->wklSignal1.load() != 0
+				&& thor_hle_once(s_sel_sig_logged[ctxt->spuNum], 0))
 			{
 				for (u32 k = 0; k < 2; k++)
 				{
@@ -547,6 +594,26 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				? (!isPoll || ctxt->wklCurrentId == CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
 				: (!isPoll || wklSelectedId == ctxt->wklCurrentId);
 
+			// A POLL MUST NOT CONSUME A SIGNAL.
+			//
+			// With the selector condition fixed, an SPU parked in the system
+			// service now selects a real workload - measured, the first time this
+			// branch ever did:
+			//
+			//   Thor SPU5 SELECTED REAL WORKLOAD wid=0 (isPoll=1)
+			//   select#1 wkl0: runnable=1 prio=1 maxCont=8 cont=0 signal=1
+			//
+			// But that came from cellSpursModulePollStatus, which only asks
+			// "should I yield?". Clearing the signal there consumes it without
+			// dispatching, so when the KERNEL selects for real (isPoll=0) the
+			// signal is gone, it picks 32, and the system service is dispatched
+			// again - the same deadlock, one step later.
+			//
+			// The original commit condition (`!isPoll || selected == current`)
+			// could not hit this: during a poll it only fired when nothing
+			// changed. Widening the commit means narrowing the clear to match.
+			const bool consumeSignal = !thor_spurs_sel_cond_fix() || !isPoll;
+
 			if (commitSelection)
 			{
 				// Clear workload signal for the selected workload.
@@ -603,7 +670,11 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// Therefore keep writing, but with a mask that changes nothing when
 				// the system service is selected. Same store, same notification, no
 				// corrupted signal.
-				if (thor_spurs_signal_fix() && wklSelectedId >= CELL_SPURS_MAX_WORKLOAD2)
+				if (!consumeSignal)
+				{
+					// Poll: report the selection, consume nothing.
+				}
+				else if (thor_spurs_signal_fix() && wklSelectedId >= CELL_SPURS_MAX_WORKLOAD2)
 				{
 					// System service: preserve the write, clear no workload bit.
 					spurs->wklSignal1.raw() &= 0xffff;
@@ -679,6 +750,19 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 		std::memcpy(ctxt, spurs, 128);
 	} //);
+
+	// If a real workload was ever selected, say so once per SPU. This is the
+	// event the whole HLE effort is waiting for.
+	if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
+	{
+		static std::array<std::atomic<u32>, 8> s_real_sel{};
+
+		if (ctxt->spuNum < 8 && thor_hle_once(s_real_sel[ctxt->spuNum], 0))
+		{
+			cellSpurs.error("Thor SPU%u SELECTED REAL WORKLOAD wid=%u (isPoll=%u)",
+				+ctxt->spuNum, wklSelectedId, +isPoll);
+		}
+	}
 
 	u64 result = u64{wklSelectedId} << 32;
 	result |= pollStatus;
@@ -801,7 +885,17 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 			// Not sure what this does. Possibly mark the SPU as idle/in use.
 			ctxt->spuIdling = wklSelectedId == CELL_SPURS_SYS_SERVICE_WORKLOAD_ID ? 1 : 0;
 
-			if (!isPoll || wklSelectedId == ctxt->wklCurrentId)
+			// Same Ghidra-derived condition as kernel1 (see the long note there).
+			// Hardware branches on "am I running the SYSTEM SERVICE", not on
+			// "did the selection change". This title takes the kernel1 path -
+			// its SPUs report [0x00818] = CELL_SPURS_KERNEL1_ENTRY_ADDR - so this
+			// copy is for 32-workload titles, kept in step so the two selectors
+			// cannot drift.
+			const bool commitSelection2 = thor_spurs_sel_cond_fix()
+				? (!isPoll || ctxt->wklCurrentId == CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
+				: (!isPoll || wklSelectedId == ctxt->wklCurrentId);
+
+			if (commitSelection2)
 			{
 				// Same undefined shift as the kernel1 selector: 0x8000 >> 32 wraps
 				// to 0x8000 on AArch64 and clears workload 0. See the comment there.
