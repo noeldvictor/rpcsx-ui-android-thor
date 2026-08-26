@@ -2587,6 +2587,24 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 		// spursDmaWaitForCompletion(spu, 0xFFFFFFFF);
 	}
 
+	// WHICH SYSCALLS DOES THE TASK ACTUALLY ISSUE?
+	//
+	// The renderer stalls with FlipPump spinning on cellSpursWakeUp, which means a
+	// completion never arrives. Before guessing at the completion path again,
+	// measure what the task asks for. One line per distinct syscall number, at
+	// warning level so it survives the default filter - trace does not, and that
+	// already caused one misreading this session.
+	{
+		static std::array<std::atomic<u32>, 16> s_seen{};
+
+		const u32 which = syscallNum & 0x0F;
+
+		if (which < 16 && s_seen[which].fetch_add(1) == 0)
+		{
+			cellSpurs.warning("Thor TASK SYSCALL #%u (raw=0x%x) args=0x%x taskId=%u", which, syscallNum, args, +ctxt->taskId);
+		}
+	}
+
 	s32 rc = 0;
 	u32 incident = 0;
 	switch (syscallNum & 0x0F)

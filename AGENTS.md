@@ -11064,3 +11064,42 @@ Remaining candidates, none yet tested:
   `warning`-level probe in each `case` of `spursTasksetProcessSyscall` and read
   which syscalls the task actually issues. That is the cheapest next measurement
   and it needs one boot.
+
+## THE STALL, FULLY EXPLAINED: the queue's NOTIFICATION half is the stub
+
+One boot with the queue calls raised to `warning` (they were at `trace`, which the
+default filter drops - that is what produced a misleading "QueuePush: 0" earlier):
+
+    _cellSpursQueueInitialize(spurs=*0x0, taskset=*0x10364100, queue=*0x1030e400)
+    cellSpurs TODO: cellSpursQueueAttachLv2EventQueue()     <- STILL A STUB
+    PushBody:  479359 calls
+    PopBody:   0
+    Thor TASK SYSCALL #2 (WAIT_SIGNAL) args=0xa taskId=0
+    Thor TASK SYSCALL #1 (YIELD)
+
+The whole deadlock, end to end:
+
+1. The task issues **WAIT_SIGNAL** - it is blocked waiting to be signalled, then
+   yields.
+2. **`cellSpursQueueAttachLv2EventQueue` is an unimplemented stub**, and that is
+   the mechanism that delivers the signal.
+3. Nothing ever wakes the consumer, so **PopBody is never called - 0 times**.
+4. The ring fills, `PushBody` returns `CELL_SPURS_TASK_ERROR_BUSY`, and the title
+   retries: **479,359 pushes**. That retry loop is what pins seven cores at 90 C
+   while frames sit at 28-32.
+
+So the data path works and the NOTIFY path does not. Note also that Initialize is
+called with `spurs = 0` and a valid taskset, which is exactly the
+"taskset OR spurs" branch at libsre 0x1654c - the implementation already handles
+it by taking `taskset->spurs`.
+
+### What remains, concretely
+
+- Implement `cellSpursQueueAttachLv2EventQueue` (and `Detach`), which binds the
+  lv2 event queue the consumer waits on.
+- Signal the waiting task when a push succeeds. `_cellSpursSendSignal(taskset,
+  taskId)` exists and is the obvious primitive; which task to signal must come
+  from the queue structure, so resolve what lives in the unmapped bytes at 0x20..0x5F
+  and at 0x18 before wiring it - **do not guess this**, two guesses tonight were
+  memory corruption.
+- Only then does BUSY-instead-of-blocking matter.
