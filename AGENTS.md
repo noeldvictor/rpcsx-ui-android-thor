@@ -9979,3 +9979,47 @@ So the module builds state at 0x2c30 / 0x2c70 and bounds-checks a count against
 **Read this before writing more HLE taskset code.** The LS addresses it touches
 (0x757-0x77a, 0x2c30, 0x2c70, 0x2c80-0x2d60) are the contract; an HLE
 implementation that does not honour them will corrupt state the guest later reads.
+
+## HLE boot instability: the SPU object cache is implicated, but clearing it is not a fix
+
+The HLE path boot-loops. Cleared the SPU native object cache - 25,824 files,
+246 MB, accumulated across every build and setting tried in one session - and
+re-ran:
+
+```
+t+60s   emu=0:01:04   <- first boot on the fresh cache, 9x further than before
+t+90s   emu=0:00:04   <- then progressively worse as the cache refills
+t+270s  emu=0:00:07
+```
+
+Before clearing, HLE died at emu 0:00:07 on 5 of 5 attempts. The first boot after
+clearing reached 0:01:04. So cache size is IMPLICATED - it matches the scudo
+failure signature, size classes 144/176/192 exhausted at 256 MB each (~1.5M small
+objects) while total RAM stays normal at 6.7 GB, the same as a healthy LLE boot.
+Tens of thousands of small objects loaded at boot is how that distribution
+arises.
+
+**But clearing it did not fix HLE.** It still never arms, and it still loops.
+
+Note the earlier mitigation attempt was aimed wrong: `spu_cache_worker_limit` and
+`spu_cache_preload_limit` bound compile CONCURRENCY, not the NUMBER of cached
+objects loaded, and they made it die sooner.
+
+`rm -rf` on that directory silently does nothing from the shell - it is
+`drwxr-s---` owned by the app. Use `run-as net.rpcsx.easy rm -rf <dir>` on a
+debuggable build. The same permission shape blocks `config/patches/`.
+
+### State of HLE at the end of this session
+
+Two real bugs found and fixed, both AArch64-specific, both confirmed by Ghidra:
+
+1. `0x8000 >> 32` is undefined; AArch64 evaluates it as `>> 0`, erasing workload
+   0's signal every poll - the only live term in the selection gate. FIXED and
+   VERIFIED: produced the first `wid=0 addr=0x200` taskset dispatch on this branch.
+2. The taskset syscall entry at 0xA70 was never registered, so the SPU branched
+   there and executed zeros. FIXED, NOT VERIFIED - no boot has reached it.
+
+What blocks verification is boot instability, not either fix. An LLE control on
+the same binary reaches emu 0:02:10 and renders at 19.19 fps.
+
+**Next: make the HLE boot survive.** Until it does, no HLE change can be judged.
