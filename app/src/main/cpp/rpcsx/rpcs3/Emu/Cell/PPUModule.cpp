@@ -33,6 +33,28 @@
 
 LOG_CHANNEL(ppu_loader);
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
+static bool thor_dump_decrypted_modules() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.dump_decrypted_modules", v) <= 0 || !v[0])
+		{
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool ppu_loader_verbose_success_enabled() noexcept
 {
 #ifdef __ANDROID__
@@ -2690,7 +2712,45 @@ bool ppu_load_exec(const ppu_exec_object& elf, bool virtual_load, const std::str
 	{
 		for (const auto& name : load_libs)
 		{
-			const ppu_prx_object obj = decrypt_self(fs::file(lle_dir + name));
+			// DUMP THE DECRYPTED MODULE, so its code can be disassembled.
+			//
+			// libsre.sprx on disk is an SCE SELF ("SCE " magic), not an ELF, so
+			// pulling it off the device gives Ghidra nothing. It is decrypted HERE,
+			// in memory, and then consumed straight into the ELF object. Writing
+			// those bytes out is the only way to get the real PPU code without a
+			// separate unself tool.
+			//
+			// This is how the SPURS queue ABI gets recovered: cellSpursQueuePushBody
+			// and its ten siblings are UNIMPLEMENTED_FUNC stubs in this tree AND in
+			// upstream RPCS3, and CellSpursQueue is not defined anywhere, so the
+			// layout has to come from the firmware that implements it.
+			//
+			//   debug.rpcsx.thor.dump_decrypted_modules = 1
+			//   adb exec-out run-as net.rpcsx.easy cat 			//       /data/data/net.rpcsx.easy/cache/decrypted_libsre.sprx.elf > libsre.elf
+			fs::file decrypted = decrypt_self(fs::file(lle_dir + name));
+
+			if (thor_dump_decrypted_modules() && decrypted)
+			{
+				const std::string dpath = fs::get_cache_dir() + "decrypted_" + name + ".elf";
+
+				if (fs::file out{dpath, fs::rewrite})
+				{
+					decrypted.seek(0);
+					const std::vector<u8> bytes = decrypted.to_vector<u8>();
+					out.write(bytes);
+					out.close();
+					ppu_loader.error("Thor: dumped decrypted '%s' to '%s' (%u bytes)",
+						name, dpath, static_cast<u32>(bytes.size()));
+				}
+				else
+				{
+					ppu_loader.error("Thor: cannot write decrypted dump '%s'", dpath);
+				}
+
+				decrypted.seek(0);
+			}
+
+			const ppu_prx_object obj = std::move(decrypted);
 
 			if (obj == elf_error::ok)
 			{

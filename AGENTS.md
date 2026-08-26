@@ -10670,3 +10670,29 @@ is a decrypted 256 KB SPU local store containing the real kernel and taskset
 policy module, dumped via `debug.rpcsx.thor.spu_ls_dump`. It gives the SPU side of
 any structure the queue touches. The PPU side still has to come from an unself'd
 libsre.
+
+### Proof that the queue stubs are the HLE blocker, from the WORKING boot
+
+A default boot (no `hle_libs`) shows the game loading the real firmware module
+itself, at runtime:
+
+    sys_prx: _sys_prx_load_module(path="/dev_flash/sys/external/libsre.sprx")
+    sys_prx: Loaded module: "/dev_flash/sys/external/libsre.sprx" (id=0x23001100)
+    ... [libsre: 0x02297c8c] sys_spu: sys_spu_thread_group_create(num=6, prio=127)
+
+and **`cellSpursQueue` appears ZERO times in that log**. The real libsre
+implements the queue, so the stubs are never reached. Forcing
+`hle_libs='libsre.sprx'` substitutes RPCS3's `UNIMPLEMENTED_FUNC` versions and
+the title freezes at 0:00:09. That is the blocker, confirmed from both sides.
+
+It also means the HLE-kernel-only arm (LLE libsre, `hle_spurs_kernel=1`) had a
+working queue and STILL rendered nothing - so that failure is the HLE kernel not
+interoperating with the real policy modules, which is a separate problem from the
+queue.
+
+### If you add a decrypted-module dump, hook the RIGHT path
+
+`debug.rpcsx.thor.dump_decrypted_modules` was added to the `load_libs` loop in
+PPUModule.cpp, which only handles STATICALLY listed LLE libraries - the log shows
+just `liblv2.sprx` there. libsre arrives through `sys_prx_load_module` at runtime,
+so the hook never fires for it. Hook the dynamic path instead.
