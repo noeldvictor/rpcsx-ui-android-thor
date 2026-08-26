@@ -10742,3 +10742,60 @@ libsre, in its FNID table at file offsets 0x1e02c-0x1e25c:
 **The firmware dumps are NOT committed.** They are Sony's copyrighted code; this
 repo has a GitHub remote. Regenerate them with the property above - it takes one
 boot. Keep them local.
+
+## CellSpursQueue ABI, recovered from libsre with Ghidra
+
+`decrypted_04.elf` imported as **PowerPC:BE:64:default**, disassembled at the
+export addresses resolved above. The trivial accessors give the layout directly -
+each is "validate, load one field, store to out-param":
+
+    cellSpursQueueGetEntrySize      lwz r0,0x8(r11)    -> u32 @ 0x08
+    cellSpursQueueDepth             lwz r0,0xc(r11)    -> u32 @ 0x0C
+    cellSpursQueueGetDirection      lwz r0,0x1c(r11)   -> u32 @ 0x1C
+    cellSpursQueueGetTasksetAddress ld  r0,0x60(r11)   -> u64 @ 0x60
+
+So, as far as the accessors reach:
+
+    struct CellSpursQueue
+    {
+        u8        unk00[0x08];   // 0x00
+        be_t<u32> entry_size;    // 0x08
+        be_t<u32> depth;         // 0x0C  (capacity, used by Size's wrap maths)
+        u8        unk10[0x0C];   // 0x10
+        be_t<u32> direction;     // 0x1C
+        u8        unk20[0x40];   // 0x20
+        vm::bptr<CellSpursTaskset, u64> taskset; // 0x60
+    };
+
+**Validation contract**, identical in every entry point:
+
+    cmpwi r11,0x0                      -> if queue == nullptr, return 0x80410911
+    rlwinm r0,r11,0x0,0x19,0x1f        -> r11 & 0x7F
+    bne   ...                          -> if not 128-byte aligned, return 0x80410910
+    cmpwi r4,0x0                       -> if out-param == nullptr, return 0x80410911
+
+(`lis r3,-0x7fbf` + `ori r3,r3,0x91x` builds 0x8041091x.) So the HLE versions must
+take `vm::ptr<CellSpursQueue>`, reject null and non-128-byte-aligned pointers with
+those exact codes, and write results through an out-pointer - NOT return them.
+
+`cellSpursQueueSize` at 0x168fc is the interesting one for semantics: it reads
+depth at 0x0C and does signed wrap arithmetic over two counters
+(`subf`/`add`/`nor` around 0x16940-0x16984), which is the ring-buffer
+head/tail distance. Those two counter fields are the next thing to pin down.
+
+`cellSpursQueuePushBody` at 0x169d0 is a real function - 0xC0 stack frame, saves
+r28-r31, takes (r3=queue, r4=buffer, r5=?) - and calls into sync primitives. It is
+the last piece, not the first; do the counters and Initialize first.
+
+### Reproducing this
+
+    adb shell setprop debug.rpcsx.thor.dump_decrypted_modules 1
+    # boot the title once, then
+    adb pull .../files/cache/decrypted_04.elf
+    analyzeHeadless <proj> p -import decrypted_04.elf \
+        -processor PowerPC:BE:64:default \
+        -postScript DisassembleSpuWindows.java out.txt 0x60 <code_va...> -noanalysis
+
+Export addresses come from pairing the FNID table (file 0x1e024, vaddr 0x1df24)
+with the faddrs table (file 0x1e2f8, vaddr 0x1e1f8), 181 entries; each faddr
+points at an OPD entry whose first word is the real code address.
