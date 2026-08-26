@@ -4341,7 +4341,13 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 	// from the guest and is not zeroed for us. 0x74 in particular MUST start at 0
 	// so a push before any attach cannot wait on a stale event queue id.
 	queue->x70 = 0;
-	queue->event_queue_id = 0;
+	// DO NOT clobber an event queue that is already bound. The title calls
+	// Attach at 0:00:09.449 and Initialize at 0:00:09.561 - initialise-after-
+	// attach - so zeroing here threw away the id the blocking path needs.
+	if (queue->event_queue_id == 0u || queue->x18 == 0xFFFFFFFFu)
+	{
+		queue->event_queue_id = 0;
+	}
 	// std r11,0x60(r5) = the taskset, std r3,0x68(r5) = taskset->spurs (r3 is
 	// reloaded from r4->0x60 at 0x1655c). When no taskset is given the spurs
 	// argument stands in, which is the branch at 0x1654c.
@@ -4392,9 +4398,25 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
 	}
 
+	// IS ANYTHING DRAINING? `Pop: 0` cannot answer that - PopBody is the PPU-side
+	// API and this queue's consumer is an SPU task reading the ring directly. The
+	// ring's own counters can: if head (0x00) advances, something IS consuming.
+	// Sampled sparsely so a half-million-call path stays cheap.
+	{
+		static std::atomic<u32> s_calls{0};
+
+		if (const u32 n = s_calls++; (n & 0x3FFF) == 0)
+		{
+			cellSpurs.warning("Thor QUEUE RING #%u: head=%u tail=%u depth=%u used=%u eq=0x%x",
+				n, +queue->head.load(), +queue->tail.load(), +queue->depth,
+				queue->tail.load() - queue->head.load(), +queue->event_queue_id);
+		}
+	}
+
 	// Claim a slot: advance the tail only if the ring is not full. This is the
 	// compare-exchange equivalent of the firmware's lwarx/stwcx. on 0x04.
 	u32 slot = 0;
+	u32 spins = 0;
 
 	while (true)
 	{
@@ -4403,6 +4425,38 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 
 		if (tail - head >= depth)
 		{
+			// BLOCK, DO NOT SPIN. Returning BUSY here starves the very consumer
+			// that has to drain the ring: the caller retried immediately and the
+			// PPU thread never yielded, so the SPU task could not run.
+			//
+			// MEASURED with a ring probe - head advanced 0 -> 42, so the SPU side
+			// IS consuming, and then froze at head=42 tail=298 used=256 for the
+			// remaining ~480,000 push calls. The data path works; the busy-spin
+			// was the deadlock.
+			//
+			// libsre blocks with a raw syscall on the event queue id at 0x74:
+			//     li r11,0x82 ; sc 0x0     = sys_event_queue_receive(id, &ev, 0)
+			if (queue->event_queue_id)
+			{
+				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 0);
+				continue;
+			}
+
+			// NO EVENT QUEUE BOUND - STILL DO NOT SPIN.
+			//
+			// Returning BUSY immediately is what starved the consumer: measured at
+			// ~480,000 pushes with head frozen at 37 and seven cores pinned. The
+			// SPU task cannot drain the ring if the PPU thread never yields, so
+			// yield explicitly and let it run. Bounded, so a genuinely stuck
+			// consumer still surfaces as BUSY rather than hanging forever.
+			if (spins++ < 1024)
+			{
+				ppu.state += cpu_flag::wait;
+				std::this_thread::yield();
+				ppu.check_state();
+				continue;
+			}
+
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 

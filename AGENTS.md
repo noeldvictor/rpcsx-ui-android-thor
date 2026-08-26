@@ -11283,3 +11283,47 @@ correct on the data path, with the remaining stall somewhere else entirely.
 
     Push: 479264   Pop: 0 (meaningless, see above)
     emu 0:03:11    fatals: 0    frames: 31    cores ~7.0
+
+## The ring probe found the real deadlock, and it was self-inflicted
+
+Sampling the ring's own counters (head at 0x00, tail at 0x04) is the ONLY valid
+drain check - `Pop: 0` never was one, see above:
+
+    RING #0:      head=0   tail=0    used=0
+    RING #16384:  head=42  tail=298  used=256   <- FULL
+    RING #32768+: head=42  tail=298  used=256   <- frozen thereafter
+
+**head advanced 0 -> 42, so the SPU consumer DOES read the ring.** The data path
+works. Then the ring filled and `cellSpursQueuePushBody` returned BUSY
+immediately, the caller retried in a tight loop, and the PPU thread never yielded
+- starving the very SPU task that had to drain it. ~480,000 pushes, seven cores
+pinned, head frozen.
+
+That was the "known simplification" flagged when the queue was first written and
+twice dismissed as not the blocker. It was the blocker.
+
+Fixed: the full path never busy-returns. It blocks on the event queue when one is
+bound (`sys_event_queue_receive`, which is what libsre's `li r11,0x82 ; sc 0x0`
+does), otherwise yields explicitly, bounded at 1024 attempts so a genuinely stuck
+consumer still surfaces BUSY rather than hanging.
+
+    pushes  481204 -> 65912   (7.3x less spinning)
+    head    37 -> 52
+    emu 0:03:07   fatals 0   frames 29
+
+### Still open: eq=0x0 at push time, and it is a self-defeating guard
+
+The probe now prints the event queue id and it reads **0**, so the blocking branch
+never runs and only the yield fallback does. Two candidate causes, not yet
+separated:
+
+1. **The guard is defeated by its own function.** `_cellSpursQueueInitialize` sets
+   `x18 = 0xFFFFFFFF` (the correct sentinel) and the preservation check is
+   `if (event_queue_id == 0 || x18 == 0xFFFFFFFF) event_queue_id = 0;` - which is
+   ALWAYS true by then. Reorder or drop that check.
+2. **Attach and Push may be on different queue objects.** The title calls Attach
+   at 0:00:09.449 and Initialize at 0:00:09.561 - attach BEFORE initialise, which
+   is odd enough to suspect two queues. Log both addresses and compare before
+   assuming (1).
+
+Resolve which before touching it again.
