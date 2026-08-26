@@ -4605,6 +4605,36 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			}
 		}
 
+		// RE-SIGNAL THE WORKLOAD EVERY PUSH, NOT ONLY ON THE 0->1 TRANSITION.
+		//
+		// _cellSpursSendSignal computes `signal = !!(~signalled & waiting & mask)`
+		// and only sends the WORKLOAD signal when that is 1. Measured state at the
+		// stall:
+		//
+		//   waiting=80000000 signalled=80000000   (set, never consumed)
+		//   gate: wkl0 signal=0, wkl1 signal=0    (workload not signalled)
+		//
+		// Once `signalled` is set and the task has not run to consume it, every
+		// later push computes 0 and never re-signals the workload. But the task
+		// can only consume by RUNNING, and it can only run if the workload is
+		// selected, which needs the workload signal. Circular - the drain stops
+		// (head froze at 100) and rendering stops with it.
+		//
+		// Re-signalling is safe: the worst case is a redundant workload selection,
+		// which the selector already handles, and it is what keeps the consumer
+		// scheduled while entries are pending.
+		if (queue->taskset && queue->spurs)
+		{
+			const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
+			const u32 wid = vm::_ref<be_t<u32>>(ts.addr() + OFFSET_OF(CellSpursTaskset, wid));
+
+			if (wid < CELL_SPURS_MAX_WORKLOAD2)
+			{
+				ppu_execute<&cellSpursSendWorkloadSignal>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs), wid);
+				ppu_execute<&cellSpursWakeUp>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs));
+			}
+		}
+
 		if (rc + 0u == CELL_SPURS_TASK_ERROR_INVAL)
 		{
 			return CELL_SPURS_TASK_ERROR_FATAL;

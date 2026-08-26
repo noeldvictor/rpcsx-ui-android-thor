@@ -11523,3 +11523,49 @@ A one-shot probe cannot show a RE-entry failure. `select#1` was one-shot and had
 to be made periodic to see the gate at all. Same for the syscall census
 (one-shot -> counted, which is how the YIELD spin and the taskId=0/1 mismatch
 became visible). Default to counting, not first-hit.
+
+## The queue's taskset is WORKLOAD 2, and the gate probe was reading wkl0/wkl1
+
+Several rounds of "the gate shows signal=0" were about the wrong workloads. The
+PPU log names the right one:
+
+    Thor signal wid=2: inside=0x2000 readback=0x2000 ... ready=255
+    (0x2000 == 0x8000 >> 2)
+
+333 of 334 workload signals go to **wid=2**. The `select#1` probe printed only
+k=0 and k=1, so it never showed the workload that matters. Extended to k<4.
+
+### wkl2's real gate terms: maxContention blocks it
+
+    select#1 wkl2: runnable=1 prio=15 maxCont=1 cont=1 ready=1 signal=1
+
+`runnable`, `ready` and `signal` all PASS. The failing term is
+`maxContention > contention` with **maxCont=1 and cont=1**. Workload 2 admits
+exactly one SPU and contention already reads 1, so it can never be selected
+again - and with maxCont=1 there is no headroom to absorb any accounting error.
+
+This is the same contention defect that showed as `cont=253` on wkl0, which is
+still present in the STORED counter (the clamp added earlier saturates the read,
+it does not stop the value accumulating). Contention is decremented only when an
+SPU re-enters the selector and subtracts its own `wklLocContention`; an SPU parked
+in the taskset PM yielding (measured: 5,440 YIELDs against 1 WAIT_SIGNAL) never
+does that, so its contribution is never released.
+
+**That is the next thing to fix**, and it is the last gate term still failing.
+
+### Run-to-run variance is large - do not trust single runs
+
+Frame counts across otherwise identical builds this round: 31, 32, 34, 50, 52,
+126. Only probe code changed between some of those. Any claim about a frame-count
+improvement needs at least two runs per arm; this session has repeatedly been
+misled by single samples.
+
+### Eliminated this round
+
+- **Bit-convention mismatch between PPU and SPU task bitmaps** - `SELECT_TASK`
+  prints `ready0=00000000000000008000000000000000`, whose `_u64[1]` MSB is bit 127
+  of the u128, exactly what `u128{1} << (~0 & 127)` tests. The conventions agree
+  and SELECT_TASK does find task 0.
+- **Re-signalling the workload on every push** - implemented and measured, no
+  change (head still froze). Kept because it matches firmware behaviour, but it is
+  not the fix.

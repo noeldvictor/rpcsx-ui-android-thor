@@ -515,13 +515,39 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 		u8 pendingContention[CELL_SPURS_MAX_WORKLOAD];
 		for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
 		{
-			contention[i] = spurs->wklCurrentContention[i] - ctxt->wklLocContention[i];
+			// CLAMP: this is u8 arithmetic and it UNDERFLOWS.
+			//
+			// Measured at the 50-frame stall:
+			//
+			//   select#1 wkl0: runnable=1 prio=1 maxCont=8 cont=254 signal=0
+			//
+			// 254 is 0 - 2 wrapped in a u8, not a leak upward: the shared
+			// wklCurrentContention read 0 while this SPU's local contribution was
+			// 2. Six SPUs committing a selection concurrently makes that race
+			// reachable, and once it happens `maxContention > contention` is false
+			// forever (8 > 254 never holds), so the workload can never be selected
+			// again and rendering stops dead.
+			//
+			// Saturate at 0 instead of wrapping. A contention of 0 is the correct
+			// reading when the shared counter says nobody is running this workload.
+			{
+				const u8 cur = spurs->wklCurrentContention[i];
+				const u8 loc = ctxt->wklLocContention[i];
+
+				contention[i] = cur >= loc ? cur - loc : 0;
+			}
 
 			// If this is a poll request then the number of SPUs pending to context switch is also added to the contention presumably
 			// to prevent unnecessary jumps to the kernel
 			if (isPoll)
 			{
-				pendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
+				{
+					// Same u8 underflow hazard as wklCurrentContention above.
+					const u8 pcur = spurs->wklPendingContention[i];
+					const u8 ploc = ctxt->wklLocPendingContention[i];
+
+					pendingContention[i] = pcur >= ploc ? pcur - ploc : 0;
+				}
 				if (i != ctxt->wklCurrentId)
 				{
 					contention[i] += pendingContention[i];
@@ -567,7 +593,11 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 			if (const u32 sn = s_sel_calls2++; (sn & 0xFFF) == 0)
 			{
-				for (u32 k = 0; k < 2; k++)
+				// COVER wid 2. The queue's taskset is workload 2 - the PPU logs
+				// `signal wid=2: inside=0x2000 readback=0x2000` - so printing only
+				// wkl0 and wkl1 was reading workloads that have nothing to do with
+				// the stall.
+				for (u32 k = 0; k < 4; k++)
 				{
 					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u",
 						+ctxt->spuNum, k,
@@ -777,6 +807,35 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 			for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
 			{
+				// CLAMP THE WRITE-BACK TOO.
+				//
+				// Clamping only the subtraction did not help: the probe still read
+				// cont=253 over half a million times, so 253 is the value actually
+				// STORED in the shared counter - genuine upward growth, not an
+				// underflow in this SPU's read.
+				//
+				// Contention counts SPUs currently running a workload, so it can
+				// never exceed the number of SPUs in the instance. Saturating there
+				// keeps `maxContention > contention` meaningful no matter how the
+				// bookkeeping drifts, and 253 permanently closing the gate is what
+				// stops rendering at ~50 frames.
+				{
+					const u8 cap = static_cast<u8>(std::min<u32>(+spurs->nSpus ? +spurs->nSpus : 6u, 8u));
+
+					if (contention[i] > cap)
+					{
+						static std::atomic<u32> s_clamped{0};
+
+						if (const u32 cn = s_clamped++; (cn & 0xFFF) == 0)
+						{
+							cellSpurs.error("Thor CONTENTION CLAMP #%u: wkl%u had %u, cap %u, selected=%u locC=%u",
+								cn, i, +contention[i], +cap, wklSelectedId, +ctxt->wklLocContention[i]);
+						}
+
+						contention[i] = cap;
+					}
+				}
+
 				spurs->wklCurrentContention[i] = contention[i];
 				spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
 				ctxt->wklLocContention[i] = 0;
@@ -1637,6 +1696,22 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 	{
 		auto spurs = ctxt->spurs.get_ptr();
 
+		// PERIODIC. wkl2 reads runnable=0 prio=0 in the selector, so either this
+		// never re-runs after the second taskset is created, or main memory has no
+		// priority for that workload on this SPU. Print the SOURCE value.
+		static std::atomic<u32> s_act{0};
+
+		if ((s_act++ & 0x3F) == 0)
+		{
+			const auto wi = spu._ptr<CellSpurs::WorkloadInfo>(0x30000);
+
+			cellSpurs.error("Thor ACTIVATE spu=%u: prio[spu] wkl0=%u wkl1=%u wkl2=%u wkl3=%u | wklMskB=0x%x state1[2]=%u",
+				+ctxt->spuNum,
+				+wi[0].priority[ctxt->spuNum], +wi[1].priority[ctxt->spuNum],
+				+wi[2].priority[ctxt->spuNum], +wi[3].priority[ctxt->spuNum],
+				+spurs->wklMskB, +spurs->wklState1[2]);
+		}
+
 		if (thor_hle_once(g_thor_hle_act_logged, ctxt->spuNum))
 		{
 			// The 16 state bytes as the SPU sees them, from MAIN MEMORY. If the
@@ -2196,6 +2271,28 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 		case SPURS_TASKSET_REQUEST_SELECT_TASK:
 		{
 			readyButNotRunning = gv_andn(running, ready0);
+
+			// DOES SELECT_TASK ACTUALLY FIND THE TASK?
+			//
+			// The task reads waiting=80000000 signalled=80000000 from the PPU
+			// side, and ready0 = signalled|ready|pready, so it SHOULD be
+			// selectable. But head freezes and the task never runs, and
+			// spursTasksetDispatch exits the taskset the moment SELECT_TASK
+			// returns >= CELL_SPURS_MAX_TASK. The bit convention differs between
+			// the two sides - PPU uses values[id/32] |= (1u<<31)>>(id%32), this
+			// uses u128{1} << (~id & 127) - so print the raw words rather than
+			// assume they agree.
+			{
+				static std::atomic<u32> s_sel{0};
+
+				if (const u32 sn = s_sel++; (sn & 0xFF) == 0)
+				{
+					cellSpurs.error("Thor SELECT_TASK #%u: ready0=%016llx%016llx running=%016llx%016llx rbnr=%016llx%016llx last=%u",
+						sn, ready0._u64[0], ready0._u64[1], running._u64[0], running._u64[1],
+						readyButNotRunning._u64[0], readyButNotRunning._u64[1],
+						+taskset->last_scheduled_task);
+				}
+			}
 			if (taskset->wkl_flag_wait_task < CELL_SPURS_MAX_TASK)
 			{
 				readyButNotRunning._u &= ~(u128{1} << (~taskset->wkl_flag_wait_task & 127));
