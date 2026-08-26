@@ -10754,18 +10754,36 @@ each is "validate, load one field, store to out-param":
     cellSpursQueueGetDirection      lwz r0,0x1c(r11)   -> u32 @ 0x1C
     cellSpursQueueGetTasksetAddress ld  r0,0x60(r11)   -> u64 @ 0x60
 
-So, as far as the accessors reach:
+`_cellSpursQueueInitialize` (0x164c0) then writes EVERY field through r5, which
+completes the layout - an initialiser is the best possible source for a struct:
+
+    stw r31,0x00(r5)   stw r31,0x04(r5)   ; two counters, both zeroed
+    stw r7, 0x08(r5)   ; entry size   (arg)
+    stw r8, 0x0C(r5)   ; depth        (arg)
+    std r0, 0x10(r5)   ; buffer       (u64)
+    stw r9, 0x18(r5)
+    stw r10,0x1C(r5)   ; direction    (arg)
+    std r11,0x60(r5)   ; taskset      (u64)
+    std r3, 0x68(r5)   ; spurs        (u64)
 
     struct CellSpursQueue
     {
-        u8        unk00[0x08];   // 0x00
+        be_t<u32> head;          // 0x00  zeroed at init, ring counter
+        be_t<u32> tail;          // 0x04  zeroed at init, ring counter
         be_t<u32> entry_size;    // 0x08
-        be_t<u32> depth;         // 0x0C  (capacity, used by Size's wrap maths)
-        u8        unk10[0x0C];   // 0x10
+        be_t<u32> depth;         // 0x0C  capacity; Size() wraps against it
+        vm::bptr<void, u64> buffer; // 0x10
+        be_t<u32> x18;           // 0x18
         be_t<u32> direction;     // 0x1C
-        u8        unk20[0x40];   // 0x20
+        u8 unk20[0x40];          // 0x20
         vm::bptr<CellSpursTaskset, u64> taskset; // 0x60
+        vm::bptr<CellSpurs, u64> spurs;          // 0x68
     };
+
+Which counter is head and which is tail is not yet proven - `cellSpursQueueSize`
+reads 0x0C and does signed wrap arithmetic over the pair, so stepping that
+function settles it. Note also `lbz r0,0xe(r11)` elsewhere, a byte read inside the
+0x0C word: depth is probably packed rather than a plain u32.
 
 **Validation contract**, identical in every entry point:
 
