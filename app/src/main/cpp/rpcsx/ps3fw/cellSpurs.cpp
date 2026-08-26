@@ -4253,10 +4253,31 @@ static bool spurs_queue_valid(vm::ptr<CellSpursQueue> queue, s32& error)
 	return true;
 }
 
-s32 _cellSpursQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 size, u32 depth, u32 direction)
+// SIGNATURE FROM THE FIRMWARE PROLOGUE, NOT FROM THE LFQueue ANALOGY.
+//
+// The first version copied _cellSpursLFQueueInitialize's shape and put the queue
+// in argument 2. That was WRONG and it corrupted memory: argument 2 is the
+// TASKSET, so writing 0x70 bytes of queue there zeroed CellSpursTaskset::spurs at
+// 0x60, and the title then died in _spurs::task_start with
+// `Verification failed (object: 0x0)` because cellSpursWakeUp got a null spurs.
+//
+// libsre 0x164c0 settles the mapping. PPC64 passes args in r3..r10:
+//
+//     lwz r0,0x74(r4)          ; r4->0x74 is CellSpursTaskset::wid
+//     ld  r3,0x60(r4)          ; r4->0x60 is CellSpursTaskset::spurs   -> r4 = taskset
+//     rlwinm r0,r5,0,0x19,0x1f ; r5 & 0x7f  -> r5 = queue, 128-byte aligned
+//     rlwinm r0,r6,0,0x1c,0x1f ; r6 & 0x0f  -> r6 = buffer, 16-byte aligned
+//     cmplwi r7,0x4000         ; r7 = size, capped at 0x4000
+//     or  r10,r9,r9 ... stw r10,0x1c(r5)   ; r9 = direction
+//
+// and the epilogue stores `taskset->spurs` (loaded into r3) at queue+0x68, with
+// the taskset itself at queue+0x60. `cmpwi cr6,r4,0x0` plus the branch at 0x1654c
+// is the "taskset OR spurs" path: when the taskset argument is null the spurs
+// argument is used instead.
+s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset> taskset, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 size, u32 depth, u32 direction)
 {
-	cellSpurs.warning("_cellSpursQueueInitialize(pTasksetOrSpurs=*0x%x, queue=*0x%x, buffer=*0x%x, size=%d, depth=%d, direction=%d)",
-		pTasksetOrSpurs, queue, buffer, size, depth, direction);
+	cellSpurs.warning("_cellSpursQueueInitialize(spurs=*0x%x, taskset=*0x%x, queue=*0x%x, buffer=*0x%x, size=%d, depth=%d, direction=%d)",
+		spurs, taskset, queue, buffer, size, depth, direction);
 
 	s32 error = CELL_OK;
 
@@ -4265,9 +4286,21 @@ s32 _cellSpursQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpursQu
 		return error;
 	}
 
-	if (!buffer || !depth)
+	if (!buffer || !depth || (!taskset && !spurs))
 	{
 		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// r6 & 0x0f: the buffer must be 16-byte aligned.
+	if (buffer.addr() % 16)
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	// cmplwi cr7,r7,0x4000
+	if (size > 0x4000)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
 	}
 
 	// Mirrors the firmware's store order at libsre 0x165c4.
@@ -4278,14 +4311,18 @@ s32 _cellSpursQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpursQu
 	queue->buffer.set(buffer.addr());
 	queue->x18 = 0;
 	queue->direction = direction;
-	// The firmware stores two DIFFERENT values here - std r11,0x60(r5) and
-	// std r3,0x68(r5) - and only r3 is the incoming argument. Which object r11
-	// is derived from is not yet established, so store the argument as the
-	// taskset (the name of the parameter) and leave spurs NULL rather than
-	// aliasing them. A wrong pointer at 0x68 is worse than a null one: anything
-	// that writes through it corrupts whatever it actually points at.
-	queue->taskset.set(pTasksetOrSpurs.addr());
-	queue->spurs.set(0);
+	// std r11,0x60(r5) = the taskset, std r3,0x68(r5) = taskset->spurs (r3 is
+	// reloaded from r4->0x60 at 0x1655c). When no taskset is given the spurs
+	// argument stands in, which is the branch at 0x1654c.
+	queue->taskset.set(taskset.addr());
+	if (taskset)
+	{
+		queue->spurs.set(taskset->spurs.addr());
+	}
+	else
+	{
+		queue->spurs.set(spurs.addr());
+	}
 
 	return CELL_OK;
 }

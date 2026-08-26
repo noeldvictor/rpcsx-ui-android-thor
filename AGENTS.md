@@ -10926,3 +10926,48 @@ path nothing could reach before the queue existed. That is the thread to pull.
 **This code only runs when cellSpurs is HLE'd.** The shipped configuration loads
 the real libsre via `sys_prx_load_module`, so the shipped 19.87 fps path never
 touches any of it.
+
+## HLE SPURS RENDERS. 31 frames, no crash, no halt.
+
+    frames=31   fatal=0   halts=0   tasksetDispatch=2   emu 0:00:10
+
+First frames ever produced with `hle_libs='libsre.sprx'` and the HLE SPURS
+kernel. The blocker was a memory corruption in the queue implementation, found by
+reading the firmware's argument validation instead of reasoning by analogy.
+
+### The signature was wrong, and it zeroed the taskset
+
+`_cellSpursQueueInitialize` was written with the shape of
+`_cellSpursLFQueueInitialize` - queue as argument 2. The firmware prologue at
+libsre 0x164c0 says otherwise, because it validates each argument distinctively:
+
+    lwz r0,0x74(r4)            ; r4->0x74 = CellSpursTaskset::wid
+    ld  r3,0x60(r4)            ; r4->0x60 = CellSpursTaskset::spurs  -> r4 IS the taskset
+    rlwinm r0,r5,0,0x19,0x1f   ; r5 & 0x7f -> r5 is the QUEUE (128-byte aligned)
+    rlwinm r0,r6,0,0x1c,0x1f   ; r6 & 0x0f -> r6 is the buffer (16-byte aligned)
+    cmplwi r7,0x4000           ; r7 = size, capped at 0x4000
+    or r10,r9,r9 ... stw r10,0x1c(r5)  ; r9 = direction
+
+PPC64 passes args in r3..r10, so the real signature is
+
+    _cellSpursQueueInitialize(spurs, taskset, queue, buffer, size, depth, direction)
+
+Writing 0x70 bytes through argument 2 therefore landed on the TASKSET and zeroed
+`spurs` at 0x60 - exactly the null that produced
+`Verification failed (object: 0x0)` in `_spurs::task_start`.
+
+**Both of this session's queue bugs came from reasoning by analogy rather than
+reading the disassembly**: the aliased spurs/taskset pointers, and this argument
+order. Both were memory corruption, not clean failures. The firmware answers these
+questions directly - ask it.
+
+### Where it stops now: 31 frames, then a stall
+
+No fatal, no halt, cores at ~6.9, frames frozen at 31. That matches the known
+simplification: the ring returns `CELL_SPURS_TASK_ERROR_BUSY` when full instead of
+blocking on lwmutex/lwcond, and the notify was removed. Once the queue fills, the
+push fails and the title stops advancing.
+
+`queue->spurs` now holds the REAL spurs pointer (`taskset->spurs`, per
+`ld r3,0x60(r4)` then `std r3,0x68(r5)`), so re-adding the wake is no longer the
+corrupting guess it was - that is the next thing to try.
