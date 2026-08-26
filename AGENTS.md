@@ -10564,3 +10564,41 @@ Seven HLE defects fixed, in the order each became visible:
 Shipped frame rate is 19.93 fps and comes entirely from config
 (XFloat Inaccurate, SPU Block Size Mega, Driver Wake-Up Delay 0).
 **HLE has contributed zero frames.**
+
+## WHY HLE SPURS CANNOT RENDER THIS TITLE: the queue API is not implemented
+
+This closes the question. Seven defects were found and fixed, the taskset
+dispatches, the task runs without asserting - and the game still freezes at
+emulated 0:00:09. The last thing the PPU does:
+
+    cellSpurs TODO: cellSpursQueuePushBody()
+    cellSpurs TODO: cellSpursQueuePushBody()
+
+Every SPURS queue function in `cellSpurs.cpp` is a bare stub. They do not even
+declare parameters:
+
+    s32 cellSpursQueuePushBody()
+    {
+        UNIMPLEMENTED_FUNC(cellSpurs);
+        return CELL_OK;
+    }
+
+Eleven of them: `_cellSpursQueueInitialize`, `PopBody`, `PushBody`,
+`AttachLv2EventQueue`, `DetachLv2EventQueue`, `GetTasksetAddress`, `Clear`,
+`Depth`, `GetEntrySize`, `Size`, `GetDirection`. The LFQueue variants are stubbed
+too (`_cellSpursLFQueueInitialize`, `cellSpursLFQueueAttachLv2EventQueue`).
+
+The title pushes work onto a SPURS queue, gets `CELL_OK`, and nothing is queued.
+The consuming task never receives work and the game waits forever. That is the
+whole of the "tasks run, six SPUs busy, frames=0" signature - not a bug left to
+find.
+
+**So HLE SPURS for this title is blocked on IMPLEMENTING the queue API, not on
+debugging.** That is real work: the SPURS queue is a ring buffer in shared memory
+with SPU-side consumers, and it needs correct DMA and reservation semantics on
+both sides. Nothing in the seven fixes is wasted - they are all prerequisites -
+but none of them can produce a frame while the push is a no-op.
+
+Do not restart HLE frame-rate attempts for BLUS30357 until the queue API exists.
+Verify with one boot: if `cellSpursQueuePushBody` still logs TODO, the run cannot
+render and the result is known in advance.
