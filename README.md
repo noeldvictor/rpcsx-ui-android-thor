@@ -623,3 +623,41 @@ file carries its own license.
     <img src="docs/images/fork-it-button.png" alt="Fork and build yourself - no APK support queue" width="620">
   </a>
 </p>
+
+## Transformers: War for Cybertron (BLUS30357) on AYN Thor — 2026-08-26
+
+Frame rate in restored 3D combat went **16.23 → 19.87 FPS (+22.4%)**, verified
+end to end with the shipped profile and no debug property overrides:
+
+    "spuBlockSize":"Mega"  "driverWakeUpDelay":"0"  "rsxFifoAccuracy":"Atomic"
+    mean fps = 19.87 over 6 samples, coresBusy 4.52
+
+Three settings, each measured interleaved against its own control on the same
+savestate, gated on `coresBusy > 4.5` so only real gameplay counts:
+
+| setting | gain | note |
+|---|---|---|
+| `XFloat Accuracy: Inaccurate` | +16.2% | lossy mode, verified by screenshot that the picture is unchanged |
+| `SPU Block Size: Mega` | +2.2% | also −5.6% CPU, which matters on a device that runs in the nineties Celsius |
+| `Driver Wake-Up Delay: 0` | +2.8% | boot-tested 5×, 0 crashes, because the old value was chosen for stability |
+
+**Two of the three had never actually applied.** `cfg::_enum::from_string` matches
+the enum's own capitalisation, so `spu_block_size=mega` failed silently while the
+code logged "forced to mega" — every `/diag` reported `Safe`. Same trap as
+`XFloat`'s `Inaccurate`. Any setting that claims to be applied needs an
+engagement proof; the SPU object cache growing (3794 → 4556 on the first Mega
+arm) is the one used here.
+
+### HLE SPURS: seven defects fixed, and a hard blocker found
+
+SPURS went from six SPUs parked on `wid=32` for weeks to dispatching the taskset
+and executing guest task code. Ghidra on the real kernel's local store supplied
+the decisive reads — `rotm` semantics proving `0x8000 >> 32` must clear nothing,
+and `ceqi r7,r20,0x20` at LS `0x290` proving hardware branches on
+`wklCurrentId == 32` where the port tested the wrong operand.
+
+It still renders nothing, and the reason is not a bug: **the entire SPURS queue
+API is unimplemented.** All eleven functions are bare stubs that declare no
+parameters and return `CELL_OK`. The title pushes work, nothing is queued, and it
+waits forever at emulated 0:00:09. `CellSpursQueue` is not even defined in the
+tree. See `AGENTS.md` for the full list of fixes and the handoff.
