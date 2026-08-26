@@ -12242,3 +12242,69 @@ against the LLE control, because that path demonstrably works: the LLE run
 reaches code that calls cellVoice 17 times and HLE never does, which says the
 two runs diverge somewhere earlier than the renderer. Find the divergence point
 in the PPU call stream before touching the RSX side.
+
+# The Title Never Finishes Loading Under HLE. It Is Not A Render Bug.
+
+2026-08-26. Differential against the LLE control, which renders the same scene
+DRAWN at 30 fps with 41,042 distinct colours.
+
+## Module-call profile, same title, same point
+
+                     LLE (renders)   HLE (flat green)
+    sys_memory            767              79
+    sys_fs                551             347
+    cellAudio              64               0
+    sys_spu                40              23
+
+The HLE run does a TENTH the allocation and never reaches cellAudio at all. The
+green frame is a LOADING screen, not a broken renderer.
+
+## Where it stops
+
+All non-SPURS activity ends at t=17.17s (last calls are RSX iomap), and
+`main_thread`'s final log line is at **t=12.01s**. For the next three minutes
+the only threads logging anything are the SPU kernels and RenderingThread.
+
+`main_thread`'s last SPURS sequence, which repeats and then stops:
+
+    cellSpursQueuePushBody(queue=*0x1030e400, buffer=*0xd00402f0, taskId=1)
+    cellSpursWakeUp(spurs=*0x1e97a80)
+    cellSpursSendWorkloadSignal(spurs=*0x1e97a80, wid=2)
+    cellSpursWakeUp(spurs=*0x1e97a80)      <- last line ever
+
+## It is SPINNING, not deadlocked - and that killed a wrong fix
+
+`cellSpursWakeUp` has exactly one blocking path,
+`_spurs::signal_to_handler_thread`, which does
+`sys_lwmutex_lock(spurs->mutex, 0)` - timeout 0, wait forever. That looked
+conclusive, and it is WRONG.
+
+Per-thread CPU over 10 s (100 jiffies = one full core):
+
+    rsx::thread        974      ~97% of a core
+    SPU[0..5]          ~900 each
+    PPU[0x1000000]     161      main_thread - RUNNING, not blocked
+    PPU[0x1000005]     173      FlipPump
+
+**main_thread is executing guest code at ~16% of a core.** It is busy-waiting
+inside the title's own code, which is why it emits no further HLE calls. A
+deadlock fix would have been aimed at a deadlock that does not exist.
+
+The lwcond handshake is in fact sound: `sys_lwcond_wait` releases the mutex
+while waiting, so the handler thread does not hold it.
+
+## What this reframes
+
+Everything is spinning - RSX at 97%, six SPUs at ~90%, main_thread and FlipPump
+alive - and all of them are waiting on something none of them will receive. The
+SPURS queue is measured healthy and is NOT the thing to look at again.
+
+The question is now: **what is main_thread busy-waiting on at ~t=12s?** Its last
+known PC is `[0x009dc0dc]` (game code, from the log's own bracket annotation).
+Sampling `main_thread`'s PPU `cia` while it spins and disassembling that address
+against the PPU ELF (PowerPC:BE:64) names the loop and what it polls. That is
+one probe and one Ghidra pass, and it is the next thing to do - not another fix.
+
+DO NOT patch anything from the list already eliminated: the SPURS queue, the LF
+queue, cellOvis, the taskset writeback, the yield capture, the ring convention,
+and the handler-thread mutex are all measured and accounted for.
