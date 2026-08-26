@@ -11951,3 +11951,59 @@ missing completion looks like, not a fixed arithmetic bound.
 to 122 2KB LS blocks, ~244KB each way, at thousands of yields per second. The
 arm measured fps=1.40. If frames ever flow, throttle re-dispatch to every Nth
 yield before reading anything into the frame rate.
+
+# HLE SPURS: The Queue Is Fixed. The Title Still Does Not Draw.
+
+Measured 2026-08-26, build with taskset_writeback + yield_redispatch +
+queue_monotonic (2*depth) + signal_atomic, all confirmed live on device.
+
+## The queue path now works, end to end
+
+    QUEUE RING #7360: head=192 tail=192 depth=256 used=0
+    QUEUE RING #7424: head=256 tail=256 depth=256 used=0
+
+`head == tail`, `used = 0`, held across ~475,000 push calls. The consumer keeps
+perfect pace. Compare the start of this work: `head` frozen at 42 with the
+producer jammed on a full ring.
+
+    frames      33 (hard stall)  ->  2,945+ and climbing
+    fps         0.00             ->  ~29.5 sustained
+    dispatches  1                ->  hundreds, continuous
+
+## Two of my own inferences, corrected
+
+**"The consumer task is never started."** WRONG, and it was an artifact of a
+sampled probe. The dispatch probe printed every 16th call, so a distribution of
+"724 isWaiting=1 against 1 isWaiting=0" said nothing about the FIRST dispatch.
+Logging every start unconditionally settles it:
+
+    Thor TASK START #0 (dispatch #0): taskId=0 taskset=0x101b4e80
+    Thor TASK START #1 (dispatch #1): taskId=0 taskset=0x10364100
+
+Both tasks start. **A sampled probe cannot answer a question about a first
+occurrence** - log the occurrence itself, not every Nth of it.
+
+**The frame checker had a false negative.** It required a low colour count AND a
+high near-black fraction, so a flat GREEN frame passed as DRAWN: 29 fps over
+2,945 frames, `distinct=148`, `near_black=0.0%`. The clear colour is not always
+black, so darkness was the wrong axis. It now reports BLANK for any flat frame
+and keeps BLACK only as a label for which kind of blank it is. Re-validated
+against six captures.
+
+## What is actually left
+
+The title renders a flat clear at ~29 fps with `RSX 5.8%` and the consumer task
+yielding 273,152 times. The SPURS plumbing is healthy; the task is spinning
+rather than producing draw work, and `/loadstate` never succeeds, so the run
+never leaves early boot.
+
+So the remaining problem is NOT the queue, NOT the taskset scheduler, and NOT
+the signal path - all three are now instrumented and behaving. It is whatever
+the started task is waiting on inside its own code.
+
+**Cost to account for first.** `yield_redispatch_fix` forces a full context
+save/restore per yield - 0x380 bytes plus up to 122 2KB LS blocks, ~244KB each
+way - and the task yields 273,152 times. That is on the order of 130 GB of
+memcpy. Before reading anything into "the task spins", throttle re-dispatch to
+every Nth yield and re-measure: the spin may be an artifact of making every
+yield enormously expensive.

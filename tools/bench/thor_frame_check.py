@@ -11,8 +11,8 @@ Usage:
     python thor_frame_check.py [--serial 192.168.1.3:5555] [--save out.png]
 
 Exit status is the contract, so a harness can gate on it:
-    0  frame is DRAWN      - the fps sample beside it may be reported
-    1  frame is BLACK      - discard the sample, the path renders nothing
+    0  frame is DRAWN         - the fps sample beside it may be reported
+    1  frame is BLANK/BLACK   - discard the sample, nothing is being drawn
     2  could not decide    - no device, capture failed, missing Pillow
 
 Thresholds come from measured captures on this device at 1920x1080:
@@ -127,16 +127,28 @@ def main():
         if temporary and os.path.exists(temporary) and not args.save:
             pass  # leave it; a failed run is exactly when the image is wanted
 
-    black = (result["distinct"] < MIN_DISTINCT_COLOURS
-             and result["near_black"] > MAX_NEAR_BLACK_FRACTION)
-    verdict = "BLACK" if black else "DRAWN"
+    # DARKNESS IS NOT THE TEST - FLATNESS IS.
+    #
+    # This originally required a LOW colour count AND a high near-black
+    # fraction, and that let a flat GREEN frame through as DRAWN: the emulator
+    # was clearing the framebuffer and submitting no geometry, at 29 fps over
+    # 2,945 frames, with distinct=148 and near_black=0.0%. The clear colour is
+    # not always black, so keying on black was the wrong axis.
+    #
+    # A frame is UNDRAWN when it carries almost no distinct colours, whatever
+    # those colours are. Darkness is kept only as a label, to say WHICH kind of
+    # blank it is.
+    blank = result["distinct"] < MIN_DISTINCT_COLOURS
+    black = blank and result["near_black"] > MAX_NEAR_BLACK_FRACTION
+    verdict = "BLACK" if black else ("BLANK" if blank else "DRAWN")
     print("frame-check: %s  %dx%d  distinct=%d  near-black=%.1f%%  %dKB  %s"
           % (verdict, result["width"], result["height"], result["distinct"],
              100.0 * result["near_black"], result["bytes"] // 1024, path))
-    if black:
+    if blank:
         print("frame-check: DISCARD any fps sample taken with this frame - "
-              "the path is presenting empty frames.", file=sys.stderr)
-    return 1 if black else 0
+              "the path is presenting empty frames (%d distinct colours)."
+              % result["distinct"], file=sys.stderr)
+    return 1 if blank else 0
 
 
 if __name__ == "__main__":

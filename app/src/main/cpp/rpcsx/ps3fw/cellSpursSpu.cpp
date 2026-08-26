@@ -2808,7 +2808,28 @@ void spursTasksetDispatch(spu_thread& spu)
 	{
 		static std::atomic<u32> s_disp{0};
 
-		if (const u32 dn = s_disp++; (dn & 0x0F) == 0)
+		// EVERY-16th SAMPLING CANNOT ANSWER "WAS THIS TASK EVER STARTED?".
+		//
+		// isWaiting=0 is the START path - it loads the task ELF and enters it.
+		// isWaiting=1 is RESUME, which restores a context save area. A task that
+		// is only ever resumed has never had its code loaded, and would execute
+		// whatever is left in local store.
+		//
+		// A sampled probe read 724 isWaiting=1 against 1 isWaiting=0 and that was
+		// over-read as "never started" - the first dispatch for a taskset can
+		// easily fall in the 15 of 16 that are not printed. So log EVERY start
+		// unconditionally, and the first few dispatches per taskset, and count
+		// starts per taskset. Then the question has an answer instead of an
+		// inference.
+		const u32 dn = s_disp++;
+
+		if (isWaiting == 0)
+		{
+			static std::atomic<u32> s_starts{0};
+			cellSpurs.error("Thor TASK START #%u (dispatch #%u): taskId=%u taskset=0x%x",
+				s_starts++, dn, taskId, ctxt->taskset.addr());
+		}
+		else if (dn < 8 || (dn & 0x3F) == 0)
 		{
 			cellSpurs.error("Thor DISPATCH #%u: selected taskId=%u isWaiting=%u (exit if >= %u) taskset=0x%x",
 				dn, taskId, isWaiting, +CELL_SPURS_MAX_TASK, ctxt->taskset.addr());
