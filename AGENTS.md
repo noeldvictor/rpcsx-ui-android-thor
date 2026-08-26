@@ -11103,3 +11103,27 @@ it by taking `taskset->spurs`.
   and at 0x18 before wiring it - **do not guess this**, two guesses tonight were
   memory corruption.
 - Only then does BUSY-instead-of-blocking matter.
+
+## cellSpursQueueAttachLv2EventQueue: the contract, from libsre 0x16778
+
+    lwz r0,0x1c(r3)          ; direction != 0        else 0x80410909 PERM
+    lwz r0,0x18(r3)          ; MUST already be -1    else 0x8041090f STAT
+    ld  r0,0x68(r3)          ; spurs != 0            else 0x80410902 INVAL
+    addi r4,r1,0x74 / addi r5,r1,0x70 / li r6,0x1
+    ... delegates with (spurs, &out, &out, 1)
+
+Two things fall out:
+
+1. **Field 0x18 is the "no event queue attached" sentinel and its value is -1.**
+   `_cellSpursQueueInitialize` must set it to 0xFFFFFFFF; setting it to 0 (as the
+   first implementation did, now fixed) makes every attach fail with STAT before
+   it does anything.
+2. The attach **delegates to `cellSpursAttachLv2EventQueue`**, which this tree
+   ALREADY IMPLEMENTS. So the notify half is not another from-scratch job - it is
+   a wrapper: validate, call the existing function, store the resulting queue id
+   in 0x18.
+
+That makes the remaining work small and specific, and it is the last thing between
+HLE and continuous frames: the consumer waits on that event queue
+(TASK SYSCALL #2 WAIT_SIGNAL), and nothing signals it today, which is why
+PopBody is called 0 times against 479,359 pushes.

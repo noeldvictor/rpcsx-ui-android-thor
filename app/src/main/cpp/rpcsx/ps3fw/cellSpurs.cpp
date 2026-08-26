@@ -4309,7 +4309,17 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 	queue->entry_size = size;
 	queue->depth = depth;
 	queue->buffer.set(buffer.addr());
-	queue->x18 = 0;
+	// 0x18 IS THE "NO EVENT QUEUE ATTACHED" SENTINEL, AND IT IS -1, NOT 0.
+	//
+	// cellSpursQueueAttachLv2EventQueue (libsre 0x16778) refuses to attach unless
+	// this field already reads -1:
+	//
+	//     lwz   r0,0x1c(r3)   ; direction must be non-zero else 0x80410909 PERM
+	//     lwz   r0,0x18(r3)   ; cmpwi r0,-0x1 ; bne -> 0x8041090f STAT
+	//     ld    r0,0x68(r3)   ; spurs must be non-null else 0x80410902 INVAL
+	//
+	// Initialising it to 0 would make every attach fail with STAT.
+	queue->x18 = 0xFFFFFFFF;
 	queue->direction = direction;
 	// std r11,0x60(r5) = the taskset, std r3,0x68(r5) = taskset->spurs (r3 is
 	// reloaded from r4->0x60 at 0x1655c). When no taskset is given the spurs
