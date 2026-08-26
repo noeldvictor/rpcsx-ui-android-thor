@@ -4428,7 +4428,32 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		const u32 tail = queue->tail.load();
 		const u32 head = queue->head.load();
 
-		if (tail - head >= depth)
+		// WRAPPED INDICES, NOT MONOTONIC COUNTERS.
+		//
+		// cellSpursQueueSize (libsre 0x168fc) computes the used count as
+		//
+		//     if (head <= tail) used = tail - head
+		//     else              used = tail + depth - head
+		//
+		//     lwz r3,0xc(r29) ; cmpw cr7,r9,r0 ; subf r11,r9,r0
+		//     ... subf r9,r3,r9 ; add r0,r0,r3 ; subf r11,r9,r0
+		//
+		// so head and tail are INDICES MODULO DEPTH, and the guest consumer reads
+		// them that way. Writing monotonic counters made `used` meaningless to the
+		// SPU side once tail passed depth: measured, the consumer drained ~40
+		// entries and then saw an empty queue forever while tail ran to 302.
+		//
+		// One slot stays reserved so full and empty remain distinguishable, which
+		// is what makes `tail == head` mean empty in the firmware's arithmetic.
+		// RAW HEAD, NOT NORMALISED - measured, and this matters.
+		//
+		// Reducing head mod depth looked harmless (the used count comes out the
+		// same for the observed values) but it collapsed dispatch activity: the
+		// queue's workload went from 45 sampled dispatches to 0, and frames from
+		// 68 to 42. Use the firmware's own comparison on the raw values.
+		const u32 used = head <= tail ? tail - head : tail + depth - head;
+
+		if (used + 1 >= depth)
 		{
 			// BLOCK, DO NOT SPIN. Returning BUSY here starves the very consumer
 			// that has to drain the ring: the caller retried immediately and the
@@ -4487,9 +4512,9 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
-		if (queue->tail.compare_and_swap_test(tail, tail + 1))
+		if (queue->tail.compare_and_swap_test(tail, (tail + 1) % depth))
 		{
-			slot = tail % depth;
+			slot = tail;
 			break;
 		}
 	}
@@ -4680,9 +4705,9 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
-		if (queue->head.compare_and_swap_test(head, head + 1))
+		if (queue->head.compare_and_swap_test(head, (head + 1) % depth))
 		{
-			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + (head % depth) * entry_size), entry_size);
+			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + head * entry_size), entry_size);
 			break;
 		}
 	}

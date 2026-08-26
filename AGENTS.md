@@ -11614,3 +11614,45 @@ The remaining question is why the guest task polls and does not see queue data
 that is demonstrably present in main memory. That needs SPU-side visibility into
 what the task reads - the HLE layer cannot see it, because the task is guest code.
 `debug.rpcsx.thor.spu_ls_dump` plus the task's ELF is the route.
+
+## Ring indices are MODULO DEPTH, and the starvation is intermittent
+
+`cellSpursQueueSize` (libsre 0x168fc) computes the used count as
+
+    if (head <= tail) used = tail - head
+    else              used = tail + depth - head
+
+    lwz r3,0xc(r29) ; cmpw cr7,r9,r0 ; subf r11,r9,r0
+    ... subf r9,r3,r9 ; add r0,r0,r3 ; subf r11,r9,r0
+
+so head and tail are INDICES MODULO DEPTH. The implementation had monotonic
+counters, which made `used` meaningless to the guest consumer once tail passed
+depth. Push and pop now wrap, one slot reserved so `tail == head` still means
+empty.
+
+### What the fix did, and what it did NOT do
+
+The best run went from **0 dispatches of the queue's workload** to **45 of 46
+sampled**, with frames 29 -> 68. But it does not reproduce:
+
+    run A   frames 68   wid=2 dispatches 45
+    run B   frames 36   wid=2 dispatches  6
+    run C   frames 31   wid=2 dispatches  0
+
+Same build, three runs. **So the starvation is NOT fixed - it is intermittent.**
+Do not cite the 68/45 run as a result.
+
+That spread is itself diagnostic: whether the queue's workload is ever selectable
+is a race. It has `maxContention = 1`, and the contention counter has been
+measured running away to 253, so a single accounting error permanently closes its
+gate. Sometimes the SPU wins the race and the workload runs; usually it does not.
+
+**The contention accounting is the remaining defect**, and it is now the only
+thing between here and a consumer that drains reliably.
+
+### Head normalisation is a REGRESSION - do not re-add it
+
+Reducing head mod depth before the comparison looks harmless and produces the same
+used count for the observed values, but measured it collapsed dispatch activity
+from 46 sampled to 1 and frames from 68 to 42. Use the firmware's comparison on
+the raw values.

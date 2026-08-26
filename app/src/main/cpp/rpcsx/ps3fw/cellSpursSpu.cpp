@@ -1176,6 +1176,22 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 		}
 	}
 
+	// WHICH WORKLOAD IS ACTUALLY BEING DISPATCHED, AND WITH WHAT ARGUMENT?
+	//
+	// 183 of 183 sampled taskset dispatches carried taskset 0x101b4e80 and ZERO
+	// carried the queue's taskset 0x10364100, so either the kernel only ever
+	// selects that workload, or the argument handed to the taskset PM is wrong.
+	// wklInfo->arg is what becomes ctxt->taskset in spursTasksetEntry.
+	{
+		static std::atomic<u32> s_dw{0};
+
+		if (const u32 dn = s_dw++; (dn & 0x3F) == 0)
+		{
+			cellSpurs.error("Thor DISPATCH_WKL #%u: spu=%u wid=%u addr=0x%x arg=0x%llx",
+				dn, spu.index, wid, wklInfo->addr.addr(), +wklInfo->arg);
+		}
+	}
+
 	// CONSUME THE SIGNAL HERE, AT DISPATCH, NOT AT SELECTION.
 	//
 	// The original clears it inside the selector via `0x8000 >> wklSelectedId`.
@@ -2285,7 +2301,7 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 			{
 				static std::atomic<u32> s_sel{0};
 
-				if (const u32 sn = s_sel++; (sn & 0xFF) == 0)
+				if (const u32 sn = s_sel++; (sn & 0x0F) == 0)
 				{
 					cellSpurs.error("Thor SELECT_TASK #%u: ready0=%016llx%016llx running=%016llx%016llx rbnr=%016llx%016llx last=%u",
 						sn, ready0._u64[0], ready0._u64[1], running._u64[0], running._u64[1],
@@ -2516,6 +2532,20 @@ void spursTasksetDispatch(spu_thread& spu)
 	u32 taskId;
 	u32 isWaiting;
 	spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_SELECT_TASK, &taskId, &isWaiting);
+
+	// WHAT DOES DISPATCH DO WITH THE RESULT? If taskId >= 128 the taskset EXITS
+	// immediately, which would explain a consumer that never resumes even though
+	// SELECT_TASK can see it. Print both the id and the waiting flag.
+	{
+		static std::atomic<u32> s_disp{0};
+
+		if (const u32 dn = s_disp++; (dn & 0x0F) == 0)
+		{
+			cellSpurs.error("Thor DISPATCH #%u: selected taskId=%u isWaiting=%u (exit if >= %u) taskset=0x%x",
+				dn, taskId, isWaiting, +CELL_SPURS_MAX_TASK, ctxt->taskset.addr());
+		}
+	}
+
 	if (taskId >= CELL_SPURS_MAX_TASK)
 	{
 		spursTasksetExit(spu);

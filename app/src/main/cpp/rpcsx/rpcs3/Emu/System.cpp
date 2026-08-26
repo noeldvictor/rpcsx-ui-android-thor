@@ -1666,6 +1666,35 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				}
 			}
 
+			// SPU GETLLAR BUSY WAITING, which defaults to 100 percent.
+			//
+			// This title spends ~29% of all cycles in VM locking
+			// (range_lock_internal 15.37%, writer_lock 10.69%, passive_lock 3.07%)
+			// with six SPU threads on eight cores, so a full-rate busy wait on
+			// load-locked reservations is worth measuring rather than assuming.
+			// The profile sets no reservation options at all.
+			//
+			//   debug.rpcsx.thor.spu_getllar_busy = 0..100
+			{
+				char gl_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.spu_getllar_busy", gl_value) > 0 && gl_value[0])
+				{
+					const long parsed = std::strtol(gl_value, nullptr, 10);
+
+					if (parsed >= 0 && parsed <= 100)
+					{
+						g_cfg.core.spu_getllar_busy_waiting_percentage.set(static_cast<u32>(parsed));
+						sys_log.error("Thor: SPU GETLLAR busy waiting set to %d%% (now %u)",
+							static_cast<int>(parsed), +g_cfg.core.spu_getllar_busy_waiting_percentage);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring SPU GETLLAR busy waiting '%s' (expected 0..100)", gl_value);
+					}
+				}
+			}
+
 			{
 				char hle_value[PROP_VALUE_MAX]{};
 
