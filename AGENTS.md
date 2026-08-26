@@ -10817,3 +10817,36 @@ the last piece, not the first; do the counters and Initialize first.
 Export addresses come from pairing the FNID table (file 0x1e024, vaddr 0x1df24)
 with the faddrs table (file 0x1e2f8, vaddr 0x1e1f8), 181 entries; each faddr
 points at an OPD entry whose first word is the real code address.
+
+## cellSpursQueuePushBody: the protocol, read off the firmware
+
+`0x169d0`, after the shared null/alignment validation:
+
+    lwz   r0,0x1c(r29)   ; direction
+    cmpwi r0,0x2         ; MUST be 2 to push, else return 0x80410909
+    addi  r9,r9,0x4      ; &queue->tail
+    lwarx r11,0,r28      ; load-and-RESERVE the counter at 0x04
+    sync  0x1            ; lwsync
+    lwz   r0,0x0(r29)    ; head  @0x00
+    lwz   r8,0xc(r29)    ; depth @0x0C
+    subf/add ...         ; wrap arithmetic -> free space
+    bl 0x0001309c        ; taken when the queue is FULL (blocking helper)
+    bl 0x0001d8f8        ; taken after the entry is written (notify helper)
+
+So it is a **PowerPC reservation-based lock-free ring**: `lwarx`/`stwcx.` on the
+tail at 0x04, head at 0x00, capacity at 0x0C, entries of `entry_size` (0x08) in
+the buffer at 0x10. That settles the open question from the layout note - the
+counter at **0x04 is the one PUSH advances**, so 0x00 is head and 0x04 is tail.
+
+This is implementable in HLE: the PPU-side function can do the same protocol with
+`vm::` atomics against the same guest memory, which is what the SPU-side consumer
+reserves against. Two things still need reading before writing code:
+
+- **0x0001309c** - what it waits on when full. Determines whether the HLE version
+  must block on an lv2 event queue or can spin.
+- **0x0001d8f8** - the notify path. Determines what the consumer is woken by;
+  getting this wrong is a silent hang, not an error.
+
+`direction == 2` for push is worth noting on its own: the current stubs accept
+anything, so a title pushing on a pop-direction queue currently gets CELL_OK where
+hardware returns 0x80410909.
