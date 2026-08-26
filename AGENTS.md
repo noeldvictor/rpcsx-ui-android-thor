@@ -10654,3 +10654,19 @@ upstream or by finding the fork's mistake; the functionality has never existed.
 That is the final word on HLE SPURS for BLUS30357. It is blocked on writing code
 that does not exist anywhere, starting with recovering the `CellSpursQueue` ABI
 from `libsre`.
+
+### Recovering the queue ABI: libsre.sprx on device is ENCRYPTED
+
+    /storage/emulated/0/Android/data/net.rpcsx.easy/files/config/dev_flash/sys/external/libsre.sprx
+    114254 bytes, magic 53434500 = "SCE\0"
+
+It is an SCE SELF, not an ELF - RPCS3 decrypts it in memory at load with its
+built-in keys, so the on-disk copy cannot be fed to Ghidra directly. Recovering
+the PPU-side queue ABI needs an unself pass first (`Utilities/unself.cpp`
+upstream), and there is no built RPCS3 host binary in this workspace.
+
+What IS already available for this: `debug-captures/spu-ls/spu_ls_CellSpursKernel0.bin`
+is a decrypted 256 KB SPU local store containing the real kernel and taskset
+policy module, dumped via `debug.rpcsx.thor.spu_ls_dump`. It gives the SPU side of
+any structure the queue touches. The PPU side still has to come from an unself'd
+libsre.
