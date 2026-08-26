@@ -3175,6 +3175,28 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 		{
 			s_seen[which]++;
 
+			// DUMP LOCAL STORE AT THE STALL, not only at the first call.
+			//
+			// The first-call dump showed the consumer had read entry_size=16,
+			// depth=256, buffer=0x1030e480 and direction=2 - our structure, at our
+			// offsets - with head=0 tail=0. At t=10.4s tail really may have been 0,
+			// so that snapshot cannot decide anything. The question is what its
+			// GETLLAR returns once the producer reports the ring FULL.
+			if (s_total.load() == 6000)
+			{
+				char path[256]{};
+				std::snprintf(path, sizeof(path),
+					"/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_stall_%08x.bin",
+					ctxt->taskset.addr());
+
+				if (FILE* f = std::fopen(path, "wb"))
+				{
+					std::fwrite(spu._ptr<void>(0), 1, 0x40000, f);
+					std::fclose(f);
+					cellSpurs.error("Thor STALL DUMP: taskset=0x%x -> %s", ctxt->taskset.addr(), path);
+				}
+			}
+
 			if (const u32 n = s_total++; (n & 0x3F) == 0)
 			{
 				// WHICH TASKSET is yielding? Two exist (0x101b4e80 and 0x10364100)

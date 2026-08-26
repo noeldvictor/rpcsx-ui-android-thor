@@ -6936,6 +6936,56 @@ bool spu_thread::process_mfc_cmd()
 		perf_meter<"GETLLAR"_u64> perf0;
 
 		const u32 addr = ch_mfc_cmd.eal & -128;
+
+		// WHICH ADDRESS DOES THE SPURS QUEUE CONSUMER ACTUALLY RESERVE?
+		//
+		// The HLE producer reports the ring FULL (head=40 tail=296 used=256) while
+		// the guest consumer computes used==0 and returns
+		// CELL_SPURS_TASK_ERROR_AGAIN forever. Both cannot be true of the same 128
+		// bytes, and the consumer gets its queue pointer from a value already in
+		// local store (`lqr r39,-0x6465`), not from anything the HLE hands it. So
+		// log the EA of the reservation itself rather than continuing to assume it
+		// is the queue we push to.
+		//
+		// Distinct addresses only, a handful per SPU - a poll loop reserves one or
+		// two lines, and GETLLAR is far too hot to log unconditionally.
+		//
+		//   debug.rpcsx.thor.getllar_census = 1
+#ifdef __ANDROID__
+		{
+			static const bool s_census = []() noexcept
+			{
+				char v[PROP_VALUE_MAX]{};
+				return __system_property_get("debug.rpcsx.thor.getllar_census", v) > 0 && v[0] && v[0] != '0';
+			}();
+
+			if (s_census)
+			{
+				static std::atomic<u32> s_seen[16]{};
+				static std::atomic<u32> s_n{0};
+
+				bool known = false;
+
+				for (u32 i = 0, have = s_n.load(); i < have && i < 16; i++)
+				{
+					if (s_seen[i].load() == addr) { known = true; break; }
+				}
+
+				if (!known)
+				{
+					const u32 idx = s_n.load();
+
+					if (idx < 16)
+					{
+						s_seen[idx].store(addr);
+						s_n.store(idx + 1);
+						spu_log.error("Thor GETLLAR EA #%u: addr=0x%08x (eal=0x%08x lsa=0x%05x size=0x%x) spu=%u",
+							idx, addr, +ch_mfc_cmd.eal, +ch_mfc_cmd.lsa, +ch_mfc_cmd.size, +id);
+					}
+				}
+			}
+		}
+#endif
 		const auto& data = vm::_ref<spu_rdata_t>(addr);
 
 		if (addr == last_faddr)

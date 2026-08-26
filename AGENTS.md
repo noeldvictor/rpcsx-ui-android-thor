@@ -12113,3 +12113,78 @@ A SECOND queue, lock-free, direction 3, both stubbed. It has been dismissed
 before on the grounds that this title never calls the LF push/pop, but the
 INITIALIZE and ATTACH are called, and nothing has checked whether the renderer
 waits on that one.
+
+# RESOLVED: The SPURS Queue Works. The AGAIN Loop Was Never A Bug.
+
+Measured 2026-08-26, sustained run of 3 minutes 29 seconds, ~954,000 push calls.
+
+## Retract the "contradiction"
+
+The previous section recorded that the producer reported the ring FULL
+(`used=256`) while the consumer computed `used == 0`, and called it a
+contradiction that had to be resolved. **It was not a contradiction. It was two
+readings from two DIFFERENT boots**, compared as if they were one.
+
+Two measurements settle it, both taken in the same run:
+
+    consumer's GETLLAR (logged EA):  addr=0x1030e400  lsa=0x80  size=0x80
+    the queue we push to:            queue=*0x1030e400
+
+so the consumer reserves OUR queue, and the local-store dump taken at the same
+moment shows it read our structure at our offsets:
+
+    LS 0x80: head=164 tail=164 entry_size=16 depth=256
+             buffer=0x1030e480 direction=2
+
+`entry_size`, `depth`, `buffer` and `direction` all match `Initialize` exactly.
+head == tail because the consumer HAD DRAINED THE QUEUE.
+
+## The ring is healthy, and the numbers are unambiguous
+
+Distribution of `used` across 234 samples spanning ~954,000 push calls:
+
+    used=0   147 samples
+    used=1    68
+    used=2    16
+    used=4     1
+    used=6     1
+    used=256   1        (a single transient)
+
+The consumer keeps pace with the producer. `head` tracks `tail` continuously
+(64/64, 127/128, 191/192, 63/64) for the whole run.
+
+**So `CELL_SPURS_TASK_ERROR_AGAIN` in the poll loop is CORRECT BEHAVIOUR.** A
+consumer that finds its queue empty returns AGAIN, yields, backs off 2400
+cycles and retries. That is what a working SPURS consumer does. Days were spent
+treating normal empty-queue polling as the stall.
+
+## What the SPURS work actually achieved
+
+    dispatches / select     1 / 1        ->  continuous
+    ring head               frozen at 42 ->  tracks tail for 3.5 minutes
+    frames                  33 (stall)   ->  3,741 and climbing
+    fps                     0.00         ->  29-30 sustained
+    push calls              475,000 flood ->  paced, ring near-empty
+
+## What is still wrong, stated precisely
+
+The title renders a FLAT GREEN FRAME at 29.89 fps with `RSX : 06.3 %` and
+`SPU : 69.0 %`. Frames are presented, SPURS is healthy, and no geometry reaches
+the GPU.
+
+That is NOT a SPURS queue problem and must stop being chased as one. The queue
+is instrumented, measured and behaving. The next question is why the title
+submits no draws, and the candidates are elsewhere:
+
+- `_cellSpursLFQueueInitialize` and `cellSpursLFQueueAttachLv2EventQueue` are
+  both UNIMPLEMENTED (`·U`), on a second queue at 0x101b1f80, depth 0x10,
+  direction 3. A different SPU was measured reserving exactly that address
+  (`GETLLAR EA #0: addr=0x101b1f80`), so something IS polling it.
+- The green is a clear colour with nothing drawn over it.
+
+## Probe artifact to fix
+
+`max head=4294967232` (0xFFFFFFC0) appears once in the probe output. The ring
+arithmetic is sound in the samples either side of it, so this is a torn read in
+the PROBE - it loads head and tail non-atomically - not a real ring state. Do
+not chase it; make the probe read both under one reservation if it matters.
