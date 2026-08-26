@@ -2716,9 +2716,15 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 
 			if (const u32 n = s_total++; (n & 0x3F) == 0)
 			{
-				cellSpurs.warning("Thor SYSCALL CENSUS n=%u: exit=%u yield=%u waitSig=%u poll=%u recvFlag=%u (taskId=%u)",
+				// WHICH TASKSET is yielding? Two exist (0x101b4e80 and 0x10364100)
+				// and each has a task 0, so taskId alone cannot tell them apart.
+				// The queue is bound to 0x10364100 - if the spinner is the OTHER
+				// taskset, the queue's consumer is simply never scheduled and the
+				// yield loop is a red herring.
+				cellSpurs.warning("Thor SYSCALL CENSUS n=%u: exit=%u yield=%u waitSig=%u poll=%u recvFlag=%u (taskId=%u taskset=0x%x spu=%u)",
 					n, s_seen[0].load(), s_seen[1].load(), s_seen[2].load(),
-					s_seen[3].load(), s_seen[4].load(), +ctxt->taskId);
+					s_seen[3].load(), s_seen[4].load(), +ctxt->taskId,
+					ctxt->taskset.addr(), +ctxt->spuNum);
 			}
 		}
 	}

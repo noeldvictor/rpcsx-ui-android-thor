@@ -11569,3 +11569,48 @@ misled by single samples.
 - **Re-signalling the workload on every push** - implemented and measured, no
   change (head still froze). Kept because it matches firmware behaviour, but it is
   not the fix.
+
+## The consumer IS scheduled and IS the queue's task. It polls without consuming.
+
+    CENSUS n=5568: exit=0 yield=5568 waitSig=1 poll=0 recvFlag=0
+                   (taskId=0 taskset=0x10364100 spu=0)
+
+`0x10364100` is the taskset the queue is bound to. So the spinning task is the
+QUEUE'S OWN CONSUMER, running on SPU 0, and it holds wkl2's single contention slot
+legitimately - `cont=1` against `maxCont=1` is correct occupancy, not a leak.
+
+This kills two theories at once:
+
+- **contention leak** - no leak; the slot is held by the task that should hold it.
+- **wrong taskset spinning** - it is the right taskset.
+
+What it leaves: the consumer runs, yields 5,568 times, waits for a signal exactly
+once, and never drains the ring past ~43 entries even though `tail` runs to 257+.
+It polls and does not see the data.
+
+### Note on pc=0x00a00 - it is ambiguous, do not read it as "idle"
+
+`spursSysServiceEntry` and `spursTasksetEntry` are BOTH registered at 0xA00
+(dispatch picks by image address: 0x100 -> sys service, 0x200 -> taskset PM). So
+`/diag` reporting every SPU at `pc=0x00a00` does NOT mean they are idling in the
+system service - SPU 0 was inside the taskset PM the whole time. An earlier
+conclusion that "nobody is running workload 2, so contention=1 is stale" was
+wrong for this reason.
+
+### wkl2's gate, full distribution
+
+    439427 x  runnable=1 prio=0  maxCont=1 cont=1 ready=1 signal=1
+     89855 x  runnable=1 prio=15 maxCont=1 cont=1 ready=1 signal=1
+       158 x  runnable=0 prio=0  maxCont=0 cont=0 ready=0 signal=0   (early boot)
+
+Two separate failing conditions, and `prio=0` dominates. Priority comes from
+`wklInfo1[i].priority[spuNum]`, so workload 2 has a priority on only some SPUs -
+the ACTIVATE probe reads `spu=0: wkl2=0`. Whether that is correct for a
+maxContention=1 workload is the next thing to establish.
+
+### Next
+
+The remaining question is why the guest task polls and does not see queue data
+that is demonstrably present in main memory. That needs SPU-side visibility into
+what the task reads - the HLE layer cannot see it, because the task is guest code.
+`debug.rpcsx.thor.spu_ls_dump` plus the task's ELF is the route.
