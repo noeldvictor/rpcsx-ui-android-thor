@@ -10997,3 +10997,40 @@ blocked on at 0:00:10, which `/threads` at the stall will answer.
 **Do not re-run HLE frame tests without a hypothesis.** Each cycle is ~10 minutes
 with the device at 85-89 C, and two consecutive changes here were guesses that
 cost a round each.
+
+## The stall, diagnosed: the render pump waits on SPURS completion
+
+Ran the stall to completion and interrogated it instead of guessing again:
+
+    stalled at frames=31
+    {PPU[0x1000005] Thread (FlipPump)} cellSpursWakeUp(spurs=*0x1e97a80)
+    ... repeated every ~265 us, indefinitely
+
+**FlipPump - the frame-presentation thread - spins on `cellSpursWakeUp` at about
+3,800 calls per second**, waiting for SPU work that never completes. At the same
+moment `/diag` shows all six SPUs at `pc=0x00a00` with `spursRunning=6`: busy, not
+waiting, and not finishing the job FlipPump needs.
+
+So the remaining defect is in **work completion**, not in dispatch, selection,
+the taskset, or the queue. Those all now function - the title boots through SPURS
+and presents ~30 frames. Something the task should signal on completion never
+reaches the PPU, and the renderer blocks forever.
+
+Also visible and probably unrelated: `sys_fs_opendir` on
+`/dev_hdd0/game/BLUS30357/USRDIR/UnrealEngine3/TransGame/PS3Cache` fails
+CELL_ENOENT twice just before the spin begins.
+
+### Instrumentation caveat, so nobody misreads the same line
+
+The run printed `QueuePush trace: 0`. That is NOT evidence that
+`cellSpursQueuePushBody` was never called - it logs at `trace` level, which is
+filtered by default, while `_cellSpursQueueInitialize` logs at `warning` and did
+appear. Raise the push log to `warning` before drawing any conclusion from it.
+
+### Next step
+
+Find what signals task completion back to the PPU. FlipPump is looping on
+`cellSpursWakeUp` from `HLE:0x02003f74`, so the caller is a game routine polling
+for a SPURS result. The candidates are the taskset's task-exit path
+(`cellSpursTaskExitCodeGet` appears in these logs) and the event-flag machinery,
+both of which are HLE'd here.
