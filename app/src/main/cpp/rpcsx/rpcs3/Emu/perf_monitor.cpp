@@ -1,9 +1,14 @@
 #include "stdafx.h"
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #include "perf_monitor.hpp"
 
 #include "Emu/System.h"
 #include "Emu/IdManager.h"
 #include "Emu/RSX/RSXThread.h"
+#include "Emu/Memory/vm.h"
+#include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "Emu/Cell/thor_spu_ls_dump.h"
@@ -187,6 +192,101 @@ void perf_monitor::operator()()
 						total_usage / 100.0 * utils::get_thread_count(), flips,
 						current_mem_use / (1024 * 1024));
 				}
+
+			// WHERE IS main_thread SPINNING?
+			//
+			// Under HLE SPURS the title never finishes loading: all non-SPURS calls
+			// stop at t=17.17s and main_thread emits its last line at t=12.01s. It is
+			// NOT deadlocked - per-thread CPU shows PPU[0x1000000] burning ~16% of a
+			// core - so it is busy-waiting inside guest code and simply making no
+			// calls this log can see.
+			//
+			// A spinning thread has a PC, and the PC names the loop. Sample it here,
+			// on a timer that keeps running while everything else is stuck, and
+			// disassemble the address against the PPU ELF (PowerPC:BE:64).
+			//
+			//   debug.rpcsx.thor.ppu_pc_census = 1
+#ifdef __ANDROID__
+			{
+				static const bool s_pc_census = []() noexcept
+				{
+					char v[PROP_VALUE_MAX]{};
+					return __system_property_get("debug.rpcsx.thor.ppu_pc_census", v) > 0 && v[0] && v[0] != '0';
+				}();
+
+				if (s_pc_census)
+				{
+					idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& ppu)
+						{
+							const u32 pc = +ppu.cia;
+
+							// THE FENCE main_thread WAITS ON.
+							//
+							// 0x00fdcf60 disassembles to a two-counter spin:
+							//
+							//     lwz  r29,-0x638c(r31)
+							//     lwz  r0,-0x6390(r31)
+							//     cmpw cr7,r29,r0
+							//     bne  cr7,-0x18        ; loop while they differ
+							//     (with li r3,30 / li r11,0x8d / sc = sys_timer_usleep(30))
+							//
+							// main_thread sits here in the WORKING LLE run too, so the loop
+							// itself is normal - what matters is whether the two counters
+							// converge. Under HLE they do not, and printing them says WHICH
+							// side is stuck: a frozen producer or a target that keeps moving.
+							if (pc == 0x00fdcf60u)
+							{
+								const u32 base = static_cast<u32>(ppu.gpr[31]);
+
+								if (vm::check_addr(base - 0x6390, 0, 8))
+								{
+									perf_log.error("Thor FENCE: base=0x%08x done=0x%08x target=0x%08x %s",
+										base,
+										+vm::_ref<be_t<u32>>(base - 0x638c),
+										+vm::_ref<be_t<u32>>(base - 0x6390),
+										ppu.get_name());
+								}
+							}
+
+							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x state=0x%x",
+								id, ppu.get_name(), pc, static_cast<u32>(ppu.state.load()));
+
+							// AND THE CODE AT THAT PC.
+							//
+							// Three HLE threads park at 0x009e4ba4 and no LLE thread ever
+							// does, so that address is the divergence. Dump the words
+							// around it once per address - a PC alone cannot say what the
+							// loop waits on, and the instructions can be disassembled
+							// offline (PowerPC:BE:64) without another device run.
+							static std::atomic<u32> s_dumped[8]{};
+							static std::atomic<u32> s_ndumped{0};
+
+							bool seen = false;
+
+							for (u32 i = 0, have = s_ndumped.load(); i < have && i < 8; i++)
+							{
+								if (s_dumped[i].load() == pc) { seen = true; break; }
+							}
+
+							if (!seen && s_ndumped.load() < 8 && pc > 0x20000 && vm::check_addr(pc - 0x20, 0, 0x40))
+							{
+								s_dumped[s_ndumped.load()].store(pc);
+								s_ndumped++;
+
+								std::string words;
+
+								for (u32 off = 0; off < 0x40; off += 4)
+								{
+									fmt::append(words, "%08x ", +vm::_ref<be_t<u32>>(pc - 0x20 + off));
+								}
+
+								perf_log.error("Thor PPU CODE @0x%08x (from 0x%08x): %s",
+									pc, pc - 0x20, words);
+							}
+						});
+				}
+			}
+#endif
 
 				last_flip_index = flips;
 				last_flip_time = now;
