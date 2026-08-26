@@ -1706,7 +1706,26 @@ bool spursTasksetEntry(spu_thread& spu)
 	// Register SPURS takset policy module HLE functions
 	// spu.UnregisterHleFunctions(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, 0x40000/*LS_BOTTOM*/);
 	spu.RegisterHleFunction(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, spursTasksetEntry);
-	// spu.RegisterHleFunction(ctxt->syscallAddr, spursTasksetSyscallEntry);
+	// REGISTER THE TASKSET SYSCALL ENTRY. Leaving this out is why the SPU faults
+	// about 20 ms after the taskset first dispatches.
+	//
+	// `ctxt->syscallAddr` is CELL_SPURS_TASKSET_PM_SYSCALL_ADDR = 0xA70, an
+	// address tasks BRANCH TO to make a syscall. With nothing registered there
+	// the SPU executes whatever local store holds - zeros - and dies.
+	//
+	// GHIDRA CONFIRMS 0xA70 IS REAL CODE, not a stub. Disassembling the genuine
+	// policy module out of LLE local store shows the context save begins at
+	// exactly that address:
+	//
+	//     00000a70: stqa lr,0x2c80
+	//     00000a74: stqa sp,0x2c90
+	//     00000a7c: stqa r80,0x2ca0  ...  r92,0x2d60
+	//
+	// So a task syscall means "save my context and re-enter the policy module",
+	// and spursTasksetSyscallEntry is the HLE stand-in for that. The entry above
+	// is already registered by this very function, so the mechanism is present
+	// and only this call was missing.
+	spu.RegisterHleFunction(ctxt->syscallAddr, spursTasksetSyscallEntry);
 
 	{
 		// Initialise the taskset policy module
