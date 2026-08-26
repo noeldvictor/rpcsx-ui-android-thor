@@ -10362,3 +10362,40 @@ the process. An entire round was scored `armed=0 activate=0 real=0` from
 RPCSX.log while logcat held `dispatch#2 wid=0 addr=0x200` for the same boot.
 logcat's android sink is synchronous. This trap was already recorded once and was
 walked into again.
+
+## Where HLE SPURS actually stands: runs deep, renders nothing
+
+After the four fixes, the chain runs end to end:
+
+    kernel arms -> selector picks a REAL workload -> taskset dispatches at
+    addr=0x200 -> taskset PM passes its own validity check -> the TASK's ELF
+    executes at PC 0x04a00
+
+That is far past the wall this branch sat behind for weeks. It still produces
+**zero frames**, and two runs bound the failure:
+
+    spu_trap_stop=1 (pause on halt)   300s: frames=0, cores FLAT at 4.059,
+                                      35C -> 84C, process died at t+320s
+    spu_trap_stop=0 (keep running)    220s: frames=0, cores ~5.96 (all six SPUs
+                                      pinned), halts=0, 47C -> 92C
+
+The guest task executes a conditional HALT (`HEQ`/`HGT` -> `make_halt` ->
+the `0xffdead00` store in SPULLVMRecompiler). With the trap guard on, Thor pauses
+and the flat 4.059 core reading is paused-but-spinning. With it off, there is no
+halt recorded at all and all six SPUs spin at full tilt with no frame ever
+presented - a LIVELOCK, not a crash.
+
+So the remaining defect is not in workload selection or taskset validation. It is
+in what the task does once it runs: either the arguments handed to it by
+`spursTasksetStartTask` (gpr[3] = taskArgs, gpr[4] = taskset args / spurs addr)
+are wrong, or a syscall it makes returns something it will not accept.
+
+**HLE has contributed no frames. The shipped frame rate is 18.85 fps and comes
+entirely from XFloat Accuracy: Inaccurate.** Do not let the depth of the SPURS
+progress imply otherwise in any report.
+
+### Heat, measured while doing this
+
+HLE livelock puts six SPUs at 100% and takes the device from 47C to 92C in under
+four minutes while rendering nothing. Any HLE soak must cap runtime and cool
+between arms, or it cooks the Thor for no data.
