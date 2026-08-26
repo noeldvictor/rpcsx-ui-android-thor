@@ -2564,6 +2564,19 @@ void spursTasksetDispatch(spu_thread& spu)
 s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 {
 	auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
+
+	// SAME STALE-SNAPSHOT DEFECT as spursTasksetStartTask and
+	// spursTasksetDispatch had. `spu._ptr<CellSpursTaskset>(0x2700)` reads
+	// tempAreaTaskset, which nothing fills, so every taskset field here is
+	// whatever was last left in that scratch.
+	//
+	// It matters on the EXIT path specifically: that case reads `taskset->x78`
+	// to find the task-exit callback, and this is the COMPLETION path the title
+	// is waiting on. Measured symptom: the FlipPump thread spins on
+	// cellSpursWakeUp roughly every 265 us forever while six SPUs stay busy at
+	// pc=0x00a00 - the renderer waiting for a task completion that never arrives.
+	thor_refresh_taskset_snapshot(spu, ctxt);
+
 	auto taskset = spu._ptr<CellSpursTaskset>(0x2700);
 
 	// If the 0x10 bit is set in syscallNum then its the 2nd version of the

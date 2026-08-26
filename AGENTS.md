@@ -11034,3 +11034,33 @@ Find what signals task completion back to the PPU. FlipPump is looping on
 for a SPURS result. The candidates are the taskset's task-exit path
 (`cellSpursTaskExitCodeGet` appears in these logs) and the event-flag machinery,
 both of which are HLE'd here.
+
+### Snapshot refresh added to the syscall handler - correct, but not the cure
+
+`spursTasksetProcessSyscall` had the same stale-snapshot defect as
+`spursTasksetStartTask` and `spursTasksetDispatch`: it reads
+`spu._ptr<CellSpursTaskset>(0x2700)`, the scratch nothing fills. Its
+`CELL_SPURS_TASK_SYSCALL_EXIT` case reads `taskset->x78` from that to find the
+task-exit callback, which is the completion path FlipPump waits on, so it was a
+well-motivated suspect.
+
+Fixed for consistency - all three sites now refresh before reading. Measured:
+
+    before   frames=31/27   tasksetDispatch=1..2
+    after    frames=32      tasksetDispatch=3
+
+Dispatches went up, frames did not, and the stall is unchanged at emulated
+0:00:10 with 299 `cellSpursWakeUp` calls logged. **So this was not the cure**, and
+it must not be described as one. The completion signal is still not reaching the
+PPU.
+
+Remaining candidates, none yet tested:
+
+- `spursTasksetOnTaskExit` - what it actually does with the callback address, and
+  whether the PPU-side handler ever runs.
+- The event-flag path (`cellSpursEventFlag*`), which is how a PPU thread normally
+  blocks on SPURS work rather than by spinning on `cellSpursWakeUp`.
+- Whether the task ever reaches the EXIT syscall at all: put a one-shot
+  `warning`-level probe in each `case` of `spursTasksetProcessSyscall` and read
+  which syscalls the task actually issues. That is the cheapest next measurement
+  and it needs one boot.
