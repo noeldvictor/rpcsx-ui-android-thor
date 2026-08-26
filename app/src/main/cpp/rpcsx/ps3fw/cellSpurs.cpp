@@ -4320,6 +4320,25 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 	}
 
 	// Mirrors the firmware's store order at libsre 0x165c4.
+	// ZERO THE WHOLE STRUCTURE FIRST.
+	//
+	// This used to set ten named fields and leave `unk20` - the 64 bytes at
+	// 0x20..0x5F - holding whatever the guest allocator last left there. The
+	// consumer READS that span. From the SPU-side pop disassembly:
+	//
+	//     lqa      r10,0xa0        ; the quadword at queue+0x20
+	//     rotqbyi  r10,r10,0xd     ; select the byte at queue+0x2D
+	//     ceqbi    r77,r10,0x0     ; and branch on whether it is zero
+	//
+	// so an uninitialised byte there steers the consumer down a path the
+	// producer never satisfies, every single call. Measured symptom: the ring
+	// fills to used=256 and `head` never moves off its first few dozen entries
+	// while the task polls, yields and backs off forever.
+	//
+	// Zeroing the whole 0x78 before writing the named fields is what the
+	// firmware does and costs nothing here.
+	std::memset(vm::base(queue.addr()), 0, sizeof(CellSpursQueue));
+
 	queue->head.release(0);
 	queue->tail.release(0);
 	queue->entry_size = size;
@@ -4446,6 +4465,41 @@ static bool thor_queue_monotonic_fix() noexcept
 //                                   tail runs away and used explodes past
 //                                   depth (measured head=2 tail=513 used=511).
 //
+// CLAIM THE SLOT INSIDE A RESERVATION ON THE QUEUE LINE.
+//
+// The consumer is guest SPU code and it reads this queue with GETLLAR and
+// commits with PUTLLC - a reservation on the 128 bytes at the queue base.
+// head (0x00) and tail (0x04) are in that one granule, so writing tail with a
+// bare atomic CAS kills the consumer's reservation on EVERY push. Under a
+// continuously pushing producer the consumer can never land its PUTLLC and
+// retries forever, which is the measured stall: ring full, head frozen, the
+// task yielding with a 2400-cycle backoff between attempts.
+//
+// Claiming through vm::reservation_op on the same line makes the two sides
+// interlock the way lwarx/stwcx. and GETLLAR/PUTLLC do on hardware: a push
+// that loses the race retries instead of silently stealing the line, and a
+// push that finds the ring full does NOT write, so it leaves the consumer's
+// reservation intact and lets it drain.
+//
+//   debug.rpcsx.thor.queue_reserve_fix = 0  restore the bare CAS
+static bool thor_queue_reserve_fix() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.queue_reserve_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static u32 spurs_ring_range(u32 depth) noexcept
 {
 	return depth * 2;
@@ -4515,6 +4569,61 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 
 	while (true)
 	{
+		// CLAIM THROUGH THE RESERVATION when enabled: read head/tail, test for
+		// full, and take the slot in one reservation on the queue line. A full
+		// ring returns false so the line is left untouched and the consumer keeps
+		// its reservation.
+		if (thor_queue_reserve_fix())
+		{
+			u32 claimed = umax;
+			u32 seen_head = 0;
+			u32 seen_tail = 0;
+
+			vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_queue_op>(queue), [&](spurs_queue_op& op)
+				{
+					seen_head = op.head;
+					seen_tail = op.tail;
+
+					if (spurs_ring_used(seen_head, seen_tail, depth) >= depth)
+					{
+						return false;   // full: do not write, do not disturb the consumer
+					}
+
+					claimed = seen_tail % depth;
+					op.tail = (seen_tail + 1) % spurs_ring_range(depth);
+					return true;
+				});
+
+			if (claimed != umax)
+			{
+				slot = claimed;
+				break;
+			}
+
+			// Full. Fall through to the same blocking path the CAS route uses.
+			if (queue->event_queue_id)
+			{
+				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 20);
+
+				if (spins++ < 4096)
+				{
+					continue;
+				}
+
+				return CELL_SPURS_TASK_ERROR_BUSY;
+			}
+
+			if (spins++ < 1024)
+			{
+				ppu.state += cpu_flag::wait;
+				std::this_thread::yield();
+				ppu.check_state();
+				continue;
+			}
+
+			return CELL_SPURS_TASK_ERROR_BUSY;
+		}
+
 		const u32 tail = queue->tail.load();
 		const u32 head = queue->head.load();
 

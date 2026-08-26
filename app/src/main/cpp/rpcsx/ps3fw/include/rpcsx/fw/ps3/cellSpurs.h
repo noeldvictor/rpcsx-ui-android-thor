@@ -996,6 +996,38 @@ struct CellSpursQueue
 
 CHECK_SIZE(CellSpursQueue, 0x78);
 
+// THE 128-BYTE LINE THE CONSUMER RESERVES.
+//
+// The guest SPU-side pop reads this queue with GETLLAR and commits with
+// PUTLLC, straight out of its disassembly:
+//
+//     wrch r49,ch16   ; MFC_LSA  = 0x80
+//     wrch r50,ch18   ; MFC_EAL  = queue
+//     wrch r49,ch19   ; MFC_Size = 0x80        (128 bytes)
+//     wrch r47,ch21   ; MFC_Cmd  = 0xd0        GETLLAR
+//     rdch r2,ch27    ; MFC_RdAtomicStat
+//
+// head (0x00) and tail (0x04) therefore live in ONE reservation granule, so a
+// producer that writes tail with a bare atomic CAS destroys the consumer's
+// reservation every time it pushes. Under continuous pushes the consumer can
+// never land its PUTLLC, and it retries forever - which is exactly the
+// measured stall: the ring full, head frozen, the task yielding and backing
+// off 2400 cycles between retries.
+//
+// vm::reservation_op needs a type that is at most 128 bytes with matching
+// alignment, and CellSpursQueue is 0x78, so this is the same trick
+// spurs_taskset_signal_op uses for the taskset line.
+struct alignas(128) spurs_queue_op
+{
+	be_t<u32> head;       // 0x00
+	be_t<u32> tail;       // 0x04
+	be_t<u32> entry_size; // 0x08
+	be_t<u32> depth;      // 0x0C
+	u8 rest[0x70];        // 0x10 .. 0x7F
+};
+
+CHECK_SIZE_ALIGN(spurs_queue_op, 128, 128);
+
 // From cellSpursQueuePushBody: `cmpwi r0,0x2` against the field at 0x1c, and
 // CELL_SPURS_TASK_ERROR_PERM if it does not match.
 enum CellSpursQueueDirection : u32

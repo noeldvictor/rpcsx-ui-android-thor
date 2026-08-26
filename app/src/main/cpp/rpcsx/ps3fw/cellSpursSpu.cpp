@@ -3,6 +3,7 @@
 #include <sys/system_properties.h>
 #endif
 #include <atomic>
+#include <cstdio>
 #include "Loader/ELF.h"
 
 #include "Emu/Memory/vm_reservation.h"
@@ -3092,6 +3093,84 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 
 		const u32 which = syscallNum & 0x0F;
 
+		// WHERE IN THE TASK IS THE YIELD LOOP?
+		//
+		// The census settled that the task issues ONLY yield - 17,024 of them,
+		// zero of anything else, zero NOSYS - while the ring sits full at
+		// used=256 with head frozen. So the task is polling some address and not
+		// seeing it change. To find what it polls, first find the loop: on SPU
+		// the link register is r0, so at the syscall entry r0 holds the address
+		// in the TASK that called yield.
+		//
+		// Distinct call sites, not a count - a poll loop has one or two, and
+		// knowing them turns "somewhere in the task" into an address to
+		// disassemble against the task ELF (SPU:BE:128 in Ghidra).
+		{
+			static std::atomic<u32> s_sites[8]{};
+			static std::atomic<u32> s_nsites{0};
+
+			const u32 lr = spu.gpr[0]._u32[3];
+			bool seen = false;
+			const u32 have = s_nsites.load();
+
+			for (u32 i = 0; i < have && i < 8; i++)
+			{
+				if (s_sites[i].load() == lr) { seen = true; break; }
+			}
+
+			if (!seen && have < 8)
+			{
+				s_sites[have].store(lr);
+				s_nsites.store(have + 1);
+				cellSpurs.error("Thor CALLSITE #%u: syscall 0x%x from task lr=0x%05x sp=0x%05x (taskId=%u taskset=0x%x)",
+					have, syscallNum, lr, spu.gpr[1]._u32[3], +ctxt->taskId, ctxt->taskset.addr());
+
+				// DUMP LOCAL STORE ONCE, so the loop at `lr` can be disassembled
+				// (Ghidra, SPU:BE:128:default, load at 0x0). A call site alone says
+				// WHERE the task waits; the code around it says WHAT it waits on,
+				// and that is the whole remaining question.
+				// ONE DUMP PER TASKSET, NAMED BY TASKSET.
+				//
+				// A single global one-shot fired on whichever SPU hit a syscall
+				// first - taskset 0x101b4e80 on SPU5 - and local store is PER SPU,
+				// so it captured the wrong task entirely: 0x0f390..0x0f400 came back
+				// all zeroes while the other task's 0x08d54 held code. Key the dump
+				// to the taskset so the queue's task is actually captured.
+				static std::atomic<u32> s_dumped[4]{};
+				static std::atomic<u32> s_ndumped{0};
+
+				const u32 tsaddr = ctxt->taskset.addr();
+				bool already = false;
+
+				for (u32 i = 0, have = s_ndumped.load(); i < have && i < 4; i++)
+				{
+					if (s_dumped[i].load() == tsaddr) { already = true; break; }
+				}
+
+				if (!already && s_ndumped.load() < 4)
+				{
+					s_dumped[s_ndumped.load()].store(tsaddr);
+					s_ndumped++;
+
+					char path[256]{};
+					std::snprintf(path, sizeof(path),
+						"/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_ls_%08x.bin", tsaddr);
+
+					if (FILE* f = std::fopen(path, "wb"))
+					{
+						std::fwrite(spu._ptr<void>(0), 1, 0x40000, f);
+						std::fclose(f);
+						cellSpurs.error("Thor LS DUMP: taskset=0x%x lr=0x%05x spu=%u -> %s",
+							tsaddr, lr, +ctxt->spuNum, path);
+					}
+					else
+					{
+						cellSpurs.error("Thor LS DUMP: could not open %s", path);
+					}
+				}
+			}
+		}
+
 		if (which < 16)
 		{
 			s_seen[which]++;
@@ -3103,9 +3182,23 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 				// The queue is bound to 0x10364100 - if the spinner is the OTHER
 				// taskset, the queue's consumer is simply never scheduled and the
 				// yield loop is a red herring.
-				cellSpurs.warning("Thor SYSCALL CENSUS n=%u: exit=%u yield=%u waitSig=%u poll=%u recvFlag=%u (taskId=%u taskset=0x%x spu=%u)",
+				// PRINT ALL SIXTEEN SLOTS, NOT THE FIVE WE IMPLEMENT.
+				//
+				// The switch below handles EXIT(0), YIELD(1), WAIT_SIGNAL(2),
+				// POLL(3) and RECV_WKL_FLAG(4), and everything else falls into
+				// `default: rc = CELL_SPURS_TASK_ERROR_NOSYS`. This census counted
+				// all sixteen and PRINTED ONLY THOSE FIVE, so a task hammering an
+				// unimplemented syscall and being told NOSYS forever would look,
+				// in every reading taken so far, exactly like a task that only
+				// yields. Do not infer "the task only yields" from a probe that
+				// can only see yields.
+				cellSpurs.warning("Thor SYSCALL CENSUS n=%u: [0]exit=%u [1]yield=%u [2]waitSig=%u [3]poll=%u [4]recvFlag=%u | UNIMPLEMENTED 5..15: %u %u %u %u %u %u %u %u %u %u %u (taskId=%u taskset=0x%x spu=%u)",
 					n, s_seen[0].load(), s_seen[1].load(), s_seen[2].load(),
-					s_seen[3].load(), s_seen[4].load(), +ctxt->taskId,
+					s_seen[3].load(), s_seen[4].load(),
+					s_seen[5].load(), s_seen[6].load(), s_seen[7].load(),
+					s_seen[8].load(), s_seen[9].load(), s_seen[10].load(),
+					s_seen[11].load(), s_seen[12].load(), s_seen[13].load(),
+					s_seen[14].load(), s_seen[15].load(), +ctxt->taskId,
 					ctxt->taskset.addr(), +ctxt->spuNum);
 			}
 		}
@@ -3182,6 +3275,18 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 		}
 		break;
 	default:
+		// LOUD. An unimplemented taskset syscall returns NOSYS and the guest
+		// will simply ask again, which presents as an unexplained spin. This
+		// arm has been silent for the whole effort.
+		{
+			static std::atomic<u32> s_nosys{0};
+
+			if (const u32 nn = s_nosys++; nn < 4 || (nn & 0x3FF) == 0)
+			{
+				cellSpurs.error("Thor NOSYS #%u: taskset syscall 0x%x UNIMPLEMENTED (taskId=%u taskset=0x%x)",
+					nn, syscallNum, +ctxt->taskId, ctxt->taskset.addr());
+			}
+		}
 		rc = CELL_SPURS_TASK_ERROR_NOSYS;
 		break;
 	}

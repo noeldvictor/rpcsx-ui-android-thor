@@ -12027,3 +12027,89 @@ settings stalled at 32 frames. This path still boots successfully about 1 in 6
 times, and even the successful boot drew nothing. Two arms is not enough to
 call anything here - see the run-to-run variance section - and a single good
 run is exactly the trap this file already warns about twice.
+
+# The Consumer Says EMPTY. Read From Its Own Disassembly.
+
+2026-08-26. Ghidra headless, SPU:BE:128:default, on a local-store dump taken
+from the SPU running the queue's taskset (`thor_ls_10364100.bin`).
+
+## The wait loop, exactly
+
+    0000f3a0  lr    r4,r86
+    0000f3b4  brsl  lr,0x00013c68     ; SPU-side queue pop, result in r3
+    0000f3b8  lr    r80,r3
+    0000f3bc  brz   r3,0x0000f238     ; success -> leave the wait
+    0000f3c0  brsl  lr,0x0000a4a0     ; cellSpursYield  (our syscall 1)
+    0000f3d0  ai    r4,r4,0x1         ;+ backoff, 0x960 = 2400 iterations
+    0000f3d4  rdch  r3,ch8            ;| read SPU_RdDec, result DISCARDED
+    0000f3dc  brz   r40,0x0000f3d0    ;+
+    0000f3e8  ceq   r41,r80,r82
+    0000f3f4  brnz  r41,0x0000f3a0    ; loop WHILE result == r82
+
+and r82 is built in the prologue:
+
+    0000f208  ilhu r82,-0x7fbf
+    0000f22c  iohl r82,0x901          ; r82 = 0x80410901
+
+**0x80410901 is CELL_SPURS_TASK_ERROR_AGAIN.** The task spins for as long as
+the pop keeps returning AGAIN.
+
+## AGAIN means EMPTY, and that is provable from the registers
+
+    ceqi r66,r86,0x0    ; arg4 == 0            -> r66 = -1
+    sfi  r8,r66,0x0     ; r8  = 1
+    ceqi r64,r68,0x0    ; r68 = used           -> r64 = -1 iff used == 0
+    sfi  r60,r64,0x0    ; r60 = 1 iff used == 0
+    and  r52,r8,r60
+    brnz r52,0x00014118 ; -> return 0x80410901
+
+## The consumer's own used() confirms the 2*depth ring
+
+    sf   r80,r11,r2         ; tail - head
+    a    r3,r2,r59          ; tail + depth
+    sf   r78,r8,r3          ; tail - head + 2*depth
+    selb r68,r78,r80,r79    ; used = head<=tail ? tail-head : tail-head+2*depth
+
+Independent confirmation of `queue_monotonic_fix`, from the guest itself.
+
+## And it reads the queue with GETLLAR
+
+    wrch r49,ch16  ; MFC_LSA  = 0x80
+    wrch r50,ch18  ; MFC_EAL  = queue
+    wrch r49,ch19  ; MFC_Size = 0x80
+    wrch r47,ch21  ; MFC_Cmd  = 0xd0     GETLLAR
+    rdch r2,ch27   ; MFC_RdAtomicStat
+
+head (0x00) and tail (0x04) are in one reservation granule, which is why the
+producer now claims its slot through `vm::reservation_op` on the same line
+(`queue_reserve_fix`) instead of a bare CAS. That change is measured and real:
+push calls collapsed from ~475,000 to ~700 because a full ring no longer writes
+the line at all. It did not, on its own, unstick the consumer.
+
+## THE OPEN CONTRADICTION - state it plainly
+
+Our side reports `head=40 tail=296 depth=256 used=256`. The consumer computes
+`used == 0` from its GETLLAR of the same structure. Both cannot be true of the
+same 128 bytes, and only ONE CellSpursQueue exists (0x1030e400, all 690 pushes
+go to it). So one of these is false and none has been checked:
+
+1. The EA in the consumer's GETLLAR is not 0x1030e400. Its queue pointer comes
+   from `lqr r39,-0x6465` - a pointer sitting in task local store - not from
+   anything this code hands it.
+2. The GETLLAR is not returning the bytes we wrote.
+3. head/tail are not at the offsets assumed on one of the two sides.
+
+**The next experiment is to log the EA of the consumer's GETLLAR and compare it
+with the queue address we push to.** That is one measurement and it eliminates
+two of the three. Do not patch anything else until it is taken - the last three
+changes were made against symptoms and none of them moved this.
+
+## Also unimplemented, and never accounted for
+
+    ·U _cellSpursLFQueueInitialize(pQueue=*0x101b1f80, size=0x20, depth=0x10, direction=3)
+    ·U cellSpursLFQueueAttachLv2EventQueue()
+
+A SECOND queue, lock-free, direction 3, both stubbed. It has been dismissed
+before on the grounds that this title never calls the LF push/pop, but the
+INITIALIZE and ATTACH are called, and nothing has checked whether the renderer
+waits on that one.
