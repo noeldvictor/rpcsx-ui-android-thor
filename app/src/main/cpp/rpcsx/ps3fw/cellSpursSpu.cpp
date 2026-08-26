@@ -399,6 +399,24 @@ static void thor_refresh_taskset_snapshot(spu_thread& spu, SpursTasksetContext* 
 	std::memcpy(spu._ptr<void>(0x2700), ctxt->taskset.get_ptr(), 128);
 }
 
+static bool thor_contention_atomic_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.contention_atomic_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_task_ls_clear_fix() noexcept
 {
 #ifdef ANDROID
@@ -836,13 +854,55 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 					}
 				}
 
-				spurs->wklCurrentContention[i] = contention[i];
+				if (!thor_contention_atomic_fix())
+				{
+					spurs->wklCurrentContention[i] = contention[i];
+				}
+
 				spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
-				ctxt->wklLocContention[i] = 0;
 				ctxt->wklLocPendingContention[i] = 0;
+
+				if (!thor_contention_atomic_fix())
+				{
+					ctxt->wklLocContention[i] = 0;
+				}
 			}
 
-			if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
+			// ATOMIC PER-ENTRY TRANSFER INSTEAD OF A BULK WRITE-BACK.
+			//
+			// `wklCurrentContention` is a plain `u8[16]` shared by all six SPUs,
+			// and the loop above has every SPU recompute the WHOLE array from its
+			// own stale read and write all sixteen bytes back. That loses updates
+			// by construction, and the counter was measured running away to 253.
+			// With `maxContention = 1` on the queue's workload, one bad update
+			// closes its gate permanently - which is why the workload is dispatched
+			// 45 times in one run and 0 times in the next off the same build.
+			//
+			// Transfer only what THIS SPU changed, atomically: release the slot it
+			// held, take the slot it selected. Nothing else is touched, so no SPU
+			// can clobber another's accounting.
+			if (thor_contention_atomic_fix())
+			{
+				const u32 prev = ctxt->wklCurrentId;
+
+				if (prev != wklSelectedId)
+				{
+					if (prev < CELL_SPURS_MAX_WORKLOAD && ctxt->wklLocContention[prev])
+					{
+						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + prev)
+							.atomic_op([](u8& v) { if (v) v--; });
+						ctxt->wklLocContention[prev] = 0;
+					}
+
+					if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
+					{
+						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + wklSelectedId)
+							.atomic_op([](u8& v) { if (v < 8) v++; });
+						ctxt->wklLocContention[wklSelectedId] = 1;
+					}
+				}
+			}
+			else if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
 			{
 				ctxt->wklLocContention[wklSelectedId] = 1;
 			}
@@ -936,7 +996,13 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 		u8 pendingContention[CELL_SPURS_MAX_WORKLOAD2];
 		for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD2; i++)
 		{
-			contention[i] = spurs->wklCurrentContention[i & 0x0F] - ctxt->wklLocContention[i & 0x0F];
+			{
+				// Same u8 underflow the kernel1 selector had.
+				const u8 kcur = spurs->wklCurrentContention[i & 0x0F];
+				const u8 kloc = ctxt->wklLocContention[i & 0x0F];
+
+				contention[i] = kcur >= kloc ? kcur - kloc : 0;
+			}
 			contention[i] = i + 0u < CELL_SPURS_MAX_WORKLOAD ? contention[i] & 0x0F : contention[i] >> 4;
 
 			// If this is a poll request then the number of SPUs pending to context switch is also added to the contention presumably
@@ -1962,15 +2028,30 @@ void spursSysServiceCleanupAfterSystemWorkload(spu_thread& spu, SpursKernelConte
 	{
 		auto spurs = ctxt->spurs.get_ptr();
 
+		// SATURATING DECREMENTS. These are raw `-=` on `u8` fields shared by six
+		// SPUs, so decrementing a counter that already reads 0 wraps to 255 - and
+		// `maxContention > contention` can never hold again for a workload whose
+		// maxContention is 1, which is the queue's taskset. `cont=255` was measured
+		// on wkl2 with exactly this signature after the bulk write-back was made
+		// atomic, so this path is the remaining writer that can corrupt it.
+		//
+		// Saturating at 0 is also the only meaning that makes sense: a contention
+		// or ready count cannot be negative.
 		if (wklId >= CELL_SPURS_MAX_WORKLOAD)
 		{
-			spurs->wklCurrentContention[wklId & 0x0F] -= 0x10;
-			spurs->wklReadyCount1[wklId & 0x0F].raw() -= 1;
+			u8& cont = spurs->wklCurrentContention[wklId & 0x0F];
+			cont = cont >= 0x10 ? cont - 0x10 : 0;
+
+			auto& rc = spurs->wklReadyCount1[wklId & 0x0F];
+			rc.raw() = rc.raw() ? rc.raw() - 1 : 0;
 		}
 		else
 		{
-			spurs->wklCurrentContention[wklId & 0x0F] -= 0x01;
-			spurs->wklIdleSpuCountOrReadyCount2[wklId & 0x0F].raw() -= 1;
+			u8& cont = spurs->wklCurrentContention[wklId & 0x0F];
+			cont = cont ? cont - 1 : 0;
+
+			auto& rc = spurs->wklIdleSpuCountOrReadyCount2[wklId & 0x0F];
+			rc.raw() = rc.raw() ? rc.raw() - 1 : 0;
 		}
 
 		std::memcpy(spu._ptr<void>(0x100), spurs, 128);
