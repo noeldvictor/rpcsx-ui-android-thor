@@ -10024,7 +10024,7 @@ the same binary reaches emu 0:02:10 and renders at 19.19 fps.
 
 **Next: make the HLE boot survive.** Until it does, no HLE change can be judged.
 
-## The HLE boot does not crash. It is SIGKILLed by the Android allocator.
+## RETRACTED: "the HLE boot is SIGKILLed by the allocator"
 
 Every HLE boot failure this session was scored as "died early" or "boot loop".
 That framing was wrong and it cost rounds, because it invited theories about
@@ -10108,3 +10108,82 @@ is an intent carrying the ISO:
     am start -a net.rpcsx.THOR_DEBUG_BOOT -n net.rpcsx.easy/net.rpcsx.MainActivity \
       --es path '<ISO>' --es titleId BLUS30357 --es thorDebugBootRequestId <tag> \
       --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true
+
+## The retraction, measured: scudo OOM is NOT the HLE boot killer
+
+The section above was written from a single HLE boot's logcat and is wrong. A
+four-cell bisect on ONE binary, using the new property gates, settles it:
+
+    cell                 scudoOOM  deaths  armed  emu
+    A baseline HLE          3        0       6    0:00:18
+    B signal fix           21        6       0    0:00:18
+    C both fixes           21        6       0    0:00:18
+    D LLE control           3        0       0    0:02:10
+
+**The LLE control emits the same three `Scudo OOM` lines and runs fine.** Three
+OOM messages - one per size class - is what a NORMAL boot on this device prints.
+The 21 in B/C is 6 restarts x ~3 per boot: the count scales WITH the deaths, so
+it is a consequence of restarting, not a cause. Reading "Scudo OOM in logcat" as
+the failure signal is a mistake; it is background noise on this hardware.
+
+What the bisect actually proves:
+
+- **`spurs_signal_fix=1` is what breaks the boot.** B and C both restart 6 times
+  in 120 s. This reproduces exactly what the in-code comment already recorded
+  ("fix=1 armed=0 twice, against fix=0 armed=6 twice"). `armed=0` there is a
+  SAMPLING ARTIFACT, not a claim that arming never happens - the log is read at
+  the end of the window, and the last restart is only seconds old.
+- **`taskset_syscall_fix` is neutral.** B and C are identical in every column, so
+  registering 0xA70 neither helps nor harms. Every earlier suspicion that it
+  caused the regression was wrong.
+- **Baseline HLE arms 6 kernels and survives** - but emulated time sticks at
+  0:00:18 while LLE reaches 0:02:10. That is the weeks-old deadlock, alive but
+  frozen, and it renders NOTHING. HLE has never produced a frame to measure.
+
+## The vise, and why the shift guard is not the way out
+
+    clear at selection (baseline)  -> 0x8000 >> 32 eats workload 0's signal
+                                      -> six SPUs park on wid=32 -> DEADLOCK
+    do not clear (signal fix)      -> "selected differs from current" forever
+                                      -> restart loop -> LIVELOCK
+
+Both ends fail, so the defect is not at the clear site.
+
+## Ghidra: what the REAL kernel does at 0x290
+
+Disassembled `CELL_SPURS_KERNEL1_SELECT_WORKLOAD_ADDR` (0x290) out of
+`debug-captures/spu-ls/spu_ls_CellSpursKernel0.bin` with the SPU language
+(`analyzeHeadless ... -processor SPU:BE:128:default -postScript
+DisassembleSpuWindows.java out.txt 0x300 0x290 0x818 0x808 -noanalysis`):
+
+    00000298: ila  r8,0x8000        ; mask base
+    000002c4: rotqbyi r20,r10,0xc   ; r20 = selected workload id
+    000002d8: ceqi r7,r20,0x20      ; EXPLICIT test: id == 32 (system service)
+    000002dc: sfi  r9,r20,0x0       ; r9 = -id
+    000002e0: sfi  r5,r7,0x0        ; r5 = -(id == 32)
+    000002e4: rotm r6,r8,r9         ; r6 = 0x8000 >> id
+    000002e8: or   r3,r29,r5        ; folds "id == 32" INTO THE RESULT
+    000002f4: fsmb r32,r6           ; mask -> byte mask
+    00000380: andc r17,r21,r32      ; candidates &= ~mask
+
+Two findings, both load-bearing:
+
+1. **SPU `rotm` shifts in zeros and gives 0 for any count >= 32.** So on real
+   hardware `0x8000 >> 32` is ZERO and clears nothing. The AArch64
+   shift-modulo-32 that turns it into 0x8000 is a genuine port bug, and
+   "clear nothing" is hardware-correct. The guard is right about the semantics.
+2. **The hardware kernel uses that mask to EXCLUDE the selected workload from the
+   candidate set (`fsmb` + `andc`), not to clear a signal word in memory**, and it
+   separately folds `id == 32` into the returned value. The HLE port instead
+   writes `wklSignal1/2` in memory. That structural difference - not the shift -
+   is the remaining gap, and it explains why fixing only the shift livelocks: the
+   clear becomes correct while the selector's result stays wrong.
+
+Checked and cleared while looking (do not re-investigate):
+
+- `wklSignal2 &= ~(0x80000000u >> id)` looks wrong for a `be_t<u16>` but is not:
+  for wids 16..31 it produces exactly `0x8000 >> (id-16)`, and for 0..15 it
+  truncates to a no-op. Only `id == 32` is broken.
+- `std::memcpy(ctxt, spurs, 128)` at the end of the selector cannot clobber the
+  selection: `tempArea[0x80]` is the first 128 bytes and `wklCurrentId` sits at
+  struct offset 0xDC.
