@@ -11413,3 +11413,42 @@ better problem than the deadlock this started as.
 **Shipped frame rate remains 19.87 fps and comes entirely from config**
 (XFloat Inaccurate, SPU Block Size Mega, Driver Wake-Up Delay 0). HLE has still
 never been the fast path, and nothing here changes that.
+
+## THE LAST LINK: a push only re-dispatches the workload if `waiting` is set
+
+`_cellSpursSendSignal(taskset, taskId)` does not unconditionally wake anything:
+
+    signal = !!(~signalled & waiting & mask);   // 1 ONLY if the task is WAITING
+    ...
+    case 1:
+        cellSpursSendWorkloadSignal(spurs, taskset->wid);   // re-dispatch workload
+        cellSpursWakeUp(spurs);
+
+So a queue push wakes the consumer **only when that task's `waiting` bit is set in
+the taskset structure in main memory**. Otherwise `signal = 0` and nothing is
+dispatched. The `waiting` bit is set SPU-side by
+`SPURS_TASKSET_REQUEST_WAIT_SIGNAL` in `spursTasksetProcessRequest`.
+
+The counts line up exactly:
+
+    cellSpursSendWorkloadSignal: 2      real workload dispatches: 2
+    system-service dispatches:   8      readyCount APIs: 0 (title never calls them)
+
+The workload is signalled twice, dispatches twice, and is then never scheduled
+again - so the task that drains the ring stops running. **That is the drain-rate
+limit**, and it is the last link in the chain.
+
+### Where to look
+
+`SPURS_TASKSET_REQUEST_WAIT_SIGNAL` in `spursTasksetProcessRequest` - does it
+actually set the `waiting` bit at the address the PPU reads? That function reads
+the taskset through `ctxt->taskset.addr()` (main memory, correct) but this whole
+file has a history of the SPU side updating a local snapshot instead of the shared
+structure - the same class of defect fixed three times already this session.
+
+### Logging trap, hit twice - check the level before believing a zero
+
+`_cellSpursSendSignal` logs at **trace**, which the default filter drops, so a
+count of 0 for it means NOTHING. The same mistake produced a misleading
+`QueuePush: 0` earlier. Before treating any zero count as evidence, confirm the
+call site logs at `warning` or above.
