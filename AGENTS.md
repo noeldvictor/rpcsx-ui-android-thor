@@ -10509,3 +10509,58 @@ Ghidra note for whoever picks this up: the real policy module CLEARS local store
 computed `bi r5` into an unrolled `stqd` run at 0x18b0-0x18ec). The HLE
 `spursTasksetStartTask` does no such clear. That is a concrete, testable
 difference and the obvious next thing to try.
+
+## The task's assertion, named by the trap decoder, and fixed
+
+The SPU trap decoder in this tree does the work that a bare pc cannot:
+
+    SPU trap 0xffdead00: HALT ... thread='CellSpursKernel0' pc=0x04a00
+    SPU trap decoded: HEQI (halt if equal to immediate) at pc=0x04a00.
+      r55 = 0x00000000 (0), immediate = 0. The guest refused this value.
+    SPU trap arg r4 = 00000000 00000000 00000000 00000000
+
+`r4` is exactly what `spursTasksetStartTask` loads with the SPURS address and the
+taskset args. It was zero, so the task refused it.
+
+**Cause: the taskset snapshot at LS 0x2700 is never filled.**
+`SpursTasksetContext` opens with `tempAreaTaskset[0x80]` at 0x2700 - scratch meant
+to hold a DMA'd copy of the taskset head - and `CellSpursTaskset` keeps `spurs` at
+0x60 and `args` at 0x68, both inside it. That is why the code reads
+`spu._ptr<CellSpursTaskset>(0x2700)`. But `spursTasksetEntry` memsets the whole
+context, and the only other write is
+
+    std::memcpy(spu._ptr<void>(0x2700), spu._ptr<void>(0x100), 128); // Copy data
+
+at the end of `spursTasksetProcessRequest`, which copies the KERNEL's `CellSpurs`
+head from LS 0x100 - the wrong structure - and runs BEFORE
+`spursTasksetStartTask` reads it.
+
+Identical to the defect the idle handler already documents in this file
+("REFRESH THE SNAPSHOT BEFORE READING IT"), and the identical repair: copy the
+live taskset in before reading. Exactly 128 bytes, so it lands in
+`tempAreaTaskset` and cannot touch context fields starting at 0x2780.
+
+RESULT, measured: `halts` goes 2 -> **0**, and `coresBusy` rises 5.02 -> 6.38 -
+the SPUs are doing real work instead of sitting halted.
+
+**Still frames=0.** Tasks now run without asserting and the title still does not
+render in 240 s. Whatever remains is downstream of task entry.
+
+## Running score, so nobody has to re-derive it
+
+Seven HLE defects fixed, in the order each became visible:
+
+    1. 0x8000 >> 32 UB erasing workload 0's signal   (Ghidra: rotm gives 0)
+    2. selector commit branch tested the wrong operand (Ghidra: LS 0x290)
+    3. a POLL consumed the signal                     (side effect of 2)
+    4. task-id allocator wrote the wrong bitset half  (upstream be_t<v128> bug)
+    5. syscall entry threw "Broken (TODO)"            (also retracts the
+                                                       "syscall fix is neutral"
+                                                       verdict - it was
+                                                       UNREACHABLE, not inert)
+    6. task LS clear ran to 0x40000, hardware stops at 0x3d000 (Ghidra)
+    7. taskset snapshot at LS 0x2700 never refreshed  (trap decoder: r4 = 0)
+
+Shipped frame rate is 19.93 fps and comes entirely from config
+(XFloat Inaccurate, SPU Block Size Mega, Driver Wake-Up Delay 0).
+**HLE has contributed zero frames.**

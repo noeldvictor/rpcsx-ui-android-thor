@@ -347,6 +347,76 @@ static bool thor_hle_nth(std::atomic<u32>& counter, u32 spuNum) noexcept
 	return counter.fetch_add(1) == n;
 }
 
+// REFRESH THE TASKSET SNAPSHOT BEFORE READING IT.
+//
+// SpursTasksetContext begins with `tempAreaTaskset[0x80]` at LS 0x2700 - a
+// 128-byte scratch meant to hold a DMA'd copy of the taskset head. CellSpursTaskset
+// keeps `spurs` at 0x60 and `args` at 0x68, both inside those 128 bytes, which is
+// why the code reads `spu._ptr<CellSpursTaskset>(0x2700)`.
+//
+// NOTHING EVER FILLS IT. spursTasksetEntry memsets the whole context, scratch
+// included, and the only other write is
+// `memcpy(spu._ptr<void>(0x2700), spu._ptr<void>(0x100), 128)` at the end of
+// spursTasksetProcessRequest - which copies the KERNEL's CellSpurs head from LS
+// 0x100, the wrong structure, and runs before spursTasksetStartTask reads it.
+//
+// MEASURED: the task halts on `HEQI` at pc=0x04a00 with r55 = 0, and the trap
+// decoder reports `arg r4 = 00000000 00000000 00000000 00000000` - the SPURS
+// address and taskset args that spursTasksetStartTask is supposed to hand it.
+// The guest refused a zero it should never have seen.
+//
+// This is the same defect the idle handler already documents ("REFRESH THE
+// SNAPSHOT BEFORE READING IT") and the same repair: copy the live structure in
+// before reading, keeping every read local. Exactly 128 bytes, so it lands in
+// tempAreaTaskset and cannot touch the context fields that start at 0x2780.
+//
+//   debug.rpcsx.thor.taskset_snapshot_fix = 0 disables
+static bool thor_taskset_snapshot_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.taskset_snapshot_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
+static void thor_refresh_taskset_snapshot(spu_thread& spu, SpursTasksetContext* ctxt) noexcept
+{
+	if (!thor_taskset_snapshot_fix() || !ctxt->taskset)
+	{
+		return;
+	}
+
+	std::memcpy(spu._ptr<void>(0x2700), ctxt->taskset.get_ptr(), 128);
+}
+
+static bool thor_task_ls_clear_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.task_ls_clear_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_spurs_sel_cond_fix() noexcept
 {
 #ifdef ANDROID
@@ -1976,6 +2046,7 @@ void spursTasksetResumeTask(spu_thread& spu)
 void spursTasksetStartTask(spu_thread& spu, CellSpursTaskArgument& taskArgs)
 {
 	auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
+	thor_refresh_taskset_snapshot(spu, ctxt);
 	auto taskset = spu._ptr<CellSpursTaskset>(0x2700);
 
 	spu.gpr[2].clear();
@@ -2340,6 +2411,7 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 void spursTasksetDispatch(spu_thread& spu)
 {
 	const auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
+	thor_refresh_taskset_snapshot(spu, ctxt);
 	const auto taskset = spu._ptr<CellSpursTaskset>(0x2700);
 
 	u32 taskId;
@@ -2369,7 +2441,31 @@ void spursTasksetDispatch(spu_thread& spu)
 	if (isWaiting == 0)
 	{
 		// If we reach here it means that the task is being started and not being resumed
-		std::memset(spu._ptr<void>(CELL_SPURS_TASK_TOP), 0, CELL_SPURS_TASK_BOTTOM - CELL_SPURS_TASK_TOP);
+		// GHIDRA: THE REAL MODULE STOPS AT 0x3d000, NOT 0x40000.
+		//
+		// The genuine taskset policy module clears local store with an unrolled
+		// store run entered by a computed branch, and its bounds are explicit:
+		//
+		//     000018b0: il   r38,0x3000     ; start - matches CELL_SPURS_TASK_TOP
+		//     000018b8: ila  r39,0x3d000    ; END - not 0x40000
+		//     000018c8: ai   r39,r39,-0x80
+		//     000018cc: brsl r5,0x000018d0  ; compute entry into the unrolled run
+		//     000018ec: bi   r5
+		//
+		// CELL_SPURS_TASK_BOTTOM is 0x40000 (LS_BOTTOM), so this memset zeroes an
+		// extra 0x3000 bytes - 12 KB at the very top of local store - that the
+		// hardware deliberately leaves alone, immediately before the task's ELF is
+		// loaded and entered. The top of local store is where a stack lives; wiping
+		// it out from under the kernel/policy module is consistent with the
+		// observed failure, where the task runs and then executes a conditional
+		// HALT on its own assertion.
+		//
+		// Only the START path is changed. The resume path below is gated on
+		// taskset->enable_clear_ls and is left exactly as it shipped.
+		//
+		//   debug.rpcsx.thor.task_ls_clear_fix = 0 restores the 0x40000 bound
+		std::memset(spu._ptr<void>(CELL_SPURS_TASK_TOP), 0,
+			(thor_task_ls_clear_fix() ? 0x3d000u : u32{CELL_SPURS_TASK_BOTTOM}) - CELL_SPURS_TASK_TOP);
 		ctxt->guidAddr = CELL_SPURS_TASK_TOP;
 
 		u32 entryPoint;
