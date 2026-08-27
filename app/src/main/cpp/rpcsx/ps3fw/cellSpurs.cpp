@@ -6348,6 +6348,59 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	{
 		view->ls_pattern = *ls_pattern;
 	}
+	else if (thor_task_attr_fix())
+	{
+		// AN ABSENT PATTERN MUST MEAN "SAVE EVERYTHING", NOT "SAVE NOTHING".
+		//
+		// Leaving it zeroed passes create_task's validation and then kills the
+		// title: a zero pattern saves no local store, so a task resumed on a
+		// DIFFERENT SPU than it ran on gets that SPU's stale LS, branches into
+		// zeroed memory and dies -
+		//
+		//   SPU[0x0000100] (CellSpursKernel0) [0x31c44] SIG: Thread terminated
+		//   due to fatal error: Unknown STOP code: 0x0 (op=0x0)
+		//
+		// op=0x0 is an all-zero instruction, i.e. executing cleared LS. The
+		// control run with the fix off shows no such error, so this was ours.
+		//
+		// spursTasksetDispatch already names the right value: it skips reloading
+		// the ELF only when the pattern is exactly this, which is blocks 6..127 -
+		// the whole task area with the six SPURS management blocks masked off.
+		// It is 122 blocks, exactly alloc_ls_blocks for the 0x3d400 context the
+		// pair-indirection reads, so it satisfies both create_task checks and
+		// makes a resumed task restore its full state.
+		//
+		// The full pattern only fits a context that can hold 122 blocks. This
+		// title also creates tasks with a 0x1c00 context, which allows just 3,
+		// and asking for 122 there fails create_task's block-count check. For
+		// those, save the TOP alloc blocks: the pattern is then not the magic
+		// value, so dispatch reloads the ELF and the code comes back by itself -
+		// what cannot be reconstructed is the mutable state, and the task stack
+		// sits at the top of local store (sp=0x3fe70 on the observed callsite).
+		//
+		// Bit mapping, verified against the magic constant above: block i < 64 is
+		// bit (63 - i) of _u64[0], so blocks 6..63 give 0x03FFFFFFFFFFFFFF; block
+		// i >= 64 is bit (127 - i) of _u64[1], so the top N blocks are the low N
+		// bits of _u64[1].
+		const u32 alloc_blocks = resolved_size > 0x3D400u ? 0x7Au
+			: (resolved_size >= 0x400u ? ((resolved_size - 0x400u) >> 11) : 0u);
+
+		if (alloc_blocks >= 122)
+		{
+			view->ls_pattern._u64[0] = 0x03FFFFFFFFFFFFFFull;
+			view->ls_pattern._u64[1] = 0xFFFFFFFFFFFFFFFFull;
+		}
+		else
+		{
+			const u32 n = std::min<u32>(alloc_blocks, 64);
+
+			view->ls_pattern._u64[0] = 0;
+			view->ls_pattern._u64[1] = n ? (n == 64 ? ~0ull : ((1ull << n) - 1)) : 0ull;
+		}
+
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern absent, synthesised for %u blocks (context size 0x%x) -> %016llx%016llx",
+			alloc_blocks, resolved_size, +view->ls_pattern._u64[0], +view->ls_pattern._u64[1]);
+	}
 	else if (ls_pattern)
 	{
 		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern=0x%x is not readable memory, treating as absent", ls_pattern.addr());

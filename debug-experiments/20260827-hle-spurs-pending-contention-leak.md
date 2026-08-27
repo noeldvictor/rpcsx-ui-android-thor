@@ -181,3 +181,64 @@ RETRACTED while doing this: "sizeContext == 0 means no context". r8 is 0, but
 r7 points at a {context,size} pair reading {0x10989380, 0x1c00} - 128-byte
 aligned, sane size - so the context is real. Dropping it took draws from 914 to
 0 while task starts went 2 -> 3.
+
+## task_attr_fix, second pass: the pattern must be sized, not zeroed
+
+Zeroing the absent ls_pattern passes create_task and then KILLS the title:
+
+    SPU[0x0000100] (CellSpursKernel0) [0x31c44] SIG: Thread terminated due to
+    fatal error: Unknown STOP code: 0x0 (op=0x0, Out_MBox=empty)
+
+op=0x0 is an all-zero instruction - the SPU is executing cleared local store. A
+zero pattern saves NO local store, so a task resumed on a different SPU than it
+ran on gets that SPU's stale LS and branches into nothing. The control run with
+the fix off shows no such error, so this one was ours.
+
+spursTasksetDispatch names the right value itself: it skips reloading the ELF
+only when the pattern is exactly
+
+    v128::from64r(0x03FFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF)
+
+which is blocks 6..127 - the whole task area with the six SPURS management
+blocks masked off, 122 blocks, exactly alloc_ls_blocks for a 0x3d400 context.
+
+Bit mapping, verified against that constant: block i < 64 is bit (63 - i) of
+_u64[0]; block i >= 64 is bit (127 - i) of _u64[1].
+
+This title uses THREE context sizes: one 0x3d400 (122 blocks) and two 0x1c00
+(3 blocks). Asking for 122 where only 3 fit fails create_task, so the pattern
+is synthesised to fit: full pattern when it fits, otherwise the TOP alloc
+blocks, since dispatch reloads the ELF when the pattern is not the magic value
+and what cannot be reconstructed is the mutable state - the task stack, which
+sits at the top of LS (sp=0x3fe70 on the observed callsite).
+
+    synthesised for 3 blocks (context size 0x1c00) -> ...0007
+
+Measured progress with task_attr_fix=1:
+
+    fatal errors      1  -> 0
+    create_task fails 3  -> 1 -> 0
+    task starts       2  -> 3 -> 12
+    tasksets running  2  -> 3   (0x101b4e80, 0x10364100, 0x1f73f00)
+
+STILL DEFAULT OFF: draws are 0 and the instance deadlocks at ~52 frames, where
+with the fix off it renders the UI at 30 fps. Neither state renders the scene.
+
+## The remaining blocker
+
+    [0]exit=0 [1]yield=369791 [2]waitSig=2 [3]poll=0 [4]recvFlag=0
+
+Two tasks are parked in WAIT_SIGNAL and nothing wakes them. cellSpursQueuePush
+is the only caller of _cellSpursSendSignal in the whole run, and its wake scan
+reads the waiting bitmap of the QUEUE'S taskset only:
+
+    for w in 0..3: word = ts->waiting[w]; if word: wake = w*32 + clz(word)
+
+The one queue (0x1030e400) is bound to 0x10364100, which has no waiter, so
+`wake` keeps its initial value and signals taskId=1 - a task that does not
+exist there, returning SRCH (0x80410905) every time. The actual waiters are on
+0x101b4e80 and 0x1f73f00.
+
+So the wake mechanism those two tasks are waiting on is not
+cellSpursSendSignal, not cellSpursEventFlagSet (zero calls), and not this
+queue. Finding it is the next step.
