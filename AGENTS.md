@@ -13312,3 +13312,53 @@ the baseline to build on, not this.
 Kept because the machinery is correct and reusable - it is the same staging that
 made the job chain policy module run - and because the negative is worth not
 repeating.
+
+# Seventeen Fixes Later, The BOOT Has Not Moved
+
+2026-08-26. The measurement that should govern what happens next.
+
+Boot progress, counted as HLE module calls, against the same metric that first
+diagnosed the stall:
+
+    module        HLE now   HLE before   LLE (renders)
+    sys_memory         76           79             767
+    sys_fs            336          347             551
+    cellAudio           2            0              64
+    sys_spu            23           23              40
+
+**Unchanged.** The title still stops at the same early point and still does a
+tenth of LLE's allocation. `cellAudio` moving 0 -> 2 is the entire visible gain
+from seventeen defect fixes.
+
+## What that means, stated carefully
+
+The fixes are real. Each was proven by reading, and each moved a measurable
+SPURS-internal signal:
+
+    taskset dispatches       1 -> 725
+    ring `used`              frozen full -> 0 in 147/234 samples over ~954k pushes
+    job chain module         never executed -> executes
+    entry assertion          SPU died at 0x2228 -> passes
+    work path                idled forever -> runs
+    switch stop              SPU died at 0x2af4 -> continues
+
+None of it advanced the thing that matters. That is not a reason to doubt the
+fixes; it is evidence that the blocker is not where any of them were.
+
+## The honest reading
+
+Either something else entirely gates this title's boot under HLE - the job chain
+is downstream of it, not the cause - or HLE SPURS for this title needs a
+faithful implementation rather than a sequence of repairs, and each repair only
+reveals the next place the approximation shows.
+
+Anything further should start from the PPU side: find what main_thread is
+actually waiting on at the point the boot stops, with the same rigour used on
+the SPU side. The last time that was measured it was a two-counter fence at
+0x00fdcf60 and the counters were pointers that never converged. That is the
+thread to pull, and it has not been pulled since.
+
+**And the standing caveat has not changed and must not be dropped:** there is
+still no measurement anywhere in this project showing HLE SPURS is faster than
+LLE for this title. LLE is 19.47 fps frame-verified in combat. Every HLE number
+ever recorded was a blank frame.
