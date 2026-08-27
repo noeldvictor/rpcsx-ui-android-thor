@@ -765,3 +765,49 @@ it is now in the tree rather than being a thing to go and find.
 Disassembling it (Ghidra, SPU:BE:128:default, load at 0xA00) and locating its
 task-exit path is the first piece of work in this document that would be
 checking rather than guessing.
+
+## The real module DISASSEMBLES - reference procedure that works
+
+The Ghidra harness parses a TEXT dump, not a .bin, which is why an earlier
+attempt in this effort produced an all-zero image. Generate one from the LLE
+local store first:
+
+    python: for i in range(0,len(d),4):
+        "%08x: %s " % (i, " ".join("%02x"%x for x in d[i:i+4]))
+    -> _research/spurs/ls_lle_kernel1.lsdump.txt
+
+    .\tools\run_ghidra_spu_window.ps1 `
+        -DisasmPath _research\spurs\ls_lle_kernel1.lsdump.txt `
+        -Addresses 0xa00,0xc00,0x1000 -WindowBytes 0x120 `
+        -OutDir _research\spurs\real_pm_disasm
+
+Check `parsed_instruction_count` in summary.json - 65536 here, i.e. the whole
+local store parsed. A zero count means the input was a .bin again.
+
+PowerShell 5.1 reports exit 1 because Ghidra writes an INFO line to stderr and
+the harness pipes it; the output files are still produced. Do not read that as
+a failure.
+
+### The real policy module entry, at LS 0xa00
+
+    00000a20: ila sp,0x3ffd0        ; stack at the top of local store
+    00000a1c: ai  r6,r3,0xdc
+    00000a30: lqd r9,0x0(r6)
+    00000a38: ceqi r2,r8,0x20       ; workload id == 0x20 -> SYS SERVICE
+    00000a3c: brz  r2,0x00000a4c
+    00000a44: brsl lr,0x00001230    ; sys-service path
+    00000a4c: brsl lr,0x000021a8    ; normal-workload path
+    00000a50: brsl lr,0x00002850
+    00000a6c: brsl lr,0x00001988
+    00000a78: brsl lr,0x00002160
+    00000a7c: rchcnt r2,ch30        ; wait for outbound mailbox space
+    00000a80: brz  r2,0x00000a7c
+
+The 0x20 comparison is CELL_SPURS_SYS_SERVICE_WORKLOAD_ID, which our HLE also
+uses - so the module's own entry independently confirms that constant. Calls
+reach 0x2850, consistent with the 0x2400-byte extent extracted from 0xA00.
+
+Saved as _research/spurs/real_pm_entry.disasm.txt.
+
+This is the first reference-checked artifact in this document. Everything else
+about taskset behaviour here was inferred from HLE-side probes.
