@@ -12905,3 +12905,62 @@ kernel exposes routines at these addresses that a policy module calls and
 returns from; only some paths terminate the workload. Getting that contract
 right is what the remaining work is - and it is a control-flow question about
 the HLE kernel, not another missing field.
+
+# A Stale HLE Stub Was Shadowing Every Real Policy Module
+
+2026-08-26. Found by reading register state instead of trusting a hypothesis.
+
+## Retract the bisl theory
+
+The previous section argued the module CALLS exitToKernelAddr with `bisl` as a
+kernel service and that our handler wrongly treats that as termination. **That
+is wrong**, and the data to disprove it was already in hand.
+
+The kernel enters a module with a known register state:
+
+    spu.gpr[0] = ctxt->exitToKernelAddr    // 0x808
+    spu.gpr[1] = 0x3FFB0                   // sp
+    spu.gpr[3] = 0x100
+    spu.gpr[5] = pollStatus
+
+and the job chain module was observed leaving with
+
+    lr=0x00808  sp=0x3ffb0  r3=0x00000100  r5=0x00000002
+
+**Every register still at its entry value**, sp included - and the module's own
+prologue sets `ila sp,0x3ffd0` at 0xa20. It never executed a single instruction
+of its own. A `bisl` from 0x2860 would have left lr=0x2864 and sp lower still.
+
+## What was actually happening
+
+The workload dispatch installs an HLE function AT local store 0xA00 for the two
+sentinel images:
+
+    case SPURS_IMG_ADDR_SYS_SRV_WORKLOAD: RegisterHleFunction(0xA00, spursSysServiceEntry);
+    case SPURS_IMG_ADDR_TASKSET_PM:       RegisterHleFunction(0xA00, spursTasksetEntry);
+    default:                              memcpy(LS 0xA00, wklInfo->addr, wklInfo->size);
+
+A registration made for ONE workload is still live when a DIFFERENT workload is
+loaded. So the real module was copied into local store and then never run: the
+SPU reached 0xA00, found the previous workload's stub registered there, and
+executed that instead.
+
+Upstream never hits this because it registers no SPU-side HLE entries at all -
+both RegisterHleFunction calls are commented out there and every workload goes
+through `default` with a real image. Enabling the SPU-side HLE on this branch
+made unregistering mandatory, and the calls that would do it were sitting
+commented out in `spursTasksetInit` and `spursKernelEntry`:
+
+    // spu.UnregisterHleFunctions(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, 0x40000);
+    // spu.UnregisterHleFunctions(0, 0x40000);
+
+## The fix and its measured effect
+
+`spu.UnregisterHleFunction(0xA00)` before the memcpy in `default`.
+
+    job chain workload loads      1  ->  6
+    exits through our handler     1  ->  0
+
+The module is no longer bounced back to the kernel on entry; it runs. Screen is
+still black at 28 frames, so this is not the last defect - but it is the first
+time the genuine policy module has actually executed under HLE.

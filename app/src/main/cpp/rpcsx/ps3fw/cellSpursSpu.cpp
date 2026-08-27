@@ -1583,6 +1583,31 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 			spu.RegisterHleFunction(0xA00, spursJobChainEntry);
 			break;
 		default:
+			// DROP ANY HLE STUB SHADOWING 0xA00 BEFORE LOADING A REAL MODULE.
+			//
+			// The two cases above install an HLE function AT 0xA00, and a
+			// registration made for one workload is still live when a DIFFERENT
+			// workload is loaded here. So the real policy module was copied into
+			// local store and then never executed: the SPU reached 0xA00, found the
+			// previous workload's HLE stub registered there, and ran that instead.
+			//
+			// MEASURED, and this is what gives it away. The kernel enters a module
+			// with r0 = exitToKernelAddr, sp = 0x3FFB0, r3 = 0x100, r5 = pollStatus
+			// (see "Run workload" below). The job chain module was observed leaving
+			// with:
+			//
+			//     lr=0x00808  sp=0x3ffb0  r3=0x00000100  r5=0x00000002
+			//
+			// EVERY register still at its entry value - including sp, which the
+			// module's own second instruction (`ila sp,0x3ffd0` at 0xa20) would have
+			// changed. It did not execute one instruction of its own prologue.
+			//
+			// Upstream never hits this because it registers no SPU-side HLE entries
+			// at all (both RegisterHleFunction calls are commented out there) and
+			// always runs real images through this branch. Enabling the HLE entries
+			// made unregistering mandatory, and the calls to do it were left
+			// commented out in spursTasksetInit and spursKernelEntry.
+			spu.UnregisterHleFunction(0xA00);
 			std::memcpy(spu._ptr<void>(0xA00), wklInfo->addr.get_ptr(), wklInfo->size);
 			break;
 		}
