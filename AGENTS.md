@@ -12483,3 +12483,57 @@ From the profiling already in this file, on the path that DOES render:
 Those are measured on drawn frames, on the path the user can actually play. The
 SPU recompiler and the VM lock are where a 19.47 -> 30 fps attempt has evidence
 behind it.
+
+# Starting The Job Chain Module: What Is In Hand, And The One Blocker Left
+
+2026-08-26. Work toward implementing the job chain policy module.
+
+## libsre is decrypted and its SPU images are extracted
+
+`debug.rpcsx.thor.dump_decrypted_modules` had already produced decrypted ELFs in
+`files/cache/decrypted_NN.elf` on a previous boot (it does NOT re-fire, because
+RPCSX caches decrypted modules - a fresh dump needs the cache cleared first).
+
+    decrypted_04.elf   239,344 bytes   4 embedded SPU ELF headers, markers: spurs SPURS JobChain
+                                       -> this is libsre.sprx decrypted
+    decrypted_00.elf   30 MB           45 embedded SPU images -> the game EBOOT
+
+Of libsre's four ELF-header hits, two are real SPU images and two are false
+positives in data:
+
+    spu_pm_1.bin  2048 bytes  entry=0x818  PT_LOAD vaddr=0x100 size=0x780
+    spu_pm_2.bin  2064 bytes  entry=0x848  PT_LOAD vaddr=0x100 size=0x790
+
+Both load at **vaddr 0x100**, which is the SPURS KERNEL entry area - these are
+kernel1 and kernel2, not policy modules. Kept as
+`_research/spurs/spurs_kernel{1,2}.spu.bin`.
+
+**The policy modules are NOT standalone ELFs in libsre.** They load at 0xA00 and
+are considerably larger than 2 KB, so they are stored some other way - raw
+blobs, or relocated at load. Finding them in the PRX is unfinished.
+
+## The direct route to the job chain module, and why it did not fire
+
+The real module is resident in SPU local store at 0xA00 during an LLE run, and
+this tree already has `thor::spu_ls_dump_tick()` for exactly that:
+
+    setprop debug.rpcsx.thor.spu_ls_dump <substring of SPU thread name>
+    -> /data/data/net.rpcsx.easy/cache/spu_ls_<name>.bin
+
+Tried with `CellSpursKernel1` on an LLE boot and no file was produced. The gate
+is `#ifdef ANDROID` (which IS defined in this build - the cellSpursSpu.cpp gates
+use the same spelling and respond to props), so the likely cause is the NAME
+FILTER: SPU thread names under LLE were never checked, and the census only ever
+printed `SPU[0x1000100]`-style ids, not names.
+
+**Next step is one cheap check, not a build:** list the SPU thread names under
+LLE, then re-run the dump with a substring that actually matches, and read what
+sits at 0xA00. A capture taken while a job chain workload is loaded IS the job
+chain policy module, and it can be disassembled the same way the taskset module
+was (Ghidra, SPU:BE:128:default).
+
+## Reminder of what this is for
+
+Two paths remain and both are large; this is progress on path 1. Nothing here
+changes the standing measurement: LLE renders at 19.47 fps frame-verified, and
+HLE's speed benefit for this title has never been measured on a drawn frame.
