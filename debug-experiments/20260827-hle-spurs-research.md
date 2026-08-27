@@ -575,3 +575,63 @@ established.
 
 The honest state of the real-firmware path: it fails, the failure is silent,
 and the mechanism is unknown. It should not be described as "one module away".
+
+## 16. Final configuration matrix, and no reference exists
+
+One more combination, shaped like upstream's arrangement (upstream registers no
+SPU-side HLE entries - both RegisterHleFunction calls are commented out there -
+and always runs real images through the default branch):
+
+    PPU HLE + real taskset module + NO SPU stubs (hle_spurs_kernel=0)
+      -> ready=false, draw_calls=0
+
+Complete matrix, every configuration reachable from this tree, all measured:
+
+    HLE stub + 3 firmware-verified fixes        ~900-1250 quads, p5=0   SHIPPED
+    real taskset PM + HLE kernel                 0 frames
+    real kernel     + HLE taskset                0 frames
+    real kernel     + real taskset PM            0 frames
+    real taskset PM + no SPU stubs               0 draws
+    real_spu_kernel both variants                0 draws
+    lfq_any2any                                  p5=0
+    task_attr_fix                                heap growth REGRESSES
+    spurs_always_notify                          p5=0
+    libspurs_jq added to hle_libs                p5=0
+
+Default restored and verified after the sweep: ready=true, 913 quads.
+
+### No working reference exists to copy
+
+Searched for any emulator with functional HLE SPURS. There is none. aPS3e is an
+RPCS3 port and inherits RPCS3's disabled implementation; RPCSX is a separate
+Android fork with no claim to it; ps3recomp explicitly abandoned the HLE stub
+approach for static firmware lifting. RPCS3 itself registers no SPU-side HLE
+entries at all and runs real images.
+
+This fork ENABLED those SPU-side HLE entries. That is the divergence from every
+other project, and it is the thing that does not work.
+
+## Closing state
+
+HLE SPURS does not render Transformers (BLUS30357) or Eternal Sonata in any
+configuration reachable from this tree. p5=0 throughout; LLE renders both.
+
+Shipped and verified:
+  - two contention leaks (0 fps and parked -> running main loop at 30 fps)
+  - three firmware-verified taskset fixes: syscall_dma_wait, exit_destroy_fix,
+    yield_poll_always
+
+Built:
+  - the p5 > 0 test and its measurement procedure (set props via adb, read back
+    with getprop, draw_census=1)
+  - an LLE-capable policy module capture (do_dma_transfer, pm_capture)
+  - the taskset PM identified, extracted, disassembled; sig_b corrected from
+    "job chain variant" to "taskset PM", which explains the recorded
+    "Module B halted all SPUs"
+  - a working Ghidra pipeline for SPU images, with the two traps written down
+    (text dump not .bin; PowerShell exit 1 is cosmetic)
+
+Unknown:
+  - why the real-firmware path fails silently. No SPU fault, PPU stops after
+    taskset creation. Mechanism not established - see section 15 for a
+    hypothesis that was proposed and then argued against.
