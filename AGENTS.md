@@ -12654,3 +12654,37 @@ module with 15 subroutines and 41 DMA sites. The way to answer it is a
 differential on local store 0x100..0x200 between an LLE boot and an HLE boot at
 the moment a job chain workload is dispatched - both captures are already
 possible with `debug.rpcsx.thor.spu_ls_dump`.
+
+## The kernel-context diff, and what it does NOT show
+
+Both local stores are kept as
+`_research/spurs/ls_{lle,hle}_CellSpursKernel1.bin` so this is re-checkable.
+
+`SpursKernelContext` at LS 0x100..0x200, LLE against HLE:
+
+    0x100..0x17F   differs     -> tempArea[0x80]. SCRATCH. Meaningless, and I
+                                  first misread a "one byte shift" here.
+    0x180, 0x190   identical   -> wklLocContention, wklLocPendingContention
+    0x1A0          differs     -> priority[0x10], HLE[i] == LLE[i+1]
+    0x1B0          identical
+    0x1C0          identical   -> spurs pointer 0x1e97a80, spuNum, dmaTagId
+    0x1D0          differs     -> wklCurrentAddr: LLE 0x022b1480 (a real module),
+                                  HLE 0x00000100 (the SYS_SRV sentinel). Different
+                                  workload current at dump time, not a defect.
+    0x1E0          differs     -> only wklRunnable1, 0xfc00 vs 0xf800. Which
+                                  workloads are runnable right now.
+
+**exitToKernelAddr (0x808) and selectWorkloadAddr (0x290) MATCH EXACTLY.** The
+kernel-entry contract the real policy module depends on is correct, which is
+consistent with the module running without faulting.
+
+The `priority[]` difference is NOT an off-by-one in the fill loop
+(`ctxt->priority[i] = 0x10 - wklInfo1[i].priority[spuNum]`). The array is indexed
+by WORKLOAD, so a shift means the workloads occupy different slots in the two
+runs - a creation-order difference, not corruption. Both runs do request the
+system workload (`cellSpursAttributeEnableSystemWorkload` is called once under
+HLE) and both have a `SpursHdlr0`.
+
+So this diff did not find the defect. What it did do is rule out the kernel
+contract and the contention arrays, which is worth having written down before
+someone re-runs it.
