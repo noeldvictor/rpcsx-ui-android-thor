@@ -104,3 +104,50 @@ Already established in this tree and unchanged by this research:
   https://github.com/sp00nznet/flow
   https://patents.google.com/patent/US8589943B2/en
   https://forums.rpcs3.net/archive/index.php/thread-176433.html
+
+## 6. Solving the capture problem: PM capture that runs under LLE
+
+The blocker named at the end of the measurement log was that the taskset policy
+module cannot be captured, because every dump facility in this tree lives in
+the HLE syscall path and does not execute under LLE.
+
+`do_dma_transfer` in SPUThread.cpp runs for every MFC transfer in BOTH
+configurations, so the capture belongs there. Added behind
+`debug.rpcsx.thor.pm_capture=1`: sample LS 0xA00 every 32 DMAs, hash the first
+16 bytes, and write the whole local store once per distinct module.
+
+It works. Under LLE it captured TWO distinct resident policy modules:
+
+    sig=c1238aa09808cb38  first16=4306dc024322b682   = sig_b, jobchain B
+    sig=d8a3c3fb5c262dde  first16=4363de0243d9da82   = NEW, not in the table
+
+The second matches none of the three signatures in thor_jobchain_pm_image
+(sig_a 42377002, sig_b 4306dc02, sig_c 436e8402). Its prologue has the same
+shape as the others - four `ila`-form constants - so it is a policy module.
+
+### It is NOT confirmed to be the taskset PM
+
+The obvious test failed. CELL_SPURS_TASKSET_PM_SYSCALL_ADDR is 0xA70, so the
+taskset PM must have its syscall entry there. Disassembled, the candidate's
+0xA70 is a DMA setup and tag wait:
+
+    wrch r13,ch18 / r12,ch19 / r11,ch20 / r10,ch21 / r6,ch22 / r4,ch23
+    rdch r2,ch24 ; sync 0x2
+
+MFC_EAL / Size / TagID / Cmd / WrTagMask / WrTagUpdate then RdTagStat - a DMA
+and a wait, not a syscall dispatch. So the candidate is a third policy module of
+some kind, not identified.
+
+Extent could not be settled either: walking forward from 0xA00 to a zero run
+gives 0xa700, which is task code and data past the module, not the module size.
+Module size has to come from the workload's declared pm_size, which the capture
+does not record.
+
+### What the capture facility still needs
+
+Record the workload's pm_size and image address alongside the bytes, so a
+capture is self-identifying instead of needing to be recognised afterwards.
+That is a small change to the same hook and it is the difference between "we
+have some modules" and "we have the taskset PM".
+
+Captures kept in _research/spurs/pm_captures/.

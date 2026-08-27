@@ -238,6 +238,92 @@ static bool get_thor_spurs_tear_probe() noexcept
 
 // Count a plain GET whose source overlaps a line under an active reservation
 // lock. Caps the walk, because a DMA can be 16 KB and this is a diagnostic.
+// CAPTURE THE RESIDENT SPURS POLICY MODULE, UNDER LLE.
+//
+// The taskset policy module is the one reference this effort has never had.
+// It cannot be captured by the dump facilities in cellSpursSpu.cpp because
+// those live in the HLE syscall path, which does not execute under LLE - and
+// under HLE the module is never resident at all (LS 0xA00 measured entirely
+// zero, against 930/1024 nonzero under LLE).
+//
+// do_dma_transfer runs for every MFC transfer in BOTH configurations, so the
+// check belongs here. The kernel DMAs a policy module into local store at
+// 0xA00 before entering it; sampling that address after transfers catches
+// whichever module is resident, keyed by its first 16 bytes so each distinct
+// module is written exactly once.
+//
+//   debug.rpcsx.thor.pm_capture = 1
+static bool get_thor_pm_capture() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.pm_capture", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+static void thor_capture_policy_module(spu_thread* spu) noexcept
+{
+	if (!spu)
+	{
+		return;
+	}
+
+	const u8* const ls = static_cast<const u8*>(spu->_ptr<void>(0xA00));
+	u64 sig = 0;
+
+	for (u32 i = 0; i < 16; i++)
+	{
+		sig = sig * 1099511628211ull ^ ls[i];
+	}
+
+	if (sig == 0 || !ls[0])
+	{
+		return;
+	}
+
+	static std::mutex s_mutex;
+	static std::vector<u64> s_seen;
+
+	{
+		std::lock_guard lock(s_mutex);
+
+		for (u64 e : s_seen)
+		{
+			if (e == sig)
+			{
+				return;
+			}
+		}
+
+		if (s_seen.size() >= 24)
+		{
+			return;
+		}
+
+		s_seen.push_back(sig);
+	}
+
+	char path[256]{};
+	std::snprintf(path, sizeof(path),
+		"/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_pm_%016llx.bin",
+		static_cast<unsigned long long>(sig));
+
+	if (FILE* f = std::fopen(path, "wb"))
+	{
+		std::fwrite(spu->_ptr<void>(0), 1, 0x40000, f);
+		std::fclose(f);
+		spu_log.error("Thor PM CAPTURE: sig=%016llx first16=%02x%02x%02x%02x%02x%02x%02x%02x -> %s",
+			static_cast<unsigned long long>(sig),
+			ls[0], ls[1], ls[2], ls[3], ls[4], ls[5], ls[6], ls[7], path);
+	}
+}
+
 static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
 {
 	static atomic_t<u64> s_checked{0};
@@ -4821,6 +4907,16 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 	}
 #endif
 	// Default off. See get_thor_spurs_tear_probe.
+	if (get_thor_pm_capture()) [[unlikely]]
+	{
+		static std::atomic<u32> s_tick{0};
+
+		if ((s_tick++ & 0x1F) == 0)
+		{
+			thor_capture_policy_module(_this);
+		}
+	}
+
 	if (is_get && eal < RAW_SPU_BASE_ADDR && get_thor_spurs_tear_probe()) [[unlikely]]
 	{
 		thor_spurs_tear_check(eal, args.size, _this ? _this->spurs_addr : 0);
