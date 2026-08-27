@@ -269,3 +269,53 @@ another counter bug and should not be chased as one.
 With task_attr_fix off, boots are stable: three consecutive runs ready=true at
 803, 1065 and 1095 frames, ~29.5 fps, holders=0x01 each time. The intermittent
 early hangs seen earlier belong to the task_attr_fix=1 path.
+
+## The wake target, found - and the ANY2ANY push implemented
+
+Captured at queue creation, which every run reaches (the push stubs are reached
+only on some):
+
+    LFQINIT: queue=0x101b1f80 buffer=0x101b2000 size=32 depth=16 dir=3
+             eaSignal=0x1e97a81
+
+dir=3 is CELL_SYNC_QUEUE_ANY2ANY. eaSignal 0x1e97a81 is the SPURS instance
+0x1e97a80 - the value the TASK ARGS probe reports - with bit 0 set, the tag
+meaning "signal through SPURS". That is the wake the parked task needs, and it
+is why nothing in HLE delivered it: _cellSpursSendSignal is only ever called
+from cellSpursQueuePush, which scans a different taskset entirely.
+
+eaSignal names the instance but not which taskset waits on it, so tasksets are
+now recorded as they are created (Thor TSREG) and the wake scans them for one
+with a non-zero `waiting` bitmap.
+
+`_cellSyncLFQueueGetPushPointer2` and `_cellSyncLFQueueCompletePushPointer2`
+are implemented against the ring convention used throughout this codebase -
+counters mod 2*depth, buffer index = counter mod depth, producer index in
+push3.m_h5 and consumer index in pop3.m_h1 (push1/push3 and pop1/pop3 are
+unions over the same words). The old stubs returned CELL_OK without writing
+*pointer, so PushBody memcpy'd every entry into slot 0 and completed a push
+that signalled nothing.
+
+It works, and the signal is accepted:
+
+    LFQWAKE #0: spurs=0x1e97a80 taskset=0x101b4e80 taskId=0 rc=0x0
+
+rc=0 is CELL_OK. The task that had been parked since boot is woken for the
+first time, and its behaviour changes completely:
+
+    lfq_any2any=0   yield=102784  waitSig=1    poll=0     draws 890 quads
+    lfq_any2any=1   yield=15441   waitSig=656  poll=672   draws 126 quads
+
+waitSig 1 -> 656 and poll 0 -> 672: it goes from parking once and never
+returning to actively cycling. That task was dead for this entire effort.
+
+DEFAULT OFF anyway: visible draws fall from ~890 to ~126 and the frame counter
+stalls, so shipping it on would be shipping a regression. Neither setting
+renders the scene. Default-off verified: ready=true, 880 quads.
+
+`debug.rpcsx.thor.lfq_any2any=1` is the frontier. What is not yet right is that
+only ONE push ever completes, so the consumer is woken once and then waits
+again - the producer either stops or blocks. Whether the SPU side agrees with
+the push3/pop3 field choice is the open question, and it is answerable: the
+consumer is real guest SPU code, so if it advances pop3.m_h1 the choice is
+right, and if it advances something else the ring layout needs correcting.

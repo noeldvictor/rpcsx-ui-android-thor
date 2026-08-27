@@ -1,4 +1,8 @@
 #include "stdafx.h"
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
 #include "Emu/Cell/PPUModule.h"
 #include "cellos/sys_event.h"
 #include "cellos/sys_process.h"
@@ -766,6 +770,17 @@ void syncLFQueueInitialize(vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer
 
 error_code cellSyncLFQueueInitialize(vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 size, u32 depth, u32 direction, vm::ptr<void> eaSignal)
 {
+	// EVERY LFQUEUE THE TITLE CREATES, and what it signals.
+	//
+	// The task parked in WAIT_SIGNAL on taskset 0x101b4e80 holds the LFQueue at
+	// 0x101b1f80 as its argument, and that queue is ANY2ANY - the one direction
+	// whose PPU push functions are todo stubs. The implemented PPU2SPU sibling
+	// wakes its consumer with fpSendSignal(ppu, queue->m_eaSignal, var6), and
+	// this title passes fpSendSignal=0, so eaSignal is where the wake must come
+	// from. Capture it HERE, at creation, which is reached on every run - the
+	// push stubs are only reached on some.
+	cellSync.error("Thor LFQINIT: queue=0x%x buffer=0x%x size=%u depth=%u dir=%u eaSignal=0x%x",
+		queue.addr(), buffer.addr(), size, depth, direction, eaSignal.addr());
 	cellSync.warning("cellSyncLFQueueInitialize(queue=*0x%x, buffer=*0x%x, size=0x%x, depth=0x%x, direction=%d, eaSignal=*0x%x)", queue, buffer, size, depth, direction, eaSignal);
 
 	if (!queue) [[unlikely]]
@@ -965,36 +980,100 @@ error_code _cellSyncLFQueueGetPushPointer(ppu_thread& ppu, vm::ptr<CellSyncLFQue
 	}
 }
 
-error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& /*ppu*/, vm::ptr<CellSyncLFQueue> queue, vm::ptr<s32> pointer, u32 isBlocking, u32 useEventQueue)
-{
-	// arguments copied from _cellSyncLFQueueGetPushPointer
-	cellSync.todo("_cellSyncLFQueueGetPushPointer2(queue=*0x%x, pointer=*0x%x, isBlocking=%d, useEventQueue=%d)", queue, pointer, isBlocking, useEventQueue);
-	// WHAT IS THIS QUEUE, AND WHAT DOES IT SIGNAL?
-	//
-	// BLUS30357 pushes into an ANY2ANY LFQueue at 0x101b1f80 - the very pointer
-	// handed to the task parked in WAIT_SIGNAL on taskset 0x101b4e80. This stub
-	// returns CELL_OK without writing *pointer and without signalling anything,
-	// so that task is never woken and the geometry stage never runs.
-	//
-	// The implemented PPU2SPU sibling wakes its consumer with
-	// fpSendSignal(ppu, queue->m_eaSignal, var6), but _cellSyncLFQueuePushBody
-	// passes vm::null and this title's own call logs fpSendSignal=*0x0 - so for
-	// ANY2ANY the wake must come through m_eaSignal itself. Print it, with
-	// enough of the queue to implement the protocol against.
-	{
-		static std::atomic<u32> s_q{0};
+// Signal a task waiting on the SPURS instance named by eaSignal (cellSpurs.cpp).
+s32 thor_spurs_wake_lfq_waiter(ppu_thread& ppu, u32 ea_signal);
 
-		if (const u32 n = s_q++; n < 4)
+static bool thor_lfq_any2any() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.lfq_any2any", v) <= 0 || !v[0])
 		{
-			cellSync.error("Thor LFQ2 #%u: queue=0x%x size=%u depth=%u dir=%u buffer=0x%x "
-				"eaSignal=0x%x eq_id=0x%x v1=0x%x v2=0x%x init=%d",
-				n, queue.addr(), +queue->m_size, +queue->m_depth, +queue->m_direction,
-				queue->m_buffer.addr(), queue->m_eaSignal.addr(), +queue->m_eq_id,
-				+queue->m_v1, +queue->m_v2, queue->init.load());
+			return false;
 		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<s32> pointer, u32 isBlocking, u32 useEventQueue)
+{
+	// ANY2ANY PUSH - previously a todo stub returning CELL_OK.
+	//
+	// The stub never wrote *pointer, so _cellSyncLFQueuePushBody memcpy'd every
+	// entry into slot 0 and then "completed" a push that signalled nothing. The
+	// consumer - the task parked in WAIT_SIGNAL holding this queue - was never
+	// woken, and the title's geometry stage never ran.
+	//
+	// The ring convention is the one used throughout this codebase: counters run
+	// mod 2*depth and the buffer index is counter mod depth, so a full queue is
+	// (push - pop) mod 2*depth == depth. ANY2ANY keeps its producer index in
+	// push3.m_h5 and its consumer index in pop3.m_h1 (push1/push3 and pop1/pop3
+	// are unions over the same words).
+	//
+	//   debug.rpcsx.thor.lfq_any2any = 0 restores the stub
+	if (!thor_lfq_any2any())
+	{
+		cellSync.todo("_cellSyncLFQueueGetPushPointer2(queue=*0x%x, pointer=*0x%x, isBlocking=%d, useEventQueue=%d)", queue, pointer, isBlocking, useEventQueue);
+		return CELL_OK;
 	}
 
-	return CELL_OK;
+	if (queue->m_direction != CELL_SYNC_QUEUE_ANY2ANY) [[unlikely]]
+	{
+		return CELL_SYNC_ERROR_PERM;
+	}
+
+	const s32 depth = queue->m_depth;
+
+	while (true)
+	{
+		const auto old = queue->push3.load();
+		auto push = old;
+
+		const s32 pop_idx = queue->pop3.load().m_h1;
+		s32 used = s32{push.m_h5} - pop_idx;
+
+		if (used < 0)
+		{
+			used += depth * 2;
+		}
+
+		if (used >= depth)
+		{
+			if (!isBlocking)
+			{
+				return not_an_error(CELL_SYNC_ERROR_AGAIN);
+			}
+
+			if (ppu.test_stopped())
+			{
+				return 0;
+			}
+
+			continue;
+		}
+
+		*pointer = push.m_h5;
+
+		s32 next = s32{push.m_h5} + 1;
+
+		if (next >= depth * 2)
+		{
+			next -= depth * 2;
+		}
+
+		push.m_h5 = static_cast<u16>(next);
+
+		if (queue->push3.compare_and_swap_test(old, push))
+		{
+			return CELL_OK;
+		}
+	}
 }
 
 error_code _cellSyncLFQueueCompletePushPointer(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, s32 pointer, vm::ptr<s32(u32 addr, u32 arg)> fpSendSignal)
@@ -1130,10 +1209,28 @@ error_code _cellSyncLFQueueCompletePushPointer(ppu_thread& ppu, vm::ptr<CellSync
 	}
 }
 
-error_code _cellSyncLFQueueCompletePushPointer2(ppu_thread&, vm::ptr<CellSyncLFQueue> queue, s32 pointer, vm::ptr<s32(u32 addr, u32 arg)> fpSendSignal)
+error_code _cellSyncLFQueueCompletePushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, s32 pointer, vm::ptr<s32(u32 addr, u32 arg)> fpSendSignal)
 {
-	// arguments copied from _cellSyncLFQueueCompletePushPointer
-	cellSync.todo("_cellSyncLFQueueCompletePushPointer2(queue=*0x%x, pointer=%d, fpSendSignal=*0x%x)", queue, pointer, fpSendSignal);
+	if (!thor_lfq_any2any())
+	{
+		cellSync.todo("_cellSyncLFQueueCompletePushPointer2(queue=*0x%x, pointer=%d, fpSendSignal=*0x%x)", queue, pointer, fpSendSignal);
+		return CELL_OK;
+	}
+
+	// The entry is already in the buffer; make it visible, then wake the
+	// consumer. This title passes fpSendSignal = 0 and puts the wake target in
+	// the queue instead: eaSignal = 0x1e97a81 is the SPURS instance 0x1e97a80
+	// with bit 0 set. The implemented PPU2SPU sibling calls
+	// fpSendSignal(ppu, queue->m_eaSignal, var6) for exactly this purpose.
+	if (fpSendSignal)
+	{
+		return not_an_error(fpSendSignal(ppu, vm::cast(queue->m_eaSignal.addr()), pointer));
+	}
+
+	if (const u32 ea = queue->m_eaSignal.addr(); ea & 1)
+	{
+		return not_an_error(thor_spurs_wake_lfq_waiter(ppu, ea));
+	}
 
 	return CELL_OK;
 }
