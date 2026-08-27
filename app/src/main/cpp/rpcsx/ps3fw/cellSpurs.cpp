@@ -4484,6 +4484,45 @@ static bool thor_queue_monotonic_fix() noexcept
 // reservation intact and lets it drain.
 //
 //   debug.rpcsx.thor.queue_reserve_fix = 0  restore the bare CAS
+// SEED THE READY COUNT WHEN A JOB CHAIN IS RUN.
+//
+// The policy module branches on POLL_STATUS_READYCOUNT at entry:
+//
+//     0222c  andi r14,r3,0x1        ; READYCOUNT
+//     02238  brhnz r12,0x000025a0   ; clear -> idle path, arm the tag event, sleep
+//
+// and our kernel sets that bit only when `readyCount > contention`. Nothing
+// ever raises a job chain's ready count: `cellSpursRunJobChain` signals and
+// wakes but sets none, and `cellSpursKickJobChain` - the API that takes a
+// numReadyCount - is never called, because this title passes
+// autoRequestSpuCount = true. With auto-request the MODULE is supposed to grow
+// its own ready count as it grabs jobs, which it cannot do while it idles.
+//
+// Matching upstream is not evidence here: upstream's HLE cellSpurs is a
+// partial port whose SPU side is entirely disabled, so its RunJobChain has
+// never had to make a real module run.
+//
+//   debug.rpcsx.thor.jobchain_readycount = N   seed N on RunJobChain (0 = off)
+static u32 thor_jobchain_readycount() noexcept
+{
+#ifdef __ANDROID__
+	static const u32 s_n = []() noexcept -> u32
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.jobchain_readycount", v) <= 0 || !v[0])
+		{
+			return 1;
+		}
+
+		const long parsed = std::strtol(v, nullptr, 10);
+		return parsed > 0 ? static_cast<u32>(parsed) : 0;
+	}();
+	return s_n;
+#else
+	return 1;
+#endif
+}
+
 static bool thor_queue_reserve_fix() noexcept
 {
 #ifdef __ANDROID__
@@ -6807,6 +6846,15 @@ s32 cellSpursRunJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 		return CELL_SPURS_JOB_ERROR_PERM;
 
 	const auto spurs = +jobChain->spurs;
+
+	// Seed the ready count so the module is entered with POLL_STATUS_READYCOUNT
+	// set and takes its work path instead of its idle path. See
+	// thor_jobchain_readycount.
+	if (const u32 seed = thor_jobchain_readycount())
+	{
+		ppu_execute<&cellSpursReadyCountStore>(ppu, spurs, wid, seed);
+	}
+
 	ppu_execute<&cellSpursSendWorkloadSignal>(ppu, spurs, wid);
 
 	const auto err = ppu_execute<&cellSpursWakeUp>(ppu, spurs);

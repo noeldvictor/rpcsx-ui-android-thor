@@ -13053,3 +13053,55 @@ function already; the guest reaches the same behaviour through the LS address.
 time and always takes the idle path. Whether the real kernel raises a ready
 count on RunJobChain for an auto-request chain is the next thing to establish -
 if it does, that is likely the remaining gap.
+
+# Seeding The Ready Count Puts The Module On Its WORK Path
+
+2026-08-26.
+
+## The circular dependency, and the seed that breaks it
+
+The module branches at entry on POLL_STATUS_READYCOUNT and idles when it is
+clear. Nothing ever raised a job chain's ready count: `cellSpursRunJobChain`
+signals and wakes but sets none, and `cellSpursKickJobChain` - the API that takes
+a numReadyCount - is never called, because this title passes
+`autoRequestSpuCount = true`, under which the MODULE grows its own ready count
+as it grabs jobs. It cannot, while it is idling.
+
+Matching upstream proves nothing here: upstream's HLE cellSpurs is a partial port
+with the whole SPU side disabled, so its `cellSpursRunJobChain` has never had to
+make a real module run. Ours matched it exactly and was still wrong for this.
+
+`thor_jobchain_readycount` (default 1) stores a ready count on the workload
+before the signal in `cellSpursRunJobChain`.
+
+## Measured effect: the failure MOVED
+
+    before:  SPU dies at 0x02228  - the entry assertion on poll status
+    after:   SPU dies at 0x02af4  - SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE
+
+Different address, different failure, much further in. The module left the idle
+path at 0x25a0 and went down the work path.
+
+# The Next Blocker: sys_spu_thread_switch_system_module Does Not Exist
+
+The module reaches 0x2af4 and issues an SPU stop with code
+`SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE`. In this tree that is:
+
+```cpp
+case SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE:
+    fmt::throw_exception("SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE (op=0x%x, Out_MBox=%s)", ...);
+```
+
+An unconditional throw, which is what kills the SPU. The only other reference in
+the tree is a name formatter in `kernel/cellos/src/sys_spu.cpp` mapping the code
+to the string `sys_spu_thread_switch_system_module`. There is no implementation
+anywhere, and upstream RPCS3 has none either.
+
+This is a real lv2 service: an SPU asks the system to switch the module loaded
+in its local store, passing parameters through the out mailbox. SPURS job chains
+use it, which is why nothing in the emulator has ever needed it - HLE SPURS has
+never got this far before.
+
+**Next step is to implement it**, and the out-mailbox contents at the stop are
+the specification: log them (the throw already formats `ch_out_mbox`) and decode
+what the module is asking for before writing anything.
