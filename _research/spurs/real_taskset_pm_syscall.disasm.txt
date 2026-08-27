@@ -1,0 +1,103 @@
+Program: spu-hot-window-image.bin
+Language: SPU:BE:128:default
+WindowBytes: 0xc0
+
+==== 0xa70 (000009b0..00000b30) ====
+   000009b0: stop 0x0    ; flow fall=000009b4
+   000009b4: stop 0x0    ; flow fall=000009b8
+   000009b8: stop 0x0    ; flow fall=000009bc
+   000009bc: stop 0x0    ; flow fall=000009c0
+   000009c0: stop 0x0    ; flow fall=000009c4
+   000009c4: stop 0x0    ; flow fall=000009c8
+   000009c8: stop 0x0    ; flow fall=000009cc
+   000009cc: stop 0x0    ; flow fall=000009d0
+   000009d0: stop 0x0    ; flow fall=000009d4
+   000009d4: stop 0x0    ; flow fall=000009d8
+   000009d8: stop 0x0    ; flow fall=000009dc
+   000009dc: stop 0x0    ; flow fall=000009e0
+   000009e0: stop 0x0    ; flow fall=000009e4
+   000009e4: stop 0x0    ; flow fall=000009e8
+   000009e8: stop 0x0    ; flow fall=000009ec
+   000009ec: stop 0x0    ; flow fall=000009f0
+   000009f0: stop 0x0    ; flow fall=000009f4
+   000009f4: stop 0x0    ; flow fall=000009f8
+   000009f8: stop 0x0    ; flow fall=000009fc
+   000009fc: stop 0x0    ; flow fall=00000a00
+   00000a00: ila r2,0x20db8    ; flow fall=00000a04
+   00000a04: ila r2,0x2456d    ; flow fall=00000a08
+   00000a08: ila r2,0xb996    ; flow fall=00000a0c
+   00000a0c: ila r2,0x1050f    ; flow fall=00000a10
+   00000a10: il sp,0x2c50    ; flow fall=00000a14
+   00000a14: hbrr    ; flow fall=00000a18
+   00000a18: lqr r17,0x76a    ; flow fall=00000a1c
+   00000a1c: lqa r16,0x1c0    ; flow fall=00000a20
+   00000a20: cwd r12,0x0(sp)    ; flow fall=00000a24
+   00000a24: lqr r14,0x763    ; flow fall=00000a28
+   00000a28: lqr r13,0x76a    ; flow fall=00000a2c
+   00000a2c: cdd r2,0x8(sp)    ; flow fall=00000a30
+   00000a30: shufb r9,r3,r17,r12    ; flow fall=00000a34
+   00000a34: cwd r11,0xc(sp)    ; flow fall=00000a38
+   00000a38: lr r3,r5    ; flow fall=00000a3c
+   00000a3c: rotqbyi r7,r16,0xc    ; flow fall=00000a40
+   00000a40: rotqbyi r5,r16,0x8    ; flow fall=00000a44
+   00000a44: lqr r18,0x6ef    ; flow fall=00000a48
+   00000a48: shufb r8,r4,r14,r2    ; flow fall=00000a4c
+   00000a4c: shufb r10,r7,r13,r12    ; flow fall=00000a50
+   00000a50: shufb r6,r5,r9,r11    ; flow fall=00000a54
+   00000a54: stqr r8,0x757    ; flow fall=00000a58
+   00000a58: stqr r18,0x77a    ; flow fall=00000a5c
+   00000a5c: stqr r6,0x759    ; flow fall=00000a60
+   00000a60: stqr r10,0x75c    ; flow fall=00000a64
+   00000a64: brsl lr,0x00001ec8    ; flow fall=00000a68 target=00001ec8
+   00000a68: brsl lr,0x00001778    ; flow fall=00000a6c target=00001778
+   00000a6c: lnop    ; flow fall=00000a70
+=> 00000a70: stqa lr,0x2c80    ; flow fall=00000a74
+   00000a74: stqa sp,0x2c90    ; flow fall=00000a78
+   00000a78: hbrr    ; flow fall=00000a7c
+   00000a7c: stqa r80,0x2ca0    ; flow fall=00000a80
+   00000a80: stqa r81,0x2cb0    ; flow fall=00000a84
+   00000a84: stqa r82,0x2cc0    ; flow fall=00000a88
+   00000a88: stqa r83,0x2cd0    ; flow fall=00000a8c
+   00000a8c: stqa r84,0x2ce0    ; flow fall=00000a90
+   00000a90: stqa r85,0x2cf0    ; flow fall=00000a94
+   00000a94: stqa r86,0x2d00    ; flow fall=00000a98
+   00000a98: stqa r87,0x2d10    ; flow fall=00000a9c
+   00000a9c: stqa r88,0x2d20    ; flow fall=00000aa0
+   00000aa0: stqa r89,0x2d30    ; flow fall=00000aa4
+   00000aa4: stqa r90,0x2d40    ; flow fall=00000aa8
+   00000aa8: stqa r91,0x2d50    ; flow fall=00000aac
+   00000aac: stqa r92,0x2d60    ; flow fall=00000ab0
+   00000ab0: stqa r93,0x2d70    ; flow fall=00000ab4
+   00000ab4: stqa r94,0x2d80    ; flow fall=00000ab8
+   00000ab8: hbr    ; flow fall=00000abc
+   00000abc: stqa r95,0x2d90    ; flow fall=00000ac0
+   00000ac0: stqa r96,0x2da0    ; flow fall=00000ac4
+   00000ac4: stqa r97,0x2db0    ; flow fall=00000ac8
+   00000ac8: stqa r98,0x2dc0    ; flow fall=00000acc
+   00000acc: stqa r99,0x2dd0    ; flow fall=00000ad0
+   00000ad0: stqa r100,0x2de0    ; flow fall=00000ad4
+   00000ad4: stqa r101,0x2df0    ; flow fall=00000ad8
+   00000ad8: stqa r102,0x2e00    ; flow fall=00000adc
+   00000adc: stqa r103,0x2e10    ; flow fall=00000ae0
+   00000ae0: stqa r104,0x2e20    ; flow fall=00000ae4
+   00000ae4: stqa r105,0x2e30    ; flow fall=00000ae8
+   00000ae8: stqa r106,0x2e40    ; flow fall=00000aec
+   00000aec: stqa r107,0x2e50    ; flow fall=00000af0
+   00000af0: stqa r108,0x2e60    ; flow fall=00000af4
+   00000af4: stqa r109,0x2e70    ; flow fall=00000af8
+   00000af8: hbr    ; flow fall=00000afc
+   00000afc: stqa r110,0x2e80    ; flow fall=00000b00
+   00000b00: stqa r111,0x2e90    ; flow fall=00000b04
+   00000b04: stqa r112,0x2ea0    ; flow fall=00000b08
+   00000b08: stqa r113,0x2eb0    ; flow fall=00000b0c
+   00000b0c: stqa r114,0x2ec0    ; flow fall=00000b10
+   00000b10: stqa r115,0x2ed0    ; flow fall=00000b14
+   00000b14: stqa r116,0x2ee0    ; flow fall=00000b18
+   00000b18: stqa r117,0x2ef0    ; flow fall=00000b1c
+   00000b1c: stqa r118,0x2f00    ; flow fall=00000b20
+   00000b20: stqa r119,0x2f10    ; flow fall=00000b24
+   00000b24: stqa r120,0x2f20    ; flow fall=00000b28
+   00000b28: stqa r121,0x2f30    ; flow fall=00000b2c
+   00000b2c: stqa r122,0x2f40    ; flow fall=00000b30
+   00000b30: stqa r123,0x2f50    ; flow fall=00000b34
+

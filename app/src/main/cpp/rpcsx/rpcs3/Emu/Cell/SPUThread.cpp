@@ -318,9 +318,33 @@ static void thor_capture_policy_module(spu_thread* spu) noexcept
 	{
 		std::fwrite(spu->_ptr<void>(0), 1, 0x40000, f);
 		std::fclose(f);
-		spu_log.error("Thor PM CAPTURE: sig=%016llx first16=%02x%02x%02x%02x%02x%02x%02x%02x -> %s",
+		// SELF-IDENTIFYING CAPTURE.
+		//
+		// Bytes alone cannot say which module this is - the first attempt caught
+		// two and neither could be confirmed as the taskset PM. The kernel context
+		// at LS 0x100 names the workload it is running:
+		//
+		//   0x1D0  wklCurrentAddr   the image EA the kernel loaded from
+		//   0x1D8  wklCurrentUniqueId
+		//   0x1DC  wklCurrentId
+		//
+		// Record them with the bytes so a capture identifies itself instead of
+		// having to be recognised afterwards. Under LLE wklCurrentAddr is a real
+		// guest address, so it also says where the image came from.
+		const u8* const kc = static_cast<const u8*>(spu->_ptr<void>(0x100));
+		const auto be32 = [](const u8* p) -> u32
+		{
+			return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | u32{p[3]};
+		};
+		const u32 wkl_addr_lo = be32(kc + 0xD4);
+		const u32 wkl_uid     = be32(kc + 0xD8);
+		const u32 wkl_id      = be32(kc + 0xDC);
+
+		spu_log.error("Thor PM CAPTURE: sig=%016llx first16=%02x%02x%02x%02x%02x%02x%02x%02x "
+			"wklCurrentAddr=0x%08x wklUniqueId=%u wklCurrentId=%u spu=%u -> %s",
 			static_cast<unsigned long long>(sig),
-			ls[0], ls[1], ls[2], ls[3], ls[4], ls[5], ls[6], ls[7], path);
+			ls[0], ls[1], ls[2], ls[3], ls[4], ls[5], ls[6], ls[7],
+			wkl_addr_lo, wkl_uid, wkl_id, spu->index, path);
 	}
 }
 

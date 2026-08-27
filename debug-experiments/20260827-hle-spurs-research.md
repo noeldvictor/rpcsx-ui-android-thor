@@ -151,3 +151,51 @@ That is a small change to the same hook and it is the difference between "we
 have some modules" and "we have the taskset PM".
 
 Captures kept in _research/spurs/pm_captures/.
+
+## 7. THE TASKSET POLICY MODULE, IDENTIFIED
+
+Making the capture self-identifying settled it. The kernel context names the
+workload it is running (0x1D0 wklCurrentAddr, 0x1D8 wklCurrentUniqueId,
+0x1DC wklCurrentId), so recording those with the bytes gives:
+
+    4306dc024322b682   wklCurrentAddr=0x022b3680  wklId=1  spu=4
+    4363de0243d9da82   wklCurrentAddr=0x02317200  wklId=2  spu=3
+
+Two workloads, two distinct policy modules. The decisive test is
+CELL_SPURS_TASKSET_PM_SYSCALL_ADDR = 0xA70: the taskset PM MUST have its
+syscall entry there, at module offset 0x70.
+
+    4363de02 at 0xA70:  wrch ch18/19/20/21/22/23, rdch ch24, sync
+                        - a DMA and a tag wait. NOT a syscall entry.
+
+    4306dc02 at 0xA70:  stqa sp,0x2c90
+                        stqa r80,0x2ca0
+                        stqa r81,0x2cb0
+                        stqa r82..r92 -> 0x2cc0..0x2d60
+
+A register-save sequence writing sp and the callee-saved registers into
+0x2c90+, which is inside the taskset management area (SpursTasksetContext at
+0x2700, fields through 0x2FD4) and OUTSIDE the module image itself (0xA00 +
+0x1E40 = 0x2840). Saving the task's context before entering policy logic is
+exactly what a taskset syscall entry does, and nothing else would write there.
+
+**4306dc02 is the taskset policy module.** Extracted at its declared pm_size:
+
+    _research/spurs/real_taskset_pm.bin              0x1E40 bytes
+    _research/spurs/real_taskset_pm_syscall.disasm.txt
+
+### This corrects the signature table in the tree
+
+thor_jobchain_pm_image lists sig_b = 43 06 dc 02 43 22 b6 82 as a JOB CHAIN
+policy module candidate. It is not - it is the taskset PM. That explains the
+measurement already recorded in the log: "Module B: halted all SPUs (HLGTI at
+pc=0x00f00)". Feeding the taskset PM to a job chain workload would do exactly
+that. Variant B should be removed from that table, not merely left unselected.
+
+### What this unblocks
+
+exit=0 - no SPURS task ever finishing, on either title, in any configuration -
+now has a reference. The task-exit path is in this 0x1E40-byte image, reachable
+from the syscall entry at offset 0x70, and it can be read against
+spursTasksetProcessSyscall's CELL_SPURS_TASK_SYSCALL_EXIT arm instead of
+inferred from HLE-side probes.
