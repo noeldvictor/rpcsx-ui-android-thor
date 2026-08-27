@@ -544,3 +544,34 @@ academic Cell literature is about SPE scheduling generally, not Sony's runtime.
 
 _research_aps3e/ is an empty checkout (README and gradle.properties only), so
 it offers no second implementation to compare against.
+
+## 15. QUALIFYING section 14 - the sys-service sentinel story is NOT confirmed
+
+Section 14 explained the real kernel's zero frames as: it DMAs the sys-service
+policy module from the 0x100 sentinel and executes garbage. That mechanism is
+NOT established, and the attempt to close the gap argues against it.
+
+Hunted the sys-service module with the LLE capture at 4x the sampling rate
+(every 8 DMAs) over 70 seconds:
+
+    first16=4306dc024322b682  wklCurrentId=1   (taskset PM)
+    first16=4363de0243d9da82  wklCurrentId=2
+
+Still only two modules. No capture with wklCurrentId=0x20 (32), the sys-service
+workload, ever appears - so under LLE the sys service does NOT load a separate
+policy module into LS 0xA00 at all.
+
+If it never loads one, the real kernel is not DMAing a module from 0x100 for
+it, and the "executes garbage from address 0x100" mechanism is wrong. A more
+likely reading is that 0x100 is meaningful to the real kernel - the kernel
+itself is resident at LS 0x100 - and the sys service is handled inside the
+kernel image rather than as a loadable module. That is a hypothesis too, and it
+is not tested here.
+
+What remains true from section 14 is only the measurement: under
+real_spu_kernel=1 there are no SPU faults and the PPU stops after taskset
+creation without ever calling cellSpursCreateTask. WHY it stops is still not
+established.
+
+The honest state of the real-firmware path: it fails, the failure is silent,
+and the mechanism is unknown. It should not be described as "one module away".

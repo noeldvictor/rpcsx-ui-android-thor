@@ -4935,7 +4935,7 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 	{
 		static std::atomic<u32> s_tick{0};
 
-		if ((s_tick++ & 0x1F) == 0)
+		if ((s_tick++ & 0x7) == 0)
 		{
 			thor_capture_policy_module(_this);
 		}
