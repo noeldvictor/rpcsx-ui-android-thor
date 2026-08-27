@@ -274,6 +274,42 @@ static void thor_capture_policy_module(spu_thread* spu) noexcept
 		return;
 	}
 
+	// DUMP THE CellSpurs INSTANCE, AHEAD OF ANY POLICY-MODULE GATE.
+	//
+	// This must not sit behind the ls[0] check below. Under HLE, LS 0xA00 is
+	// entirely zero, so that check returns early and the structure would never
+	// be written - which reads as "HLE has no SPURS instance" when it only
+	// means "HLE has no policy module resident", something already known. The
+	// point here is to compare what the PPU side BUILDS in the two modes.
+	if (const u32 sa = spu->spurs_addr; sa && sa != 0u - 0x80u && vm::check_addr(sa, 0, 0x200))
+	{
+		static std::atomic<u32> s_sdump{0};
+
+		if (s_sdump++ == 0)
+		{
+			char spath[256]{};
+			std::snprintf(spath, sizeof(spath),
+				"/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_spurs_%08x.bin", sa);
+
+			if (FILE* sf = std::fopen(spath, "wb"))
+			{
+				std::fwrite(vm::base(sa), 1, 0x200, sf);
+				std::fclose(sf);
+				spu_log.error("Thor SPURS DUMP: instance 0x%x -> %s", sa, spath);
+			}
+		}
+	}
+	else
+	{
+		static std::atomic<u32> s_nosp{0};
+
+		if (s_nosp++ == 0)
+		{
+			spu_log.error("Thor SPURS DUMP: spurs_addr %s (0x%x) - nothing to dump",
+				spu->spurs_addr == 0 ? "UNSET" : "INVALID", spu->spurs_addr);
+		}
+	}
+
 	const u8* const ls = static_cast<const u8*>(spu->_ptr<void>(0xA00));
 	u64 sig = 0;
 

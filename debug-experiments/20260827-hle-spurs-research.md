@@ -635,3 +635,55 @@ Unknown:
   - why the real-firmware path fails silently. No SPU fault, PPU stops after
     taskset creation. Mechanism not established - see section 15 for a
     hypothesis that was proposed and then argued against.
+
+## 17. THE STRUCTURAL DIVERGENCE - HLE builds one more workload than LLE
+
+Dumped the CellSpurs instance the PPU side builds, from do_dma_transfer so it
+fires in BOTH modes, and diffed. Same instance address (0x1e97a80) both ways,
+479 of 512 bytes identical - and the workload table is not:
+
+    wklReadyCount1        LLE  00 01 00 ...    HLE  00 00 01 00 ...
+    wklCurrentContention  LLE  00 01 00 ...    HLE  00 00 01 00 ...
+    wklMinContention      LLE  01 08 00 ...    HLE  08 01 08 00 ...
+    wklMaxContention      LLE  01 08 00 ...    HLE  08 05 01 00 ...
+    wklStatus1            LLE  02 02 00 ...    HLE  02 02 02 00 ...
+    wklEvent1             LLE  3f 3f 00 ...    HLE  3f 3f 3f 00 ...
+    wklState2             LLE  c0 00 ff ff c0  HLE  e0 00 ff ff e0
+    wklMskA               LLE  00 02           HLE  00 00
+
+Read wklStatus1 and wklEvent1 as occupancy: LLE has TWO live workloads, HLE has
+THREE. And wklMinContention is the giveaway - the LLE array 01 08 appears in
+the HLE array shifted right, with an extra 08 prepended:
+
+    LLE   [01] [08]
+    HLE   [08] [01] [08]
+
+So HLE inserts a workload at index 0 that LLE does not have, and every
+workload the title creates afterwards lands at a DIFFERENT INDEX than it does
+on the real runtime. The selector probes have been showing wkl0..wkl3 under HLE
+against the two workloads LLE actually uses, and that was visible the whole
+time without being recognised.
+
+wklMskA differing (0x0002 vs 0x0000) is consistent: it is a workload bitmask,
+and the bit set under LLE is for a workload that sits elsewhere under HLE.
+
+### Why this matters more than anything else found
+
+Every workload-indexed array in the SPURS instance - contention, priority,
+ready counts, status, events - is addressed by workload id. If our ids are
+offset by one relative to what the title's own data expects, then contention
+accounting, priority selection and signalling are all operating on the wrong
+slots, and no amount of correcting the taskset syscall path can fix that.
+
+It also explains why three firmware-verified syscall fixes changed nothing:
+they were correct, and they were being applied to a workload table that does
+not line up with the title's.
+
+### Not yet established
+
+WHY the extra workload exists. Candidates: the sys-service workload being given
+a normal slot under HLE when the real runtime keeps it out of band, or
+cellSpursAddWorkload allocating from a different base. That is the next thing to
+read, and it is a PPU-side question in cellSpurs.cpp, not an SPU one.
+
+Structures kept in _research/spurs/spurs_structs/.
