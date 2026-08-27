@@ -13485,3 +13485,40 @@ and the module reads exactly that:
 
 `cellSpursModulePollStatus` unpacks it the same way (`result >> 32` for the wid,
 `static_cast<u32>(result)` for the status), so both sides agree with the guest.
+
+## VERIFIED CORRECT: the switch_system_module reply, and the module proceeds past it
+
+The single call site of the switch helper (0x2a98) is 0x2460, and the caller
+checks the return against exactly one error:
+
+    02460  brsl lr,0x00002a98    ; the switch service
+    02464  ilhu r73,-0x7fff
+    02468  ori  r72,r73,0x2      ; 0x80010002
+    0246c  ceq  r71,r3,r72
+    02470  brz  r71,0x00002478   ; not that error -> CONTINUE
+    02474  stopd                 ; that error -> assert
+    ...
+    024b4  wrch r11,ch21         ; MFC_Cmd = 0xd0 (GETLLAR)
+
+Our CELL_OK is not 0x80010002, so the module carries on and issues further DMA.
+The reply is accepted and the implementation is right.
+
+The helper itself also explains its own guard:
+
+    02a98  ilhu r4,-0x7fff
+    02a9c  rchcnt r2,ch29     ; COUNT of SPU_RdInMbox
+    02aa0  ori  r4,r4,0xa     ; CELL_EBUSY
+    02aa4  brz  r2,0x2ab0     ; in-mailbox EMPTY -> do the switch
+    02aa8  lr   r3,r4         ; NOT empty -> return EBUSY without switching
+
+So leaving anything unread in the in-mailbox makes the service refuse. Our
+handler writes exactly one value and the module consumes it at 0x2af8, which is
+why the second invocation still works.
+
+## Where the module actually is now
+
+Entry checks pass, poll status accepted, ready count satisfied, switch service
+accepted, and it proceeds to further GETLLAR work - and `jobChain->pc` still
+never leaves 0x01eca480. Everything up to and including the switch is verified
+correct against the module's own code. The failure is inside the job processing
+that follows, which is the part no available tool can trace.
