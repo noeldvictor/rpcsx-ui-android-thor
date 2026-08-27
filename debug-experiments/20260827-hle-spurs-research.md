@@ -479,3 +479,68 @@ reachable from this tree. The work that stands is:
   - five configurations and both hybrids eliminated with measurements
 
 For playing this title: use LLE. It renders.
+
+## 14. WHY the real kernel produces zero frames - sentinels it cannot read
+
+Diagnosed rather than assumed. Under real_spu_kernel=1 there are NO SPU faults
+at all, and the PPU call histogram stops dead after taskset creation:
+
+    3x cellSpursWorkloadAttributeInitialize   2x cellSpursCreateTasksetWithAttribute
+    2x cellSpursWakeUp                        2x cellSpursSendWorkloadSignal
+    (no cellSpursCreateTask, no queue push)
+
+Earlier than the HLE stub gets, and without faulting. The cause is structural:
+
+    SPURS_IMG_ADDR_SYS_SRV_WORKLOAD = 0x100
+    SPURS_IMG_ADDR_TASKSET_PM       = 0x200
+    SPURS_IMG_ADDR_JOBCHAIN_PM      = 0x300
+
+These are SENTINELS. cellSpursSpu.cpp switches on them and substitutes an HLE
+entry instead of loading an image. The REAL kernel knows nothing about that
+convention - it treats wklInfo->addr as a guest address and DMAs the policy
+module from it. create_spurs sets the sys-service workload image to the 0x100
+sentinel (cellSpurs.cpp:1405), so the real kernel loads its housekeeping module
+from guest address 0x100 and runs whatever is there.
+
+That is why the real-kernel path produces zero frames and no fault: it is
+executing garbage in the workload SPURS runs most.
+
+### What this changes
+
+"The lift does not work" was too strong. It is not that real firmware and this
+emulator are incompatible - it is that the lift was PARTIAL in a way that
+cannot work: every remaining sentinel is an address the real kernel will
+happily read as a module.
+
+A complete lift needs all three images real, with no sentinel left:
+
+    sys service   NOT captured yet - this is the missing piece
+    taskset PM    HAVE IT (real_taskset_pm.bin, identified by its 0xA70 entry)
+    job chain PM  HAVE IT (thor_jobchain_pm_image, sig_a/b/c already in tree)
+
+So the gap is one module. The capture facility built in section 6 can get it -
+it samples LS 0xA00 on every 32nd DMA under LLE and writes each distinct
+module once - but the sys-service workload has not appeared in a capture yet.
+It is workload id 0x20, so a capture keyed on wklCurrentId==0x20 would isolate
+it.
+
+That is a bounded, concrete next step, and it is the first time in this
+document that the real-firmware path has had one.
+
+## Research, additional sources
+
+RPCS3's actual working arrangement is PPU-side cellSpurs HLE plus real SPU-side
+code from libsre - not the all-HLE path this effort has been building. The
+description that matches everything measured here is that SPURS "is deeply
+stateful, uses SPU mailboxes as semaphores, relies on precise timing between
+the PPU and SPU scheduling loops, and uses Cell-specific atomic primitives with
+no direct x86 equivalent", and that before it worked "any game leaning heavily
+on SPURS would hang at startup or make it to gameplay and then crash in ways
+that were essentially impossible to debug from the outside".
+
+Sony's patents (US 7979680, 7647483, 8589943, 9870252) remain the only
+specification-grade source. No arXiv paper covers SPURS scheduling; the
+academic Cell literature is about SPE scheduling generally, not Sony's runtime.
+
+_research_aps3e/ is an empty checkout (README and gradle.properties only), so
+it offers no second implementation to compare against.
