@@ -1030,6 +1030,33 @@ error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQu
 
 	const s32 depth = queue->m_depth;
 
+	// WHICH FIELD DOES THE SPU CONSUMER ADVANCE?
+	//
+	// The producer index is taken to be push3.m_h5 and the consumer index
+	// pop3.m_h1, but the consumer is real guest SPU code and has the final say.
+	// Dump the whole 16-byte control head (pop1/pop3 at 0x0, push1/push3 at 0x8)
+	// on each push: if m_h1 moves after a wake, the layout is right and the
+	// producer stops for some other reason; if a different halfword moves, the
+	// ring layout is what needs correcting.
+	{
+		static std::atomic<u32> s_r{0};
+
+		if (const u32 n = s_r++; n < 24)
+		{
+			const auto pop = queue->pop3.load();
+			const auto psh = queue->push3.load();
+
+			cellSync.error("Thor LFQRING #%u: pop3{h1=%u h2=%u} push3{h5=%u h6=%u} "
+				"raw0=%08x raw4=%08x raw8=%08x rawC=%08x depth=%d",
+				n, +pop.m_h1, +pop.m_h2, +psh.m_h5, +psh.m_h6,
+				+vm::_ref<be_t<u32>>(queue.addr() + 0x0),
+				+vm::_ref<be_t<u32>>(queue.addr() + 0x4),
+				+vm::_ref<be_t<u32>>(queue.addr() + 0x8),
+				+vm::_ref<be_t<u32>>(queue.addr() + 0xC),
+				depth);
+		}
+	}
+
 	while (true)
 	{
 		const auto old = queue->push3.load();

@@ -319,3 +319,45 @@ again - the producer either stops or blocks. Whether the SPU side agrees with
 the push3/pop3 field choice is the open question, and it is answerable: the
 consumer is real guest SPU code, so if it advances pop3.m_h1 the choice is
 right, and if it advances something else the ring layout needs correcting.
+
+## The LFQueue is a control path, not the data path
+
+With lfq_any2any=1 the ring probe fires exactly ONCE per run:
+
+    LFQRING #0: pop3{h1=0 h2=0} push3{h5=0 h6=0}
+                raw0=00000000 raw4=00010000 raw8=00000000 rawC=00000000
+
+One GetPushPointer2 call in the whole run. So the producer is not looping and
+the push3/pop3 field choice is not what limits it - the title pushes a single
+control entry, the consumer is woken once (rc=0) and then runs its own loop.
+That closes the "is the ring layout right" question: it does not matter yet.
+
+Screenshot with the wake enabled: still flat green, internal FPS 30.00,
+SPU 67.7%, RSX 6.5%, frames advancing past 1821. The task is awake and the
+scene is still not drawn.
+
+## All four combinations, measured
+
+    attr_fix=0 lfq=0   ready=true   ~880 quads, 0 triangles   (shipped default)
+    attr_fix=0 lfq=1   ready=true   ~126 quads, 0 triangles
+    attr_fix=1 lfq=0   ready varies 0 draws, deadlocks
+    attr_fix=1 lfq=1   ready=false  0 draws, 3 tasksets start, no wake
+
+Both fixes are individually correct and each unblocks a different half of the
+chain - attr_fix creates the third taskset, lfq delivers the wake - but neither
+alone nor both together produce a triangle draw. Both ship OFF.
+
+## What the green screen probably is
+
+The title opens /dev_bdvd/PS3_GAME/USRDIR/TransGame/Movies/TF_LoadingScreen.bik
+and decodes Bink on the SPUs (cellVdec is never called, which is why
+thor_sample's movie guard is blind here). Under LLE the geometry burst is 73
+draws / 1.31M vertices ONCE at flips 600-720 and then a single blit quad per
+flip forever - consistent with a loading screen that is rendered once and then
+presented. Under HLE that burst never happens and the screen stays at the clear
+colour.
+
+So the missing work is most likely the SPU task that decodes/loads the loading
+screen, and the title does not advance past it. That is consistent with every
+measurement here: SPU ~65% busy producing nothing, RSX ~6%, main loop at a
+locked 30, and a draw stream that contains only the blit.
