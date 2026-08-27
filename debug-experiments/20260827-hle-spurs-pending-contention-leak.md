@@ -626,3 +626,30 @@ with them, so a heap that stops growing is consistent with blocks never being
 returned - which points back at completion signalling, where exit=0 already
 says no SPURS task ever finishes its work item. The next question is narrow and
 concrete: what frees a GCM heap block, and is that path reached under HLE?
+
+## Both flagged fixes RE-TESTED on the p5 metric - neither helps, one hurts
+
+Every earlier flag comparison used thor_setprop with empty values, which does
+not clear a property, so those A/Bs are unreliable. Re-run with props set via
+adb and read back, scored on iomaps and p5:
+
+    baseline        ready=true   iomaps=10   p8~1000   p5=0
+    task_attr_fix=1 ready=false  iomaps=6    (no draws)
+    lfq_any2any=1   ready=true   iomaps=10   p8=1110   p5=0
+    both            ready=false  iomaps=6    (no draws)
+
+lfq_any2any changes NOTHING on the metric that matters - same 10 iomaps, same
+p5=0. task_attr_fix makes it WORSE: the heap reaches 6 maps instead of 10.
+
+So the earlier characterisation of these two as "each correct, each unblocking
+half the chain" does not survive measurement. They are:
+
+  - task_attr_fix   a genuine argument-validation bug fix that REGRESSES this
+                    title's heap growth. Keep the code, keep it OFF, and do not
+                    describe it as progress.
+  - lfq_any2any     implements a real unimplemented firmware path and wakes a
+                    task that was otherwise dead, but has NO effect on heap
+                    growth or geometry. Interesting, not useful here.
+
+The only changes in this effort that survive scrutiny are the two contention
+fixes, which were confirmed by a state signature rather than a count.
