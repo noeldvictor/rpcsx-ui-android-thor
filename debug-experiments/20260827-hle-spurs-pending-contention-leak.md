@@ -833,3 +833,34 @@ Two structures to check our HLE against, both now readable rather than guessed:
 the +0xdc context offset used by both the entry and the dispatch, and the
 0x20 / bit-1 / bit-0 tests that gate the paths and halt the module when they
 fail. `spursTasksetDispatch` in cellSpursSpu.cpp is the counterpart.
+
+## Firmware confirms our SpursKernelContext layout - that cause is eliminated
+
+Reading the real module's absolute loads against the struct in cellSpurs.h:
+
+    0x1230  lqa r5,0x1c0     -> SpursKernelContext.spurs        @ 0x1C0   MATCH
+    0x21b8  ai  r3,r3,0xdc   -> SpursKernelContext.wklCurrentId @ 0x1DC   MATCH
+    0x28d0  lqa r77,0x210    -> SpursKernelContext.traceBuffer  @ 0x210   MATCH
+
+Three independent absolute references, three matches. The layout our HLE
+assumes is the layout the firmware uses, so "the struct offsets are wrong" is
+eliminated as a cause of exit=0. That mattered: the memcpy(ctxt, spurs, 128) at
+the end of the selector writes exactly tempArea[0x80] and nothing past it, and
+this confirms the boundary is real rather than assumed.
+
+What the two callees actually are:
+
+  0x1230 (sys-service path)  loads spurs, extracts a 7-bit field, and asserts
+                             with `hlgti r8,0x0` if it is zero.
+  0x28d0                     opens `wrch r4,ch20` (MFC_TagID), gates on a
+                             trace-enable byte at LS 0x172 and the trace buffer
+                             at 0x210, returning early via `biz r75,lr` when
+                             tracing is off. It is the trace emitter -
+                             cellSpursModulePutTrace - not dispatch logic.
+
+Saved as _research/spurs/real_pm_callees.disasm.txt.
+
+So the module entry, the workload dispatch and the trace path are all read and
+none of them contradicts our HLE. The task-exit path is not in the windows read
+so far; the dispatch calls 0x1988 and 0x2160 which remain unread, and those are
+where to look next.
