@@ -916,6 +916,28 @@ namespace rsx
 				g_thor_prim_elems[pm] += method_registers.current_draw_clause.get_elements_count();
 			}
 
+			// EVERY NON-QUAD DRAW, IN FULL.
+			//
+			// LLE renders the scene as 73 prim=5 (TRIANGLES) draws totalling
+			// 1,310,328 vertices, once, between flips 600 and 720; HLE issues none.
+			// Sampling every 97th draw cannot characterise a 73-draw burst inside a
+			// thousand quads, so log the burst itself - what it draws and where its
+			// vertex data lives is what HLE has to be made to produce.
+			if (const u32 pm = static_cast<u32>(method_registers.current_draw_clause.primitive);
+				pm != 8 && g_thor_prim_hist[pm & 15].load() <= 80)
+			{
+				const auto& tc = method_registers.transform_constants;
+
+				rsx_log.error("Thor GEOM prim=%u elems=%u vtxbase=0x%x cmd=%u idx=%u "
+					"c0=[%08x %08x %08x %08x] c4=[%08x %08x %08x %08x]",
+					pm, method_registers.current_draw_clause.get_elements_count(),
+					method_registers.vertex_data_base_offset(),
+					static_cast<u32>(method_registers.current_draw_clause.command),
+					method_registers.current_draw_clause.is_immediate_draw ? 1u : 0u,
+					tc[0][0], tc[0][1], tc[0][2], tc[0][3],
+					tc[4][0], tc[4][1], tc[4][2], tc[4][3]);
+			}
+
 			if (const u64 dn = g_thor_draw_calls.load(); dn <= 40 || (dn % 97) == 0)
 			{
 				const auto& tc = method_registers.transform_constants;

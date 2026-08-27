@@ -361,3 +361,44 @@ So the missing work is most likely the SPU task that decodes/loads the loading
 screen, and the title does not advance past it. That is consistent with every
 measurement here: SPU ~65% busy producing nothing, RSX ~6%, main loop at a
 locked 30, and a draw stream that contains only the blit.
+
+## CORRECTION: the burst is not a 1.31M-vertex mesh
+
+The per-primitive histogram accumulates `get_elements_count()`, and for indexed
+draws that sum is not a vertex count. Logging the burst itself:
+
+    GEOM prim=5 elems=45 vtxbase=0x0 cmd=3 idx=0 c0=[0 0 3f7fbe77 3f800000]
+    GEOM prim=5 elems=21 ...  elems=21, 30, 30, 12, 30, 36 ...
+
+They are 73 SMALL INDEXED triangle draws (cmd=3), a dozen to a few dozen
+elements each - ordinary scene geometry, not one enormous mesh. The
+"1,310,328 vertices" figure quoted in the earlier entries is an accumulator
+artefact and should not be used.
+
+## Where the title actually stops - it never reaches the movie
+
+thor_sample refused a measurement under LLE with "a movie is playing", which
+contradicted the advice string this title normally shows
+("unknown-this-title-never-calls-cellVdec"). That advice is about cellVdec; the
+probe also detects an OPEN video file, and under LLE:
+
+    LLE   videoDecoding=true  videoFilesOpen=1  source=open-video-file
+          videoFile=/dev_bdvd/PS3_GAME/USRDIR/TransGame/Movies/FMV_intro.bik
+
+    HLE   videoDecoding=false videoFilesOpen=0  source=none  videoFile=""
+
+LLE is playing the intro FMV. HLE never opens any video file at all, so it is
+stuck EARLIER than the loading screen hypothesis assumed - before the intro.
+
+With lfq_any2any=1 the title does get further into that sequence: it starts
+probing the localised movie variants, which it does not do otherwise -
+
+    TF_InitialStartup.bik, _INT, _PS3, _PS3_INT, _PS3_int, _int
+    TF_LoadingScreen_INT, _PS3, _PS3_INT, _PS3_int, _int
+
+- but still opens none of them. So the wake advances the state machine and does
+not complete it.
+
+The right success metric from here is NOT the quad count. It is whether the
+title opens a video file, which is a single unambiguous bit and is what
+separates the two configurations.
