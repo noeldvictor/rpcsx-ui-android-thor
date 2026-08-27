@@ -465,3 +465,48 @@ every symptom in this document: SPU ~65% busy producing nothing, RSX ~6%, no
 triangle draw, no video file opened.
 
 Anything that makes `exit` non-zero is progress. Anything that does not is not.
+
+## THE TITLE SAYS WHAT IS WRONG - GCM heap assertion
+
+Diffing the log message histogram (whole file, Thor probes excluded) between
+the two configurations surfaced something no amount of SPURS probing did: under
+HLE the title writes to sys_tty, and under LLE it does not. What it writes is
+its own assertion:
+
+    gcmx_cmd.h:55 GCMXIsHeapBlockAllocated(Block) -- assertion failed
+    abort() is called from 0x1022ea4
+                      from 0x00fde064
+                      from 0x00a83ff8
+                      from 0x00fdd908
+                      from 0x00fde384
+                      from 0x009e05b0
+                      from 0x009f265c
+
+Control: LLE has ZERO occurrences of GCMXIsHeapBlockAllocated and zero
+occurrences of "assertion failed". HLE repeats this one continuously.
+
+The title aborts because a GCM heap block is not allocated. Its graphics memory
+allocator fails, so the draw is never issued - which is precisely the missing
+triangle burst, and it is the title's own diagnosis rather than an inference
+from counters.
+
+### This closes the loop back to the fence
+
+0x00fde064, 0x00fdd908 and 0x00fde384 sit immediately around 0x00fdcf60 - the
+address the ppu_pc_census probe identified at the very start of this effort as
+the two-counter spin main_thread sits in:
+
+    lwz r29,-0x638c(r31); lwz r0,-0x6390(r31); cmpw cr7,r29,r0; bne cr7,-0x18
+
+So that fence is not some unrelated wait: it is the GCM heap's wait for the RSX
+to consume, inside the same allocator that then asserts. `done` never reaching
+`target` and "heap block not allocated" are the same failure seen from two
+sides. Blocks are never released, the heap exhausts, the allocation fails, and
+the assert fires.
+
+### Why this is the best handle yet
+
+It is observable (a string in the log), it has a control (absent under LLE), it
+has a PPU callstack, and it converts "no triangles are drawn" into "this
+specific allocator call fails". Anything that removes this assertion is
+progress; the draw census only reports the consequence.
