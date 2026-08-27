@@ -1626,6 +1626,62 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			// managed profile has been written, because the profile rewrites the
 			// per-title yml and an edit made before it does not survive.
 			//
+			// FORCE THE SPU INTERPRETER, FOR TRACING ONLY.
+			//
+			// `RunHleFunction` is consulted once per BLOCK on the recompiler path
+			// and before EVERY STEP on the interpreter path:
+			//
+			//     if (jit) { while (true) { ... if (RunHleFunction()) continue; ... } }
+			//     else     { while (true) { ... if (RunHleFunction()) continue;
+			//                                   g_interpreter(...); } }
+			//
+			// so one-shot probes planted inside a guest policy module only fire under
+			// the interpreter. Two tracing attempts against the recompiler produced
+			// zero lines on boots where the module demonstrably ran.
+			//
+			// `jit` is set in the spu_thread constructor and stays null unless the
+			// decoder is asmjit or llvm, so selecting an interpreter here is what
+			// takes the else branch.
+			//
+			// THIS IS RUINOUSLY SLOW. It is a debugging lever, never a measurement
+			// configuration - any fps number taken with it set is meaningless.
+			//
+			// Canonical spellings matter: `cfg::_enum::from_string` matches the
+			// enum's own text, which is "Interpreter (static)", not "static". The
+			// same trap silently swallowed SPU Block Size and XFloat Accuracy for
+			// weeks, so canonicalise AND check the return value.
+			//
+			//   debug.rpcsx.thor.spu_decoder = static | dynamic | llvm | asmjit
+			{
+				char dec_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.spu_decoder", dec_value) > 0 && dec_value[0])
+				{
+					const std::string want(dec_value);
+					std::string canon;
+
+					if (want == "static" || want == "Interpreter (static)") canon = "Interpreter (static)";
+					else if (want == "dynamic" || want == "Interpreter (dynamic)") canon = "Interpreter (dynamic)";
+					else if (want == "asmjit" || want == "Recompiler (ASMJIT)") canon = "Recompiler (ASMJIT)";
+					else if (want == "llvm" || want == "Recompiler (LLVM)") canon = "Recompiler (LLVM)";
+
+					if (canon.empty())
+					{
+						sys_log.error("Thor: ignoring SPU Decoder '%s' (expected static|dynamic|asmjit|llvm)", want);
+					}
+					else if (g_cfg.core.spu_decoder.from_string(canon))
+					{
+						sys_log.error("Thor: SPU Decoder forced to %s (TRACING ONLY - fps is meaningless)",
+							g_cfg.core.spu_decoder.to_string());
+					}
+					else
+					{
+						sys_log.error("Thor: FAILED to set SPU Decoder '%s', still %s",
+							canon, g_cfg.core.spu_decoder.to_string());
+					}
+				}
+			}
+
 			//   debug.rpcsx.thor.spu_block_size = safe | mega | giga
 			//
 			// Unset leaves the configured value untouched.

@@ -527,6 +527,35 @@ static u32 get_thor_spurs_drop_notify() noexcept
 // and has been unreachable since RegisterHleFunction was removed.
 extern bool spursKernelEntry(spu_thread& spu);
 
+// When the REAL SPURS kernel is staged into the SPU image, the HLE entry hooks
+// must NOT be installed: 0x818 and 0x848 are exactly the addresses the genuine
+// kernel is entered on, so hooking them intercepts it and staging it achieves
+// nothing.
+//
+// This is separate from hle_spurs_kernel on purpose. That flag also gates the
+// PPU-side HLE setup - the handler thread among other things - and turning it
+// off to get the real kernel left SPURS half-initialised: measured, the title
+// died before sys_spu_thread_group_start with
+// "Access violation reading location 0x55553188" inside liblv2.
+//
+// So the working combination is hle_spurs_kernel = 1 AND real_spu_kernel = 1:
+// full PPU-side HLE, genuine SPU-side code.
+//
+//   debug.rpcsx.thor.real_spu_kernel = 1
+static FORCE_INLINE bool get_thor_real_spu_kernel() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.real_spu_kernel", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
 static FORCE_INLINE bool get_thor_hle_spurs_kernel() noexcept
 {
 #ifdef ANDROID
@@ -4003,7 +4032,7 @@ void spu_thread::cpu_task()
 	//   debug.rpcsx.thor.hle_spurs_kernel = 1
 	//
 	// This is only meaningful together with hle_libs forcing libsre.sprx to HLE.
-	if (group && get_thor_hle_spurs_kernel())
+	if (group && get_thor_hle_spurs_kernel() && !get_thor_real_spu_kernel())
 	{
 		constexpr std::string_view spurs_suffix = "CellSpursKernelGroup"sv;
 

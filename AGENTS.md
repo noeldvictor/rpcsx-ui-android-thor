@@ -13252,3 +13252,63 @@ extremely slow - acceptable for a trace, not for a measurement.
 
 That is the honest next step for finding where the module diverges from LLE, and
 it is a bigger piece of work than any single fix in this session.
+
+# Staging The REAL SPURS Kernel: Built, Measured, Does Not Boot
+
+2026-08-26. A strategy change, and an honest negative.
+
+## The idea
+
+Every remaining job chain failure had the same shape: genuine Sony code run
+against an approximation of the kernel it was written for. libsre contains the
+KERNELS as well as the policy modules, so stage those too and the whole SPU side
+becomes real code with only the PPU side HLE.
+
+`thor_spurs_kernel_image()` finds them by ELF header rather than byte signature -
+their loadable segment starts with the zeroed kernel-context area, so the first
+bytes are not distinctive. `e_machine == 23` is SPU and `e_entry` picks the
+kernel, and those entries are exactly the addresses the HLE path hooks:
+
+    kernel1  entry 0x818  PT_LOAD vaddr 0x100 size 0x780   (libsre elf at 0x20480)
+    kernel2  entry 0x848  PT_LOAD vaddr 0x100 size 0x790   (libsre elf at 0x20d00)
+
+It works as far as installation goes:
+
+    Thor KERNEL: staged the real SPURS kernel entry=0x818 at 0x22b0000
+                 (1920 bytes, libsre elf at 0x20480)
+    Thor KERNEL: real SPURS kernel1 installed (entry 0x818, 1920 bytes -> LS 0x100)
+
+## Two failures, and what the first one taught
+
+First attempt ran `real_spu_kernel=1` with `hle_spurs_kernel=0`, reasoning that
+the SPU hooks at 0x818/0x848 would otherwise intercept the genuine kernel at
+exactly its entry points. Result:
+
+    VM: Access violation reading location 0x55553188 (unmapped memory)
+        in main_thread at liblv2: 0x022273bc
+    sys_spu_thread_group_start count: 0
+
+`hle_spurs_kernel` also gates the PPU-SIDE setup - the handler thread among
+other things - so turning it off left SPURS half-initialised and the title died
+before the SPU group ever started. The two concerns are now separate:
+`get_thor_real_spu_kernel()` in SPUThread.cpp suppresses only the SPU entry
+hooks, so `hle_spurs_kernel=1` + `real_spu_kernel=1` gives full PPU HLE with
+genuine SPU code.
+
+Second attempt, with that combination: still `groupstart=0`, 6 access
+violations, no boot.
+
+## Verdict
+
+**The real-kernel path does not work and is gated off.** Our PPU-side HLE was
+written to pair with our own SPU kernel; the genuine kernel reads more of the
+CellSpurs structure, and in a different order, than the HLE side currently
+maintains. Making it boot is its own project.
+
+The HLE-kernel path remains the furthest anything has got: module loads, runs,
+passes its entry checks, takes its work path, survives the switch stop. That is
+the baseline to build on, not this.
+
+Kept because the machinery is correct and reusable - it is the same staging that
+made the job chain policy module run - and because the negative is worth not
+repeating.

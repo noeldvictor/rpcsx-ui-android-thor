@@ -1280,6 +1280,10 @@ s32 _spurs::join_handler_thread(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 	return CELL_OK;
 }
 
+// Defined below, next to the job chain module staging they share machinery with.
+static bool thor_real_spu_kernel() noexcept;
+static u32 thor_spurs_kernel_image(u32 want_entry, u32& out_size) noexcept;
+
 s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, u32 sdkVersion, s32 nSpus, s32 spuPriority, s32 ppuPriority, u32 flags, vm::cptr<char> prefix, u32 prefixSize, u32 container, vm::cptr<u8> swlPriority, u32 swlMaxSpu, u32 swlIsPreem)
 {
 	vm::var<u32> sem;
@@ -1433,7 +1437,47 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	// least one COPY segment whose size is non-zero, whose ls and size are
 	// 16-byte aligned, and whose source address is 4-byte aligned. Sixteen bytes
 	// of zeros at local store 0 satisfies all of it and is inert.
-	if (get_thor_hle_spurs_kernel_enabled())
+	// THE REAL KERNEL, when asked for. See thor_spurs_kernel_image.
+	//
+	// Use with hle_spurs_kernel = 1 AND real_spu_kernel = 1. The SPU-side entry
+	// hooks at 0x818/0x848 are suppressed separately by get_thor_real_spu_kernel()
+	// in SPUThread.cpp, because hle_spurs_kernel also gates the PPU-side setup:
+	// turning IT off to get the real kernel left SPURS half-initialised and the
+	// title died before sys_spu_thread_group_start with an access violation at
+	// 0x55553188 inside liblv2.
+	if (thor_real_spu_kernel())   // takes precedence over the minimal stub image below
+	{
+		const bool k2 = (spurs->flags1 & SF1_32_WORKLOADS) != 0;
+		const u32 entry = k2 ? 0x848u : 0x818u;
+
+		u32 ksize = 0;
+
+		if (const u32 kmem = thor_spurs_kernel_image(entry, ksize))
+		{
+			if (const u32 seg_mem = vm::alloc(0x80, vm::main))
+			{
+				std::memset(vm::base(seg_mem), 0, 0x80);
+
+				const auto segs = vm::ptr<sys_spu_segment>::make(seg_mem);
+				segs[0].type = SYS_SPU_SEGMENT_TYPE_COPY;
+				segs[0].ls = 0x100;
+				segs[0].size = ksize;
+				segs[0].addr = kmem;
+
+				spurs->spuImg.segs = segs;
+				spurs->spuImg.nsegs = 1;
+				spurs->spuImg.entry_point = entry;
+
+				cellSpurs.error("Thor KERNEL: real SPURS kernel%d installed "
+					"(entry 0x%x, %u bytes at 0x%x -> LS 0x100)", k2 ? 2 : 1, entry, ksize, kmem);
+			}
+			else
+			{
+				cellSpurs.error("Thor KERNEL: could not allocate the segment table");
+			}
+		}
+	}
+	else if (get_thor_hle_spurs_kernel_enabled())
 	{
 		if (const u32 img_mem = vm::alloc(0x100, vm::main))
 		{
@@ -6208,6 +6252,133 @@ s32 _spurs::check_job_chain_attribute(u32 sdkVer, vm::cptr<u64> jcEntry, u16 siz
 // taskset module's 0xA70 is its syscall entry beginning `stqa lr,0x2c80`
 // (here 0xa70 is `lr r3,r80`), and the taskset LS-clear bound `ila r39,0x3d000`
 // appears nowhere in it.
+// STAGE THE REAL SPURS KERNEL, SO THE WHOLE SPU SIDE IS GENUINE CODE.
+//
+// Every remaining job chain failure has been our HLE kernel not matching what
+// a real Sony policy module expects: a stale HLE stub shadowing LS 0xA00, a
+// consumed signal reported in the entry poll status, a ready count nobody
+// seeded, an lv2 stop nobody implemented. Each was real and each only moved the
+// failure, because the module is genuine code being run against an
+// approximation of the kernel it was written for.
+//
+// libsre contains the kernels too. Staging them removes that entire class of
+// problem: the SPU runs Sony's kernel AND Sony's policy modules, and only the
+// PPU side stays HLE.
+//
+// The two kernels are found by ELF header rather than by byte signature - their
+// loadable segment begins with the zeroed kernel-context area, so the first
+// bytes are not distinctive. e_machine 23 is SPU; e_entry distinguishes them,
+// and those entries are exactly the addresses the HLE path hooks:
+//
+//     kernel1  entry 0x818  PT_LOAD vaddr 0x100 size 0x780
+//     kernel2  entry 0x848  PT_LOAD vaddr 0x100 size 0x790
+//
+//   debug.rpcsx.thor.real_spu_kernel = 1   (use with hle_spurs_kernel = 0)
+static bool thor_real_spu_kernel() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.real_spu_kernel", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+// Returns the guest address of the staged loadable segment, 0 on failure.
+// `want_entry` selects the kernel; `out_size` receives the segment size.
+static u32 thor_spurs_kernel_image(u32 want_entry, u32& out_size) noexcept
+{
+	out_size = 0;
+
+	fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
+
+	if (!self)
+	{
+		cellSpurs.error("Thor KERNEL: cannot open libsre.sprx");
+		return 0;
+	}
+
+	fs::file dec = decrypt_self(self);
+
+	if (!dec)
+	{
+		cellSpurs.error("Thor KERNEL: cannot decrypt libsre.sprx");
+		return 0;
+	}
+
+	dec.seek(0);
+	const std::vector<u8> b = dec.to_vector<u8>();
+
+	const auto rd32 = [&](usz o) -> u32
+	{
+		return (u32{b[o]} << 24) | (u32{b[o + 1]} << 16) | (u32{b[o + 2]} << 8) | u32{b[o + 3]};
+	};
+	const auto rd16 = [&](usz o) -> u16
+	{
+		return static_cast<u16>((u32{b[o]} << 8) | u32{b[o + 1]});
+	};
+
+	static const u8 elfmag[7] = { 0x7f, 'E', 'L', 'F', 0x01, 0x02, 0x01 };
+
+	for (usz off = 0; off + 0x40 < b.size(); off++)
+	{
+		if (std::memcmp(b.data() + off, elfmag, sizeof(elfmag)) != 0)
+		{
+			continue;
+		}
+
+		if (rd16(off + 0x12) != 23 || rd32(off + 0x18) != want_entry)   // e_machine, e_entry
+		{
+			continue;
+		}
+
+		const u32 phoff = rd32(off + 0x1C);
+		const u16 phentsize = rd16(off + 0x2A);
+		const u16 phnum = rd16(off + 0x2C);
+
+		for (u16 i = 0; i < phnum; i++)
+		{
+			const usz ph = off + phoff + usz{i} * phentsize;
+
+			if (ph + 0x20 > b.size() || rd32(ph) != 1)   // PT_LOAD
+			{
+				continue;
+			}
+
+			const u32 p_off = rd32(ph + 0x04);
+			const u32 p_vaddr = rd32(ph + 0x08);
+			const u32 p_filesz = rd32(ph + 0x10);
+
+			if (p_vaddr != 0x100 || !p_filesz || off + p_off + p_filesz > b.size())
+			{
+				continue;
+			}
+
+			const u32 mem = vm::alloc(align<u32>(p_filesz, 128), vm::main);
+
+			if (!mem)
+			{
+				cellSpurs.error("Thor KERNEL: could not allocate %u bytes", p_filesz);
+				return 0;
+			}
+
+			std::memcpy(vm::base(mem), b.data() + off + p_off, p_filesz);
+			out_size = p_filesz;
+
+			cellSpurs.error("Thor KERNEL: staged the real SPURS kernel entry=0x%x at 0x%x "
+				"(%u bytes, libsre elf at 0x%x)", want_entry, mem, p_filesz, static_cast<u32>(off));
+			return mem;
+		}
+	}
+
+	cellSpurs.error("Thor KERNEL: no SPU image with entry 0x%x found in libsre", want_entry);
+	return 0;
+}
+
 static u32 thor_jobchain_pm_image(u32& out_size) noexcept
 {
 	static u32 s_size = 0;
