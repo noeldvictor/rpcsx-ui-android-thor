@@ -585,3 +585,44 @@ all worse tests: they move for reasons unrelated to the geometry.
 
 (The e= sums beside p5 are still not vertex counts - 73 indexed draws of 12-45
 elements cannot sum to 1310328. Use the draw COUNT, not the element sum.)
+
+## THE GCM HEAP STOPS GROWING - measured, with both configs verified
+
+Using the p5 test and reading the props back on every run:
+
+    LLE   18 sys_rsx_context_iomap   p5=73
+    HLE   10 sys_rsx_context_iomap   p5=0
+
+The title maps its GCM heap into RSX IO space one 1 MB block at a time, and the
+sequences diverge at a single point:
+
+    LLE   io=0x300000 0x400000 0x500000 0x600000 0x700000 0x800000
+          0x900000 0xa00000 0xb00000 0xc00000     (ea 0x40000000..0x40900000)
+
+    HLE   io=0x300000 0x400000 0x500000 0x600000  (ea 0x40000000..0x40300000)
+          then nothing - only repeat remaps of 0x500000/0x600000
+
+HLE's heap stops growing after FOUR blocks; LLE grows to TEN. Both share the
+identical first four and the identical io=0x0/0xe000000 maps, so this is not a
+different layout - it is the same allocator stopping early.
+
+That IS "GCMXIsHeapBlockAllocated(Block) -- assertion failed": the heap runs out
+of blocks, the next allocation has nothing to hand back, and the geometry draw
+that needed the block is skipped. Quads keep working because they are already
+resident; only new geometry needs a fresh block.
+
+The repeated "RSX is not idle while mapping io" warnings appear in BOTH configs,
+so they are not the discriminator.
+
+### What this does and does not establish
+
+It is the tightest causal link found so far, and it connects three previously
+separate observations into one: the fence at 0x00fdcf60 (the heap waiting for
+the RSX), the GCMX assertion (the heap failing to allocate), and p5=0 (the draw
+that needed the block).
+
+It does NOT yet say WHY the heap stops. Blocks are freed when the RSX finishes
+with them, so a heap that stops growing is consistent with blocks never being
+returned - which points back at completion signalling, where exit=0 already
+says no SPURS task ever finishes its work item. The next question is narrow and
+concrete: what frees a GCM heap block, and is that path reached under HLE?
