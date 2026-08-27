@@ -10013,7 +10013,41 @@ bool spu_thread::stop_and_signal(u32 code)
 
 	case SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE:
 	{
-		fmt::throw_exception("SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE (op=0x%x, Out_MBox=%s)", code, _ref<u32>(pc), ch_out_mbox);
+		// sys_spu_thread_switch_system_module.
+		//
+		// Unimplemented here and in upstream - it was an unconditional throw, and
+		// the only other mention in the tree is a name formatter. Nothing needed
+		// it because no SPURS policy module had ever run far enough to ask: the
+		// real job chain module reaches it once its ready count is seeded.
+		//
+		// The contract is legible from the module's own code around the stop:
+		//
+		//     02af0  wrch r6,ch28    ; SPU_WrOutIntrMbox  <- the request
+		//     02af4  stop 0x120      ; this
+		//     02af8  rdch r4,ch29    ; SPU_RdInMbox       <- expects a reply
+		//     02afc  ceq  r10,r4,r5  ; r5 = 0x8001000A = CELL_EBUSY
+		//     02b00  brnz r10,0x2af0 ; reply == EBUSY -> RETRY the whole sequence
+		//     02b04  br   0x2aa8     ; anything else    -> carry on
+		//
+		// So a reply is mandatory and it must NOT be EBUSY, or the guest spins on
+		// that retry branch forever.
+		//
+		// Under HLE SPURS the emulator owns policy-module loading already - the
+		// kernel's workload dispatch copies the image to local store itself - so
+		// there is no switch left for lv2 to perform. Acknowledge it and let the
+		// module continue.
+		const u32 request = ch_out_mbox.get_count() ? ch_out_mbox.pop() : 0;
+
+		{
+			static std::atomic<u32> s_n{0};
+
+			if (const u32 n = s_n++; n < 8 || (n & 0xFFF) == 0)
+			{
+				spu_log.error("Thor SWITCH_SYSTEM_MODULE #%u: request=0x%08x -> CELL_OK", n, request);
+			}
+		}
+
+		ch_in_mbox.set_values(1, CELL_OK);
 		return true;
 	}
 

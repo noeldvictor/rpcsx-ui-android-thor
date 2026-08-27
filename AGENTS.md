@@ -13105,3 +13105,54 @@ never got this far before.
 **Next step is to implement it**, and the out-mailbox contents at the stop are
 the specification: log them (the throw already formats `ch_out_mbox`) and decode
 what the module is asking for before writing anything.
+
+# Implemented sys_spu_thread_switch_system_module
+
+2026-08-26. It did not exist here or in upstream RPCS3 - the case in
+`spu_thread::stop_and_signal` was an unconditional `fmt::throw_exception`, and
+the only other reference in the tree is a name formatter. Nothing had ever
+needed it, because no SPURS policy module had run far enough to ask. The real
+job chain module reaches it as soon as its ready count is seeded.
+
+## The contract, read off the module's own code
+
+    02adc  wrch r9,ch22    ; SPU_WrEventMask = -1
+    02ae4  wrch r3,ch23    ; SPU_WrEventAck = 2
+    02aec  rdch r2,ch24    ; SPU_RdEventStat
+    02af0  wrch r6,ch28    ; the REQUEST
+    02af4  stop 0x120      ; SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE
+    02af8  rdch r4,ch29    ; expects a REPLY
+    02afc  ceq  r10,r4,r5  ; r5 = 0x8001000A = CELL_EBUSY
+    02b00  brnz r10,0x2af0 ; reply == EBUSY -> RETRY the whole sequence
+    02b04  br   0x2aa8     ; anything else  -> carry on
+
+So a reply is MANDATORY, and it must not be EBUSY or the guest spins on that
+retry branch forever.
+
+## What we do
+
+Under HLE SPURS the emulator already owns policy-module loading - the kernel's
+workload dispatch copies the image into local store itself - so there is no
+switch left for lv2 to perform. Acknowledge with CELL_OK and let the module
+continue.
+
+    Thor SWITCH_SYSTEM_MODULE #0: request=0x00000000 -> CELL_OK
+    Thor SWITCH_SYSTEM_MODULE #1: request=0x00000000 -> CELL_OK
+
+and no STOP code or fatal error anywhere in the run - the SPU used to die here
+on every job chain that got this far.
+
+**Caveat worth recording:** `request` reads 0 because the value is taken from
+`ch_out_mbox`, and the module writes channel 28. If the request payload ever
+matters, that is the first thing to correct - the reply is what unblocks the
+guest, and the reply is right.
+
+## Running total on the job chain path
+
+    module never executed        -> executes            (unregister stale HLE stub at 0xA00)
+    died at entry assertion      -> passes entry checks (mask consumed SIGNAL from poll status)
+    idled forever                -> runs its work path  (seed the ready count on RunJobChain)
+    died on an unimplemented stop-> continues           (implement switch_system_module)
+
+Still black. Each of these was a real defect and each moved the failure; none of
+them was the last one.
