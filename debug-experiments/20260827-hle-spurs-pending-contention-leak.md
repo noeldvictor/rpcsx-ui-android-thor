@@ -890,3 +890,34 @@ five windows, and each window costs a Ghidra run plus manual reading. Finishing
 it is a multi-session reverse-engineering project, not a step.
 
 Saved as _research/spurs/real_pm_exit.disasm.txt.
+
+## CORRECTION: the extracted module is the JOB CHAIN PM, not the taskset PM
+
+The module pulled from LS 0xA00 of the LLE dump was labelled real_taskset_pm.bin
+and described in two commits as the taskset reference. That is WRONG, and the
+arithmetic settles it:
+
+    taskset PM   0x1E40 -> ends at LS 0x2840   does NOT contain 0x28d0
+    jobchain A   0x2200 -> ends at LS 0x2c00   DOES contain 0x28d0
+
+The disassembly has real code at 0x2850 and 0x28d0, past the taskset PM's
+extent. It also matched `sig_a`, which thor_jobchain_pm_image lists as a JOB
+CHAIN signature. So the LLE capture was taken while a job chain workload was
+resident, not a taskset workload.
+
+Files renamed to real_jobchain_pm_A*.
+
+### What survives the correction
+
+The three struct-offset confirmations stand - 0x1C0 spurs, 0x1DC wklCurrentId,
+0x210 traceBuffer are SpursKernelContext fields read by ANY policy module, so
+"the struct offsets are wrong" remains eliminated. The disassembly pipeline
+stands. The sys-service id 0x20 test stands.
+
+### What does NOT survive
+
+"We now have the taskset reference, exit=0 finally has something to be checked
+against." We do not. The taskset policy module has NOT been captured. Getting
+it needs an LLE local-store dump taken while a TASKSET workload is resident,
+and the dump facilities in this tree live in the HLE syscall path, which does
+not execute under LLE. That is an unsolved capture problem, not a reading task.

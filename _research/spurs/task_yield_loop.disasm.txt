@@ -1,0 +1,79 @@
+Program: spu-hot-window-image.bin
+Language: SPU:BE:128:default
+WindowBytes: 0x90
+
+==== 0xf3a0 (0000f310..0000f430) ====
+   0000f310: il r6,0x0    ; flow fall=0000f314
+   0000f314: ila r7,0x20000    ; flow fall=0000f318
+   0000f318: iohl r3,0x7a00    ; flow fall=0000f31c
+   0000f31c: rotqbyi r57,r58,0x8    ; flow fall=0000f320
+   0000f320: andi r87,r57,0x7f    ; flow fall=0000f324
+   0000f324: a r55,r87,r81    ; flow fall=0000f328
+   0000f328: sf r4,r87,r57    ; flow fall=0000f32c
+   0000f32c: and r5,r55,r56    ; flow fall=0000f330
+   0000f330: nop r127    ; flow fall=0000f334
+   0000f334: brsl lr,0x000048e0    ; flow fall=0000f338 target=000048e0
+   0000f338: a r54,r87,r88    ; flow fall=0000f33c
+   0000f33c: lqd r53,0x0(r86)    ; flow fall=0000f340
+   0000f340: stqr r54,0x2dd4    ; flow fall=0000f344
+   0000f344: rotqby r3,r53,r86    ; flow fall=0000f348
+   0000f348: brsl lr,0x0000cd10    ; flow fall=0000f34c target=0000cd10
+   0000f34c: lqr r52,-0x6453    ; flow fall=0000f350
+   0000f350: hbrr    ; flow fall=0000f354
+   0000f354: lqr r50,0x300b    ; flow fall=0000f358
+   0000f358: ai r51,r52,0x4    ; flow fall=0000f35c
+   0000f35c: rotqmbyi r4,r51,-0x4    ; flow fall=0000f360
+   0000f360: shufb r49,r50,r50,r83    ; flow fall=0000f364
+   0000f364: shlqbyi r45,r4,0x4    ; flow fall=0000f368
+   0000f368: stqd r49,0xb0(sp)    ; flow fall=0000f36c
+   0000f36c: andi r48,r45,0x3    ; flow fall=0000f370
+   0000f370: ceqi r47,r48,0x0    ; flow fall=0000f374
+   0000f374: sfi r46,r47,0x0    ; flow fall=0000f378
+   0000f378: heqi r46,0x0    ; flow fall=0000f37c
+   0000f37c: lnop    ; flow fall=0000f380
+   0000f380: il r5,0x4    ; flow fall=0000f384
+   0000f384: fsmbi r6,0x0    ; flow fall=0000f388
+   0000f388: andi r44,r45,0xf    ; flow fall=0000f38c
+   0000f38c: il r7,0x20    ; flow fall=0000f390
+   0000f390: a r3,r85,r44    ; flow fall=0000f394
+   0000f394: brsl lr,0x00013868    ; flow fall=0000f398 target=00013868
+   0000f398: nop r127    ; flow fall=0000f39c
+   0000f39c: brsl lr,0x00013b90    ; flow fall=0000f3a0 target=00013b90
+=> 0000f3a0: lr r4,r86    ; flow fall=0000f3a4
+   0000f3a4: lqr r39,-0x6465    ; flow fall=0000f3a8
+   0000f3a8: il r5,0x0    ; flow fall=0000f3ac
+   0000f3ac: fsmbi r6,0x0    ; flow fall=0000f3b0
+   0000f3b0: rotqmbyi r3,r39,-0x4    ; flow fall=0000f3b4
+   0000f3b4: brsl lr,0x00013c68    ; flow fall=0000f3b8 target=00013c68
+   0000f3b8: lr r80,r3    ; flow fall=0000f3bc
+   0000f3bc: brz r3,0x0000f238    ; flow fall=0000f3c0 target=0000f238
+   0000f3c0: brsl lr,0x0000a4a0    ; flow fall=0000f3c4 target=0000a4a0
+   0000f3c4: il r4,0x0    ; flow fall=0000f3c8
+   0000f3c8: il r5,0x960    ; flow fall=0000f3cc
+   0000f3cc: lnop    ; flow fall=0000f3d0
+   0000f3d0: ai r4,r4,0x1    ; flow fall=0000f3d4
+   0000f3d4: rdch r3,ch8    ; flow fall=0000f3d8
+   0000f3d8: ceq r40,r4,r5    ; flow fall=0000f3dc
+   0000f3dc: brz r40,0x0000f3d0    ; flow fall=0000f3e0 target=0000f3d0
+   0000f3e0: brsl lr,0x00013b90    ; flow fall=0000f3e4 target=00013b90
+   0000f3e4: hbrr    ; flow fall=0000f3e8
+   0000f3e8: ceq r41,r80,r82    ; flow fall=0000f3ec
+   0000f3ec: nop r127    ; flow fall=0000f3f0
+   0000f3f0: nop r127    ; flow fall=0000f3f4
+   0000f3f4: brnz r41,0x0000f3a0    ; flow fall=0000f3f8 target=0000f3a0
+   0000f3f8: il r4,0x0    ; flow fall=0000f3fc
+   0000f3fc: lqr r43,-0x647b    ; flow fall=0000f400
+   0000f400: il r5,0x0    ; flow fall=0000f404
+   0000f404: rotqmbyi r3,r43,-0x4    ; flow fall=0000f408
+   0000f408: brsl lr,0x00014160    ; flow fall=0000f40c target=00014160
+   0000f40c: lqd r42,0x0(r86)    ; flow fall=0000f410
+   0000f410: rotqby r2,r42,r86    ; flow fall=0000f414
+   0000f414: brnz r2,0x0000f258    ; flow fall=0000f418 target=0000f258
+   0000f418: il r74,0x0    ; flow fall=0000f41c
+   0000f41c: hbrr    ; flow fall=0000f420
+   0000f420: il r73,0x0    ; flow fall=0000f424
+   0000f424: shlqbyi r88,r84,0x4    ; flow fall=0000f428
+   0000f428: stqr r74,-0x65be    ; flow fall=0000f42c
+   0000f42c: stqd r73,0xb0(sp)    ; flow fall=0000f430
+   0000f430: andi r72,r88,0x3    ; flow fall=0000f434
+

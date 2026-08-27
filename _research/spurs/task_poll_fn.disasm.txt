@@ -1,0 +1,71 @@
+Program: spu-hot-window-image.bin
+Language: SPU:BE:128:default
+WindowBytes: 0x80
+
+==== 0x13c68 (00013be8..00013ce8) ====
+   00013be8: il r80,0x0    ; flow fall=00013bec
+   00013bec: stqd r81,-0x20(sp)    ; flow fall=00013bf0
+   00013bf0: iohl r5,0x90f    ; flow fall=00013bf4
+   00013bf4: stqd lr,0x10(sp)    ; flow fall=00013bf8
+   00013bf8: stqd sp,-0x40(sp)    ; flow fall=00013bfc
+   00013bfc: ai sp,sp,-0x40    ; flow fall=00013c00
+   00013c00: rotqbyi r11,r6,0x8    ; flow fall=00013c04
+   00013c04: cdd r81,0x8(sp)    ; flow fall=00013c08
+   00013c08: ai r10,r11,0x98    ; flow fall=00013c0c
+   00013c0c: ai r6,r11,0xc4    ; flow fall=00013c10
+   00013c10: lqd r9,0x0(r10)    ; flow fall=00013c14
+   00013c14: rotqby r8,r9,r10    ; flow fall=00013c18
+   00013c18: ceq r7,r8,r80    ; flow fall=00013c1c
+   00013c1c: gb r4,r7    ; flow fall=00013c20
+   00013c20: cgti r2,r4,0xb    ; flow fall=00013c24
+   00013c24: brnz r2,0x00013c50    ; flow fall=00013c28 target=00013c50
+   00013c28: lqa r15,0x2fd0    ; flow fall=00013c2c
+   00013c2c: shufb r14,r80,r15,r81    ; flow fall=00013c30
+   00013c30: stqa r14,0x2fd0    ; flow fall=00013c34
+   00013c34: lqd r13,0x0(r6)    ; flow fall=00013c38
+   00013c38: rotqby r5,r13,r6    ; flow fall=00013c3c
+   00013c3c: bisl lr,r5    ; flow fall=00013c40
+   00013c40: lqa r12,0x2fd0    ; flow fall=00013c44
+   00013c44: lr r5,r3    ; flow fall=00013c48
+   00013c48: shufb r3,r80,r12,r81    ; flow fall=00013c4c
+   00013c4c: stqa r3,0x2fd0    ; flow fall=00013c50
+   00013c50: lr r3,r5    ; flow fall=00013c54
+   00013c54: lqd lr,0x50(sp)    ; flow fall=00013c58
+   00013c58: ai sp,sp,0x40    ; flow fall=00013c5c
+   00013c5c: lqd r80,-0x10(sp)    ; flow fall=00013c60
+   00013c60: lqd r81,-0x20(sp)    ; flow fall=00013c64
+   00013c64: bi lr
+=> 00013c68: il r7,0x0    ; flow fall=00013c6c
+   00013c6c: stqd r82,-0x30(sp)    ; flow fall=00013c70
+   00013c70: lr r82,r3    ; flow fall=00013c74
+   00013c74: hbrr    ; flow fall=00013c78
+   00013c78: ceqi r11,r4,0x0    ; flow fall=00013c7c
+   00013c7c: stqd r84,-0x50(sp)    ; flow fall=00013c80
+   00013c80: ceq r13,r82,r7    ; flow fall=00013c84
+   00013c84: lr r84,r4    ; flow fall=00013c88
+   00013c88: sfi r10,r11,0x0    ; flow fall=00013c8c
+   00013c8c: stqd r86,-0x70(sp)    ; flow fall=00013c90
+   00013c90: lr r86,r6    ; flow fall=00013c94
+   00013c94: gb r12,r13    ; flow fall=00013c98
+   00013c98: stqd r87,-0x80(sp)    ; flow fall=00013c9c
+   00013c9c: stqd lr,0x10(sp)    ; flow fall=00013ca0
+   00013ca0: lr r87,r5    ; flow fall=00013ca4
+   00013ca4: stqd r80,-0x10(sp)    ; flow fall=00013ca8
+   00013ca8: cgti r8,r12,0xb    ; flow fall=00013cac
+   00013cac: stqd r81,-0x20(sp)    ; flow fall=00013cb0
+   00013cb0: stqd r83,-0x40(sp)    ; flow fall=00013cb4
+   00013cb4: sfi r9,r8,0x0    ; flow fall=00013cb8
+   00013cb8: ilhu r8,-0x7fbf    ; flow fall=00013cbc
+   00013cbc: stqd r85,-0x60(sp)    ; flow fall=00013cc0
+   00013cc0: or r4,r9,r10    ; flow fall=00013cc4
+   00013cc4: stqd r88,-0x90(sp)    ; flow fall=00013cc8
+   00013cc8: iohl r8,0x911    ; flow fall=00013ccc
+   00013ccc: stqd r126,-0xa0(sp)    ; flow fall=00013cd0
+   00013cd0: ceqbi r3,r4,0x0    ; flow fall=00013cd4
+   00013cd4: stqd sp,-0xc0(sp)    ; flow fall=00013cd8
+   00013cd8: ai sp,sp,-0xc0    ; flow fall=00013cdc
+   00013cdc: xsbh r2,r3    ; flow fall=00013ce0
+   00013ce0: brhz r2,0x00014120    ; flow fall=00013ce4 target=00014120
+   00013ce4: hbrr    ; flow fall=00013ce8
+   00013ce8: andi r18,r84,0xf    ; flow fall=00013cec
+
