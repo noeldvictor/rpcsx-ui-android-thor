@@ -700,3 +700,31 @@ default off, from a 2026-08-24 investigation. Tested it here under HLE:
     spurs_always_notify=1   ready=true   p8=1242   p5=0   iomaps=9
 
 No effect on the geometry. Eliminated for this failure.
+
+## Two more configurations eliminated, and what the firmware actually contains
+
+    hle_libs="libsre.sprx,libspurs_jq.sprx"   ready=true  p8=1133  p5=0  iomaps=8
+    spurs_always_notify=1                     ready=true  p8=1242  p5=0  iomaps=9
+
+Neither produces a triangle. Adding the job-queue module does not help and
+slightly reduces heap growth.
+
+### What is inside the decrypted libsre (dec_04.elf, 239344 bytes)
+
+Container is PPC64. It embeds exactly TWO SPU ELF images:
+
+    off=0x020480  SPU  entry=0x00818  PT_LOAD vaddr=0x100 size=0x780
+    off=0x020d00  SPU  entry=0x00848  PT_LOAD vaddr=0x100 size=0x790
+
+These are the SPURS KERNELS - kernel1 and kernel2 - and they confirm the
+constants this effort has been using: they load at LS 0x100 and their entries
+sit beside exitToKernelAddr=0x808. Extracted as real_spu_kernel1.elf and
+real_spu_kernel2.elf for disassembly.
+
+The TASKSET POLICY MODULE is NOT in this file. A heuristic scan of everything
+after the kernels for SPU instruction density found nothing above noise, so the
+0x1E40-byte taskset PM that `_spurs::create_taskset` stages at
+SPURS_IMG_ADDR_TASKSET_PM comes from somewhere else - another module, or a
+compressed section. Finding it is the prerequisite for comparing our HLE
+taskset against the real one, which is where `exit=0` (no task ever finishes)
+would finally have a reference to be checked against.
