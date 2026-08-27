@@ -424,3 +424,58 @@ path only comes up in Debug builds.
 Kept behind debug.rpcsx.thor.real_taskset_pm, DEFAULT OFF, because it is a
 strictly worse state than the stub. It is committed rather than discarded so
 the next attempt starts from a working staging path instead of rebuilding it.
+
+## 13. The all-or-nothing lift, tried - it fails at the kernel stage
+
+If a real policy module cannot run under an HLE kernel, the implied test is to
+lift both together. Both pieces exist here: debug.rpcsx.thor.real_spu_kernel
+stages the real SPURS kernel from libsre, and real_taskset_pm stages the real
+taskset policy module. They had never been enabled at the same time.
+
+    real_spu_kernel=1 real_taskset_pm=1 hle_spurs_kernel=1  ready=false draws=0
+    real_spu_kernel=1 real_taskset_pm=1 hle_spurs_kernel=0  ready=false draws=0
+
+The real kernel installs correctly:
+
+    Thor KERNEL: real SPURS kernel1 installed (entry 0x818, 1920 bytes at
+                 0x22b0000 -> LS 0x100)
+
+1920 bytes matches the 0x780 PT_LOAD measured in the kernel extracted from
+dec_04.elf, so the right image is going to the right place. And the title still
+produces ZERO frames - it fails at the kernel stage, before the policy module
+matters.
+
+### The approach space, exhausted
+
+    HLE stub + 3 firmware-verified fixes   ~1000 quads, p5=0   (shipped default)
+    real taskset PM + HLE kernel           0 frames
+    real kernel     + HLE taskset          0 frames
+    real kernel     + real taskset PM      0 frames
+
+Every combination available in this tree has been measured. The stub renders
+the UI and no geometry; every path that introduces real firmware produces
+nothing at all.
+
+That is not a small gap to close. Making the real kernel work means the whole
+SPU-side environment it expects has to be right - the kernel context it is
+handed, the workload records it walks, the channel and DMA conventions, the
+addresses it hands control back through. RPCS3 never finished that, ps3recomp
+concluded a C stub cannot express it and lifted the firmware statically
+instead, and this fork's real-kernel path does not boot the title.
+
+## Conclusion for this effort
+
+HLE SPURS does not render this title, or Eternal Sonata, in any configuration
+reachable from this tree. The work that stands is:
+
+  - two contention leaks fixed (shipped ON, took the title from parked at 0 fps
+    to a running main loop at 30)
+  - three firmware-verified taskset fixes (shipped ON, correct, none renders)
+  - a test that cannot lie: p5 > 0, with a verified measurement procedure
+  - the real taskset policy module identified, extracted and partly disassembled
+  - a mislabeled signature corrected: sig_b is the taskset PM, not a job chain
+    variant, which explains the recorded "Module B halted all SPUs"
+  - an LLE-capable policy-module capture built from nothing
+  - five configurations and both hybrids eliminated with measurements
+
+For playing this title: use LLE. It renders.
