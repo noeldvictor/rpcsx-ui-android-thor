@@ -10036,14 +10036,21 @@ bool spu_thread::stop_and_signal(u32 code)
 		// kernel's workload dispatch copies the image to local store itself - so
 		// there is no switch left for lv2 to perform. Acknowledge it and let the
 		// module continue.
-		const u32 request = ch_out_mbox.get_count() ? ch_out_mbox.pop() : 0;
+		// Read the request the way every other stop handler does. The first
+		// version used `get_count() ? pop() : 0` and always saw 0, so the request
+		// was being answered without ever being read.
+		u32 request = 0;
+		const bool had_request = ch_out_mbox.try_read(request);
+		const u32 in_count = ch_in_mbox.get_count();
 
 		{
 			static std::atomic<u32> s_n{0};
 
 			if (const u32 n = s_n++; n < 8 || (n & 0xFFF) == 0)
 			{
-				spu_log.error("Thor SWITCH_SYSTEM_MODULE #%u: request=0x%08x -> CELL_OK", n, request);
+				spu_log.error("Thor SWITCH_SYSTEM_MODULE #%u: request=0x%08x (present=%d) "
+					"in_mbox_count=%u pc=0x%05x -> CELL_OK",
+					n, request, had_request ? 1 : 0, in_count, pc);
 			}
 		}
 

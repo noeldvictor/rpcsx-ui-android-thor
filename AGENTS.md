@@ -13196,3 +13196,22 @@ Two facts make this worth checking before anything else:
 
 **Next step: read the actual request payload from the correct channel.** Until
 that is known, any further change to the job path is guesswork.
+
+## The switch request really is 0 - suspicion cleared
+
+The previous section suspected we were replying to `switch_system_module`
+without ever reading the request, because `request` came back 0 and the handler
+used `get_count() ? pop() : 0` rather than the `try_read` idiom every other stop
+handler uses. Corrected to `try_read`:
+
+    Thor SWITCH_SYSTEM_MODULE #0: request=0x00000000 (present=1)
+                                  in_mbox_count=0 pc=0x02af4 -> CELL_OK
+
+**present=1** - the mailbox did hold a value and the request genuinely IS zero.
+The reply is not being made blind, and CELL_OK is a reasonable answer to it.
+That suspicion is eliminated, not acted on.
+
+(The read idiom is still worth having fixed: `try_read` is what the rest of the
+file uses and it now reports whether a value was actually present.)
+
+The chain still does not advance - `pc=0x01eca480` unchanged.
