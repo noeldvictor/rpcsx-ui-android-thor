@@ -13362,3 +13362,53 @@ thread to pull, and it has not been pulled since.
 still no measurement anywhere in this project showing HLE SPURS is faster than
 LLE for this title. LLE is 19.47 fps frame-verified in combat. Every HLE number
 ever recorded was a blank frame.
+
+# The Fence Is Downstream Of SPURS. One Symptom, Not Two Problems.
+
+2026-08-26. This corrects the previous section.
+
+## What the fence actually guards
+
+Extended the probe to identify the two values `main_thread` spins on at
+0x00fdcf60:
+
+    Thor FENCE: base=0x01fb4980 done=0x304f8348(mapped) target=0x304f93e8(mapped)
+                delta=0x10a0 PPU[0x1000000] main_thread
+    Thor FENCE   at done: 0004eb00 00010000 00083008 304fec00
+                                            ^^^^^^^^ another pointer, same region
+
+Both are MAPPED guest pointers in the dynamically created RSX-context region
+(main memory ends at 0x10000000; video is 0xC0000000; stack 0xD0000000), and the
+memory at `done` is a structured node containing a link to the next. This is a
+command-buffer walk: `main_thread` waits for `done` to reach `target`, i.e. for
+the RSX to consume what has been submitted.
+
+## Why that is not a second bug
+
+- `main_thread` sits in this SAME loop in the WORKING LLE run - measured
+  earlier, `cia=0x00fdcf60`. The loop is normal; only its completion differs.
+- The last RSX activity in an HLE run is at t=10.23s and nothing follows. The
+  surrounding calls are `libgcm_sys`.
+- This engine builds its RSX command data ON THE SPUS through SPURS job chains.
+
+So: HLE SPURS completes no jobs -> the command buffer is never filled -> RSX has
+nothing to consume -> `done` never reaches `target` -> `main_thread` waits
+forever -> the boot metrics never move -> the screen stays blank.
+
+## Retraction
+
+The previous section concluded from the flat boot metrics that "the blocker is
+not where any of the fixes were". **That was wrong.** The job chain IS the
+blocker. The frozen boot counters, the fence, and the blank frame are one
+symptom with one cause, and the seventeen fixes moved the job chain forward
+without yet reaching the point where it produces output.
+
+That also explains why boot progress could not move: nothing downstream of the
+job chain can advance until a job actually completes.
+
+## Where that leaves the work
+
+The target is unchanged and now unambiguous: make the job chain module complete
+a job, so `jobChain->pc` advances past 0x01eca480. Everything else follows from
+it. The module currently loads, runs, passes its entry checks, takes its work
+path and survives the switch stop - and consumes nothing.

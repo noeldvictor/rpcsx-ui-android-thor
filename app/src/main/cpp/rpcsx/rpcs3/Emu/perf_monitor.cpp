@@ -240,11 +240,30 @@ void perf_monitor::operator()()
 
 								if (vm::check_addr(base - 0x6390, 0, 8))
 								{
-									perf_log.error("Thor FENCE: base=0x%08x done=0x%08x target=0x%08x %s",
-										base,
-										+vm::_ref<be_t<u32>>(base - 0x638c),
-										+vm::_ref<be_t<u32>>(base - 0x6390),
-										ppu.get_name());
+									// WHAT ARE THESE TWO VALUES?
+									//
+									// They never converge and they are not small counters -
+									// 0x304f8348 and 0x304f93e8, 0x10A0 apart. Guest main
+									// memory ends at 0x10000000, video is 0xC0000000 and
+									// stack 0xD0000000, so if these are pointers they live in
+									// a dynamically created user/RSX-context block. Report
+									// whether they are mapped at all, and what they point at.
+									const u32 done = +vm::_ref<be_t<u32>>(base - 0x638c);
+									const u32 targ = +vm::_ref<be_t<u32>>(base - 0x6390);
+									const bool d_ok = vm::check_addr(done, 0, 16);
+									const bool t_ok = vm::check_addr(targ, 0, 16);
+
+									perf_log.error("Thor FENCE: base=0x%08x done=0x%08x(%s) target=0x%08x(%s) delta=0x%x %s",
+										base, done, d_ok ? "mapped" : "UNMAPPED",
+										targ, t_ok ? "mapped" : "UNMAPPED",
+										targ - done, ppu.get_name());
+
+									if (d_ok)
+									{
+										perf_log.error("Thor FENCE   at done: %08x %08x %08x %08x",
+											+vm::_ref<be_t<u32>>(done), +vm::_ref<be_t<u32>>(done + 4),
+											+vm::_ref<be_t<u32>>(done + 8), +vm::_ref<be_t<u32>>(done + 12));
+									}
 								}
 							}
 
