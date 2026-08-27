@@ -12688,3 +12688,64 @@ HLE) and both have a `SpursHdlr0`.
 So this diff did not find the defect. What it did do is rule out the kernel
 contract and the contention arrays, which is worth having written down before
 someone re-runs it.
+
+# The Job Chain Module Gets The RIGHT Argument And Bails Anyway
+
+2026-08-26. Reports and diagrams for this project go in the repo, not to a cloud
+artifact - see `_research/spurs/spurs-dispatch.html` for the dispatch graph.
+
+## The workload argument is correct
+
+    Thor WKLOAD #16: wid=6 addr=0x2330000 size=0x2200 arg=0x1eca280
+                     kind=REAL-IMAGE spu=3
+
+and the title created its job chains at:
+
+    jobChain=*0x1e76500   jobChain=*0x1e97880   jobChain=*0x1eca280
+
+`arg` matches the third one exactly. The kernel passes `wklInfo->arg` to the
+module in r4, so the module receives a valid `CellSpursJobChain` pointer. For
+contrast the taskset workloads carry `arg=0x101b4e80`, their taskset - the same
+mechanism, and it is right in both cases.
+
+**"The module gets a null or wrong job chain" is eliminated.**
+
+## Where it exits
+
+    Thor JCEXIT #0: module image 0x2330000 wid=6 exits from lr=0x00808
+                    sp=0x3ffb0 r3=0x00000100 r4=0x00000000 r5=0x00000002
+
+`lr = 0x808` is `exitToKernelAddr` itself - the value the KERNEL puts in r0
+before jumping to 0xA00 - so this says the module tail-returned without ever
+calling anything, and it does NOT locate the branch. r4 = 0 at exit is likewise
+worthless as evidence: the module clobbers r4 before leaving. Do not read either
+as the input state.
+
+Its entry, from the disassembly, takes the expected path:
+
+    00a1c  ai   r6,r3,0xdc     ; r3 = 0x100, so r6 = 0x1DC = ctxt->wklCurrentId
+    00a30  lqd  r9,0x0(r6)
+    00a38  ceqi r2,r8,0x20     ; is this the system workload (32)?
+    00a3c  brz  r2,0x00000a4c  ; ours is wid=6 -> non-system path, correct
+
+## Eliminated so far, on the job chain specifically
+
+- the module is missing              -> staged from libsre, loads verbatim
+- the module is not dispatched       -> `kind=REAL-IMAGE` on two SPUs
+- the kernel contract differs        -> exitToKernel 0x808, selectWorkload 0x290 identical
+- the workload argument is wrong     -> arg = 0x1eca280, the real job chain
+- it faults or halts                 -> no halt, no fault, no access violation
+
+## What is left
+
+The module has the right code, the right kernel contract and the right job chain
+pointer, and still decides there is nothing to do. That points at the CONTENTS
+of the job chain it DMAs in - `pc`, `sizeJobDescriptor`, `maxGrabbedJob`,
+`isHalted` - i.e. at the PPU side that fills `CellSpursJobChain`, not at the SPU
+side.
+
+**Next probe: dump the 0x80 bytes at 0x1eca280 when the workload is dispatched,
+and compare against the same structure in an LLE boot.** If `pc` is null or
+`isHalted` is set, the defect is in `_spurs::create_job_chain` or in the
+Run/Kick path - and note that `cellSpursRunJobChain` and `cellSpursKickJobChain`
+log at TRACE level, so their absence from any log so far proves nothing.

@@ -1511,6 +1511,34 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	// Load the workload to LS
 	if (ctxt->wklCurrentAddr != wklInfo->addr)
 	{
+		// EVERY WORKLOAD IMAGE LOAD, so the dispatch flow can be graphed.
+		//
+		// LS 0xA00 under HLE was measured EMPTY (830/8704 bytes matching the real
+		// job chain module, first 16 bytes zero) while under LLE it matches 100%.
+		// That capture had wklCurrentAddr = 0x100 (the SYS_SRV sentinel), so it
+		// only proves that SPU was on another workload at the time - not that the
+		// job chain copy fails. Log the load itself and stop inferring.
+		{
+			static std::atomic<u32> s_ld{0};
+			const u32 n = s_ld++;
+
+			if (n < 64 || (n & 0x3FF) == 0)
+			{
+				const u32 a = wklInfo->addr.addr();
+				const char* kind =
+					a == SPURS_IMG_ADDR_SYS_SRV_WORKLOAD ? "SYS_SRV" :
+					a == SPURS_IMG_ADDR_TASKSET_PM       ? "TASKSET" :
+					a == SPURS_IMG_ADDR_JOBCHAIN_PM      ? "JOBCHAIN-SENTINEL" :
+					a == 0                               ? "NULL-IMAGE" : "REAL-IMAGE";
+
+				// ARG MATTERS: the kernel passes wklInfo->arg to the module in r4, and
+				// for a job chain that must be the CellSpursJobChain address. The
+				// module was measured exiting with r4 = 0.
+				cellSpurs.error("Thor WKLOAD #%u: wid=%u addr=0x%x size=0x%x arg=0x%llx kind=%s spu=%u",
+					n, wid, a, +wklInfo->size, +wklInfo->arg, kind, +ctxt->spuNum);
+			}
+		}
+
 		switch (wklInfo->addr.addr())
 		{
 		case SPURS_IMG_ADDR_SYS_SRV_WORKLOAD:
@@ -1550,6 +1578,34 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 bool spursKernelWorkloadExit(spu_thread& spu)
 {
 	const auto ctxt = spu._ptr<SpursKernelContext>(0x100);
+
+	// WHERE INSIDE THE JOB CHAIN MODULE DOES IT GIVE UP?
+	//
+	// The staged real module is loaded to LS 0xA00, entered, and returns here
+	// immediately having done no work - twice in a whole run, with no fault and
+	// no halt. A module that branches to exitToKernelAddr leaves its return
+	// address in the link register (r0 on SPU), so THAT address is the exact
+	// instruction inside the module that decided to bail. It maps straight onto
+	// the disassembly of _research/spurs/jobchain_pm.spu.bin loaded at 0xA00.
+	//
+	// Only for the job chain: the taskset and system service exit through here
+	// constantly and would bury it.
+	{
+		const u32 img = ctxt->wklCurrentAddr.addr();
+
+		if (img != SPURS_IMG_ADDR_SYS_SRV_WORKLOAD && img != SPURS_IMG_ADDR_TASKSET_PM && img != 0)
+		{
+			static std::atomic<u32> s_x{0};
+
+			if (const u32 n = s_x++; n < 16)
+			{
+				cellSpurs.error("Thor JCEXIT #%u: module image 0x%x wid=%u exits from lr=0x%05x "
+					"sp=0x%05x r3=0x%08x r4=0x%08x r5=0x%08x spu=%u",
+					n, img, +ctxt->wklCurrentId, +spu.gpr[0]._u32[3], +spu.gpr[1]._u32[3],
+					+spu.gpr[3]._u32[3], +spu.gpr[4]._u32[3], +spu.gpr[5]._u32[3], +ctxt->spuNum);
+			}
+		}
+	}
 	const bool isKernel2 = ctxt->spurs->flags1 & SF1_32_WORKLOADS ? true : false;
 
 	// Select next workload to run
