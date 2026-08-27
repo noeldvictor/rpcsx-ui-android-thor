@@ -165,6 +165,19 @@ enum SpursImgAddrConstants : u32
 	// Image addresses
 	SPURS_IMG_ADDR_SYS_SRV_WORKLOAD = 0x100,
 	SPURS_IMG_ADDR_TASKSET_PM = 0x200,
+
+	// THE JOB CHAIN POLICY MODULE NEEDS A SENTINEL TOO.
+	//
+	// `_spurs::create_job_chain` passes vm::null as the workload image with size
+	// 0, so a job chain workload falls into the kernel dispatch's `default` arm
+	// and does `memcpy(LS 0xA00, nullptr, 0)` - copying NOTHING - and then sets
+	// spu.pc = 0xA00 and runs whatever the PREVIOUS module left there.
+	//
+	// Upstream gets away with this because it never registers the SPU-side HLE
+	// entries at all (both RegisterHleFunction calls are commented out there) and
+	// runs real guest policy-module binaries. This branch enabled the SPU-side
+	// HLE, so job chains need the same treatment tasksets got.
+	SPURS_IMG_ADDR_JOBCHAIN_PM = 0x300,
 };
 
 enum SpursWorkloadGUIDs : u64

@@ -6173,7 +6173,11 @@ s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<
 	vm::var<u32> wid;
 
 	// TODO
-	if (auto err = _cellSpursWorkloadAttributeInitialize(ppu, +attr_wkl, 1, SYS_PROCESS_PARAM_VERSION_330_0, vm::null, 0, jobChain.addr(), prio, 1, maxContention))
+	if (auto err = _cellSpursWorkloadAttributeInitialize(ppu, +attr_wkl, 1, SYS_PROCESS_PARAM_VERSION_330_0,
+			// Name the job chain policy module instead of passing a null image.
+			// See SPURS_IMG_ADDR_JOBCHAIN_PM: a null image made the SPU kernel run
+			// stale local store as if it were a policy module.
+			vm::cptr<void>::make(SPURS_IMG_ADDR_JOBCHAIN_PM), 0, jobChain.addr(), prio, 1, maxContention))
 	{
 		return as_job_error(err);
 	}

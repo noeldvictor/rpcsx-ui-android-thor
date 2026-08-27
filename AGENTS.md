@@ -12380,3 +12380,46 @@ the kernel-side registration. It is the other half of SPURS, not a patch.
 **Do not resume by editing the taskset path.** The next work is
 `spursJobChainEntry` and its registration, or the honest conclusion that HLE
 SPURS for this title is a project of that size.
+
+## Correction, and the proof
+
+An earlier note here said the job chain module "has no call site, so a selected
+job chain dispatches to an unregistered address". The mechanism was wrong in a
+way worth recording, because the real one is worse.
+
+The kernel's workload dispatch is:
+
+```cpp
+switch (wklInfo->addr.addr())
+{
+case SPURS_IMG_ADDR_SYS_SRV_WORKLOAD: RegisterHleFunction(0xA00, spursSysServiceEntry); break;
+case SPURS_IMG_ADDR_TASKSET_PM:       RegisterHleFunction(0xA00, spursTasksetEntry);    break;
+default: std::memcpy(spu._ptr<void>(0xA00), wklInfo->addr.get_ptr(), wklInfo->size);    break;
+}
+...
+spu.pc = 0xA00;
+```
+
+and `_spurs::create_job_chain` passed **`vm::null` with size 0** as the workload
+image. So a job chain took the `default` arm, did `memcpy(LS 0xA00, nullptr, 0)`
+- copying NOTHING - and then ran whatever the PREVIOUS policy module had left at
+0xA00. Not garbage in the abstract: the taskset module's code, executed as if it
+were a job chain.
+
+Upstream avoids this only because it never registers the SPU-side HLE entries at
+all (both RegisterHleFunction calls are commented out there) and always runs real
+guest policy-module binaries. This branch enabled SPU-side HLE, so job chains
+needed the same sentinel treatment tasksets got.
+
+Fixed: `SPURS_IMG_ADDR_JOBCHAIN_PM = 0x300`, passed by `create_job_chain`,
+dispatched to `spursJobChainEntry`, which now EXITS the workload back to the
+kernel and says so instead of `return false` (which left the SPU running on
+stale local store).
+
+**Measured, and this is the proof the diagnosis is right:**
+
+    Thor JOBCHAIN #0: policy module UNIMPLEMENTED - exiting workload
+                      (jobChain=0x0 arg=0x1eca280)
+
+The job chain workload is selected, reaches the SPU, and finds nothing to run.
+That is now an observation rather than an inference.

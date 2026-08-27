@@ -1519,6 +1519,9 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 		case SPURS_IMG_ADDR_TASKSET_PM:
 			spu.RegisterHleFunction(0xA00, spursTasksetEntry);
 			break;
+		case SPURS_IMG_ADDR_JOBCHAIN_PM:
+			spu.RegisterHleFunction(0xA00, spursJobChainEntry);
+			break;
 		default:
 			std::memcpy(spu._ptr<void>(0xA00), wklInfo->addr.get_ptr(), wklInfo->size);
 			break;
@@ -3421,16 +3424,42 @@ s32 spursTasksetLoadElf(spu_thread& spu, u32* entryPoint, u32* lowestLoadAddr, u
 //----------------------------------------------------------------------------
 // SPURS taskset policy module functions
 //----------------------------------------------------------------------------
+// THE JOB CHAIN POLICY MODULE IS NOT IMPLEMENTED, AND NOW IT SAYS SO.
+//
+// This title renders through SPURS JOB CHAINS - it creates three of them at
+// t=11.4s - not through the taskset. Everything the taskset path does is
+// therefore invisible to the renderer, which is why a measurably healthy SPURS
+// queue never produced a frame.
+//
+// Until this is implemented, the honest behaviour is to EXIT the workload back
+// to the kernel rather than to return false. `return false` left the SPU
+// running at pc=0xA00 over local store that this module never filled - the
+// previous policy module's bytes, executed as if they were a job chain. That
+// is how six SPUs stay at 90% while nothing is drawn.
+//
+// What a real implementation owes, from CellSpursJobChain_x00 and the SPU-side
+// contract: fetch the job descriptor at `pc`, honour `sizeJobDescriptor` and
+// `maxGrabbedJob`, DMA in the job binary (jobbin2) and its data, run it, walk
+// `linkRegister` on return, service `urgentCmds` (the one piece that already
+// exists here, spursJobchainPopUrgentCommand), and respect `isHalted` and the
+// job guard. That is a policy module of comparable size to the taskset one.
 bool spursJobChainEntry(spu_thread& spu)
 {
-	// const auto ctxt = spu._ptr<SpursJobChainContext>(0x4a00);
-	// auto kernelCtxt = spu._ptr<SpursKernelContext>(spu.gpr[3]._u32[3]);
+	const auto ctxt = spu._ptr<SpursJobChainContext>(0x4a00);
 
-	// auto arg = spu.gpr[4]._u64[1];
-	// auto pollStatus = spu.gpr[5]._u32[3];
+	static std::atomic<u32> s_n{0};
 
-	// TODO
-	return false;
+	if (const u32 n = s_n++; n < 4 || (n & 0xFFF) == 0)
+	{
+		cellSpurs.error("Thor JOBCHAIN #%u: policy module UNIMPLEMENTED - exiting workload "
+			"(jobChain=0x%x arg=0x%llx). This title renders through job chains, so nothing "
+			"will be drawn until this is written.",
+			n, ctxt->jobChain.addr(), spu.gpr[4]._u64[1]);
+	}
+
+	// Hand the SPU back to the kernel instead of running whatever is at 0xA00.
+	cellSpursModuleExit(spu);
+	return true;
 }
 
 void spursJobchainPopUrgentCommand(spu_thread& spu)
