@@ -12423,3 +12423,63 @@ stale local store).
 
 The job chain workload is selected, reaches the SPU, and finds nothing to run.
 That is now an observation rather than an inference.
+
+# HLE SPURS For This Title: The Two Remaining Paths, And Their Real Cost
+
+2026-08-26, after the job chain root cause was proven by dispatch.
+
+## Why "just use the real policy module" does not work
+
+The kernel dispatch's `default` arm runs REAL guest policy-module binaries, so
+the obvious move is to point job chains at the genuine image instead of writing
+one. Measured, that is impossible as things stand:
+
+    HLE:  sys_prx: Ignored module: "/dev_flash/sys/external/libsre.sprx"
+    LLE:  sys_prx: Loaded module:  "/dev_flash/sys/external/libsre.sprx"
+
+`debug.rpcsx.thor.hle_libs` routes through `should_load_hle`, and returning true
+means the PRX is **never mapped**. The job chain policy module lives inside
+libsre.sprx, so under HLE that binary is not in memory at all.
+
+## The two paths, sized honestly
+
+1. **Write the job chain policy module.** Job descriptor fetch, honouring
+   `sizeJobDescriptor` and `maxGrabbedJob`, jobbin2 code and data DMA, the
+   `linkRegister` walk, `urgentCmds` service, `isHalted` and the job guard.
+   `SpursJobChainContext` in the header is still `// TODO` - the structure is not
+   even mapped out. This is the size of the taskset policy module, which is what
+   this entire session amounted to.
+
+2. **Load libsre but HLE its exports**, then find the embedded PM image and pass
+   its address. That means reworking PRX loading and export resolution -
+   `should_load_hle` is a binary load/don't-load decision today - and then
+   locating the image inside the PRX.
+
+Neither is a patch.
+
+## The part that should decide whether to spend that
+
+**There is no measurement anywhere in this file showing HLE SPURS is faster than
+LLE for this title.** The "HLE deletes the guest SPU loop" argument was recorded
+as a mechanism, and the retraction above states plainly that every number once
+offered as evidence for it was a blank frame. So the honest position is:
+
+    LLE, frame-verified, in combat        19.47 fps  (6/6 frames DRAWN)
+    HLE, if the job chain module existed  UNKNOWN - never measured on a drawn frame
+
+Spending a taskset-sized effort to reach an unmeasured payoff is a decision that
+belongs to whoever is paying for the time, and it should be made with that
+sentence in front of them.
+
+## Where the measured evidence actually points for 30 fps
+
+From the profiling already in this file, on the path that DOES render:
+
+- ~29% of cycles in VM locking (`range_lock_internal` 15.37%,
+  `writer_lock` 10.69%, `passive_lock` 3.07%)
+- ~55% of cycles in JIT-compiled guest SPU code
+- 73% total CPU with 2.6 cores idle - a dependency chain, not saturation
+
+Those are measured on drawn frames, on the path the user can actually play. The
+SPU recompiler and the VM lock are where a 19.47 -> 30 fps attempt has evidence
+behind it.
