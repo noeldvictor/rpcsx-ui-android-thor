@@ -1536,6 +1536,38 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 				// module was measured exiting with r4 = 0.
 				cellSpurs.error("Thor WKLOAD #%u: wid=%u addr=0x%x size=0x%x arg=0x%llx kind=%s spu=%u",
 					n, wid, a, +wklInfo->size, +wklInfo->arg, kind, +ctxt->spuNum);
+
+				// AND THE JOB CHAIN ITSELF.
+				//
+				// The module has the right code, the right kernel contract and the
+				// right job chain pointer, and still decides there is nothing to do.
+				// What is left is the CONTENT of the structure it DMAs in. Decode the
+				// fields it actually branches on rather than dumping raw bytes.
+				if (a != SPURS_IMG_ADDR_SYS_SRV_WORKLOAD && a != SPURS_IMG_ADDR_TASKSET_PM && a != 0)
+				{
+					const u32 jc = static_cast<u32>(+wklInfo->arg);
+
+					if (jc && vm::check_addr(jc, 0, 0x80))
+					{
+						const auto rd32 = [&](u32 o) { return +vm::_ref<be_t<u32>>(jc + o); };
+						const auto rd16 = [&](u32 o) { return +vm::_ref<be_t<u16>>(jc + o); };
+						const auto rd8  = [&](u32 o) { return vm::_ref<u8>(jc + o); };
+
+						cellSpurs.error("Thor JOBCHAIN STATE jc=0x%x: pc=0x%08x_%08x "
+							"lr0=0x%08x_%08x isHalted=%u autoReadyCount=%u initSpuCount=%u "
+							"tag1=%u tag2=%u val2C=0x%02x jmVer=%u "
+							"maxGrabbedJob=%u sizeJobDescriptor=%u workloadId=%u spurs=0x%08x_%08x "
+							"urgent0=0x%08x_%08x",
+							jc, rd32(0x00), rd32(0x04), rd32(0x08), rd32(0x0C),
+							rd8(0x23), rd8(0x24), rd8(0x28), rd8(0x2A), rd8(0x2B), rd8(0x2C), rd8(0x2D),
+							rd16(0x70), rd16(0x72), rd32(0x74), rd32(0x78), rd32(0x7C),
+							rd32(0x30), rd32(0x34));
+					}
+					else
+					{
+						cellSpurs.error("Thor JOBCHAIN STATE: arg 0x%x is not readable guest memory", jc);
+					}
+				}
 			}
 		}
 

@@ -12749,3 +12749,53 @@ and compare against the same structure in an LLE boot.** If `pc` is null or
 `isHalted` is set, the defect is in `_spurs::create_job_chain` or in the
 Run/Kick path - and note that `cellSpursRunJobChain` and `cellSpursKickJobChain`
 log at TRACE level, so their absence from any log so far proves nothing.
+
+# Two Dropped Field Assignments In _spurs::create_job_chain
+
+2026-08-26. Found by auditing the function against its own signature, and
+confirmed in the structure the policy module actually reads.
+
+## The audit
+
+    parameters:  ppu spurs jobChain jobChainEntry sizeJob maxGrabbedJob prio
+                 maxContention autoReadyCount tag1 tag2 HaltOnError name ...
+
+    fields written: spurs jmVer val2F tag1 tag2 isHalted maxGrabbedJob pc
+                    cause error workloadId
+
+`sizeJob` and `autoReadyCount` arrive as parameters and were never stored.
+Measured, decoding `CellSpursJobChain` at the moment the workload is dispatched:
+
+    before:  sizeJobDescriptor=0    autoReadyCount=0
+    after:   sizeJobDescriptor=128  autoReadyCount=1
+
+`sizeJobDescriptor` is the STRIDE of a job descriptor. At zero the module cannot
+fetch a single job - the DMA it would issue has zero length - so it returns to
+the kernel immediately having done nothing. That is precisely the observed
+behaviour, and it is worth keeping in mind as a lesson: the module was doing
+exactly the right thing with the data it was given.
+
+## Everything else in that structure is now valid
+
+    jc=0x1eca280 pc=0x01eca480 isHalted=0 maxGrabbedJob=16
+    sizeJobDescriptor=128 autoReadyCount=1 workloadId=6 spurs=0x01e97a80
+
+pc points at the descriptor list, the workload id and spurs pointer are right,
+nothing is halted.
+
+## And it STILL exits immediately
+
+Job chain loads = 1, exits = 1, screen black. So these two were real defects and
+were not the last one. Remaining zeros in the structure, in the order worth
+checking:
+
+    initSpuCount = 0     - set by cellSpursCreateJobChainWithAttribute from
+                           attr->initSpuCount, so the attribute may be the source
+    val2C        = 0x00  - packed isFixedMemAlloc<<7 | ((maxSizeJobDescriptor-0x100)/128 & 7)<<4
+    lr0          = 0     - linkRegister[0]
+    urgent0      = 0     - urgentCmds[0]
+
+`val2C = 0` implies `maxSizeJobDescriptor = 0x100` and `isFixedMemAlloc = 0`,
+which is worth verifying against what the title actually passed, since the same
+class of bug (an attribute field never reaching the structure) would look
+exactly like this.

@@ -6256,6 +6256,33 @@ s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<
 	jobChain->tag2 = static_cast<u8>(tag2);
 	jobChain->isHalted = false;
 	jobChain->maxGrabbedJob = maxGrabbedJob;
+
+	// THE STRIDE OF A JOB DESCRIPTOR. It was never written.
+	//
+	// `sizeJob` arrives as a parameter and this function assigned spurs, jmVer,
+	// tag1, tag2, isHalted, maxGrabbedJob, pc, cause, error and workloadId - and
+	// then dropped this one field on the floor. So every job chain reached the
+	// SPU with sizeJobDescriptor = 0.
+	//
+	// MEASURED, decoding the structure the policy module DMAs in, at the moment
+	// the workload is dispatched:
+	//
+	//     jc=0x1eca280 pc=0x01eca480 isHalted=0 maxGrabbedJob=16 workloadId=6
+	//     spurs=0x01e97a80 sizeJobDescriptor=0
+	//
+	// Everything the module checks is valid except this. A descriptor stride of
+	// zero means it cannot fetch a single job - the DMA it would issue has zero
+	// length - so it returns to the kernel immediately having done nothing,
+	// which is exactly the observed behaviour: the real module loads at LS 0xA00,
+	// is entered, faults nowhere, and exits at once.
+	jobChain->sizeJobDescriptor = sizeJob;
+
+	// SAME CLASS, SAME FUNCTION: `autoReadyCount` is a parameter and was also
+	// never stored. Auditing this function against its own signature, it receives
+	// sizeJob, maxGrabbedJob, autoReadyCount and HaltOnError, and wrote only
+	// maxGrabbedJob. Measured effect of the two it dropped: the job chain reached
+	// the SPU with sizeJobDescriptor = 0 and autoReadyCount = 0.
+	jobChain->autoReadyCount = autoReadyCount;
 	jobChain->pc = jobChainEntry;
 
 	auto as_job_error = [](s32 error) -> s32
