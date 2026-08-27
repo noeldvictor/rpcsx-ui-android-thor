@@ -12537,3 +12537,59 @@ was (Ghidra, SPU:BE:128:default).
 Two paths remain and both are large; this is progress on path 1. Nothing here
 changes the standing measurement: LLE renders at 19.47 fps frame-verified, and
 HLE's speed benefit for this title has never been measured on a drawn frame.
+
+# The Job Chain Policy Module Is Captured. Identified, 9,168 Bytes.
+
+2026-08-26. The source material for porting it now exists.
+
+## How it was captured
+
+`thor::spu_ls_dump_tick()` works and the earlier "it did not fire" was MY error:
+the doc comment in `thor_spu_ls_dump.h` says the file lands in
+`/data/data/net.rpcsx.easy/cache/`, but `fs::get_cache_dir()` on this build
+resolves to **`files/cache/`** - the same directory the decrypted modules go to.
+The file was there the whole time. Fix the comment before it costs someone else
+an hour.
+
+    setprop debug.rpcsx.thor.spu_ls_dump CellSpursKernel1     # LLE boot
+    -> /storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/spu_ls_CellSpursKernel1.bin
+
+The thread name is the SAME under LLE and HLE (`CellSpursKernel0..5`), which was
+also worth knowing - it was checked against the LLE log rather than assumed.
+
+## What is in it
+
+A policy module occupies LS **0xA00 .. ~0x2dcc**, about 9 KB of real guest code,
+in an LLE boot where the title renders. Extracted to
+`_research/spurs/jobchain_pm.spu.bin` (9,168 bytes).
+
+## Why it is the JOB CHAIN module and not the taskset one
+
+Two independent checks against the taskset module's documented signatures:
+
+    word at 0xa70 = 0x04002803  (lr r3,r80)
+      - the taskset PM's 0xA70 is its syscall entry and begins `stqa lr,0x2c80`
+    'ila r39,0x3d000' - the taskset PM's LS-clear bound, disassembled earlier in
+      this file at 0x18b8 - encodes to 0x41e80027 and appears NOWHERE in the
+      module region.
+
+Its entry does what a policy module should: sets up the stack at 0x3ffd0,
+branches on an argument byte, and immediately performs a GETLLAR
+(`il r16,0xd0` -> `wrch r16,ch21`) over a structure at r80, which is the job
+chain the workload argument points at.
+
+## What porting it needs, in order
+
+1. Disassemble `jobchain_pm.spu.bin` at load address 0xA00
+   (Ghidra, SPU:BE:128:default) - the same route that cracked the taskset module.
+2. Map `SpursJobChainContext` properly. It is `// TODO` in the header today, and
+   the module's own accesses off r80 and 0x4a00 will name the fields.
+3. Implement `spursJobChainEntry` against it: descriptor fetch honouring
+   `sizeJobDescriptor` and `maxGrabbedJob`, jobbin2 code and data DMA, the
+   `linkRegister` walk, `urgentCmds` (the existing
+   `spursJobchainPopUrgentCommand` already models this), `isHalted`, job guard.
+
+The dispatch wiring is already in place from the previous commit
+(`SPURS_IMG_ADDR_JOBCHAIN_PM`), so an implementation has somewhere to land and
+is measurable the moment it does anything - the `Thor JOBCHAIN #n` line fires
+whenever the workload is selected.
