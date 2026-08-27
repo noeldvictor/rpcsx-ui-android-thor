@@ -591,6 +591,79 @@ static u32 thor_yield_redispatch_every() noexcept
 #endif
 }
 
+// ONE-SHOT EXECUTION PROBES INSIDE A REAL POLICY MODULE.
+//
+// `RunHleFunction` replaces the block at a registered pc and its caller does
+// `continue`, which re-evaluates pc. So a probe that LOGS, UNREGISTERS ITSELF
+// and returns true lets the genuine instruction execute on the very next
+// iteration - a one-shot "execution reached here" marker that costs nothing
+// afterwards and does not perturb the module.
+//
+// This is the only tracing available: the SPU runs through the recompiler, so
+// there is no per-instruction hook, and the module is guest code we must not
+// modify.
+//
+//   debug.rpcsx.thor.jobchain_trace = 1
+static bool thor_jobchain_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.jobchain_trace", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+static bool thor_jc_trace_probe(spu_thread& spu)
+{
+	static std::atomic<u32> s_seq{0};
+
+	cellSpurs.error("Thor JCTRACE %u: reached 0x%05x (spu=%u r3=0x%08x r4=0x%08x r5=0x%08x)",
+		s_seq++, +spu.pc, +spu.lv2_id,
+		+spu.gpr[3]._u32[3], +spu.gpr[4]._u32[3], +spu.gpr[5]._u32[3]);
+
+	// Drop the hook so the real instruction runs on the next dispatch.
+	spu.UnregisterHleFunction(spu.pc);
+	return true;
+}
+
+static void thor_install_jobchain_trace(spu_thread& spu)
+{
+	if (!thor_jobchain_trace())
+	{
+		return;
+	}
+
+	// Decision points and subroutine entries along the path a non-system
+	// workload takes, from the module disassembly.
+	// ONLY FUNCTION ENTRIES WORK. `RunHleFunction` is consulted at block-entry
+	// pcs and the SPU runs whole recompiled blocks, so a probe planted in the
+	// middle of a block never fires. A first attempt probed mid-block addresses
+	// (0x2204, 0x222c, 0x2af0 ...) and produced NOTHING even on a boot where the
+	// module demonstrably ran and hit the switch stop twice.
+	//
+	// These are all `brsl` targets taken from the module's own call graph, which
+	// is what makes them block entries. 0x21a8 matters most: the entry path is
+	// `0xa4c -> brsl 0x21a8`, and everything the module executes - including the
+	// switch request at 0x2af4 - happens inside that call's subtree.
+	static constexpr u32 sites[] = {
+		0x21a8, 0x28d0,          // the entry subtree, and the trace writer it calls
+		0x2850, 0x2868,          // the kernel-service callers
+		0x1230, 0x1470, 0x1600,  // other subroutines reachable from the entry
+		0x1988, 0x1b00, 0x1c00, 0x1d88, 0x2160, 0x2630, 0x2a98,
+		0x0cc8,                  // the remaining brsl target from the call map
+	};
+
+	for (const u32 a : sites)
+	{
+		spu.RegisterHleFunction(a, thor_jc_trace_probe);
+	}
+}
+
 static bool thor_entry_pollstatus_fix() noexcept
 {
 #ifdef ANDROID
@@ -1650,6 +1723,7 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 			// commented out in spursTasksetInit and spursKernelEntry.
 			spu.UnregisterHleFunction(0xA00);
 			std::memcpy(spu._ptr<void>(0xA00), wklInfo->addr.get_ptr(), wklInfo->size);
+			thor_install_jobchain_trace(spu);
 			break;
 		}
 

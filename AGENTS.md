@@ -13215,3 +13215,40 @@ That suspicion is eliminated, not acted on.
 file uses and it now reports whether a value was actually present.)
 
 The chain still does not advance - `pc=0x01eca480` unchanged.
+
+# HLE Probes Cannot Trace Inside A Recompiled Module
+
+2026-08-26. Recorded so the next attempt does not repeat it.
+
+`RunHleFunction` looks promising as a tracer: it replaces the block at a
+registered pc, and its caller does `continue`, so a probe that LOGS,
+UNREGISTERS ITSELF and returns true lets the genuine instruction run on the next
+iteration - a one-shot "execution reached here" marker.
+
+**It does not work inside a real policy module.** Two attempts, both on boots
+where the module demonstrably ran (REAL-IMAGE loads and SWITCH_SYSTEM_MODULE
+stops both present in the same log):
+
+    attempt 1 - mid-block addresses (0x2204, 0x222c, 0x2af0, ...)   0 trace lines
+    attempt 2 - only brsl targets   (0x21a8, 0x28d0, 0x2850, ...)   0 trace lines
+
+The SPU runs through the recompiler, which compiles large regions containing
+internal branches. The dispatch loop - and therefore the `RunHleFunction` check -
+only regains control at boundaries the RECOMPILER chooses, not at addresses we
+pick. The registrations that do work (0xA00, 0x808, 0x290, 0x818, 0x848) work
+because the kernel jumps to them directly as entry points.
+
+`thor_install_jobchain_trace` is kept, gated off by default
+(`debug.rpcsx.thor.jobchain_trace`), because it is harmless and the mechanism is
+correct for entry points - but it cannot answer "which branch did the module
+take".
+
+## What would actually trace it
+
+Force the SPU decoder to an interpreter for the run. Then every instruction goes
+through the dispatch path and probes fire wherever they are planted. That is a
+config change (`g_cfg.core.spu_decoder`) plus a Thor property, and it will be
+extremely slow - acceptable for a trace, not for a measurement.
+
+That is the honest next step for finding where the module diverges from LLE, and
+it is a bigger piece of work than any single fix in this session.
