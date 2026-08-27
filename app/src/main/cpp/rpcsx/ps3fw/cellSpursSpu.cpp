@@ -505,6 +505,24 @@ static void thor_release_wkl(u32 wid, u32 spu_num) noexcept
 // read too early.
 //
 //   debug.rpcsx.thor.syscall_dma_wait = 0 restores the previous behaviour
+static bool thor_exit_destroy_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.exit_destroy_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_syscall_dma_wait() noexcept
 {
 #ifdef ANDROID
@@ -4080,9 +4098,33 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 	switch (syscallNum & 0x0F)
 	{
 	case CELL_SPURS_TASK_SYSCALL_EXIT:
+		// DESTROY IS UNCONDITIONAL. Read out of the real taskset policy module,
+		// captured under LLE and disassembled (EXIT arm at 0x1cd8):
+		//
+		//     00001cd8: lqr  r12,0x4be   -> 0x1cd8 + 0x4be*4 = 0x2FD0, word 1 is x2FD4
+		//     00001ce0: ceqi r6,r7,0x4   ; x2FD4 == 4, the same test we use
+		//     00001ce4: brz  r6,0x1cfc   ; not 4 -> the destroy path
+		//     00001cfc: il r3,0 / il r4,0 / fsmbi r5,0
+		//     00001d08: brsl lr,0x00000e40   ; DESTROY - not guarded by anything
+		//     00001d0c: lqr  r6,0x4ad   -> 0x1d0c + 0x4ad*4 = 0x2FC0, i.e. x2FC0
+		//     00001d18: brz  r14,0x1e40 ; x2FC0 == 0 -> skip the callback, and END
+		//     00001d2c: brsl lr,0x00001438   ; otherwise onTaskExit
+		//
+		// The firmware destroys the task whenever x2FD4 != 4, and only THEN asks
+		// whether there is an exit callback. Our copy wrapped BOTH in a single
+		// gate, so a task exiting with x2FD4 != 4 and x2FC0 == 0 was never
+		// destroyed at all - it stays set in the taskset's running/enabled
+		// bitmaps forever, and nothing can reuse its slot.
+		//
+		//   debug.rpcsx.thor.exit_destroy_fix = 0 restores the old gate
+		if (ctxt->x2FD4 != 4u && thor_exit_destroy_fix())
+		{
+			spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_DESTROY_TASK, nullptr, nullptr);
+		}
+
 		if (ctxt->x2FD4 == 4u || (ctxt->x2FC0 & 0xffffffffu) != 0u)
 		{ // TODO: Figure this out
-			if (ctxt->x2FD4 != 4u)
+			if (ctxt->x2FD4 != 4u && !thor_exit_destroy_fix())
 			{
 				spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_DESTROY_TASK, nullptr, nullptr);
 			}

@@ -280,3 +280,45 @@ not the cause. Kept on because it matches the firmware and costs nothing
 measurable; recorded here so nobody re-derives it as a candidate.
 
 The exit path itself is at 0x1cd8 and has not been read yet.
+
+## 10. The EXIT arm, read - a real bug, and why it cannot be the cause
+
+EXIT is jump-table entry 0, at 0x1cd8:
+
+    00001cd8: lqr  r12,0x4be   -> 0x1cd8 + 0x4be*4 = 0x2FD0, word 1 = x2FD4
+    00001ce0: ceqi r6,r7,0x4   ; x2FD4 == 4 - the same test our HLE uses
+    00001ce4: brz  r6,0x1cfc
+    00001cfc: il r3,0 / il r4,0 / fsmbi r5,0
+    00001d08: brsl lr,0x00000e40    ; DESTROY - guarded by nothing
+    00001d0c: lqr  r6,0x4ad   -> 0x1d0c + 0x4ad*4 = 0x2FC0, i.e. x2FC0
+    00001d18: brz  r14,0x1e40      ; x2FC0 == 0 -> skip callback, END
+    00001d2c: brsl lr,0x00001438   ; onTaskExit
+
+The firmware destroys the task whenever x2FD4 != 4, and only then asks whether
+an exit callback exists. Ours wrapped both in one gate:
+
+    if (x2FD4 == 4 || x2FC0 != 0) { if (x2FD4 != 4) destroy; onTaskExit(); }
+
+so a task exiting with x2FD4 != 4 AND x2FC0 == 0 was never destroyed - it stays
+set in the taskset's running/enabled bitmaps and its slot is never reusable.
+Fixed behind debug.rpcsx.thor.exit_destroy_fix, default ON.
+
+### It is dormant, and that matters more than the fix
+
+    exit=0  yield=138624  waitSig=1  poll=0     p8=1243  p5=0
+
+exit is still ZERO. The EXIT arm never executes, so this fix cannot currently
+change anything, and it did not: p5=0, unchanged. (Task starts read 11 against
+an earlier 2, but attributing that to a code path that never runs would be
+wrong - it is run variance or the DMA-wait change from the previous commit.)
+
+### Reconsidering exit=0
+
+This log has treated exit=0 as the smoking gun. Reading the firmware weakens
+that. The task on taskset 0x10364100 is a queue consumer that polls and yields;
+a service task that runs for the lifetime of the taskset never calls EXIT, and
+its exit count being zero is then NORMAL rather than diagnostic. Nothing
+measured here establishes that this title's tasks are supposed to exit.
+
+So "make exit non-zero" should be retired as the success metric. p5 > 0 remains
+the only one that is grounded.
