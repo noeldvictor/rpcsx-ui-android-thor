@@ -664,6 +664,58 @@ static void thor_install_jobchain_trace(spu_thread& spu)
 	}
 }
 
+extern u32 thor_spurs_kernel_code(u32 want_entry, u32& out_size) noexcept;
+
+// FILL THE KERNEL CODE REGION OF LOCAL STORE.
+//
+// MEASURED, comparing local store from an LLE boot where the job chain module
+// works against an HLE boot where it does not, with the SAME module byte-
+// identical at 0xA00 in both (8704/8704):
+//
+//     non-zero bytes   LLE 9543   HLE 8081
+//     0x2C0 .. 0x880   LLE ~1472 bytes   HLE ZERO, every 64-byte block
+//
+// That range is the tail of the SPURS kernel image (PT_LOAD vaddr 0x100,
+// size 0x780 -> 0x100..0x880). In LLE the kernel's own CODE is resident there.
+// Under HLE the kernel is intercepted by RegisterHleFunction and the image is
+// never loaded, so the region is empty.
+//
+// The module `bisl`s addresses it reads out of the kernel context - 0x808
+// (exitToKernelAddr) and 0x290 (selectWorkloadAddr) - and those are hooked, so
+// they work. Any OTHER call into kernel code lands on zeros and returns without
+// doing anything, which is exactly the observed behaviour: runs, faults
+// nowhere, consumes nothing.
+//
+// Copy only 0x2C0..0x880. The first 0x1C0 bytes of the image overlap
+// SpursKernelContext at 0x100, which the HLE kernel maintains itself and must
+// not be clobbered.
+static void thor_fill_kernel_code(spu_thread& spu, bool isKernel2)
+{
+	constexpr u32 code_lo = 0x2C0;   // first byte past SpursKernelContext
+	constexpr u32 img_lo = 0x100;    // the image loads at LS 0x100
+
+	u32 size = 0;
+	const u32 mem = thor_spurs_kernel_code(isKernel2 ? 0x848u : 0x818u, size);
+
+	if (!mem || size <= (code_lo - img_lo))
+	{
+		return;
+	}
+
+	const u32 off = code_lo - img_lo;
+	const u32 len = size - off;
+
+	std::memcpy(spu._ptr<void>(code_lo), vm::base(mem + off), len);
+
+	static std::atomic<u32> s_n{0};
+
+	if (const u32 n = s_n++; n < 8)
+	{
+		cellSpurs.error("Thor KERNEL CODE: filled LS 0x%x..0x%x from the real kernel%d (%u bytes)",
+			code_lo, code_lo + len, isKernel2 ? 2 : 1, len);
+	}
+}
+
 static bool thor_entry_pollstatus_fix() noexcept
 {
 #ifdef ANDROID
@@ -1724,6 +1776,31 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 			spu.UnregisterHleFunction(0xA00);
 			std::memcpy(spu._ptr<void>(0xA00), wklInfo->addr.get_ptr(), wklInfo->size);
 			thor_install_jobchain_trace(spu);
+
+			// DUMP LOCAL STORE ONCE, WITH THE JOB CHAIN MODULE RESIDENT.
+			//
+			// An LLE capture already exists in which this same module is resident at
+			// 0xA00 and WORKING (_research/spurs/ls_lle_CellSpursKernel1.bin - the
+			// module matched 8704/8704 bytes there). Capturing the HLE equivalent at
+			// the same point makes the two directly comparable, and the differences
+			// outside the module image are the data the working one has and ours
+			// does not.
+			//
+			// One shot, and only for the job chain - the taskset and system service
+			// pass through here constantly.
+			{
+				static std::atomic<bool> s_dumped{false};
+
+				if (bool expected = false; s_dumped.compare_exchange_strong(expected, true))
+				{
+					if (FILE* f = std::fopen("/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_ls_jobchain.bin", "wb"))
+					{
+						std::fwrite(spu._ptr<void>(0), 1, 0x40000, f);
+						std::fclose(f);
+						cellSpurs.error("Thor LS DUMP: job chain resident, 256KB written (spu=%u)", +ctxt->spuNum);
+					}
+				}
+			}
 			break;
 		}
 
@@ -1856,6 +1933,10 @@ bool spursKernelEntry(spu_thread& spu)
 
 	// Register SPURS kernel HLE functions
 	// spu.UnregisterHleFunctions(0, 0x40000/*LS_BOTTOM*/);
+	// The kernel is HLE, but its CODE must still be present for the guest policy
+	// modules that call into it. See thor_fill_kernel_code.
+	thor_fill_kernel_code(spu, isKernel2);
+
 	spu.RegisterHleFunction(isKernel2 ? CELL_SPURS_KERNEL2_ENTRY_ADDR : CELL_SPURS_KERNEL1_ENTRY_ADDR, spursKernelEntry);
 	spu.RegisterHleFunction(ctxt->exitToKernelAddr, spursKernelWorkloadExit);
 	spu.RegisterHleFunction(ctxt->selectWorkloadAddr, isKernel2 ? spursKernel2SelectWorkload : spursKernel1SelectWorkload);

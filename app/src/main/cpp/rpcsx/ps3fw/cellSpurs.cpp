@@ -1283,6 +1283,7 @@ s32 _spurs::join_handler_thread(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 // Defined below, next to the job chain module staging they share machinery with.
 static bool thor_real_spu_kernel() noexcept;
 static u32 thor_spurs_kernel_image(u32 want_entry, u32& out_size) noexcept;
+u32 thor_spurs_kernel_code(u32 want_entry, u32& out_size) noexcept;
 
 s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, u32 sdkVersion, s32 nSpus, s32 spuPriority, s32 ppuPriority, u32 flags, vm::cptr<char> prefix, u32 prefixSize, u32 container, vm::cptr<u8> swlPriority, u32 swlMaxSpu, u32 swlIsPreem)
 {
@@ -6290,6 +6291,25 @@ static bool thor_real_spu_kernel() noexcept
 
 // Returns the guest address of the staged loadable segment, 0 on failure.
 // `want_entry` selects the kernel; `out_size` receives the segment size.
+// Public wrapper: the SPU side needs the same staged payload to fill the
+// kernel CODE region of local store. Cached by thor_spurs_kernel_image itself
+// through vm::alloc, so repeated calls are cheap after the first.
+u32 thor_spurs_kernel_code(u32 want_entry, u32& out_size) noexcept
+{
+	static u32 s_addr[2]{};
+	static u32 s_size[2]{};
+
+	const u32 i = want_entry == 0x848u ? 1u : 0u;
+
+	if (!s_addr[i])
+	{
+		s_addr[i] = thor_spurs_kernel_image(want_entry, s_size[i]);
+	}
+
+	out_size = s_size[i];
+	return s_addr[i];
+}
+
 static u32 thor_spurs_kernel_image(u32 want_entry, u32& out_size) noexcept
 {
 	out_size = 0;

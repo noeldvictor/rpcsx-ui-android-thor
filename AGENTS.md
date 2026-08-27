@@ -13412,3 +13412,49 @@ The target is unchanged and now unambiguous: make the job chain module complete
 a job, so `jobChain->pc` advances past 0x01eca480. Everything else follows from
 it. The module currently loads, runs, passes its entry checks, takes its work
 path and survives the switch stop - and consumes nothing.
+
+# The Kernel CODE Region Was Empty Under HLE. Filled. Still Black.
+
+2026-08-27.
+
+## The measurement
+
+Captured local store from an HLE boot with the job chain module resident, and
+compared it against the LLE capture in which the SAME module works. Both kept in
+`_research/spurs/` (`ls_hle_jobchain.bin`, `ls_lle_CellSpursKernel1.bin`).
+
+    module at 0xA00      LLE 8704/8704      HLE 8704/8704     byte-identical
+    non-zero bytes       LLE 9543           HLE 8081
+    0x2C0 .. 0x880       LLE ~1472 bytes    HLE ZERO, every 64-byte block
+
+Only one region differs materially, and it is exactly the tail of the SPURS
+kernel image: `PT_LOAD vaddr 0x100 size 0x780` covers 0x100..0x880. In LLE the
+kernel's own CODE is resident in low local store. Under HLE the kernel is
+intercepted by RegisterHleFunction and the image is never loaded, so it is empty.
+
+The reasoning that made this look decisive: the module `bisl`s addresses it reads
+out of the kernel context - 0x808 (exitToKernelAddr) and 0x290
+(selectWorkloadAddr) - and both are hooked, so they work. Any OTHER call into
+kernel code would land on zeros and return having done nothing, which is exactly
+what the module appears to do.
+
+## The fix, and the result
+
+`thor_fill_kernel_code` copies 0x2C0..0x880 from the staged real kernel into
+local store at SPURS kernel entry. Only that range: the first 0x1C0 bytes of the
+image overlap SpursKernelContext at 0x100, which the HLE kernel maintains itself.
+
+    Thor KERNEL CODE: filled LS 0x2c0..0x880 from the real kernel1 (1472 bytes)
+
+Exactly the measured gap, closed.
+
+**And it changed nothing.** pc still 0x01eca480, faults 0, screen black.
+
+## Verdict
+
+The gap was real and closing it is correct - the HLE local store now matches the
+working one far more closely, and a whole class of "module calls unhooked kernel
+code" failures is gone. It was not the cause.
+
+Kept enabled: it makes HLE local store closer to genuine, costs one memcpy per
+kernel entry, and introduced no faults.
