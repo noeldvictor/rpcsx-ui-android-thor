@@ -12308,3 +12308,75 @@ one probe and one Ghidra pass, and it is the next thing to do - not another fix.
 DO NOT patch anything from the list already eliminated: the SPURS queue, the LF
 queue, cellOvis, the taskset writeback, the yield capture, the ring convention,
 and the handler-thread mutex are all measured and accounted for.
+
+# ROOT CAUSE: The Job Chain Policy Module Does Not Exist
+
+Found 2026-08-26. This is why HLE SPURS does not render, and it means most of
+the SPURS work in this branch, while correct, was aimed at the wrong half of
+SPURS.
+
+## The chain of evidence
+
+`main_thread` parks at 0x00fdcf60, which disassembles to a spin comparing two
+words and sleeping 30 us between attempts. Printing them:
+
+    Thor FENCE: base=0x01fb4980 done=0x304f8348 target=0x304f93e8
+
+Both are POINTERS, not counters - 0x10A0 apart, frozen at those exact values for
+the whole run. Something must advance `done` toward `target` and nothing does.
+
+The title calls `cellSpursCreateJobChainWithAttribute` **three times**. UE3 on
+PS3 drives rendering through SPURS JOB CHAINS, not tasksets.
+
+And the job chain policy module is this:
+
+```cpp
+bool spursJobChainEntry(spu_thread& spu)
+{
+    // TODO
+    return false;
+}
+```
+
+**It is worse than a stub: it has no call site at all.** The taskset module is
+wired into the SPU kernel explicitly -
+
+    spu.RegisterHleFunction(CELL_SPURS_TASKSET_PM_ENTRY_ADDR, spursTasksetEntry);
+
+- and there is NO equivalent registration for the job chain module. A selected
+job chain workload dispatches to an unregistered local store address.
+
+## What this explains, all at once
+
+- Six SPUs at ~90% and RSX at ~97%, with no draws: the kernel keeps selecting
+  job chain workloads that do nothing.
+- `main_thread`, `AsyncIOSystem` and `RenderingThread` all parked on the same
+  fence: they wait on job chain output that is never produced.
+- The title never finishing load - a tenth the sys_memory calls, cellAudio never
+  reached.
+- Why the SPURS QUEUE being measurably healthy changed nothing: the queue feeds
+  the taskset, and rendering does not go through the taskset.
+
+## Honest accounting of this branch
+
+The six defects fixed here are real and stay fixed - the discarded taskset
+writeback, the yield capture, the 2*depth ring, the GETLLAR reservation, the
+uninitialised queue header, the underflowing probe. The taskset path went from
+`dispatches: 1` and a frozen ring to a consumer that keeps pace across ~954,000
+pushes.
+
+None of it could ever have produced a rendered frame, because the rendering
+work never travels that path. That was knowable earlier: the title creates
+three job chains at t=11.4s, in the same log that was read a dozen times for
+queue state.
+
+## Scale, stated plainly
+
+Implementing the job chain policy module is comparable in size to the taskset
+policy module - job descriptor DMA, the urgent command queue (the one piece
+that DOES exist here, `spursJobchainPopUrgentCommand`), job code loading, and
+the kernel-side registration. It is the other half of SPURS, not a patch.
+
+**Do not resume by editing the taskset path.** The next work is
+`spursJobChainEntry` and its registration, or the honest conclusion that HLE
+SPURS for this title is a project of that size.
