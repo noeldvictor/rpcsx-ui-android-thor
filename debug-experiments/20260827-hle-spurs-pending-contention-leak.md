@@ -121,3 +121,63 @@ WRONG, not missing. HLE also burns 3.8x the SPU time to produce it.
 
 Next: dump the vertex/transform buffer for that draw under both configs and
 diff. Do not spend more time on queue plumbing - it is measured working.
+
+## Past SPURS: why no triangle draw is ever issued
+
+Exact per-primitive census (counters, not sampling), same point in the boot:
+
+    LLE   p5=73(e=1310328)  p6=1(e=4)  p8=973(e=3892)
+    HLE   p5=0              p6=0       p8=914(e=3656)
+
+p5 is TRIANGLES. LLE renders the scene in ONE burst of 73 draws / 1.31M
+vertices between flips 600 and 720, then only blits ~1 quad per flip. HLE never
+issues that burst, which is the whole of the missing picture.
+
+The chain, each link measured, with a clean LLE control that hits none of it:
+
+1. `cellSpursCreateTaskWithAttribute` fails with 0x80410902 (INVAL).
+2. So the worker task is never created.
+3. The title falls back to an ANY2ANY LFQueue at 0x101b1f80, whose PPU push
+   functions `_cellSyncLFQueueGetPushPointer2` and
+   `_cellSyncLFQueueCompletePushPointer2` are `todo` stubs returning CELL_OK.
+   They never write *pointer and never call fpSendSignal.
+4. So the task parked in WAIT_SIGNAL on taskset 0x101b4e80 is never woken -
+   zero non-queue `_cellSpursSendSignal` calls in an entire run - and the
+   geometry stage never runs.
+
+### Why create_task rejected it
+
+`_cellSpursTaskAttributeInitialize` is a Thor-local implementation; upstream
+RPCS3 has it as an argument-less stub, so the layout was inferred. The raw ABI
+registers say:
+
+    r3=0xd00aa370 r4=0x1 r5=0x310000 r6=0x1765800
+    r7=0xd00aa358 r8=0x0 r9=0x1098933f r10=0x1098933e
+
+r9 and r10 are readable but NOT 16-byte aligned, and both `CellSpursTaskLsPattern`
+and `CellSpursTaskArgument` are 16 bytes. The old code checked readability only,
+so it read 16 bytes from an unaligned address and stored a garbage pattern -
+which then failed create_task's `ls_blocks > alloc_ls_blocks` and
+`pattern & 0xFC000000` (SPURS management area) checks.
+
+Two consecutive descending odd addresses are leftover registers, not arguments.
+
+### thor_task_attr_fix - correct, but DEFAULT OFF
+
+Rejecting an unaligned pointer as absent makes create_task succeed, and the
+third task is finally created and started on taskset 0x1f73f00. The ANY2ANY
+LFQueue stubs stop being hit entirely. But that task then deadlocks the
+instance:
+
+    task_attr_fix=0   ready=true  ready=true   draws 434, 300 (all quads)
+    task_attr_fix=1   ready=false ready=false  draws 0, hangs at ~47 frames
+
+Neither renders the scene. 30 fps with the UI drawing is closer to working than
+a dead instance, so the fix ships OFF behind
+`debug.rpcsx.thor.task_attr_fix=1`, which is the switch for working on the
+deadlock it exposes.
+
+RETRACTED while doing this: "sizeContext == 0 means no context". r8 is 0, but
+r7 points at a {context,size} pair reading {0x10989380, 0x1c00} - 128-byte
+aligned, sane size - so the context is real. Dropping it took draws from 914 to
+0 while task starts went 2 -> 3.

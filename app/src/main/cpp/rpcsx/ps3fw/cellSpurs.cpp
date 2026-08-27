@@ -42,6 +42,43 @@ LOG_CHANNEL(cellSpurs);
 #include <sys/system_properties.h>
 #endif
 
+// DEFAULT OFF, and the A/B is why.
+//
+// This fix is CORRECT in isolation: BLUS30357 passes r9/r10 as 0x1098933f and
+// 0x1098933e - readable but not 16-byte aligned, and both types are 16 bytes -
+// so reading a pattern through them yields garbage, which is what made
+// _spurs::create_task return 0x80410902 and cellSpursCreateTaskWithAttribute
+// fail. Rejecting an unaligned pointer as absent makes create_task succeed and
+// the title's third task is finally created and started, on taskset 0x1f73f00.
+//
+// But that task then deadlocks the instance. Measured, two runs each:
+//
+//   task_attr_fix=0   ready=true  ready=true   draws 434 and 300 (all quads)
+//   task_attr_fix=1   ready=false ready=false  draws 0, hangs at ~47 frames
+//
+// Neither state renders the scene, but 30 fps with the UI drawing is strictly
+// closer than a dead instance, so this stays OFF until the deadlock the new
+// task walks into is understood. Turn it on to work on that:
+//
+//   debug.rpcsx.thor.task_attr_fix = 1
+static bool thor_task_attr_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.task_attr_fix", v) <= 0 || !v[0])
+		{
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool thor_taskset_enabled_fix() noexcept
 {
 #ifdef ANDROID
@@ -6218,6 +6255,30 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	u32 resolved_size = size_context;
 	const char* how = "direct";
 
+	// A ZERO-SIZE CONTEXT IS NO CONTEXT.
+	//
+	// BLUS30357 calls this with r8 = sizeContext = 0. `_spurs::create_task`
+	// guards its whole validation block on `if (context)`, so a null context is
+	// the path that SUCCEEDS - it simply means the task has no save area. The
+	// indirection heuristic below instead synthesises a context out of a stack
+	// pointer, and the invented {ea, size} then fails the very checks the null
+	// path would have skipped:
+	//
+	//   CREATETASK-INVAL ls-blocks-exceed-alloc:   context=0x10989380 size=0x1c00
+	//   CREATETASK-INVAL ls-pattern-hits-mgmt-area: context=0x1094ba00 size=0x1c00
+	//
+	// create_task then returns 0x80410902 and cellSpursCreateTaskWithAttribute
+	// fails, so the title's worker task is never created at all.
+	//
+	//   debug.rpcsx.thor.task_attr_fix = 0 restores the previous behaviour
+	// RETRACTED: "sizeContext == 0 means no context".
+	//
+	// r8 is 0, but r7 points at a {context, size} pair reading {0x10989380,
+	// 0x1c00} - a 128-byte aligned address and a sane size - so the context is
+	// REAL and the indirection below finds it. Dropping it gave tasks no save
+	// area, and measured over three runs the draw count fell from 914 quads to
+	// 0 while task starts rose 2 -> 3. The only garbage in this call is the
+	// unaligned ls_pattern, which is handled further down.
 	if (resolved_context && (resolved_context % 128) != 0 &&
 		vm::check_addr(resolved_context, vm::page_info_t::page_readable, 8))
 	{
@@ -6268,7 +6329,22 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	// treat an implausible pointer as absent. A guest pointer must therefore be
 	// CHECKED, not merely non-null, and a rejected one is logged so the next run
 	// can tell "the game passed nothing" from "the order is still wrong".
-	if (ls_pattern && vm::check_addr(ls_pattern.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern)))
+	// AN UNALIGNED POINTER IS NOT A POINTER.
+	//
+	// Readability alone is not enough. BLUS30357 passes r9 = 0x1098933f and
+	// r10 = 0x1098933e - readable main memory, but neither is 16-byte aligned,
+	// and both of these types are 16 bytes. Reading 16 bytes from an unaligned
+	// address yields a garbage ls_pattern, which is exactly what tripped the
+	// two create_task INVAL checks: more blocks than the context allows, and
+	// bits inside the 0xFC000000 SPURS management area.
+	//
+	// Two consecutive descending odd addresses are leftover registers, not a
+	// pattern and an argument. Treat them as absent, which is legal and leaves
+	// a zeroed pattern - "save nothing", the ELF is reloaded on resume.
+	const bool lsp_ok = ls_pattern && (!thor_task_attr_fix() || ls_pattern.aligned()) &&
+		vm::check_addr(ls_pattern.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern));
+
+	if (lsp_ok)
 	{
 		view->ls_pattern = *ls_pattern;
 	}
@@ -6277,7 +6353,10 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern=0x%x is not readable memory, treating as absent", ls_pattern.addr());
 	}
 
-	if (argument && vm::check_addr(argument.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskArgument)))
+	const bool arg_ok = argument && (!thor_task_attr_fix() || argument.aligned()) &&
+		vm::check_addr(argument.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskArgument));
+
+	if (arg_ok)
 	{
 		view->argument = *argument;
 	}
