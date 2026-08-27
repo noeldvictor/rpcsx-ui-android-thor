@@ -483,6 +483,46 @@ static void thor_release_wkl(u32 wid, u32 spu_num) noexcept
 	}
 }
 
+// WAIT FOR DMA BEFORE DISPATCHING A TASKSET SYSCALL.
+//
+// Read out of the real taskset policy module, captured under LLE and
+// disassembled (_research/spurs/real_taskset_pm.bin, handler at 0x1c58):
+//
+//     00001c78: brz  r2,0x00001c84        ; version flag decides
+//     00001c7c: andi r5,r3,0xf            ; syscallNum & 0xF
+//     00001c84: il   r4,-0x1
+//     00001c88: il   r3,0x2
+//     00001c8c: wrch r4,ch22              ; MFC_WrTagMask  = -1
+//     00001c90: wrch r3,ch23              ; MFC_WrTagUpdate = 2
+//     00001c94: rdch r2,ch24              ; MFC_RdTagStat - WAIT FOR ALL DMA
+//     00001c98: shli r10,r5,0x2           ; then dispatch through the table
+//
+// The firmware drains every outstanding transfer before it will look at a
+// syscall. Our copy has the same shape - the `(syscallNum & 0x10) == 0` guard
+// is the same version test - but the call inside it was left commented out,
+// so the syscall is serviced while the task's DMA may still be in flight.
+// Anything the task wrote by DMA and expects the policy module to see is then
+// read too early.
+//
+//   debug.rpcsx.thor.syscall_dma_wait = 0 restores the previous behaviour
+static bool thor_syscall_dma_wait() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.syscall_dma_wait", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_contention_orphan_fix() noexcept
 {
 #ifdef ANDROID
@@ -3838,7 +3878,12 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 	// for DMA completion
 	if ((syscallNum & 0x10) == 0)
 	{
-		// spursDmaWaitForCompletion(spu, 0xFFFFFFFF);
+		// See thor_syscall_dma_wait: the real module drains all DMA here
+		// (wrch ch22/-1, wrch ch23/2, rdch ch24) before dispatching.
+		if (thor_syscall_dma_wait())
+		{
+			spursDmaWaitForCompletion(spu, 0xFFFFFFFF);
+		}
 	}
 
 	// WHICH SYSCALLS DOES THE TASK ACTUALLY ISSUE?

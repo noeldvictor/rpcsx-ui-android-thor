@@ -232,3 +232,51 @@ now a bounded read: 0x1c58 against spursTasksetProcessSyscall's
 CELL_SPURS_TASK_SYSCALL_EXIT arm, with exit=0 as the thing to explain.
 
 Saved as _research/spurs/real_taskset_pm_wrapper.disasm.txt.
+
+## 9. The syscall dispatch, read - and one real discrepancy found
+
+The handler at 0x1c58 is a jump table:
+
+    00001c78: brz  r2,0x00001c84      ; version flag decides
+    00001c7c: andi r5,r3,0xf          ; syscallNum & 0xF  - same mask we use
+    00001c84: il   r4,-0x1
+    00001c88: il   r3,0x2
+    00001c8c: wrch r4,ch22            ; MFC_WrTagMask  = -1
+    00001c90: wrch r3,ch23            ; MFC_WrTagUpdate = 2
+    00001c94: rdch r2,ch24            ; MFC_RdTagStat - WAIT FOR ALL DMA
+    00001c98: shli r10,r5,0x2
+    00001c9c: ila  r11,0x1cc4         ; jump table base
+    00001ca0: clgti r5,r5,0x4         ; > 4 -> error
+    00001cb0: iohl r6,0x903           ; 0x80410903, the NOSYS code
+    00001cc0: bi   r2
+
+    table @ 0x1cc4:  0x1cd8 EXIT   0x1d34 YIELD   0x1d80 WAIT_SIGNAL
+                     0x1db8 POLL   ...  RECV_WKL_FLAG
+
+Confirms three things our HLE already does: the & 0xF mask, the >4 bound with
+an error return, and five implemented syscalls.
+
+### The discrepancy
+
+The firmware DRAINS ALL OUTSTANDING DMA before dispatching. Our copy has the
+identical structure - the `(syscallNum & 0x10) == 0` guard is the same version
+test - but the call inside it was left commented out:
+
+    if ((syscallNum & 0x10) == 0)
+    {
+        // spursDmaWaitForCompletion(spu, 0xFFFFFFFF);
+    }
+
+So a syscall was serviced while the task's DMA could still be in flight.
+Enabled behind debug.rpcsx.thor.syscall_dma_wait, default ON, because it is
+firmware-verified behaviour rather than a guess.
+
+### It does NOT fix rendering
+
+    syscall_dma_wait=1   ready=true  p8=1237  p5=0  exit=0  yield=132416
+
+Identical to baseline on every metric that matters. A real correctness fix, and
+not the cause. Kept on because it matches the firmware and costs nothing
+measurable; recorded here so nobody re-derives it as a candidate.
+
+The exit path itself is at 0x1cd8 and has not been read yet.
