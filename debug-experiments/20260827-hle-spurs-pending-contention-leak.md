@@ -547,3 +547,41 @@ distinguish a real improvement from a lucky boot, and effort spent on fixes is
 spent blind. A cheap first step is n>=5 per configuration on the two metrics
 that are unambiguous - does it open a video file, does the assertion fire - and
 recording the distribution rather than a single value.
+
+## CORRECTION AGAIN: the baseline IS reproducible - the variance was mine
+
+The previous entry called run-to-run variance the real obstacle. That was
+substantially wrong, and the cause was my own measurement.
+
+`thor_setprop` with an empty value does NOT clear a property here. Reading the
+device back:
+
+    hle_libs = 'libsre.sprx'      <- after "clearing" it
+    hle_spurs_kernel = '1'
+
+So several runs I labelled LLE were HLE, and some A/B pairs differed by less
+than I thought. Clearing has to go through adb directly:
+
+    setprop debug.rpcsx.thor.hle_libs ""
+
+With the two configurations set EXPLICITLY and verified by reading the props
+back, the contrast is exact and stable:
+
+    HLE   p8=1003 / 1033 / 1007      p5=0   (three consecutive runs)
+    LLE   p8=1013  p6=1              p5=73
+
+The quad count is the SAME in both, ~1000. The entire difference between a
+rendering emulator and a green screen is the 73 p5 draws. Nothing else in the
+draw stream differs.
+
+### The test to use from here
+
+    Under HLE, does p5 exceed 0?
+
+One number, reproducible over three runs, with a control that always shows 73.
+It needs `debug.rpcsx.thor.draw_census=1` and it needs the props verified with
+getprop, not assumed. Draw totals, quad counts, fps and assertion counts are
+all worse tests: they move for reasons unrelated to the geometry.
+
+(The e= sums beside p5 are still not vertex counts - 73 indexed draws of 12-45
+elements cannot sum to 1310328. Use the draw COUNT, not the element sum.)
