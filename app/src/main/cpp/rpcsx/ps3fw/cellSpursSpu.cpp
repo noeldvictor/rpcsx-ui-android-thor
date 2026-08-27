@@ -1580,6 +1580,29 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 							rd8(0x23), rd8(0x24), rd8(0x28), rd8(0x2A), rd8(0x2B), rd8(0x2C), rd8(0x2D),
 							rd16(0x70), rd16(0x72), rd32(0x74), rd32(0x78), rd32(0x7C),
 							rd32(0x30), rd32(0x34));
+
+						// AND THE JOB DESCRIPTOR LIST ITSELF.
+						//
+						// `pc` is identical at every dispatch - measured across four
+						// selections on four different SPUs - so the module runs and
+						// consumes nothing. Either the descriptors are empty, or the
+						// module rejects them. Print the first two entries; a jmVer=3
+						// descriptor is sizeJobDescriptor bytes (0x80 here).
+						const u32 pc32 = rd32(0x04);
+
+						if (pc32 && vm::check_addr(pc32, 0, 0x40))
+						{
+							const auto d = [&](u32 o) { return +vm::_ref<be_t<u32>>(pc32 + o); };
+
+							cellSpurs.error("Thor JOBDESC @0x%x: %08x %08x %08x %08x | %08x %08x %08x %08x",
+								pc32, d(0x00), d(0x04), d(0x08), d(0x0C), d(0x10), d(0x14), d(0x18), d(0x1C));
+							cellSpurs.error("Thor JOBDESC +0x20:  %08x %08x %08x %08x | %08x %08x %08x %08x",
+								d(0x20), d(0x24), d(0x28), d(0x2C), d(0x30), d(0x34), d(0x38), d(0x3C));
+						}
+						else
+						{
+							cellSpurs.error("Thor JOBDESC: pc 0x%x is not readable guest memory", pc32);
+						}
 					}
 					else
 					{

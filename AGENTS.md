@@ -13156,3 +13156,43 @@ guest, and the reply is right.
 
 Still black. Each of these was a real defect and each moved the failure; none of
 them was the last one.
+
+# The Descriptors Are Real And The Chain Still Does Not Advance
+
+2026-08-26.
+
+## pc never moves
+
+Across four dispatches, on four different SPUs, in one run:
+
+    jc=0x1eca280  pc=0x01eca480  isHalted=0  autoReadyCount=1   (identical x4)
+
+The workload is selected repeatedly, the module runs, no job is consumed.
+
+## And there ARE jobs
+
+    Thor JOBDESC @0x1eca480: 00000000 01eca10f  00000000 01eca086
+                             00000000 00000002  00000000 01eca400
+    Thor JOBDESC +0x20:      00000000 01eca483  00000000 00000000 ...
+
+64-bit entries with plausible addresses in the title's own data. The descriptor
+list is intact, so "the chain is empty" is eliminated.
+
+## The suspicion this raises about the switch_system_module reply
+
+The module issues SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE twice per run and we
+answer CELL_OK without doing anything. That was justified on the grounds that
+HLE SPURS owns policy-module loading - but if the module uses that service to
+have JOB CODE loaded, answering "done" while loading nothing means it proceeds
+against a local store that does not contain what it asked for.
+
+Two facts make this worth checking before anything else:
+
+- `request` reads 0 in our handler because it is taken from `ch_out_mbox`, and
+  the module writes CHANNEL 28. We are replying without ever seeing what was
+  asked. Fix the channel first - the request payload is the specification.
+- The count is small and fixed (2), which fits "asked twice, got a useless
+  answer, gave up" better than it fits a working service.
+
+**Next step: read the actual request payload from the correct channel.** Until
+that is known, any further change to the job path is guesswork.
