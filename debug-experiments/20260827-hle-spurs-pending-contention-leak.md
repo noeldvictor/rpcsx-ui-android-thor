@@ -811,3 +811,25 @@ Saved as _research/spurs/real_pm_entry.disasm.txt.
 
 This is the first reference-checked artifact in this document. Everything else
 about taskset behaviour here was inferred from HLE-side probes.
+
+## Real workload dispatch at 0x21a8, for comparison against our HLE
+
+    000021b8: ai   r3,r3,0xdc      ; same +0xdc context offset as the entry
+    000021e4: rotqby r4,r8,r3
+    000021f0: ceqi r2,r4,0x20      ; workload id == SYS SERVICE again
+    000021fc: brz  r2,0x00002204
+    00002200: stopd                ; HALT if it is the sys-service id here
+    00002204: ai   r10,r84,0xcc
+    00002208: ila  r3,0x2be0
+    00002218: brsl lr,0x000028d0
+    0000221c: lqd  r3,0x20(sp)
+    00002220: andi r11,r3,0x2      ; flag bit 1 -> stopd
+    0000222c: andi r14,r3,0x1      ; flag bit 0 -> branch
+
+Saved as _research/spurs/real_pm_dispatch.disasm.txt
+(parsed_instruction_count = 65536, i.e. the whole local store).
+
+Two structures to check our HLE against, both now readable rather than guessed:
+the +0xdc context offset used by both the entry and the dispatch, and the
+0x20 / bit-1 / bit-0 tests that gate the paths and halt the module when they
+fail. `spursTasksetDispatch` in cellSpursSpu.cpp is the counterpart.
