@@ -199,3 +199,36 @@ now has a reference. The task-exit path is in this 0x1E40-byte image, reachable
 from the syscall entry at offset 0x70, and it can be read against
 spursTasksetProcessSyscall's CELL_SPURS_TASK_SYSCALL_EXIT arm instead of
 inferred from HLE-side probes.
+
+## 8. The taskset syscall handler is at 0x1c58
+
+Reading the taskset PM from its syscall entry, the whole wrapper resolves:
+
+    0xa70   stqa sp,0x2c90
+            stqa r80..r127 -> 0x2ca0..0x2f90      full callee-saved set
+    0xb50   stqd lr,0x0(sp)
+            stqd sp,-0x20(sp) ; ai sp,sp,-0x20
+    0xb5c   brsl lr,0x00001c58                    <-- THE SYSCALL HANDLER
+    0xb60   lqa lr,0x2c80
+            lqa sp,0x2c90
+    0xb6c+  lqa r80..r127 <- 0x2ca0..0x2f90       restore
+            return to the task
+
+So 0xA70 is only a save/call/restore shell. The syscall itself - EXIT, YIELD,
+WAIT_SIGNAL, POLL, RECV_WKL_FLAG - is implemented at **0x1c58**, module offset
+0x1258. That is the direct counterpart to spursTasksetProcessSyscall in
+cellSpursSpu.cpp.
+
+Two things follow immediately.
+
+The save area is 0x2c80..0x2f90, which sits between SpursTasksetContext (0x2700)
+and its x2FC0/x2FD4 fields. Our HLE never writes that region, and does not need
+to: a C++ handler does not clobber the task's SPU registers the way a real
+module does. So the absence of that save in HLE is correct, not a defect - one
+more thing that does not need investigating.
+
+The handler being a single function at a fixed offset means the exit path is
+now a bounded read: 0x1c58 against spursTasksetProcessSyscall's
+CELL_SPURS_TASK_SYSCALL_EXIT arm, with exit=0 as the thing to explain.
+
+Saved as _research/spurs/real_taskset_pm_wrapper.disasm.txt.
