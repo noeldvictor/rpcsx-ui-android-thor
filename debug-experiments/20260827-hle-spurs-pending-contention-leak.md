@@ -242,3 +242,30 @@ exist there, returning SRCH (0x80410905) every time. The actual waiters are on
 So the wake mechanism those two tasks are waiting on is not
 cellSpursSendSignal, not cellSpursEventFlagSet (zero calls), and not this
 queue. Finding it is the next step.
+
+## The contention slot is NOT leaked - retiring a whole hypothesis class
+
+`cont=1 maxCont=1 rawCont=0x01 curId=32 locC=0` on every SPU that prints looks
+identical whether a real holder is busy inside a task (and so never reaches the
+selector to print) or the slot leaked with no holder at all. The printed lines
+cannot separate those, because the SPU inside a task is exactly the one that
+does not appear.
+
+So the holder is now recorded as the counter moves - `g_thor_wkl_holders[wid]`,
+bit n meaning SPU n believes it holds that workload - and printed in the select
+probe. Measured:
+
+    wkl2: maxCont=1 cont=1 rawCont=0x01 curId=32 locC=0 holders=0x01
+
+Bit 0 set: SPU0 genuinely holds it, and maxContention=1 correctly excludes the
+other five. The accounting is right and this signature is NOT a leak.
+
+That retires the leak hypothesis for this state. It does not undo the two
+contention fixes already committed - those were confirmed by their own
+measurements (rawCont=0x00 with locC=0 for pending, and a slot orphaned across
+a wklCurrentId change for current) - but it does mean the remaining hang is not
+another counter bug and should not be chased as one.
+
+With task_attr_fix off, boots are stable: three consecutive runs ready=true at
+803, 1065 and 1095 frames, ~29.5 fps, holders=0x01 each time. The intermittent
+early hangs seen earlier belong to the task_attr_fix=1 path.

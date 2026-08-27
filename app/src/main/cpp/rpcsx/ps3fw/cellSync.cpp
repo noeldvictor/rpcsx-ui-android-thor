@@ -969,6 +969,30 @@ error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& /*ppu*/, vm::ptr<CellSync
 {
 	// arguments copied from _cellSyncLFQueueGetPushPointer
 	cellSync.todo("_cellSyncLFQueueGetPushPointer2(queue=*0x%x, pointer=*0x%x, isBlocking=%d, useEventQueue=%d)", queue, pointer, isBlocking, useEventQueue);
+	// WHAT IS THIS QUEUE, AND WHAT DOES IT SIGNAL?
+	//
+	// BLUS30357 pushes into an ANY2ANY LFQueue at 0x101b1f80 - the very pointer
+	// handed to the task parked in WAIT_SIGNAL on taskset 0x101b4e80. This stub
+	// returns CELL_OK without writing *pointer and without signalling anything,
+	// so that task is never woken and the geometry stage never runs.
+	//
+	// The implemented PPU2SPU sibling wakes its consumer with
+	// fpSendSignal(ppu, queue->m_eaSignal, var6), but _cellSyncLFQueuePushBody
+	// passes vm::null and this title's own call logs fpSendSignal=*0x0 - so for
+	// ANY2ANY the wake must come through m_eaSignal itself. Print it, with
+	// enough of the queue to implement the protocol against.
+	{
+		static std::atomic<u32> s_q{0};
+
+		if (const u32 n = s_q++; n < 4)
+		{
+			cellSync.error("Thor LFQ2 #%u: queue=0x%x size=%u depth=%u dir=%u buffer=0x%x "
+				"eaSignal=0x%x eq_id=0x%x v1=0x%x v2=0x%x init=%d",
+				n, queue.addr(), +queue->m_size, +queue->m_depth, +queue->m_direction,
+				queue->m_buffer.addr(), queue->m_eaSignal.addr(), +queue->m_eq_id,
+				+queue->m_v1, +queue->m_v2, queue->init.load());
+		}
+	}
 
 	return CELL_OK;
 }

@@ -454,6 +454,35 @@ static bool thor_pending_contention_fix() noexcept
 #endif
 }
 
+// WHO ACTUALLY HOLDS A CONTENTION SLOT.
+//
+// The hang always reads the same: wkl2 maxCont=1 cont=1 rawCont=0x01, and
+// every SPU that PRINTS reports curId=32 locC=0. That is consistent with two
+// very different worlds - a real holder that is busy inside a task and so
+// never reaches the selector to print, or a leaked slot with no holder at all
+// - and the printed lines cannot tell them apart, because an SPU inside a task
+// is exactly the SPU that does not appear.
+//
+// Record the holder as the counter is moved, so the question has an answer.
+// Bit n means SPU n believes it holds that workload.
+static std::atomic<u32> g_thor_wkl_holders[CELL_SPURS_MAX_WORKLOAD]{};
+
+static void thor_hold_wkl(u32 wid, u32 spu_num) noexcept
+{
+	if (wid < CELL_SPURS_MAX_WORKLOAD && spu_num < 32)
+	{
+		g_thor_wkl_holders[wid] |= (1u << spu_num);
+	}
+}
+
+static void thor_release_wkl(u32 wid, u32 spu_num) noexcept
+{
+	if (wid < CELL_SPURS_MAX_WORKLOAD && spu_num < 32)
+	{
+		g_thor_wkl_holders[wid] &= ~(1u << spu_num);
+	}
+}
+
 static bool thor_contention_orphan_fix() noexcept
 {
 #ifdef ANDROID
@@ -1036,7 +1065,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// the stall.
 				for (u32 k = 0; k < 4; k++)
 				{
-					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u | K2=%u rawCont=0x%02x rawMax=0x%02x curId=%u locC=%u isPoll=%u",
+					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u | K2=%u rawCont=0x%02x rawMax=0x%02x curId=%u locC=%u isPoll=%u holders=0x%02x",
 						+ctxt->spuNum, k,
 						(ctxt->wklRunnable1 & (0x8000 >> k)) ? 1u : 0u,
 						+ctxt->priority[k],
@@ -1063,7 +1092,8 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 						// SPU reports curId=2 while wkl2 shows cont=1, the count is leaked.
 						+ctxt->wklCurrentId,
 						+ctxt->wklLocContention[k],
-						isPoll ? 1u : 0u);
+						isPoll ? 1u : 0u,
+						g_thor_wkl_holders[k & 0x0F].load());
 				}
 			}
 
@@ -1381,6 +1411,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 							vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + i)
 								.atomic_op([](u8& v) { if (v) v--; });
 							ctxt->wklLocContention[i] = 0;
+							thor_release_wkl(i, ctxt->spuNum);
 						}
 					}
 
@@ -1389,6 +1420,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + wklSelectedId)
 							.atomic_op([](u8& v) { if (v < 8) v++; });
 						ctxt->wklLocContention[wklSelectedId] = 1;
+						thor_hold_wkl(wklSelectedId, ctxt->spuNum);
 					}
 				}
 				else
