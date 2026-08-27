@@ -12964,3 +12964,52 @@ commented out in `spursTasksetInit` and `spursKernelEntry`:
 The module is no longer bounced back to the kernel on entry; it runs. Screen is
 still black at 28 frames, so this is not the last defect - but it is the first
 time the genuine policy module has actually executed under HLE.
+
+# The Module Asserts On A Consumed Signal In The Entry Poll Status
+
+2026-08-26, immediately after the UnregisterHleFunction fix let the real module
+run for the first time.
+
+## What it did once it could run
+
+    ·F {SPU[0x3000100] CellSpursKernel3 [0x02228]}
+       Thread terminated due to fatal error: Unknown STOP code: 0x3fff
+
+0x2228 is a `stopd` in the module's own entry checks:
+
+    021fc  brz  r2,0x00002204   ; wklCurrentId == 32 -> assert (we pass, wid=6)
+    02204  ai   r10,r84,0xcc    ; r10 = 0x1CC = dmaTagId
+    02218  brsl lr,0x000028d0   ; write a trace packet
+    0221c  lqd  r3,0x20(sp)     ; the word holding the pollStatus ARGUMENT
+    02220  andi r11,r3,0x2      ; CELL_SPURS_MODULE_POLL_STATUS_SIGNAL
+    02224  brz  r11,0x0000222c  ; clear -> carry on
+    02228  stopd                ; SET -> assert
+
+Note 0x28d0 is NOT a status helper - it is `cellSpursModulePutTrace`. It
+early-returns through `biz r75,lr` when tracing is off, otherwise reads
+`traceBuffer` at LS 0x210 and DMAs a packet. Its return value is never tested;
+`r3` at 0x221c is reloaded FROM THE STACK, where the pollStatus argument was
+stashed at 0x21f8. Reading that call as the source of the tested value is a
+mistake worth not repeating.
+
+## Why our kernel set the bit
+
+The selection loop consumes the workload's signal on the way to picking it -
+`wklSignal1 &= ~(0x8000 >> wid)` - and then still reported
+`CELL_SPURS_MODULE_POLL_STATUS_SIGNAL` in the entry poll status. That describes
+a condition which no longer exists by the time the module reads it.
+
+`cellSpursRunJobChain` signals the workload, so EVERY job chain start hit this.
+Measured entry state was `r5 = 0x00000002` - exactly this bit and nothing else.
+
+## Fix and effect
+
+Mask SIGNAL out of the poll status passed at workload entry
+(`entry_pollstatus_fix`, ON by default, `= 0` restores the raw value).
+
+    before:  SPU dies at 0x2228, "Unknown STOP code: 0x3fff"
+    after:   no STOP code, no fatal error anywhere in the run
+
+The module clears its entry checks and keeps running. Screen is still black at
+22 frames, so this is not the last defect either - but the SPU no longer dies,
+which it did on every job chain dispatch before this.

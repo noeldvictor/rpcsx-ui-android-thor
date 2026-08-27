@@ -591,6 +591,24 @@ static u32 thor_yield_redispatch_every() noexcept
 #endif
 }
 
+static bool thor_entry_pollstatus_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.entry_pollstatus_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_yield_redispatch_fix() noexcept
 {
 	const u32 every = thor_yield_redispatch_every();
@@ -1627,7 +1645,31 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	spu.gpr[1]._u32[3] = 0x3FFB0;
 	spu.gpr[3]._u32[3] = 0x100;
 	spu.gpr[4]._u64[1] = wklInfo->arg;
-	spu.gpr[5]._u32[3] = pollStatus;
+	// DO NOT HAND A CONSUMED SIGNAL TO THE POLICY MODULE.
+	//
+	// The selection loop above ALREADY consumed the workload's signal - it does
+	// `wklSignal1 &= ~(0x8000 >> wid)` on the way to picking this workload - so
+	// reporting SIGNAL in the entry poll status describes a condition that no
+	// longer exists.
+	//
+	// The real job chain policy module treats it as fatal. Straight from its
+	// disassembly, at its entry:
+	//
+	//     0221c  lqd  r3,0x20(sp)   ; the word holding the pollStatus argument
+	//     02220  andi r11,r3,0x2    ; CELL_SPURS_MODULE_POLL_STATUS_SIGNAL
+	//     02224  brz  r11,0x222c    ; clear -> carry on
+	//     02228  stopd              ; SET -> assert
+	//
+	// MEASURED once the module was actually allowed to run (see the
+	// UnregisterHleFunction fix): it reaches 0x2228 and the SPU dies with
+	// "Unknown STOP code: 0x3fff". Entry state was r5 = 0x00000002, exactly this
+	// bit. cellSpursRunJobChain signals the workload, so EVERY job chain start
+	// hit this.
+	//
+	//   debug.rpcsx.thor.entry_pollstatus_fix = 0  pass the raw poll status
+	spu.gpr[5]._u32[3] = thor_entry_pollstatus_fix()
+		? (pollStatus & ~u32{CELL_SPURS_MODULE_POLL_STATUS_SIGNAL})
+		: pollStatus;
 	spu.pc = 0xA00;
 }
 
