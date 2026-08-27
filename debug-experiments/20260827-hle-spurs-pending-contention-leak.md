@@ -402,3 +402,38 @@ not complete it.
 The right success metric from here is NOT the quad count. It is whether the
 title opens a video file, which is a single unambiguous bit and is what
 separates the two configurations.
+
+## Two hybrid modes tried and eliminated - do not re-attempt
+
+`debug.rpcsx.thor.real_spu_kernel=1` loads the REAL SPURS SPU kernel image
+while the PPU side stays HLE. It was the obvious untried lever: if the genuine
+SPU kernel drives the taskset, the geometry should follow.
+
+    hle_libs=libsre.sprx hle_spurs_kernel=1 real_spu_kernel=1
+      -> ready=false, fps 0.0, draw_calls=0, no video file
+
+    hle_libs=libsre.sprx hle_spurs_kernel=0 real_spu_kernel=1
+      -> ready=false, fps 0.0, flips reach 5640, draw_calls=0, no video file
+
+The second is notable: the RSX flips thousands of times while issuing ZERO
+draws, so the loop runs and nothing is ever submitted. Neither hybrid is closer
+than the shipped default and both are eliminated.
+
+Baseline restored and verified after the experiments: ready=true, 883 quads.
+
+## Standing summary of the shipped state
+
+Shipped ON (measured, keep):
+  pending_contention_fix     the poll branch's pending leak
+  contention_orphan_fix      slots orphaned across a wklCurrentId change
+
+Shipped OFF (correct in isolation, each regresses something):
+  task_attr_fix              unaligned ls_pattern/argument rejected, pattern
+                             synthesised to fit the context. Creates the third
+                             taskset; deadlocks.
+  lfq_any2any                ANY2ANY LFQueue push + SPURS wake. Wakes the task
+                             that was dead all session (rc=0, waitSig 1 -> 656)
+                             and advances the movie state machine; draws fall.
+
+Eliminated: real_spu_kernel (both variants), and every counter-leak theory for
+the cont=1/holders=0x01 signature.
