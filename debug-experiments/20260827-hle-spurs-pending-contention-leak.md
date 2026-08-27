@@ -864,3 +864,29 @@ So the module entry, the workload dispatch and the trace path are all read and
 none of them contradicts our HLE. The task-exit path is not in the windows read
 so far; the dispatch calls 0x1988 and 0x2160 which remain unread, and those are
 where to look next.
+
+## 0x1988 and 0x2160 read - still no exit path, and why that matters
+
+    0x2160  a thin wrapper: saves r80/r81, calls 0x1c00, restores, returns.
+    0x1988  lqd r14,0xc0(r3) then bit work on 0x101 / 0x303 / 0x80 masks,
+            ila r12,0x2d80, lqr r9,0x45b. Offset +0xc0 is also loaded by the
+            module entry (lqd r13,0xc0(r80)), so it is a live field of the
+            workload/taskset structure.
+
+Neither contains the task-exit path. Each window read so far resolves into more
+callees - 0x1c00 and 0x2d80 are now the frontier.
+
+### The honest shape of this work
+
+Five windows of the real module have been read (entry 0xa00, dispatch 0x21a8,
+sys-service 0x1230, trace 0x28d0, and these two). Every one has CONFIRMED our
+HLE rather than contradicted it: three struct offsets match exactly, the
+sys-service workload id 0x20 matches, the tempArea boundary matches. Nothing
+read so far explains exit=0.
+
+That is a real result, but it is also the measure of the remaining work: this
+module is 0x2400 bytes of dense SPU code, the exit path has not been located in
+five windows, and each window costs a Ghidra run plus manual reading. Finishing
+it is a multi-session reverse-engineering project, not a step.
+
+Saved as _research/spurs/real_pm_exit.disasm.txt.
