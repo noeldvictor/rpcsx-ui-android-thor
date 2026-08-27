@@ -437,3 +437,31 @@ Shipped OFF (correct in isolation, each regresses something):
 
 Eliminated: real_spu_kernel (both variants), and every counter-leak theory for
 the cont=1/holders=0x01 signature.
+
+## Cross-title reference: attempted, INCONCLUSIVE
+
+A title that renders under HLE SPURS would give something to diff against
+instead of deriving everything from scratch. Eleven other ISOs are on the
+device. Dragon's Crown was tried with the same HLE config:
+
+    thor_boot -> booted=true, then pid=null, no RPCSX.log written at all
+
+The emulator never began emulation, so this says nothing about HLE SPURS - the
+boot path here (THOR_DEBUG_BOOT with an iso path) is tuned for BLUS30357 and
+other titles most likely need their game data installed first. Recorded as
+INCONCLUSIVE, not as evidence either way.
+
+## The sharpest single statement of the failure
+
+Across every configuration tried, in the taskset syscall census:
+
+    [0]exit=0
+
+No SPURS task EVER exits. Not once, in any run, under any combination of
+flags. A task exits when its work item completes, so nothing any task is asked
+to do ever finishes - they poll, they yield, they wait for a signal, and they
+are still doing that when the run is killed. That is one line and it covers
+every symptom in this document: SPU ~65% busy producing nothing, RSX ~6%, no
+triangle draw, no video file opened.
+
+Anything that makes `exit` non-zero is progress. Anything that does not is not.
