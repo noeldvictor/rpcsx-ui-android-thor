@@ -12799,3 +12799,55 @@ checking:
 which is worth verifying against what the title actually passed, since the same
 class of bug (an attribute field never reaching the structure) would look
 exactly like this.
+
+# The Job Chain Structure Is Now Fully Correct. It Still Bails.
+
+2026-08-26, final state of this session's job chain work.
+
+## The title's own attribute values, logged at last
+
+`_cellSpursJobChainAttributeInitialize` and the Run/Kick entries log at TRACE,
+which is why they read as "never called" for most of this session. Raised to
+error, they say:
+
+    chain 1: sizeJobDescriptor=0x100 maxSizeJobDescriptor=0x100 isFixedMemAlloc=false initialRequestSpuCount=0
+    chain 2: sizeJobDescriptor=0x100 maxSizeJobDescriptor=0x100 isFixedMemAlloc=false initialRequestSpuCount=0
+    chain 3: sizeJobDescriptor=0x80  maxSizeJobDescriptor=0x100 isFixedMemAlloc=false initialRequestSpuCount=0
+
+    jmRevsion=0x3 sdkRevision=0x300000 maxGrabbedJob=0x10 maxContention=6
+    autoRequestSpuCount=true tag1=0x0 tag2=0x1
+
+    cellSpursRunJobChain(jobChain=*0x1eca280)     <- called once, on chain 3
+    cellSpursKickJobChain                          <- never called
+
+## Which reconciles everything and clears two false suspects
+
+    structure at dispatch:  jc=0x1eca280 sizeJobDescriptor=128 = 0x80  <- MATCHES chain 3
+    initSpuCount = 0     <- CORRECT: the title passes initialRequestSpuCount=0
+    val2C        = 0x00  <- CORRECT: isFixedMemAlloc=false and
+                            (maxSizeJobDescriptor - 0x100)/128 = 0
+
+Both were listed as suspicious zeros. Both are the title's own values. Do not
+"fix" them.
+
+So `CellSpursJobChain` is now fully valid at the moment the module reads it:
+`pc=0x01eca480`, `sizeJobDescriptor=128`, `autoReadyCount=1`, `maxGrabbedJob=16`,
+`isHalted=0`, `workloadId=6`, `spurs=0x01e97a80`.
+
+## And the module still exits at once
+
+Loads = 1, exits = 1, screen black.
+
+## The circular dependency worth naming
+
+`cellSpursRunJobChain` signals the workload and wakes SPURS - it does NOT set a
+ready count. `cellSpursKickJobChain`, which takes `numReadyCount`, is never
+called, because the title passes `autoRequestSpuCount=true`: with auto request,
+the POLICY MODULE is what raises its own ready count as it grabs jobs. The
+module cannot do that because it exits first, and it exits for a reason that is
+not any field checked so far.
+
+That is the shape of the remaining problem. It cannot be resolved by another
+field audit - every field the structure carries has now been verified against
+the value the title passed. It needs the module's own execution traced from
+0xA00 until the branch that leaves, under HLE, against the same trace under LLE.

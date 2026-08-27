@@ -6436,7 +6436,7 @@ s32 cellSpursJoinJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 
 s32 cellSpursKickJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain, u8 numReadyCount)
 {
-	cellSpurs.trace("cellSpursKickJobChain(jobChain=*0x%x, numReadyCount=0x%x)", jobChain, numReadyCount);
+	cellSpurs.error("cellSpursKickJobChain(jobChain=*0x%x, numReadyCount=0x%x)", jobChain, numReadyCount);
 
 	if (!jobChain)
 		return CELL_SPURS_JOB_ERROR_NULL_POINTER;
@@ -6470,7 +6470,7 @@ s32 cellSpursKickJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain, 
 
 s32 _cellSpursJobChainAttributeInitialize(u32 jmRevsion, u32 sdkRevision, vm::ptr<CellSpursJobChainAttribute> attr, vm::cptr<u64> jobChainEntry, u16 sizeJobDescriptor, u16 maxGrabbedJob, vm::cptr<u8[8]> priorityTable, u32 maxContention, b8 autoRequestSpuCount, u32 tag1, u32 tag2, b8 isFixedMemAlloc, u32 maxSizeJobDescriptor, u32 initialRequestSpuCount)
 {
-	cellSpurs.trace("_cellSpursJobChainAttributeInitialize(jmRevsion=0x%x, sdkRevision=0x%x, attr=*0x%x, jobChainEntry=*0x%x, sizeJobDescriptor=0x%x, maxGrabbedJob=0x%x, priorityTable=*0x%x"
+	cellSpurs.error("_cellSpursJobChainAttributeInitialize(jmRevsion=0x%x, sdkRevision=0x%x, attr=*0x%x, jobChainEntry=*0x%x, sizeJobDescriptor=0x%x, maxGrabbedJob=0x%x, priorityTable=*0x%x"
 					", maxContention=%u, autoRequestSpuCount=%s, tag1=0x%x, tag2=0x%x, isFixedMemAlloc=%s, maxSizeJobDescriptor=0x%x, initialRequestSpuCount=%u)",
 		jmRevsion, sdkRevision, attr, jobChainEntry, sizeJobDescriptor, maxGrabbedJob, priorityTable, maxContention, autoRequestSpuCount, tag1, tag2, isFixedMemAlloc, maxSizeJobDescriptor, initialRequestSpuCount);
 
@@ -6650,7 +6650,7 @@ s32 cellSpursJobGuardInitialize(vm::ptr<CellSpursJobChain> jobChain, vm::ptr<Cel
 
 s32 cellSpursJobChainAttributeSetName(vm::ptr<CellSpursJobChainAttribute> attr, vm::cptr<char> name)
 {
-	cellSpurs.trace("cellSpursJobChainAttributeSetName(attr=*0x%x, name=*0x%x %s)", attr, name, name);
+	cellSpurs.error("cellSpursJobChainAttributeSetName(attr=*0x%x, name=*0x%x %s)", attr, name, name);
 
 	if (!attr || !name)
 		return CELL_SPURS_JOB_ERROR_NULL_POINTER;
@@ -6790,7 +6790,7 @@ s32 cellSpursJobGuardReset(vm::ptr<CellSpursJobGuard> jobGuard)
 
 s32 cellSpursRunJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 {
-	cellSpurs.trace("cellSpursRunJobChain(jobChain=*0x%x)", jobChain);
+	cellSpurs.error("cellSpursRunJobChain(jobChain=*0x%x)", jobChain);
 
 	if (!jobChain)
 		return CELL_SPURS_JOB_ERROR_NULL_POINTER;
