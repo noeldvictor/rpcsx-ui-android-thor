@@ -13458,3 +13458,30 @@ code" failures is gone. It was not the cause.
 
 Kept enabled: it makes HLE local store closer to genuine, costs one memcpy per
 kernel entry, and introduced no faults.
+
+## VERIFIED CORRECT: the selectWorkload return ABI
+
+Checked because the guest module calls `selectWorkloadAddr` (LS 0x1E4) with
+`bisl` and reads a result out of r3 - the same shape as the 0xA00 bug. It is NOT
+a bug. Do not "fix" it.
+
+Ours packs:
+
+    u64 result = u64{wklSelectedId} << 32 | pollStatus;
+    spu.gpr[3]._u64[1] = result;
+
+On a little-endian host `_u64[1]` spans `_u32[2]` (low half) and `_u32[3]` (high
+half), and `_u32[3]` IS the SPU preferred slot. So:
+
+    _u32[3]  preferred word  = wklSelectedId
+    _u32[2]  word 1          = pollStatus
+
+and the module reads exactly that:
+
+    02890  lr r5,r3            ; ...
+    028bc  ceq r8,r5,r10       ; preferred word compared against ctxt->wklCurrentId
+    0289c  rotqbyi r3,r3,0x4   ; word 1 into the preferred slot
+    028a4  stqd r6,0x0(r80)    ; stored as the status out-parameter
+
+`cellSpursModulePollStatus` unpacks it the same way (`result >> 32` for the wid,
+`static_cast<u32>(result)` for the status), so both sides agree with the guest.
