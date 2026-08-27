@@ -653,3 +653,50 @@ half the chain" does not survive measurement. They are:
 
 The only changes in this effort that survive scrutiny are the two contention
 fixes, which were confirmed by a state signature rather than a count.
+
+## SECOND TITLE: HLE SPURS fails systemically, not per-title
+
+Eternal Sonata (USA), same build, props verified both ways:
+
+    LLE         p1=128  p6=17682  p8=688     iomaps=2    renders
+    HLE SPURS   0 draws                      iomaps=0    nothing
+
+It boots under HLE (pid alive, 120 flips) and draws NOTHING - not even the
+quads BLUS30357 still manages. So HLE SPURS is not failing on a Transformers
+-specific path; it fails on an unrelated title just as completely, and worse.
+
+That reframes twelve rounds of this document. The contention leaks, the task
+attribute validation, the ANY2ANY LFQueue - all real bugs, none of them the
+reason HLE does not render, because the failure is not title-specific.
+
+(Dragon's Crown would not boot at all - it needs game data installed - so it
+remains inconclusive. Eternal Sonata is the usable second data point.)
+
+## What upstream says, and it matches
+
+RPCS3 has no working HLE cellSpurs. The taskset and event-flag submodules are
+incomplete and were DISABLED upstream to prevent regressions, the SPURS kernel
+is disabled, and the project's own guidance is that libsre and libspurs_jq must
+be LLE for every title. "Working HLE CellSpurs implementation" exists upstream
+only as a feature request (RPCS3 issue #9063), opened with no description.
+
+So "fix HLE SPURS for BLUS30357" is really "finish an HLE cellSpurs that
+upstream has never finished". That is the honest scope, and it explains the
+shape of this entire document - every fix exposed another missing behaviour
+because most of the behaviour is missing.
+
+## Upstream sync, 2026-08-27
+
+    RPCS3   27 new commits, NONE touching cellSpurs / cellSync / cellGcm
+    RPCSX   0 new commits
+    ARMSX3  60 new commits; one relevant:
+            a7ec28f7a "SPU: always notify reservation waiters after a
+            successful store" - removes the pc==0x11e4 / byte-0x73 suppression
+            because those constants assume one SPURS kernel build.
+
+We already carry that behaviour behind `debug.rpcsx.thor.spurs_always_notify`,
+default off, from a 2026-08-24 investigation. Tested it here under HLE:
+
+    spurs_always_notify=1   ready=true   p8=1242   p5=0   iomaps=9
+
+No effect on the geometry. Eliminated for this failure.
