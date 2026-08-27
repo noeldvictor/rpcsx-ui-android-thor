@@ -12851,3 +12851,57 @@ That is the shape of the remaining problem. It cannot be resolved by another
 field audit - every field the structure carries has now been verified against
 the value the title passed. It needs the module's own execution traced from
 0xA00 until the branch that leaves, under HLE, against the same trace under LLE.
+
+# The Module Calls The Kernel's Services With BISL. We Treat One As Termination.
+
+2026-08-26. Static trace of the real job chain module, Ghidra SPU:BE:128, from
+its entry at 0xA00 down the path a non-system workload takes.
+
+## The path for wid != 32
+
+    00a1c  ai   r6,r3,0xdc      ; r3 = 0x100 -> r6 = 0x1DC = wklCurrentId
+    00a38  ceqi r2,r8,0x20      ; is it the system workload?
+    00a3c  brz  r2,0x00000a4c   ; ours is wid=6 -> take 0xa4c
+    00a4c  brsl lr,0x000021a8
+    00a50  brsl lr,0x00002850
+
+## And 0x2850 is where it goes
+
+    02850  lqa  r2,0x1e0        ; quadword at LS 0x1E0
+    02860  bisl lr,r2           ; CALL the address in the preferred slot
+    02868  lqa  r4,0x1e0
+    02884  rotqbyi r2,r4,0x4    ; the second word, LS 0x1E4
+    02888  bisl lr,r2           ; CALL that too
+
+In `SpursKernelContext`, 0x1E0 is **exitToKernelAddr** and 0x1E4 is
+**selectWorkloadAddr**. `bisl` is branch-indirect-AND-SET-LINK: the module is
+CALLING these as kernel services and expects them to RETURN.
+
+Our HLE registers `spursKernelWorkloadExit` at exitToKernelAddr and treats the
+SPU arriving there as "this workload is done" - it switches the SPU to another
+workload and never returns to the caller.
+
+**That is a complete explanation of the observed behaviour**: the module is
+entered, walks a few instructions, calls what it believes is a kernel service,
+and from our side that call IS the workload ending. No fault, no halt, exits
+immediately, loads=1 exits=1. It also explains why every field audit came back
+clean - nothing is wrong with the data, the control-flow contract is wrong.
+
+## What this predicts, and how to check it cheaply
+
+If true, the JCEXIT probe should show the exit arriving from inside 0x2850
+rather than from the module's top level. It reported `lr=0x00808`, which is the
+value the KERNEL put in r0 - consistent, but not proof, because `bisl` writes
+the return address into lr and our handler reads r0 after that write.
+
+The check: log `spu.gpr[0]` at entry to `spursKernelWorkloadExit` AND compare it
+against 0x808. A `bisl` from 0x2860 leaves lr = 0x2864, not 0x808. If lr is
+0x2864 the module is calling a service and this is confirmed outright.
+
+## If confirmed
+
+`spursKernelWorkloadExit` cannot be a single "workload over" handler. The real
+kernel exposes routines at these addresses that a policy module calls and
+returns from; only some paths terminate the workload. Getting that contract
+right is what the remaining work is - and it is a control-flow question about
+the HLE kernel, not another missing field.
