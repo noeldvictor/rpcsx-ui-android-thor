@@ -510,3 +510,40 @@ It is observable (a string in the log), it has a control (absent under LLE), it
 has a PPU callstack, and it converts "no triangles are drawn" into "this
 specific allocator call fails". Anything that removes this assertion is
 progress; the draw census only reports the consequence.
+
+## QUALIFICATION: the assertion is INTERMITTENT, and so is everything else
+
+The GCMX assertion is real and its LLE control holds - LLE has never produced
+one. But it does NOT fire on every HLE run. Immediately after finding it:
+
+    lfq_any2any=0   ready=true  GCMX asserts=0  draw_calls=0
+    lfq_any2any=1   ready=true  GCMX asserts=1  draw_calls=0
+
+Zero and one, where an earlier HLE run repeated the assertion continuously -
+and draw_calls=0 in both, from a configuration that produced 880 quads twenty
+minutes earlier. So the previous entry overstated it: the assertion is the
+title's diagnosis when it fires, not a constant.
+
+### This is the real obstacle now
+
+Run-to-run variance, at n=1, exceeds the effect size of every change measured
+in this document:
+
+    same build, same flags, boot to boot
+      ready        true / false
+      draw_calls   0 / 126 / 434 / 880 / 1121
+      GCMX asserts 0 / 1 / many
+      task starts  2 / 3 / 12
+      tasksets     2 / 3
+
+Every A/B in this file is n=1 or n=2 against that spread. The two contention
+fixes are safe - they were confirmed by a state signature (rawCont/locC), not
+by a count - but every conclusion drawn from a draw count or an assertion count
+across single runs is weaker than it reads, including the four-way flag matrix.
+
+The honest next objective is therefore NOT another fix. It is determinism:
+until the same build and flags produce the same outcome, no experiment can
+distinguish a real improvement from a lucky boot, and effort spent on fixes is
+spent blind. A cheap first step is n>=5 per configuration on the two metrics
+that are unambiguous - does it open a video file, does the assertion fire - and
+recording the distribution rather than a single value.
