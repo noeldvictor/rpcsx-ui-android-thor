@@ -728,3 +728,40 @@ SPURS_IMG_ADDR_TASKSET_PM comes from somewhere else - another module, or a
 compressed section. Finding it is the prerequisite for comparing our HLE
 taskset against the real one, which is where `exit=0` (no task ever finishes)
 would finally have a reference to be checked against.
+
+## THE REAL POLICY MODULE, EXTRACTED
+
+SPURS_IMG_ADDR_TASKSET_PM is 0x200 - a SENTINEL, not an address. The HLE
+recognises it and substitutes C++; no real image is ever loaded on that path.
+That is why the module is not findable in the firmware container by address.
+
+But the LLE local-store dump taken earlier this session has it. Comparing the
+policy-module region of the two dumps:
+
+    LS 0x00a00   LLE  nonzero=930/1024   first8 = 42 37 70 02 42 83 7e 82
+    LS 0x00a00   HLE  nonzero=  0/1024   entirely zero
+
+Under LLE the SPU holds real policy-module code at 0xA00. Under HLE that region
+is empty by construction, because our C++ runs instead. The LLE bytes match
+`sig_a` from thor_jobchain_pm_image exactly, so the signature table in the tree
+was derived from this same image.
+
+Extracted by walking forward from 0xA00 until a sustained zero run:
+
+    _research/spurs/real_taskset_pm.bin   0x2400 (9216) bytes
+
+It is real SPU code - the leading words are `ila` (RI18), which the crude
+opcode-density heuristic used above scores low only because its table is
+incomplete. Do not read that 0.05 as "not code".
+
+### Why this matters
+
+Every HLE taskset behaviour in this effort was inferred: what makes a task
+exit, what the yield path must do, when contention is released, what the
+ANY2ANY ring layout is. `exit=0` - no task ever finishing, on either title -
+has had no reference to be checked against. This image is that reference, and
+it is now in the tree rather than being a thing to go and find.
+
+Disassembling it (Ghidra, SPU:BE:128:default, load at 0xA00) and locating its
+task-exit path is the first piece of work in this document that would be
+checking rather than guessing.
