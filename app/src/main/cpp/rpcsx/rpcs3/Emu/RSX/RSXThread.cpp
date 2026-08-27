@@ -859,6 +859,28 @@ namespace rsx
 		in_begin_end = true;
 	}
 
+	// See the census in thread::end / thread::flip.
+	//   debug.rpcsx.thor.draw_census = 1
+	static std::atomic<u64> g_thor_draw_calls{0};
+
+	// EXACT COUNTS PER PRIMITIVE, NOT A SAMPLE.
+	//
+	// Sampling every 97th draw found LLE issuing one prim=5 (TRIANGLES,
+	// 48 elems) among 50 quads and HLE issuing none - but one observation
+	// cannot carry that conclusion. Tally every draw instead.
+	static std::atomic<u64> g_thor_prim_hist[16]{};
+	static std::atomic<u64> g_thor_prim_elems[16]{};
+
+	static const bool g_thor_draw_census = []() noexcept -> bool
+	{
+#ifdef ANDROID
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.draw_census", v) > 0 && v[0] && v[0] != '0';
+#else
+		return false;
+#endif
+	}();
+
 	void thread::end()
 	{
 		if (capture_current_frame)
@@ -868,6 +890,48 @@ namespace rsx
 
 		in_begin_end = false;
 		m_frame_stats.draw_calls++;
+
+		// DOES ANY GEOMETRY REACH THE RSX AT ALL.
+		//
+		// Under HLE SPURS this title runs its frame loop at ~30 Hz and presents
+		// empty frames. A flip rate proves the loop runs; it says nothing about
+		// whether draws were submitted. This counts them, and thread::flip reports
+		// the total so that ZERO is reported too - a counter here alone can never
+		// report the case that matters.
+		g_thor_draw_calls++;
+
+		// WHAT IS IN THE DRAW, NOT JUST HOW MANY.
+		//
+		// Measured: HLE issues the SAME number of draws as LLE (~1 per flip) and
+		// shows a flat green frame, with RSX slightly HIGHER than LLE. So the
+		// geometry is submitted and comes out invisible - degenerate vertices or a
+		// dead transform - rather than never submitted. A draw COUNT cannot tell
+		// those apart. Print the shape of the draw and the first transform
+		// constants, which is what actually differs between the two runs.
+		if (g_thor_draw_census) [[unlikely]]
+		{
+			if (const u32 pm = static_cast<u32>(method_registers.current_draw_clause.primitive); pm < 16)
+			{
+				g_thor_prim_hist[pm]++;
+				g_thor_prim_elems[pm] += method_registers.current_draw_clause.get_elements_count();
+			}
+
+			if (const u64 dn = g_thor_draw_calls.load(); dn <= 40 || (dn % 97) == 0)
+			{
+				const auto& tc = method_registers.transform_constants;
+				rsx_log.error("Thor DRAW #%llu: prim=%u elems=%u vtxbase=0x%x "
+					"c0=[%08x %08x %08x %08x] c1=[%08x %08x %08x %08x] "
+					"c2=[%08x %08x %08x %08x] c3=[%08x %08x %08x %08x]",
+					dn,
+					static_cast<u32>(method_registers.current_draw_clause.primitive),
+					method_registers.current_draw_clause.get_elements_count(),
+					method_registers.vertex_data_base_offset(),
+					tc[0][0], tc[0][1], tc[0][2], tc[0][3],
+					tc[1][0], tc[1][1], tc[1][2], tc[1][3],
+					tc[2][0], tc[2][1], tc[2][2], tc[2][3],
+					tc[3][0], tc[3][1], tc[3][2], tc[3][3]);
+			}
+		}
 
 		method_registers.current_draw_clause.post_execute_cleanup(m_ctx);
 
@@ -2476,6 +2540,28 @@ namespace rsx
 
 	void thread::flip(const display_flip_info_t& info)
 	{
+		if (g_thor_draw_census) [[unlikely]]
+		{
+			static std::atomic<u64> s_flips{0};
+
+			if (const u64 f = ++s_flips; (f % 120) == 0)
+			{
+				char hist[256]{};
+				int off = 0;
+
+				for (u32 i = 0; i < 16; i++)
+				{
+					if (const u64 c = g_thor_prim_hist[i].load())
+					{
+						off += std::snprintf(hist + off, sizeof(hist) - off, " p%u=%llu(e=%llu)",
+							i, c, g_thor_prim_elems[i].load());
+					}
+				}
+
+				rsx_log.error("Thor DRAW CENSUS: flips=%llu draw_calls=%llu |%s", f, g_thor_draw_calls.load(), hist);
+			}
+		}
+
 		m_eng_interrupt_mask.clear(rsx::display_interrupt);
 
 		if (async_flip_requested & flip_request::any)

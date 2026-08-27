@@ -3706,6 +3706,16 @@ s32 cellSpursEventFlagClear(vm::ptr<CellSpursEventFlag> eventFlag, u16 bits)
 /// Set a SPURS event flag
 s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag, u16 bits)
 {
+	// Does the title wake its parked task through an EVENT FLAG?
+	{
+		static std::atomic<u32> s_efs{0};
+
+		if (const u32 n = s_efs++; n < 8 || (n & 0xFF) == 0)
+		{
+			cellSpurs.error("Thor EFSET #%u: eventFlag=0x%x bits=0x%x", n, eventFlag.addr(), bits);
+		}
+	}
+
 	cellSpurs.trace("cellSpursEventFlagSet(eventFlag=*0x%x, bits=0x%x)", eventFlag, bits);
 
 	if (!eventFlag)
@@ -4339,6 +4349,12 @@ static bool spurs_queue_valid(vm::ptr<CellSpursQueue> queue, s32& error)
 // argument is used instead.
 s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset> taskset, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 size, u32 depth, u32 direction)
 {
+	// WHICH QUEUES EXIST AND WHICH TASKSET OWNS EACH.
+	// Only 0x10364100 ever takes a push; a second queue bound to 0x101b4e80
+	// would be the wake path its parked task is waiting on.
+	cellSpurs.error("Thor QUEUEINIT: queue=0x%x taskset=0x%x depth=%u size=%u dir=%u",
+		queue.addr(), taskset.addr(), depth, size, direction);
+
 	cellSpurs.warning("_cellSpursQueueInitialize(spurs=*0x%x, taskset=*0x%x, queue=*0x%x, buffer=*0x%x, size=%d, depth=%d, direction=%d)",
 		spurs, taskset, queue, buffer, size, depth, direction);
 
@@ -4472,6 +4488,39 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 // congruent to 0 and reads as empty. See the full test below.
 //
 //   debug.rpcsx.thor.queue_monotonic_fix = 0  restore the modulo-depth tail
+// PUBLISH THE PAYLOAD BEFORE THE COUNTER, NOT AFTER.
+//
+// Both producer paths advanced `tail` and only THEN memcpy'd the entry:
+//
+//     if (queue->tail.compare_and_swap_test(tail, ...)) { slot = ...; break; }
+//     ...
+//     std::memcpy(buffer + slot * entry_size, src, entry_size);
+//
+// The consumer gates on `tail`, so between those two statements it can dequeue
+// a slot whose payload has not been written and read whatever was there before.
+// Measured consequence: the ring drains correctly (head tracks tail, used=1),
+// pops succeed, and the SPU tasks produce NOTHING - put_census bucket c0 (RSX
+// memory) is empty under HLE against 641,379 writes under LLE, and bucket 10
+// (the title's heap) gets 7 writes out of 2000 against LLE's 17.8 million.
+//
+// Writing the payload first makes the counter mean what the consumer assumes it
+// means: "this slot is complete".
+//
+//   debug.rpcsx.thor.queue_publish_order = 1
+static bool thor_queue_publish_order() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.queue_publish_order", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool thor_queue_monotonic_fix() noexcept
 {
 #ifdef __ANDROID__
@@ -4548,6 +4597,124 @@ static bool thor_queue_monotonic_fix() noexcept
 // never had to make a real module run.
 //
 //   debug.rpcsx.thor.jobchain_readycount = N   seed N on RunJobChain (0 = off)
+// EXPERIMENT: seed the halfword the job chain policy module gates on.
+//
+// Disassembly of the real job chain policy module (see AGENTS.md, "The gate:
+// LS 0x22c8", and _research/spurs/jobchain_pm.disasm.txt):
+//
+//   22b0: wrch r25,ch21        ; GETLLAR the job chain
+//   22c0: lqr  r27,0x270       ; the fetched line at LS 0x2c80
+//   22c4: rotqbyi r26,r27,0x8  ; preferred slot <- struct +0x08..0x0b
+//   22c8: brhz r26,0x2374      ; halfword at +0x0a == 0 -> skip the grab
+//
+// 0x2368 is the ONLY PUTLLC in that region and it sits strictly inside the
+// range brhz jumps over, so while +0x0a is zero the module can never write
+// `pc` back and no job is ever grabbed.
+//
+// The firmware reads +0x08 and +0x0a as two u16 fields; RPCS3's header calls
+// the same bytes linkRegister[0], a 64-bit pointer, and NOTHING in the PPU-side
+// code writes them. They reach the SPU as zero.
+//
+// This is a probe, not a fix: it writes a nonzero value there so the branch is
+// not taken, purely to confirm that the gate is what stops the job chain. If
+// `pc` then advances and a PUTLLC on the job chain appears in the atomic
+// census, the gate is proven and the real field semantics can be worked out.
+// Default 0 = off = unchanged behaviour.
+//
+//   debug.rpcsx.thor.jobchain_grab_seed = 1   (or 16, = maxGrabbedJob)
+static u16 thor_jobchain_grab_seed() noexcept
+{
+#ifdef __ANDROID__
+	static const u16 s_n = []() noexcept -> u16
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.jobchain_grab_seed", v) <= 0 || !v[0])
+		{
+			return 0;
+		}
+
+		const long parsed = std::strtol(v, nullptr, 10);
+		return parsed > 0 && parsed < 0x10000 ? static_cast<u16>(parsed) : 0;
+	}();
+	return s_n;
+#else
+	return 0;
+#endif
+}
+
+// Publishes the "jobs available to grab" count the policy module gates on.
+//
+// MEASURED, from the census dump of the job chain before and after the module's
+// own PUTLLC at LS 0x2368:
+//
+//   before:  pc=0x01eca480  +0x08=0x0000  +0x0a=0x0001   (seeded)
+//   after:   pc=0x01eca480  +0x08=0x0001  +0x0a=0x0000
+//
+// The module took one job: it consumed +0x0a and advanced +0x08. So +0x0a is a
+// count of jobs available and +0x08 is the index of the next one. `pc` is the
+// descriptor array base and is NOT advanced per job - the index is.
+//
+// Nothing in this file ever writes +0x0a, at creation or at kick, so it reaches
+// the SPU as zero and the module never grabs anything. Seeding it at creation
+// alone yields exactly one job and then silence.
+// Dumps the memory the job chain points at.
+//
+// The grab path reads job n as a 4-byte word at jobChain + 0x14 + n*4, and in
+// the captured reservation line that whole region is zero - so forcing a grab
+// fetches a NULL job, which is why seeding the count produces a write-back but
+// no frame. This says whether the title ever wrote a descriptor list at all:
+// `pc` is the descriptor array base and `sizeJobDescriptor` its stride.
+static void thor_jobchain_dump_descriptors(vm::ptr<CellSpursJobChain> jobChain, const char* site)
+{
+	if (!jobChain)
+	{
+		return;
+	}
+
+	const u32 pc = static_cast<u32>(jobChain->pc.addr());
+	const u32 stride = jobChain->sizeJobDescriptor;
+
+	auto hexdump = [](u32 addr, u32 len) -> std::string
+	{
+		std::string out;
+
+		if (!addr || !vm::check_addr(addr, vm::page_readable, len))
+		{
+			fmt::append(out, "<unmapped>");
+			return out;
+		}
+
+		const u8* p = vm::_ptr<u8>(addr);
+
+		for (u32 i = 0; i < len; i++)
+		{
+			fmt::append(out, "%s%02x", (i && (i % 16) == 0) ? " | " : " ", p[i]);
+		}
+
+		return out;
+	};
+
+	cellSpurs.error("Thor JOBCHAIN DESC(%s): jc=0x%x pc=0x%x stride=0x%x", site, jobChain.addr(), pc, stride);
+	cellSpurs.error("Thor JOBCHAIN DESC(%s):   handles jc+0x14: %s", site, hexdump(jobChain.addr() + 0x14, 0x20));
+	cellSpurs.error("Thor JOBCHAIN DESC(%s):   at pc         : %s", site, hexdump(pc, 0x40));
+}
+
+static void thor_jobchain_publish_jobs(vm::ptr<CellSpursJobChain> jobChain, const char* site)
+{
+	const u16 seed = thor_jobchain_grab_seed();
+
+	if (!seed || !jobChain)
+	{
+		return;
+	}
+
+	const auto raw = vm::_ptr<u8>(jobChain.addr());
+	raw[0x0a] = static_cast<u8>(seed >> 8);
+	raw[0x0b] = static_cast<u8>(seed & 0xff);
+
+	cellSpurs.error("Thor JOBCHAIN PUBLISH(%s): +0x0a = 0x%04x at 0x%x (probe)", site, seed, jobChain.addr());
+}
+
 static u32 thor_jobchain_readycount() noexcept
 {
 #ifdef __ANDROID__
@@ -4641,6 +4808,43 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 
 		if (const u32 n = s_calls++; (n & 0x3F) == 0)   // every 64: the run only makes ~650 pushes
 		{
+			// HOW MANY WORK ITEMS HAVE ACTUALLY BEEN FILLED?
+			//
+			// The entries carry pointers to 16-byte slots in 0x304f8038.., and those
+			// slots are ZERO when pushed - they are OUTPUT slots the SPU fills. The
+			// fence done=0x304f8348 is item #49 of that array and target=0x304f93e8 is
+			// item #315. So counting how far the non-zero prefix extends says exactly
+			// how much work the SPU has really completed, independently of any counter
+			// either side maintains.
+			if (thor_queue_publish_order())   // reuse as a queue-diagnostics gate; OFF by default
+			{
+				constexpr u32 base = 0x304f8038;
+				u32 filled = 0;
+				u32 scanned = 0;
+
+				for (u32 i = 0; i < 320; i++)
+				{
+					const u32 a = base + i * 0x10;
+
+					if (!vm::check_addr(a, vm::page_readable, 0x10))
+					{
+						break;
+					}
+
+					scanned++;
+
+					const u8* w = vm::_ptr<u8>(a);
+
+					for (u32 k = 0; k < 0x10; k++)
+					{
+						if (w[k]) { filled++; break; }
+					}
+				}
+
+				cellSpurs.error("Thor WORKFILL: %u of %u items non-zero (done=item#49 target=item#315)",
+					filled, scanned);
+			}
+
 			cellSpurs.warning("Thor QUEUE RING #%u: head=%u tail=%u depth=%u used=%u eq=0x%x",
 				n, +queue->head.load(), +queue->tail.load(), +queue->depth,
 				spurs_ring_used(+queue->head.load(), +queue->tail.load(), +queue->depth),
@@ -4652,6 +4856,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	// compare-exchange equivalent of the firmware's lwarx/stwcx. on 0x04.
 	u32 slot = 0;
 	u32 spins = 0;
+	bool published = false;   // see thor_queue_publish_order
 
 	while (true)
 	{
@@ -4664,6 +4869,19 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			u32 claimed = umax;
 			u32 seen_head = 0;
 			u32 seen_tail = 0;
+
+			// See thor_queue_publish_order. Fill the slot this iteration is ABOUT to
+			// claim before the reservation publishes the new tail. If another producer
+			// takes that slot first the copy is redone below at the slot actually
+			// claimed - wasted work under contention, never a slot visible to the
+			// consumer before its payload has landed.
+			const bool order_fix = thor_queue_publish_order();
+			const u32 guess_slot = order_fix ? (+queue->tail.load() % depth) : 0;
+
+			if (order_fix)
+			{
+				std::memcpy(vm::base(queue->buffer.addr() + guess_slot * entry_size), buffer.get_ptr(), entry_size);
+			}
 
 			vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_queue_op>(queue), [&](spurs_queue_op& op)
 				{
@@ -4683,6 +4901,14 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			if (claimed != umax)
 			{
 				slot = claimed;
+
+				if (order_fix && claimed == guess_slot)
+				{
+					// The guess held: the payload is already in place, published before
+					// the tail that advertises it.
+					published = true;
+				}
+
 				break;
 			}
 
@@ -4812,15 +5038,84 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
+		// See thor_queue_publish_order: fill the slot BEFORE the CAS makes it
+		// visible. If the CAS loses the race the copy is simply redone at the new
+		// slot next iteration - wasted work under contention, never stale data.
+		const u32 pending_slot = thor_queue_monotonic_fix() ? tail % depth : tail;
+
+		if (thor_queue_publish_order())
+		{
+			std::memcpy(vm::base(queue->buffer.addr() + pending_slot * entry_size), buffer.get_ptr(), entry_size);
+		}
+
 		if (queue->tail.compare_and_swap_test(tail, thor_queue_monotonic_fix() ? (tail + 1) % spurs_ring_range(depth) : (tail + 1) % depth))
 		{
 			// The COUNTER is monotonic; the BUFFER INDEX is the counter mod depth.
-			slot = thor_queue_monotonic_fix() ? tail % depth : tail;
+			slot = pending_slot;
+			published = thor_queue_publish_order();
 			break;
 		}
 	}
 
-	std::memcpy(vm::base(queue->buffer.addr() + slot * entry_size), buffer.get_ptr(), entry_size);
+	if (!published)
+	{
+		std::memcpy(vm::base(queue->buffer.addr() + slot * entry_size), buffer.get_ptr(), entry_size);
+	}
+
+	// WHAT IS ACTUALLY IN THE ENTRY?
+	//
+	// The consumer pops successfully and produces nothing - put_census bucket c0
+	// (RSX memory) is empty under HLE against 641,379 writes under LLE. Every
+	// mechanism between the two has been cleared, so check the payload itself: an
+	// entry of zeros would mean the task is correctly doing nothing and the fault
+	// is upstream on the PPU, not in SPURS at all.
+	{
+		static std::atomic<u32> s_pay{0};
+
+		if (const u32 n = s_pay++; n < 4 || (n & 0x3FF) == 0)
+		{
+			const u8* src = static_cast<const u8*>(buffer.get_ptr());
+			const u32 show = std::min<u32>(entry_size, 32);
+			std::string hex;
+			u32 nonzero = 0;
+
+			for (u32 i = 0; i < entry_size; i++)
+			{
+				nonzero += src[i] ? 1 : 0;
+			}
+
+			for (u32 i = 0; i < show; i++)
+			{
+				fmt::append(hex, " %02x", src[i]);
+			}
+
+			// The first word of the entry is a WORK ITEM POINTER into 0x304fxxxx, and
+			// the long-known fence (done=0x304f8348 target=0x304f93e8) indexes the same
+			// array. Dump what the item itself holds - that layout says what the task
+			// is meant to do with it, and it is ordinary mapped main memory, so no SPU
+			// tracing is needed to read it.
+			std::string item;
+			const u32 wp = entry_size >= 4 ? ((u32{src[0]} << 24) | (u32{src[1]} << 16) | (u32{src[2]} << 8) | src[3]) : 0;
+
+			if (wp && vm::check_addr(wp, vm::page_readable, 0x20))
+			{
+				const u8* w = vm::_ptr<u8>(wp);
+
+				for (u32 i = 0; i < 0x20; i++)
+				{
+					fmt::append(item, " %02x", w[i]);
+				}
+			}
+			else
+			{
+				fmt::append(item, " <unmapped 0x%08x>", wp);
+			}
+
+			cellSpurs.error("Thor PAYLOAD #%u: entry_size=%u nonzero=%u/%u slot=%u src=0x%x |%s",
+				n, entry_size, nonzero, entry_size, slot, buffer.addr(), hex);
+			cellSpurs.error("Thor WORKITEM #%u: at 0x%08x |%s", n, wp, item);
+		}
+	}
 
 	{
 		static std::atomic<u32> s_ok{0};
@@ -4920,7 +5215,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 				const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
 				const auto rd = [&](u32 off) { return vm::_ref<be_t<u32>>(ts.addr() + off); };
 
-				cellSpurs.warning("Thor SIGNAL #%u: taskId=%u rc=0x%x | ts=0x%x running=%08x ready=%08x pready=%08x waiting=%08x enabled=%08x signalled=%08x",
+				cellSpurs.error("Thor SIGNAL #%u: taskId=%u rc=0x%x | ts=0x%x running=%08x ready=%08x pready=%08x waiting=%08x enabled=%08x signalled=%08x",
 					n, tid, rc, ts.addr(),
 					+rd(OFFSET_OF(CellSpursTaskset, running)),
 					+rd(OFFSET_OF(CellSpursTaskset, ready)),
@@ -5338,6 +5633,8 @@ s32 _spurs::create_task(vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id,
 	{
 		if (size < CELL_SPURS_TASK_EXECUTION_CONTEXT_SIZE)
 		{
+			cellSpurs.error("Thor CREATETASK-INVAL size-too-small: context=0x%x size=0x%x lsp=0x%x elf=0x%x",
+				context.addr(), size, ls_pattern.addr(), elf.addr());
 			return CELL_SPURS_TASK_ERROR_INVAL;
 		}
 
@@ -5350,14 +5647,18 @@ s32 _spurs::create_task(vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id,
 
 			if (ls_blocks > alloc_ls_blocks)
 			{
-				return CELL_SPURS_TASK_ERROR_INVAL;
+				cellSpurs.error("Thor CREATETASK-INVAL ls-blocks-exceed-alloc: context=0x%x size=0x%x lsp=0x%x elf=0x%x",
+				context.addr(), size, ls_pattern.addr(), elf.addr());
+			return CELL_SPURS_TASK_ERROR_INVAL;
 			}
 
 			v128 _0 = v128::from32(0);
 			if ((ls_pattern_128 & v128::from32r(0xFC000000)) != _0)
 			{
 				// Prevent save/restore to SPURS management area
-				return CELL_SPURS_TASK_ERROR_INVAL;
+				cellSpurs.error("Thor CREATETASK-INVAL ls-pattern-hits-mgmt-area: context=0x%x size=0x%x lsp=0x%x elf=0x%x",
+				context.addr(), size, ls_pattern.addr(), elf.addr());
+			return CELL_SPURS_TASK_ERROR_INVAL;
 			}
 		}
 	}
@@ -5491,6 +5792,10 @@ s32 _spurs::task_start(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32 t
 
 s32 cellSpursCreateTask(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> taskId, vm::cptr<void> elf, vm::cptr<void> context, u32 size, vm::ptr<CellSpursTaskLsPattern> lsPattern, vm::ptr<CellSpursTaskArgument> argument)
 {
+	// EVERY TASK THE TITLE CREATES, and on which taskset.
+	cellSpurs.error("Thor CREATETASK: taskset=0x%x elf=0x%x arg=0x%x",
+		taskset.addr(), elf.addr(), argument.addr());
+
 	cellSpurs.warning("cellSpursCreateTask(taskset=*0x%x, taskID=*0x%x, elf=*0x%x, context=*0x%x, size=0x%x, lsPattern=*0x%x, argument=*0x%x)", taskset, taskId, elf, context, size, lsPattern, argument);
 
 	if (!taskset)
@@ -5521,6 +5826,35 @@ s32 cellSpursCreateTask(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, vm::
 s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32 taskId)
 {
 	cellSpurs.trace("_cellSpursSendSignal(taskset=*0x%x, taskId=0x%x)", taskset, taskId);
+
+	// EVERY CALLER, NOT JUST THE QUEUE PUSH.
+	//
+	// The task on taskset 0x101b4e80 called WAIT_SIGNAL once and never came
+	// back, and that taskset NEVER appears in dispatch. The only signal probe
+	// so far sits in the queue push path, which is bound to 0x10364100 - so a
+	// signal aimed at 0x101b4e80 would be invisible to it. Count them here,
+	// keyed by taskset, to settle whether anything wakes that task at all.
+	{
+		static std::atomic<u32> s_all{0};
+		static std::atomic<u32> s_other{0};
+
+		const u32 n = s_all++;
+		const bool is_queue_ts = taskset.addr() == 0x10364100u;
+
+		if (!is_queue_ts)
+		{
+			if (const u32 o = s_other++; o < 8 || (o & 0xFF) == 0)
+			{
+				cellSpurs.error("Thor SENDSIG-OTHER #%u (of %u total): taskset=0x%x taskId=%u wid=%u",
+					o, n, taskset.addr(), taskId, +taskset->wid);
+			}
+		}
+		else if ((n & 0x3FF) == 0)
+		{
+			cellSpurs.error("Thor SENDSIG #%u: taskset=0x%x taskId=%u (non-queue signals so far: %u)",
+				n, taskset.addr(), taskId, s_other.load());
+		}
+	}
 
 	if (!taskset)
 	{
@@ -6405,12 +6739,78 @@ static u32 thor_jobchain_pm_image(u32& out_size) noexcept
 
 	static const u32 s_addr = [&]() -> u32
 	{
-		static const u8 sig[32] = {
+		// WHICH MODULE. libsre holds several SPU policy modules back to back, each
+		// starting with a 16-byte magic of four dead `ila r2,imm` words:
+		//
+		//   0x021580  module A (0x2200)  - has the system-service path (wklCurrentId
+		//                                  == 0x20) and no job execution at all
+		//   0x023780  module B (0x1c00)  - holds the register-indirect jumps
+		//                                  (bi r6/r7/r5/r2) and six MFC GETs
+		//   0x025380  'SPURSTASK MODULE' - the taskset policy module
+		//
+		// A was picked first and may be the wrong one: under LLE the job chain EA is
+		// worked by code at pcs (0x0e90, 0x1238, 0x12a0) that are not MFC sites in A,
+		// so LLE has a different image at LS 0xa00.
+		//
+		//   debug.rpcsx.thor.jobchain_pm_variant = A (default) | B
+		static const u8 sig_a[32] = {
 			0x42, 0x37, 0x70, 0x02, 0x42, 0x83, 0x7e, 0x82, 0x42, 0x71, 0xf1, 0x02, 0x43, 0x3a, 0x67, 0x82,
 			0x40, 0x80, 0x00, 0x07, 0x12, 0x00, 0x07, 0x0a, 0x43, 0xff, 0xf8, 0x0a, 0x1c, 0x37, 0x01, 0x86,
 		};
 
-		constexpr u32 pm_size = 0x2200;
+		static const u8 sig_b[32] = {
+			0x43, 0x06, 0xdc, 0x02, 0x43, 0x22, 0xb6, 0x82, 0x42, 0x5c, 0xcb, 0x02, 0x42, 0x82, 0x87, 0x82,
+			0x40, 0x96, 0x28, 0x01, 0x12, 0x02, 0x96, 0x94, 0x33, 0x83, 0xb5, 0x11, 0x30, 0x80, 0x38, 0x10,
+		};
+
+		// Variant C is the REAL job chain policy module, identified by measurement:
+		// under LLE the module resident at LS 0xa00 when the job chain (0x01eca280),
+		// its command list (0x01eca480) and 0x01eca100 are worked atomically has the
+		// magic 43 6e 84 02 42 56 96 82. Neither A nor B. It lives at libsre 0x2a280,
+		// past the taskset module, outside the window originally searched.
+		//
+		// Size 0x4000: the word at module+0x3f00 is 0x00004000, it carries a "JobC"
+		// marker at +0x3cb0, and 0xa00 + 0x4000 == 0x4a00, exactly where
+		// SpursJobChainContext sits (see spursJobChainEntry). Three independent
+		// agreements.
+		static const u8 sig_c[32] = {
+			0x43, 0x6e, 0x84, 0x02, 0x42, 0x56, 0x96, 0x82, 0x43, 0xd9, 0xe3, 0x02, 0x43, 0xf7, 0x5f, 0x82,
+			0x40, 0x80, 0x00, 0x05, 0x43, 0xff, 0xf8, 0x02, 0x43, 0xff, 0xe8, 0x01, 0x20, 0xff, 0xfe, 0x05,
+		};
+
+		char variant = 'C';
+#ifdef __ANDROID__
+		{
+			char v[PROP_VALUE_MAX]{};
+			if (__system_property_get("debug.rpcsx.thor.jobchain_pm_variant", v) > 0 && v[0])
+			{
+				variant = (v[0] >= 'a' && v[0] <= 'z') ? static_cast<char>(v[0] - 32) : v[0];
+			}
+		}
+#endif
+
+		bool want_b = (variant == 'B');
+		const u8* const sig = variant == 'C' ? sig_c : (want_b ? sig_b : sig_a);
+
+		// SIZE OF THE JOB CHAIN POLICY MODULE. 0x2200 is correct - do not "fix" it.
+		//
+		// It was briefly changed to 0x4000 on the theory that 0xa00 + 0x4000 lands
+		// exactly on SpursJobChainContext at 0x4a00, and that the module had been
+		// truncated. That theory was WRONG, twice over:
+		//
+		//  1. There is a module boundary at +0x2200. The image ends with the ASCII
+		//     string "SYS " at +0x21e8 followed by zero padding, and unrelated code
+		//     begins at +0x2200. libsre stores its SPU modules back to back, so a
+		//     larger copy simply appends the NEXT module.
+		//  2. The module DMAs into LS 0x2c80 and 0x2d80 (ila r8,0x2c80 at LS 0x2240,
+		//     ila r24,0x2d80 at 0x2378). Those are scratch buffers 0x80 past the end
+		//     of a 0x2200 image. At 0x4000 they land INSIDE the copied bytes and the
+		//     module DMAs over itself.
+		//
+		// The 1910 instructions past +0x2200 are a different module, which is why
+		// nothing in this one ever branches there: every reference into that range
+		// is an `ila` of a scratch address, never a branch target.
+		const u32 pm_size = variant == 'C' ? 0x4000u : (want_b ? 0x1c00u : 0x2200u);
 
 		fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
 
@@ -6437,7 +6837,7 @@ static u32 thor_jobchain_pm_image(u32& out_size) noexcept
 			return 0;
 		}
 
-		const auto it = std::search(bytes.begin(), bytes.end(), std::begin(sig), std::end(sig));
+		const auto it = std::search(bytes.begin(), bytes.end(), sig, sig + 32);
 
 		if (it == bytes.end())
 		{
@@ -6466,7 +6866,7 @@ static u32 thor_jobchain_pm_image(u32& out_size) noexcept
 		s_size = pm_size;
 
 		cellSpurs.error("Thor JOBCHAIN: staged the real policy module at 0x%x "
-			"(%u bytes, found in libsre at 0x%x)", mem, pm_size, static_cast<u32>(off));
+			"(%u bytes, variant %s, found in libsre at 0x%x)", mem, pm_size, variant == 'C' ? "C" : (want_b ? "B" : "A"), static_cast<u32>(off));
 		return mem;
 	}();
 
@@ -6514,6 +6914,8 @@ s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<
 	// the SPU with sizeJobDescriptor = 0 and autoReadyCount = 0.
 	jobChain->autoReadyCount = autoReadyCount;
 	jobChain->pc = jobChainEntry;
+
+	thor_jobchain_publish_jobs(jobChain, "create");
 
 	auto as_job_error = [](s32 error) -> s32
 	{
@@ -6682,6 +7084,8 @@ s32 cellSpursKickJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain, 
 
 	if (jobChain->jmVer > CELL_SPURS_JOB_REVISION_1)
 		return CELL_SPURS_JOB_ERROR_PERM;
+
+	thor_jobchain_publish_jobs(jobChain, "kick");
 
 	if (jobChain->autoReadyCount)
 		ppu_execute<&cellSpursReadyCountStore>(ppu, spurs, wid, numReadyCount);
@@ -7037,6 +7441,9 @@ s32 cellSpursRunJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 		return CELL_SPURS_JOB_ERROR_PERM;
 
 	const auto spurs = +jobChain->spurs;
+
+	thor_jobchain_dump_descriptors(jobChain, "run");
+	thor_jobchain_publish_jobs(jobChain, "run");
 
 	// Seed the ready count so the module is entered with POLL_STATUS_READYCOUNT
 	// set and takes its work path instead of its idle path. See

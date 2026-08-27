@@ -1,0 +1,68 @@
+#!/usr/bin/env python
+"""Drive tools/thor_mcp/server.py over stdio JSON-RPC.
+
+The server is the tested harness; AGENTS.md says the LOOP was the defect, not the
+primitives. This exists so the tools are usable when the MCP server is not loaded
+into the agent session - same code path, no ad-hoc bash reimplementation.
+
+  python tools/thor_mcp/call.py tools/list
+  python tools/thor_mcp/call.py thor_state
+  python tools/thor_mcp/call.py thor_boot '{"titleId":"BLUS30357"}'
+"""
+import json, os, subprocess, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__); return 2
+    name = sys.argv[1]
+    args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+
+    env = dict(os.environ)
+    env.setdefault("THOR_SERIAL", "192.168.1.3:5555")
+    env.setdefault("THOR_CTRL_PORT", "8099")
+
+    reqs = [
+        {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "protocolVersion":"2024-11-05","capabilities":{},
+            "clientInfo":{"name":"thor-call","version":"1"}}},
+        {"jsonrpc":"2.0","method":"notifications/initialized"},
+    ]
+    reqs.append({"jsonrpc":"2.0","id":2,"method":"tools/list"} if name == "tools/list"
+                else {"jsonrpc":"2.0","id":2,"method":"tools/call",
+                      "params":{"name":name,"arguments":args}})
+
+    p = subprocess.run(
+        [sys.executable, os.path.join(HERE, "server.py")],
+        input="".join(json.dumps(r) + "\n" for r in reqs).encode(),
+        capture_output=True, cwd=ROOT, env=env,
+        timeout=int(env.get("THOR_CALL_TIMEOUT", "600")))
+
+    for line in p.stdout.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if msg.get("id") == 2:
+            if "error" in msg:
+                print("ERROR:", json.dumps(msg["error"], indent=2)); return 1
+            res = msg.get("result", {})
+            if name == "tools/list":
+                for t in res.get("tools", []):
+                    req = t.get("inputSchema", {}).get("required", [])
+                    print("  %-18s %s" % (t["name"], t.get("description","").split("\n")[0][:100]))
+                    if req: print("%22s required: %s" % ("", ", ".join(req)))
+            else:
+                for c in res.get("content", []):
+                    print(c.get("text", json.dumps(c)))
+            return 0
+    err = p.stderr.decode("utf-8", "replace").strip()
+    print("no reply; stderr:", err[-800:] if err else "(none)")
+    return 1
+
+sys.exit(main())

@@ -36,6 +36,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 def _resolve_adb():
@@ -152,7 +153,7 @@ def proc_jiffies(p):
 # --------------------------------------------------------------------------
 # tools
 # --------------------------------------------------------------------------
-def t_state(_):
+def t_state(a):
     """Everything at once, so a caller does not stitch three calls together."""
     if not reachable():
         return {"error": "device unreachable; an empty answer here is NOT a dead emulator"}
@@ -362,7 +363,11 @@ def t_sample(a):
 
 
 def t_log(a):
-    return api(f"/log?match={a.get('match', '')}&n={int(a.get('n', 40))}")
+    # URL-ENCODE the match. It was interpolated raw, so any pattern containing a
+    # space - which is most useful ones, e.g. "Thor DRAW CENSUS" - died with
+    # InvalidURL before reaching the device.
+    return api(f"/log?match={urllib.parse.quote(str(a.get('match', '')), safe='')}"
+               f"&n={int(a.get('n', 40))}")
 
 
 def t_setprop(a):

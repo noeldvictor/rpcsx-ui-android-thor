@@ -542,6 +542,51 @@ extern bool spursKernelEntry(spu_thread& spu);
 // full PPU-side HLE, genuine SPU-side code.
 //
 //   debug.rpcsx.thor.real_spu_kernel = 1
+// See the PUT census in process_mfc_cmd.
+//   debug.rpcsx.thor.put_census = 1
+// EA of a CellSpursQueue to watch, as hex. Every SPU DMA that reads its first
+// line is logged with the head/tail the SPU is about to receive.
+//
+// The consumer returns CELL_SPURS_TASK_ERROR_AGAIN (queue empty) while the
+// producer's ring reads head=6 tail=262 depth=256, i.e. FULL. Both sides use
+// the same used() formula, so they must be seeing different VALUES. This prints
+// the value the SPU actually gets.
+//
+//   debug.rpcsx.thor.queue_watch_ea = 1030e400
+static FORCE_INLINE u32 get_thor_queue_watch_ea() noexcept
+{
+#ifdef ANDROID
+	static const u32 s_value = []() noexcept -> u32
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.queue_watch_ea", value) <= 0 || !value[0])
+		{
+			return 0;
+		}
+
+		return static_cast<u32>(std::strtoul(value, nullptr, 16));
+	}();
+	return s_value;
+#else
+	return 0;
+#endif
+}
+
+static FORCE_INLINE bool get_thor_put_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.put_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
 static FORCE_INLINE bool get_thor_real_spu_kernel() noexcept
 {
 #ifdef ANDROID
@@ -3903,6 +3948,131 @@ static u64 get_thor_cpu_affinity_mask() noexcept
 // member here broke the emulator.
 static thread_local std::map<u32, bool (*)(spu_thread&)> g_thor_spu_hle_functions;
 
+// SPURS ATOMIC CENSUS.
+//
+// `jobChain->pc` lives in main memory and only ever advances through the SPU's
+// own GETLLAR/PUTLLC pair. Probes planted in local store cannot be seen from a
+// recompiled block, but every atomic goes through process_mfc_cmd, which IS a
+// real call. So the reservation traffic is the one place the job chain module
+// can be observed at full speed.
+//
+// Records (pc, ea, cmd) triples with outcome counts and prints each new triple
+// once, then every 4096th hit. Bounded to 48 slots so a runaway loop cannot
+// flood the log.
+//
+//   debug.rpcsx.thor.spurs_atomic_census = 1
+static FORCE_INLINE bool get_thor_spurs_atomic_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.spurs_atomic_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+// cmd: 0 = GETLLAR, 1 = PUTLLC ok, 2 = PUTLLC fail, 3 = PUTLLUC.
+void thor_spurs_atomic_census(u32 pc, u32 ea, u32 cmd, u32 spu_index, const void* data, const void* ls_pm)
+{
+	if (!get_thor_spurs_atomic_census())
+	{
+		return;
+	}
+
+	// No pc filter. The bound used to be 0x4000, which silently cut off the top of
+	// the real job chain policy module - variant C spans LS 0xa00..0x4a00, so its
+	// sites at 0x4528/0x462c/0x4658 were never recorded. The table is large enough
+	// to hold the title's own SPU programs alongside SPURS; if it saturates, the
+	// highest slot index printed will be 255 and the run is inconclusive.
+
+	static constexpr const char* s_names[4] = {"GETLLAR", "PUTLLC-ok", "PUTLLC-FAIL", "PUTLLUC"};
+
+	struct slot_t
+	{
+		std::atomic<u64> key{0};
+		std::atomic<u64> hits{0};
+	};
+
+	static slot_t s_slots[256];
+	static std::atomic<u32> s_used{0};
+
+	// pc is 18 bits, ea 32, cmd 2 - packs without collision.
+	const u64 key = (u64{cmd} << 56) | (u64{pc} << 32) | u64{ea};
+
+	const u32 have = s_used.load(std::memory_order_acquire);
+
+	for (u32 i = 0; i < have && i < 256; i++)
+	{
+		if (s_slots[i].key.load(std::memory_order_relaxed) == key)
+		{
+			const u64 n = ++s_slots[i].hits;
+
+			if (n <= 8 || (n % 64) == 0)
+			{
+				spu_log.error("Thor ATOMIC #%u %s pc=0x%05x ea=0x%08x spu=%u hits=%llu",
+					i, s_names[cmd & 3], pc, ea, spu_index, n);
+			}
+
+			return;
+		}
+	}
+
+	const u32 idx = s_used.load(std::memory_order_relaxed);
+
+	if (idx >= 256)
+	{
+		return;
+	}
+
+	s_slots[idx].key.store(key, std::memory_order_relaxed);
+	s_slots[idx].hits.store(1, std::memory_order_relaxed);
+	s_used.store(idx + 1, std::memory_order_release);
+
+	std::string pm;
+
+	if (ls_pm)
+	{
+		const u8* p = static_cast<const u8*>(ls_pm);
+
+		for (u32 i = 0; i < 8; i++)
+		{
+			fmt::append(pm, "%02x", p[i]);
+		}
+
+		// libsre module magics: four dead `ila r2,imm` words at the image start.
+		// Matching on pc alone collides - under LLE several modules occupy LS 0xa00
+		// in turn, so the same pc can belong to different code at different times.
+		if (pm.starts_with("42377002")) fmt::append(pm, "[A]");
+		else if (pm.starts_with("4306dc02")) fmt::append(pm, "[B]");
+		else if (pm.starts_with("53505552")) fmt::append(pm, "[TASKSET]");
+	}
+
+	spu_log.error("Thor ATOMIC #%u %s pc=0x%05x ea=0x%08x spu=%u pm=%s NEW",
+		idx, s_names[cmd & 3], pc, ea, spu_index, pm);
+
+	if ((cmd == 0 || cmd == 1) && data && pc >= 0xa00 && pc < 0x2c00)
+	{
+		const u8* p = static_cast<const u8*>(data);
+		std::string hex;
+
+		for (u32 row = 0; row < 128; row += 16)
+		{
+			fmt::append(hex, "%s+0x%02x:", row ? " |" : "", row);
+
+			for (u32 i = 0; i < 16; i++)
+			{
+				fmt::append(hex, " %02x", p[row + i]);
+			}
+		}
+
+		spu_log.error("Thor ATOMIC #%u DATA ea=0x%08x %s", idx, ea, hex);
+	}
+}
+
 void spu_thread::RegisterHleFunction(u32 addr, bool (*func)(spu_thread&))
 {
 	g_thor_spu_hle_functions[addr] = func;
@@ -7015,6 +7185,8 @@ bool spu_thread::process_mfc_cmd()
 			}
 		}
 #endif
+		thor_spurs_atomic_census(pc, addr, 0, +id, &vm::_ref<spu_rdata_t>(addr), _ptr<void>(0xa00));
+
 		const auto& data = vm::_ref<spu_rdata_t>(addr);
 
 		if (addr == last_faddr)
@@ -7839,6 +8011,10 @@ bool spu_thread::process_mfc_cmd()
 
 	case MFC_PUTLLC_CMD:
 	{
+		// raddr is cleared before the outcome is written, so the census EA must be
+		// taken here or it reports 0.
+		const u32 thor_putllc_ea = raddr;
+
 		// Avoid logging useless commands if there is no reservation
 		const bool dump = get_mfc_debug_for_runtime() && raddr;
 
@@ -8004,6 +8180,7 @@ bool spu_thread::process_mfc_cmd()
 
 		if (do_putllc(ch_mfc_cmd))
 		{
+			thor_spurs_atomic_census(pc, thor_putllc_ea, 1, +id, thor_putllc_ea ? &vm::_ref<spu_rdata_t>(thor_putllc_ea) : nullptr, _ptr<void>(0xa00));
 			ch_atomic_stat.set_value(MFC_PUTLLC_SUCCESS);
 
 			if (is_spurs_task_wait)
@@ -8057,6 +8234,7 @@ bool spu_thread::process_mfc_cmd()
 		}
 		else
 		{
+			thor_spurs_atomic_census(pc, thor_putllc_ea, 2, +id, nullptr, _ptr<void>(0xa00));
 			ch_atomic_stat.set_value(MFC_PUTLLC_FAILURE);
 		}
 
@@ -8136,6 +8314,84 @@ bool spu_thread::process_mfc_cmd()
 	case MFC_GETF_CMD:
 	case MFC_SDCRZ_CMD:
 	{
+		// WHERE DO THE SPUs WRITE?
+		//
+		// The title draws ~0.94 times per flip under HLE against ~91 under LLE, so
+		// essentially no scene geometry is submitted. On PS3 that geometry comes
+		// from RSX command buffers the SPUs build in main memory, so the question
+		// is whether the SPUs write there at all. Bucket every PUT by its target
+		// address, 16 MB per bucket, and report the histogram from the SPU that
+		// asks - a bucket that stays empty under HLE and is hot under LLE names
+		// the memory the title never fills.
+		//
+		//   debug.rpcsx.thor.put_census = 1
+		// WHAT DOES THE CONSUMER ACTUALLY READ? See get_thor_queue_watch_ea.
+		if (const u32 watch = get_thor_queue_watch_ea()) [[unlikely]]
+		{
+			if (ch_mfc_cmd.eal >= watch && ch_mfc_cmd.eal < watch + 0x80 &&
+				ch_mfc_cmd.cmd >= MFC_GET_CMD && ch_mfc_cmd.cmd <= MFC_GETF_CMD)
+			{
+				static std::atomic<u64> s_n{0};
+
+				if (const u64 n = ++s_n; n <= 6 || (n % 4096) == 0)
+				{
+					const u32 head = +vm::_ref<be_t<u32>>(watch + 0);
+					const u32 tail = +vm::_ref<be_t<u32>>(watch + 4);
+					const u32 dep  = +vm::_ref<be_t<u32>>(watch + 12);
+
+					spu_log.error("Thor QWATCH #%llu: SPU GET ea=0x%08x size=0x%x -> "
+						"head=%u tail=%u depth=%u used=%d (pc=0x%05x)",
+						n, +ch_mfc_cmd.eal, +ch_mfc_cmd.size, head, tail, dep,
+						static_cast<s32>(tail - head), pc);
+				}
+			}
+		}
+
+		if (get_thor_put_census() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTRF_CMD) [[unlikely]]
+		{
+			static std::atomic<u64> s_buckets[256]{};
+			static std::atomic<u64> s_opcodes[64]{};
+			static std::atomic<u64> s_total{0};
+
+			// BUCKET BY OPCODE TOO.
+			//
+			// For a LIST dma (PUTL 0x24 / PUTLB 0x25 / PUTLF 0x26) `eal` is the address
+			// of the DMA LIST, not the destination - the real targets are inside the
+			// list entries. So the address histogram MIS-ATTRIBUTES every list transfer,
+			// and a conclusion like "bucket c0 is empty, the SPU never writes RSX memory"
+			// is only sound if the title is not using list DMA. Count the opcodes so that
+			// assumption is checked rather than assumed.
+			s_opcodes[ch_mfc_cmd.cmd & 0x3F]++;
+			s_buckets[(ch_mfc_cmd.eal >> 24) & 0xFF]++;
+
+			if (const u64 n = ++s_total; n == 200 || n == 2000 || (n % 100000) == 0)
+			{
+				std::string hist;
+
+				for (u32 b = 0; b < 256; b++)
+				{
+					if (const u64 c = s_buckets[b].load())
+					{
+						fmt::append(hist, " %02x:%llu", b, c);
+					}
+				}
+
+				std::string ops;
+
+				for (u32 c = 0; c < 64; c++)
+				{
+					if (const u64 v = s_opcodes[c].load())
+					{
+						const char* nm =
+							c == 0x20 ? "PUT" : c == 0x21 ? "PUTB" : c == 0x22 ? "PUTF" :
+							c == 0x24 ? "PUTL" : c == 0x25 ? "PUTLB" : c == 0x26 ? "PUTLF" : "?";
+						fmt::append(ops, " %02x/%s:%llu", c, nm, v);
+					}
+				}
+
+				spu_log.error("Thor PUT CENSUS total=%llu ops:%s byhi:%s", n, ops, hist);
+			}
+		}
 		if (ch_mfc_cmd.size <= 0x4000) [[likely]]
 		{
 			if (do_dma_check(ch_mfc_cmd)) [[likely]]

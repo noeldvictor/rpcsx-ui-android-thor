@@ -29,6 +29,7 @@ overlay drawn on it has only the overlay's antialiasing ramp.
 """
 
 import argparse
+import re
 import collections
 import os
 import subprocess
@@ -96,12 +97,28 @@ def score(path):
     }
 
 
+def last_fps(adb, serial):
+    """Most recent FPS the emulator reported, or None if it never reported one."""
+    log = "/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/RPCSX.log"
+    cmd = [adb] + (["-s", serial] if serial else []) + ["shell", "grep -a Frames: %s | tail -1" % log]
+
+    try:
+        out = subprocess.run(cmd, capture_output=True, timeout=60).stdout.decode("utf-8", "replace")
+    except Exception:                              # noqa: BLE001 - never fail the check on this
+        return None
+
+    m = re.search(r"\(([0-9.]+) FPS\)", out)
+    return float(m.group(1)) if m else None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--adb", default=os.environ.get("ADB", "adb"))
     parser.add_argument("--serial", default=os.environ.get("THOR_SERIAL"))
     parser.add_argument("--save", help="keep the capture at this path")
     parser.add_argument("--image", help="score an existing PNG instead of capturing")
+    parser.add_argument("--no-fps-gate", action="store_true",
+                        help="skip the FPS gate (scoring a saved PNG, or the log is unavailable)")
     args = parser.parse_args()
 
     try:
@@ -141,6 +158,31 @@ def main():
     blank = result["distinct"] < MIN_DISTINCT_COLOURS
     black = blank and result["near_black"] > MAX_NEAR_BLACK_FRACTION
     verdict = "BLACK" if black else ("BLANK" if blank else "DRAWN")
+
+    # A COLOURFUL FRAME IS NOT A RUNNING GAME.
+    #
+    # RPCSX's own "Building SPU Cache..." screen is a full-bleed photographic
+    # wallpaper. It scores distinct=24141, near-black=17.6%, and passes as DRAWN
+    # with the title not running at all. That false positive invalidated an
+    # entire prop bisection on 2026-08-27 before anyone looked at the capture.
+    #
+    # A frozen frame cannot be gameplay, whatever it looks like, so require the
+    # emulator to be advancing frames. This reads the same counter the harnesses
+    # already grep for.
+    if verdict == "DRAWN" and not args.no_fps_gate and not args.image:
+        fps = last_fps(args.adb, args.serial)
+
+        if fps is None:
+            print("frame-check: WARNING no FPS sample found; DRAWN is unverified. "
+                  "Pass --no-fps-gate if that is intended.", file=sys.stderr)
+        elif fps <= 0.0:
+            verdict = "FROZEN"
+            print("frame-check: FROZEN  %dx%d  distinct=%d  (0.00 FPS)  %s"
+                  % (result["width"], result["height"], result["distinct"], path))
+            print("frame-check: the screen is not advancing - this is NOT gameplay. "
+                  "A colourful still is usually the emulator's own loading screen; "
+                  "open the capture and look.", file=sys.stderr)
+            return 1
     print("frame-check: %s  %dx%d  distinct=%d  near-black=%.1f%%  %dKB  %s"
           % (verdict, result["width"], result["height"], result["distinct"],
              100.0 * result["near_black"], result["bytes"] // 1024, path))

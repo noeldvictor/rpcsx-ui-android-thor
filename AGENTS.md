@@ -13522,3 +13522,2271 @@ accepted, and it proceeds to further GETLLAR work - and `jobChain->pc` still
 never leaves 0x01eca480. Everything up to and including the switch is verified
 correct against the module's own code. The failure is inside the job processing
 that follows, which is the part no available tool can trace.
+
+## ELIMINATED: a per-thread SPU interpreter cannot exist in asmjit mode
+
+The plan was to interpret only the six `CellSpursKernel` threads, so that HLE
+probes fire inside the policy module without paying the global interpreter's
+cost. `RunHleFunction` is consulted once per recompiled *block* but before
+*every* interpreter step, and forcing the interpreter globally reached only
+`tasksets=2, loads=0` in 480 s.
+
+The decoder is chosen per thread in the `spu_thread` constructor, so leaving
+`jit` null for those threads looks like it should work. `cpu_task` even branches
+on `if (jit)`.
+
+**It cannot work.** `SPUCommonRecompiler.cpp:1243`:
+
+    spu_runtime::g_interpreter = spu_runtime::g_gateway;
+
+is unconditional, and the real interpreter is only built when the *global*
+`spu_decoder` is `_static` or `dynamic` (only then are the `g_dispatcher`
+entries filled with `tr_interpreter`, and only then does the LLVM path fill
+`g_interpreter_table`). In asmjit mode the `else` branch of `cpu_task`
+therefore calls the recompiler dispatcher, which dereferences the null `jit`:
+
+    F RPCS3: Thread terminated due to fatal error: Segfault reading location
+             0000000000000008 at 00000072aae4ffb8.
+    I Zygote: Process 30146 exited due to signal 11 (Segmentation fault)
+
+and the app crash-loops. Reverted. The interpreter's existence is a global
+property of the run, not a per-thread one. Do not try this again without first
+making `g_interpreter` a genuine interpreter independent of `spu_decoder`.
+
+## Two tooling traps that silently produce confident nonsense
+
+**`spu_block_size` must be canonically capitalised.** `cfg::_enum::from_string`
+takes `Safe` / `Mega` / `Giga`. Setting `debug.rpcsx.thor.spu_block_size=mega`
+stalls the boot during config apply: the log stops right after "Saving input
+configuration" at ~2.6 KB and the title never loads. This cost one run that
+looked like a code regression and was not.
+
+**`tools/run_ghidra_spu_window.ps1` takes a text dump, not a raw binary.** It
+parses lines of the form `%08x: bb bb bb bb`. Handed a `.bin` it matches
+nothing, writes an all-zero image, and Ghidra faithfully disassembles `stop 0x0`
+forever - which reads exactly like "that address is not code". The tell is
+`parsed_instruction_count: 0` in `summary.json`; **check it every time.**
+`_research/spurs/jobchain_pm.lsdump.txt` is the module converted to that format
+with its addresses at the real LS base `0xa00`, so disassembly addresses match
+the `pc` values in the logs directly.
+
+## New probe: `debug.rpcsx.thor.spurs_atomic_census`
+
+Probes planted in local store cannot be observed from a recompiled block, but
+every atomic goes through `process_mfc_cmd`, which is a real call. That makes
+reservation traffic the one place the job chain module can be watched at full
+speed.
+
+Records `(pc, ea, cmd)` triples - GETLLAR / PUTLLC-ok / PUTLLC-FAIL - with
+counts, bounded to 48 slots, printing each new triple once and then every 512th
+hit. For a GETLLAR issued from the module's LS range (`0xa00..0x2c00`) it also
+hexdumps the 128 bytes that were fetched, so the structure at that EA identifies
+itself instead of being guessed from a header.
+
+Note `raddr` is cleared before the PUTLLC outcome is written, so the census EA is
+captured at the top of the `MFC_PUTLLC_CMD` case. Taking it at the outcome
+reports `ea=0x00000000`.
+
+## VERIFIED CORRECT: the job chain structure, in memory, at runtime
+
+Dumped from the GETLLAR the module itself issues, at EA `0x01eca280`:
+
+    +0x00: 00 00 00 00 01 ec a4 80   pc = 0x01eca480
+    +0x08: 00 00 00 00 00 00 00 00   linkRegister[0] = 0
+    +0x23: 00                        isHalted = 0
+    +0x24: 01                        autoReadyCount = 1
+    +0x72: 00 80                     sizeJobDescriptor = 0x80
+    +0x74: 00 00 00 06               workloadId = 6
+    +0x78: 00 00 00 00 01 e9 7a 80   spurs = 0x01e97a80
+
+This is `CellSpursJobChain`, and it confirms the two assignments restored in
+`_spurs::create_job_chain` are present at runtime. `isHalted` is clear. The
+structure is not the defect - stop re-checking it.
+
+## The stall is NOT a livelock
+
+Five minutes of HLE boot with the census armed:
+
+  * **zero** `PUTLLC-FAIL` lines,
+  * **no** `(pc, ea, cmd)` triple ever reached 512 hits,
+  * 29 census lines total.
+
+So the module is not spinning on a contended reservation and no atomic is
+failing. SPURS atomic traffic happens in a short burst and then **stops**. Every
+earlier hypothesis that assumed contention, tearing, or a lost reservation is
+dead. The SPUs go quiet and something never wakes them.
+
+## The gate: LS 0x22c8
+
+Disassembly of the job chain policy module at its real LS base. The jobchain
+GETLLAR is at `0x22b0` (`il r25,0xd0` at `0x2270` is `MFC_GETLLAR_CMD`); the
+128 bytes land at LS `0x2c80`:
+
+    22b0: wrch r25,ch21        ; issue GETLLAR
+    22b4: rdch r2,ch27         ; await the reservation
+    22c0: lqr  r27,0x270       ; 0x22c0 + (0x270<<2) = 0x2c80, the fetched line
+    22c4: rotqbyi r26,r27,0x8  ; preferred slot <- struct bytes 0x08..0x0b
+    22c8: brhz r26,0x2374      ; halfword at struct+0x0a == 0 -> branch
+
+`brhz` tests bytes `0x0a..0x0b`, the high half of `linkRegister[0]`, which the
+dump above shows is zero - so **the branch is always taken**.
+
+`0x2374` is not a bail: it is a second GETLLAR, on the SPURS structure at
+`spurs+0x80`, and that one does complete (`PUTLLC-ok` at `0x2448`). The census
+also shows workload 6 being assigned into SPU slots there, so scheduling is
+happening.
+
+But `il r18,0xb4` (`MFC_PUTLLC_CMD`) is preloaded at `0x2298`, and the PUTLLC it
+feeds lives only on the **fall-through** path at `0x22cc` - the path `brhz`
+skips. That path computes `n` from the halfword at struct `+0x08` and DMAs from
+`jobchain + 0x14 + n*4`.
+
+**Measured:** no PUTLLC is ever issued against `0x01eca280`, so `pc` is never
+written back.
+
+**Not yet verified:** that `0x22cc` holds the *only* write-back. The PUTLLC fed
+by `r18` is on that skipped path, but the `0x2374` path continues well past the
+atomics the census caught, and could carry its own write-back that is not
+reached for some other reason. Do not state the stronger claim until the module
+has been walked from `0x2374` to either a jobchain PUTLLC or a return to the
+kernel.
+
+One thing that *is* settled: `linkRegister[0] == 0` is the correct state for a
+freshly created job chain - nothing in the PPU-side code writes it, and zero is
+what real hardware starts from. So the taken branch is the normal path, not an
+error path, and "make linkRegister non-zero" is almost certainly the wrong fix.
+
+Also note `spursJobChainEntry` in `cellSpursSpu.cpp` - the UNIMPLEMENTED stub
+that just calls `cellSpursModuleExit` - is **dead code in this configuration**.
+When `thor_jobchain_pm_image()` resolves, `create_job_chain` passes the real
+allocated module address, the dispatch `default` arm memcpy's it into LS `0xa00`
+and unregisters the HLE hook, and the genuine guest module runs. The census pcs
+at `0x22b0` and after are that real module. Do not "fix" the stub expecting it
+to change anything here.
+
+## RETRACTION: "jobChain->pc never advances" was the wrong field
+
+Every earlier session, this one included, framed the blocker as `jobChain->pc`
+being stuck at `0x01eca480`. That framing is wrong and it sent the work down a
+long dead end.
+
+The census now dumps the job chain line both on the module's GETLLAR and again
+after its own PUTLLC lands. Before and after the module's single write-back at
+LS `0x2368`:
+
+    before:  pc=0x01eca480   +0x08=0x0000   +0x0a=0x0001
+    after:   pc=0x01eca480   +0x08=0x0001   +0x0a=0x0000
+
+The module **took a job**. It consumed `+0x0a` and advanced `+0x08`. `pc` did
+not move, and is not supposed to: `pc` is the base of the job descriptor array,
+and `+0x08` is the index of the next descriptor within it. Watching `pc` for
+movement was watching a field that never moves by design.
+
+So the two u16 fields are:
+
+  * `+0x08` - index of the next job to grab
+  * `+0x0a` - number of jobs available to grab
+
+RPCS3's header calls those same four bytes `linkRegister[0]`, one 64-bit
+pointer. For this firmware that is wrong, and it is why nothing ever wrote them.
+
+## The gate is proven, and it is the only thing standing between here and a grab
+
+`debug.rpcsx.thor.jobchain_grab_seed = N` writes N into `+0x0a`. With it set,
+`Thor ATOMIC PUTLLC-ok pc=0x02368 ea=0x01eca280` appears - **the first job chain
+write-back ever observed on this branch.** Without it, that line never appears in
+any run. The gate at LS `0x22c8` is therefore confirmed as the blocker, not a
+theory.
+
+`thor_jobchain_publish_jobs()` writes the field at three sites: `create`, `run`
+and `kick`.
+
+## What is still missing, stated exactly
+
+**Still 0.00 FPS.** A grab is not a frame.
+
+1. **Nothing replenishes `+0x0a`.** Seeding at creation buys exactly one job:
+   the module consumes the count and then polls forever. Confirmed by the census
+   reporting every hit up to 8 - `0x22b0` and `0x2368` each fire exactly once.
+
+2. **This title never calls `cellSpursKickJobChain`.** Measured: `create` x3 and
+   `run` x1, `kick` zero. So republishing on kick, which is where a title would
+   normally say "there is more work", does nothing here. Whatever maintains the
+   count for this title is not the kick path.
+
+3. **`seed=16` and `seed=1` behaved differently across runs** - `seed=1` reached
+   `0x22b0`, two `seed=16` runs did not reach it at all. That may be a real
+   effect of an out-of-range count, or it may be boot nondeterminism. **One run
+   each is not enough to tell.** Repeat both several times before believing
+   either. Do not build on this until it is repeated.
+
+The likely shape of the real answer: on hardware the SPU walks the descriptor
+chain itself until an END command, maintaining `+0x08`/`+0x0a` as it goes, and
+the initial state is established by whatever enters the chain - not by the PPU
+republishing a count. That is the next thing to establish, and it is now a
+question about a two-field ring in a structure whose semantics are measured
+rather than guessed.
+
+## Census caveat that already cost one wrong conclusion
+
+The census table is shared by every SPU thread. The title's own SPU programs run
+at `0x08000-0x14000` and exhausted all 48 slots before the policy module reached
+one - which read exactly like "the module never ran" when it simply never got
+recorded. The table is now bounded to `pc < 0x4000` (SPURS kernel and policy
+modules all live below `0x2c00`) and holds 64 slots. If a census run shows
+nothing, check `Thor ATOMIC #<n>` for saturation before concluding anything.
+
+## The job chain now runs, and the frames are still empty
+
+Config: `jobchain_readycount=255` + `jobchain_grab_seed=255`, on top of the
+existing HLE fix set.
+
+    run A:  reached 0x22b0 x5   Frames: 295 in 10.00s (29.50 FPS)
+    run B:  reached 0x22b0 x5   Frames: 294 in 10.00s (29.40 FPS)
+    run C:  reached 0x22b0 x5   Frames: 296 in 10.00s (29.60 FPS)
+
+Before this the counter had been **0.00 FPS - no flips at all**, in every HLE run
+ever recorded here. So presentation genuinely starts once the job chain is
+allowed to grab repeatedly. Three runs, same result.
+
+**And it is not rendering.** `tools/bench/thor_frame_check.py`:
+
+    frame-check: BLANK  1920x1080  distinct=154  near-black=0.0%
+    debug-captures/hle-jobchain-20260827-021648.png
+
+154 distinct colours, and near-black 0.0% - so this is a flat NON-black frame
+being presented 30 times a second. This is exactly the trap the frame checker
+exists for, and exactly what "an fps number without a verified drawn frame is not
+a measurement" means. **Do not quote 29.5 FPS as an HLE result.** The honest
+statement is: the present path now runs at 30 Hz over empty frames.
+
+## Why readycount is what moved it
+
+`cellSpursReadyCountStore` rejects only `value > 0xff`, so 100 and 255 are both
+legal; the earlier run where 100 appeared to do nothing was the race below, not
+a rejection.
+
+The module is entered on its work path only when poll status has bit0
+(READYCOUNT) set. `cellSpursRunJobChain` stored it once, the module consumed it,
+and nothing re-armed it - so the job chain was reached at most once per boot.
+Raising the stored count lets the module be re-entered many times.
+
+Both knobs are needed and they gate different things:
+
+  * `jobchain_readycount` controls **how often the module is entered** (upstream
+    of the job chain entirely),
+  * `jobchain_grab_seed` controls **whether a grab happens once inside**.
+
+That also settles the earlier open question about `seed=16` vs `seed=1`: the
+seed **cannot** affect whether LS `0x22b0` is reached, because `+0x0a` is not
+read until `0x22c0`, after it. The run-to-run variation was the readycount race.
+Do not re-open that.
+
+## Next
+
+The chain grabs jobs and the display flips, but nothing is drawn, so the grabbed
+jobs are not producing RSX work. The open question is what the module does with
+a grabbed job - the descriptor list at `pc` is populated and real:
+
+    pc=0x1eca480: 0x01eca10f  0x01eca086  0x00000002  0x01eca400  0x01eca483
+
+(low bits are the job chain command opcode). Next step is to decode those
+commands and follow what the module does after the grab at LS `0x2368` -
+specifically whether it ever DMAs a jobbin2 binary in and jumps to it.
+
+Both knobs stay OFF by default. They are probes, not fixes: nothing here yet
+identifies the real producer of `+0x0a`.
+
+## MY ERROR, CAUGHT AND REVERTED: pm_size is 0x2200, not 0x4000
+
+I changed `pm_size` from 0x2200 to 0x4000 on the theory that the module had been
+truncated, because `0xa00 + 0x4000` lands exactly on `SpursJobChainContext` at
+0x4a00 and because the first zero padding in libsre after the signature is at
+module+0x3e87. It built, it ran, and it was **wrong**. Reverted. Two independent
+proofs, either one sufficient:
+
+  1. **There is a module boundary at +0x2200.** The image ends with the ASCII
+     string `"SYS "` at +0x21e8 followed by zero padding, and unrelated code
+     begins at +0x2200. libsre stores its SPU modules back to back, so copying
+     more just appends the next one.
+  2. **The module DMAs into LS 0x2c80 and 0x2d80** (`ila r8,0x2c80` at LS 0x2240,
+     `ila r24,0x2d80` at 0x2378). Those are scratch buffers 0x80 past the end of
+     a 0x2200 image. At 0x4000 they land *inside* the copied bytes and the module
+     DMAs over its own code.
+
+The 1910 instructions past +0x2200 belong to a different module, which is
+exactly why nothing in this one ever branches there: **every reference into that
+range is an `ila` of a scratch address, never a branch target.** That absence of
+inbound branches was the clue, and I initially read it backwards.
+
+Measured either way: 0x4000 changed nothing observable (BLANK, 29.5 FPS), because
+the corrupted region was never executed.
+
+## The module never runs a job. It cannot.
+
+Every register-indirect transfer inside the real module (LS 0xa00..0x2c00):
+
+    0x011fc biz r12,lr    0x01ad8 biz r6,lr     0x01bec biz r5,lr
+    0x01c1c binz r2,lr    0x028e4 biz r75,lr    0x02908 biz r75,lr
+    0x02860 bisl lr,r2    0x02888 bisl lr,r2
+
+The `biz`/`binz` forms are conditional returns. The only two real indirect calls
+are 0x2860 and 0x2888, and both go through the kernel service table at LS 0x1e0:
+
+    LS[0x1e0] = 0x808  exitToKernelAddr     (called via 0x2850)
+    LS[0x1e4] = 0x290  selectWorkloadAddr   (called via 0x2868, with r3=1)
+
+Both match the LLE dump exactly, so that ABI is correct and is not the problem.
+
+**There is no jump into a DMA'd job binary anywhere in this module.** So the job
+chain policy module is a *scheduler*, not an executor: it polls, grabs a job from
+the chain, updates SPURS bookkeeping, and exits to the kernel. Whatever loads and
+runs the jobbin2 binary is on the kernel side of the handoff - which in this
+build is HLE code.
+
+That reframes the remaining work: stop looking inside the policy module for the
+draw path. It is not there.
+
+## The module's two entry paths
+
+    0xa30: lqd  r9,0x0(r6)     ; r6 = ctx + 0xdc  -> wklCurrentId at LS 0x1dc
+    0xa38: ceqi r2,r8,0x20
+    0xa3c: brz  r2,0xa4c       ; != 0x20 -> grab/poll at 0x21a8
+    0xa44: brsl lr,0x1230      ; == 0x20 -> system service path
+    0xa50: brsl lr,0x2850      ; then exitToKernel, either way
+
+`0x1230` is the system service path, not job execution - it GETLLARs the SPURS
+struct and sets `sysSrvInitialised` (LS 0x1ea) via `stqa r12,0x1e0`. Workload id
+0x20 is the system service workload. The grab function `stopd`s if entered with
+0x20, so the two paths are mutually exclusive by design.
+
+## State, honestly
+
+  * complete module, correct size, staged and executing
+  * jobs are grabbed: `+0x0a` consumed, `+0x08` advanced, PUTLLC at 0x2368 lands
+  * SPURS bookkeeping succeeds, workload 6 claims SPU slots
+  * display flips at 29.5 FPS where it was 0.00
+  * **frame-check: BLANK, 149-155 distinct colours. Nothing is drawn.**
+
+Next: the handoff. After the policy module exits to the kernel having grabbed a
+job, something must load that job's binary and run it. Find what the HLE kernel
+does with `wklCurrentAddr` / the grabbed job at that point - that is where the
+draw path is missing.
+
+## FOUND: how a job is actually run, and the two places it breaks
+
+The policy module does not execute jobs itself - it has no jump into a job
+binary. It asks lv2 to load one, via `stop 0x120`
+(`SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE`). The full path, all of it verified
+against `_research/spurs/jobchain_pm_full.disasm.txt`:
+
+    0x0225c  fsmbi r85,0x0          ; handle = 0
+    0x02344  rotqby r85,r37,r38     ; handle <- the 4 bytes GET from jobchain+0x14+n*4
+    ...                             ; (r85 is not written again until 0x25b0, after the call)
+    0x0245c  lr   r3,r85
+    0x02460  brsl lr,0x2a98         ; -> the switch-system-module wrapper
+    0x0246c  ceq  r71,r3,0x80010002 ; assert the reply is not CELL_EINVAL
+
+and the wrapper at 0x2a98:
+
+    0x02ad0  lr   r6,r3             ; the handle
+    0x02aec  rdch r2,ch24           ; wait for ALL outstanding DMA first
+    0x02af0  wrch r6,ch28           ; SPU_WrOutIntrMbox = handle
+    0x02af4  stop 0x120             ; switch system module
+    0x02af8  rdch r4,ch29           ; reply
+    0x02b00  brnz r10,0x2af0        ; reply == CELL_EBUSY -> retry
+    0x02b04  br   0x2aa8            ; else return the reply
+
+So: **grab job n, read its handle, hand the handle to lv2, and lv2 loads and runs
+that job.** That is the draw path. It breaks in two independent places:
+
+  1. **The handle is always 0.** It is read from `jobchain + 0x14 + n*4`, and
+     nothing in RPCSX ever writes that array - the DESC probe dumps it as zeros.
+     Measured: `Thor SWITCH_SYSTEM_MODULE #0..#2: request=0x00000000`.
+  2. **The handler is a stub.** It reads the mailbox, replies `CELL_OK`, and
+     loads nothing. Its own comment claims "under HLE SPURS the emulator owns
+     policy-module loading already - there is no switch left for lv2 to perform".
+     **That claim is wrong** and is why this was never pursued.
+
+This also finally explains the shape of every measurement: the chain schedules
+correctly, jobs are grabbed, SPURS bookkeeping is right, the display flips - and
+not one job ever executes, so nothing is drawn.
+
+## Related: there is a second SPU module in libsre that is never loaded
+
+Module map of the decrypted libsre (`_research/spurs/dec_04.elf`), from its
+`SPUNAME` records and module headers:
+
+    0x020c8c  SPUNAME 'spurs_kernel_executable.elf'
+    0x02151c  SPUNAME 'spurs_kernel2_executable.elf'
+    0x021580  module A  (0x2200 bytes) - what thor_jobchain_pm_image extracts
+    0x023780  module B  (0x1c00 bytes) - NEVER LOADED
+    0x025380  'SPURSTASK MODULE'       - the taskset policy module
+
+Module B has the same 16-byte header as module A - four `ila r2,imm` words, dead
+code acting as a magic marker - so it is a genuine separate SPU module:
+
+    A: 42 37 70 02  42 83 7e 82  42 71 f1 02  43 3a 67 82
+    B: 43 06 dc 02  43 22 b6 82  42 5c cb 02  42 82 87 82
+
+Module B is where the register-indirect jumps live (`bi r6`, `bi r7`, `bi r5`,
+`bi r2`) along with six MFC GETs. Whether B is the job executor that `stop 0x120`
+is meant to install is the obvious next question - it is the right shape and it
+sits in the right place.
+
+**Do not confuse this with the earlier size mistake.** B is a separate module; it
+must be loaded at its own base by the switch handler, NOT appended to A by
+enlarging `pm_size`. See the retraction above.
+
+## RETRACTION: switch_system_module is NOT the draw path
+
+Last section claimed the job execution handoff is `stop 0x120` with the grabbed
+job handle. **Wrong.** An LLE run - real libsre, no HLE - was measured with the
+same probes, which live in SPUThread.cpp and fire regardless of HLE:
+
+    LLE: SWITCH_SYSTEM_MODULE count = 0
+
+The real system **never issues `stop 0x120`**, and it renders. So that stop is a
+fallback path the firmware does not normally take, and the HLE run only reached
+it because it was off the normal path already. The register trace (r85 = the
+handle, unmodified into the call) is still correct; the *conclusion* drawn from
+it was not. Implementing that stop would have been wasted work.
+
+Lesson worth keeping: **before building on "X must be how this works", check
+whether LLE does X at all.** LLE is the oracle and it was one run away.
+
+## LLE ground truth, for A/B
+
+    frame-check: DRAWN  1920x1080  distinct=19585  near-black=26.4%
+    Frames: 252 in 10.00s (25.20 FPS) / 282 in 10.00s (28.20 FPS)
+
+LLE renders this title at 25-28 FPS. That is the target, and the same probes work
+on both sides, so any HLE claim can now be A/B'd against it directly.
+
+Atomic EAs touched by SPURS code under LLE:
+
+    0x01e97880  0x01e97a80  0x01e97b00  0x01e98380
+    0x01eca100  0x01eca280 (job chain)  0x01eca480 (its command list)
+    0x01ec4700  0x01edf780  0x01f73f00  0x01fae600
+
+## CORRECTION: the job chain policy module is B, not A
+
+`thor_jobchain_pm_image` was extracting **module A** (libsre 0x21580, 0x2200
+bytes). That is the wrong module.
+
+Under LLE the job chain is worked from pcs `0x00e90`, `0x01238`, `0x012a0` -
+**none of which are MFC sites in module A**. Switching the extraction to module B
+(libsre 0x23780, 0x1c00 bytes) reproduces the LLE path immediately:
+
+    variant B, HLE:  Thor ATOMIC #0 GETLLAR pc=0x00e90 ea=0x01eca280
+    LLE:             Thor ATOMIC     GETLLAR pc=0x00e90 ...
+                     Thor ATOMIC     PUTLLC-ok pc=0x01238 ...
+
+Same module, same entry, same code. Module A has the system-service shape (the
+`wklCurrentId == 0x20` path, workload contention bookkeeping, no job execution);
+module B has the job-execution shape (the register-indirect jumps and the GETs).
+
+Selectable so both can be measured without a rebuild:
+
+    debug.rpcsx.thor.jobchain_pm_variant = A (default) | B
+
+**This invalidates the module-A analysis above as a description of the job
+chain.** The LS 0x22c8 gate, the `+0x08`/`+0x0a` index/count pair, and
+`jobchain_grab_seed` are all facts about module A. They were measured correctly
+and they are real, but they describe the wrong module, so do not carry them over
+to B without re-deriving them. Left in place above, clearly scoped, because the
+method still applies.
+
+## Where variant B stands
+
+    Thor ATOMIC #0 GETLLAR pc=0x00e90 ea=0x01eca280   <- and nothing after
+    frame-check: BLANK / BLACK, 212-247 distinct colours, 0-4 FPS
+
+B reads the job chain once and stops. LLE follows that same GETLLAR with
+`PUTLLC-ok pc=0x01238`; HLE never gets there. **That single missing PUTLLC is now
+the whole gap**, and it is a much smaller question than anything before it,
+because both sides can be traced at the same two pcs.
+
+Next: disassemble module B at its own base (it loads at LS 0xa00, so libsre
+0x23780 maps to 0xa00) and find what sits between 0x0e90 and 0x1238 - the
+condition LLE satisfies and HLE does not.
+
+## THE JOB CHAIN POLICY MODULE IS AT libsre 0x2a280. A and B were both wrong.
+
+Identified by measurement, not by guessing a signature. The census now records
+the 16-byte magic of whatever module is resident at LS 0xa00 alongside each
+atomic, because **matching on pc alone collides** - under LLE several policy
+modules occupy 0xa00 in turn, so the same pc is different code at different
+times. That collision is what made module B look correct last round.
+
+Under LLE, the module that works the job chain (0x01eca280), its command list
+(0x01eca480) and 0x01eca100 is:
+
+    pm=436e840242569682     -> libsre 0x2a280, NOT A (0x21580), NOT B (0x23780)
+
+It sits past the taskset module, outside the window originally searched.
+
+**Size 0x4000**, agreed by three independent facts: the word at module+0x3f00 is
+`00 00 40 00`; there is a `"JobC"` marker at +0x3cb0; and `0xa00 + 0x4000 ==
+0x4a00`, exactly where `SpursJobChainContext` sits. (The same 0x4a00 reasoning
+was wrong for module A - it is right here because this is actually the module
+that owns that context.)
+
+    debug.rpcsx.thor.jobchain_pm_variant = C (default) | A | B
+
+## Evidence that C is right and B was not
+
+Module B **halted every SPU**. It is the wrong code and the hardware said so:
+
+    SPU trap 0xffdead00: HALT, guest ran a halt instruction. pc=0x00f00
+    SPU trap decoded: HLGTI at pc=0x00f00. r43 = 0x00000001, immediate = 0.
+    ... on CellSpursKernel1..4, raddr=0x01eca280
+
+That halt was predicted from the disassembly before it was found in the log
+(`hlgti r43,0x0` at 0x0f00, reached when an OR-reduce over the fetched line is
+non-zero), which is a good sign the disassembly-at-correct-base method works.
+
+With variant C, on HLE:
+
+    Thor ATOMIC GETLLAR pc=0x00a70 ea=0x01eca280 pm=436e840242569682
+    Thor ATOMIC PUTLLC-ok pc=0x00ad4 ea=0x01eca280
+    Thor ATOMIC GETLLAR pc=0x03930 ea=0x01eca480      <- the command list
+    Thor ATOMIC GETLLAR pc=0x030f8 ea=0x01eca100
+    Thor ATOMIC PUTLLC-ok pc=0x03180 ea=0x01eca100
+    SPU trap count: 0
+
+Every one of those pc/EA pairs is identical to the LLE run. HLE now reproduces
+the LLE job chain execution pattern exactly, with no halts, and it loops
+(hits=3+ on the command-list read and the chain updates).
+
+## Still BLANK
+
+    variant C alone:                  0.00 FPS, BLACK
+    variant C + jobchain_readycount=255: 29.5 FPS, BLANK (157 distinct colours)
+
+So: right module, no halts, chain looping, display flipping - and nothing drawn.
+`jobchain_readycount` is still needed only because the HLE kernel never
+replenishes the ready count; LLE needs no such prop, so that remains a real and
+separate gap.
+
+## What this invalidates
+
+Everything above about module A's internals - the LS 0x22c8 `brhz` gate, the
+`+0x08`/`+0x0a` index/count pair, `jobchain_grab_seed` - describes a module that
+is **not** the job chain policy module. Those measurements were correct about
+module A and are useless for the job chain. `jobchain_grab_seed` writes a field
+that variant C never reads; leave it off.
+
+The method that finally worked, and should be used first next time:
+
+  1. run LLE, which renders, with the same probes,
+  2. identify the module by its magic at LS 0xa00, never by pc,
+  3. match HLE against it.
+
+## The A/B that should drive the rest of this work
+
+Census with the pc filter removed and 256 slots, same build, same probes, ~3
+minutes each.
+
+    LLE (renders):  255 slots used (saturated), 73 distinct EAs
+    HLE (blank):     36 slots used,             13 distinct EAs
+
+HLE is doing roughly a fifth of the SPURS work LLE does. The 13 EAs HLE touches
+are a strict subset of LLE's 73. Missing entirely under HLE:
+
+    0x01e54800 0x01e76680 0x01e97880 0x01e98380 0x01ec4700 0x01eccb80
+    0x01ed0480 0x01ed0e00 0x01ed1780 0x01ed2100   <- a series, stride 0x980
+    0x01ede200 0x01edf200 0x01edf580 0x01edf780
+    0x01f20500 0x01f20580 0x01f20600 0x01f20680 0x01f20700   <- stride 0x80
+    0x01f73f00 0x01f7d580 0x01f94c00 0x01fae680 0x01fae780
+    0x01faf600 0x01faf680 0x01faf700 0x01faf780
+    0x101b1f80 0x101b4e80 0x10364100 0x10bf2900 0x10bf2980 0x11592c80
+    ... and most of the 0x1030a500-0x1030e400 block
+
+**CONFOUNDED - do not use the raw EA count as a target.** Breaking the census
+down by which module was resident at LS 0xa00 shows why:
+
+    HLE:  24 entries pm=0000000000000000  (the title's own SPU threads)
+          13 entries pm=436e840242569682  (module C, the job chain)
+           0 entries module A, module B, or the taskset module
+
+    LLE:  module A x19, module C x7, module B x6, plus the title's threads
+
+Under HLE the system service and the tasksets are emulated in HOST code, so they
+issue no SPU atomics and **cannot appear in this census at all**. A large part of
+the 73-vs-13 gap is that, not missing work. Comparing raw EA counts across HLE
+and LLE measures the HLE/LLE split as much as it measures progress.
+
+What the breakdown does say, and this part is sound:
+
+  * **The job chain module now behaves the same on both sides.** Its atomic
+    footprint under HLE - pcs 0x00a70, 0x00ad4, 0x00b64, 0x00c24, 0x00d18,
+    0x00dfc, 0x030f8, 0x03180, 0x03930 on 0x01eca280 / 0x01eca480 / 0x01eca100 -
+    matches the LLE footprint for the same module. No halts. It loops.
+  * **The title's own SPU work is much smaller under HLE.** Its threads touch 8
+    EAs where LLE touches dozens across the 0x1030a500-0x1030e400 block. The
+    title is submitting less work, which points upstream of SPURS entirely -
+    consistent with the long-standing finding that main_thread sits on a fence.
+
+So the honest next question is not "what is SPURS missing" but "what is the PPU
+waiting for that stops it submitting SPU work". Compare like with like: the
+per-module footprint, not the raw EA total.
+
+Note the census pc filter was `pc >= 0x4000 -> skip`, which silently hid the top
+of the real job chain module (variant C spans LS 0xa00..0x4a00). It is now
+unfiltered with 256 slots. If a run reports slot 255, it saturated and the EA set
+is incomplete - LLE does saturate, so LLE's 73 is a floor, not a total.
+
+Neither side executed any atomic from LS 0x4000..0x4a00, so the top of module C
+is not reached in either - that is not a difference.
+
+## RETRACTED: the queue is NOT the blocker - it drains correctly
+
+I read `cellSpursQueuePushBody = 14159, cellSpursQueuePopBody = 0` and called it
+the blocker. **Wrong.** The `Thor QUEUE RING` probe, which exists precisely to
+answer this and whose own comment says `pop=0` cannot answer it, shows the ring
+draining perfectly:
+
+    Thor QUEUE RING #0:     head=0   tail=0   depth=256 used=0
+    Thor QUEUE RING #64:    head=64  tail=64  depth=256 used=0
+    Thor QUEUE RING #14144: head=320 tail=320 depth=256 used=0
+
+`head` tracks `tail` and `used` never exceeds 1, over 14k pushes, wrapping
+correctly (14144 mod 512 = 320). **The SPU task pops every entry.** 14k pushes in
+four minutes is the title's normal render rate, not a spin.
+
+Keep the fact, drop the conclusion: `RenderingThread` pushes render work at
+`LR:0x00fdcf0c` into queue 0x1030e400 and a SPURS task consumes it. That path
+works.
+
+## What the numbers actually say now
+
+  * the queue drains,
+  * the job chain module (variant C) runs, loops, and matches LLE exactly,
+  * the display flips at **29.5 FPS**, not 0,
+  * frames are BLANK.
+
+So the title is **not stalled**. It is running its frame loop at ~30 Hz, SPURS is
+consuming its render queue, and the RSX is presenting - and the presented frames
+carry no geometry. That is a different failure from everything assumed up to now,
+including the "main_thread sits on a fence" reading: main_thread going quiet at
+t+12.5s is it finishing init and handing the frame loop to RenderingThread, which
+is demonstrably busy.
+
+The question is no longer "what is blocking SPURS". It is **"the SPU tasks
+consume render commands and emit no RSX work - why"**. Check it against LLE the
+same way: same probes, same build, compare what the consuming task does with an
+entry.
+
+
+## RETRACTED AGAIN: the Bink intro is NOT where either run sits
+
+I claimed every HLE frame-check measured the Bink intro movie, on the strength of
+`BinkPS3_VertexShader.bin` CELL_ENOENT lines appearing last in a grep for
+"shader". **Wrong.** They were last only because nothing shader-related came
+after them. Measured on both sides at the same 4-minute mark, same install:
+
+    LLE:  Bink ENOENT x5, last at 0:00:11, emu clock 0:04:00
+          frame-check: DRAWN 1920x1080 distinct=19883 near-black=26.6%  29.6 FPS
+    HLE:  Bink ENOENT at 0:00:12, then never again
+          frame-check: BLANK
+
+The Bink shader is missing in both runs, both hit it once around eleven seconds,
+and both move on. It is a red herring.
+
+**So the HLE-vs-LLE frame comparison is valid after all**, and the session's
+measurements stand: at the same elapsed time, on the same install, LLE draws a
+full scene and HLE presents an empty one. The difference is the HLE SPURS path.
+
+Two lessons, both mine, both cheap to avoid:
+
+  * `grep ... | tail` answers "what was the last line matching this pattern",
+    never "where is the program now". Timestamp it before concluding anything.
+  * The intro-vs-gameplay rule is real, but it has to be checked, not assumed.
+    Here the emulator clock said 0:04:00 and the Bink line said 0:00:11 - eleven
+    seconds of intro, not four minutes of it.
+
+The savestate route is still worth having for gameplay-scene measurement, and it
+is still blocked - see below - but it is not required to trust the cold-boot A/B.
+
+## The savestate cannot be cold-booted, and here is why
+
+    config/savestates/BLUS30357/BLUS30357_1_0.SAVESTAT.zst   124 MB, 2026-08-24
+
+Booting it directly fails:
+
+    SYS: Disc directory not found. Savestate cannot be loaded. ('BLUS30357')
+
+`Emu::Load` needs `m_games_config.get_path(title_id)` to resolve
+(System.cpp:1251); it returns empty, so the fatal at 1265 fires.
+`config/games.yml` holds
+
+    BLUS30357: /vfsv0_sVgghQiXWg4hwYYAd8xGqi_/
+
+which is a SAF token, not a filesystem path, and it does not resolve after the
+app restarts. Rewriting games.yml over adb does NOT work: the file is mode 0640
+owned by the app user, so the shell's redirect silently fails - **echo the file
+back after writing it, or you will measure a change you never made.**
+
+Do not fix this by deleting and recreating games.yml over adb either: that hands
+the file to the shell user and the app can no longer rewrite its own library.
+The supported route is to restore the savestate from inside a session where the
+disc is already mounted.
+
+## THE FRAME CHECKER PASSES THE EMULATOR'S OWN LOADING SCREEN AS "DRAWN"
+
+**This invalidated a whole bisection, and it will do it again if not fixed.**
+
+`tools/bench/thor_frame_check.py` scores a capture by distinct-colour count. RPCSX's
+own "Building SPU Cache..." screen is a full-bleed photographic wallpaper. It
+scores **distinct=24141, near-black=17.6%** and passes as DRAWN, with the game not
+running at all:
+
+    debug-captures/hle-best-052010.png
+      -> RPCSX UI: "Building SPU Cache...  Progress: module 866 of 866"
+
+Compare the real thing, LLE, same 4-minute mark:
+
+    debug-captures/lle-samewindow-044522.png
+      -> the game's title screen, "TRANSFORMERS WAR FOR CYBERTRON",
+         "Press START button", in-game overlay reading FPS 29.99, SPU 36.3%
+
+Both score DRAWN. Only one is the title rendering.
+
+**Rules, from now on:**
+  * a DRAWN verdict with **0.00 FPS is never gameplay** - a frozen frame cannot be
+    a running game. Gate on FPS > 0 before believing any DRAWN.
+  * LOOK AT THE CAPTURE. Reading the PNG takes one tool call and would have
+    caught this immediately.
+  * the checker needs to reject the emulator's own overlays. Until it does, its
+    DRAWN verdict means "something colourful is on screen", nothing more.
+
+## RETRACTED: spurs_signal_fix and spurs_sel_cond_fix are NOT harmful
+
+A bisection concluded those two props blanked the screen, because arms without
+them scored DRAWN. Every one of those DRAWN verdicts was the SPU-cache wallpaper
+at 0.00 FPS. The bisection measured nothing.
+
+What the arms actually show, once the captures are read:
+
+    base (no signal/selcond)          0.00 FPS   stuck on the emulator's cache
+                                                 screen - the GAME NEVER STARTS
+    base + signal + selcond          29.50 FPS   the game runs, renders BLANK
+    LLE                              29.99 FPS   the game runs, renders correctly
+
+So those two fixes are **load-bearing**: without them the title never produces a
+frame at all. They are the difference between "no game" and "game running". Keep
+them ON. The Ghidra reasoning behind them in cellSpursSpu.cpp stands.
+
+## Where this actually leaves HLE
+
+At the same point where LLE shows the title screen at 29.99 FPS, HLE runs the
+title at 29.5 FPS and draws nothing. The title IS executing - the frame loop
+runs, SPURS consumes its queue, the job chain (variant C) matches LLE - and the
+rendered output is empty.
+
+That is still the gap, and it is unchanged by today's bisection. The difference
+now is that the measurement is trustworthy: compare HLE against
+`lle-samewindow-044522.png`, require FPS > 0, and read the capture.
+
+## FIXED: the frame checker now gates DRAWN on the emulator advancing frames
+
+`tools/bench/thor_frame_check.py` grew an FPS gate. On a live capture it reads the
+last `Frames:` line from RPCSX.log and, if the emulator reports 0.00 FPS, reports
+**FROZEN** and exits 1 instead of DRAWN.
+
+Validated against the exact capture that caused the bad bisection:
+
+    before:  frame-check: DRAWN   1920x1080 distinct=24141 near-black=17.6%  exit 0
+    after:   frame-check: FROZEN  1920x1080 distinct=24142 (0.00 FPS)        exit 1
+
+`--image` (scoring a saved PNG) skips the gate, since a file has no live FPS;
+`--no-fps-gate` disables it explicitly. A missing FPS sample warns rather than
+failing, so the tool never blocks a harness on a log problem.
+
+This does not make the checker able to recognise the emulator's wallpaper - it
+only makes a still frame stop counting as gameplay, which is the case that
+actually bit. **Still read the capture before believing a DRAWN.**
+
+## THE METRIC THIS WORK SHOULD HAVE HAD FROM THE START: draw_calls
+
+`debug.rpcsx.thor.draw_census = 1` counts every `rsx::thread::end()` (one per
+draw) and reports the total from `thread::flip()` every 120 flips - **reported
+from the flip path on purpose, so that ZERO is reported too.** A counter in the
+draw path alone can never report the case that matters.
+
+Same build, same probe, four minutes per arm:
+
+    LLE:  flips=6960  draw_calls=631921   27.6 FPS
+    HLE:  flips=360   draw_calls=0         0.0 FPS
+
+**Under HLE the title submits ZERO draw calls.** Not few, not wrong ones - none.
+The RSX presents an empty framebuffer because no geometry is ever issued.
+
+This is the sharpest statement of the bug so far, and it retires the frame
+checker as the primary instrument:
+
+  * it is a NUMBER, not an image, so nothing has to be eyeballed,
+  * it is scene-independent - no intro-vs-gameplay question, no wallpaper false
+    positive, no dependence on where the title happens to be,
+  * zero versus six hundred thousand is not a judgement call,
+  * and it is monotone, so any partial progress shows up immediately as a
+    non-zero count rather than needing a full correct frame to be visible.
+
+**Use `draw_calls > 0` as the gate for every future change.** A change that moves
+it off zero is progress even if the screen is still wrong; a change that leaves
+it at zero did nothing, whatever the frame checker says.
+
+**CORRECTION on the companion metric.** A later section recommends `put_census`
+bucket c0 (RSX memory) as the gate. **Do not use c0.** Two LLE runs of the same
+build measured c0 = 641,379 and c0 = 62 - it fires in bursts tied to render
+phase and is useless as a stable comparison. Use the GAME HEAP buckets 10-13
+instead, which are steady:
+
+    LLE:  10:2929023 11:6600452 12:1948778 13:37936   = 11.4M of 13M total
+    HLE:  ~5 writes per 2000 total
+
+Also measured, and it validates the address histogram: the title issues
+`20/PUT` almost exclusively (12,999,970 of 13,000,000) with 30 `PUTF` and
+**zero PUTL**. So no list DMA is in play, and bucketing by `eal` is sound. That
+was worth checking - for a list DMA `eal` is the address of the LIST, not the
+destination, and any c0/heap conclusion would have been an artifact.
+
+It also narrows the search decisively: this is not a rendering-state problem, not
+a shader problem, not an RSX problem. Nothing upstream ever asks for a triangle.
+The RenderingThread pushes render commands into the SPURS queue, an SPU task pops
+every one of them, and no draw comes out the far side.
+
+## draw_calls = 0 is reproducible, and it is not the module variant
+
+Four HLE runs on the current build, varying config, four minutes each:
+
+    HLE + readycount=255, variant C (default)   flips=360  draw_calls=0
+    HLE + readycount=255, variant C (repeat)    flips=360  draw_calls=0
+    HLE + variant A explicitly                  flips=360  draw_calls=0  staged=1
+    HLE, no readycount override                 flips=360  draw_calls=0  staged=1
+    LLE                                         flips=6960 draw_calls=631921
+
+Zero every time. The job chain policy module variant makes no difference to it,
+so the module work from this session - correct as it is - is not what stands
+between here and a triangle.
+
+**RESOLVED - it is not a regression from this session's changes.** These runs
+stop at exactly flips=360 with 0.00 FPS, where earlier runs of the same prop set
+reached 29.50 FPS (blank). Bisected the BUILD, not the props: the three modified
+sources were set aside, `git checkout`-ed back to HEAD, rebuilt, and run with the
+same HLE prop set.
+
+    HEAD (pre-session sources), same props:  0.00 FPS, BLACK, distinct=150
+
+**Identical.** So the hang predates every change made here, and this session's
+edits - the atomic census, the job chain probes, the module variant selection,
+the RSX draw census - are cleared of causing it.
+
+Also ruled out by measurement: the module variant (A and C hang identically) and
+`jobchain_readycount` (present and absent identical). LLE on the same build is
+healthy at 27.6 FPS and 631k draws, so the build is not broadly broken.
+
+What that leaves for the 29.5 FPS observation earlier in the session: a different
+prop combination, or device state (SPU cache contents, thermal). It was never
+re-measured after the fact. **Treat 29.5 FPS as unconfirmed** until a run
+reproduces it; the reproducible HLE behaviour on this device today is a hang at
+flips=360 with zero draws.
+
+## FIXED: wklPendingContention underflowed (u8 wrap), four sites
+
+`spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];`
+appeared four times as a **raw u8 subtraction**. It wraps.
+
+`wklCurrentContention` already had a clamp (the CONTENTION CLAMP in
+spursKernel1SelectWorkload); `wklPendingContention` never got one. The read side
+saturates, but that only prevents a SECOND underflow - once the shared byte is
+253 it passes straight through, and the poll path adds pendingContention into
+contention, so `maxContention > contention` is false forever.
+
+Caught by extending the selector probe to print the raw shared bytes beside the
+computed value, which separated the two readings:
+
+    select#1 wkl0: maxCont=8 cont=253 ... K2=0 rawCont=0x00
+
+`rawCont=0x00` - the shared current-contention was CLEAN. The 253 came entirely
+from pendingContention. (K2=0 also killed a nibble-packing hypothesis: the title
+is 16-workload, so kernel1's unpacked read is correct.)
+
+All four sites now saturate. Measured before and after, same config:
+
+    before:  wkl0 cont=253   wkl2 cont=2
+    after:   wkl0 cont=0     wkl2 cont=1
+
+Every contention value is sane now. **This is a real defect and the fix is
+verified** - but it did not lift the hang: draw_calls is still 0.
+
+## The next layer, now legible
+
+    wkl2: maxCont=1  cont=1  ready=1  signal=1
+
+Workload 2 is the taskset that owns the render queue - runnable, ready and
+signalled. The selector needs `maxContention > contention`, and `1 > 1` is false,
+so no FURTHER SPU can take it.
+
+**Careful here - `cont=1, maxCont=1` is also exactly what one legitimate holder
+looks like.** It is not evidence of a leak on its own, and calling it one would
+be the same mistake as the queue `pop=0` reading earlier in this file. Deciding
+between "leaked" and "legitimately held" needs `ctxt->wklCurrentId` printed per
+SPU, which has NOT been measured.
+
+What IS measured at the hang:
+
+    all six SPUs reach the selector (100k+ probe hits each)
+    SPU program counters:  0xa00 x4  (policy module entry),  0x290 x2  (selectWorkload)
+
+So no SPU is parked inside a module doing work. Four are sitting at the policy
+module's entry point and two in workload selection, and they cycle between the
+two: a workload is selected, the SPU jumps to 0xa00, the module returns almost
+immediately, and selection runs again. That is a dispatch loop that never
+executes anything.
+
+Next, and cheap: add `ctxt->wklCurrentId` to the selector probe. It settles
+leaked-versus-held, and it names which workload each SPU thinks it is on while
+sitting at 0xa00.
+
+## CORRECTED: draw_calls is BIMODAL, not always zero
+
+Two runs, identical config, same build:
+
+    d1:  flips=360   draw_calls=0      0.0 FPS   BLACK
+    d2:  flips=7080  draw_calls=6650  29.5 FPS   BLANK
+    LLE: flips=6960  draw_calls=631921 27.6 FPS  renders
+
+HLE has two failure modes and earlier runs happened to sample only the first:
+
+  1. **hang** - stops at flips=360, zero draws, black. Reproducible in bursts.
+  2. **running** - 29.5 FPS and **~6650 draws, about 1% of LLE's 631921**, screen
+     blank.
+
+"HLE submits zero draw calls" was therefore wrong as a general statement. It
+submits about a hundredth of what it should, when it runs at all. A blank screen
+at 1% of the expected geometry is a much more specific symptom than no geometry.
+
+**Use draw_calls as a ratio against LLE, not as zero-versus-nonzero**, and run
+each arm at least twice - one sample cannot tell the two modes apart.
+
+## RETRACTED: the workload-2 contention is NOT leaked. SPU0 holds it.
+
+I recorded this as confirmed on the strength of a `tail -6` of the probe, in
+which every line showed `locC=0`. That tail happened to contain only SPU1, SPU2
+and SPU4. Checking all six:
+
+    SPU0: rawCont=0x01 rawMax=0x01 curId=2  locC=1   <- the holder
+    SPU1: rawCont=0x01 rawMax=0x01 curId=32 locC=0
+    SPU2: rawCont=0x01 rawMax=0x01 curId=32 locC=0
+    SPU3: rawCont=0x01 rawMax=0x01 curId=32 locC=0
+    SPU4: rawCont=0x01 rawMax=0x01 curId=32 locC=0
+    SPU5: rawCont=0x01 rawMax=0x01 curId=32 locC=0
+
+    locC over the whole run:  0 x538814,  1 x331
+
+**SPU0 is on workload 2 and holds its slot, correctly.** `cont=1` against
+`maxCont=1` is exactly what one legitimate holder looks like - which is the
+alternative the previous section explicitly flagged and then resolved the wrong
+way one turn later.
+
+With `maxContention = 1` the title itself limits that taskset to a single SPU, so
+the other five sitting in the system service is not evidence of a fault either.
+There is no contention bug here to fix.
+
+**The method error, worth more than the finding:** a per-SPU value cannot be read
+from a tail of the log. `tail -6` over six SPUs x four workloads samples a quarter
+of one SPU-round. Group by SPU, or count the whole run - `locC=1 x331` was there
+the entire time.
+
+## And the SPUs are parked in the system service
+
+    curId=32 : 405949 samples      curId=2 : 255 samples
+
+32 is `CELL_SPURS_SYS_SERVICE_WORKLOAD_ID`. The SPUs are in the system service
+99.94% of the time and on a real workload almost never. Together with the leaked
+slot on workload 2 and the four-at-0xa00 / two-at-0x290 program counters, the
+picture is a dispatch loop that keeps choosing the system service because the
+real workload it wants is locked out by a counter nobody owns.
+
+**That "find the missing decrement" instruction is void** - see the retraction
+above. SPU0 holds workload 2 legitimately, every clear of `wklLocContention` in
+the file is paired with a decrement, and `CELL_SPURS_TASK_TOP` is 0x3000 so the
+task LS clear cannot reach the kernel context at 0x180. There is no contention
+leak. Do not go looking for one.
+
+What is actually open, stated without a theory attached:
+
+  * **the running mode draws ~1% of LLE** (6650 vs 631921) and the screen is
+    blank. That ratio is the number to move.
+  * **the hang mode** (flips=360, zero draws) happens on roughly one run in two,
+    on the same build and config, and predates every change in this session -
+    proven by rebuilding HEAD and reproducing it.
+
+Both need at least two runs per arm to measure at all, because the two modes are
+indistinguishable from a single sample.
+
+## SPU DMA VOLUME: HLE is 100x below LLE
+
+`debug.rpcsx.thor.put_census = 1` buckets every MFC PUT by its target address,
+16 MB per bucket, and prints the histogram periodically.
+
+LLE, four minutes:
+
+    Thor PUT CENSUS total=21600000 byhi:
+      01:760238  02:41976
+      10:4188813  11:10862833  12:2240883  13:555607     <- the title's heap, ~17.8M
+      30:1304918  40:910980  50:90100
+      c0:641379  c1:12 c2:384 c3:1012 c4:865             <- RSX local memory
+
+HLE, four minutes, running mode (7080 flips, 6666 draws):
+
+    no report at all - the SPUs never reached 200000 PUTs
+
+HLE, hang mode:
+
+    no report at all - never reached even 10000 PUTs
+
+So the SPUs issue **less than 1% of the DMA they do under LLE**, and in the hang
+mode essentially none. That matches the draw ratio (6650 vs 631921) exactly: the
+SPUs are not doing work, so no command buffers get built, so nothing is drawn.
+
+Bucket `c0` is the one to watch - 641k writes into RSX local memory under LLE is
+the geometry actually being handed to the GPU. **Getting bucket c0 non-trivial
+under HLE is the same target as draw_calls, one step earlier in the pipeline**,
+and it discriminates "the SPU ran but produced nothing" from "the SPU never ran".
+
+## Run-mode frequency, measured
+
+Of the last six HLE runs on identical config: **five hung** (flips=360, zero
+draws) and one ran (7080 flips, 6666 draws). Earlier in the session the running
+mode appeared more often. Whatever selects between them is not any prop tested
+here and is not this session's code - HEAD reproduces the hang. Budget at least
+three runs per arm, and report the mode split, or a result means nothing.
+
+## THE HANG IS A LOST WAKEUP ON TASK 0
+
+Captured in the hang mode (flips=360, draw_calls=0) with the existing
+`Thor DISPATCH` probe:
+
+    Thor DISPATCH #5:  selected taskId=0 isWaiting=1 (exit if >= 128) taskset=0x10364100
+    Thor DISPATCH #6:  selected taskId=0 isWaiting=1 ...
+    Thor DISPATCH #7:  selected taskId=0 isWaiting=1 ...
+    Thor DISPATCH #64: selected taskId=0 isWaiting=1 ...
+
+    total dispatches in four minutes: 7, every one taskId=0 isWaiting=1
+    PPU side:  cellSpursQueuePushBody x755,  cellSpursWakeUp x530,  then silence
+
+Compare the running mode, which pushes ~14000 times.
+
+So the taskset has exactly one task, it is **waiting**, and it is dispatched
+seven times and never resumed. The PPU pushes 755 entries into its queue, signals
+530 times, and then stops because the queue backs up. Both sides go quiet.
+
+That is a **lost wakeup**: task 0 waits on the queue, the PPU pushes and signals,
+and the task is never made runnable.
+
+Note this is a DIFFERENT statement from the earlier "182 of 183 dispatches
+selected taskId=128 (no runnable task)" recorded beside `release_idle_taskset`.
+Here a task IS selected - task 0 - and it is selected while still waiting. The
+`isWaiting=1` flag is the thing to chase: find what is supposed to clear it when
+a queue push arrives, and why that path does not run.
+
+`taskset=0x10364100` - the same taskset EA that appears in the LLE PUT histogram
+bucket 10, and the owner of render queue 0x1030e400.
+
+## THE HANG, END TO END - and the code already says why
+
+`cellSpursQueuePushBody` blocks on the queue's event queue when the ring fills,
+and its own comment states the problem outright:
+
+    // Nothing signals this queue yet, so every retry burns the FULL timeout
+    sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 20);
+
+That matches the dispatch measurement exactly. The whole loop:
+
+  1. RenderingThread pushes render commands into queue 0x1030e400
+     (taskset 0x10364100, the render taskset).
+  2. Task 0 of that taskset waits on the queue. `Thor DISPATCH` shows it selected
+     seven times in four minutes, every time with **isWaiting=1**.
+  3. Nothing ever clears that wait, because **nothing signals the queue's event
+     queue** - stated in the push path's own comment.
+  4. The ring fills. The PPU blocks on `sys_event_queue_receive` with a 20 us
+     timeout and spins; measured 755 pushes and 530 wakeups, then silence.
+  5. No task runs, so the SPUs issue <10k DMAs (LLE: 21.6M), build no command
+     buffers, and submit zero draws.
+
+So the hang is not a scheduler bug, a contention bug, or a job chain bug - all of
+which were chased at length in this file and cleared. **It is an unimplemented
+wakeup: the SPU-side queue push/pop never signals the lv2 event queue the PPU
+waits on, and never clears the waiting task's flag.**
+
+The 20 us timeout is a workaround for that missing signal, not a fix, and it is
+why the running mode limps at 1% of LLE's work instead of stopping outright: the
+PPU eventually times out, retries, and occasionally makes progress.
+
+**Start here.** Everything else measured in this session is downstream of it.
+
+## CORRECTION: the queue wakeup is NOT unimplemented - it works
+
+The previous section concluded "nothing signals the queue" and told the next
+reader to start there. **That was based on a stale code comment, not a
+measurement.** The comment quotes `SIGNAL taskId=1 rc=0x80410905 (SRCH)`, which
+is a HISTORICAL reading from before the waiting-bitmap fix directly below it in
+the same function. The fix is present and active: `cellSpursQueuePushBody` walks
+the taskset's `waiting` bitmap and signals the task that is actually waiting,
+instead of treating arg3 as a task id.
+
+(arg3 IS misnamed `taskId` in this fork - the sibling `cellSpursQueuePopBody` and
+`_cellSpursLFQueuePopBody` both call the same parameter `isBlocking`, and the
+observed value 1 is a blocking push, not task 1. The name is wrong; the code no
+longer relies on it.)
+
+Measured now, in the hang:
+
+    Thor SIGNAL #256: taskId=0 rc=0x0 | ts=0x10364100
+      running=00000000 ready=80000000 pready=00000000
+      waiting=80000000 enabled=80000000 signalled=80000000
+
+    rc over the run:  0x0 x4,  SRCH x1
+
+**The signal succeeds.** Task 0 is enabled, signalled and READY. So the wakeup is
+delivered and the PPU side is doing its job.
+
+## What is actually wrong, stated precisely
+
+    ready=80000000    <- selectable
+    waiting=80000000  <- still marked waiting at the same time
+    running=00000000  <- never runs
+    Thor DISPATCH: 7 dispatches in four minutes, every one taskId=0 isWaiting=1
+
+SELECT_TASK computes `ready0 = signalled|ready|pready` and
+`readyButNotRunning = ~running & ready0`, so task 0 IS selectable and IS selected
+- the dispatch probe proves it. The dispatcher then takes the `isWaiting == 1`
+RESUME path, which restores a context save area.
+
+So: the task is selected, resumed 7 times, and never ends up in `running`, while
+`waiting` is never cleared. The open question is **what the resume path does with
+a task whose `waiting` bit is still set, and why dispatch stops after 7 rounds** -
+not the signal, and not the queue.
+
+Do NOT go implement a queue wakeup. It exists and it returns CELL_OK.
+
+## CORRECTION AGAIN: the waiting bit IS cleared. The task runs and re-blocks.
+
+The section above says "`waiting` is never cleared" and points the next reader at
+the resume path. **Wrong.** `SPURS_TASKSET_REQUEST_SELECT_TASK` does exactly the
+right thing, and writes both words back unconditionally at the end of the
+handler:
+
+    *isWaiting = waiting._u & selectedTaskIdMask ? 1 : 0;
+    taskset->last_scheduled_task = selectedTaskId;
+    running._u |=  selectedTaskIdMask;
+    waiting._u &= ~selectedTaskIdMask;
+
+So the observed `running=00000000 waiting=80000000` is not a stuck flag - it is
+the state AFTER the task ran and blocked again. Signal, run, block, repeat. The
+cycle works.
+
+What is actually anomalous is only the RATE: seven dispatches in four minutes
+against a producer pushing hundreds of entries. The task is not deadlocked; it is
+being scheduled about a thousand times too rarely.
+
+**Three consecutive diagnoses in this file were one layer off** - "queue wakeup
+unimplemented", "waiting never cleared", and before them "contention leaked" -
+and each was refuted by reading the code or widening the sample rather than by
+new measurement. The pattern is asserting a mechanism from one suggestive
+reading. The reliable move has been: read the whole handler, count over the whole
+run, group per SPU.
+
+## The one number that still has no explanation
+
+    dispatches:  7 in four minutes          (producer pushes 755+)
+    SPU DMA:     <10k        vs LLE 21.6M
+    draws:       0 (hang) / 6650 (running)  vs LLE 631921
+
+Everything downstream of scheduling is consistent with a task that almost never
+gets scheduled. Nothing found so far explains WHY the dispatch rate is that low,
+and the mechanisms blamed for it - contention, the wakeup, the waiting bit, the
+job chain module - have each been measured and cleared.
+
+## THE DISPATCH SPIN: 4 module entries, 624,000 dispatches
+
+Running mode (flips=7080, draw_calls=6670), four minutes, with an entry counter
+added to `spursTasksetEntry`:
+
+    Thor TASKSET ENTRY:  #4        <- the module is entered FOUR times
+    Thor DISPATCH:       #624000   <- and dispatches 624 THOUSAND times
+    every dispatch:      selected taskId=0 isWaiting=1 taskset=0x10364100
+
+`spursTasksetEntry` runs memset + init + dispatch exactly once per call, so those
+two numbers should track each other. They differ by five orders of magnitude:
+**`spursTasksetDispatch` is looping internally without returning to the module
+entry.**
+
+And `isWaiting=1` on every one of the 624,000. `SELECT_TASK` CLEARS the waiting
+bit when it selects a task, so a task selected twice in a row should report
+isWaiting=0 the second time. It never does. The only way to see isWaiting=1
+forever is for the task to **re-block between every dispatch**.
+
+So the loop is: select task 0 (waiting) -> resume it -> it immediately blocks
+again -> repeat, 624k times in four minutes. The SPU spends all its time
+resuming a task that does nothing and goes straight back to sleep, which is
+exactly why the draw count is 1% of LLE rather than zero - the few draws are
+whatever squeezes through between spins.
+
+This also reframes the hang mode: 7 dispatches there versus 624000 here is not
+"more broken and less broken", it is two different failures. The hang stops the
+loop entirely; the running mode spins in it.
+
+**The question is now: what does the resumed task do that makes it block again
+immediately?** It waits on queue 0x1030e400, the PPU is pushing into that queue,
+and the ring probe shows head tracking tail - so the entries ARE being consumed
+by someone. Reconcile those two facts next: a task that re-blocks instantly and a
+ring that drains cannot both be describing the same consumer.
+
+## THE RING IS FULL, NOT DRAINING - and the full/empty ambiguity is NOT the cause
+
+Earlier in this file I read the ring probe as "head tracks tail, used=0, the
+consumer pops everything". That reading came from a RUNNING-mode run. In the hang
+mode the ring is **full and frozen**:
+
+    r1:  head=6   tail=262  depth=256  used=256
+    r2:  head=40  tail=296  depth=256  used=256
+
+`head` advances 6-40 entries and then stops for the rest of the run while tail
+runs on. The consumer drains a few dozen entries and quits - which matches the
+older note in the push path ("head advanced 0 -> 42 ... then froze at head=42
+tail=298 used=256").
+
+`used == depth == 256` is exactly the full/empty ambiguity the push path warns
+about: a consumer reducing modulo depth reads 256 as 0, i.e. EMPTY. That looked
+like the answer. **It is not.**
+
+Tested by turning off BOTH queue conventions, so the producer uses mod-depth
+arithmetic WITH a reserved slot - the unambiguous case:
+
+    debug.rpcsx.thor.queue_monotonic_fix=0  debug.rpcsx.thor.queue_reserve_fix=0
+
+    b1:  head=79  tail=78  depth=256  used=255   flips=360 draw_calls=0  BLACK
+    b2:  head=98  tail=97  depth=256  used=255   flips=360 draw_calls=0  BLACK
+
+`used=255` with tail below depth - the reserved slot is in effect and 255 is
+unambiguous - and the consumer **still freezes**. So the ambiguity is not what
+stops it.
+
+**Note the two conventions disagree with each other**, which is a real defect
+even though it is not this one: `thor_queue_reserve_fix` (default ON) advances
+tail modulo `spurs_ring_range(depth)` = 2*depth unconditionally, ignoring
+`thor_queue_monotonic_fix`, and it returns before the monotonic path runs. So
+setting `queue_monotonic_fix=0` ALONE does nothing - a test of it alone is
+confounded, which is how this was first mis-tested. Set both or neither.
+
+## Where this leaves the queue
+
+The consumer stops after ~6-100 entries regardless of ring convention, while
+being dispatched hundreds of thousands of times with isWaiting=1. Something makes
+the task stop popping that is not the ring arithmetic, not the wakeup signal
+(rc=CELL_OK), and not the waiting bit (SELECT_TASK clears it correctly).
+
+## RULED OUT: the resume path and the context save area are correct
+
+Probed on every resume (running mode, flips=5280 draw_calls=4866):
+
+    Thor RESUME #1:     task=0 ctxSave=0x10370080 mapped=1 raw=0x103700fa
+                        lsPattern=ffffffffffffffff03ffffffffffffff elf=0x177ec80
+    Thor RESUME #65536: identical
+    mapped= distribution:  1 x10, 0 x0
+
+  * the context save storage is a real, mapped address and never changes,
+  * `ls_pattern` decodes (through `from64r`, which swaps the halves) to exactly
+    `from64r(0x03FFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF)` - the "entire LS is saved"
+    sentinel - so the ELF-reload branch is correctly skipped and the whole LS is
+    restored from the save area,
+  * resume runs 65536+ times with identical, valid inputs.
+
+So the task is resumed correctly, from a valid context, tens of thousands of
+times, and blocks again immediately every time.
+
+## Everything measured and cleared, in one place
+
+Nothing in this list is the cause. Each was measured, not reasoned about:
+
+    the job chain policy module      variant C matches LLE exactly, 0 SPU traps
+    contention accounting            underflow fixed; wkl2 held legitimately by SPU0
+    the queue wakeup signal          _cellSpursSendSignal returns CELL_OK
+    the waiting bit                  SELECT_TASK clears it and writes it back
+    ring full/empty ambiguity        still freezes with an unambiguous used=255
+    the context save area            mapped, stable, correct ls_pattern
+    switch_system_module             LLE never issues it
+    this session's code changes      HEAD reproduces the hang
+
+What is left is what the resumed task DOES in the handful of instructions before
+it blocks again - and that is SPU guest code inside a recompiled block, which is
+the one thing this fork cannot currently trace (see the eliminated per-thread
+interpreter section at the top of this file). **Getting a trace inside a running
+task is the prerequisite for the next real step**, not another hypothesis about
+the scheduler.
+
+## THE TASK IS NOT BLOCKED. IT SPINS ON cellSpursYield.
+
+The existing syscall census in `spursTasksetProcessSyscall` answers "what does
+the resumed task do before it goes back to sleep", and the answer is not what
+every section above assumed:
+
+    Thor SYSCALL CENSUS n=704:
+      [0]exit=0  [1]yield=704  [2]waitSig=1  [3]poll=0  [4]recvFlag=0
+      UNIMPLEMENTED 5..15: all zero
+      (taskId=0 taskset=0x10364100 spu=0)
+
+**yield climbs without bound; waitSignal fired exactly ONCE, at the start.**
+
+So task 0 is not parked on a signal and there is no lost wakeup to find. It runs,
+polls for something, does not find it, calls `cellSpursYield`, gets re-selected,
+and does it again - which is precisely the 624,000-dispatch spin, seen from the
+task's side instead of the scheduler's.
+
+This retires a whole family of hypotheses at once, including several this file
+spent sections on: the queue wakeup, the waiting bit, the signal path, the
+contention slot. None of them can matter to a task that never blocks.
+
+**The question is now: what is the task polling for that it never sees?** It
+belongs to taskset 0x10364100, which owns render queue 0x1030e400, and the ring
+shows tail advancing while head is frozen - data IS present and the consumer is
+not taking it. So the task polls the queue, does not see the entries the producer
+wrote, and yields.
+
+Two things worth checking first, in this order:
+
+  1. `[3]poll=0` - the task never calls the taskset POLL syscall, so whatever it
+     polls is NOT the SPURS poll path. It is reading something directly, most
+     likely the queue ring in main memory via DMA.
+  2. `waitSig=1` then never again - it took the blocking path once and has
+     avoided it since, which is what a "check, then spin" consumer does when its
+     check keeps failing.
+
+Also note `taskset=0x101b4e80` in the n=0 line versus `0x10364100` afterwards -
+there are two tasksets and only the second spins.
+
+## The consumer DOES reach the queue - it just barely runs
+
+Same run as the yield census (flips=480, draw_calls=73 - a third, partially
+working mode):
+
+    yield=17408   waitSig=1
+    atomic accesses to render queue 0x1030e400:  338
+      Thor ATOMIC GETLLAR   pc=0x13dcc ea=0x1030e400 pm=0000000000000000
+      Thor ATOMIC PUTLLC-ok pc=0x13ff8 ea=0x1030e400 pm=0000000000000000
+      Thor ATOMIC GETLLAR   pc=0x14220 ea=0x1030e400
+
+`pm=0000000000000000` means LS 0xa00 holds no policy module magic - this is the
+TITLE'S OWN SPU CODE, i.e. the task itself, not a SPURS module. And the PUTLLC
+succeeds, so the task reserves and updates the ring correctly when it gets there.
+
+Hottest EAs overall: 0x1030e400 (338), then a spread of 0x1030a500-0x1030ae00
+(the title's structures). So the consumer runs, reaches its queue, and does valid
+atomic work - just 338 times against 17408 yields.
+
+**So nothing is broken about the queue, the reservation, or the consumer's
+access to it.** The task is simply not getting enough execution to drain what the
+producer writes: it pops a few entries (head 6-40), then spends its life in
+yield.
+
+That is consistent with every other ratio measured today - draws at 1% of LLE,
+SPU DMA at <1% of LLE, dispatches in the hundreds of thousands with nothing to
+show. The whole system runs at roughly a hundredth of the rate it should, rather
+than being stuck on any single missing event.
+
+**Reframe for whoever picks this up:** stop looking for a deadlock. There isn't
+one - the task is alive, the queue works, the signals return CELL_OK, the
+contention is legitimate. Look instead for why each scheduling round accomplishes
+so little work before yielding. The `yield` count is the metric with the most
+headroom: 17408 yields for 338 queue operations is ~50 yields per useful action.
+
+## THE TASK'S POLL LOOP, TRACED TO INSTRUCTIONS
+
+The `Thor CALLSITE` probe plus the per-taskset LS dump (both already in the tree)
+give the task's own code, not the scheduler's. Captured for the render taskset:
+
+    Thor CALLSITE #0: syscall 0x2 from task lr=0x08d54 (taskset=0x101b4e80)
+    Thor CALLSITE #1: syscall 0x1 from task lr=0x0f3e4 (taskset=0x10364100)
+    Thor CALLSITE #2: syscall 0x1 from task lr=0x0f3a0 (taskset=0x10364100)
+
+LS dumped to `cache/thor_ls_10364100.bin`, pulled to
+`_research/spurs/task_ls_10364100.bin` and converted to
+`task_ls_10364100.lsdump.txt`. Disassembled (SPU:BE:128:default) as
+`task_yield_loop.disasm.txt` and `task_poll_fn.disasm.txt`.
+
+The loop:
+
+    0000f39c: brsl lr,0x00013b90   ; returns to 0xf3a0 - this is the YIELD
+    0000f3b4: brsl lr,0x00013c68   ; the POLLED function
+    0000f3b8: lr   r80,r3
+    0000f3bc: brz  r3,0x0000f238   ; r3 == 0 -> jump BACK to 0xf238 and repeat
+    0000f3c0: brsl lr,0x0000a4a0   ; r3 != 0 -> proceed (never taken)
+
+So the task calls `0x13c68`, and **loops for as long as it returns 0**. It
+returns 0 forever, so the task never reaches 0xf3c0 and never does its work. The
+17,408 yields are this loop turning over.
+
+`0x13c68` takes r3 (a pointer), r4, r5, r6, validates them, and has an error
+constant `0x80410911` built at 0x13cb8/0x13cc8 (`ilhu -0x7fbf ; iohl 0x911`) for
+its failure path - a CELL_SPURS_TASK_ERROR code, so this is a SPURS task API,
+almost certainly the queue receive/try-pop. It is NOT returning that error; it is
+returning 0, i.e. "nothing available".
+
+**This is the deepest point reached: the exact instruction where the title gives
+up each round, and the exact function that lies to it.** The next step is to
+disassemble 0x13c68 through to its return paths and find which memory it reads to
+decide "nothing available" - the artifacts to do that are all in _research/spurs
+and need no device.
+
+## 0x13c68 DECODED - and it is not failing the way the loop suggested
+
+Full disassembly in `_research/spurs/task_poll_full.disasm.txt`.
+
+**Direction guard.** The GETLLAR lands at LS 0x80, so the loads map onto
+CellSpursQueue directly:
+
+    lqa r4,0x80    -> head(0x00) tail(0x04) entry_size(0x08) depth(0x0C)
+    lqa r46,0x90   -> buffer(0x10) .. direction(0x1C)
+    13ddc: rotqbyi r45,r46,0xc   ; queue+0x1c = direction
+    13de0: ceqi    r44,r45,0x1   ; == 1 == CELL_SPURS_QUEUE_SPU2PPU
+    13de4: brnz    r44,0x14100   ; -> ilhu/iohl 0x80410909, return that error
+
+Our queue is **PPU2SPU (=2)**, so this guard is NOT taken. The function is the
+SPU-side receive and it is being called on a queue it accepts.
+
+**The used computation is CORRECT, and it is the double-range form:**
+
+    r2  = tail, r11 = head, r59 = depth
+    r80 = tail - head
+    r78 = tail - head + 2*depth
+    r9  = head > tail
+    r68 = (head <= tail) ? r80 : r78
+
+which is exactly `spurs_ring_used`. With the measured head=6 tail=262 depth=256
+that is 256 - FULL, not empty. **The consumer's arithmetic agrees with the
+producer's.** The ring convention is not mismatched.
+
+**And the caller's loop is a DRAIN loop, not a failure spin:**
+
+    0f3b4: brsl lr,0x13c68
+    0f3bc: brz  r3,0x0f238     ; r3 == 0 == CELL_OK -> go round again
+
+It loops WHILE THE POP SUCCEEDS. So "the task spins because the call keeps
+returning 0" was the wrong reading of the wrong sign - returning 0 is success.
+
+## The contradiction this leaves, stated plainly
+
+    yields:                            17408
+    atomic accesses to 0x1030e400:       338
+
+If the loop pops successfully 17k times, there should be ~17k reservations on the
+queue. There are 338. So most iterations return CELL_OK **without touching the
+queue at all** - there is an early-out path in 0x13c68 that returns 0 before the
+GETLLAR at 0x13dcc.
+
+Finding that early return is the next step, and it is pure disassembly - the
+window is already dumped. Look for a `bi lr` reachable from the entry block at
+0x13c68..0x13db4 (before the first wrch ch16), and for what it tests: that test
+is what makes the title believe it has drained a queue it never read.
+
+## THE DEFECT, IN ONE LINE: the pop returns AGAIN while the ring is FULL
+
+Read straight out of the task's registers at its yield syscall:
+
+    Thor POPRC #0: lr=0x0f3e4 r80=0x80410901 r82=0x80410901
+                   r3=0x1 r4=0x0 r5=0x27c4 r86=0x0003ff00
+
+`r80` is the value `0x13c68` just returned (`lr r80,r3` at 0xf3b8).
+
+**0x80410901 = CELL_SPURS_TASK_ERROR_AGAIN** - "nothing available, try again".
+`r82` holds the same code, so `ceq r41,r80,r82 ; brnz r41,0xf3a0` retries forever.
+
+At the same moment the producer's ring reads:
+
+    head=6 tail=262 depth=256  ->  used = 256 = FULL
+
+**The producer says 256 entries are queued. The consumer says empty.** Both use
+the same double-range formula - I decoded the consumer's copy at 0x13e00..0x13e4c
+and it is `spurs_ring_used` exactly - so they are not disagreeing on arithmetic.
+They are reading different VALUES.
+
+Also settled by this probe: `r86=0x0003ff00` is 256-byte aligned, so the early
+alignment/range exits inside 0x13c68 (0x80410910, 0x80410902) are NOT what fires.
+The pop reaches the queue read and concludes empty.
+
+And the 338-atomics-vs-17000-iterations gap needs no early-out to explain: the
+census only records GETLLAR/PUTLLC. A pop that finds the queue empty reads
+head/tail with an ordinary DMA GET and never reserves, so it is invisible to the
+atomic census by construction. Only the 338 that actually dequeue show up.
+
+## What to do with this
+
+The question is now exact and small: **why does the consumer's read of
+CellSpursQueue at 0x1030e400 not see the tail the producer wrote?**
+
+Candidates, in the order the evidence supports:
+  1. the consumer's DMA GET returns stale data - the producer's tail store is not
+     visible to the SPU's read path,
+  2. the producer writes tail somewhere the consumer does not read (the reserve
+     path writes through `vm::unsafe_ptr_cast<spurs_queue_op>(queue)`; confirm
+     that lands on queue+0x04 and not on a copy),
+  3. an ordering problem - tail advanced before the entry payload landed, and the
+     consumer is gated on something else in the same line.
+
+A `put_census`-style probe on the ENTRY WRITE (not just tail) would separate 1
+from 2 in one run: if the payload never reaches 0x1030e400+buffer, the consumer
+is right to say empty.
+
+## CORRECTION: the AGAIN result is HANG-MODE ONLY. In running mode the queue drains.
+
+A watch on every SPU DMA read of the queue's first line
+(`debug.rpcsx.thor.queue_watch_ea = 1030e400`) produced **no lines at all**, in a
+run that was healthy by its own numbers:
+
+    mode: flips=5280 draw_calls=4879        (running mode)
+    producer ring: head=255 tail=256 used=1
+                   head=319 tail=320 used=1
+
+`head` tracks `tail`, `used` stays at 1. **The queue drains correctly in running
+mode**, and the consumer never reads the line with a plain GET - it uses only the
+GETLLAR path, which is why the atomic census sees it and the watch does not. The
+"invisible plain GET" explanation offered above is wrong; delete it from your
+model.
+
+**So the CELL_SPURS_TASK_ERROR_AGAIN spin belongs to the HANG mode only.** It was
+measured in a `flips=360 draw_calls=0` run and then reasoned about alongside ring
+figures taken from a different, running-mode run. Those are two different
+failures and mixing their evidence produced a contradiction that never existed.
+
+    hang mode     : pop returns AGAIN forever, ring full, head frozen, 0 draws
+    running mode  : queue drains, ~4900 draws, screen still BLANK
+
+**Rule, learned the hard way and repeatedly in this file: every measurement must
+record its mode.** A number from a 360-flip run and a number from a 7000-flip run
+describe different machines. Several conclusions above were built by combining
+them; treat any cross-run comparison here as suspect unless both arms state their
+flip count.
+
+## Two problems, not one
+
+1. **The hang** (majority of runs): the consumer's pop returns AGAIN while the
+   producer's ring is full. Still unexplained, and the queue-visibility framing
+   is the right one for THIS mode.
+2. **The blank screen in running mode**: the queue works, ~4900 draws are
+   submitted against LLE's 631921, and nothing appears. This is NOT a queue
+   problem and must be chased separately - the draw count being 1% of LLE with a
+   healthy queue points at the SPU tasks doing their work but producing almost no
+   geometry.
+
+# ============================================================
+# START HERE - HLE SPURS, state as of 2026-08-27
+# This section supersedes the running commentary above, which
+# contains many superseded readings and their retractions.
+# ============================================================
+
+## How to measure, before anything else
+
+  * **`debug.rpcsx.thor.draw_census = 1`** - counts every RSX draw, reported from
+    the flip path so ZERO is reported too. This is the primary metric.
+        LLE renders: ~631,921 draws / 4 min.
+  * **`debug.rpcsx.thor.put_census = 1`** - buckets SPU DMA writes by target.
+        LLE: 21.6M PUTs, incl. 641k into RSX local memory (bucket c0).
+  * `tools/bench/thor_frame_check.py` now reports **FROZEN** at 0.00 FPS instead
+    of DRAWN. Its DRAWN verdict means "something colourful is on screen" - the
+    emulator's own SPU-cache wallpaper scores 24141 distinct colours. **Open the
+    capture.**
+  * **HLE is bimodal. Every measurement must record its flip count.**
+        hang mode:    flips=360,  draw_calls=0
+        running mode: flips~7000, draw_calls~5000
+    Roughly 1 run in 2-5 is the running mode. A single sample proves nothing, and
+    combining numbers across modes produces contradictions that do not exist -
+    that mistake is made several times above.
+
+## Config that reaches running mode
+
+    hle_libs='libsre.sprx'  hle_spurs_kernel=1
+    spurs_signal_fix=1  spurs_sel_cond_fix=1        <- LOAD-BEARING, keep on
+    taskset_snapshot_fix=1  task_ls_clear_fix=1  taskset_syscall_fix=1
+    taskset_enabled_fix=1  contention_atomic_fix=1
+    release_idle_taskset=1  yield_redispatch_fix=1
+
+`jobchain_pm_variant` defaults to C and is correct. `jobchain_grab_seed` and
+`jobchain_readycount` are probes for module A and are not needed.
+
+## The two problems
+
+**1. Hang mode.** The consumer's queue pop returns `0x80410901`
+(CELL_SPURS_TASK_ERROR_AGAIN) forever while the producer's ring is full
+(head frozen at 6-40, tail running to 262+). Measured from the task's own
+registers at its yield syscall. Ruled out: ring arithmetic (both sides use the
+same double-range formula), the wakeup signal (returns CELL_OK), the waiting bit,
+contention, the context save area, the reserve struct's field offsets.
+
+**2. Running mode blank screen.** The queue drains correctly (head tracks tail,
+used=1) and ~4,900 draws are submitted - 1% of LLE - and nothing appears. Not a
+queue problem. SPU DMA is also ~1% of LLE.
+
+**Do not chase "the SPUs park in the system service (curId=32, 99.94%)" as a
+bug.** The selector gate is `runnable && priority > 0 && maxContention >
+contention`, then `wklFlag || wklSignal || readyCount > contention`. Measured per
+workload:
+
+    wkl0/1/3: ready=0 signal=0  -> fail the second test, nothing to do
+    wkl2:     ready=1 signal=1  -> passes it, but priority is 0 on most SPUs
+                                   and 15 on SPU0, and maxContention is 1
+
+So the title deliberately pins its render taskset to ONE SPU. Five SPUs sitting
+in the system service is that configuration working, not a scheduling failure.
+The throughput problem is therefore per-SPU: the same single SPU that does ~4,900
+draws here does ~631,921 under LLE. Look at what that one SPU spends its time on,
+not at how many SPUs are idle.
+
+## Fixed this session
+
+  * `wklPendingContention` u8 underflow, four sites (253 -> 0, verified).
+  * Job chain policy module: variant C at libsre 0x2a280, identified by matching
+    the module magic LLE has resident at LS 0xa00. Modules A and B are both wrong
+    and B halts every SPU.
+
+## Do not repeat
+
+switch_system_module (LLE never issues it) - pm_size 0x4000 - the 73-vs-13 EA
+metric (confounded by host-side HLE) - "the queue is the blocker" (it drains) -
+"renders through job chains not tasksets" - the Bink intro (both sides hit it at
+0:00:11 and move on) - "signal/sel_cond are harmful" (they are required) - a
+contention leak (SPU0 holds it legitimately) - a per-thread SPU interpreter
+(architecturally impossible; g_interpreter is only built in global interpreter
+mode).
+
+## yield_fast_path: a real inefficiency, but NOT the throughput limiter
+
+`debug.rpcsx.thor.yield_fast_path = 1` (default OFF).
+
+The yield syscall runs
+`pollStatus || REQUEST_POLL || thor_yield_redispatch_fix()`, and the last term is
+a fallback that is **always true**. So every yield takes the expensive arm -
+`spursTasketSaveTaskContext` plus a YIELD_TASK request plus a re-dispatch - even
+when no other workload and no other task want the SPU. The task's `ls_pattern` is
+the "entire LS is saved" sentinel, so that is a save and restore of ~240 KB, and
+the task yields 17,408 times in four minutes.
+
+The fast path returns immediately when neither poll finds work, which is what
+hardware does. Short-circuit order is preserved exactly (pollStatus always
+evaluated for its side effect; REQUEST_POLL only when it is false).
+
+**Measured: it does not help rendering.**
+
+    fast path ON:  flips=7080 draw_calls=6652   BLANK
+    fast path ON:  flips=7080 draw_calls=6653   BLANK
+    fast path ON:  flips=360  draw_calls=0      (hang)
+    control OFF:   flips=480  draw_calls=65
+    control OFF:   flips=360  draw_calls=0      (hang)
+
+Draw count is **unchanged** at ~6650, so the ~4 GB of pointless memcpy was not
+what limits geometry. The first two runs both reached running mode and suggested
+the hang might be gone, but the third hung - **2 of 3 is not evidence with a
+failure that already occurs in 1 of 2 runs at baseline.** Do not claim it fixes
+the hang without a proper sample.
+
+Kept and defaulted OFF because the inefficiency it removes is real and
+independently justified, but it is not the answer and must not be mistaken for
+one.
+
+**What this rules out:** the yield/context-save cost as the explanation for HLE
+running at 1% of LLE. The remaining candidates for that are upstream of the SPU
+entirely - the producer's rate, or how much work each queue entry represents.
+
+## THE ONE NUMBER: HLE SPUs write NOTHING to RSX memory
+
+Running mode (flips=5280 draw_calls=4862), SPU PUT histogram by 16 MB bucket:
+
+    HLE:  total=2000     01:1462  10:7  30:310  50:221
+    LLE:  total=21600000 01:760238 02:41976
+                         10:4188813 11:10862833 12:2240883 13:555607   <- game heap
+                         30:1304918 40:910980 50:90100
+                         c0:641379 c1:12 c2:384 c3:1012 c4:865         <- RSX memory
+
+**Bucket c0 does not appear under HLE at all.** The SPUs never write a byte of
+RSX command buffer. And bucket 10 - the title's own heap, where LLE puts 17.8
+MILLION writes - gets 7 out of 2000.
+
+So the SPU tasks are doing SPURS bookkeeping (bucket 01 is the SPURS structures)
+and essentially no application work. They are alive, scheduled, popping their
+queue, and producing nothing.
+
+That also explains the ~4,900 draws in running mode without contradiction: at
+0.94 draws per flip that is about one draw per frame, i.e. the PPU's own
+clear/blit. **The SPU contribution to rendering is exactly zero**, not 1%.
+
+**This is the sharpest statement of the bug available, and the right regression
+metric going forward: `put_census` bucket c0 must become non-zero.** It is
+strictly better than draw_calls for this purpose - draw_calls includes PPU work
+and so never reads zero, while c0 isolates the SPU's contribution and currently
+reads a clean zero.
+
+Ruled out as explanations for it, each by measurement: the queue (drains
+correctly in running mode), the wakeup, the waiting bit, contention, the job
+chain module, the yield/context-save cost (removing ~4 GB of memcpy changed
+draw_calls by 0), and scheduling (the title pins the render taskset to one SPU by
+design).
+
+## queue_publish_order: a real ordering bug, fixed, and it changes nothing
+
+`debug.rpcsx.thor.queue_publish_order = 1` (default OFF).
+
+Both producer paths published the counter before the data:
+
+    if (queue->tail.compare_and_swap_test(tail, ...)) { slot = ...; break; }
+    ...
+    std::memcpy(buffer + slot * entry_size, src, entry_size);
+
+and the reserve path did the same - `op.tail` advances inside the reservation,
+the memcpy happens after it returns. The consumer gates on `tail`, so it could
+dequeue a slot whose payload had not landed. That is a genuine bug.
+
+Fixed in both paths: the payload is written to the slot the iteration is about to
+claim, then the counter is published. If the claim loses a race the copy is
+redone at the slot actually taken - wasted work under contention, never stale
+data visible to the consumer.
+
+**Measured, on the default ring configuration, changing only this flag:**
+
+    ro1: flips=360 draw_calls=0   SPU writes total=200  byhi 01:97 10:2 30:64 50:37
+    ro2: flips=480 draw_calls=61  SPU writes total=2000 byhi 01:1710 10:4 30:170 50:116
+
+No `c0` bucket in either. Identical distribution to the unfixed build. **The
+ordering was not what stops the SPUs producing output.**
+
+Kept, default OFF, because the ordering it corrects is wrong on its own terms and
+someone will otherwise rediscover it. It is not the answer.
+
+(An earlier attempt to test this with `queue_reserve_fix=0` was confounded - that
+flag alone hangs - which is why the fix was extended to the reserve path so it
+could be tested with only ONE variable changed. Do the same for anything else
+tested here.)
+
+## Status after all of the above
+
+Still: `put_census` bucket c0 = 0. The SPUs run, are scheduled, pop their queue,
+and write nothing to RSX memory or to the title's heap. Every mechanism between
+the producer and that point has now been measured and cleared.
+
+## Context save/restore: verified correct, ruled out
+
+The yield and wait paths both do `rc = spursTasketSaveTaskContext(spu); if (rc ==
+CELL_OK) {...}` and **silently do nothing on failure** - a failing save turns a
+yield into a no-op with no log line anywhere. That made it a good suspect.
+
+Instrumented all three error returns (no context storage / lsBlocks >
+allocLsBlocks / stack block missing from ls_pattern):
+
+    running mode, flips=5280 draw_calls=4875
+    Thor SAVECTX FAIL: 0 occurrences
+
+And the save/restore pair is symmetric by inspection: both walk `i = 6..127`,
+both address `contextSaveStorage + 0x400 + ((i-6) << 11)` against
+`CELL_SPURS_TASK_TOP + ((i-6) << 11)`, which is LS `i * 0x800` - blocks 0-5 are
+the policy module area and are correctly excluded by the ls_pattern. The stack
+coverage check passes for the measured `sp = 0x3fe70` (block 127).
+
+Ruled out.
+
+## Everything now ruled out, for the record
+
+Between the producer and the missing SPU output, each cleared by measurement:
+
+    the queue ring arithmetic      both sides compute the same used()
+    the queue payload copy         the push does memcpy the entry
+    the queue publish ordering     fixed; changed nothing
+    the wakeup signal              _cellSpursSendSignal returns CELL_OK
+    the waiting bit                SELECT_TASK clears and writes it back
+    contention accounting          underflow fixed; wkl2 held legitimately
+    the job chain policy module    variant C matches LLE exactly, 0 traps
+    the yield/context-save cost    fast path removed ~4 GB of memcpy, 0 effect
+    the context save/restore       0 failures, symmetric by inspection
+    scheduling                     the title pins its render taskset to one SPU
+    switch_system_module           LLE never issues it
+
+And the symptom is unchanged throughout: `put_census` bucket **c0 = 0**. The SPU
+runs, is scheduled, pops its queue, executes its own code (its poll loop and its
+`0x13c68` receive are both traced to instructions), and writes nothing to RSX
+memory or to the title's heap.
+
+**The cause is inside the task's own execution between popping an entry and
+producing output, and that is guest SPU code in a recompiled block.** Every
+mechanism around it has been eliminated. The next real step is instruction-level
+visibility into that region - the CALLSITE probe plus per-taskset LS dumps
+(already in the tree, artifacts in _research/spurs) are the way in, and they got
+as far as naming the loop and the receive function without a device.
+
+## THE QUEUE CARRIES WORK-ITEM POINTERS - and they ARE the fence
+
+The entries the PPU pushes, logged at the push:
+
+    Thor PAYLOAD #0: entry_size=16 nonzero=4/16 slot=0 | 30 4f 80 38 00..00
+    Thor PAYLOAD #1: entry_size=16 nonzero=4/16 slot=1 | 30 4f 80 48 00..00
+    Thor PAYLOAD #2: entry_size=16 nonzero=4/16 slot=2 | 30 4f 80 58 00..00
+    Thor PAYLOAD #3: entry_size=16 nonzero=4/16 slot=3 | 30 4f 80 68 00..00
+    Thor PAYLOAD #1024:                          slot=0 | 30 4f 9d ac 00..00
+
+**The payload is not empty.** Each entry is 16 bytes carrying one pointer in its
+first word, stepping by 0x10: a work-item array at 0x304f8038 .. 0x304f9dac.
+
+That is the SAME region as the fence this repo has tracked since the start:
+
+    fence done   = 0x304f8348  -> work item #49  of that array
+    fence target = 0x304f93e8  -> work item #315
+    items between them          266
+
+So `done` and `target` are not an abstract fence at all - **they are positions in
+the work-item array the render queue feeds.** "done never reaches target" and
+"the SPU produces no output" are the same fact stated twice, and the queue is how
+the items get there.
+
+This also finally explains the PUT census shape. Bucket 30 is 0x30xxxxxx - the
+work-item region - and the SPUs DO write there:
+
+    HLE:  30:310 of 2000 total   (15%)
+    LLE:  30:1304918 of 21.6M    (6%)
+
+Proportionally HLE writes MORE of its traffic to the work area than LLE does. The
+SPU is processing items and writing results to the right place. **What is missing
+is volume, not correctness of destination** - and the missing volume is bucket 10
+(the title's heap, LLE 17.8M vs HLE 4-7 per 2000) and c0 (RSX memory, LLE 641k vs
+HLE zero).
+
+## Where that points
+
+The task pops a work-item pointer and writes something back to 0x30xxxxxx - the
+completion side - but never touches the heap or RSX memory, which is where the
+actual geometry work would land. So it is acknowledging items without doing them,
+or doing a trivial subset.
+
+`done` sitting at item #49 with target at #315 says the same thing numerically:
+it completed 49 of 315 and stopped. Against 338 measured queue dequeues, those
+numbers are the same order - **the SPU is dequeuing and completing a few dozen
+items and then stalling, not silently discarding thousands.**
+
+Next: read the 16-byte work item at 0x304f8038 (and at the item where `done`
+stalls, 0x304f8348) from the PPU side. Its layout says what the task is supposed
+to do with it, and comparing a completed item against a stalled one says what
+distinguishes the ones it cannot finish.
+
+## RETRACTED: the work items are NOT empty. They fill completely.
+
+The previous section read the 16-byte work items as all zeros at push and
+concluded the SPU was "acknowledging items without doing them". **Wrong, and the
+error was in the probe's trigger.** It fired on `n < 4` - the first four pushes
+of the entire boot - before the title had written anything.
+
+Scanning the array periodically instead of at push:
+
+    Thor WORKFILL: 0 of 320 items non-zero      (early boot)
+    Thor WORKFILL: 286 of 320
+    Thor WORKFILL: 320 of 320                   (steady state, stays there)
+
+**All 320 work items fill.** The producer/consumer path populates the entire
+array. So "the items are empty" and "the SPU acknowledges without doing" are both
+false, and the fence indices (done=item#49, target=item#315) are NOT a measure of
+how many slots have been written - the whole array is written well past item 315
+while `done` stays at 49.
+
+Lesson, and it is the same one as several sections above: **a probe that samples
+the first N events measures BOOT, not steady state.** Pair every "first few"
+trigger with a periodic one before drawing a conclusion.
+
+## Honest state at the end of this session
+
+The data path works end to end:
+
+    PPU pushes work-item pointers        -> yes, 755-14000 per run
+    the ring drains                      -> yes, head tracks tail in running mode
+    the SPU task pops                    -> yes, 338 dequeues, PUTLLC-ok
+    the work items get filled            -> yes, 320 of 320
+    the SPU writes to the work region    -> yes, bucket 30, proportionally more
+                                            of its traffic than LLE
+    the SPU writes to RSX memory         -> NO. bucket c0 = 0 (LLE: 641,379)
+    the SPU writes to the title's heap   -> essentially NO (LLE: 17.8M)
+    draws submitted                      -> ~1 per flip, i.e. PPU clear/blit only
+
+Every stage before the last two has now been verified working by direct
+measurement. The failure is confined to the SPU task not producing geometry
+output, with its inputs demonstrably present and its bookkeeping demonstrably
+correct.
+
+## LLE regression check on the modified tree - PASSES
+
+Everything changed this session was verified not to harm the working path:
+
+    modified:  flips=6960 draw_calls=638341  28.8 FPS  DRAWN distinct=19536
+    baseline:  flips=6960 draw_calls=631921  27.6 FPS  DRAWN distinct=19883
+
+Within variance on every axis. The `wklPendingContention` clamp and the correct
+job chain policy module are live in that run (neither is prop-gated); the four
+probes and two inert fixes are all OFF by default and were off here.
+
+**Do this check before leaving any change in this tree.** HLE is broken either
+way, so an HLE measurement cannot tell you whether a SPURS change is safe - only
+the LLE arm can, and it is cheap.
+
+## EXPLAINED: 4 taskset entries vs 624,000 dispatches
+
+Flagged earlier as "the one number nothing explains". It is pure control flow and
+needed no device:
+
+    spursTasksetEntry      (LS 0xa00) -> init -> spursTasksetDispatch   <- 4 calls
+    spursTasksetSyscallEntry (0xa70) -> spursTasksetProcessSyscall
+        ... at the end:
+        if (spursTasksetPollStatus(spu)) spursTasksetExit(spu);
+        else                             spursTasksetDispatch(spu);     <- 624,000
+
+The dispatches do not come from the module being entered. They come from the
+**task's own yield syscall**: the task yields, the syscall handler finishes, and
+because `spursTasksetPollStatus` is false (no other workload wants this SPU) it
+calls `spursTasksetDispatch` instead of exiting to the kernel. Dispatch re-selects
+the same single task and resumes it, the task yields again, and round it goes.
+
+So the SPU is CAPTURED by this taskset - it never returns to the kernel - and the
+loop is: task yields -> handler re-dispatches -> task resumes -> task yields.
+That is the 624,000, and the 4 entries are just the four times the kernel handed
+the SPU to this taskset in the first place.
+
+This is exactly the behaviour `thor_yield_redispatch_fix`'s own comment predicts:
+"without it a one-task taskset can never set `incident`, so it never re-dispatches
+and captures the SPU". With the fix ON it does set `incident` and re-dispatch -
+capture is the fix WORKING, not failing.
+
+`thor_yield_fast_path` (added this session, default OFF) short-circuits that whole
+cycle when nothing else wants the SPU: no context save, no YIELD_TASK, no
+re-dispatch - the task simply continues. Measured: it removes the ~4 GB of memcpy
+and leaves draw_calls unchanged, which is how we know the cycle's COST was never
+the limiter.
+
+**The loop is not the bug. It is the task waiting.** It yields because its own
+poll (0x13c68, the SPURS queue receive) returns CELL_SPURS_TASK_ERROR_AGAIN. The
+open question remains why that receive says empty - and in the hang mode it says
+so while the producer's ring holds 256 entries.
+
+## LEADING HYPOTHESIS: the producer starves the consumer's reservation
+
+Not yet verified - stated as a hypothesis with its reasoning, because verifying
+it by log scraping failed (see below).
+
+`CellSpursQueue` puts `head` at 0x00 and `tail` at 0x04. **They share one
+128-byte reservation granule.** The consumer's receive (0x13c68) does
+GETLLAR at 0x13dcc and PUTLLC at 0x13ff8 on that line; every producer write to
+`tail` invalidates it.
+
+    running mode : PPU pushes at a moderate rate, the consumer sometimes wins
+                   -> 338 dequeues observed
+    hang mode    : the ring fills, the PPU spins in its 20 us retry loop
+                   hammering the same line -> the consumer never commits
+                   -> receive returns CELL_SPURS_TASK_ERROR_AGAIN forever
+
+That fits both modes and it fits the shape of the numbers. On hardware the SPU's
+reservation round trip is fast enough to win; under emulation the PPU thread can
+out-run it badly.
+
+**IMPORTANT CORRECTION.** An early section reports "zero PUTLLC failures" and
+uses it to rule out contention. That measurement was taken with the atomic census
+filtered to `pc < 0x4000`, which **excludes the title's own task** - its PUTLLC
+is at pc 0x13ff8. So that check never looked at the consumer at all, and
+contention was never actually ruled out for the queue. Treat the earlier claim as
+void.
+
+**Why it is still unverified.** The census lines are drowned out by the other
+unconditional cellSpurs probes - a 3-minute run produces hundreds of MB and the
+tail window no longer contains them. Two attempts returned nothing. This is the
+exact failure mode `tools/thor_mcp/server.py` exists to remove.
+
+**To test it properly:** count `PUTLLC-FAIL` at pc 0x13ff8 on ea 0x1030e400. If
+it is large in hang mode and small in running mode, the hypothesis holds and the
+fix is to stop the producer touching that line while the ring is full (it already
+tries - `thor_queue_reserve_fix`'s lambda returns false without writing - so check
+whether `vm::reservation_op` bumps the reservation counter even on a false
+return, which would defeat it).
+
+## RETRACTED: reservation starvation. The ARM64 path is correct.
+
+The hypothesis above - that the producer's `vm::reservation_op` invalidates the
+consumer's reservation even when it declines to write, starving the SPU's PUTLLC -
+is **wrong on this platform**, and the check was pure source reading.
+
+`vm_reservation.h`, the path that compiles on AArch64 (the TSX block above it is
+`#if defined(ARCH_X64)` and is skipped):
+
+    reservation_shared_lock_internal(res);          // takes +1
+    ...
+    if ((result = std::invoke(op, *sptr)))
+    {
+        res += 127;                                 // commit, +128 total
+        reservation_watch_note(addr);
+    }
+    else
+    {
+        res -= 1;                                   // <-- RESTORES it
+    }
+
+The declined path restores the counter, so the consumer's reservation survives.
+`thor_queue_reserve_fix`'s "full: do not write, do not disturb the consumer"
+comment is accurate. Starvation via that mechanism does not happen here, and it
+cannot explain hang mode - where the ring IS full and the producer is therefore
+taking exactly that declining path.
+
+**Separately, and worth reporting upstream: the x86 TSX path in the same function
+IS missing that decrement.**
+
+    _old = res.fetch_add(1);
+    ...
+    if (auto result = std::invoke(op, *sptr)) { ... res += 127; return result; }
+    else                                      { ...             return result; }   // no res -= 1
+
+On an x86 host, every declined `reservation_op` leaks +1 into the reservation
+counter for that 128-byte line, which is enough to fail an SPU PUTLLC on it. Not
+our platform, so it changes nothing here, but it is a genuine defect and this is
+the kind of asymmetry that makes an x86-only repro behave differently.
+
+The hang-mode question is therefore still open, and the contention angle is now
+closed from both directions: the earlier "zero PUTLLC failures" measurement was
+invalid (filtered out the task), and this mechanism is disproved by construction.
+
+## USE THE MCP SERVER. Two bugs in it are now fixed, and a caller added.
+
+I spent a whole session hand-rolling bash harnesses while
+`tools/thor_mcp/server.py` sat in the tree - the exact mistake its own section
+above warns about ("the LOOP was the defect, not the primitives"). Fixed so the
+next agent has no excuse:
+
+  * **`t_state(_)` took its args as `_` and the body referenced `a`** - every
+    `thor_state` call died with `NameError: name 'a' is not defined` before it
+    reached the device.
+  * **`t_log` interpolated `match` into the URL unencoded** - any pattern with a
+    space (`"Thor DRAW CENSUS"`) died with `InvalidURL`. Now `urllib.parse.quote`d.
+  * **Added `tools/thor_mcp/call.py`** - drives the server over stdio JSON-RPC, so
+    the tools work even when the MCP server is not loaded into the agent session:
+
+        python tools/thor_mcp/call.py tools/list
+        python tools/thor_mcp/call.py thor_state
+        python tools/thor_mcp/call.py thor_boot '{"titleId":"BLUS30357","isoPath":"..."}'
+
+**`thor_boot` boots with `thorRequireManagedProfile false` and
+`thorReplaceCustomProfile false`.** Every hand-rolled run in this session used
+`true`/`true`, i.e. it REWROTE the title's profile on each boot. Treat measurements
+from those runs as taken under a different configuration than the harness uses.
+
+## HLE measured through the harness
+
+    thor_wait_ready : ready in 20 s, fps 20.1, coresBusy 6.06, no fatal errors
+    thor_screenshot : FLAT GREEN, with the TITLE'S OWN overlay rendering:
+                      FPS 28.54  PPU 6.4%  SPU 61.2%  RSX 5.7%
+    thor_log        : Thor DRAW CENSUS: flips=3240 draw_calls=815
+                                        flips=3360 draw_calls=815
+                                        flips=3480 draw_calls=815
+
+Three things this says that hand measurement did not:
+
+1. **The title runs.** It reaches ready in twenty seconds and its own overlay
+   draws, so 815 draws did happen and the game's HUD path works.
+2. **The SPUs are BUSY - 61.2%.** Not idle. Earlier sections infer "the SPUs do
+   almost no work" from DMA volume; CPU occupancy says the opposite. Both can be
+   true (busy spinning, little DMA) but the idle reading was too strong.
+3. **draw_calls FREEZES at 815** while flips keep climbing. It is not a low rate,
+   it is a stop. Scene submission halts after the early frames and never resumes,
+   and the RSX then flips a green clear forever.
+
+That last point is sharper than "1% of LLE": the correct question is what stops
+draw submission at ~815, not why it is slow.
+
+## The HLE hang is a LIVELOCK, measured through the harness
+
+Second harness run, same config, and it took the other mode. Live state during
+the stall (`thor_state`):
+
+    fps            0.0
+    coresBusy      7.04        <- seven cores BUSY at zero frames
+    frames         202
+    thermalGuard   ENGAGED, cap 30
+    cpuJunctionC   86
+    SPU traps      0
+    Fatal errors   0
+
+**Nothing has crashed and nothing is blocked.** Seven cores spin flat out and
+produce no frames, which is why the junction climbs to 86 C in about two minutes.
+That is a livelock, not a deadlock, and it is the reason the device cooks during
+HLE runs - worth knowing before anyone leaves an arm running unattended.
+
+The two modes now have proper names:
+
+    livelock : flips freeze (480), fps 0.0, coresBusy ~7, device heats fast
+    stall    : flips keep climbing, draw_calls FREEZES (815), green clear forever
+
+Both reached from the identical config; roughly a coin flip which one a boot
+takes. Neither shows a trap or a fatal.
+
+**Device discipline.** `thor_state` and `thor_screenshot` report `cpuJunctionC`
+and escalate WARM/HOT in their own output, and `thor_boot` refuses above 70 C.
+Those exist because this workload will otherwise sit at 86 C indefinitely. Use
+`thor_cooldown` between arms; it force-stops FIRST, which is the whole reason it
+works.
+
+## What the loading path shows
+
+    sys_fs_opendir(".../UnrealEngine3/TransGame/PS3Cache") -> CELL_ENOENT [1]
+    sys_fs_opendir(".../UnrealEngine3/TransGame/PS3Cache") -> CELL_ENOENT [2]
+
+The title probes for its PS3Cache directory twice at 0:00:11 and gets ENOENT both
+times. Not necessarily a fault - a missing cache directory is a normal cold state
+and the title should create or skip it - but it is the last thing the main thread
+does on the loading path before the modes diverge, and it is worth checking what
+LLE does at the same point.
+
+## yield_fast_path DOES work - my earlier "changes nothing" was measured wrong
+
+Re-tested through the MCP harness (`thorReplaceCustomProfile false`), not the
+hand-rolled boot (`true`) that produced the earlier verdict:
+
+    WITHOUT yield_fast_path      WITH yield_fast_path=1
+    fps            0.0           fps           29.4 -> 31.2 sustained
+    coresBusy      7.04          coresBusy      5.7
+    thermalGuard   ENGAGED       thermalGuard   false
+    draw_calls     frozen 815    draw_calls     2209 -> 2329, climbing
+    junction       86 C          junction       cooler, no guard
+
+**The livelock is gone.** Seven cores spinning at zero frames becomes a sustained
+~30 fps with draw submission that keeps moving instead of freezing. That is a
+real improvement and it was invisible to every hand-rolled measurement in this
+session, because those booted with `thorReplaceCustomProfile true` and rewrote the
+title's profile on every run.
+
+**Everything measured by hand in this session is suspect for the same reason.**
+Re-check anything you intend to rely on through `thor_boot`.
+
+It still does not render: the screenshot is flat green with only the title's own
+overlay (FPS 31.20, PPU 5.3%, SPU 64.2%, RSX 5.8%), and ~1 draw per flip is the
+clear/blit. So the remaining gap is unchanged in kind - no scene geometry - but
+the emulator now runs the title steadily instead of livelocking, which makes
+every further experiment cheaper and safer for the device.
+
+**Recommendation: default `yield_fast_path` ON** once someone confirms it over
+more than the two runs measured here.
+
+## THE TITLE'S MAIN THREAD BLOCKS AT 0:00:13 AND NEVER RESUMES
+
+Measured cleanly through the harness, with `yield_fast_path=1` so the emulator is
+NOT livelocking and the title runs at a steady ~30 fps:
+
+    main_thread, last log line : 0:00:13.3   (sys_memory_allocate)
+    emulator clock             : 0:02:07
+    -> silent for ~114 seconds, i.e. the whole run
+
+Meanwhile RenderingThread keeps pushing and the SPUs stay ~64% busy. So the
+picture is not "SPURS produces no geometry" - it is **the title's main thread
+stops during load and never comes back**, so the game never leaves its loading
+screen, and the only draw per frame is the clear/blit.
+
+This was seen at the very start of the session ("main_thread goes quiet at
+t+12.5s") and then dropped when the queue measurements looked healthy. It was the
+right thread to pull the whole time.
+
+**Do not chase the SPU geometry path again until main_thread is unblocked.** A
+task that never gets its work because the game never asked for it will look
+exactly like a broken task, and that mistake cost most of this session.
+
+Next: find what main_thread waits on after the `sys_memory_allocate` burst at
+0:00:13. `thor_log` with a `main_thread` match gives its last call; the PPU
+profiler (`debug.rpcsx.thor.ppu_prof`) gives where it is parked. LLE gets past
+this point - it reaches the title screen by 0:04:00 - so the same probe on both
+sides names the call that differs.
+
+## queue_publish_order: still inert, now confirmed properly
+
+Re-tested through the harness alongside `yield_fast_path=1`:
+
+    yield_fast_path alone      : fps 29.4, draws 2209 -> 2329  (+1 per flip)
+    + queue_publish_order=1    : fps 29.4, draws 1972 -> 2092  (+1 per flip)
+
+No difference. The ordering fix is correct on its own terms and stays default
+OFF. Unlike `yield_fast_path`, its earlier "changes nothing" verdict survives
+re-measurement under the correct boot configuration.
+
+## THE BLOCKER, MEASURED: main_thread waits on a fence that never advances
+
+Captured with `debug.rpcsx.thor.ppu_pc_census=1` through the harness:
+
+    Thor FENCE: base=0x01fb4980 done=0x304f920c(mapped) target=0x304f9a74(mapped)
+                delta=0x868  PPU[0x1000000] main_thread
+    Thor FENCE   at done: 00041d6c 00000ff0 00041d70 00060000
+
+Identical on every sample - `done` does not move. Device state at the same moment:
+
+    fps 0.0   coresBusy 6.48   frames 2
+    rsxFifo: idlePolls 0, parks 0      <- the RSX is NOT starved of commands
+    spuTrap: tripped false             <- no SPU fault
+
+Other PPU threads, for contrast (all alive, all parked in normal waits):
+
+    FlipPump          cia=0x02003e6c state=0x1224
+    PoolThread        cia=0x00a02218 state=0x224
+    AsyncIOSystem     cia=0x00a02218 state=0x224
+    CellMemoryManager cia=0x00b69098 state=0x224
+
+**This is the whole failure in one line: the title's main thread spins on a fence
+whose `done` pointer never reaches `target`, so it never finishes loading, never
+submits a scene, and every downstream symptom follows.**
+
+`done`/`target` are allocation-dependent - an earlier run had
+done=0x304f8348 target=0x304f93e8, this one done=0x304f920c target=0x304f9a74 -
+but the shape repeats: both mapped, a delta of a couple of KB, and no movement.
+
+**Correction to an earlier model.** A section above treats 0x304f8038 + n*0x10 as
+an array of 16-byte work items and reads the fence as an index into it. `done`
+here ends in 0xc, so it is not on that grid. That model is wrong; the memory at
+`done` (`00041d6c 00000ff0 00041d70 00060000`) reads like a command/offset
+stream. Do not carry the work-item interpretation forward.
+
+**Next, and it is now a small question:** find who is supposed to advance `done`.
+The RSX is not starved (idlePolls 0), no SPU has trapped, and every other PPU
+thread is alive - so the writer of that pointer is identifiable, and LLE reaching
+the title screen means the same probe on LLE will show it advancing.
+
+## A/B: the fence wait is HLE-ONLY. LLE never enters it.
+
+Same build, same probe (`ppu_pc_census=1`), through the harness:
+
+    LLE                                   HLE
+    fps 30.0                              fps 0.0
+    coresBusy 2.76                        coresBusy 6.48
+    frames 1996                           frames 2
+    Thor FENCE lines: NONE                Thor FENCE: done frozen, main_thread parked
+    threads: CheckForDiscEjection,        threads: FlipPump, PoolThread,
+             Bink Audio Thread                     AsyncIOSystem, CellMemoryManager
+
+**Under LLE main_thread never waits on that fence at all** - the probe only fires
+when it is spinning there, and it never fires.
+
+And look at the thread lists. LLE has `Bink Audio Thread` and
+`CheckForDiscEjection` running: the title has progressed into its intro. HLE has
+only the early boot threads - it has not yet created the threads LLE already has.
+**HLE is stuck far earlier in startup than any SPURS-level symptom suggested.**
+
+Note also `coresBusy`: LLE renders at 30 fps using 2.76 cores; HLE produces 2
+frames while burning 6.48. That ratio alone says HLE is spinning, not working.
+
+## What this rules out, and what it means
+
+The fence is not a normal synchronisation point that HLE is merely slow to
+satisfy - it is a path LLE does not take. Something before it fails under HLE and
+sends main_thread into a wait that has no writer.
+
+**So the question is no longer "who advances `done`" - it is "what does
+main_thread do differently under HLE in the seconds before it parks".** Its last
+logged action is the `sys_memory_allocate` burst at 0:00:13, and LLE gets from
+there to Bink playback. Diff the two runs' main_thread call sequences from boot to
+0:00:13 and the divergence will be in that window.
+
+That is a bounded comparison of two logs over thirteen seconds, and both sides are
+reproducible in about a minute each through `thor_boot` + `thor_wait_ready`.

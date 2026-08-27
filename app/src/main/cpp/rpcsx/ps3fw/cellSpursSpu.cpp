@@ -436,6 +436,42 @@ static bool thor_contention_atomic_fix() noexcept
 #endif
 }
 
+static bool thor_pending_contention_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.pending_contention_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
+static bool thor_contention_orphan_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.contention_orphan_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_task_ls_clear_fix() noexcept
 {
 #ifdef ANDROID
@@ -451,6 +487,43 @@ static bool thor_task_ls_clear_fix() noexcept
 	return s_on;
 #else
 	return true;
+#endif
+}
+
+// A YIELD WITH NOTHING ELSE TO RUN MUST BE CHEAP.
+//
+// The yield case runs `pollStatus || REQUEST_POLL || thor_yield_redispatch_fix()`,
+// and the last term is a fallback that is ALWAYS TRUE. So every yield takes the
+// expensive arm: spursTasketSaveTaskContext, a YIELD_TASK request, and a full
+// re-dispatch - even when no other workload and no other task want the SPU.
+//
+// The task's ls_pattern is the "entire LS is saved" sentinel
+// (0x03FFFFFFFFFFFFFF/0xFFFFFFFFFFFFFFFF), so each of those costs a save and a
+// restore of essentially all 256 KB of local store. Measured 17,408 yields in
+// four minutes against 338 useful queue operations - roughly 4 GB of memcpy to
+// accomplish nothing, and it is the best available explanation for HLE running
+// at ~1% of LLE (4,900 draws vs 631,921; <200k SPU DMAs vs 21.6M).
+//
+// On hardware cellSpursYield returns immediately when nothing else is runnable
+// and the task simply continues. This does the same: if neither poll found work,
+// return without saving anything and let the task keep the SPU.
+//
+// Short-circuit order is preserved exactly - spursTasksetPollStatus is always
+// evaluated for its side effect, and REQUEST_POLL only when it returns false,
+// which is what `a || b` did before.
+//
+//   debug.rpcsx.thor.yield_fast_path = 1
+static bool thor_yield_fast_path() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.yield_fast_path", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
 #endif
 }
 
@@ -963,7 +1036,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				// the stall.
 				for (u32 k = 0; k < 4; k++)
 				{
-					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u",
+					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u | K2=%u rawCont=0x%02x rawMax=0x%02x curId=%u locC=%u isPoll=%u",
 						+ctxt->spuNum, k,
 						(ctxt->wklRunnable1 & (0x8000 >> k)) ? 1u : 0u,
 						+ctxt->priority[k],
@@ -973,7 +1046,24 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 						+spurs->wklIdleSpuCountOrReadyCount2[k],
 						(spurs->wklSignal1.load() & (0x8000u >> k)) ? 1u : 0u,
 						+spurs->wklFlag.flag.load(),
-						+spurs->wklFlagReceiver);
+						// IS THIS TITLE 32-WORKLOAD? kernel2 packs wklCurrentContention as two
+						// 4-bit counters per byte (low = wkl i, high = wkl i+16); kernel1 reads
+						// the byte as a plain count. If K2=1 while THIS probe (kernel1) is the
+						// one running, a packed 0xFC reads as 252 and no workload can ever be
+						// selected. Print the raw bytes beside the decoded value so the two
+						// readings can be told apart.
+
+						+spurs->wklFlagReceiver,
+						(spurs->flags1 & SF1_32_WORKLOADS) ? 1u : 0u,
+						+spurs->wklCurrentContention[k],
+						+spurs->wklMaxContention[k],
+						// LEAKED OR LEGITIMATELY HELD? cont=1 with maxCont=1 looks identical
+						// either way. curId says which workload THIS SPU thinks it is on, and
+						// locC says whether it believes it holds contention for wkl k. If no
+						// SPU reports curId=2 while wkl2 shows cont=1, the count is leaked.
+						+ctxt->wklCurrentId,
+						+ctxt->wklLocContention[k],
+						isPoll ? 1u : 0u);
 				}
 			}
 
@@ -1205,7 +1295,42 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 					spurs->wklCurrentContention[i] = contention[i];
 				}
 
-				spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
+				// SATURATE. This was a raw u8 subtraction and it UNDERFLOWS.
+				//
+				// Measured at the hang, with the shared current-contention CLEAN:
+				//
+				//   select#1 wkl0: maxCont=8 cont=253 ... K2=0 rawCont=0x00
+				//
+				// rawCont is the shared wklCurrentContention and it is 0, so the 253
+				// came from pendingContention, which the poll path adds in. 253 is 0-3
+				// wrapped in a u8.
+				//
+				// wklCurrentContention already had a clamp (see CONTENTION CLAMP above);
+				// wklPendingContention never did. The read side saturates too, but that
+				// only stops a SECOND underflow - once the SHARED byte is 253 it is
+				// passed straight through, `maxContention > contention` is false forever
+				// (8 > 253 never holds), and the workload can never be selected again.
+				//
+				// That is the hang: every workload unselectable, six SPUs spinning in the
+				// selector, no task ever dispatched, and draw_calls = 0.
+				// Atomic per entry: this SPU subtracts only what IT owes. The plain
+				// read-modify-write below is shared by six SPUs and loses updates,
+				// which leaves the same permanent +1 the poll branch used to leak.
+				if (thor_pending_contention_fix())
+				{
+					if (const u8 ploc = ctxt->wklLocPendingContention[i])
+					{
+						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklPendingContention) + i)
+							.atomic_op([ploc](u8& v) { v = v >= ploc ? v - ploc : 0; });
+					}
+				}
+				else
+				{
+					const u8 pcur = spurs->wklPendingContention[i];
+					const u8 ploc = ctxt->wklLocPendingContention[i];
+
+					spurs->wklPendingContention[i] = pcur >= ploc ? pcur - ploc : 0;
+				}
 				ctxt->wklLocPendingContention[i] = 0;
 
 				if (!thor_contention_atomic_fix())
@@ -1229,6 +1354,45 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			// can clobber another's accounting.
 			if (thor_contention_atomic_fix())
 			{
+				// RELEASE EVERY SLOT THIS SPU HOLDS, NOT JUST wklCurrentId.
+				//
+				// Releasing only `prev = wklCurrentId` orphans a slot whenever
+				// wklCurrentId changes by any OTHER route - a taskset exit, a kernel
+				// re-entry - because `wklLocContention[X]` is then still set for a
+				// workload that `prev` no longer names, and nothing ever subtracts
+				// its +1. Measured at a hang, with the pending leak already fixed:
+				//
+				//   wkl2: maxCont=1 cont=1 rawCont=0x01 curId=32 locC=0  (all six SPUs)
+				//
+				// The shared CURRENT contention is 1 and no SPU holds it, so the
+				// maxContention=1 gate is shut for good - the same deadlock as the
+				// pending leak, one counter over.
+				//
+				// This form is idempotent: the SPU's held set always equals its own
+				// local records, so no route out of a workload can orphan a slot.
+				//
+				//   debug.rpcsx.thor.contention_orphan_fix = 0 restores prev-only
+				if (thor_contention_orphan_fix())
+				{
+					for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
+					{
+						if (i != wklSelectedId && ctxt->wklLocContention[i])
+						{
+							vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + i)
+								.atomic_op([](u8& v) { if (v) v--; });
+							ctxt->wklLocContention[i] = 0;
+						}
+					}
+
+					if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD && !ctxt->wklLocContention[wklSelectedId])
+					{
+						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + wklSelectedId)
+							.atomic_op([](u8& v) { if (v < 8) v++; });
+						ctxt->wklLocContention[wklSelectedId] = 1;
+					}
+				}
+				else
+				{
 				const u32 prev = ctxt->wklCurrentId;
 
 				if (prev != wklSelectedId)
@@ -1247,6 +1411,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 						ctxt->wklLocContention[wklSelectedId] = 1;
 					}
 				}
+				}
 			}
 			else if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
 			{
@@ -1257,6 +1422,56 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 		}
 		else if (wklSelectedId != ctxt->wklCurrentId)
 		{
+			// PENDING CONTENTION LEAKED HERE, AND THAT IS THE HANG.
+			//
+			// The bulk write-back below stores this SPU's stale snapshot over the
+			// WHOLE shared array and then clears ALL of this SPU's local records:
+			//
+			//     spurs->wklPendingContention[i] = pendingContention[i];
+			//     ctxt->wklLocPendingContention[i] = 0;
+			//
+			// `wklLocPendingContention[X]` is the ONLY record that this SPU owes a
+			// decrement on workload X. If this SPU polled X earlier and now polls a
+			// different workload Y, X's +1 is written straight back into the shared
+			// counter while its local record is zeroed - so no SPU will ever subtract
+			// it. That is a permanent +1 per leaked workload.
+			//
+			// Measured at the hang, six SPUs spinning and zero frames:
+			//
+			//   select#1 wkl2: maxCont=1 cont=1 ready=1 signal=1 rawCont=0x00 locC=0 curId=32
+			//
+			// rawCont (shared CURRENT contention) is 0 and locC is 0, so the 1 is
+			// pure leaked PENDING contention. With maxContention = 1 the selector
+			// gate `maxContention > contention` is `1 > 1` - false forever - so the
+			// workload can never be selected again, every SPU falls back to the
+			// system service workload (curId=32), and no task is ever dispatched.
+			//
+			// Release every pending slot this SPU actually holds, atomically and
+			// per entry, then take the one it just selected. Nothing another SPU
+			// owns is touched, so no update is lost.
+			//
+			//   debug.rpcsx.thor.pending_contention_fix = 0 restores the old path
+			if (thor_pending_contention_fix())
+			{
+				for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
+				{
+					if (ctxt->wklLocPendingContention[i])
+					{
+						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklPendingContention) + i)
+							.atomic_op([](u8& v) { if (v) v--; });
+						ctxt->wklLocPendingContention[i] = 0;
+					}
+				}
+
+				if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID && wklSelectedId < CELL_SPURS_MAX_WORKLOAD)
+				{
+					vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklPendingContention) + wklSelectedId)
+						.atomic_op([](u8& v) { if (v < 8) v++; });
+					ctxt->wklLocPendingContention[wklSelectedId] = 1;
+				}
+			}
+			else
+			{
 			// Not called by kernel but a context switch is required
 			// Increment the pending contention for the selected workload
 			if (wklSelectedId != CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
@@ -1274,13 +1489,49 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			{
 				ctxt->wklLocPendingContention[wklSelectedId] = 1;
 			}
+			}
 		}
 		else
 		{
 			// Not called by kernel and no context switch is required
 			for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
 			{
-				spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
+				// SATURATE. This was a raw u8 subtraction and it UNDERFLOWS.
+				//
+				// Measured at the hang, with the shared current-contention CLEAN:
+				//
+				//   select#1 wkl0: maxCont=8 cont=253 ... K2=0 rawCont=0x00
+				//
+				// rawCont is the shared wklCurrentContention and it is 0, so the 253
+				// came from pendingContention, which the poll path adds in. 253 is 0-3
+				// wrapped in a u8.
+				//
+				// wklCurrentContention already had a clamp (see CONTENTION CLAMP above);
+				// wklPendingContention never did. The read side saturates too, but that
+				// only stops a SECOND underflow - once the SHARED byte is 253 it is
+				// passed straight through, `maxContention > contention` is false forever
+				// (8 > 253 never holds), and the workload can never be selected again.
+				//
+				// That is the hang: every workload unselectable, six SPUs spinning in the
+				// selector, no task ever dispatched, and draw_calls = 0.
+				// Atomic per entry: this SPU subtracts only what IT owes. The plain
+				// read-modify-write below is shared by six SPUs and loses updates,
+				// which leaves the same permanent +1 the poll branch used to leak.
+				if (thor_pending_contention_fix())
+				{
+					if (const u8 ploc = ctxt->wklLocPendingContention[i])
+					{
+						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklPendingContention) + i)
+							.atomic_op([ploc](u8& v) { v = v >= ploc ? v - ploc : 0; });
+					}
+				}
+				else
+				{
+					const u8 pcur = spurs->wklPendingContention[i];
+					const u8 ploc = ctxt->wklLocPendingContention[i];
+
+					spurs->wklPendingContention[i] = pcur >= ploc ? pcur - ploc : 0;
+				}
 				ctxt->wklLocPendingContention[i] = 0;
 			}
 		}
@@ -1508,7 +1759,30 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 			for (u32 i = 0; i < (CELL_SPURS_MAX_WORKLOAD2 >> 1); i++)
 			{
 				spurs->wklCurrentContention[i] = contention[i] | (contention[i + 0x10] << 4);
-				spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
+				// SATURATE. This was a raw u8 subtraction and it UNDERFLOWS.
+				//
+				// Measured at the hang, with the shared current-contention CLEAN:
+				//
+				//   select#1 wkl0: maxCont=8 cont=253 ... K2=0 rawCont=0x00
+				//
+				// rawCont is the shared wklCurrentContention and it is 0, so the 253
+				// came from pendingContention, which the poll path adds in. 253 is 0-3
+				// wrapped in a u8.
+				//
+				// wklCurrentContention already had a clamp (see CONTENTION CLAMP above);
+				// wklPendingContention never did. The read side saturates too, but that
+				// only stops a SECOND underflow - once the SHARED byte is 253 it is
+				// passed straight through, `maxContention > contention` is false forever
+				// (8 > 253 never holds), and the workload can never be selected again.
+				//
+				// That is the hang: every workload unselectable, six SPUs spinning in the
+				// selector, no task ever dispatched, and draw_calls = 0.
+				{
+					const u8 pcur = spurs->wklPendingContention[i];
+					const u8 ploc = ctxt->wklLocPendingContention[i];
+
+					spurs->wklPendingContention[i] = pcur >= ploc ? pcur - ploc : 0;
+				}
 				ctxt->wklLocContention[i] = 0;
 				ctxt->wklLocPendingContention[i] = 0;
 			}
@@ -1540,7 +1814,30 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 			// Not called by kernel and no context switch is required
 			for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
 			{
-				spurs->wklPendingContention[i] = spurs->wklPendingContention[i] - ctxt->wklLocPendingContention[i];
+				// SATURATE. This was a raw u8 subtraction and it UNDERFLOWS.
+				//
+				// Measured at the hang, with the shared current-contention CLEAN:
+				//
+				//   select#1 wkl0: maxCont=8 cont=253 ... K2=0 rawCont=0x00
+				//
+				// rawCont is the shared wklCurrentContention and it is 0, so the 253
+				// came from pendingContention, which the poll path adds in. 253 is 0-3
+				// wrapped in a u8.
+				//
+				// wklCurrentContention already had a clamp (see CONTENTION CLAMP above);
+				// wklPendingContention never did. The read side saturates too, but that
+				// only stops a SECOND underflow - once the SHARED byte is 253 it is
+				// passed straight through, `maxContention > contention` is false forever
+				// (8 > 253 never holds), and the workload can never be selected again.
+				//
+				// That is the hang: every workload unselectable, six SPUs spinning in the
+				// selector, no task ever dispatched, and draw_calls = 0.
+				{
+					const u8 pcur = spurs->wklPendingContention[i];
+					const u8 ploc = ctxt->wklLocPendingContention[i];
+
+					spurs->wklPendingContention[i] = pcur >= ploc ? pcur - ploc : 0;
+				}
 				ctxt->wklLocPendingContention[i] = 0;
 			}
 		}
@@ -2629,6 +2926,21 @@ enum SpursTasksetRequest
 // Taskset PM entry point
 bool spursTasksetEntry(spu_thread& spu)
 {
+	// HOW OFTEN IS THE TASKSET MODULE ENTERED, versus how often does it DISPATCH?
+	//
+	// Seven dispatches in four minutes is the one number nothing explains, while
+	// SPU program counters sample at 0xa00 - inside this handler - constantly.
+	// This entry runs memset + init + dispatch exactly once per call, so entries
+	// and dispatches should match. If they do not, the gap is between them.
+	{
+		static std::atomic<u64> s_entries{0};
+
+		if (const u64 n = ++s_entries; n <= 4 || (n % 4096) == 0)
+		{
+			cellSpurs.error("Thor TASKSET ENTRY #%llu (spu=%u)", n, +spu.lv2_id);
+		}
+	}
+
 	auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
 	auto kernelCtxt = spu._ptr<SpursKernelContext>(spu.gpr[3]._u32[3]);
 
@@ -2766,6 +3078,29 @@ void spursTasksetStartTask(spu_thread& spu, CellSpursTaskArgument& taskArgs)
 	spu.gpr[3] = v128::from64r(taskArgs._u64[0], taskArgs._u64[1]);
 	spu.gpr[4]._u64[1] = taskset->args;
 	spu.gpr[4]._u64[0] = taskset->spurs.addr();
+
+	// WHAT ARGUMENT DOES THE TASK ACTUALLY RECEIVE?
+	//
+	// The consumer task on taskset 0x10364100 polls a queue and gets 0x80410911
+	// - CELL_SPURS_TASK_ERROR_NULL_POINTER, the code returned when the queue
+	// argument is zero - on every iteration, then yields. Measured: yield=9216,
+	// waitSig=1, poll=0, and no NOSYS. So the task is not stuck on an
+	// unimplemented service, it is holding a null queue pointer.
+	//
+	// The task reads that pointer from its own global, which it fills at entry
+	// from r3/r4. Print both here: if the argument is zero the defect is on the
+	// PPU side that publishes it, not anywhere in the SPU dispatch path.
+	{
+		static std::atomic<u32> s_args{0};
+
+		if (s_args++ < 8)
+		{
+			cellSpurs.error("Thor TASK ARGS: taskId=%u taskset=0x%x r3=%016llx.%016llx spurs=0x%x tsArgs=%016llx",
+				+ctxt->taskId, ctxt->taskset.addr(),
+				+taskArgs._u64[0], +taskArgs._u64[1],
+				taskset->spurs.addr(), +taskset->args);
+		}
+	}
 	for (auto i = 5; i < 128; i++)
 	{
 		spu.gpr[i].clear();
@@ -3117,6 +3452,13 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 
 	if (taskInfo->context_save_storage_and_alloc_ls_blocks == 0u)
 	{
+		static std::atomic<u32> s_e0{0};
+
+		if (const u32 n = s_e0++; n < 4 || (n & 0xFFF) == 0)
+		{
+			cellSpurs.error("Thor SAVECTX FAIL #%u: no context_save_storage (taskId=%u)", n, +ctxt->taskId);
+		}
+
 		return CELL_SPURS_TASK_ERROR_STAT;
 	}
 
@@ -3127,6 +3469,14 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 
 	if (lsBlocks > allocLsBlocks)
 	{
+		static std::atomic<u32> s_e1{0};
+
+		if (const u32 n = s_e1++; n < 4 || (n & 0xFFF) == 0)
+		{
+			cellSpurs.error("Thor SAVECTX FAIL #%u: lsBlocks=%u > allocLsBlocks=%u (taskId=%u)",
+				n, lsBlocks, allocLsBlocks, +ctxt->taskId);
+		}
+
 		return CELL_SPURS_TASK_ERROR_STAT;
 	}
 
@@ -3135,6 +3485,14 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 	{
 		if (!(ls_pattern._u & (u128{1} << (i ^ 127))))
 		{
+			static std::atomic<u32> s_e2{0};
+
+			if (const u32 n = s_e2++; n < 4 || (n & 0xFFF) == 0)
+			{
+				cellSpurs.error("Thor SAVECTX FAIL #%u: stack block %u not in ls_pattern "
+					"(sp=0x%05x taskId=%u)", n, i, ctxt->savedContextSp.value()._u32[3], +ctxt->taskId);
+			}
+
 			return CELL_SPURS_TASK_ERROR_STAT;
 		}
 	}
@@ -3161,6 +3519,10 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 	}
 
 	// spursDmaWaitForCompletion(spu, 1 << ctxt->dmaTagId);
+	// DOES THE SAVE EVER FAIL? Callers test `rc == CELL_OK` and silently do
+	// nothing otherwise - a failing save turns a yield into a no-op and a
+	// wait into a lost task, with no log line anywhere. Report the error
+	// paths; CELL_OK is counted but not printed.
 	return CELL_OK;
 }
 
@@ -3204,6 +3566,26 @@ void spursTasksetDispatch(spu_thread& spu)
 		}
 		else if (dn < 8 || (dn & 0x3F) == 0)
 		{
+			// PRINT THE TASKSET BITMAPS, NOT JUST THE ID.
+			//
+			// waitSig=1 for the whole run means the task on taskset 0x101b4e80
+			// called WAIT_SIGNAL once and never came back. Whether it is still
+			// parked, and whether anything ever set its signalled bit, is in these
+			// words - and nothing else prints them for a taskset that takes no
+			// queue pushes.
+			{
+				const auto rd = [&](u32 off) { return +vm::_ref<be_t<u32>>(ctxt->taskset.addr() + off); };
+
+				cellSpurs.error("Thor TSSTATE #%u: taskset=0x%x taskId=%u isWaiting=%u | running=%08x ready=%08x pready=%08x waiting=%08x enabled=%08x signalled=%08x",
+					dn, ctxt->taskset.addr(), taskId, isWaiting,
+					rd(OFFSET_OF(CellSpursTaskset, running)),
+					rd(OFFSET_OF(CellSpursTaskset, ready)),
+					rd(OFFSET_OF(CellSpursTaskset, pending_ready)),
+					rd(OFFSET_OF(CellSpursTaskset, waiting)),
+					rd(OFFSET_OF(CellSpursTaskset, enabled)),
+					rd(OFFSET_OF(CellSpursTaskset, signalled)));
+			}
+
 			cellSpurs.error("Thor DISPATCH #%u: selected taskId=%u isWaiting=%u (exit if >= %u) taskset=0x%x",
 				dn, taskId, isWaiting, +CELL_SPURS_MAX_TASK, ctxt->taskset.addr());
 		}
@@ -3344,6 +3726,28 @@ void spursTasksetDispatch(spu_thread& spu)
 
 		// Load saved context from main memory to LS
 		const u32 contextSaveStorage = vm::cast(taskInfo->context_save_storage_and_alloc_ls_blocks & -0x80);
+
+		// IS THE CONTEXT SAVE AREA EVEN VALID?
+		//
+		// The task is resumed hundreds of thousands of times and blocks again
+		// immediately every time. If this address or ls_pattern is wrong the resume
+		// restores garbage, the task hits its wait again at once, and the dispatch
+		// loop spins exactly as measured. Check the address is mapped before
+		// trusting anything else about the resume path.
+		{
+			static std::atomic<u64> s_res{0};
+
+			if (const u64 n = ++s_res; n <= 4 || (n % 65536) == 0)
+			{
+				const bool ok = contextSaveStorage && vm::check_addr(contextSaveStorage, vm::page_readable, 0x380);
+
+				cellSpurs.error("Thor RESUME #%llu: task=%u ctxSave=0x%08x mapped=%u raw=0x%llx "
+					"lsPattern=%016llx%016llx elf=0x%x",
+					n, taskId, contextSaveStorage, ok ? 1u : 0u,
+					+taskInfo->context_save_storage_and_alloc_ls_blocks,
+					ls_pattern._u64[0], ls_pattern._u64[1], taskInfo->elf.addr());
+			}
+		}
 		std::memcpy(spu._ptr<void>(0x2C80), vm::base(contextSaveStorage), 0x380);
 		for (auto i = 6; i < 128; i++)
 		{
@@ -3446,6 +3850,38 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 			static std::atomic<u32> s_nsites{0};
 
 			const u32 lr = spu.gpr[0]._u32[3];
+
+			// WHY IS THE POP FAILING?
+			//
+			// Disassembly of the task (task_yield_loop.disasm.txt) shows the loop at
+			// 0xf3c0 is a backoff-retry, not a drain:
+			//
+			//   0f3b4: brsl lr,0x13c68   ; the pop
+			//   0f3b8: lr   r80,r3       ; r80 = its RETURN CODE
+			//   0f3bc: brz  r3,0xf238    ; 0 = success -> drain again
+			//   0f3d0..0f3dc            ; 2400x rdch ch8, a timed backoff
+			//   0f3e0: brsl lr,0x13b90   ; YIELD  (returns to 0xf3e4)
+			//   0f3e8: ceq  r41,r80,r82  ; same code as last time?
+			//   0f3f4: brnz r41,0xf3a0   ; yes -> retry
+			//
+			// So at THIS syscall r80 holds the code the pop just returned, and r82
+			// the one it expects to keep seeing. Only 338 of ~17000 iterations touch
+			// the queue, so most fail an early check inside 0x13c68 - 0x80410910
+			// (arg2 not 16-byte aligned) or 0x80410902 (arg3 >= 32) - before its
+			// GETLLAR. Print the code rather than guess which.
+			if (lr == 0xf3e4 || lr == 0xf3a0)
+			{
+				static std::atomic<u32> s_rc{0};
+
+				if (const u32 rn = s_rc++; rn < 8 || (rn & 0xFFF) == 0)
+				{
+					cellSpurs.error("Thor POPRC #%u: lr=0x%05x r80=0x%08x r82=0x%08x "
+						"r3=0x%08x r4=0x%08x r5=0x%08x r86=0x%08x",
+						rn, lr, spu.gpr[80]._u32[3], spu.gpr[82]._u32[3],
+						spu.gpr[3]._u32[3], spu.gpr[4]._u32[3], spu.gpr[5]._u32[3],
+						spu.gpr[86]._u32[3]);
+				}
+			}
 			bool seen = false;
 			const u32 have = s_nsites.load();
 
@@ -3550,7 +3986,7 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 				// in every reading taken so far, exactly like a task that only
 				// yields. Do not infer "the task only yields" from a probe that
 				// can only see yields.
-				cellSpurs.warning("Thor SYSCALL CENSUS n=%u: [0]exit=%u [1]yield=%u [2]waitSig=%u [3]poll=%u [4]recvFlag=%u | UNIMPLEMENTED 5..15: %u %u %u %u %u %u %u %u %u %u %u (taskId=%u taskset=0x%x spu=%u)",
+				cellSpurs.error("Thor SYSCALL CENSUS n=%u: [0]exit=%u [1]yield=%u [2]waitSig=%u [3]poll=%u [4]recvFlag=%u | UNIMPLEMENTED 5..15: %u %u %u %u %u %u %u %u %u %u %u (taskId=%u taskset=0x%x spu=%u)",
 					n, s_seen[0].load(), s_seen[1].load(), s_seen[2].load(),
 					s_seen[3].load(), s_seen[4].load(),
 					s_seen[5].load(), s_seen[6].load(), s_seen[7].load(),
@@ -3587,15 +4023,30 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 		// ORDER MATTERS: spursTasksetPollStatus has a side effect
 		// (spursTasksetProcessPollStatus on the false path), so it must still be
 		// evaluated. The gate is a FALLBACK, never a short-circuit.
-		if (spursTasksetPollStatus(spu) || spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr) || thor_yield_redispatch_fix())
 		{
+			// Preserve the original short-circuit exactly: pollStatus always runs
+			// (side effect on its false path), REQUEST_POLL only when it is false.
+			const bool wklWantsSpu = spursTasksetPollStatus(spu);
+			const bool taskWantsSpu = wklWantsSpu ? false
+				: spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr) != 0;
+
+			// See thor_yield_fast_path: nothing else can run, so keep the SPU and
+			// skip the whole-local-store save/restore this would otherwise cost.
+			if (!wklWantsSpu && !taskWantsSpu && thor_yield_fast_path())
+			{
+				break;
+			}
+
+			if (wklWantsSpu || taskWantsSpu || thor_yield_redispatch_fix())
+			{
 			// If we reach here then it means that either another task can be scheduled or another workload can be scheduled
 			// Save the context of the current task
-			rc = spursTasketSaveTaskContext(spu);
-			if (rc == CELL_OK)
-			{
-				spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_YIELD_TASK, nullptr, nullptr);
-				incident = CELL_SPURS_TRACE_TASK_YIELD;
+				rc = spursTasketSaveTaskContext(spu);
+				if (rc == CELL_OK)
+				{
+					spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_YIELD_TASK, nullptr, nullptr);
+					incident = CELL_SPURS_TRACE_TASK_YIELD;
+				}
 			}
 		}
 		break;
