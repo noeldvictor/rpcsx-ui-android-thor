@@ -13013,3 +13013,43 @@ Mask SIGNAL out of the poll status passed at workload entry
 The module clears its entry checks and keeps running. Screen is still black at
 22 frames, so this is not the last defect either - but the SPU no longer dies,
 which it did on every job chain dispatch before this.
+
+## Where the module goes now, and what it needs from us
+
+With the assertion cleared it takes the no-ready-count branch:
+
+    0222c  andi r14,r3,0x1      ; POLL_STATUS_READYCOUNT
+    02238  brhnz r12,0x000025a0 ; bit clear -> 0x25a0
+
+    025a0  ai   r3,sp,0x20
+    025a4  brsl lr,0x00002868   ; -> 0x2868 loads LS 0x1E0, takes the SECOND word
+                                ;    (0x1E4 = selectWorkloadAddr) and `bisl`s it
+    025a8  brz  r3,0x0000221c   ; result 0 -> loop back and re-poll
+    025f8  wrch r84,ch22        ; SPU_WrEventMask = 1 << dmaTagId
+    025fc  wrch r83,ch23        ; SPU_WrEventAck
+    02600  rdch r2,ch24         ; SPU_RdEventStat - BLOCKS until an event
+    0262c  bi lr
+
+That is correct SPURS idle behaviour, not a defect: no ready count, so poll,
+and if still nothing, arm the MFC tag-group event and sleep.
+
+**But it makes `selectWorkloadAddr` a CALLABLE SUBROUTINE.** The module `bisl`s
+it and reads a result out of r3. We register
+`spursKernel1SelectWorkload`/`spursKernel2SelectWorkload` there, and whether
+those behave as subroutines that return a value to a GUEST caller - rather than
+as kernel-internal entry points - has never been checked. It is the same shape
+as the bug that was just fixed at 0xA00: an HLE function standing where guest
+code expects a specific contract.
+
+Note this also shows `cellSpursModulePollStatus` is exactly what 0x2868 is: set
+r3 = 1, call the select-workload routine, return its status. Our HLE has that
+function already; the guest reaches the same behaviour through the LS address.
+
+## Ready count is the other half
+
+`cellSpursRunJobChain` signals and wakes but sets NO ready count, and
+`cellSpursKickJobChain` is never called because the title passes
+`autoRequestSpuCount=true`. So the module is entered with READYCOUNT clear every
+time and always takes the idle path. Whether the real kernel raises a ready
+count on RunJobChain for an auto-request chain is the next thing to establish -
+if it does, that is likely the remaining gap.
