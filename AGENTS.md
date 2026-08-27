@@ -12593,3 +12593,64 @@ The dispatch wiring is already in place from the previous commit
 (`SPURS_IMG_ADDR_JOBCHAIN_PM`), so an implementation has somewhere to land and
 is measurable the moment it does anything - the `Thor JOBCHAIN #n` line fires
 whenever the workload is selected.
+
+# Staging The REAL Job Chain Module Instead Of Porting It
+
+2026-08-26. This works, and it changes the shape of the remaining problem.
+
+## The idea
+
+The SPU kernel's workload dispatch already runs real policy modules - its
+`default` arm is `memcpy(LS 0xA00, wklInfo->addr, wklInfo->size)`. So the job
+chain module never had to be reimplemented; it had to be FOUND and STAGED.
+
+## The measurements that make it possible
+
+From an LLE boot where the title renders, local store holds the module at
+0xA00..0x2C00 - exactly **0x2200 bytes** - and those bytes appear **verbatim** in
+decrypted libsre at offset 0x21580. No relocation is applied at load, so a
+straight copy is correct. A 32-byte signature from its entry is unique in the
+file, so it is searched for rather than trusting a fixed offset across firmware
+versions.
+
+(The earlier extraction said 9,168 bytes; that over-read into zeroed local store
+past the module. The real size is 0x2200.)
+
+## What was implemented
+
+`thor_jobchain_pm_image()` in cellSpurs.cpp: open
+`/dev_flash/sys/external/libsre.sprx` through the VFS, `decrypt_self` it, search
+for the signature, `vm::alloc` 0x2200 bytes and copy the module in. Cached, so it
+happens once. `_spurs::create_job_chain` then passes that address and size as the
+workload image instead of `vm::null`, falling back to the sentinel (clean exit,
+loud) when the module cannot be found.
+
+**It works:**
+
+    Thor JOBCHAIN: staged the real policy module at 0x2330000
+                   (8704 bytes, found in libsre at 0x21580)
+
+and the SPU threads are then observed executing AT the module entry:
+
+    SPU[0x3000100] Thread (CellSpursKernel3) [0x00a00]
+
+with **no SPU halts, no faults, no access violations** in the whole run. The
+genuine module loads and runs under the HLE kernel.
+
+## What is still wrong
+
+The title still does not advance - 19 frames, black. So the module runs but does
+not do useful work, and the most likely reason is the one this approach implies:
+
+**a real policy module expects the SPURS KERNEL CONTEXT at local store 0x100 to
+be bit-compatible with what the REAL kernel maintains**, and ours is an HLE
+kernel that keeps `SpursKernelContext` to its own satisfaction. Any field the
+real module reads that the HLE kernel does not maintain identically - or lays
+out differently - makes it read nonsense without ever faulting, which is exactly
+the symptom.
+
+That is now the whole remaining question, and it is far narrower than porting a
+module with 15 subroutines and 41 DMA sites. The way to answer it is a
+differential on local store 0x100..0x200 between an LLE boot and an HLE boot at
+the moment a job chain workload is dispatched - both captures are already
+possible with `debug.rpcsx.thor.spu_ls_dump`.

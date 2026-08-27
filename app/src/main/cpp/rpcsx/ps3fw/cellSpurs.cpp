@@ -27,6 +27,8 @@
 #include "cellos/sys_process.h"
 #include "cellos/sys_semaphore.h"
 #include "cellos/sys_event.h"
+#include "Crypto/unself.h"
+#include "Emu/VFS.h"
 #include "sysPrxForUser.h"
 #include "cellSpurs.h"
 
@@ -6144,6 +6146,104 @@ s32 _spurs::check_job_chain_attribute(u32 sdkVer, vm::cptr<u64> jcEntry, u16 siz
 	return CELL_OK;
 }
 
+// SUPPLY THE REAL JOB CHAIN POLICY MODULE INSTEAD OF PORTING IT.
+//
+// This title renders through job chains. Under HLE, libsre.sprx is never
+// mapped (`sys_prx: Ignored module`), so the job chain policy module - which
+// lives inside it - is not in guest memory, and `create_job_chain` passed a
+// NULL workload image. The SPU kernel then ran whatever the previous policy
+// module had left at local store 0xA00.
+//
+// The kernel's workload dispatch already knows how to run a REAL module: its
+// `default` arm does `memcpy(LS 0xA00, wklInfo->addr, wklInfo->size)`. So the
+// module does not have to be reimplemented - it has to be FOUND and staged.
+//
+// MEASURED, from an LLE boot where the title renders: the module occupies
+// local store 0xA00..0x2C00, exactly 0x2200 bytes, and those bytes appear
+// VERBATIM in decrypted libsre at offset 0x21580 - no relocation is applied at
+// load, so a straight copy is correct. The 32-byte signature below is unique
+// in the file, so it is searched for rather than trusting a fixed offset
+// across firmware versions.
+//
+// It is identified as the job chain module and not the taskset one because the
+// taskset module's 0xA70 is its syscall entry beginning `stqa lr,0x2c80`
+// (here 0xa70 is `lr r3,r80`), and the taskset LS-clear bound `ila r39,0x3d000`
+// appears nowhere in it.
+static u32 thor_jobchain_pm_image(u32& out_size) noexcept
+{
+	static u32 s_size = 0;
+
+	static const u32 s_addr = [&]() -> u32
+	{
+		static const u8 sig[32] = {
+			0x42, 0x37, 0x70, 0x02, 0x42, 0x83, 0x7e, 0x82, 0x42, 0x71, 0xf1, 0x02, 0x43, 0x3a, 0x67, 0x82,
+			0x40, 0x80, 0x00, 0x07, 0x12, 0x00, 0x07, 0x0a, 0x43, 0xff, 0xf8, 0x0a, 0x1c, 0x37, 0x01, 0x86,
+		};
+
+		constexpr u32 pm_size = 0x2200;
+
+		fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
+
+		if (!self)
+		{
+			cellSpurs.error("Thor JOBCHAIN: cannot open libsre.sprx - job chains will not run");
+			return 0;
+		}
+
+		fs::file dec = decrypt_self(self);
+
+		if (!dec)
+		{
+			cellSpurs.error("Thor JOBCHAIN: cannot decrypt libsre.sprx - job chains will not run");
+			return 0;
+		}
+
+		dec.seek(0);
+		const std::vector<u8> bytes = dec.to_vector<u8>();
+
+		if (bytes.size() < pm_size)
+		{
+			cellSpurs.error("Thor JOBCHAIN: decrypted libsre is only %u bytes", static_cast<u32>(bytes.size()));
+			return 0;
+		}
+
+		const auto it = std::search(bytes.begin(), bytes.end(), std::begin(sig), std::end(sig));
+
+		if (it == bytes.end())
+		{
+			cellSpurs.error("Thor JOBCHAIN: policy module signature not found in libsre "
+				"(different firmware?) - job chains will not run");
+			return 0;
+		}
+
+		const usz off = static_cast<usz>(it - bytes.begin());
+
+		if (off + pm_size > bytes.size())
+		{
+			cellSpurs.error("Thor JOBCHAIN: module at 0x%x runs past end of libsre", static_cast<u32>(off));
+			return 0;
+		}
+
+		const u32 mem = vm::alloc(pm_size, vm::main);
+
+		if (!mem)
+		{
+			cellSpurs.error("Thor JOBCHAIN: could not allocate %u bytes for the policy module", pm_size);
+			return 0;
+		}
+
+		std::memcpy(vm::base(mem), bytes.data() + off, pm_size);
+		s_size = pm_size;
+
+		cellSpurs.error("Thor JOBCHAIN: staged the real policy module at 0x%x "
+			"(%u bytes, found in libsre at 0x%x)", mem, pm_size, static_cast<u32>(off));
+		return mem;
+	}();
+
+	out_size = s_size;
+	return s_addr;
+}
+
 s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursJobChain> jobChain, vm::cptr<u64> jobChainEntry, u16 sizeJob, u16 maxGrabbedJob, vm::cptr<u8[8]> prio, u32 maxContention, b8 autoReadyCount, u32 tag1, u32 tag2, u32 HaltOnError, vm::cptr<char> name, u32 param_13, u32 param_14)
 {
 	const s32 sdkVer = _spurs::get_sdk_version();
@@ -6173,11 +6273,16 @@ s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<
 	vm::var<u32> wid;
 
 	// TODO
+	u32 jc_pm_size = 0;
+	const u32 jc_pm_addr = thor_jobchain_pm_image(jc_pm_size);
+
 	if (auto err = _cellSpursWorkloadAttributeInitialize(ppu, +attr_wkl, 1, SYS_PROCESS_PARAM_VERSION_330_0,
-			// Name the job chain policy module instead of passing a null image.
-			// See SPURS_IMG_ADDR_JOBCHAIN_PM: a null image made the SPU kernel run
-			// stale local store as if it were a policy module.
-			vm::cptr<void>::make(SPURS_IMG_ADDR_JOBCHAIN_PM), 0, jobChain.addr(), prio, 1, maxContention))
+			// The REAL policy module when it can be staged from libsre, so the
+			// kernel's `default` dispatch arm copies it to LS 0xA00 and runs it.
+			// Falls back to the sentinel, which exits the workload cleanly and says
+			// so, rather than to a null image that ran stale local store.
+			vm::cptr<void>::make(jc_pm_addr ? jc_pm_addr : +SPURS_IMG_ADDR_JOBCHAIN_PM), jc_pm_size,
+			jobChain.addr(), prio, 1, maxContention))
 	{
 		return as_job_error(err);
 	}
