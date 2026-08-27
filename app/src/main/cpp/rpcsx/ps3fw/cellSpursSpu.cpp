@@ -505,6 +505,24 @@ static void thor_release_wkl(u32 wid, u32 spu_num) noexcept
 // read too early.
 //
 //   debug.rpcsx.thor.syscall_dma_wait = 0 restores the previous behaviour
+static bool thor_yield_poll_always() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.yield_poll_always", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
 static bool thor_exit_destroy_fix() noexcept
 {
 #ifdef ANDROID
@@ -4145,9 +4163,31 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 		{
 			// Preserve the original short-circuit exactly: pollStatus always runs
 			// (side effect on its false path), REQUEST_POLL only when it is false.
+			// THE FIRMWARE CALLS BOTH, UNCONDITIONALLY, AND ORS THEM.
+			//
+			// Read out of the real taskset policy module, YIELD arm at 0x1d34:
+			//
+			//     00001d34: brsl lr,0x00001350   ; poll status      -> r80
+			//     00001d44: il   r3,0x3
+			//     00001d48: brsl lr,0x00000e40   ; ProcessRequest(POLL) -> r3
+			//     00001d4c: andi r15,r80,0xff
+			//     00001d50: or   r80,r15,r3      ; combine BOTH results
+			//     00001d54: brz  r80,0x00001e9c  ; neither wants it -> fast return
+			//
+			// There is no branch between 0x1d34 and 0x1d48: the request is issued
+			// every time, whatever the poll returned. Our copy short-circuited it
+			// with a ternary, so whenever wklWantsSpu was true the request was
+			// never made - and spursTasksetProcessRequest is NOT a pure query. It
+			// ends by writing the taskset bitmaps back, so skipping it drops a
+			// state write-back on a path this title takes 138,624 times per run.
+			//
+			//   debug.rpcsx.thor.yield_poll_always = 0 restores the short circuit
 			const bool wklWantsSpu = spursTasksetPollStatus(spu);
-			const bool taskWantsSpu = wklWantsSpu ? false
-				: spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr) != 0;
+			const bool pollRc = thor_yield_poll_always()
+				? spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr) != 0
+				: (wklWantsSpu ? false
+					: spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, nullptr, nullptr) != 0);
+			const bool taskWantsSpu = pollRc;
 
 			// See thor_yield_fast_path: nothing else can run, so keep the SPU and
 			// skip the whole-local-store save/restore this would otherwise cost.

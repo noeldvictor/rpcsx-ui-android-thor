@@ -322,3 +322,60 @@ measured here establishes that this title's tasks are supposed to exit.
 
 So "make exit non-zero" should be retired as the success metric. p5 > 0 remains
 the only one that is grounded.
+
+## 11. YIELD and WAIT_SIGNAL, read - a live discrepancy, still no geometry
+
+YIELD is table entry 1, at 0x1d34:
+
+    00001d34: brsl lr,0x00001350   ; poll status          -> r80
+    00001d44: il   r3,0x3
+    00001d48: brsl lr,0x00000e40   ; ProcessRequest(POLL) -> r3
+    00001d4c: andi r15,r80,0xff
+    00001d50: or   r80,r15,r3      ; combine BOTH
+    00001d54: brz  r80,0x00001e9c  ; neither wants the SPU -> fast return
+    00001d58: brsl lr,0x000014d0   ; save task context
+    00001d60: brnz r3,0x00001eb0   ; save failed -> error
+    00001d64: il   r3,0x1
+    00001d70: brsl lr,0x00000e40   ; ProcessRequest(YIELD_TASK)
+
+WAIT_SIGNAL is entry 2, at 0x1d80: ProcessRequest(-1 = POLL_SIGNAL), then
+save context, then ProcessRequest(2 = WAIT_SIGNAL) - the same order our HLE
+uses.
+
+Two things this confirms about our HLE: the fast return when neither the
+workload nor another task wants the SPU is REAL firmware behaviour, not a Thor
+invention (thor_yield_fast_path was right), and the WAIT_SIGNAL ordering is
+correct.
+
+### The discrepancy
+
+There is no branch between 0x1d34 and 0x1d48. The firmware issues
+ProcessRequest(POLL) every time, whatever the poll status returned. Ours
+short-circuited it:
+
+    const bool taskWantsSpu = wklWantsSpu ? false
+        : spursTasksetProcessRequest(spu, SPURS_TASKSET_REQUEST_POLL, ...) != 0;
+
+so whenever wklWantsSpu was true the request was never made - and
+spursTasksetProcessRequest is not a pure query, it ends by writing the taskset
+bitmaps back. A dropped write-back, on a path taken 138,624 times per run.
+
+Fixed behind debug.rpcsx.thor.yield_poll_always, default ON.
+
+### Result
+
+    ready=true  p8=1245  p5=0  exit=0  yield=131456  waitSig=1
+
+No change. Third firmware-verified fix in a row that is correct and does not
+render.
+
+### Standing tally of firmware-derived fixes
+
+    syscall_dma_wait     drain DMA before dispatch        no effect on p5
+    exit_destroy_fix     unconditional destroy on EXIT    dormant (exit=0)
+    yield_poll_always    always issue ProcessRequest      no effect on p5
+
+All three are real, all three match the firmware, none produces geometry. The
+implication is that the taskset syscall path is not where the missing geometry
+is lost - three of its five arms now match the reference and the picture is
+unchanged.
