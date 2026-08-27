@@ -5574,6 +5574,110 @@ s32 thor_spurs_wake_lfq_waiter(ppu_thread& ppu, u32 ea_signal)
 	return CELL_OK;
 }
 
+// STAGE THE REAL TASKSET POLICY MODULE.
+//
+// SPURS_IMG_ADDR_TASKSET_PM is a sentinel (0x200). cellSpursSpu.cpp switches on
+// it and registers an HLE stub at LS 0xA00 instead of loading anything, so
+// under HLE the SPU holds NO policy module at all - measured, LS 0xA00 is
+// entirely zero against 930/1024 nonzero under LLE.
+//
+// Three firmware-verified corrections to that stub (syscall_dma_wait,
+// exit_destroy_fix, yield_poll_always) each matched the real module and none
+// produced a triangle, which argues the stub is not where the geometry is
+// lost. ps3recomp reached the same conclusion independently: the SPURS kernel
+// dispatches through OPD pointers read from memory, and images coexist at
+// overlapping local-store addresses, which a C stub cannot reproduce - so they
+// lift the real firmware instead of finishing the HLE.
+//
+// This does that for the taskset. The module is the one identified by its
+// syscall entry at 0xA70 (CELL_SPURS_TASKSET_PM_SYSCALL_ADDR), where it saves
+// sp and r80..r127 into the taskset management area - sig_b below. Passing its
+// real address instead of the sentinel makes cellSpursSpu.cpp take the default
+// branch, which unregisters the 0xA00 stub and copies the image in.
+//
+//   debug.rpcsx.thor.real_taskset_pm = 1
+static bool thor_real_taskset_pm() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.real_taskset_pm", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+static u32 thor_taskset_pm_image(u32& out_size) noexcept
+{
+	static u32 s_size = 0;
+
+	static const u32 s_addr = []() -> u32
+	{
+		// The taskset policy module, identified by its 0xA70 syscall entry.
+		static const u8 sig[32] = {
+			0x43, 0x06, 0xdc, 0x02, 0x43, 0x22, 0xb6, 0x82, 0x42, 0x5c, 0xcb, 0x02, 0x42, 0x82, 0x87, 0x82,
+			0x40, 0x96, 0x28, 0x01, 0x12, 0x02, 0x96, 0x94, 0x33, 0x83, 0xb5, 0x11, 0x30, 0x80, 0x38, 0x10,
+		};
+
+		constexpr u32 pm_size = 0x1E40;
+
+		fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
+
+		if (!self)
+		{
+			cellSpurs.error("Thor TASKSETPM: cannot open libsre.sprx");
+			return 0;
+		}
+
+		fs::file dec = decrypt_self(self);
+
+		if (!dec)
+		{
+			cellSpurs.error("Thor TASKSETPM: cannot decrypt libsre.sprx");
+			return 0;
+		}
+
+		dec.seek(0);
+		const std::vector<u8> bytes = dec.to_vector<u8>();
+		const auto it = std::search(bytes.begin(), bytes.end(), sig, sig + 32);
+
+		if (it == bytes.end())
+		{
+			cellSpurs.error("Thor TASKSETPM: signature not found in libsre (different firmware?)");
+			return 0;
+		}
+
+		const usz off = static_cast<usz>(it - bytes.begin());
+
+		if (off + pm_size > bytes.size())
+		{
+			cellSpurs.error("Thor TASKSETPM: module at 0x%x runs past end of libsre", static_cast<u32>(off));
+			return 0;
+		}
+
+		const u32 mem = vm::alloc(pm_size, vm::main);
+
+		if (!mem)
+		{
+			cellSpurs.error("Thor TASKSETPM: could not allocate %u bytes", pm_size);
+			return 0;
+		}
+
+		std::memcpy(vm::base(mem), bytes.data() + off, pm_size);
+		s_size = pm_size;
+
+		cellSpurs.error("Thor TASKSETPM: staged the REAL taskset policy module at 0x%x "
+			"(%u bytes, found in libsre at 0x%x)", mem, pm_size, static_cast<u32>(off));
+		return mem;
+	}();
+
+	out_size = s_size;
+	return s_addr;
+}
+
 s32 _spurs::create_taskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset> taskset, u64 args, vm::cptr<u8[8]> priority, u32 max_contention, vm::cptr<char> name, u32 size, s32 enable_clear_ls)
 {
 	if (!spurs || !taskset)
@@ -5594,7 +5698,25 @@ s32 _spurs::create_taskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<Ce
 	taskset->size = size;
 
 	vm::var<CellSpursWorkloadAttribute> wkl_attr;
-	_cellSpursWorkloadAttributeInitialize(ppu, wkl_attr, 1, SYS_PROCESS_PARAM_VERSION_330_0, vm::cptr<void>::make(SPURS_IMG_ADDR_TASKSET_PM), 0x1E40 /*pm_size*/,
+
+	// Use the real module when asked for. See thor_taskset_pm_image.
+	u32 pm_addr = SPURS_IMG_ADDR_TASKSET_PM;
+	u32 pm_size = 0x1E40;
+
+	if (thor_real_taskset_pm())
+	{
+		u32 real_size = 0;
+
+		if (const u32 real = thor_taskset_pm_image(real_size))
+		{
+			pm_addr = real;
+			pm_size = real_size;
+			cellSpurs.error("Thor TASKSETPM: taskset 0x%x will run the REAL policy module at 0x%x",
+				taskset.addr(), real);
+		}
+	}
+
+	_cellSpursWorkloadAttributeInitialize(ppu, wkl_attr, 1, SYS_PROCESS_PARAM_VERSION_330_0, vm::cptr<void>::make(pm_addr), pm_size,
 		taskset.addr(), priority, 8, max_contention);
 	// TODO: Check return code
 

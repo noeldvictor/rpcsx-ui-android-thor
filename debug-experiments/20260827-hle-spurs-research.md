@@ -379,3 +379,48 @@ All three are real, all three match the firmware, none produces geometry. The
 implication is that the taskset syscall path is not where the missing geometry
 is lost - three of its five arms now match the reference and the picture is
 unchanged.
+
+## 12. Running the REAL taskset module under the HLE kernel - it does not mix
+
+The three firmware-verified corrections to the stub all matched the reference
+and none rendered, which argued the stub is not where the geometry is lost. The
+test that follows from that, and from ps3recomp's conclusion, is to stop
+stubbing the taskset and run the real module.
+
+That is now possible because the module is identified. Implemented as
+`thor_taskset_pm_image()`: open /dev_flash/sys/external/libsre.sprx, decrypt,
+search for the taskset signature, stage 0x1E40 bytes with vm::alloc, and pass
+that address to _cellSpursWorkloadAttributeInitialize instead of the
+SPURS_IMG_ADDR_TASKSET_PM sentinel. cellSpursSpu.cpp then takes its default
+branch, unregisters the 0xA00 stub and copies the image in.
+
+It stages correctly:
+
+    TASKSETPM: staged the REAL taskset policy module at 0x2310000
+               (7744 bytes, found in libsre at 0x23780...)
+    TASKSETPM: taskset 0x101b4e80 will run the REAL policy module at 0x2310000
+    TASKSETPM: taskset 0x10364100 will run the REAL policy module at 0x2310000
+
+And it does not work:
+
+    ready=false   frames=0   coresBusy=6.12   draw_calls=0   no fatal error
+
+Zero frames - worse than the stub, which at least reaches ~1000 quads. The SPUs
+spin without faulting.
+
+### Why this is informative rather than just a failure
+
+A real policy module expects the REAL kernel's conventions - what is in which
+register at entry, what exitToKernelAddr and selectWorkloadAddr point at, how
+the kernel hands off and takes back control. Ours is an HLE kernel providing
+Thor's conventions. Mixing one real image with an HLE kernel cannot work unless
+those interfaces match exactly, and they evidently do not.
+
+That is precisely ps3recomp's finding, reached here independently and by
+measurement: lifting must be all-or-nothing. Their static firmware LLE lifts
+the kernel AND the policy modules together, and even there the LLE SPU-kernel
+path only comes up in Debug builds.
+
+Kept behind debug.rpcsx.thor.real_taskset_pm, DEFAULT OFF, because it is a
+strictly worse state than the stub. It is committed rather than discarded so
+the next attempt starts from a working staging path instead of rebuilding it.
