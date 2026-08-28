@@ -809,6 +809,10 @@ public:
 
 	std::unique_ptr<class spu_recompiler_base> jit; // Recompiler instance
 
+	bool interp_fallback = false;
+	u32 interp_fallback_begin = 0;
+	u32 interp_fallback_end = 0;
+
 	u64 block_counter = 0;
 	u64 block_recover = 0;
 	u64 block_failure = 0;

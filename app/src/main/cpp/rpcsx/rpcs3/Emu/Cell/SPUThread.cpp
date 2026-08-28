@@ -4392,6 +4392,10 @@ void spu_thread::cpu_task()
 				continue;
 			}
 
+			// An escape from the fallback returns here through the JIT gateway.
+			interp_fallback = false;
+			allow_interrupts_in_cpu_work = false;
+
 			spu_runtime::g_gateway(*this, _ptr<u8>(0), nullptr);
 		}
 

@@ -19,6 +19,7 @@
 
 #include "SPUThread.h"
 #include "SPUAnalyser.h"
+#include "SPUFailedBlocks.h"
 #include "SPUInterpreter.h"
 #include "SPUDisAsm.h"
 #include <algorithm>
@@ -28,6 +29,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
+#include <tuple>
 #include <unordered_set>
 
 #ifdef ANDROID
@@ -141,6 +143,69 @@ static spu_program analyse_spu_llvm_program(spu_recompiler_base& compiler, const
 	}
 
 	return compiler.analyse(ls.data(), program.entry_point);
+}
+
+static shared_mutex s_spu_failed_blocks_mutex;
+static spu_failed_block_set s_spu_failed_blocks;
+
+static void spu_reset_failed_blocks()
+{
+	std::lock_guard lock(s_spu_failed_blocks_mutex);
+	s_spu_failed_blocks.clear();
+}
+
+static bool spu_block_compile_failed(u32 address)
+{
+	reader_lock lock(s_spu_failed_blocks_mutex);
+	return s_spu_failed_blocks.contains(address);
+}
+
+static void spu_mark_block_compile_failed(u32 entry_point, u32 lower_bound = 0, u32 size_bytes = 0)
+{
+	std::lock_guard lock(s_spu_failed_blocks_mutex);
+
+	const u32 begin = size_bytes ? lower_bound : entry_point;
+	const u32 end = size_bytes ? lower_bound + size_bytes : entry_point + 4;
+
+	if (s_spu_failed_blocks.mark(begin, end))
+	{
+		spu_log.error("SPU block 0x%05x cannot be compiled on this backend. The thread uses the interpreter for this range.", entry_point);
+	}
+}
+
+static std::pair<u32, u32> spu_arm_interp_fallback(u32 pc, u32 lower_bound, u32 size_bytes)
+{
+	std::lock_guard lock(s_spu_failed_blocks_mutex);
+
+	if (const auto range = s_spu_failed_blocks.range_of(pc); range.second > range.first)
+	{
+		return range;
+	}
+
+	if (size_bytes && pc >= lower_bound && pc - lower_bound < size_bytes)
+	{
+		s_spu_failed_blocks.mark(lower_bound, lower_bound + size_bytes);
+	}
+	else
+	{
+		s_spu_failed_blocks.mark(pc, pc + 4);
+	}
+
+	return s_spu_failed_blocks.range_of(pc);
+}
+
+// Interpret the failed range while the current JIT gateway frame is live.
+static void spu_run_interp_fallback(spu_thread& spu, u32 lower_bound = 0, u32 size_bytes = 0)
+{
+	std::tie(spu.interp_fallback_begin, spu.interp_fallback_end) =
+		spu_arm_interp_fallback(spu.pc, lower_bound, size_bytes);
+
+	ensure(spu.interp_fallback_end > spu.interp_fallback_begin);
+
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+	spu_runtime::g_escape(&spu);
 }
 
 // Compiles with TBL2/TBX2 first. If LLVM aborts inside the AArch64 register
@@ -2042,6 +2107,10 @@ bool spu_program::operator<(const spu_program& rhs) const noexcept
 
 spu_runtime::spu_runtime()
 {
+#ifdef ARCH_ARM64
+	spu_reset_failed_blocks();
+#endif
+
 	// Clear LLVM output
 	m_cache_path = rpcs3::cache::get_ppu_cache();
 
@@ -2938,7 +3007,22 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 		return;
 	}
 
+#ifdef ARCH_ARM64
+	if (spu_block_compile_failed(spu.pc))
+	{
+		spu_run_interp_fallback(spu);
+		return;
+	}
+#endif
+
 	auto program = spu.jit->analyse(spu._ptr<u32>(0), spu.pc);
+#ifdef ARCH_ARM64
+	if (program.data.empty())
+	{
+		spu_run_interp_fallback(spu);
+		return;
+	}
+#endif
 #ifdef ARCH_ARM64
 	const auto func = compile_spu_llvm_with_retry(spu.jit, program, []()
 	{
@@ -2950,6 +3034,15 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 
 	if (!func)
 	{
+#ifdef ARCH_ARM64
+#if defined(__APPLE__)
+		pthread_jit_write_protect_np(true);
+#endif
+		spu_mark_block_compile_failed(program.entry_point, program.lower_bound, ::size32(program.data) * 4);
+		spu_run_interp_fallback(spu, program.lower_bound, ::size32(program.data) * 4);
+		return;
+#endif
+
 		spu_log.fatal("[0x%05x] Compilation failed.", spu.pc);
 		return;
 	}
@@ -3079,7 +3172,7 @@ void spu_recompiler_base::branch(spu_thread& spu, void*, u8* rip)
 
 void spu_recompiler_base::old_interpreter(spu_thread& spu, void* ls, u8* /*rip*/)
 {
-	if (g_cfg.core.spu_decoder != spu_decoder_type::_static)
+	if (g_cfg.core.spu_decoder != spu_decoder_type::_static && !spu.interp_fallback)
 	{
 		fmt::throw_exception("Invalid SPU decoder");
 	}
@@ -3096,6 +3189,13 @@ void spu_recompiler_base::old_interpreter(spu_thread& spu, void* ls, u8* /*rip*/
 		{
 			if (spu.check_state())
 				break;
+		}
+
+		if (spu.interp_fallback &&
+			(spu.pc < spu.interp_fallback_begin || spu.pc >= spu.interp_fallback_end)) [[unlikely]]
+		{
+			spu.interp_fallback = false;
+			break;
 		}
 
 		const u32 op = *reinterpret_cast<const be_t<u32>*>(base + spu.pc);
@@ -8861,6 +8961,9 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 	if (result.data.empty())
 	{
 		// Blocks starting from 0x0 or invalid instruction won't be compiled, may need special interpreter fallback
+#ifdef ARCH_ARM64
+		spu_mark_block_compile_failed(entry_point);
+#endif
 	}
 
 	thor_shorten_spu_backoff_loops(result, lsa);
