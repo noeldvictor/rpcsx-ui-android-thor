@@ -329,9 +329,12 @@ void perf_monitor::operator()()
 										const bool io_worker_ok = vm::check_addr(io_worker, 0, 0x78);
 										const u32 io_worker_vtable = io_worker_ok
 											? +vm::_ref<be_t<u32>>(io_worker) : 0;
-										const bool io_worker_vtable_ok = vm::check_addr(io_worker_vtable + 0x10, 0, 4);
+										const bool io_worker_vtable_ok = io_worker_vtable && vm::check_addr(io_worker_vtable, 0, 0x50);
 										const u32 direct_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x0c) : 0;
 										const u32 table_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x10) : 0;
+										const u32 backend_read_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x40) : 0;
+										const u32 backend_release_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x48) : 0;
+										const u32 backend_validate_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x4c) : 0;
 
 										perf_log.error("Thor LOAD RANGE: sample=%u limit=%u size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u",
 											sample + 1,
@@ -358,6 +361,11 @@ void perf_monitor::operator()()
 											sample + 1, io_manager, io_workers, io_worker_count, io_worker, io_worker_vtable, direct_opd,
 											vm::check_addr(direct_opd, 0, 8) ? +vm::_ref<be_t<u32>>(direct_opd) : 0,
 											table_opd, vm::check_addr(table_opd, 0, 8) ? +vm::_ref<be_t<u32>>(table_opd) : 0);
+										perf_log.error("Thor LOAD IO BACKEND: sample=%u read_opd=0x%08x read_code=0x%08x release_opd=0x%08x release_code=0x%08x validate_opd=0x%08x validate_code=0x%08x",
+											sample + 1,
+											backend_read_opd, vm::check_addr(backend_read_opd, 0, 8) ? +vm::_ref<be_t<u32>>(backend_read_opd) : 0,
+											backend_release_opd, vm::check_addr(backend_release_opd, 0, 8) ? +vm::_ref<be_t<u32>>(backend_release_opd) : 0,
+											backend_validate_opd, vm::check_addr(backend_validate_opd, 0, 8) ? +vm::_ref<be_t<u32>>(backend_validate_opd) : 0);
 
 										// Ghidra shows that both read methods add a 0x50-byte entry to
 										// the queue at worker +0x4c. The worker moves it to the active
