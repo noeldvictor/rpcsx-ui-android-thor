@@ -4055,14 +4055,20 @@ void spursTasksetDispatch(spu_thread& spu)
 
 				if (n < 16 || (n & 0xFFFF) == 0)
 				{
+					const auto rd = [&](u32 off)
+					{
+						return +vm::_ref<be_t<u32>>(ctxt->taskset.addr() + off);
+					};
+
 					cellSpurs.error("Thor TASKSET IDLE-READY #%u: taskset=0x%x wid=%u readyCount=%u "
 						"contention{shared=%u pending=%u local=%u localPending=%u} "
 						"state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x} spu=%u",
 						n, ctxt->taskset.addr(), held, readyCount,
 						+kctxt->spurs->wklCurrentContention[held], +kctxt->spurs->wklPendingContention[held],
 						+kctxt->wklLocContention[held], +kctxt->wklLocPendingContention[held],
-						+taskset->running[0], +taskset->ready[0], +taskset->pending_ready[0],
-						+taskset->waiting[0], +taskset->enabled[0], +taskset->signalled[0], +ctxt->spuNum);
+						rd(OFFSET_OF(CellSpursTaskset, running)), rd(OFFSET_OF(CellSpursTaskset, ready)),
+						rd(OFFSET_OF(CellSpursTaskset, pending_ready)), rd(OFFSET_OF(CellSpursTaskset, waiting)),
+						rd(OFFSET_OF(CellSpursTaskset, enabled)), rd(OFFSET_OF(CellSpursTaskset, signalled)), +ctxt->spuNum);
 				}
 			}
 
