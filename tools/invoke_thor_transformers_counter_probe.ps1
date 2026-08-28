@@ -65,6 +65,7 @@ $macroParameters = [ordered]@{
     ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
     BootGame = $true
     ForceStop = $true
+    PostSnapshot = $true
     PassThruCaptureDirectory = $true
 }
 
