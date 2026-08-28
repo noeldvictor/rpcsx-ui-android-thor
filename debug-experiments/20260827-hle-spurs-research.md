@@ -2591,3 +2591,60 @@ This APK is not installed. The next hardware work must start in a new cool
 round. It must use a strict gate, a no-launch install, a second strict gate,
 and one bounded atomic route. Correct 3D output and sustained 30 FPS are still
 not proved.
+
+## 44. Correct atomic selection leaves one edgeZlib task active
+
+The Thor refused strict gates at 38.1 C and 38.5 C. It then passed a strict
+gate. The no-launch installer verified the corrected APK and kept RPCSX
+stopped. The second strict gate failed on its third sample at 35.3 C. A later
+full gate passed. The evidence is in:
+
+    20260828-150711-thor-input-strict-cool-gate
+    20260828-150842-thor-input-strict-cool-gate
+    20260828-151051-thor-input-strict-cool-gate
+    20260828-151110-transformers-taskset-endian-install
+    20260828-151121-thor-input-strict-cool-gate
+    20260828-151240-thor-input-strict-cool-gate
+
+The installer verified this exact SHA-256 on the device:
+
+    248AED06A2E0CA3D98759C911A259C011E4ED9D626A8A2341B09F134D67C9FA3
+
+One bounded route enabled the firmware LFQueue path, both selector repairs,
+and corrected atomic task selection. Its capture is:
+
+    20260828-151323-thor-input-custom
+
+The endian repair worked. The first atomic selection for edgeZlib task set
+`0x101b4e80` selected task zero and changed its running word from zero to
+`0x80000000`. Two other SPUs then returned task ID 128 while the same running
+bit stayed set. Task zero received its valid queue arguments and returned to
+system service after its first wait.
+
+The later firmware LFQueue push found one pending pop notification. It
+consumed token zero, resolved workload zero to edgeZlib task set
+`0x101b4e80`, sent the task signal, and woke SPURS. Exactly one SPU then
+selected workload zero. No second SPU selected this workload after that
+signal. This result proves that atomic selection prevents the duplicate
+edgeZlib dispatch seen in the previous route.
+
+The selected SPU did not return to system service before the thermal stop. It
+did not call the task-set event-flag set path. The PoolThread stayed blocked on
+event flag `0x01e54800`. The route did not map RSX IO range `0x700000`; it
+mapped only `0x50000000` and `0x50100000`.
+
+Draw samples at flips 120 and 240 had zero draws. The flip-360 sample had 27
+primitive-8 draws. The flip-480 sample had 147 primitive-8 draws. These are
+loading-screen quads, not correct 3D output. No crash, task ELF load failure,
+or fatal error occurred.
+
+The thermal guard stopped RPCSX after package silicon held at 65.4 C in the
+near-limit probe. The PID was absent after the stop. The screenshot token did
+not run, and no second route ran in this thermal round.
+
+The remaining boundary is inside the resumed edgeZlib task or its SPU-side
+LFQueue pop. The next bounded route enables the existing SPU atomic census.
+This census records each guest GETLLAR and PUTLLC with its live local-store PC
+and effective address. It can show whether the resumed task reaches the Ghidra
+queue helpers at `0x8e98` and `0x8d80` without changing emulation behavior.
+Correct 3D output and sustained 30 FPS are still not proved.

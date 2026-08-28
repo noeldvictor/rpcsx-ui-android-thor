@@ -50,6 +50,8 @@ $requiredRenderProbeFragments = @(
     'LfqAny2Any = $LfqAny2Any',
     'SpursSelectorFixes = $SpursSelectorFixes',
     'TasksetSelectAtomic = $TasksetSelectAtomic',
+    '"debug.rpcsx.thor.spurs_atomic_census" = "1"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
     'SpuCachePreloadLimit = 64',
     'SpuCacheCompileBudgetMs = 50',
     'CacheWorkerAffinityMask = 7'
