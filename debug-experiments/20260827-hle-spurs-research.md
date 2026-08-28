@@ -961,14 +961,34 @@ Each row starts with `Thor PPU CALL TRACE` and includes a sequence number. The
 begin row records the mode, retained count, total index, and current PC. The
 property also enables the existing PPU PC census, so one property is sufficient.
 Normal runs retain the one-entry history and have no new per-call trace work.
+The mode label comes from the effective `libsre.sprx:hle` library setting. It
+does not infer the mode from the sampled PC because LLE also enters the fence
+briefly and then passes it.
+
+The monitor suspends the CPU threads only while it copies the diagnostic ring.
+It writes the log after execution resumes. This prevents a concurrent ring
+write from corrupting the evidence. The trace is keyed to the emulation run, so
+an LLE boot and a later HLE boot in the same app process each get one trace.
+
+Compare the two logs with this command:
+
+    python -B tools/bench/compare_thor_ppu_call_trace.py HLE_LOG LLE_LOG
+
+The tool validates the row count and sequence numbers. It aligns the function
+names, reports changed addresses, results, or arguments in the latest shared
+block, and shows the first calls after that block. Its local self-test command
+is:
+
+    python -B tools/bench/compare_thor_ppu_call_trace.py --self-test
 
 ARM64 RelWithDebInfo verification passed:
 
     .\gradlew.bat ':app:buildCMakeRelWithDebInfo[arm64-v8a]'
-    BUILD SUCCESSFUL in 1m 25s
+    BUILD SUCCESSFUL in 42s
 
 No APK was installed and no device command ran. The next device round needs one
 cooled LLE boot and one separately cooled HLE boot with this property enabled.
-Compare the two retained sequences from their common suffix. The first missing
-call, changed argument, or changed return value is the boundary to disassemble
-with Ghidra. Do not add another SPURS state probe before this comparison.
+Compare the latest shared function block in the two retained sequences. The
+first missing call, changed argument, or changed return value is the boundary
+to disassemble with Ghidra. Do not add another SPURS state probe before this
+comparison.
