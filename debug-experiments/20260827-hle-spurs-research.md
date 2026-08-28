@@ -2538,3 +2538,56 @@ proved. After the Thor passes a new strict cool gate, install this exact APK
 without a title launch. Run a second strict gate. Then run one bounded route
 with the firmware LFQueue path, the paired selector repairs, and atomic task
 selection on. Do not run a second route in the same thermal round.
+
+## 43. The first atomic route found a bitmap-endian defect
+
+The Thor refused strict gates at 39.3 C and 35.3 C. It then passed a strict
+gate. The no-launch installer verified APK
+`01AA0B23412EE0BC5431D48770C83BDE6525E0D74B7E82F28B86B462668463D6` and
+kept RPCSX stopped. The second gate failed on its third sample at 35.3 C. A
+later full gate passed. The evidence is in:
+
+    20260828-145658-thor-input-strict-cool-gate
+    20260828-145818-thor-input-strict-cool-gate
+    20260828-145921-thor-input-strict-cool-gate
+    20260828-145942-transformers-taskset-atomic-install
+    20260828-145953-thor-input-strict-cool-gate
+    20260828-150111-thor-input-strict-cool-gate
+
+One bounded route enabled the firmware LFQueue path, both selector repairs,
+and atomic task selection. Its capture is:
+
+    20260828-150132-thor-input-custom
+
+The process crashed during task-set startup, before the later LFQueue signal.
+The first atomic selection log reported task ID 120 for task set `0x101b4e80`.
+Its state changed from running word `0x00000000` to `0x80000000`. The next two
+SPUs correctly found no second task, but the selected task ID was wrong.
+`spursTaskLoadElf` failed, the SPU executed address zero, and Android reported
+signal 11. The process guard detected that PID 19496 became PID 20067 and
+force-stopped the restarted process.
+
+This is not an unknown Android restart. The reservation callback treated the
+four big-endian bitmap words as a raw host `v128`. On AArch64, the task-zero
+byte then appears as numeric bit 7. The selection loop maps bit 7 to task 120.
+The normal `vm::_ref<v128>` path converts the full 16-byte value through
+`be_t<v128>`, where task zero is numeric bit 127.
+
+The route showed zero draws at flips 120 and 240. It did not prove 3D output or
+30 FPS. The highest guarded silicon sample was 52.6 C. A separate CPU junction
+sensor reached 72.7 C before the process died. No second route ran in this
+thermal round.
+
+The atomic callback now loads and stores each bitmap through `be_t<v128>`.
+This makes its numeric bit convention equal to the existing task-selection
+path while the reservation still covers the complete 128-byte line. The route
+contracts and the Android debug build passed.
+
+The corrected APK is 116,132,240 bytes and has this SHA-256:
+
+    248AED06A2E0CA3D98759C911A259C011E4ED9D626A8A2341B09F134D67C9FA3
+
+This APK is not installed. The next hardware work must start in a new cool
+round. It must use a strict gate, a no-launch install, a second strict gate,
+and one bounded atomic route. Correct 3D output and sustained 30 FPS are still
+not proved.

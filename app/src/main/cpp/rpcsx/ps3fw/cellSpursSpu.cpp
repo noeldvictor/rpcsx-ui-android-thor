@@ -449,6 +449,19 @@ static bool thor_taskset_select_atomic() noexcept
 #endif
 }
 
+static v128 thor_load_task_bitmap(const be_t<u32> (&words)[4]) noexcept
+{
+	be_t<v128> bitmap;
+	std::memcpy(&bitmap, words, sizeof(bitmap));
+	return bitmap;
+}
+
+static void thor_store_task_bitmap(be_t<u32> (&words)[4], v128 bitmap) noexcept
+{
+	const be_t<v128> stored = bitmap;
+	std::memcpy(words, &stored, sizeof(stored));
+}
+
 static bool thor_release_idle_taskset() noexcept
 {
 #ifdef ANDROID
@@ -3346,12 +3359,12 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 		vm::reservation_op(spu, vm::unsafe_ptr_cast<spurs_taskset_signal_op>(+ctxt->taskset),
 			[&](spurs_taskset_signal_op& op)
 			{
-				v128 waiting = reinterpret_cast<v128&>(op.waiting[0]);
-				v128 running = reinterpret_cast<v128&>(op.running[0]);
-				v128 ready = reinterpret_cast<v128&>(op.ready[0]);
-				v128 pready = reinterpret_cast<v128&>(op.pending_ready[0]);
-				v128 enabled = reinterpret_cast<v128&>(op.enabled[0]);
-				v128 signalled = reinterpret_cast<v128&>(op.signalled[0]);
+				v128 waiting = thor_load_task_bitmap(op.waiting);
+				v128 running = thor_load_task_bitmap(op.running);
+				v128 ready = thor_load_task_bitmap(op.ready);
+				v128 pready = thor_load_task_bitmap(op.pending_ready);
+				v128 enabled = thor_load_task_bitmap(op.enabled);
+				v128 signalled = thor_load_task_bitmap(op.signalled);
 
 				beforeRunning = +op.running[0];
 				beforeWaiting = +op.waiting[0];
@@ -3415,12 +3428,12 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 					*isWaiting = waiting._u & (u128{1} << 127) ? 1 : 0;
 				}
 
-				reinterpret_cast<v128&>(op.waiting[0]) = waiting;
-				reinterpret_cast<v128&>(op.running[0]) = running;
-				reinterpret_cast<v128&>(op.ready[0]) = ready0;
-				reinterpret_cast<v128&>(op.pending_ready[0]) = v128{};
-				reinterpret_cast<v128&>(op.enabled[0]) = enabled;
-				reinterpret_cast<v128&>(op.signalled[0]) = signalled0;
+				thor_store_task_bitmap(op.waiting, waiting);
+				thor_store_task_bitmap(op.running, running);
+				thor_store_task_bitmap(op.ready, ready0);
+				thor_store_task_bitmap(op.pending_ready, v128{});
+				thor_store_task_bitmap(op.enabled, enabled);
+				thor_store_task_bitmap(op.signalled, signalled0);
 				std::memcpy(&committed, &op, sizeof(committed));
 				return true;
 			});
