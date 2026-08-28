@@ -43,7 +43,8 @@ $requiredFragments = @(
     '"getprop debug.rpcsx.thor.taskset_select_atomic"',
     '"taskset-select-atomic-prelaunch-reset.txt"',
     '"taskset-select-atomic-failure-reset.txt"',
-    '"taskset-select-atomic-reset.txt"'
+    '"taskset-select-atomic-reset.txt"',
+    '[ValidateRange(25, 70)]'
 )
 
 foreach ($fragment in $requiredFragments) {
@@ -80,6 +81,8 @@ $requiredRenderProbeFragments = @(
     'Macro = "wait:8000;shot:late-render-boundary;threads:late-render-boundary;wait:2000;stop"',
     'ThermalRuntimeStopHeadroomC = 2',
     'ThermalRuntimeProbeWindowC = 2',
+    'ThermalPreflightSamples = 1',
+    'MaxLaunchSiliconTemperatureC = 70',
     'SpuCachePreloadLimit = 64',
     'SpuCacheCompileBudgetMs = 50',
     'CacheWorkerAffinityMask = 7'

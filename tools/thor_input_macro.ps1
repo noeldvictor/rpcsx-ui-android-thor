@@ -17,7 +17,7 @@
     [int]$ThermalPreflightIntervalSeconds = 2,
     [ValidateRange(0, 20)]
     [double]$ThermalPreflightHeadroomC = 5.0,
-    [ValidateRange(25, 60)]
+    [ValidateRange(25, 70)]
     [double]$MaxLaunchSiliconTemperatureC = 40.0,
     [ValidateRange(0, 10)]
     [double]$ThermalPreflightMaxRiseC = 2.0,
