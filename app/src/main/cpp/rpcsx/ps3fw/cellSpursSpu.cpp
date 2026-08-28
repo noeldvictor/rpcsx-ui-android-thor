@@ -2736,8 +2736,7 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 // Activate a workload
 void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 {
-	// DMA IN, MODIFY LOCALLY, DMA OUT - what a real SPU does, and what this code
-	// was written for.
+	// Refresh the private first-line snapshot before this SPU reads it.
 	//
 	// LS 0x100 is SpursKernelContext::tempArea, a 128-byte scratch meant to hold
 	// the head of CellSpurs. Nothing refreshed it, so every read below saw the
@@ -2747,8 +2746,9 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 	// workload permanently unrunnable, which is the whole failure.
 	//
 	// Redirecting the reads to ctxt->spurs instead was tried and boot-looped the
-	// emulator twice; the code is written against a private copy. So refresh the
-	// copy here, and write the modified bytes back at the end.
+	// emulator twice; the code is written against a private copy. Refresh only
+	// the private copy here. The state and status updates below use the live
+	// CellSpurs pointer.
 	std::memcpy(spu._ptr<void>(0x100), ctxt->spurs.get_ptr(), 128);
 	const auto spurs = spu._ptr<CellSpurs>(0x100);
 	std::memcpy(spu._ptr<void>(0x30000), ctxt->spurs->wklInfo1, 0x200);
@@ -2872,11 +2872,11 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 
 		std::memcpy(spu._ptr<void>(0x2D80), spurs->wklState1, 128);
 
-		// Write the modified snapshot back. wklStatus1/wklStatus2 and any
-		// SHUTTING_DOWN -> REMOVABLE transition above were applied to the local
-		// copy; without this they are discarded and the workload is never marked
-		// as taken by this SPU.
-		std::memcpy(ctxt->spurs.get_ptr(), spu._ptr<void>(0x100), 128);
+		// Do not copy the private first line back to shared memory. This line does
+		// not contain wklState or wklStatus. The updates above already use the
+		// live CellSpurs pointer. A whole-line copy can instead overwrite a PPU
+		// write to wklSignal1 at offset 0x70. Six SPUs can activate workloads at
+		// the same time, which made the signal loss timing-dependent on Thor.
 	} //);
 
 	if (wklShutdownBitSet)
