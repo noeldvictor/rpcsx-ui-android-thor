@@ -78,7 +78,7 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"',
-    'Macro = "wait:8000;shot:late-render-boundary;threads:late-render-boundary;wait:2000;stop"',
+    'Macro = "wait:8000;shot:late-render-boundary;wait:2000;stop"',
     'ThermalRuntimeStopHeadroomC = 2',
     'ThermalRuntimeProbeWindowC = 2',
     'ThermalPreflightSamples = 1',
