@@ -1166,3 +1166,28 @@ The comparator self-test and `git diff --check` passed. The ARM64
 RelWithDebInfo build passed in 2 minutes 51 seconds. Debug APK assembly passed
 in 24 seconds. The exact Debug APK is `58D48B94...0934B3C`, and its size is
 116,122,643 bytes. Its stripped ARM64 library contains both new mode labels.
+
+The no-launch install succeeded, and the device-side APK hash matched the
+exact local hash. The first property-value-3 route used LLE. Its startup
+profile recorded `hle_libs=none`, `hle_spurs_kernel=0`, all other SPURS
+experiment switches off, and `ppu_call_trace=3`. All three preflight silicon
+samples were 33.3 C. The route emitted one complete `LLE_NET` block at 11.805
+seconds:
+
+    count=952 index=952 sequence=0..951
+    emulation_id=1 previous_emulation_id=18446744073709551615
+
+The first retained call is `sys_mutex_create` at `0x02224490`. The last call
+is `_sys_prx_start_module` at `0x0223120c` for `libnetctl.sprx`. The block has
+one event, one begin marker, and one end marker. Its history starts at sequence
+zero, so it includes the proven `FlipPump` boundary.
+
+The package sensor peaked at 59.8 C. The route completed below the 60 C
+sustained probe, the 68 C immediate stop, and the 72 C hard limit. The runner
+did not request its post snapshot. A direct ADB pull saved the unchanged remote
+guest log after the verified force-stop and before any new launch. The capture
+is:
+
+    20260827-235306-thor-input-custom/post-RPCSX.log
+
+The Thor must pass the same strict cool gate before the paired HLE route.
