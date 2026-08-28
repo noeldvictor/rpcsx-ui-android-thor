@@ -4043,7 +4043,7 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			i = eventFlag->ctrl.raw().ppuWaitSlotAndMode >> 4;
 		}
 
-		*mask = eventFlag->pendingRecvTaskEvents[i];
+		receivedEvents = eventFlag->pendingRecvTaskEvents[i];
 		vm::atomic_op(eventFlag->ctrl, [](CellSpursEventFlag::ControlSyncVar& ctrl)
 			{
 				ctrl.ppuPendingRecv = 0;

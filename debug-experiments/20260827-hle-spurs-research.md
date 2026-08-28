@@ -2736,3 +2736,69 @@ This APK is not installed. The next device work must start with a strict cool
 gate. Install this exact APK without a title launch. Run another strict cool
 gate before one bounded route. Do not run a second route in the same thermal
 round.
+
+## 46. The edgeZlib task reaches the SPURS event-flag notification
+
+The Thor refused strict gates at 38.9 C and 35.3 C. A later gate passed. The
+no-launch installer verified the PC-census APK and kept RPCSX stopped. The
+second strict gate also passed. The evidence is in:
+
+    20260828-154020-thor-input-strict-cool-gate
+    20260828-154203-thor-input-strict-cool-gate
+    20260828-154330-thor-input-strict-cool-gate
+    20260828-154350-apk-no-launch-install
+    20260828-154401-thor-input-strict-cool-gate
+
+The installer verified this exact SHA-256 on the device:
+
+    326A5E50CBB6F483BF958D0545F1E6FA6BBC14766300827D53CA36C636435FB2
+
+One bounded route enabled the firmware LFQueue path, both selector repairs,
+corrected atomic task selection, the SPURS atomic census, and the SPU PC
+census. Its capture is:
+
+    20260828-154424-thor-input-custom
+
+The PC census found one active edgeZlib task. The first six samples showed the
+task move through queue and decompression code at PCs `0x09940`, `0x05c10`,
+`0x0538c`, `0x04530`, `0x06fc0`, and `0x088d8`. The task then updated event
+flag `0x01e54800`. Its GETLLAR at PC `0x08990` and PUTLLC at PC `0x08be8` both
+completed. The next nine samples all had PC `0x0a4d8`, link register
+`0x08ca8`, last MFC command `0xb4`, and effective address `0x01e54800`.
+
+Ghidra mapped PC `0x0a4d8` in the valid live local-store image. This helper
+checks that its port is at most 63. It writes the payload to outbound mailbox
+channel 28. It then writes command `0x40 | port` to interrupt mailbox channel
+30. Caller PC `0x08ca4` gives the helper the event-flag port and returns at PC
+`0x08ca8`. This is the SPU event-throw path that notifies the waiting PPU
+thread. The repeated PC samples show that the guest did not complete this
+notification before the stop.
+
+The HLE event-flag wait code had a separate definite correctness defect. After
+a blocking queue receive, it copied `pendingRecvTaskEvents[i]` to the output
+mask. It then replaced that mask with an uninitialized `receivedEvents` local.
+The August 22 RPCS3 comparison checkout has the same defect. The local fix now
+copies `pendingRecvTaskEvents[i]` to `receivedEvents` and uses the existing
+final output assignment. A source contract test prevents the old assignment
+from returning.
+
+The route did not map RSX IO range `0x700000`. It mapped only `0x50000000` and
+`0x50100000`. Draw samples at flips 120 and 240 had zero draws. The flip-360
+sample had 31 primitive-8 draws. The flip-480 sample had 150 primitive-8
+draws. These are loading-screen quads, not correct 3D output. No crash, signal
+11, task ELF load failure, or fatal marker occurred.
+
+The near-limit guard stopped RPCSX after package silicon held at 62.2 C. The
+highest package sample was 62.6 C. The PID was absent after the stop. No second
+route ran in this thermal round.
+
+The event-flag wait contract, LFQueue route contract, Android debug build, and
+ARM64 APK contract passed. The corrected APK is 116,130,185 bytes and has this
+SHA-256:
+
+    C7939244A4F5BC8C9B996E714ABC5996FDB22EA8E9C793DEE55CE2C297DBFB00
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
+still not proved.
