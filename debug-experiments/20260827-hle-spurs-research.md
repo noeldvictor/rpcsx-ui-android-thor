@@ -768,3 +768,47 @@ were wrong. State sampling here is unreliable in a specific way: the sampler is
 driven by DMA traffic, which stops exactly when the thing being investigated
 goes wrong, so the last sample is systematically from before the failure. Event
 logging does not have that failure mode. Prefer it.
+
+## 20. Real modules DO run under the HLE kernel - correcting section 12
+
+Section 12 concluded that a real policy module cannot run under an HLE kernel,
+because staging the real taskset module gave zero frames. That reasoning was
+wrong, and the ADDWKL log disproves it directly:
+
+    ADDWKL #1 pm=0x2347200 size=0x4000     job chain, REAL module
+    ADDWKL #3 pm=0x2390000 size=0x4000     job chain, REAL module
+    ADDWKL #4 pm=0x2390000 size=0x4000     job chain, REAL module
+    ADDWKL #6 pm=0x2390000 size=0x4000     job chain, REAL module
+
+FOUR of this title's nine workloads already run real firmware under our HLE
+kernel, every run, through the default branch that copies the image into local
+store. Real modules and the HLE kernel are not incompatible. Section 12's
+"mixing cannot work unless the interfaces match exactly, and they evidently do
+not" is withdrawn - the interfaces evidently DO match for job chains.
+
+### With real_taskset_pm=1 the real module executes, and gets further
+
+Verified it is actually running rather than shadowed by the stub:
+
+    ADDWKL taskset workloads now pm=0x2320000  (was the 0x200 sentinel)
+    SYSCALL CENSUS: ABSENT                     (the HLE stub is not executing)
+
+And the PPU reaches further than it does with the real KERNEL enabled:
+
+    1x cellSpursCreateTask            2x cellSpursQueuePushBody
+    2x cellSpursCreateTaskWithAttribute   4x cellSpursSendWorkloadSignal
+    2x cellSpursCreateTasksetWithAttribute  6x cellSpursWakeUp
+
+Tasks are created and the queue is pushed - neither happens on the real-kernel
+path - and there are no SPU faults. But frames=0, against ~1000 quads for the
+stub, so the RSX never flips at all. Something in the render path stalls before
+the first flip.
+
+### Standing state
+
+    stub                    ready=true   ~1000 quads   p5=0
+    real taskset module     ready=false  0 frames      tasks created, queue pushed
+
+Neither renders. But the failure modes are different, and the real-module path
+is the only one where the title creates tasks AND pushes its queue, which is
+further into its own startup than anything else measured here.
