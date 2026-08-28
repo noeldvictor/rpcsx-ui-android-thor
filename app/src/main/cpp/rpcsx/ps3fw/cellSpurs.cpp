@@ -6025,35 +6025,6 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 {
 	cellSpurs.trace("_cellSpursSendSignal(taskset=*0x%x, taskId=0x%x)", taskset, taskId);
 
-	// EVERY CALLER, NOT JUST THE QUEUE PUSH.
-	//
-	// The task on taskset 0x101b4e80 called WAIT_SIGNAL once and never came
-	// back, and that taskset NEVER appears in dispatch. The only signal probe
-	// so far sits in the queue push path, which is bound to 0x10364100 - so a
-	// signal aimed at 0x101b4e80 would be invisible to it. Count them here,
-	// keyed by taskset, to settle whether anything wakes that task at all.
-	{
-		static std::atomic<u32> s_all{0};
-		static std::atomic<u32> s_other{0};
-
-		const u32 n = s_all++;
-		const bool is_queue_ts = taskset.addr() == 0x10364100u;
-
-		if (!is_queue_ts)
-		{
-			if (const u32 o = s_other++; o < 8 || (o & 0xFF) == 0)
-			{
-				cellSpurs.error("Thor SENDSIG-OTHER #%u (of %u total): taskset=0x%x taskId=%u wid=%u",
-					o, n, taskset.addr(), taskId, +taskset->wid);
-			}
-		}
-		else if ((n & 0x3FF) == 0)
-		{
-			cellSpurs.error("Thor SENDSIG #%u: taskset=0x%x taskId=%u (non-queue signals so far: %u)",
-				n, taskset.addr(), taskId, s_other.load());
-		}
-	}
-
 	if (!taskset)
 	{
 		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
@@ -6068,6 +6039,24 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 	{
 		return CELL_SPURS_TASK_ERROR_INVAL;
 	}
+
+	// TRACE THE EDGEZLIB WAKE WITHOUT CHANGING ITS STATE.
+	//
+	// The Transformers loader submits compressed reads to the edgeZlib task on
+	// this taskset. The PPU pushes one LFQueue item and sends task 0 a signal,
+	// but the task does not dispatch again. Keep this trace bounded because this
+	// function is also used by high-frequency render queues.
+	static std::atomic<u32> s_edge_wakes{0};
+	const bool thor_trace_edge = taskset.addr() == 0x101b4e80u && taskId == 0;
+	const u32 thor_edge_index = thor_trace_edge ? s_edge_wakes++ : 0;
+	const bool thor_log_edge = thor_trace_edge && thor_edge_index < 8;
+	u32 thor_running = 0;
+	u32 thor_ready = 0;
+	u32 thor_pready = 0;
+	u32 thor_waiting = 0;
+	u32 thor_enabled = 0;
+	u32 thor_signalled_before = 0;
+	u32 thor_signalled_after = 0;
 
 	int signal;
 
@@ -6084,6 +6073,16 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 
 			const u32 mask = (1u << 31) >> (taskId % 32);
 
+			if (thor_log_edge)
+			{
+				thor_running = running;
+				thor_ready = ready;
+				thor_pready = pready;
+				thor_waiting = waiting;
+				thor_enabled = enabled;
+				thor_signalled_before = signalled;
+			}
+
 			if ((running & waiting) || (ready & pready) ||
 				((signalled | waiting | pready | running | ready) & ~enabled) || !(enabled & mask))
 			{
@@ -6098,8 +6097,17 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 
 			signal = !!(~signalled & waiting & mask);
 			op.signalled[taskId / 32] = signalled | mask;
+			thor_signalled_after = signalled | mask;
 			return true;
 		});
+
+	if (thor_log_edge)
+	{
+		cellSpurs.error("Thor EDGE WAKE #%u: taskset=0x%x wid=%u task=%u signal=%d | run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x signalled=%08x->%08x",
+			thor_edge_index, taskset.addr(), +taskset->wid, taskId, signal,
+			thor_running, thor_ready, thor_pready, thor_waiting, thor_enabled,
+			thor_signalled_before, thor_signalled_after);
+	}
 
 	switch (signal)
 	{
@@ -6107,11 +6115,23 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 	case 1:
 	{
 		auto spurs = +taskset->spurs;
+		const u32 wid = +taskset->wid;
 
 		static_cast<void>(ppu.test_stopped());
 
 		ppu_execute<&cellSpursSendWorkloadSignal>(ppu, spurs, +taskset->wid);
 		auto rc = ppu_execute<&cellSpursWakeUp>(ppu, spurs);
+
+		if (thor_log_edge)
+		{
+			cellSpurs.error("Thor EDGE GATE #%u: spurs=0x%x wid=%u rc=0x%x | signal1=%04x state=%u ready=%u current=%u pending=%u max=%u nspus=%u",
+				thor_edge_index, spurs.addr(), wid, rc,
+				+spurs->wklSignal1.load(), +spurs->wklState(wid),
+				+spurs->wklReadyCount1[wid].load(), +spurs->wklCurrentContention[wid],
+				+spurs->wklPendingContention[wid], +spurs->wklMaxContention[wid].load(),
+				+spurs->nSpus);
+		}
+
 		if (rc + 0u == CELL_SPURS_POLICY_MODULE_ERROR_STAT)
 		{
 			return CELL_SPURS_TASK_ERROR_STAT;
