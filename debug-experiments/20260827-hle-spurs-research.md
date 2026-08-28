@@ -1722,3 +1722,72 @@ The census now records LR, SP, and r3 with each PC. It also records one bounded
 manual `ppu_pc_census` property is on. The next build and cooled route must use
 these records to find the caller that remains after the HLE map boundary.
 RPCSX is stopped, and the Thor is asleep.
+
+## 30. The late HLE wait follows task creation
+
+Commit `14d40267c` extends the low-rate PPU census. Each record now contains
+LR, SP, r3, and the PPU state. The probe also records one bounded 12-frame
+main-thread stack. The probe is active only when the manual `ppu_pc_census`
+property is on.
+
+The ARM64 RelWithDebInfo build passed in 57 seconds. The full debug APK build
+passed in 36 seconds. The exact APK was 116,122,991 bytes and had this SHA-256:
+
+    161A0D17D652B14848E64D2BF271DC35E1359863DC9698E5889CD68CE689295E
+
+The no-launch installer verified the same SHA-256 on the device and verified
+that RPCSX was not active. The evidence is in:
+
+    20260828-031006-apk-no-launch-install
+
+The launch gate passed at 34.1, 33.7, and 34.1 C. The route kept the measured
+HLE candidate stack, disabled the draw and call-trace probes, and enabled only
+the low-rate PPU census. The thermal guard stopped the route after the
+near-limit confirmation. The silicon peak was 62.2 C, and the junction peak
+was 75.9 C. Both values were below their hard limits. The complete failure log
+is:
+
+    20260828-031058-thor-input-custom/failure-RPCSX.log
+
+At 18.235 seconds, the main thread had this state:
+
+    cia=0x00fdd2cc lr=0x00fdd2b4 sp=0xd00403f0 r3=0x1e state=0x224
+
+The bounded stack was:
+
+    0x00fdddbc sp=0xd0040790
+    0x009dfabc sp=0xd0040840
+    0x009dfd58 sp=0xd0040910
+    0x009dff70 sp=0xd00409a0
+    0x009e8da0 sp=0xd0040a10
+    0x000153d0 sp=0xd0040bd0
+    0x000182a8 sp=0xd0040c60
+    0x00018038 sp=0xd0040d00
+
+The title code at `0x00fdd2cc` reads the word at `r31 + 0x590`. If the value
+is zero, it sleeps for 30 microseconds and repeats. This is a task start wait,
+not the common sleep wrapper from section 29.
+
+Immediately before the wait, the title created task-set workload 2 at
+`0x10364100`. It then created one task with ELF address `0x0177ec80`, context
+address `0x10370080`, and context size `0x3d400`. The task creation and start
+calls returned success. `cellSpursSendWorkloadSignal` wrote bit `0x2000` for
+workload 2, and its immediate readback was also `0x2000`.
+
+All six HLE SPU threads recorded only their initial system-service dispatch:
+
+    dispatch#1 wid=32 addr=0x100 size=0x2200
+
+No thread recorded a second dispatch to workload 0 or workload 2 before the
+stop. The earlier workload 0 signal also differed between otherwise similar
+runs. Its immediate readback was zero in this run and `0x8000` in two runs
+that reached the green render boundary. This difference is nondeterministic.
+It is not yet proof of causation because one other completed counter route
+also read zero.
+
+The direct signal write is not a lost host store. The HLE selector can clear
+workload 0 from six SPU threads when it selects system service workload 32.
+The current AArch64 shift wraps `0x8000 >> 32` to bit `0x8000`. The next change
+must measure or repair signal consumption and workload dispatch as one state
+transition. Repeating the signal write alone cannot establish correctness.
+RPCSX is stopped, and the Thor is asleep.
