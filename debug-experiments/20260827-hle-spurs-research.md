@@ -3069,3 +3069,96 @@ This APK is not installed. It supersedes the installed `87E7...9912` APK.
 The next device work must start with a new strict cool gate. Install this exact
 APK without a title launch. Run another strict cool gate before one bounded
 route. Correct 3D output and sustained 30 FPS are still not proved.
+
+## 52. The scheduler is running when edgeZlib stops
+
+Charging through the USB data cable kept the idle package near 40 C. The AYN
+charging-separation setting was 0. It was set to 1 for this thermal round. This
+changed the battery state from charging to discharging and let the Thor cool.
+The first strict gate, no-launch install, and post-install strict gate passed.
+The evidence is in:
+
+    20260828-170108-thor-input-strict-cool-gate
+    20260828-170133-transformers-edge-event-result-install
+    20260828-170152-thor-input-strict-cool-gate
+
+The installer verified this exact APK SHA-256 on the device:
+
+    5CC3FE43E189B42C044A8E0ED96C45FB654F7ED007EA0A114195C1C7AC67E058
+
+One bounded route used the firmware LFQueue path, both selector repairs,
+atomic task selection, and all three censuses. Its capture is:
+
+    20260828-170233-thor-input-custom
+
+The PoolThread called `cellSpursEventFlagWait` for event flag `0x01e54800`.
+SPU 5 then completed the event-flag GETLLAR at PC `0x08990` and PUTLLC at PC
+`0x08be8`. Samples 22 through 27 show normal progress. The JIT block count
+moved from 4 to 1714. Sample 28 reached PC `0x0a4d8` with link register
+`0x08ca8`, `r3=0x00000011`, `r4=0`, and `r5=0`.
+
+Samples 28 through 42 then stayed identical. The SPU state was 0, the thread
+group state was 6, and the SPURS running count was 6. The block count and
+recovery count both stayed at 1775. The failure count stayed at 20. The
+interpreter fallback state stayed off. All three mailbox counts stayed at 0.
+
+The exact event-entry counts were also zero:
+
+    Thor EDGE EVENT out-entry=0
+    Thor EDGE EVENT intr-entry=0
+    Thor EDGE EVENT result=0
+    Thor SPU EVENT=0
+
+The corrected entry filters use WRCH PCs `0x0a500` and `0x0a514`. Therefore,
+these zeros are valid. The task is runnable and its group is running, but no
+new translated-module entry or mailbox handler occurs. This rules out a SPURS
+scheduler suspension at this boundary. The active boundary is inside the
+cached LLVM module with entry `0x08840`, before the event helper reaches its
+first WRCH.
+
+The route mapped RSX addresses `0x50000000` and `0x50100000`. It did not map
+`0x70000000`. Draw samples had 0 calls at flips 120 and 240, 25 calls at flip
+360, 145 calls at flip 480, and 261 calls at flip 600. All calls used primitive
+8. These are loading quads, not correct 3D output. No fatal, signal 11, task
+ELF load failure, or crash marker occurred.
+
+The route started with three package samples of 34.9 C. The near-limit guard
+stopped it at a package sample of 64.6 C. The highest junction sample was
+74.3 C, below the 95 C junction limit. The PID was absent after the stop. No
+second route ran in this thermal round.
+
+After the round, RPCSX was force-stopped, the display was put to sleep, and
+charging separation was restored to its original value of 0.
+
+## 53. An exact event-helper interpreter handoff is ready
+
+A new default-off diagnostic can bypass only the event helper at LS range
+`0x0a4d8` through `0x0a51c`:
+
+    debug.rpcsx.thor.edge_event_interp=1
+
+The ARM64 compiler requires five exact guest opcodes. They include the helper
+entry, branch, both WRCH instructions, and the return. A match saves all live
+LLVM register values to the SPU context, starts the existing legacy
+interpreter at `0x0a4d8`, and stops the fallback after PC leaves `0x0a520`.
+The normal JIT gateway then resumes at the guest link register. The handoff
+does not enable the global interpreter and does not interpret the edgeZlib
+worker loop.
+
+The gate changes emitted IR. The existing native-object key hashes the final
+IR, so an object made with the gate off cannot satisfy a run with the gate on.
+Entry and exit records show whether the exact helper ran and where it returned.
+The route resets the property after success or failure.
+
+The LFQueue route contract, Android debug build, ARM64 APK contract, and Git
+whitespace check passed. The new diagnostic APK is 116,129,697 bytes and has
+this SHA-256:
+
+    033CCDA94908D9553ECF405E888E150CC0720DF719B3EB69E982F8B6A8ABCFBD
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate, then run one bounded route with `EdgeEventInterp=on`. The route must
+show both WRCH entries, the event result, the interpreter exit at `0x08ca8`,
+and progress past the current event-flag wait. Correct 3D output and sustained
+30 FPS are still not proved.

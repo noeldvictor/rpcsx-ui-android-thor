@@ -271,6 +271,89 @@ static bool get_thor_spu_verification() noexcept
 	return s_override != 0;
 }
 
+// Use the existing ARM64 interpreter fallback for the exact edgeZlib event
+// helper. This is a diagnostic gate. It is off by default.
+//
+//   debug.rpcsx.thor.edge_event_interp = 1
+static bool get_thor_edge_event_interp() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.edge_event_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
+#ifdef ARCH_ARM64
+static bool is_thor_edge_event_helper(const spu_program& program) noexcept
+{
+	static constexpr std::array<std::pair<u32, u32>, 5> s_signature = {{
+		{0x0a4d8, 0x7fffc280}, // clgtbi r8,r3,0x3f
+		{0x0a4f4, 0x1804888f}, // brhnz r2,0x0a518
+		{0x0a500, 0x3fe10207}, // wrch r5,ch28
+		{0x0a514, 0x40800205}, // wrch r3,ch30
+		{0x0a51c, 0x1c080086}, // bi lr
+	}};
+
+	const u32 end = program.lower_bound + ::size32(program.data) * 4;
+
+	for (const auto [address, expected] : s_signature)
+	{
+		if (address < program.lower_bound || address >= end)
+		{
+			return false;
+		}
+
+		const u32 opcode = std::bit_cast<be_t<u32>>(program.data[(address - program.lower_bound) / 4]);
+
+		if (opcode != expected)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static void exec_thor_edge_event_interp(spu_thread* spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+
+	spu->interp_fallback_begin = 0x0a4d8;
+	spu->interp_fallback_end = 0x0a520;
+	spu->interp_fallback = true;
+	spu->allow_interrupts_in_cpu_work = true;
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT INTERPRETER enter #%u pc=0x%05x lr=0x%05x "
+			"r3=0x%08x r4=0x%08x r5=0x%08x",
+			count, spu->pc, spu->gpr[0]._u32[3], spu->gpr[3]._u32[3],
+			spu->gpr[4]._u32[3], spu->gpr[5]._u32[3]);
+	}
+
+	spu_recompiler_base::old_interpreter(*spu, spu->_ptr<u8>(0), nullptr);
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
+			count, spu->pc, spu->gpr[3]._u32[3]);
+	}
+
+	spu_runtime::g_escape(spu);
+}
+#endif
+
 // Strict SPU block verification, default OFF. See the comment at the checksum
 // for the measurement that motivates it. Read once: the recompiler must not
 // change shape between the IR it emits and the host mirror that checks it.
@@ -342,6 +425,11 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 
 	// Read once, out of the compile loop, like the two gates above.
 	const bool m_thor_shufb_tbl2_or = thor::shufb_tbl2_or();
+
+	// This diagnostic changes emitted IR. The native-object cache key includes
+	// the final IR, so an object built with the gate off cannot satisfy a run
+	// that has the gate on.
+	const bool m_thor_edge_event_interp = get_thor_edge_event_interp();
 
 	// Interpreter table size power
 	const u8 m_interp_magn;
@@ -3350,6 +3438,14 @@ public:
 						break;
 					}
 
+#ifdef ARCH_ARM64
+					if (m_thor_edge_event_interp && m_pos == 0x0a4d8 && is_thor_edge_event_helper(func))
+					{
+						emit_thor_edge_event_interp();
+						continue;
+					}
+#endif
+
 					// Set variable for set_link()
 					if (m_pos + 4 >= end)
 						m_next_op = 0;
@@ -4711,6 +4807,33 @@ public:
 			m_block->has_gpr_memory_barriers = true;
 		}
 	}
+
+#ifdef ARCH_ARM64
+	void emit_thor_edge_event_interp()
+	{
+		update_pc();
+		ensure_gpr_stores();
+
+		// A true LLVM function keeps SP and r3 in host SSA values and can omit
+		// their context stores. The legacy interpreter reads the context, so save
+		// each live value before the handoff.
+		for (u32 i = 0; i < s_reg_max; i++)
+		{
+			if (llvm::Value* value = m_block->reg[i])
+			{
+				const bool is_xfloat = value->getType() == get_type<f64[4]>();
+				auto store = m_ir->CreateStore(
+					is_xfloat ? double_to_xfloat(value) : bitcast(value, get_reg_type(i)),
+					init_reg_fixed(i));
+				spu_context_attr(store);
+			}
+		}
+
+		m_block->block_end = m_ir->GetInsertBlock();
+		call("thor_edge_event_interp", &exec_thor_edge_event_interp, m_thread);
+		m_ir->CreateUnreachable();
+	}
+#endif
 
 	llvm::Value* get_rdch(spu_opcode_t op, u32 off, bool atomic)
 	{

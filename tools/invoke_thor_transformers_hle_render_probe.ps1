@@ -8,7 +8,9 @@ param(
     [ValidateSet("on", "off")]
     [string]$SpursSelectorFixes = "off",
     [ValidateSet("on", "off")]
-    [string]$TasksetSelectAtomic = "off"
+    [string]$TasksetSelectAtomic = "off",
+    [ValidateSet("on", "off")]
+    [string]$EdgeEventInterp = "off"
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +44,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.spurs_atomic_census" = "1"
     "debug.rpcsx.thor.spu_pc_census" = "1"
     "debug.rpcsx.thor.spu_event_census" = "1"
+    "debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_pc_census" = "0"
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = "0"
@@ -108,6 +111,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_event_census" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
 }
 
 $captureCandidates = @(

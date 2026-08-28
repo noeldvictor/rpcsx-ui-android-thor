@@ -10,6 +10,8 @@ $perfMonitorPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\
 $perfMonitor = Get-Content -LiteralPath $perfMonitorPath -Raw
 $spuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUThread.cpp"
 $spuThread = Get-Content -LiteralPath $spuThreadPath -Raw
+$spuLlvmPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp"
+$spuLlvm = Get-Content -LiteralPath $spuLlvmPath -Raw
 
 $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
@@ -34,6 +36,7 @@ $requiredFragments = @(
     '"debug.rpcsx.thor.taskset_select_atomic"',
     '"debug.rpcsx.thor.spu_pc_census"',
     '"debug.rpcsx.thor.spu_event_census"',
+    '"debug.rpcsx.thor.edge_event_interp"',
     '"setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue"',
     '"getprop debug.rpcsx.thor.taskset_select_atomic"',
     '"taskset-select-atomic-prelaunch-reset.txt"',
@@ -55,15 +58,18 @@ $requiredRenderProbeFragments = @(
     '[string]$LfqAny2Any = "off"',
     '[string]$SpursSelectorFixes = "off"',
     '[string]$TasksetSelectAtomic = "off"',
+    '[string]$EdgeEventInterp = "off"',
     'LfqAny2Any = $LfqAny2Any',
     'SpursSelectorFixes = $SpursSelectorFixes',
     'TasksetSelectAtomic = $TasksetSelectAtomic',
+    '"debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spurs_atomic_census" = "1"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
     '"debug.rpcsx.thor.spu_pc_census" = "1"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"',
     '"debug.rpcsx.thor.spu_event_census" = "1"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_event_census" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"',
     'SpuCachePreloadLimit = 64',
     'SpuCacheCompileBudgetMs = 50',
     'CacheWorkerAffinityMask = 7'
@@ -114,6 +120,26 @@ $requiredEventCensusFragments = @(
 foreach ($fragment in $requiredEventCensusFragments) {
     if (-not $spuThread.Contains($fragment)) {
         throw "The SPU event census is missing: $fragment"
+    }
+}
+
+$requiredEdgeEventInterpFragments = @(
+    '"debug.rpcsx.thor.edge_event_interp"',
+    'return false;',
+    'is_thor_edge_event_helper(func)',
+    '{0x0a4d8, 0x7fffc280}',
+    '{0x0a500, 0x3fe10207}',
+    '{0x0a514, 0x40800205}',
+    'spu->interp_fallback_begin = 0x0a4d8;',
+    'spu->interp_fallback_end = 0x0a520;',
+    'spu_recompiler_base::old_interpreter(*spu, spu->_ptr<u8>(0), nullptr);',
+    'Thor EDGE EVENT INTERPRETER enter #%u',
+    'Thor EDGE EVENT INTERPRETER leave #%u'
+)
+
+foreach ($fragment in $requiredEdgeEventInterpFragments) {
+    if (-not $spuLlvm.Contains($fragment)) {
+        throw "The edgeZlib event interpreter handoff is missing: $fragment"
     }
 }
 
