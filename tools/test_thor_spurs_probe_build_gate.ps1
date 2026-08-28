@@ -6,6 +6,7 @@ $cmakeSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/C
 $headerSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/thor_spurs_probe.h") -Raw
 $kernelSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_spu.cpp") -Raw
 $spuThreadSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp") -Raw
+$hleSpursSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/ps3fw/cellSpursSpu.cpp") -Raw
 $eventSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_event.cpp") -Raw
 $semaphoreSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_semaphore.cpp") -Raw
 $timerSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_timer.cpp") -Raw
@@ -43,6 +44,15 @@ if ($kernelSource -notmatch '#if !defined\(__ANDROID__\) \|\| defined\(RPCSX_THO
 
 if ($spuThreadSource -notmatch '#if !defined\(ANDROID\) \|\| defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?__system_property_get\("debug\.rpcsx\.thor\.spurs_probe", value\)[\s\S]*?Thor SPURS wait probe:[\s\S]*?#else\s+enum class thor_spurs_wait_event[\s\S]*?static FORCE_INLINE constexpr void\s+thor_spurs_wait_probe_log[\s\S]*?#endif') {
     throw "SPU reservation/wait diagnostics are not wholly excluded from normal Android builds."
+}
+
+if ($hleSpursSource -notmatch '#if defined\(ANDROID\) && !defined\(RPCSX_THOR_SPURS_PROBE\)[\s\S]*?static FORCE_INLINE constexpr bool thor_hle_spurs_diagnostics\(\) noexcept[\s\S]*?return false;[\s\S]*?#else[\s\S]*?__system_property_get\("debug\.rpcsx\.thor\.spurs_probe", value\)[\s\S]*?#endif') {
+    throw "HLE SPURS hot-loop diagnostics are not excluded from normal Android builds."
+}
+
+$hleDiagnosticGateCount = [regex]::Matches($hleSpursSource, 'thor_hle_spurs_diagnostics\(\)').Count - 2
+if ($hleDiagnosticGateCount -ne 6) {
+    throw "Expected 6 HLE SPURS hot-loop diagnostic gates, found $hleDiagnosticGateCount."
 }
 
 $ppuSources = @($eventSource, $semaphoreSource, $timerSource)

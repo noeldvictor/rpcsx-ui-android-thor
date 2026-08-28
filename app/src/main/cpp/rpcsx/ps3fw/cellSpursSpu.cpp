@@ -282,7 +282,30 @@ s32 sys_spu_thread_switch_system_module(spu_thread& spu, u32 status)
 // branch twice: six SPUs run these functions continuously.
 static std::atomic<u32> g_thor_hle_req_logged{0};
 static std::atomic<u32> g_thor_hle_act_logged{0};
-static std::atomic<u32> g_thor_hle_sel_logged{0};
+
+// Keep the research counters and log formatting out of normal Android builds.
+// Diagnostic APKs still require the explicit runtime property before launch.
+#if defined(ANDROID) && !defined(RPCSX_THOR_SPURS_PROBE)
+static FORCE_INLINE constexpr bool thor_hle_spurs_diagnostics() noexcept
+{
+	return false;
+}
+#else
+static bool thor_hle_spurs_diagnostics() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.spurs_probe", value) > 0 &&
+			value[0] && value[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+#endif
 
 // Gate for the wklSignal clear fix. **DEFAULT OFF - the fix REGRESSES HLE.**
 //
@@ -1133,43 +1156,48 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			// so sample the gate terms every 4096 selector calls.
 			static std::atomic<u32> s_sel_calls2{0};
 
-			if (const u32 sn = s_sel_calls2++; (sn & 0xFFF) == 0)
+			if (thor_hle_spurs_diagnostics())
 			{
-				// COVER wid 2. The queue's taskset is workload 2 - the PPU logs
-				// `signal wid=2: inside=0x2000 readback=0x2000` - so printing only
-				// wkl0 and wkl1 was reading workloads that have nothing to do with
-				// the stall.
-				for (u32 k = 0; k < 4; k++)
-				{
-					cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u | K2=%u rawCont=0x%02x rawMax=0x%02x curId=%u locC=%u isPoll=%u holders=0x%02x",
-						+ctxt->spuNum, k,
-						(ctxt->wklRunnable1 & (0x8000 >> k)) ? 1u : 0u,
-						+ctxt->priority[k],
-						+spurs->wklMaxContention[k],
-						+contention[k],
-						+spurs->wklReadyCount1[k],
-						+spurs->wklIdleSpuCountOrReadyCount2[k],
-						(spurs->wklSignal1.load() & (0x8000u >> k)) ? 1u : 0u,
-						+spurs->wklFlag.flag.load(),
-						// IS THIS TITLE 32-WORKLOAD? kernel2 packs wklCurrentContention as two
-						// 4-bit counters per byte (low = wkl i, high = wkl i+16); kernel1 reads
-						// the byte as a plain count. If K2=1 while THIS probe (kernel1) is the
-						// one running, a packed 0xFC reads as 252 and no workload can ever be
-						// selected. Print the raw bytes beside the decoded value so the two
-						// readings can be told apart.
+				const u32 sn = s_sel_calls2++;
 
-						+spurs->wklFlagReceiver,
-						(spurs->flags1 & SF1_32_WORKLOADS) ? 1u : 0u,
-						+spurs->wklCurrentContention[k],
-						+spurs->wklMaxContention[k],
-						// LEAKED OR LEGITIMATELY HELD? cont=1 with maxCont=1 looks identical
-						// either way. curId says which workload THIS SPU thinks it is on, and
-						// locC says whether it believes it holds contention for wkl k. If no
-						// SPU reports curId=2 while wkl2 shows cont=1, the count is leaked.
-						+ctxt->wklCurrentId,
-						+ctxt->wklLocContention[k],
-						isPoll ? 1u : 0u,
-						g_thor_wkl_holders[k & 0x0F].load());
+				if ((sn & 0xFFF) == 0)
+				{
+					// COVER wid 2. The queue's taskset is workload 2 - the PPU logs
+					// `signal wid=2: inside=0x2000 readback=0x2000` - so printing only
+					// wkl0 and wkl1 was reading workloads that have nothing to do with
+					// the stall.
+					for (u32 k = 0; k < 4; k++)
+					{
+						cellSpurs.error("Thor HLE SPU%u select#1 wkl%u: runnable=%u prio=%u maxCont=%u cont=%u ready=%u idle=%u signal=%u flag=%u flagRecv=%u | K2=%u rawCont=0x%02x rawMax=0x%02x curId=%u locC=%u isPoll=%u holders=0x%02x",
+							+ctxt->spuNum, k,
+							(ctxt->wklRunnable1 & (0x8000 >> k)) ? 1u : 0u,
+							+ctxt->priority[k],
+							+spurs->wklMaxContention[k],
+							+contention[k],
+							+spurs->wklReadyCount1[k],
+							+spurs->wklIdleSpuCountOrReadyCount2[k],
+							(spurs->wklSignal1.load() & (0x8000u >> k)) ? 1u : 0u,
+							+spurs->wklFlag.flag.load(),
+							// IS THIS TITLE 32-WORKLOAD? kernel2 packs wklCurrentContention as two
+							// 4-bit counters per byte (low = wkl i, high = wkl i+16); kernel1 reads
+							// the byte as a plain count. If K2=1 while THIS probe (kernel1) is the
+							// one running, a packed 0xFC reads as 252 and no workload can ever be
+							// selected. Print the raw bytes beside the decoded value so the two
+							// readings can be told apart.
+
+							+spurs->wklFlagReceiver,
+							(spurs->flags1 & SF1_32_WORKLOADS) ? 1u : 0u,
+							+spurs->wklCurrentContention[k],
+							+spurs->wklMaxContention[k],
+							// LEAKED OR LEGITIMATELY HELD? cont=1 with maxCont=1 looks identical
+							// either way. curId says which workload THIS SPU thinks it is on, and
+							// locC says whether it believes it holds contention for wkl k. If no
+							// SPU reports curId=2 while wkl2 shows cont=1, the count is leaked.
+							+ctxt->wklCurrentId,
+							+ctxt->wklLocContention[k],
+							isPoll ? 1u : 0u,
+							g_thor_wkl_holders[k & 0x0F].load());
+					}
 				}
 			}
 
@@ -1656,6 +1684,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 	// workloads, so count SELECTIONS per workload id - event-based, because
 	// state sampling here is driven by DMA traffic that stops at the failure.
 	// A workload with zero selections is never running at all.
+	if (thor_hle_spurs_diagnostics())
 	{
 		static std::array<std::atomic<u32>, 32> s_sel_hist{};
 		static std::atomic<u32> s_sel_total{0};
@@ -1682,7 +1711,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 		}
 	}
 
-	if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
+	if (thor_hle_spurs_diagnostics() && wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
 	{
 		static std::array<std::atomic<u32>, 8> s_real_sel{};
 
@@ -3394,6 +3423,7 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 			// the two sides - PPU uses values[id/32] |= (1u<<31)>>(id%32), this
 			// uses u128{1} << (~id & 127) - so print the raw words rather than
 			// assume they agree.
+			if (thor_hle_spurs_diagnostics())
 			{
 				static std::atomic<u32> s_sel{0};
 
@@ -3681,6 +3711,7 @@ void spursTasksetDispatch(spu_thread& spu)
 	// WHAT DOES DISPATCH DO WITH THE RESULT? If taskId >= 128 the taskset EXITS
 	// immediately, which would explain a consumer that never resumes even though
 	// SELECT_TASK can see it. Print both the id and the waiting flag.
+	if (thor_hle_spurs_diagnostics())
 	{
 		static std::atomic<u32> s_disp{0};
 
@@ -3962,6 +3993,7 @@ s32 spursTasksetProcessSyscall(spu_thread& spu, u32 syscallNum, u32 args)
 	// measure what the task asks for. One line per distinct syscall number, at
 	// warning level so it survives the default filter - trace does not, and that
 	// already caused one misreading this session.
+	if (thor_hle_spurs_diagnostics())
 	{
 		// COUNT, DO NOT ONE-SHOT.
 		//
