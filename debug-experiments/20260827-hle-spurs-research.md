@@ -1327,3 +1327,6 @@ guest state.
 
 The comparator self-test and `git diff --check` passed. The ARM64
 RelWithDebInfo build passed in 3 minutes 31 seconds.
+
+Debug APK assembly passed in 8 seconds. The exact APK is
+`F9688506...A5F60CAC`, and its size is 116,123,033 bytes.
