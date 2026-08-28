@@ -2802,3 +2802,69 @@ This APK is not installed. The next device work must start with a new strict
 cool gate. Install this exact APK without a title launch. Run another strict
 cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
 still not proved.
+
+## 47. The event-mask fix does not release the SPU notification
+
+The Thor refused a strict gate at 36.5 C. A later gate passed. The no-launch
+installer verified the event-mask APK and kept RPCSX stopped. The second gate
+failed at 35.3 C, then a later gate passed. The USB ADB transport disappeared
+before the route set its first property, so the route did not launch. The same
+Thor remained online through its Wi-Fi ADB transport. Wi-Fi gates refused at
+46.2 C and 35.3 C before a full gate passed. The evidence is in:
+
+    20260828-155518-thor-input-strict-cool-gate
+    20260828-155717-thor-input-strict-cool-gate
+    20260828-155819-transformers-event-flag-mask-install
+    20260828-155838-thor-input-strict-cool-gate
+    20260828-155952-thor-input-strict-cool-gate
+    20260828-160059-thor-input-strict-cool-gate
+    20260828-160322-thor-input-strict-cool-gate
+    20260828-160440-thor-input-strict-cool-gate
+
+The installer and route verified this exact APK SHA-256:
+
+    C7939244A4F5BC8C9B996E714ABC5996FDB22EA8E9C793DEE55CE2C297DBFB00
+
+One bounded route used the firmware LFQueue path, both selector repairs,
+corrected atomic task selection, the event-mask fix, and both existing
+censuses. Its capture is:
+
+    20260828-160507-thor-input-custom
+
+The event-mask fix did not move the boundary. One edgeZlib task completed both
+queue reservations, ran decompression code, and updated event flag
+`0x01e54800`. Its GETLLAR at PC `0x08990` and PUTLLC at PC `0x08be8` both
+succeeded. The next seven samples all had PC `0x0a4d8`, link register
+`0x08ca8`, last MFC command `0xb4`, and effective address `0x01e54800`.
+PoolThread did not log a later HLE call. This means that the current blocker is
+in the SPU event notification before the fixed PPU event-flag wait can return.
+The mask repair is valid, but it is not the current stall repair.
+
+The route did not map RSX IO range `0x700000`. It mapped only `0x50000000` and
+`0x50100000`. Draw samples at flips 120 and 240 had zero draws. The flip-360
+sample had 42 primitive-8 draws. The flip-480 sample had 158 primitive-8
+draws. These are loading-screen quads, not correct 3D output. No crash, signal
+11, task ELF load failure, or fatal marker occurred.
+
+The near-limit guard stopped RPCSX after package silicon held at 65.4 C. The
+highest package sample was 66.2 C. The PID was absent after the stop. No second
+route ran in this thermal round.
+
+A new default-off event census now records the SPU event notification result:
+
+    debug.rpcsx.thor.spu_event_census=1
+
+It records at most 32 events. Each record includes the event port, payload,
+result code, queue ID, queue depth, PPU waiter state, mailbox counts, and SPU
+state. It takes the queue lock only after the normal send operation returns.
+It does not change mailbox or queue behavior.
+
+The LFQueue route contract, Android debug build, and ARM64 APK contract passed.
+The diagnostic APK is 116,130,605 bytes and has this SHA-256:
+
+    CA1C628D1AC1D65BE6F499BB99F18C443358F51A0441607C10616B8DA371F045
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
+still not proved.

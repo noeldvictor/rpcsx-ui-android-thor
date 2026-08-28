@@ -4125,6 +4125,24 @@ static FORCE_INLINE bool get_thor_spurs_atomic_census() noexcept
 #endif
 }
 
+// Record the result of each bounded SPU event notification. This probe is off
+// by default and does not change mailbox or event-queue behavior.
+//
+//   debug.rpcsx.thor.spu_event_census = 1
+static FORCE_INLINE bool get_thor_spu_event_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.spu_event_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
 // cmd: 0 = GETLLAR, 1 = PUTLLC ok, 2 = PUTLLC fail, 3 = PUTLLUC.
 void thor_spurs_atomic_census(u32 pc, u32 ea, u32 cmd, u32 spu_index, const void* data, const void* ls_pm)
 {
@@ -9810,7 +9828,35 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				}
 
 				// TODO: check passing spup value
-				if (auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN)
+				const auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN;
+
+				if (get_thor_spu_event_census())
+				{
+					static std::atomic<u32> s_event_count{0};
+					const u32 n = s_event_count.fetch_add(1, std::memory_order_relaxed);
+
+					if (n < 32)
+					{
+						u32 queue_id = 0;
+						u32 queue_depth = 0;
+						u32 ppu_waiter = 0;
+
+						if (queue)
+						{
+							std::lock_guard lock{queue->mutex};
+							queue_id = queue->id;
+							queue_depth = static_cast<u32>(queue->events.size());
+							ppu_waiter = queue->pq ? 1 : 0;
+						}
+
+						spu_log.error("Thor SPU EVENT #%u pc=0x%05x port=%u data0=0x%06x data1=0x%08x "
+							"result=0x%08x queue=0x%08x depth=%u waiter=%u out=%u in=%u state=0x%llx",
+							n, pc, spup, value & 0x00ffffff, data, res + 0u, queue_id, queue_depth,
+							ppu_waiter, ch_out_mbox.get_count(), ch_in_mbox.get_count(), +state);
+					}
+				}
+
+				if (res)
 				{
 					if (res == CELL_EAGAIN)
 					{

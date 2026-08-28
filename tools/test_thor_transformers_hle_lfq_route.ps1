@@ -8,6 +8,8 @@ $pcCensusPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cel
 $pcCensus = Get-Content -LiteralPath $pcCensusPath -Raw
 $perfMonitorPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\perf_monitor.cpp"
 $perfMonitor = Get-Content -LiteralPath $perfMonitorPath -Raw
+$spuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUThread.cpp"
+$spuThread = Get-Content -LiteralPath $spuThreadPath -Raw
 
 $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
@@ -31,6 +33,7 @@ $requiredFragments = @(
     '"setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue"',
     '"debug.rpcsx.thor.taskset_select_atomic"',
     '"debug.rpcsx.thor.spu_pc_census"',
+    '"debug.rpcsx.thor.spu_event_census"',
     '"setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue"',
     '"getprop debug.rpcsx.thor.taskset_select_atomic"',
     '"taskset-select-atomic-prelaunch-reset.txt"',
@@ -59,6 +62,8 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
     '"debug.rpcsx.thor.spu_pc_census" = "1"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"',
+    '"debug.rpcsx.thor.spu_event_census" = "1"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_event_census" -Value "0"',
     'SpuCachePreloadLimit = 64',
     'SpuCacheCompileBudgetMs = 50',
     'CacheWorkerAffinityMask = 7'
@@ -81,6 +86,21 @@ $requiredPcCensusFragments = @(
 foreach ($fragment in $requiredPcCensusFragments) {
     if (-not ($pcCensus.Contains($fragment) -or $perfMonitor.Contains($fragment))) {
         throw "The edgeZlib SPU PC census is missing: $fragment"
+    }
+}
+
+$requiredEventCensusFragments = @(
+    '"debug.rpcsx.thor.spu_event_census"',
+    'static std::atomic<u32> s_event_count{0};',
+    'if (n < 32)',
+    'queue_depth = static_cast<u32>(queue->events.size());',
+    'ppu_waiter = queue->pq ? 1 : 0;',
+    'Thor SPU EVENT #%u'
+)
+
+foreach ($fragment in $requiredEventCensusFragments) {
+    if (-not $spuThread.Contains($fragment)) {
+        throw "The SPU event census is missing: $fragment"
     }
 }
 
