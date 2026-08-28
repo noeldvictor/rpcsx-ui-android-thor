@@ -940,3 +940,35 @@ workload selections - have each turned out to be downstream of the stall rather
 than the stall. Each looked like a cause when first measured. The pattern is
 consistent enough to state plainly: this title's HLE failure presents as a
 cascade, and nearly everything observable about it is an effect.
+
+## 24. A bounded PPU call trace now targets the first divergence
+
+The next question is earlier than SPURS selection: which `main_thread` HLE or
+lv2 call differs before HLE enters the GCM fence wait. The existing
+`ppu_thread::syscall_history` already records the function name, four arguments,
+the return value, and the call address. It held one entry unless PPU call history
+was enabled, and no diagnostic emitted it at a comparable point in both modes.
+
+`debug.rpcsx.thor.ppu_call_trace=1` now enables the existing 2,048-entry history
+on Android. The performance monitor emits it once, in oldest-to-newest order, at
+one of two mode-specific milestones:
+
+  - `HLE_FENCE`: `main_thread` reaches guest PC `0x00fdcf60`.
+  - `LLE_BINK`: the title creates `Bink Audio Thread`, which proves that LLE
+    passed the load boundary that HLE does not pass.
+
+Each row starts with `Thor PPU CALL TRACE` and includes a sequence number. The
+begin row records the mode, retained count, total index, and current PC. The
+property also enables the existing PPU PC census, so one property is sufficient.
+Normal runs retain the one-entry history and have no new per-call trace work.
+
+ARM64 RelWithDebInfo verification passed:
+
+    .\gradlew.bat ':app:buildCMakeRelWithDebInfo[arm64-v8a]'
+    BUILD SUCCESSFUL in 1m 25s
+
+No APK was installed and no device command ran. The next device round needs one
+cooled LLE boot and one separately cooled HLE boot with this property enabled.
+Compare the two retained sequences from their common suffix. The first missing
+call, changed argument, or changed return value is the boundary to disassemble
+with Ghidra. Do not add another SPURS state probe before this comparison.

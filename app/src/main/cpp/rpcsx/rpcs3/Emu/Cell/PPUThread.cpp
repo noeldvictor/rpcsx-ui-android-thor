@@ -3935,6 +3935,21 @@ static thor_es_frame_poll_wait_mode get_initial_thor_es_frame_poll_wait_mode(u32
 		: thor_es_frame_poll_wait_mode::off;
 }
 
+static bool thor_ppu_call_trace_enabled() noexcept
+{
+#ifdef ANDROID
+	static const bool s_enabled = []() noexcept
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) > 0 && value[0] && value[0] != '0';
+	}();
+
+	return s_enabled;
+#else
+	return false;
+#endif
+}
+
 ppu_thread::~ppu_thread()
 {
 }
@@ -3967,9 +3982,10 @@ ppu_thread::ppu_thread(const ppu_thread_params& param, std::string_view name, u3
 		state += cpu_flag::memory;
 	}
 
-	call_history.data.resize(g_cfg.core.ppu_call_history ? call_history_max_size : 1);
-	syscall_history.data.resize(g_cfg.core.ppu_call_history ? syscall_history_max_size : 1);
-	syscall_history.count_debug_arguments = static_cast<u32>(g_cfg.core.ppu_call_history ? std::size(syscall_history.data[0].args) : 0);
+	const bool record_call_history = g_cfg.core.ppu_call_history || thor_ppu_call_trace_enabled();
+	call_history.data.resize(record_call_history ? call_history_max_size : 1);
+	syscall_history.data.resize(record_call_history ? syscall_history_max_size : 1);
+	syscall_history.count_debug_arguments = static_cast<u32>(record_call_history ? std::size(syscall_history.data[0].args) : 0);
 
 #ifdef __APPLE__
 	pthread_jit_write_protect_np(true);
@@ -4075,9 +4091,10 @@ ppu_thread::ppu_thread(utils::serial& ar)
 		atomic_t<u32> inited = false;
 	};
 
-	call_history.data.resize(g_cfg.core.ppu_call_history ? call_history_max_size : 1);
-	syscall_history.data.resize(g_cfg.core.ppu_call_history ? syscall_history_max_size : 1);
-	syscall_history.count_debug_arguments = static_cast<u32>(g_cfg.core.ppu_call_history ? std::size(syscall_history.data[0].args) : 0);
+	const bool record_call_history = g_cfg.core.ppu_call_history || thor_ppu_call_trace_enabled();
+	call_history.data.resize(record_call_history ? call_history_max_size : 1);
+	syscall_history.data.resize(record_call_history ? syscall_history_max_size : 1);
+	syscall_history.count_debug_arguments = static_cast<u32>(record_call_history ? std::size(syscall_history.data[0].args) : 0);
 
 	if (version >= 2 && !g_fxo->get<save_lv2_tag>().loaded.exchange(true))
 	{

@@ -211,14 +211,54 @@ void perf_monitor::operator()()
 				static const bool s_pc_census = []() noexcept
 				{
 					char v[PROP_VALUE_MAX]{};
-					return __system_property_get("debug.rpcsx.thor.ppu_pc_census", v) > 0 && v[0] && v[0] != '0';
+					if (__system_property_get("debug.rpcsx.thor.ppu_pc_census", v) > 0 && v[0] && v[0] != '0')
+					{
+						return true;
+					}
+
+					std::memset(v, 0, sizeof(v));
+					return __system_property_get("debug.rpcsx.thor.ppu_call_trace", v) > 0 && v[0] && v[0] != '0';
 				}();
 
 				if (s_pc_census)
 				{
-					idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& ppu)
+					bool bink_thread_exists = false;
+					idm::select<named_thread<ppu_thread>>([&](u32, ppu_thread& ppu)
+						{
+							bink_thread_exists |= ppu.get_name().find("Bink Audio Thread") != std::string_view::npos;
+						});
+
+					idm::select<named_thread<ppu_thread>>([bink_thread_exists](u32 id, ppu_thread& ppu)
 						{
 							const u32 pc = +ppu.cia;
+
+							// Capture the same bounded main-thread call history at the first
+							// causal milestone in each mode. HLE reaches the frozen fence. LLE
+							// creates the Bink audio thread after it passes the load boundary.
+							// The history is enabled only by debug.rpcsx.thor.ppu_call_trace.
+							static std::atomic<bool> s_call_trace_dumped{false};
+							const bool is_main = ppu.get_name().find("main_thread") != std::string_view::npos;
+							const bool trace_milestone = pc == 0x00fdcf60u || bink_thread_exists;
+
+							if (is_main && trace_milestone && ppu.syscall_history.data.size() > 1 &&
+								!s_call_trace_dumped.exchange(true))
+							{
+								const auto& history = ppu.syscall_history;
+								const u64 count = std::min<u64>(history.index, history.data.size());
+								const u64 first = history.index - count;
+								perf_log.error("Thor PPU CALL TRACE BEGIN: mode=%s count=%llu index=%llu cia=0x%08x",
+									pc == 0x00fdcf60u ? "HLE_FENCE" : "LLE_BINK", count, history.index, pc);
+
+								for (u64 seq = first; seq < history.index; seq++)
+								{
+									const auto& entry = history.data[seq % history.data.size()];
+									perf_log.error("Thor PPU CALL TRACE: seq=%llu cia=0x%08x func=%s rc=0x%llx r3=0x%llx r4=0x%llx r5=0x%llx r6=0x%llx",
+										seq, static_cast<u32>(entry.cia), entry.func_name ? entry.func_name : "<null>", entry.error,
+										entry.args[0], entry.args[1], entry.args[2], entry.args[3]);
+								}
+
+								perf_log.error("Thor PPU CALL TRACE END");
+							}
 
 							// THE FENCE main_thread WAITS ON.
 							//
