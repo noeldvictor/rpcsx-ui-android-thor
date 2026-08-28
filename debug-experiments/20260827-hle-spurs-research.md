@@ -994,8 +994,17 @@ HLE fence milestone was transient in this path. It therefore earns no speed or
 correctness credit. The HLE main thread settled at `0x009e4ba4`, while both
 modes created `FlipPump` at the nearly identical times above.
 
-The tracer now uses that shared event for both modes. This revision is
-host-only until the next cooled capture. Compare its two retained sequences.
-The first missing call, changed argument, or changed return value is the
-boundary to disassemble with Ghidra. Do not add another SPURS state probe before
-this comparison.
+The first shared-event revision polled the live PPU thread list from the
+performance monitor. Its exact APK `D994EA5E...A377CF7F0` passed a no-launch
+device hash check. The cooled LLE boot did not emit a trace: LLE creates
+`FlipPump` at 11.276 seconds and destroys it at 12.686 seconds, before the next
+monitor scan. The run was stopped without an HLE arm. This is a sampling race,
+not title evidence.
+
+The tracer now emits directly inside `_sys_ppu_thread_create` when the decoded
+name is exactly `FlipPump`. It records the creating main thread before that HLE
+call returns, so both modes use the same event and no thread-lifetime polling.
+This event-driven revision is host-only until the next cooled capture. Compare
+its two retained sequences. The first missing call, changed argument, or
+changed return value is the boundary to disassemble with Ghidra. Do not add
+another SPURS state probe before this comparison.

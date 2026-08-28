@@ -223,60 +223,6 @@ void perf_monitor::operator()()
 
 				if (s_pc_census)
 				{
-					const bool trace_title = Emu.GetTitleID() == "BLUS30357";
-					const bool hle_spurs = g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
-					bool flip_thread_exists = false;
-					idm::select<named_thread<ppu_thread>>([&](u32, ppu_thread& ppu)
-						{
-							flip_thread_exists |= ppu.get_name().find("FlipPump") != std::string_view::npos;
-						});
-
-					// Capture the bounded main-thread call history at the same title
-					// milestone in both modes. Transformers creates FlipPump at 11.073 s
-					// under HLE and 11.276 s under LLE. The old HLE fence milestone was
-					// transient in the green-clear path and did not emit a trace.
-					// The history is enabled only by debug.rpcsx.thor.ppu_call_trace.
-					const auto trace_ppu = idm::select<named_thread<ppu_thread>>([trace_title, flip_thread_exists](u32, ppu_thread& ppu)
-						{
-							const bool is_main = ppu.get_name().find("main_thread") != std::string_view::npos;
-							return trace_title && flip_thread_exists && is_main && ppu.syscall_history.data.size() > 1;
-						});
-
-					static std::atomic<u64> s_call_trace_emulation_id{0};
-					const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
-
-					if (trace_ppu && s_call_trace_emulation_id.exchange(emulation_id) != emulation_id)
-					{
-						const auto ppu = trace_ppu.ptr;
-						std::vector<ppu_thread::syscall_history_t::entry_t> entries;
-						u64 history_index = 0;
-						u32 trace_pc = 0;
-
-						// The PPU writes this ring without atomics. Suspend the CPU threads
-						// for the copy, and emit the copied rows after execution resumes.
-						cpu_thread::suspend_all(nullptr, {}, [&]
-							{
-								entries = ppu->syscall_history.data;
-								history_index = ppu->syscall_history.index;
-								trace_pc = +ppu->cia;
-							});
-
-						const u64 count = std::min<u64>(history_index, entries.size());
-						const u64 first = history_index - count;
-						perf_log.error("Thor PPU CALL TRACE BEGIN: mode=%s count=%llu index=%llu cia=0x%08x",
-							hle_spurs ? "HLE_FLIP" : "LLE_FLIP", count, history_index, trace_pc);
-
-						for (u64 seq = first; seq < history_index; seq++)
-						{
-							const auto& entry = entries[seq % entries.size()];
-							perf_log.error("Thor PPU CALL TRACE: seq=%llu cia=0x%08x func=%s rc=0x%llx r3=0x%llx r4=0x%llx r5=0x%llx r6=0x%llx",
-								seq, static_cast<u32>(entry.cia), entry.func_name ? entry.func_name : "<null>", entry.error,
-								entry.args[0], entry.args[1], entry.args[2], entry.args[3]);
-						}
-
-						perf_log.error("Thor PPU CALL TRACE END");
-					}
-
 					idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& ppu)
 						{
 							const u32 pc = +ppu.cia;
