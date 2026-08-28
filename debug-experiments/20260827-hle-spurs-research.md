@@ -2061,3 +2061,57 @@ The junction peak was 73.9 C. Both values were below their hard limits. The
 route did not enable the draw census or take a screenshot, so it has no 3D or
 FPS credit. RPCSX is stopped, and the display is asleep. Correct 3D output and
 30 FPS are still not proved.
+
+## 36. The staged loader waits for an asynchronous stream range
+
+A focused Ghidra pass resolved the loader object's virtual table entries. The
+values `0x01963408` and `0x01963410` are PPU function descriptors. Their code
+addresses are `0x005a0a18` and `0x005a3298`. The first function creates or
+checks a backing stream at object offset `0x580`. It asks that stream for its
+size and then requests the range that starts at zero.
+
+Commit `98c15082f` added three bounded snapshots of the backing stream. The
+source contract and related SPU and SPURS contracts passed. The probe-off ARM64
+debug APK built in 1 minute 23 seconds. It was 116,125,808 bytes and had this
+SHA-256:
+
+    7CCB4DD76D6AFC22D49A083237E7965584F4DAFC37C8D35F80382650E27AC655
+
+The strict gate passed at 32.9 C for all three samples. The no-launch installer
+verified the same hash on the device and verified that RPCSX was not active. A
+fresh gate then passed. The evidence is in:
+
+    20260828-054414-thor-input-strict-cool-gate
+    20260828-054457-transformers-loader-source-install
+    20260828-054515-thor-input-strict-cool-gate
+
+The bounded Transformers route passed its own launch gate at 33.7, 32.9, and
+33.3 C. Its capture is:
+
+    20260828-054545-thor-input-custom/failure-RPCSX.log
+
+The loader snapshots at 17.236781 and 27.236779 guest seconds were identical.
+The loader had completed only its setup bit. Its stage counters stayed at
+zero. The backing stream stayed at `0x109cbbb0`, with virtual table
+`0x01a84258`. Its size method descriptor resolved to code `0x00520040`. Its
+range-read method descriptor resolved to code `0x005234d8`.
+
+Ghidra shows that `0x00520040` returns the stream value at offset `0x98`.
+Function `0x005234d8` tests whether the requested range is already in either
+of two buffers. If the range is not ready and both asynchronous counts at
+offsets `0xc0` and `0xc4` are zero, it submits a new read. It returns zero
+until the range is ready. The first probe did not record offsets `0x94` through
+`0xcc`, so it cannot yet show whether the request size, buffer limits, or
+asynchronous counts are stuck.
+
+The log contains zero invalid-code records, zero `0xce00` records, zero
+compilation failures, and zero failed-block markers. The thermal guard stopped
+RPCSX after the silicon value stayed at or above the 60 C probe threshold. The
+last confirmation was 61.4 C, below the 72 C hard limit. The post-stop value
+was 54.6 C, and the PID was absent. No second route is permitted in this
+thermal round.
+
+This result identifies the next diagnostic boundary. It does not prove that
+the asynchronous stream is an emulator fault. The route did not take a
+screenshot or record draw calls, so it has no 3D or FPS credit. Correct 3D
+output and 30 FPS are still not proved.
