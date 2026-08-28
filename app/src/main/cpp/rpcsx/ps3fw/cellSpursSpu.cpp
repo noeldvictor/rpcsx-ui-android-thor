@@ -3940,13 +3940,21 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 	const u32 contextSaveStorage = vm::cast(taskInfo->context_save_storage_and_alloc_ls_blocks & -0x80);
 	std::memcpy(vm::base(contextSaveStorage), spu._ptr<void>(0x2C80), 0x380);
 
-	// Save LS context
+	// Save the selected LS blocks in a compact array after the 0x400-byte
+	// register area. The firmware advances the destination by the size of each
+	// selected run. The LS block number only selects the source address.
+	//
+	// Do not use (i - 6) for the destination offset. Sparse patterns would then
+	// write beyond the context allocation. For example, one selected stack block
+	// near the end of LS still has only one 0x800-byte save slot.
+	u32 savedLsBlock = 0;
 	for (auto i = 6; i < 128; i++)
 	{
 		if (ls_pattern._u & (u128{1} << (i ^ 127)))
 		{
 			// TODO: Combine DMA requests for consecutive blocks into a single request
-			std::memcpy(vm::base(contextSaveStorage + 0x400 + ((i - 6) << 11)), spu._ptr<void>(CELL_SPURS_TASK_TOP + ((i - 6) << 11)), 0x800);
+			std::memcpy(vm::base(contextSaveStorage + 0x400 + (savedLsBlock << 11)), spu._ptr<void>(CELL_SPURS_TASK_TOP + ((i - 6) << 11)), 0x800);
+			savedLsBlock++;
 		}
 	}
 
@@ -4210,12 +4218,14 @@ void spursTasksetDispatch(spu_thread& spu)
 			}
 		}
 		std::memcpy(spu._ptr<void>(0x2C80), vm::base(contextSaveStorage), 0x380);
+		u32 savedLsBlock = 0;
 		for (auto i = 6; i < 128; i++)
 		{
 			if (ls_pattern._u & (u128{1} << (i ^ 127)))
 			{
 				// TODO: Combine DMA requests for consecutive blocks into a single request
-				std::memcpy(spu._ptr<void>(CELL_SPURS_TASK_TOP + ((i - 6) << 11)), vm::base(contextSaveStorage + 0x400 + ((i - 6) << 11)), 0x800);
+				std::memcpy(spu._ptr<void>(CELL_SPURS_TASK_TOP + ((i - 6) << 11)), vm::base(contextSaveStorage + 0x400 + (savedLsBlock << 11)), 0x800);
+				savedLsBlock++;
 			}
 		}
 
