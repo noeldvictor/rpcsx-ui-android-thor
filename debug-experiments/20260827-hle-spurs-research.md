@@ -687,3 +687,40 @@ cellSpursAddWorkload allocating from a different base. That is the next thing to
 read, and it is a PPU-side question in cellSpurs.cpp, not an SPU one.
 
 Structures kept in _research/spurs/spurs_structs/.
+
+## 18. CORRECTION to section 17 - HLE builds FEWER workloads, not more
+
+Section 17 concluded that HLE inserts an extra workload at index 0 and shifts
+the title's workloads. That is WRONG, and the error was methodological: the
+dump fired once, at the first capture opportunity, which is not the same moment
+in an LLE run and an HLE run. It compared phases, not behaviour.
+
+Re-dumped as a periodic late snapshot so both are at a comparable phase:
+
+    wklStatus1  LLE  02 02 02 02 02 02 02 02 02 02      10 live workloads
+                HLE  02 02 02                            3 live workloads
+
+    wklMinContention  LLE  01 08 01 08 01 01 08 01 08 08
+                      HLE  08 01 08
+
+    wklMaxContention  LLE  01 08 05 01 06 06 06 05 01 01
+                      HLE  08 05 01
+
+The title's SPURS work is TEN workloads under the real runtime. HLE reaches
+THREE and stops. The three it has line up with LLE's entries 1..3, so it is not
+building a different table - it is building the same table and never getting
+past the third entry.
+
+### What this is and is not
+
+It is a CONSEQUENCE, not a cause: the title stalls, so it never adds the
+remaining seven workloads. It does not explain the stall.
+
+But it is a far better progress metric than p5. p5 is binary - 0 or 73 - and
+was insensitive to every fix tried. Workload count is GRADED: 3 of 10 says how
+far the title gets, and any change that moves it to 4 or 5 is measurable
+progress that p5 would not show at all. That is the first graded metric this
+effort has had.
+
+Both structures kept in _research/spurs/spurs_structs/ (late_lle.bin,
+late_hle.bin) so the comparison can be redone without a device.

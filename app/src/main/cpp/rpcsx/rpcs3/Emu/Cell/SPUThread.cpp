@@ -285,7 +285,11 @@ static void thor_capture_policy_module(spu_thread* spu) noexcept
 	{
 		static std::atomic<u32> s_sdump{0};
 
-		if (s_sdump++ == 0)
+		// Rewrite periodically, so the file left behind is a LATE snapshot.
+		// A once-only dump fires at the first capture opportunity, which is not
+		// the same moment in an LLE run and an HLE run - comparing those two
+		// compares phases, not behaviour.
+		if ((s_sdump++ & 0x3FF) == 0)
 		{
 			char spath[256]{};
 			std::snprintf(spath, sizeof(spath),
