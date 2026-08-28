@@ -1380,3 +1380,14 @@ sleep. At `0x00fdcf60`, registers r0 and r9 contain the two global counter
 values. At `0x00fdcf90`, registers r0 and r9 contain the values at object
 offsets 4 and 0, and r31 contains the object address. The next trace must
 record these values and the caller stack at the first real counter poll.
+
+Property value 5 now captures that poll as `HLE_POLL` or `LLE_POLL`. The event
+row records r0, r9, r30, and r31. The trace does not write guest memory. The
+comparator validates the event registers and reports them with the guest
+stack.
+
+The comparator self-test, Python syntax check, and `git diff --check` passed.
+The ARM64 RelWithDebInfo build passed in 3 minutes 54 seconds. Debug APK
+assembly passed in 15 seconds. The exact APK is
+`A69442CC...EFDADA3A`, and its size is 116,122,402 bytes. Its stripped ARM64
+library contains the `HLE_POLL` mode label.
