@@ -2166,6 +2166,15 @@ bytes and has this SHA-256:
 
 The earlier `BA1C...29E7` APK is superseded and must not be installed.
 
+After another passive interval, a new strict gate refused the run at 39.3 C
+silicon. The capture is:
+
+    20260828-061349-thor-input-strict-cool-gate
+
+RPCSX was force-stopped. The corrected APK was not installed, and no title
+launch occurred. Do not retry until the silicon temperature is below 35 C for
+all three strict-gate samples.
+
 The two `cellSpursCreateTaskWithAttribute` failures in the last run are known
 control behavior. The route sets `task_attr_fix=0`. The existing repair already
 rejects the two unaligned leftover-register values and makes a size-correct LS
