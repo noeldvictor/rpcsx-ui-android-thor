@@ -2339,6 +2339,7 @@ A later strict cool gate refused the hardware run at 42.5 C silicon. The
 capture is:
 
     20260828-135158-thor-input-strict-cool-gate
+    20260828-140515-thor-input-strict-cool-gate
 
 RPCSX was force-stopped. No APK was installed, and no title launch occurred.
 The 35 C launch limit stays in effect.
@@ -2378,7 +2379,9 @@ then `_cellSpursSendSignal`. Other signal tags name a task set directly.
 The new default-off route implements this measured fast path. It reserves with
 `m_h8`, publishes with `m_h5/m_h6`, consumes `pop1.m_h3/m_hs1`, and uses the
 firmware SPURS token decoder. The event-queue contention slow path remains out
-of scope for this experiment.
+of scope for this experiment. A follow-up removes the old task-set registry and
+direct waiter scan. The firmware token decoder is now the only SPURS LFQueue
+notification path.
 
 Online source research found no implementation to copy. Current RPCS3 and the
 ARMSX3 branch still return success from TODO stubs for both ANY2ANY functions.
@@ -2390,10 +2393,10 @@ specify the Sony data layout:
     https://arxiv.org/abs/2201.02179
 
 The LFQueue route contract, loader logging contract, firmware contract, and Git
-whitespace check passed. Android debug assembly passed in 1 minute 24 seconds.
-The APK is 116,126,541 bytes and has this SHA-256:
+whitespace check passed. The final Android debug rebuild passed in 53 seconds.
+The APK is 116,128,657 bytes and has this SHA-256:
 
-    98DC56B82E6F6C6A86C871406F9D5C3BA47F4B9D2D0394A171EE69AC88F8BDE7
+    3BF21BB4A4D440F81FE2184D8F4C8E468A5E7080B6AB0304B64866C41BF140FE
 
 This APK is not installed. It supersedes the `F91F...EC2` probe APK. The device
 still has exact APK `641E8AC8...A429E7`. The next hardware run must use one

@@ -5504,85 +5504,6 @@ s32 cellSpursQueueGetDirection()
 	return CELL_OK;
 }
 
-// WAKING THE TASK AN ANY2ANY LFQUEUE FEEDS.
-//
-// The title creates its LFQueue with
-//   queue=0x101b1f80 buffer=0x101b2000 size=32 depth=16 dir=3 eaSignal=0x1e97a81
-// dir=3 is ANY2ANY and 0x1e97a81 is the SPURS instance 0x1e97a80 with bit 0
-// set - the tag meaning "signal through SPURS". The consumer is the task that
-// holds 0x101b1f80 as its argument and parks in WAIT_SIGNAL on taskset
-// 0x101b4e80, and nothing in HLE ever wakes it: _cellSpursSendSignal is called
-// only from cellSpursQueuePush, which scans a different taskset entirely.
-//
-// eaSignal names the SPURS instance but not which taskset is waiting on it, so
-// record the tasksets as they are created and look for the one with a waiter.
-static std::mutex g_thor_ts_mutex;
-static std::vector<std::pair<u32, u32>> g_thor_tasksets; // {spurs, taskset}
-
-static void thor_register_taskset(u32 spurs_ea, u32 taskset_ea)
-{
-	std::lock_guard lock(g_thor_ts_mutex);
-
-	for (const auto& e : g_thor_tasksets)
-	{
-		if (e.first == spurs_ea && e.second == taskset_ea)
-		{
-			return;
-		}
-	}
-
-	g_thor_tasksets.emplace_back(spurs_ea, taskset_ea);
-	cellSpurs.error("Thor TSREG: spurs=0x%x taskset=0x%x (%u known)", spurs_ea, taskset_ea, 
-		static_cast<u32>(g_thor_tasksets.size()));
-}
-
-// Signal the first task waiting on any taskset of this SPURS instance.
-s32 thor_spurs_wake_lfq_waiter(ppu_thread& ppu, u32 ea_signal)
-{
-	const u32 spurs_ea = ea_signal & ~1u;
-	std::vector<u32> tasksets;
-
-	{
-		std::lock_guard lock(g_thor_ts_mutex);
-
-		for (const auto& e : g_thor_tasksets)
-		{
-			if (e.first == spurs_ea)
-			{
-				tasksets.push_back(e.second);
-			}
-		}
-	}
-
-	for (u32 ts_ea : tasksets)
-	{
-		const auto ts = vm::ptr<CellSpursTaskset>::make(ts_ea);
-
-		for (u32 w = 0; w < 4; w++)
-		{
-			const u32 word = vm::_ref<be_t<u32>>(ts_ea + OFFSET_OF(CellSpursTaskset, waiting) + w * 4);
-
-			if (word)
-			{
-				const u32 tid = w * 32 + std::countl_zero(word);
-				const s32 rc = _cellSpursSendSignal(ppu, ts, tid);
-
-				static std::atomic<u32> s_w{0};
-
-				if (const u32 n = s_w++; n < 8 || (n & 0xFF) == 0)
-				{
-					cellSpurs.error("Thor LFQWAKE #%u: spurs=0x%x taskset=0x%x taskId=%u rc=0x%x",
-						n, spurs_ea, ts_ea, tid, rc);
-				}
-
-				return rc;
-			}
-		}
-	}
-
-	return CELL_OK;
-}
-
 // Match the notifier that Sony's _cellSpursLFQueuePushBody passes to cellSync.
 // eaSignal low nibble 1 means that the base is a SPURS instance. The token then
 // contains the workload ID above the low task-ID byte. Other tags name a
@@ -5771,7 +5692,6 @@ s32 _spurs::create_taskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<Ce
 
 	taskset->wkl_flag_wait_task = 0x80;
 	taskset->wid = *wid;
-	thor_register_taskset(spurs.addr(), taskset.addr());
 	// TODO: cellSpursSetExceptionEventHandler(spurs, wid, hook, taskset);
 	// TODO: Check return code
 
