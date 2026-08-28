@@ -3173,7 +3173,12 @@ s32 cellSpursWakeUp(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 /// Send a workload signal
 s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
 {
-	cellSpurs.warning("cellSpursSendWorkloadSignal(spurs=*0x%x, wid=%d)", spurs, wid);
+	static std::atomic<u32> s_thor_signal_calls{0};
+	const u32 thor_call_index = s_thor_signal_calls.fetch_add(1);
+	if (thor_call_index < 8)
+	{
+		cellSpurs.warning("cellSpursSendWorkloadSignal(spurs=*0x%x, wid=%d)", spurs, wid);
+	}
 
 	if (!spurs)
 	{
@@ -3190,12 +3195,7 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 		return CELL_SPURS_POLICY_MODULE_ERROR_INVAL;
 	}
 
-	// THOR: this function is called exactly twice by BLUS30357, so logging every
-	// path is free. It matters because the SPU selection gate reads signal=0
-	// FIVE MILLISECONDS AFTER this returns, and the gate's other two terms are
-	// also dead (readyCount=0, wklFlag=0), so the signal is the whole reason a
-	// taskset workload would ever be selected. Five early returns can swallow it
-	// silently, and entry logging cannot tell them apart.
+	// Keep rejection logs because an early return can prevent workload dispatch.
 	if (!(spurs->wklEnabled.load() & (0x80000000u >> wid)))
 	{
 		cellSpurs.error("Thor signal wid=%u REJECTED: not enabled (wklEnabled=0x%x)", wid, +spurs->wklEnabled);
@@ -3216,13 +3216,9 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 
 	// FIX: set the signal the same way this file CLEARS it in spursAddWorkload.
 	//
-	// The vm::light_op form that used to be here did not stick. Measured: this
-	// function reached its write path with state=2 and wklEnabled correct, ran the
-	// light_op, and reading wklSignal1 back on the very next line still gave 0x0
-	// for wid=0 where 0x8000 was expected - so the store was lost, not cleared by
-	// a later consumer. light_op writes through vm::get_super_ptr(addr) computed
-	// from a host-pointer subtraction, while the SPU selection gate and every
-	// other reader use the ordinary mapping.
+	// The vm::light_op form that used to be here did not preserve the signal.
+	// Use the same direct atomic operation that spursAddWorkload uses for this
+	// field.
 	//
 	// spursAddWorkload already clears this very field with a direct atomic_op on
 	// the member, and that path demonstrably works. Use the same shape to set it.
@@ -3237,15 +3233,16 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 			thor_inside = data;
 		});
 
-	// inside  = what the atomic op itself saw after OR-ing, at the write site
-	// readback = the same field through the ordinary mapping, one line later
-	// If inside is right and readback is 0, the store lands somewhere the readers
-	// do not look. If inside is ALSO 0, the OR itself is not doing what it reads
-	// like - which would point at be_t/atomic_be_t semantics, not at addressing.
-	cellSpurs.error("Thor signal wid=%u: inside=0x%x readback=0x%x addr=0x%x sig2=0x%x enabled=0x%x ready=%u state=%u",
-		wid, thor_inside, +spurs->wklSignal1.load(), spurs.addr(),
-		+spurs->wklSignal2.load(), +spurs->wklEnabled,
-		+spurs->wklReadyCount1[wid % CELL_SPURS_MAX_WORKLOAD], +spurs->wklState(wid));
+	// The selector can consume the signal before this PPU thread reads it back.
+	// Keep only a bounded startup record. The render path calls this function
+	// thousands of times and success logging can change timing and temperature.
+	if (thor_call_index < 8)
+	{
+		cellSpurs.error("Thor signal wid=%u: inside=0x%x readback=0x%x addr=0x%x sig2=0x%x enabled=0x%x ready=%u state=%u",
+			wid, thor_inside, +spurs->wklSignal1.load(), spurs.addr(),
+			+spurs->wklSignal2.load(), +spurs->wklEnabled,
+			+spurs->wklReadyCount1[wid % CELL_SPURS_MAX_WORKLOAD], +spurs->wklState(wid));
+	}
 
 	return CELL_OK;
 }
