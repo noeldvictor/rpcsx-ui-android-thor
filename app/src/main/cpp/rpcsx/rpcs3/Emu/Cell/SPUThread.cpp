@@ -4143,6 +4143,17 @@ static FORCE_INLINE bool get_thor_spu_event_census() noexcept
 #endif
 }
 
+static FORCE_INLINE bool is_thor_edge_zlib_spu(const spu_thread& spu) noexcept
+{
+	// These are the first four instructions at edgeZlib LS address 0x3000.
+	static constexpr u8 s_edge_signature[16] = {
+		0x42, 0x47, 0x24, 0x02, 0x43, 0x7e, 0xc0, 0x82,
+		0x43, 0x3e, 0x0f, 0x02, 0x42, 0x01, 0x6d, 0x82,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x3000), s_edge_signature, sizeof(s_edge_signature)) == 0;
+}
+
 // cmd: 0 = GETLLAR, 1 = PUTLLC ok, 2 = PUTLLC fail, 3 = PUTLLUC.
 void thor_spurs_atomic_census(u32 pc, u32 ea, u32 cmd, u32 spu_index, const void* data, const void* ls_pm)
 {
@@ -9700,7 +9711,9 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutIntrMbox:
 	{
-		if (get_thor_spu_event_census() && pc == 0xa4d8)
+		// LLVM records the current WRCH address before it calls this handler.
+		// The edgeZlib helper starts at 0xa4d8, but this WRCH is at 0xa514.
+		if (get_thor_spu_event_census() && pc == 0xa514 && is_thor_edge_zlib_spu(*this))
 		{
 			static std::atomic<u32> s_edge_intr_entry_count{0};
 			const u32 n = s_edge_intr_entry_count.fetch_add(1, std::memory_order_relaxed);
@@ -9962,7 +9975,9 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutMbox:
 	{
-		if (get_thor_spu_event_census() && pc == 0xa4d8)
+		// LLVM records the current WRCH address before it calls this handler.
+		// The edgeZlib helper starts at 0xa4d8, but this WRCH is at 0xa500.
+		if (get_thor_spu_event_census() && pc == 0xa500 && is_thor_edge_zlib_spu(*this))
 		{
 			static std::atomic<u32> s_edge_out_entry_count{0};
 			const u32 n = s_edge_out_entry_count.fetch_add(1, std::memory_order_relaxed);

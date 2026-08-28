@@ -3001,3 +3001,38 @@ This APK is not installed. The next device work must start with a new strict
 cool gate. Install this exact APK without a title launch. Run another strict
 cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
 still not proved.
+
+## 50. Correction: the mailbox-entry filter used the block entry
+
+Do not use section 49 to conclude that the edgeZlib task did not enter either
+mailbox handler. The probe filter was wrong.
+
+The LLVM WRCH emitter calls `update_pc()` before it calls `set_ch_value()`.
+Therefore, the channel handler sees the address of the WRCH instruction, not
+the entry address of its translated block. Ghidra puts the edgeZlib outbound
+mailbox WRCH at PC `0x0a500` and its interrupt mailbox WRCH at PC `0x0a514`.
+The old filter required PC `0x0a4d8`. It could not match either call. The zero
+entry count does not show whether the guest entered these handlers.
+
+The corrected probe requires the exact edgeZlib local-store signature. It
+records the outbound handler only at PC `0x0a500` and the interrupt handler
+only at PC `0x0a514`. The PC census still records the corrected SPU state,
+group state, SPURS running count, JIT block counters, block hash, and
+interpreter fallback state.
+
+A strict cool gate refused the next device round at 40.9 C. Its capture is:
+
+    20260828-163532-thor-input-strict-cool-gate
+
+RPCSX was force-stopped, the display was put to sleep, and no APK was
+installed. The LFQueue route contract, Android debug build, ARM64 APK
+contract, and Git whitespace check passed. The corrected APK is 116,128,657
+bytes and has this SHA-256:
+
+    87E7C460241994B39C7268904C13ABCDED60FA23279B2D58DAF232FD53D29912
+
+The next device work must start with a new strict cool gate. Install this exact
+APK without a title launch. Run another strict cool gate before one bounded
+route. The route must determine which exact mailbox handler is reached and use
+the corrected state fields to distinguish a scheduler suspension from a JIT
+stall. Correct 3D output and sustained 30 FPS are still not proved.
