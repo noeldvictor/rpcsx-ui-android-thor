@@ -1077,3 +1077,30 @@ The zero-ID revision passed the ARM64 RelWithDebInfo build in 58 seconds and
 Debug APK assembly in 7 seconds. The exact APK is
 `4C24C6B1...BC94E64D`; its native library contains both late trace labels and
 the previous-emulation-ID event field.
+
+### Correction: the formatted PPU name rejected the trace
+
+The zero-ID conclusion above was premature. The activation event was written
+before the thread-name guard, and it showed this value:
+
+    thread=PPU[0x1000000] main_thread
+
+`ppu.get_name()` returns that formatted debugger name. It does not return the
+raw title name `main_thread`. Therefore, the equality guard rejected the valid
+thread before the deduplication guard ran. Initializing the atomic to `umax` is
+still correct for a valid zero emulation ID, but it was not the cause of the
+missing block.
+
+The exact `4C24C6B1...BC94E64D` LLE route confirmed this. Its managed profile
+contained only `none:hle`, the startup property read 2, and it reached
+`libvoice.sprx` at 17.049 seconds, but it wrote no event row after the name
+guard. The capture is:
+
+    20260827-232001-thor-input-custom/post-RPCSX.log
+
+The guard now reads the raw `ppu_tname` pointer and requires that value to be
+`main_thread`.
+
+The raw-name revision passed the ARM64 RelWithDebInfo build in 57 seconds and
+Debug APK assembly in 7 seconds. The exact APK is
+`AF09CCD9...3C868783`.

@@ -3957,7 +3957,8 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 
 	const bool hle_spurs =
 		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
-	if (Emu.GetTitleID() != "BLUS30357" || ppu.get_name() != "main_thread" ||
+	const auto ppu_name = ppu.ppu_tname.load();
+	if (Emu.GetTitleID() != "BLUS30357" || !ppu_name || *ppu_name != "main_thread" ||
 		ppu.syscall_history.data.size() <= 1)
 	{
 		return;
