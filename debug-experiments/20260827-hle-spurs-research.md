@@ -950,12 +950,10 @@ the return value, and the call address. It held one entry unless PPU call histor
 was enabled, and no diagnostic emitted it at a comparable point in both modes.
 
 `debug.rpcsx.thor.ppu_call_trace=1` now enables the existing 2,048-entry history
-on Android. The performance monitor emits it once, in oldest-to-newest order, at
-one of two mode-specific milestones:
-
-  - `HLE_FENCE`: `main_thread` reaches guest PC `0x00fdcf60`.
-  - `LLE_BINK`: the title creates `Bink Audio Thread`, which proves that LLE
-    passed the load boundary that HLE does not pass.
+on Android. The performance monitor emits it once, in oldest-to-newest order,
+when the title creates `FlipPump`. This is a common milestone: the first device
+capture created it at 11.073 seconds under HLE and 11.276 seconds under LLE.
+The trace modes are `HLE_FLIP` and `LLE_FLIP`.
 
 Each row starts with `Thor PPU CALL TRACE` and includes a sequence number. The
 begin row records the mode, retained count, total index, and current PC. The
@@ -987,9 +985,17 @@ ARM64 RelWithDebInfo verification passed:
     .\gradlew.bat ':app:buildCMakeRelWithDebInfo[arm64-v8a]'
     BUILD SUCCESSFUL in 42s
 
-No APK was installed and no device command ran. The next device round needs one
-cooled LLE boot and one separately cooled HLE boot with this property enabled.
-Compare the latest shared function block in the two retained sequences. The
-first missing call, changed argument, or changed return value is the boundary
-to disassemble with Ghidra. Do not add another SPURS state probe before this
-comparison.
+The first device round used exact Debug APK
+`6935342F...BC59DD3B`. The no-launch install verified the same device hash. A
+strictly cooled LLE boot emitted the old `LLE_BINK` trace with 2,048 rows and
+total index 37,509. A separately cooled HLE boot reached a solid-green clear at
+29.97 FPS, with no 3D geometry. It emitted no trace because the old exact-PC
+HLE fence milestone was transient in this path. It therefore earns no speed or
+correctness credit. The HLE main thread settled at `0x009e4ba4`, while both
+modes created `FlipPump` at the nearly identical times above.
+
+The tracer now uses that shared event for both modes. This revision is
+host-only until the next cooled capture. Compare its two retained sequences.
+The first missing call, changed argument, or changed return value is the
+boundary to disassemble with Ghidra. Do not add another SPURS state probe before
+this comparison.

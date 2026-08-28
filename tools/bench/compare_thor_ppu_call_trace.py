@@ -117,10 +117,10 @@ def format_call(call: Call) -> str:
 
 
 def compare(hle: Trace, lle: Trace, context: int) -> str:
-    if hle.mode != "HLE_FENCE":
-        raise ValueError(f"HLE input has mode {hle.mode}, expected HLE_FENCE")
-    if lle.mode != "LLE_BINK":
-        raise ValueError(f"LLE input has mode {lle.mode}, expected LLE_BINK")
+    if hle.mode != "HLE_FLIP":
+        raise ValueError(f"HLE input has mode {hle.mode}, expected HLE_FLIP")
+    if lle.mode != "LLE_FLIP":
+        raise ValueError(f"LLE input has mode {lle.mode}, expected LLE_FLIP")
 
     matcher = difflib.SequenceMatcher(
         None,
@@ -188,8 +188,8 @@ def self_test() -> None:
         lines.append("Thor PPU CALL TRACE END")
         return "\n".join(lines)
 
-    hle = parse_trace(make("HLE_FENCE", ["a", "b", "c", "d", "e", "h"]), "self-hle")
-    lle = parse_trace(make("LLE_BINK", ["a", "b", "c", "d", "e", "l"]), "self-lle")
+    hle = parse_trace(make("HLE_FLIP", ["a", "b", "c", "d", "e", "h"]), "self-hle")
+    lle = parse_trace(make("LLE_FLIP", ["a", "b", "c", "d", "e", "l"]), "self-lle")
     report = compare(hle, lle, 2)
     assert "length=5" in report
     assert "Last aligned HLE call: seq=4 cia=0x00000005 e " in report
@@ -197,14 +197,14 @@ def self_test() -> None:
     assert "LLE calls after the shared block:\n  seq=5 cia=0x00000006 l " in report
 
     try:
-        parse_trace(make("HLE_FENCE", ["a"]).replace("\nThor PPU CALL TRACE END", ""), "cut")
+        parse_trace(make("HLE_FLIP", ["a"]).replace("\nThor PPU CALL TRACE END", ""), "cut")
     except ValueError as error:
         assert "end marker is missing" in str(error)
     else:
         raise AssertionError("a trace without its end marker was accepted")
 
     try:
-        parse_trace(make("HLE_FENCE", ["a"]).replace("index=1", "index=2"), "gap")
+        parse_trace(make("HLE_FLIP", ["a"]).replace("index=1", "index=2"), "gap")
     except ValueError as error:
         assert "sequence numbers do not cover [1, 2)" in str(error)
     else:

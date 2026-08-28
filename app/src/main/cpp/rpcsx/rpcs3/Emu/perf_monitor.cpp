@@ -225,22 +225,21 @@ void perf_monitor::operator()()
 				{
 					const bool trace_title = Emu.GetTitleID() == "BLUS30357";
 					const bool hle_spurs = g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
-					bool bink_thread_exists = false;
+					bool flip_thread_exists = false;
 					idm::select<named_thread<ppu_thread>>([&](u32, ppu_thread& ppu)
 						{
-							bink_thread_exists |= ppu.get_name().find("Bink Audio Thread") != std::string_view::npos;
+							flip_thread_exists |= ppu.get_name().find("FlipPump") != std::string_view::npos;
 						});
 
-					// Capture the same bounded main-thread call history at the first
-					// causal milestone in each mode. HLE reaches the frozen fence. LLE
-					// creates the Bink audio thread after it passes the load boundary.
+					// Capture the bounded main-thread call history at the same title
+					// milestone in both modes. Transformers creates FlipPump at 11.073 s
+					// under HLE and 11.276 s under LLE. The old HLE fence milestone was
+					// transient in the green-clear path and did not emit a trace.
 					// The history is enabled only by debug.rpcsx.thor.ppu_call_trace.
-					const auto trace_ppu = idm::select<named_thread<ppu_thread>>([trace_title, hle_spurs, bink_thread_exists](u32, ppu_thread& ppu)
+					const auto trace_ppu = idm::select<named_thread<ppu_thread>>([trace_title, flip_thread_exists](u32, ppu_thread& ppu)
 						{
 							const bool is_main = ppu.get_name().find("main_thread") != std::string_view::npos;
-							const bool trace_milestone = trace_title &&
-								(hle_spurs ? +ppu.cia == 0x00fdcf60u : bink_thread_exists);
-							return is_main && trace_milestone && ppu.syscall_history.data.size() > 1;
+							return trace_title && flip_thread_exists && is_main && ppu.syscall_history.data.size() > 1;
 						});
 
 					static std::atomic<u64> s_call_trace_emulation_id{0};
@@ -265,7 +264,7 @@ void perf_monitor::operator()()
 						const u64 count = std::min<u64>(history_index, entries.size());
 						const u64 first = history_index - count;
 						perf_log.error("Thor PPU CALL TRACE BEGIN: mode=%s count=%llu index=%llu cia=0x%08x",
-							hle_spurs ? "HLE_FENCE" : "LLE_BINK", count, history_index, trace_pc);
+							hle_spurs ? "HLE_FLIP" : "LLE_FLIP", count, history_index, trace_pc);
 
 						for (u64 seq = first; seq < history_index; seq++)
 						{
