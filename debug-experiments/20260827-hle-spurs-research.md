@@ -1191,3 +1191,40 @@ is:
     20260827-235306-thor-input-custom/post-RPCSX.log
 
 The Thor must pass the same strict cool gate before the paired HLE route.
+
+The Thor passed that gate. The paired route used the same installed APK and
+verified hash. Its startup profile recorded `hle_libs=libsre.sprx`,
+`hle_spurs_kernel=1`, all other SPURS experiment switches off, and
+`ppu_call_trace=3`. It emitted one complete `HLE_NET` block at 12.072 seconds:
+
+    count=948 index=948 sequence=0..947
+    emulation_id=1 previous_emulation_id=18446744073709551615
+
+The first retained call is the same `sys_mutex_create` call at `0x02224490`.
+The last call is `_sys_prx_start_module` at `0x0223120c` for
+`libnetctl.sprx`. The capture is:
+
+    20260827-235726-thor-input-custom/failure-RPCSX.log
+
+The complete trace ended before the route reached its thermal stop. The 60 C
+sustained probe requested a confirmation sample. That sample was 70.3 C, at
+or above the 68 C immediate stop and below the 72 C hard limit. The guard
+force-stopped the app. No second launch is necessary for this boundary.
+
+The paired traces contain the same final 666 function names from HLE sequence
+282 and LLE sequence 286 through the `libnet.sprx` event. The last exact-call
+block has 13 rows. The last call-site block has 17 rows, with four rows changed
+only by allocated object or module IDs. For example, the `libnetctl.sprx`
+module ID is `0x23006700` in HLE and `0x23006d00` in LLE.
+
+The earlier differences are the expected implementation split. HLE records
+the `cellSpurs` API calls, while LLE records the semaphore, SPU thread group,
+SPU thread, event queue, and PPU helper-thread calls inside the real SPURS
+module. After this initialization split, the title main thread has no function
+flow divergence before `libnet.sprx`. Therefore, this boundary does not contain
+the rendering fault.
+
+Both modes later call `sys_timer_usleep` from title address `0x009e4ba4`. HLE
+stays in this wait, while LLE passes it. The next shared trace must capture the
+first call at this address in both modes. This moves the comparison after
+`libnet.sprx` and directly before the observed forward-progress split.
