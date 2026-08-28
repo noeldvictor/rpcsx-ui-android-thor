@@ -1297,3 +1297,33 @@ point, but this difference is mainly the number of 30-microsecond polling
 calls. It does not identify a different title branch. The next analysis must
 identify the condition around `0x009e4ba4` and the asynchronous worker or
 state that supplies it.
+
+That address interpretation was incorrect. A guarded two-second PPU Debug
+boot produced a decrypted BLUS30357 EBOOT for Ghidra. The ELF is 30,367,464
+bytes, and its SHA-256 is `82CBF369...53065D48`. The temporary config change
+was restored to its exact original SHA-256, `514AB655...D02E905`, before the
+Thor returned to sleep.
+
+Ghidra imported the ELF as `PowerPC:BE:64:A2ALT:default`. A raw-window probe
+at `0x009e4ba4` shows that this address is the `sc` instruction in a generic
+sleep wrapper at `0x009e4b58`. The wrapper converts its floating-point input
+to microseconds, clamps the value to at least 30, loads syscall number 0x8d,
+and calls `sys_timer_usleep`. The address is not a caller condition or a title
+wait loop.
+
+A raw-window probe at `0x00fdcf20` shows the actual repeated 30-microsecond
+polling function. Its first loop compares two global 32-bit counters and
+sleeps until they are equal. Its second loop loads an object pointer, compares
+the 32-bit values at offsets 0 and 4, and sleeps until they are equal. The
+trace counts show that the second loop supplies most of the retained history
+in both modes.
+
+A static PowerPC branch scan found 573 direct calls to the generic sleep
+wrapper and six direct calls to the polling function. Therefore, the syscall
+CIA cannot identify which title path reached the one-shot event. Trace value
+4 now records the bounded guest call stack at that event. It also records the
+current CIA, LR, and stack pointer. This diagnostic change does not change
+guest state.
+
+The comparator self-test and `git diff --check` passed. The ARM64
+RelWithDebInfo build passed in 3 minutes 31 seconds.

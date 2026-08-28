@@ -4021,10 +4021,23 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 		return;
 	}
 
+	const auto call_stack = ppu.dump_callstack_list();
+
 	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u mode=%s history_size=%u index=%llu "
-		"emulation_id=%llu previous_emulation_id=%llu",
+		"emulation_id=%llu previous_emulation_id=%llu cia=0x%08x lr=0x%llx sp=0x%llx "
+		"stack_count=%u",
 		static_cast<u32>(point), mode, static_cast<u32>(ppu.syscall_history.data.size()),
-		ppu.syscall_history.index, emulation_id, previous_emulation_id);
+		ppu.syscall_history.index, emulation_id, previous_emulation_id, +ppu.cia, +ppu.lr,
+		ppu.gpr[1], static_cast<u32>(call_stack.size()));
+
+	ppu_log.error("Thor PPU CALL TRACE STACK BEGIN: mode=%s count=%u", mode,
+		static_cast<u32>(call_stack.size()));
+	for (usz frame = 0; frame < call_stack.size(); frame++)
+	{
+		ppu_log.error("Thor PPU CALL TRACE STACK: frame=%u from=0x%08x sp=0x%08x",
+			static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+	}
+	ppu_log.error("Thor PPU CALL TRACE STACK END");
 
 	const u64 history_index = ppu.syscall_history.index;
 	const u64 count = std::min<u64>(history_index, ppu.syscall_history.data.size());
