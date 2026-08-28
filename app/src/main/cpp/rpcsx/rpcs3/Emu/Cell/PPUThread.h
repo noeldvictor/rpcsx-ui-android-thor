@@ -319,6 +319,18 @@ public:
 
 static_assert(ppu_join_status::max <= ppu_join_status{ppu_thread::id_base});
 
+enum class thor_ppu_call_trace_point : u8
+{
+	flip_pump,
+	hle_stall,
+	lle_voice,
+};
+
+// Capture one bounded Transformers main-thread call history at an exact event.
+// Property value 1 selects the shared FlipPump event. Value 2 selects the late
+// HLE-stall or LLE-libvoice boundary.
+void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point);
+
 // Android-only Eternal Sonata PPU interpreter isolation. The range query is
 // also used while forming the LLVM object-cache key, so a selected range can
 // never reuse an object compiled for the normal PPU LLVM path.

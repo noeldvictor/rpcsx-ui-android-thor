@@ -117,10 +117,12 @@ def format_call(call: Call) -> str:
 
 
 def compare(hle: Trace, lle: Trace, context: int) -> str:
-    if hle.mode != "HLE_FLIP":
-        raise ValueError(f"HLE input has mode {hle.mode}, expected HLE_FLIP")
-    if lle.mode != "LLE_FLIP":
-        raise ValueError(f"LLE input has mode {lle.mode}, expected LLE_FLIP")
+    valid_pairs = {("HLE_FLIP", "LLE_FLIP"), ("HLE_STALL", "LLE_VOICE")}
+    if (hle.mode, lle.mode) not in valid_pairs:
+        raise ValueError(
+            f"trace modes are {hle.mode} and {lle.mode}; expected "
+            "HLE_FLIP/LLE_FLIP or HLE_STALL/LLE_VOICE"
+        )
 
     matcher = difflib.SequenceMatcher(
         None,
@@ -195,6 +197,14 @@ def self_test() -> None:
     assert "Last aligned HLE call: seq=4 cia=0x00000005 e " in report
     assert "HLE calls after the shared block:\n  seq=5 cia=0x00000006 h " in report
     assert "LLE calls after the shared block:\n  seq=5 cia=0x00000006 l " in report
+
+    hle_boundary = parse_trace(
+        make("HLE_STALL", ["a", "b", "c", "d"]), "self-hle-boundary"
+    )
+    lle_boundary = parse_trace(
+        make("LLE_VOICE", ["a", "b", "c", "d"]), "self-lle-boundary"
+    )
+    assert "length=4" in compare(hle_boundary, lle_boundary, 2)
 
     try:
         parse_trace(make("HLE_FLIP", ["a"]).replace("\nThor PPU CALL TRACE END", ""), "cut")

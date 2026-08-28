@@ -20,57 +20,7 @@
 
 #include <thread>
 
-#ifdef __ANDROID__
-#include <sys/system_properties.h>
-#endif
-
 LOG_CHANNEL(sys_ppu_thread);
-
-#ifdef __ANDROID__
-static void thor_dump_transformers_ppu_call_trace(ppu_thread &ppu,
-                                                   std::string_view created_name) {
-  if (created_name != "FlipPump" || Emu.GetTitleID() != "BLUS30357" ||
-      ppu.syscall_history.data.size() <= 1) {
-    return;
-  }
-
-  char value[PROP_VALUE_MAX]{};
-  if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", value) <= 0 ||
-      !value[0] || value[0] == '0') {
-    return;
-  }
-
-  static std::atomic<u64> s_emulation_id{0};
-  const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
-  if (s_emulation_id.exchange(emulation_id) == emulation_id) {
-    return;
-  }
-
-  const bool hle_spurs =
-      g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
-  const u64 history_index = ppu.syscall_history.index;
-  const u64 count =
-      std::min<u64>(history_index, ppu.syscall_history.data.size());
-  const u64 first = history_index - count;
-
-  sys_ppu_thread.error(
-      "Thor PPU CALL TRACE BEGIN: mode=%s count=%llu index=%llu cia=0x%08x",
-      hle_spurs ? "HLE_FLIP" : "LLE_FLIP", count, history_index, +ppu.cia);
-
-  for (u64 seq = first; seq < history_index; seq++) {
-    const auto &entry =
-        ppu.syscall_history.data[seq % ppu.syscall_history.data.size()];
-    sys_ppu_thread.error(
-        "Thor PPU CALL TRACE: seq=%llu cia=0x%08x func=%s rc=0x%llx "
-        "r3=0x%llx r4=0x%llx r5=0x%llx r6=0x%llx",
-        seq, static_cast<u32>(entry.cia),
-        entry.func_name ? entry.func_name : "<null>", entry.error,
-        entry.args[0], entry.args[1], entry.args[2], entry.args[3]);
-  }
-
-  sys_ppu_thread.error("Thor PPU CALL TRACE END");
-}
-#endif
 
 // Simple structure to cleanup previous thread, because can't remove its own
 // thread
@@ -574,7 +524,10 @@ error_code _sys_ppu_thread_create(ppu_thread &ppu, vm::ptr<u64> thread_id,
   // FlipPump is the first stable title milestone shared by Transformers HLE
   // and LLE. Capture on the creating main thread before this HLE call returns;
   // LLE keeps FlipPump alive for only about 1.4 seconds, which a timer can miss.
-  thor_dump_transformers_ppu_call_trace(ppu, ppu_name);
+  if (ppu_name == "FlipPump") {
+    thor_dump_transformers_ppu_call_trace(
+        ppu, thor_ppu_call_trace_point::flip_pump);
+  }
 #endif
 
   ppu.check_state();

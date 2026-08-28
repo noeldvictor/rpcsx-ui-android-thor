@@ -597,6 +597,16 @@ error_code _sys_prx_load_module(ppu_thread &ppu, vm::cptr<char> path, u64 flags,
   sys_prx.warning("_sys_prx_load_module(path=%s, flags=0x%x, pOpt=*0x%x)", path,
                   flags, pOpt);
 
+#ifdef __ANDROID__
+  // LLE loads libvoice after it passes the last phase that HLE reaches. Use
+  // this exact event as the late comparison boundary.
+  if (std::string_view(path.get_ptr()) ==
+      "/dev_flash/sys/external/libvoice.sprx") {
+    thor_dump_transformers_ppu_call_trace(
+        ppu, thor_ppu_call_trace_point::lle_voice);
+  }
+#endif
+
   return prx_load_module(path.get_ptr(), flags, pOpt);
 }
 

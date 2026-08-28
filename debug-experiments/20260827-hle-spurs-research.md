@@ -1004,7 +1004,35 @@ not title evidence.
 The tracer now emits directly inside `_sys_ppu_thread_create` when the decoded
 name is exactly `FlipPump`. It records the creating main thread before that HLE
 call returns, so both modes use the same event and no thread-lifetime polling.
-This event-driven revision is host-only until the next cooled capture. Compare
-its two retained sequences. The first missing call, changed argument, or
-changed return value is the boundary to disassemble with Ghidra. Do not add
-another SPURS state probe before this comparison.
+
+The event revision used exact Debug APK
+`147C6302...F23C`. The no-launch install verified the same hash on the Thor. A
+strictly cooled LLE run recorded 275 calls at total index 275. A separately
+cooled HLE run recorded 488 calls at total index 488. The captures are:
+
+    20260827-2220-transformers-event-trace-lle/RPCSX.log
+    20260827-2228-transformers-event-trace-hle/RPCSX.log
+
+Both traces end with the same seven function names and the same final mutex
+unlock. HLE reaches this event at 11.110 seconds. LLE reaches it at 11.144
+seconds. Therefore, HLE has no measured wall-time loss before `FlipPump`.
+
+The additional HLE rows are SPURS HLE calls and 30-microsecond guest waits.
+For example, HLE has eight SPURS HLE calls and 74 waits between the two RSX
+context writes at the end of this phase. LLE has one wait. This count is not a
+performance fault because HLE still reaches the shared event first. It also
+does not explain the missing 3D image, which occurs after this event.
+
+The next common module loads are `SPUJobs.self`, `libnetctl.sprx`, and
+`libnet.sprx`. HLE stops after `libnet.sprx`. LLE continues and loads
+`libvoice.sprx` at 17.495 seconds. Trace property value 2 now captures the
+useful boundary:
+
+  - `HLE_STALL` records the first main-thread sleep at guest address
+    `0x009e4ba4`.
+  - `LLE_VOICE` records the LLE call history when `libvoice.sprx` loads.
+
+Property value 1 continues to select the `FlipPump` trace. Each property value
+emits only one trace in one run. This prevents two trace blocks in one log and
+keeps truncated-log validation exact. The ARM64 RelWithDebInfo build passed in
+2 minutes 59 seconds. The late event pair still needs a cooled Thor capture.

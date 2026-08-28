@@ -3950,6 +3950,85 @@ static bool thor_ppu_call_trace_enabled() noexcept
 #endif
 }
 
+void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point)
+{
+#ifdef ANDROID
+	if (Emu.GetTitleID() != "BLUS30357" || ppu.get_name() != "main_thread" ||
+		ppu.syscall_history.data.size() <= 1)
+	{
+		return;
+	}
+
+	char value[PROP_VALUE_MAX]{};
+	if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", value) <= 0 || !value[0])
+	{
+		return;
+	}
+
+	const bool hle_spurs =
+		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
+	const char* mode = nullptr;
+	std::atomic<u64>* captured_emulation_id = nullptr;
+	static std::atomic<u64> s_flip_emulation_id{0};
+	static std::atomic<u64> s_boundary_emulation_id{0};
+
+	switch (point)
+	{
+	case thor_ppu_call_trace_point::flip_pump:
+		if (value[0] != '1')
+		{
+			return;
+		}
+		mode = hle_spurs ? "HLE_FLIP" : "LLE_FLIP";
+		captured_emulation_id = &s_flip_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::hle_stall:
+		if (value[0] != '2' || !hle_spurs)
+		{
+			return;
+		}
+		mode = "HLE_STALL";
+		captured_emulation_id = &s_boundary_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::lle_voice:
+		if (value[0] != '2' || hle_spurs)
+		{
+			return;
+		}
+		mode = "LLE_VOICE";
+		captured_emulation_id = &s_boundary_emulation_id;
+		break;
+	}
+
+	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+	if (captured_emulation_id->exchange(emulation_id) == emulation_id)
+	{
+		return;
+	}
+
+	const u64 history_index = ppu.syscall_history.index;
+	const u64 count = std::min<u64>(history_index, ppu.syscall_history.data.size());
+	const u64 first = history_index - count;
+
+	ppu_log.error("Thor PPU CALL TRACE BEGIN: mode=%s count=%llu index=%llu cia=0x%08x",
+		mode, count, history_index, +ppu.cia);
+
+	for (u64 seq = first; seq < history_index; seq++)
+	{
+		const auto& entry = ppu.syscall_history.data[seq % ppu.syscall_history.data.size()];
+		ppu_log.error("Thor PPU CALL TRACE: seq=%llu cia=0x%08x func=%s rc=0x%llx "
+			"r3=0x%llx r4=0x%llx r5=0x%llx r6=0x%llx",
+			seq, static_cast<u32>(entry.cia), entry.func_name ? entry.func_name : "<null>",
+			entry.error, entry.args[0], entry.args[1], entry.args[2], entry.args[3]);
+	}
+
+	ppu_log.error("Thor PPU CALL TRACE END");
+#else
+	static_cast<void>(ppu);
+	static_cast<void>(point);
+#endif
+}
+
 ppu_thread::~ppu_thread()
 {
 }
