@@ -186,6 +186,8 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 	u32 interp_end = 0;
 	const bool use_thor_es_dispatch_probe = !m_reloc && ppu_thor_es_dispatch_probe_range(info.addr, info.size);
 	const bool use_thor_es_async_draw_barrier = !m_reloc && ppu_thor_es_async_draw_barrier_range(info.addr, info.size);
+	const bool use_thor_transformers_counter_probe =
+		!m_reloc && ppu_thor_transformers_counter_probe_range(info.addr, info.size);
 
 	if (!m_reloc && ppu_thor_es_command_interp_range(info.addr, interp_start, interp_end))
 	{
@@ -315,6 +317,14 @@ Function* PPUTranslator::Translate(const ppu_function& info)
 
 			const u32 op = *ensure(m_info.get_ptr<u32>(::narrow<u32>(m_addr + base)));
 			const u32 guest_cia = ::narrow<u32>(m_addr + base);
+
+			if (use_thor_transformers_counter_probe &&
+				(guest_cia == 0x00fdcf20 || guest_cia == 0x00fdcf74 || guest_cia == 0x00fdcfa4))
+			{
+				Call(GetType<void>(), "__thor_transformers_counter_probe", m_thread,
+					GetGpr(0), GetGpr(3), GetGpr(9), GetGpr(29), GetGpr(30), GetGpr(31),
+					m_ir->getInt32(guest_cia));
+			}
 
 			if (use_thor_es_dispatch_probe && guest_cia == 0x002aedd0)
 			{

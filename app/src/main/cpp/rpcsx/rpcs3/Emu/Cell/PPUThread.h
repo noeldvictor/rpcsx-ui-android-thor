@@ -335,6 +335,12 @@ enum class thor_ppu_call_trace_point : u8
 // Value 5 selects the first sleep in the title counter-poll function.
 void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point);
 
+// Property value 6 records a bounded series of counter-poll entry, wait, and
+// exit events. The LLVM hooks use the three Ghidra-proven title addresses.
+bool ppu_thor_transformers_counter_probe_range(u32 address, u32 size);
+void ppu_thor_transformers_counter_probe(ppu_thread& ppu, u64 r0, u64 r3, u64 r9,
+	u64 r29, u64 r30, u64 r31, u32 cia);
+
 // Android-only Eternal Sonata PPU interpreter isolation. The range query is
 // also used while forming the LLVM object-cache key, so a selected range can
 // never reuse an object compiled for the normal PPU LLVM path.

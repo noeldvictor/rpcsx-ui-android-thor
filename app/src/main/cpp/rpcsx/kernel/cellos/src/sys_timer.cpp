@@ -935,6 +935,9 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
   // r31 contains the global base or object address. Property value 5 records
   // the first real poll without changing either value.
   if (cia == 0x00fdcf60u || cia == 0x00fdcf90u) {
+    ppu_thor_transformers_counter_probe(
+        ppu, ppu.gpr[0], ppu.gpr[3], ppu.gpr[9], ppu.gpr[29], ppu.gpr[30],
+        ppu.gpr[31], cia);
     thor_dump_transformers_ppu_call_trace(
         ppu, thor_ppu_call_trace_point::counter_poll);
   }

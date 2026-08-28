@@ -3939,10 +3939,186 @@ static bool thor_ppu_call_trace_enabled() noexcept
 {
 #ifdef ANDROID
 	char value[PROP_VALUE_MAX]{};
-	return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) > 0 && value[0] && value[0] != '0';
+	return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) > 0 &&
+		value[0] >= '1' && value[0] <= '5' && !value[1];
 #else
 	return false;
 #endif
+}
+
+static bool thor_transformers_counter_probe_enabled() noexcept
+{
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+	return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) == 1 &&
+		value[0] == '6';
+#else
+	return false;
+#endif
+}
+
+bool ppu_thor_transformers_counter_probe_range(u32 address, u32 size)
+{
+	if (!size || Emu.GetTitleID() != "BLUS30357" || !thor_transformers_counter_probe_enabled())
+	{
+		return false;
+	}
+
+	constexpr std::array<u32, 3> sites = {0x00fdcf20, 0x00fdcf74, 0x00fdcfa4};
+	const u64 end = static_cast<u64>(address) + size;
+	for (const u32 site : sites)
+	{
+		if (address <= site && site < end)
+		{
+			static atomic_t<bool> logged = false;
+			if (!logged.exchange(true))
+			{
+				ppu_log.notice("Thor Transformers counter probe enabled: entry=0x%x global_equal=0x%x object_equal=0x%x",
+					sites[0], sites[1], sites[2]);
+			}
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ppu_thor_transformers_counter_probe(ppu_thread& ppu, u64 r0, u64 r3, u64 r9,
+	u64 r29, u64 r30, u64 r31, u32 cia)
+{
+	if (!thor_transformers_counter_probe_enabled() || Emu.GetTitleID() != "BLUS30357")
+	{
+		return;
+	}
+
+	const auto ppu_name = ppu.ppu_tname.load();
+	if (!ppu_name || *ppu_name != "main_thread")
+	{
+		return;
+	}
+
+	constexpr u32 entry_cia = 0x00fdcf20;
+	constexpr u32 global_wait_cia = 0x00fdcf60;
+	constexpr u32 global_equal_cia = 0x00fdcf74;
+	constexpr u32 object_wait_cia = 0x00fdcf90;
+	constexpr u32 object_equal_cia = 0x00fdcfa4;
+	constexpr u64 invocation_limit = 32;
+	constexpr u64 wait_milestone_limit = 1024;
+	static atomic_t<u64> s_emulation_id = umax;
+	static atomic_t<u64> s_next_invocation = 0;
+	static atomic_t<u64> s_current_invocation = umax;
+	static atomic_t<u64> s_global_waits = 0;
+	static atomic_t<u64> s_object_waits = 0;
+	static atomic_t<u64> s_last_global_pair = umax;
+	static atomic_t<u64> s_last_object_pair = umax;
+
+	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+	if (s_emulation_id.load() != emulation_id && s_emulation_id.exchange(emulation_id) != emulation_id)
+	{
+		s_next_invocation.store(0);
+		s_current_invocation.store(umax);
+		s_global_waits.store(0);
+		s_object_waits.store(0);
+		s_last_global_pair.store(umax);
+		s_last_object_pair.store(umax);
+	}
+
+	const bool hle_spurs =
+		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
+	const char* const mode = hle_spurs ? "HLE" : "LLE";
+
+	auto read_pair = [](u32 first_address, u32 second_address)
+	{
+		const u32 first = vm::check_addr<4>(first_address) ? vm::read32(first_address) : umax;
+		const u32 second = vm::check_addr<4>(second_address) ? vm::read32(second_address) : umax;
+		return std::pair{first, second};
+	};
+
+	if (cia == entry_cia)
+	{
+		const u64 invocation = s_next_invocation.fetch_add(1);
+		s_current_invocation.store(invocation);
+		s_global_waits.store(0);
+		s_object_waits.store(0);
+		s_last_global_pair.store(umax);
+		s_last_object_pair.store(umax);
+		if (invocation < invocation_limit)
+		{
+			ppu_log.error("Thor Transformers COUNTER: mode=%s emulation_id=%llu invocation=%llu event=ENTRY cia=0x%08x r3=0x%llx r30=0x%llx",
+				mode, emulation_id, invocation, cia, r3, r30);
+		}
+		return;
+	}
+
+	const u64 invocation = s_current_invocation.load();
+	if (invocation == umax || invocation >= invocation_limit)
+	{
+		return;
+	}
+
+	u32 first_address = 0;
+	u32 second_address = 0;
+	const char* event = nullptr;
+	u64 waits = 0;
+	bool must_log = true;
+
+	if (cia == global_wait_cia || cia == global_equal_cia)
+	{
+		const u32 global_base = static_cast<u32>(r30) + 0x20000u;
+		first_address = global_base - 0x638cu;
+		second_address = global_base - 0x6390u;
+		if (cia == global_wait_cia)
+		{
+			event = "GLOBAL_WAIT";
+			waits = s_global_waits.fetch_add(1) + 1;
+		}
+		else
+		{
+			event = "GLOBAL_EQUAL";
+			waits = s_global_waits.load();
+		}
+	}
+	else if (cia == object_wait_cia || cia == object_equal_cia)
+	{
+		first_address = static_cast<u32>(r31) + 4u;
+		second_address = static_cast<u32>(r31);
+		if (cia == object_wait_cia)
+		{
+			event = "OBJECT_WAIT";
+			waits = s_object_waits.fetch_add(1) + 1;
+		}
+		else
+		{
+			event = "OBJECT_EQUAL";
+			waits = s_object_waits.load();
+		}
+	}
+	else
+	{
+		return;
+	}
+
+	const auto [first, second] = read_pair(first_address, second_address);
+	const u64 pair = static_cast<u64>(first) << 32 | second;
+	if (cia == global_wait_cia)
+	{
+		const u64 previous_pair = s_last_global_pair.exchange(pair);
+		must_log = pair != previous_pair || waits <= 4 ||
+			(waits <= wait_milestone_limit && (waits & (waits - 1)) == 0);
+	}
+	else if (cia == object_wait_cia)
+	{
+		const u64 previous_pair = s_last_object_pair.exchange(pair);
+		must_log = pair != previous_pair || waits <= 4 ||
+			(waits <= wait_milestone_limit && (waits & (waits - 1)) == 0);
+	}
+
+	if (must_log)
+	{
+		ppu_log.error("Thor Transformers COUNTER: mode=%s emulation_id=%llu invocation=%llu event=%s cia=0x%08x waits=%llu first=0x%08x:0x%08x second=0x%08x:0x%08x r0=0x%llx r9=0x%llx r29=0x%llx r30=0x%llx r31=0x%llx",
+			mode, emulation_id, invocation, event, cia, waits, first_address, first,
+			second_address, second, r0, r9, r29, r30, r31);
+	}
 }
 
 void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point)
@@ -6682,6 +6858,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 						   })},
 			{"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
 			{"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
+			{"__thor_transformers_counter_probe", reinterpret_cast<u64>(ppu_thor_transformers_counter_probe)},
 #if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 			{"__thor_es_command_interp", reinterpret_cast<u64>(ppu_thor_es_command_interp)},
 			{"__thor_es_command9_probe", reinterpret_cast<u64>(ppu_thor_es_command9_probe)},
@@ -7340,8 +7517,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				// ARM64 PPU codegen changes. Never re-toggle an old one: that collides
 				// with hashes already on disk from an earlier build.
 				arm64_codegen_v1,
+				thor_transformers_counter_probe_v1,
 
-				bitset_last = arm64_codegen_v1,
+				bitset_last = thor_transformers_counter_probe_v1,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -7408,6 +7586,14 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (has_thor_es_async_draw_barrier)
 				settings += ppu_settings::thor_es_async_draw_barrier_v8;
 #endif
+			bool has_thor_transformers_counter_probe = false;
+			for (const ppu_function& f : part.get_funcs())
+			{
+				has_thor_transformers_counter_probe |=
+					ppu_thor_transformers_counter_probe_range(f.addr, f.size);
+			}
+			if (has_thor_transformers_counter_probe)
+				settings += ppu_settings::thor_transformers_counter_probe_v1;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 
