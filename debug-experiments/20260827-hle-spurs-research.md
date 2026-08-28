@@ -1855,3 +1855,86 @@ records and 2,252 success records from `cellSpursSendWorkloadSignal` in about
 the entry and success records to eight calls per process. The source contract
 test passed. The ARM64 RelWithDebInfo build passed in 54 seconds. This logging
 change is not installed and has no device performance or correctness credit.
+
+## 32. The selector can erase another workload signal
+
+Commits `db42387a0`, `36e35b170`, and `76cdf2e36` extended the bounded PPU PC
+route and added one staged loader record. The normal diagnostic APK passed the
+ARM64 contract. Its SHA-256 was:
+
+    4A5B75F5E36595A72A6773431585AC990E830ABDD2F736AED420A4A71B843D93
+
+The Thor passed the strict gate at 34.5 C for all three samples. The no-launch
+installer verified the same hash on the device and verified that RPCSX was not
+active. The evidence is in:
+
+    20260828-040023-thor-input-strict-cool-gate
+    20260828-040047-hle-load-wait-probe-install
+
+The first bounded route passed its launch gate at 34.9, 34.1, and 34.5 C. The
+guard stopped RPCSX during the near-limit confirmation. The capture is:
+
+    20260828-040114-thor-input-custom/failure-RPCSX.log
+
+The main PPU thread stopped at `0x00fdd2cc` with LR `0x00fdd2b4` and r3
+`0x1e`. Workload 2 was runnable. Its `0x2000` signal had an immediate `0x2000`
+readback, but no SPU dispatched workload 2.
+
+A focused Ghidra import used the legally owned BLUS30357 ELF and language
+`PowerPC:BE:64:A2ALT:default`. The function at `0x00fdd17c` creates the GCMX
+task set and task. It then waits in a 30-microsecond loop until the completion
+word at the task-set owner plus `0x590` becomes nonzero. This confirms that the
+missing workload 2 dispatch causes the late PPU wait.
+
+Commit `235b06d4b` added a route switch for the existing SPURS selector probe.
+A normal APK run could set the runtime property, but that APK did not contain
+the compile-time probe. Its capture still gave useful race evidence:
+
+    20260828-040901-thor-input-custom/failure-RPCSX.log
+
+The route passed at 34.5, 34.1, and 34.1 C. This time the PPU set `0x2000`, but
+the immediate readback was zero. Therefore, the failure was nondeterministic.
+The guard stopped RPCSX during the near-limit confirmation.
+
+A new diagnostic APK was built with `RPCSX_THOR_SPURS_PROBE=ON`. It passed the
+ARM64 contract. Its SHA-256 was:
+
+    75069634E22A1EA345BB57BA61BE5E514923A310AD1A2DBD1E325BE1C063B7B6
+
+The strict gate and no-launch install evidence is in:
+
+    20260828-042442-thor-input-strict-cool-gate
+    20260828-042506-hle-spurs-selector-probe-install
+
+The selector route passed its launch gate at 33.7, 32.9, and 33.3 C. The guard
+stopped RPCSX at a confirmed 63.0 C package sensor value, before the 72 C hard
+limit. The complete capture is:
+
+    20260828-042527-thor-input-custom/failure-RPCSX.log
+
+At 7.842051 guest seconds, the PPU signal call recorded `inside=0x2000` and
+`readback=0x2000`. The selectors immediately before and after that record saw
+workload 2 as runnable, with priority 0, maximum contention 1, contention 0,
+ready count 0, and signal 0. No SPU selected workload 2. Only one real workload
+selection occurred in the capture, and it selected workload 0.
+
+Both selector implementations updated each complete 16-bit workload signal
+word through a non-atomic `raw() &= mask` operation. An SPU could read zero,
+the PPU could atomically set workload 2, and then the SPU could store its stale
+zero. The mask did not need to target workload 2 because the stale store
+replaced the complete word. This is the remaining signal race after the
+activation snapshot fix.
+
+Commit `86bb45158` replaces both selector updates with one atomic helper. The
+helper clears only the selected bit. It also preserves the measured default
+system-service behavior and the signal-fix no-op arm. The new source contract,
+the activation snapshot contract, and the bounded signal log contract passed.
+The incremental ARM64 build passed in 50 seconds. The debug APK passed the
+ARM64 contract and kept `RPCSX_THOR_SPURS_PROBE=ON`. Its SHA-256 is:
+
+    69C5B32779AF30EF8015BD2E984E5DF99A990058A67472EDE482C8DEF9411C6B
+
+The first validation gate refused to continue because the Thor was still at
+37.7 C. RPCSX remained stopped. This APK is not installed, and the atomic fix
+has no device correctness or performance credit yet. Correct 3D output and 30
+FPS are still not proved.
