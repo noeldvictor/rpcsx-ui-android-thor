@@ -423,14 +423,15 @@ static void thor_refresh_taskset_snapshot(spu_thread& spu, SpursTasksetContext* 
 	std::memcpy(spu._ptr<void>(0x2700), ctxt->taskset.get_ptr(), 128);
 }
 
-// SELECT A TASK WITH THE FIRMWARE RESERVATION CONTRACT.
+// PROCESS TASKSET REQUESTS WITH THE FIRMWARE RESERVATION CONTRACT.
 //
 // The taskset policy module at LS 0xE40 reads the 128-byte taskset head with
-// GETLLAR, updates it in local store, and retries PUTLLC until it succeeds.
+// GETLLAR for every request, updates it in local store, and retries PUTLLC
+// until it succeeds.
 // The old HLE path reads and writes the six bitmaps without one transaction.
-// Two SPUs can therefore select the same waiting task from one signal.
+// A PPU signal can therefore race an SPU wait and leave the task state or the
+// ready count inconsistent.
 //
-// Keep this first repair narrow. Other request types still use the old path.
 // The route switch lets one APK test both behaviors.
 //
 //   debug.rpcsx.thor.taskset_select_atomic = 1  use the reservation contract
@@ -3349,7 +3350,7 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 	s32 rc = CELL_OK;
 	s32 numNewlyReadyTasks = 0;
 
-	if (request == SPURS_TASKSET_REQUEST_SELECT_TASK && thor_taskset_select_atomic())
+	if (thor_taskset_select_atomic())
 	{
 		spurs_taskset_signal_op committed{};
 		u32 beforeRunning = 0;
@@ -3373,7 +3374,7 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 				if ((waiting & running) != v128{} || (ready & pready) != v128{} ||
 					(gv_andn(enabled, running | ready | pready | signalled | waiting) != v128{}))
 				{
-					spu_log.error("Invalid taskset state in atomic SELECT_TASK");
+					spu_log.error("Invalid taskset state in atomic taskset request");
 					spursHalt(spu);
 				}
 
@@ -3382,25 +3383,73 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 
 				v128 signalled0 = signalled & (ready | pready);
 				v128 ready0 = signalled | ready | pready;
-				v128 readyButNotRunning = gv_andn(running, ready0);
+				v128 readyButNotRunning{};
+				const u128 ctxtTaskIdMask = u128{1} << +(~ctxt->taskId & 127);
 
-				if (op.wkl_flag_wait_task < CELL_SPURS_MAX_TASK)
+				switch (request)
 				{
-					readyButNotRunning._u &= ~(u128{1} << (~op.wkl_flag_wait_task & 127));
-				}
-
-				u8 selectedTaskId;
-				for (selectedTaskId = op.last_scheduled_task + 1; selectedTaskId < 128; selectedTaskId++)
-				{
-					if (readyButNotRunning._u & (u128{1} << (~selectedTaskId & 127)))
+				case SPURS_TASKSET_REQUEST_POLL_SIGNAL:
+					rc = signalled0._u & ctxtTaskIdMask ? 1 : 0;
+					signalled0._u &= ~ctxtTaskIdMask;
+					break;
+				case SPURS_TASKSET_REQUEST_DESTROY_TASK:
+					numNewlyReadyTasks--;
+					running._u &= ~ctxtTaskIdMask;
+					enabled._u &= ~ctxtTaskIdMask;
+					signalled0._u &= ~ctxtTaskIdMask;
+					ready0._u &= ~ctxtTaskIdMask;
+					break;
+				case SPURS_TASKSET_REQUEST_YIELD_TASK:
+					running._u &= ~ctxtTaskIdMask;
+					waiting._u |= ctxtTaskIdMask;
+					break;
+				case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:
+					if (!(signalled0._u & ctxtTaskIdMask))
 					{
-						break;
+						numNewlyReadyTasks--;
+						running._u &= ~ctxtTaskIdMask;
+						waiting._u |= ctxtTaskIdMask;
+						signalled0._u &= ~ctxtTaskIdMask;
+						ready0._u &= ~ctxtTaskIdMask;
 					}
-				}
-
-				if (selectedTaskId == 128)
+					break;
+				case SPURS_TASKSET_REQUEST_POLL:
+					readyButNotRunning = gv_andn(running, ready0);
+					if (op.wkl_flag_wait_task < CELL_SPURS_MAX_TASK)
+					{
+						readyButNotRunning._u &= ~(u128{1} << (~op.wkl_flag_wait_task & 127));
+					}
+					rc = readyButNotRunning._u ? 1 : 0;
+					break;
+				case SPURS_TASKSET_REQUEST_WAIT_WKL_FLAG:
+					if (op.wkl_flag_wait_task == 0x81)
+					{
+						op.wkl_flag_wait_task = 0x80;
+						rc = 0;
+					}
+					else if (op.wkl_flag_wait_task == 0x80)
+					{
+						op.wkl_flag_wait_task = static_cast<u8>(+ctxt->taskId);
+						running._u &= ~ctxtTaskIdMask;
+						waiting._u |= ctxtTaskIdMask;
+						rc = 1;
+						numNewlyReadyTasks--;
+					}
+					else
+					{
+						rc = CELL_SPURS_TASK_ERROR_BUSY;
+					}
+					break;
+				case SPURS_TASKSET_REQUEST_SELECT_TASK:
 				{
-					for (selectedTaskId = 0; selectedTaskId < op.last_scheduled_task + 1; selectedTaskId++)
+					readyButNotRunning = gv_andn(running, ready0);
+					if (op.wkl_flag_wait_task < CELL_SPURS_MAX_TASK)
+					{
+						readyButNotRunning._u &= ~(u128{1} << (~op.wkl_flag_wait_task & 127));
+					}
+
+					u8 selectedTaskId;
+					for (selectedTaskId = op.last_scheduled_task + 1; selectedTaskId < 128; selectedTaskId++)
 					{
 						if (readyButNotRunning._u & (u128{1} << (~selectedTaskId & 127)))
 						{
@@ -3408,24 +3457,54 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 						}
 					}
 
-					if (selectedTaskId == op.last_scheduled_task + 1)
+					if (selectedTaskId == 128)
 					{
-						selectedTaskId = CELL_SPURS_MAX_TASK;
-					}
-				}
+						for (selectedTaskId = 0; selectedTaskId < op.last_scheduled_task + 1; selectedTaskId++)
+						{
+							if (readyButNotRunning._u & (u128{1} << (~selectedTaskId & 127)))
+							{
+								break;
+							}
+						}
 
-				*taskId = selectedTaskId;
-				if (selectedTaskId != CELL_SPURS_MAX_TASK)
-				{
-					const u128 selectedTaskIdMask = u128{1} << (~selectedTaskId & 127);
-					*isWaiting = waiting._u & selectedTaskIdMask ? 1 : 0;
-					op.last_scheduled_task = selectedTaskId;
-					running._u |= selectedTaskIdMask;
-					waiting._u &= ~selectedTaskIdMask;
+						if (selectedTaskId == op.last_scheduled_task + 1)
+						{
+							selectedTaskId = CELL_SPURS_MAX_TASK;
+						}
+					}
+
+					*taskId = selectedTaskId;
+					if (selectedTaskId != CELL_SPURS_MAX_TASK)
+					{
+						const u128 selectedTaskIdMask = u128{1} << (~selectedTaskId & 127);
+						*isWaiting = waiting._u & selectedTaskIdMask ? 1 : 0;
+						op.last_scheduled_task = selectedTaskId;
+						running._u |= selectedTaskIdMask;
+						waiting._u &= ~selectedTaskIdMask;
+					}
+					else
+					{
+						*isWaiting = waiting._u & (u128{1} << 127) ? 1 : 0;
+					}
+					break;
 				}
-				else
-				{
-					*isWaiting = waiting._u & (u128{1} << 127) ? 1 : 0;
+				case SPURS_TASKSET_REQUEST_RECV_WKL_FLAG:
+					if (op.wkl_flag_wait_task < CELL_SPURS_MAX_TASK)
+					{
+						op.wkl_flag_wait_task = 0x80;
+						rc = 1;
+						numNewlyReadyTasks++;
+					}
+					else
+					{
+						op.wkl_flag_wait_task = 0x81;
+						rc = 0;
+					}
+					break;
+				default:
+					spu_log.error("Unknown atomic taskset request");
+					spursHalt(spu);
+					break;
 				}
 
 				thor_store_task_bitmap(op.waiting, waiting);
@@ -3441,6 +3520,7 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 		// Keep the local-store snapshot equal to the cache line that won PUTLLC.
 		std::memcpy(spu._ptr<void>(0x2700), &committed, sizeof(committed));
 
+		if (request == SPURS_TASKSET_REQUEST_SELECT_TASK)
 		{
 			static std::atomic<u32> s_atomic_selects{0};
 			if (const u32 n = s_atomic_selects++; n < 32)

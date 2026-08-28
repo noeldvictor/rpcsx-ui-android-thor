@@ -7,7 +7,7 @@ $source = Get-Content -LiteralPath $sourcePath -Raw
 $requiredFragments = @(
     'debug.rpcsx.thor.taskset_select_atomic',
     'return false;',
-    'request == SPURS_TASKSET_REQUEST_SELECT_TASK && thor_taskset_select_atomic()',
+    'if (thor_taskset_select_atomic())',
     'vm::reservation_op(spu, vm::unsafe_ptr_cast<spurs_taskset_signal_op>(+ctxt->taskset)',
     'be_t<v128> bitmap;',
     'const be_t<v128> stored = bitmap;',
@@ -33,15 +33,36 @@ $propertyMatch = [regex]::Match(
     '(?m)^static bool thor_taskset_select_atomic\(\) noexcept[\s\S]*?(?=^static bool thor_release_idle_taskset)'
 )
 if (-not $propertyMatch.Success -or -not $propertyMatch.Value.Contains('return false;')) {
-    throw "Atomic taskset selection must stay off by default."
+    throw "Atomic taskset requests must stay off by default."
 }
 
-$atomicSelectMatch = [regex]::Match(
+$atomicRequestMatch = [regex]::Match(
     $source,
-    '(?m)^\s*if \(request == SPURS_TASKSET_REQUEST_SELECT_TASK && thor_taskset_select_atomic\(\)\)[\s\S]*?(?=^\s*// vm::reservation_op)'
+    '(?m)^\s*if \(thor_taskset_select_atomic\(\)\)[\s\S]*?(?=^\s*// vm::reservation_op)'
 )
-if (-not $atomicSelectMatch.Success -or $atomicSelectMatch.Value.Contains('reinterpret_cast<v128&>(op.')) {
-    throw "Atomic taskset selection must convert the big-endian bitmap before it uses a task ID."
+if (-not $atomicRequestMatch.Success -or $atomicRequestMatch.Value.Contains('reinterpret_cast<v128&>(op.')) {
+    throw "Atomic taskset requests must convert the big-endian bitmaps before they use a task ID."
 }
 
-Write-Output "Thor taskset atomic selection contract passed."
+$requestNames = @(
+    'SPURS_TASKSET_REQUEST_POLL_SIGNAL',
+    'SPURS_TASKSET_REQUEST_DESTROY_TASK',
+    'SPURS_TASKSET_REQUEST_YIELD_TASK',
+    'SPURS_TASKSET_REQUEST_WAIT_SIGNAL',
+    'SPURS_TASKSET_REQUEST_POLL',
+    'SPURS_TASKSET_REQUEST_WAIT_WKL_FLAG',
+    'SPURS_TASKSET_REQUEST_SELECT_TASK',
+    'SPURS_TASKSET_REQUEST_RECV_WKL_FLAG'
+)
+
+foreach ($requestName in $requestNames) {
+    if (-not $atomicRequestMatch.Value.Contains("case ${requestName}:")) {
+        throw "The atomic taskset request contract does not cover: $requestName"
+    }
+}
+
+if ($source.Contains('request == SPURS_TASKSET_REQUEST_SELECT_TASK && thor_taskset_select_atomic()')) {
+    throw "The firmware reservation contract must not be limited to SELECT_TASK."
+}
+
+Write-Output "Thor atomic taskset request contract passed."

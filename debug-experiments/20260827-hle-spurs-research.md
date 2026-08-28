@@ -3446,3 +3446,47 @@ The SPURS event-flag contract checks both allowed Set directions and rejects
 the old direction expression. The event-flag contract, Transformers HLE route
 contract, and Git whitespace check pass. Correct 3D output and sustained 30
 FPS with correct output still require one guarded device run.
+
+## 59. The real taskset module makes every request atomic
+
+The Thor passed the install gates for APK
+`502BC47D3B0AA115218C125F42F9E312E452229ECA5F4D2106187C89112730E1`.
+One bounded route used the PPU event-set repair and is in:
+
+    20260828-180956-thor-input-custom
+
+The Bink event flag accepted PPU sets. The task performed its event wait twice,
+and `_cellSpursSendSignal` signalled task 0 in workload 7. Queue pushes then
+resumed, and RSX recorded two primitive 8 draws. The title did not produce
+correct 3D output or a verified 30 FPS result.
+
+After the second event, workload 7 entered a dispatch storm. Its dispatch
+counter reached 1,251,136 in approximately 1.8 seconds. The taskset entry
+counter reached 1,249,280. Only four task resume records occurred in the full
+run, all before the Bink task started. Thus, the hot loop was repeated taskset
+entry with no task resume. The thermal guard stopped the route at a silicon
+sample of 63 C, below the 72 C hard limit. RPCSX was force-stopped.
+
+The taskset policy image has this SHA-256:
+
+    4AAB9A10A61D71B6CE8A51C7327D779067011C56D87398802260C096A249AF68
+
+Headless Ghidra used `SPU:BE:128:default` at base 0. The dispatcher at
+`0x1778` calls request 5 at `0x179c`. If no task is selected, the branch at
+`0x17a8` goes to `0x1c50`, which calls the module-exit path at `0x13b0`.
+This behavior agrees with the HLE no-task exit.
+
+The request handler at `0x0e40` uses GETLLAR for the 128-byte taskset line at
+`0x0e90`. It applies the selected request, uses PUTLLC at `0x1238`, and retries
+from `0x1240` when the reservation fails. The syscall arms for request -1
+`POLL_SIGNAL` and request 2 `WAIT_SIGNAL` both use this handler. The same
+handler covers all eight taskset requests.
+
+The HLE repair previously used a reservation only for `SELECT_TASK`. Other
+requests wrote the taskset fields separately. A PPU signal could race
+`WAIT_SIGNAL` and leave the task bitmaps or ready count inconsistent. The new
+guarded candidate uses one reservation transaction for all eight request
+types. It copies the committed taskset line back to local store. The route
+property stays off by default. The atomic taskset request contract, event-flag
+contract, HLE route contract, and Git whitespace check pass. The candidate
+still needs an Android ARM64 build and one independently cool Thor run.
