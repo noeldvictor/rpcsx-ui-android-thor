@@ -1038,6 +1038,45 @@ static bool thor_spurs_signal_fix() noexcept
 #endif
 }
 
+// Clear only the selected signal bit with an atomic update.
+//
+// The PPU sets workload signals with atomic_op. A direct `raw() &= mask` in a
+// selector can read an old word, race with that PPU update, and then store the
+// old word. That operation can erase a signal for a different workload.
+//
+// Keep the measured default behavior for the system service. The old AArch64
+// shift cleared workload 0 when the selected ID was 32. The signal-fix arm
+// changes that operation to a no-op, but both arms still issue atomic writes so
+// that guest reservation waiters receive the same notification.
+static void spursAtomicClearSelectedSignal(CellSpurs* spurs, u32 selectedId, bool guardSystemService) noexcept
+{
+	u16 signal1Mask = 0;
+	u16 signal2Mask = 0;
+
+	if (selectedId < CELL_SPURS_MAX_WORKLOAD)
+	{
+		signal1Mask = 0x8000u >> selectedId;
+	}
+	else if (selectedId < CELL_SPURS_MAX_WORKLOAD2)
+	{
+		signal2Mask = 0x8000u >> (selectedId - CELL_SPURS_MAX_WORKLOAD);
+	}
+	else if (!guardSystemService)
+	{
+		// Preserve the measured AArch64 result of the old `0x8000 >> 32`.
+		signal1Mask = 0x8000u;
+	}
+
+	spurs->wklSignal1.atomic_op([&](be_t<u16>& signal)
+	{
+		signal &= ~signal1Mask;
+	});
+	spurs->wklSignal2.atomic_op([&](be_t<u16>& signal)
+	{
+		signal &= ~signal2Mask;
+	});
+}
+
 static bool thor_hle_once(std::atomic<u32>& bits, u32 spuNum) noexcept
 {
 	const u32 bit = 1u << (spuNum & 31);
@@ -1364,16 +1403,9 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				{
 					// Poll: report the selection, consume nothing.
 				}
-				else if (thor_spurs_signal_fix() && wklSelectedId >= CELL_SPURS_MAX_WORKLOAD2)
-				{
-					// System service: preserve the write, clear no workload bit.
-					spurs->wklSignal1.raw() &= 0xffff;
-					spurs->wklSignal2.raw() &= 0xffff;
-				}
 				else
 				{
-					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
-					spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
+					spursAtomicClearSelectedSignal(spurs, wklSelectedId, thor_spurs_signal_fix());
 				}
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
@@ -1897,17 +1929,7 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 				// Therefore keep writing, but with a mask that changes nothing when
 				// the system service is selected. Same store, same notification, no
 				// corrupted signal.
-				if (thor_spurs_signal_fix() && wklSelectedId >= CELL_SPURS_MAX_WORKLOAD2)
-				{
-					// System service: preserve the write, clear no workload bit.
-					spurs->wklSignal1.raw() &= 0xffff;
-					spurs->wklSignal2.raw() &= 0xffff;
-				}
-				else
-				{
-					spurs->wklSignal1.raw() &= ~(0x8000 >> wklSelectedId);
-					spurs->wklSignal2.raw() &= ~(0x80000000u >> wklSelectedId);
-				}
+				spursAtomicClearSelectedSignal(spurs, wklSelectedId, thor_spurs_signal_fix());
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
 				if (wklSelectedId == spurs->wklFlagReceiver)
