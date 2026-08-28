@@ -2124,5 +2124,37 @@ seconds. The probe-off APK is 116,125,669 bytes and has this SHA-256:
 
     088CB17B4D751A8497342F79776A2B4701AA43B403B80DEC8096260AC2316D54
 
+A fresh strict gate refused the next run at 40.1 C silicon. RPCSX was
+force-stopped. The range APK was not installed. Do not bypass this gate.
+
+A second Ghidra pass traced the submission path. Function `0x00522c3c`
+increments the first pending count and submits a direct read through the
+title's global IO manager. Its arguments include the source object at stream
+offset `0x88`, the requested file offset and size, the destination buffer, and
+the pending-count address. Function `0x00522e60` does the same work for a range
+table and increments the pending count once for each table entry. The
+`AsyncIOSystem` thread waits in its normal idle loop when it has no active
+entry. This evidence does not yet show whether the title submits a read or
+whether a submitted read does not complete.
+
+The next probe now also records the three-word source object and the first two
+range-table entries. This addition makes one later bounded run sufficient to
+separate a missing request from a stuck request and to identify the source
+range. It also resolves the two IO-manager virtual method descriptors to code
+addresses for a direct follow-up in Ghidra. The source contract, related SPU
+and SPURS contracts, and the ARM64 debug APK build passed. The APK is
+116,126,621 bytes and has this SHA-256:
+
+    BA1CA9C852BA9E092A30062DB0E9C6796E777741F349743655AD89F7E2E2B2A5
+
+The device still has the earlier exact APK.
+
+The two `cellSpursCreateTaskWithAttribute` failures in the last run are known
+control behavior. The route sets `task_attr_fix=0`. The existing repair already
+rejects the two unaligned leftover-register values and makes a size-correct LS
+pattern. Earlier A/B tests show that this repair reduces GCM heap growth and can
+deadlock the title. Therefore, these failures are not a new lead, and the flag
+must stay off until a different task-exit cause is proved.
+
 This APK is not installed. The previous exact APK remains installed. Do not
 use the Thor again until a later strict cool gate.
