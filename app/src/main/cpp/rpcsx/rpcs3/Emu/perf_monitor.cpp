@@ -326,7 +326,8 @@ void perf_monitor::operator()()
 										const u32 io_worker_count = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 8) : 0;
 										const u32 io_worker = io_worker_count && vm::check_addr(io_workers, 0, 4)
 											? +vm::_ref<be_t<u32>>(io_workers) : 0;
-										const u32 io_worker_vtable = vm::check_addr(io_worker, 0, 4)
+										const bool io_worker_ok = vm::check_addr(io_worker, 0, 0x78);
+										const u32 io_worker_vtable = io_worker_ok
 											? +vm::_ref<be_t<u32>>(io_worker) : 0;
 										const bool io_worker_vtable_ok = vm::check_addr(io_worker_vtable + 0x10, 0, 4);
 										const u32 direct_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x0c) : 0;
@@ -357,6 +358,46 @@ void perf_monitor::operator()()
 											sample + 1, io_manager, io_workers, io_worker_count, io_worker, io_worker_vtable, direct_opd,
 											vm::check_addr(direct_opd, 0, 8) ? +vm::_ref<be_t<u32>>(direct_opd) : 0,
 											table_opd, vm::check_addr(table_opd, 0, 8) ? +vm::_ref<be_t<u32>>(table_opd) : 0);
+
+										// Ghidra shows that both read methods add a 0x50-byte entry to
+										// the queue at worker +0x4c. The worker moves it to the active
+										// list at +0x58 before it starts the backend read. Record both
+										// list counts and the first active entry. This separates a
+										// queued request from a backend request that does not finish.
+										if (io_worker_ok)
+										{
+											const u32 io_queue = +vm::_ref<be_t<u32>>(io_worker + 0x4c);
+											const u32 io_queue_count = +vm::_ref<be_t<u32>>(io_worker + 0x50);
+											const u32 io_active = +vm::_ref<be_t<u32>>(io_worker + 0x58);
+											const u32 io_active_count = +vm::_ref<be_t<u32>>(io_worker + 0x5c);
+
+											perf_log.error("Thor LOAD IO STATE: sample=%u queue=0x%08x/%u/%u active=0x%08x/%u/%u wake=0x%08x refs=%u run=%u sequence=%llu",
+												sample + 1, io_queue, io_queue_count, +vm::_ref<be_t<u32>>(io_worker + 0x54),
+												io_active, io_active_count, +vm::_ref<be_t<u32>>(io_worker + 0x60),
+												+vm::_ref<be_t<u32>>(io_worker + 0x64), +vm::_ref<be_t<u32>>(io_worker + 0x68),
+												+vm::_ref<be_t<u32>>(io_worker + 0x6c),
+												static_cast<unsigned long long>(+vm::_ref<be_t<u64>>(io_worker + 0x70)));
+
+											if (io_active_count && vm::check_addr(io_active, 0, 0x50))
+											{
+												perf_log.error("Thor LOAD IO ACTIVE 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+													sample + 1,
+													+vm::_ref<be_t<u32>>(io_active + 0x00), +vm::_ref<be_t<u32>>(io_active + 0x04),
+													+vm::_ref<be_t<u32>>(io_active + 0x08), +vm::_ref<be_t<u32>>(io_active + 0x0c),
+													+vm::_ref<be_t<u32>>(io_active + 0x10), +vm::_ref<be_t<u32>>(io_active + 0x14),
+													+vm::_ref<be_t<u32>>(io_active + 0x18), +vm::_ref<be_t<u32>>(io_active + 0x1c));
+												perf_log.error("Thor LOAD IO ACTIVE 20: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+													sample + 1,
+													+vm::_ref<be_t<u32>>(io_active + 0x20), +vm::_ref<be_t<u32>>(io_active + 0x24),
+													+vm::_ref<be_t<u32>>(io_active + 0x28), +vm::_ref<be_t<u32>>(io_active + 0x2c),
+													+vm::_ref<be_t<u32>>(io_active + 0x30), +vm::_ref<be_t<u32>>(io_active + 0x34),
+													+vm::_ref<be_t<u32>>(io_active + 0x38), +vm::_ref<be_t<u32>>(io_active + 0x3c));
+												perf_log.error("Thor LOAD IO ACTIVE 40: sample=%u %08x %08x %08x %08x",
+													sample + 1,
+													+vm::_ref<be_t<u32>>(io_active + 0x40), +vm::_ref<be_t<u32>>(io_active + 0x44),
+													+vm::_ref<be_t<u32>>(io_active + 0x48), +vm::_ref<be_t<u32>>(io_active + 0x4c));
+											}
+										}
 										perf_log.error("Thor LOAD DATA 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
 											sample + 1,
 											+vm::_ref<be_t<u32>>(data + 0x00), +vm::_ref<be_t<u32>>(data + 0x04),
