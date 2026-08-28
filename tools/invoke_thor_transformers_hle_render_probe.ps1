@@ -2,7 +2,11 @@ param(
     [string]$Serial = "192.168.1.3:5555",
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
-    [string]$ExpectedInstalledApkSha256
+    [string]$ExpectedInstalledApkSha256,
+    [ValidateSet("on", "off")]
+    [string]$LfqAny2Any = "off",
+    [ValidateSet("on", "off")]
+    [string]$SpursSelectorFixes = "off"
 )
 
 $ErrorActionPreference = "Stop"
@@ -67,7 +71,12 @@ $macroParameters = [ordered]@{
     MaxBatteryTemperatureC = 34
     MaxSkinTemperatureC = 40
     MaxSiliconTemperatureC = 72
+    SpuCachePreloadLimit = 64
+    SpuCacheCompileBudgetMs = 50
     SpuNativeObjectCache = "on"
+    LfqAny2Any = $LfqAny2Any
+    SpursSelectorFixes = $SpursSelectorFixes
+    CacheWorkerAffinityMask = 7
     ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
     BootGame = $true
     ForceStop = $true

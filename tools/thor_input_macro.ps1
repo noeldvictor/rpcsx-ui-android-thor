@@ -53,6 +53,8 @@
     [string]$SpuNativeObjectCache = "off",
     [ValidateSet("on", "off")]
     [string]$LfqAny2Any = "off",
+    [ValidateSet("on", "off")]
+    [string]$SpursSelectorFixes = "off",
     [ValidateRange(0, 255)]
     [int]$CacheWorkerAffinityMask = 0,
     [ValidateSet("on", "off")]
@@ -86,6 +88,7 @@
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
 $lfqAny2AnyPropertyValue = if ($LfqAny2Any -eq "on") { "1" } else { "0" }
+$spursSelectorFixPropertyValue = if ($SpursSelectorFixes -eq "on") { "1" } else { "0" }
 
 if ($ThermalRuntimeProbeWindowC -lt $ThermalRuntimeStopHeadroomC) {
     throw "ThermalRuntimeProbeWindowC must be greater than or equal to ThermalRuntimeStopHeadroomC."
@@ -1067,6 +1070,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- SPU cached-program compile budget ms (0=unbounded): $SpuCacheCompileBudgetMs",
     "- SPU startup native-object cache: $SpuNativeObjectCache",
     "- SPURS ANY2ANY LFQueue: $LfqAny2Any",
+    "- SPURS selector repair pair: $SpursSelectorFixes",
     "- Startup cache-worker affinity mask (unset=core default 0x07, explicit 0=ordinary scheduler): $(if ($PSBoundParameters.ContainsKey('CacheWorkerAffinityMask')) { $CacheWorkerAffinityMask } else { 'unset' })",
     "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Vulkan preload cache hits only: $VkPreloadCacheHitsOnly",
@@ -1223,6 +1227,8 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_native_object_cache") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-set.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any $lfqAny2AnyPropertyValue") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-effective.txt" @("shell", "getprop debug.rpcsx.thor.lfq_any2any") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-set.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-effective.txt" @("shell", 'printf "spurs_sel_cond_fix=%s\nspurs_signal_fix=%s\n" "$(getprop debug.rpcsx.thor.spurs_sel_cond_fix)" "$(getprop debug.rpcsx.thor.spurs_signal_fix)"') | Out-Null
     # Leave the property empty unless the caller asked for a specific mask, so a
     # plain run measures the core's own default instead of overriding it with 0.
     $cacheWorkerAffinityProperty = if ($PSBoundParameters.ContainsKey("CacheWorkerAffinityMask")) { "$CacheWorkerAffinityMask" } else { '""' }

@@ -2410,3 +2410,49 @@ battery service reported USB power and a maximum charge current of 900 mA.
 USB charging is the remaining cooldown source. Disconnect the cable while the
 device cools, then reconnect it before the next strict gate. Do not lower the
 35 C launch limit.
+
+## 41. The firmware LFQueue path reaches the SPURS selector
+
+The Thor passed the first strict gate at 34.1, 34.9, and 34.5 C. The no-launch
+installer verified the new APK on the device and kept RPCSX stopped. The exact
+SHA-256 was:
+
+    3BF21BB4A4D440F81FE2184D8F4C8E468A5E7080B6AB0304B64866C41BF140FE
+
+The second strict gate passed at 34.1, 34.1, and 34.5 C. The evidence is in:
+
+    20260828-141251-thor-input-strict-cool-gate
+    20260828-141324-transformers-lfq-firmware-install
+    20260828-141348-thor-input-strict-cool-gate
+
+One bounded route used `lfq_any2any=1`. Its capture is:
+
+    20260828-141452-thor-input-transformers-lfq-firmware/failure-RPCSX.log
+
+The firmware LFQueue path ran. The queue had one pending pop notification in
+`pop1.m_h3`. The path consumed token zero, resolved workload zero to edgeZlib
+task set `0x101b4e80`, signaled task zero, and called `cellSpursWakeUp`. The
+next SPU 3 dispatch was still system service workload 32. No SPU dispatched
+edgeZlib workload zero after the notification. The PoolThread then waited on
+event flag `0x01e54800`.
+
+This result moves the boundary past LFQueue publication and token delivery. It
+does not complete the edgeZlib task. The route did not map RSX IO range
+`0x700000`, open the target movie, or prove correct 3D output. The 10-second
+frame samples were 21.40 and 29.50 FPS, but the earlier stalled route had the
+same 29.50 FPS presentation rate. These values have zero full-speed credit.
+The thermal guard stopped RPCSX during the 15-second wait. Silicon reached
+61.4 C, the highest recorded junction value was 72.7 C, and the PID was absent
+after the stop. The screenshot token did not run before the thermal stop.
+
+The next verified boundary is the SPURS selector. The route tool forced
+`spurs_sel_cond_fix=0` and `spurs_signal_fix=0`. In that mode the selector
+preserves the measured AArch64 result of shifting the workload mask by the
+system service ID. That operation clears workload zero. Existing Ghidra work
+shows that the selector condition and signal guard must be tested as one pair.
+The route tool now exposes one paired switch and records its effective values.
+It does not permit a hidden stale property to control the result.
+
+Do not run a second hardware route until the Thor passes a new strict cool
+gate. The next route must use the same exact APK with `lfq_any2any=on` and the
+paired selector repair on. It must capture a screenshot before its short stop.
