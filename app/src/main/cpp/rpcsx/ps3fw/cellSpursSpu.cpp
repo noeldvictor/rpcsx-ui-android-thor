@@ -4044,6 +4044,28 @@ void spursTasksetDispatch(spu_thread& spu)
 
 		if (held < CELL_SPURS_MAX_WORKLOAD && kctxt->wklLocContention[held])
 		{
+			const u8 readyCount = kctxt->spurs->readyCount(held).load();
+
+			// A nonzero ready count with no selectable task caused the measured
+			// workload 7 redispatch storm. Keep this exceptional probe bounded.
+			if (readyCount)
+			{
+				static std::atomic<u32> s_idle_ready{0};
+				const u32 n = s_idle_ready++;
+
+				if (n < 16 || (n & 0xFFFF) == 0)
+				{
+					cellSpurs.error("Thor TASKSET IDLE-READY #%u: taskset=0x%x wid=%u readyCount=%u "
+						"contention{shared=%u pending=%u local=%u localPending=%u} "
+						"state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x} spu=%u",
+						n, ctxt->taskset.addr(), held, readyCount,
+						+kctxt->spurs->wklCurrentContention[held], +kctxt->spurs->wklPendingContention[held],
+						+kctxt->wklLocContention[held], +kctxt->wklLocPendingContention[held],
+						+taskset->running[0], +taskset->ready[0], +taskset->pending_ready[0],
+						+taskset->waiting[0], +taskset->enabled[0], +taskset->signalled[0], +ctxt->spuNum);
+				}
+			}
+
 			vm::_ref<atomic_t<u8>>(kctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + held)
 				.atomic_op([](u8& v) { if (v) v--; });
 			kctxt->wklLocContention[held] = 0;

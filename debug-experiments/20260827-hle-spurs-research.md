@@ -3486,7 +3486,9 @@ The HLE repair previously used a reservation only for `SELECT_TASK`. Other
 requests wrote the taskset fields separately. A PPU signal could race
 `WAIT_SIGNAL` and leave the task bitmaps or ready count inconsistent. The new
 guarded candidate uses one reservation transaction for all eight request
-types. It copies the committed taskset line back to local store. The route
+types. It copies the committed taskset line back to local store. A bounded
+exception probe records the full first bitmap words and contention values if
+the scheduler has a nonzero ready count but cannot select a task. The route
 property stays off by default. The atomic taskset request contract, event-flag
 contract, HLE route contract, and Git whitespace check pass. The candidate
 still needs an Android ARM64 build and one independently cool Thor run.
