@@ -1112,6 +1112,57 @@ if ($BootGame) {
     Write-ThorLaunchPowerState -Adb $Adb -CaptureDir $captureDir
 }
 
+$spursProfilePropertyNames = @(
+    "debug.rpcsx.thor.cmp_rdata",
+    "debug.rpcsx.thor.contention_atomic_fix",
+    "debug.rpcsx.thor.contention_orphan_fix",
+    "debug.rpcsx.thor.cpu_affinity_mask",
+    "debug.rpcsx.thor.dma_nontemporal",
+    "debug.rpcsx.thor.entry_pollstatus_fix",
+    "debug.rpcsx.thor.es_getllar",
+    "debug.rpcsx.thor.exit_destroy_fix",
+    "debug.rpcsx.thor.getllar_busy_percent",
+    "debug.rpcsx.thor.getllar_census",
+    "debug.rpcsx.thor.getllar_outbuf_cap",
+    "debug.rpcsx.thor.getllar_spin_cycles",
+    "debug.rpcsx.thor.getllar_spin_limit",
+    "debug.rpcsx.thor.jobchain_grab_seed",
+    "debug.rpcsx.thor.jobchain_pm_variant",
+    "debug.rpcsx.thor.jobchain_readycount",
+    "debug.rpcsx.thor.jobchain_trace",
+    "debug.rpcsx.thor.max_spurs_threads",
+    "debug.rpcsx.thor.movsb_threshold",
+    "debug.rpcsx.thor.pending_contention_fix",
+    "debug.rpcsx.thor.put_census",
+    "debug.rpcsx.thor.queue_monotonic_fix",
+    "debug.rpcsx.thor.queue_publish_order",
+    "debug.rpcsx.thor.queue_reserve_fix",
+    "debug.rpcsx.thor.queue_watch_ea",
+    "debug.rpcsx.thor.release_idle_taskset",
+    "debug.rpcsx.thor.sel_probe_nth",
+    "debug.rpcsx.thor.signal_atomic_fix",
+    "debug.rpcsx.thor.spu_accurate_reservations",
+    "debug.rpcsx.thor.spu_channel_spin",
+    "debug.rpcsx.thor.spu_loop_detection",
+    "debug.rpcsx.thor.spurs_always_notify",
+    "debug.rpcsx.thor.spurs_atomic_census",
+    "debug.rpcsx.thor.spurs_drop_notify",
+    "debug.rpcsx.thor.spurs_max_run_clamp",
+    "debug.rpcsx.thor.spurs_store_exclusive",
+    "debug.rpcsx.thor.spurs_tear_probe",
+    "debug.rpcsx.thor.spurs_wait_honour_maxrun",
+    "debug.rpcsx.thor.spurs_wait_scale",
+    "debug.rpcsx.thor.syscall_dma_wait",
+    "debug.rpcsx.thor.task_attr_fix",
+    "debug.rpcsx.thor.task_ls_clear_fix",
+    "debug.rpcsx.thor.taskset_enabled_fix",
+    "debug.rpcsx.thor.taskset_snapshot_fix",
+    "debug.rpcsx.thor.taskset_syscall_fix",
+    "debug.rpcsx.thor.taskset_writeback_fix",
+    "debug.rpcsx.thor.yield_poll_always",
+    "debug.rpcsx.thor.yield_redispatch_fix"
+)
+
 function Get-ThorStartupProfileResetPropertyCommand {
     $propertyNames = @(
         "debug.rpcsx.thor.rsx_cache_workers",
@@ -1138,7 +1189,7 @@ function Get-ThorStartupProfileResetPropertyCommand {
         "debug.rpcsx.thor.es_frame_wait",
         "debug.rpcsx.thor.es_frame_wait_grace_us",
         "debug.rpcsx.thor.es_frame_wait_continuous_rearm"
-    )
+    ) + $spursProfilePropertyNames
     return 'for p in ' + ($propertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
 }
 $tokens = @()
@@ -1225,7 +1276,7 @@ if ($BootGame) {
         "debug.rpcsx.thor.es_frame_wait_continuous_rearm",
         "log.tag.RPCS3",
         "log.tag.RPCSX-UI"
-    )
+    ) + $spursProfilePropertyNames
     $startupProfilePropertyCommand = 'for p in ' + ($startupProfilePropertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
     Invoke-ThorAdbText $Adb $captureDir "startup-profile-effective.txt" @("shell", $startupProfilePropertyCommand) | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
