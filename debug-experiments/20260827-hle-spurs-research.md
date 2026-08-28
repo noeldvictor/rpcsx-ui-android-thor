@@ -1119,4 +1119,41 @@ the 68 C immediate stop and 72 C hard limit. The capture is:
 
     20260827-233144-thor-input-custom/post-RPCSX.log
 
-The HLE boundary still needs a separate cooled route before comparison.
+The separate HLE route used the same installed APK and verified hash. Its
+startup profile recorded `hle_libs=libsre.sprx`, `hle_spurs_kernel=1`, all
+other SPURS experiment switches off, and `ppu_call_trace=2`. It emitted a
+complete `HLE_STALL` block at 13.110 seconds:
+
+    count=2048 index=5724 sequence=3676..5723
+    emulation_id=1 previous_emulation_id=18446744073709551615
+
+The first and last retained calls are `sys_timer_usleep` at `0x00fdcf90` and
+`sys_memory_allocate` at `0x009dc0dc`. The complete block was in the log before
+the route reached the conservative 60 C sustained probe. The guard stopped the
+app at a maximum package temperature of 63.4 C. This value is below the 68 C
+immediate stop and the 72 C hard limit. The capture is:
+
+    20260827-233623-thor-input-custom/failure-RPCSX.log
+
+The HLE event was called again for each later sleep. The event row was before
+the one-run guard, so the log contains 16,037 duplicate event rows. The guard
+still emitted only one complete trace. The next revision puts the event row
+after the one-run guard. It removes this diagnostic log load without a guest
+behavior change.
+
+The late traces do not contain a verified common boundary. A function-name
+comparison found a six-call thread-start pattern near the end of both windows.
+Only five call sites match, and all five rows use different results or
+arguments. No complete call row matches. This repeated library pattern is not
+evidence of the title divergence.
+
+The comparator now reports function-name, call-site, and exact-call blocks
+separately. It uses an exact-call block for context only when one exists. Its
+self-test includes a repeated function sequence at different call sites. The
+late pair reports no exact-call block. Therefore, both 2,048-entry late windows
+start after the two modes have already diverged.
+
+Both modes load `libnet.sprx` after the proven common `FlipPump` event. HLE
+reaches the load at 12.060 seconds, and LLE reaches it at 11.864 seconds. A
+trace at this same module-load event can bridge the known common event to the
+late failure without an inferred library-thread anchor.

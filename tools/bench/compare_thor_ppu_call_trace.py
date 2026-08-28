@@ -116,32 +116,43 @@ def format_call(call: Call) -> str:
     )
 
 
-def compare(hle: Trace, lle: Trace, context: int) -> str:
-    valid_pairs = {("HLE_FLIP", "LLE_FLIP"), ("HLE_STALL", "LLE_VOICE")}
-    if (hle.mode, lle.mode) not in valid_pairs:
-        raise ValueError(
-            f"trace modes are {hle.mode} and {lle.mode}; expected "
-            "HLE_FLIP/LLE_FLIP or HLE_STALL/LLE_VOICE"
-        )
-
+def select_anchor(
+    hle: Trace,
+    lle: Trace,
+    key,
+    useful_size: int,
+) -> difflib.Match | None:
     matcher = difflib.SequenceMatcher(
         None,
-        [call.function for call in hle.calls],
-        [call.function for call in lle.calls],
+        [key(call) for call in hle.calls],
+        [key(call) for call in lle.calls],
         autojunk=False,
     )
     blocks = [block for block in matcher.get_matching_blocks() if block.size]
-    useful = [block for block in blocks if block.size >= 4]
+    useful = [block for block in blocks if block.size >= useful_size]
     candidates = useful or blocks
 
     if not candidates:
-        return "No common function-call block was found.\n"
+        return None
 
-    anchor = max(candidates, key=lambda block: (block.a + block.size, block.size))
-    hle_after = anchor.a + anchor.size
-    lle_after = anchor.b + anchor.size
-    last_hle = hle.calls[hle_after - 1]
-    last_lle = lle.calls[lle_after - 1]
+    return max(
+        candidates,
+        key=lambda block: (
+            min(block.a + block.size, block.b + block.size),
+            block.a + block.b + (2 * block.size),
+            block.size,
+        ),
+    )
+
+
+def describe_anchor(
+    label: str,
+    hle: Trace,
+    lle: Trace,
+    anchor: difflib.Match | None,
+) -> str:
+    if anchor is None:
+        return f"Latest shared {label} block: <none>"
 
     changed_rows = 0
     for offset in range(anchor.size):
@@ -150,17 +161,54 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
         if (left.cia, left.result, left.args) != (right.cia, right.result, right.args):
             changed_rows += 1
 
+    return (
+        f"Latest shared {label} block: length={anchor.size} "
+        f"HLE[{anchor.a}:{anchor.a + anchor.size}] "
+        f"LLE[{anchor.b}:{anchor.b + anchor.size}] "
+        f"changed_rows={changed_rows}"
+    )
+
+
+def compare(hle: Trace, lle: Trace, context: int) -> str:
+    valid_pairs = {("HLE_FLIP", "LLE_FLIP"), ("HLE_STALL", "LLE_VOICE")}
+    if (hle.mode, lle.mode) not in valid_pairs:
+        raise ValueError(
+            f"trace modes are {hle.mode} and {lle.mode}; expected "
+            "HLE_FLIP/LLE_FLIP or HLE_STALL/LLE_VOICE"
+        )
+
+    function_anchor = select_anchor(
+        hle, lle, lambda call: call.function, useful_size=4
+    )
+    site_anchor = select_anchor(
+        hle, lle, lambda call: (call.function, call.cia), useful_size=4
+    )
+    exact_anchor = select_anchor(
+        hle,
+        lle,
+        lambda call: (call.function, call.cia, call.result, call.args),
+        useful_size=2,
+    )
+
+    anchor = exact_anchor or site_anchor or function_anchor
+    if anchor is None:
+        return "No common call was found.\n"
+
+    hle_after = anchor.a + anchor.size
+    lle_after = anchor.b + anchor.size
+    last_hle = hle.calls[hle_after - 1]
+    last_lle = lle.calls[lle_after - 1]
+
     lines = [
         f"HLE: retained={len(hle.calls)} total_index={hle.total_index} cia=0x{hle.cia:08x}",
         f"LLE: retained={len(lle.calls)} total_index={lle.total_index} cia=0x{lle.cia:08x}",
-        (
-            f"Latest shared function block: length={anchor.size} "
-            f"HLE[{anchor.a}:{hle_after}] LLE[{anchor.b}:{lle_after}]"
-        ),
-        f"Rows with changed address, result, or arguments inside that block: {changed_rows}",
+        describe_anchor("function-name", hle, lle, function_anchor),
+        describe_anchor("call-site", hle, lle, site_anchor),
+        describe_anchor("exact-call", hle, lle, exact_anchor),
+        "Context uses the exact-call block, then the call-site block, when available.",
         "Last aligned HLE call: " + format_call(last_hle),
         "Last aligned LLE call: " + format_call(last_lle),
-        "HLE calls after the shared block:",
+        "HLE calls after the context block:",
     ]
 
     for call in hle.calls[hle_after : hle_after + context]:
@@ -168,7 +216,7 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
     if hle_after == len(hle.calls):
         lines.append("  <none>")
 
-    lines.append("LLE calls after the shared block:")
+    lines.append("LLE calls after the context block:")
     for call in lle.calls[lle_after : lle_after + context]:
         lines.append("  " + format_call(call))
     if lle_after == len(lle.calls):
@@ -178,13 +226,13 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
 
 
 def self_test() -> None:
-    def make(mode: str, names: list[str]) -> str:
+    def make(mode: str, names: list[str], cia_bias: int = 0) -> str:
         lines = [
             f"Thor PPU CALL TRACE BEGIN: mode={mode} count={len(names)} index={len(names)} cia=0x1"
         ]
         for seq, name in enumerate(names):
             lines.append(
-                f"Thor PPU CALL TRACE: seq={seq} cia=0x{seq + 1:08x} func={name} "
+                f"Thor PPU CALL TRACE: seq={seq} cia=0x{cia_bias + seq + 1:08x} func={name} "
                 "rc=0x0 r3=0x1 r4=0x2 r5=0x3 r6=0x4"
             )
         lines.append("Thor PPU CALL TRACE END")
@@ -193,10 +241,19 @@ def self_test() -> None:
     hle = parse_trace(make("HLE_FLIP", ["a", "b", "c", "d", "e", "h"]), "self-hle")
     lle = parse_trace(make("LLE_FLIP", ["a", "b", "c", "d", "e", "l"]), "self-lle")
     report = compare(hle, lle, 2)
-    assert "length=5" in report
+    assert "Latest shared exact-call block: length=5" in report
     assert "Last aligned HLE call: seq=4 cia=0x00000005 e " in report
-    assert "HLE calls after the shared block:\n  seq=5 cia=0x00000006 h " in report
-    assert "LLE calls after the shared block:\n  seq=5 cia=0x00000006 l " in report
+    assert "HLE calls after the context block:\n  seq=5 cia=0x00000006 h " in report
+    assert "LLE calls after the context block:\n  seq=5 cia=0x00000006 l " in report
+
+    shifted = parse_trace(
+        make("LLE_FLIP", ["a", "b", "c", "d", "e", "l"], cia_bias=0x100),
+        "self-shifted",
+    )
+    shifted_report = compare(hle, shifted, 2)
+    assert "Latest shared function-name block: length=5" in shifted_report
+    assert "Latest shared call-site block: <none>" in shifted_report
+    assert "Latest shared exact-call block: <none>" in shifted_report
 
     hle_boundary = parse_trace(
         make("HLE_STALL", ["a", "b", "c", "d"]), "self-hle-boundary"
@@ -204,7 +261,9 @@ def self_test() -> None:
     lle_boundary = parse_trace(
         make("LLE_VOICE", ["a", "b", "c", "d"]), "self-lle-boundary"
     )
-    assert "length=4" in compare(hle_boundary, lle_boundary, 2)
+    assert "Latest shared exact-call block: length=4" in compare(
+        hle_boundary, lle_boundary, 2
+    )
 
     try:
         parse_trace(make("HLE_FLIP", ["a"]).replace("\nThor PPU CALL TRACE END", ""), "cut")

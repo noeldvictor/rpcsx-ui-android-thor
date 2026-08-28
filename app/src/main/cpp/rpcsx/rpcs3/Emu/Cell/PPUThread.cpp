@@ -3999,15 +3999,16 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 
 	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
 	const u64 previous_emulation_id = captured_emulation_id->exchange(emulation_id);
-	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u mode=%s history_size=%u index=%llu "
-		"emulation_id=%llu previous_emulation_id=%llu",
-		static_cast<u32>(point), mode, static_cast<u32>(ppu.syscall_history.data.size()),
-		ppu.syscall_history.index, emulation_id, previous_emulation_id);
 
 	if (previous_emulation_id == emulation_id)
 	{
 		return;
 	}
+
+	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u mode=%s history_size=%u index=%llu "
+		"emulation_id=%llu previous_emulation_id=%llu",
+		static_cast<u32>(point), mode, static_cast<u32>(ppu.syscall_history.data.size()),
+		ppu.syscall_history.index, emulation_id, previous_emulation_id);
 
 	const u64 history_index = ppu.syscall_history.index;
 	const u64 count = std::min<u64>(history_index, ppu.syscall_history.data.size());
