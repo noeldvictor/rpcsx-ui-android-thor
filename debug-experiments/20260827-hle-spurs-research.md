@@ -2648,3 +2648,72 @@ This census records each guest GETLLAR and PUTLLC with its live local-store PC
 and effective address. It can show whether the resumed task reaches the Ghidra
 queue helpers at `0x8e98` and `0x8d80` without changing emulation behavior.
 Correct 3D output and sustained 30 FPS are still not proved.
+
+## 45. The edgeZlib queue pop completes before the remaining delay
+
+The Thor refused the first strict gate at 39.3 C. The second gate measured
+34.9, 34.9, and 36.1 C, so it also refused the launch. A later strict gate
+passed. The evidence is in:
+
+    20260828-151911-thor-input-strict-cool-gate
+    20260828-152110-thor-input-strict-cool-gate
+    20260828-152432-thor-input-strict-cool-gate
+
+One bounded route used the installed APK with this exact SHA-256:
+
+    248AED06A2E0CA3D98759C911A259C011E4ED9D626A8A2341B09F134D67C9FA3
+
+The route enabled the firmware LFQueue path, both selector repairs, corrected
+atomic task selection, and the SPURS atomic census. Its capture is:
+
+    20260828-152504-thor-input-custom
+
+The startup selection remained correct. One SPU selected task zero in edgeZlib
+task set `0x101b4e80`. Two other SPUs returned task ID 128. After the LFQueue
+notification, exactly one SPU entered workload zero. The PoolThread then
+waited on event flag `0x01e54800`.
+
+The resumed task completed two reservation transactions on queue effective
+address `0x101b1f80`:
+
+    GETLLAR  PC 0x0954c -> PUTLLC PC 0x098b8
+    GETLLAR  PC 0x099b8 -> PUTLLC PC 0x09f0c
+
+Both PUTLLC operations succeeded. The task did not issue another atomic
+operation or a task-set syscall before the stop. This result moves the current
+boundary past task selection, task wake-up, and the SPU-side queue pop.
+
+Ghidra analyzed the 262,144-byte local-store image that the earlier run saved
+for this exact task set. The image SHA-256 is:
+
+    F65F111BDA08922A74CA6A131E4087E905EE7A511A6A3863F29E240412932A28
+
+The disassembly confirms the live trace. PC `0x0954c` writes GETLLAR command
+`0xd0`, and PC `0x098b8` writes PUTLLC command `0xb4`. PC `0x099b8` writes the
+second GETLLAR, and PC `0x09f0c` writes the second PUTLLC. The second function
+retries at `0x099a0` when PUTLLC fails. After success, it calls helper
+`0x0a030` at `0x09f2c`.
+
+Helper `0x0a030` iterates the entries that the queue operation produced. It
+calls callback `0x092e0` for each normal entry. Callback `0x092e0` validates
+the entry fields and can call helpers `0x09060` and `0x09110`. Helper `0x09110`
+contains another complete GETLLAR and PUTLLC transaction. The live census did
+not record that transaction. Therefore, the captured execution did not reach
+that atomic path before the stop. A zero callback-entry count or work in the
+main edgeZlib loop can explain this result. A live SPU PC sample is required to
+separate these cases.
+
+The route did not set event flag `0x01e54800` and did not map RSX IO range
+`0x700000`. It mapped only `0x50000000` and `0x50100000`. Draw samples at flips
+120 and 240 had zero draws. The flip-360 sample had 47 primitive-8 draws. The
+flip-480 sample had 163 primitive-8 draws. These are loading-screen quads, not
+correct 3D output.
+
+The near-limit guard stopped the process after package silicon held at 61.4 C.
+The PID was absent after the stop. No crash, signal 11, task ELF load failure,
+or fatal marker occurred. No second route ran in this thermal round.
+
+The next diagnostic must sample each SPU guest PC from the timer thread while
+the route is active. It must be default-off and bounded. Run it only after a
+new strict cool gate. Correct 3D output and sustained 30 FPS are still not
+proved.
