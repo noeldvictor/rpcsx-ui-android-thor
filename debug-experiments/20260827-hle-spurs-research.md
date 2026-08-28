@@ -899,3 +899,44 @@ WHY they are starved. Candidates worth checking in order: the priority table
 every SPU can never be picked), the contention cap, or readyCount never being
 raised for those workloads. All three are readable in the selector, and all
 three are event-loggable rather than sampled.
+
+## 23. CORRECTION to section 22 - the selector is NOT starving anything
+
+Section 22 said the job chain workloads are starved by the selection gate. That
+framing is wrong. Measured what the TITLE asks for:
+
+    cellSpursSendWorkloadSignal  wid=0 -> 1     wid=2 -> 3686    wid=6 -> 1
+    cellSpursReadyCountStore/Add -> NONE, for any workload
+    signal rejections            -> 0
+
+Against selections: w0=4, w2=120001, w6=7.
+
+Selections track signals exactly. The workloads never selected - w1, w3, w4,
+w5, w7, w8 - are the ones the title NEVER SIGNALS. Our selector is faithfully
+scheduling what it is asked to schedule, and the gate is not at fault. Nothing
+is being starved.
+
+So section 22's "the consumer is starved" is withdrawn. The truth is narrower
+and less convenient: the title creates four job chain workloads and then only
+ever runs one of them, once.
+
+### What that leaves
+
+The title sets its job chains up and never dispatches work to them, which is
+consistent with everything else here - it is stalled waiting on something and
+never reaches the point of driving them. That makes this another CONSEQUENCE of
+the stall rather than its cause, like the workload count and the GCM heap
+before it.
+
+Also worth recording: cellSpursReadyCountStore and cellSpursReadyCountAdd are
+never called at all. Under LLE that cannot be compared, because the real libsre
+services those calls instead of our HLE, so their absence here proves nothing
+on its own.
+
+### Where this leaves the effort
+
+Four separate measurements - workload count, GCM heap delta, syscall census,
+workload selections - have each turned out to be downstream of the stall rather
+than the stall. Each looked like a cause when first measured. The pattern is
+consistent enough to state plainly: this title's HLE failure presents as a
+cascade, and nearly everything observable about it is an effect.
