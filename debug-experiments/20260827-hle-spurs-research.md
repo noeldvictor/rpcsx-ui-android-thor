@@ -3349,3 +3349,66 @@ junction limit. No fatal, signal 11, task ELF load failure, LLVM verification
 failure, compilation failure, or crash marker occurred. RPCSX was force-
 stopped. Charging separation was restored to its original value of 0, and the
 display was put to sleep.
+
+## 57. The attribute repair creates the Bink task and enters a slow state
+
+Two route preflights refused to start because one silicon sample was 35.3 C.
+No title process ran in these attempts. Their captures are:
+
+    20260828-174542-thor-input-custom
+    20260828-174645-thor-input-custom
+
+The Thor then cooled without a workload. One bounded route used the firmware
+LFQueue path, both selector repairs, atomic task selection, the dispatcher
+event-helper handoff, and the task attribute repair. Its capture is:
+
+    20260828-174825-thor-input-custom
+
+The route used APK
+`7BAA5BEB53392A2E998C830DBE8C62490AC9AD7B51E63D2E6457F210C454A2B4`.
+The active profile recorded `task_attr_fix=1` and
+`edge_event_interp=1`.
+
+The attribute repair resolved context `0x1094ba00`, with size `0x1c00`. It
+synthesized this three-block local-store save pattern:
+
+    00000000000000000000000000000007
+
+`cellSpursCreateTaskWithAttribute` then created the task from image
+`0x01765800`, with size `0x191e8`. Workload 7 and taskset `0x01f73f00`
+dispatched on SPU 1. The task completed GETLLAR at PC `0x13384` and PUTLLC at
+PC `0x1360c` for event flag `0x01f7d580`. It then returned to the SPURS system
+service at PC `0x00808`. Thus, task creation works, and the Bink task does not
+stay in its first atomic operation.
+
+The render producer stopped after queue push 1,088. It then created the Bink
+taskset, mapped RSX I/O addresses `0x500000` and `0x600000`, and set event bits
+`0xffff`. The Bink task consumed that event. The producer did not record a
+later queue push in the bounded window.
+
+The GCMX task continued its queue polling loop at PC `0x13dcc`, for effective
+address `0x1030e400`. It reached 23,552 GETLLAR operations by 19.32 seconds.
+This loop is not new. The repair-off baseline reached 26,176 operations at the
+same PC by 19.98 seconds and later sustained the title frame cap. The new
+boundary is the render producer after Bink task setup, not the GCMX GETLLAR
+instruction.
+
+The route recorded 34 frames in one 10-second sample, or 3.40 FPS. Draw
+samples at flips 120 and 240 both had zero calls. The route did not record a
+primitive 5 draw, a primitive 8 draw, an RSX map at `0x70000000`, or an edge
+event-helper call before the stop. No screenshot was taken because the
+thermal guard stopped the route during its wait stage. Correct 3D output is
+not proved.
+
+The thermal guard stopped the route after a sustained near-limit check.
+Silicon samples in the check were 62.2 C, 63.0 C, 65.0 C, and 64.6 C. They
+were below the 72 C hard limit. The highest junction sample was 76.7 C, below
+the 95 C junction limit. RPCSX was force-stopped, and its PID was absent.
+Direct device checks showed that the task attribute, event-helper, draw,
+SPU-PC, and SPU-event properties were all reset to 0. The display was put to
+sleep and reported `Dozing`.
+
+The task attribute repair stays off by default. The next diagnostic must find
+the RenderingThread call after the event flag set and must record the Bink
+task request state. A new Thor run is not useful until this bounded probe is
+ready and the device passes a new strict cool gate.
