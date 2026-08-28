@@ -25,6 +25,11 @@ $requiredFragments = @(
     'data + 0xc0',
     'data + 0xc4',
     'data + 0xc8',
+    'const u32 range_table =',
+    'vm::check_addr(range_table, 0, 0x20)',
+    '"Thor LOAD IO:',
+    'data + 0x88',
+    'range_table + 0x1c',
     '"Thor LOAD DATA 00:',
     '"Thor LOAD DATA 20:',
     '"Thor LOAD DATA 40:'

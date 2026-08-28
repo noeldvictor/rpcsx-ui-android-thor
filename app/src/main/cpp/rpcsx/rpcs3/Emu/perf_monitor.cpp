@@ -317,6 +317,9 @@ void perf_monitor::operator()()
 
 									if (data_ok)
 									{
+										const u32 range_table = +vm::_ref<be_t<u32>>(data + 0xc8);
+										const bool range_table_ok = vm::check_addr(range_table, 0, 0x20);
+
 										perf_log.error("Thor LOAD RANGE: sample=%u limit=%u size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u",
 											sample + 1,
 											+vm::_ref<be_t<u32>>(data + 0x94), +vm::_ref<be_t<u32>>(data + 0x98),
@@ -325,7 +328,19 @@ void perf_monitor::operator()()
 											+vm::_ref<be_t<u32>>(data + 0xb8), +vm::_ref<be_t<u32>>(data + 0xc0),
 											+vm::_ref<be_t<u32>>(data + 0xac), +vm::_ref<be_t<u32>>(data + 0xb4),
 											+vm::_ref<be_t<u32>>(data + 0xbc), +vm::_ref<be_t<u32>>(data + 0xc4),
-											+vm::_ref<be_t<u32>>(data + 0xc8), +vm::_ref<be_t<u32>>(data + 0xcc));
+											range_table, +vm::_ref<be_t<u32>>(data + 0xcc));
+										perf_log.error("Thor LOAD IO: sample=%u source=%08x %08x %08x table=%s %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x88), +vm::_ref<be_t<u32>>(data + 0x8c),
+											+vm::_ref<be_t<u32>>(data + 0x90), range_table_ok ? "mapped" : "unmapped",
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x00) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x04) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x08) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x0c) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x10) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x14) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x18) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x1c) : 0);
 										perf_log.error("Thor LOAD DATA 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
 											sample + 1,
 											+vm::_ref<be_t<u32>>(data + 0x00), +vm::_ref<be_t<u32>>(data + 0x04),
