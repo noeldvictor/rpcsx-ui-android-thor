@@ -25,7 +25,8 @@ function Set-ThorPpuProbeProperty {
 }
 
 # Keep the measured HLE candidate stack explicit. Enable only the low-rate PPU
-# PC census. The route stops before any snapshot or screenshot delay.
+# PC census. Bound the cached SPU preload so that the startup compile does not
+# use the complete thermal window before the title reaches the late wait.
 $profileProperties = [ordered]@{
     "debug.rpcsx.thor.hle_libs" = "libsre.sprx"
     "debug.rpcsx.thor.hle_spurs_kernel" = "1"
@@ -68,7 +69,10 @@ $macroParameters = [ordered]@{
     MaxBatteryTemperatureC = 34
     MaxSkinTemperatureC = 40
     MaxSiliconTemperatureC = 72
+    SpuCachePreloadLimit = 64
+    SpuCacheCompileBudgetMs = 50
     SpuNativeObjectCache = "on"
+    CacheWorkerAffinityMask = 7
     ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
     BootGame = $true
     ForceStop = $true
