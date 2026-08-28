@@ -9708,9 +9708,9 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 			if (n < 16)
 			{
 				spu_log.error("Thor EDGE EVENT intr-entry #%u pc=0x%05x value=0x%08x "
-					"out=%u intr=%u in=%u state=0x%llx",
+					"out=%u intr=%u in=%u state=0x%08x",
 					n, pc, value, ch_out_mbox.get_count(), ch_out_intr_mbox.get_count(),
-					ch_in_mbox.get_count(), +state);
+					ch_in_mbox.get_count(), state.load().toUnderlying());
 			}
 		}
 
@@ -9864,9 +9864,9 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 						}
 
 						spu_log.error("Thor SPU EVENT #%u pc=0x%05x port=%u data0=0x%06x data1=0x%08x "
-							"result=0x%08x queue=0x%08x depth=%u waiter=%u out=%u in=%u state=0x%llx",
+							"result=0x%08x queue=0x%08x depth=%u waiter=%u out=%u in=%u state=0x%08x",
 							n, pc, spup, value & 0x00ffffff, data, res + 0u, queue_id, queue_depth,
-							ppu_waiter, ch_out_mbox.get_count(), ch_in_mbox.get_count(), +state);
+							ppu_waiter, ch_out_mbox.get_count(), ch_in_mbox.get_count(), state.load().toUnderlying());
 					}
 				}
 
@@ -9970,9 +9970,9 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 			if (n < 16)
 			{
 				spu_log.error("Thor EDGE EVENT out-entry #%u pc=0x%05x value=0x%08x "
-					"out=%u intr=%u in=%u state=0x%llx",
+					"out=%u intr=%u in=%u state=0x%08x",
 					n, pc, value, ch_out_mbox.get_count(), ch_out_intr_mbox.get_count(),
-					ch_in_mbox.get_count(), +state);
+					ch_in_mbox.get_count(), state.load().toUnderlying());
 			}
 		}
 

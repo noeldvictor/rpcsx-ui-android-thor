@@ -81,7 +81,11 @@ $requiredPcCensusFragments = @(
     'std::memcmp(spu._ptr<u8>(0x3000), edge_signature.data(), edge_signature.size())',
     'Thor EDGE PC sample=%u',
 	'r3=0x%08x r4=0x%08x r5=0x%08x',
-	'out=%u intr=%u in=%u state=0x%llx',
+	'out=%u intr=%u in=%u state=0x%08x',
+	'group=%u spursrun=%u blocks=%llu recover=%llu failures=%llu',
+	'hash=0x%016llx interp=%u',
+	'spu.state.load().toUnderlying()',
+	'spu.group->run_state.load()',
     'thor::spu_pc_census_tick();'
 )
 
@@ -97,6 +101,7 @@ $requiredEventCensusFragments = @(
     'if (n < 32)',
     'queue_depth = static_cast<u32>(queue->events.size());',
     'ppu_waiter = queue->pq ? 1 : 0;',
+	'state.load().toUnderlying()',
 	'pc == 0xa4d8',
 	'Thor EDGE EVENT out-entry #%u',
 	'Thor EDGE EVENT intr-entry #%u',

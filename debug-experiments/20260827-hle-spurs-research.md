@@ -2938,3 +2938,66 @@ This APK is not installed. The next device work must start with a new strict
 cool gate. Install this exact APK without a title launch. Run another strict
 cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
 still not proved.
+
+## 49. The edge task does not enter the mailbox handlers
+
+A strict cool gate passed with package samples of 33.7 C, 33.7 C, and 34.1 C.
+The installer then verified this exact APK SHA-256 on the device:
+
+    BCD331EC2978F129698F919972BFFDD33A800420F962186CBB25ACAF22AC008A
+
+The post-install strict cool gate passed with package samples of 34.1 C,
+33.7 C, and 33.7 C. The evidence is in:
+
+    20260828-162414-thor-input-strict-cool-gate
+    20260828-162440-transformers-edge-mailbox-entry-install
+    20260828-162455-thor-input-strict-cool-gate
+
+One bounded route used the firmware LFQueue path, both selector repairs,
+corrected atomic task selection, the event-mask fix, and all three censuses.
+Its capture is:
+
+    20260828-162516-thor-input-custom
+
+The PoolThread called `cellSpursEventFlagWait` for event flag `0x01e54800`.
+The edgeZlib PC census then moved through PCs `0x09f40`, `0x03940`, `0x04f5c`,
+`0x066d0`, `0x05e34`, and `0x057ac`. Samples 27 through 41 all had PC
+`0x0a4d8`, link register `0x08ca8`, `r3=0x00000011`, `r4=0`, and `r5=0`.
+All of these samples had outbound, interrupt, and inbound mailbox counts of
+zero.
+
+The route did not record `Thor EDGE EVENT out-entry`, `Thor EDGE EVENT
+intr-entry`, or `Thor SPU EVENT`. The first record is before the guest write
+to outbound mailbox channel 28. Therefore, the outbound mailbox is not full,
+and the event queue send is not the current wait point. The SPU does not enter
+the first guest mailbox write handler. The current boundary is before guest
+instruction `0x0a500` in the translated `0x0a4d8` block, or the SPU is
+suspended at this block boundary.
+
+The route did not map RSX IO range `0x700000`. It mapped only `0x50000000` and
+`0x50100000`. Draw samples at flips 120 and 240 had zero draws. The flip-360
+sample had 45 primitive-8 draws. The flip-480 sample had 161 primitive-8
+draws, and the flip-600 sample had 281 primitive-8 draws. These are loading
+quads, not correct 3D output. No crash, signal 11, task ELF load failure, or
+fatal marker occurred.
+
+The near-limit guard stopped RPCSX when package silicon reached 63.8 C. The
+PID was absent after the stop. No second route ran in this thermal round.
+
+The old SPU state field used an invalid format and argument type. Do not use
+its recorded value. The census now reads the state through `toUnderlying()`.
+It also records the SPU group state, the SPURS running count, JIT block count,
+recovery count, failure count, block hash, and interpreter fallback state.
+These fields will separate a scheduler suspension from a translated-block
+stall. The mailbox entry and event-result records use the corrected state
+format too.
+
+The LFQueue route contract, Android debug build, and ARM64 APK contract passed.
+The new diagnostic APK is 116,128,907 bytes and has this SHA-256:
+
+    804EAA625B503F43D261BF4D3BF641180D1EDB2FAAB6A13E1220E9FC0EBE7366
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
+still not proved.
