@@ -18,6 +18,7 @@ CALL_RE = re.compile(
     r"rc=0x([0-9a-fA-F]+) r3=0x([0-9a-fA-F]+) r4=0x([0-9a-fA-F]+) "
     r"r5=0x([0-9a-fA-F]+) r6=0x([0-9a-fA-F]+)"
 )
+END_RE = re.compile(r"Thor PPU CALL TRACE END")
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class Trace:
 
 def parse_trace(text: str, source: str) -> Trace:
     begin = None
+    ended = False
     calls: list[Call] = []
 
     for line in text.splitlines():
@@ -49,7 +51,17 @@ def parse_trace(text: str, source: str) -> Trace:
             begin = match
             continue
 
+        if END_RE.search(line):
+            if begin is None:
+                raise ValueError(f"{source}: trace end marker precedes the begin marker")
+            if ended:
+                raise ValueError(f"{source}: more than one trace ends")
+            ended = True
+            continue
+
         if match := CALL_RE.search(line):
+            if begin is None or ended:
+                raise ValueError(f"{source}: call row is outside the trace markers")
             calls.append(
                 Call(
                     seq=int(match.group(1)),
@@ -62,6 +74,8 @@ def parse_trace(text: str, source: str) -> Trace:
 
     if begin is None:
         raise ValueError(f"{source}: trace begin marker is missing")
+    if not ended:
+        raise ValueError(f"{source}: trace end marker is missing")
 
     trace = Trace(
         mode=begin.group(1),
@@ -75,6 +89,17 @@ def parse_trace(text: str, source: str) -> Trace:
         raise ValueError(
             f"{source}: begin marker says {trace.retained_count} calls, "
             f"but {len(trace.calls)} rows were parsed"
+        )
+
+    if trace.total_index < trace.retained_count:
+        raise ValueError(f"{source}: total index is smaller than the retained count")
+
+    expected_first = trace.total_index - trace.retained_count
+    expected_sequences = range(expected_first, trace.total_index)
+    if any(call.seq != expected for call, expected in zip(trace.calls, expected_sequences)):
+        raise ValueError(
+            f"{source}: sequence numbers do not cover "
+            f"[{expected_first}, {trace.total_index})"
         )
 
     if any(right.seq != left.seq + 1 for left, right in zip(trace.calls, trace.calls[1:])):
@@ -160,6 +185,7 @@ def self_test() -> None:
                 f"Thor PPU CALL TRACE: seq={seq} cia=0x{seq + 1:08x} func={name} "
                 "rc=0x0 r3=0x1 r4=0x2 r5=0x3 r6=0x4"
             )
+        lines.append("Thor PPU CALL TRACE END")
         return "\n".join(lines)
 
     hle = parse_trace(make("HLE_FENCE", ["a", "b", "c", "d", "e", "h"]), "self-hle")
@@ -169,6 +195,20 @@ def self_test() -> None:
     assert "Last aligned HLE call: seq=4 cia=0x00000005 e " in report
     assert "HLE calls after the shared block:\n  seq=5 cia=0x00000006 h " in report
     assert "LLE calls after the shared block:\n  seq=5 cia=0x00000006 l " in report
+
+    try:
+        parse_trace(make("HLE_FENCE", ["a"]).replace("\nThor PPU CALL TRACE END", ""), "cut")
+    except ValueError as error:
+        assert "end marker is missing" in str(error)
+    else:
+        raise AssertionError("a trace without its end marker was accepted")
+
+    try:
+        parse_trace(make("HLE_FENCE", ["a"]).replace("index=1", "index=2"), "gap")
+    except ValueError as error:
+        assert "sequence numbers do not cover [1, 2)" in str(error)
+    else:
+        raise AssertionError("a trace with the wrong sequence range was accepted")
 
 
 def main() -> int:

@@ -974,10 +974,11 @@ Compare the two logs with this command:
 
     python -B tools/bench/compare_thor_ppu_call_trace.py HLE_LOG LLE_LOG
 
-The tool validates the row count and sequence numbers. It aligns the function
-names, reports changed addresses, results, or arguments in the latest shared
-block, and shows the first calls after that block. Its local self-test command
-is:
+The tool requires the begin and end markers. It validates the row count and the
+exact sequence-number range against the total index. This rejects a truncated
+log before it can report a false divergence. It aligns the function names,
+reports changed addresses, results, or arguments in the latest shared block,
+and shows the first calls after that block. Its local self-test command is:
 
     python -B tools/bench/compare_thor_ppu_call_trace.py --self-test
 
