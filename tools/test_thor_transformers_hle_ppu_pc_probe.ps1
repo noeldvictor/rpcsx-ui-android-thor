@@ -8,6 +8,8 @@ $requiredFragments = @(
     '"debug.rpcsx.thor.hle_spurs_kernel" = "1"',
     '"debug.rpcsx.thor.draw_census" = "0"',
     '"debug.rpcsx.thor.ppu_pc_census" = "1"',
+    '[switch]$EnableSpursProbe',
+    '"debug.rpcsx.thor.spurs_probe" = if ($EnableSpursProbe) { "1" } else { "0" }',
     '"debug.rpcsx.thor.ppu_call_trace" = "0"',
     'Macro = "wait:15000;stop"',
     'MaxLaunchSiliconTemperatureC = 35',
@@ -17,7 +19,8 @@ $requiredFragments = @(
     'SpuNativeObjectCache = "on"',
     'CacheWorkerAffinityMask = 7',
     'ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()',
-    'Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"'
+    'Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"',
+    'Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"'
 )
 
 foreach ($fragment in $requiredFragments) {

@@ -2,7 +2,8 @@ param(
     [string]$Serial = "192.168.1.3:5555",
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
-    [string]$ExpectedInstalledApkSha256
+    [string]$ExpectedInstalledApkSha256,
+    [switch]$EnableSpursProbe
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,7 +38,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.draw_census" = "0"
     "debug.rpcsx.thor.ppu_pc_census" = "1"
     "debug.rpcsx.thor.ppu_call_trace" = "0"
-    "debug.rpcsx.thor.spurs_probe" = "0"
+    "debug.rpcsx.thor.spurs_probe" = if ($EnableSpursProbe) { "1" } else { "0" }
     "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"
     "debug.rpcsx.thor.spurs_signal_fix" = "0"
     "debug.rpcsx.thor.spurs_always_notify" = "0"
@@ -95,6 +96,7 @@ try {
     throw
 } finally {
     Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"
+    Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"
 }
 
 $captureCandidates = @(
