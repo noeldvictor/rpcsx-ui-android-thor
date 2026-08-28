@@ -55,6 +55,11 @@ $requiredFragments = @(
     '"Thor LOAD IO ACTIVE 00:',
     '"Thor LOAD IO ACTIVE 20:',
     '"Thor LOAD IO ACTIVE 40:',
+    'const u32 completion_entries =',
+    'const u32 completion_item =',
+    'const u32 completion_state =',
+    'vm::check_addr(completion_state, 0, 4)',
+    '"Thor LOAD IO COMPLETION:',
     '"Thor LOAD DATA 00:',
     '"Thor LOAD DATA 20:',
     '"Thor LOAD DATA 40:'

@@ -404,6 +404,24 @@ void perf_monitor::operator()()
 													sample + 1,
 													+vm::_ref<be_t<u32>>(io_active + 0x40), +vm::_ref<be_t<u32>>(io_active + 0x44),
 													+vm::_ref<be_t<u32>>(io_active + 0x48), +vm::_ref<be_t<u32>>(io_active + 0x4c));
+
+												// The completion poll at 0x013bcce0 walks the pointer list
+												// at active entry +0x40. Each item points to a status word
+												// and storage. The request completes when the status is zero.
+												const u32 completion_entries = +vm::_ref<be_t<u32>>(io_active + 0x40);
+												const u32 completion_count = +vm::_ref<be_t<u32>>(io_active + 0x44);
+												const u32 completion_capacity = +vm::_ref<be_t<u32>>(io_active + 0x48);
+												const u32 completion_item = completion_count && vm::check_addr(completion_entries, 0, 4)
+													? +vm::_ref<be_t<u32>>(completion_entries) : 0;
+												const bool completion_item_ok = completion_item && vm::check_addr(completion_item, 0, 8);
+												const u32 completion_state = completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item) : 0;
+												const u32 completion_storage = completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item + 4) : 0;
+												const bool completion_state_ok = completion_state && vm::check_addr(completion_state, 0, 4);
+
+												perf_log.error("Thor LOAD IO COMPLETION: sample=%u entries=0x%08x/%u/%u item0=0x%08x state0=%s:0x%08x value=0x%08x storage=0x%08x",
+													sample + 1, completion_entries, completion_count, completion_capacity,
+													completion_item, completion_state_ok ? "mapped" : "unmapped", completion_state,
+													completion_state_ok ? +vm::_ref<be_t<u32>>(completion_state) : 0, completion_storage);
 											}
 										}
 										perf_log.error("Thor LOAD DATA 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
