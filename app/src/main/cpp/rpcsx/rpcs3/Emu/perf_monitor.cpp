@@ -274,6 +274,38 @@ void perf_monitor::operator()()
 								}
 							}
 
+							// Ghidra identifies 0x005a3298 as a staged title loader. The
+							// sleep at 0x009e4ba4 returns to 0x005a3350 once per loop.
+							// Record its object state once, so a later run can show the
+							// exact stage that does not finish.
+							static std::atomic<bool> s_load_wait_dumped{false};
+							if (id == 0x1000000u && pc == 0x009e4ba4u &&
+								static_cast<u32>(ppu.lr) == 0x005a3350u && !s_load_wait_dumped.load())
+							{
+								const u32 object = static_cast<u32>(ppu.gpr[29]);
+
+								if (vm::check_addr(object, 0, 0x5b0) && !s_load_wait_dumped.exchange(true))
+								{
+									const u32 vtable = +vm::_ref<be_t<u32>>(object);
+									const bool vtable_ok = vm::check_addr(vtable + 0x170, 0, 8);
+
+									perf_log.error("Thor LOAD WAIT: object=0x%08x vtable=0x%08x poll=0x%08x loader=0x%08x flags=0x%08x control=0x%08x data=0x%08x handle=0x%08x",
+										object, vtable,
+										vtable_ok ? +vm::_ref<be_t<u32>>(vtable + 0x170) : 0,
+										vtable_ok ? +vm::_ref<be_t<u32>>(vtable + 0x174) : 0,
+										+vm::_ref<be_t<u32>>(object + 0x598),
+										+vm::_ref<be_t<u32>>(object + 0x170),
+										+vm::_ref<be_t<u32>>(object + 0x580),
+										+vm::_ref<be_t<u32>>(object + 0x28));
+									perf_log.error("Thor LOAD COUNTS: a=%u/%u b=%u/%u c=%u/%u links=%u/%u ticks=%u entries=0x%08x",
+										+vm::_ref<be_t<u32>>(object + 0x584), +vm::_ref<be_t<u32>>(object + 0x4c),
+										+vm::_ref<be_t<u32>>(object + 0x588), +vm::_ref<be_t<u32>>(object + 0x5c),
+										+vm::_ref<be_t<u32>>(object + 0x58c), +vm::_ref<be_t<u32>>(object + 0x54),
+										+vm::_ref<be_t<u32>>(object + 0x594), +vm::_ref<be_t<u32>>(object + 0xbc),
+										+vm::_ref<be_t<u32>>(object + 0x59c), +vm::_ref<be_t<u32>>(object + 0xb8));
+								}
+							}
+
 							// A syscall PC can identify only a shared wrapper. Keep its caller,
 							// stack pointer and first argument in the same low-rate sample.
 							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x",
