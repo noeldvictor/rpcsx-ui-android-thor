@@ -19,6 +19,14 @@ CALL_RE = re.compile(
     r"r5=0x([0-9a-fA-F]+) r6=0x([0-9a-fA-F]+)"
 )
 END_RE = re.compile(r"Thor PPU CALL TRACE END")
+STACK_BEGIN_RE = re.compile(
+    r"Thor PPU CALL TRACE STACK BEGIN: mode=(\S+) count=(\d+)"
+)
+STACK_ROW_RE = re.compile(
+    r"Thor PPU CALL TRACE STACK: frame=(\d+) from=0x([0-9a-fA-F]+) "
+    r"sp=0x([0-9a-fA-F]+)"
+)
+STACK_END_RE = re.compile(r"Thor PPU CALL TRACE STACK END")
 
 
 @dataclass(frozen=True)
@@ -31,20 +39,57 @@ class Call:
 
 
 @dataclass(frozen=True)
+class StackFrame:
+    index: int
+    caller: int
+    stack_pointer: int
+
+
+@dataclass(frozen=True)
 class Trace:
     mode: str
     retained_count: int
     total_index: int
     cia: int
     calls: tuple[Call, ...]
+    stack: tuple[StackFrame, ...] | None
 
 
 def parse_trace(text: str, source: str) -> Trace:
     begin = None
     ended = False
     calls: list[Call] = []
+    stack_begin = None
+    stack_ended = False
+    stack: list[StackFrame] = []
 
     for line in text.splitlines():
+        if match := STACK_BEGIN_RE.search(line):
+            if stack_begin is not None:
+                raise ValueError(f"{source}: more than one stack begins")
+            stack_begin = match
+            continue
+
+        if STACK_END_RE.search(line):
+            if stack_begin is None:
+                raise ValueError(f"{source}: stack end marker precedes the begin marker")
+            if stack_ended:
+                raise ValueError(f"{source}: more than one stack ends")
+            stack_ended = True
+            continue
+
+        if match := STACK_ROW_RE.search(line):
+            if stack_begin is None or stack_ended:
+                raise ValueError(f"{source}: stack row is outside the stack markers")
+            stack.append(
+                StackFrame(
+                    index=int(match.group(1)),
+                    caller=int(match.group(2), 16),
+                    stack_pointer=int(match.group(3), 16),
+                )
+            )
+            continue
+
         if match := BEGIN_RE.search(line):
             if begin is not None:
                 raise ValueError(f"{source}: more than one trace begins")
@@ -77,12 +122,30 @@ def parse_trace(text: str, source: str) -> Trace:
     if not ended:
         raise ValueError(f"{source}: trace end marker is missing")
 
+    if stack_begin is not None:
+        if not stack_ended:
+            raise ValueError(f"{source}: stack end marker is missing")
+        declared_stack_count = int(stack_begin.group(2))
+        if declared_stack_count != len(stack):
+            raise ValueError(
+                f"{source}: stack marker says {declared_stack_count} frames, "
+                f"but {len(stack)} rows were parsed"
+            )
+        if any(frame.index != expected for expected, frame in enumerate(stack)):
+            raise ValueError(f"{source}: stack frame numbers are not contiguous")
+        if stack_begin.group(1) != begin.group(1):
+            raise ValueError(
+                f"{source}: stack mode {stack_begin.group(1)} does not match "
+                f"trace mode {begin.group(1)}"
+            )
+
     trace = Trace(
         mode=begin.group(1),
         retained_count=int(begin.group(2)),
         total_index=int(begin.group(3)),
         cia=int(begin.group(4), 16),
         calls=tuple(calls),
+        stack=tuple(stack) if stack_begin is not None else None,
     )
 
     if trace.retained_count != len(trace.calls):
@@ -169,6 +232,35 @@ def describe_anchor(
     )
 
 
+def describe_stack(hle: Trace, lle: Trace) -> list[str]:
+    if hle.stack is None or lle.stack is None:
+        missing = []
+        if hle.stack is None:
+            missing.append("HLE")
+        if lle.stack is None:
+            missing.append("LLE")
+        return [f"Guest stack comparison: unavailable ({' and '.join(missing)} stack missing)"]
+
+    shared = 0
+    for left, right in zip(hle.stack, lle.stack):
+        if left.caller != right.caller:
+            break
+        shared += 1
+
+    lines = [
+        f"Guest stacks: HLE={len(hle.stack)} LLE={len(lle.stack)} "
+        f"shared_prefix={shared}"
+    ]
+    for index in range(max(len(hle.stack), len(lle.stack))):
+        left = hle.stack[index] if index < len(hle.stack) else None
+        right = lle.stack[index] if index < len(lle.stack) else None
+        left_text = "<none>" if left is None else f"0x{left.caller:08x} sp=0x{left.stack_pointer:x}"
+        right_text = "<none>" if right is None else f"0x{right.caller:08x} sp=0x{right.stack_pointer:x}"
+        marker = "=" if left is not None and right is not None and left.caller == right.caller else "!"
+        lines.append(f"  frame={index} HLE={left_text} {marker} LLE={right_text}")
+    return lines
+
+
 def compare(hle: Trace, lle: Trace, context: int) -> str:
     valid_pairs = {
         ("HLE_FLIP", "LLE_FLIP"),
@@ -208,6 +300,7 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
     lines = [
         f"HLE: retained={len(hle.calls)} total_index={hle.total_index} cia=0x{hle.cia:08x}",
         f"LLE: retained={len(lle.calls)} total_index={lle.total_index} cia=0x{lle.cia:08x}",
+        *describe_stack(hle, lle),
         describe_anchor("function-name", hle, lle, function_anchor),
         describe_anchor("call-site", hle, lle, site_anchor),
         describe_anchor("exact-call", hle, lle, exact_anchor),
@@ -232,10 +325,26 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
 
 
 def self_test() -> None:
-    def make(mode: str, names: list[str], cia_bias: int = 0) -> str:
-        lines = [
+    def make(
+        mode: str,
+        names: list[str],
+        cia_bias: int = 0,
+        stack_callers: list[int] | None = None,
+    ) -> str:
+        lines = []
+        if stack_callers is not None:
+            lines.append(
+                f"Thor PPU CALL TRACE STACK BEGIN: mode={mode} count={len(stack_callers)}"
+            )
+            for index, caller in enumerate(stack_callers):
+                lines.append(
+                    f"Thor PPU CALL TRACE STACK: frame={index} "
+                    f"from=0x{caller:08x} sp=0x{0x1000 + (index * 0x80):x}"
+                )
+            lines.append("Thor PPU CALL TRACE STACK END")
+        lines.append(
             f"Thor PPU CALL TRACE BEGIN: mode={mode} count={len(names)} index={len(names)} cia=0x1"
-        ]
+        )
         for seq, name in enumerate(names):
             lines.append(
                 f"Thor PPU CALL TRACE: seq={seq} cia=0x{cia_bias + seq + 1:08x} func={name} "
@@ -251,6 +360,20 @@ def self_test() -> None:
     assert "Last aligned HLE call: seq=4 cia=0x00000005 e " in report
     assert "HLE calls after the context block:\n  seq=5 cia=0x00000006 h " in report
     assert "LLE calls after the context block:\n  seq=5 cia=0x00000006 l " in report
+    assert "Guest stack comparison: unavailable (HLE and LLE stack missing)" in report
+
+    hle_stack = parse_trace(
+        make("HLE_WAIT", ["a"], stack_callers=[0x10, 0x20, 0x30]),
+        "self-hle-stack",
+    )
+    lle_stack = parse_trace(
+        make("LLE_WAIT", ["a"], stack_callers=[0x10, 0x20, 0x40]),
+        "self-lle-stack",
+    )
+    stack_report = compare(hle_stack, lle_stack, 1)
+    assert "Guest stacks: HLE=3 LLE=3 shared_prefix=2" in stack_report
+    assert "frame=1 HLE=0x00000020 sp=0x1080 = LLE=0x00000020" in stack_report
+    assert "frame=2 HLE=0x00000030 sp=0x1100 ! LLE=0x00000040" in stack_report
 
     shifted = parse_trace(
         make("LLE_FLIP", ["a", "b", "c", "d", "e", "l"], cia_bias=0x100),
