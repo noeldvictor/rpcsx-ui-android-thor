@@ -2115,3 +2115,14 @@ This result identifies the next diagnostic boundary. It does not prove that
 the asynchronous stream is an emulator fault. The route did not take a
 screenshot or record draw calls, so it has no 3D or FPS credit. Correct 3D
 output and 30 FPS are still not proved.
+
+Commit `5be4d51c7` extends the next bounded probe through stream offset `0xcc`.
+It records the total size, requested range, both cached ranges, both buffer
+pointers, both asynchronous counts, the range table, and the IO selector. The
+source contract passed, and the incremental ARM64 debug APK build passed in 55
+seconds. The probe-off APK is 116,125,669 bytes and has this SHA-256:
+
+    088CB17B4D751A8497342F79776A2B4701AA43B403B80DEC8096260AC2316D54
+
+This APK is not installed. The previous exact APK remains installed. Do not
+use the Thor again until a later strict cool gate.
