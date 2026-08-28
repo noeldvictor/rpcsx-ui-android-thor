@@ -1580,3 +1580,57 @@ and some LLE calls wait longer. Therefore, this counter poll is a shared
 timing mechanism. It is not the HLE correctness boundary. The next analysis
 must follow the completed queue work to a downstream state or render result.
 RPCSX is stopped, and the Thor is asleep.
+
+## 27. The disabled hot diagnostics were still active
+
+The HLE log from capture `20260828-020456-thor-input-custom` contained 49,622
+high-rate SPURS diagnostic records. The route set
+`debug.rpcsx.thor.spurs_probe=0`, but six diagnostic blocks in
+`cellSpursSpu.cpp` did not read that property. These blocks added counters,
+histograms, formatting work, and log writes to the SPURS selector, task
+selector, dispatcher, and syscall paths. The log contained 57,238 lines and
+used 14,176,775 bytes. This work was measurement overhead, not title work.
+
+Commit `c019838aa` puts all six blocks behind one gate. A normal Android build
+uses a compile-time false result. An Android diagnostic build still needs
+`RPCSX_THOR_SPURS_PROBE` at build time and the `spurs_probe=1` property at run
+time. Desktop behavior does not change. The build-gate test checks the source
+gate and the six call sites.
+
+The ARM64 RelWithDebInfo build passed in 55 seconds. The full debug APK build
+passed in 1 minute 45 seconds. The normal ARM64 library did not contain the six
+high-rate format strings. It retained the two intentional one-shot activation
+and request strings. The exact APK was 116,122,881 bytes and had this SHA-256:
+
+    DDE8FE3E747ACDDF897085A0A1669B73496C8F7CF4995281465B3FDF9572EC48
+
+The strict gate passed at 32.1, 32.1, and 32.5 C. The no-launch installer then
+verified the same SHA-256 on the device and verified that the RPCSX process was
+not active. The evidence is in:
+
+    20260828-023435-thor-input-strict-cool-gate
+    20260828-023507-apk-no-launch-install
+
+The exact A/B HLE route used the same 10-second counter wrapper as the earlier
+HLE route. Its launch gate passed at 32.9, 32.1, and 32.5 C. It used
+`hle_libs=libsre.sprx`, `hle_spurs_kernel=1`, `spurs_probe=0`, and
+`ppu_call_trace=6`. It also kept the measured candidate stack. The capture is:
+
+    20260828-023555-thor-input-custom/post-RPCSX.log
+
+All 19 counter calls reached both equal events. The log contained 195 counter
+events. Therefore, removal of the hot diagnostics did not stop the measured
+queue work. The six high-rate marker counts fell from 49,622 to zero. The new
+log contained 10,590 lines and used 1,666,432 bytes. One separate one-shot
+`Thor DISPATCH_WKL` record remained.
+
+The package sensor peak fell from 67.4 to 62.2 C. The highest junction sample
+fell from 76.3 to 73.5 C. The route stayed below all thermal limits and stopped
+normally. These values are one paired observation, not a general performance
+result.
+
+This change removes a large observer effect. It does not prove correct 3D
+output or 30 FPS because this route did not enable the draw census or capture a
+game frame. The next cooled route must set `ppu_call_trace=0`, set
+`draw_census=1`, capture a frame, and measure a fixed interval after the shared
+counter milestone. RPCSX is stopped, and the Thor is asleep.
