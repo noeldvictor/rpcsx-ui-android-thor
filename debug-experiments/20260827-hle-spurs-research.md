@@ -2250,3 +2250,32 @@ This new APK is not installed. The device still has exact APK
 `641E8AC8...A429E7`. The route did not take a screenshot or record a draw
 census, so it has no 3D or FPS credit. Correct 3D output and 30 FPS are still
 not proved. Do not use the Thor again until a later strict cool gate.
+
+## 38. Ghidra resolves the loader IO backend methods
+
+The raw Ghidra project resolved the virtual table at `0x01bbab48`. The backend
+read entry at offset `0x40` uses descriptor `0x0198c998` and code
+`0x00a08798`. The release entry at offset `0x48` uses descriptor `0x0198c9a8`
+and code `0x00a08c8c`. The source-validation entry at offset `0x4c` uses
+descriptor `0x0198c9b0` and code `0x00a08ce4`.
+
+Function `0x00a08798` is the data-read backend. It has a buffered direct-read
+path and a path that uses the title's 16-slot asynchronous job pool. Function
+`0x00a08c8c` calls the request object's release method when the object is not
+null. Function `0x00a08ce4` returns true when the source object in the request
+is not null. This result gives the field meaning needed to read the first
+active 0x50-byte entry from the next capture.
+
+Commit `8a269568c` adds the three backend method descriptors and code addresses
+to the bounded loader probe. The source contract passed. The ARM64 native
+build passed in 2 minutes 26 seconds. Debug APK assembly passed in 56 seconds.
+The ARM64 package gate and the SPURS probe gate passed. The APK is 116,138,373
+bytes and has this SHA-256:
+
+    2F96D3E36F5285F1D9E7F03275E8E5FB36A1482957C26E56DBAAF9493A71FF12
+
+This APK is not installed. The device still has exact APK
+`641E8AC8...A429E7`. The next hardware step is one strict cool gate, one
+no-launch install, one more strict cool gate, and one bounded Transformers HLE
+route. The route must stop if the thermal guard refuses it. No 3D or FPS result
+is available yet.
