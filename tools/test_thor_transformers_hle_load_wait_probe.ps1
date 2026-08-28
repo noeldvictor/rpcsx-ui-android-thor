@@ -30,6 +30,10 @@ $requiredFragments = @(
     '"Thor LOAD IO:',
     'data + 0x88',
     'range_table + 0x1c',
+    'vm::check_addr(0x019d5410u, 0, 4)',
+    'io_vtable + 0x0c',
+    'io_vtable + 0x10',
+    '"Thor LOAD IO VT:',
     '"Thor LOAD DATA 00:',
     '"Thor LOAD DATA 20:',
     '"Thor LOAD DATA 40:'
