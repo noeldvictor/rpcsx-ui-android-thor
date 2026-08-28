@@ -325,12 +325,14 @@ enum class thor_ppu_call_trace_point : u8
 	hle_stall,
 	lle_voice,
 	net_module,
+	counter_poll,
 };
 
 // Capture one bounded Transformers main-thread call history at an exact event.
 // Property value 1 selects the shared FlipPump event. Value 2 selects the late
 // HLE-stall or LLE-libvoice boundary. Value 3 selects the shared libnet load.
 // Value 4 selects the first shared main-thread title sleep after the libnet load.
+// Value 5 selects the first sleep in the title counter-poll function.
 void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point);
 
 // Android-only Eternal Sonata PPU interpreter isolation. The range query is

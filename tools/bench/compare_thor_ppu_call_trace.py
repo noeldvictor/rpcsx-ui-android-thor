@@ -27,6 +27,11 @@ STACK_ROW_RE = re.compile(
     r"sp=0x([0-9a-fA-F]+)"
 )
 STACK_END_RE = re.compile(r"Thor PPU CALL TRACE STACK END")
+EVENT_REGISTERS_RE = re.compile(
+    r"Thor PPU CALL TRACE EVENT: .*?mode=(\S+).*?cia=0x([0-9a-fA-F]+).*?"
+    r"r0=0x([0-9a-fA-F]+) r9=0x([0-9a-fA-F]+) "
+    r"r30=0x([0-9a-fA-F]+) r31=0x([0-9a-fA-F]+)"
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,15 @@ class StackFrame:
 
 
 @dataclass(frozen=True)
+class EventRegisters:
+    cia: int
+    r0: int
+    r9: int
+    r30: int
+    r31: int
+
+
+@dataclass(frozen=True)
 class Trace:
     mode: str
     retained_count: int
@@ -53,6 +67,7 @@ class Trace:
     cia: int
     calls: tuple[Call, ...]
     stack: tuple[StackFrame, ...] | None
+    event_registers: EventRegisters | None
 
 
 def parse_trace(text: str, source: str) -> Trace:
@@ -62,8 +77,23 @@ def parse_trace(text: str, source: str) -> Trace:
     stack_begin = None
     stack_ended = False
     stack: list[StackFrame] = []
+    event_mode = None
+    event_registers = None
 
     for line in text.splitlines():
+        if match := EVENT_REGISTERS_RE.search(line):
+            if event_registers is not None:
+                raise ValueError(f"{source}: more than one event register row was found")
+            event_mode = match.group(1)
+            event_registers = EventRegisters(
+                cia=int(match.group(2), 16),
+                r0=int(match.group(3), 16),
+                r9=int(match.group(4), 16),
+                r30=int(match.group(5), 16),
+                r31=int(match.group(6), 16),
+            )
+            continue
+
         if match := STACK_BEGIN_RE.search(line):
             if stack_begin is not None:
                 raise ValueError(f"{source}: more than one stack begins")
@@ -139,6 +169,11 @@ def parse_trace(text: str, source: str) -> Trace:
                 f"trace mode {begin.group(1)}"
             )
 
+    if event_mode is not None and event_mode != begin.group(1):
+        raise ValueError(
+            f"{source}: event mode {event_mode} does not match trace mode {begin.group(1)}"
+        )
+
     trace = Trace(
         mode=begin.group(1),
         retained_count=int(begin.group(2)),
@@ -146,6 +181,7 @@ def parse_trace(text: str, source: str) -> Trace:
         cia=int(begin.group(4), 16),
         calls=tuple(calls),
         stack=tuple(stack) if stack_begin is not None else None,
+        event_registers=event_registers,
     )
 
     if trace.retained_count != len(trace.calls):
@@ -261,18 +297,35 @@ def describe_stack(hle: Trace, lle: Trace) -> list[str]:
     return lines
 
 
+def describe_event_registers(hle: Trace, lle: Trace) -> list[str]:
+    if hle.event_registers is None or lle.event_registers is None:
+        return []
+
+    def format_registers(event: EventRegisters) -> str:
+        return (
+            f"cia=0x{event.cia:08x} r0=0x{event.r0:x} r9=0x{event.r9:x} "
+            f"r30=0x{event.r30:x} r31=0x{event.r31:x}"
+        )
+
+    return [
+        "HLE event registers: " + format_registers(hle.event_registers),
+        "LLE event registers: " + format_registers(lle.event_registers),
+    ]
+
+
 def compare(hle: Trace, lle: Trace, context: int) -> str:
     valid_pairs = {
         ("HLE_FLIP", "LLE_FLIP"),
         ("HLE_STALL", "LLE_VOICE"),
         ("HLE_NET", "LLE_NET"),
         ("HLE_WAIT", "LLE_WAIT"),
+        ("HLE_POLL", "LLE_POLL"),
     }
     if (hle.mode, lle.mode) not in valid_pairs:
         raise ValueError(
             f"trace modes are {hle.mode} and {lle.mode}; expected "
             "HLE_FLIP/LLE_FLIP, HLE_STALL/LLE_VOICE, HLE_NET/LLE_NET, "
-            "or HLE_WAIT/LLE_WAIT"
+            "HLE_WAIT/LLE_WAIT, or HLE_POLL/LLE_POLL"
         )
 
     function_anchor = select_anchor(
@@ -300,6 +353,7 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
     lines = [
         f"HLE: retained={len(hle.calls)} total_index={hle.total_index} cia=0x{hle.cia:08x}",
         f"LLE: retained={len(lle.calls)} total_index={lle.total_index} cia=0x{lle.cia:08x}",
+        *describe_event_registers(hle, lle),
         *describe_stack(hle, lle),
         describe_anchor("function-name", hle, lle, function_anchor),
         describe_anchor("call-site", hle, lle, site_anchor),
@@ -330,8 +384,18 @@ def self_test() -> None:
         names: list[str],
         cia_bias: int = 0,
         stack_callers: list[int] | None = None,
+        event_registers: tuple[int, int, int, int, int] | None = None,
     ) -> str:
         lines = []
+        if event_registers is not None:
+            cia, r0, r9, r30, r31 = event_registers
+            lines.append(
+                "Thor PPU CALL TRACE EVENT: point=4 "
+                f"mode={mode} history_size=4 index=4 emulation_id=1 "
+                f"previous_emulation_id=0 cia=0x{cia:x} lr=0x0 sp=0x0 "
+                f"stack_count=0 r0=0x{r0:x} r9=0x{r9:x} "
+                f"r30=0x{r30:x} r31=0x{r31:x}"
+            )
         if stack_callers is not None:
             lines.append(
                 f"Thor PPU CALL TRACE STACK BEGIN: mode={mode} count={len(stack_callers)}"
@@ -374,6 +438,18 @@ def self_test() -> None:
     assert "Guest stacks: HLE=3 LLE=3 shared_prefix=2" in stack_report
     assert "frame=1 HLE=0x00000020 sp=0x1080 = LLE=0x00000020" in stack_report
     assert "frame=2 HLE=0x00000030 sp=0x1100 ! LLE=0x00000040" in stack_report
+
+    hle_poll = parse_trace(
+        make("HLE_POLL", ["a"], event_registers=(0xFDCF90, 7, 5, 3, 1)),
+        "self-hle-poll",
+    )
+    lle_poll = parse_trace(
+        make("LLE_POLL", ["a"], event_registers=(0xFDCF90, 9, 9, 3, 1)),
+        "self-lle-poll",
+    )
+    poll_report = compare(hle_poll, lle_poll, 1)
+    assert "HLE event registers: cia=0x00fdcf90 r0=0x7 r9=0x5" in poll_report
+    assert "LLE event registers: cia=0x00fdcf90 r0=0x9 r9=0x9" in poll_report
 
     shifted = parse_trace(
         make("LLE_FLIP", ["a", "b", "c", "d", "e", "l"], cia_bias=0x100),

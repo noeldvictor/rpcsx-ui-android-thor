@@ -3970,6 +3970,7 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 	static std::atomic<u64> s_boundary_emulation_id{umax};
 	static std::atomic<u64> s_net_emulation_id{umax};
 	static std::atomic<u64> s_wait_emulation_id{umax};
+	static std::atomic<u64> s_poll_emulation_id{umax};
 
 	switch (point)
 	{
@@ -4011,6 +4012,14 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 		mode = hle_spurs ? "HLE_NET" : "LLE_NET";
 		captured_emulation_id = &s_net_emulation_id;
 		break;
+	case thor_ppu_call_trace_point::counter_poll:
+		if (value[0] != '5')
+		{
+			return;
+		}
+		mode = hle_spurs ? "HLE_POLL" : "LLE_POLL";
+		captured_emulation_id = &s_poll_emulation_id;
+		break;
 	}
 
 	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
@@ -4025,10 +4034,11 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 
 	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u mode=%s history_size=%u index=%llu "
 		"emulation_id=%llu previous_emulation_id=%llu cia=0x%08x lr=0x%llx sp=0x%llx "
-		"stack_count=%u",
+		"stack_count=%u r0=0x%llx r9=0x%llx r30=0x%llx r31=0x%llx",
 		static_cast<u32>(point), mode, static_cast<u32>(ppu.syscall_history.data.size()),
 		ppu.syscall_history.index, emulation_id, previous_emulation_id, +ppu.cia, +ppu.lr,
-		ppu.gpr[1], static_cast<u32>(call_stack.size()));
+		ppu.gpr[1], static_cast<u32>(call_stack.size()), ppu.gpr[0], ppu.gpr[9],
+		ppu.gpr[30], ppu.gpr[31]);
 
 	ppu_log.error("Thor PPU CALL TRACE STACK BEGIN: mode=%s count=%u", mode,
 		static_cast<u32>(call_stack.size()));

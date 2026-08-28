@@ -922,13 +922,21 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
   sys_timer.trace("sys_timer_usleep(sleep_time=0x%llx)", sleep_time);
 
 #ifdef __ANDROID__
-  // Both modes use this title sleep wrapper after libnet loads. Capture the
-  // first main-thread use before repeated sleeps replace the useful history.
-  // The one-shot trace also records the caller stack because this wrapper has
-  // many static call sites.
-  if (+ppu.cia == 0x009e4ba4u) {
+  const u32 cia = +ppu.cia;
+  // Both modes use this title sleep wrapper after libnet loads. Capture its
+  // first main-thread use and its caller stack for property value 4.
+  if (cia == 0x009e4ba4u) {
     thor_dump_transformers_ppu_call_trace(
         ppu, thor_ppu_call_trace_point::hle_stall);
+  }
+
+  // This title function polls either two global counters or two values in one
+  // object. At syscall entry, r0 and r9 contain the compared values. Register
+  // r31 contains the global base or object address. Property value 5 records
+  // the first real poll without changing either value.
+  if (cia == 0x00fdcf60u || cia == 0x00fdcf90u) {
+    thor_dump_transformers_ppu_call_trace(
+        ppu, thor_ppu_call_trace_point::counter_poll);
   }
 #endif
 
