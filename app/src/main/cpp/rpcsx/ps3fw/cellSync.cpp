@@ -980,8 +980,8 @@ error_code _cellSyncLFQueueGetPushPointer(ppu_thread& ppu, vm::ptr<CellSyncLFQue
 	}
 }
 
-// Signal a task waiting on the SPURS instance named by eaSignal (cellSpurs.cpp).
-s32 thor_spurs_wake_lfq_waiter(ppu_thread& ppu, u32 ea_signal);
+// Deliver a SPURS LFQueue token (cellSpurs.cpp).
+s32 thor_spurs_notify_lfq(ppu_thread& ppu, u32 ea_signal, u32 token);
 
 static bool thor_lfq_any2any() noexcept
 {
@@ -1003,20 +1003,13 @@ static bool thor_lfq_any2any() noexcept
 
 error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<s32> pointer, u32 isBlocking, u32 useEventQueue)
 {
-	// ANY2ANY PUSH - previously a todo stub returning CELL_OK.
+	// Sony's ANY2ANY path has separate reserve and publish counters. Get reserves
+	// push1.m_h8. Complete publishes through push1.m_h5 and m_h6 after the copy.
+	// The former Thor route changed m_h5 here. That made the entry visible before
+	// memcpy and left m_h8 unchanged.
 	//
-	// The stub never wrote *pointer, so _cellSyncLFQueuePushBody memcpy'd every
-	// entry into slot 0 and then "completed" a push that signalled nothing. The
-	// consumer - the task parked in WAIT_SIGNAL holding this queue - was never
-	// woken, and the title's geometry stage never ran.
-	//
-	// The ring convention is the one used throughout this codebase: counters run
-	// mod 2*depth and the buffer index is counter mod depth, so a full queue is
-	// (push - pop) mod 2*depth == depth. ANY2ANY keeps its producer index in
-	// push3.m_h5 and its consumer index in pop3.m_h1 (push1/push3 and pop1/pop3
-	// are unions over the same words).
-	//
-	//   debug.rpcsx.thor.lfq_any2any = 0 restores the stub
+	// This is the uncontended firmware fast path. The packed event-queue slow
+	// path in m_h7 remains disabled by the experiment switch.
 	if (!thor_lfq_any2any())
 	{
 		cellSync.todo("_cellSyncLFQueueGetPushPointer2(queue=*0x%x, pointer=*0x%x, isBlocking=%d, useEventQueue=%d)", queue, pointer, isBlocking, useEventQueue);
@@ -1043,34 +1036,39 @@ error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQu
 
 		if (const u32 n = s_r++; n < 24)
 		{
-			const auto pop = queue->pop3.load();
-			const auto psh = queue->push3.load();
+			const auto pop = queue->pop1.load();
+			const auto psh = queue->push1.load();
 
-			cellSync.error("Thor LFQRING #%u: pop3{h1=%u h2=%u} push3{h5=%u h6=%u} "
-				"raw0=%08x raw4=%08x raw8=%08x rawC=%08x depth=%d",
-				n, +pop.m_h1, +pop.m_h2, +psh.m_h5, +psh.m_h6,
-				+vm::_ref<be_t<u32>>(queue.addr() + 0x0),
-				+vm::_ref<be_t<u32>>(queue.addr() + 0x4),
-				+vm::_ref<be_t<u32>>(queue.addr() + 0x8),
-				+vm::_ref<be_t<u32>>(queue.addr() + 0xC),
+			cellSync.error("Thor LFQRING #%u: pop{%u,%u,%04x,%u} push{%u,%04x,%04x,%u} "
+				"hs1[0]=%04x hs2[0]=%04x depth=%d",
+				n, +pop.m_h1, +pop.m_h2, +pop.m_h3, +pop.m_h4,
+				+psh.m_h5, +psh.m_h6, +psh.m_h7, +psh.m_h8,
+				+queue->m_hs1[0], +queue->m_hs2[0],
 				depth);
 		}
 	}
 
 	while (true)
 	{
-		const auto old = queue->push3.load();
+		const auto old = queue->push1.load();
 		auto push = old;
 
-		const s32 pop_idx = queue->pop3.load().m_h1;
-		s32 used = s32{push.m_h5} - pop_idx;
+		const s32 reserved = +push.m_h8;
+		s32 used = reserved - +queue->pop1.load().m_h1;
 
 		if (used < 0)
 		{
 			used += depth * 2;
 		}
 
-		if (used >= depth)
+		s32 incomplete = reserved - +push.m_h5;
+
+		if (incomplete < 0)
+		{
+			incomplete += depth * 2;
+		}
+
+		if (push.m_h7 || used >= depth || incomplete >= 16)
 		{
 			if (!isBlocking)
 			{
@@ -1085,18 +1083,18 @@ error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQu
 			continue;
 		}
 
-		*pointer = push.m_h5;
+		*pointer = reserved;
 
-		s32 next = s32{push.m_h5} + 1;
+		s32 next = reserved + 1;
 
 		if (next >= depth * 2)
 		{
 			next -= depth * 2;
 		}
 
-		push.m_h5 = static_cast<u16>(next);
+		push.m_h8 = static_cast<u16>(next);
 
-		if (queue->push3.compare_and_swap_test(old, push))
+		if (queue->push1.compare_and_swap_test(old, push))
 		{
 			return CELL_OK;
 		}
@@ -1244,19 +1242,120 @@ error_code _cellSyncLFQueueCompletePushPointer2(ppu_thread& ppu, vm::ptr<CellSyn
 		return CELL_OK;
 	}
 
-	// The entry is already in the buffer; make it visible, then wake the
-	// consumer. This title passes fpSendSignal = 0 and puts the wake target in
-	// the queue instead: eaSignal = 0x1e97a81 is the SPURS instance 0x1e97a80
-	// with bit 0 set. The implemented PPU2SPU sibling calls
-	// fpSendSignal(ppu, queue->m_eaSignal, var6) for exactly this purpose.
-	if (fpSendSignal)
+	const s32 depth = queue->m_depth;
+	s32 advance = 0;
+
+	// Mark this reservation complete. Move the published counter only across a
+	// contiguous run of completed reservations. m_h6 is the 16-entry completion
+	// bitmap used by the firmware.
+	while (true)
 	{
-		return not_an_error(fpSendSignal(ppu, vm::cast(queue->m_eaSignal.addr()), pointer));
+		const auto old = queue->push1.load();
+		auto push = old;
+
+		s32 distance = pointer - +push.m_h5;
+
+		if (distance < 0)
+		{
+			distance += depth * 2;
+		}
+
+		if (distance >= 16) [[unlikely]]
+		{
+			return CELL_SYNC_ERROR_INVAL;
+		}
+
+		const u16 completed = static_cast<u16>(+push.m_h6 | (1u << (15 - distance)));
+		advance = std::countl_zero<u32>(static_cast<u16>(~completed)) - 16;
+		push.m_h6 = static_cast<u16>(completed << advance);
+
+		s32 published = +push.m_h5 + advance;
+
+		if (published >= depth * 2)
+		{
+			published -= depth * 2;
+		}
+
+		push.m_h5 = static_cast<u16>(published);
+
+		if (queue->push1.compare_and_swap_test(old, push))
+		{
+			break;
+		}
 	}
 
-	if (const u32 ea = queue->m_eaSignal.addr(); ea & 1)
+	// Each newly published entry can satisfy one pending pop notification. The
+	// notification ring is the three packed five-bit fields in pop1.m_h3. The
+	// token is in m_hs1. This is the state that the former direct wake left set.
+	for (s32 i = 0; i < advance; i++)
 	{
-		return not_an_error(thor_spurs_wake_lfq_waiter(ppu, ea));
+		u32 token = 0;
+
+		while (true)
+		{
+			const auto old = queue->pop1.load();
+			auto pop = old;
+			const u16 pack = pop.m_h3;
+			const u32 head = (pack >> 10) & 0x1f;
+			const u32 tail = pack & 0x1f;
+
+			if (head == tail)
+			{
+				return CELL_OK;
+			}
+
+			const u32 slot = head >= 15 ? head - 15 : head;
+			token = queue->m_hs1[slot];
+			const u32 next = head == 0x1d ? 0 : head + 1;
+			pop.m_h3 = static_cast<u16>((pack & 0x83ff) | (next << 10));
+
+			if (queue->pop1.compare_and_swap_test(old, pop))
+			{
+				break;
+			}
+		}
+
+		static std::atomic<u32> s_notify{0};
+		if (const u32 n = s_notify++; n < 16)
+		{
+			cellSync.error("Thor LFQNOTIFY #%u: queue=0x%x eaSignal=0x%x token=0x%04x",
+				n, queue.addr(), queue->m_eaSignal.addr(), token);
+		}
+
+		if ((token & 0xff00) == 0xff00)
+		{
+			u32 event_port = token == 0xff01
+				? +queue->m_v1
+				: (+queue->push2.load().pack << 16) | +queue->pop2.load().pack;
+
+			if (event_port == umax)
+			{
+				return CELL_SYNC_ERROR_NO_NOTIFIER;
+			}
+
+			if (const s32 rc = sys_event_port_send(event_port, 0, 0, 0))
+			{
+				return not_an_error(rc);
+			}
+		}
+		else if (fpSendSignal)
+		{
+			if (const s32 rc = fpSendSignal(ppu, vm::cast(queue->m_eaSignal.addr()), token))
+			{
+				return not_an_error(rc);
+			}
+		}
+		else if ((queue->m_eaSignal.addr() & 0xf) == 1)
+		{
+			if (const s32 rc = thor_spurs_notify_lfq(ppu, queue->m_eaSignal.addr(), token))
+			{
+				return not_an_error(rc);
+			}
+		}
+		else
+		{
+			return CELL_SYNC_ERROR_NO_NOTIFIER;
+		}
 	}
 
 	return CELL_OK;

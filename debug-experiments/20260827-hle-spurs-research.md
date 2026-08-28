@@ -2332,3 +2332,71 @@ cool gate. It must then run one bounded route with `lfq_any2any=on`. The test
 must show whether the completion state becomes zero and whether the active
 entry retires. It has no 3D or FPS credit unless a screenshot and draw evidence
 show correct output. Correct 3D output and 30 FPS are still not proved.
+
+## 40. Firmware replaces the incorrect LFQueue shortcut
+
+A later strict cool gate refused the hardware run at 42.5 C silicon. The
+capture is:
+
+    20260828-135158-thor-input-strict-cool-gate
+
+RPCSX was force-stopped. No APK was installed, and no title launch occurred.
+The 35 C launch limit stays in effect.
+
+The cooldown made a firmware comparison possible. The encrypted `libsre.sprx`
+on the Thor has SHA-256
+`FD0F6E06A623C4C43F978CB75610243D620E04108F8075566FA8FEFC34918E84`.
+The existing decrypted firmware ELF has SHA-256
+`74A023767AAE35838F26EF1A846806CAAD438A041A06BA16B1165050AA403E8`.
+These files are research inputs. They are not in Git.
+
+Ghidra resolved these firmware functions:
+
+    _cellSyncLFQueueGetPushPointer2        code 0x000030b8
+    _cellSyncLFQueueCompletePushPointer2   code 0x000035c8
+    _cellSyncLFQueuePushBody               code 0x000016b4
+    _cellSpursLFQueuePushBody              code 0x000171b8
+    SPURS LFQueue notifier                 code 0x000127cc
+    LFQueue notification delivery helper   code 0x0000439c
+
+The result invalidates the old shortcut. The old HLE used `push1.m_h5` as both
+the reserve counter and the publish counter. Sony reserves with `push1.m_h8`.
+It copies the entry, records completion in the 16-bit `push1.m_h6` bitmap, and
+only then advances `push1.m_h5` across contiguous completed entries.
+
+The raw queue state from the earlier Thor run also contains one pending pop
+notification. `pop1.m_h3` is `0x0001`. Sony consumes the token from
+`m_hs1[0]`, advances the packed notification head, and sends that token through
+the notifier. The old direct waiter scan sent a signal but did not retire this
+queue state.
+
+The SPURS notifier contract is exact. If the low nibble of `eaSignal` is 1,
+the base address is a SPURS instance. The token stores the workload ID above
+the low task-ID byte. The notifier calls `cellSpursLookUpTasksetAddress` and
+then `_cellSpursSendSignal`. Other signal tags name a task set directly.
+
+The new default-off route implements this measured fast path. It reserves with
+`m_h8`, publishes with `m_h5/m_h6`, consumes `pop1.m_h3/m_hs1`, and uses the
+firmware SPURS token decoder. The event-queue contention slow path remains out
+of scope for this experiment.
+
+Online source research found no implementation to copy. Current RPCS3 and the
+ARMSX3 branch still return success from TODO stubs for both ANY2ANY functions.
+An arXiv search found no PS3 or SPURS paper. The SCQ and wCQ papers confirm the
+general need for separate MPMC reservation and publication, but they do not
+specify the Sony data layout:
+
+    https://arxiv.org/abs/1908.04511
+    https://arxiv.org/abs/2201.02179
+
+The LFQueue route contract, loader logging contract, firmware contract, and Git
+whitespace check passed. Android debug assembly passed in 1 minute 24 seconds.
+The APK is 116,126,541 bytes and has this SHA-256:
+
+    98DC56B82E6F6C6A86C871406F9D5C3BA47F4B9D2D0394A171EE69AC88F8BDE7
+
+This APK is not installed. It supersedes the `F91F...EC2` probe APK. The device
+still has exact APK `641E8AC8...A429E7`. The next hardware run must use one
+strict cool gate, one no-launch install, a second strict cool gate, and one
+bounded `lfq_any2any=on` route. Correct 3D output and 30 FPS are still not
+proved.

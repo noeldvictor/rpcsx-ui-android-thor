@@ -4289,11 +4289,10 @@ s32 _cellSpursLFQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpurs
 error_code _cellSyncLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 isBlocking);
 error_code _cellSyncLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<void> buffer, u32 isBlocking);
 
-// The SPURS LF queue push is a thin wrapper over the cellSync one, exactly like
-// _cellSpursLFQueueInitialize is over cellSyncLFQueueInitialize.
-// `_cellSyncLFQueuePushBody` is FULLY IMPLEMENTED in cellSync.cpp, so this stub
-// was discarding a working implementation and returning CELL_OK with nothing
-// queued - the same shape of bug as the cellSpursQueue* stubs.
+// The SPURS LFQueue body uses the cellSync reserve, copy, and complete sequence.
+// Sony's wrapper supplies a SPURS notifier to the complete call. The HLE
+// complete path recognizes the SPURS tag in eaSignal and delivers the packed
+// workload and task token through thor_spurs_notify_lfq.
 //
 // This title exercises BOTH queue families: the log shows
 // cellSpursLFQueueAttachLv2EventQueue and cellSpursQueueAttachLv2EventQueue
@@ -5582,6 +5581,36 @@ s32 thor_spurs_wake_lfq_waiter(ppu_thread& ppu, u32 ea_signal)
 	}
 
 	return CELL_OK;
+}
+
+// Match the notifier that Sony's _cellSpursLFQueuePushBody passes to cellSync.
+// eaSignal low nibble 1 means that the base is a SPURS instance. The token then
+// contains the workload ID above the low task-ID byte. Other tags name a
+// taskset directly.
+s32 thor_spurs_notify_lfq(ppu_thread& ppu, u32 ea_signal, u32 token)
+{
+	const u32 task_id = token & 0xff;
+	vm::ptr<CellSpursTaskset> taskset;
+
+	if ((ea_signal & 0xf) == 1)
+	{
+		vm::var<vm::ptr<CellSpursTaskset>> resolved;
+		const s32 rc = cellSpursLookUpTasksetAddress(ppu,
+			vm::ptr<CellSpurs>::make(ea_signal & ~0xfu), resolved, (token >> 8) & 0xffffff);
+
+		if (rc)
+		{
+			return rc;
+		}
+
+		taskset = *resolved;
+	}
+	else
+	{
+		taskset = vm::ptr<CellSpursTaskset>::make(ea_signal & ~0xfu);
+	}
+
+	return _cellSpursSendSignal(ppu, taskset, task_id);
 }
 
 // STAGE THE REAL TASKSET POLICY MODULE.
