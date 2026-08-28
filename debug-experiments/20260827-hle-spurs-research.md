@@ -1691,3 +1691,34 @@ fixed performance sample. The thermal guard stopped the route after the
 near-limit confirmation. The silicon peak was 63.8 C, and the junction peak
 was 75.5 C. Both values were below their hard limits. RPCSX is stopped, and
 the Thor is asleep.
+
+## 29. The low-rate sample stops in the common sleep wrapper
+
+Commit `339410856` adds a short PPU PC route. The route keeps the exact HLE
+candidate stack, disables the draw and call-trace probes, enables the low-rate
+PPU PC census, waits for eight seconds, and stops. The same commit also fixes
+the Android line endings in the detailed thread snapshot tool.
+
+The Thor passed the strict gate at 33.3 C for all three samples. The capture
+is:
+
+    20260828-030248-thor-input-strict-cool-gate
+
+The PC route used the same installed APK. The device SHA-256 matched
+`DDE8FE3E...572EC48`. The guard stopped RPCSX during the near-limit
+confirmation. The silicon peak was 65.0 C, and the junction peak was 77.5 C.
+Both values were below their hard limits. The failure snapshot is complete:
+
+    20260828-030335-thor-input-custom/failure-RPCSX.log
+
+At 16.738 seconds, `main_thread`, `AsyncIOSystem`, and `RenderingThread` all
+sampled at `0x009e4ba4`. Ghidra confirms that this address is the `sc`
+instruction in the common sleep wrapper at `0x009e4b58`. The wrapper converts
+its input to microseconds, clamps the value to 30, and calls
+`sys_timer_usleep`. This PC does not identify the title caller.
+
+The census now records LR, SP, and r3 with each PC. It also records one bounded
+12-frame main-thread stack. These records are low-rate and active only when the
+manual `ppu_pc_census` property is on. The next build and cooled route must use
+these records to find the caller that remains after the HLE map boundary.
+RPCSX is stopped, and the Thor is asleep.

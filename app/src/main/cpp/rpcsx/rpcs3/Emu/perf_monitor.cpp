@@ -274,16 +274,38 @@ void perf_monitor::operator()()
 								}
 							}
 
-							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x state=0x%x",
-								id, ppu.get_name(), pc, static_cast<u32>(ppu.state.load()));
+							// A syscall PC can identify only a shared wrapper. Keep its caller,
+							// stack pointer and first argument in the same low-rate sample.
+							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x",
+								id, ppu.get_name(), pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
+								ppu.gpr[3], static_cast<u32>(ppu.state.load()));
+
+							// Capture one bounded main-thread stack. The census runs only when
+							// the manual Android property is on, and the performance thread
+							// samples at most once per log interval.
+							static std::atomic<bool> s_main_stack_dumped{false};
+							if (id == 0x1000000u && pc && !s_main_stack_dumped.load())
+							{
+								const auto call_stack = ppu.dump_callstack_list();
+								if (!call_stack.empty() && !s_main_stack_dumped.exchange(true))
+								{
+									const usz count = std::min<usz>(call_stack.size(), 12);
+									perf_log.error("Thor PPU STACK BEGIN: cia=0x%08x lr=0x%08x sp=0x%08x count=%u total=%u",
+										pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
+										static_cast<u32>(count), static_cast<u32>(call_stack.size()));
+									for (usz frame = 0; frame < count; frame++)
+									{
+										perf_log.error("Thor PPU STACK: frame=%u from=0x%08x sp=0x%08x",
+											static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+									}
+									perf_log.error("Thor PPU STACK END");
+								}
+							}
 
 							// AND THE CODE AT THAT PC.
 							//
-							// Three HLE threads park at 0x009e4ba4 and no LLE thread ever
-							// does, so that address is the divergence. Dump the words
-							// around it once per address - a PC alone cannot say what the
-							// loop waits on, and the instructions can be disassembled
-							// offline (PowerPC:BE:64) without another device run.
+							// Dump the words around each sampled address once. The code can
+							// then be disassembled offline as PowerPC:BE:64.
 							static std::atomic<u32> s_dumped[8]{};
 							static std::atomic<u32> s_ndumped{0};
 
