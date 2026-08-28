@@ -1990,3 +1990,43 @@ contract and the three related SPURS contracts passed. The ARM64
 RelWithDebInfo build passed in 1 minute 43 seconds. This build is not installed
 and has no device correctness or performance credit yet. Correct 3D output and
 30 FPS are still not proved.
+
+## 34. The first fallback APK route stopped during cache compilation
+
+The probe-off debug APK passed the ARM64 package contract and the SPURS probe
+build gate. It was 116,124,328 bytes and had this SHA-256:
+
+    FDBE87ABA97D2E82AB47A8BA5B4128BA6B568DE697392F94C4AABF5215898E4A
+
+The general optimized-APK source contract did not pass. It still requires the
+literal text `isDebuggable = false`, but the build now uses the
+`rpcsxThorDebuggable` setting. This failure is unrelated to the debug APK
+package and is not a device result.
+
+The first two strict gates refused to continue at 39.3 C and 40.1 C. RPCSX
+remained stopped. The display then slept during a longer passive cooldown. The
+next strict gate passed at 34.1, 34.9, and 34.5 C. The no-launch installer
+verified the same APK hash on the device and verified that RPCSX was not
+active. The evidence is in:
+
+    20260828-051815-thor-input-strict-cool-gate
+    20260828-051838-hle-spu-fallback-install
+
+One guarded Transformers route then ran. The capture is:
+
+    20260828-051902-thor-input-custom/failure-RPCSX.log
+
+The route reused 225 PPU warm-cache objects. At 7.649588 guest seconds, the
+SPU native-object cache started its startup compilation. The route stopped
+during that compilation, before a SPURS workload dispatch. The draw census
+contained three zero-draw samples. No screenshot was taken.
+
+The near-limit confirmation read 73.1 C from the silicon package sensor, above
+the 72 C hard limit. The junction peak was 86.7 C, below its 95 C limit. The
+guard force-stopped RPCSX. The display is asleep.
+
+The log contains zero `0xce00` analysis failures and zero compilation failures,
+but this is not fallback correctness evidence because guest execution did not
+reach that block. This route has no correctness, 3D, FPS, or performance
+credit. Do not retry until a later strict cool gate. Correct 3D output and 30
+FPS are still not proved.
