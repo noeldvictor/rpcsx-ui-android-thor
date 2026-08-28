@@ -14,7 +14,14 @@ $requiredFragments = @(
     'object + 0x588',
     'object + 0x58c',
     'object + 0x594',
-    'object + 0x598'
+    'object + 0x598',
+    's_load_wait_dumps.load() < 3',
+    '"Thor LOAD SOURCE:',
+    'data_vtable + 0x3c',
+    'data_vtable + 0x50',
+    '"Thor LOAD DATA 00:',
+    '"Thor LOAD DATA 20:',
+    '"Thor LOAD DATA 40:'
 )
 
 foreach ($fragment in $requiredFragments) {
