@@ -3968,6 +3968,7 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 	std::atomic<u64>* captured_emulation_id = nullptr;
 	static std::atomic<u64> s_flip_emulation_id{umax};
 	static std::atomic<u64> s_boundary_emulation_id{umax};
+	static std::atomic<u64> s_net_emulation_id{umax};
 
 	switch (point)
 	{
@@ -3994,6 +3995,14 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 		}
 		mode = "LLE_VOICE";
 		captured_emulation_id = &s_boundary_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::net_module:
+		if (value[0] != '3')
+		{
+			return;
+		}
+		mode = hle_spurs ? "HLE_NET" : "LLE_NET";
+		captured_emulation_id = &s_net_emulation_id;
 		break;
 	}
 

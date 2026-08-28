@@ -1157,3 +1157,12 @@ Both modes load `libnet.sprx` after the proven common `FlipPump` event. HLE
 reaches the load at 12.060 seconds, and LLE reaches it at 11.864 seconds. A
 trace at this same module-load event can bridge the known common event to the
 late failure without an inferred library-thread anchor.
+
+Property value 3 now captures this event as `HLE_NET` or `LLE_NET`. It uses one
+separate run guard and emits only the active mode. Values 1 and 2 keep their
+existing meanings.
+
+The comparator self-test and `git diff --check` passed. The ARM64
+RelWithDebInfo build passed in 2 minutes 51 seconds. Debug APK assembly passed
+in 24 seconds. The exact Debug APK is `58D48B94...0934B3C`, and its size is
+116,122,643 bytes. Its stripped ARM64 library contains both new mode labels.

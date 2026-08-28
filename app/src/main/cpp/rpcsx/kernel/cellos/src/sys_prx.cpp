@@ -598,10 +598,18 @@ error_code _sys_prx_load_module(ppu_thread &ppu, vm::cptr<char> path, u64 flags,
                   flags, pOpt);
 
 #ifdef __ANDROID__
+  const std::string_view module_path(path.get_ptr());
+
+  // Both modes reach this module after FlipPump. Use the event to find the
+  // first divergence after that proven common boundary.
+  if (module_path == "/dev_flash/sys/external/libnet.sprx") {
+    thor_dump_transformers_ppu_call_trace(
+        ppu, thor_ppu_call_trace_point::net_module);
+  }
+
   // LLE loads libvoice after it passes the last phase that HLE reaches. Use
   // this exact event as the late comparison boundary.
-  if (std::string_view(path.get_ptr()) ==
-      "/dev_flash/sys/external/libvoice.sprx") {
+  if (module_path == "/dev_flash/sys/external/libvoice.sprx") {
     thor_dump_transformers_ppu_call_trace(
         ppu, thor_ppu_call_trace_point::lle_voice);
   }
