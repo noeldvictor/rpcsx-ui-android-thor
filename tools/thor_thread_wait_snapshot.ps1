@@ -106,6 +106,10 @@ while [ "$i" -le "$samples" ]; do
 done
 '@
 
+# Android sh reads a carriage return as part of a token. PowerShell here-strings
+# use the host line ending, so normalize the payload before ADB sends it.
+$remoteScript = $remoteScript.Replace("`r`n", "`n").Replace("`r", "`n")
+
 $quotedRemoteScript = ConvertTo-ThorShellSingleQuoted $remoteScript
 Invoke-ThorAdbText $Adb $captureDir "thread-wait.txt" @("shell", "run-as $Package sh -c $quotedRemoteScript -- $Package $Samples $IntervalMs") -AllowFailure | Out-Null
 Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "snapshot"

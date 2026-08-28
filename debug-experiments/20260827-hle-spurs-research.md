@@ -1634,3 +1634,60 @@ output or 30 FPS because this route did not enable the draw census or capture a
 game frame. The next cooled route must set `ppu_call_trace=0`, set
 `draw_census=1`, capture a frame, and measure a fixed interval after the shared
 counter milestone. RPCSX is stopped, and the Thor is asleep.
+
+## 28. HLE draws only the green loading quads
+
+Commit `b4ec6c9ce` adds a repeatable render-boundary route. It keeps the
+measured HLE candidate stack, disables the counter and PPU trace probes, and
+enables only the draw census. It waits for eight seconds, takes a thread
+snapshot and a screenshot, and stops RPCSX.
+
+The exact installed APK was the same clean diagnostic build. Its SHA-256 was:
+
+    DDE8FE3E747ACDDF897085A0A1669B73496C8F7CF4995281465B3FDF9572EC48
+
+The launch gate passed at 32.5 C for all three samples. The route used
+`hle_libs=libsre.sprx`, `hle_spurs_kernel=1`, `spurs_probe=0`,
+`ppu_call_trace=0`, and the measured candidate fixes. The capture is:
+
+    20260828-025454-thor-input-custom
+
+The screenshot is a solid green frame. The overlay reports 29.55 FPS, 9.2%
+PPU, 63.7% SPU, and 6.1% RSX. This is not a correct 30 FPS result because the
+game has no 3D geometry.
+
+The draw census gives the exact render boundary. Draw call 1 starts at 13.102
+seconds. Every recorded draw is primitive 8 with four elements. The census has
+no primitive 5 draw:
+
+    14.160 seconds: flips=480  draw_calls=32   p8=32
+    18.190 seconds: flips=600  draw_calls=150  p8=150
+    22.251 seconds: flips=720  draw_calls=268  p8=268
+    26.316 seconds: flips=840  draw_calls=388  p8=388
+    30.379 seconds: flips=960  draw_calls=508  p8=508
+    34.460 seconds: flips=1080 draw_calls=628  p8=628
+    38.516 seconds: flips=1200 draw_calls=748  p8=748
+
+The HLE route maps IO ranges 0x500000 and 0x600000 again at 18.244 seconds.
+It does not map 0x700000 through 38.5 guest seconds. The paired LLE route maps
+0x500000 again at 18.153 seconds and maps 0x700000 at 18.714 seconds. It then
+maps 0x800000 and 0x900000. This is the first stable downstream boundary. HLE
+does not complete the work that permits the next main-thread allocation and
+RSX map stage.
+
+The standard top snapshot shows that this is not a sleeping main thread. Guest
+PPU thread `0x1000000` is runnable and uses 18.5% in the sample. Five SPU
+threads each use about one full core. The rendering thread also continues to
+push task 1 work at about 30 Hz. Therefore, the next probe must sample the
+guest PPU program counter and identify its hot loop.
+
+The detailed wait snapshot did not run. A Windows carriage return reached
+Android `sh` and made its `case` command invalid. The surrounding standard
+snapshot and RPCSX log are valid. The snapshot tool now converts its payload
+to LF before ADB sends it. The next route does not need the detailed snapshot.
+
+The long snapshot and screenshot steps extended this capture. It is not a
+fixed performance sample. The thermal guard stopped the route after the
+near-limit confirmation. The silicon peak was 63.8 C, and the junction peak
+was 75.5 C. Both values were below their hard limits. RPCSX is stopped, and
+the Thor is asleep.
