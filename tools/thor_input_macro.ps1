@@ -1096,6 +1096,7 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-prelaunch-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1120,6 +1121,8 @@ function Get-ThorStartupProfileResetPropertyCommand {
         "debug.rpcsx.thor.spu_cache_preload_limit",
         "debug.rpcsx.thor.spu_cache_compile_budget_ms",
         "debug.rpcsx.thor.spu_native_object_cache",
+        "debug.rpcsx.thor.spurs_sel_cond_fix",
+        "debug.rpcsx.thor.spurs_signal_fix",
         "debug.rpcsx.thor.cache_worker_affinity_mask",
         "debug.rpcsx.thor.vk_pipeline_cache",
         "debug.rpcsx.thor.vk_preload_cache_hits_only",
@@ -1201,6 +1204,8 @@ if ($BootGame) {
         "debug.rpcsx.thor.spu_reduced_loop_detect",
         "debug.rpcsx.thor.spu_reduced_loop_emit",
         "debug.rpcsx.thor.spurs_probe",
+        "debug.rpcsx.thor.spurs_sel_cond_fix",
+        "debug.rpcsx.thor.spurs_signal_fix",
         "debug.rpcsx.thor.hle_libs",
         "debug.rpcsx.thor.hle_spurs_kernel",
         "debug.rpcsx.thor.real_spu_kernel",
@@ -1571,6 +1576,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-failure-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1595,6 +1601,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
