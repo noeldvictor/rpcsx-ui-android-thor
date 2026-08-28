@@ -34,7 +34,7 @@ function Set-ThorRenderProbeProperty {
     }
 }
 
-# Keep the measured HLE candidate stack explicit. Enable only the draw census.
+# Keep the measured HLE candidate stack explicit. Enable bounded render probes.
 $profileProperties = [ordered]@{
     "debug.rpcsx.thor.hle_libs" = "libsre.sprx"
     "debug.rpcsx.thor.hle_spurs_kernel" = "1"
@@ -47,7 +47,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.spu_pc_census" = "1"
     "debug.rpcsx.thor.spu_event_census" = "1"
     "debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }
-    "debug.rpcsx.thor.ppu_pc_census" = "0"
+    "debug.rpcsx.thor.ppu_pc_census" = "1"
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = "0"
     "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"
@@ -69,7 +69,7 @@ $profileProperties = [ordered]@{
 $macroParameters = [ordered]@{
     Serial = $Serial
     Profile = "custom"
-    Macro = "wait:8000;threads:late-render-boundary;shot:late-render-boundary;wait:2000;stop"
+    Macro = "wait:8000;shot:late-render-boundary;threads:late-render-boundary;wait:2000;stop"
     GamePath = "/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso"
     TitleId = "BLUS30357"
     ThermalPreflightSamples = 3
@@ -77,7 +77,8 @@ $macroParameters = [ordered]@{
     ThermalPreflightHeadroomC = 0
     MaxLaunchSiliconTemperatureC = 35
     ThermalPreflightMaxRiseC = 1
-    ThermalRuntimeProbeWindowC = 12
+    ThermalRuntimeStopHeadroomC = 2
+    ThermalRuntimeProbeWindowC = 2
     MaxBatteryTemperatureC = 34
     MaxSkinTemperatureC = 40
     MaxSiliconTemperatureC = 72
@@ -113,6 +114,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_event_census" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"
 }
