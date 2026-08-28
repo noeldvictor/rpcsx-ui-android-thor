@@ -1938,3 +1938,55 @@ The first validation gate refused to continue because the Thor was still at
 37.7 C. RPCSX remained stopped. This APK is not installed, and the atomic fix
 has no device correctness or performance credit yet. Correct 3D output and 30
 FPS are still not proved.
+
+## 33. Failed SPU block analysis causes an unbounded retry
+
+The Thor later passed the strict gate, and the atomic selector fix received
+device correctness credit. The diagnostic capture is:
+
+    20260828-044145-thor-input-custom/failure-RPCSX.log
+
+Workload 2 ran on SPU 0 with task-set argument `0x10364100`. Real image
+workload 6 also ran. The earlier title wait at `0x00fdd2cc` did not remain as
+the main-thread wait. The route mapped RSX IO ranges 0x500000 and 0x600000.
+It did not map 0x700000. The main thread later waited at `0x009e4ba4` with LR
+`0x005a3350`.
+
+A focused Ghidra import shows that LR `0x005a3350` is in a resource-object
+completion loop. Therefore, the atomic signal repair advances GCMX
+initialization, but it does not complete the render path. The silicon peak was
+62.6 C, and the junction peak was 73.5 C. Both values were below their hard
+limits.
+
+A second route used the compile-time selector probe in its off state. Its
+capture is:
+
+    20260828-045259-thor-input-custom/failure-RPCSX.log
+
+Workload 2 and real image workload 6 ran again. The first failure started at
+24.832773 guest seconds on SPU 0:
+
+    [0xce00] Invalid code
+    [0x0ce00] Compilation failed.
+
+The two records each occurred 401,116 times before the guard stopped the run.
+The silicon peak was 68.7 C, and the junction peak was 79.9 C. Both values
+were below their hard limits. The route did not produce a usable screenshot,
+and it did not prove correct 3D output.
+
+The task image is `gcmxk_kernel_task.spu.elf`. Its first load segment covers
+local-store address `0xce00`. A saved local-store image contains word
+`0x408eba52` at that address. A focused Ghidra import used language
+`PowerPC:BE:64:A2ALT:default`. It decoded `0xce00` as `il r82,0x1d74`, inside
+the function that starts at `0xcd10`. The instruction is a valid fall-through
+instruction. The failure is in block analysis. It is not missing or damaged
+guest code.
+
+Commit `567b3439d` adds a bounded ARM64 recovery path. It stores failed
+local-store ranges, runs the existing C++ interpreter only while the PC is in
+one failed range, and then returns to the normal JIT and HLE dispatch loop. It
+also prevents the repeated analysis and compilation log flood. The new source
+contract and the three related SPURS contracts passed. The ARM64
+RelWithDebInfo build passed in 1 minute 43 seconds. This build is not installed
+and has no device correctness or performance credit yet. Correct 3D output and
+30 FPS are still not proved.
