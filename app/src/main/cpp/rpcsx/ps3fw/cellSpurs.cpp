@@ -2723,8 +2723,21 @@ s32 _spurs::add_workload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<u32>
 		});
 
 	*wid = wnum; // store workload id
+
+	// HOW FAR DOES THE TITLE GET? Measured: the real runtime builds TEN
+	// workloads for this title and HLE reaches THREE. Log every attempt with
+	// its outcome, so "stops at 3" becomes either "the 4th add fails with X"
+	// or "the 4th add is never requested".
+	{
+		static std::atomic<u32> s_add{0};
+
+		cellSpurs.error("Thor ADDWKL #%u: wnum=%u wmax=%u pm=0x%x size=0x%x minC=%u maxC=%u",
+			s_add++, wnum, wmax, pm.addr(), size, minContention, maxContention);
+	}
+
 	if (wnum >= wmax)
 	{
+		cellSpurs.error("Thor ADDWKL: REFUSED, wnum=%u >= wmax=%u (table full)", wnum, wmax);
 		return CELL_SPURS_POLICY_MODULE_ERROR_AGAIN;
 	}
 

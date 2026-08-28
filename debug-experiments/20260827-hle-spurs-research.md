@@ -724,3 +724,47 @@ effort has had.
 
 Both structures kept in _research/spurs/spurs_structs/ (late_lle.bin,
 late_hle.bin) so the comparison can be redone without a device.
+
+## 19. CORRECTION to section 18 - HLE adds NINE workloads, not three
+
+Section 18 said HLE reaches three workloads against LLE's ten. That is also
+wrong, and for the same class of reason: it was read from a SNAPSHOT. The
+periodic dump overwrites one file, so once the title stalls the DMA traffic
+that drives it stops and the file left behind is stale, not final.
+
+Measured properly, by logging the event instead of sampling the state - a probe
+in _spurs::add_workload prints every attempt:
+
+    ADDWKL #0  wnum=0  pm=0x200      size=0x1e40  minC=8 maxC=8
+    ADDWKL #1  wnum=1  pm=0x2347200  size=0x4000  minC=1 maxC=5
+    ADDWKL #2  wnum=2  pm=0x200      size=0x1e40  minC=8 maxC=1
+    ADDWKL #3  wnum=3  pm=0x2390000  size=0x4000  minC=1 maxC=6
+    ADDWKL #4  wnum=4  pm=0x2390000  size=0x4000  minC=1 maxC=6
+    ADDWKL #5  wnum=5  pm=0x200      size=0x1e40  minC=8 maxC=6
+    ADDWKL #6  wnum=6  pm=0x2390000  size=0x4000  minC=1 maxC=5
+    ADDWKL #7  wnum=7  pm=0x200      size=0x1e40  minC=8 maxC=1
+    ADDWKL #8  wnum=8  pm=0x200      size=0x1e40  minC=8 maxC=1
+
+NINE workloads, none refused, against LLE's ten live. Workload creation is NOT
+the divergence, and both section 17 ("HLE builds one extra") and section 18
+("HLE builds only three") are withdrawn.
+
+### What the log does show
+
+The split is legible: pm=0x200 is the TASKSET sentinel and pm=0x2347200 /
+0x2390000 with size 0x4000 are real JOB CHAIN modules. So this title runs
+
+    5 taskset workloads   (all sentinel-backed, all HLE-stubbed)
+    4 job chain workloads (all real modules, loaded through the default branch)
+
+That is worth knowing on its own: four of the nine workloads already run REAL
+firmware today, through the default branch that copies the image into LS. Only
+the taskset ones are stubbed.
+
+### Methodological note, because this is the second one
+
+Two consecutive conclusions were drawn from snapshots of shared state and both
+were wrong. State sampling here is unreliable in a specific way: the sampler is
+driven by DMA traffic, which stops exactly when the thing being investigated
+goes wrong, so the last sample is systematically from before the failure. Event
+logging does not have that failure mode. Prefer it.
