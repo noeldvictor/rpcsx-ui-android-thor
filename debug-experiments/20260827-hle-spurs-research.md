@@ -3507,3 +3507,48 @@ The first gate read 38.5 C at its first silicon sample. The second gate read
 38.9 C and then 40.1 C after the stop. The 35 C launch limit therefore remains
 in force. RPCSX stayed stopped. The candidate needs a later strict cool gate,
 an exact no-launch install, a post-install cool gate, and one bounded route.
+
+## 60. Atomic taskset requests remove the dispatch storm
+
+The Thor later passed the strict cool gate in:
+
+    20260828-184620-thor-input-strict-cool-gate
+
+The exact APK was installed without a launch in:
+
+    20260828-184642-transformers-atomic-requests-install
+
+The installed APK hash matched
+`743D48A47B17238EF1FEDCC01EE5EDAA15BE288E6A799DEA16A68D7D51E2378E`.
+The device then passed the post-install strict cool gate in:
+
+    20260828-184657-thor-input-strict-cool-gate
+
+One bounded Transformers route is in:
+
+    20260828-184719-thor-input-custom
+
+The all-request atomic repair removed the taskset dispatch storm. The prior
+route recorded 1,251,136 workload-dispatch entries and 1,249,280 taskset
+entries. This route recorded one workload-dispatch line at counter 0 and four
+taskset-entry lines. It recorded no `TASKSET IDLE-READY` exception, invalid
+taskset state, fatal error, signal 11, or native crash.
+
+The Bink task completed its second event reservation. The existing Ghidra
+listing for the exact Bink local-store image shows that PC `0x13720` writes the
+GETLLAR command and PC `0x13774` writes the PUTLLC command. The trace reached
+both PCs after the second accepted event set and signal. Queue pushes then
+advanced through sampled counter 832. RSX recorded two primitive 8 draws.
+
+This result does not prove correct 3D output. The route recorded 25 performance
+frames in 10 seconds, or 2.50 FPS. It did not record the expected primitive 5
+draw or the `0x70000000` mapping. The thermal guard stopped the route before the
+screenshot. The final confirmed package-silicon sample was 63.8 C. The highest
+CPU-junction sample was 74.3 C. Both were below their 72 C and 95 C hard limits.
+RPCSX was force-stopped, and its PID was absent.
+
+The next route enables the bounded PPU PC census and takes the screenshot before
+the thread snapshot. It runs while the observed package-silicon temperature is
+below 70 C. It keeps the 72 C hard limit and the 95 C junction limit. The route
+contract, atomic taskset contract, event-flag contract, and Git whitespace
+check pass. The next device run must start with a new strict cool gate.
