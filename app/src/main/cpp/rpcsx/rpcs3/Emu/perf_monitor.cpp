@@ -290,7 +290,7 @@ void perf_monitor::operator()()
 									const u32 vtable = +vm::_ref<be_t<u32>>(object);
 									const bool vtable_ok = vm::check_addr(vtable + 0x170, 0, 8);
 									const u32 data = +vm::_ref<be_t<u32>>(object + 0x580);
-									const bool data_ok = vm::check_addr(data, 0, 0x60);
+									const bool data_ok = vm::check_addr(data, 0, 0xd0);
 									const u32 data_vtable = data_ok ? +vm::_ref<be_t<u32>>(data) : 0;
 									const bool data_vtable_ok = data_ok && vm::check_addr(data_vtable + 0x50, 0, 4);
 									const u32 size_opd = data_vtable_ok ? +vm::_ref<be_t<u32>>(data_vtable + 0x3c) : 0;
@@ -317,6 +317,15 @@ void perf_monitor::operator()()
 
 									if (data_ok)
 									{
+										perf_log.error("Thor LOAD RANGE: sample=%u limit=%u size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x94), +vm::_ref<be_t<u32>>(data + 0x98),
+											+vm::_ref<be_t<u32>>(data + 0xa0), +vm::_ref<be_t<u32>>(data + 0xa4),
+											+vm::_ref<be_t<u32>>(data + 0xa8), +vm::_ref<be_t<u32>>(data + 0xb0),
+											+vm::_ref<be_t<u32>>(data + 0xb8), +vm::_ref<be_t<u32>>(data + 0xc0),
+											+vm::_ref<be_t<u32>>(data + 0xac), +vm::_ref<be_t<u32>>(data + 0xb4),
+											+vm::_ref<be_t<u32>>(data + 0xbc), +vm::_ref<be_t<u32>>(data + 0xc4),
+											+vm::_ref<be_t<u32>>(data + 0xc8), +vm::_ref<be_t<u32>>(data + 0xcc));
 										perf_log.error("Thor LOAD DATA 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
 											sample + 1,
 											+vm::_ref<be_t<u32>>(data + 0x00), +vm::_ref<be_t<u32>>(data + 0x04),
