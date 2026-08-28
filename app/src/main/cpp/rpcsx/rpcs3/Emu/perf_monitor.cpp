@@ -321,11 +321,16 @@ void perf_monitor::operator()()
 										const bool range_table_ok = vm::check_addr(range_table, 0, 0x20);
 										const u32 io_manager = vm::check_addr(0x019d5410u, 0, 4)
 											? +vm::_ref<be_t<u32>>(0x019d5410u) : 0;
-										const u32 io_vtable = vm::check_addr(io_manager, 0, 4)
-											? +vm::_ref<be_t<u32>>(io_manager) : 0;
-										const bool io_vtable_ok = vm::check_addr(io_vtable + 0x10, 0, 4);
-										const u32 direct_opd = io_vtable_ok ? +vm::_ref<be_t<u32>>(io_vtable + 0x0c) : 0;
-										const u32 table_opd = io_vtable_ok ? +vm::_ref<be_t<u32>>(io_vtable + 0x10) : 0;
+										const bool io_manager_ok = vm::check_addr(io_manager, 0, 0x0c);
+										const u32 io_workers = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 4) : 0;
+										const u32 io_worker_count = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 8) : 0;
+										const u32 io_worker = io_worker_count && vm::check_addr(io_workers, 0, 4)
+											? +vm::_ref<be_t<u32>>(io_workers) : 0;
+										const u32 io_worker_vtable = vm::check_addr(io_worker, 0, 4)
+											? +vm::_ref<be_t<u32>>(io_worker) : 0;
+										const bool io_worker_vtable_ok = vm::check_addr(io_worker_vtable + 0x10, 0, 4);
+										const u32 direct_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x0c) : 0;
+										const u32 table_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x10) : 0;
 
 										perf_log.error("Thor LOAD RANGE: sample=%u limit=%u size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u",
 											sample + 1,
@@ -348,8 +353,8 @@ void perf_monitor::operator()()
 											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x14) : 0,
 											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x18) : 0,
 											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x1c) : 0);
-										perf_log.error("Thor LOAD IO VT: sample=%u manager=0x%08x vtable=0x%08x direct_opd=0x%08x direct_code=0x%08x table_opd=0x%08x table_code=0x%08x",
-											sample + 1, io_manager, io_vtable, direct_opd,
+										perf_log.error("Thor LOAD IO VT: sample=%u manager=0x%08x workers=0x%08x/%u worker0=0x%08x vtable=0x%08x direct_opd=0x%08x direct_code=0x%08x table_opd=0x%08x table_code=0x%08x",
+											sample + 1, io_manager, io_workers, io_worker_count, io_worker, io_worker_vtable, direct_opd,
 											vm::check_addr(direct_opd, 0, 8) ? +vm::_ref<be_t<u32>>(direct_opd) : 0,
 											table_opd, vm::check_addr(table_opd, 0, 8) ? +vm::_ref<be_t<u32>>(table_opd) : 0);
 										perf_log.error("Thor LOAD DATA 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
