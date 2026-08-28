@@ -1391,3 +1391,35 @@ The ARM64 RelWithDebInfo build passed in 3 minutes 54 seconds. Debug APK
 assembly passed in 15 seconds. The exact APK is
 `A69442CC...EFDADA3A`, and its size is 116,122,402 bytes. Its stripped ARM64
 library contains the `HLE_POLL` mode label.
+
+The no-launch install used a fresh strict cool gate. The device APK SHA-256
+matched `A69442CC...EFDADA3A`, and RPCSX stayed stopped after the install.
+
+The first property-value-5 route used LLE. Its startup profile recorded
+`hle_libs=none`, `hle_spurs_kernel=0`, all other SPURS experiment switches
+off, and `ppu_call_trace=5`. It emitted one complete `LLE_POLL` block at
+11.073 seconds:
+
+    count=265 index=265 cia=0x00fdcf60
+    r0=0x303013a0 r9=0x304f8048
+    r30=0x01f94980 r31=0x01fb4980
+    first caller=0x009e0be8 stack_count=10
+
+The first caller identifies the direct call at `0x009e0be4`. The package
+sensors stayed at or below 61.4 C. The route completed normally. The capture
+is:
+
+    20260828-012235-thor-input-custom/post-RPCSX.log
+
+The first paired HLE route passed the strict cool gate, but it did not reach
+the poll. The package temperature reached the 68 C early-stop threshold at
+10.94 seconds. The guard force-stopped RPCSX at 68.2 C, below the 72 C hard
+limit. The log ends while the SPU workers load cached native objects. It has no
+poll event or trace markers, so it cannot support an HLE and LLE comparison.
+The capture is:
+
+    20260828-012530-thor-input-custom/failure-RPCSX.log
+
+One retry is necessary because the paired evidence is incomplete. It must use
+the same exact APK and profile. It must also start colder than the normal
+strict gate so the poll can occur before the 68 C early stop.
