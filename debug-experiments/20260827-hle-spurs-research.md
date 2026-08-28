@@ -1423,3 +1423,83 @@ The capture is:
 One retry is necessary because the paired evidence is incomplete. It must use
 the same exact APK and profile. It must also start colder than the normal
 strict gate so the poll can occur before the 68 C early stop.
+
+## 25. The real counter poll has the same HLE and LLE caller stack
+
+Before the retry, a property audit found two stale selector experiments:
+
+    debug.rpcsx.thor.spurs_sel_cond_fix=1
+    debug.rpcsx.thor.spurs_signal_fix=1
+
+Earlier tests rejected these experiments, and their default value is zero.
+The route tool did not reset or record them. Commit `9f2086293` makes the tool
+clear both properties before and after each route. It also records them in the
+startup profile and in the reset evidence.
+
+The audit also found that the route tool did not record 48 other SPURS
+properties that the core reads. Therefore, earlier statements that all other
+SPURS experiment switches were off are not valid. The title still uses the
+measured contention, task-set, DMA-wait, and yield fixes. These fixes are part
+of the current candidate stack. Commit `fb5f25041` makes the route tool record
+all SPURS properties that the core reads. This change removes the evidence
+gap. It does not change an emulator property value.
+
+The Thor passed a colder three-sample gate. Its package sensors were about
+33.3 C. The gate capture is:
+
+    20260828-013300-thor-input-strict-cool-gate
+
+The HLE retry used the same installed APK. The device APK SHA-256 matched
+`A69442CC...EFDADA3A`. The profile used `hle_libs=libsre.sprx`,
+`hle_spurs_kernel=1`, and `ppu_call_trace=5`. The two selector experiments
+were zero. The trace emitted one complete `HLE_POLL` block at 11.518 seconds:
+
+    count=234 index=234 cia=0x00fdcf90
+    lr=0x00fdcf3c sp=0xd00405a0
+    r0=0x001f0080 r9=0x001f0100
+    r30=0x01f94980 r31=0x50100040
+    first caller=0x009e0be8 stack_count=10
+
+The package temperature reached 69.1 C. The guard force-stopped RPCSX below
+the 72 C package limit. The highest junction sensor value was 82.7 C, below
+the 95 C junction limit. The capture is:
+
+    20260828-013412-thor-input-custom/failure-RPCSX.log
+
+The paired LLE event was at `0x00fdcf60`, and the HLE event was at
+`0x00fdcf90`. However, all 10 caller addresses and all 10 stack pointers are
+identical. The shared stack is:
+
+    0x009e0be8 sp=0xd0040630
+    0x009f4870 sp=0xd0040730
+    0x009f4b14 sp=0xd00407e0
+    0x009df410 sp=0xd0040890
+    0x009dfeec sp=0xd0040910
+    0x009dff70 sp=0xd00409a0
+    0x009e8da0 sp=0xd0040a10
+    0x000153d0 sp=0xd0040bd0
+    0x000182a8 sp=0xd0040c60
+    0x00018038 sp=0xd0040d00
+
+Ghidra shows that the direct call to the poll function is at `0x009e0be4`.
+The function at `0x00fdcf20` first calls a helper at `0x00fdced0`. The helper
+submits an item through `cellSpursQueuePushBody`. The poll function then waits
+for the queue counters to become equal. The title caller at `0x009e09f4`
+creates records, submits the queue item, and calls the poll function. The poll
+is a SPURS queue submission and drain path. It is not a generic sleep path.
+
+The HLE and LLE events have the same title call path. The first observed HLE
+sleep was in the second counter loop. The first observed LLE sleep was in the
+first counter loop. This is a state or timing difference, but it is not yet a
+fault boundary. Earlier long traces show that both modes spend most poll time
+in the second loop at `0x00fdcf90`.
+
+The queue log also shows `CELL_SPURS_TASK_ERROR_AGAIN` from task 0. Earlier
+same-run GETLLAR evidence proved that this result is the normal empty-queue
+state. The consumer uses the same queue EA and keeps pace with the producer.
+This result is not evidence of a failed queue.
+
+The next probe must record a bounded series of counter transitions and the
+poll exit. It must use event data, not a one-time state snapshot. No new Thor
+route starts until the device is cool. RPCSX is stopped, and the Thor is
+asleep.
