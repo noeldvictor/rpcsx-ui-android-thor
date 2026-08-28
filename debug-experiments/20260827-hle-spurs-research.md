@@ -3234,3 +3234,68 @@ cool gate, then run one bounded route with `EdgeEventInterp=on`. The route must
 show no interpreter entries from `CellSpursKernel0`, an edgeZlib entry with
 link register `0x08ca8`, and progress through both WRCH operations. Correct 3D
 output and sustained 30 FPS are still not proved.
+
+## 55. The cached edge module does not contain the new guard
+
+The Thor passed a strict cool gate. The no-launch installer verified APK
+`636329905E6011C515C217F30B6FF9834F67E2EBCF28F83BC07C77ECB2E09D7A` and
+kept RPCSX stopped. The post-install strict gate also passed. The evidence is
+in:
+
+    20260828-172812-thor-input-strict-cool-gate
+    20260828-172832-transformers-edge-event-runtime-install
+    20260828-172852-thor-input-strict-cool-gate
+
+One bounded route then used the firmware LFQueue path, both selector repairs,
+atomic task selection, and the event-helper gate. Its capture is:
+
+    20260828-172929-thor-input-custom
+
+The route loaded this native object for the edgeZlib worker module:
+
+    __spu-0x08840-CbaEkA2fhvGi5ZwZxXemp3AdpxXu-KxMSFEwK0U1M54tfsa4f3AbhPg9t.obj
+
+Both earlier routes loaded the same object name. The object key did not change
+because the analyser did not emit the indirect target at PC `0x0a4d8` into
+this module. Therefore, the LLVM-level guard is absent from the object. The
+edge event interpreter, PC census, mailbox entries, and event results all had
+zero records in this run. The edgeZlib image was not resident during a timer
+sample, and the route did not test the helper fallback.
+
+The edgeZlib task did run briefly on SPU 0. It completed GETLLAR at PC
+`0x0954c` and PUTLLC at PC `0x098b8`, then returned to the SPURS kernel before
+the first PC census tick. This differs from the prior runs where the task
+continued to PC `0x0a4d8`. Treat the longer progress as scheduler timing, not
+as proof that the LLVM guard fixed the helper.
+
+The frame counter stayed close to the title cap after startup. Four consecutive
+10-second samples reported 29.5, 29.4, 29.4, and 29.5 FPS. The draw census
+reached 1,680 flips and 1,342 draw calls. All calls used primitive 8. The
+captured frame was a flat green image with the performance overlay, not correct
+3D output. The displayed instantaneous rate was 28.89 FPS. No
+`0x70000000` RSX map, fatal, signal 11, LLVM verification failure, compilation
+failure, or crash marker occurred.
+
+The thermal guard stopped the route at a silicon sample of 67.4 C, below the
+72 C hard limit. The highest junction sample was 76.3 C, below the 95 C
+junction limit. RPCSX was force-stopped. Charging separation was restored to
+its original value of 0, and the display was put to sleep.
+
+The next diagnostic catches PC `0x0a4d8` in the shared ARM64 dispatcher before
+native-object lookup. It requires the same exact 16-byte edgeZlib task-image
+signature. It then runs only the event helper through the legacy interpreter
+and returns to the JIT at the guest link register. It does not invalidate the
+global SPU native-object cache.
+
+The LFQueue route contract, Android debug build, ARM64 APK contract, and Git
+whitespace check passed. The dispatcher diagnostic APK is 116,131,666 bytes
+and has this SHA-256:
+
+    7BAA5BEB53392A2E998C830DBE8C62490AC9AD7B51E63D2E6457F210C454A2B4
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate, then run one bounded route with `EdgeEventInterp=on`. The route must
+show a dispatcher interpreter entry from edgeZlib, both WRCH operations, and
+an event result. Correct 3D output and sustained 30 FPS with correct output are
+still not proved.

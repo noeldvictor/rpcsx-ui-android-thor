@@ -208,6 +208,66 @@ static void spu_run_interp_fallback(spu_thread& spu, u32 lower_bound = 0, u32 si
 	spu_runtime::g_escape(&spu);
 }
 
+// A cached module can transfer to an indirect target that its analysis did not
+// emit. Catch the exact edgeZlib event helper at the shared dispatcher too.
+// This gate is off by default.
+static bool is_thor_edge_event_interp_dispatch(const spu_thread& spu) noexcept
+{
+	static const bool s_enabled = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.edge_event_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	if (!s_enabled || spu.pc != 0x0a4d8)
+	{
+		return false;
+	}
+
+	static constexpr std::array<u8, 16> s_edge_signature = {
+		0x42, 0x47, 0x24, 0x02, 0x43, 0x7e, 0xc0, 0x82,
+		0x43, 0x3e, 0x0f, 0x02, 0x42, 0x01, 0x6d, 0x82,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x3000), s_edge_signature.data(), s_edge_signature.size()) == 0;
+}
+
+static void spu_run_thor_edge_event_interp_dispatch(spu_thread& spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+
+	spu.interp_fallback_begin = 0x0a4d8;
+	spu.interp_fallback_end = 0x0a520;
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT DISPATCH INTERPRETER enter #%u pc=0x%05x lr=0x%05x "
+			"r3=0x%08x r4=0x%08x r5=0x%08x",
+			count, spu.pc, spu.gpr[0]._u32[3], spu.gpr[3]._u32[3],
+			spu.gpr[4]._u32[3], spu.gpr[5]._u32[3]);
+	}
+
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT DISPATCH INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
+			count, spu.pc, spu.gpr[3]._u32[3]);
+	}
+
+	spu_runtime::g_escape(&spu);
+}
+
 // Compiles with TBL2/TBX2 first. If LLVM aborts inside the AArch64 register
 // scavenger, rebuild the compiler via `make_compiler` (which must reproduce the
 // caller's original construction parameters) and retry without TBL2/TBX2.
@@ -2990,6 +3050,14 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 #error "Unimplemented"
 #endif
 	}
+
+#ifdef ARCH_ARM64
+	if (is_thor_edge_event_interp_dispatch(spu))
+	{
+		spu_run_thor_edge_event_interp_dispatch(spu);
+		return;
+	}
+#endif
 
 	// Second attempt (recover from the recursion after repeated unsuccessful trampoline call)
 	if (spu.block_counter != spu.block_recover && &dispatch != ::at32(*spu_runtime::g_dispatcher, spu._ref<nse_t<u32>>(spu.pc) >> 12))

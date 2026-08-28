@@ -12,6 +12,8 @@ $spuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Ce
 $spuThread = Get-Content -LiteralPath $spuThreadPath -Raw
 $spuLlvmPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp"
 $spuLlvm = Get-Content -LiteralPath $spuLlvmPath -Raw
+$spuCommonPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUCommonRecompiler.cpp"
+$spuCommon = Get-Content -LiteralPath $spuCommonPath -Raw
 
 $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
@@ -131,6 +133,11 @@ $requiredEdgeEventInterpFragments = @(
     'm_ir->getInt64(0x82c07e4302244742)',
     'm_ir->getInt64(0x826d0142020f3e43)',
     'm_ir->CreateCondBr(m_ir->CreateAnd(is_edge0, is_edge1), interp, native, m_md_unlikely);',
+	'is_thor_edge_event_interp_dispatch(spu)',
+	'spu.pc != 0x0a4d8',
+	'std::memcmp(spu._ptr<u8>(0x3000), s_edge_signature.data(), s_edge_signature.size())',
+	'Thor EDGE EVENT DISPATCH INTERPRETER enter #%u',
+	'Thor EDGE EVENT DISPATCH INTERPRETER leave #%u',
     'spu->interp_fallback_begin = 0x0a4d8;',
     'spu->interp_fallback_end = 0x0a520;',
     'spu_recompiler_base::old_interpreter(*spu, spu->_ptr<u8>(0), nullptr);',
@@ -139,7 +146,7 @@ $requiredEdgeEventInterpFragments = @(
 )
 
 foreach ($fragment in $requiredEdgeEventInterpFragments) {
-    if (-not $spuLlvm.Contains($fragment)) {
+    if (-not ($spuLlvm.Contains($fragment) -or $spuCommon.Contains($fragment))) {
         throw "The edgeZlib event interpreter handoff is missing: $fragment"
     }
 }
