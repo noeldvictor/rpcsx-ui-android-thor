@@ -80,6 +80,8 @@ $requiredPcCensusFragments = @(
     'static constexpr u32 max_samples = 64;',
     'std::memcmp(spu._ptr<u8>(0x3000), edge_signature.data(), edge_signature.size())',
     'Thor EDGE PC sample=%u',
+	'r3=0x%08x r4=0x%08x r5=0x%08x',
+	'out=%u intr=%u in=%u state=0x%llx',
     'thor::spu_pc_census_tick();'
 )
 
@@ -95,6 +97,9 @@ $requiredEventCensusFragments = @(
     'if (n < 32)',
     'queue_depth = static_cast<u32>(queue->events.size());',
     'ppu_waiter = queue->pq ? 1 : 0;',
+	'pc == 0xa4d8',
+	'Thor EDGE EVENT out-entry #%u',
+	'Thor EDGE EVENT intr-entry #%u',
     'Thor SPU EVENT #%u'
 )
 

@@ -9700,6 +9700,20 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutIntrMbox:
 	{
+		if (get_thor_spu_event_census() && pc == 0xa4d8)
+		{
+			static std::atomic<u32> s_edge_intr_entry_count{0};
+			const u32 n = s_edge_intr_entry_count.fetch_add(1, std::memory_order_relaxed);
+
+			if (n < 16)
+			{
+				spu_log.error("Thor EDGE EVENT intr-entry #%u pc=0x%05x value=0x%08x "
+					"out=%u intr=%u in=%u state=0x%llx",
+					n, pc, value, ch_out_mbox.get_count(), ch_out_intr_mbox.get_count(),
+					ch_in_mbox.get_count(), +state);
+			}
+		}
+
 		// Does the SPU ever try to signal the PPU at all?
 		//
 		// The boot deadlock ends with main_thread blocked in
@@ -9948,6 +9962,20 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutMbox:
 	{
+		if (get_thor_spu_event_census() && pc == 0xa4d8)
+		{
+			static std::atomic<u32> s_edge_out_entry_count{0};
+			const u32 n = s_edge_out_entry_count.fetch_add(1, std::memory_order_relaxed);
+
+			if (n < 16)
+			{
+				spu_log.error("Thor EDGE EVENT out-entry #%u pc=0x%05x value=0x%08x "
+					"out=%u intr=%u in=%u state=0x%llx",
+					n, pc, value, ch_out_mbox.get_count(), ch_out_intr_mbox.get_count(),
+					ch_in_mbox.get_count(), +state);
+			}
+		}
+
 		if (state & cpu_flag::pending)
 		{
 			do_mfc();

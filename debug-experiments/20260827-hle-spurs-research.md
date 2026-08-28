@@ -2868,3 +2868,73 @@ This APK is not installed. The next device work must start with a new strict
 cool gate. Install this exact APK without a title launch. Run another strict
 cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
 still not proved.
+
+## 48. The event-result probe is after the current boundary
+
+The Thor refused strict gates at 36.1 C and 35.3 C. A later strict gate passed.
+The no-launch installer used the Wi-Fi ADB transport because the USB transport
+was not present. It verified this exact APK SHA-256 on the device:
+
+    CA1C628D1AC1D65BE6F499BB99F18C443358F51A0441607C10616B8DA371F045
+
+The post-install strict gate also passed. The evidence is in:
+
+    20260828-161315-thor-input-strict-cool-gate
+    20260828-161416-thor-input-strict-cool-gate
+    20260828-161525-thor-input-strict-cool-gate
+    20260828-161545-transformers-spu-event-census-install
+    20260828-161602-thor-input-strict-cool-gate
+
+One bounded route used the firmware LFQueue path, both selector repairs,
+corrected atomic task selection, the event-mask fix, and all three censuses.
+Its capture is:
+
+    20260828-161630-thor-input-custom
+
+The effective startup profile proves that
+`debug.rpcsx.thor.spu_event_census=1` was active. The route did not record one
+`Thor SPU EVENT` result. The result probe runs after the event queue send
+returns. Therefore, this zero does not give the queue result. It proves that
+the selected edgeZlib SPU did not reach that point.
+
+The edgeZlib PC samples first moved through queue and decompression code at
+PCs `0x093f8`, `0x04ef8`, `0x06780`, `0x05e34`, and `0x048c8`. The task then
+updated event flag `0x01e54800`. Its GETLLAR at PC `0x08990` and PUTLLC at PC
+`0x08be8` both completed. The next seven samples all had PC `0x0a4d8`, link
+register `0x08ca8`, last MFC command `0xb4`, and effective address
+`0x01e54800`.
+
+Ghidra shows two writes in helper `0x0a4d8`. The first write sends the payload
+to outbound mailbox channel 28. The second write sends the event command to
+interrupt mailbox channel 30. A PC sample cannot separate these instructions
+because both are in one translated block. The remaining boundary is now one
+of these cases:
+
+1. The outbound mailbox is full, so the first write waits.
+2. The second write enters the event handler, but its queue send does not
+   return.
+
+The route did not map RSX IO range `0x700000`. It mapped only `0x50000000` and
+`0x50100000`. Draw samples at flips 120 and 240 had zero draws. The flip-360
+sample had 47 primitive-8 draws. The flip-480 sample had 163 primitive-8
+draws. These are loading-screen quads, not correct 3D output. No crash, signal
+11, task ELF load failure, or fatal marker occurred.
+
+The near-limit guard stopped RPCSX after package silicon reached 65.4 C. The
+PID was absent after the stop. No second route ran in this thermal round.
+
+The bounded PC census now also records registers `r3`, `r4`, and `r5`, all
+three mailbox counts, and the SPU state. The event census records entry into
+each mailbox write only when edgeZlib is at PC `0x0a4d8`. These new records
+run before any wait or event send. They do not change mailbox or event-queue
+behavior.
+
+The LFQueue route contract, Android debug build, and ARM64 APK contract passed.
+The new diagnostic APK is 116,129,650 bytes and has this SHA-256:
+
+    BCD331EC2978F129698F919972BFFDD33A800420F962186CBB25ACAF22AC008A
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate before one bounded route. Correct 3D output and sustained 30 FPS are
+still not proved.
