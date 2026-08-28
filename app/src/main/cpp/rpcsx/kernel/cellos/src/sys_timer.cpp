@@ -922,9 +922,9 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
   sys_timer.trace("sys_timer_usleep(sleep_time=0x%llx)", sleep_time);
 
 #ifdef __ANDROID__
-  // HLE stops making forward progress when the main thread first enters this
-  // persistent sleep. Capture before repeated sleeps replace the useful call
-  // history.
+  // Both modes enter this title wait after libnet loads. HLE stops making
+  // forward progress here, while LLE leaves it. Capture before repeated sleeps
+  // replace the useful call history.
   if (+ppu.cia == 0x009e4ba4u) {
     thor_dump_transformers_ppu_call_trace(
         ppu, thor_ppu_call_trace_point::hle_stall);

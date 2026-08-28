@@ -174,11 +174,13 @@ def compare(hle: Trace, lle: Trace, context: int) -> str:
         ("HLE_FLIP", "LLE_FLIP"),
         ("HLE_STALL", "LLE_VOICE"),
         ("HLE_NET", "LLE_NET"),
+        ("HLE_WAIT", "LLE_WAIT"),
     }
     if (hle.mode, lle.mode) not in valid_pairs:
         raise ValueError(
             f"trace modes are {hle.mode} and {lle.mode}; expected "
-            "HLE_FLIP/LLE_FLIP, HLE_STALL/LLE_VOICE, or HLE_NET/LLE_NET"
+            "HLE_FLIP/LLE_FLIP, HLE_STALL/LLE_VOICE, HLE_NET/LLE_NET, "
+            "or HLE_WAIT/LLE_WAIT"
         )
 
     function_anchor = select_anchor(
@@ -272,6 +274,16 @@ def self_test() -> None:
     hle_net = parse_trace(make("HLE_NET", ["a", "b", "c", "d"]), "self-hle-net")
     lle_net = parse_trace(make("LLE_NET", ["a", "b", "c", "d"]), "self-lle-net")
     assert "Latest shared exact-call block: length=4" in compare(hle_net, lle_net, 2)
+
+    hle_wait = parse_trace(
+        make("HLE_WAIT", ["a", "b", "c", "d"]), "self-hle-wait"
+    )
+    lle_wait = parse_trace(
+        make("LLE_WAIT", ["a", "b", "c", "d"]), "self-lle-wait"
+    )
+    assert "Latest shared exact-call block: length=4" in compare(
+        hle_wait, lle_wait, 2
+    )
 
     try:
         parse_trace(make("HLE_FLIP", ["a"]).replace("\nThor PPU CALL TRACE END", ""), "cut")

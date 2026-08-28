@@ -1228,3 +1228,12 @@ Both modes later call `sys_timer_usleep` from title address `0x009e4ba4`. HLE
 stays in this wait, while LLE passes it. The next shared trace must capture the
 first call at this address in both modes. This moves the comparison after
 `libnet.sprx` and directly before the observed forward-progress split.
+
+Property value 4 now captures the first call as `HLE_WAIT` or `LLE_WAIT`. It
+uses a separate one-run guard. Property value 2 keeps its existing HLE-only
+late-boundary behavior.
+
+The comparator self-test and `git diff --check` passed. The ARM64
+RelWithDebInfo build passed in 2 minutes 54 seconds. Debug APK assembly passed
+in 8 seconds. The exact Debug APK is `F5E6C10D...47B081DE`, and its size is
+116,124,144 bytes. Its stripped ARM64 library contains both wait mode labels.

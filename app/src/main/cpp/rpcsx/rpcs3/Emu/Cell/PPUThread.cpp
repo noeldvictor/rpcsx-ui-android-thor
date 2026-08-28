@@ -3969,6 +3969,7 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 	static std::atomic<u64> s_flip_emulation_id{umax};
 	static std::atomic<u64> s_boundary_emulation_id{umax};
 	static std::atomic<u64> s_net_emulation_id{umax};
+	static std::atomic<u64> s_wait_emulation_id{umax};
 
 	switch (point)
 	{
@@ -3981,6 +3982,12 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 		captured_emulation_id = &s_flip_emulation_id;
 		break;
 	case thor_ppu_call_trace_point::hle_stall:
+		if (value[0] == '4')
+		{
+			mode = hle_spurs ? "HLE_WAIT" : "LLE_WAIT";
+			captured_emulation_id = &s_wait_emulation_id;
+			break;
+		}
 		if (value[0] != '2' || !hle_spurs)
 		{
 			return;
