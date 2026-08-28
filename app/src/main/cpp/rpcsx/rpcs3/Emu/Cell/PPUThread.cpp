@@ -3938,13 +3938,8 @@ static thor_es_frame_poll_wait_mode get_initial_thor_es_frame_poll_wait_mode(u32
 static bool thor_ppu_call_trace_enabled() noexcept
 {
 #ifdef ANDROID
-	static const bool s_enabled = []() noexcept
-	{
-		char value[PROP_VALUE_MAX]{};
-		return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) > 0 && value[0] && value[0] != '0';
-	}();
-
-	return s_enabled;
+	char value[PROP_VALUE_MAX]{};
+	return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) > 0 && value[0] && value[0] != '0';
 #else
 	return false;
 #endif
@@ -3953,20 +3948,27 @@ static bool thor_ppu_call_trace_enabled() noexcept
 void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point)
 {
 #ifdef ANDROID
-	if (Emu.GetTitleID() != "BLUS30357" || ppu.get_name() != "main_thread" ||
-		ppu.syscall_history.data.size() <= 1)
-	{
-		return;
-	}
-
 	char value[PROP_VALUE_MAX]{};
-	if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", value) <= 0 || !value[0])
+	if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", value) <= 0 ||
+		!value[0] || value[0] == '0')
 	{
 		return;
 	}
 
 	const bool hle_spurs =
 		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
+	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u title=%s thread=%s history_size=%u "
+		"index=%llu property=%s hle_spurs=%s",
+		static_cast<u32>(point), Emu.GetTitleID(), ppu.get_name(),
+		static_cast<u32>(ppu.syscall_history.data.size()), ppu.syscall_history.index,
+		value, hle_spurs ? "true" : "false");
+
+	if (Emu.GetTitleID() != "BLUS30357" || ppu.get_name() != "main_thread" ||
+		ppu.syscall_history.data.size() <= 1)
+	{
+		return;
+	}
+
 	const char* mode = nullptr;
 	std::atomic<u64>* captured_emulation_id = nullptr;
 	static std::atomic<u64> s_flip_emulation_id{0};

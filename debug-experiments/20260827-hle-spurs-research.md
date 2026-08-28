@@ -1035,4 +1035,25 @@ useful boundary:
 Property value 1 continues to select the `FlipPump` trace. Each property value
 emits only one trace in one run. This prevents two trace blocks in one log and
 keeps truncated-log validation exact. The ARM64 RelWithDebInfo build passed in
-2 minutes 59 seconds. The late event pair still needs a cooled Thor capture.
+2 minutes 59 seconds.
+
+The first late LLE route used exact Debug APK `EF394328...DCB164`. The device
+hash matched. Its three launch samples were 33.3, 33.7, and 33.7 C. Runtime
+silicon stayed at or below 55.0 C. The route reached `libvoice.sprx` at 17.276
+seconds, but it emitted no trace block. The capture is:
+
+    20260827-225002-thor-input-custom/post-RPCSX.log
+
+The device property still read `2` after the run. The APK native library also
+contained `HLE_STALL` and `LLE_VOICE`. Therefore, the route and APK were
+correct, but trace activation was not observable. The next revision removes
+the process-lifetime property cache, logs one exact event row before the trace
+guards, and records all HLE/SPURS trace properties in the guarded runner startup
+profile. Do not run HLE until a cooled LLE route emits a complete block or gives
+an exact skip reason.
+
+The activation revision passed the ARM64 RelWithDebInfo build in 1 minute 35
+seconds. Debug APK assembly passed in 57 seconds. The cache-route and cache-phase
+pacing contract tests also passed. The exact Debug APK is
+`E634031B...99B618`; its native library contains the event row and both late
+trace labels.
