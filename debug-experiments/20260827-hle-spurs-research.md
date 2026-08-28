@@ -2279,3 +2279,56 @@ This APK is not installed. The device still has exact APK
 no-launch install, one more strict cool gate, and one bounded Transformers HLE
 route. The route must stop if the thermal guard refuses it. No 3D or FPS result
 is available yet.
+
+## 39. The active loader operation is a SPURS LFQueue job
+
+A strict cool gate refused a later hardware run at 65.8 C silicon. The capture
+is:
+
+    20260828-132454-thor-input-strict-cool-gate
+
+RPCSX was force-stopped. No APK was installed, and no title launch occurred.
+Do not bypass the 35 C launch limit.
+
+A focused Ghidra pass resolved the active-request completion list. The active
+entry stores the list pointer at offset `0x40`, the count at offset `0x44`, and
+the capacity at offset `0x48`. Each list item points to an eight-byte pair. The
+first word is a completion-state pointer. The second word is a storage pointer.
+The worker retires an item when the completion-state word becomes zero.
+
+Commit `17e18681c` adds a bounded runtime sample of this nested completion
+state. The source contract passed. The ARM64 native build passed in 44 seconds.
+Debug APK assembly passed in 9 seconds. The ARM64 package gate, the SPURS probe
+gate, and the Transformers probe contract passed. The APK is 116,137,742 bytes
+and has this SHA-256:
+
+    F91FFAAD4E1EBCBD67A7D8F649DD862C7272D07D7F87BC380E8EC374120BFEC2
+
+This APK is not installed. The device still has exact APK
+`641E8AC8...A429E7`.
+
+The earlier Thor log and the Ghidra import trace identify the operation behind
+this wait. The title builds a 32-byte edgeZlib control job and calls
+`_cellSpursLFQueuePushBody` with return address `0x00a886a4`. Its queue is
+`0x101b1f80`. The queue has 0x20-byte entries, depth 0x10, and direction 3,
+which is ANY2ANY. The associated edgeZlib task set is `0x101b4e80`, and its
+signal address is `0x01e97a81`. The PoolThread then waits on event flag
+`0x01e54800`.
+
+The HLE calls `_cellSyncLFQueueGetPushPointer2` and
+`_cellSyncLFQueueCompletePushPointer2` on this path. The existing ANY2ANY
+implementation is behind `debug.rpcsx.thor.lfq_any2any` and is off by default.
+The default route therefore leaves this loader job unpublished. Earlier tests
+show that enabling the route wakes edgeZlib task 0, but those tests did not have
+the exact loader-completion probe and did not produce correct 3D output.
+
+Commit `3971c7bd6` adds explicit control and evidence for the LFQueue property
+to the Thor runner. It resets the property after success or failure. The
+PowerShell parser, the new route contract, the loader probe contract, and the
+Git whitespace check passed.
+
+The next hardware test must install the exact `F91F...EC2` APK after a strict
+cool gate. It must then run one bounded route with `lfq_any2any=on`. The test
+must show whether the completion state becomes zero and whether the active
+entry retires. It has no 3D or FPS credit unless a screenshot and draw evidence
+show correct output. Correct 3D output and 30 FPS are still not proved.
