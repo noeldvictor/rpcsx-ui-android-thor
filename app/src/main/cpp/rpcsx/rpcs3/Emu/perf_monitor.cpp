@@ -13,6 +13,7 @@
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
 #include "Emu/Cell/thor_spu_ls_dump.h"
+#include "Emu/Cell/thor_spu_pc_census.h"
 #include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
@@ -52,6 +53,9 @@ void perf_monitor::operator()()
 	{
 		thread_ctrl::wait_until(&sleep_until, update_interval_us);
 		elapsed_us += update_interval_us;
+
+		// This is a monitor-thread probe. The SPU execution path stays unchanged.
+		thor::spu_pc_census_tick();
 
 		// Sample temperature for the gameplay thermal guard.
 		//

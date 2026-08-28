@@ -1159,6 +1159,7 @@ $spursProfilePropertyNames = @(
     "debug.rpcsx.thor.spu_accurate_reservations",
     "debug.rpcsx.thor.spu_channel_spin",
     "debug.rpcsx.thor.spu_loop_detection",
+    "debug.rpcsx.thor.spu_pc_census",
     "debug.rpcsx.thor.spurs_always_notify",
     "debug.rpcsx.thor.spurs_atomic_census",
     "debug.rpcsx.thor.spurs_drop_notify",

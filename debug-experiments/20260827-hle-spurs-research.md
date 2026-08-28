@@ -2717,3 +2717,22 @@ The next diagnostic must sample each SPU guest PC from the timer thread while
 the route is active. It must be default-off and bounded. Run it only after a
 new strict cool gate. Correct 3D output and sustained 30 FPS are still not
 proved.
+
+The default-off diagnostic is now available as:
+
+    debug.rpcsx.thor.spu_pc_census=1
+
+It runs from the 500 ms monitor timer. It matches the exact 16-byte edgeZlib
+code signature at local-store address `0x3000`. It records the guest PC, base
+PC, link register, stack pointer, and last MFC command for each matching SPU.
+It stops after 64 samples. It adds no work to the SPU execution path.
+
+The route contract, Android debug build, and ARM64 APK contract passed. The APK
+is 116,130,197 bytes and has this SHA-256:
+
+    326A5E50CBB6F483BF958D0545F1E6FA6BBC14766300827D53CA36C636435FB2
+
+This APK is not installed. The next device work must start with a strict cool
+gate. Install this exact APK without a title launch. Run another strict cool
+gate before one bounded route. Do not run a second route in the same thermal
+round.

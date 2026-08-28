@@ -40,6 +40,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.pm_capture" = "0"
     "debug.rpcsx.thor.draw_census" = "1"
     "debug.rpcsx.thor.spurs_atomic_census" = "1"
+    "debug.rpcsx.thor.spu_pc_census" = "1"
     "debug.rpcsx.thor.ppu_pc_census" = "0"
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = "0"
@@ -104,6 +105,7 @@ try {
 } finally {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.draw_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"
 }
 
 $captureCandidates = @(

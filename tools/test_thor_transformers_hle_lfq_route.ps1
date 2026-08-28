@@ -4,6 +4,10 @@ $macroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
 $macro = Get-Content -LiteralPath $macroPath -Raw
 $renderProbePath = Join-Path $PSScriptRoot "invoke_thor_transformers_hle_render_probe.ps1"
 $renderProbe = Get-Content -LiteralPath $renderProbePath -Raw
+$pcCensusPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\thor_spu_pc_census.h"
+$pcCensus = Get-Content -LiteralPath $pcCensusPath -Raw
+$perfMonitorPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\perf_monitor.cpp"
+$perfMonitor = Get-Content -LiteralPath $perfMonitorPath -Raw
 
 $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
@@ -26,6 +30,7 @@ $requiredFragments = @(
     '"spurs-selector-fixes-effective.txt"',
     '"setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue"',
     '"debug.rpcsx.thor.taskset_select_atomic"',
+    '"debug.rpcsx.thor.spu_pc_census"',
     '"setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue"',
     '"getprop debug.rpcsx.thor.taskset_select_atomic"',
     '"taskset-select-atomic-prelaunch-reset.txt"',
@@ -52,6 +57,8 @@ $requiredRenderProbeFragments = @(
     'TasksetSelectAtomic = $TasksetSelectAtomic',
     '"debug.rpcsx.thor.spurs_atomic_census" = "1"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
+    '"debug.rpcsx.thor.spu_pc_census" = "1"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"',
     'SpuCachePreloadLimit = 64',
     'SpuCacheCompileBudgetMs = 50',
     'CacheWorkerAffinityMask = 7'
@@ -60,6 +67,20 @@ $requiredRenderProbeFragments = @(
 foreach ($fragment in $requiredRenderProbeFragments) {
     if (-not $renderProbe.Contains($fragment)) {
         throw "The Transformers HLE render probe is missing: $fragment"
+    }
+}
+
+$requiredPcCensusFragments = @(
+    '"debug.rpcsx.thor.spu_pc_census"',
+    'static constexpr u32 max_samples = 64;',
+    'std::memcmp(spu._ptr<u8>(0x3000), edge_signature.data(), edge_signature.size())',
+    'Thor EDGE PC sample=%u',
+    'thor::spu_pc_census_tick();'
+)
+
+foreach ($fragment in $requiredPcCensusFragments) {
+    if (-not ($pcCensus.Contains($fragment) -or $perfMonitor.Contains($fragment))) {
+        throw "The edgeZlib SPU PC census is missing: $fragment"
     }
 }
 

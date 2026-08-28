@@ -1,0 +1,86 @@
+#pragma once
+
+// Sample the guest PC of a loaded edgeZlib SPU task from the monitor thread.
+//
+// The task can complete its LFQueue reservation operations and then run guest
+// code without another observable syscall or MFC atomic operation. This probe
+// identifies that code without adding work to the SPU execution path.
+//
+// The property is off by default. A run records at most 64 timer samples. The
+// edgeZlib code signature limits each sample to the matching local-store image.
+//
+//   debug.rpcsx.thor.spu_pc_census = 1
+
+#include "Emu/Cell/SPUThread.h"
+#include "Emu/IdManager.h"
+#include "util/types.hpp"
+
+#include <array>
+#include <cstdlib>
+#include <cstring>
+
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
+namespace thor
+{
+	inline bool spu_pc_census_enabled()
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_pc_census", value) > 0)
+		{
+			return value[0] && value[0] != '0';
+		}
+#endif
+
+		if (const char* value = std::getenv("RPCSX_THOR_SPU_PC_CENSUS"))
+		{
+			return value[0] && value[0] != '0';
+		}
+
+		return false;
+	}
+
+	inline void spu_pc_census_tick()
+	{
+		if (!spu_pc_census_enabled())
+		{
+			return;
+		}
+
+		static constexpr u32 max_samples = 64;
+		static u32 s_sample = 0;
+
+		if (s_sample >= max_samples)
+		{
+			return;
+		}
+
+		const u32 sample = ++s_sample;
+
+		// These are the first four instructions at edgeZlib LS address 0x3000.
+		static constexpr std::array<u8, 16> edge_signature = {
+			0x42, 0x47, 0x24, 0x02, 0x43, 0x7e, 0xc0, 0x82,
+			0x43, 0x3e, 0x0f, 0x02, 0x42, 0x01, 0x6d, 0x82,
+		};
+
+		idm::select<named_thread<spu_thread>>([&](u32 id, named_thread<spu_thread>& spu)
+			{
+				if (std::memcmp(spu._ptr<u8>(0x3000), edge_signature.data(), edge_signature.size()) != 0)
+				{
+					return;
+				}
+
+				const auto tname = spu.spu_tname.load();
+				const char* name = tname ? tname->c_str() : "";
+
+				spu_log.error("Thor EDGE PC sample=%u id=0x%08x spu=%u pc=0x%05x base=0x%05x "
+					"lr=0x%05x sp=0x%05x mfc=0x%02x ea=0x%08x thread='%s'",
+					sample, id, spu.index, spu.pc, spu.base_pc, spu.gpr[0]._u32[3],
+					spu.gpr[1]._u32[3], +spu.ch_mfc_cmd.cmd, +spu.ch_mfc_cmd.eal, name);
+			});
+	}
+} // namespace thor
