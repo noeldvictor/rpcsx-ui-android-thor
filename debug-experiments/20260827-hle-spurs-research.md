@@ -2403,3 +2403,10 @@ still has exact APK `641E8AC8...A429E7`. The next hardware run must use one
 strict cool gate, one no-launch install, a second strict cool gate, and one
 bounded `lfq_any2any=on` route. Correct 3D output and 30 FPS are still not
 proved.
+
+The cooldown audit found no software load. The device was asleep, had no wake
+locks, and reported 793 percent idle across eight CPUs. RPCSX was absent. The
+battery service reported USB power and a maximum charge current of 900 mA.
+USB charging is the remaining cooldown source. Disconnect the cable while the
+device cools, then reconnect it before the next strict gate. Do not lower the
+35 C launch limit.
