@@ -10,7 +10,9 @@ param(
     [ValidateSet("on", "off")]
     [string]$TasksetSelectAtomic = "off",
     [ValidateSet("on", "off")]
-    [string]$EdgeEventInterp = "off"
+    [string]$EdgeEventInterp = "off",
+    [ValidateSet("on", "off")]
+    [string]$TaskAttrFix = "off"
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,7 +53,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"
     "debug.rpcsx.thor.spurs_signal_fix" = "0"
     "debug.rpcsx.thor.spurs_always_notify" = "0"
-    "debug.rpcsx.thor.task_attr_fix" = "0"
+    "debug.rpcsx.thor.task_attr_fix" = if ($TaskAttrFix -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.contention_atomic_fix" = "1"
     "debug.rpcsx.thor.contention_orphan_fix" = "1"
     "debug.rpcsx.thor.pending_contention_fix" = "1"
@@ -112,6 +114,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_event_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"
 }
 
 $captureCandidates = @(

@@ -3299,3 +3299,53 @@ cool gate, then run one bounded route with `EdgeEventInterp=on`. The route must
 show a dispatcher interpreter entry from edgeZlib, both WRCH operations, and
 an event result. Correct 3D output and sustained 30 FPS with correct output are
 still not proved.
+
+## 56. The exact edge event helper now returns
+
+The Thor passed a strict cool gate. The no-launch installer verified APK
+`7BAA5BEB53392A2E998C830DBE8C62490AC9AD7B51E63D2E6457F210C454A2B4` and
+kept RPCSX stopped. The post-install strict gate also passed. The evidence is
+in:
+
+    20260828-173805-thor-input-strict-cool-gate
+    20260828-173827-transformers-edge-event-dispatch-install
+    20260828-173845-thor-input-strict-cool-gate
+
+One bounded route then used the firmware LFQueue path, both selector repairs,
+atomic task selection, and the dispatcher event-helper handoff. Its capture is:
+
+    20260828-173914-thor-input-custom
+
+The exact edgeZlib task-image guard matched four times. Each helper entry had
+PC `0x0a4d8`, link register `0x08ca8`, `r3=0x11`, `r4=0`, and `r5=0`. Each
+run wrote outbound mailbox value 0 at PC `0x0a500`, wrote interrupt mailbox
+value `0x51000000` at PC `0x0a514`, and sent event port 17 to queue
+`0x8d005600`. Each event returned 0. Each interpreter handoff then left at PC
+`0x08ca8` with `r3=0`.
+
+The PoolThread entered `cellSpursEventFlagWait` again after each event. The
+edgeZlib worker later reached PC `0x0324c` with a block count of 1,781. Thus,
+the helper is no longer frozen at PC `0x0a4d8`: the event is sent, the helper
+returns, and the task continues.
+
+After startup, five consecutive 10-second samples reported 29.6, 29.4, 29.4,
+29.5, and 29.6 FPS. The draw census reached 1,920 flips and 1,589 draw calls.
+All calls used primitive 8. The captured frame was still flat green, with an
+instantaneous rate of 29.21 FPS. The route did not produce a primitive 5 draw
+or an RSX map at `0x70000000`. Therefore, the measured event helper works and
+the title runs at its frame-rate cap, but correct 3D output is not proved.
+
+The route also showed the next stable boundary. The title failed two attempts
+to create the `0x01765800` Bink/render task because the supplied local-store
+pattern used the SPURS management area. The existing default-off task
+attribute repair can create this task, but its old tests predate the selector,
+task-selection, failed-block, LFQueue, and event-helper repairs. The render
+route now has a default-off `TaskAttrFix` switch so this exact combination can
+be tested without a new APK.
+
+The thermal guard stopped the route at a silicon sample of 66.2 C, below the
+72 C hard limit. The highest junction sample was 77.1 C, below the 95 C
+junction limit. No fatal, signal 11, task ELF load failure, LLVM verification
+failure, compilation failure, or crash marker occurred. RPCSX was force-
+stopped. Charging separation was restored to its original value of 0, and the
+display was put to sleep.
