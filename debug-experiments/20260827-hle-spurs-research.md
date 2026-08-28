@@ -2184,3 +2184,69 @@ must stay off until a different task-exit cause is proved.
 
 This APK is not installed. The previous exact APK remains installed. Do not
 use the Thor again until a later strict cool gate.
+
+## 37. The loader request reaches an active IO worker entry
+
+The Thor passed a new strict gate at 31.7, 31.7, and 31.3 C. The no-launch
+installer then installed the corrected loader IO APK. The host and device
+SHA-256 values both matched:
+
+    641E8AC83B533325CC149EA8365EEE7C8CF214FBD11ECA6B2237C7F696A429E7
+
+RPCSX was not active before or after the install. A new strict gate then
+passed at 32.1 C for all three samples. The evidence is in:
+
+    20260828-110416-thor-input-strict-cool-gate
+    20260828-110443-transformers-loader-io-install
+    20260828-110457-thor-input-strict-cool-gate
+
+One bounded Transformers route ran. Its capture is:
+
+    20260828-110518-thor-input-custom/post-RPCSX.log
+
+The loader snapshots at 17.234533 and 27.234501 guest seconds were identical.
+The stream size was 280,390 bytes. The requested range was offset 109 plus
+148,299 bytes. Buffer zero covered 109 through 280,390, and its pending count
+stayed at one. Buffer one and its pending count stayed at zero. The range table
+stayed at `0x10540fd4`.
+
+The corrected probe resolved worker zero to `0x1050b450`, with virtual table
+`0x01bbab48`. Its direct-read method resolved through descriptor `0x01961a88`
+to code `0x00518e18`. Its table-read method resolved through descriptor
+`0x01961a90` to code `0x00518e54`.
+
+A focused Ghidra raw import used the verified decrypted ELF with language
+`PowerPC:BE:64:A2ALT:default` and base address `0x10000`. Both worker methods
+are small wrappers around `0x00518930`. That common function adds a 0x50-byte
+request to the queue at worker offset `0x4c` and signals the wake object at
+offset `0x64`. The worker loop moves a request to the active list at offset
+`0x58`, starts the backend operation, and polls its completion object.
+
+At both runtime samples, `AsyncIOSystem` slept with LR `0x0051aea4`. Ghidra
+shows that this sleep arm runs when the worker active-list count at offset
+`0x5c` is greater than zero. Therefore, the observed boundary is not a missing
+submission. The title has at least one active IO request while this stream's
+pending count stays at one. The current capture does not yet match that active
+entry to this exact stream request or identify the backend operation that does
+not finish.
+
+The log continues through 27.638087 guest seconds. It contains zero invalid-
+code records, zero `0xce00` records, zero compilation failures, and zero old
+SPU retry-flood records. The macro stopped the route. The silicon peak was
+59.8 C, the junction peak was 71.1 C, the skin peak was 30 C, and the battery
+peak was 22 C. The post-stop silicon value was 45.3 C, and the PID was absent.
+No second route ran in this thermal round.
+
+Commit `3930d495d` adds the next bounded probe. It records the worker queue and
+active-list pointers, counts, capacities, wake object, reference and run
+counts, submission sequence, and the first active 0x50-byte entry. The source
+contract passed. The ARM64 build passed in 1 minute 53 seconds. Debug APK
+assembly passed in 11 seconds. The ARM64 package gate and SPURS probe gate
+passed. The APK is 116,141,091 bytes and has this SHA-256:
+
+    B1751D680FBF8A2FEC641DF1314D292670EAD3E698C705061E5C3186B066993D
+
+This new APK is not installed. The device still has exact APK
+`641E8AC8...A429E7`. The route did not take a screenshot or record a draw
+census, so it has no 3D or FPS credit. Correct 3D output and 30 FPS are still
+not proved. Do not use the Thor again until a later strict cool gate.
