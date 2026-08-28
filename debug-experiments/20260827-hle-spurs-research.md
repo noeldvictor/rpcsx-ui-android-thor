@@ -2030,3 +2030,34 @@ but this is not fallback correctness evidence because guest execution did not
 reach that block. This route has no correctness, 3D, FPS, or performance
 credit. Do not retry until a later strict cool gate. Correct 3D output and 30
 FPS are still not proved.
+
+## 35. A bounded route has no failed-analysis flood
+
+After a full passive cooldown, a new strict gate passed at 32.9, 32.9, and
+32.5 C. The bounded validation route then passed its own launch gate at 33.7 C
+for all three samples. It limited SPU cache preload to 64 programs and the SPU
+startup compile budget to 50 milliseconds. The evidence is in:
+
+    20260828-052644-thor-input-strict-cool-gate
+    20260828-052710-thor-input-custom/failure-RPCSX.log
+
+Workload 2 dispatched once on SPU 0. Real image workload 6 dispatched on SPU 4
+and SPU 5. The route mapped RSX IO ranges 0x500000 and 0x600000. It did not map
+0x700000. At 17.240364 and 27.240331 guest seconds, the main thread waited at
+`0x009e4ba4` with LR `0x005a3350`. The resource-object completion wait from
+section 33 therefore remains.
+
+The log continues through 33.981171 guest seconds. It contains zero `0xce00`
+analysis failures, zero compilation failures, and zero other invalid-code
+records. The old probe-off APK started its 401,116-record flood at 24.832773
+guest seconds on a route that also dispatched workload 2 and workload 6.
+
+This is strong retry-flood regression evidence. It is not direct fallback
+execution proof because this capture contains no one-time failed-block marker.
+The run can have taken a different task branch before the guard stopped it.
+
+The early guard stopped RPCSX after an immediate 62.6 C package confirmation.
+The junction peak was 73.9 C. Both values were below their hard limits. The
+route did not enable the draw census or take a screenshot, so it has no 3D or
+FPS credit. RPCSX is stopped, and the display is asleep. Correct 3D output and
+30 FPS are still not proved.
