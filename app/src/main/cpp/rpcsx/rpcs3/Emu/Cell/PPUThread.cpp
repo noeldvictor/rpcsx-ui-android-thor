@@ -3957,12 +3957,6 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 
 	const bool hle_spurs =
 		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
-	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u title=%s thread=%s history_size=%u "
-		"index=%llu property=%s hle_spurs=%s",
-		static_cast<u32>(point), Emu.GetTitleID(), ppu.get_name(),
-		static_cast<u32>(ppu.syscall_history.data.size()), ppu.syscall_history.index,
-		value, hle_spurs ? "true" : "false");
-
 	if (Emu.GetTitleID() != "BLUS30357" || ppu.get_name() != "main_thread" ||
 		ppu.syscall_history.data.size() <= 1)
 	{
@@ -3971,8 +3965,8 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 
 	const char* mode = nullptr;
 	std::atomic<u64>* captured_emulation_id = nullptr;
-	static std::atomic<u64> s_flip_emulation_id{0};
-	static std::atomic<u64> s_boundary_emulation_id{0};
+	static std::atomic<u64> s_flip_emulation_id{umax};
+	static std::atomic<u64> s_boundary_emulation_id{umax};
 
 	switch (point)
 	{
@@ -4003,7 +3997,13 @@ void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_
 	}
 
 	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
-	if (captured_emulation_id->exchange(emulation_id) == emulation_id)
+	const u64 previous_emulation_id = captured_emulation_id->exchange(emulation_id);
+	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u mode=%s history_size=%u index=%llu "
+		"emulation_id=%llu previous_emulation_id=%llu",
+		static_cast<u32>(point), mode, static_cast<u32>(ppu.syscall_history.data.size()),
+		ppu.syscall_history.index, emulation_id, previous_emulation_id);
+
+	if (previous_emulation_id == emulation_id)
 	{
 		return;
 	}

@@ -1057,3 +1057,23 @@ seconds. Debug APK assembly passed in 57 seconds. The cache-route and cache-phas
 pacing contract tests also passed. The exact Debug APK is
 `E634031B...99B618`; its native library contains the event row and both late
 trace labels.
+
+The second cooled LLE route reached the helper at `libvoice.sprx` on
+`main_thread`. The event row reported a 2,048-entry history, index 20,705,
+property 2, and LLE mode. No block followed. All visible guards therefore
+passed; the remaining deduplication guard compared the current emulation ID
+with an atomic that started at zero. A first emulation can also have ID zero.
+The capture is:
+
+    20260827-230127-thor-input-custom/failure-RPCSX.log
+
+The same revision logged 101,821 rejected HLE-stall events from `FlipPump` under
+LLE. This logging raised the device to the guarded 57.4 C early stop. The next
+revision initializes both deduplication atomics to `umax` and writes the event
+row only after title, thread, trace-mode, and history eligibility checks. This
+removes the zero-ID collision and the rejected-event log load.
+
+The zero-ID revision passed the ARM64 RelWithDebInfo build in 58 seconds and
+Debug APK assembly in 7 seconds. The exact APK is
+`4C24C6B1...BC94E64D`; its native library contains both late trace labels and
+the previous-emulation-ID event field.
