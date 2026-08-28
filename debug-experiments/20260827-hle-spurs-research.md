@@ -812,3 +812,37 @@ the first flip.
 Neither renders. But the failure modes are different, and the real-module path
 is the only one where the title creates tasks AND pushes its queue, which is
 further into its own startup than anything else measured here.
+
+## 21. The real-module path stalls on the SAME fence, far deeper in
+
+With real_taskset_pm=1, main_thread parks on the 0x00fdcf60 GCM heap fence -
+the same one identified at the very start of this effort - but the numbers are
+completely different:
+
+    stub                 done=0x304f920c target=0x304f9a74  delta=0x868
+    real taskset module  done=0x303013a0 target=0x304f8048  delta=0x1f6ca8
+
+The title has queued roughly 2 MB of command-buffer work and nothing drains it,
+against ~2 KB queued on the stub path. So the real module lets the title get
+dramatically further into its own startup - tasks created, queue pushed, 2 MB
+of GCM work submitted - and then hits the same consumer stall.
+
+That is the clearest statement of the failure this effort has produced:
+
+    The producer works. The consumer does not.
+
+The title fills its GCM command heap and the SPU side never consumes it, in
+both configurations. The stub barely gets started before stalling; the real
+module runs the whole producer side and stalls with the heap nearly full.
+
+### What is NOT concluded
+
+Which consumer, and why it does not drain, is not established. The selector is
+still cycling (wkl0..wkl3 printing), so the SPUs are alive and not faulted. A
+plausible reading is that the workload which consumes the command buffer is
+never selected or never completes, but this document has been wrong four times
+about mechanisms inferred from partial state, so it is left as a question.
+
+The measurement stands on its own: delta 0x868 -> 0x1f6ca8 is a 240x increase
+in queued-but-unconsumed work, and it is the largest movement any change in
+this effort has produced.
