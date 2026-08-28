@@ -2149,6 +2149,23 @@ and SPURS contracts, and the ARM64 debug APK build passed. The APK is
 
 The device still has the earlier exact APK.
 
+Ghidra then found a probe error before deployment. The global at `0x019d5410`
+is a 16-byte manager with a worker-array pointer at offset `4` and a worker
+count at offset `8`. Constructor `0x005a40c0` sets its base virtual table to
+`0x01a871d8`. The submission functions first call manager method `+8` to get
+worker zero. They then call the direct-read or table-read method on that
+worker. The first probe revision incorrectly resolved `+0x0c/+0x10` on the
+manager itself. Those manager entries are null.
+
+The corrected host probe reads worker zero from the manager array and resolves
+the two method descriptors from the worker virtual table. The source contract
+passed, and the ARM64 debug APK build passed. The corrected APK is 116,126,061
+bytes and has this SHA-256:
+
+    641E8AC83B533325CC149EA8365EEE7C8CF214FBD11ECA6B2237C7F696A429E7
+
+The earlier `BA1C...29E7` APK is superseded and must not be installed.
+
 The two `cellSpursCreateTaskWithAttribute` failures in the last run are known
 control behavior. The route sets `task_attr_fix=0`. The existing repair already
 rejects the two unaligned leftover-register values and makes a size-correct LS
