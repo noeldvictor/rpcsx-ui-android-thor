@@ -1503,3 +1503,80 @@ The next probe must record a bounded series of counter transitions and the
 poll exit. It must use event data, not a one-time state snapshot. No new Thor
 route starts until the device is cool. RPCSX is stopped, and the Thor is
 asleep.
+
+## 26. Both modes complete the bounded counter series
+
+Commit `a1fd0f870` adds property value 6 for the bounded title counter probe.
+The probe applies only to BLUS30357 on `main_thread`. It records entry, wait,
+and equal events for the first 32 calls to the function at `0x00fdcf20`. The
+translator passes guest registers r0, r3, r9, r29, r30, and r31 directly to
+the helper. The helper reads the two counter pairs but does not write guest
+memory. A new PPU cache identity bit prevents the use of an object that was
+compiled without the probe.
+
+Commit `ed7c8bcda` adds a comparator for the bounded series. It rejects mixed
+modes, mixed emulation IDs, missing invocation numbers, reversed event order,
+and invalid wait totals. Its syntax check and self-test passed. Commit
+`cecb42ecb` adds the exact HLE and LLE route wrapper. Commit `675036db4` makes
+the wrapper collect the post-run RPCSX log.
+
+The ARM64 RelWithDebInfo build passed in 3 minutes 38 seconds. Debug APK
+assembly passed in 9 seconds. The exact APK is
+`26C37EC3...AF12F70F`, and its size is 116,124,395 bytes. The stripped ARM64
+library contains both `Thor Transformers COUNTER` and
+`__thor_transformers_counter_probe`. The no-launch install succeeded. The
+device APK SHA-256 matched the full expected value before each route:
+
+    26C37EC33081D8A66F2F0228573AD1DA6A2D2C832314E7D807FA0589AF12F70F
+
+The HLE route started after a strict three-sample gate at 32.5 to 32.9 C. It
+used `hle_libs=libsre.sprx`, `hle_spurs_kernel=1`, and
+`ppu_call_trace=6`. Both selector experiments were zero. The route collected
+19 consecutive calls before its fixed stop. All 19 calls reached both equal
+events. The probe recorded 283 events. The package sensor peak was 67.4 C.
+The near-limit confirmation fell to 59.8 C, and the route did not reach the
+68 C immediate-stop value or the 72 C hard limit. The stopped-run log was
+recovered with the standard snapshot helper. The captures are:
+
+    20260828-020244-thor-input-strict-cool-gate
+    20260828-020456-thor-input-custom/post-RPCSX.log
+
+The Thor then slept and cooled. A second strict gate passed at 34.5 C. The
+LLE route used the same APK and route settings, with `hle_libs=none` and
+`hle_spurs_kernel=0`. It also collected 19 consecutive calls, and all 19
+calls reached both equal events. The probe recorded 175 events. The package
+sensor peak was 64.2 C. The near-limit confirmation fell to 57.8 C. The
+captures are:
+
+    20260828-021040-thor-input-strict-cool-gate
+    20260828-021105-thor-input-custom/post-RPCSX.log
+
+The comparator reported these complete wait totals:
+
+    invocation HLE(global,object) LLE(global,object)
+             0 HLE(4,0)           LLE(1,0)
+             1 HLE(0,1)           LLE(1,0)
+             2 HLE(1,419)         LLE(1,174)
+             3 HLE(5,225)         LLE(1,358)
+             4 HLE(3,129)         LLE(1,356)
+             5 HLE(1,221)         LLE(1,353)
+             6 HLE(2,224)         LLE(2,357)
+             7 HLE(0,111)         LLE(2,0)
+             8 HLE(0,106)         LLE(1,354)
+             9 HLE(2,465)         LLE(1,0)
+            10 HLE(1,281)         LLE(2,0)
+            11 HLE(2,219)         LLE(1,350)
+            12 HLE(1,98)          LLE(1,0)
+            13 HLE(1,157)         LLE(1,0)
+            14 HLE(2,208)         LLE(1,354)
+            15 HLE(0,397)         LLE(1,0)
+            16 HLE(1,221)         LLE(1,0)
+            17 HLE(1,219)         LLE(1,0)
+            18 HLE(1,78)          LLE(1,345)
+
+The wait totals differ from the first call, but both modes always make
+forward progress and exit the queue drain path. Some HLE calls wait longer,
+and some LLE calls wait longer. Therefore, this counter poll is a shared
+timing mechanism. It is not the HLE correctness boundary. The next analysis
+must follow the completed queue work to a downstream state or render result.
+RPCSX is stopped, and the Thor is asleep.
