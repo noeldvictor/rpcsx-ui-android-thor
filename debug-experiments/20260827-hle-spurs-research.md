@@ -3377,14 +3377,16 @@ synthesized this three-block local-store save pattern:
 `cellSpursCreateTaskWithAttribute` then created the task from image
 `0x01765800`, with size `0x191e8`. Workload 7 and taskset `0x01f73f00`
 dispatched on SPU 1. The task completed GETLLAR at PC `0x13384` and PUTLLC at
-PC `0x1360c` for event flag `0x01f7d580`. It then returned to the SPURS system
-service at PC `0x00808`. Thus, task creation works, and the Bink task does not
-stay in its first atomic operation.
+PC `0x1360c` for event flag `0x01f7d580`. It then entered the SPURS system
+service at PC `0x00808`. Later analysis showed that this path parks the task in
+`WAIT_SIGNAL`. Thus, task creation works, but the Bink task does not receive
+its first event.
 
 The render producer stopped after queue push 1,088. It then created the Bink
 taskset, mapped RSX I/O addresses `0x500000` and `0x600000`, and set event bits
-`0xffff`. The Bink task consumed that event. The producer did not record a
-later queue push in the bounded window.
+`0xffff`. The HLE function logged the call before its permission check, then
+rejected it. The event bits stayed clear. The producer did not record a later
+queue push in the bounded window.
 
 The GCMX task continued its queue polling loop at PC `0x13dcc`, for effective
 address `0x1030e400`. It reached 23,552 GETLLAR operations by 19.32 seconds.
@@ -3412,3 +3414,35 @@ The task attribute repair stays off by default. The next diagnostic must find
 the RenderingThread call after the event flag set and must record the Bink
 task request state. A new Thor run is not useful until this bounded probe is
 ready and the device passes a new strict cool gate.
+
+## 58. The PPU event setter rejects the Bink flag in the wrong direction
+
+The exact Bink local-store capture is 262,144 bytes and has this SHA-256:
+
+    F74407A529BD036D30D25D6D7E809A0702D01C32BB6A14F2491FA58E66AA7356
+
+A headless Ghidra import used the `SPU:BE:128:default` processor at base 0.
+The function at PC `0x13210` issues GETLLAR at `0x13384` and PUTLLC at
+`0x1360c`. If the requested event is present, the branch at `0x13618` returns
+0. Otherwise, the call at `0x13670` selects SPURS task system call 2,
+`WAIT_SIGNAL`. The device trace returned to the SPURS system service after
+PUTLLC. Therefore, the task took the wait path.
+
+The Bink event flag has direction 2, `CELL_SPURS_EVENT_FLAG_PPU2SPU`. The PPU
+called `cellSpursEventFlagSet` with bits `0xffff` before the task waited. The
+function permitted only `CELL_SPURS_EVENT_FLAG_SPU2PPU` and
+`CELL_SPURS_EVENT_FLAG_ANY2ANY`. It returned `CELL_SPURS_TASK_ERROR_PERM`
+before its reservation operation, so it did not set the event bits. Its Thor
+diagnostic was before the permission check and hid this return.
+
+Official RPCS3 master commit
+`98906eb0357823aa84997a1ce06406a66fde3722` from August 28, 2026 has the same
+direction check. The local repair permits `PPU2SPU` and `ANY2ANY` in the
+PPU-side Set function. It does not change the PPU-side Wait direction. The
+Thor event diagnostic now runs after the permission check and records the
+accepted direction.
+
+The SPURS event-flag contract checks both allowed Set directions and rejects
+the old direction expression. The event-flag contract, Transformers HLE route
+contract, and Git whitespace check pass. Correct 3D output and sustained 30
+FPS with correct output still require one guarded device run.

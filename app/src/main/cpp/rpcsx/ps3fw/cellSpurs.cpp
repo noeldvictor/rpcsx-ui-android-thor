@@ -3753,16 +3753,6 @@ s32 cellSpursEventFlagClear(vm::ptr<CellSpursEventFlag> eventFlag, u16 bits)
 /// Set a SPURS event flag
 s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag, u16 bits)
 {
-	// Does the title wake its parked task through an EVENT FLAG?
-	{
-		static std::atomic<u32> s_efs{0};
-
-		if (const u32 n = s_efs++; n < 8 || (n & 0xFF) == 0)
-		{
-			cellSpurs.error("Thor EFSET #%u: eventFlag=0x%x bits=0x%x", n, eventFlag.addr(), bits);
-		}
-	}
-
 	cellSpurs.trace("cellSpursEventFlagSet(eventFlag=*0x%x, bits=0x%x)", eventFlag, bits);
 
 	if (!eventFlag)
@@ -3775,9 +3765,19 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 		return CELL_SPURS_TASK_ERROR_ALIGN;
 	}
 
-	if (auto dir = eventFlag->direction; dir != CELL_SPURS_EVENT_FLAG_SPU2PPU && dir != CELL_SPURS_EVENT_FLAG_ANY2ANY)
+	if (auto dir = eventFlag->direction; dir != CELL_SPURS_EVENT_FLAG_PPU2SPU && dir != CELL_SPURS_EVENT_FLAG_ANY2ANY)
 	{
 		return CELL_SPURS_TASK_ERROR_PERM;
+	}
+
+	// Does the title wake its parked task through an event flag?
+	{
+		static std::atomic<u32> s_efs{0};
+
+		if (const u32 n = s_efs++; n < 8 || (n & 0xFF) == 0)
+		{
+			cellSpurs.error("Thor EFSET #%u: eventFlag=0x%x bits=0x%x direction=%u", n, eventFlag.addr(), bits, eventFlag->direction);
+		}
 	}
 
 	bool send;
