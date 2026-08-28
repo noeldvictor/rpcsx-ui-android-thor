@@ -1791,3 +1791,67 @@ The current AArch64 shift wraps `0x8000 >> 32` to bit `0x8000`. The next change
 must measure or repair signal consumption and workload dispatch as one state
 transition. Repeating the signal write alone cannot establish correctness.
 RPCSX is stopped, and the Thor is asleep.
+
+## 31. Workload activation no longer erases PPU signals
+
+Ghidra decoded the captured PPU window as
+`PowerPC:BE:64:A2ALT:default`. The function at `0x00fdd17c` creates the GCMX
+task and then waits at `0x00fdd2cc` until the word at `r31 + 0x590` changes.
+Its caller returns at `0x00fdddbc`. This confirms that the section 30 wait is
+part of GCMX initialization.
+
+The signal loss came from `spursSysServiceActivateWorkload`. Each SPU copied
+the first 128 bytes of `CellSpurs` to its private local-store snapshot. The
+function later copied that old line back to shared memory. The copied line
+contains `wklSignal1` at offset `0x70`. It does not contain `wklState1` or
+`wklStatus1`, which start at offsets `0x80` and `0x90`. Those state and status
+updates already used the live shared pointer. Therefore, the whole-line
+writeback did not preserve any update from this function. It could only
+overwrite newer shared values, including a concurrent PPU workload signal.
+
+Commit `5768f5bd3` removes the stale writeback and keeps the required snapshot
+refresh. A source contract test prevents the writeback from returning. The
+test passed. The ARM64 RelWithDebInfo build passed in 50 seconds. The full
+debug APK build passed in 7 seconds. The ARM64 APK contract passed. The exact
+APK was 116,122,927 bytes and had this SHA-256:
+
+    6CC1AE2410E5104EF65EF808515E7EEF5C0967F97C1BA6513583EF3CCE1F568F
+
+The Thor passed the strict gate at 32.5, 32.9, and 32.5 C. The no-launch
+installer verified the same APK hash on the device and verified that RPCSX was
+not active. The evidence is in:
+
+    20260828-032603-thor-input-strict-cool-gate
+    20260828-032625-apk-no-launch-install
+
+The fixed HLE route used the same render-boundary profile as section 28. Its
+capture is:
+
+    20260828-032650-thor-input-custom/failure-RPCSX.log
+
+The result proves that the removed writeback was a real correctness fault.
+Workload 0 kept its `0x8000` signal and reached `dispatch#2` on SPU 2. Workload
+2 kept its `0x2000` signal and reached `dispatch#2` on SPU 0. The policy module
+received the correct task-set argument `0x10364100`. Five SPUs then reached
+their second dispatch on real job-chain workload 6.
+
+This change does not complete 3D rendering. The draw census still contains
+only primitive 8 four-element quads:
+
+    14.150 seconds: flips=480 draw_calls=15  p8=15
+    18.187 seconds: flips=600 draw_calls=135 p8=135
+    22.248 seconds: flips=720 draw_calls=251 p8=251
+    26.329 seconds: flips=840 draw_calls=371 p8=371
+    30.395 seconds: flips=960 draw_calls=491 p8=491
+
+The route mapped IO ranges 0x500000 and 0x600000 again at 18.812 seconds. It
+did not map 0x700000 before the guard stopped the run. The silicon peak was
+62.2 C, and the junction peak was 70.7 C. Both values were below their hard
+limits. RPCSX is stopped, and the Thor is asleep.
+
+The fixed route also exposed a second observer effect. It wrote 2,252 entry
+records and 2,252 success records from `cellSpursSendWorkloadSignal` in about
+19 guest seconds. Commit `6dd2806a8` keeps all rejection records but limits
+the entry and success records to eight calls per process. The source contract
+test passed. The ARM64 RelWithDebInfo build passed in 54 seconds. This logging
+change is not installed and has no device performance or correctness credit.
