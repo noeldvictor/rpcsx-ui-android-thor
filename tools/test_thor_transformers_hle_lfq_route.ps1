@@ -67,7 +67,7 @@ $requiredRenderProbeFragments = @(
     'TasksetSelectAtomic = $TasksetSelectAtomic',
     '"debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.task_attr_fix" = if ($TaskAttrFix -eq "on") { "1" } else { "0" }',
-    '"debug.rpcsx.thor.spurs_atomic_census" = "1"',
+    '"debug.rpcsx.thor.spurs_atomic_census" = "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
     '"debug.rpcsx.thor.spu_pc_census" = "1"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"',
