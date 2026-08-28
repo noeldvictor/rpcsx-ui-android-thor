@@ -1260,3 +1260,40 @@ The capture is:
     20260828-000644-thor-input-custom/post-RPCSX.log
 
 The Thor must cool and pass the strict gate before the paired HLE route.
+
+The Thor passed that gate. The paired route used the same installed APK and
+verified hash. Its startup profile recorded `hle_libs=libsre.sprx`,
+`hle_spurs_kernel=1`, all other SPURS experiment switches off, and
+`ppu_call_trace=4`. It emitted one complete `HLE_WAIT` block at 13.624
+seconds:
+
+    count=2048 index=5967 sequence=3919..5966
+    emulation_id=1 previous_emulation_id=18446744073709551615
+
+The first retained call is `sys_timer_usleep` at `0x00fdcf90`. The last call
+is `sys_memory_allocate` at `0x009dc0dc`. The retained window contains
+1,989 `sys_timer_usleep` calls. Of these calls, 1,958 are from `0x00fdcf90`
+and 31 are from `0x00fdcf60`.
+
+The complete trace ended before the conservative thermal stop. The 60 C
+sustained probe requested a confirmation sample. That sample was 61.4 C,
+below the 68 C immediate stop and the 72 C hard limit. The guard force-stopped
+the app. The capture is:
+
+    20260828-001149-thor-input-custom/failure-RPCSX.log
+
+The latest shared function-name block has 15 calls. The latest shared
+call-site block has 10 calls. The only exact-call block at the end is the
+final `sys_memory_allocate` call. The HLE and LLE tails still perform the same
+title operations: update the RSX context, join `FlipPump`, create the render
+thread, wait on its start semaphore, query the NP region, probe the same
+files, restore the thread priority, and allocate 0x50000 bytes. Allocated
+object IDs and thread IDs differ. The HLE PRX call sites also move because HLE
+does not load the same firmware modules as LLE.
+
+The title main thread therefore reaches the same wait from the same final
+operation in both modes. The HLE trace has 2,417 fewer calls before this
+point, but this difference is mainly the number of 30-microsecond polling
+calls. It does not identify a different title branch. The next analysis must
+identify the condition around `0x009e4ba4` and the asynchronous worker or
+state that supplies it.
