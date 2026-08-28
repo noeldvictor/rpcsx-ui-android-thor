@@ -1330,3 +1330,53 @@ RelWithDebInfo build passed in 3 minutes 31 seconds.
 
 Debug APK assembly passed in 8 seconds. The exact APK is
 `F9688506...A5F60CAC`, and its size is 116,123,033 bytes.
+
+The no-launch install succeeded. The device APK SHA-256 matched
+`F9688506...A5F60CAC` before each route.
+
+The first route used HLE. Its startup profile recorded
+`hle_libs=libsre.sprx`, `hle_spurs_kernel=1`, and `ppu_call_trace=4`. It
+emitted one complete `HLE_WAIT` block at 12.828 seconds:
+
+    count=2048 index=4614
+    cia=0x009e4ba4 lr=0x005a3350 sp=0xd0040220
+    stack_count=10
+
+The complete stack and history ended before the conservative thermal stop.
+The package sensors stayed at or below 63.4 C. The capture is:
+
+    20260828-010131-thor-input-custom/failure-RPCSX.log
+
+Ghidra decoded each call instruction in the HLE stack. The direct call to the
+generic sleep wrapper is at `0x005a334c`. The earlier stack calls are at
+`0x00566160`, `0x0057146c`, `0x00012c1c`, `0x00012f10`, `0x00013194`,
+`0x000151c0`, `0x0001542c`, `0x000182a4`, and `0x00018034`.
+
+The first strict cool gate for the paired route refused the launch at 36.1 C.
+The Thor stayed idle until its package sensors were at or below 32.5 C. It
+then passed the three-sample strict gate.
+
+The paired route used LLE. Its startup profile recorded `hle_libs=none`,
+`hle_spurs_kernel=0`, all other SPURS experiment switches off, and
+`ppu_call_trace=4`. It emitted one complete `LLE_WAIT` block at 12.731
+seconds:
+
+    count=2048 index=8342
+    cia=0x009e4ba4 lr=0x005a3350 sp=0xd0040220
+    stack_count=10
+
+The route completed normally. Its package sensors stayed at or below 62.6 C.
+The capture is:
+
+    20260828-010947-thor-input-custom/post-RPCSX.log
+
+The HLE and LLE guest stacks are identical. All 10 caller addresses and all
+10 stack pointers match. The first caller is `0x005a3350`, and the final
+caller is `0x00018038`. Therefore, the first call to the generic sleep wrapper
+does not contain the HLE fault boundary.
+
+The actual repeated poll at `0x00fdcf20` compares two values before each
+sleep. At `0x00fdcf60`, registers r0 and r9 contain the two global counter
+values. At `0x00fdcf90`, registers r0 and r9 contain the values at object
+offsets 4 and 0, and r31 contains the object address. The next trace must
+record these values and the caller stack at the first real counter poll.
