@@ -1237,3 +1237,26 @@ The comparator self-test and `git diff --check` passed. The ARM64
 RelWithDebInfo build passed in 2 minutes 54 seconds. Debug APK assembly passed
 in 8 seconds. The exact Debug APK is `F5E6C10D...47B081DE`, and its size is
 116,124,144 bytes. Its stripped ARM64 library contains both wait mode labels.
+
+The no-launch install succeeded, and the device-side APK hash matched the
+exact local hash. The first property-value-4 route used LLE. Its startup
+profile recorded `hle_libs=none`, `hle_spurs_kernel=0`, all other SPURS
+experiment switches off, and `ppu_call_trace=4`. It emitted one complete
+`LLE_WAIT` block at 12.780 seconds:
+
+    count=2048 index=8384 sequence=6336..8383
+    emulation_id=1 previous_emulation_id=18446744073709551615
+
+The first retained call is `sys_timer_usleep` at `0x00fdcf90`. The last call
+is `sys_memory_allocate` at `0x009dc0dc`. The retained window contains 2,004
+`sys_timer_usleep` calls. Of these calls, 1,997 are from `0x00fdcf90` and seven
+are from `0x00fdcf60`. The window therefore shows that polling replaces almost
+all earlier call history before the title reaches `0x009e4ba4`.
+
+The package sensor peaked at 64.2 C. The sustained probe did not issue a stop,
+and the route completed below the 68 C immediate stop and the 72 C hard limit.
+The capture is:
+
+    20260828-000644-thor-input-custom/post-RPCSX.log
+
+The Thor must cool and pass the strict gate before the paired HLE route.
