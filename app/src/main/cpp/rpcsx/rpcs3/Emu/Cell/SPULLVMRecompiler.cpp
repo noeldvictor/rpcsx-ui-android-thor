@@ -294,36 +294,6 @@ static bool get_thor_edge_event_interp() noexcept
 }
 
 #ifdef ARCH_ARM64
-static bool is_thor_edge_event_helper(const spu_program& program) noexcept
-{
-	static constexpr std::array<std::pair<u32, u32>, 5> s_signature = {{
-		{0x0a4d8, 0x7fffc280}, // clgtbi r8,r3,0x3f
-		{0x0a4f4, 0x1804888f}, // brhnz r2,0x0a518
-		{0x0a500, 0x3fe10207}, // wrch r5,ch28
-		{0x0a514, 0x40800205}, // wrch r3,ch30
-		{0x0a51c, 0x1c080086}, // bi lr
-	}};
-
-	const u32 end = program.lower_bound + ::size32(program.data) * 4;
-
-	for (const auto [address, expected] : s_signature)
-	{
-		if (address < program.lower_bound || address >= end)
-		{
-			return false;
-		}
-
-		const u32 opcode = std::bit_cast<be_t<u32>>(program.data[(address - program.lower_bound) / 4]);
-
-		if (opcode != expected)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
 static void exec_thor_edge_event_interp(spu_thread* spu)
 {
 	static std::atomic<u32> s_count{0};
@@ -3439,10 +3409,9 @@ public:
 					}
 
 #ifdef ARCH_ARM64
-					if (m_thor_edge_event_interp && m_pos == 0x0a4d8 && is_thor_edge_event_helper(func))
+					if (m_thor_edge_event_interp && m_pos == 0x0a4d8)
 					{
-						emit_thor_edge_event_interp();
-						continue;
+						emit_thor_edge_event_interp_guard();
 					}
 #endif
 
@@ -4809,6 +4778,26 @@ public:
 	}
 
 #ifdef ARCH_ARM64
+	void emit_thor_edge_event_interp_guard()
+	{
+		// The SPURS kernel and edgeZlib both have code at 0xa4d8. Test the exact
+		// edgeZlib image at runtime so a cached module cannot send another SPU
+		// program through this title-specific fallback.
+		const auto signature0 = m_ir->CreateAlignedLoad(
+			get_type<u64>(), _ptr(m_lsptr, 0x3000), llvm::MaybeAlign{1});
+		const auto signature1 = m_ir->CreateAlignedLoad(
+			get_type<u64>(), _ptr(m_lsptr, 0x3008), llvm::MaybeAlign{1});
+		const auto is_edge0 = m_ir->CreateICmpEQ(signature0, m_ir->getInt64(0x82c07e4302244742));
+		const auto is_edge1 = m_ir->CreateICmpEQ(signature1, m_ir->getInt64(0x826d0142020f3e43));
+		const auto interp = llvm::BasicBlock::Create(m_context, "edge-event-interp", m_function);
+		const auto native = llvm::BasicBlock::Create(m_context, "edge-event-native", m_function);
+
+		m_ir->CreateCondBr(m_ir->CreateAnd(is_edge0, is_edge1), interp, native, m_md_unlikely);
+		m_ir->SetInsertPoint(interp);
+		emit_thor_edge_event_interp();
+		m_ir->SetInsertPoint(native);
+	}
+
 	void emit_thor_edge_event_interp()
 	{
 		update_pc();
@@ -4829,7 +4818,6 @@ public:
 			}
 		}
 
-		m_block->block_end = m_ir->GetInsertBlock();
 		call("thor_edge_event_interp", &exec_thor_edge_event_interp, m_thread);
 		m_ir->CreateUnreachable();
 	}

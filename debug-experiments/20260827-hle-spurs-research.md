@@ -3162,3 +3162,75 @@ cool gate, then run one bounded route with `EdgeEventInterp=on`. The route must
 show both WRCH entries, the event result, the interpreter exit at `0x08ca8`,
 and progress past the current event-flag wait. Correct 3D output and sustained
 30 FPS are still not proved.
+
+## 54. The edge event fallback needs a runtime task-image guard
+
+The Thor passed a strict cool gate. The no-launch installer then verified APK
+`033CCDA94908D9553ECF405E888E150CC0720DF719B3EB69E982F8B6A8ABCFBD` and
+kept RPCSX stopped. The post-install strict gate also passed. The evidence is
+in:
+
+    20260828-171827-thor-input-strict-cool-gate
+    20260828-171848-transformers-edge-event-interp-install
+    20260828-171904-thor-input-strict-cool-gate
+
+The first route preflight refused to start at 35.3 C. No title process ran.
+A later strict gate passed, and one bounded route ran with the event-helper
+interpreter handoff enabled. The captures are:
+
+    20260828-171936-thor-input-custom
+    20260828-172006-thor-input-strict-cool-gate
+    20260828-172033-thor-input-custom
+
+The route recorded 16 interpreter entries and 16 exits. All entries came from
+SPU 0 in `CellSpursKernel0`. Most exits were at PC `0x0a62c`, and one exit was
+at PC `0x0a520`. None came from edgeZlib. The SPURS kernel contains enough of
+the same instructions at the same addresses to satisfy the five-opcode
+compile-time test. Therefore, this test is not a valid task guard.
+
+The real edgeZlib task ran on SPU 2. It progressed through sample 24. Samples
+25 through 34 then stayed at PC `0x0a4d8`, link register `0x08ca8`,
+`r3=0x00000011`, `r4=0`, and `r5=0`. Its SPU state was 0, its thread group
+state was 6, and its SPURS running count was 6. The block count stayed at
+1801. The failure count stayed at 19. Its mailbox and interpreter counts all
+stayed at 0. The exact event counts were also zero:
+
+    Thor EDGE EVENT out-entry=0
+    Thor EDGE EVENT intr-entry=0
+    Thor EDGE EVENT result=0
+    Thor SPU EVENT=0
+
+The fallback mechanism can enter and leave the legacy interpreter on ARM64.
+The broad guard selected the wrong SPU program, so this run did not test the
+edgeZlib helper behavior.
+
+Draw samples had 0 calls at flips 120 and 240, 58 calls at flip 360, and 174
+calls at flip 480. All calls used primitive 8. The route mapped RSX addresses
+`0x50000000` and `0x50100000`. It did not map `0x70000000`. No fatal, signal
+11, task ELF load failure, LLVM verification failure, compilation failure, or
+crash marker occurred. Correct 3D output was absent.
+
+The thermal guard stopped the route at a package sample of 62.6 C. The highest
+junction sample was 72.3 C. Both values were below their hard limits. The PID
+was absent after the stop. Charging separation was restored to its original
+value of 0, and the display was put to sleep.
+
+The corrected compiler now tests the exact edgeZlib task image at runtime. At
+PC `0x0a4d8`, it compares the 16 local-store bytes at `0x03000` with the live
+edgeZlib signature. Only a match enters the interpreter handoff. The native
+path continues unchanged for the SPURS kernel and all other SPU programs. This
+runtime test also remains valid when a cached LLVM module serves more than one
+SPU program.
+
+The LFQueue route contract, Android debug build, ARM64 APK contract, and Git
+whitespace check passed. The corrected APK is 116,130,961 bytes and has this
+SHA-256:
+
+    636329905E6011C515C217F30B6FF9834F67E2EBCF28F83BC07C77ECB2E09D7A
+
+This APK is not installed. The next device work must start with a new strict
+cool gate. Install this exact APK without a title launch. Run another strict
+cool gate, then run one bounded route with `EdgeEventInterp=on`. The route must
+show no interpreter entries from `CellSpursKernel0`, an edgeZlib entry with
+link register `0x08ca8`, and progress through both WRCH operations. Correct 3D
+output and sustained 30 FPS are still not proved.
