@@ -9857,6 +9857,20 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				// TODO: check passing spup value
 				const auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN;
 
+				if (get_thor_spu_event_census() && pc == 0xa514 && is_thor_edge_zlib_spu(*this))
+				{
+					static std::atomic<u32> s_edge_event_result_count{0};
+					const u32 n = s_edge_event_result_count.fetch_add(1, std::memory_order_relaxed);
+
+					if (n < 16)
+					{
+						spu_log.error("Thor EDGE EVENT result #%u pc=0x%05x port=%u data0=0x%06x "
+							"data1=0x%08x result=0x%08x queue=0x%08x out=%u in=%u state=0x%08x",
+							n, pc, spup, value & 0x00ffffff, data, res + 0u, queue ? queue->id : 0,
+							ch_out_mbox.get_count(), ch_in_mbox.get_count(), state.load().toUnderlying());
+					}
+				}
+
 				if (get_thor_spu_event_census())
 				{
 					static std::atomic<u32> s_event_count{0};

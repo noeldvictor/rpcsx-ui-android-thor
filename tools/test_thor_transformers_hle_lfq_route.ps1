@@ -107,6 +107,7 @@ $requiredEventCensusFragments = @(
 	'pc == 0xa514',
 	'Thor EDGE EVENT out-entry #%u',
 	'Thor EDGE EVENT intr-entry #%u',
+	'Thor EDGE EVENT result #%u',
     'Thor SPU EVENT #%u'
 )
 

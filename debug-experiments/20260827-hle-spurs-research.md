@@ -3036,3 +3036,36 @@ APK without a title launch. Run another strict cool gate before one bounded
 route. The route must determine which exact mailbox handler is reached and use
 the corrected state fields to distinguish a scheduler suspension from a JIT
 stall. Correct 3D output and sustained 30 FPS are still not proved.
+
+## 51. The edge event result has its own quota
+
+The Thor passed a strict cool gate. The no-launch installer then verified APK
+`87E7C460241994B39C7268904C13ABCDED60FA23279B2D58DAF232FD53D29912` and
+kept RPCSX stopped. The evidence is in:
+
+    20260828-164302-thor-input-strict-cool-gate
+    20260828-164333-transformers-edge-wrch-corrected-install
+
+The post-install strict gate refused at 35.3 C. A later gate refused at
+36.5 C. RPCSX was force-stopped and no title route ran. The captures are:
+
+    20260828-164357-thor-input-strict-cool-gate
+    20260828-164436-thor-input-strict-cool-gate
+
+The general event-result census can consume its 32-record quota on unrelated
+SPU events. A separate bounded record now reports the result of the exact
+edgeZlib interrupt mailbox handler at PC `0x0a514`. It does not depend on the
+general quota. If its interrupt entry appears without its result, the event
+queue send did not return. If both appear, the result code and queue ID are
+available directly.
+
+The LFQueue route contract, Android debug build, ARM64 APK contract, and Git
+whitespace check passed. The new APK is 116,133,035 bytes and has this
+SHA-256:
+
+    5CC3FE43E189B42C044A8E0ED96C45FB654F7ED007EA0A114195C1C7AC67E058
+
+This APK is not installed. It supersedes the installed `87E7...9912` APK.
+The next device work must start with a new strict cool gate. Install this exact
+APK without a title launch. Run another strict cool gate before one bounded
+route. Correct 3D output and sustained 30 FPS are still not proved.
