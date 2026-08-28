@@ -846,3 +846,56 @@ about mechanisms inferred from partial state, so it is left as a question.
 The measurement stands on its own: delta 0x868 -> 0x1f6ca8 is a 240x increase
 in queued-but-unconsumed work, and it is the largest movement any change in
 this effort has produced.
+
+## 22. THE CONSUMER IS STARVED - measured per workload, event-based
+
+The producer fills the GCM heap and nothing drains it. The consumer is one of
+the title's workloads, so count SELECTIONS per workload id in the selector -
+event-based, because state sampling here is driven by DMA traffic that stops at
+the failure.
+
+Nine workloads created. Selections over a 30-second run:
+
+    w0 = 4        w2 = 120001       w6 = 7
+    w1, w3, w4, w5, w7, w8 = ZERO
+
+Cross-referenced against what each workload IS, from the ADDWKL log:
+
+    w0  pm=0x200      taskset (stub)       4 selections
+    w1  pm=0x2347200  JOB CHAIN, real      0
+    w2  pm=0x200      taskset (stub)       120001 selections
+    w3  pm=0x2390000  JOB CHAIN, real      0
+    w4  pm=0x2390000  JOB CHAIN, real      0
+    w5  pm=0x200      taskset (stub)       0
+    w6  pm=0x2390000  JOB CHAIN, real      7
+    w7  pm=0x200      taskset (stub)       0
+    w8  pm=0x200      taskset (stub)       0
+
+THREE OF THE FOUR JOB CHAIN WORKLOADS ARE NEVER SELECTED, and the fourth runs
+seven times in thirty seconds. One taskset takes 120,001 selections - better
+than 99.99% of all scheduling - and that is the workload already known to sit
+in a poll-and-yield loop consuming nothing.
+
+Job chains are what drain a GCM command buffer. They are starved.
+
+### Why this is the sharpest result here
+
+It connects every earlier measurement into one mechanism instead of a list:
+
+  - the GCM heap fills and never drains (delta 0x868 -> 0x1f6ca8)
+  - because the workloads that consume it are never scheduled
+  - while one polling taskset monopolises every SPU
+  - which is why 138,624 yields go nowhere, why exit stays 0, and why three
+    correct syscall fixes changed nothing - they were fixing the workload that
+    runs, not the ones that do not
+
+It is also the first finding that names something ACTIONABLE in our own code:
+the selection gate, which this effort has already touched twice for contention.
+
+### Not yet established
+
+WHY they are starved. Candidates worth checking in order: the priority table
+(the gate requires priority[i] != 0 per SPU, and a job chain with priority 0 on
+every SPU can never be picked), the contention cap, or readyCount never being
+raised for those workloads. All three are readable in the selector, and all
+three are event-loggable rather than sampled.

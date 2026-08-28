@@ -1649,6 +1649,39 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 	// If a real workload was ever selected, say so once per SPU. This is the
 	// event the whole HLE effort is waiting for.
+	// WHICH WORKLOADS ACTUALLY RUN, AND HOW OFTEN.
+	//
+	// The title queues ~2 MB of GCM command buffer that nothing drains. The
+	// producer works; the consumer does not. The consumer is one of these
+	// workloads, so count SELECTIONS per workload id - event-based, because
+	// state sampling here is driven by DMA traffic that stops at the failure.
+	// A workload with zero selections is never running at all.
+	{
+		static std::array<std::atomic<u32>, 32> s_sel_hist{};
+		static std::atomic<u32> s_sel_total{0};
+
+		if (wklSelectedId < 32)
+		{
+			s_sel_hist[wklSelectedId]++;
+		}
+
+		if ((s_sel_total++ % 20000) == 0)
+		{
+			char hist[256]{};
+			int off = 0;
+
+			for (u32 i = 0; i < 16; i++)
+			{
+				if (const u32 c = s_sel_hist[i].load())
+				{
+					off += std::snprintf(hist + off, sizeof(hist) - off, " w%u=%u", i, c);
+				}
+			}
+
+			cellSpurs.error("Thor SELHIST (sys=%u):%s", s_sel_hist[32 & 31].load(), hist);
+		}
+	}
+
 	if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD2)
 	{
 		static std::array<std::atomic<u32>, 8> s_real_sel{};
