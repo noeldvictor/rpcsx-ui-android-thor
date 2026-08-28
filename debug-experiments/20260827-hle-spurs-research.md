@@ -3490,5 +3490,20 @@ types. It copies the committed taskset line back to local store. A bounded
 exception probe records the full first bitmap words and contention values if
 the scheduler has a nonzero ready count but cannot select a task. The route
 property stays off by default. The atomic taskset request contract, event-flag
-contract, HLE route contract, and Git whitespace check pass. The candidate
-still needs an Android ARM64 build and one independently cool Thor run.
+contract, HLE route contract, and Git whitespace check pass.
+
+The Android ARM64 build passed. The exact diagnostic APK is 116,134,309 bytes
+and has this SHA-256:
+
+    743D48A47B17238EF1FEDCC01EE5EDAA15BE288E6A799DEA16A68D7D51E2378E
+
+The ARM64 APK contract passed. Two independent strict gates refused device
+work before installation or title launch. Their captures are:
+
+    20260828-183112-thor-input-strict-cool-gate
+    20260828-183552-thor-input-strict-cool-gate
+
+The first gate read 38.5 C at its first silicon sample. The second gate read
+38.9 C and then 40.1 C after the stop. The 35 C launch limit therefore remains
+in force. RPCSX stayed stopped. The candidate needs a later strict cool gate,
+an exact no-launch install, a post-install cool gate, and one bounded route.
