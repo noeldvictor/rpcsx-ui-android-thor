@@ -1104,3 +1104,19 @@ The guard now reads the raw `ppu_tname` pointer and requires that value to be
 The raw-name revision passed the ARM64 RelWithDebInfo build in 57 seconds and
 Debug APK assembly in 7 seconds. The exact APK is
 `AF09CCD9...3C868783`.
+
+The corrected LLE route used that exact APK and a verified device hash. Its
+startup profile recorded `hle_libs=none`, `hle_spurs_kernel=0`, all other SPURS
+experiment switches off, and `ppu_call_trace=2`. It emitted a complete
+`LLE_VOICE` block at 17.315 seconds:
+
+    count=2048 index=11919 sequence=9871..11918
+    emulation_id=1 previous_emulation_id=18446744073709551615
+
+The first and last retained calls are `sys_timer_usleep` at `0x009e4ba4` and
+`cellPadGetInfo2` at `0x02006a74`. The package sensor peaked at 64.2 C, below
+the 68 C immediate stop and 72 C hard limit. The capture is:
+
+    20260827-233144-thor-input-custom/post-RPCSX.log
+
+The HLE boundary still needs a separate cooled route before comparison.
