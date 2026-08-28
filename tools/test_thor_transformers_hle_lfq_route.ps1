@@ -8,10 +8,13 @@ $renderProbe = Get-Content -LiteralPath $renderProbePath -Raw
 $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
     '[string]$SpursSelectorFixes = "off"',
+    '[string]$TasksetSelectAtomic = "off"',
     '$lfqAny2AnyPropertyValue = if ($LfqAny2Any -eq "on") { "1" } else { "0" }',
     '$spursSelectorFixPropertyValue = if ($SpursSelectorFixes -eq "on") { "1" } else { "0" }',
+    '$tasksetSelectAtomicPropertyValue = if ($TasksetSelectAtomic -eq "on") { "1" } else { "0" }',
     '"- SPURS ANY2ANY LFQueue: $LfqAny2Any"',
     '"- SPURS selector repair pair: $SpursSelectorFixes"',
+    '"- SPURS taskset atomic selection: $TasksetSelectAtomic"',
     '"debug.rpcsx.thor.lfq_any2any"',
     '"setprop debug.rpcsx.thor.lfq_any2any $lfqAny2AnyPropertyValue"',
     '"getprop debug.rpcsx.thor.lfq_any2any"',
@@ -21,7 +24,13 @@ $requiredFragments = @(
     '"lfq-any2any-reset.txt"',
     '"spurs-selector-fixes-set.txt"',
     '"spurs-selector-fixes-effective.txt"',
-    '"setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue"'
+    '"setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue"',
+    '"debug.rpcsx.thor.taskset_select_atomic"',
+    '"setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue"',
+    '"getprop debug.rpcsx.thor.taskset_select_atomic"',
+    '"taskset-select-atomic-prelaunch-reset.txt"',
+    '"taskset-select-atomic-failure-reset.txt"',
+    '"taskset-select-atomic-reset.txt"'
 )
 
 foreach ($fragment in $requiredFragments) {
@@ -37,8 +46,10 @@ if ($macro.Contains('setprop debug.rpcsx.thor.lfq_any2any off')) {
 $requiredRenderProbeFragments = @(
     '[string]$LfqAny2Any = "off"',
     '[string]$SpursSelectorFixes = "off"',
+    '[string]$TasksetSelectAtomic = "off"',
     'LfqAny2Any = $LfqAny2Any',
     'SpursSelectorFixes = $SpursSelectorFixes',
+    'TasksetSelectAtomic = $TasksetSelectAtomic',
     'SpuCachePreloadLimit = 64',
     'SpuCacheCompileBudgetMs = 50',
     'CacheWorkerAffinityMask = 7'

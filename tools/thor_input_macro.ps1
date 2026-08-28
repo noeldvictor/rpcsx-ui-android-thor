@@ -55,6 +55,8 @@
     [string]$LfqAny2Any = "off",
     [ValidateSet("on", "off")]
     [string]$SpursSelectorFixes = "off",
+    [ValidateSet("on", "off")]
+    [string]$TasksetSelectAtomic = "off",
     [ValidateRange(0, 255)]
     [int]$CacheWorkerAffinityMask = 0,
     [ValidateSet("on", "off")]
@@ -89,6 +91,7 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
 $lfqAny2AnyPropertyValue = if ($LfqAny2Any -eq "on") { "1" } else { "0" }
 $spursSelectorFixPropertyValue = if ($SpursSelectorFixes -eq "on") { "1" } else { "0" }
+$tasksetSelectAtomicPropertyValue = if ($TasksetSelectAtomic -eq "on") { "1" } else { "0" }
 
 if ($ThermalRuntimeProbeWindowC -lt $ThermalRuntimeStopHeadroomC) {
     throw "ThermalRuntimeProbeWindowC must be greater than or equal to ThermalRuntimeStopHeadroomC."
@@ -1071,6 +1074,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- SPU startup native-object cache: $SpuNativeObjectCache",
     "- SPURS ANY2ANY LFQueue: $LfqAny2Any",
     "- SPURS selector repair pair: $SpursSelectorFixes",
+    "- SPURS taskset atomic selection: $TasksetSelectAtomic",
     "- Startup cache-worker affinity mask (unset=core default 0x07, explicit 0=ordinary scheduler): $(if ($PSBoundParameters.ContainsKey('CacheWorkerAffinityMask')) { $CacheWorkerAffinityMask } else { 'unset' })",
     "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Vulkan preload cache hits only: $VkPreloadCacheHitsOnly",
@@ -1106,6 +1110,7 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-prelaunch-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1166,6 +1171,7 @@ $spursProfilePropertyNames = @(
     "debug.rpcsx.thor.task_attr_fix",
     "debug.rpcsx.thor.task_ls_clear_fix",
     "debug.rpcsx.thor.taskset_enabled_fix",
+    "debug.rpcsx.thor.taskset_select_atomic",
     "debug.rpcsx.thor.taskset_snapshot_fix",
     "debug.rpcsx.thor.taskset_syscall_fix",
     "debug.rpcsx.thor.taskset_writeback_fix",
@@ -1229,6 +1235,8 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-effective.txt" @("shell", "getprop debug.rpcsx.thor.lfq_any2any") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-set.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-effective.txt" @("shell", 'printf "spurs_sel_cond_fix=%s\nspurs_signal_fix=%s\n" "$(getprop debug.rpcsx.thor.spurs_sel_cond_fix)" "$(getprop debug.rpcsx.thor.spurs_signal_fix)"') | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-set.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-effective.txt" @("shell", "getprop debug.rpcsx.thor.taskset_select_atomic") | Out-Null
     # Leave the property empty unless the caller asked for a specific mask, so a
     # plain run measures the core's own default instead of overriding it with 0.
     $cacheWorkerAffinityProperty = if ($PSBoundParameters.ContainsKey("CacheWorkerAffinityMask")) { "$CacheWorkerAffinityMask" } else { '""' }
@@ -1643,6 +1651,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-failure-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1669,6 +1678,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-reset.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-reset.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null

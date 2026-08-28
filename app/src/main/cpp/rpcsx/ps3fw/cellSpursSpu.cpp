@@ -423,6 +423,32 @@ static void thor_refresh_taskset_snapshot(spu_thread& spu, SpursTasksetContext* 
 	std::memcpy(spu._ptr<void>(0x2700), ctxt->taskset.get_ptr(), 128);
 }
 
+// SELECT A TASK WITH THE FIRMWARE RESERVATION CONTRACT.
+//
+// The taskset policy module at LS 0xE40 reads the 128-byte taskset head with
+// GETLLAR, updates it in local store, and retries PUTLLC until it succeeds.
+// The old HLE path reads and writes the six bitmaps without one transaction.
+// Two SPUs can therefore select the same waiting task from one signal.
+//
+// Keep this first repair narrow. Other request types still use the old path.
+// The route switch lets one APK test both behaviors.
+//
+//   debug.rpcsx.thor.taskset_select_atomic = 1  use the reservation contract
+static bool thor_taskset_select_atomic() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.taskset_select_atomic", v) > 0 &&
+			v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool thor_release_idle_taskset() noexcept
 {
 #ifdef ANDROID
@@ -3309,6 +3335,126 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 
 	s32 rc = CELL_OK;
 	s32 numNewlyReadyTasks = 0;
+
+	if (request == SPURS_TASKSET_REQUEST_SELECT_TASK && thor_taskset_select_atomic())
+	{
+		spurs_taskset_signal_op committed{};
+		u32 beforeRunning = 0;
+		u32 beforeWaiting = 0;
+		u32 beforeSignalled = 0;
+
+		vm::reservation_op(spu, vm::unsafe_ptr_cast<spurs_taskset_signal_op>(+ctxt->taskset),
+			[&](spurs_taskset_signal_op& op)
+			{
+				v128 waiting = reinterpret_cast<v128&>(op.waiting[0]);
+				v128 running = reinterpret_cast<v128&>(op.running[0]);
+				v128 ready = reinterpret_cast<v128&>(op.ready[0]);
+				v128 pready = reinterpret_cast<v128&>(op.pending_ready[0]);
+				v128 enabled = reinterpret_cast<v128&>(op.enabled[0]);
+				v128 signalled = reinterpret_cast<v128&>(op.signalled[0]);
+
+				beforeRunning = +op.running[0];
+				beforeWaiting = +op.waiting[0];
+				beforeSignalled = +op.signalled[0];
+
+				if ((waiting & running) != v128{} || (ready & pready) != v128{} ||
+					(gv_andn(enabled, running | ready | pready | signalled | waiting) != v128{}))
+				{
+					spu_log.error("Invalid taskset state in atomic SELECT_TASK");
+					spursHalt(spu);
+				}
+
+				const v128 newlyReadyTasks = gv_andn(ready, signalled | pready);
+				numNewlyReadyTasks = rx::popcnt128(newlyReadyTasks._u);
+
+				v128 signalled0 = signalled & (ready | pready);
+				v128 ready0 = signalled | ready | pready;
+				v128 readyButNotRunning = gv_andn(running, ready0);
+
+				if (op.wkl_flag_wait_task < CELL_SPURS_MAX_TASK)
+				{
+					readyButNotRunning._u &= ~(u128{1} << (~op.wkl_flag_wait_task & 127));
+				}
+
+				u8 selectedTaskId;
+				for (selectedTaskId = op.last_scheduled_task + 1; selectedTaskId < 128; selectedTaskId++)
+				{
+					if (readyButNotRunning._u & (u128{1} << (~selectedTaskId & 127)))
+					{
+						break;
+					}
+				}
+
+				if (selectedTaskId == 128)
+				{
+					for (selectedTaskId = 0; selectedTaskId < op.last_scheduled_task + 1; selectedTaskId++)
+					{
+						if (readyButNotRunning._u & (u128{1} << (~selectedTaskId & 127)))
+						{
+							break;
+						}
+					}
+
+					if (selectedTaskId == op.last_scheduled_task + 1)
+					{
+						selectedTaskId = CELL_SPURS_MAX_TASK;
+					}
+				}
+
+				*taskId = selectedTaskId;
+				if (selectedTaskId != CELL_SPURS_MAX_TASK)
+				{
+					const u128 selectedTaskIdMask = u128{1} << (~selectedTaskId & 127);
+					*isWaiting = waiting._u & selectedTaskIdMask ? 1 : 0;
+					op.last_scheduled_task = selectedTaskId;
+					running._u |= selectedTaskIdMask;
+					waiting._u &= ~selectedTaskIdMask;
+				}
+				else
+				{
+					*isWaiting = waiting._u & (u128{1} << 127) ? 1 : 0;
+				}
+
+				reinterpret_cast<v128&>(op.waiting[0]) = waiting;
+				reinterpret_cast<v128&>(op.running[0]) = running;
+				reinterpret_cast<v128&>(op.ready[0]) = ready0;
+				reinterpret_cast<v128&>(op.pending_ready[0]) = v128{};
+				reinterpret_cast<v128&>(op.enabled[0]) = enabled;
+				reinterpret_cast<v128&>(op.signalled[0]) = signalled0;
+				std::memcpy(&committed, &op, sizeof(committed));
+				return true;
+			});
+
+		// Keep the local-store snapshot equal to the cache line that won PUTLLC.
+		std::memcpy(spu._ptr<void>(0x2700), &committed, sizeof(committed));
+
+		{
+			static std::atomic<u32> s_atomic_selects{0};
+			if (const u32 n = s_atomic_selects++; n < 32)
+			{
+				cellSpurs.error("Thor TASKSET SELECT ATOMIC #%u: taskset=0x%x taskId=%u isWaiting=%u "
+					"before{run=%08x wait=%08x sig=%08x} after{run=%08x wait=%08x sig=%08x} spu=%u",
+					n, ctxt->taskset.addr(), *taskId, *isWaiting,
+					beforeRunning, beforeWaiting, beforeSignalled,
+					+committed.running[0], +committed.waiting[0], +committed.signalled[0], +ctxt->spuNum);
+			}
+		}
+
+		if (numNewlyReadyTasks)
+		{
+			auto spurs = kernelCtxt->spurs;
+			vm::light_op(spurs->readyCount(kernelCtxt->wklCurrentId), [&](atomic_t<u8>& val)
+				{
+					val.fetch_op([&](u8& value)
+						{
+							const s32 next = value + numNewlyReadyTasks;
+							value = static_cast<u8>(std::clamp<s32>(next, 0, 0xFF));
+						});
+				});
+		}
+
+		return rc;
+	}
 
 	// vm::reservation_op(vm::cast(ctxt->taskset.addr()), 128, [&]()
 	{

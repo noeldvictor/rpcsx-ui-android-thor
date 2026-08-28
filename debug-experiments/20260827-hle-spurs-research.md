@@ -2456,3 +2456,85 @@ It does not permit a hidden stale property to control the result.
 Do not run a second hardware route until the Thor passes a new strict cool
 gate. The next route must use the same exact APK with `lfq_any2any=on` and the
 paired selector repair on. It must capture a screenshot before its short stop.
+
+## 42. The paired selector route reaches the edgeZlib task set
+
+The Thor refused two strict gates before it cooled. The first gate measured
+39.3 C. The second gate measured 35.3 C. The third strict gate passed. The
+evidence is in:
+
+    20260828-142543-thor-input-strict-cool-gate
+    20260828-142827-thor-input-strict-cool-gate
+    20260828-142952-thor-input-strict-cool-gate
+
+One bounded route used the installed APK with this exact SHA-256:
+
+    3BF21BB4A4D440F81FE2184D8F4C8E468A5E7080B6AB0304B64866C41BF140FE
+
+The route enabled `lfq_any2any`, `spurs_sel_cond_fix`, and
+`spurs_signal_fix`. Its capture is:
+
+    20260828-143020-thor-input-custom
+
+The firmware LFQueue publication and notification path completed. It consumed
+token zero, sent a signal to task zero in edgeZlib task set `0x101b4e80`, and
+called `cellSpursWakeUp`. SPU 4 then selected workload zero at dispatch 31.
+SPU 1 also selected workload zero at dispatch 32 and returned to system
+service at dispatch 33. This result proves that the signal, wake-up, selector,
+and workload-selection paths now reach the edgeZlib task set.
+
+The edgeZlib task did not complete the load operation. The PoolThread still
+waited on event flag `0x01e54800`, and no event-flag set occurred. The route did
+not map RSX IO range `0x700000`. It mapped only `0x500000` and `0x600000`.
+Draw census samples at flips 120 and 240 had zero draws. The sample at flip
+360 had 23 primitive-8 draws. The sample at flip 480 had 143 primitive-8
+draws. These are loading-screen quads, not correct 3D output.
+
+The thermal guard stopped the process during the 8-second wait after silicon
+held at 63.0 C near the limit. The PID was absent after the stop. The route did
+not capture a screenshot. No second route ran in this thermal round.
+
+Ghidra located the embedded edgeZlib SPU ELF at guest address `0x0175c700` in
+the decrypted Transformers executable. The ELF entry at local-store address
+`0x3050` initializes the task and calls worker `0x8840`. That worker calls the
+loop at `0x30a8`. The loop calls queue helpers `0x8e98` and `0x8d80`, task-state
+helpers `0x88b8`, `0x8870`, and `0x88d8`, and the task-exit wrapper `0xa318`.
+This result sets the current boundary at task dispatch or task completion.
+
+Ghidra also resolved the real firmware task-set request function at
+local-store address `0x0e40`. The policy module gets the first 128-byte taskset
+line with GETLLAR command `0xd0`, changes the task state in local store, and
+publishes it with PUTLLC command `0xb4`. It retries when the reservation fails.
+The EXIT, YIELD, WAIT, and POLL syscall paths call this function. This is direct
+evidence that task-state selection must be one atomic transaction.
+
+The live route had two SPUs select workload zero after one task signal. This is
+consistent with duplicate task selection, but it is not proof. Current RPCS3
+master and the current ARMSX3 master still have the task-set reservation and
+writeback code disabled. They do not contain an implementation to port. The
+arXiv SCQ and wCQ papers describe separate reservation and publication for
+concurrent queues, but they do not specify the Sony ABI:
+
+    https://arxiv.org/abs/1908.04511
+    https://arxiv.org/abs/2201.02179
+
+A new default-off route property is now available:
+
+    debug.rpcsx.thor.taskset_select_atomic
+
+When this property is on, SELECT_TASK reads and publishes the six task bitmaps
+and `last_scheduled_task` in one 128-byte reservation transaction. It copies
+the committed line to local-store address `0x2700`, as the firmware does. It
+also writes a bounded selection trace. Other request types still use the old
+path. The route, firmware-contract, selector-contract, and new atomic-selection
+tests passed. The Android debug build passed.
+
+The new APK is 116,132,150 bytes and has this SHA-256:
+
+    01AA0B23412EE0BC5431D48770C83BDE6525E0D74B7E82F28B86B462668463D6
+
+This APK is not installed. Correct 3D output and sustained 30 FPS are still not
+proved. After the Thor passes a new strict cool gate, install this exact APK
+without a title launch. Run a second strict gate. Then run one bounded route
+with the firmware LFQueue path, the paired selector repairs, and atomic task
+selection on. Do not run a second route in the same thermal round.

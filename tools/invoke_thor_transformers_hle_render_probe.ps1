@@ -6,7 +6,9 @@ param(
     [ValidateSet("on", "off")]
     [string]$LfqAny2Any = "off",
     [ValidateSet("on", "off")]
-    [string]$SpursSelectorFixes = "off"
+    [string]$SpursSelectorFixes = "off",
+    [ValidateSet("on", "off")]
+    [string]$TasksetSelectAtomic = "off"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,6 +78,7 @@ $macroParameters = [ordered]@{
     SpuNativeObjectCache = "on"
     LfqAny2Any = $LfqAny2Any
     SpursSelectorFixes = $SpursSelectorFixes
+    TasksetSelectAtomic = $TasksetSelectAtomic
     CacheWorkerAffinityMask = 7
     ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
     BootGame = $true
