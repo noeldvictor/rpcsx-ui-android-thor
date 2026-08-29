@@ -516,16 +516,28 @@ function Invoke-ThorControlPause {
         throw "Could not forward the Thor control port."
     }
 
-    try {
-        $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause" -TimeoutSec 8
-    } catch {
-        throw "Could not pause RPCSX through the Thor control API: $($_.Exception.Message)"
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $attempt = 0
+    while ($timer.ElapsedMilliseconds -lt 8000) {
+        $attempt++
+        try {
+            $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause" -TimeoutSec 2
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) response=$($response | ConvertTo-Json -Compress)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-pause.log") -Append -Encoding UTF8
+            if ($response.ok -and $response.paused) {
+                $response | ConvertTo-Json -Compress |
+                    Set-Content -LiteralPath (Join-Path $captureDir "control-pause.json") -Encoding UTF8
+                return
+            }
+        } catch {
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) error=$($_.Exception.Message)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-pause.log") -Append -Encoding UTF8
+        }
+
+        Assert-ThorDeviceThermalGuardAlive
+        Start-Sleep -Milliseconds 100
     }
-    $response | ConvertTo-Json -Compress |
-        Set-Content -LiteralPath (Join-Path $captureDir "control-pause.json") -Encoding UTF8
-    if (-not $response.ok -or -not $response.paused) {
-        throw "The Thor control API did not confirm the paused state."
-    }
+    throw "The Thor control API did not confirm the paused state within 8000 ms."
 }
 
 function Save-ThorScreenshot {
