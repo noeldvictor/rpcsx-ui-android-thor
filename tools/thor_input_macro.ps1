@@ -23,7 +23,7 @@
     [double]$ThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(1, 5)]
     [int]$ThermalPollIntervalSeconds = 2,
-    [ValidateSet("full", "fast")]
+    [ValidateSet("full", "fast", "device")]
     [string]$ThermalRuntimeTelemetry = "full",
     [ValidateRange(0, 20)]
     [double]$ThermalRuntimeStopHeadroomC = 4.0,
@@ -97,6 +97,10 @@ $tasksetSelectAtomicPropertyValue = if ($TasksetSelectAtomic -eq "on") { "1" } e
 
 if ($ThermalRuntimeProbeWindowC -lt $ThermalRuntimeStopHeadroomC) {
     throw "ThermalRuntimeProbeWindowC must be greater than or equal to ThermalRuntimeStopHeadroomC."
+}
+
+if ($ThermalRuntimeTelemetry -eq "device" -and -not $BootGame) {
+    throw "Device runtime thermal telemetry requires -BootGame."
 }
 
 if ($Profile -eq "strict-cool-gate") {
@@ -570,6 +574,82 @@ function Get-ThorTemperatureSnapshot {
 
 $script:ExpectedThorPackageProcessId = $null
 $script:ThorFullThermalBaseline = $null
+$script:ThorDeviceThermalGuardProcess = $null
+$script:ThorDeviceThermalGuardOutput = $null
+$script:ThorDeviceThermalGuardError = $null
+
+function Start-ThorDeviceThermalGuard {
+    if ($ThermalRuntimeTelemetry -ne "device") {
+        return
+    }
+
+    # Prove that the exact device-side list still matches the full preflight
+    # source set before the asynchronous guard can authorize any runtime work.
+    Assert-ThorThermalBudget "device-guard-source-check" -FastTelemetry -PassThru | Out-Null
+
+    $localGuard = Join-Path $PSScriptRoot "thor_device_thermal_guard.sh"
+    $remoteGuard = "/data/local/tmp/rpcsx-thor-thermal-guard.sh"
+    Invoke-ThorAdbText $Adb $captureDir "device-thermal-guard-push.txt" @("push", $localGuard, $remoteGuard) | Out-Null
+
+    $script:ThorDeviceThermalGuardOutput = Join-Path $captureDir "device-thermal-guard.log"
+    $script:ThorDeviceThermalGuardError = Join-Path $captureDir "device-thermal-guard.stderr.log"
+    $siliconStopMilliC = [int](($MaxSiliconTemperatureC - $ThermalRuntimeStopHeadroomC) * 1000)
+    $siliconHardMilliC = [int]($MaxSiliconTemperatureC * 1000)
+    $junctionHardMilliC = 95000
+    $batteryHardMilliC = [int]($MaxBatteryTemperatureC * 1000)
+    $guardArguments = @(
+        "-s", $Serial, "shell", "sh", $remoteGuard, $Package,
+        "$siliconStopMilliC", "$siliconHardMilliC", "$junctionHardMilliC",
+        "$batteryHardMilliC", "$MaxSkinTemperatureC"
+    )
+
+    $script:ThorDeviceThermalGuardProcess = Start-Process -FilePath $Adb `
+        -ArgumentList $guardArguments -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $script:ThorDeviceThermalGuardOutput `
+        -RedirectStandardError $script:ThorDeviceThermalGuardError
+    Start-Sleep -Milliseconds 250
+    if ($script:ThorDeviceThermalGuardProcess.HasExited) {
+        $guardText = if (Test-Path -LiteralPath $script:ThorDeviceThermalGuardOutput) {
+            Get-Content -LiteralPath $script:ThorDeviceThermalGuardOutput -Raw
+        } else { "no output" }
+        throw "The device thermal guard exited before boot: $guardText"
+    }
+}
+
+function Assert-ThorDeviceThermalGuardAlive {
+    if ($ThermalRuntimeTelemetry -ne "device" -or $null -eq $script:ThorDeviceThermalGuardProcess) {
+        return
+    }
+    if (-not $script:ThorDeviceThermalGuardProcess.HasExited) {
+        return
+    }
+
+    $guardText = if (Test-Path -LiteralPath $script:ThorDeviceThermalGuardOutput) {
+        (Get-Content -LiteralPath $script:ThorDeviceThermalGuardOutput -Raw).Trim()
+    } else { "no output" }
+    if ($guardText -match 'status=failed') {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "The device thermal guard stopped RPCSX: $guardText"
+    }
+}
+
+function Stop-ThorDeviceThermalGuard {
+    if ($null -eq $script:ThorDeviceThermalGuardProcess) {
+        return
+    }
+
+    if (-not $script:ThorDeviceThermalGuardProcess.HasExited) {
+        $script:ThorDeviceThermalGuardProcess.WaitForExit(5000) | Out-Null
+    }
+    try {
+        if (-not $script:ThorDeviceThermalGuardProcess.HasExited) {
+            $script:ThorDeviceThermalGuardProcess.Kill()
+            $script:ThorDeviceThermalGuardProcess.WaitForExit()
+        }
+    } catch [System.InvalidOperationException] {
+        # The process exited between the state check and Kill().
+    }
+}
 
 function Get-ThorPackageProcessId {
     $processIdLines = @(& $Adb shell pidof $Package 2>$null)
@@ -779,6 +859,11 @@ function Assert-ThorRuntimeThermalBudget {
         return
     }
 
+    if ($ThermalRuntimeTelemetry -eq "device") {
+        Assert-ThorDeviceThermalGuardAlive
+        return
+    }
+
     $snapshot = Assert-ThorThermalBudget $Stage -FastTelemetry:($ThermalRuntimeTelemetry -eq "fast") -PassThru
     $decisionParams = @{
         Snapshot = $snapshot
@@ -868,6 +953,13 @@ function Assert-ThorThermalPreflight {
 
 function Wait-ThorThermallyBounded {
     param([int]$Milliseconds)
+
+    if ($ThermalRuntimeTelemetry -eq "device") {
+        Start-Sleep -Milliseconds $Milliseconds
+        Assert-ThorDeviceThermalGuardAlive
+        Assert-ThorProcessIdentity "wait-$Milliseconds-ms"
+        return
+    }
 
     $remaining = $Milliseconds
     while ($remaining -gt 0) {
@@ -1066,6 +1158,11 @@ function Assert-ThorInstalledApkIdentity {
 
 $resolvedMacro = Get-ThorMacroForProfile $Profile
 
+if ($ThermalRuntimeTelemetry -eq "device" -and -not $StopAfterMacro -and
+    $resolvedMacro -notmatch '(?:^|;)\s*stop\s*(?:;|$)') {
+    throw "Device runtime thermal telemetry requires a stop token or -StopAfterMacro."
+}
+
 @(
     "# Thor Input Macro",
     "",
@@ -1247,6 +1344,7 @@ $script:ThorDebugBootRequested = $false
 try {
 Assert-ThorInstalledApkIdentity
 Assert-ThorThermalPreflight "pre-run"
+Start-ThorDeviceThermalGuard
 
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-set.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers $RsxCacheWorkers") | Out-Null
@@ -1647,6 +1745,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     if ($ForceStop -or $BootGame -or $tokens -contains 'stop') {
         Invoke-ThorAdbText $Adb $captureDir "macro-failure-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     }
+    Stop-ThorDeviceThermalGuard
 
     if ($ForceStop -and -not $BootGame -and -not $PostSnapshot) {
         Invoke-ThorAdbText $Adb $captureDir "failure-pid.txt" @("shell", "pidof $Package") -AllowFailure | Out-Null
@@ -1699,6 +1798,8 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
 
     throw $failure
 }
+
+Stop-ThorDeviceThermalGuard
 
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
