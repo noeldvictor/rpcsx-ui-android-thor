@@ -4373,3 +4373,34 @@ The strict gate read 45.3 C. The probe started at 52.6 C, reached 69.5 C, and
 stopped normally. HLE SPURS now produces stable, full-speed startup output.
 The result does not prove title-menu or gameplay speed. The next run must move
 past the legal screen and verify the next interactive state.
+
+## 93. Direct Start moves past the legal screen
+
+Online research confirmed two useful controls. The RPCS3 compatibility list
+classifies BLUS30357 as playable. A public PS3 boot report says that Start can
+skip the opening credits. The first local tests used Android virtual gamepad
+input. The input macro already warns that this route can drop a button while a
+title is visibly ready.
+
+Commit `b6a68b5be` makes the dedicated Transformers probe use the app-owned
+direct pad route by default. The LFQueue-route, device-guard, contention-claim,
+idle-contention, and pause contracts passed. This is a host probe change and
+does not change the installed APK.
+
+Capture `20260829-041456-thor-input-custom` stopped before any Start input. A
+first 3.6-second slice raised fixed silicon to 72.3 C, and the device guard
+stopped RPCSX. No emulator fault occurred. Later routes divide the same work
+into 2-second slices.
+
+Capture `20260829-042354-thor-input-custom` used six 2-second startup slices
+and one `direct:start` action. The final frame was different from the legal
+screen. It was a dark transition at 29.83 FPS. Its SHA-256 is
+`8C67AFEF81E09CDABAD8315311157CDD896950F3CA771EAB155D7742FAD4DF7F`.
+Fixed silicon reached 71.1 C. RPCSX stopped normally, with no access violation,
+verification failure, or native fatal error.
+
+Capture `20260829-042945-thor-input-custom` added four post-Start work slices.
+The final image was still black and kept the old pause toast. Its 29.65 FPS
+value has no speed credit. The active-time total is close to the earlier
+23.49-second loading-output boundary from section 64. The next route must add
+one cooled work slice before it captures the post-Start state.
