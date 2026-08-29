@@ -4551,3 +4551,37 @@ The 2 to 4 FPS screenshot values have no speed credit because the runtime
 census was enabled and each active interval was only two seconds. The next
 proof must disable the census, continue beyond the black transition, inspect
 the next visible screen, and measure an unpaused active interval.
+
+## 97. The first edge-Zlib batch completes
+
+Capture `20260829-063618-thor-input-custom` used the exact APK with SHA-256
+`AF5AB723AAE104579FEB5E3903EBA10C74E100186CBBA86FF3058DABA9835642`.
+It enabled the bounded SPURS atomic census. It kept the runtime census off and
+used ten cooled post-Start slices. All three direct Start pulses were accepted.
+
+The first LFQueue notification woke workload 0 and task 0 in taskset
+`0x101b4e80`. SPU 3 then performed two atomic pairs on queue `0x101b1f80`.
+The edge event interpreter completed five calls. The pool thread advanced the
+queue pop count from zero to five. These rows prove that the first loader batch
+now completes.
+
+The next queue push changed the pop state to `pop{5,0,0422,5}`. It issued the
+second LFQueue notification. The event path set the task signal bit and the
+workload signal. The gate row reported state 2, current contention 0, pending
+contention 0, and maximum contention 8. No later atomic pair on queue
+`0x101b1f80` appears in the capture. Thus, the second workload or task selection
+is the current boundary. The old event-signal `SRCH` is not this boundary. It
+occurs later when the title removes a separate Bink taskset.
+
+Visual inspection of `01-post-start-20.png` shows the Transformers loading
+emblem. Its SHA-256 is
+`2AFB8A93E06AB4DD2FBA5A471156FA03A49B5966D97E81FFCD80C540B5BA09FD`.
+The image includes a pause notice, and its FPS value has no speed credit. The
+capture contains no access violation, verification failure, native crash, or
+fatal thread stop. The launch sample was 44.1 C. Fixed silicon reached 66.2 C,
+and the maximum junction sample was 83.5 C. RPCSX stopped normally.
+
+The next APK adds two bounded records. One record shows each selector that sees
+or selects workload 0. The other record shows the task state after each atomic
+selection for workload 0. This will show whether the second signal is lost at
+the workload gate or whether the taskset returns no selectable task.

@@ -307,6 +307,25 @@ static bool thor_hle_spurs_diagnostics() noexcept
 }
 #endif
 
+// Record the narrow Transformers edge-Zlib scheduling boundary without the
+// high-volume general SPURS probe. This is a bounded diagnostic only.
+//
+//   debug.rpcsx.thor.edge_task_census = 1
+static bool thor_edge_task_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.edge_task_census", value) > 0 &&
+			value[0] && value[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 // Gate for the wklSignal clear fix. **DEFAULT OFF - the fix REGRESSES HLE.**
 //
 //   debug.rpcsx.thor.spurs_signal_fix = 0  original unguarded shift (default)
@@ -1423,6 +1442,31 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			// could not hit this: during a poll it only fired when nothing
 			// changed. Widening the commit means narrowing the clear to match.
 			const bool consumeSignal = !thor_spurs_sel_cond_fix() || !isPoll;
+
+			// The first edge-Zlib signal completes one loader batch. The next
+			// signal is consumed but no further queue atomic appears. Record each
+			// selector that sees or chooses workload 0 so the next capture can
+			// distinguish a lost workload signal from a failed task selection.
+			if (thor_edge_task_census() &&
+				(wklSelectedId == 0 || (spurs->wklSignal1.load() & 0x8000u)))
+			{
+				static std::atomic<u32> s_edge_wkl_selects{0};
+				const u32 n = s_edge_wkl_selects++;
+
+				if (n < 32)
+				{
+					cellSpurs.error("Thor EDGE WKL SELECT #%u: selected=%u current=%u isPoll=%u pollStatus=0x%x "
+						"commit=%u consume=%u signal1=%04x gate{runnable=%u prio=%u max=%u cont=%u ready=%u idle=%u} "
+						"contention{shared=%u pending=%u local=%u localPending=%u} spu=%u",
+						n, wklSelectedId, +ctxt->wklCurrentId, +isPoll, pollStatus,
+						commitSelection ? 1u : 0u, consumeSignal ? 1u : 0u, +spurs->wklSignal1.load(),
+						(ctxt->wklRunnable1 & 0x8000u) ? 1u : 0u, +ctxt->priority[0],
+						+spurs->wklMaxContention[0], +contention[0], +spurs->wklReadyCount1[0],
+						+spurs->wklIdleSpuCountOrReadyCount2[0], +spurs->wklCurrentContention[0],
+						+spurs->wklPendingContention[0], +ctxt->wklLocContention[0],
+						+ctxt->wklLocPendingContention[0], +ctxt->spuNum);
+				}
+			}
 
 			if (commitSelection)
 			{
@@ -3599,6 +3643,27 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 					n, ctxt->taskset.addr(), *taskId, *isWaiting,
 					beforeRunning, beforeWaiting, beforeSignalled,
 					+committed.running[0], +committed.waiting[0], +committed.signalled[0], +ctxt->spuNum);
+			}
+
+			// Keep this quota independent of the general startup census. Workload
+			// 0 owns the edge-Zlib taskset in BLUS30357, and its second wake occurs
+			// after the general 32-line quota is exhausted.
+			if (thor_edge_task_census() && kernelCtxt->wklCurrentId == 0)
+			{
+				static std::atomic<u32> s_edge_task_selects{0};
+				const u32 n = s_edge_task_selects++;
+
+				if (n < 32)
+				{
+					cellSpurs.error("Thor EDGE TASK SELECT #%u: taskset=0x%x taskId=%u isWaiting=%u "
+						"before{run=%08x wait=%08x sig=%08x} after{run=%08x wait=%08x sig=%08x} "
+						"ready=%08x pready=%08x enabled=%08x readyCount=%u spu=%u",
+						n, ctxt->taskset.addr(), *taskId, *isWaiting,
+						beforeRunning, beforeWaiting, beforeSignalled,
+						+committed.running[0], +committed.waiting[0], +committed.signalled[0],
+						+committed.ready[0], +committed.pending_ready[0], +committed.enabled[0],
+						+kernelCtxt->spurs->readyCount(kernelCtxt->wklCurrentId).load(), +ctxt->spuNum);
+				}
 			}
 		}
 
