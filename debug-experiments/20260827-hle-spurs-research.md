@@ -6713,3 +6713,74 @@ rendering progress.
   census once. Require a confirmed control handshake, the native gate-release
   line, and active guest work. Stop at the second late-loader completion sample,
   then map the live edgeZlib PC with Ghidra.
+
+## 137. A running bit strands the later EDGE task
+
+- Status: android-pass, diagnostic, not-comparable
+- Scope: HLE-SPURS, event-delivery, asynchronous-loader, thermal-safety
+- Hypothesis: The repaired slice control will reach the later loader marker and
+  place the missing EDGE producer at a live SPU PC or a taskset state.
+- Changed files/settings: The run used exact installed APK
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  size 116,143,682 bytes, and host commit `8918c4ead`. It used the experiment
+  136 HLE stack, the bounded SPU PC and atomic censuses, the EDGE event-wait
+  trace, 0.5-second slices, one cold sample below 70 C, three later-resume
+  samples below 60 C, a 66 C device hold, and 72 C and 95 C hard limits.
+- Thor result: The cold-start gate passed at 44.5 C fixed silicon. The native
+  Ready gate was confirmed through the repaired control forward and released
+  once. The controller completed 70 slices and reached its 600-second host
+  limit without the requested second late-loader marker. It accumulated
+  44.279 active seconds. Active windows were 0.578 to 0.750 seconds. Cooldown
+  waits totaled 146 seconds. This proves active HLE execution and correct
+  startup control, but it does not prove loader completion.
+- Event evidence: The task dispatched correct events through sequence 281.
+  The PoolThread then armed request sequence 283, but the event-dispatch count
+  stayed at 281. Three samples aged the same active wait from 44.096100 to
+  241.450353 seconds with a zero dispatch delta. This is the same missing-
+  producer class as experiment 132, with a different sequence because boot
+  timing changed.
+- Taskset evidence: Workload 0 owns edgeZlib taskset `0x101b4e80`, task 0,
+  queue `0x101b1f80`, and event flag `0x01e54800`. Its last logged workload
+  dispatch was on SPU 1 at 4:14.181. At 4:50.299, SPU 5 entered the taskset but
+  selected no task. The state was `running=80000000`, `ready=80000000`,
+  `signalled=80000000`, `waiting=00000000`, and ready count one. Shared and
+  local contention were both one. The new task signal was present, but the
+  running bit excluded task 0 from `readyButNotRunning`, so the dispatcher
+  exited without running the producer.
+- SPU PC evidence: Six bounded edgeZlib samples landed at PCs `0x05c3c`,
+  `0x07168`, `0x044f0`, `0x06a88`, `0x08be8`, and `0x07c00` before the stall.
+  No edgeZlib PC was resident at any later performance sample while sequence
+  283 waited. This is evidence that the task was absent at those sample times,
+  not that it spun at one guest PC.
+- Static evidence: A read-only Ghidra pass over the exact captured edgeZlib
+  local store mapped the six live PCs. Five are normal task or decompression
+  control paths. PC `0x08be8` writes MFC channel 21 and then reads channel 27
+  in the proved event-flag reservation path. It continues to the event helper
+  at `0x0a4d8`. None of the six anchors is a persistent wait loop. Do not patch
+  the guest task body from these samples.
+- Visual correctness: Not proved. The route did not reach the screenshot
+  marker. No moving gameplay output exists.
+- FPS/frame-time: No sustained-performance credit. Paused-slice intervals
+  reported 0.70, 1.05, 0.00, and 0.14 FPS. They are not a comparable moving-
+  gameplay measurement.
+- Thermal result: The controller maximum was 64.6 C fixed silicon. The
+  independent device guard recorded 1,036 temperature rows, with a 69.9 C
+  fixed-silicon maximum and an 85.1 C junction maximum. It recorded no hold
+  state and no hard stop. The final live values were 60.2 C fixed silicon and
+  77.0 C junction.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared 57 values and found zero remaining
+  `debug.rpcsx.thor.*` values. Final fixed-silicon values were 52.2 C after
+  stop and 53.0 C after cleanup.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-173756-thor-input-custom` and
+  `debug-captures/ghidra-edge-zlib-pc-census-20260829/live-pcs-173756-ghidra.txt`.
+- Decision: Keep the event flag, completion word, and guest task code
+  unchanged. The next repair boundary is the HLE taskset running-owner
+  invariant. Add a bounded owner census before any recovery. Do not clear a
+  running bit until the HLE path proves that no SPU owns that task.
+- Next: Record the taskset address, task ID, SPU, HLE task state, and running
+  bitmap at task start, task syscall, taskset exit, and idle-ready selection.
+  Use that evidence to repair the exact lost-owner transition. Require moving
+  3D output and a comparable sustained 30 FPS measurement before a full-HLE
+  or performance claim.
