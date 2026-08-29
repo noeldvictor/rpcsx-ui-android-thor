@@ -4310,3 +4310,40 @@ The runtime guard did not fire, and RPCSX stopped normally. The log contains
 981 `cellSpursQueuePushBody` warning rows during 12.6 seconds of guest time.
 The next change must remove this hot-path warning cost before another active
 FPS measurement.
+
+## 91. The HLE legal frame reaches the 30 FPS cap
+
+Commit `f0331ae8a` changes the per-call `cellSpursQueuePushBody` record from
+warning level to trace level. A focused source contract prevents the hot call
+from returning to warning level. The contention-claim, idle-contention, and
+pause contracts passed. The full Android debug build and the ARM64 APK contract
+also passed.
+
+Exact APK
+`4A176356229D56C8BF3A73EA1C7FFF08428386112D35A80FC5E59C4F0998BD22`
+is 116,135,330 bytes. The exact no-launch installation is in:
+
+    20260829-035620-thor-input-strict-cool-gate
+    20260829-035636-transformers-queue-log-budget-install
+
+The install gate read 43.7 C. The host and installed APK hashes matched, and
+RPCSX was not active after installation.
+
+Capture `20260829-035705-thor-input-custom` repeated the exact four-slice
+cadence from section 90. The first two active screenshots were black. The third
+active screenshot showed the complete Unreal and PhysX legal screen with no
+pause toast. Its overlay reported 29.98 FPS. The previous equivalent active
+legal frame reported 13.69 FPS. The fourth screenshot contained the pause toast
+and has no speed credit.
+
+The complete log contains no per-call queue-push warning rows. It contains 19
+sampled queue-ring rows and eight workload-7 event sets. The two workload-7
+idle rows kept shared contention at 1 while one task was running. There was no
+redispatch storm. No access violation, verification failure, or native fatal
+error occurred.
+
+The probe started at 44.5 C. Fixed silicon reached 68.2 C and stayed below the
+72 C runtime stop limit. RPCSX stopped normally. This proves an active visible
+HLE frame at the 30 FPS cap. It does not yet prove a sustained 30 FPS interval.
+The next proof must take two or more active FPS samples from one visible
+interval.
