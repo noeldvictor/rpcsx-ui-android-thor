@@ -574,9 +574,31 @@ function Get-ThorTemperatureSnapshot {
 
 $script:ExpectedThorPackageProcessId = $null
 $script:ThorFullThermalBaseline = $null
-$script:ThorDeviceThermalGuardProcess = $null
+$script:ThorDeviceThermalGuardPowerShell = $null
+$script:ThorDeviceThermalGuardAsync = $null
+$script:ThorDeviceThermalGuardText = $null
 $script:ThorDeviceThermalGuardOutput = $null
 $script:ThorDeviceThermalGuardError = $null
+
+function Complete-ThorDeviceThermalGuard {
+    if ($null -ne $script:ThorDeviceThermalGuardText) {
+        return $script:ThorDeviceThermalGuardText
+    }
+
+    $outputLines = @()
+    try {
+        $outputLines = @($script:ThorDeviceThermalGuardPowerShell.EndInvoke($script:ThorDeviceThermalGuardAsync) |
+            ForEach-Object { $_.ToString() })
+    } catch {
+        $outputLines += "status=host-completion-error message=$($_.Exception.Message)"
+    }
+    $errorLines = @($script:ThorDeviceThermalGuardPowerShell.Streams.Error |
+        ForEach-Object { $_.ToString() })
+    $outputLines | Set-Content -LiteralPath $script:ThorDeviceThermalGuardOutput -Encoding UTF8
+    $errorLines | Set-Content -LiteralPath $script:ThorDeviceThermalGuardError -Encoding UTF8
+    $script:ThorDeviceThermalGuardText = ($outputLines -join [Environment]::NewLine).Trim()
+    return $script:ThorDeviceThermalGuardText
+}
 
 function Start-ThorDeviceThermalGuard {
     if ($ThermalRuntimeTelemetry -ne "device") {
@@ -603,30 +625,30 @@ function Start-ThorDeviceThermalGuard {
         "$batteryHardMilliC", "$MaxSkinTemperatureC"
     )
 
-    $script:ThorDeviceThermalGuardProcess = Start-Process -FilePath $Adb `
-        -ArgumentList $guardArguments -PassThru -WindowStyle Hidden `
-        -RedirectStandardOutput $script:ThorDeviceThermalGuardOutput `
-        -RedirectStandardError $script:ThorDeviceThermalGuardError
+    # Use an in-process runspace because this workspace can expose both Path
+    # and PATH. Windows PowerShell Start-Process rejects that environment.
+    $script:ThorDeviceThermalGuardPowerShell = [PowerShell]::Create()
+    $null = $script:ThorDeviceThermalGuardPowerShell.AddCommand($Adb)
+    foreach ($argument in $guardArguments) {
+        $null = $script:ThorDeviceThermalGuardPowerShell.AddArgument([string]$argument)
+    }
+    $script:ThorDeviceThermalGuardAsync = $script:ThorDeviceThermalGuardPowerShell.BeginInvoke()
     Start-Sleep -Milliseconds 250
-    if ($script:ThorDeviceThermalGuardProcess.HasExited) {
-        $guardText = if (Test-Path -LiteralPath $script:ThorDeviceThermalGuardOutput) {
-            Get-Content -LiteralPath $script:ThorDeviceThermalGuardOutput -Raw
-        } else { "no output" }
+    if ($script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        $guardText = Complete-ThorDeviceThermalGuard
         throw "The device thermal guard exited before boot: $guardText"
     }
 }
 
 function Assert-ThorDeviceThermalGuardAlive {
-    if ($ThermalRuntimeTelemetry -ne "device" -or $null -eq $script:ThorDeviceThermalGuardProcess) {
+    if ($ThermalRuntimeTelemetry -ne "device" -or $null -eq $script:ThorDeviceThermalGuardAsync) {
         return
     }
-    if (-not $script:ThorDeviceThermalGuardProcess.HasExited) {
+    if (-not $script:ThorDeviceThermalGuardAsync.IsCompleted) {
         return
     }
 
-    $guardText = if (Test-Path -LiteralPath $script:ThorDeviceThermalGuardOutput) {
-        (Get-Content -LiteralPath $script:ThorDeviceThermalGuardOutput -Raw).Trim()
-    } else { "no output" }
+    $guardText = Complete-ThorDeviceThermalGuard
     if ($guardText -match 'status=failed') {
         & $Adb shell am force-stop $Package | Out-Null
         throw "The device thermal guard stopped RPCSX: $guardText"
@@ -634,21 +656,18 @@ function Assert-ThorDeviceThermalGuardAlive {
 }
 
 function Stop-ThorDeviceThermalGuard {
-    if ($null -eq $script:ThorDeviceThermalGuardProcess) {
+    if ($null -eq $script:ThorDeviceThermalGuardPowerShell) {
         return
     }
 
-    if (-not $script:ThorDeviceThermalGuardProcess.HasExited) {
-        $script:ThorDeviceThermalGuardProcess.WaitForExit(5000) | Out-Null
+    if (-not $script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        $script:ThorDeviceThermalGuardAsync.AsyncWaitHandle.WaitOne(5000) | Out-Null
     }
-    try {
-        if (-not $script:ThorDeviceThermalGuardProcess.HasExited) {
-            $script:ThorDeviceThermalGuardProcess.Kill()
-            $script:ThorDeviceThermalGuardProcess.WaitForExit()
-        }
-    } catch [System.InvalidOperationException] {
-        # The process exited between the state check and Kill().
+    if (-not $script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        $script:ThorDeviceThermalGuardPowerShell.Stop()
     }
+    Complete-ThorDeviceThermalGuard | Out-Null
+    $script:ThorDeviceThermalGuardPowerShell.Dispose()
 }
 
 function Get-ThorPackageProcessId {
