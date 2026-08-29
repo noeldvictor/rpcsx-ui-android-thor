@@ -2,6 +2,7 @@ param(
     [string]$Label = "",
     [string]$Package = "net.rpcsx.easy",
     [string]$OutRoot = "debug-captures",
+    [string]$Serial = "",
     [int]$LogcatLines = 30000,
     [switch]$Prepare,
     [switch]$Launch,
@@ -13,6 +14,27 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Get-ThorRepoRoot
 $Adb = Resolve-ThorAdb
+
+$onlineSerials = @(
+    & $Adb devices 2>&1 |
+        Select-Object -Skip 1 |
+        Where-Object { $_ -match '^\S+\s+device(?:\s|$)' } |
+        ForEach-Object { ($_ -split '\s+')[0] }
+)
+$requestedSerial = $Serial
+if ([string]::IsNullOrWhiteSpace($requestedSerial)) {
+    $requestedSerial = $env:ANDROID_SERIAL
+}
+if ([string]::IsNullOrWhiteSpace($requestedSerial)) {
+    if ($onlineSerials.Count -ne 1) {
+        throw "Expected exactly one online Android device. Pass -Serial when more than one device is online: $($onlineSerials -join ', ')"
+    }
+    $requestedSerial = $onlineSerials[0]
+} elseif ($requestedSerial -notin $onlineSerials) {
+    throw "Requested Android device '$requestedSerial' is not online. Online devices: $($onlineSerials -join ', ')"
+}
+$DeviceSerial = $requestedSerial.Trim()
+$env:ANDROID_SERIAL = $DeviceSerial
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $safeLabel = New-ThorSafeLabel $Label
 $CaptureDir = Join-Path $RepoRoot (Join-Path $OutRoot "$timestamp-$safeLabel")
@@ -36,7 +58,7 @@ if ($Prepare) {
         "When the issue is visible, run:",
         "",
         '```powershell',
-        ".\tools\collect_thor_debug.ps1 -Label $safeLabel",
+        ".\tools\collect_thor_debug.ps1 -Label $safeLabel -Serial $DeviceSerial",
         '```'
     ) | Set-Content -LiteralPath (Join-Path $CaptureDir "README.md") -Encoding UTF8
 
@@ -97,6 +119,7 @@ try {
     "- Captured: $(Get-Date -Format o)",
     "- Label: $safeLabel",
     "- Package: $Package",
+    "- Device serial: $DeviceSerial",
     "- Repo: $head",
     '- Device logs: `logcat-full.txt`, `logcat-interesting.txt`, `device-files/cache/RPCSX.log`',
     '- Start here: `rpcsx-log-errors.txt`, then `activity.txt`, then `cache-summary.txt`.',

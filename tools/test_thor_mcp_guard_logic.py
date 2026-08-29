@@ -131,12 +131,44 @@ assert all(item["targetC"] == 70 for item in loop_cool_requests), (
 stops = []
 loop_slices.clear()
 SERVER._matching_log_lines = lambda match, count=1: (
-    ["verification failure"] if match == "Verification failed" else []
+    ["out-of-memory failure"] if match == "Out of memory" else []
 )
 SERVER.t_stop = lambda _: stops.append(True) or {"quiet": True}
 result = SERVER.t_slice_loop({"seconds": 0.5, "maxSlices": 2})
-assert result["fatal"] == "Verification failed", "The slice loop missed a fatal log."
+assert result["fatal"] == "Out of memory", "The slice loop missed an out-of-memory log."
 assert stops == [True], "The slice loop did not use the verified fatal stop."
+
+property_rows = [
+    "[debug.rpcsx.thor.alpha]: [on]",
+    "[debug.rpcsx.thor.empty]: []",
+    "[debug.other.value]: [keep]",
+    "[debug.rpcsx.thor.beta]: [7]",
+]
+cleared_properties = []
+
+
+def property_shell(command, timeout=120):
+    if command == "getprop":
+        return "\n".join(
+            row for row in property_rows
+            if not any(row.startswith(f"[{name}]") for name in cleared_properties)
+        )
+    match = __import__("re").match(r"setprop (debug\.rpcsx\.thor\.[A-Za-z0-9_.-]+) ''$", command)
+    assert match, f"Property cleanup used an unsafe command: {command}"
+    cleared_properties.append(match.group(1))
+    return ""
+
+
+SERVER.sh = property_shell
+SERVER.pid = lambda: None
+result = SERVER.t_clearprops({})
+assert result["beforeCount"] == 2, "Property cleanup included empty or unrelated values."
+assert result["clearedCount"] == 2 and result["remainingCount"] == 0, (
+    "Property cleanup did not clear and audit the Thor property namespace."
+)
+SERVER.pid = lambda: "123"
+result = SERVER.t_clearprops({})
+assert result["refused"] is True, "Property cleanup changed a running experiment."
 
 clock.now = 0.0
 prepare_paused_guest()

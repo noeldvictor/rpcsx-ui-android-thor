@@ -32,6 +32,7 @@ It never writes a game profile. Propose only.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -592,7 +593,8 @@ def t_slice_loop(a):
                                      "the bounded slice did not end paused"),
                            "slice": part})
 
-        for fatal_match in ("Access violation", "Verification failed"):
+        for fatal_match in ("Access violation", "Verification failed", "Fatal",
+                            "FATAL", "Out of memory"):
             fatal_lines = _matching_log_lines(fatal_match)
             if fatal_lines:
                 stop = t_stop({})
@@ -711,6 +713,36 @@ def t_setprop(a):
     return {"name": name, "requested": value, "readback": sh(f"getprop {name}").strip()}
 
 
+def _nonempty_thor_properties():
+    rows = []
+    pattern = re.compile(r"^\[(debug\.rpcsx\.thor\.[A-Za-z0-9_.-]+)\]: \[(.*)\]$")
+    for line in sh("getprop").splitlines():
+        match = pattern.match(line.strip())
+        if match and match.group(2):
+            rows.append({"name": match.group(1), "value": match.group(2)})
+    return rows
+
+
+def t_clearprops(_):
+    """Clear all nonempty Thor experiment properties after a stopped run."""
+    running_pid = pid()
+    if running_pid:
+        return {"refused": True,
+                "reason": "stop the emulator before property cleanup",
+                "pid": running_pid}
+
+    before = _nonempty_thor_properties()
+    for row in before:
+        sh(f"setprop {row['name']} ''")
+    remaining = _nonempty_thor_properties()
+    remaining_names = {row["name"] for row in remaining}
+    cleared = [row["name"] for row in before
+               if row["name"] not in remaining_names]
+    return {"beforeCount": len(before), "clearedCount": len(cleared),
+            "cleared": cleared, "remainingCount": len(remaining),
+            "remaining": remaining}
+
+
 def t_stop(_):
     """Stop, and KEEP stopping. One force-stop loses to the app's respawn: the
     device once climbed 56 -> 79 -> 95 C after a stop that reported success,
@@ -747,6 +779,7 @@ TOOLS = [
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),
     ("thor_setprop", "Set a debug property and read it back, so an arm cannot silently run unset.", {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name"]}, t_setprop),
+    ("thor_clearprops", "Clear all nonempty debug.rpcsx.thor properties after the emulator has stopped, then audit the result.", {"type": "object", "properties": {}}, t_clearprops),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
 ]
 HANDLERS = {name: fn for name, _, _, fn in TOOLS}

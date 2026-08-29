@@ -32,11 +32,14 @@ foreach ($required in @(
     '"hostDeadlineReached": True',
     '"hostElapsedS"',
     '"includeState": False',
-    'for fatal_match in ("Access violation", "Verification failed"):',
+    'for fatal_match in ("Access violation", "Verification failed", "Fatal",',
+    '"FATAL", "Out of memory"):',
     '"Thor: SPURS shutdown completion event mask"',
     '("thor_slice",',
     '("thor_slice_loop",',
     '("thor_wait_cool_paused",'
+    'def t_clearprops(_):',
+    '("thor_clearprops",'
 )) {
     if (-not $server.Contains($required)) {
         throw "The Thor MCP fixed-silicon guard is missing '$required'."
