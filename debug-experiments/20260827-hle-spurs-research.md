@@ -6586,9 +6586,10 @@ rendering progress.
   handoff.
 - Thor result: The one-sample cold-start gate passed at 44.9 C fixed silicon.
   The controller again refused before a slice because the earlier boot state
-  was not `Paused`, `Ready`, or `Starting`. The RPCSX state enum identifies the
-  remaining valid early state as `Loading`. The route completed zero slices
-  and produced no HLE, PC, visual, or performance evidence.
+  was not observed as `Paused`, `Ready`, or `Starting`. The native log proves
+  that RPCSX reached its start-paused `Ready` gate, so a transient control API
+  status failure is also possible. The route completed zero slices and
+  produced no HLE, PC, visual, or performance evidence.
 - Thermal result: The independent guard recorded 16 samples. Fixed silicon
   peaked at 52.6 C, and CPU junction peaked at 68.2 C. No hold or hard stop
   occurred.
@@ -6598,9 +6599,11 @@ rendering progress.
   and cleanup.
 - Capture path:
   `debug-captures/android-speed-sprint/20260829-165711-thor-input-custom`.
-- Decision: Keep the HLE stack unchanged. The opt-in startup handoff now covers
-  both `Loading` and `Starting`. The default call still refuses both. A future
-  refusal records its numeric initial state, process-hold state, and permission
-  value.
+- Decision: Keep the HLE stack unchanged. When the caller explicitly permits a
+  startup handoff and the PID is live, the slice controller now process-holds
+  `Loading`, `Running`, `Starting`, or a transient unavailable status before
+  the first cooldown. It still refuses `Stopped`, `Stopping`, and `Frozen`,
+  and the default call still requires `Paused` or `Ready`. A future refusal
+  records its numeric initial state, process-hold state, and permission value.
 - Next: Repeat the producer census in a separate cool round. Do not give this
   zero-slice route any HLE or FPS credit.

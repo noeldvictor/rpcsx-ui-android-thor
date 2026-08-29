@@ -77,10 +77,14 @@ SERIAL = os.environ.get("THOR_SERIAL", "192.168.1.3:5555")
 PORT = int(os.environ.get("THOR_CTRL_PORT", "8099"))
 PKG = "net.rpcsx.easy"
 FILES = f"/storage/emulated/0/Android/data/{PKG}/files"
+EMU_STATE_STOPPED = 0
+EMU_STATE_LOADING = 1
+EMU_STATE_STOPPING = 2
+EMU_STATE_RUNNING = 3
 EMU_STATE_PAUSED = 4
+EMU_STATE_FROZEN = 5
 EMU_STATE_READY = 6
 EMU_STATE_STARTING = 7
-EMU_STATE_LOADING = 1
 _process_hold_pid = None
 
 
@@ -675,10 +679,12 @@ def t_slice_loop(a):
     process_held = held_process_pid() == p
     initial_state = EMU_STATE_STARTING if process_held else emulation_state()
     allow_starting = bool(a.get("allowStarting", False))
-    startup_state = initial_state in (EMU_STATE_LOADING, EMU_STATE_STARTING)
+    paused_state = initial_state in (EMU_STATE_PAUSED, EMU_STATE_READY)
+    invalid_startup_state = initial_state in (
+        EMU_STATE_STOPPED, EMU_STATE_STOPPING, EMU_STATE_FROZEN)
     if (not process_held and
-            initial_state not in (EMU_STATE_PAUSED, EMU_STATE_READY) and
-            not (allow_starting and startup_state)):
+            not paused_state and
+            (not allow_starting or invalid_startup_state)):
         return {"refused": True,
                 "reason": "the emulator must be paused before a slice loop",
                 "initialState": initial_state,
@@ -707,7 +713,7 @@ def t_slice_loop(a):
                            "resumeTargetC must be below maxSiliconC")}
 
     initial_process_hold = None
-    if not process_held and startup_state:
+    if not process_held and not paused_state:
         initial_process_hold = stop_process_for_slice(p)
         if not initial_process_hold.get("ok"):
             stop = t_stop({})

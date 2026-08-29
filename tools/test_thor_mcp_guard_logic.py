@@ -352,6 +352,18 @@ assert result["initialProcessHold"]["processState"] == "T", (
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
 
+startup_process_state["value"] = "R"
+SERVER.emulation_state = lambda: None
+startup_holds.clear()
+result = SERVER.t_slice_loop({
+    "seconds": 0.5, "maxSlices": 1, "allowStarting": True,
+})
+assert result["markerReached"] is True and startup_holds == ["123"], (
+    "The explicit startup handoff rejected a transient status failure."
+)
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
 clock.now = 0.0
 prepare_paused_guest()
 loop_slices = []
