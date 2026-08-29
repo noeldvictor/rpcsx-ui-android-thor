@@ -3194,7 +3194,7 @@ s32 cellSpursRemoveWorkload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
 
 s32 cellSpursWakeUp(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
-	cellSpurs.warning("cellSpursWakeUp(spurs=*0x%x)", spurs);
+	cellSpurs.trace("cellSpursWakeUp(spurs=*0x%x)", spurs);
 
 	if (!spurs)
 	{
@@ -4138,7 +4138,7 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 /// Wait for SPURS event flag
 s32 cellSpursEventFlagWait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag, vm::ptr<u16> mask, u32 mode)
 {
-	cellSpurs.warning("cellSpursEventFlagWait(eventFlag=*0x%x, mask=*0x%x, mode=%d)", eventFlag, mask, mode);
+	cellSpurs.trace("cellSpursEventFlagWait(eventFlag=*0x%x, mask=*0x%x, mode=%d)", eventFlag, mask, mode);
 
 	return _spurs::event_flag_wait(ppu, eventFlag, mask, mode, 1);
 }
@@ -4146,7 +4146,7 @@ s32 cellSpursEventFlagWait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFla
 /// Check SPURS event flag
 s32 cellSpursEventFlagTryWait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag, vm::ptr<u16> mask, u32 mode)
 {
-	cellSpurs.warning("cellSpursEventFlagTryWait(eventFlag=*0x%x, mask=*0x%x, mode=0x%x)", eventFlag, mask, mode);
+	cellSpurs.trace("cellSpursEventFlagTryWait(eventFlag=*0x%x, mask=*0x%x, mode=0x%x)", eventFlag, mask, mode);
 
 	return _spurs::event_flag_wait(ppu, eventFlag, mask, mode, 0);
 }
@@ -4380,7 +4380,7 @@ error_code _cellSyncLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> que
 // called from different sites within 30 ms of each other.
 s32 _cellSpursLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 isBlocking)
 {
-	cellSpurs.warning("_cellSpursLFQueuePushBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+	cellSpurs.trace("_cellSpursLFQueuePushBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
 
 	return SyncErrorToSpursError(static_cast<s32>(_cellSyncLFQueuePushBody(ppu, queue, buffer, isBlocking)));
 }
@@ -4399,7 +4399,7 @@ s32 cellSpursLFQueueDetachLv2EventQueue(vm::ptr<CellSyncLFQueue> queue)
 
 s32 _cellSpursLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<void> buffer, u32 isBlocking)
 {
-	cellSpurs.warning("_cellSpursLFQueuePopBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+	cellSpurs.trace("_cellSpursLFQueuePopBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
 
 	return SyncErrorToSpursError(static_cast<s32>(_cellSyncLFQueuePopBody(ppu, queue, buffer, isBlocking)));
 }
@@ -6859,7 +6859,7 @@ s32 cellSpursTasksetUnsetExceptionEventHandler(vm::ptr<CellSpursTaskset> taskset
 
 s32 cellSpursLookUpTasksetAddress(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::pptr<CellSpursTaskset> taskset, u32 id)
 {
-	cellSpurs.warning("cellSpursLookUpTasksetAddress(spurs=*0x%x, taskset=**0x%x, id=0x%x)", spurs, taskset, id);
+	cellSpurs.trace("cellSpursLookUpTasksetAddress(spurs=*0x%x, taskset=**0x%x, id=0x%x)", spurs, taskset, id);
 
 	if (!taskset)
 	{

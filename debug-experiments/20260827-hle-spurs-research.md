@@ -5143,3 +5143,54 @@ rendering progress.
   the guest is paused. Correlate the last PPU PCs, SPURS task state, queue-ring
   counters, PUT census, and draw census after taskset `0x1158d800` starts. Make
   no new source repair until that evidence identifies the blocked contract.
+
+## 110. The short reuse run exposes a SPURS call-log flood
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: A bounded slice run will pass the safe taskset-reuse boundary and
+  identify the next blocked SPURS contract.
+- Changed files/settings: The run used candidate APK SHA-256
+  `756978BFFD348CA7553A38BB690BC4A28880EE19C5C984BF6568CDD91748CB2B`,
+  size 116,142,297 bytes. It used the same 53-property HLE repair stack as
+  section 109. The exact no-launch install and all property readbacks passed.
+  The host successor changes six hot SPURS call records from warning to trace
+  and adds a source contract for their log levels. It does not change HLE
+  behavior.
+- Rollback: RPCSX was stopped. The stop check found no PID and no RPCSX row.
+  Fixed silicon was 50.6 C after the stop. All 59 nonempty
+  `debug.rpcsx.thor.*` properties were cleared, and the audit found zero values.
+- Windows result: Six focused source contracts passed. They cover the new hot
+  call log budget, event-flag wait, queue logging, workload signalling, taskset
+  join, and shutdown completion. `git diff --check` passed.
+- Thor result: The fixed-silicon gate passed at 42.9 C. Boot started at 42.1 C.
+  The host invocation did not retain the long-running controller session. The
+  controller stopped after about 30 host seconds, and the guest stayed paused.
+  A later state read found fixed silicon at 72.3 C, above the 72 C hard limit.
+  RPCSX was stopped at once. This is a host-orchestration and thermal failure.
+  It is not a comparable emulator result.
+- HLE evidence: The rendering taskset at `0x1f73f00` shut down and joined. The
+  shutdown-completion mask was delivered, and the same address was created
+  again after workload removal. This reconfirms section 109. The log ended at
+  about 1:18 guest time, before taskset `0x1158d800` appeared. Draws increased
+  from zero to 387 and were still increasing when the run stopped. The target
+  late boundary was not reached.
+- Visual correctness: Not proved. No screenshot was taken in this run. The log
+  shows loading-route progress only.
+- FPS/frame-time: No credit. A state query reported 16.8 FPS while the guest was
+  paused and the thermal guard was active. This is not a valid scene or window.
+- Capture paths: `20260829-111529-thor-input-strict-cool-gate`,
+  `20260829-111549-transformers-post-reuse-stall-install`, and
+  `20260829-111951-transformers-post-reuse-stall-thermal-stop`.
+- Log-flood evidence: `cellSpursWakeUp` wrote 8,322 records,
+  `cellSpursEventFlagWait` wrote 748, `_cellSpursLFQueuePushBody` wrote 747,
+  and `cellSpursLookUpTasksetAddress` wrote 653. These four records account for
+  10,470 lines. The first three alone use about 1.39 MB of the 2.13 MB log.
+  Their call-entry records are diagnostic data, not errors. The successor moves
+  them and the paired try-wait and LFQueue-pop records to trace level.
+- Decision: Keep the atomic shutdown repair. Accept only the log-level cleanup
+  as the offline successor. Do not claim full HLE, gameplay, or a speed gain.
+- Next: Build the successor. In a later independently cool round, start below
+  70 C and stop at 72 C. Keep the controller process attached. Require the
+  `0x1158d800` boundary, later draw and PUT progress, a correct 3D image, and a
+  comparable 30 FPS scene before any full-HLE or performance claim.
