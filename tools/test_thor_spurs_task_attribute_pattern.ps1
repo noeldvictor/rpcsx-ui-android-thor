@@ -14,15 +14,17 @@ if ($source.Contains($oldTail)) {
     throw "The task attribute initializer still treats stale r9 and r10 as arguments."
 }
 
-$copy = 'const CellSpursTaskLsPattern caller_pattern ='
-$clear = 'std::memset(attribute.get_ptr(), 0, sizeof(CellSpursTaskAttribute));'
-$copyIndex = $source.IndexOf($copy, [System.StringComparison]::Ordinal)
-$clearIndex = $source.IndexOf($clear, [System.StringComparison]::Ordinal)
-if ($copyIndex -lt 0 -or $clearIndex -lt 0 -or $copyIndex -gt $clearIndex) {
-    throw "The caller LS pattern must be copied before the attribute buffer is cleared."
+$oldAttributeCopy = '*vm::cptr<CellSpursTaskLsPattern>::make(attribute.addr())'
+if ($source.Contains($oldAttributeCopy)) {
+    throw "The initializer still reads the LS pattern from the opaque attribute buffer."
 }
 
 $requiredFragments = @(
+    'vm::check_addr(resolved_context, vm::page_info_t::page_readable, 12)',
+    'const u32 indirect_pattern_ea = descriptor[2];',
+    'resolved_pattern_ea = indirect_pattern_ea;',
+    'vm::check_addr(resolved_pattern_ea, vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern));',
+    'caller_pattern = *vm::cptr<CellSpursTaskLsPattern>::make(resolved_pattern_ea);',
     'const u32 caller_blocks = rx::popcnt128(caller_pattern_128._u);',
     '(caller_pattern_128 & v128::from32r(0xFC000000)) != v128::from32(0);',
     'caller_blocks == alloc_blocks && !caller_uses_management;',

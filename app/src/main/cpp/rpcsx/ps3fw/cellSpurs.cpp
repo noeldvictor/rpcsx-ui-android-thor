@@ -6163,9 +6163,8 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 // ## The private HLE layout
 //
 // `CellSpursTaskAttribute` is declared `u8 reserved[256]` - an OPAQUE buffer.
-// The caller uses its first 16 bytes to build the LS pattern before the
-// initializer. The initializer saves that pattern and then installs the private
-// HLE view. The exit-code setter modifies the view, and the creator reads it.
+// The initializer installs the private HLE view. The exit-code setter modifies
+// the view, and the creator reads it.
 //
 // The view carries a magic, so an uninitialized buffer is detected instead of
 // being read silently.
@@ -6174,8 +6173,9 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 //
 // The decrypted BLUS30357 caller sets r3 through r8 immediately before the
 // import call. It does not set r9 or r10. The six values are attribute,
-// revision, SDK version, ELF, context pair, and the direct context size. The raw
-// GPR log remains as a check for other titles.
+// revision, SDK version, ELF, context descriptor, and the direct context size.
+// The descriptor carries {context, size, LS-pattern address}. The raw GPR log
+// remains as a check for other titles.
 struct thor_spurs_task_attr
 {
 	static constexpr u32 c_magic = 0x54415454; // 'TATT'
@@ -6391,13 +6391,6 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 
 	const auto view = vm::ptr<thor_spurs_task_attr>::make(attribute.addr());
 
-	// The caller builds the LS pattern in the first 16 bytes of the opaque
-	// attribute before this call. Save it before the private HLE view replaces
-	// the buffer. Ghidra shows that the call sets only r3 through r8. The values
-	// in r9 and r10 are stale and are not pattern or argument pointers.
-	const CellSpursTaskLsPattern caller_pattern =
-		*vm::cptr<CellSpursTaskLsPattern>::make(attribute.addr());
-
 	std::memset(attribute.get_ptr(), 0, sizeof(CellSpursTaskAttribute));
 
 	view->magic = thor_spurs_task_attr::c_magic;
@@ -6419,9 +6412,10 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	//
 	// Two big-endian u32s: 0x10370080 and 0x0003d400. The first IS 128-byte
 	// aligned. The second is 0x3d400, which is the very constant create_task
-	// compares the context size against. So r7 points at a {context, size} pair
-	// rather than being the context, and reading through it produces values that
-	// satisfy every check that direct use fails.
+	// compares the context size against. The third u32 is the LS-pattern address.
+	// So r7 points at a {context, size, pattern} descriptor rather than being the
+	// context, and reading through it produces values that satisfy every check
+	// that direct use fails.
 	//
 	// That is inferred from ONE title. So it is applied only when the indirection
 	// actually looks right, the direct reading is kept as the fallback, and the
@@ -6429,6 +6423,7 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	// show itself immediately instead of silently creating a broken task.
 	u32 resolved_context = static_cast<u32>(ea_context);
 	u32 resolved_size = size_context;
+	u32 resolved_pattern_ea = 0;
 	const char* how = "direct";
 
 	// A ZERO-SIZE CONTEXT IS NO CONTEXT.
@@ -6449,25 +6444,28 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	//   debug.rpcsx.thor.task_attr_fix = 0 restores the previous behaviour
 	// RETRACTED: "sizeContext == 0 means no context".
 	//
-	// r8 is 0, but r7 points at a {context, size} pair reading {0x10989380,
-	// 0x1c00} - a 128-byte aligned address and a sane size - so the context is
-	// REAL and the indirection below finds it. Dropping it gave tasks no save
-	// area, and measured over three runs the draw count fell from 914 quads to
-	// 0 while task starts rose 2 -> 3. The only garbage in this call is the
-	// unaligned ls_pattern, which is handled further down.
+	// r8 is 0, but r7 points at a descriptor whose first two fields read
+	// {0x10989380, 0x1c00} - a 128-byte aligned address and a sane size - so the
+	// context is REAL and the indirection below finds it. Dropping it gave tasks
+	// no save area, and measured over three runs the draw count fell from 914
+	// quads to 0 while task starts rose 2 -> 3. The old code read r9 as the LS
+	// pattern address. Ghidra proves that r9 is stale and the descriptor field is
+	// the real source.
 	if (resolved_context && (resolved_context % 128) != 0 &&
-		vm::check_addr(resolved_context, vm::page_info_t::page_readable, 8))
+		vm::check_addr(resolved_context, vm::page_info_t::page_readable, 12))
 	{
-		const auto pair = vm::ptr<be_t<u32>>::make(resolved_context);
-		const u32 indirect_ea = pair[0];
-		const u32 indirect_size = pair[1];
+		const auto descriptor = vm::ptr<be_t<u32>>::make(resolved_context);
+		const u32 indirect_ea = descriptor[0];
+		const u32 indirect_size = descriptor[1];
+		const u32 indirect_pattern_ea = descriptor[2];
 
 		if (indirect_ea && (indirect_ea % 128) == 0 && indirect_size >= CELL_SPURS_TASK_EXECUTION_CONTEXT_SIZE &&
 			vm::check_addr(indirect_ea, vm::page_info_t::page_readable, 128))
 		{
 			resolved_context = indirect_ea;
 			resolved_size = indirect_size;
-			how = "indirect via {context,size} pair";
+			resolved_pattern_ea = indirect_pattern_ea;
+			how = "indirect via {context,size,pattern} descriptor";
 		}
 	}
 
@@ -6475,28 +6473,39 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	{
 		// Still unusable. A null context is LEGAL and means "no save area", which
 		// beats handing create_task an address it will reject outright.
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: context 0x%x is not 128-byte aligned and no valid pair was found, continuing without a context", resolved_context);
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: context 0x%x is not 128-byte aligned and no valid descriptor was found, continuing without a context", resolved_context);
 		resolved_context = 0;
 		resolved_size = 0;
 		how = "dropped";
 	}
 
-	cellSpurs.error("_cellSpursTaskAttributeInitialize: context resolved %s -> ea=0x%x size=0x%x", how, resolved_context, resolved_size);
+	cellSpurs.error("_cellSpursTaskAttributeInitialize: context resolved %s -> ea=0x%x size=0x%x pattern=0x%x",
+		how, resolved_context, resolved_size, resolved_pattern_ea);
 
 	view->ea_context = resolved_context;
 	view->size_context = resolved_size;
 
 	// The local title helpers first derive a pattern from the ELF load segments.
-	// They then add the stack range and calculate the context size from the set
-	// bit count. Therefore, a real caller pattern uses no SPURS management block
-	// and its bit count equals the number of blocks in the context allocation.
+	// They then add the stack range, store the pattern address at descriptor
+	// offset 8, and calculate the context size from the set bit count. Therefore,
+	// a real caller pattern uses no SPURS management block and its bit count
+	// equals the number of blocks in the context allocation.
+	CellSpursTaskLsPattern caller_pattern{};
+	const bool caller_pattern_readable = resolved_pattern_ea && !(resolved_pattern_ea & 0xFu) &&
+		vm::check_addr(resolved_pattern_ea, vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern));
+
+	if (caller_pattern_readable)
+	{
+		caller_pattern = *vm::cptr<CellSpursTaskLsPattern>::make(resolved_pattern_ea);
+	}
+
 	const u32 alloc_blocks = resolved_size > 0x3D400u ? 0x7Au
 		: (resolved_size >= 0x400u ? ((resolved_size - 0x400u) >> 11) : 0u);
 	const v128 caller_pattern_128 = v128::from64r(caller_pattern._u64[0], caller_pattern._u64[1]);
 	const u32 caller_blocks = rx::popcnt128(caller_pattern_128._u);
 	const bool caller_uses_management =
 		(caller_pattern_128 & v128::from32r(0xFC000000)) != v128::from32(0);
-	const bool caller_pattern_ok = resolved_context && alloc_blocks &&
+	const bool caller_pattern_ok = caller_pattern_readable && resolved_context && alloc_blocks &&
 		caller_blocks == alloc_blocks && !caller_uses_management;
 
 	if (caller_pattern_ok)
@@ -6524,7 +6533,7 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 		// the ELF only when the pattern is exactly this, which is blocks 6..127 -
 		// the whole task area with the six SPURS management blocks masked off.
 		// It is 122 blocks, exactly alloc_ls_blocks for the 0x3d400 context the
-		// pair-indirection reads, so it satisfies both create_task checks and
+		// descriptor indirection reads, so it satisfies both create_task checks and
 		// makes a resumed task restore its full state.
 		//
 		// The full pattern only fits a context that can hold 122 blocks. This
