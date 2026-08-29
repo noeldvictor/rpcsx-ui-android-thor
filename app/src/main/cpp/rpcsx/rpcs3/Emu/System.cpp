@@ -3192,6 +3192,10 @@ void Emulator::Resume()
 			}
 
 			m_pause_msgs_refs.clear();
+
+			// A static guest frame does not request a new presentation. Present the
+			// cleared native UI so that the pause message does not stay on screen.
+			rsx::set_native_ui_flip();
 		});
 
 	if (g_cfg.misc.prevent_display_sleep)
