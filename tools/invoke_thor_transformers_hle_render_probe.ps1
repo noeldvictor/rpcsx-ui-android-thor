@@ -26,6 +26,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$SpursProbe = "off",
     [ValidateSet("on", "off")]
+    [string]$SpursAtomicCensus = "off",
+    [ValidateSet("on", "off")]
     [string]$RuntimeCensus = "off",
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$InputMode = "Direct",
@@ -66,7 +68,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.ppu_cached_rtime_fix" = if ($PpuCachedRtimeFix -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.pm_capture" = "0"
     "debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
-    "debug.rpcsx.thor.spurs_atomic_census" = "0"
+    "debug.rpcsx.thor.spurs_atomic_census" = if ($SpursAtomicCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_event_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }
