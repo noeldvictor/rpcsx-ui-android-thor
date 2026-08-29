@@ -372,12 +372,17 @@ def continue_process_for_slice(p):
     if held_process_pid() != p:
         return {"ok": False, "pid": p,
                 "error": "the recorded process hold is not active"}
-    sh(f"run-as {PKG} kill -CONT {p}")
-    state = _process_state(p)
-    if state in ("T", "t"):
-        return {"ok": False, "pid": p, "processState": state}
+    acknowledgement = sh(
+        f"run-as {PKG} kill -CONT {p} && echo __THOR_CONTINUED__")
+    if "__THOR_CONTINUED__" not in acknowledgement:
+        return {"ok": False, "pid": p,
+                "error": "the process continue signal was not acknowledged"}
+    # Clear the old hold before the status read. The independent deadline can
+    # set it again while this ADB read is in flight.
     _process_hold_pid = None
-    return {"ok": True, "pid": p, "processState": state}
+    state = _process_state(p)
+    return {"ok": True, "pid": p, "processState": state,
+            "deadlineHoldRaced": state in ("T", "t")}
 
 
 def is_paused():

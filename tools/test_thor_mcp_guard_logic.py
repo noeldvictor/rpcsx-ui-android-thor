@@ -105,6 +105,25 @@ assert SERVER.held_process_pid() == "123", (
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
 
+original_sh = SERVER.sh
+SERVER._process_hold_pid = "123"
+SERVER.pid = lambda: "123"
+process_states = iter(["T", "T"])
+SERVER._process_state = lambda process_id: next(process_states)
+SERVER.sh = lambda command, timeout=120: (
+    "__THOR_CONTINUED__\n" if "kill -CONT" in command else ""
+)
+continue_result = SERVER.continue_process_for_slice("123")
+assert continue_result["ok"] is True, (
+    "A deadline hold raced with SIGCONT and was reported as a resume failure."
+)
+assert continue_result["deadlineHoldRaced"] is True, (
+    "The process continue result lost the deadline-race evidence."
+)
+SERVER.sh = original_sh
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
 original_adb = SERVER.adb
 original_hold = SERVER.hold
 original_api = SERVER.api

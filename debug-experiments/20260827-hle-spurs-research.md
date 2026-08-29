@@ -6194,3 +6194,55 @@ rendering progress.
   holds and continue to `Thor EDGE EFWAIT EVENT`. Correlate the exact result and
   SPU dispatch delta before an HLE semantic repair. Do not claim gameplay or
   sustained 30 FPS until correct moving 3D output is visible and measured.
+
+## 127. Thermal holds preserve startup until a resume-status race
+
+- Status: route-tooling, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: The independent watchdog can hold RPCSX at its early thermal
+  margin, let the controller cool the same process, and continue startup without
+  repeating PPU analysis.
+- Changed files/settings: The run used the same exact installed APK and HLE
+  stack as experiment 126. Its APK SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`.
+  The host included commits `b92efa7a3` and `53a505073`. The slice duration was
+  0.25 seconds. The first-start ceiling was 70 C, the later resume target was
+  60 C, the device early-hold threshold was 68 C, and the hard limit was 72 C.
+- Rollback: The controller force-stopped RPCSX after it misclassified the final
+  continue attempt. The wrapper stop result had no PID, zero RPCSX rows in
+  `top`, and `quiet=true`. Property cleanup cleared 56 values and found zero
+  remaining `debug.rpcsx.thor.*` values. Final fixed-silicon values were 50.6 C
+  after stop and 52.2 C after cleanup. Do not launch the Thor again in this
+  hardware round.
+- Thor result: The cold-start gate passed at 43.7 C fixed silicon. Seventy-three
+  complete process-held slices accumulated 25.778 active seconds. Their active
+  windows were 0.312 to 0.422 seconds. The controller maximum was 65.0 C. The
+  device watchdog took 534 samples and reached 69.5 C. It never reached 70 C or
+  the 72 C hard limit.
+- Preserve-progress evidence: The watchdog held the same PID at 69.1, 69.5, and
+  68.2 C. The controller later continued that PID after each cooldown. The log
+  continued from PPU warm-cache reuse into many SPU worker modules and GETLLAR
+  pattern entries. This proves that the early thermal hold preserves startup
+  work instead of forcing a new boot.
+- Controller failure: On slice 74, `kill -CONT` returned, but the following
+  process-status read did not finish before the 0.25-second deadline stopped the
+  process again. The read therefore reported state `T`. The controller treated
+  that correct deadline race as a failed continue and stopped the package. This
+  is a host control defect, not an HLE failure.
+- HLE evidence: No `Thor EDGE EFWAIT EVENT` row appears. The run remained in SPU
+  startup compilation and produced zero frames. It provides no evidence for an
+  event-flag, notification, or loader change.
+- Visual correctness: Not proved. No boundary screenshot exists.
+- FPS/frame-time: No credit. No moving gameplay sample exists.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-153619-thor-input-custom`.
+- Decision: Keep the thermal hold, 60 C later-resume target, and 0.25-second
+  slices. The successor requires an explicit remote-shell acknowledgment from
+  `kill -CONT`. A stopped state from the later status read is recorded as a
+  deadline race, not a signal failure, because the independent deadline can
+  correctly reapply `SIGSTOP` while that read is in flight.
+- Next: In a separate independently cool hardware round, use the same exact APK
+  and route. Continue the preserved process to `Thor EDGE EFWAIT EVENT` or the
+  bounded host deadline. Correlate the exact event result and dispatch delta
+  before an HLE semantic repair. Do not claim gameplay or sustained 30 FPS until
+  correct moving 3D output is visible and measured.
