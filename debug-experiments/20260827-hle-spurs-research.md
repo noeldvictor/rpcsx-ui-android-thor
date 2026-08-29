@@ -4198,3 +4198,41 @@ no FPS credit. Fixed silicon peaked at 70.7 C, and RPCSX stopped normally.
 
 The yield fast path is not correct for the current HLE repair stack. Keep it off.
 The exact visible route in section 86 remains the last known-good route.
+
+## 88. An atomic claim enforces the workload-6 limit
+
+Capture `20260829-030952-thor-input-custom` reproduced the remaining scheduler
+race with the yield fast path off. The title changed workload 6 maximum
+contention from five to three, but five SPUs dispatched the workload at the
+same timestamp. Workload 7 was not created. SPU 0 then reported an access
+violation at PC `0x048e0` while it read unmapped address `0xfff3c400`.
+
+The selector read contention before it changed the shared counter. Several
+SPUs could read the same old value, select the same workload, and then perform
+separate atomic increments. Commit `e264114ae` makes the limit check and slot
+claim one atomic operation. A failed claimant stays in the system service and
+does not consume the workload signal. A source contract, the related SPURS
+contracts, the full ARM64 debug build, and the ARM64 APK contract passed.
+
+Exact APK
+`3159577C302446D9BF90887A3B207FEB81013C5DD68D15531017EDD590467A2F`
+is 116,134,313 bytes. The exact no-launch installation is in:
+
+    20260829-032020-thor-input-strict-cool-gate
+    20260829-032038-transformers-atomic-contention-install
+
+The install gate read 42.9 C. The host and installed hashes matched, and RPCSX
+was not active after installation.
+
+Capture `20260829-032102-thor-input-custom` proves the atomic limit. Exactly
+SPUs 5, 1, and 4 dispatched workload 6. Workload 7 was created 0.56 seconds
+later and dispatched on reserved SPU 3. No access violation or native fault
+appeared. The legal screen became recognizable in the last three images.
+Fixed silicon peaked at 69.5 C, and RPCSX stopped normally.
+
+The strict frame check still classifies these dark images as blank, with 382
+to 449 distinct colors and 89.9 to 91.2 percent near-black pixels. The images
+labeled active at 9.6 and 12.6 seconds still contain the pause overlay. Their
+30.93 and 29.67 FPS readings have no speed credit. System logs confirm each
+resume interval, so the next test must force a fresh presentation while the
+emulator is running or wait for a later game flip before it measures FPS.
