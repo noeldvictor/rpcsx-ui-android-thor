@@ -54,17 +54,24 @@ if ($noWorkIndex -lt 0 -or $checkIndex -le $noWorkIndex -or $sleepIndex -le $che
 
 $rateLimit = 'if ((++pauseCheckCounter & 0xff) == 0)'
 $loopIndex = $main.IndexOf('while (true)')
-$rateLimitIndex = $main.IndexOf($rateLimit, $loopIndex)
+$pollIndex = $main.IndexOf('poll:', $loopIndex)
+$rateLimitIndex = $main.IndexOf($rateLimit, $pollIndex)
 $mainLoadIndex = $main.IndexOf($stateLoad, $rateLimitIndex)
 $mainCheckIndex = $main.IndexOf($stateCheck, $mainLoadIndex)
-$processIndex = $main.IndexOf('spursSysServiceProcessRequests(spu, ctxt);', $mainCheckIndex)
+$pollStatusIndex = $main.IndexOf('if (cellSpursModulePollStatus(spu, nullptr))', $mainCheckIndex)
 if (-not $main.Contains('u32 pauseCheckCounter = 0;') -or
     $loopIndex -lt 0 -or
-    $rateLimitIndex -le $loopIndex -or
+    $pollIndex -le $loopIndex -or
+    $rateLimitIndex -le $pollIndex -or
     $mainLoadIndex -le $rateLimitIndex -or
     $mainCheckIndex -le $mainLoadIndex -or
-    $processIndex -le $mainCheckIndex) {
-    throw "The HLE SPURS active pause check is not rate-limited before system-service work."
+    $pollStatusIndex -le $mainCheckIndex) {
+    throw "The HLE SPURS active pause check is not rate-limited at the common poll label."
+}
+
+$processIndex = $main.IndexOf('spursSysServiceProcessRequests(spu, ctxt);', $loopIndex)
+if ($processIndex -lt 0 -or $processIndex -ge $pollIndex) {
+    throw "The HLE SPURS system-service request path no longer reaches the common poll label."
 }
 
 if ($main.IndexOf($stateLoad, $mainLoadIndex + $stateLoad.Length) -ge 0 -or

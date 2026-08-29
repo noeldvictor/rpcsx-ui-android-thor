@@ -2700,11 +2700,16 @@ void spursSysServiceMain(spu_thread& spu, u32 pollStatus)
 
 	while (true)
 	{
-		// An active HLE system service does not return to the normal SPU
-		// dispatcher. Check debug pause and stop at a bounded interval so the
-		// emulator can suspend it. The earlier per-iteration state load changed
-		// the SPURS scheduling race and delayed the Bink workload. Keep 255 of
-		// every 256 active iterations free of thread-state atomics.
+		// Process requests for the system service
+		spursSysServiceProcessRequests(spu, ctxt);
+
+	poll:
+		// Every system-service path crosses this label. The idle-handler path
+		// returns here with goto and can bypass the top of the loop forever. A
+		// check before ProcessRequests therefore did not stop that path: six SPUs
+		// stayed at pc 0xa00 with dbg_global_pause set. Check here at the same
+		// bounded rate. Keep 255 of every 256 scheduling passes free of
+		// thread-state atomics because a check on every pass changes the Bink race.
 		if ((++pauseCheckCounter & 0xff) == 0)
 		{
 			const auto threadState = spu.state.load();
@@ -2714,10 +2719,6 @@ void spursSysServiceMain(spu_thread& spu, u32 pollStatus)
 			}
 		}
 
-		// Process requests for the system service
-		spursSysServiceProcessRequests(spu, ctxt);
-
-	poll:
 		if (cellSpursModulePollStatus(spu, nullptr))
 		{
 			// Trace - SERVICE: EXIT
