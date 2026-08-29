@@ -27,6 +27,8 @@ param(
     [string]$SpursProbe = "off",
     [ValidateSet("on", "off")]
     [string]$RuntimeCensus = "off",
+    [ValidateSet("Virtual", "OdinRaw", "Direct")]
+    [string]$InputMode = "Direct",
     [ValidateRange(1, 4096)]
     [int]$SpuCachePreloadLimit = 64,
     [string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"
@@ -92,6 +94,7 @@ $profileProperties = [ordered]@{
 $macroParameters = [ordered]@{
     Serial = $Serial
     Profile = "custom"
+    InputMode = $InputMode
     Macro = $Macro
     GamePath = "/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso"
     TitleId = "BLUS30357"
