@@ -65,4 +65,12 @@ if ($source.Contains('request == SPURS_TASKSET_REQUEST_SELECT_TASK && thor_tasks
     throw "The firmware reservation contract must not be limited to SELECT_TASK."
 }
 
+$waitSignalRaceResults = [regex]::Matches(
+    $source,
+    'case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:[\s\S]*?rc = signalled0[.]_u & ctxtTaskIdMask [?] 1 : 0;'
+)
+if ($waitSignalRaceResults.Count -ne 2) {
+    throw "Both taskset request paths must return the firmware WAIT_SIGNAL race result."
+}
+
 Write-Output "Thor atomic taskset request contract passed."

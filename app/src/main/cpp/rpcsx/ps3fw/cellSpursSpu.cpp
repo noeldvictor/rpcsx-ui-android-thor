@@ -3706,7 +3706,12 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 					waiting._u |= ctxtTaskIdMask;
 					break;
 				case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:
-					if (!(signalled0._u & ctxtTaskIdMask))
+					// The signal can arrive after POLL_SIGNAL and before this
+					// reservation. The firmware request handler at 0x0fd8 returns 1
+					// in that case. Its caller resumes the task instead of dispatching
+					// while the task is still in the running bitmap.
+					rc = signalled0._u & ctxtTaskIdMask ? 1 : 0;
+					if (rc == 0)
 					{
 						numNewlyReadyTasks--;
 						running._u &= ~ctxtTaskIdMask;
@@ -3948,7 +3953,10 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 		}
 		case SPURS_TASKSET_REQUEST_WAIT_SIGNAL:
 		{
-			if (!(signalled0._u & ctxtTaskIdMask))
+			// Match the firmware race result. A nonzero result tells the
+			// syscall path to resume this task without a second dispatch.
+			rc = signalled0._u & ctxtTaskIdMask ? 1 : 0;
+			if (rc == 0)
 			{
 				numNewlyReadyTasks--;
 				running._u &= ~ctxtTaskIdMask;
