@@ -6249,3 +6249,56 @@ rendering progress.
   bounded host deadline. Correlate the exact event result and dispatch delta
   before an HLE semantic repair. Do not claim gameplay or sustained 30 FPS until
   correct moving 3D output is visible and measured.
+
+## 128. One cool sample permits a later hard-limit spike
+
+- Status: route-tooling, failed, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: The acknowledged-continue repair can keep the startup-slice loop
+  active until the exact EDGE event marker.
+- Changed files/settings: The run used exact installed APK
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`
+  and host commits through `ed76e2ef1`. It used the experiment 127 HLE stack,
+  0.25-second slices, a 60 C later-resume target, a 68 C device hold, and a
+  72 C hard stop.
+- Thor result: The cold-start gate passed at 45.3 C fixed silicon. Sixty-three
+  complete slices accumulated 22.141 active seconds in 262.672 host seconds.
+  Active windows were 0.328 to 0.422 seconds. The controller maximum was
+  65.0 C. The controller did not repeat the experiment 127 continue-status
+  failure.
+- Independent guard: The device guard recorded 438 temperature samples. It
+  first held PID 2038 at 70.3 C and preserved it during cooldown. It later
+  detected the controller release. The final fixed-silicon sample jumped from
+  59.8 to 72.3 C, so the guard applied the required hard stop. Its maximum CPU
+  junction value was 87.9 C, below the separate 95 C limit.
+- Route failure: Later cooldowns accepted one sample below 60 C. Most records
+  have `waitedS=0`. This allowed repeated resumes while subsystem heat remained
+  unstable. The independent guard then removed the process at the hard limit,
+  and the controller correctly reported `emulator is not running`.
+- HLE evidence: No `Thor EDGE EFWAIT EVENT`, fatal error, access violation, or
+  out-of-memory row appears. The log reached SPU runtime compilation, GETLLAR
+  patterns, and unmatched `spu_fi` reports, but produced zero frames. The
+  `BLUS30357` cache stayed at 439,777 KiB, and `spu_progs` stayed at 24 KiB.
+- Visual correctness: Not proved. The route did not reach the marker and did
+  not capture a boundary image.
+- FPS/frame-time: No credit. No moving gameplay sample exists.
+- Cleanup: The verified stop found no PID and zero RPCSX `top` rows. Property
+  cleanup cleared 56 values and found zero remaining `debug.rpcsx.thor.*`
+  values. Its final fixed-silicon sample was 54.2 C.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-154830-thor-input-custom`.
+- Decision: Do not change HLE semantics. Keep the cold-start rule unchanged:
+  start immediately below 70 C. The host successor requires three consecutive
+  later-resume samples below 60 C at one-second intervals, lowers the device
+  early hold to 66 C, raises the bounded slice count to 256, and raises the
+  bounded host ceiling to 600 seconds. The 72 C hard stop remains unchanged.
+- Verification: Python compilation, the guarded slice state-machine test, the
+  fixed-silicon contract, the device thermal contract, the Transformers HLE
+  route contract, and `git diff --check` pass. A separate shell syntax rerun
+  could not start because the Windows Bash service returned access denied; the
+  device shell guard file was not changed.
+- Next: In a separate independently cool hardware round, use the same exact APK
+  and HLE settings with 0.25-second slices, at most 192 slices, a 600-second
+  host limit, and the three-sample resume gate. Continue to
+  `Thor EDGE EFWAIT EVENT` or the bounded host deadline. Do not make an HLE
+  semantic repair until the exact event result and SPU dispatch delta exist.

@@ -278,6 +278,21 @@ assert result["cooledAtFixedSiliconC"] == 69.0, "The cool wait lost its decisive
 
 clock.now = 0.0
 prepare_paused_guest()
+use_temperatures([59.0, 61.0, 59.0, 58.0, 57.0])
+result = SERVER.t_wait_cool_paused({
+    "targetC": 60, "timeoutS": 10,
+    "stableSamples": 3, "sampleIntervalS": 1,
+})
+assert result["cooled"] is True, "The stable cool wait did not complete."
+assert result["waitedS"] == 4.0, (
+    "A transient cool sample satisfied the stable resume gate."
+)
+assert result["stableSamples"] == 3, (
+    "The stable resume gate lost its consecutive-sample evidence."
+)
+
+clock.now = 0.0
+prepare_paused_guest()
 loop_slices = []
 loop_cool_requests = []
 SERVER.t_wait_cool_paused = lambda arguments: (
@@ -335,10 +350,17 @@ SERVER._matching_log_lines = lambda match, count=1: (
 )
 result = SERVER.t_slice_loop({
     "seconds": 1.0, "maxSlices": 4, "resumeTargetC": 60,
+    "resumeStableSamples": 3, "resumeSampleIntervalS": 1,
 })
 assert result["markerReached"] is True, "The cooled slice loop missed the marker."
 assert [item["targetC"] for item in loop_cool_requests] == [70, 60, 60], (
     "The slice loop did not keep 70 C for launch and 60 C for later resumes."
+)
+assert [item["stableSamples"] for item in loop_cool_requests] == [1, 3, 3], (
+    "The slice loop did not keep the cold start immediate and stabilize later resumes."
+)
+assert all(item["sampleIntervalS"] == 1 for item in loop_cool_requests), (
+    "The slice loop did not pass the requested stable-sample interval."
 )
 
 stops = []

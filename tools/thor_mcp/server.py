@@ -619,16 +619,13 @@ def t_wait_cool_paused(a):
     target = float(a.get("targetC", 70))
     hard_limit = float(a.get("maxSiliconC", 72))
     limit = int(a.get("timeoutS", 120))
-    waited = 0
-    silicon = fixed_silicon_c()
-    if silicon < 0 or silicon >= hard_limit:
-        stop = t_stop({})
-        return {"cooled": False, "thermalStop": True,
-                "triggerFixedSiliconC": silicon,
-                "maxSiliconC": hard_limit, "stop": stop}
-    while silicon >= target and waited < limit:
-        time.sleep(2)
-        waited += 2
+    stable_samples = max(1, min(int(a.get("stableSamples", 1)), 5))
+    sample_interval = max(
+        0.25, min(float(a.get("sampleIntervalS", 2.0)), 5.0))
+    waited = 0.0
+    stable_count = 0
+
+    while True:
         silicon = fixed_silicon_c()
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
@@ -636,9 +633,22 @@ def t_wait_cool_paused(a):
                     "triggerFixedSiliconC": silicon,
                     "maxSiliconC": hard_limit, "stop": stop}
 
-    return {"cooled": 0 <= silicon < target, "targetC": target,
+        stable_count = stable_count + 1 if silicon < target else 0
+        if stable_count >= stable_samples:
+            break
+        if waited >= limit:
+            break
+
+        interval = min(sample_interval, limit - waited)
+        time.sleep(interval)
+        waited += interval
+
+    return {"cooled": stable_count >= stable_samples, "targetC": target,
             "fixedSiliconC": silicon,
             "cooledAtFixedSiliconC": silicon, "waitedS": waited,
+            "stableSamples": stable_count,
+            "requiredStableSamples": stable_samples,
+            "sampleIntervalS": sample_interval,
             "paused": process_held or is_paused(),
             "holdMode": "process" if process_held else "emulator"}
 
@@ -665,10 +675,14 @@ def t_slice_loop(a):
                 "reason": "the emulator must be paused before a slice loop"}
 
     duration = max(0.1, min(float(a.get("seconds", 1.0)), 5.0))
-    max_slices = max(1, min(int(a.get("maxSlices", 64)), 128))
-    max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 420.0))
+    max_slices = max(1, min(int(a.get("maxSlices", 64)), 256))
+    max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 600.0))
     start_ceiling = float(a.get("maxStartC", 70))
     resume_target = float(a.get("resumeTargetC", start_ceiling))
+    resume_stable_samples = max(
+        1, min(int(a.get("resumeStableSamples", 1)), 5))
+    resume_sample_interval = max(
+        0.25, min(float(a.get("resumeSampleIntervalS", 2.0)), 5.0))
     hard_limit = float(a.get("maxSiliconC", 72))
     cool_timeout = max(2, min(int(a.get("coolTimeoutS", 120)), 300))
     marker_every = max(1, min(int(a.get("markerEvery", 1)), 16))
@@ -714,6 +728,8 @@ def t_slice_loop(a):
             "targetC": cool_target,
             "maxSiliconC": hard_limit,
             "timeoutS": min(cool_timeout, max(2, int(remaining_host_s))),
+            "stableSamples": 1 if index == 1 else resume_stable_samples,
+            "sampleIntervalS": resume_sample_interval,
         })
         cool_silicon = cool.get(
             "cooledAtFixedSiliconC",
@@ -755,6 +771,9 @@ def t_slice_loop(a):
             "coolTargetC": cool_target,
             "cooledAtFixedSiliconC": cool_silicon,
             "waitedS": cool.get("waitedS"),
+            "coolStableSamples": cool.get("stableSamples"),
+            "coolRequiredStableSamples": cool.get("requiredStableSamples"),
+            "coolSampleIntervalS": cool.get("sampleIntervalS"),
             "requestedS": part.get("requestedS", duration),
             "elapsedS": part.get("elapsedS"),
             "pauseRequestedAtS": part.get("pauseRequestedAtS"),
@@ -973,8 +992,8 @@ TOOLS = [
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
-    ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool below the runtime resume target between slices. Return within the host deadline and keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
-    ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon is below targetC. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}}}, t_wait_cool_paused),
+    ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool below the runtime resume target between slices. Return within the host deadline and keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
+    ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon stays below targetC for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),

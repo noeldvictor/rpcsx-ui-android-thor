@@ -41,12 +41,16 @@ param(
     [switch]$SliceLoop,
     [ValidateRange(0.1, 5.0)]
     [double]$SliceSeconds = 1.0,
-    [ValidateRange(1, 128)]
+    [ValidateRange(1, 256)]
     [int]$MaxSlices = 64,
-    [ValidateRange(30, 420)]
+    [ValidateRange(30, 600)]
     [double]$MaxSliceHostSeconds = 240,
     [ValidateRange(2, 300)]
     [int]$SliceCoolTimeoutSeconds = 120,
+    [ValidateRange(1, 5)]
+    [int]$SliceResumeStableSamples = 3,
+    [ValidateRange(0.25, 5.0)]
+    [double]$SliceResumeSampleIntervalSeconds = 1.0,
     [string]$SliceStopMatch = "Thor EDGE EFWAIT EVENT"
 )
 
@@ -174,7 +178,7 @@ function Start-ThorSliceDeviceGuard {
     $script:ThorSliceDeviceGuardError = Join-Path $CaptureDir "slice-device-thermal-guard.stderr.log"
     $guardArguments = @(
         "-s", $Serial, "shell", "sh", $remoteGuard, "net.rpcsx.easy",
-        "68000", "72000", "95000", "34000", "40",
+        "66000", "72000", "95000", "34000", "40",
         $script:ThorSliceDeviceGuardReady, "0.25", "hold"
     )
 
@@ -314,7 +318,9 @@ try {
             "- Maximum host seconds: $MaxSliceHostSeconds",
             "- Cool timeout seconds: $SliceCoolTimeoutSeconds",
             "- Runtime slice resume target C: 60",
-            "- Device watchdog early stop C: 68",
+            "- Runtime resume stable samples: $SliceResumeStableSamples",
+            "- Runtime resume sample interval seconds: $SliceResumeSampleIntervalSeconds",
+            "- Device watchdog early stop C: 66",
             "- Device watchdog poll interval seconds: 0.25",
             "- Stop match: $SliceStopMatch"
         ) | Add-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
@@ -326,6 +332,8 @@ try {
             coolTimeoutS = $SliceCoolTimeoutSeconds
             maxStartC = 70
             resumeTargetC = 60
+            resumeStableSamples = $SliceResumeStableSamples
+            resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds
             maxSiliconC = 72
             stopMatch = $SliceStopMatch
             markerEvery = 1

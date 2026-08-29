@@ -93,8 +93,10 @@ if (-not $route.Contains('ThermalRuntimeTelemetry = if ($SliceLoop) { "full" } e
 foreach ($fragment in @(
     'function Start-ThorSliceDeviceGuard',
     'function Stop-ThorSliceDeviceGuard',
-    '"68000", "72000", "95000", "34000", "40"',
+    '"66000", "72000", "95000", "34000", "40"',
     '$script:ThorSliceDeviceGuardReady, "0.25", "hold"',
+    'resumeStableSamples = $SliceResumeStableSamples',
+    'resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds',
     'slice-device-thermal-guard-ready.txt',
     'Start-ThorSliceDeviceGuard -CaptureDir $captureDir',
     'Stop-ThorSliceDeviceGuard'
