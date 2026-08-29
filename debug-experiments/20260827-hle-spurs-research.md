@@ -6224,6 +6224,9 @@ rendering progress.
   continued from PPU warm-cache reuse into many SPU worker modules and GETLLAR
   pattern entries. This proves that the early thermal hold preserves startup
   work instead of forcing a new boot.
+- Cache evidence: The `BLUS30357` title cache stayed at 439,777 KiB, and its
+  `spu_progs` directory stayed at 24 KiB. The full cache increased by only
+  12 KiB. Do not expect a measurably warmer next boot from this run.
 - Controller failure: On slice 74, `kill -CONT` returned, but the following
   process-status read did not finish before the 0.25-second deadline stopped the
   process again. The read therefore reported state `T`. The controller treated
