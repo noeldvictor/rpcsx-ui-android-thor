@@ -18,6 +18,9 @@ $ppuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Ce
 $ppuThread = Get-Content -LiteralPath $ppuThreadPath -Raw
 
 $requiredFragments = @(
+    '[int]$ThermalPreflightSamples = 1',
+    '[double]$ThermalPreflightHeadroomC = 0.0',
+    '[double]$MaxLaunchSiliconTemperatureC = 70.0',
     '[string]$LfqAny2Any = "off"',
     '[string]$SpursSelectorFixes = "off"',
     '[string]$TasksetSelectAtomic = "off"',
@@ -60,6 +63,8 @@ if ($macro.Contains('setprop debug.rpcsx.thor.lfq_any2any off')) {
 }
 
 $requiredRenderProbeFragments = @(
+    '[ValidateSet("HLE", "LLE")]',
+    '[string]$Mode = "HLE"',
     '[string]$LfqAny2Any = "off"',
     '[string]$SpursSelectorFixes = "off"',
     '[string]$TasksetSelectAtomic = "off"',
@@ -69,6 +74,8 @@ $requiredRenderProbeFragments = @(
     '[string]$PpuCachedRtimeFix = "on"',
     '[string]$SpursProbe = "off"',
     '[string]$RuntimeCensus = "off"',
+    '"debug.rpcsx.thor.hle_libs" = if ($Mode -eq "HLE") { "libsre.sprx" } else { "none" }',
+    '"debug.rpcsx.thor.hle_spurs_kernel" = if ($Mode -eq "HLE") { "1" } else { "0" }',
     'LfqAny2Any = $LfqAny2Any',
     'SpursSelectorFixes = $SpursSelectorFixes',
     'TasksetSelectAtomic = $TasksetSelectAtomic',

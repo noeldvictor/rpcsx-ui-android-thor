@@ -12,13 +12,13 @@
     [string]$InputMode = "Virtual",
     [string]$RawInputDevice = "/dev/input/event9",
     [ValidateRange(1, 5)]
-    [int]$ThermalPreflightSamples = 3,
+    [int]$ThermalPreflightSamples = 1,
     [ValidateRange(1, 10)]
     [int]$ThermalPreflightIntervalSeconds = 2,
     [ValidateRange(0, 20)]
-    [double]$ThermalPreflightHeadroomC = 5.0,
+    [double]$ThermalPreflightHeadroomC = 0.0,
     [ValidateRange(25, 70)]
-    [double]$MaxLaunchSiliconTemperatureC = 40.0,
+    [double]$MaxLaunchSiliconTemperatureC = 70.0,
     [ValidateRange(0, 10)]
     [double]$ThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(1, 5)]
@@ -1353,6 +1353,7 @@ $spursProfilePropertyNames = @(
     "debug.rpcsx.thor.max_spurs_threads",
     "debug.rpcsx.thor.movsb_threshold",
     "debug.rpcsx.thor.pending_contention_fix",
+    "debug.rpcsx.thor.ppu_cached_rtime_fix",
     "debug.rpcsx.thor.put_census",
     "debug.rpcsx.thor.queue_monotonic_fix",
     "debug.rpcsx.thor.queue_publish_order",

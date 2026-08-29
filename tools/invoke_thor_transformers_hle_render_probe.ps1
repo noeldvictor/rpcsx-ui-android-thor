@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("HLE", "LLE")]
+    [string]$Mode = "HLE",
     [string]$Serial = "192.168.1.3:5555",
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
@@ -45,8 +47,8 @@ function Set-ThorRenderProbeProperty {
 
 # Keep the measured HLE candidate stack explicit. Enable bounded render probes.
 $profileProperties = [ordered]@{
-    "debug.rpcsx.thor.hle_libs" = "libsre.sprx"
-    "debug.rpcsx.thor.hle_spurs_kernel" = "1"
+    "debug.rpcsx.thor.hle_libs" = if ($Mode -eq "HLE") { "libsre.sprx" } else { "none" }
+    "debug.rpcsx.thor.hle_spurs_kernel" = if ($Mode -eq "HLE") { "1" } else { "0" }
     "debug.rpcsx.thor.real_spu_kernel" = "0"
     "debug.rpcsx.thor.real_taskset_pm" = "0"
     "debug.rpcsx.thor.yield_fast_path" = if ($YieldFastPath -eq "on") { "1" } else { "0" }
@@ -117,7 +119,7 @@ try {
     $failureCaptureDir = [string]$_.Exception.Data["ThorCaptureDirectory"]
     if (-not [string]::IsNullOrWhiteSpace($failureCaptureDir)) {
         $resolvedFailureCaptureDir = [IO.Path]::GetFullPath($failureCaptureDir)
-        throw "Transformers HLE render probe failed (capture_dir=$resolvedFailureCaptureDir): $($_.Exception.Message)"
+        throw "Transformers $Mode render probe failed (capture_dir=$resolvedFailureCaptureDir): $($_.Exception.Message)"
     }
     throw
 } finally {
@@ -139,12 +141,12 @@ $captureCandidates = @(
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 )
 if ($captureCandidates.Count -ne 1) {
-    throw "Transformers HLE render probe expected one capture directory, got $($captureCandidates.Count)."
+    throw "Transformers $Mode render probe expected one capture directory, got $($captureCandidates.Count)."
 }
 
 $captureDir = $captureCandidates[0]
 if (-not (Test-Path -LiteralPath $captureDir -PathType Container)) {
-    throw "Transformers HLE render probe capture does not exist: $captureDir"
+    throw "Transformers $Mode render probe capture does not exist: $captureDir"
 }
 
 Write-Output (Resolve-Path -LiteralPath $captureDir).Path
