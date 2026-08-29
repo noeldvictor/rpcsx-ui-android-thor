@@ -4183,3 +4183,18 @@ stopped normally, with no access violation or native fault.
 
 The next run must capture the same visible sequence while it is active. It must
 measure an uninterrupted FPS interval before it gives sustained-FPS credit.
+
+## 87. The yield fast path fails this repaired route
+
+Capture `20260829-030501-thor-input-custom` changed only
+`debug.rpcsx.thor.yield_fast_path` from zero to one and added two cooled slices.
+It did not repeat the visible result. SPU 0 reported an access violation at PC
+`0x048e0` while it read unmapped address `0xfff00000`. Workload 7 did not
+dispatch after the fault, and all seven screenshots were black.
+
+Two screenshots reported about 29 FPS, but the pause overlay remained visible
+and total CPU was 0.3 percent. These samples show the paused presenter and have
+no FPS credit. Fixed silicon peaked at 70.7 C, and RPCSX stopped normally.
+
+The yield fast path is not correct for the current HLE repair stack. Keep it off.
+The exact visible route in section 86 remains the last known-good route.
