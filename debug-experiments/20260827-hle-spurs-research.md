@@ -5275,3 +5275,67 @@ rendering progress.
   request near each requested slice deadline. Continue to taskset `0x1158d800`
   only if that timing contract holds. Require a correct 3D image and a
   comparable 30 FPS gameplay window before any full-HLE or performance claim.
+
+## 112. Deadline pauses work and expose a later stream wait
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: An independent deadline timer will pause each one-second guest
+  slice on time despite a slow fixed-silicon read. The guarded route can then
+  reach taskset marker `0x1158d800` without a telemetry overrun.
+- Changed files/settings: The run used candidate APK SHA-256
+  `0843DE9B58717B0F8F4648FB1A7CF995A49236BE43F77AA411639C56845911AB`,
+  size 116,142,104 bytes. It contains commit `79a144d0a`. The exact no-launch
+  install passed. All 59 HLE and generic property readbacks matched.
+- Rollback: The slice controller force-stopped RPCSX at the hard limit.
+  `pidof` was empty, `top` had zero RPCSX rows, and the process was quiet. The
+  cleanup cleared all 59 nonempty `debug.rpcsx.thor.*` properties. Its audit
+  found zero remaining values. The final fixed-silicon sample was 51.8 C.
+- Windows result: The successor load-wait probe contract and
+  `git diff --check` passed. The normal Android debug build passed in 1 minute
+  13 seconds. Successor APK SHA-256
+  `7485031E3F00399F6133A09727B167EE9C5825D902B4CE9B4F0AC99E41D2AD32`
+  is 116,142,628 bytes and contains commit `204c2bac8`.
+- Thor result: The one-sample gate passed at 42.9 C fixed silicon. Boot started
+  at 42.1 C. The controller produced 58 complete timed slices. Every complete
+  slice requested pause at 1.000 to 1.016 seconds. Slice 59 reached 72.3 C
+  fixed silicon and used the verified stop. The host duration was 251.531
+  seconds. This is a thermal stop, but the deadline-timer hypothesis passes.
+- HLE evidence: The rendering taskset at `0x1f73f00` shut down and joined. The
+  shutdown-completion mask arrived, and the title safely created the same
+  taskset address again. The log ended after 5,880 flips, 475 draw calls,
+  queue-push record 4,672, and workload-dispatch record 2,560. It did not reach
+  marker `0x1158d800`. Draw calls paused at 426, increased to 447 and then 475,
+  and stopped increasing before the thermal stop. No SPURS task error, access
+  violation, verification failure, fatal error, or out-of-memory error was
+  observed.
+- Ghidra result: The late PPU census repeatedly put `main_thread` in the common
+  sleep wrapper with link register `0x00523690`. A focused read-only Ghidra pass
+  on the verified BLUS30357 ELF shows that this call is in a stream-read loop.
+  The loop sleeps while the second pending-read count at stream offset `0xc4`
+  is not zero. At the same time, `AsyncIOSystem` used link register
+  `0x0051aea4`. Ghidra maps that call to the sleep arm used when the IO worker
+  has an active entry. This evidence identifies a late active IO request. It
+  does not yet show whether its backend completion word is stuck or whether a
+  later SPURS handoff does not complete.
+- Visual correctness: Not proved. The marker did not appear, so the controller
+  did not take a paused screenshot. The counters show loading-route progress,
+  not correct gameplay.
+- FPS/frame-time: No credit. A sensor row reported 28 frames in ten seconds,
+  but the window included repeated global pauses and is not a comparable
+  gameplay sample.
+- Capture paths: `20260829-114701-thor-input-strict-cool-gate`,
+  `20260829-114719-transformers-deadline-pause-install`, and
+  `20260829-115314-transformers-deadline-pause-thermal-stop`. The focused Ghidra
+  output is `ghidra-transformers-current-main-wait-20260829.txt`.
+- Decision: Keep the deadline timer and the atomic taskset lifecycle repair.
+  Reject this run for full HLE, gameplay, and speed proof. Commit `204c2bac8`
+  adds a bounded diagnostic for the exact late stream wait. It records both
+  pending counts, request ranges, the first active IO entry, and its completion
+  word. It does not change guest state.
+- Next: In a later independently cool Thor round, install exact successor APK
+  `7485031E3F00399F6133A09727B167EE9C5825D902B4CE9B4F0AC99E41D2AD32`.
+  Start immediately below 70 C and stop at 72 C. Require two stable late-load
+  samples. Use the completion word and active-entry fields to select the next
+  semantic repair. Do not claim full HLE or 30 FPS until a correct moving 3D
+  scene and a comparable sustained measurement both pass.
