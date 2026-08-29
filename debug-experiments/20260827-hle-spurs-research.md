@@ -6077,6 +6077,14 @@ rendering progress.
   Transformers route contract, Python compilation, PowerShell parsing, and
   `git diff --check` pass. This successor is host-only and does not need a new
   APK.
+- Android source check: AOSP `run-as` accepts only a debuggable package, changes
+  to that application's UID and SELinux context, and then executes the requested
+  command. AOSP Toybox `kill` accepts a named signal. These sources support the
+  same-UID `kill -STOP` and `kill -CONT` route, but the next Thor round must
+  still prove the commands on this exact build. See the AOSP
+  [`run-as.cpp`](https://android.googlesource.com/platform/system/core/+/refs/heads/android14-qpr3-s12-release/run-as/run-as.cpp)
+  and Toybox
+  [`kill` help](https://android.googlesource.com/platform/external/toybox/+/90937f6e7e180bc1c54e6e7e9e287f1fada9c203/android/mac/generated/help.h#663).
 - Next: In a later independently cool hardware round, use the same exact APK.
   First prove that `run-as` can stop and continue the app process and that the
   device guard is ready before resume. Require every active startup slice to
