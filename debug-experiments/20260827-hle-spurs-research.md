@@ -6860,3 +6860,67 @@ rendering progress.
   path. Add a bounded FMOD task and event-flag trace before another device
   run. Require moving 3D output and a comparable sustained 30 FPS measurement
   before a full-HLE or performance claim.
+
+## 139. The FMOD task reaches the event-send helper
+
+- Status: android-pass, boundary-capture, not-comparable
+- Scope: HLE-SPURS, FMOD, event-delivery, thermal-safety
+- Hypothesis: The main thread waits because the FMOD SPU task does not send
+  its event to the HLE event flag.
+- Changed files/settings: Commit `67b802bd0` adds the bounded, default-off
+  `debug.rpcsx.thor.fmod_event_wait_trace` probe. The probe identifies the
+  BLUS30357 main-thread wait by link register `0x00e2bab4`. It records the
+  event flag, taskset, queue, port, task state, matching SPU PC, and one local
+  store image. The run used exact installed APK
+  `656AC6ADEFF0645B588C28E899D30A381E038232AA05F14F53316A422154BCCA`,
+  size 116,148,476 bytes. The route used HLE, the EDGE task census, the EDGE
+  event-wait trace, the FMOD event-wait trace, 0.5-second slices, and the
+  second FMOD census sample as its stop marker.
+- Thor result: The one-sample cold-start gate passed immediately at 42.9 C
+  fixed silicon. The controller reached its marker after 46 slices and
+  381.875 host seconds. Its maximum fixed-silicon value was 65.4 C. The
+  main thread armed event flag `0x01f20600` for request `0x0001`. The flag
+  used taskset `0x1144c200`, queue `0x8d008f00`, and port 21. Task 0 was
+  enabled, ready, and running.
+- SPU evidence: The first matching sample put FMOD task 0 on SPU 3 at PC
+  `0x03010`. The second sample put the same task at PC `0x14008`, with link
+  register `0x12150`, port 21 in register 3, zero in registers 4 and 5, and
+  event-flag address `0x01f20600` in the last MFC address. The probe wrote
+  one 262,144-byte local store image. Its SHA-256 was
+  `30227856AB27F0AE7F84329059C0E6374E332633A2C13FE9048CBEEF33F642F2`.
+- Static evidence: A read-only Ghidra 12.0.4 pass over the exact local store
+  proves that PC `0x14008` is the SPU user-event send helper. The caller at
+  `0x1214c` passes port 21, data zero, and event bits zero. The helper writes
+  data to channel 28 at `0x14030`. It then writes interrupt value
+  `0x55000000` to channel 30 at `0x14044`. The RPCSX decoder maps this value
+  to SPU port 21 and sends the event to its queue. The earlier function uses
+  GETLLAR at `0x11e24` and PUTLLC at `0x1207c` before it calls this helper.
+- Boundary correction: The route stopped when PC was `0x14008`. It stopped
+  before the channel writes at `0x14030` and `0x14044`. Zero dispatch at that
+  sample does not prove a failed event. It proves that the route stopped one
+  instruction before the event-send helper started its work.
+- Visual correctness: Not proved. The boundary image is black except for the
+  emulator overlay. It does not show the title or moving 3D output.
+- FPS/frame-time: No performance credit. The saved overlay reports 0.13 FPS,
+  PPU 0 percent, SPU 1.1 percent, and RSX 0 percent. A paused boundary image
+  is not a comparable performance sample.
+- Thermal result: The independent device guard recorded 15 holds at or above
+  66 C. Fixed silicon reached 69.1 C, and CPU junction reached 85.1 C. It
+  recorded no 72 C fixed-silicon hard stop and no 95 C junction hard stop.
+- Rollback: The verified stop found no PID and zero RPCSX rows in `top`. It
+  reported
+  `quiet=true`. Final fixed silicon was 53.4 C. The local-store property was
+  reset to value `0`. The wrapper now uses value `0` for all property reset
+  paths because its mandatory value parameter rejects an empty string.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-190732-thor-input-custom`.
+- Decision: Keep the WAIT_SIGNAL repair and the FMOD probe. Do not change
+  event semantics from this capture. When the FMOD trace is enabled without
+  an explicit stop marker, the route now stops at
+  `Thor FMOD EFWAIT RETURN #0`. This prevents another stop before dispatch.
+- Next: In one later independently cool round, continue through the SPU event
+  line and the PPU wake and return lines. If the event appears but the PPU
+  does not return, repair that exact event-flag boundary. If the return
+  appears, continue to the next startup boundary. Require moving 3D output
+  and a comparable sustained 30 FPS measurement before a full-HLE or speed
+  claim.
