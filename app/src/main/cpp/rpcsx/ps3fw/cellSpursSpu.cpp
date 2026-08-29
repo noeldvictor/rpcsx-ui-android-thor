@@ -2949,7 +2949,9 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 	bool updateWorkload = false;
 	bool terminate = false;
 
-	// vm::reservation_op(vm::cast(ctxt->spurs.addr() + OFFSET_32(CellSpurs, wklState1)), 128, [&]()
+	vm::reservation_op(spu,
+		vm::unsafe_ptr_cast<spurs_wkl_state_op>(ctxt->spurs.ptr(&CellSpurs::wklState1)),
+		[&](spurs_wkl_state_op& op)
 	{
 		auto spurs = ctxt->spurs.get_ptr();
 
@@ -2968,9 +2970,9 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 		}
 
 		// Update workload message
-		if (spurs->sysSrvMsgUpdateWorkload & (1 << ctxt->spuNum))
+		if (op.sysSrvMsgUpdateWorkload & (1 << ctxt->spuNum))
 		{
-			spurs->sysSrvMsgUpdateWorkload &= ~(1 << ctxt->spuNum);
+			op.sysSrvMsgUpdateWorkload &= ~(1 << ctxt->spuNum);
 			updateWorkload = true;
 		}
 
@@ -2980,8 +2982,8 @@ void spursSysServiceProcessRequests(spu_thread& spu, SpursKernelContext* ctxt)
 			updateTrace = true;
 		}
 
-		std::memcpy(spu._ptr<void>(0x2D80), spurs->wklState1, 128);
-	} //);
+		std::memcpy(spu._ptr<void>(0x2D80), &op, sizeof(op));
+	});
 
 	// Process update workload message
 	if (updateWorkload)
@@ -3049,7 +3051,9 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 		}
 	}
 
-	// vm::reservation_op(ctxt->spurs.ptr(&CellSpurs::wklState1).addr(), 128, [&]()
+	vm::reservation_op(spu,
+		vm::unsafe_ptr_cast<spurs_wkl_state_op>(ctxt->spurs.ptr(&CellSpurs::wklState1)),
+		[&](spurs_wkl_state_op& op)
 	{
 		auto spurs = ctxt->spurs.get_ptr();
 
@@ -3090,24 +3094,24 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 		for (u32 i = 0; i < CELL_SPURS_MAX_WORKLOAD; i++)
 		{
 			// Update workload status and runnable flag based on the workload state
-			auto wklStatus = spurs->wklStatus1[i];
-			if (spurs->wklState1[i] == SPURS_WKL_STATE_RUNNABLE)
+			auto wklStatus = op.wklStatus1[i];
+			if (op.wklState1[i] == SPURS_WKL_STATE_RUNNABLE)
 			{
-				spurs->wklStatus1[i] |= 1 << ctxt->spuNum;
+				op.wklStatus1[i] |= 1 << ctxt->spuNum;
 				ctxt->wklRunnable1 |= 0x8000 >> i;
 			}
 			else
 			{
-				spurs->wklStatus1[i] &= ~(1 << ctxt->spuNum);
+				op.wklStatus1[i] &= ~(1 << ctxt->spuNum);
 			}
 
 			// If the workload is shutting down and if this is the last SPU from which it is being removed then
 			// add it to the shutdown bit set
-			if (spurs->wklState1[i] == SPURS_WKL_STATE_SHUTTING_DOWN)
+			if (op.wklState1[i] == SPURS_WKL_STATE_SHUTTING_DOWN)
 			{
-				if (((wklStatus & (1 << ctxt->spuNum)) != 0) && (spurs->wklStatus1[i] == 0))
+				if (((wklStatus & (1 << ctxt->spuNum)) != 0) && (op.wklStatus1[i] == 0))
 				{
-					spurs->wklState1[i] = SPURS_WKL_STATE_REMOVABLE;
+					op.wklState1[i] = SPURS_WKL_STATE_REMOVABLE;
 					wklShutdownBitSet |= 0x80000000u >> i;
 				}
 			}
@@ -3115,38 +3119,38 @@ void spursSysServiceActivateWorkload(spu_thread& spu, SpursKernelContext* ctxt)
 			if (spurs->flags1 & SF1_32_WORKLOADS)
 			{
 				// Update workload status and runnable flag based on the workload state
-				wklStatus = spurs->wklStatus2[i];
-				if (spurs->wklState2[i] == SPURS_WKL_STATE_RUNNABLE)
+				wklStatus = op.wklStatus2[i];
+				if (op.wklState2[i] == SPURS_WKL_STATE_RUNNABLE)
 				{
-					spurs->wklStatus2[i] |= 1 << ctxt->spuNum;
+					op.wklStatus2[i] |= 1 << ctxt->spuNum;
 					ctxt->wklRunnable2 |= 0x8000 >> i;
 				}
 				else
 				{
-					spurs->wklStatus2[i] &= ~(1 << ctxt->spuNum);
+					op.wklStatus2[i] &= ~(1 << ctxt->spuNum);
 				}
 
 				// If the workload is shutting down and if this is the last SPU from which it is being removed then
 				// add it to the shutdown bit set
-				if (spurs->wklState2[i] == SPURS_WKL_STATE_SHUTTING_DOWN)
+				if (op.wklState2[i] == SPURS_WKL_STATE_SHUTTING_DOWN)
 				{
-					if (((wklStatus & (1 << ctxt->spuNum)) != 0) && (spurs->wklStatus2[i] == 0))
+					if (((wklStatus & (1 << ctxt->spuNum)) != 0) && (op.wklStatus2[i] == 0))
 					{
-						spurs->wklState2[i] = SPURS_WKL_STATE_REMOVABLE;
+						op.wklState2[i] = SPURS_WKL_STATE_REMOVABLE;
 						wklShutdownBitSet |= 0x8000 >> i;
 					}
 				}
 			}
 		}
 
-		std::memcpy(spu._ptr<void>(0x2D80), spurs->wklState1, 128);
+		std::memcpy(spu._ptr<void>(0x2D80), &op, sizeof(op));
 
 		// Do not copy the private first line back to shared memory. This line does
 		// not contain wklState or wklStatus. The updates above already use the
 		// live CellSpurs pointer. A whole-line copy can instead overwrite a PPU
 		// write to wklSignal1 at offset 0x70. Six SPUs can activate workloads at
 		// the same time, which made the signal loss timing-dependent on Thor.
-	} //);
+	});
 
 	if (wklShutdownBitSet)
 	{
@@ -3161,7 +3165,9 @@ void spursSysServiceUpdateShutdownCompletionEvents(spu_thread& spu, SpursKernelC
 	// workloads that have a shutdown completion hook registered
 	u32 wklNotifyBitSet;
 	[[maybe_unused]] u8 spuPort;
-	// vm::reservation_op(ctxt->spurs.ptr(&CellSpurs::wklState1).addr(), 128, [&]()
+	vm::reservation_op(spu,
+		vm::unsafe_ptr_cast<spurs_wkl_state_op>(ctxt->spurs.ptr(&CellSpurs::wklState1)),
+		[&](spurs_wkl_state_op& op)
 	{
 		auto spurs = ctxt->spurs.get_ptr();
 
@@ -3171,8 +3177,8 @@ void spursSysServiceUpdateShutdownCompletionEvents(spu_thread& spu, SpursKernelC
 		{
 			if (wklShutdownBitSet & (0x80000000u >> i))
 			{
-				spurs->wklEvent1[i] |= 0x01;
-				if (spurs->wklEvent1[i] & 0x02 || spurs->wklEvent1[i] & 0x10)
+				op.wklEvent1[i] |= 0x01;
+				if (op.wklEvent1[i] & 0x02 || op.wklEvent1[i] & 0x10)
 				{
 					wklNotifyBitSet |= 0x80000000u >> i;
 				}
@@ -3180,16 +3186,16 @@ void spursSysServiceUpdateShutdownCompletionEvents(spu_thread& spu, SpursKernelC
 
 			if (wklShutdownBitSet & (0x8000 >> i))
 			{
-				spurs->wklEvent2[i] |= 0x01;
-				if (spurs->wklEvent2[i] & 0x02 || spurs->wklEvent2[i] & 0x10)
+				op.wklEvent2[i] |= 0x01;
+				if (op.wklEvent2[i] & 0x02 || op.wklEvent2[i] & 0x10)
 				{
 					wklNotifyBitSet |= 0x8000 >> i;
 				}
 			}
 		}
 
-		std::memcpy(spu._ptr<void>(0x2D80), spurs->wklState1, 128);
-	} //);
+		std::memcpy(spu._ptr<void>(0x2D80), &op, sizeof(op));
+	});
 
 	if (wklNotifyBitSet)
 	{

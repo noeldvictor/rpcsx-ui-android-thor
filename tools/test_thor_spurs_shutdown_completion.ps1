@@ -60,10 +60,59 @@ if (-not $completionMatch.Success) {
     throw "The SPURS shutdown completion function was not found."
 }
 
+$processMatch = [regex]::Match(
+    $spuSource,
+    '(?m)^void spursSysServiceProcessRequests\([\s\S]*?(?=^// Activate a workload)'
+)
+if (-not $processMatch.Success) {
+    throw "The SPURS system-service request function was not found."
+}
+
+$activateMatch = [regex]::Match(
+    $spuSource,
+    '(?m)^void spursSysServiceActivateWorkload\([\s\S]*?(?=^// Update shutdown completion events)'
+)
+if (-not $activateMatch.Success) {
+    throw "The SPURS workload activation function was not found."
+}
+
+$reservationContract = @(
+    'vm::reservation_op(spu,',
+    'vm::unsafe_ptr_cast<spurs_wkl_state_op>(ctxt->spurs.ptr(&CellSpurs::wklState1))',
+    '[&](spurs_wkl_state_op& op)'
+)
+foreach ($function in @($processMatch.Value, $activateMatch.Value, $completionMatch.Value)) {
+    foreach ($required in $reservationContract) {
+        if (-not $function.Contains($required)) {
+            throw "A SPURS shutdown-state update is outside the shared reservation: $required"
+        }
+    }
+}
+
+foreach ($required in @(
+    'op.sysSrvMsgUpdateWorkload &= ~(1 << ctxt->spuNum);',
+    'std::memcpy(spu._ptr<void>(0x2D80), &op, sizeof(op));'
+)) {
+    if (-not $processMatch.Value.Contains($required)) {
+        throw "The SPURS request update contract is missing '$required'."
+    }
+}
+
+foreach ($required in @(
+    'op.wklStatus1[i] &= ~(1 << ctxt->spuNum);',
+    'op.wklState1[i] = SPURS_WKL_STATE_REMOVABLE;',
+    'std::memcpy(spu._ptr<void>(0x2D80), &op, sizeof(op));'
+)) {
+    if (-not $activateMatch.Value.Contains($required)) {
+        throw "The SPURS atomic workload-removal contract is missing '$required'."
+    }
+}
+
 $completion = $completionMatch.Value
 foreach ($required in @(
-    'spurs->wklEvent1[i] |= 0x01;',
-    'spurs->wklEvent2[i] |= 0x01;',
+    'op.wklEvent1[i] |= 0x01;',
+    'op.wklEvent2[i] |= 0x01;',
+    'std::memcpy(spu._ptr<void>(0x2D80), &op, sizeof(op));',
     'sys_spu_thread_send_event(spu, spuPort, 0, wklNotifyBitSet)'
 )) {
     if (-not $completion.Contains($required)) {
