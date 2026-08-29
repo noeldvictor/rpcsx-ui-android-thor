@@ -4404,3 +4404,59 @@ The final image was still black and kept the old pause toast. Its 29.65 FPS
 value has no speed credit. The active-time total is close to the earlier
 23.49-second loading-output boundary from section 64. The next route must add
 one cooled work slice before it captures the post-Start state.
+
+## 94. The event-flag setter no longer stops the rendering thread
+
+Capture `20260829-045342-thor-input-custom` added the next cooled work slice.
+It reached the loading emblem, but the rendering thread stopped at guest time
+6:22.725. The host `ensure` in `cellSpursEventFlagSet` rejected a nonzero
+result from `_cellSpursSendSignal`. The image FPS value was stale after the
+thread stopped, so it has no speed credit.
+
+Ghidra analysis used the decrypted Sony `libsre` ELF with SHA-256
+`74A023767AAE35838F26EF1A846806CAAD438A041A06BA16B1165050AA403E8`.
+The module log maps export `cellSpursEventFlagSet` to module offset `0x16010`.
+Its firmware control flow maps `0x80410902` (`INVAL`) and `0x8041090f`
+(`STAT`) to `0x80410914` (`FATAL`). It sends every other signal result to its
+diagnostic helper and then returns `CELL_OK`. The saved decompile is in:
+
+    20260829-045342-thor-input-custom/libsre-event-set-decompile.txt
+
+The same function also confirmed a wait-slot mirror error in the inherited
+HLE code. The low pending bit selects wait slot 15. The old code saved the
+event mask in slot 0 and later read slot 15. Commit `6ed0f9831` saves the mask
+in the selected wait slot. A focused source contract covers this mapping.
+
+Commit `d87fa3089` removes the host-killing assertion. It keeps the firmware
+`INVAL` and `STAT` to `FATAL` mapping. Other nonzero results now use a bounded
+diagnostic and continue to the firmware `CELL_OK` return. The event-flag,
+selector, activation, queue-log, and Transformers HLE route contracts passed.
+The full Android debug build and the ARM64 APK contract also passed.
+
+Exact APK
+`5E91D9FC175415828411B0B707A036C950C0797A80FC34EE97C170E28F5E320D`
+is 116,135,772 bytes. The exact no-launch installation is in:
+
+    20260829-050743-thor-input-strict-cool-gate
+    20260829-050755-transformers-event-result-install
+
+The install gate read 42.9 C. The host and installed APK hashes matched, and
+RPCSX was not active after installation.
+
+Capture `20260829-050820-thor-input-custom` repeated the same direct-Start
+route. The log contains eight sampled event-flag Set calls. The rendering
+thread was still active at guest time 6:24.922, more than two seconds past the
+old fatal boundary. The log has no verification failure, fatal thread stop,
+access violation, or native crash. RPCSX stopped only at the macro stop.
+
+Visual inspection confirms a complete Unreal and PhysX legal frame. Its
+overlay reports 28.82 FPS, and its SHA-256 is
+`BA8D246D5BA25AB963CCE0B9E83C842D8C48AFEE92CC0C2DC70C96E192E88116`.
+All six HLE SPURS workers were active in the final diagnostic. The queue also
+continued to drain after guest time 6:22. The final frame is valid HLE output,
+but one 28.82 FPS image is not a sustained 30 FPS proof.
+
+The launch sample was 44.1 C. Fixed silicon reached 65.4 C and stayed below
+the 72 C stop limit. The direct Start action did not reach the loading frame
+in this repeat. The next proof must make the Start transition deterministic,
+then take two active samples after the transition.
