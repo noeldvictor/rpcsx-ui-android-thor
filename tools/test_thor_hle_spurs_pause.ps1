@@ -52,8 +52,24 @@ if ($noWorkIndex -lt 0 -or $checkIndex -le $noWorkIndex -or $sleepIndex -le $che
     throw "The HLE SPURS state check is not in the idle no-work branch before its sleep."
 }
 
-if ($main.Contains($stateLoad) -or $main.Contains('spu.check_state()')) {
-    throw "The HLE SPURS system-service loop adds a state load to active scheduling."
+$rateLimit = 'if ((++pauseCheckCounter & 0xff) == 0)'
+$loopIndex = $main.IndexOf('while (true)')
+$rateLimitIndex = $main.IndexOf($rateLimit, $loopIndex)
+$mainLoadIndex = $main.IndexOf($stateLoad, $rateLimitIndex)
+$mainCheckIndex = $main.IndexOf($stateCheck, $mainLoadIndex)
+$processIndex = $main.IndexOf('spursSysServiceProcessRequests(spu, ctxt);', $mainCheckIndex)
+if (-not $main.Contains('u32 pauseCheckCounter = 0;') -or
+    $loopIndex -lt 0 -or
+    $rateLimitIndex -le $loopIndex -or
+    $mainLoadIndex -le $rateLimitIndex -or
+    $mainCheckIndex -le $mainLoadIndex -or
+    $processIndex -le $mainCheckIndex) {
+    throw "The HLE SPURS active pause check is not rate-limited before system-service work."
+}
+
+if ($main.IndexOf($stateLoad, $mainLoadIndex + $stateLoad.Length) -ge 0 -or
+    $main.IndexOf('spu.check_state()', $mainCheckIndex + $stateCheck.Length) -ge 0) {
+    throw "The HLE SPURS system-service loop has more than one active state check."
 }
 
 Write-Output "Thor HLE SPURS pause contract passed."

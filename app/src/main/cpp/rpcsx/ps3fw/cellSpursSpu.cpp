@@ -2696,8 +2696,24 @@ void spursSysServiceMain(spu_thread& spu, u32 pollStatus)
 	pkt.data.start.ls = 0xA00 >> 2;
 	cellSpursModulePutTrace(&pkt, ctxt->dmaTagId);
 
+	u32 pauseCheckCounter = 0;
+
 	while (true)
 	{
+		// An active HLE system service does not return to the normal SPU
+		// dispatcher. Check debug pause and stop at a bounded interval so the
+		// emulator can suspend it. The earlier per-iteration state load changed
+		// the SPURS scheduling race and delayed the Bink workload. Keep 255 of
+		// every 256 active iterations free of thread-state atomics.
+		if ((++pauseCheckCounter & 0xff) == 0)
+		{
+			const auto threadState = spu.state.load();
+			if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())
+			{
+				return;
+			}
+		}
+
 		// Process requests for the system service
 		spursSysServiceProcessRequests(spu, ctxt);
 
