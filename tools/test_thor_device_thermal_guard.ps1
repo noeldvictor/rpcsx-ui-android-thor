@@ -44,7 +44,11 @@ $requiredMacroFragments = @(
     'Assert-ThorDeviceThermalGuardAlive',
     'Start-ThorDeviceThermalGuard',
     'Stop-ThorDeviceThermalGuard',
-    'Device runtime thermal telemetry requires a stop token or -StopAfterMacro.'
+    'Device runtime thermal telemetry requires a stop token or -StopAfterMacro.',
+    'function Invoke-ThorControlPause',
+    '& $Adb -s $DeviceSerial forward tcp:8099 tcp:8099',
+    'Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause"',
+    '} elseif ($token -eq ''pause'') {'
 )
 
 foreach ($fragment in $requiredMacroFragments) {

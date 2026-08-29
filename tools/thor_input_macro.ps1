@@ -510,6 +510,24 @@ function Invoke-ThorPadCombo {
     & $Adb shell input gamepad -d $Display keycombination -t $DurationMs @codes | Out-Null
 }
 
+function Invoke-ThorControlPause {
+    & $Adb -s $DeviceSerial forward tcp:8099 tcp:8099 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not forward the Thor control port."
+    }
+
+    try {
+        $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause" -TimeoutSec 8
+    } catch {
+        throw "Could not pause RPCSX through the Thor control API: $($_.Exception.Message)"
+    }
+    $response | ConvertTo-Json -Compress |
+        Set-Content -LiteralPath (Join-Path $captureDir "control-pause.json") -Encoding UTF8
+    if (-not $response.ok -or -not $response.paused) {
+        throw "The Thor control API did not confirm the paused state."
+    }
+}
+
 function Save-ThorScreenshot {
     param(
         [string]$Label,
@@ -1237,7 +1255,7 @@ if ($ThermalRuntimeTelemetry -eq "device" -and -not $StopAfterMacro -and
     "- Stop after macro: $StopAfterMacro",
     "- Macro: $resolvedMacro",
     "",
-    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
+    'Syntax: `wait:MS`, `pause`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
     'Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.',
     'Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`.'
     'State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected.'
@@ -1725,6 +1743,9 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
             if (-not $battleUiReached) {
                 Throw-ThorVisualFailure "Battle UI was not detected after $approachAttempts bounded movement attempts." "visual-battle-approach-failure"
             }
+        } elseif ($token -eq 'pause') {
+            Invoke-ThorControlPause
+            Assert-ThorRuntimeThermalBudget "control-pause"
         } elseif ($token -eq 'stop') {
             Stop-ThorPackageAndVerify -EvidencePrefix "macro-stop"
         } elseif ($token -match '^threads:(.+)$') {
