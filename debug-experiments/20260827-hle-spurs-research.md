@@ -3552,3 +3552,121 @@ the thread snapshot. It runs while the observed package-silicon temperature is
 below 70 C. It keeps the 72 C hard limit and the 95 C junction limit. The route
 contract, atomic taskset contract, event-flag contract, and Git whitespace
 check pass. The next device run must start with a new strict cool gate.
+
+## 61. Ghidra identifies the real task context descriptor
+
+The first task-pattern interpretation was wrong. It treated the start of the
+attribute buffer as the caller pattern. Captures
+`20260828-193016-thor-input-custom` and
+`20260828-194030-thor-input-custom` rejected patterns with the wrong block
+counts and reproduced the Bink task fault. Packing the saved local-store
+blocks did not correct the source address.
+
+A raw Ghidra import of the decrypted BLUS30357 PPU executable used the guest
+address minus `0x10000` as the file address. The RenderingThread caller sets
+only registers r3 through r8 for `_cellSpursTaskAttributeInitialize`. Registers
+r9 and r10 are stale. The caller builds the local-store pattern at r18 and
+stores a 12-byte descriptor at r7:
+
+    offset 0: context effective address
+    offset 4: context size
+    offset 8: local-store pattern effective address
+
+The HLE initializer now reads the third descriptor field. It accepts the
+pattern only when the address is aligned and readable, the set-bit count
+matches the allocated context blocks, and no SPURS management bit is set. The
+fallback stays behind `debug.rpcsx.thor.task_attr_fix`. The task-attribute
+pattern, task-context layout, and Transformers HLE route contracts pass.
+
+## 62. The caller pattern removes the Bink resume fault
+
+The corrected task descriptor ran in:
+
+    20260828-201235-thor-input-custom
+
+The Bink task used this exact three-block pattern:
+
+    00000000000001800000000000000001
+
+It selects local-store blocks 55, 56, and 127. The capture recorded no access
+violation, no old PC `0x32a8` occurrence, and no zero-address PUTLLC fault. The
+renderer was still waiting in its short Bink producer poll, and the bounded
+window recorded no RSX draw. Thus, this capture removes the old context-resume
+fault but does not by itself prove frame output.
+
+## 63. The corrected task reaches the RSX draw path
+
+A bounded SPURS trace ran in:
+
+    20260828-202011-thor-input-custom
+
+The Bink task started with the exact caller pattern. RSX draws began and
+reached 154 by guest time 23.49 seconds. The capture recorded no access
+violation, old PC `0x32a8` loop, or zero-address PUTLLC fault. Its 3.90 FPS
+sample includes startup and active diagnostic work, so it is not a speed
+result.
+
+A less verbose route ran in:
+
+    20260828-202244-thor-input-custom
+
+The active-draw screenshot reported 29.26 FPS. It was black, and the route did
+not prove a geometry draw or an RSX mapping at `0x70000000`. The Bink taskset
+shut down and was created again with the same correct pattern. No prior memory
+fault returned.
+
+An extended route in `20260828-202635-thor-input-custom` stopped at 71.9 C
+before its first draw. The guard stopped RPCSX below the 72 C hard limit. That
+capture has no render credit.
+
+## 64. Live Bink planes reach the renderer
+
+The bounded RSX input sampler was built in exact ARM64 APK:
+
+    F73E46D978AA0BE928AD2496EBA1AE92276844E52958B9E880F61A3286AE7227
+
+The ARM64 APK contract and the focused HLE contracts pass. The exact APK was
+installed without a launch, its on-device hash matched, and the RPCSX PID was
+absent after installation.
+
+The texture proof is in:
+
+    20260828-203517-thor-input-custom
+
+The first 16 quad draws used 48 mapped texture planes. Every strided plane
+sample had 64 nonzero bytes out of 64. The 1280 by 720 Y planes started with
+`0x10`, and the two 640 by 360 chroma planes started with `0x80`. More
+importantly, the sample hashes changed across later frames and across the two
+buffer sets. The decode output is therefore live data, not an empty Bink
+queue or an unmapped texture.
+
+The draw census reached 154 quads. The second screenshot showed the visible
+Transformers loading emblem at 28.98 FPS. The capture recorded no access
+violation, old PC `0x32a8` loop, or zero-address PUTLLC fault. The runtime guard
+stopped RPCSX at 70.3 C, below the 72 C hard limit. This result proves that the
+HLE task produces live Bink planes, the RSX consumes them, and the title
+advances to visible loading output.
+
+## 65. The lean HLE boundary reaches the 30 FPS cap
+
+The normal route now leaves the draw, SPU-PC, SPU-event, and PPU-PC censuses
+off. `RuntimeCensus=on` can enable them for a bounded diagnosis. The lean route
+ran in:
+
+    20260828-203910-thor-input-custom
+
+The second screenshot reported 30.01 FPS, with 12.1% PPU, 8.3% SPU, 4.0% RSX,
+and 24.3% total CPU use. That screenshot was a black transition frame, so it
+does not prove correct 3D output. The route recorded no access violation and
+no enabled census output.
+
+The device started at 40.9 C. Stored startup heat still reached the 70.3 C
+runtime stop during the extra downstream wait. RPCSX stopped below the 72 C
+hard limit, and the post-stop sample was 53.8 C. Removing solved census work
+therefore reduces log volume but does not remove the startup thermal limit.
+
+The standard proof route now ends after the 12-second active-draw boundary.
+HLE task creation, event delivery, task resume, live Bink texture production,
+visible loading output, and an instantaneous 30 FPS result are proved. Correct
+3D output and sustained 30 FPS are not proved. The next work must reduce
+startup CPU heat or reach the first map with a shorter state-gated route.
