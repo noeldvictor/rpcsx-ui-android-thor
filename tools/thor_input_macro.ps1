@@ -115,10 +115,10 @@ if ($Profile -eq "strict-cool-gate") {
     }
 
     $strictCoolGateParameters = [ordered]@{
-        ThermalPreflightSamples = @($ThermalPreflightSamples, 3)
+        ThermalPreflightSamples = @($ThermalPreflightSamples, 1)
         ThermalPreflightIntervalSeconds = @($ThermalPreflightIntervalSeconds, 2)
         ThermalPreflightHeadroomC = @($ThermalPreflightHeadroomC, 0)
-        MaxLaunchSiliconTemperatureC = @($MaxLaunchSiliconTemperatureC, 35)
+        MaxLaunchSiliconTemperatureC = @($MaxLaunchSiliconTemperatureC, 70)
         ThermalPreflightMaxRiseC = @($ThermalPreflightMaxRiseC, 1)
         MaxBatteryTemperatureC = @($MaxBatteryTemperatureC, 34)
         MaxSkinTemperatureC = @($MaxSkinTemperatureC, 40)

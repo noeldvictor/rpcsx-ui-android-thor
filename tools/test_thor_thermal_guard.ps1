@@ -104,6 +104,15 @@ Assert-ThorEqual "preflight headroom cool" (Get-ThorThermalGuardViolation -Snaps
 
 $hotPreflight = New-ThorTestSnapshot -Battery 33 -Skin 39 -Silicon 75 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
 Assert-ThorEqual "preflight headroom ceiling" (Get-ThorThermalGuardViolation -Snapshot $hotPreflight @preflightLimits).code "silicon-temperature"
+$coldStartLimits = @{
+    MaxBatteryTemperatureC = 34
+    MaxSkinTemperatureC = 40
+    MaxSiliconTemperatureC = 70
+}
+$coldStartBelow = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 69.9 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "cold-start below 70 C" (Get-ThorThermalGuardViolation -Snapshot $coldStartBelow @coldStartLimits) $null
+$coldStartAtLimit = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 70.0 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "cold-start at 70 C" (Get-ThorThermalGuardViolation -Snapshot $coldStartAtLimit @coldStartLimits).code "silicon-temperature"
 Assert-ThorEqual "launch ceiling wins" (Get-ThorPreflightSiliconLimitC -RuntimeLimitC 75 -HeadroomC 5 -MaxLaunchSiliconTemperatureC 40) 40
 Assert-ThorEqual "runtime headroom wins" (Get-ThorPreflightSiliconLimitC -RuntimeLimitC 35 -HeadroomC 5 -MaxLaunchSiliconTemperatureC 40) 30
 $stablePreflight = @(
