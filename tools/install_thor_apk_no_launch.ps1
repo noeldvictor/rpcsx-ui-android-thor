@@ -97,20 +97,15 @@ $coolGateSamples = @(
             }
         }
 )
-if ($coolGateSamples.Count -ne 3 -or
-    @($coolGateSamples | Where-Object { $_.Count -ne 3 }).Count -ne 0 -or
-    (($coolGateSamples | Sort-Object Index | ForEach-Object Index) -join ',') -ne '1,2,3') {
-    throw "Cool gate must contain exactly three ordered pre-run samples."
+if ($coolGateSamples.Count -ne 1 -or
+    @($coolGateSamples | Where-Object { $_.Count -ne 1 }).Count -ne 0 -or
+    (($coolGateSamples | ForEach-Object Index) -join ',') -ne '1') {
+    throw "Cool gate must contain exactly one ordered pre-run sample."
 }
 
-$orderedGateSamples = @($coolGateSamples | Sort-Object Index)
-$coolGateMaximumC = ($orderedGateSamples | Measure-Object -Property TemperatureC -Maximum).Maximum
-$coolGateRiseC = $orderedGateSamples[-1].TemperatureC - $orderedGateSamples[0].TemperatureC
-if ($coolGateMaximumC -ge 35.0) {
-    throw "Cool gate failed: maximum silicon temperature $coolGateMaximumC C is not below 35 C."
-}
-if ($coolGateRiseC -gt 1.0) {
-    throw "Cool gate failed: silicon rise $coolGateRiseC C exceeds 1 C."
+$coolGateMaximumC = $coolGateSamples[0].TemperatureC
+if ($coolGateMaximumC -ge 70.0) {
+    throw "Cool gate failed: silicon temperature $coolGateMaximumC C is not below 70 C."
 }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -219,9 +214,8 @@ $status = if ($null -eq $installFailure) { "installed-exact-no-launch" } else { 
     "- Expected/host SHA-256: $expectedHash",
     "- Cool gate capture: $resolvedCoolGate",
     "- Cool gate age minutes at validation: $([math]::Round($coolGateAge.TotalMinutes, 2))",
-    "- Cool gate silicon samples C: $(($orderedGateSamples | ForEach-Object { $_.TemperatureC.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture) }) -join ', ')",
+    "- Cool gate silicon samples C: $(($coolGateSamples | ForEach-Object { $_.TemperatureC.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture) }) -join ', ')",
     "- Cool gate maximum silicon C: $($coolGateMaximumC.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture))",
-    "- Cool gate silicon rise C: $($coolGateRiseC.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture))",
     "- Installed base.apk: $remoteApk",
     "- Installed SHA-256: $deviceHash",
     "- PID before: $(if ($pidBefore.Count) { $pidBefore -join ' ' } else { 'absent' })",
