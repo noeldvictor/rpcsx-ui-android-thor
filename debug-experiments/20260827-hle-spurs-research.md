@@ -6950,3 +6950,97 @@ rendering progress.
 - Next: In a separate cool round, install the exact APK and run one bounded
   HLE route. Stop at `Thor FMOD EFWAIT RETURN #0`. If the return marker does
   not appear, use the send result and queue IDs to repair the exact boundary.
+
+## 141. The FMOD task stays at a cold LLVM block entry
+
+- Status: android-pass, boundary-capture, not-comparable
+- Scope: HLE-SPURS, FMOD, SPU-dispatch, thermal-safety
+- Hypothesis: A missing or wrong SPU port connection prevents the FMOD event
+  from reaching the PPU event queue.
+- Changed files/settings: The run used the exact experiment 140 APK. Its
+  installed SHA-256 was
+  `73DA69ADC0359F54C270CBD7ABE166C2728074FAFE5F9FF9FBB7E5182A824927`,
+  and its size was 116,147,159 bytes. The route used HLE, the FMOD event-wait
+  trace, 0.5-second slices, and `Thor FMOD EFWAIT RETURN #0` as its stop
+  marker. The EDGE task and event traces and the general SPU censuses were
+  off.
+- Thor result: The one-sample cold-start gate passed immediately at 44.5 C
+  fixed silicon. The controller completed 69 slices in 599.437 host seconds
+  and reached its host limit without the stop marker. It accumulated 42.241
+  active seconds. Active windows were 0.578 to 0.672 seconds. Cooldown waits
+  totaled 153 seconds.
+- Event evidence: The main thread armed request `0x0001` on event flag
+  `0x01f20600`. The flag used taskset `0x1144e580`, queue `0x8d009000`, and
+  port 21. The trace recorded no `Thor FMOD EVENT`, wake, or return line. This
+  proves that the task did not execute an event-send attempt. It does not show
+  a missing or wrong port connection.
+- SPU evidence: Sixteen samples from wait age 10.056 to 85.634 seconds put the
+  same FMOD task 0 on SPU 1 at PC `0x14008`. Every sample had opcode
+  `0x5e0fc188`, link register `0x12150`, port 21 in register 3, zero in
+  registers 4 and 5, and zero outbound, interrupt, and inbound channels. The
+  task stayed at the first instruction of the exact user-event helper. The
+  startup native-object log loaded modules through `0x11d80`, but it did not
+  load or compile an object for `0x14008`.
+- Static evidence: The experiment 139 Ghidra result proves that `0x14008` to
+  `0x1404c` is straight-line user-event helper code. It writes data to channel
+  28 and interrupt value `0x55000000` to channel 30, then returns. Therefore,
+  the repeated entry PC is a cold LLVM dispatch boundary, not a guest wait
+  loop.
+- Visual correctness: Not proved. The route did not reach its marker and did
+  not save a boundary image. No moving 3D output exists.
+- FPS/frame-time: No performance credit. The final interval reported 18
+  frames in 104.00 seconds, or 0.17 FPS. Paused slices are not a comparable
+  gameplay measurement.
+- Thermal result: The controller maximum was 65.4 C fixed silicon. The
+  independent guard recorded 1,017 temperature samples and 19 early holds.
+  Fixed silicon peaked at 70.7 C, and CPU junction peaked at 85.1 C. It
+  recorded no 72 C fixed-silicon hard stop and no 95 C junction hard stop.
+  The final live values were 61.0 C fixed silicon and 67 C junction.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Final fixed silicon was 53.0 C. Property cleanup reset the
+  FMOD trace and local-store controls.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-192850-thor-input-custom`.
+- Decision: Reject the missing-port hypothesis for this run. Keep the
+  firmware-matching `WAIT_SIGNAL` repair and the event semantics. The next
+  candidate must execute the exact guest helper instead of creating a host
+  event directly.
+- Next: Use a default-off, title-state-gated interpreter handoff for the exact
+  helper range. In one later independently cool round, require the helper
+  enter and leave lines, the real SPU event line, the PPU wake, and the PPU
+  return before the result can pass this boundary.
+
+## 142. Interpret the exact FMOD user-event helper
+
+- Status: proposed, host-pass, not-comparable
+- Scope: HLE-SPURS, FMOD, SPU-dispatch
+- Hypothesis: The cold LLVM dispatch boundary at `0x14008` prevents the FMOD
+  SPU task from sending the event that releases the main thread.
+- Changed files/settings: The default-off
+  `debug.rpcsx.thor.fmod_event_interp` gate now hands PC `0x14008` to the old
+  SPU interpreter before a cold LLVM compile. The gate also requires an active
+  FMOD PPU wait, a nonzero wait taskset, the same taskset at local-store offset
+  `0x27b8`, and the exact 16-byte helper signature. It interprets only
+  `0x14008` through `0x1404f`. The experimental HLE route enables the gate and
+  resets it after the run. It does not inject an event or change event-flag
+  state.
+- Rollback: Set `debug.rpcsx.thor.fmod_event_interp` to `0`. The normal LLVM
+  dispatcher and event path are unchanged when the gate is off.
+- Windows result: Not run. This is an Android ARM64 dispatch candidate.
+- Thor result: Not run. Experiment 141 used the one allowed launch for this
+  independently cool round, and the Thor remains stopped.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The focused Transformers HLE route contract, PowerShell
+  parser checks for all changed scripts, and `git diff --check` passed. The
+  complete Android debug APK build passed in 1 minute 15 seconds. The host APK
+  is 116,146,165 bytes. Its SHA-256 is
+  `CB0806B23C9101D7A591A284888C5B9911655855630DAA437EED15D5974A8FAA`.
+- Decision: Keep this candidate for one device test. It follows the existing
+  exact-range ARM64 interpreter pattern and executes the real guest helper.
+- Next: In a separate independently cool round, install the exact APK and run
+  one bounded HLE route. Stop at `Thor FMOD EFWAIT RETURN #0`. Require the
+  interpreter enter and leave lines, event delivery, wake, and return. If the
+  PPU returns, continue to the next proved startup boundary. Require moving
+  3D output and a comparable sustained 30 FPS measurement before a full-HLE
+  or speed claim.

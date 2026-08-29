@@ -22,6 +22,7 @@
 #include "SPUFailedBlocks.h"
 #include "SPUInterpreter.h"
 #include "SPUDisAsm.h"
+#include "thor_spurs_event_wait_probe.h"
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -262,6 +263,75 @@ static void spu_run_thor_edge_event_interp_dispatch(spu_thread& spu)
 	if (count < 16)
 	{
 		spu_log.error("Thor EDGE EVENT DISPATCH INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
+			count, spu.pc, spu.gpr[3]._u32[3]);
+	}
+
+	spu_runtime::g_escape(&spu);
+}
+
+// Interpret the exact FMOD event-send helper before a cold LLVM compile can
+// hold the task at its block entry. The PPU wait snapshot and taskset context
+// keep this default-off diagnostic inside the live BLUS30357 FMOD wait.
+static bool is_thor_fmod_event_interp_dispatch(const spu_thread& spu) noexcept
+{
+	static const bool s_enabled = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.fmod_event_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	if (!s_enabled || spu.pc != 0x14008)
+	{
+		return false;
+	}
+
+	const auto wait = thor::get_fmod_event_wait_snapshot();
+
+	if (!wait.active || !wait.taskset ||
+		static_cast<u32>(+spu._ref<u64>(0x27b8)) != wait.taskset)
+	{
+		return false;
+	}
+
+	static constexpr std::array<u8, 16> s_fmod_event_signature = {
+		0x5e, 0x0f, 0xc1, 0x88, 0x35, 0x80, 0x00, 0x10,
+		0x41, 0x40, 0x00, 0x86, 0x56, 0xc0, 0x04, 0x02,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x14008), s_fmod_event_signature.data(),
+		s_fmod_event_signature.size()) == 0;
+}
+
+static void spu_run_thor_fmod_event_interp_dispatch(spu_thread& spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+
+	spu.interp_fallback_begin = 0x14008;
+	spu.interp_fallback_end = 0x14050;
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+
+	if (count < 16)
+	{
+		spu_log.error("Thor FMOD EVENT DISPATCH INTERPRETER enter #%u pc=0x%05x lr=0x%05x "
+			"r3=0x%08x r4=0x%08x r5=0x%08x",
+			count, spu.pc, spu.gpr[0]._u32[3], spu.gpr[3]._u32[3],
+			spu.gpr[4]._u32[3], spu.gpr[5]._u32[3]);
+	}
+
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+
+	if (count < 16)
+	{
+		spu_log.error("Thor FMOD EVENT DISPATCH INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
 			count, spu.pc, spu.gpr[3]._u32[3]);
 	}
 
@@ -3066,6 +3136,12 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 	if (is_thor_edge_event_interp_dispatch(spu))
 	{
 		spu_run_thor_edge_event_interp_dispatch(spu);
+		return;
+	}
+
+	if (is_thor_fmod_event_interp_dispatch(spu))
+	{
+		spu_run_thor_fmod_event_interp_dispatch(spu);
 		return;
 	}
 #endif

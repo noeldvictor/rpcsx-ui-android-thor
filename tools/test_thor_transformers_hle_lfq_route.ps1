@@ -62,6 +62,7 @@ $requiredFragments = @(
     '"debug.rpcsx.thor.spu_pc_census"',
     '"debug.rpcsx.thor.spu_event_census"',
     '"debug.rpcsx.thor.edge_event_interp"',
+    '"debug.rpcsx.thor.fmod_event_interp"',
     '"setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue"',
     '"getprop debug.rpcsx.thor.taskset_select_atomic"',
     '"taskset-select-atomic-prelaunch-reset.txt"',
@@ -97,6 +98,7 @@ $requiredRenderProbeFragments = @(
     '[string]$EdgeTaskCensus = "off"',
     '[string]$EdgeEventWaitTrace = "off"',
     '[string]$FmodEventWaitTrace = "off"',
+    '[string]$FmodEventInterp = "on"',
     '[string]$RuntimeCensus = "off"',
     '[string]$SpuPcCensus = "off"',
     '[string]$InputMode = "Direct"',
@@ -122,8 +124,10 @@ $requiredRenderProbeFragments = @(
     '"debug.rpcsx.thor.edge_event_wait_trace" = if ($Mode -eq "HLE" -and $EdgeEventWaitTrace -eq "on") { "1" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_wait_trace" -Value "0"',
     '"debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"',
     '"debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on" -or $SpuPcCensus -eq "on") { "1" } else { "0" }',
@@ -431,6 +435,25 @@ $requiredEdgeEventInterpFragments = @(
 foreach ($fragment in $requiredEdgeEventInterpFragments) {
     if (-not ($spuLlvm.Contains($fragment) -or $spuCommon.Contains($fragment))) {
         throw "The edgeZlib event interpreter handoff is missing: $fragment"
+    }
+}
+
+$requiredFmodEventInterpFragments = @(
+    '"debug.rpcsx.thor.fmod_event_interp"',
+    'is_thor_fmod_event_interp_dispatch(spu)',
+    'spu.pc != 0x14008',
+    'thor::get_fmod_event_wait_snapshot()',
+    'static_cast<u32>(+spu._ref<u64>(0x27b8)) != wait.taskset',
+    'std::memcmp(spu._ptr<u8>(0x14008), s_fmod_event_signature.data()',
+    'spu.interp_fallback_begin = 0x14008;',
+    'spu.interp_fallback_end = 0x14050;',
+    'Thor FMOD EVENT DISPATCH INTERPRETER enter #%u',
+    'Thor FMOD EVENT DISPATCH INTERPRETER leave #%u'
+)
+
+foreach ($fragment in $requiredFmodEventInterpFragments) {
+    if (-not $spuCommon.Contains($fragment)) {
+        throw "The FMOD event interpreter handoff is missing: $fragment"
     }
 }
 

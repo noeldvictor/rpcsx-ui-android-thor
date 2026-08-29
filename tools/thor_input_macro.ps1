@@ -1426,6 +1426,8 @@ $spursProfilePropertyNames = @(
     "debug.rpcsx.thor.spu_event_census",
     "debug.rpcsx.thor.edge_event_interp",
     "debug.rpcsx.thor.edge_event_wait_trace",
+    "debug.rpcsx.thor.fmod_event_wait_trace",
+    "debug.rpcsx.thor.fmod_event_interp",
     "debug.rpcsx.thor.spurs_always_notify",
     "debug.rpcsx.thor.spurs_atomic_census",
     "debug.rpcsx.thor.spurs_drop_notify",
