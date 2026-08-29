@@ -11,6 +11,7 @@ silicon_hard_milli_c="${3:?silicon hard limit}"
 junction_hard_milli_c="${4:?junction hard limit}"
 battery_hard_milli_c="${5:?battery hard limit}"
 skin_hard_c="${6:?skin hard limit}"
+ready_path="${7:-}"
 
 silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 82 90"
 junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"
@@ -83,6 +84,14 @@ while :; do
         echo "sample=$sample status=failed code=sensor-set silicon_count=$silicon_count junction_count=$junction_count battery_milli_c=$battery_value skin_c=${last_skin:-unknown}"
         stop_package
         exit 40
+    fi
+
+    if [ "$sample" -eq 1 ] && [ -n "$ready_path" ]; then
+        if ! printf '%s\n' "ready" > "$ready_path"; then
+            echo "sample=$sample status=failed code=ready-file path=$ready_path"
+            stop_package
+            exit 41
+        fi
     fi
 
     echo "sample=$sample status=ok pid=$pid silicon_milli_c=$silicon_max silicon_source=$silicon_source junction_milli_c=$junction_max junction_source=$junction_source battery_milli_c=$battery_value skin_c=$last_skin"

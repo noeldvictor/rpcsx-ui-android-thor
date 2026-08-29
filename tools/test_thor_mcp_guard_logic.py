@@ -43,6 +43,7 @@ def use_temperatures(values):
 
 
 def prepare_paused_guest():
+    SERVER._process_hold_pid = None
     calls = []
     SERVER.pid = lambda: calls.append(("pid", None)) or "123"
     SERVER.emulation_state = lambda: 4
@@ -144,7 +145,17 @@ clock.now = 0.0
 calls = prepare_paused_guest()
 startup_states = iter([6, 7, 7, 4])
 SERVER.emulation_state = lambda: next(startup_states)
-use_temperatures([42.0, 55.0, 60.0, 61.0])
+use_temperatures([42.0, 55.0])
+process_holds = []
+
+
+def hold_startup_process(process_id):
+    process_holds.append(process_id)
+    SERVER._process_hold_pid = process_id
+    return {"ok": True, "pid": process_id, "processState": "T"}
+
+
+SERVER.stop_process_for_slice = hold_startup_process
 result = SERVER.t_slice({
     "seconds": 0.1,
     "startupPauseTimeoutS": 20.0,
@@ -152,15 +163,44 @@ result = SERVER.t_slice({
 })
 assert result["completed"] is True, "The startup handoff did not reach its held state."
 assert result["startupHandoff"] is True, "The Ready-to-starting handoff was not recorded."
-assert result["initialState"] == 6 and result["finalState"] == 4, (
+assert result["initialState"] == 6 and result["finalState"] == 7, (
     "The startup handoff lost its state evidence."
 )
-assert result["pauseSettledAtS"] > result["pauseRequestedAtS"], (
-    "The startup handoff did not record its delayed pause."
+assert result["holdMode"] == "process" and process_holds == ["123"], (
+    "The startup handoff did not stop the process at its deadline."
 )
 assert calls.count(("/pause", "POST")) == 1, (
     "The controller retried a normal pause while startup owned the handoff."
 )
+SERVER._process_hold_pid = None
+
+clock.now = 0.0
+calls = []
+SERVER.pid = lambda: calls.append(("pid", None)) or "123"
+SERVER.api = lambda path, method="GET", timeout=8: calls.append((path, method)) or {"ok": True}
+SERVER.t_stop = lambda _: {"quiet": True}
+SERVER._process_hold_pid = "123"
+SERVER._process_state = lambda process_id: "T"
+SERVER.emulation_state = lambda: 7
+continued_processes = []
+
+
+def continue_startup_process(process_id):
+    continued_processes.append(process_id)
+    SERVER._process_hold_pid = None
+    return {"ok": True, "pid": process_id, "processState": "R"}
+
+
+SERVER.continue_process_for_slice = continue_startup_process
+use_temperatures([42.0, 45.0])
+result = SERVER.t_slice({"seconds": 0.1, "includeState": False})
+assert result["completed"] is True and result["holdMode"] == "process", (
+    "A process-held startup slice did not stop again at its deadline."
+)
+assert result["initialState"] == 7 and continued_processes == ["123"], (
+    "The process-held startup slice did not continue the recorded process."
+)
+SERVER._process_hold_pid = None
 
 clock.now = 0.0
 prepare_paused_guest()

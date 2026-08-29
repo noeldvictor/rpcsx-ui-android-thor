@@ -6021,3 +6021,67 @@ rendering progress.
   until the event result is recorded. Require correct moving 3D output and a
   comparable sustained 30 FPS measurement before a full-HLE or performance
   claim.
+
+## 124. A blocked host sensor read defeats the startup wait guard
+
+- Status: route-tooling, failed, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: The extended startup-handoff wait will let startup compilation
+  finish while the host controller continues to enforce the 72 C fixed-silicon
+  hard stop.
+- Changed files/settings: The run used the same exact installed APK, HLE stack,
+  cache settings, and event marker as experiment 123. Its APK SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`.
+  The host included commit `98fe8bed7`.
+- Rollback: The controller force-stopped RPCSX when its fixed-silicon read
+  returned. Its stop result had no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. The wrapper stop confirmed the same result. Property cleanup
+  cleared 56 values and found zero remaining `debug.rpcsx.thor.*` values. The
+  final fixed-silicon values were 48.2 C after the wrapper stop and 48.6 C after
+  property cleanup. Do not launch the Thor again in this hardware round.
+- Thor result: The strict gate passed at 42.5 C fixed silicon. The first slice
+  cooled to 47.0 C before release. The controller correctly identified initial
+  state 6 (`ready`), final state 7 (`starting`), and the startup-handoff flag.
+  It did not apply the old eight-second state failure. However, the first host
+  fixed-silicon read did not return while the device was saturated. It returned
+  after 28.281 seconds with 79.9 C, above both the 72 C repository limit and the
+  user's 75 C ceiling. The controller then force-stopped the process. The
+  emulator junction guard engaged at 85 C during this interval.
+- Guard failure: The input macro ended its own thermal guard before the wrapper
+  started `thor_slice_loop`. The slice loop then depended on synchronous host
+  ADB temperature reads. This left no independent device-side stop while the
+  first read was blocked. Extending the startup wait therefore exposed a second
+  harness defect; it did not test the EDGE event path.
+- HLE evidence: No `Thor EDGE EFWAIT` or exact event-result row appears. The run
+  stopped during startup compilation. It provides no evidence for an HLE
+  semantic change.
+- Visual correctness: Not proved. No boundary screenshot exists.
+- FPS/frame-time: No credit. No moving gameplay sample exists.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-150719-thor-input-custom`.
+- Decision: Do not wait for startup compilation with only an emulator pause.
+  `Emulator::Pause()` cannot stop `system_state::starting`. The successor sends
+  process-level `SIGSTOP` at the one-second deadline and `SIGCONT` for the next
+  slice. This stops startup compiler threads as well as guest threads. The
+  controller records whether each held state is an emulator pause or a process
+  hold. It reads the guest log through `run-as` while the control server is
+  stopped.
+- Thermal successor: The wrapper now starts the existing guard on the device
+  before the slice controller. A ready-file handshake proves that the guard has
+  validated all sensors before the first resume. It requests an early stop at
+  70 C, keeps 72 C as the hard limit, and keeps the separate 95 C junction
+  limit. The guard stays active until the verified package stop. Thus, a blocked
+  host ADB read cannot remove the device-side stop again.
+- Windows result: The simulated guarded-slice state machine, repeated
+  process-held startup slices, fixed-silicon contract, device guard contract,
+  Transformers route contract, Python compilation, PowerShell parsing, and
+  `git diff --check` pass. This successor is host-only and does not need a new
+  APK.
+- Next: In a later independently cool hardware round, use the same exact APK.
+  First prove that `run-as` can stop and continue the app process and that the
+  device guard is ready before resume. Require every active startup slice to
+  settle near one second and stay below the device-side early stop. Continue to
+  the exact EDGE event marker only if those safety gates pass. Do not change HLE
+  semantics until the event result is recorded. Require correct moving 3D output
+  and a comparable sustained 30 FPS measurement before a full-HLE or
+  performance claim.

@@ -80,6 +80,7 @@ FILES = f"/storage/emulated/0/Android/data/{PKG}/files"
 EMU_STATE_PAUSED = 4
 EMU_STATE_READY = 6
 EMU_STATE_STARTING = 7
+_process_hold_pid = None
 
 
 # --------------------------------------------------------------------------
@@ -333,6 +334,48 @@ def emulation_state():
     return state if isinstance(state, int) else None
 
 
+def _process_state(p):
+    raw = sh(f"run-as {PKG} cat /proc/{p}/status")
+    match = re.search(r"^State:\s+([A-Za-z])", raw, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def held_process_pid():
+    global _process_hold_pid
+    if not _process_hold_pid:
+        return None
+    current = pid()
+    if current != _process_hold_pid or _process_state(current) not in ("T", "t"):
+        _process_hold_pid = None
+        return None
+    return current
+
+
+def stop_process_for_slice(p):
+    """Stop every app thread while RPCSX is still in startup compilation."""
+    global _process_hold_pid
+    sh(f"run-as {PKG} kill -STOP {p}")
+    state = _process_state(p)
+    if state not in ("T", "t"):
+        return {"ok": False, "pid": p, "processState": state}
+    _process_hold_pid = p
+    return {"ok": True, "pid": p, "processState": state}
+
+
+def continue_process_for_slice(p):
+    """Continue a process-level startup hold before the next bounded slice."""
+    global _process_hold_pid
+    if held_process_pid() != p:
+        return {"ok": False, "pid": p,
+                "error": "the recorded process hold is not active"}
+    sh(f"run-as {PKG} kill -CONT {p}")
+    state = _process_state(p)
+    if state in ("T", "t"):
+        return {"ok": False, "pid": p, "processState": state}
+    _process_hold_pid = None
+    return {"ok": True, "pid": p, "processState": state}
+
+
 def is_paused():
     # system_state: 4 Paused, 6 Ready. A start-paused debug boot is Ready and
     # has no guest threads until the first resume. Treat it as a valid held
@@ -371,8 +414,9 @@ def t_slice(a):
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
-    initial_state = emulation_state()
-    if initial_state not in (EMU_STATE_PAUSED, EMU_STATE_READY):
+    process_held = held_process_pid() == p
+    initial_state = EMU_STATE_STARTING if process_held else emulation_state()
+    if not process_held and initial_state not in (EMU_STATE_PAUSED, EMU_STATE_READY):
         return {"refused": True,
                 "reason": "the emulator must be paused before a bounded slice"}
 
@@ -384,7 +428,7 @@ def t_slice(a):
         pause_timeout,
         min(float(a.get("startupPauseTimeoutS", 120.0)), 300.0),
     )
-    startup_handoff = initial_state == EMU_STATE_READY
+    startup_handoff = process_held or initial_state == EMU_STATE_READY
     start_silicon = fixed_silicon_c()
     if start_silicon < 0 or start_silicon >= start_ceiling:
         return {"refused": True, "fixedSiliconC": start_silicon,
@@ -392,7 +436,14 @@ def t_slice(a):
                            if start_silicon < 0 else
                            f"fixed silicon is not below {start_ceiling} C")}
 
-    resume = api("/resume", "POST")
+    resume = (continue_process_for_slice(p) if process_held
+              else api("/resume", "POST"))
+    if not resume.get("ok"):
+        stop = t_stop({})
+        return {"error": "the bounded slice could not resume its held state",
+                "resume": resume, "stop": stop,
+                "initialState": initial_state,
+                "startupHandoff": startup_handoff}
     started = time.monotonic()
     deadline_pause = {}
 
@@ -403,6 +454,12 @@ def t_slice(a):
     def pause_at_deadline():
         deadline_pause["requestedAtS"] = time.monotonic() - started
         deadline_pause["result"] = api("/pause", "POST")
+        if (startup_handoff and
+                not deadline_pause["result"].get("paused", False)):
+            deadline_pause["state"] = emulation_state()
+            if deadline_pause["state"] == EMU_STATE_STARTING:
+                deadline_pause["processHold"] = stop_process_for_slice(p)
+                deadline_pause["settledAtS"] = time.monotonic() - started
 
     deadline_timer = threading.Timer(duration, pause_at_deadline)
     deadline_timer.daemon = True
@@ -433,6 +490,27 @@ def t_slice(a):
     if pause is None:
         deadline_timer.cancel()
         pause = api("/pause", "POST")
+
+    process_hold = deadline_pause.get("processHold")
+    if process_hold and process_hold.get("ok"):
+        settled = float(deadline_pause.get("settledAtS", elapsed))
+        host_elapsed = time.monotonic() - started
+        return {"completed": True, "requestedS": duration,
+                "elapsedS": round(settled, 3),
+                "hostElapsedS": round(host_elapsed, 3),
+                "activeElapsedS": round(settled, 3),
+                "pauseRequestedAtS": round(float(
+                    deadline_pause.get("requestedAtS", elapsed)), 3),
+                "pauseSettledAtS": round(settled, 3),
+                "startFixedSiliconC": start_silicon,
+                "endFixedSiliconC": silicon,
+                "maxFixedSiliconC": max_silicon,
+                "resume": resume, "pause": pause,
+                "processHold": process_hold,
+                "paused": True, "holdMode": "process",
+                "initialState": initial_state,
+                "finalState": EMU_STATE_STARTING,
+                "startupHandoff": startup_handoff}
 
     # Check liveness only after the independent deadline pause. A pid read can
     # take more than one second on this device.
@@ -497,6 +575,7 @@ def t_slice(a):
               "maxFixedSiliconC": max_silicon,
               "resume": resume, "pause": pause,
               "paused": paused,
+              "holdMode": "emulator",
               "initialState": initial_state,
               "finalState": final_state,
               "startupHandoff": startup_handoff}
@@ -508,9 +587,11 @@ def t_slice(a):
 
 def t_wait_cool_paused(a):
     """Keep a paused guest still until fixed silicon is below the next ceiling."""
-    if not pid():
+    p = pid()
+    if not p:
         return {"error": "emulator is not running"}
-    if not is_paused():
+    process_held = held_process_pid() == p
+    if not process_held and not is_paused():
         return {"refused": True,
                 "reason": "the emulator must stay paused while it cools"}
 
@@ -537,10 +618,15 @@ def t_wait_cool_paused(a):
     return {"cooled": 0 <= silicon < target, "targetC": target,
             "fixedSiliconC": silicon,
             "cooledAtFixedSiliconC": silicon, "waitedS": waited,
-            "paused": is_paused()}
+            "paused": process_held or is_paused(),
+            "holdMode": "process" if process_held else "emulator"}
 
 
 def _matching_log_lines(match, count=1):
+    if held_process_pid():
+        raw = adb(["exec-out", "run-as", PKG, "cat",
+                   f"{FILES}/cache/RPCSX.log"], timeout=30)
+        return [line for line in raw.splitlines() if str(match) in line][-count:]
     encoded = urllib.parse.quote(str(match), safe="")
     result = api(f"/log?match={encoded}&n={int(count)}")
     if not isinstance(result, dict):
@@ -553,7 +639,7 @@ def t_slice_loop(a):
     """Own one slice and cool sequence until a log boundary or hard stop."""
     if not pid():
         return {"error": "emulator is not running"}
-    if not is_paused():
+    if not held_process_pid() and not is_paused():
         return {"refused": True,
                 "reason": "the emulator must be paused before a slice loop"}
 
@@ -582,9 +668,12 @@ def t_slice_loop(a):
         fields["hostElapsedS"] = round(time.monotonic() - loop_started, 3)
         fields["maxHostS"] = max_host_s
         if pid():
-            fields["paused"] = is_paused()
-            fields["device"] = api("/device")
-            fields["diag"] = api("/diag")
+            process_held = held_process_pid()
+            fields["paused"] = bool(process_held) or is_paused()
+            fields["holdMode"] = "process" if process_held else "emulator"
+            if not process_held:
+                fields["device"] = api("/device")
+                fields["diag"] = api("/diag")
         else:
             fields["paused"] = False
         return fields
@@ -644,12 +733,15 @@ def t_slice_loop(a):
             "elapsedS": part.get("elapsedS"),
             "pauseRequestedAtS": part.get("pauseRequestedAtS"),
             "pauseSettledAtS": part.get("pauseSettledAtS"),
+            "activeElapsedS": part.get("activeElapsedS"),
+            "hostElapsedS": part.get("hostElapsedS"),
             "startFixedSiliconC": part.get("startFixedSiliconC"),
             "endFixedSiliconC": part.get("endFixedSiliconC"),
             "maxFixedSiliconC": part.get("maxFixedSiliconC"),
             "initialState": part.get("initialState"),
             "finalState": part.get("finalState"),
             "startupHandoff": part.get("startupHandoff"),
+            "holdMode": part.get("holdMode"),
         }
         records.append(record)
 
@@ -822,6 +914,8 @@ def t_stop(_):
     """Stop, and KEEP stopping. One force-stop loses to the app's respawn: the
     device once climbed 56 -> 79 -> 95 C after a stop that reported success,
     with the app back at 542% CPU while pidof had read empty."""
+    global _process_hold_pid
+    _process_hold_pid = None
     for _ in range(5):
         sh(f"am force-stop {PKG}")
         p = pid()

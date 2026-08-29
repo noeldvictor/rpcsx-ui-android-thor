@@ -127,6 +127,102 @@ function Invoke-ThorRenderProbeController {
     }
 }
 
+$script:ThorSliceDeviceGuardPowerShell = $null
+$script:ThorSliceDeviceGuardAsync = $null
+$script:ThorSliceDeviceGuardText = $null
+$script:ThorSliceDeviceGuardOutput = $null
+$script:ThorSliceDeviceGuardError = $null
+$script:ThorSliceDeviceGuardReady = $null
+
+function Complete-ThorSliceDeviceGuard {
+    if ($null -ne $script:ThorSliceDeviceGuardText) {
+        return $script:ThorSliceDeviceGuardText
+    }
+    if ($null -eq $script:ThorSliceDeviceGuardPowerShell) {
+        return ""
+    }
+
+    $outputLines = @()
+    try {
+        $outputLines = @(
+            $script:ThorSliceDeviceGuardPowerShell.EndInvoke($script:ThorSliceDeviceGuardAsync) |
+                ForEach-Object { $_.ToString() }
+        )
+    } catch {
+        $outputLines += "status=host-completion-error message=$($_.Exception.Message)"
+    }
+    $errorLines = @(
+        $script:ThorSliceDeviceGuardPowerShell.Streams.Error |
+            ForEach-Object { $_.ToString() }
+    )
+    $outputLines | Set-Content -LiteralPath $script:ThorSliceDeviceGuardOutput -Encoding UTF8
+    $errorLines | Set-Content -LiteralPath $script:ThorSliceDeviceGuardError -Encoding UTF8
+    $script:ThorSliceDeviceGuardText = ($outputLines -join [Environment]::NewLine).Trim()
+    return $script:ThorSliceDeviceGuardText
+}
+
+function Start-ThorSliceDeviceGuard {
+    param([Parameter(Mandatory = $true)][string]$CaptureDir)
+
+    $localGuard = Join-Path $PSScriptRoot "thor_device_thermal_guard.sh"
+    $remoteGuard = "/data/local/tmp/rpcsx-thor-thermal-guard.sh"
+    $script:ThorSliceDeviceGuardReady = "/data/local/tmp/rpcsx-thor-slice-guard-$PID.ready"
+    Invoke-ThorAdbText $adb $CaptureDir "slice-device-thermal-guard-push.txt" @("push", $localGuard, $remoteGuard) | Out-Null
+    & $adb -s $Serial shell rm -f $script:ThorSliceDeviceGuardReady | Out-Null
+
+    $script:ThorSliceDeviceGuardOutput = Join-Path $CaptureDir "slice-device-thermal-guard.log"
+    $script:ThorSliceDeviceGuardError = Join-Path $CaptureDir "slice-device-thermal-guard.stderr.log"
+    $guardArguments = @(
+        "-s", $Serial, "shell", "sh", $remoteGuard, "net.rpcsx.easy",
+        "70000", "72000", "95000", "34000", "40",
+        $script:ThorSliceDeviceGuardReady
+    )
+
+    $script:ThorSliceDeviceGuardPowerShell = [PowerShell]::Create()
+    $null = $script:ThorSliceDeviceGuardPowerShell.AddCommand($adb)
+    foreach ($argument in $guardArguments) {
+        $null = $script:ThorSliceDeviceGuardPowerShell.AddArgument([string]$argument)
+    }
+    $script:ThorSliceDeviceGuardAsync = $script:ThorSliceDeviceGuardPowerShell.BeginInvoke()
+
+    $ready = $false
+    for ($attempt = 1; $attempt -le 40; $attempt++) {
+        if ($script:ThorSliceDeviceGuardAsync.IsCompleted) {
+            $guardText = Complete-ThorSliceDeviceGuard
+            & $adb -s $Serial shell am force-stop net.rpcsx.easy | Out-Null
+            throw "The slice device thermal guard exited before it became ready: $guardText"
+        }
+        & $adb -s $Serial shell test -f $script:ThorSliceDeviceGuardReady 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $ready = $true
+            break
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $ready) {
+        & $adb -s $Serial shell am force-stop net.rpcsx.easy | Out-Null
+        throw "The slice device thermal guard did not become ready within its bounded wait."
+    }
+    Invoke-ThorAdbText $adb $CaptureDir "slice-device-thermal-guard-ready.txt" @("shell", "cat $($script:ThorSliceDeviceGuardReady)") | Out-Null
+}
+
+function Stop-ThorSliceDeviceGuard {
+    if ($null -eq $script:ThorSliceDeviceGuardPowerShell) {
+        return
+    }
+    if (-not $script:ThorSliceDeviceGuardAsync.IsCompleted) {
+        $script:ThorSliceDeviceGuardAsync.AsyncWaitHandle.WaitOne(5000) | Out-Null
+    }
+    if (-not $script:ThorSliceDeviceGuardAsync.IsCompleted) {
+        $script:ThorSliceDeviceGuardPowerShell.Stop()
+    }
+    Complete-ThorSliceDeviceGuard | Out-Null
+    $script:ThorSliceDeviceGuardPowerShell.Dispose()
+    if (-not [string]::IsNullOrWhiteSpace($script:ThorSliceDeviceGuardReady)) {
+        & $adb -s $Serial shell rm -f $script:ThorSliceDeviceGuardReady | Out-Null
+    }
+}
+
 # Keep the measured HLE candidate stack explicit. Enable bounded render probes.
 $profileProperties = [ordered]@{
     "debug.rpcsx.thor.hle_libs" = if ($Mode -eq "HLE") { "libsre.sprx" } else { "none" }
@@ -208,6 +304,7 @@ try {
     $captureDir = Resolve-ThorRenderProbeCaptureDirectory -Output $captureOutput
 
     if ($SliceLoop) {
+        Start-ThorSliceDeviceGuard -CaptureDir $captureDir
         @(
             "",
             "## Paused slice loop",
@@ -230,12 +327,13 @@ try {
             markerEvery = 1
         }
         $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)
-        $null = Invoke-ThorRenderProbeController `
+        $controllerOutput = Invoke-ThorRenderProbeController `
             -Name "thor_slice_loop" `
             -Arguments $sliceArguments `
             -CaptureDir $captureDir `
             -OutputName "slice-loop.json" `
             -TimeoutSeconds $controllerTimeout
+        $sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json
 
         $pidEvidence = Invoke-ThorAdbText $adb $captureDir "slice-loop-pid.txt" @("shell", "pidof net.rpcsx.easy") -AllowFailure
         $pidRows = @(
@@ -247,7 +345,8 @@ try {
                     $_ -notmatch '^exit='
                 }
         )
-        if ($pidRows.Count -gt 0) {
+        if ($pidRows.Count -gt 0 -and $sliceResult.markerReached -and
+            $sliceResult.paused -and $sliceResult.holdMode -ne "process") {
             $screenshotArguments = @{ path = (Join-Path $captureDir "slice-loop-boundary.png") }
             $null = Invoke-ThorRenderProbeController `
                 -Name "thor_screenshot" `
@@ -291,6 +390,11 @@ try {
             } catch {
                 $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "slice-loop-stop-error.txt") -Encoding UTF8
             }
+            try {
+                Stop-ThorSliceDeviceGuard
+            } catch {
+                $_.ToString() | Set-Content -LiteralPath (Join-Path $captureDir "slice-device-thermal-guard-stop-error.txt") -Encoding UTF8
+            }
         } else {
             # Keep the failure safe if boot completed but capture-path parsing
             # failed. The normal controller path records and verifies its stop.
@@ -303,6 +407,7 @@ try {
                     break
                 }
             }
+            Stop-ThorSliceDeviceGuard
         }
     }
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.draw_census" -Value "0"

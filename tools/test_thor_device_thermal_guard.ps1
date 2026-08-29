@@ -12,6 +12,8 @@ $requiredGuardFragments = @(
     'silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 82 90"',
     'junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"',
     'battery_zone=94',
+    'ready_path="${7:-}"',
+    'code=ready-file',
     '[ "$silicon_count" -ne 15 ]',
     '[ "$junction_count" -ne 14 ]',
     'code=sensor-set',
@@ -80,6 +82,28 @@ if ($guardStopCount -lt 2) {
 
 if (-not $route.Contains('ThermalRuntimeTelemetry = if ($SliceLoop) { "full" } else { "device" }')) {
     throw "The Transformers HLE route does not select the correct thermal telemetry."
+}
+
+foreach ($fragment in @(
+    'function Start-ThorSliceDeviceGuard',
+    'function Stop-ThorSliceDeviceGuard',
+    '"70000", "72000", "95000", "34000", "40"',
+    'slice-device-thermal-guard-ready.txt',
+    'Start-ThorSliceDeviceGuard -CaptureDir $captureDir',
+    'Stop-ThorSliceDeviceGuard'
+)) {
+    if (-not $route.Contains($fragment)) {
+        throw "The Transformers slice route is missing its device guard contract: $fragment"
+    }
+}
+
+$sliceGuardStart = $route.IndexOf('Start-ThorSliceDeviceGuard -CaptureDir $captureDir')
+$sliceController = $route.IndexOf('-Name "thor_slice_loop"', $sliceGuardStart)
+$verifiedStop = $route.IndexOf('-Name "thor_stop"', $sliceController)
+$sliceGuardStop = $route.IndexOf('Stop-ThorSliceDeviceGuard', $verifiedStop)
+if ($sliceGuardStart -lt 0 -or $sliceController -le $sliceGuardStart -or
+    $verifiedStop -le $sliceController -or $sliceGuardStop -le $verifiedStop) {
+    throw "The device guard does not cover the full Transformers slice controller lifetime."
 }
 
 Write-Output "Thor device thermal guard contract passed."
