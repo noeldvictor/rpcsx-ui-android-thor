@@ -4236,3 +4236,49 @@ labeled active at 9.6 and 12.6 seconds still contain the pause overlay. Their
 30.93 and 29.67 FPS readings have no speed credit. System logs confirm each
 resume interval, so the next test must force a fresh presentation while the
 emulator is running or wait for a later game flip before it measures FPS.
+
+## 89. Idle dispatch no longer releases active task contention
+
+Commit `52c9224bb` requests a native UI flip after Resume. The source contract,
+full Android debug build, and ARM64 APK contract passed. This change removes the
+pause overlay after the guest has time to present a new frame. It does not make
+a black guest frame valid.
+
+Capture `20260829-032946-thor-input-custom` then found a separate workload-7
+loop. SPU 5 executed task 0 while SPU 3 entered the same taskset. The taskset
+had one running task and maximum contention 1. The idle SPU reduced the shared
+contention count from 1 to 0 before it cleared its local record. This opened the
+gate, and SPU 3 entered workload 7 about 4.6 million times.
+
+Commit `eac664f4d` counts the running tasks before an idle taskset exit. It
+reduces shared contention only when the shared count is greater than the
+running-task count. It always clears the idle SPU local record. This keeps the
+shared count for an active task and still removes extra idle slots. A focused
+source contract, the related SPURS contracts, the full Android debug build,
+and the ARM64 APK contract passed.
+
+Exact APK
+`266405B4B4EF6632377CE3FB0E7C873A0C615BFDDF568BD1D3E7F7C9F69F45B7`
+is 116,135,311 bytes. The exact no-launch installation is in:
+
+    20260829-034112-thor-input-strict-cool-gate
+    20260829-034131-transformers-idle-contention-install
+
+The install gate read 42.5 C. The host and installed hashes matched, and RPCSX
+was not active after installation.
+
+Capture `20260829-034203-thor-input-custom` proves the contention repair. SPU 2
+started workload 7 task 0. SPU 3 then found no selectable task while the running
+bitmap contained task 0. Its diagnostic row read `shared=1`, `local=1`, and
+`runningTaskCount=1`. It cleared only its local record and returned to the
+system service. The complete saved log contains one idle-ready row and no
+redispatch storm. Later workload-7 dispatches ran the task on SPU 4. No access
+violation, verification failure, or native fatal error occurred.
+
+The two active screenshots are still black. The frame check found 152 and 139
+distinct colors with 98.5 percent near-black pixels. It rejects the displayed
+29.99 and 3.79 FPS values. The fixed-silicon start was 42.9 C, and the maximum
+runtime sample was 71.1 C. RPCSX stopped normally. This is a scheduler
+correctness result, not a visible-frame or speed result. The next cooled proof
+must use enough short guest slices to pass the first Bink frames before it
+measures FPS.
