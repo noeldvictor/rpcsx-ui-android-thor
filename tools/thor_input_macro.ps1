@@ -524,7 +524,10 @@ function Invoke-ThorControlPause {
             $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause" -TimeoutSec 2
             "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) response=$($response | ConvertTo-Json -Compress)" |
                 Out-File -LiteralPath (Join-Path $captureDir "control-pause.log") -Append -Encoding UTF8
-            if ($response.ok -and $response.paused) {
+            # A startup handoff can pause RPCSX before this request reaches the
+            # core. In that case, the pause action reports false because it did
+            # not change the state, but the reported state is already correct.
+            if ($response.paused) {
                 $response | ConvertTo-Json -Compress |
                     Set-Content -LiteralPath (Join-Path $captureDir "control-pause.json") -Encoding UTF8
                 return

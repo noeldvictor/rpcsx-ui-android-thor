@@ -50,6 +50,7 @@ $requiredMacroFragments = @(
     '& $Adb -s $DeviceSerial forward tcp:8099 tcp:8099',
     'Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause"',
     'Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/resume"',
+    'if ($response.paused)',
     'while ($timer.ElapsedMilliseconds -lt 8000)',
     'Start-Sleep -Milliseconds 100',
     '} elseif ($token -eq ''pause'') {',
