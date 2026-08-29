@@ -3816,3 +3816,45 @@ can start, and a sample at or above 70 C cannot start.
 The no-input route did not leave the legal frame. A single START press after a
 visually checked legal frame is the next correctness test. Correct gameplay and
 sustained 30 FPS are still not proved.
+
+## 72. The comparison route disabled the proved HLE repair stack
+
+The HLE/LLE comparison used exact APK
+`45495E4027789740D3D47BAAED48BE60C4BE2E5EDCE1E49A08B12106AD014F03`.
+The HLE capture is in:
+
+    20260828-232440-thor-input-custom
+
+Its effective startup profile set these four required HLE routes to zero:
+
+    debug.rpcsx.thor.lfq_any2any=0
+    debug.rpcsx.thor.spurs_sel_cond_fix=0
+    debug.rpcsx.thor.spurs_signal_fix=0
+    debug.rpcsx.thor.taskset_select_atomic=0
+    debug.rpcsx.thor.edge_event_interp=0
+
+The loader request then reproduced the boundary from sections 39 through 56.
+Its pending count stayed at one. The active IO completion word stayed at one,
+and the AsyncIOSystem thread stayed in the active-list sleep path. The LLE
+control in `20260828-232750-thor-input-custom` began with the same request. It
+retired that request between guest seconds 37 and 47 and moved to the idle IO
+wait. This is not evidence of a new loader defect. The comparison accidentally
+restored the old incomplete HLE configuration.
+
+The proved HLE captures used value one for all four repair groups. Capture
+`20260828-203517-thor-input-custom` produced live Bink texture planes and a
+visible Transformers loading frame at 28.98 FPS. Capture
+`20260828-203910-thor-input-custom` reached the 30 FPS cap. Both effective
+profiles record the LFQueue route, paired selector repairs, atomic task-set
+requests, and exact edge event handoff as enabled.
+
+The Transformers render route now enables this proved HLE repair stack by
+default. An explicit `off` value can still run a regression control. LLE mode
+forces the LFQueue, selector, task-set, and edge event routes off so the LLE
+control cannot use the title-specific SPU handoff.
+
+The route contract, PowerShell parse, and Git whitespace check pass. This is a
+host route correction. It does not change the APK. The next hardware action is
+one default HLE route with the installed exact APK. The cold-start gate permits
+one fixed-silicon sample below 70 C and refuses a sample at or above 70 C. The
+runtime guard still stops before 72 C silicon or 95 C junction.

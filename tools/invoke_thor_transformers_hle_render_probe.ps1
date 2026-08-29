@@ -6,13 +6,13 @@ param(
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
     [string]$ExpectedInstalledApkSha256,
     [ValidateSet("on", "off")]
-    [string]$LfqAny2Any = "off",
+    [string]$LfqAny2Any = "on",
     [ValidateSet("on", "off")]
-    [string]$SpursSelectorFixes = "off",
+    [string]$SpursSelectorFixes = "on",
     [ValidateSet("on", "off")]
-    [string]$TasksetSelectAtomic = "off",
+    [string]$TasksetSelectAtomic = "on",
     [ValidateSet("on", "off")]
-    [string]$EdgeEventInterp = "off",
+    [string]$EdgeEventInterp = "on",
     [ValidateSet("on", "off")]
     [string]$TaskAttrFix = "on",
     [ValidateSet("on", "off")]
@@ -32,6 +32,9 @@ $ErrorActionPreference = "Stop"
 $adb = Resolve-ThorAdb
 $inputMacroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
 $env:ANDROID_SERIAL = $Serial
+$hleLfqAny2Any = if ($Mode -eq "HLE") { $LfqAny2Any } else { "off" }
+$hleSpursSelectorFixes = if ($Mode -eq "HLE") { $SpursSelectorFixes } else { "off" }
+$hleTasksetSelectAtomic = if ($Mode -eq "HLE") { $TasksetSelectAtomic } else { "off" }
 
 function Set-ThorRenderProbeProperty {
     param(
@@ -58,7 +61,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.spurs_atomic_census" = "0"
     "debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_event_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
-    "debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }
@@ -98,9 +101,9 @@ $macroParameters = [ordered]@{
     SpuCachePreloadLimit = 64
     SpuCacheCompileBudgetMs = 50
     SpuNativeObjectCache = "on"
-    LfqAny2Any = $LfqAny2Any
-    SpursSelectorFixes = $SpursSelectorFixes
-    TasksetSelectAtomic = $TasksetSelectAtomic
+    LfqAny2Any = $hleLfqAny2Any
+    SpursSelectorFixes = $hleSpursSelectorFixes
+    TasksetSelectAtomic = $hleTasksetSelectAtomic
     CacheWorkerAffinityMask = 7
     ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
     BootGame = $true
