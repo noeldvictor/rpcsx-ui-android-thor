@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -378,6 +379,19 @@ def t_slice(a):
 
     resume = api("/resume", "POST")
     started = time.monotonic()
+    deadline_pause = {}
+
+    # A fixed-silicon ADB read can take longer than the requested guest slice.
+    # Do not let slow telemetry extend the active guest window. The independent
+    # timer asks the in-process control API to pause at the deadline while this
+    # thread continues to enforce the thermal hard stop.
+    def pause_at_deadline():
+        deadline_pause["requestedAtS"] = time.monotonic() - started
+        deadline_pause["result"] = api("/pause", "POST")
+
+    deadline_timer = threading.Timer(duration, pause_at_deadline)
+    deadline_timer.daemon = True
+    deadline_timer.start()
     elapsed = 0.0
     silicon = start_silicon
     max_silicon = start_silicon
@@ -391,14 +405,22 @@ def t_slice(a):
         max_silicon = max(max_silicon, silicon)
         elapsed = time.monotonic() - started
         if silicon < 0 or silicon >= hard_limit:
+            deadline_timer.cancel()
             stop = t_stop({})
             return {"thermalStop": True, "elapsedS": round(elapsed, 3),
                     "triggerFixedSiliconC": silicon,
                     "maxSiliconC": hard_limit, "resume": resume, "stop": stop}
 
-    # Pause before the ADB liveness check. A pid read can take more than one
-    # second on this device. The guest must not run during that host delay.
-    pause = api("/pause", "POST")
+    # Wait for the deadline request, not for another telemetry or liveness
+    # command. If the timer did not run, send the pause here as a fail-safe.
+    deadline_timer.join(timeout=8.0)
+    pause = deadline_pause.get("result")
+    if pause is None:
+        deadline_timer.cancel()
+        pause = api("/pause", "POST")
+
+    # Check liveness only after the independent deadline pause. A pid read can
+    # take more than one second on this device.
     if not pid():
         return {"error": "process gone during the bounded slice",
                 "elapsedS": round(elapsed, 3),
@@ -427,6 +449,8 @@ def t_slice(a):
 
     result = {"completed": True, "requestedS": duration,
               "elapsedS": round(elapsed, 3),
+              "pauseRequestedAtS": round(
+                  float(deadline_pause.get("requestedAtS", elapsed)), 3),
               "startFixedSiliconC": start_silicon,
               "endFixedSiliconC": silicon,
               "maxFixedSiliconC": max_silicon,
@@ -572,6 +596,7 @@ def t_slice_loop(a):
             "waitedS": cool.get("waitedS"),
             "requestedS": part.get("requestedS", duration),
             "elapsedS": part.get("elapsedS"),
+            "pauseRequestedAtS": part.get("pauseRequestedAtS"),
             "startFixedSiliconC": part.get("startFixedSiliconC"),
             "endFixedSiliconC": part.get("endFixedSiliconC"),
             "maxFixedSiliconC": part.get("maxFixedSiliconC"),

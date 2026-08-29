@@ -16,9 +16,22 @@ SPEC.loader.exec_module(SERVER)
 class Clock:
     def __init__(self):
         self.now = 0.0
+        self.timers = []
 
     def sleep(self, seconds):
-        self.now += seconds
+        target = self.now + seconds
+        while True:
+            due = [
+                timer for timer in self.timers
+                if timer.started and not timer.cancelled and not timer.fired
+                and timer.deadline <= target
+            ]
+            if not due:
+                break
+            timer = min(due, key=lambda item: item.deadline)
+            self.now = timer.deadline
+            timer.fire()
+        self.now = target
 
     def monotonic(self):
         return self.now
@@ -42,6 +55,42 @@ clock = Clock()
 SERVER.time.sleep = clock.sleep
 SERVER.time.monotonic = clock.monotonic
 
+
+class DeadlineTimer:
+    """Run the timer callback when the controller waits for the deadline."""
+
+    def __init__(self, interval, function):
+        self.interval = interval
+        self.function = function
+        self.cancelled = False
+        self.started = False
+        self.fired = False
+        self.deadline = 0.0
+        self.daemon = False
+
+    def start(self):
+        self.started = True
+        self.deadline = clock.now + self.interval
+        clock.timers.append(self)
+
+    def cancel(self):
+        self.cancelled = True
+
+    def join(self, timeout=None):
+        if self.started and not self.cancelled and not self.fired:
+            wait = max(0.0, self.deadline - clock.now)
+            if timeout is None or wait <= timeout:
+                clock.sleep(wait)
+
+    def fire(self):
+        if self.cancelled or self.fired:
+            return
+        self.fired = True
+        self.function()
+
+
+SERVER.threading.Timer = DeadlineTimer
+
 SERVER.api = lambda path, method="GET", timeout=8: {"state": 6}
 assert SERVER.is_paused() is True, "The start-paused Ready state is not held."
 
@@ -50,11 +99,34 @@ use_temperatures([42.0, 45.0, 50.0, 55.0, 60.0])
 result = SERVER.t_slice({"seconds": 1.0})
 assert result["completed"] is True, "The safe slice did not complete."
 assert result["requestedS"] == 1.0, "The safe slice lost its requested time."
+assert result["pauseRequestedAtS"] == 1.0, "The deadline pause did not use the requested guest window."
 assert result["paused"] is True, "The safe slice did not end paused."
 assert result["maxFixedSiliconC"] == 60.0, "The safe slice lost its maximum temperature."
 assert ("/resume", "POST") in calls and ("/pause", "POST") in calls, "The safe slice did not resume and pause."
 assert calls.index(("/pause", "POST")) < len(calls) - 1 - calls[::-1].index(("pid", None)), (
     "The safe slice checked the pid before it paused."
+)
+
+clock.now = 0.0
+calls = prepare_paused_guest()
+slow_values = iter([42.0, 50.0])
+
+
+def slow_temperature():
+    value = next(slow_values)
+    if value == 50.0:
+        clock.sleep(2.0)
+        calls.append(("slow-temperature-returned", None))
+    return value
+
+
+SERVER.fixed_silicon_c = slow_temperature
+result = SERVER.t_slice({"seconds": 1.0, "includeState": False})
+assert result["completed"] is True, "The telemetry-blocked slice did not complete."
+assert result["elapsedS"] > 2.0, "The test did not model a slow telemetry read."
+assert result["pauseRequestedAtS"] == 1.0, "Slow telemetry delayed the independent pause."
+assert calls.index(("/pause", "POST")) < calls.index(("slow-temperature-returned", None)), (
+    "The deadline pause waited for the slow telemetry read."
 )
 
 clock.now = 0.0
@@ -105,6 +177,7 @@ def loop_slice(arguments):
         "completed": True,
         "requestedS": arguments["seconds"],
         "elapsedS": arguments["seconds"],
+        "pauseRequestedAtS": arguments["seconds"],
         "startFixedSiliconC": 45.0,
         "endFixedSiliconC": 50.0,
         "maxFixedSiliconC": 52.0,
@@ -122,6 +195,9 @@ SERVER.api = lambda path, method="GET", timeout=8: {"ok": True}
 result = SERVER.t_slice_loop({"seconds": 1.0, "maxSlices": 4})
 assert result["markerReached"] is True, "The slice loop did not find the marker."
 assert result["completedSlices"] == 2, "The slice loop ran past the marker."
+assert all(item["pauseRequestedAtS"] == 1.0 for item in result["slices"]), (
+    "The slice loop lost the deadline-pause timing evidence."
+)
 assert result["maxFixedSiliconC"] == 69.9, "The slice loop lost its maximum temperature."
 assert all(item["includeState"] is False for item in loop_slices), "The slice loop used full slice state."
 assert all(item["targetC"] == 70 for item in loop_cool_requests), (
@@ -187,6 +263,7 @@ def deadline_slice(arguments):
         "completed": True,
         "requestedS": arguments["seconds"],
         "elapsedS": arguments["seconds"],
+        "pauseRequestedAtS": arguments["seconds"],
         "startFixedSiliconC": 69.9,
         "endFixedSiliconC": 69.9,
         "maxFixedSiliconC": 69.9,

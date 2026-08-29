@@ -5198,3 +5198,70 @@ rendering progress.
   Require the `0x1158d800` boundary, later draw and PUT progress, a correct 3D
   image, and a comparable 30 FPS scene before any full-HLE or performance
   claim.
+
+## 111. The SPURS log cleanup works, but slow telemetry extends slices
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: Removing the measured hot SPURS call records will reduce default
+  log pressure enough for an attached bounded-slice run to reach taskset
+  `0x1158d800` under the 72 C hard stop.
+- Changed files/settings: Candidate APK SHA-256
+  `C6936A68948E019D407BEB8BE1C76A3EA64EA611D109F29ECDC29F014E328897`,
+  size 116,142,103 bytes, contains commit `fb5ebb8fd`. The run used the same 53
+  HLE properties as section 110 and six explicit generic controls. All 59
+  readbacks matched. The exact no-launch install matched the expected, host,
+  and installed APK hashes. RPCSX was absent after installation.
+- Rollback: The controller force-stopped RPCSX. `pidof` was empty, `top` had
+  zero RPCSX rows, and the stopped-run fixed-silicon sample was 49.0 C. The
+  cleanup cleared all 59 nonempty `debug.rpcsx.thor.*` properties. Its audit
+  found zero remaining values.
+- Windows result: Not run. This test validates the Android HLE route and the
+  Android controller.
+- Thor result: Strict gate capture
+  `20260829-113023-thor-input-strict-cool-gate` passed at 42.5 C fixed silicon.
+  Boot started at 41.3 C. Six complete slices started at 46.2, 51.8, 53.0,
+  54.6, 55.0, and 55.8 C. Their recorded maxima were 61.0, 64.2, 67.4, 66.2,
+  67.4, and 71.5 C. Slice 7 started after a 60.6 C cooldown sample, reached
+  73.1 C, and used the verified stop. This exceeds the 72 C hard limit and is
+  a thermal failure.
+- HLE evidence: The log ended at guest time 1:08.770. It reached three initial
+  tasksets, 720 flips, two draw calls, PUT census 2,000, and bounded workload
+  dispatch record 960. It did not create the rendering taskset, reach shutdown
+  or join, or create taskset `0x1158d800`. It therefore adds no lifecycle or
+  late-HLE proof. The log has no SPURS task error, access violation,
+  verification failure, fatal error, or out-of-memory error.
+- Visual correctness: Not proved. No screenshot was taken. The counters show
+  early loading only.
+- FPS/frame-time: No credit. The last sensor record reports 21 frames in ten
+  seconds while the loading route and thermal stop were active. This is not a
+  correct or comparable gameplay scene.
+- Capture paths: `20260829-113023-thor-input-strict-cool-gate`,
+  `20260829-113056-transformers-spurs-hot-log-install`, and
+  `20260829-113424-transformers-spurs-hot-log-thermal-stop`.
+- Log result: The four records measured in section 110 are absent. The complete
+  log is 405,856 bytes, compared with 2,134,369 bytes for the similar 78-second
+  section-110 capture. This proves log-volume reduction only. It does not prove
+  a speed or thermal improvement. The next visible hot pair is the underlying
+  cellSync LFQueue push and pop entry. Push wrote 224 records and 39,424 bytes.
+  The successor moves both call-entry records from warning to trace.
+- Controller result: Each slice requested one second, but recorded 1.250 to
+  2.968 host seconds. A fixed-silicon ADB read can block beyond the requested
+  deadline, so the same controller thread cannot send pause on time. The
+  successor starts an independent deadline timer that sends pause through the
+  in-process control API. The main controller thread continues to sample fixed
+  silicon and still uses the verified stop at 72 C. Slice results now retain
+  the time at which the deadline pause was requested.
+- Host verification: Python syntax, the mocked guarded-slice state machine, the
+  two-second blocked-telemetry deadline-pause case, the fixed-silicon source
+  contract, the cellSync LFQueue log budget, and both SPURS log-budget contracts
+  passed. `git diff --check` passed.
+- Decision: Accept the SPURS log cleanup as a log-volume result. Reject the run
+  for HLE and speed proof. Keep the hard stop. Do not run the Thor again in this
+  hardware round.
+- Next: Build the deadline-pause and cellSync-log successor. In a later
+  independently cool round, install the exact APK, start below 70 C, stop at
+  72 C, and require the controller to report a pause request near each requested
+  slice deadline. Continue to taskset `0x1158d800` only if that timing contract
+  holds. Require a correct 3D image and a comparable 30 FPS gameplay window
+  before any full-HLE or performance claim.
