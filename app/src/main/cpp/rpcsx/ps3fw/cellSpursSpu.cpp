@@ -3193,7 +3193,7 @@ void spursSysServiceUpdateShutdownCompletionEvents(spu_thread& spu, SpursKernelC
 
 	if (wklNotifyBitSet)
 	{
-		// TODO: sys_spu_thread_send_event(spuPort, 0, wklNotifyMask);
+		ensure(sys_spu_thread_send_event(spu, spuPort, 0, wklNotifyBitSet) == CELL_OK);
 	}
 }
 

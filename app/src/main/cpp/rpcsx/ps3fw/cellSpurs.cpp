@@ -891,7 +891,7 @@ static bool get_thor_hle_spurs_kernel_enabled() noexcept
 #endif
 }
 
-// Register the handler entry ONLY when HLE SPURS is actually requested.
+// Register the PPU helper entries only when HLE SPURS is requested.
 //
 // This must stay at namespace scope: ppu_function_manager allocates ONE guest
 // block for the whole registered list, so a registration made later - from a
@@ -912,6 +912,10 @@ static bool get_thor_hle_spurs_kernel_enabled() noexcept
 // to a stock build, and savestates written by either load in the other.
 static const u32 s_thor_spurs_handler_index = get_thor_hle_spurs_kernel_enabled()
 	? ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry))
+	: 0;
+
+static const u32 s_thor_spurs_event_helper_index = get_thor_hle_spurs_kernel_enabled()
+	? ppu_function_manager::register_function<decltype(&_spurs::event_helper_entry), &_spurs::event_helper_entry>(BIND_FUNC(_spurs::event_helper_entry))
 	: 0;
 
 s32 _spurs::create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority)
@@ -1065,6 +1069,9 @@ s32 _spurs::wakeup_shutdown_completion_waiter(ppu_thread& ppu, vm::ptr<CellSpurs
 
 void _spurs::event_helper_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
+	cellSpurs.error("Thor: SPURS event_helper_entry ENTERED (eventQueue=0x%x, spuPort=%u)",
+		+spurs->eventQueue, +spurs->spuPort);
+
 	vm::var<sys_event_t[]> events(8);
 	vm::var<u32> count;
 
@@ -1112,11 +1119,12 @@ void _spurs::event_helper_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 			if (data0 == 1)
 			{
-				return;
+				return sys_ppu_thread_exit(ppu, 0);
 			}
 			else if (data0 < 1)
 			{
 				const u32 shutdownMask = static_cast<u32>(event_data3);
+				cellSpurs.error("Thor: SPURS shutdown completion event mask=0x%x", shutdownMask);
 
 				for (u32 wid = 0; wid < CELL_SPURS_MAX_WORKLOAD; wid++)
 				{
@@ -1179,40 +1187,57 @@ s32 _spurs::create_event_helper(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 p
 		return CELL_SPURS_CORE_ERROR_STAT;
 	}
 
-	struct event_helper_thread : ppu_thread
-	{
-		using ppu_thread::ppu_thread;
-
-		void non_task()
-		{
-			// BIND_FUNC(_spurs::event_helper_entry)(*this);
-		}
-	};
-
-	// auto eht = idm::make_ptr<ppu_thread, event_helper_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr1", ppuPriority, 0x8000);
-
-	// THE SECOND NO-OP HELPER, and this one does damage rather than nothing.
-	//
-	// `if (!eht)` is commented out with the thread creation, so what was the
-	// FAILURE path now runs UNCONDITIONALLY: it disconnects the event port,
-	// destroys it, detaches the queue, force-destroys the event queue and returns
-	// CELL_SPURS_CORE_ERROR_STAT. The `return CELL_OK` at the end of this
-	// function is unreachable.
-	//
-	// So _spurs::initialize always fails here, tearing down an event port it just
-	// created, which is where the access violation at liblv2 0x022273bc reading
-	// 0x555538f8 comes from - teardown running over half-initialized state.
-	//
-	// Skipping it leaves SPURS without an event helper THREAD, which is not
-	// correct, but the port and queue survive and initialization can continue.
-	// That is the only way to find out whether anything past this point works,
-	// since nothing past it has ever executed.
-	//
-	// Gated on debug.rpcsx.thor.hle_spurs_kernel, so the default path still runs
-	// the original code exactly.
+	// The old helper used the removed ppu_thread::non_task interface. Create a
+	// normal joinable PPU thread with the registered HLE entry, as create_handler
+	// does for SpursHdlr0. The event queue and port above remain the real SPURS
+	// transport. This thread receives shutdown masks and posts workload semaphores.
 	if (get_thor_hle_spurs_kernel_enabled())
 	{
-		cellSpurs.error("Thor: HLE SPURS skipping the dead event-helper failure path (no helper thread is created either way)");
+		const u32 code = g_fxo->get<ppu_function_manager>().func_addr(s_thor_spurs_event_helper_index, true);
+
+		if (!code)
+		{
+			cellSpurs.error("Thor: SPURS event helper has no guest address (index %u)", s_thor_spurs_event_helper_index);
+			return CELL_SPURS_CORE_ERROR_STAT;
+		}
+
+		const vm::addr_t stack{vm::alloc(0x8000, vm::stack, 4096)};
+
+		if (!stack)
+		{
+			cellSpurs.error("Thor: SPURS event helper stack allocation failed");
+			return CELL_SPURS_CORE_ERROR_NOMEM;
+		}
+
+		const std::string name = std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr1";
+		const u32 tid = idm::import<named_thread<ppu_thread>>([&]()
+		{
+			ppu_thread_params p{};
+			p.stack_addr = stack;
+			p.stack_size = 0x8000;
+			p.tls_addr = 0;
+			p.entry = ppu_func_opd_t{code, 0};
+			p.arg0 = spurs.addr();
+			p.arg1 = 0;
+
+			return stx::make_shared<named_thread<ppu_thread>>(p, name, ppuPriority, 0);
+		});
+
+		if (!tid)
+		{
+			vm::dealloc(stack);
+			cellSpurs.error("Thor: SPURS event helper thread creation failed");
+			return CELL_SPURS_CORE_ERROR_STAT;
+		}
+
+		spurs->ppu1 = tid;
+		if (const s32 start_rc = sys_ppu_thread_start(ppu, tid))
+		{
+			cellSpurs.error("Thor: SPURS event helper thread start failed 0x%x (id=0x%x)", start_rc, tid);
+			return CELL_SPURS_CORE_ERROR_STAT;
+		}
+
+		cellSpurs.error("Thor: SPURS event helper thread created and started (id=0x%x, entry=0x%x)", tid, code);
 		return CELL_OK;
 	}
 
