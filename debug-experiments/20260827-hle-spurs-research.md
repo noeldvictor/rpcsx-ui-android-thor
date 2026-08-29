@@ -4126,3 +4126,32 @@ device guard stopped the route when a CPU junction reached 95.2 C. Fixed
 silicon peaked at 68.7 C. No native fault appeared. The next run must disable
 the runtime census and use shorter active slices to reach a later video frame
 without reaching the junction limit.
+
+## 85. The common SPURS poll path now honors pause
+
+Capture `20260829-024426-thor-input-custom` showed that Android Pause set
+`dbg_global_pause` on all six SPURS workers, but each worker stayed active at
+PC `0x00a00`. The rate-limited state check was at the top of
+`spursSysServiceMain`. The idle-handler path used `goto poll`, so it could run
+without returning to that check.
+
+Commit `69b9dbe18` moves the same one-in-256 state check to the common `poll`
+label. It does not add state loads to the other 255 scheduling passes. The
+source contract, diagnostic-token contract, ARM64-only APK contract, and full
+debug APK build passed. Exact APK
+`93D7E701B59B2EA7464FFC9E310A9E96F9E8C484077A998907997446742857A5`
+is 116,136,043 bytes. The exact no-launch installation is in:
+
+    20260829-024831-thor-input-strict-cool-gate
+    20260829-024842-transformers-common-poll-pause-install
+
+Capture `20260829-025043-thor-input-custom` proves the repair with active
+workers. Before pause, all six SPURS workers were active. Five were at PC
+`0x00a00`, and one was in the workload-6 image. After pause, all six reported
+state `0x8004`. Three Linux thread samples then found every SPU worker asleep
+in `futex_wait_queue_me` at 0.0 percent CPU. Total emulator CPU while paused
+was 0.5 percent. Fixed silicon peaked at 65.0 C and then fell to 49.0 C.
+
+The pause route is now safe for short active slices. This result does not add
+visible-frame or sustained-FPS credit. The next HLE run must use these pause
+windows to pass the first black Bink frame and capture a later video frame.
