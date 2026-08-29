@@ -953,6 +953,68 @@ namespace rsx
 					tc[2][0], tc[2][1], tc[2][2], tc[2][3],
 					tc[3][0], tc[3][1], tc[3][2], tc[3][3]);
 			}
+
+			// A submitted Bink quad can still produce a black frame when its decoded
+			// texture planes are empty. Sample the first few draw inputs while the
+			// existing draw-census property is active. Use a strided sample across
+			// each plane so a black border at the start does not hide decoded data.
+			if (const u64 dn = g_thor_draw_calls.load(); dn <= 16)
+			{
+				const auto& draw = method_registers.current_draw_clause;
+				u64 inline_hash = 1469598103934665603ull;
+				const usz inline_words = std::min<usz>(draw.inline_vertex_array.size(), 64);
+
+				for (usz i = 0; i < inline_words; i++)
+				{
+					inline_hash ^= draw.inline_vertex_array[i];
+					inline_hash *= 1099511628211ull;
+				}
+
+				rsx_log.error("Thor DRAW INPUT #%llu: cmd=%u inlineWords=%u inlineHash=0x%016llx",
+					dn, static_cast<u32>(draw.command), static_cast<u32>(draw.inline_vertex_array.size()), inline_hash);
+
+				for (u32 slot = 0; slot < method_registers.fragment_textures.size(); slot++)
+				{
+					const auto& tex = method_registers.fragment_textures[slot];
+
+					if (!tex.enabled())
+					{
+						continue;
+					}
+
+					const u32 address = get_address(tex.offset(), tex.location());
+					const u64 requested_span = tex.pitch()
+						? static_cast<u64>(tex.pitch()) * tex.height()
+						: static_cast<u64>(tex.width()) * tex.height() * 4;
+					const u32 span = static_cast<u32>(std::clamp<u64>(requested_span, 1, 0x1000000));
+					const bool mapped = vm::check_addr(address, vm::page_readable, span);
+					u32 nonzero = 0;
+					u64 sample_hash = 1469598103934665603ull;
+					u32 first[4]{};
+
+					if (mapped)
+					{
+						const auto data = static_cast<const u8*>(vm::base(address));
+						std::memcpy(first, data, std::min<u32>(sizeof(first), span));
+
+						for (u32 sample = 0; sample < 64; sample++)
+						{
+							const u8 value = data[(static_cast<u64>(sample) * (span - 1)) / 63];
+							nonzero += value != 0;
+							sample_hash ^= value;
+							sample_hash *= 1099511628211ull;
+						}
+					}
+
+					rsx_log.error("Thor DRAW TEXTURE #%llu.%u: addr=0x%08x off=0x%08x loc=%u "
+						"fmt=0x%02x dim=%u size=%ux%u pitch=%u span=%u mapped=%u "
+						"sampleNonzero=%u/64 sampleHash=0x%016llx first=%08x.%08x.%08x.%08x",
+						dn, slot, address, tex.offset(), tex.location(), tex.format(),
+						static_cast<u32>(tex.dimension()), tex.width(), tex.height(), tex.pitch(), span,
+						mapped ? 1u : 0u, nonzero, sample_hash,
+						first[0], first[1], first[2], first[3]);
+				}
+			}
 		}
 
 		method_registers.current_draw_clause.post_execute_cleanup(m_ctx);
