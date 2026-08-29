@@ -4977,3 +4977,66 @@ cache-identity enum and is set from the configuration.
 
 This is host-route proof only. It does not change the device result from
 section 105 and gives no HLE, render, FPS, or gameplay credit.
+
+## 107. Guarded slices stop before the shutdown boundary
+
+The strict gate is capture
+`20260829-093930-thor-input-strict-cool-gate`. Fixed silicon was 42.1 C, so the
+gate passed the less-than-70 C rule. The exact no-launch installation is
+capture `20260829-093957-transformers-spurs-shutdown-completion-install`. The
+expected, host, and installed APK hashes matched
+`6D35D17466B099B668D3B9366BD46AD98153D30D30DBDA78C6255248EDF1F21D`.
+RPCSX was not active after installation.
+
+The MCP boot preserved the current title profile and used the explicit HLE
+property stack. It started in the `Ready` state at 44.1 C fixed silicon. The
+first slice found that a start-paused boot uses state 6, not state 4. It also
+found that the first pause request can race core startup. Later slices ended
+paused. The largest recorded slice sample was 71.9 C fixed silicon.
+
+The stopped-run capture is
+`20260829-094904-transformers-guarded-slices-process-exit`. It proves that
+`SpursHdlr1` started and entered `event_helper_entry` on event queue
+`0x8d005200`, SPU port 16. The rendering thread created taskset `0x1f73f00`
+once and created its first task. Queue activity reached ring record 896.
+Workload dispatch reached record 320. The draw census reached 54 records and
+ended at 6,480 flips with two draw calls. This is early black-screen progress
+only.
+
+The run did not reach `cellSpursShutdownTaskset`, a shutdown-completion mask,
+`cellSpursJoinTaskset`, workload removal, or a second taskset creation. It
+therefore does not prove commit `4b4d5f82b` after the helper-entry boundary.
+It has no screenshot or FPS credit.
+
+A paused cooldown call remained active in a second host process while the main
+host process sent the final slice. The cooldown call detected the hard thermal
+condition and used the verified stop loop. Android records the external
+force-stop of PID 12828 and its signal-9 exit. The capture has no access
+violation, verification failure, emulator fatal error, OOM event, or
+low-memory kill. The host did not retain the exact fixed-silicon trigger value.
+The final stop check found no PID and zero RPCSX rows in `top`. Fixed silicon
+was 48.2 C. All nonempty debug properties were cleared.
+
+This attempt is `thermal-stop-before-shutdown`, `not-comparable`, and
+`route-tooling`. It has no render, FPS, gameplay, shutdown, join, or full-HLE
+credit.
+
+The MCP harness now treats start-paused `Ready` and `Paused` as held states. A
+bounded slice retries a raced pause and uses the verified stop if it cannot
+restore a held state. The new `thor_slice_loop` tool owns slice, paused
+cooldown, exact shutdown-marker checks, fatal checks, and hard stops in one
+host process. A slice now sends pause before the slow ADB PID check. It does not
+fetch device and diagnostic state inside each active slice. The paused cooldown
+result also keeps the decisive fixed-silicon sample separate from the
+response-time sample.
+
+The mocked state-machine test covers the `Ready` state, a raced pause, compact
+slices, marker detection on the second slice, and a fatal verified stop. The
+fixed-silicon source contract, Python syntax, thermal contracts, strict cool
+gate, and HLE pause contract passed.
+
+The next independently cool Thor round must use only `thor_slice_loop`. It must
+accumulate guest time until the shutdown-completion marker while each slice
+starts below 70 C and the hard limit stays 72 C. The next required proof is the
+helper wake, join return, workload removal, safe taskset reuse, and later
+rendering progress.

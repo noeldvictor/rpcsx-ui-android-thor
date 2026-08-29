@@ -324,8 +324,10 @@ def t_press(a):
 
 def is_paused():
     r = api("/status")
-    # EmulatorState: 0 Stopped 1 Loading 2 Stopping 3 Running 4 Paused
-    return isinstance(r, dict) and r.get("state") == 4
+    # system_state: 4 Paused, 6 Ready. A start-paused debug boot is Ready and
+    # has no guest threads until the first resume. Treat it as a valid held
+    # state so thor_slice guards that first resume too.
+    return isinstance(r, dict) and r.get("state") in (4, 6)
 
 
 def hold(a, default=True):
@@ -393,19 +395,46 @@ def t_slice(a):
                     "triggerFixedSiliconC": silicon,
                     "maxSiliconC": hard_limit, "resume": resume, "stop": stop}
 
+    # Pause before the ADB liveness check. A pid read can take more than one
+    # second on this device. The guest must not run during that host delay.
+    pause = api("/pause", "POST")
     if not pid():
         return {"error": "process gone during the bounded slice",
                 "elapsedS": round(elapsed, 3),
-                "maxFixedSiliconC": max_silicon}
+                "maxFixedSiliconC": max_silicon, "pause": pause}
 
-    pause = api("/pause", "POST")
-    return {"completed": True, "elapsedS": round(elapsed, 3),
-            "startFixedSiliconC": start_silicon,
-            "endFixedSiliconC": silicon,
-            "maxFixedSiliconC": max_silicon,
-            "resume": resume, "pause": pause,
-            "paused": is_paused(), "device": api("/device"),
-            "diag": api("/diag")}
+    paused = is_paused()
+    pause_started = time.monotonic()
+    while not paused and time.monotonic() - pause_started < 8.0:
+        silicon = fixed_silicon_c()
+        max_silicon = max(max_silicon, silicon)
+        if silicon < 0 or silicon >= hard_limit:
+            stop = t_stop({})
+            return {"thermalStop": True, "elapsedS": round(elapsed, 3),
+                    "triggerFixedSiliconC": silicon,
+                    "maxSiliconC": hard_limit, "resume": resume,
+                    "pause": pause, "stop": stop}
+        time.sleep(0.25)
+        pause = api("/pause", "POST")
+        paused = is_paused()
+
+    if not paused:
+        stop = t_stop({})
+        return {"error": "the bounded slice could not restore a held state",
+                "elapsedS": round(elapsed, 3), "maxFixedSiliconC": max_silicon,
+                "resume": resume, "pause": pause, "stop": stop}
+
+    result = {"completed": True, "requestedS": duration,
+              "elapsedS": round(elapsed, 3),
+              "startFixedSiliconC": start_silicon,
+              "endFixedSiliconC": silicon,
+              "maxFixedSiliconC": max_silicon,
+              "resume": resume, "pause": pause,
+              "paused": paused}
+    if a.get("includeState", True):
+        result["device"] = api("/device")
+        result["diag"] = api("/diag")
+    return result
 
 
 def t_wait_cool_paused(a):
@@ -437,8 +466,137 @@ def t_wait_cool_paused(a):
                     "maxSiliconC": hard_limit, "stop": stop}
 
     return {"cooled": 0 <= silicon < target, "targetC": target,
-            "fixedSiliconC": silicon, "waitedS": waited,
+            "fixedSiliconC": silicon,
+            "cooledAtFixedSiliconC": silicon, "waitedS": waited,
             "paused": is_paused()}
+
+
+def _matching_log_lines(match, count=1):
+    encoded = urllib.parse.quote(str(match), safe="")
+    result = api(f"/log?match={encoded}&n={int(count)}")
+    if not isinstance(result, dict):
+        return []
+    lines = result.get("lines", [])
+    return lines if isinstance(lines, list) else []
+
+
+def t_slice_loop(a):
+    """Own one slice and cool sequence until a log boundary or hard stop."""
+    if not pid():
+        return {"error": "emulator is not running"}
+    if not is_paused():
+        return {"refused": True,
+                "reason": "the emulator must be paused before a slice loop"}
+
+    duration = max(0.1, min(float(a.get("seconds", 1.0)), 5.0))
+    max_slices = max(1, min(int(a.get("maxSlices", 64)), 128))
+    start_ceiling = float(a.get("maxStartC", 70))
+    hard_limit = float(a.get("maxSiliconC", 72))
+    cool_target = float(a.get("coolTargetC", 50))
+    cool_timeout = max(2, min(int(a.get("coolTimeoutS", 120)), 300))
+    marker_every = max(1, min(int(a.get("markerEvery", 1)), 16))
+    stop_match = str(a.get(
+        "stopMatch", "Thor: SPURS shutdown completion event mask"))
+
+    if cool_target >= start_ceiling:
+        return {"refused": True,
+                "reason": "coolTargetC must be below maxStartC"}
+    if hard_limit <= start_ceiling:
+        return {"refused": True,
+                "reason": "maxSiliconC must be above maxStartC"}
+
+    records = []
+    max_silicon = -1.0
+
+    def finish(fields):
+        fields["completedSlices"] = len(records)
+        fields["slices"] = records
+        fields["maxFixedSiliconC"] = max_silicon
+        if pid():
+            fields["paused"] = is_paused()
+            fields["device"] = api("/device")
+            fields["diag"] = api("/diag")
+        else:
+            fields["paused"] = False
+        return fields
+
+    for index in range(1, max_slices + 1):
+        cool = t_wait_cool_paused({
+            "targetC": cool_target,
+            "maxSiliconC": hard_limit,
+            "timeoutS": cool_timeout,
+        })
+        cool_silicon = cool.get(
+            "cooledAtFixedSiliconC",
+            cool.get("triggerFixedSiliconC", cool.get("fixedSiliconC", -1)))
+        if isinstance(cool_silicon, (int, float)):
+            max_silicon = max(max_silicon, float(cool_silicon))
+
+        if cool.get("thermalStop"):
+            return finish({"markerReached": False, "thermalStop": True,
+                           "cooldown": cool})
+        if cool.get("error") or cool.get("refused"):
+            return finish({"markerReached": False, "error":
+                           cool.get("error") or cool.get("reason"),
+                           "cooldown": cool})
+        if not cool.get("cooled"):
+            return finish({"markerReached": False, "cooled": False,
+                           "reason": "the paused cooldown timed out",
+                           "cooldown": cool})
+        if not cool.get("paused"):
+            stop = t_stop({})
+            return finish({"markerReached": False,
+                           "error": "the guest resumed during cooldown",
+                           "stop": stop})
+
+        part = t_slice({
+            "seconds": duration,
+            "maxStartC": start_ceiling,
+            "maxSiliconC": hard_limit,
+            "includeState": False,
+        })
+        part_max = part.get("maxFixedSiliconC",
+                            part.get("triggerFixedSiliconC", -1))
+        if isinstance(part_max, (int, float)):
+            max_silicon = max(max_silicon, float(part_max))
+        record = {
+            "index": index,
+            "cooledAtFixedSiliconC": cool_silicon,
+            "waitedS": cool.get("waitedS"),
+            "requestedS": part.get("requestedS", duration),
+            "elapsedS": part.get("elapsedS"),
+            "startFixedSiliconC": part.get("startFixedSiliconC"),
+            "endFixedSiliconC": part.get("endFixedSiliconC"),
+            "maxFixedSiliconC": part.get("maxFixedSiliconC"),
+        }
+        records.append(record)
+
+        if part.get("thermalStop"):
+            return finish({"markerReached": False, "thermalStop": True,
+                           "slice": part})
+        if (part.get("error") or part.get("refused") or
+                not part.get("completed") or not part.get("paused")):
+            return finish({"markerReached": False,
+                           "error": (part.get("error") or part.get("reason") or
+                                     "the bounded slice did not end paused"),
+                           "slice": part})
+
+        for fatal_match in ("Access violation", "Verification failed"):
+            fatal_lines = _matching_log_lines(fatal_match)
+            if fatal_lines:
+                stop = t_stop({})
+                return finish({"markerReached": False, "fatal": fatal_match,
+                               "fatalLines": fatal_lines, "stop": stop})
+
+        if index % marker_every == 0:
+            marker_lines = _matching_log_lines(stop_match)
+            if marker_lines:
+                return finish({"markerReached": True,
+                               "stopMatch": stop_match,
+                               "markerLines": marker_lines})
+
+    return finish({"markerReached": False, "limitReached": True,
+                   "stopMatch": stop_match})
 
 
 def t_screenshot(a):
@@ -572,6 +730,7 @@ TOOLS = [
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
+    ("thor_slice_loop", "Keep slice, paused cooling, log-boundary checks, and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "coolTargetC": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon is below targetC. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),

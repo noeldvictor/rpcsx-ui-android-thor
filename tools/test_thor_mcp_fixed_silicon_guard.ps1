@@ -19,12 +19,20 @@ foreach ($required in @(
     'out["fixedSiliconC"] = silicon',
     'elif silicon >= 72:',
     'def t_slice(a):',
+    'r.get("state") in (4, 6)',
     'duration = max(0.1, min(float(a.get("seconds", 1.5)), 5.0))',
     'interval = min(0.25, duration - elapsed)',
+    '"the bounded slice could not restore a held state"',
     '"paused": is_paused()',
     'def t_wait_cool_paused(a):',
+    '"cooledAtFixedSiliconC": silicon',
     '"the emulator must stay paused while it cools"',
+    'def t_slice_loop(a):',
+    '"includeState": False',
+    'for fatal_match in ("Access violation", "Verification failed"):',
+    '"Thor: SPURS shutdown completion event mask"',
     '("thor_slice",',
+    '("thor_slice_loop",',
     '("thor_wait_cool_paused",'
 )) {
     if (-not $server.Contains($required)) {
