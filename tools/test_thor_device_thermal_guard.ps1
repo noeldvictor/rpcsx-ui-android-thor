@@ -78,8 +78,8 @@ if ($guardStopCount -lt 2) {
     throw "The input macro must stop the device guard on success and failure."
 }
 
-if (-not $route.Contains('ThermalRuntimeTelemetry = "device"')) {
-    throw "The Transformers HLE route does not select device thermal telemetry."
+if (-not $route.Contains('ThermalRuntimeTelemetry = if ($SliceLoop) { "full" } else { "device" }')) {
+    throw "The Transformers HLE route does not select the correct thermal telemetry."
 }
 
 Write-Output "Thor device thermal guard contract passed."
