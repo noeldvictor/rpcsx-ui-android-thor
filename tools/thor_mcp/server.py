@@ -281,6 +281,17 @@ def t_press(a):
     puts the emulator back the way it found it. That keeps the pause-look-decide
     -press loop working without the caller tracking the state by hand."""
     was_paused = is_paused()
+    start_ceiling = float(a.get("maxStartC", 70))
+    hard_limit = float(a.get("maxSiliconC", 72))
+    start_silicon = fixed_silicon_c()
+    if start_silicon < 0 or start_silicon >= hard_limit:
+        stop = t_stop({})
+        return {"thermalStop": True, "triggerFixedSiliconC": start_silicon,
+                "maxSiliconC": hard_limit, "stop": stop}
+    if was_paused and start_silicon >= start_ceiling:
+        return {"refused": True, "fixedSiliconC": start_silicon,
+                "reason": f"fixed silicon is not below {start_ceiling} C"}
+
     if was_paused:
         api("/resume", "POST")
         time.sleep(0.3)
@@ -288,13 +299,27 @@ def t_press(a):
     r = api(f"/pad/press?buttons={a['buttons']}&ms={int(a.get('ms', 150))}", "POST")
 
     settle = float(a.get("settleS", 1.0))
-    if settle > 0:
-        time.sleep(settle)
+    started = time.monotonic()
+    max_silicon = start_silicon
+    while True:
+        elapsed = time.monotonic() - started
+        if elapsed >= settle:
+            break
+        interval = min(0.25, settle - elapsed)
+        time.sleep(interval)
+        silicon = fixed_silicon_c()
+        max_silicon = max(max_silicon, silicon)
+        if silicon < 0 or silicon >= hard_limit:
+            stop = t_stop({})
+            return {"press": r, "wasPaused": was_paused,
+                    "thermalStop": True, "triggerFixedSiliconC": silicon,
+                    "maxSiliconC": hard_limit, "stop": stop}
     if was_paused and a.get("rePause", True):
         api("/pause", "POST")
 
     return {"press": r, "wasPaused": was_paused,
-            "rePaused": was_paused and a.get("rePause", True)}
+            "rePaused": was_paused and a.get("rePause", True),
+            "maxFixedSiliconC": max_silicon}
 
 
 def is_paused():
@@ -327,6 +352,93 @@ def t_pause(a):
 
 def t_resume(a):
     return api("/resume", "POST")
+
+
+def t_slice(a):
+    """Run one bounded guest slice from a paused state, then pause again."""
+    p = pid()
+    if not p:
+        return {"error": "emulator is not running"}
+    if not is_paused():
+        return {"refused": True,
+                "reason": "the emulator must be paused before a bounded slice"}
+
+    duration = max(0.1, min(float(a.get("seconds", 1.5)), 5.0))
+    start_ceiling = float(a.get("maxStartC", 70))
+    hard_limit = float(a.get("maxSiliconC", 72))
+    start_silicon = fixed_silicon_c()
+    if start_silicon < 0 or start_silicon >= start_ceiling:
+        return {"refused": True, "fixedSiliconC": start_silicon,
+                "reason": ("the fixed-silicon sensor domain is unavailable"
+                           if start_silicon < 0 else
+                           f"fixed silicon is not below {start_ceiling} C")}
+
+    resume = api("/resume", "POST")
+    started = time.monotonic()
+    elapsed = 0.0
+    silicon = start_silicon
+    max_silicon = start_silicon
+    while True:
+        elapsed = time.monotonic() - started
+        if elapsed >= duration:
+            break
+        interval = min(0.25, duration - elapsed)
+        time.sleep(interval)
+        silicon = fixed_silicon_c()
+        max_silicon = max(max_silicon, silicon)
+        elapsed = time.monotonic() - started
+        if silicon < 0 or silicon >= hard_limit:
+            stop = t_stop({})
+            return {"thermalStop": True, "elapsedS": round(elapsed, 3),
+                    "triggerFixedSiliconC": silicon,
+                    "maxSiliconC": hard_limit, "resume": resume, "stop": stop}
+
+    if not pid():
+        return {"error": "process gone during the bounded slice",
+                "elapsedS": round(elapsed, 3),
+                "maxFixedSiliconC": max_silicon}
+
+    pause = api("/pause", "POST")
+    return {"completed": True, "elapsedS": round(elapsed, 3),
+            "startFixedSiliconC": start_silicon,
+            "endFixedSiliconC": silicon,
+            "maxFixedSiliconC": max_silicon,
+            "resume": resume, "pause": pause,
+            "paused": is_paused(), "device": api("/device"),
+            "diag": api("/diag")}
+
+
+def t_wait_cool_paused(a):
+    """Keep a paused guest still until fixed silicon is below the next ceiling."""
+    if not pid():
+        return {"error": "emulator is not running"}
+    if not is_paused():
+        return {"refused": True,
+                "reason": "the emulator must stay paused while it cools"}
+
+    target = float(a.get("targetC", 70))
+    hard_limit = float(a.get("maxSiliconC", 72))
+    limit = int(a.get("timeoutS", 120))
+    waited = 0
+    silicon = fixed_silicon_c()
+    if silicon < 0 or silicon >= hard_limit:
+        stop = t_stop({})
+        return {"cooled": False, "thermalStop": True,
+                "triggerFixedSiliconC": silicon,
+                "maxSiliconC": hard_limit, "stop": stop}
+    while silicon >= target and waited < limit:
+        time.sleep(2)
+        waited += 2
+        silicon = fixed_silicon_c()
+        if silicon < 0 or silicon >= hard_limit:
+            stop = t_stop({})
+            return {"cooled": False, "thermalStop": True,
+                    "triggerFixedSiliconC": silicon,
+                    "maxSiliconC": hard_limit, "stop": stop}
+
+    return {"cooled": 0 <= silicon < target, "targetC": target,
+            "fixedSiliconC": silicon, "waitedS": waited,
+            "paused": is_paused()}
 
 
 def t_screenshot(a):
@@ -456,9 +568,11 @@ TOOLS = [
     ("thor_cooldown", "Force-stop the emulator, then wait for the CPU junction to fall below targetC. Stops first on purpose: cooling while the emulator runs never finishes.", {"type": "object", "properties": {"targetC": {"type": "integer"}, "timeoutS": {"type": "integer"}}}, t_cooldown),
     ("thor_boot", "Boot a title below the fixed-silicon start ceiling. freshCompile (default true) turns the SPU object cache OFF.", {"type": "object", "properties": {"titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
     ("thor_wait_ready", "Wait until the title renders. Poll fixed silicon every two seconds and stop at the hard limit.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_wait_ready),
-    ("thor_press", "Press pad buttons. RESUMES first if paused, presses, then re-pauses, because a paused guest cannot see a button.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}}, "required": ["buttons"]}, t_press),
+    ("thor_press", "Press pad buttons. If paused, require a below-ceiling start, resume, monitor fixed silicon, and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}, "required": ["buttons"]}, t_press),
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
+    ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
+    ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon is below targetC. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),

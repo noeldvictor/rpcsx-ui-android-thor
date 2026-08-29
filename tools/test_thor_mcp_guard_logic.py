@@ -1,0 +1,81 @@
+#!/usr/bin/env python
+"""Test the Thor MCP thermal state machine without a device."""
+
+import importlib.util
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location(
+    "thor_mcp_server", ROOT / "tools" / "thor_mcp" / "server.py"
+)
+SERVER = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(SERVER)
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+    def monotonic(self):
+        return self.now
+
+
+def use_temperatures(values):
+    temperatures = iter(values)
+    SERVER.fixed_silicon_c = lambda: next(temperatures)
+
+
+def prepare_paused_guest():
+    calls = []
+    SERVER.pid = lambda: "123"
+    SERVER.is_paused = lambda: True
+    SERVER.api = lambda path, method="GET", timeout=8: calls.append((path, method)) or {"ok": True}
+    SERVER.t_stop = lambda _: {"quiet": True}
+    return calls
+
+
+clock = Clock()
+SERVER.time.sleep = clock.sleep
+SERVER.time.monotonic = clock.monotonic
+
+calls = prepare_paused_guest()
+use_temperatures([42.0, 45.0, 50.0, 55.0, 60.0])
+result = SERVER.t_slice({"seconds": 1.0})
+assert result["completed"] is True, "The safe slice did not complete."
+assert result["paused"] is True, "The safe slice did not end paused."
+assert result["maxFixedSiliconC"] == 60.0, "The safe slice lost its maximum temperature."
+assert ("/resume", "POST") in calls and ("/pause", "POST") in calls, "The safe slice did not resume and pause."
+
+clock.now = 0.0
+prepare_paused_guest()
+use_temperatures([42.0, 73.0])
+result = SERVER.t_slice({"seconds": 1.0})
+assert result["thermalStop"] is True, "The hot slice did not stop."
+assert result["triggerFixedSiliconC"] == 73.0, "The hot slice lost its trigger temperature."
+assert result["stop"]["quiet"] is True, "The hot slice did not use the verified stop path."
+
+clock.now = 0.0
+prepare_paused_guest()
+use_temperatures([71.0, 69.0])
+result = SERVER.t_wait_cool_paused({"targetC": 70, "timeoutS": 10})
+assert result["cooled"] is True, "The paused cool wait did not cross below 70 C."
+assert result["fixedSiliconC"] == 69.0, "The paused cool wait reported the wrong temperature."
+
+clock.now = 0.0
+calls = prepare_paused_guest()
+use_temperatures([42.0, 45.0, 50.0])
+result = SERVER.t_press({"buttons": "START", "settleS": 0.5})
+assert result["rePaused"] is True, "The guarded press did not restore the paused state."
+assert ("/pad/press?buttons=START&ms=150", "POST") in calls, "The guarded press did not send the input."
+
+clock.now = 0.0
+prepare_paused_guest()
+use_temperatures([73.0])
+result = SERVER.t_press({"buttons": "START"})
+assert result["thermalStop"] is True, "The guarded press did not stop at the hard limit."
+
+print("Thor MCP guarded slice logic passed.")
