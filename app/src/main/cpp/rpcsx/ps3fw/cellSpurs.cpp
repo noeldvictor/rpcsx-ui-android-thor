@@ -119,6 +119,27 @@ static bool thor_transformers_edge_event_wait_trace() noexcept
 #endif
 }
 
+// Trace the FMOD event wait that follows the first completed late load.
+//
+// The event flag and taskset addresses are dynamic. The PPU caller is stable
+// for BLUS30357, so use its link register as the narrow runtime anchor. This
+// probe records state only. It does not change the wait or event delivery.
+//
+//   debug.rpcsx.thor.fmod_event_wait_trace = 1
+static bool thor_transformers_fmod_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.fmod_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
 static bool thor_taskset_enabled_fix() noexcept
 {
 #ifdef ANDROID
@@ -4029,11 +4050,22 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 
 	const u16 requested_mask = *mask;
 	static std::atomic<u32> s_edge_wait_trace_count{0};
+	static std::atomic<u32> s_fmod_wait_trace_count{0};
 	const bool thor_edge_wait = thor_transformers_edge_event_wait_trace() && eventFlag.addr() == 0x01e54800u;
 	const u32 thor_edge_wait_index = thor_edge_wait ? s_edge_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
 	const u32 thor_edge_wait_sequence = thor_edge_wait_index + 1;
 	const bool thor_log_edge_wait = thor_edge_wait &&
 		(thor_edge_wait_index < 4 || (thor_edge_wait_index < 2048 && (thor_edge_wait_index & 0x7f) == 0));
+	const bool thor_fmod_wait = thor_transformers_fmod_event_wait_trace() && block &&
+		static_cast<u32>(ppu.lr) == 0x00e2bab4u;
+	const u32 thor_fmod_wait_index = thor_fmod_wait
+		? s_fmod_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
+	const u32 thor_fmod_wait_sequence = thor_fmod_wait_index + 1;
+	const bool thor_log_fmod_wait = thor_fmod_wait && thor_fmod_wait_index < 16;
+	const u32 thor_fmod_taskset = thor_fmod_wait && !eventFlag->isIwl
+		? static_cast<u32>(+eventFlag->addr) : 0;
+	const bool thor_fmod_taskset_ok = thor_fmod_taskset &&
+		vm::check_addr(thor_fmod_taskset, 0, 0xa0);
 
 	if (eventFlag->ctrl.raw().ppuWaitMask || eventFlag->ctrl.raw().ppuPendingRecv)
 	{
@@ -4044,6 +4076,15 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
 				thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block,
 				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
+		if (thor_log_fmod_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor FMOD EFWAIT BUSY #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x "
+				"request=0x%04x mode=%u block=%u state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_fmod_wait_index, ppu.id, static_cast<u32>(ppu.lr), eventFlag.addr(), thor_fmod_taskset,
+				requested_mask, mode, block, +ctrl.events, +ctrl.ppuWaitMask,
+				+ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
 		}
 		return CELL_SPURS_TASK_ERROR_BUSY;
 	}
@@ -4170,6 +4211,59 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 		cellSpurs.error("Thor EDGE EFWAIT ERROR #%u: flag=0x%x request=0x%04x mode=%u block=%u rc=0x%x",
 			thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block, static_cast<u32>(rc));
 	}
+	if (thor_log_fmod_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		u32 running = 0;
+		u32 ready = 0;
+		u32 pending_ready = 0;
+		u32 enabled = 0;
+		u32 signalled = 0;
+		u32 waiting = 0;
+		u32 wid = 0xffffffffu;
+		u32 task0_elf = 0;
+
+		if (thor_fmod_taskset_ok)
+		{
+			const auto rd = [&](u32 off) { return +vm::_ref<be_t<u32>>(thor_fmod_taskset + off); };
+			running = rd(OFFSET_OF(CellSpursTaskset, running));
+			ready = rd(OFFSET_OF(CellSpursTaskset, ready));
+			pending_ready = rd(OFFSET_OF(CellSpursTaskset, pending_ready));
+			enabled = rd(OFFSET_OF(CellSpursTaskset, enabled));
+			signalled = rd(OFFSET_OF(CellSpursTaskset, signalled));
+			waiting = rd(OFFSET_OF(CellSpursTaskset, waiting));
+			wid = rd(OFFSET_OF(CellSpursTaskset, wid));
+			task0_elf = static_cast<u32>(+vm::_ref<be_t<u64>>(thor_fmod_taskset + 0x90));
+		}
+
+		cellSpurs.error("Thor FMOD EFWAIT ARM #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x mapped=%u "
+			"request=0x%04x mode=%u block=%u recv=%u rc=0x%x "
+			"pre{events=%04x wait=%04x slotmode=%02x pending=%u} "
+			"post{events=%04x wait=%04x slotmode=%02x pending=%u} "
+			"queue=0x%x port=%u direction=%u clear=%u "
+			"task{run=%08x ready=%08x pready=%08x enabled=%08x sig=%08x wait=%08x wid=%u elf0=0x%08x}",
+			thor_fmod_wait_index, ppu.id, static_cast<u32>(ppu.lr), eventFlag.addr(), thor_fmod_taskset,
+			thor_fmod_taskset_ok, requested_mask, mode, block, recv, static_cast<u32>(rc),
+			+thor_ctrl_before.events, +thor_ctrl_before.ppuWaitMask,
+			+thor_ctrl_before.ppuWaitSlotAndMode, +thor_ctrl_before.ppuPendingRecv,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv,
+			+eventFlag->eventQueueId, +eventFlag->spuPort, +eventFlag->direction, +eventFlag->clearMode,
+			running, ready, pending_ready, enabled, signalled, waiting, wid, task0_elf);
+	}
+	if (thor_fmod_wait && rc == CELL_OK)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		thor::fmod_event_wait_arm(thor_fmod_wait_sequence, ppu.id, eventFlag.addr(),
+			thor_fmod_taskset, +eventFlag->eventQueueId, +eventFlag->spuPort,
+			requested_mask, mode, +ctrl.ppuWaitSlotAndMode >> 4, get_system_time());
+	}
+	else if (thor_fmod_wait)
+	{
+		cellSpurs.error("Thor FMOD EFWAIT ERROR #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x "
+			"request=0x%04x mode=%u block=%u rc=0x%x",
+			thor_fmod_wait_index, ppu.id, static_cast<u32>(ppu.lr), eventFlag.addr(), thor_fmod_taskset,
+			requested_mask, mode, block, static_cast<u32>(rc));
+	}
 
 	if (rc != CELL_OK)
 	{
@@ -4194,6 +4288,20 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 		if (thor_edge_wait)
 		{
 			thor::spurs_event_wait_wake(received_slot, receivedEvents, get_system_time());
+		}
+		if (thor_fmod_wait)
+		{
+			thor::fmod_event_wait_wake(received_slot, receivedEvents, get_system_time());
+		}
+		if (thor_log_fmod_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor FMOD EFWAIT WAKE #%u: ppu=0x%x flag=0x%x taskset=0x%x "
+				"request=0x%04x slot=%u slotEvents=0x%04x "
+				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_fmod_wait_index, ppu.id, eventFlag.addr(), thor_fmod_taskset,
+				requested_mask, received_slot, receivedEvents,
+				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
 		}
 		if (thor_log_edge_wait)
 		{
@@ -4223,12 +4331,36 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 				thor_edge_wait_index, eventFlag.addr(), requested_mask, receivedEvents, recv, received_slot);
 		}
 	}
+	if (thor_fmod_wait)
+	{
+		const bool mismatch = mode == CELL_SPURS_EVENT_FLAG_OR
+			? (receivedEvents & requested_mask) == 0
+			: receivedEvents != requested_mask;
+		thor::fmod_event_wait_finish(thor_fmod_wait_sequence, receivedEvents, mismatch);
+		if (mismatch)
+		{
+			cellSpurs.error("Thor FMOD EFWAIT MISMATCH #%u: ppu=0x%x flag=0x%x taskset=0x%x "
+				"request=0x%04x received=0x%04x recv=%u slot=%u",
+				thor_fmod_wait_index, ppu.id, eventFlag.addr(), thor_fmod_taskset,
+				requested_mask, receivedEvents, recv, received_slot);
+		}
+	}
 	if (thor_log_edge_wait)
 	{
 		const auto ctrl = eventFlag->ctrl.raw();
 		cellSpurs.error("Thor EDGE EFWAIT RETURN #%u: flag=0x%x request=0x%04x received=0x%04x recv=%u slot=%u rc=0x%x "
 			"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
 			thor_edge_wait_index, eventFlag.addr(), requested_mask, receivedEvents, recv, received_slot, 0u,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+	}
+	if (thor_log_fmod_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		cellSpurs.error("Thor FMOD EFWAIT RETURN #%u: ppu=0x%x flag=0x%x taskset=0x%x "
+			"request=0x%04x received=0x%04x recv=%u slot=%u rc=0x%x "
+			"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+			thor_fmod_wait_index, ppu.id, eventFlag.addr(), thor_fmod_taskset,
+			requested_mask, receivedEvents, recv, received_slot, 0u,
 			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
 	}
 	return CELL_OK;

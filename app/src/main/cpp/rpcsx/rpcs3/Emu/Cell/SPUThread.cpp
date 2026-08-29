@@ -4160,6 +4160,22 @@ static FORCE_INLINE bool get_thor_edge_event_wait_trace() noexcept
 #endif
 }
 
+// Correlate SPU event sends with the dynamic FMOD queue. The PPU wait trace
+// publishes the queue ID before it blocks. This probe stays off by default.
+static FORCE_INLINE bool get_thor_fmod_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.fmod_event_wait_trace", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
 static FORCE_INLINE bool is_thor_edge_zlib_spu(const spu_thread& spu) noexcept
 {
 	// These are the first four instructions at edgeZlib LS address 0x3000.
@@ -9910,6 +9926,33 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 							"data1=0x%08x result=0x%08x queue=0x%08x out=%u in=%u state=0x%08x",
 							n, pc, spup, value & 0x00ffffff, data, res + 0u, queue ? queue->id : 0,
 							ch_out_mbox.get_count(), ch_in_mbox.get_count(), state.load().toUnderlying());
+					}
+				}
+
+				if (get_thor_fmod_event_wait_trace())
+				{
+					const auto fmod_wait = thor::get_fmod_event_wait_snapshot();
+
+					if (fmod_wait.active && queue && queue->id == fmod_wait.event_queue)
+					{
+						const u64 dispatch_time_us = get_system_time();
+						const u32 dispatch_total = thor::fmod_event_dispatch(spup, res + 0u,
+							queue->id, dispatch_time_us);
+						const u64 active_age_us = fmod_wait.arm_time_us && dispatch_time_us >= fmod_wait.arm_time_us
+							? dispatch_time_us - fmod_wait.arm_time_us : 0;
+						static std::atomic<u32> s_fmod_wait_event_count{0};
+						const u32 n = s_fmod_wait_event_count.fetch_add(1, std::memory_order_relaxed);
+
+						if (n < 16)
+						{
+							spu_log.error("Thor FMOD EFWAIT EVENT #%u: sequence=%u active_age_us=%llu "
+								"spu=0x%x index=%u pc=0x%05x dispatch=%u/%u delta=%u "
+								"port=%u data0=0x%06x data1=0x%08x result=0x%08x queue=0x%08x",
+								n, fmod_wait.sequence, static_cast<unsigned long long>(active_age_us),
+								id, index, pc, dispatch_total, fmod_wait.event_dispatch_at_arm,
+								dispatch_total - fmod_wait.event_dispatch_at_arm, spup,
+								value & 0x00ffffff, data, res + 0u, queue->id);
+						}
 					}
 				}
 

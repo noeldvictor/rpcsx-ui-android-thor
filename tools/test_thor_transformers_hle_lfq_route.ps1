@@ -6,6 +6,10 @@ $renderProbePath = Join-Path $PSScriptRoot "invoke_thor_transformers_hle_render_
 $renderProbe = Get-Content -LiteralPath $renderProbePath -Raw
 $pcCensusPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\thor_spu_pc_census.h"
 $pcCensus = Get-Content -LiteralPath $pcCensusPath -Raw
+$eventWaitProbePath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\thor_spurs_event_wait_probe.h"
+$eventWaitProbe = Get-Content -LiteralPath $eventWaitProbePath -Raw
+$lsDumpPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\thor_spu_ls_dump.h"
+$lsDump = Get-Content -LiteralPath $lsDumpPath -Raw
 $perfMonitorPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\perf_monitor.cpp"
 $perfMonitor = Get-Content -LiteralPath $perfMonitorPath -Raw
 $spuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUThread.cpp"
@@ -92,6 +96,7 @@ $requiredRenderProbeFragments = @(
     '[string]$SpursAtomicCensus = "off"',
     '[string]$EdgeTaskCensus = "off"',
     '[string]$EdgeEventWaitTrace = "off"',
+    '[string]$FmodEventWaitTrace = "off"',
     '[string]$RuntimeCensus = "off"',
     '[string]$SpuPcCensus = "off"',
     '[string]$InputMode = "Direct"',
@@ -116,6 +121,10 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_task_census" -Value "0"',
     '"debug.rpcsx.thor.edge_event_wait_trace" = if ($Mode -eq "HLE" -and $EdgeEventWaitTrace -eq "on") { "1" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_wait_trace" -Value "0"',
+    '"debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "" }',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value ""',
     '"debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on" -or $SpuPcCensus -eq "on") { "1" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"',
@@ -297,6 +306,45 @@ $requiredEdgeEventWaitTraceFragments = @(
 foreach ($fragment in $requiredEdgeEventWaitTraceFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers EDGE event-wait trace is missing: $fragment"
+    }
+}
+
+$requiredFmodEventWaitTraceFragments = @(
+    'static bool thor_transformers_fmod_event_wait_trace() noexcept',
+    '"debug.rpcsx.thor.fmod_event_wait_trace"',
+    'static_cast<u32>(ppu.lr) == 0x00e2bab4u',
+    'Thor FMOD EFWAIT BUSY #%u',
+    'Thor FMOD EFWAIT ARM #%u',
+    'Thor FMOD EFWAIT ERROR #%u',
+    'Thor FMOD EFWAIT WAKE #%u',
+    'Thor FMOD EFWAIT MISMATCH #%u',
+    'Thor FMOD EFWAIT RETURN #%u',
+    'thor::fmod_event_wait_arm(',
+    'thor::fmod_event_wait_wake(',
+    'thor::fmod_event_wait_finish('
+)
+
+foreach ($fragment in $requiredFmodEventWaitTraceFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The Transformers FMOD event-wait trace is missing: $fragment"
+    }
+}
+
+$requiredFmodCorrelationFragments = @(
+    @($eventWaitProbe, 'inline fmod_event_wait_probe_state g_fmod_event_wait_probe;'),
+    @($eventWaitProbe, 'inline u32 fmod_event_dispatch('),
+    @($spuThread, 'Thor FMOD EFWAIT EVENT #%u'),
+    @($spuThread, 'queue->id == fmod_wait.event_queue'),
+    @($pcCensus, 'static_cast<u32>(+spu._ref<u64>(0x27b8))'),
+    @($pcCensus, 'Thor FMOD PC sample=%u'),
+    @($pcCensus, 'Thor FMOD EFWAIT CENSUS: sample=%u'),
+    @($lsDump, 'const bool fmod_wait_dump = want == "@fmod";'),
+    @($lsDump, 'fmod_wait_dump ? "FMOD"')
+)
+
+foreach ($requirement in $requiredFmodCorrelationFragments) {
+    if (-not $requirement[0].Contains($requirement[1])) {
+        throw "The Transformers FMOD correlation probe is missing: $($requirement[1])"
     }
 }
 

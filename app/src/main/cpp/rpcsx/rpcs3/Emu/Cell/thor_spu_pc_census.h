@@ -12,6 +12,7 @@
 //   debug.rpcsx.thor.spu_pc_census = 1
 
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/IdManager.h"
 #include "cellos/sys_spu.h"
 #include "util/types.hpp"
@@ -45,7 +46,7 @@ namespace thor
 		return false;
 	}
 
-	inline void spu_pc_census_tick()
+	inline void spu_edge_pc_census_tick()
 	{
 		if (!spu_pc_census_enabled())
 		{
@@ -105,5 +106,102 @@ namespace thor
 		{
 			s_sample++;
 		}
+	}
+
+	inline bool fmod_event_wait_census_enabled()
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.fmod_event_wait_trace", value) > 0)
+		{
+			return value[0] && value[0] != '0';
+		}
+#endif
+
+		if (const char* value = std::getenv("RPCSX_THOR_FMOD_EVENT_WAIT_TRACE"))
+		{
+			return value[0] && value[0] != '0';
+		}
+
+		return false;
+	}
+
+	inline void spu_fmod_event_wait_census_tick()
+	{
+		if (!fmod_event_wait_census_enabled())
+		{
+			return;
+		}
+
+		static constexpr u32 max_samples = 16;
+		static u32 s_sample = 0;
+
+		if (s_sample >= max_samples)
+		{
+			return;
+		}
+
+		const auto wait = get_fmod_event_wait_snapshot();
+
+		if (!wait.active || !wait.taskset)
+		{
+			return;
+		}
+
+		const u32 sample = s_sample + 1;
+		u32 matches = 0;
+
+		idm::select<named_thread<spu_thread>>([&](u32 id, named_thread<spu_thread>& spu)
+			{
+				const u32 taskset = static_cast<u32>(+spu._ref<u64>(0x27b8));
+
+				if (taskset != wait.taskset)
+				{
+					return;
+				}
+
+				matches++;
+				const auto tname = spu.spu_tname.load();
+				const char* name = tname ? tname->c_str() : "";
+				const u32 state = spu.state.load().toUnderlying();
+				const u32 group_state = spu.group ? static_cast<u32>(spu.group->run_state.load()) : umax;
+				const u32 spurs_running = spu.group ? spu.group->spurs_running.load() : 0;
+
+				spu_log.error("Thor FMOD PC sample=%u id=0x%08x spu=%u taskset=0x%08x task=%u "
+					"pc=0x%05x op=0x%08x base=0x%05x lr=0x%05x sp=0x%05x "
+					"r3=0x%08x r4=0x%08x r5=0x%08x mfc=0x%02x ea=0x%08x "
+					"out=%u intr=%u in=%u state=0x%08x group=%u spursrun=%u thread='%s'",
+					sample, id, spu.index, taskset, +spu._ref<u32>(0x27d4),
+					spu.pc, +spu._ref<u32>(spu.pc), spu.base_pc, spu.gpr[0]._u32[3],
+					spu.gpr[1]._u32[3], spu.gpr[3]._u32[3], spu.gpr[4]._u32[3],
+					spu.gpr[5]._u32[3], +spu.ch_mfc_cmd.cmd, +spu.ch_mfc_cmd.eal,
+					spu.ch_out_mbox.get_count(), spu.ch_out_intr_mbox.get_count(),
+					spu.ch_in_mbox.get_count(), state, group_state, spurs_running, name);
+			});
+
+		if (!matches)
+		{
+			return;
+		}
+
+		const u64 now = get_system_time();
+		const u64 active_age_us = wait.arm_time_us && now >= wait.arm_time_us
+			? now - wait.arm_time_us : 0;
+		spu_log.error("Thor FMOD EFWAIT CENSUS: sample=%u sequence=%u ppu=0x%08x "
+			"flag=0x%08x taskset=0x%08x matches=%u request=0x%04x mode=%u slot=%u "
+			"active_age_us=%llu dispatch=%u/%u delta=%u queue=0x%08x port=%u",
+			sample, wait.sequence, wait.ppu_id, wait.event_flag, wait.taskset, matches,
+			wait.requested, wait.mode, wait.slot,
+			static_cast<unsigned long long>(active_age_us), wait.event_dispatch_total,
+			wait.event_dispatch_at_arm, wait.event_dispatch_total - wait.event_dispatch_at_arm,
+			wait.event_queue, wait.event_port);
+		s_sample++;
+	}
+
+	inline void spu_pc_census_tick()
+	{
+		spu_edge_pc_census_tick();
+		spu_fmod_event_wait_census_tick();
 	}
 } // namespace thor

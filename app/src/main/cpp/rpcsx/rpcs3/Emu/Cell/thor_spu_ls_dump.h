@@ -46,6 +46,7 @@
 // is what a halt map needs. Do not use this dump to reason about SPU data.
 
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/IdManager.h"
 #include "util/File.h"
 #include "util/logs.hpp"
@@ -112,6 +113,14 @@ namespace thor
 			return;
 		}
 
+		const bool fmod_wait_dump = want == "@fmod";
+		const auto fmod_wait = get_fmod_event_wait_snapshot();
+
+		if (fmod_wait_dump && (!fmod_wait.active || !fmod_wait.taskset))
+		{
+			return;
+		}
+
 		idm::select<named_thread<spu_thread>>([&](u32, named_thread<spu_thread>& spu)
 			{
 				if (s_done.load(std::memory_order_relaxed))
@@ -121,12 +130,20 @@ namespace thor
 
 				const auto tname = spu.spu_tname.load();
 
-				if (!tname || tname->find(want) == std::string::npos)
+				if (fmod_wait_dump)
+				{
+					if (static_cast<u32>(+spu._ref<u64>(0x27b8)) != fmod_wait.taskset)
+					{
+						return;
+					}
+				}
+				else if (!tname || tname->find(want) == std::string::npos)
 				{
 					return;
 				}
 
-				const std::string path = fs::get_cache_dir() + "spu_ls_" + spu_ls_dump_sanitize(*tname) + ".bin";
+				const std::string dump_name = fmod_wait_dump ? "FMOD" : spu_ls_dump_sanitize(*tname);
+				const std::string path = fs::get_cache_dir() + "spu_ls_" + dump_name + ".bin";
 
 				fs::file out(path, fs::rewrite);
 
@@ -147,7 +164,7 @@ namespace thor
 
 				spu_log.warning("Thor SPU LS dump: wrote '%s' (%u bytes) thread='%s' pc=0x%05x. "
 								"Disassemble as SPU code at load address 0.",
-					path, static_cast<u32>(SPU_LS_SIZE), *tname, spu.pc);
+					path, static_cast<u32>(SPU_LS_SIZE), tname ? tname->c_str() : "", spu.pc);
 			});
 	}
 } // namespace thor
