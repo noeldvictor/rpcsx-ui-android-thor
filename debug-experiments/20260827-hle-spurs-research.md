@@ -5259,6 +5259,14 @@ rendering progress.
   Candidate APK SHA-256
   `0843DE9B58717B0F8F4648FB1A7CF995A49236BE43F77AA411639C56845911AB`
   is 116,142,104 bytes.
+- Upstream research: The read-only RPCS3 comparison checkout was fetched to
+  `origin/master` commit `eb61fc1fb`. The current `cellSpursJoinTaskset` still
+  returns success from an unimplemented stub. SPURS task-attribute creation,
+  LFQueue bodies, and queue bodies also remain unimplemented. Current
+  `armsx3/master` has no different SPURS or cellSync implementation. The latest
+  relevant upstream SPURS change is `d7ed328f4`, which adds PPU wait state around
+  reservation operations. This branch already carries that exact file-level
+  port in commit `47cff93031`. There is no new upstream HLE body to import.
 - Decision: Accept the SPURS log cleanup as a log-volume result. Reject the run
   for HLE and speed proof. Keep the hard stop. Do not run the Thor again in this
   hardware round.
