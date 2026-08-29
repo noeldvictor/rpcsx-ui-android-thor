@@ -5080,3 +5080,66 @@ rendering progress.
   Require the shutdown mask, helper wake, join return, workload removal, safe
   taskset reuse, later real frames, and a correct 30 FPS scene before any HLE
   or performance claim.
+
+## 109. Atomic shutdown state lets taskset join return
+
+- Status: android-pass
+- Scope: config-driver
+- Hypothesis: One guest reservation for each shared SPURS workload-state update
+  will prevent a concurrent SPU operation from restoring a cleared status bit.
+  The shutdown helper will then signal the event, taskset join will remove the
+  workload, and the game can reuse the taskset storage.
+- Changed files/settings: Candidate APK SHA-256
+  `756978BFFD348CA7553A38BB690BC4A28880EE19C5C984BF6568CDD91748CB2B`,
+  size 116,142,297 bytes, contains commit `ecf235d67`. It uses one typed
+  128-byte reservation operation for request processing, workload activation,
+  and shutdown-completion updates. The run used HLE `libsre`, the HLE SPURS
+  kernel, profile preservation, and the current SPURS repair stack. The yield
+  fast path and queue-publication experiment stayed off.
+- Rollback: RPCSX is stopped. `pidof` was empty, `top` had zero RPCSX rows, and
+  the final fixed-silicon temperature was 49.4 C. All 59 nonempty
+  `debug.rpcsx.thor.*` properties were cleared. The first cleanup command had a
+  host quoting fault. A readback audit found 53 intended values and six known
+  generic controls set to `off`. The corrected command left zero nonempty
+  properties. Commit `3712524eb` adds one stopped-run cleanup tool with a final
+  audit.
+- Windows result: Not run. This test validates the Android HLE lifecycle.
+- Thor result: The exact no-launch install matched the expected, host, and
+  installed APK hashes. The fixed-silicon install gate passed at 43.3 C. Boot
+  started at 41.7 C. Eight guarded slices reached the shutdown-completion mask
+  at guest time 1:17.452. The slice starts were 44.9, 49.8, 52.2, 53.4, 56.2,
+  55.8, 56.6, and 56.2 C. The maximum fixed-silicon value was 70.3 C. The
+  rendering thread called shutdown and join at 1:17.116, and it created the
+  same taskset address `0x1f73f00` again at 1:17.483. The join implementation
+  waits for shutdown, removes the workload, invalidates the workload ID, and
+  only then returns. Safe same-address creation therefore proves that join and
+  removal completed. No task error, access violation, verification failure,
+  fatal error, or out-of-memory error was observed.
+- Visual correctness: Partial only. The first paused image shows a black
+  Transformers loading screen with the Decepticon emblem. A second set of
+  eight slices started at 50.2, 55.0, 57.4, 57.0, 57.8, 58.6, 57.8, and 60.6 C.
+  It stayed below the 72 C hard stop and reached a 71.9 C maximum. The second
+  paused image shows the Autobot loading emblem. Neither image shows correct
+  3D or gameplay output.
+- FPS/frame-time: No credit. The paused overlays showed 31.09 and 29.65, which
+  are not measurements. The loading route is not comparable. Draw calls stayed
+  at 202 for a long interval, then increased through 226, 288, 366, 450, 504,
+  558, 631, 713, 779, 832, and 880 before they stopped again. A new taskset with
+  attribute address `0x1158d800` appeared at guest time 3:11.530 before that
+  burst. No valid 30 FPS scene exists.
+- Capture paths: `20260829-105748-thor-input-strict-cool-gate`,
+  `20260829-105805-transformers-spurs-atomic-shutdown-install`,
+  `20260829-1058-transformers-atomic-shutdown-runtime`, and
+  `20260829-110539-transformers-atomic-shutdown-reuse`. The last collector
+  directory lost the runtime log because it did not select an ADB serial. The
+  in-run controller queries and the two images supply the result evidence.
+- Decision: Accept the narrow lifecycle hypothesis. The atomic shutdown repair
+  fixes the observed join stall. Do not claim full HLE, gameplay, or a speed
+  improvement. The route now stops later, after taskset reuse and a second
+  loading-taskset draw burst. Commit `3712524eb` adds fatal and out-of-memory
+  stops, audited property cleanup, and explicit collector device selection.
+- Next: Keep the atomic repair. In the next independent cool Thor round, start
+  below 70 C and stop at 72 C. Save the full log with serial `c3ca0370` while
+  the guest is paused. Correlate the last PPU PCs, SPURS task state, queue-ring
+  counters, PUT census, and draw census after taskset `0x1158d800` starts. Make
+  no new source repair until that evidence identifies the blocked contract.
