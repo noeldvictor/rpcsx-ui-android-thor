@@ -27,4 +27,12 @@ if ($functionSource -notmatch 'if \(thor_call_index < 8\)[\s\S]*?Thor signal wid
     throw "The successful SPURS workload signal record is not bounded."
 }
 
+if (-not $functionSource.Contains('vm::light_op<true>(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2')) {
+    throw "The SPURS workload signal write must notify reservation waiters."
+}
+
+if ($functionSource -match '\? spurs->wklSignal1 : spurs->wklSignal2\)\.atomic_op') {
+    throw "The SPURS workload signal write must not use a non-notifying member atomic."
+}
+
 Write-Output "Thor SPURS workload signal log budget test passed."

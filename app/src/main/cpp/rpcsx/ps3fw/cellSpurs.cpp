@@ -3207,20 +3207,17 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
 	}
 
-	// FIX: set the signal the same way this file CLEARS it in spursAddWorkload.
-	//
-	// The vm::light_op form that used to be here did not preserve the signal.
-	// Use the same direct atomic operation that spursAddWorkload uses for this
-	// field.
-	//
-	// spursAddWorkload already clears this very field with a direct atomic_op on
-	// the member, and that path demonstrably works. Use the same shape to set it.
+	// Publish the signal through the reservation-aware guest-memory helper.
+	// A direct member atomic can set the bit without notifying an SPU that waits
+	// for a reservation loss. In that case, a new workload runs only when an SPU
+	// polls by chance. The upstream RPCS3 path uses light_op<true> so the write
+	// also wakes reservation waiters.
 	//
 	// This matters because it is the ONLY term that can start a taskset workload
 	// here: the gate is (wklFlag || wklSignal || readyCount) and the other two are
 	// dead - flag reads 0xFFFFFFFF and readyCount is 0.
 	u16 thor_inside = 0;
-	(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2).atomic_op([&](be_t<u16>& data)
+	vm::light_op<true>(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2, [&](atomic_be_t<u16>& data)
 		{
 			data |= 0x8000 >> (wid % 16);
 			thor_inside = data;
