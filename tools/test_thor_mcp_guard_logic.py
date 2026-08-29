@@ -293,6 +293,8 @@ assert result["stableSamples"] == 3, (
 
 clock.now = 0.0
 startup_process_state = {"value": "R"}
+slice_loop_forward_calls = []
+SERVER.ensure_forward = lambda: slice_loop_forward_calls.append("forward")
 SERVER._process_hold_pid = None
 SERVER.pid = lambda: "123"
 SERVER._process_state = lambda process_id: startup_process_state["value"]
@@ -304,6 +306,9 @@ assert result["refused"] is True, (
 )
 assert result["initialState"] == SERVER.EMU_STATE_LOADING, (
     "The startup refusal lost the exact emulator state."
+)
+assert slice_loop_forward_calls == ["forward"], (
+    "The slice loop did not establish its control forward before refusal."
 )
 
 startup_holds = []
@@ -369,10 +374,12 @@ SERVER._process_state = lambda process_id: "R"
 
 startup_holds.clear()
 handshake_calls = []
+handshake_order = []
 handshake_states = iter([None, SERVER.EMU_STATE_READY])
 
 
 def ready_handshake_state():
+    handshake_order.append("status")
     return next(handshake_states, SERVER.EMU_STATE_READY)
 
 
@@ -380,10 +387,13 @@ def ready_handshake_api(path, method="GET", timeout=8):
     handshake_calls.append((path, method, timeout))
     if path == "/pause":
         return {"ok": True, "paused": True}
+    if path == "/status":
+        return {"state": SERVER.EMU_STATE_READY}
     return {"ok": True}
 
 
 SERVER.emulation_state = ready_handshake_state
+SERVER.ensure_forward = lambda: handshake_order.append("forward")
 SERVER.api = ready_handshake_api
 result = SERVER.t_slice_loop({
     "seconds": 0.5, "maxSlices": 1, "allowStarting": True,
@@ -405,6 +415,33 @@ assert result["initialPauseAttempts"] == 1, (
 )
 assert ("/pause", "POST", 0.5) in handshake_calls, (
     "The startup handoff did not use the bounded pause endpoint."
+)
+assert ("/status", "GET", 0.5) in handshake_calls, (
+    "The startup handoff did not use the bounded status endpoint."
+)
+assert handshake_order[0] == "forward", (
+    "The startup handoff read status before it established the control forward."
+)
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
+startup_holds.clear()
+SERVER.emulation_state = lambda: None
+SERVER.ensure_forward = lambda: None
+SERVER.api = lambda path, method="GET", timeout=8: {
+    "error": "control API unreachable"
+}
+result = SERVER.t_slice_loop({
+    "seconds": 0.5, "maxSlices": 1, "allowStarting": True,
+})
+assert result["error"] == "the startup control API did not become reachable", (
+    "The slice loop did not refuse an unavailable startup control API."
+)
+assert result["initialPauseAttempts"] == 8 and startup_holds == [], (
+    "The unavailable control API entered a process hold."
+)
+assert result["stop"]["quiet"] is True, (
+    "The unavailable control API did not use the verified stop path."
 )
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"

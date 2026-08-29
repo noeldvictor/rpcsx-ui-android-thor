@@ -6659,3 +6659,57 @@ rendering progress.
   Require a confirmed initial pause, the native gate-release line, and active
   guest work before the result can describe HLE. Stop at the second late-loader
   completion sample, then map the live edgeZlib PC with Ghidra.
+
+## 136. The slice controller lacks its own port forward
+
+- Status: route-tooling, failed, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: The bounded live `/pause` handshake will confirm the native Ready
+  gate and avoid the experiment 135 process hold.
+- Changed files/settings: The run used the same exact installed APK and HLE
+  stack as experiment 135. Its SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  and its size was 116,143,682 bytes. The host included commit `1e4cfad17`.
+  The route enabled the bounded SPU PC census, SPURS atomic census, and EDGE
+  event-wait trace. It requested 0.5-second slices and the second late-loader
+  completion marker.
+- Thor result: The one-sample cold-start gate passed immediately at 44.5 C
+  fixed silicon. All eight live `/pause` probes timed out, and the paired status
+  remained unavailable. The controller then took an initial process hold in
+  state `T`. It completed 80 process windows in 600.266 host seconds and reached
+  the host deadline without the marker. The windows reported 48.072 active
+  seconds, from 0.578 to 0.688 seconds each. Cooldown waits totaled 158 seconds.
+  These windows do not show guest work.
+- Startup evidence: The native log reached
+  `Thor start-paused gate is ready` once and never logged that the gate was
+  released. Every performance interval reported zero frames and zero busy
+  cores. The enabled properties were read back as one, but the run produced no
+  native SPU object load, SPU PC census, atomic census, EDGE wait, or late-loader
+  line. The slice-loop controller runs in a new process and did not establish
+  `adb forward tcp:8099 tcp:8099` before its first control request. It depended
+  on a forward that an earlier tool might leave behind. Experiment 132 had that
+  accidental state; experiments 135 and 136 did not.
+- Visual correctness: None. The route did not reach a game frame or save a
+  boundary image.
+- FPS/frame-time: No FPS credit. The log reported zero frames throughout, and
+  the process windows are not a performance workload.
+- Thermal result: The controller maximum was 59.4 C fixed silicon, and its
+  final live read was 58.2 C fixed silicon and 64.0 C junction. The independent
+  device guard recorded 1,102 samples, with a 58.6 C fixed-silicon maximum and
+  a 76.7 C junction maximum. It recorded no 66 C hold and no hard stop.
+- Rollback: The wrapper stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared 57 values and found zero remaining
+  `debug.rpcsx.thor.*` values. Fixed silicon was 52.6 C after both stop and
+  cleanup.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-172214-thor-input-custom`.
+- Decision: This is a second controller failure, not an HLE result. Keep the
+  HLE stack unchanged. The slice loop now establishes its own control-port
+  forward before it reads status. Each startup `/pause` and `/status` request
+  has a 0.5-second timeout. If all eight pairs are unreachable, the route uses
+  the verified stop path instead of entering a process hold. A reachable but
+  transient startup state still keeps the process-hold fallback.
+- Next: After a separate independently cool interval, repeat the producer
+  census once. Require a confirmed control handshake, the native gate-release
+  line, and active guest work. Stop at the second late-loader completion sample,
+  then map the live edgeZlib PC with Ghidra.

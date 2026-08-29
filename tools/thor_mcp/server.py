@@ -676,6 +676,9 @@ def t_slice_loop(a):
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
+    # This tool can run in a new server.py process. Do not depend on a forward
+    # that an earlier controller call happened to leave behind.
+    ensure_forward()
     process_held = held_process_pid() == p
     initial_state = EMU_STATE_STARTING if process_held else emulation_state()
     allow_starting = bool(a.get("allowStarting", False))
@@ -713,8 +716,10 @@ def t_slice_loop(a):
                            "resumeTargetC must be below maxSiliconC")}
 
     initial_pause_probe = None
+    initial_pause_status = None
     initial_pause_state = initial_state
     initial_pause_attempts = 0
+    initial_control_reachable = False
     if not process_held and not paused_state and allow_starting:
         # The status request can race the native start-paused Ready gate. Ask
         # the live control endpoint to confirm that gate before SIGSTOP. A
@@ -723,7 +728,17 @@ def t_slice_loop(a):
         for attempt in range(1, 9):
             initial_pause_attempts = attempt
             initial_pause_probe = api("/pause", "POST", timeout=0.5)
-            initial_pause_state = emulation_state()
+            initial_pause_status = api("/status", timeout=0.5)
+            initial_pause_state = (
+                initial_pause_status.get("state")
+                if isinstance(initial_pause_status, dict) and
+                isinstance(initial_pause_status.get("state"), int)
+                else None
+            )
+            initial_control_reachable = initial_control_reachable or any(
+                isinstance(result, dict) and "error" not in result
+                for result in (initial_pause_probe, initial_pause_status)
+            )
             if ((isinstance(initial_pause_probe, dict) and
                  initial_pause_probe.get("paused")) or
                     initial_pause_state in (
@@ -737,12 +752,27 @@ def t_slice_loop(a):
                     "reason": "the emulator left its startup handoff",
                     "initialState": initial_state,
                     "initialPauseProbe": initial_pause_probe,
+                    "initialPauseStatus": initial_pause_status,
                     "initialPauseState": initial_pause_state,
                     "initialPauseAttempts": initial_pause_attempts,
                     "processHeld": False,
                     "allowStarting": allow_starting,
                 }
             time.sleep(0.1)
+
+    if (initial_pause_attempts and not initial_control_reachable):
+        stop = t_stop({})
+        return {
+            "error": "the startup control API did not become reachable",
+            "initialState": initial_state,
+            "initialPauseProbe": initial_pause_probe,
+            "initialPauseStatus": initial_pause_status,
+            "initialPauseState": initial_pause_state,
+            "initialPauseAttempts": initial_pause_attempts,
+            "processHeld": False,
+            "allowStarting": allow_starting,
+            "stop": stop,
+        }
 
     initial_process_hold = None
     if not process_held and not paused_state:
@@ -752,6 +782,7 @@ def t_slice_loop(a):
             return {"error": "the startup process could not enter its initial hold",
                     "initialState": initial_state,
                     "initialPauseProbe": initial_pause_probe,
+                    "initialPauseStatus": initial_pause_status,
                     "initialPauseState": initial_pause_state,
                     "initialPauseAttempts": initial_pause_attempts,
                     "initialProcessHold": initial_process_hold,
@@ -764,6 +795,7 @@ def t_slice_loop(a):
     def finish(fields):
         if initial_pause_attempts:
             fields["initialPauseProbe"] = initial_pause_probe
+            fields["initialPauseStatus"] = initial_pause_status
             fields["initialPauseState"] = initial_pause_state
             fields["initialPauseAttempts"] = initial_pause_attempts
         if initial_process_hold is not None:
