@@ -5538,3 +5538,35 @@ rendering progress.
   completion address with the EDGE LL/SC rows and the late-loader state before
   a semantic repair. Require correct moving 3D output and a comparable sustained
   30 FPS measurement before a full-HLE or performance claim.
+
+## 116. The direct EDGE submit paths are event-backed
+
+- Status: inconclusive
+- Scope: static-analysis
+- Hypothesis: A direct caller of the EDGE item producer will show where the
+  late counter-backed request enters the queue.
+- Ghidra result: The saved legal PPU image has one direct call to producer
+  `0x00a88564`. It is at `0x00a88810` in wrapper `0x00a887e0`. The wrapper has
+  two direct callers, at `0x009e3368` and `0x009e3558`. Their functions start
+  at `0x009e3200` and `0x009e33f8`. Both functions pass zero as the completion
+  pointer. One passes low mode bit one, and the other passes low mode bit zero.
+  These direct paths cannot create a counter-backed item.
+- Tool result: `FindPowerPcCalls.java` now skips initialized ranges that are
+  outside the default address space. It also decodes relative and absolute
+  direct calls. A headless Ghidra 12.0.4 read-only run completed without the
+  prior address-space error. The complete direct-call scan found only the
+  three calls above. A byte scan found no stored producer or wrapper address
+  in the PPU image.
+- Runtime relation: The result agrees with the 128 early Thor items whose raw
+  completion word was one. It does not prove that the late completion state
+  belongs to this EDGE queue. An indirect or runtime-linked path is still
+  possible, and the late state can also belong to a different work system.
+- Decision: Do not add a completion repair from the static result. Keep the
+  counter-backed-only runtime trace. It can prove whether the late request
+  enters this exact queue without a high-rate boot trace.
+- Next: In the next independently cool Thor round, install exact APK
+  `E27DD6841EC555A721DA6469DD66D7EA8627217B4D80B09F383B605BA1DFFDB6`.
+  Start immediately below 70 C and stop at 72 C. Stop on the first
+  `Thor EDGE LFQ COUNTER ITEM` row or the second late completion sample. If the
+  late state appears without a counter-backed item, reject this EDGE queue as
+  its owner and move the HLE repair to the work system that owns the state.

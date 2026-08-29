@@ -49,6 +49,11 @@ public class FindPowerPcCalls extends GhidraScript {
             AddressRangeIterator ranges = initialized.getAddressRanges();
             while (ranges.hasNext() && !monitor.isCancelled()) {
                 AddressRange range = ranges.next();
+                if (!range.getMinAddress().getAddressSpace().equals(space)
+                    || !range.getMaxAddress().getAddressSpace().equals(space)) {
+                    continue;
+                }
+
                 long start = alignUp(range.getMinAddress().getOffset(), 4);
                 long end = range.getMaxAddress().getOffset();
 
@@ -67,7 +72,7 @@ public class FindPowerPcCalls extends GhidraScript {
                         | ((bytes[1] & 0xff) << 16)
                         | ((bytes[2] & 0xff) << 8)
                         | (bytes[3] & 0xff);
-                    if ((word & 0xfc000003) != 0x48000001) {
+                    if ((word & 0xfc000001) != 0x48000001) {
                         continue;
                     }
 
@@ -75,7 +80,8 @@ public class FindPowerPcCalls extends GhidraScript {
                     if ((displacement & 0x02000000L) != 0) {
                         displacement -= 0x04000000L;
                     }
-                    long target = offset + displacement;
+                    boolean absolute = (word & 0x2) != 0;
+                    long target = absolute ? displacement : offset + displacement;
 
                     for (long requestedTarget : targets) {
                         if (target == requestedTarget) {
