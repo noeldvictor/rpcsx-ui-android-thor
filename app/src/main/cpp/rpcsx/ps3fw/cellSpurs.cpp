@@ -2760,7 +2760,7 @@ s32 _spurs::add_workload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<u32>
 	// This exact edgeZlib workload can take every SPU that is not in the first
 	// taskset. Keep one SPU available for the Bink taskset that the render thread
 	// adds later. Do not change any other title or workload.
-	if (thor_transformers_spu_reserve() && wnum == 6 && pm.addr() == 0x02390000 && size == 0x4000 && minContention == 1 && maxContention == 5)
+	if (thor_transformers_spu_reserve() && wnum == 6 && size == 0x4000 && minContention == 1 && maxContention == 5)
 	{
 		maxContention = 4;
 		cellSpurs.notice("Thor Transformers SPU reserve: workload 6 max contention changed from 5 to 4");

@@ -179,7 +179,7 @@ $requiredTransformersSpuReserveFragments = @(
     '"debug.rpcsx.thor.transformers_spu_reserve"',
     's_on && Emu.GetTitleID() == "BLUS30357"',
     'wnum == 6',
-    'pm.addr() == 0x02390000',
+    'size == 0x4000',
     'minContention == 1 && maxContention == 5',
     'maxContention = 4;'
 )
@@ -188,6 +188,10 @@ foreach ($fragment in $requiredTransformersSpuReserveFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers SPU reserve is missing: $fragment"
     }
+}
+
+if ($cellSpurs.Contains('pm.addr() == 0x02390000')) {
+    throw "The Transformers SPU reserve must not depend on a variable policy-image address."
 }
 
 foreach ($fragment in $requiredEventCensusFragments) {
