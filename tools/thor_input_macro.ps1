@@ -1378,6 +1378,7 @@ $spursProfilePropertyNames = @(
     "debug.rpcsx.thor.spurs_wait_scale",
     "debug.rpcsx.thor.syscall_dma_wait",
     "debug.rpcsx.thor.task_attr_fix",
+    "debug.rpcsx.thor.transformers_spu_reserve",
     "debug.rpcsx.thor.task_ls_clear_fix",
     "debug.rpcsx.thor.taskset_enabled_fix",
     "debug.rpcsx.thor.taskset_select_atomic",

@@ -16,6 +16,8 @@ $spuCommonPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Ce
 $spuCommon = Get-Content -LiteralPath $spuCommonPath -Raw
 $ppuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\PPUThread.cpp"
 $ppuThread = Get-Content -LiteralPath $ppuThreadPath -Raw
+$cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSpurs.cpp"
+$cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
 
 $requiredFragments = @(
     '[int]$ThermalPreflightSamples = 1',
@@ -70,6 +72,7 @@ $requiredRenderProbeFragments = @(
     '[string]$TasksetSelectAtomic = "on"',
     '[string]$EdgeEventInterp = "on"',
     '[string]$TaskAttrFix = "on"',
+    '[string]$SpuReserve = "on"',
     '[string]$YieldFastPath = "off"',
     '[string]$PpuCachedRtimeFix = "on"',
     '[string]$SpursProbe = "off"',
@@ -84,6 +87,7 @@ $requiredRenderProbeFragments = @(
     'TasksetSelectAtomic = $hleTasksetSelectAtomic',
     '"debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.task_attr_fix" = if ($TaskAttrFix -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.transformers_spu_reserve" = if ($Mode -eq "HLE" -and $SpuReserve -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.yield_fast_path" = if ($YieldFastPath -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.ppu_cached_rtime_fix" = if ($PpuCachedRtimeFix -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }',
@@ -99,6 +103,7 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_spu_reserve" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.yield_fast_path" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"',
     '[string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
@@ -166,6 +171,22 @@ $requiredPpuCachedRtimeFragments = @(
 foreach ($fragment in $requiredPpuCachedRtimeFragments) {
     if (-not $ppuThread.Contains($fragment)) {
         throw "The PPU cached reservation fix is missing: $fragment"
+    }
+}
+
+$requiredTransformersSpuReserveFragments = @(
+    'static bool thor_transformers_spu_reserve() noexcept',
+    '"debug.rpcsx.thor.transformers_spu_reserve"',
+    's_on && Emu.GetTitleID() == "BLUS30357"',
+    'wnum == 6',
+    'pm.addr() == 0x02390000',
+    'minContention == 1 && maxContention == 5',
+    'maxContention = 4;'
+)
+
+foreach ($fragment in $requiredTransformersSpuReserveFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The Transformers SPU reserve is missing: $fragment"
     }
 }
 

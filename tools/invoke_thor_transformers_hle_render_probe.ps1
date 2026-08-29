@@ -16,6 +16,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$TaskAttrFix = "on",
     [ValidateSet("on", "off")]
+    [string]$SpuReserve = "on",
+    [ValidateSet("on", "off")]
     [string]$YieldFastPath = "off",
     [ValidateSet("on", "off")]
     [string]$PpuCachedRtimeFix = "on",
@@ -69,6 +71,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.spurs_signal_fix" = "0"
     "debug.rpcsx.thor.spurs_always_notify" = "0"
     "debug.rpcsx.thor.task_attr_fix" = if ($TaskAttrFix -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.transformers_spu_reserve" = if ($Mode -eq "HLE" -and $SpuReserve -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.contention_atomic_fix" = "1"
     "debug.rpcsx.thor.contention_orphan_fix" = "1"
     "debug.rpcsx.thor.pending_contention_fix" = "1"
@@ -134,6 +137,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_spu_reserve" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.yield_fast_path" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"
 }
