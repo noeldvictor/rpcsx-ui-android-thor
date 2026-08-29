@@ -80,6 +80,7 @@ FILES = f"/storage/emulated/0/Android/data/{PKG}/files"
 EMU_STATE_PAUSED = 4
 EMU_STATE_READY = 6
 EMU_STATE_STARTING = 7
+EMU_STATE_LOADING = 1
 _process_hold_pid = None
 
 
@@ -674,11 +675,15 @@ def t_slice_loop(a):
     process_held = held_process_pid() == p
     initial_state = EMU_STATE_STARTING if process_held else emulation_state()
     allow_starting = bool(a.get("allowStarting", False))
+    startup_state = initial_state in (EMU_STATE_LOADING, EMU_STATE_STARTING)
     if (not process_held and
             initial_state not in (EMU_STATE_PAUSED, EMU_STATE_READY) and
-            not (allow_starting and initial_state == EMU_STATE_STARTING)):
+            not (allow_starting and startup_state)):
         return {"refused": True,
-                "reason": "the emulator must be paused before a slice loop"}
+                "reason": "the emulator must be paused before a slice loop",
+                "initialState": initial_state,
+                "processHeld": process_held,
+                "allowStarting": allow_starting}
 
     duration = max(0.1, min(float(a.get("seconds", 1.0)), 5.0))
     max_slices = max(1, min(int(a.get("maxSlices", 64)), 256))
@@ -702,7 +707,7 @@ def t_slice_loop(a):
                            "resumeTargetC must be below maxSiliconC")}
 
     initial_process_hold = None
-    if not process_held and initial_state == EMU_STATE_STARTING:
+    if not process_held and startup_state:
         initial_process_hold = stop_process_for_slice(p)
         if not initial_process_hold.get("ok"):
             stop = t_stop({})

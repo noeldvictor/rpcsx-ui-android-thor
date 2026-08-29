@@ -296,11 +296,14 @@ startup_process_state = {"value": "R"}
 SERVER._process_hold_pid = None
 SERVER.pid = lambda: "123"
 SERVER._process_state = lambda process_id: startup_process_state["value"]
-SERVER.emulation_state = lambda: SERVER.EMU_STATE_STARTING
+SERVER.emulation_state = lambda: SERVER.EMU_STATE_LOADING
 SERVER.t_stop = lambda _: {"quiet": True}
 result = SERVER.t_slice_loop({"seconds": 0.5, "maxSlices": 1})
 assert result["refused"] is True, (
-    "The slice loop accepted a starting process without explicit permission."
+    "The slice loop accepted a loading process without explicit permission."
+)
+assert result["initialState"] == SERVER.EMU_STATE_LOADING, (
+    "The startup refusal lost the exact emulator state."
 )
 
 startup_holds = []

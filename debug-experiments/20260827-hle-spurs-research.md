@@ -6535,7 +6535,7 @@ rendering progress.
   proved. Require correct moving 3D output and a comparable sustained 30 FPS
   measurement before a full-HLE or performance claim.
 
-## 133. A starting-state race refuses the producer census
+## 133. A pre-paused-state race refuses the producer census
 
 - Status: route-tooling, failed, not-comparable
 - Scope: config-driver, thermal-safety
@@ -6547,9 +6547,11 @@ rendering progress.
   0.5-second route and the second late-loader completion marker.
 - Thor result: The one-sample cold-start gate passed at 46.6 C fixed silicon.
   RPCSX logged that the Thor start-paused gate was ready. The outer controller
-  then observed emulator state `Starting`, before it changed to `Ready` or
-  `Paused`, and refused with `the emulator must be paused before a slice loop`.
-  It completed zero slices and produced no SPU PC or atomic samples.
+  then observed a state before `Ready` or `Paused` and refused with
+  `the emulator must be paused before a slice loop`. The old refusal did not
+  retain the numeric state. RPCSX can be `Loading` or `Starting` at this
+  boundary. The route completed zero slices and produced no SPU PC or atomic
+  samples.
 - HLE and visual evidence: None. The route stopped during startup and did not
   reach the HLE diagnostic boundary. No boundary image exists. Give no FPS or
   visual-correctness credit.
@@ -6563,10 +6565,11 @@ rendering progress.
 - Capture path:
   `debug-captures/android-speed-sprint/20260829-165241-thor-input-custom`.
 - Decision: This is a host startup-handoff race, not an HLE result. Keep the
-  cold-start rule and HLE stack. The slice controller now accepts a `Starting`
-  state only when the caller explicitly sets `allowStarting`. It immediately
-  process-holds that PID before cooldown and keeps the default path
-  fail-closed. The guarded controller test covers both cases.
+  cold-start rule and HLE stack. The slice controller now accepts `Loading` or
+  `Starting` only when the caller explicitly sets `allowStarting`. It
+  immediately process-holds that PID before cooldown and keeps the default
+  path fail-closed. Future refusals record the exact state. The guarded
+  controller test covers the loading case and the default refusal.
 - Next: In a separate independently cool hardware round, repeat the producer
   census with the repaired startup handoff. Stop at the second late-loader
   completion sample and map the live edgeZlib PC with Ghidra.
