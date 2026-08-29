@@ -2510,6 +2510,13 @@ void spursSysServiceIdleHandler(spu_thread& spu, SpursKernelContext* ctxt)
 
 	while (true)
 	{
+		// HLE callbacks can stay in this loop without returning to the SPU
+		// dispatcher. Honor pause and stop here as the normal dispatcher does.
+		if (spu.state && spu.check_state())
+		{
+			return;
+		}
+
 		// REFRESH THE SNAPSHOT BEFORE READING IT.
 		//
 		// LS 0x100 is `SpursKernelContext::tempArea[0x80]` - a 128-byte scratch at
@@ -2690,6 +2697,13 @@ void spursSysServiceMain(spu_thread& spu, u32 pollStatus)
 
 	while (true)
 	{
+		// The system service can poll here for the whole emulation session.
+		// Do not bypass the SPU pause and stop state while it is in HLE code.
+		if (spu.state && spu.check_state())
+		{
+			return;
+		}
+
 		// Process requests for the system service
 		spursSysServiceProcessRequests(spu, ctxt);
 
