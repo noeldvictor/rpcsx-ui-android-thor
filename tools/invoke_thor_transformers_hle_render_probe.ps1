@@ -14,7 +14,7 @@ param(
     [ValidateSet("on", "off")]
     [string]$TaskAttrFix = "on",
     [ValidateSet("on", "off")]
-    [string]$YieldFastPath = "on",
+    [string]$YieldFastPath = "off",
     [ValidateSet("on", "off")]
     [string]$PpuCachedRtimeFix = "on",
     [ValidateSet("on", "off")]
@@ -129,6 +129,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.yield_fast_path" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"
 }
 

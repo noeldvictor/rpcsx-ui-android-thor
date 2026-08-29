@@ -3773,3 +3773,22 @@ screenshot was a black transition frame at 26.82 FPS. The route started at
 45.8 C silicon and reached 68.7 C before the macro stopped RPCSX. The device
 guard did not have to stop the process. This run proves the reservation-time
 repair. It does not prove correct 3D output or sustained 30 FPS.
+
+## 70. The fixed HLE route shows the legal frame near 30 FPS
+
+The paused route in `20260828-223626-thor-input-custom` used the cached PPU
+reservation repair and the SPURS yield fast path. Short resume windows produced
+correct Unreal, PhysX, and legal screens. Two visible frames reported 29.98 FPS
+and 29.36 FPS. The final counter had 11 exact stale-128 failures and 20 other
+failures. These small counts have the normal contention ratio. The old exact
+128 failure storm did not return.
+
+The route did not advance past the legal movie during the bounded resume
+windows. Thus, the yield fast path does not have a title-advance proof. The HLE
+route keeps this experiment off by default. It can still be enabled with
+`-YieldFastPath on`. The route also resets its property after the run.
+
+The comparison route `20260828-224150-thor-input-custom` used the normal yield
+path. A 10-second continuous resume window caused the device guard to stop
+RPCSX. The stop occurred before 72 C. The post-stop launcher screenshot has no
+visual credit. Correct gameplay and sustained 30 FPS are still not proved.
