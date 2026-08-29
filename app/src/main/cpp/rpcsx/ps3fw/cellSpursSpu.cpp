@@ -1136,18 +1136,10 @@ static void spursAtomicClearSelectedSignal(CellSpurs* spurs, u32 selectedId, boo
 	});
 }
 
-// Keep the reservation notification when signal consumption is deferred.
-// The selector must still write this line because SPURS waiters use its
-// reservation notification. The guarded system-service operation changes no
-// signal bit and issues the same two atomic updates as the clear helper.
-static void spursAtomicNotifySignalWaiters(CellSpurs* spurs) noexcept
-{
-	spursAtomicClearSelectedSignal(spurs, CELL_SPURS_SYS_SERVICE_WORKLOAD_ID, true);
-}
-
 // Return true when the selected workload enters a host HLE callback at 0xA00.
 // A real policy module starts in the SPU runtime and has no host callback
-// boundary. Its signal must still be consumed during kernel dispatch.
+// boundary. The selector consumes its signal. The dispatch path must not clear
+// a newer signal that arrives after selection.
 static bool spursWorkloadUsesHleEntry(CellSpurs* spurs, u32 selectedId, bool isKernel2) noexcept
 {
 	u32 policyAddress = 0;
@@ -1168,39 +1160,74 @@ static bool spursWorkloadUsesHleEntry(CellSpurs* spurs, u32 selectedId, bool isK
 	return policyAddress == SPURS_IMG_ADDR_TASKSET_PM ||
 		policyAddress == SPURS_IMG_ADDR_JOBCHAIN_PM;
 }
-
-// Consume a deferred signal as the first operation in an HLE policy entry.
-// The kernel has committed wklCurrentId before it sets pc to 0xA00.
-static void spursConsumeHleEntrySignal(spu_thread& spu, SpursKernelContext* ctxt) noexcept
+// The first CellSpurs cache line contains every dynamic kernel-1 scheduling
+// input. Real SPURS updates this line through a 128-byte reservation. Keep the
+// HLE claim on the same reservation granule as PPU workload signals.
+struct alignas(128) spurs_kernel1_claim_op
 {
-	if (thor_spurs_signal_fix())
-	{
-		spursAtomicClearSelectedSignal(ctxt->spurs.get_ptr(), ctxt->wklCurrentId, true);
-	}
-}
+	u8 readyCount[0x10];       // 0x00
+	u8 idleSpuCount[0x10];     // 0x10
+	u8 currentContention[0x10]; // 0x20
+	u8 pendingContention[0x10]; // 0x30
+	u8 minContention[0x10];     // 0x40
+	u8 maxContention[0x10];     // 0x50
+	u8 workloadFlagPrefix[0x0c]; // 0x60
+	be_t<u32> workloadFlag;      // 0x6c
+	be_t<u16> signal1;           // 0x70
+	u8 sysSrvMessage;            // 0x72
+	u8 spuIdling;                // 0x73
+	u8 flags1;                   // 0x74
+	u8 sysSrvTraceControl;       // 0x75
+	u8 nSpus;                    // 0x76
+	u8 workloadFlagReceiver;     // 0x77
+	be_t<u16> signal2;           // 0x78
+	u8 tail[6];                  // 0x7a
+};
 
-// Claim one current-contention slot without exceeding the workload limit.
-// Selection and the old increment were separate operations. Several SPUs could
-// therefore read the same count, select the same workload, and all increment it.
-static bool spursAtomicTryClaimWorkload(SpursKernelContext* ctxt, u32 selectedId) noexcept
+CHECK_SIZE_ALIGN(spurs_kernel1_claim_op, 128, 128);
+
+// Revalidate demand, claim one contention slot, and consume the demand token
+// in one reservation transaction. A signal-only wake can therefore dispatch
+// one SPU, not every SPU that read the bit before a separate clear.
+static bool spursAtomicTryClaimWorkload(spu_thread& spu, SpursKernelContext* ctxt, u32 selectedId) noexcept
 {
 	if (selectedId >= CELL_SPURS_MAX_WORKLOAD)
 	{
 		return false;
 	}
 
-	const u8 maxContention = ctxt->spurs->wklMaxContention[selectedId].load();
-	bool claimed = false;
-	vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + selectedId)
-		.atomic_op([&](u8& current)
+	return vm::reservation_op<true>(spu,
+		vm::unsafe_ptr_cast<spurs_kernel1_claim_op>(ctxt->spurs),
+		[&](spurs_kernel1_claim_op& op)
 		{
-			if (current < maxContention)
+			const u8 current = op.currentContention[selectedId];
+			const u8 maximum = op.maxContention[selectedId];
+			const u8 ready = std::min<u8>(op.readyCount[selectedId], CELL_SPURS_MAX_SPU);
+			const u8 idle = std::min<u8>(op.idleSpuCount[selectedId], CELL_SPURS_MAX_SPU);
+			const u16 signalMask = 0x8000u >> selectedId;
+			const bool hasSignal = (op.signal1 & signalMask) != 0;
+			const bool hasFlag = op.workloadFlag == 0 && op.workloadFlagReceiver == selectedId;
+			const bool hasReadyDemand = ready != 0 && ready + idle > current;
+
+			if (current >= maximum || (!hasSignal && !hasFlag && !hasReadyDemand))
 			{
-				current++;
-				claimed = true;
+				return false;
 			}
+
+			op.currentContention[selectedId] = current + 1;
+
+			if (hasSignal)
+			{
+				op.signal1 &= ~signalMask;
+			}
+
+			if (hasFlag)
+			{
+				op.workloadFlag = -1;
+			}
+
+			return true;
 		});
-	return claimed;
 }
 
 static bool thor_hle_once(std::atomic<u32>& bits, u32 spuNum) noexcept
@@ -1425,7 +1452,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				wklSelectedId < CELL_SPURS_MAX_WORKLOAD &&
 				!ctxt->wklLocContention[wklSelectedId])
 			{
-				contentionClaimed = spursAtomicTryClaimWorkload(ctxt, wklSelectedId);
+				contentionClaimed = spursAtomicTryClaimWorkload(spu, ctxt, wklSelectedId);
 
 				if (!contentionClaimed)
 				{
@@ -1485,8 +1512,6 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 			// could not hit this: during a poll it only fired when nothing
 			// changed. Widening the commit means narrowing the clear to match.
 			const bool consumeSignal = !thor_spurs_sel_cond_fix() || !isPoll;
-			const bool deferHleSignal = consumeSignal && thor_spurs_signal_fix() &&
-				spursWorkloadUsesHleEntry(spurs, wklSelectedId, false);
 
 			// The first edge-Zlib signal completes one loader batch. The next
 			// signal is consumed but no further queue atomic appears. Record each
@@ -1573,11 +1598,10 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				{
 					// Poll: report the selection, consume nothing.
 				}
-				else if (deferHleSignal)
+				else if (contentionClaimed)
 				{
-					// Keep the signal until the HLE policy entry runs. A host pause
-					// can occur after this callback and before the entry callback.
-					spursAtomicNotifySignalWaiters(spurs);
+					// The reservation claim already consumed the selected signal.
+					// Do not clear a newer signal that arrived after the claim.
 				}
 				else
 				{
@@ -1585,7 +1609,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 				}
 
 				// If the selected workload is the wklFlag workload then pull the wklFlag to all 1s
-				if (wklSelectedId == spurs->wklFlagReceiver)
+				if (!contentionClaimed && wklSelectedId == spurs->wklFlagReceiver)
 				{
 					spurs->wklFlag.flag = -1;
 				}
@@ -2070,8 +2094,6 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 				? (!isPoll || ctxt->wklCurrentId == CELL_SPURS_SYS_SERVICE_WORKLOAD_ID)
 				: (!isPoll || wklSelectedId == ctxt->wklCurrentId);
 			const bool consumeSignal2 = !thor_spurs_sel_cond_fix() || !isPoll;
-			const bool deferHleSignal2 = consumeSignal2 && thor_spurs_signal_fix() &&
-				spursWorkloadUsesHleEntry(spurs, wklSelectedId, true);
 
 			if (commitSelection2)
 			{
@@ -2114,10 +2136,6 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 				if (!consumeSignal2)
 				{
 					// Poll: report the selection, consume nothing.
-				}
-				else if (deferHleSignal2)
-				{
-					spursAtomicNotifySignalWaiters(spurs);
 				}
 				else
 				{
@@ -2308,25 +2326,21 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	// which consuming-at-selection never did.
 	//
 	// Real workloads only. The system service has no signal bit, which is exactly
-	// what the undefined shift forgot.
-	// The host checks pause state between HLE callbacks. A pause can occur after
-	// the kernel commits this dispatch and before the policy entry at 0xA00. If
-	// this code consumes an HLE policy signal here, a lifecycle restart can lose
-	// the entry PC and the only signal that can select the taskset again.
-	//
-	// Keep the signal for an HLE taskset or job-chain entry. That entry consumes
-	// it as its first operation. Real policy modules keep the dispatch-time clear.
-	const bool deferSignalToHleEntry = thor_spurs_signal_fix() &&
+	// what the undefined shift forgot. The selector already consumes an HLE
+	// workload signal. Do not clear a newer signal that the PPU can publish
+	// between selection and dispatch. Real policy modules keep the legacy
+	// dispatch-time clear.
+	const bool signalConsumedBySelector = thor_spurs_signal_fix() &&
 		spursWorkloadUsesHleEntry(ctxt->spurs.get_ptr(), wid, isKernel2);
 
-	if (!deferSignalToHleEntry && wid < CELL_SPURS_MAX_WORKLOAD)
+	if (!signalConsumedBySelector && wid < CELL_SPURS_MAX_WORKLOAD)
 	{
 		ctxt->spurs->wklSignal1.atomic_op([&](be_t<u16>& sig)
 			{
 				sig &= ~(0x8000 >> wid);
 			});
 	}
-	else if (!deferSignalToHleEntry && wid < CELL_SPURS_MAX_WORKLOAD2)
+	else if (!signalConsumedBySelector && wid < CELL_SPURS_MAX_WORKLOAD2)
 	{
 		ctxt->spurs->wklSignal2.atomic_op([&](be_t<u16>& sig)
 			{
@@ -3338,7 +3352,6 @@ enum SpursTasksetRequest
 bool spursTasksetEntry(spu_thread& spu)
 {
 	auto kernelCtxt = spu._ptr<SpursKernelContext>(spu.gpr[3]._u32[3]);
-	spursConsumeHleEntrySignal(spu, kernelCtxt);
 
 	// HOW OFTEN IS THE TASKSET MODULE ENTERED, versus how often does it DISPATCH?
 	//
@@ -4968,9 +4981,6 @@ s32 spursTasksetLoadElf(spu_thread& spu, u32* entryPoint, u32* lowestLoadAddr, u
 // job guard. That is a policy module of comparable size to the taskset one.
 bool spursJobChainEntry(spu_thread& spu)
 {
-	const auto kernelCtxt = spu._ptr<SpursKernelContext>(spu.gpr[3]._u32[3]);
-	spursConsumeHleEntrySignal(spu, kernelCtxt);
-
 	const auto ctxt = spu._ptr<SpursJobChainContext>(0x4a00);
 
 	static std::atomic<u32> s_n{0};

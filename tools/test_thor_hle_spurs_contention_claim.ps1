@@ -14,11 +14,11 @@ if (-not $helperMatch.Success) {
 
 $helper = $helperMatch.Value
 foreach ($required in @(
-    'wklMaxContention[selectedId].load()',
-    'wklCurrentContention) + selectedId',
-    '.atomic_op([&](u8& current)',
-    'if (current < maxContention)',
-    'current++;'
+    'vm::reservation_op<true>(spu,',
+    'op.maxContention[selectedId]',
+    'op.currentContention[selectedId]',
+    'if (current >= maximum',
+    'op.currentContention[selectedId] = current + 1;'
 )) {
     if (-not $helper.Contains($required)) {
         throw "The atomic SPURS contention claim is missing '$required'."
@@ -33,7 +33,7 @@ if ($selectorStart -lt 0 -or $selectorEnd -le $selectorStart) {
 }
 $selector = $source.Substring($selectorStart, $selectorEnd - $selectorStart)
 
-$claimCall = 'contentionClaimed = spursAtomicTryClaimWorkload(ctxt, wklSelectedId);'
+$claimCall = 'contentionClaimed = spursAtomicTryClaimWorkload(spu, ctxt, wklSelectedId);'
 $failedClaim = [regex]::Match(
     $selector,
     'if \(!contentionClaimed\)\s*\{\s*wklSelectedId = CELL_SPURS_SYS_SERVICE_WORKLOAD_ID;\s*pollStatus = 0;\s*\}'
