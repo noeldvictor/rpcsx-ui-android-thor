@@ -6302,3 +6302,31 @@ rendering progress.
   host limit, and the three-sample resume gate. Continue to
   `Thor EDGE EFWAIT EVENT` or the bounded host deadline. Do not make an HLE
   semantic repair until the exact event result and SPU dispatch delta exist.
+
+## 129. Current upstream and arXiv do not replace the runtime gate
+
+- Status: research, not-comparable
+- Scope: upstream-audit, event-delivery
+- Upstream refresh: A read-only fetch moved RPCS3 `origin/master` to
+  `010bf1753ea1cd0f35fc0d30fd63cb58c05a199c`. ARMSX3 `master` stayed at
+  `a74a0f3e045f064515a5fa48643e66ab386577d3`.
+- Relevant history: RPCS3 has no later change to `cellSpurs.cpp` or
+  `SPUThread.cpp` after `d7ed328f4` on 2026-08-02. That writer-lock repair is
+  already present in this branch. The upstream and ARMSX3
+  `sys_spu_thread_throw_event` paths still send to the connected LV2 queue and
+  retry only `CELL_EAGAIN`; they provide no new event result or loader repair.
+- ARMSX3 result: Its related `a7ec28f7a` change always notifies reservation
+  waiters after a successful store. This tree already carries that behavior
+  behind `debug.rpcsx.thor.spurs_always_notify`. Earlier Transformers HLE
+  evidence showed no geometry effect, so do not retest it as an EDGE event fix.
+- Literature result: Targeted arXiv searches found Cell workload and performance
+  papers, but no SPURS event-flag ABI, LV2 user-event protocol, or compatible HLE
+  implementation. IBM Cell SDK documentation and the Cell Broadband Engine
+  Programming Handbook define hardware SPE event channels. They do not define
+  Sony's SPURS event-flag queue attachment and wake contract used here.
+- Decision: No import or semantic edit is justified. Keep the exact runtime
+  correlation gate. The first useful new fact remains the result, queue, port,
+  and dispatch delta in `Thor EDGE EFWAIT EVENT`.
+- Primary sources:
+  `https://github.com/RPCS3/rpcs3`, `https://github.com/ARMSX2/ARMSX3`, and
+  `https://public.dhe.ibm.com/linux/cellsdk/docs/`.
