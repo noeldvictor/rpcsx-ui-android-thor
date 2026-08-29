@@ -5828,3 +5828,53 @@ rendering progress.
   uncached compiler construction. The object key and corruption checks are
   unchanged. The next Thor run must prove actual warm object loads and a longer
   useful window before the thermal limit. No performance credit applies yet.
+
+## 121. The first runtime-cache run populates cold Android SPU objects
+
+- Status: failed, not-comparable
+- Scope: config-driver, performance
+- Hypothesis: Runtime SPU misses will use the exact native-object cache. Existing
+  objects will load, and cold objects will persist for a later warm run.
+- Changed files/settings: The run used exact APK SHA-256
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  size 116,143,682 bytes. The HLE settings matched experiment 120. The wait
+  trace was on, the full runtime census was off, and the guest started
+  unpaused. The SPU preload limit was 64, and the native-object cache was on.
+- Rollback: The external device guard stopped RPCSX at its hard limit. The
+  failure path force-stopped PID 6035. The process was absent after the run.
+  No fatal signal, tombstone, access violation, or native crash appears. Do not
+  launch the Thor again in this hardware round.
+- Thor result: The independent strict gate passed at 43.3 C fixed silicon and
+  ended at 43.7 C. The exact no-launch install left the process absent. The
+  route pre-run value was 43.7 C. Runtime fixed-silicon samples were 52.2,
+  56.6, 57.0, 59.8, 68.7, 70.7, and 72.7 C. The last sample exceeded the
+  72.0 C hard limit. The post-stop value was 45.3 C.
+- Cache evidence: Startup loaded 64 exact native objects and built the bounded
+  64-program set. One more exact object loaded at guest time 12.026 seconds,
+  after startup compilation ended at 7.883 seconds. The title PPU cache tree
+  increased from 437,554 KiB in experiment 120 to 438,682 KiB, an increase of
+  1,128 KiB. The post-startup load proves the runtime compiler received the
+  cache. The size increase is consistent with cold runtime objects that were
+  persisted for the next run.
+- Event-wait evidence: No `Thor EDGE EFWAIT` row appears. The pulled log ends at
+  guest time 17.260 seconds. The prior run armed the first wait at 17.435
+  seconds. The guard therefore stopped this run before the event-correlation
+  boundary. This result does not identify an event-flag fault.
+- Visual correctness: Not proved. The guard stopped the process before the
+  requested screenshot.
+- FPS/frame-time: No credit. At guest time 17.260 seconds, RPCSX used 83.5%
+  total CPU and produced 42 frames in ten seconds, or 4.20 FPS. Experiment 120
+  produced 0.50 FPS at the same guest-time sample. Both samples are from
+  loading and compilation, not moving gameplay, so they are not comparable
+  performance proof.
+- Capture paths: `20260829-143631-thor-input-strict-cool-gate`,
+  `20260829-143647-transformers-runtime-spu-object-cache-install`, and
+  `20260829-143705-thor-input-custom`.
+- Decision: Keep the runtime native-object cache. It reached a post-startup warm
+  hit and populated more title-cache data without a native failure. Do not
+  change event-flag or loader semantics from this run.
+- Next: In a separate independently cool round, use the exact same APK and HLE
+  settings. Require more than 65 total `LLVM: Loaded module` rows and passage
+  through the first EDGE wait before the 72 C stop. Correlate the dispatch
+  delta if the later PoolThread wait remains active. Do not claim gameplay or
+  sustained 30 FPS until moving 3D output is visible and measured.
