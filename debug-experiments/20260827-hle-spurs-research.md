@@ -4798,3 +4798,47 @@ Candidate APK
 `5854545F1E179D87B01244002599923E1B2F76A20F5081F67CF3CB20459674A9`
 is 116,139,488 bytes. The next cooled validation must retain the 24-ring
 progress and contain no access violation.
+
+## 103. The selector HLE dispatch is stable, but taskset join is missing
+
+The strict one-sample gate is capture
+`20260829-082253-thor-input-strict-cool-gate`. Fixed silicon was 43.7 C. The
+exact no-launch installation is capture
+`20260829-082306-transformers-selector-hle-dispatch-install`. The expected,
+host, and installed APK hashes matched. RPCSX was not active after installation.
+
+Capture `20260829-082330-thor-input-custom` repeated the no-census direct-Start
+route. It retained 24 LFQueue ring records, 16 notifications, eight edge wakes,
+and 16 edge event-interpreter entries and exits. All six SPU threads remained
+active. The capture has no access violation, verification failure, native crash,
+or fatal thread stop. This clears the selector HLE dispatch stability gate.
+
+Visual inspection of `01-selector-hle-dispatch.png` shows the Transformers
+loading emblem. Its SHA-256 is
+`E66EC058CF5A41248AB101D30D2EFBED16AA5C9B59AB8FD59C65B5806D15368D`.
+The image includes a pause notice, so its 30.94 FPS value has no speed credit.
+Fixed silicon reached 68.7 C, maximum junction reached 83.9 C, and the last
+fixed-silicon sample was 56.2 C. RPCSX stopped normally.
+
+The log exposes the next HLE defect. The rendering thread calls
+`cellSpursShutdownTaskset` and `cellSpursJoinTaskset` for taskset `0x1f73f00` at
+guest time 4:00.711. Join is an unimplemented stub that returns success. The
+thread creates another taskset at the same address at 4:25.986. The later event
+signal sees task 0 waiting while its enabled bit is clear and returns
+`CELL_SPURS_TASK_ERROR_SRCH`. The old workload still refers to the reused
+taskset memory because join did not remove it.
+
+The saved Sony `libsre` resolves the required lifecycle. Export NID
+`0x9f72add3` maps to code address `0x15404`. Headless Ghidra shows that this
+function validates the taskset, waits for workload shutdown, removes the
+workload, and sets the taskset workload ID to `0x20`. The existing implemented
+job-chain join uses the same order.
+
+Commit `50f93a231` implements this taskset lifecycle and converts core invalid
+and state errors to task errors. A focused source contract covers validation,
+error conversion, call order, and workload-ID invalidation. The selector,
+contention, queue, task-context, and probe-build contracts passed. The full
+Android debug build passed. Candidate APK
+`E0B528064B91ABBA6AF3D863F89DCC4E425D954B1FFD78754DC397150C200F76`
+is 116,142,291 bytes. The next cooled Thor run must prove that join removes the
+old taskset workload before the address is reused.
