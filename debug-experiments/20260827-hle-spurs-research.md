@@ -5154,15 +5154,18 @@ rendering progress.
   `756978BFFD348CA7553A38BB690BC4A28880EE19C5C984BF6568CDD91748CB2B`,
   size 116,142,297 bytes. It used the same 53-property HLE repair stack as
   section 109. The exact no-launch install and all property readbacks passed.
-  The host successor changes six hot SPURS call records from warning to trace
-  and adds a source contract for their log levels. It does not change HLE
-  behavior.
+  Host successor commit `fb5ebb8fd` changes six hot SPURS call records from
+  warning to trace and adds a source contract for their log levels. It does not
+  change HLE behavior.
 - Rollback: RPCSX was stopped. The stop check found no PID and no RPCSX row.
   Fixed silicon was 50.6 C after the stop. All 59 nonempty
   `debug.rpcsx.thor.*` properties were cleared, and the audit found zero values.
 - Windows result: Six focused source contracts passed. They cover the new hot
   call log budget, event-flag wait, queue logging, workload signalling, taskset
-  join, and shutdown completion. `git diff --check` passed.
+  join, and shutdown completion. `git diff --check` passed. The normal Android
+  debug build passed. Candidate APK SHA-256
+  `C6936A68948E019D407BEB8BE1C76A3EA64EA611D109F29ECDC29F014E328897`
+  is 116,142,103 bytes.
 - Thor result: The fixed-silicon gate passed at 42.9 C. Boot started at 42.1 C.
   The host invocation did not retain the long-running controller session. The
   controller stopped after about 30 host seconds, and the guest stayed paused.
@@ -5190,7 +5193,8 @@ rendering progress.
   them and the paired try-wait and LFQueue-pop records to trace level.
 - Decision: Keep the atomic shutdown repair. Accept only the log-level cleanup
   as the offline successor. Do not claim full HLE, gameplay, or a speed gain.
-- Next: Build the successor. In a later independently cool round, start below
-  70 C and stop at 72 C. Keep the controller process attached. Require the
-  `0x1158d800` boundary, later draw and PUT progress, a correct 3D image, and a
-  comparable 30 FPS scene before any full-HLE or performance claim.
+- Next: In a later independently cool round, install the exact successor APK.
+  Start below 70 C and stop at 72 C. Keep the controller process attached.
+  Require the `0x1158d800` boundary, later draw and PUT progress, a correct 3D
+  image, and a comparable 30 FPS scene before any full-HLE or performance
+  claim.
