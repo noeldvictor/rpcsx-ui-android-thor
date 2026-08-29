@@ -8,10 +8,11 @@ Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
 ## The cold-start gate permits silicon below 70 C
 
 The standalone `strict-cool-gate` uses one sample and an exclusive 70 C launch
-limit. A silicon reading below 70 C can proceed. A reading at or above 70 C
-cannot proceed. This launch rule uses only the fixed CPU-subsystem,
-GPU-subsystem, DDR, SoC, and crystal sensor set. It does not compare a CPU
-junction reading with the silicon limit.
+limit. A fixed-silicon reading below 70 C can proceed immediately. It does not
+wait for a lower target. A reading at or above 70 C cannot proceed. Battery,
+skin, and CPU-junction readings do not decide this launch gate. The launch rule
+uses only the fixed CPU-subsystem, GPU-subsystem, DDR, SoC, and crystal sensor
+set.
 
 The runtime guard is separate. It stops early at 70 C and keeps a 72 C hard
 silicon limit. The CPU-junction hard limit remains 95 C.

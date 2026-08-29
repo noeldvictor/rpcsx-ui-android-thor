@@ -87,12 +87,16 @@ assert result["cooledAtFixedSiliconC"] == 69.0, "The cool wait lost its decisive
 clock.now = 0.0
 prepare_paused_guest()
 loop_slices = []
-SERVER.t_wait_cool_paused = lambda _: {
-    "cooled": True,
-    "cooledAtFixedSiliconC": 45.0,
-    "waitedS": 2,
-    "paused": True,
-}
+loop_cool_requests = []
+SERVER.t_wait_cool_paused = lambda arguments: (
+    loop_cool_requests.append(arguments)
+    or {
+        "cooled": True,
+        "cooledAtFixedSiliconC": 69.9,
+        "waitedS": 0,
+        "paused": True,
+    }
+)
 
 
 def loop_slice(arguments):
@@ -118,8 +122,11 @@ SERVER.api = lambda path, method="GET", timeout=8: {"ok": True}
 result = SERVER.t_slice_loop({"seconds": 1.0, "maxSlices": 4})
 assert result["markerReached"] is True, "The slice loop did not find the marker."
 assert result["completedSlices"] == 2, "The slice loop ran past the marker."
-assert result["maxFixedSiliconC"] == 52.0, "The slice loop lost its maximum temperature."
+assert result["maxFixedSiliconC"] == 69.9, "The slice loop lost its maximum temperature."
 assert all(item["includeState"] is False for item in loop_slices), "The slice loop used full slice state."
+assert all(item["targetC"] == 70 for item in loop_cool_requests), (
+    "The slice loop imposed a cooldown target below the 70 C start ceiling."
+)
 
 stops = []
 loop_slices.clear()

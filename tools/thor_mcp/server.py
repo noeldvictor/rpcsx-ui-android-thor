@@ -492,15 +492,11 @@ def t_slice_loop(a):
     max_slices = max(1, min(int(a.get("maxSlices", 64)), 128))
     start_ceiling = float(a.get("maxStartC", 70))
     hard_limit = float(a.get("maxSiliconC", 72))
-    cool_target = float(a.get("coolTargetC", 50))
     cool_timeout = max(2, min(int(a.get("coolTimeoutS", 120)), 300))
     marker_every = max(1, min(int(a.get("markerEvery", 1)), 16))
     stop_match = str(a.get(
         "stopMatch", "Thor: SPURS shutdown completion event mask"))
 
-    if cool_target >= start_ceiling:
-        return {"refused": True,
-                "reason": "coolTargetC must be below maxStartC"}
     if hard_limit <= start_ceiling:
         return {"refused": True,
                 "reason": "maxSiliconC must be above maxStartC"}
@@ -522,7 +518,7 @@ def t_slice_loop(a):
 
     for index in range(1, max_slices + 1):
         cool = t_wait_cool_paused({
-            "targetC": cool_target,
+            "targetC": start_ceiling,
             "maxSiliconC": hard_limit,
             "timeoutS": cool_timeout,
         })
@@ -730,7 +726,7 @@ TOOLS = [
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
-    ("thor_slice_loop", "Keep slice, paused cooling, log-boundary checks, and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "coolTargetC": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
+    ("thor_slice_loop", "Run each slice as soon as fixed silicon is below the start ceiling. Keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon is below targetC. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),

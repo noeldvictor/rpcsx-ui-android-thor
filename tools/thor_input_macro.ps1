@@ -1061,6 +1061,30 @@ function Assert-ThorThermalPreflight {
     $script:ThorFullThermalBaseline = $snapshots[-1]
 }
 
+function Assert-ThorStrictColdStartGate {
+    param([string]$Stage)
+
+    $launchLimitC = 70.0
+    $snapshot = Get-ThorTemperatureSnapshot
+    $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
+    $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
+    $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
+    "$(Get-Date -Format o) stage=$Stage gate=fixed-silicon-only battery_temperature_c=$batteryText skin_temperature_c=$skinText silicon_temperature_c=$siliconText silicon_limit_c=$launchLimitC silicon_sensor_count=$($snapshot.silicon_sensor_count) sources=$($snapshot.source_summary)" |
+        Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+
+    if ($snapshot.silicon_sensor_count -lt 1 -or $null -eq $snapshot.silicon_temperature_c) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Thor fixed-silicon temperature could not be read. Stage '$Stage'. RPCSX was force-stopped."
+    }
+
+    if ([double]$snapshot.silicon_temperature_c -ge $launchLimitC) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Thor fixed-silicon temperature is $siliconText C, at or above the $launchLimitC C cold-start limit. Stage '$Stage'. RPCSX was force-stopped."
+    }
+
+    $script:ThorFullThermalBaseline = $snapshot
+}
+
 function Wait-ThorThermallyBounded {
     param([int]$Milliseconds)
 
@@ -1457,7 +1481,11 @@ $script:LastThorScreenshotPath = $null
 $script:ThorDebugBootRequested = $false
 try {
 Assert-ThorInstalledApkIdentity
-Assert-ThorThermalPreflight "pre-run"
+if ($Profile -eq "strict-cool-gate") {
+    Assert-ThorStrictColdStartGate "pre-run"
+} else {
+    Assert-ThorThermalPreflight "pre-run"
+}
 Start-ThorDeviceThermalGuard
 
 if ($BootGame) {

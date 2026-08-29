@@ -23,6 +23,12 @@ foreach ($fragment in @(
     'Write-Output $captureDir',
     '"failure-pid.txt" @("shell", "pidof $Package")',
     '$failure.Exception.Data["ThorCaptureDirectory"] = $captureDir'
+    'function Assert-ThorStrictColdStartGate'
+    '$launchLimitC = 70.0'
+    'gate=fixed-silicon-only'
+    'if ([double]$snapshot.silicon_temperature_c -ge $launchLimitC)'
+    'if ($Profile -eq "strict-cool-gate") {'
+    'Assert-ThorStrictColdStartGate "pre-run"'
 )) {
     if (-not $macroSource.Contains($fragment)) {
         throw "Thor input macro is missing strict cool-gate contract: $fragment"
@@ -107,4 +113,4 @@ foreach ($line in @(
     }
 }
 
-Write-Output "Thor strict cool-gate contract passed: silicon below 70 C can run, Run is no-boot/force-stop, and success/failure capture output is machine-readable with post-stop PID evidence."
+Write-Output "Thor strict cool-gate contract passed: one fixed-silicon sample below 70 C can run, other temperatures do not decide launch, Run is no-boot/force-stop, and success/failure capture output is machine-readable with post-stop PID evidence."
