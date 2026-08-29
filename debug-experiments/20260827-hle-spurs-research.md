@@ -4155,3 +4155,31 @@ was 0.5 percent. Fixed silicon peaked at 65.0 C and then fell to 49.0 C.
 The pause route is now safe for short active slices. This result does not add
 visible-frame or sustained-FPS credit. The next HLE run must use these pause
 windows to pass the first black Bink frame and capture a later video frame.
+
+## 86. The cooled HLE route now produces a visible Bink frame
+
+Capture `20260829-025327-thor-input-custom` was a route error. The generic
+input macro reset `debug.rpcsx.thor.transformers_spu_reserve` to zero. Workload
+6 took five SPUs, workload 7 did not dispatch, and every guest screenshot was
+black. Do not use the generic macro alone for this proof.
+
+Capture `20260829-025751-thor-input-custom` used the dedicated Transformers HLE
+probe with the reserve, edge-event interpreter, and task-attribute repair on.
+It used the exact APK from section 85. The route kept the guest active for short
+slices and used the repaired pause path for cooling between slices.
+
+The workload-6 maximum changed from five to three. Exactly three SPUs then took
+workload 6. Workload 7 dispatched on SPU 4, and its event woke the workload-0
+edge taskset. The screenshots at 3.6 and 6.6 seconds were black. The screenshots
+at 9.6 and 12.6 seconds showed the Unreal and PhysX legal frame. The frame check
+classified both later screenshots as `DRAWN`, with 4,566 and 4,796 distinct
+colors. The 9.6-second overlay reported 30.23 FPS.
+
+This is the first deterministic visible HLE result with the two-SPU reserve. It
+proves that HLE SPURS now reaches visible Bink output. It does not yet prove a
+sustained 30 FPS interval because every saved frame was taken after a pause.
+Fixed silicon peaked at 71.1 C and fell to 52.6 C in the next sample. RPCSX
+stopped normally, with no access violation or native fault.
+
+The next run must capture the same visible sequence while it is active. It must
+measure an uninterrupted FPS interval before it gives sustained-FPS credit.
