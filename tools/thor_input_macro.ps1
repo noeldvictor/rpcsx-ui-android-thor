@@ -416,7 +416,15 @@ function Invoke-ThorDirectPadKey {
     $bits = ConvertTo-ThorDirectPadBits $Key
     $digital1 = [int]$bits[0]
     $digital2 = [int]$bits[1]
-    & $Adb shell "am broadcast -a net.rpcsx.THOR_DEBUG_PAD -n $Package/net.rpcsx.ThorDebugPadReceiver --ei digital1 $digital1 --ei digital2 $digital2 --el durationMs $DurationMs" | Out-Null
+    $broadcastOutput = @(& $Adb -s $DeviceSerial shell "am broadcast -a net.rpcsx.THOR_DEBUG_PAD -n $Package/net.rpcsx.ThorDebugPadReceiver --ei digital1 $digital1 --ei digital2 $digital2 --el durationMs $DurationMs" 2>&1)
+    $broadcastExit = $LASTEXITCODE
+    $broadcastText = ($broadcastOutput | ForEach-Object { $_.ToString().Trim() }) -join " | "
+    "$(Get-Date -Format o) key=$Key duration_ms=$DurationMs exit=$broadcastExit response=$broadcastText" |
+        Out-File -LiteralPath (Join-Path $captureDir "direct-pad.log") -Append -Encoding UTF8
+
+    if ($broadcastExit -ne 0 -or $broadcastText -notmatch 'Broadcast completed: result=-1') {
+        throw "The app did not accept the direct pad input '$Key': $broadcastText"
+    }
 }
 
 function Invoke-ThorDirectStick {
@@ -1822,8 +1830,13 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         } elseif ($token -match '^raw:(.+)$') {
             Invoke-ThorRawKey -Key $Matches[1] -DurationMs 80
             Start-Sleep -Milliseconds $DefaultWaitMs
-        } elseif ($token -match '^direct:(.+)$') {
-            Invoke-ThorDirectPadKey -Key $Matches[1] -DurationMs 80
+        } elseif ($token -match '^direct:([^:]+)(?::(\d+))?$') {
+            $directKey = $Matches[1]
+            $directDuration = if ($Matches[2]) { [int]$Matches[2] } else { 80 }
+            if ($directDuration -lt 20 -or $directDuration -gt 5000) {
+                throw "Direct pad duration must be from 20 through 5000 ms."
+            }
+            Invoke-ThorDirectPadKey -Key $directKey -DurationMs $directDuration
             Start-Sleep -Milliseconds $DefaultWaitMs
         } elseif ($token -match '^stick:([^:]+):([^:]+)(?::(\d+))?$') {
             $duration = if ($Matches[3]) { [int]$Matches[3] } else { 500 }

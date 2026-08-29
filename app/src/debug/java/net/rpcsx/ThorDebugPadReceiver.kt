@@ -1,5 +1,6 @@
 package net.rpcsx
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -21,6 +22,8 @@ class ThorDebugPadReceiver : BroadcastReceiver() {
             durationMs = intent.getLongExtra("durationMs", 80L)
         )
 
+        setResultCode(if (ok) Activity.RESULT_OK else Activity.RESULT_CANCELED)
+        setResultData(if (ok) "accepted" else "no-active-activity")
         Log.i("RPCSX-UI", "Thor debug pad broadcast result=$ok")
     }
 
