@@ -1230,14 +1230,15 @@ static bool spursAtomicTryClaimWorkload(spu_thread& spu, SpursKernelContext* ctx
 		});
 }
 
-// Return from a selector that the SPU reached through its registered HLE
-// address. The real kernel ends the selector with `bi lr`. Direct host calls
-// do not enter at selectWorkloadAddr and must keep the PC that their caller set.
-static void spursReturnFromSelectorHle(spu_thread& spu, SpursKernelContext* ctxt) noexcept
+// Complete a selector that the SPU reached through its registered HLE address.
+// The real selector builds local-store DMA state before it returns to guest
+// dispatch. The HLE selector does not build that state, so use the HLE
+// dispatcher. Direct host calls do not enter at selectWorkloadAddr.
+static void spursDispatchFromSelectorHle(spu_thread& spu, SpursKernelContext* ctxt, u64 result)
 {
 	if (spu.pc == ctxt->selectWorkloadAddr)
 	{
-		spu.pc = spu.gpr[0]._u32[3];
+		spursKernelDispatchWorkload(spu, result);
 	}
 }
 
@@ -1971,7 +1972,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 	u64 result = u64{wklSelectedId} << 32;
 	result |= pollStatus;
 	spu.gpr[3]._u64[1] = result;
-	spursReturnFromSelectorHle(spu, ctxt);
+	spursDispatchFromSelectorHle(spu, ctxt, result);
 	return true;
 }
 
@@ -2263,7 +2264,7 @@ bool spursKernel2SelectWorkload(spu_thread& spu)
 	u64 result = u64{wklSelectedId} << 32;
 	result |= pollStatus;
 	spu.gpr[3]._u64[1] = result;
-	spursReturnFromSelectorHle(spu, ctxt);
+	spursDispatchFromSelectorHle(spu, ctxt, result);
 	return true;
 }
 
