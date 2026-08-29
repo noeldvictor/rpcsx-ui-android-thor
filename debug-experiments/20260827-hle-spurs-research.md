@@ -4512,3 +4512,42 @@ enabled set to `0x80000000`; pending-ready, waiting, and signaled are clear.
 Fixed silicon reached 69.9 C, and RPCSX stopped normally. The next cooled probe
 must add one more two-second post-Start slice and stop after it records the
 event-state line.
+
+## 96. The event result is not the stable post-Start boundary
+
+Capture `20260829-054047-thor-input-custom` used the exact diagnostic APK and
+added the planned post-Start slice. The cold sample was 45.3 C. The maximum
+fixed-silicon sample was 67.4 C, and RPCSX stopped normally. All three direct
+Start pulses returned `result=-1, data="accepted"`.
+
+This run did not call the event setter at the prior failure point. It did
+record the known queue signal result many times. The queue is bound to taskset
+`0x10364100`, which has only task 0 enabled. When task 0 is running and is not
+waiting, the queue code falls back to the caller value, task 1, and
+`_cellSpursSendSignal` returns `SRCH`. The separate pending-contention record
+already proves that this queue does not own the two event waiters. Therefore,
+this result is not the loading blocker and the queue must not remap a caller
+argument without new firmware evidence.
+
+Capture `20260829-055132-thor-input-custom` enabled the bounded runtime census
+and added post-Start slices 10 and 12. The cold sample was 45.3 C. The maximum
+fixed-silicon sample was 67.4 C, and RPCSX stopped normally. All three Start
+pulses were accepted. The event setter ran many times and recorded no event
+signal error. Thus, the earlier event `SRCH` is not a stable failure boundary.
+
+The two inspected screenshots prove live progress. Slice 10 shows the Unreal
+and PhysX legal screen. Slice 12 is a black transition frame. Their SHA-256
+values are, respectively:
+
+    FF2BA481340A8388581796996A70CDBF96C6EB5957978B4A4DD801A94DC9BAB3
+    CD831EA741FC94046C08CA416E6E91870257EB452D0EACA1D03BEE73EFC2AD61
+
+During paused intervals, the rendering thread is in `sys_ppu_thread_sleep` at
+guest address `0x009e4ba4` with link register `0x00106f60`. In the last active
+sample, it is inside `cellSpursQueuePushBody`. The thread therefore wakes and
+continues to submit work. This is progress, not a dead renderer.
+
+The 2 to 4 FPS screenshot values have no speed credit because the runtime
+census was enabled and each active interval was only two seconds. The next
+proof must disable the census, continue beyond the black transition, inspect
+the next visible screen, and measure an unpaused active interval.
