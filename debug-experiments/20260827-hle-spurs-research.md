@@ -4951,3 +4951,29 @@ loop. It must accumulate enough guest time to reach shutdown while every active
 slice starts below 70 C and stays below 72 C. The required proof remains the
 shutdown mask, helper wake, join return, workload removal, safe taskset reuse,
 and later rendering progress.
+
+## 106. The dedicated probe now preserves the Transformers profile
+
+The dedicated render probe used `tools/thor_input_macro.ps1`. That generic
+macro forced the managed profile and replaced the custom title profile in its
+debug-boot command. Therefore, the dedicated route did not preserve the same
+BLUS30357 configuration as the maintained route from section 105.
+
+The generic macro now has explicit `RequireManagedProfile` and
+`ReplaceCustomProfile` switches. Both switches default to `on`, so existing
+Eternal Sonata and generic callers keep their current behavior. The capture
+README records both effective choices. The debug-boot command converts each
+choice to an Android Boolean extra instead of using fixed `true` values.
+
+`invoke_thor_transformers_hle_render_probe.ps1` passes `off` for both switches.
+The next Transformers run can now preserve the current title profile and keep
+the dedicated exact-APK, thermal, property-cleanup, and capture controls.
+
+The Transformers route, PPU FTZ/NJ, display-pacing, multi-sensor thermal,
+strict cool-gate, MCP fixed-silicon guard, and mocked guarded-slice contracts
+passed. The PPU contract also now accepts later cache-version flags after
+`uses_hardware_ftz`; it still requires that the hardware-FTZ flag is inside the
+cache-identity enum and is set from the configuration.
+
+This is host-route proof only. It does not change the device result from
+section 105 and gives no HLE, render, FPS, or gameplay credit.

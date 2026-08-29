@@ -79,6 +79,10 @@
     [string]$EsAsyncDrawBarrier = "off",
     [ValidateSet("on", "off")]
     [string]$ThorDisplayPacing = "on",
+    [ValidateSet("on", "off")]
+    [string]$RequireManagedProfile = "on",
+    [ValidateSet("on", "off")]
+    [string]$ReplaceCustomProfile = "on",
     [ValidatePattern('^$|^[0-9A-Fa-f]{64}$')]
     [string]$ExpectedInstalledApkSha256 = "",
     [switch]$BootGame,
@@ -191,6 +195,8 @@ $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-th
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
 $strictGuestDrawStream = $Profile -eq "eternal-sonata-battle-intro-route" -and -not $AllowUnknownDraw
 $thorDisplayPacingValue = if ($ThorDisplayPacing -eq "on") { "true" } else { "false" }
+$requireManagedProfileValue = if ($RequireManagedProfile -eq "on") { "true" } else { "false" }
+$replaceCustomProfileValue = if ($ReplaceCustomProfile -eq "on") { "true" } else { "false" }
 $normalizedExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
 
 $keyAliases = @{
@@ -1278,6 +1284,8 @@ if ($ThermalRuntimeTelemetry -eq "device" -and -not $StopAfterMacro -and
     "- Title ID: $TitleId",
     "- Display: $Display",
     "- Thor display pacing: $ThorDisplayPacing",
+    "- Require managed profile: $RequireManagedProfile",
+    "- Replace custom profile: $ReplaceCustomProfile",
     "- Input mode requested: $requestedInputMode",
     "- Input mode: $InputMode",
     "- Battle profile forced direct input: $profileForcesDirectInput",
@@ -1545,7 +1553,7 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "debug-boot-logcat-clear.txt" @("logcat", "-c") -AllowFailure | Out-Null
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
     $script:ThorDebugBootRequested = $true
-    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile $requireManagedProfileValue --ez thorReplaceCustomProfile $replaceCustomProfileValue --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
     Initialize-ThorProcessIdentity
     Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId
 }

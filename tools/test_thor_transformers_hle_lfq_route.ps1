@@ -32,9 +32,15 @@ $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
     '[string]$SpursSelectorFixes = "off"',
     '[string]$TasksetSelectAtomic = "off"',
+    '[string]$RequireManagedProfile = "on"',
+    '[string]$ReplaceCustomProfile = "on"',
     '$lfqAny2AnyPropertyValue = if ($LfqAny2Any -eq "on") { "1" } else { "0" }',
     '$spursSelectorFixPropertyValue = if ($SpursSelectorFixes -eq "on") { "1" } else { "0" }',
     '$tasksetSelectAtomicPropertyValue = if ($TasksetSelectAtomic -eq "on") { "1" } else { "0" }',
+    '$requireManagedProfileValue = if ($RequireManagedProfile -eq "on") { "true" } else { "false" }',
+    '$replaceCustomProfileValue = if ($ReplaceCustomProfile -eq "on") { "true" } else { "false" }',
+    '--ez thorRequireManagedProfile $requireManagedProfileValue',
+    '--ez thorReplaceCustomProfile $replaceCustomProfileValue',
     '"- SPURS ANY2ANY LFQueue: $LfqAny2Any"',
     '"- SPURS selector repair pair: $SpursSelectorFixes"',
     '"- SPURS taskset atomic selection: $TasksetSelectAtomic"',
@@ -132,7 +138,9 @@ $requiredRenderProbeFragments = @(
     'MaxLaunchSiliconTemperatureC = 70',
     'SpuCachePreloadLimit = $SpuCachePreloadLimit',
     'SpuCacheCompileBudgetMs = 50',
-    'CacheWorkerAffinityMask = 7'
+    'CacheWorkerAffinityMask = 7',
+    'RequireManagedProfile = "off"',
+    'ReplaceCustomProfile = "off"'
 )
 
 foreach ($fragment in $requiredRenderProbeFragments) {
