@@ -17,6 +17,12 @@ set.
 The runtime guard is separate. It stops early at 70 C and keeps a 72 C hard
 silicon limit. The CPU-junction hard limit remains 95 C.
 
+The paused startup-slice route has a smaller safety margin. Its independent
+device watchdog polls every 0.25 seconds and stops early at 68 C. The 72 C hard
+limit does not change. This margin absorbs a fast subsystem-sensor rise while
+the host is busy. It does not change the cold-start rule: a value below 70 C
+can start immediately.
+
 ## The guard measures junction maxima against a package-shaped limit
 
 Following the sensor mistake below to its source found the same error in the

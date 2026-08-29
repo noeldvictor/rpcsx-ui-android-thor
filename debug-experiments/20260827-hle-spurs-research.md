@@ -6093,3 +6093,56 @@ rendering progress.
   semantics until the event result is recorded. Require correct moving 3D output
   and a comparable sustained 30 FPS measurement before a full-HLE or
   performance claim.
+
+## 125. Process holds work, but the API-first deadline can still overrun
+
+- Status: route-tooling, failed, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: Process-level startup slices and the independent device watchdog
+  will keep every active window near one second and below the 72 C fixed-silicon
+  hard limit.
+- Changed files/settings: The run used the same exact installed APK, HLE stack,
+  cache settings, and event marker as experiment 124. Its APK SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`.
+  The host included commits `98fe8bed7`, `7c97f921a`, and `2fac446f5`.
+- Rollback: The controller force-stopped RPCSX at its thermal observation. Its
+  result had no PID, zero RPCSX rows in `top`, and `quiet=true`. The wrapper
+  stop confirmed the same result. Property cleanup cleared 56 values and found
+  zero remaining `debug.rpcsx.thor.*` values. The final fixed-silicon value was
+  49.0 C. Do not launch the Thor again in this hardware round.
+- Thor result: The route pre-run value was 44.1 C fixed silicon. The ready-file
+  handshake proved that the independent guard validated its sensor set before
+  the first resume. Eight process-held slices completed. Their active times
+  were 1.094 to 1.235 seconds, and their recorded maxima were 52.6 to 68.7 C.
+  This proves that same-UID `SIGSTOP` and `SIGCONT` work on this exact Thor
+  build.
+- Deadline failure: Slice nine started after a 53.0 C held sample. The host
+  thermal read returned after 1.672 seconds at 73.1 C and force-stopped the
+  package. This is below the user's 75 C ceiling but above the repository's
+  72 C hard limit. The deadline thread still called the in-process pause API
+  before `SIGSTOP`. That API blocked during the high-load startup phase, so the
+  proved process hold did not run at the one-second deadline.
+- Device-guard evidence: The device watchdog's last live sample was 68.2 C
+  fixed silicon and 83.9 C CPU junction. Its next row reports that the package
+  was already stopped. A two-second watchdog interval cannot cover the observed
+  fast fixed-silicon rise. The watchdog did remain alive for the full slice-loop
+  lifetime, so its ready and lifetime handshake are proved.
+- HLE evidence: No `Thor EDGE EFWAIT EVENT` row appears. The log ends during SPU
+  startup compilation and reports zero frames. This run provides no evidence
+  for an event-flag, notification, or loader change.
+- Visual correctness: Not proved. No boundary screenshot exists.
+- FPS/frame-time: No credit. No moving gameplay sample exists.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-151828-thor-input-custom`.
+- Decision: Keep process-level startup holds. The successor sends `SIGSTOP`
+  before any pause API call at a startup deadline. A continued process-held
+  slice also sends a bounded resume request so that a completed startup pause
+  can advance into guest execution. The slice watchdog now polls every 0.25
+  seconds and stops early at 68 C while it retains the 72 C hard limit. The
+  exclusive cold-start gate stays at 70 C.
+- Next: In a separate independently cool hardware round, use the same exact
+  APK. Require every startup hold to settle at the requested deadline and stay
+  below 72 C. Continue only to the exact EDGE event-result marker. Correlate its
+  result with the matching SPU dispatch delta before any HLE semantic change.
+  Require correct moving 3D output and a comparable sustained 30 FPS
+  measurement before a full-HLE or performance claim.

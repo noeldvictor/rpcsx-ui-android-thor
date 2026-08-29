@@ -13,6 +13,7 @@ $requiredGuardFragments = @(
     'junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"',
     'battery_zone=94',
     'ready_path="${7:-}"',
+    'poll_interval="${8:-2}"',
     'code=ready-file',
     '[ "$silicon_count" -ne 15 ]',
     '[ "$junction_count" -ne 14 ]',
@@ -23,7 +24,7 @@ $requiredGuardFragments = @(
     'code=battery-hard-limit',
     'code=skin-hard-limit',
     'am force-stop "$package"',
-    'sleep 2'
+    'sleep "$poll_interval"'
 )
 
 foreach ($fragment in $requiredGuardFragments) {
@@ -87,7 +88,8 @@ if (-not $route.Contains('ThermalRuntimeTelemetry = if ($SliceLoop) { "full" } e
 foreach ($fragment in @(
     'function Start-ThorSliceDeviceGuard',
     'function Stop-ThorSliceDeviceGuard',
-    '"70000", "72000", "95000", "34000", "40"',
+    '"68000", "72000", "95000", "34000", "40"',
+    '$script:ThorSliceDeviceGuardReady, "0.25"',
     'slice-device-thermal-guard-ready.txt',
     'Start-ThorSliceDeviceGuard -CaptureDir $captureDir',
     'Stop-ThorSliceDeviceGuard'

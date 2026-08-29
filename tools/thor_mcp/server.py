@@ -436,34 +436,46 @@ def t_slice(a):
                            if start_silicon < 0 else
                            f"fixed silicon is not below {start_ceiling} C")}
 
+    started = time.monotonic()
+    deadline_pause = {}
+
+    # A fixed-silicon ADB read can take longer than the requested guest slice.
+    # Do not let slow telemetry or the control API extend the active guest
+    # window. During startup, stop the process before any API request. The
+    # starting state cannot accept a normal emulator pause, and an API request
+    # can block while compilation saturates the device.
+    def pause_at_deadline():
+        deadline_pause["requestedAtS"] = time.monotonic() - started
+        if startup_handoff:
+            deadline_pause["processHold"] = stop_process_for_slice(p)
+            if deadline_pause["processHold"].get("ok"):
+                deadline_pause["result"] = {
+                    "ok": True, "paused": False, "processHeld": True,
+                }
+                deadline_pause["state"] = EMU_STATE_STARTING
+                deadline_pause["settledAtS"] = time.monotonic() - started
+                return
+        deadline_pause["result"] = api("/pause", "POST")
+
+    deadline_timer = threading.Timer(duration, pause_at_deadline)
+    deadline_timer.daemon = True
+    deadline_timer.start()
+
     resume = (continue_process_for_slice(p) if process_held
               else api("/resume", "POST"))
+    if process_held and resume.get("ok"):
+        # Startup requests an emulator pause when initialization ends. A
+        # process-held slice can therefore resume into Paused instead of
+        # Starting. This bounded request advances either state without putting
+        # the deadline after a potentially blocked control call.
+        resume["emulatorResume"] = api("/resume", "POST", timeout=0.5)
     if not resume.get("ok"):
+        deadline_timer.cancel()
         stop = t_stop({})
         return {"error": "the bounded slice could not resume its held state",
                 "resume": resume, "stop": stop,
                 "initialState": initial_state,
                 "startupHandoff": startup_handoff}
-    started = time.monotonic()
-    deadline_pause = {}
-
-    # A fixed-silicon ADB read can take longer than the requested guest slice.
-    # Do not let slow telemetry extend the active guest window. The independent
-    # timer asks the in-process control API to pause at the deadline while this
-    # thread continues to enforce the thermal hard stop.
-    def pause_at_deadline():
-        deadline_pause["requestedAtS"] = time.monotonic() - started
-        deadline_pause["result"] = api("/pause", "POST")
-        if (startup_handoff and
-                not deadline_pause["result"].get("paused", False)):
-            deadline_pause["state"] = emulation_state()
-            if deadline_pause["state"] == EMU_STATE_STARTING:
-                deadline_pause["processHold"] = stop_process_for_slice(p)
-                deadline_pause["settledAtS"] = time.monotonic() - started
-
-    deadline_timer = threading.Timer(duration, pause_at_deadline)
-    deadline_timer.daemon = True
-    deadline_timer.start()
     elapsed = 0.0
     silicon = start_silicon
     max_silicon = start_silicon

@@ -174,8 +174,8 @@ function Start-ThorSliceDeviceGuard {
     $script:ThorSliceDeviceGuardError = Join-Path $CaptureDir "slice-device-thermal-guard.stderr.log"
     $guardArguments = @(
         "-s", $Serial, "shell", "sh", $remoteGuard, "net.rpcsx.easy",
-        "70000", "72000", "95000", "34000", "40",
-        $script:ThorSliceDeviceGuardReady
+        "68000", "72000", "95000", "34000", "40",
+        $script:ThorSliceDeviceGuardReady, "0.25"
     )
 
     $script:ThorSliceDeviceGuardPowerShell = [PowerShell]::Create()
@@ -313,6 +313,8 @@ try {
             "- Maximum slices: $MaxSlices",
             "- Maximum host seconds: $MaxSliceHostSeconds",
             "- Cool timeout seconds: $SliceCoolTimeoutSeconds",
+            "- Device watchdog early stop C: 68",
+            "- Device watchdog poll interval seconds: 0.25",
             "- Stop match: $SliceStopMatch"
         ) | Add-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 

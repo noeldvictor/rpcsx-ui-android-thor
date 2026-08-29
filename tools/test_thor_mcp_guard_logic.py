@@ -169,8 +169,8 @@ assert result["initialState"] == 6 and result["finalState"] == 7, (
 assert result["holdMode"] == "process" and process_holds == ["123"], (
     "The startup handoff did not stop the process at its deadline."
 )
-assert calls.count(("/pause", "POST")) == 1, (
-    "The controller retried a normal pause while startup owned the handoff."
+assert calls.count(("/pause", "POST")) == 0, (
+    "The startup deadline called the pause API before it stopped the process."
 )
 SERVER._process_hold_pid = None
 
@@ -199,6 +199,9 @@ assert result["completed"] is True and result["holdMode"] == "process", (
 )
 assert result["initialState"] == 7 and continued_processes == ["123"], (
     "The process-held startup slice did not continue the recorded process."
+)
+assert ("/resume", "POST") in calls, (
+    "The process-held slice did not advance a completed startup pause."
 )
 SERVER._process_hold_pid = None
 
