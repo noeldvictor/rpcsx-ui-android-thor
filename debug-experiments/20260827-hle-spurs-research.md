@@ -6469,3 +6469,68 @@ rendering progress.
   Do not force a completion value. Require correct moving 3D output and a
   comparable sustained 30 FPS measurement before a full-HLE or performance
   claim.
+
+## 132. The later loader wait misses EDGE sequence 318
+
+- Status: android-pass, diagnostic, not-comparable
+- Scope: event-delivery, asynchronous-loader, thermal-safety, visual-output
+- Hypothesis: Two late-loader samples will show whether the active completion
+  state retires after the first proved EDGE event.
+- Changed files/settings: The run used the same exact installed APK as
+  experiment 131. Its SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  and its size was 116,143,682 bytes. The host included commit `fd0920eca`.
+  The route used the experiment 131 HLE stack, 0.5-second slices, one cold
+  sample below 70 C, three later-resume samples below 60 C, a 66 C device
+  hold, and a 72 C hard stop. It stopped on the second late-loader completion
+  sample.
+- Thor result: The cold-start gate passed immediately at 45.8 C fixed silicon.
+  The controller completed 47 slices and accumulated 29.629 active seconds in
+  411.609 host seconds. Active windows were 0.578 to 0.813 seconds. Cooldown
+  waits totaled 103 seconds. The controller maximum was 65.4 C. It reached the
+  exact requested marker with the same process paused and held.
+- Loader evidence: Both samples identify the same active entry, item, mapped
+  completion address, storage address, request range, and pending cache range.
+  The mapped completion value stayed `0x00000001`. Sample 1 occurred at
+  emulated time 5:05.248, and sample 2 occurred at 6:59.248. The main thread
+  stayed in the staged loader wait at LR `0x00523690`, and the AsyncIOSystem
+  thread stayed in its active-list poll at LR `0x0051aea4`. The active item did
+  not retire.
+- Event evidence: The earlier path completed requests 1 through 317. For the
+  later request, both samples report total and sequence 318, request bit one,
+  phase one, received value zero, and one active wait. Dispatch stayed at
+  317-at-arm and 317-current, with delta zero. The active wait age increased
+  from 17.829523 to 131.829592 seconds. This proves that the later loader wait
+  lacks a new SPU event dispatch. It does not show a failed PPU wake or a
+  completion-word visibility fault.
+- Cache evidence: The delayed profile stayed active. Startup logged native SPU
+  cache activation, the bounded 64-of-879 preload, and 266 native SPU object
+  loads. The `BLUS30357` title cache increased from 440,341 to 440,509 KiB.
+- Visual correctness: Partial boot output is proved. The boundary image shows
+  the Unreal Technology and PhysX legal splash with a correctly visible
+  performance overlay. It reports 28.80 FPS at that paused boundary. This is
+  not moving 3D gameplay and does not prove full visual correctness.
+- FPS/frame-time: No sustained-performance credit. The paused sensor intervals
+  include 90 frames in 88.97 seconds and 14 frames in 114.00 seconds. The
+  overlay value is one boundary observation, not a comparable moving-gameplay
+  measurement.
+- Thermal result: The independent guard recorded 682 samples and 11 early-hold
+  samples. Fixed silicon peaked at 69.1 C, below the 72 C hard limit. CPU
+  junction peaked at 82.3 C, below its separate 95 C limit. The boundary image
+  was captured at 55.0 C fixed silicon. No hard stop occurred.
+- Rollback: The wrapper stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared 57 values and found zero remaining
+  `debug.rpcsx.thor.*` values. Final fixed-silicon values were 52.6 C after
+  stop and 52.2 C after cleanup. Do not launch the Thor again in this hardware
+  round.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-163924-thor-input-custom`.
+- Decision: Keep the existing PPU event-flag wait, queue connection, port, and
+  completion-state semantics. Do not force the completion word to zero. The
+  next proof boundary is the SPU task state that should produce event sequence
+  318. Add a bounded task or SPU PC census before another device run.
+- Next: Correlate the live taskset, task ID, SPU PC, and event-output mailbox
+  state for sequence 318. Use Ghidra to map that PC to the EDGE helper or task
+  control path. Make a semantic repair only after this producer-side state is
+  proved. Require correct moving 3D output and a comparable sustained 30 FPS
+  measurement before a full-HLE or performance claim.
