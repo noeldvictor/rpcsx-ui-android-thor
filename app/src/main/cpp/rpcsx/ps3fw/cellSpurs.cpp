@@ -42,23 +42,16 @@ LOG_CHANNEL(cellSpurs);
 #include <sys/system_properties.h>
 #endif
 
-// DEFAULT OFF, and the A/B is why.
+// DEFAULT OFF until the corrected task-attribute route has device proof.
 //
-// This fix is CORRECT in isolation: BLUS30357 passes r9/r10 as 0x1098933f and
-// 0x1098933e - readable but not 16-byte aligned, and both types are 16 bytes -
-// so reading a pattern through them yields garbage, which is what made
-// _spurs::create_task return 0x80410902 and cellSpursCreateTaskWithAttribute
-// fail. Rejecting an unaligned pointer as absent makes create_task succeed and
-// the title's third task is finally created and started, on taskset 0x1f73f00.
+// Ghidra shows that BLUS30357 sets only r3 through r8 for the initializer. It
+// builds the LS pattern in the opaque attribute buffer before the call. The
+// old HLE code treated stale r9 and r10 values as pointers, cleared the caller
+// pattern, and then made a replacement pattern. The replacement lost Bink's
+// mutable LS block and caused a zero-address DMA after the task resumed.
 //
-// But that task then deadlocks the instance. Measured, two runs each:
-//
-//   task_attr_fix=0   ready=true  ready=true   draws 434 and 300 (all quads)
-//   task_attr_fix=1   ready=false ready=false  draws 0, hangs at ~47 frames
-//
-// Neither state renders the scene, but 30 fps with the UI drawing is strictly
-// closer than a dead instance, so this stays OFF until the deadlock the new
-// task walks into is understood. Turn it on to work on that:
+// This switch keeps the caller pattern and resolves the {context,size} pair.
+// Turn it on for the bounded Transformers route:
 //
 //   debug.rpcsx.thor.task_attr_fix = 1
 static bool thor_task_attr_fix() noexcept
@@ -6167,27 +6160,22 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 // is not to write a task scheduler. It is to carry six values across three
 // calls.
 //
-// ## Why we are allowed to choose the layout
+// ## The private HLE layout
 //
 // `CellSpursTaskAttribute` is declared `u8 reserved[256]` - an OPAQUE buffer.
-// Every function that touches it is HLE and therefore ours: the initializer
-// writes it, the exit-code setter modifies it, the creator reads it. The guest
-// only passes the pointer between our functions and never inspects the bytes,
-// because on real firmware those bytes are private to libsre as well.
+// The caller uses its first 16 bytes to build the LS pattern before the
+// initializer. The initializer saves that pattern and then installs the private
+// HLE view. The exit-code setter modifies the view, and the creator reads it.
 //
-// So the layout below is ours to define. It carries a magic, so a buffer that
-// never passed through our initializer is detected instead of silently misread.
+// The view carries a magic, so an uninitialized buffer is detected instead of
+// being read silently.
 //
-// ## The argument order is a HYPOTHESIS until hardware says otherwise
+// ## The argument order is verified
 //
-// This tree carries no prototype for these calls - the declarations sit
-// commented out at the top of this file with empty parameter lists. The order
-// used here follows `_cellSpursTasksetAttributeInitialize`, which IS implemented
-// and takes (attribute, revision, sdk_version, ...). So every one of these
-// functions also logs its raw incoming GPRs, and ONE run settles the ABI rather
-// than letting a guess survive into a measurement. If r4 is not a small revision
-// number, or r5 does not look like an SDK version, the order here is wrong and
-// the log will say so plainly.
+// The decrypted BLUS30357 caller sets r3 through r8 immediately before the
+// import call. It does not set r9 or r10. The six values are attribute,
+// revision, SDK version, ELF, context pair, and the direct context size. The raw
+// GPR log remains as a check for other titles.
 struct thor_spurs_task_attr
 {
 	static constexpr u32 c_magic = 0x54415454; // 'TATT'
@@ -6385,10 +6373,10 @@ s32 cellSpursTaskGenerateLsPattern()
 	return CELL_OK;
 }
 
-s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttribute> attribute, u32 revision, u32 sdk_version, vm::cptr<void> elf, u64 ea_context, u32 size_context, vm::cptr<CellSpursTaskLsPattern> ls_pattern, vm::cptr<CellSpursTaskArgument> argument)
+s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttribute> attribute, u32 revision, u32 sdk_version, vm::cptr<void> elf, u64 ea_context, u32 size_context)
 {
-	cellSpurs.warning("_cellSpursTaskAttributeInitialize(attribute=*0x%x, revision=%d, sdk_version=0x%x, elf=*0x%x, ea_context=0x%llx, size_context=0x%x, ls_pattern=*0x%x, argument=*0x%x)",
-		attribute, revision, sdk_version, elf, ea_context, size_context, ls_pattern, argument);
+	cellSpurs.warning("_cellSpursTaskAttributeInitialize(attribute=*0x%x, revision=%d, sdk_version=0x%x, elf=*0x%x, ea_context=0x%llx, size_context=0x%x)",
+		attribute, revision, sdk_version, elf, ea_context, size_context);
 	thor_log_task_abi(ppu, "_cellSpursTaskAttributeInitialize");
 
 	if (!attribute)
@@ -6402,6 +6390,13 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	}
 
 	const auto view = vm::ptr<thor_spurs_task_attr>::make(attribute.addr());
+
+	// The caller builds the LS pattern in the first 16 bytes of the opaque
+	// attribute before this call. Save it before the private HLE view replaces
+	// the buffer. Ghidra shows that the call sets only r3 through r8. The values
+	// in r9 and r10 are stale and are not pattern or argument pointers.
+	const CellSpursTaskLsPattern caller_pattern =
+		*vm::cptr<CellSpursTaskLsPattern>::make(attribute.addr());
 
 	std::memset(attribute.get_ptr(), 0, sizeof(CellSpursTaskAttribute));
 
@@ -6491,47 +6486,28 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	view->ea_context = resolved_context;
 	view->size_context = resolved_size;
 
-	// VALIDATE BEFORE DEREFERENCING, because the tail of this signature is
-	// inferred rather than known.
-	//
-	// The ABI probe on hardware returned, for BLUS30357:
-	//
-	//   r3=0xd0040470 (attribute)  r4=0x1 (revision)  r5=0x300000 (sdk_version)
-	//   r6=0x177ec80  -> 7f 45 4c 46, the ELF header, so r6 IS eaElf
-	//   r7=0xd0040460 (context, on the stack)         r8=0x0 (sizeContext)
-	//   r9=0x170a258  (lsPattern)                     r10=0x7
-	//
-	// Seven of the eight match the order `cellSpursCreateTask` already uses. The
-	// eighth does not: 0x7 is not an address, and dereferencing it aborted this
-	// function outright - "PPU: Function aborted", which stopped the boot.
-	//
-	// Either the call takes seven arguments and r10 is leftover, or it takes eight
-	// and this title passes nothing meaningful. Both readings agree on what to do:
-	// treat an implausible pointer as absent. A guest pointer must therefore be
-	// CHECKED, not merely non-null, and a rejected one is logged so the next run
-	// can tell "the game passed nothing" from "the order is still wrong".
-	// AN UNALIGNED POINTER IS NOT A POINTER.
-	//
-	// Readability alone is not enough. BLUS30357 passes r9 = 0x1098933f and
-	// r10 = 0x1098933e - readable main memory, but neither is 16-byte aligned,
-	// and both of these types are 16 bytes. Reading 16 bytes from an unaligned
-	// address yields a garbage ls_pattern, which is exactly what tripped the
-	// two create_task INVAL checks: more blocks than the context allows, and
-	// bits inside the 0xFC000000 SPURS management area.
-	//
-	// Two consecutive descending odd addresses are leftover registers, not a
-	// pattern and an argument. Treat them as absent, which is legal and leaves
-	// a zeroed pattern - "save nothing", the ELF is reloaded on resume.
-	const bool lsp_ok = ls_pattern && (!thor_task_attr_fix() || ls_pattern.aligned()) &&
-		vm::check_addr(ls_pattern.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern));
+	// The local title helpers first derive a pattern from the ELF load segments.
+	// They then add the stack range and calculate the context size from the set
+	// bit count. Therefore, a real caller pattern uses no SPURS management block
+	// and its bit count equals the number of blocks in the context allocation.
+	const u32 alloc_blocks = resolved_size > 0x3D400u ? 0x7Au
+		: (resolved_size >= 0x400u ? ((resolved_size - 0x400u) >> 11) : 0u);
+	const v128 caller_pattern_128 = v128::from64r(caller_pattern._u64[0], caller_pattern._u64[1]);
+	const u32 caller_blocks = rx::popcnt128(caller_pattern_128._u);
+	const bool caller_uses_management =
+		(caller_pattern_128 & v128::from32r(0xFC000000)) != v128::from32(0);
+	const bool caller_pattern_ok = resolved_context && alloc_blocks &&
+		caller_blocks == alloc_blocks && !caller_uses_management;
 
-	if (lsp_ok)
+	if (caller_pattern_ok)
 	{
-		view->ls_pattern = *ls_pattern;
+		view->ls_pattern = caller_pattern;
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: kept caller LS pattern for %u blocks -> %016llx%016llx",
+			caller_blocks, +view->ls_pattern._u64[0], +view->ls_pattern._u64[1]);
 	}
 	else if (thor_task_attr_fix())
 	{
-		// AN ABSENT PATTERN MUST MEAN "SAVE EVERYTHING", NOT "SAVE NOTHING".
+		// Keep a bounded fallback for callers that do not build a pattern first.
 		//
 		// Leaving it zeroed passes create_task's validation and then kills the
 		// title: a zero pattern saves no local store, so a task resumed on a
@@ -6563,9 +6539,6 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 		// bit (63 - i) of _u64[0], so blocks 6..63 give 0x03FFFFFFFFFFFFFF; block
 		// i >= 64 is bit (127 - i) of _u64[1], so the top N blocks are the low N
 		// bits of _u64[1].
-		const u32 alloc_blocks = resolved_size > 0x3D400u ? 0x7Au
-			: (resolved_size >= 0x400u ? ((resolved_size - 0x400u) >> 11) : 0u);
-
 		if (alloc_blocks >= 122)
 		{
 			view->ls_pattern._u64[0] = 0x03FFFFFFFFFFFFFFull;
@@ -6579,24 +6552,9 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 			view->ls_pattern._u64[1] = n ? (n == 64 ? ~0ull : ((1ull << n) - 1)) : 0ull;
 		}
 
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern absent, synthesised for %u blocks (context size 0x%x) -> %016llx%016llx",
-			alloc_blocks, resolved_size, +view->ls_pattern._u64[0], +view->ls_pattern._u64[1]);
-	}
-	else if (ls_pattern)
-	{
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern=0x%x is not readable memory, treating as absent", ls_pattern.addr());
-	}
-
-	const bool arg_ok = argument && (!thor_task_attr_fix() || argument.aligned()) &&
-		vm::check_addr(argument.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskArgument));
-
-	if (arg_ok)
-	{
-		view->argument = *argument;
-	}
-	else if (argument)
-	{
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: argument=0x%x is not readable memory, treating as absent", argument.addr());
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: rejected caller LS pattern (%u/%u blocks, management=%u); synthesised -> %016llx%016llx",
+			caller_blocks, alloc_blocks, caller_uses_management ? 1u : 0u,
+			+view->ls_pattern._u64[0], +view->ls_pattern._u64[1]);
 	}
 
 	return CELL_OK;
