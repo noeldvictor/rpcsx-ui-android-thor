@@ -176,6 +176,7 @@ $requiredRenderProbeFragments = @(
     'resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds',
     'maxSiliconC = 72',
     'markerEvery = 1',
+    'allowStarting = $true',
     '-Name "thor_screenshot"',
     '$pidRows = @(',
     'Get-Content -LiteralPath $pidEvidence',

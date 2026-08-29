@@ -388,6 +388,7 @@ try {
             maxSiliconC = 72
             stopMatch = $SliceStopMatch
             markerEvery = 1
+            allowStarting = $true
         }
         $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)
         $controllerOutput = Invoke-ThorRenderProbeController `

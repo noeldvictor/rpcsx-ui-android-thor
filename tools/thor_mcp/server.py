@@ -668,9 +668,15 @@ def _matching_log_lines(match, count=1):
 
 def t_slice_loop(a):
     """Own one slice and cool sequence until a log boundary or hard stop."""
-    if not pid():
+    p = pid()
+    if not p:
         return {"error": "emulator is not running"}
-    if not held_process_pid() and not is_paused():
+    process_held = held_process_pid() == p
+    initial_state = EMU_STATE_STARTING if process_held else emulation_state()
+    allow_starting = bool(a.get("allowStarting", False))
+    if (not process_held and
+            initial_state not in (EMU_STATE_PAUSED, EMU_STATE_READY) and
+            not (allow_starting and initial_state == EMU_STATE_STARTING)):
         return {"refused": True,
                 "reason": "the emulator must be paused before a slice loop"}
 
@@ -695,11 +701,23 @@ def t_slice_loop(a):
                 "reason": ("maxSiliconC must be above maxStartC, and "
                            "resumeTargetC must be below maxSiliconC")}
 
+    initial_process_hold = None
+    if not process_held and initial_state == EMU_STATE_STARTING:
+        initial_process_hold = stop_process_for_slice(p)
+        if not initial_process_hold.get("ok"):
+            stop = t_stop({})
+            return {"error": "the startup process could not enter its initial hold",
+                    "initialState": initial_state,
+                    "initialProcessHold": initial_process_hold,
+                    "stop": stop}
+
     records = []
     max_silicon = -1.0
     loop_started = time.monotonic()
 
     def finish(fields):
+        if initial_process_hold is not None:
+            fields["initialProcessHold"] = initial_process_hold
         fields["completedSlices"] = len(records)
         fields["slices"] = records
         fields["maxFixedSiliconC"] = max_silicon
@@ -992,7 +1010,7 @@ TOOLS = [
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
-    ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool below the runtime resume target between slices. Return within the host deadline and keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
+    ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool below the runtime resume target between slices. Return within the host deadline and keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}, "allowStarting": {"type": "boolean"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon stays below targetC for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),

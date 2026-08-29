@@ -292,6 +292,64 @@ assert result["stableSamples"] == 3, (
 )
 
 clock.now = 0.0
+startup_process_state = {"value": "R"}
+SERVER._process_hold_pid = None
+SERVER.pid = lambda: "123"
+SERVER._process_state = lambda process_id: startup_process_state["value"]
+SERVER.emulation_state = lambda: SERVER.EMU_STATE_STARTING
+SERVER.t_stop = lambda _: {"quiet": True}
+result = SERVER.t_slice_loop({"seconds": 0.5, "maxSlices": 1})
+assert result["refused"] is True, (
+    "The slice loop accepted a starting process without explicit permission."
+)
+
+startup_holds = []
+
+
+def hold_initial_startup_process(process_id):
+    startup_holds.append(process_id)
+    startup_process_state["value"] = "T"
+    SERVER._process_hold_pid = process_id
+    return {"ok": True, "pid": process_id, "processState": "T"}
+
+
+SERVER.stop_process_for_slice = hold_initial_startup_process
+SERVER.t_wait_cool_paused = lambda _: {
+    "cooled": True,
+    "cooledAtFixedSiliconC": 45.0,
+    "waitedS": 0,
+    "paused": True,
+}
+SERVER.t_slice = lambda arguments: {
+    "completed": True,
+    "requestedS": arguments["seconds"],
+    "elapsedS": arguments["seconds"],
+    "pauseRequestedAtS": arguments["seconds"],
+    "startFixedSiliconC": 45.0,
+    "endFixedSiliconC": 50.0,
+    "maxFixedSiliconC": 50.0,
+    "paused": True,
+    "holdMode": "process",
+}
+SERVER._matching_log_lines = lambda match, count=1: (
+    ["startup marker"] if "shutdown completion event mask" in match else []
+)
+result = SERVER.t_slice_loop({
+    "seconds": 0.5, "maxSlices": 1, "allowStarting": True,
+})
+assert result["markerReached"] is True, (
+    "The explicitly allowed startup slice did not reach its marker."
+)
+assert startup_holds == ["123"], (
+    "The startup slice loop did not hold the process before its first cooldown."
+)
+assert result["initialProcessHold"]["processState"] == "T", (
+    "The startup slice loop lost its initial process-hold evidence."
+)
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
+clock.now = 0.0
 prepare_paused_guest()
 loop_slices = []
 loop_cool_requests = []
