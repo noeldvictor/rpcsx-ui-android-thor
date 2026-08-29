@@ -36,6 +36,11 @@ if (-not $setBody.Contains($requiredSignalDiagnostic)) {
     throw "The SPURS event-flag Set function does not handle a firmware diagnostic result."
 }
 
+$requiredSignalState = 'state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x}'
+if (-not $setBody.Contains($requiredSignalState)) {
+    throw "The SPURS event-flag signal diagnostic does not record the task state."
+}
+
 $requiredFatalResults = 'rc + 0u == CELL_SPURS_TASK_ERROR_INVAL || rc + 0u == CELL_SPURS_TASK_ERROR_STAT'
 if (-not $setBody.Contains($requiredFatalResults)) {
     throw "The SPURS event-flag Set function does not map INVAL and STAT to FATAL."

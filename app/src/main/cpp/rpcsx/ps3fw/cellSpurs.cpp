@@ -3920,8 +3920,29 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 
 					if (const u32 n = s_signal_errors++; n < 8 || (n & 0xff) == 0)
 					{
-						cellSpurs.error("Thor EFSET signal #%u: slot=%d taskset=0x%x taskId=%u rc=0x%x", n, i,
-							taskset->addr(), eventFlag->waitingTaskId[i], rc);
+						u32 running = 0;
+						u32 ready = 0;
+						u32 pending_ready = 0;
+						u32 waiting = 0;
+						u32 enabled = 0;
+						u32 signalled = 0;
+						const auto ts = *taskset;
+
+						if (ts)
+						{
+							const auto rd = [&](u32 off) { return vm::_ref<be_t<u32>>(ts.addr() + off); };
+							running = +rd(OFFSET_OF(CellSpursTaskset, running));
+							ready = +rd(OFFSET_OF(CellSpursTaskset, ready));
+							pending_ready = +rd(OFFSET_OF(CellSpursTaskset, pending_ready));
+							waiting = +rd(OFFSET_OF(CellSpursTaskset, waiting));
+							enabled = +rd(OFFSET_OF(CellSpursTaskset, enabled));
+							signalled = +rd(OFFSET_OF(CellSpursTaskset, signalled));
+						}
+
+						cellSpurs.error("Thor EFSET signal #%u: slot=%d taskset=0x%x taskId=%u rc=0x%x "
+							"state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x}",
+							n, i, ts.addr(), eventFlag->waitingTaskId[i], rc,
+							running, ready, pending_ready, waiting, enabled, signalled);
 					}
 				}
 			}
