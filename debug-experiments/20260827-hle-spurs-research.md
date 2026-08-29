@@ -4639,3 +4639,46 @@ The full Android debug build passed. Candidate APK
 is 116,139,883 bytes. The next device run must keep the edge-task census off and
 repeat the exact long post-Start route. Success requires repeated queue-ring
 work and main-thread progress after the first cooled pause.
+
+## 99. The HLE entry handoff crosses the old pause boundary
+
+The strict one-sample gate is capture
+`20260829-072347-thor-input-strict-cool-gate`. Fixed silicon was 43.7 C. The
+exact no-launch installation is capture
+`20260829-072401-transformers-hle-entry-signal-install`. The host and installed
+APK hashes matched, and RPCSX was not active after installation.
+
+Capture `20260829-072430-thor-input-custom` repeated the section 98 route with
+the edge-task census and the general atomic census off. All three direct Start
+actions were accepted. The first queue push and workload wake occurred at
+2:03.281, immediately before a cooled pause. After resume at 2:57.505, the edge
+event interpreter completed seven calls. The queue produced nine ring records,
+six notifications, and six workload wakes. The queue pop state advanced from
+zero to eight. The main thread resumed its staged memory work and allocated
+through address `0x10ea0000` after the first pause.
+
+This result satisfies the planned repair gate. The same no-census route without
+the repair stopped after one ring record and one wake in section 98. The HLE
+entry signal handoff now crosses that host callback and pause boundary without
+diagnostic timing help.
+
+The capture does not prove full HLE startup. Ring record 8 has
+`pop{8,0,18c6,8}`. It has no following queue notification, workload wake, or
+edge event-interpreter entry. The pool thread then waits on event flag
+`0x1e54800`. The edge task can consume an unnotified item only if it stays
+active and polls the queue. The last record can therefore be a queue-notification
+race, but this is not yet proved.
+
+The rendering thread continued to run the workload-7 Bink taskset. One active
+interval produced 44 frames in 10 seconds. The main thread produced no later
+log record after 2:58.342. The final screenshot is black with a pause notice and
+reports 1.60 FPS. Its SHA-256 is
+`6DC9C7F3A7FC52AA5F75F6562B3B0B7AD32486E2BB837815B9B1A1BCFE458192`.
+It has no speed credit. There was no access violation, verification failure,
+native crash, or fatal thread stop.
+
+The launch sample was 44.5 C. Fixed silicon reached 67.8 C, the maximum junction
+sample was 83.1 C, and the last fixed-silicon sample was 61.8 C. The device
+guard stopped only after the package stopped normally. The next software probe
+must record why LFQueue ring record 8 suppresses its notification and whether
+the edge task is running, waiting, or between those states at that write.
