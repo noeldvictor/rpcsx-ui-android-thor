@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSpurs.cpp"
 $cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
+$probePath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\thor_spurs_event_wait_probe.h"
+$probe = Get-Content -LiteralPath $probePath -Raw
 
 $setComment = $cellSpurs.IndexOf('/// Set a SPURS event flag')
 $setStart = $cellSpurs.IndexOf('s32 cellSpursEventFlagSet(', $setComment)
@@ -71,16 +73,35 @@ $requiredTraceFragments = @(
     '"debug.rpcsx.thor.edge_event_wait_trace"',
     'eventFlag.addr() == 0x01e54800u',
     'const u16 requested_mask = *mask;',
-    'thor_edge_wait_index < 64',
+    'thor_edge_wait_index < 2048 && (thor_edge_wait_index & 0x7f) == 0',
     'Thor EDGE EFWAIT ARM #%u',
     'Thor EDGE EFWAIT WAKE #%u',
     'Thor EDGE EFWAIT RETURN #%u',
+    'thor::spurs_event_wait_arm(',
+    'thor::spurs_event_wait_wake(',
+    'thor::spurs_event_wait_finish(',
     'receivedEvents = eventFlag->pendingRecvTaskEvents[i];'
 )
 
 foreach ($fragment in $requiredTraceFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The bounded SPURS event-flag wait trace is missing: $fragment"
+    }
+}
+
+$requiredProbeFragments = @(
+    'inline spurs_event_wait_probe_state g_spurs_event_wait_probe;',
+    'inline void spurs_event_wait_arm(',
+    'inline void spurs_event_wait_wake(',
+    'inline void spurs_event_wait_finish(',
+    'inline spurs_event_wait_snapshot get_spurs_event_wait_snapshot()',
+    'state.active.store(1, std::memory_order_release);',
+    'state.active.store(0, std::memory_order_release);'
+)
+
+foreach ($fragment in $requiredProbeFragments) {
+    if (-not $probe.Contains($fragment)) {
+        throw "The SPURS event-wait state probe is missing: $fragment"
     }
 }
 

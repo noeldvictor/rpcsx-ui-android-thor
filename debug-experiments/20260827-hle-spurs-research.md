@@ -5640,3 +5640,72 @@ rendering progress.
   second late completion sample. Require correct moving 3D output and a
   comparable sustained 30 FPS measurement before a full-HLE or performance
   claim.
+
+## 118. The sampled EDGE event waits complete correctly
+
+- Status: failed, not-comparable
+- Scope: config-driver, static-analysis
+- Hypothesis: An EDGE event-flag wait will stay armed after the late loader
+  completion state appears.
+- Changed files/settings: The run used exact APK SHA-256
+  `3944A8C1C7984E86206208922B837C4BA516F81911F67397C06E6DCE76E5AC01`,
+  size 116,143,340 bytes. The HLE settings matched experiment 117. The guest
+  started paused. The controller requested one-second slices.
+- Rollback: The external thermal guard stopped RPCSX. The process was absent
+  after the run. The experiment-specific event-wait trace property was zero.
+  The post-stop fixed-silicon value was 56.2 C. Do not launch the Thor again in
+  this hardware round.
+- Thor result: The strict cool gate passed at 42.5 C fixed silicon, and the
+  post-gate value was 43.3 C. The exact no-launch install passed. The run ended
+  during the eleventh slice before the requested late boundary. The external
+  guard recorded fixed-silicon values of 48.2, 46.2, 53.0, 55.0, 56.6, 69.1,
+  68.2, 70.7, 70.3, and 74.7 C. The last sample exceeded the 72.0 C hard
+  limit, so the guard killed RPCSX. The input wrapper then reported a missing
+  process. The guard log identifies this result as a thermal stop, not as
+  evidence of a native crash.
+- Event-wait evidence: The trace contains 64 ARM rows, 64 WAKE rows, and 64
+  RETURN rows. It contains no BUSY row and no mismatch. Every sampled call
+  used flag `0x01e54800`, request `0x0001`, AND mode, slot zero, SPU result
+  `0x0001`, and return result `0x0001`. Each call returned success and cleared
+  the PPU receive state. The first sampled wait armed at guest time 18.100
+  seconds and woke at 22.652 seconds. The other sampled waits completed by
+  guest time 23.751 seconds. Therefore, the first-64 quota measured boot work
+  and did not reach the late-loader state.
+- Ghidra result: The saved legal PPU image shows the following chain. Function
+  `0x00519ce0` allocates and initializes each asynchronous loader completion
+  counter. Function `0x0051708c` queues a separate child request. The worker
+  around `0x0051aea4` polls the child completion list through `0x013bcce0` and
+  decrements the child counter only after that list becomes empty. The EDGE
+  backend at `0x00a08798` submits event-backed work through `0x009e33f8` and
+  waits through `0x009e35e4`. The wait wrapper allocates one bit from pool
+  `0x019de3b0`, waits on flag `0x01e54800`, and then releases the bit. Thus, a
+  successful event wait is necessary but is not sufficient to prove loader
+  finalization.
+- Visual correctness: Not proved. The guard stopped the run before the late
+  screenshot boundary.
+- FPS/frame-time: No credit. No moving gameplay measurement exists.
+- Capture paths: `20260829-134828-thor-input-strict-cool-gate`,
+  `20260829-134845-transformers-edge-event-wait-install`, and
+  `20260829-134956-thor-input-custom`. The focused Ghidra outputs are
+  `ghidra-transformers-edge-backend-decompile-20260829.txt`,
+  `ghidra-transformers-edge-submit-functions-decompile-20260829.txt`, and
+  `ghidra-transformers-loader-owners-decompile-20260829.txt`.
+- Decision: Reject the first-64 hot-path log. Do not repair the event result or
+  the loader counter from this evidence. Keep the current semantic stack. The
+  successor stores the current event-wait state in low-overhead atomics. It
+  logs only the first four calls, each 128th call through call 2048, and every
+  mismatch. The existing late PPU census reads the live state and reports an
+  active age and a wake latency at the late-loader boundary.
+- Windows result: The SPURS event-flag wait, Transformers HLE route, late-load
+  wait, ANY2ANY LFQueue firmware, and LFQueue log-budget contracts pass.
+  `git diff --check` passes. The normal Android debug build passes. Successor
+  APK SHA-256
+  `C3BF97865700E7B35E407321A4B01BEAEC93AC796483A8964633E0ECE6479C04`
+  is 116,141,896 bytes.
+- Next: Commit the successor. In a later independently cool Thor round, install
+  the exact successor without launch. Enable the event-wait trace and runtime
+  census with the required HLE settings. Start immediately below 70 C, use
+  one-second paused slices, and stop at 72 C or the second late sample. Inspect
+  `Thor EDGE EFWAIT STATE` before a semantic repair. Require correct moving 3D
+  output and a comparable sustained 30 FPS measurement before a full-HLE or
+  performance claim.

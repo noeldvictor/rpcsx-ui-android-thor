@@ -19,6 +19,8 @@
 #include "Emu/Memory/vm_reservation.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
+#include "Emu/Cell/timers.hpp"
 #include "cellos/sys_lwmutex.h"
 #include "cellos/sys_lwcond.h"
 #include "cellos/sys_spu.h"
@@ -4029,11 +4031,13 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 	static std::atomic<u32> s_edge_wait_trace_count{0};
 	const bool thor_edge_wait = thor_transformers_edge_event_wait_trace() && eventFlag.addr() == 0x01e54800u;
 	const u32 thor_edge_wait_index = thor_edge_wait ? s_edge_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
-	const bool thor_log_edge_wait = thor_edge_wait && thor_edge_wait_index < 64;
+	const u32 thor_edge_wait_sequence = thor_edge_wait_index + 1;
+	const bool thor_log_edge_wait = thor_edge_wait &&
+		(thor_edge_wait_index < 4 || (thor_edge_wait_index < 2048 && (thor_edge_wait_index & 0x7f) == 0));
 
 	if (eventFlag->ctrl.raw().ppuWaitMask || eventFlag->ctrl.raw().ppuPendingRecv)
 	{
-		if (thor_log_edge_wait)
+		if (thor_edge_wait)
 		{
 			const auto ctrl = eventFlag->ctrl.raw();
 			cellSpurs.error("Thor EDGE EFWAIT BUSY #%u: flag=0x%x request=0x%04x mode=%u block=%u "
@@ -4155,6 +4159,17 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv,
 			+eventFlag->eventQueueId, +eventFlag->spuPort);
 	}
+	if (thor_edge_wait && rc == CELL_OK)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		thor::spurs_event_wait_arm(thor_edge_wait_sequence, ppu.id, requested_mask, mode,
+			+ctrl.ppuWaitSlotAndMode >> 4, get_system_time());
+	}
+	else if (thor_edge_wait)
+	{
+		cellSpurs.error("Thor EDGE EFWAIT ERROR #%u: flag=0x%x request=0x%04x mode=%u block=%u rc=0x%x",
+			thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block, static_cast<u32>(rc));
+	}
 
 	if (rc != CELL_OK)
 	{
@@ -4176,6 +4191,10 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 
 		received_slot = static_cast<u32>(i);
 		receivedEvents = eventFlag->pendingRecvTaskEvents[i];
+		if (thor_edge_wait)
+		{
+			thor::spurs_event_wait_wake(received_slot, receivedEvents, get_system_time());
+		}
 		if (thor_log_edge_wait)
 		{
 			const auto ctrl = eventFlag->ctrl.raw();
@@ -4191,6 +4210,19 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 	}
 
 	*mask = receivedEvents;
+	if (thor_edge_wait)
+	{
+		const bool mismatch = mode == CELL_SPURS_EVENT_FLAG_OR
+			? (receivedEvents & requested_mask) == 0
+			: receivedEvents != requested_mask;
+		thor::spurs_event_wait_finish(thor_edge_wait_sequence, receivedEvents,
+			mismatch);
+		if (mismatch)
+		{
+			cellSpurs.error("Thor EDGE EFWAIT MISMATCH #%u: flag=0x%x request=0x%04x received=0x%04x recv=%u slot=%u",
+				thor_edge_wait_index, eventFlag.addr(), requested_mask, receivedEvents, recv, received_slot);
+		}
+	}
 	if (thor_log_edge_wait)
 	{
 		const auto ctrl = eventFlag->ctrl.raw();

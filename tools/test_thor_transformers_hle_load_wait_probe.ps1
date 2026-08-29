@@ -71,7 +71,12 @@ $requiredFragments = @(
     '"Thor LATE LOAD IO ACTIVE 00:',
     '"Thor LATE LOAD IO ACTIVE 20:',
     '"Thor LATE LOAD IO ACTIVE 40:',
-    '"Thor LATE LOAD IO COMPLETION:'
+    '"Thor LATE LOAD IO COMPLETION:',
+    '#include "Emu/Cell/thor_spurs_event_wait_probe.h"',
+    'thor::get_spurs_event_wait_snapshot()',
+    '"Thor EDGE EFWAIT STATE:',
+    'active_age_us=',
+    'wake_latency_us='
 )
 
 foreach ($fragment in $requiredFragments) {

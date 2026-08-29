@@ -12,6 +12,7 @@
 #include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/Cell/thor_spu_ls_dump.h"
 #include "Emu/Cell/thor_spu_pc_census.h"
 #include "Emu/Cell/thor_spu_trap_stop.h"
@@ -531,6 +532,19 @@ void perf_monitor::operator()()
 												completion_state_ok ? "mapped" : "unmapped", completion_state,
 												completion_state_ok ? +vm::_ref<be_t<u32>>(completion_state) : 0,
 												completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item + 4) : 0);
+
+											const auto edge_wait = thor::get_spurs_event_wait_snapshot();
+											const u64 now = get_system_time();
+											const u64 active_age_us = edge_wait.active && edge_wait.arm_time_us && now >= edge_wait.arm_time_us
+												? now - edge_wait.arm_time_us : 0;
+											const u64 wake_latency_us = edge_wait.wake_time_us >= edge_wait.arm_time_us
+												? edge_wait.wake_time_us - edge_wait.arm_time_us : 0;
+											perf_log.error("Thor EDGE EFWAIT STATE: sample=%u total=%u active=%u sequence=%u ppu=0x%08x request=0x%04x received=0x%04x mode=%u slot=%u phase=%u active_age_us=%llu wake_latency_us=%llu",
+												sample + 1, edge_wait.total, edge_wait.active, edge_wait.sequence,
+												edge_wait.ppu_id, edge_wait.requested, edge_wait.received,
+												edge_wait.mode, edge_wait.slot, edge_wait.phase,
+												static_cast<unsigned long long>(active_age_us),
+												static_cast<unsigned long long>(wake_latency_us));
 										}
 									}
 								}
